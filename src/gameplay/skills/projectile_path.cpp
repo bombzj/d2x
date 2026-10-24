@@ -10,6 +10,14 @@
 #include <limits>
 
 namespace d2x {
+uint32_t pd2MissilePathSeed(uint32_t previous,uint32_t type,uint32_t id) {
+    // Current 0x37E710/770/780: the low twenty bits are an identity-derived
+    // hash; the high twelve bits count initializations and wrap to one.
+    if(!previous) return ((id&0x0fffffffu)^(type<<28))&0xfffffu;
+    const auto counter=previous>>20;
+    const auto prefix=(counter<0xfff?counter+1:1)<<20;
+    return ((((previous&0xfffffu)+prefix)*0x6ac690c6u)&0xfffffu)+prefix;
+}
 std::vector<Vec> blessedHammerPath(Vec origin) {
     // Retail Fog ordinals 10083/10084 index the same 512-entry float table.
     // Hammer advances by 16 entries. Preserve those exact float words and
@@ -119,6 +127,15 @@ std::vector<Vec> missileFanTargets(Vec origin, Vec target, int count, Vec facing
         result.push_back(endpoint); endpoint = endpoint + Vec{float(sideX), float(sideY)};
     }
     return result;
+}
+Vec pd2MissileEndpoint(Vec origin,Vec target,int distance) {
+    // Current core 0x37BA40: integer coordinates, double distance and
+    // truncation toward zero. Output aliases the target in stream programs.
+    const auto x=int(origin.x),y=int(origin.y),dx=int(target.x)-x,dy=int(target.y)-y;
+    const double length=std::sqrt(double(dx)*dx+double(dy)*dy);
+    if(!length) return {float(int(target.x))+.5f,float(int(target.y))+.5f};
+    return {float(int(double(x)+double(dx)*distance/length))+.5f,
+            float(int(double(y)+double(dy)*distance/length))+.5f};
 }
 MissileFanLayout pd2MissileFanLayout(Vec origin, Vec target, int count) {
     int deltaX = nativeSubtract(int(origin.x),int(target.x));

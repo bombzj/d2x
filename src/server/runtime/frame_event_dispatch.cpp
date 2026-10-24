@@ -1,8 +1,17 @@
 #include "frame_event_dispatch.hpp"
 #include "game_systems.hpp"
+#include "server/systems/skills/pd2/vengeance.hpp"
+#include "server/systems/skills/pd2/corpses.hpp"
+#include "server/systems/effects/pd2/sacrifice.hpp"
 
 namespace d2x::server {
 DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,TickContext tick) {
+    if((event.handler==skills::pd2VengeanceTimerHandler || event.handler==skills::pd2CorpseTimerHandler) && event.type==FrameEventType::MonsterModifier)
+        return systems.skills.activeStateEvent(event,tick.tick);
+    if(event.handler==effects::pd2SacrificeTimerHandler && event.type==FrameEventType::MonsterModifier)
+        return systems.effects.pd2SacrificeEvent(event,tick.tick);
+    if(event.handler==missiles::pd2SkillMissileTimerHandler && event.type==FrameEventType::MonsterModifier)
+        return systems.missiles.pd2SkillMissileEvent(event,tick);
     // Native continuous timers discard explicit callbacks; retain the domain
     // routing identity in customId, which survives the continuous queue.
     if(event.continuous && event.customId==int32_t(movementTimerHandler) && event.owner.type==FrameEventUnit::Player && event.type==FrameEventType::ModeChange)

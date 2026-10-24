@@ -8,9 +8,18 @@
 #include <stdexcept>
 #include <charconv>
 #include <limits>
+#include <cctype>
 #include "core/random.hpp"
 
 namespace d2x {
+namespace {
+bool samePropertyCode(const ClassicData &data,std::string_view first,std::string_view second) {
+    if(!data.pd2Host) return first==second;
+    return first.size()==second.size() && std::equal(first.begin(),first.end(),second.begin(),[](unsigned char left,unsigned char right) {
+        return std::tolower(left)==std::tolower(right);
+    });
+}
+}
 void loadPropertyData(ClassicData &data) {
     if (data.profile != "lod-named-txt-v1" && data.profile != "remote-display-txt-v1" && !data.pd2Host)
         return;
@@ -156,7 +165,7 @@ std::shared_ptr<const StatRuleCatalog> prepareNativeStatRules(const ClassicData 
 }
 bool isDirectPropertyRoll(const ClassicData &data, std::string_view code) {
     auto found = std::find_if(data.properties.begin(), data.properties.end(),
-                              [&](const auto &property) { return property.code == code; });
+                              [&](const auto &property) { return samePropertyCode(data,property.code,code); });
     if (found == data.properties.end() || found->operations.empty()) return false;
     return propertyUsesDirectRoll(found->operations.front().function);
 }
@@ -164,7 +173,7 @@ SpecialPropertyRoll rollItemProperties(const ClassicData &data,std::span<const P
     SpecialPropertyRoll result;
     result.randomState=seed;
     for(const auto &property:properties) {
-        const auto definition=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &entry){return entry.code==property.code;});
+        const auto definition=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &entry){return samePropertyCode(data,entry.code,property.code);});
         if(definition==data.properties.end()) throw std::runtime_error("Unknown generated property: "+property.code);
         std::vector<int32_t> values;
         int first=0;
@@ -222,7 +231,7 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
     const PropertyRange &property, int roll, int level, int itemLevel,std::span<const int32_t> operations) {
     std::vector<ResolvedItemStat> result;
     const auto found = std::find_if(data.properties.begin(), data.properties.end(),
-        [&](const auto &p) { return p.code == property.code; });
+        [&](const auto &p) { return samePropertyCode(data,p.code,property.code); });
     if (found == data.properties.end()) return result;
     auto number = [](std::string_view text) {
         int value = 0;
@@ -289,7 +298,7 @@ std::vector<ResolvedItemStat> resolveOwnItemStats(const ClassicData &data,
         for (size_t i = 0; i < properties.size(); ++i) {
             auto stats = resolvePropertyStats(data, properties[i], rolls[i], level, int(item.level),operations.empty()?std::span<const int32_t>{}:operations[i]);
             const auto *base=data.items.find(item.definition);
-            const auto program=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &entry){return entry.code==properties[i].code;});
+            const auto program=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &entry){return samePropertyCode(data,entry.code,properties[i].code);});
             if(base && base->equipment.isType("weap") && program!=data.properties.end() &&
                 std::any_of(program->operations.begin(),program->operations.end(),[](const auto &operation){return operation.function==7;})) {
                 const int maximum=std::max(base->base.maxDamage.value_or(0),base->base.twoHandMax.value_or(0));

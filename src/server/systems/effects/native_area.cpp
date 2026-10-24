@@ -46,7 +46,9 @@ DomainResult<> System::nativeArea(const NativeAreaSpec &spec,uint64_t tick,std::
                 impact.areaDamage->rolled=std::make_shared<combat::MissileAreaRoll>();impact.areaDamage->rolled->value=pulse.spec.damage;
             }
             if(pulse.spec.directFunction) {
+                const auto initial=impact.nativeSkill?impact.nativeSkill->initialDamage:nullptr;
                 impact.nativeSkill=std::make_shared<combat::NativeSkillContact>();
+                impact.nativeSkill->initialDamage=initial;
                 impact.nativeSkill->skill=pulse.spec.skill;impact.nativeSkill->rank=pulse.spec.rank;
                 impact.nativeSkill->directFunction=pulse.spec.directFunction;impact.nativeSkill->staticField=pulse.spec.staticField;
                 impact.areaDamage->rolled->value.reset();

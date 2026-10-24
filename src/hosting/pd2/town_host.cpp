@@ -4,8 +4,10 @@
 #include <stdexcept>
 namespace d2x::hosting::pd2 {
 void validateTownArea(const LevelRecord &area) {
-    if(area.town) return;
-    throw std::runtime_error("PD2 town hosting does not yet implement wilderness combat or map programs");
+    // The original five-act map generators are shared. PD2's additional map
+    // levels require separate map/event programs before they may be admitted.
+    if(area.town || (area.id>0 && area.id<=136)) return;
+    throw std::runtime_error("PD2 hosting does not yet implement this additional map program");
 }
 std::shared_ptr<const MonsterRegionRules> prepareTownRegionRules(Archives &archives) {
     MonsterRegionRules rules;

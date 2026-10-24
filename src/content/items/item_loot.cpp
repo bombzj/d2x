@@ -232,7 +232,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                       const std::set<size_t> &usedUniques, std::string_view characterClass,
                       int magicFind, int goldFind, std::optional<DropQuality> forcedQuality, unsigned effectivePlayers, bool ignoreNoDrop,
                       bool hellBovine,const ItemSeedSource &seeds) {
-    if (data.profile != "lod-named-txt-v1" || itemLevel < 1 || itemLevel > 99 ||
+    if ((data.profile != "lod-named-txt-v1" && !data.pd2Host) || itemLevel < 1 || itemLevel > 99 ||
         upgradeLevel < 0 || upgradeLevel > 99)
         throw std::runtime_error("Unsupported item loot profile or level");
     LootPlan plan;

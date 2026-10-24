@@ -8,6 +8,7 @@
 #include <list>
 #include <string>
 
+namespace d2x {struct StatSnapshot;}
 namespace d2x::server::reactions {
 struct ItemTrigger;
 class ItemEventPlan {
@@ -28,6 +29,8 @@ struct ItemTriggerPorts {
     transactions::System &transactions;
     uint64_t &random;
     EventOutbox &events;
+    monsters::System &monsters;
+    effects::System &effects;
 };
 class ItemTriggers {
     const ItemTriggerPorts ports_;
@@ -41,7 +44,7 @@ class ItemTriggers {
     ItemTriggers &operator=(const ItemTriggers &) = delete;
     size_t pending() const;
     const std::string &deferred() const { return deferred_; }
-    DomainResult<ItemEventPlan> prepare(const ActorContext &, std::initializer_list<ItemSkillEvent>, EntityId, Vec) const;
+    DomainResult<ItemEventPlan> prepare(const ActorContext &, std::initializer_list<ItemSkillEvent>, EntityId, Vec,const StatSnapshot *weaponStats=nullptr) const;
     void commit(ItemEventPlan plan, bool terminal) noexcept;
     StepStatus advance(uint64_t tick);
     StepStatus advance(ItemEventPlan &,uint64_t tick);

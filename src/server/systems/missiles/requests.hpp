@@ -60,9 +60,14 @@ struct MonsterSpawn {
     std::optional<int> totalFrames{}; // Native 0x8000 range override, applied before path initialization.
     std::optional<EntityId> guidedTarget{};
     std::optional<int32_t> nativeVelocityRaw{}; // Constructor's 8.8 value before slow / 75% scaling.
+    int32_t initialDamagePercent{};
+    std::optional<WeaponSkillDamage> weapon{};
 };
 struct MonsterLaunch { EntityId first; };
 struct NativeSpawn {
+    struct DamageAdds {
+        int32_t minimumPhysical{},maximumPhysical{},minimumPoison{},maximumPoison{},poisonLength{},poisonCount{};
+    };
     EntityId owner;
     RegionId area;
     uint64_t generation{},tick{};
@@ -77,7 +82,7 @@ struct NativeSpawn {
     int32_t scatterRadius{};
     int32_t minimumTargetDistanceSquared{};
     std::optional<std::pair<uint64_t,uint64_t>> ownerSeedEdit{};
-    enum class Initialization { None,ProgressiveCharged,ProgressiveSpiral,ChargedSkill,DiabWall } initialization{};
+    enum class Initialization { None,ProgressiveCharged,ProgressiveSpiral,ChargedSkill,DiabWall,BlessedHammer,Pd2Firestorm } initialization{};
     uint32_t initialSeed{};
     std::optional<int32_t> nativeVelocity{};
     std::optional<std::array<int32_t,2>> finalParameters{};
@@ -90,5 +95,11 @@ struct NativeSpawn {
     std::optional<EntityId> guidedTarget{};
     std::optional<int> postCreationFrames{}; // SetTotal/Current after construction; preserve Activate.
     bool velocityFixed{}; // Flag0x10: nativeVelocity already has eight fractional bits.
+    std::optional<int> activateFrame{}; // Constructor flag0x800, independent of Range.
+    std::optional<int> attackBonus{}; // Post-constructor STAT_TOHIT write.
+    bool suppressSourceEvents{}; // Constructor flag0x10000 (outer multishot projectiles).
+    int32_t initialDamagePercent{}; // InitFunc stat write before SetDamageStats.
+    std::optional<WeaponSkillDamage> weapon{};
+    std::optional<DamageAdds> damageAdds{}; // Current PD2 0x36CD50, after SetDamageStats.
 };
 }

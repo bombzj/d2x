@@ -1,6 +1,8 @@
 #include "system.hpp"
+#include "pd2/wounds.hpp"
 #include "gameplay/combat/weapon_block.hpp"
 #include "player_contact.hpp"
+#include "pd2/crushing.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/effects/system.hpp"
@@ -10,12 +12,16 @@
 #include "server/systems/inventory/system.hpp"
 #include "server/runtime/equipment_rules.hpp"
 #include "server/systems/skills/evaluation.hpp"
+#include "server/systems/skills/native_caster.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "gameplay/combat/accuracy.hpp"
 #include "gameplay/combat/unit_values.hpp"
 #include "gameplay/combat/avoidance.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2_random.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
@@ -117,6 +123,8 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
     if(impact.nativeSkill) {
         const auto prepared=prepareNativeSkillContact(impact,source,target,tick);
         if(prepared!=DomainStatus::Applied) return prepared;
+        if(impact.areaDamage && impact.areaDamage->rolled && impact.areaDamage->rolled->value)
+            impact.hitClass=impact.areaDamage->rolled->value->hitClass&0xf;
         contact.hit=impact.nativeSkill->hit;
         if(!contact.hit) return DomainStatus::Applied;
         const Participants participants{ports_.players,ports_.monsters,ports_.social};
@@ -158,6 +166,8 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
         }
         MissileDamageProgramInput program;
         program.function=missile.serverDamageFunction;program.element=missile.element;program.parameters=missile.damageParameters;
+        const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,source.id());
+        const bool pd2=caster && caster->programs() && caster->programs()->pd2;
         program.level=missile.level;program.ownerHireling=source.monster && source.monster->hireling;
         program.targetMonster=bool(monster);program.targetPlayer=bool(target.player);
         if(monster && missile.monsterTypes) {
@@ -166,7 +176,7 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
                 program.targetDimensionsKnown=true;program.targetSmall=dimensions->second.first;program.targetLarge=dimensions->second.second;
             }
         }
-        if(!impact.areaDamage && !impact.nativeDamageFlagsOnly && (program.function==1 || program.function==7 || program.function==9 || program.function==11 || program.function==12 || program.function==13)) {
+        if(!impact.areaDamage && !impact.nativeDamageFlagsOnly && (program.function==1 || program.function==7 || program.function==9 || program.function==11 || program.function==12 || program.function==13 || (pd2 && (program.function==15 || program.function==16 || program.function==17)))) {
             if(!missile.formulas || !missile.statRules) throw std::runtime_error("Missing native missile damage program definitions");
             const auto owner=source.player?std::optional{source.player->totals.nativeStats}:ports_.effects.unitStatValues(source.id(),tick.tick);
             if(!owner) throw std::runtime_error("Missing native missile damage program owner");
@@ -180,7 +190,7 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
             if(const auto skill=missile.formulas->skills.find(missile.skill);skill!=missile.formulas->skills.end()) {
                 program.skillExists=true;program.skillParameter1=skill->second.number("param1");program.skillParameter2=skill->second.number("param2");
             }
-            if(program.function==1 || program.function==12) {
+            if(program.function==1 || program.function==12 || (pd2 && program.function==17)) {
                 const auto percentage=values.calculation(FormulaDomain::Missile,missile.definition,missile.level,"dmgcalc1",std::pair{-1,-1});
                 if(!percentage) throw std::runtime_error("Unavailable native missile damage formula context");
                 program.percentage=*percentage;
@@ -193,10 +203,50 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
                 program.maximumPoisonLength=*maximum;
             }
             program.ownerDamagePercent=owner->get({missile.statRules->names.at("damagepercent"),0});
+            if(pd2 && (program.function==15 || program.function==16)) {
+                const auto first=values.calculation(FormulaDomain::Skill,missile.skill,missile.level,program.function==15?"calc1":"calc2");
+                const auto second=values.calculation(FormulaDomain::Skill,missile.skill,missile.level,program.function==15?"calc2":"calc3");
+                if(!first || !second) throw std::runtime_error("Unavailable PD2 missile damage formula");
+                program.skillParameter1=*first;program.skillParameter2=*second;
+            }
             if(random!=expected) contact.damageFormulaSeed=std::pair{expected,random};
         }
         if(!impact.areaDamage && !impact.nativeDamageFlagsOnly && !applyMissileDamageProgram(rolled,program,missile.data,missile.mastery,damageTarget,missile.random))
             throw std::runtime_error("Unavailable native missile damage program");
+        if(pd2 && !impact.areaDamage && !impact.nativeDamageFlagsOnly) {
+            // Current core RVAs 0x3A48A0 / 0x3A49B0. Psychic Hammer's
+            // bounce decay uses signed products; Double Throw's bonus uses
+            // the helper's unsigned product/division, including overflow.
+            const auto targetX=missile.targetParameterX.value_or(0);
+            if(program.function==15) {
+                const auto decay=nativeMultiply(nativeSubtract(program.skillParameter1,targetX),program.skillParameter2);
+                rolled.channels[1]=decay>99?0:nativeMultiply(nativeSubtract(100,decay),rolled.channels[1])/100;
+            } else if(program.function==16 && program.skillParameter1==targetX && program.skillParameter2>0) {
+                for(auto &channel:rolled.channels)
+                    channel=int32_t(uint32_t(nativeMultiply(nativeAdd(program.skillParameter2,100),channel))/100u);
+                for(auto *drain:{&rolled.lifeLeech,&rolled.manaLeech,&rolled.staminaLeech})
+                    *drain=int32_t(uint32_t(nativeMultiply(nativeAdd(program.skillParameter2,100),*drain))/100u);
+            } else if(program.function==17 && missile.pierceCount>1) {
+                // Current 0x3A4AB0 and collision helper 0x302B20. Only
+                // successful native pierce continuations advance this stat.
+                const auto factor=std::max(double(uint32_t(program.parameters[0])),
+                    100.0-double(nativeSubtract(missile.pierceCount,1))*program.percentage);
+                const auto scale=[&](int32_t value) {
+                    const double amount=double(value)*factor/100.0;
+                    return amount>INT32_MAX?INT32_MAX:amount<INT32_MIN?INT32_MIN:int32_t(std::trunc(amount));
+                };
+                for(auto &channel:rolled.channels) channel=scale(channel);
+                for(auto *drain:{&rolled.lifeLeech,&rolled.manaLeech,&rolled.staminaLeech}) *drain=scale(*drain);
+            } else if(program.function==19) {
+                // Current core RVA 0x3A4D40: percentage drains use unsigned
+                // products. The strict CRT roll sets ResultFlags 0x20,
+                // suppressing both hit and kill events without removing XP.
+                for(auto *drain:{&rolled.lifeLeech,&rolled.manaLeech,&rolled.staminaLeech})
+                    *drain=int32_t(uint32_t(nativeMultiply(*drain,program.parameters[1]))/100u);
+                contact.suppressEvents=int(pd2CrtRandom(ports_.pd2Random)%100)>program.parameters[0];
+                if(contact.suppressEvents && targetX) rolled.lifeLeech=rolled.manaLeech=rolled.staminaLeech=0;
+            }
+        }
         impact.missileRolled=std::pair{impact.next,rolled};
         contact.damage=impact.monsterHit.value_or(MonsterHit{});
         for(size_t i=0;i<rolled.channels.size();++i) contact.damage.channels[i]=rolled.channels[i];
@@ -242,6 +292,11 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
             }
             contact.flagsPrepared=true;
         }
+        if(impact.nativeSkill && impact.nativeSkill->directFunction==163) {
+            const auto defense=preparePd2SplashDefense(impact,source,target,tick);if(defense!=DomainStatus::Applied) return defense;
+        }
+    }
+    if(!contact.defensePrepared) {
         const auto expected=seed(target);auto random=expected;
         auto modifiers=target.player?target.player->totals.character.combat:target.monster->petStats.attributes.combat;
         contact.blocked=false;contact.avoidance=WeaponAvoidance::None;
@@ -300,9 +355,16 @@ DomainStatus System::prepareContactProcedures(SpellImpact &impact,ParticipantVie
     auto &contact=*impact.missileContact;
     if(!contact.proceduresPrepared && contact.resultSuccessful && !contact.blocked && contact.avoidance==WeaponAvoidance::None) {
         const auto expected=source.player?source.player->combatRandom:source.monster->combatRandom;auto random=expected;
-        WeaponHitEffects extras;WeaponHitResult playerExtras;
-        if(impact.weapon) {
+        WeaponHitEffects extras;WeaponHitResult playerExtras;std::optional<OpenWoundsApplication> pd2Wound;
+        if(impact.weapon && !contact.suppressEvents) {
             auto attack=*impact.weapon;
+            const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,source.id());
+            const bool pd2=caster && caster->programs() && caster->programs()->pd2;
+            const auto crushing=pd2?pd2CrushingBlow(ports_,impact,source,target,tick.tick,random):0;
+            if(pd2) {
+                attack.crushingBlow=attack.openWounds=0;
+                pd2Wound=pd2OpenWounds(ports_,impact,source,target,tick.tick,random);
+            }
             // Native percentage drains are executed by advanceMissileDrain.
             // CB / OW remain weapon procedures and do not replace the ranges.
             attack.lifeLeech=attack.manaLeech=0;
@@ -310,12 +372,14 @@ DomainStatus System::prepareContactProcedures(SpellImpact &impact,ParticipantVie
                 ports_.effects.unitResistance(target.id(),DamageType::Physical,tick.tick),0,{},tick.tick,random);
             else playerExtras=calculateWeaponHitEffects(attack,{target.player->persistent.player.hp.raw(),
                 target.player->totals.character.combat.physicalResist,100,1,false,false,false,true},0,{},random);
+            if(pd2) {extras.crushing=crushing;playerExtras.crushing=crushing;extras.wound=pd2Wound;}
         }
         reactions::ItemEventPlan events;
-        if(source.player) {
-            const auto *sourceArea=ports_.areas.find(source.player->area);if(!sourceArea) return DomainStatus::Stale;
-            const ActorContext actor{source.player->player,source.id(),source.player->area,sourceArea->generation,0,tick.tick};
-            auto prepared=ports_.itemTriggers.prepare(actor,impact.weapon && !impact.suppressSourceEvents?std::initializer_list{ItemSkillEvent::Hit,ItemSkillEvent::Kill}:
+        if(!contact.suppressEvents && (source.player || (source.monster && ports_.monsters.skillPrograms() && ports_.monsters.skillPrograms()->pd2))) {
+            const auto region=source.player?source.player->area:source.monster->area;
+            const auto *sourceArea=ports_.areas.find(region);if(!sourceArea) return DomainStatus::Stale;
+            const ActorContext actor{source.player?source.player->player:source.monster->owner.value_or(PlayerId{}),source.id(),region,sourceArea->generation,0,tick.tick};
+            auto prepared=ports_.itemTriggers.prepare(actor,(impact.weapon || impact.melee) && !impact.suppressSourceEvents?std::initializer_list{ItemSkillEvent::Hit,ItemSkillEvent::Kill}:
                 std::initializer_list{ItemSkillEvent::Kill},target.id(),target.position());
             if(!prepared) return prepared.status;
             events=std::move(*prepared.value);
@@ -324,35 +388,55 @@ DomainStatus System::prepareContactProcedures(SpellImpact &impact,ParticipantVie
             ports_.transactions.consumeRandom({source.player->player,source.id(),source.player->area,
                 ports_.areas.at(source.player->area).generation,0,tick.tick},expected,random).status;
         if(result!=DomainStatus::Applied) return result;
-        contact.extras=std::move(extras);contact.playerExtras=playerExtras;contact.itemEvents=std::move(events);
+        contact.extras=std::move(extras);contact.pd2Wound=std::move(pd2Wound);contact.playerExtras=playerExtras;contact.itemEvents=std::move(events);
         contact.proceduresPrepared=true;
     }
     return DomainStatus::Applied;
 }
 DomainStatus System::prepareMeleeDrainProcedures(SpellImpact &impact,ParticipantView target,TickContext tick) {
-    if(!impact.nativeSkill || !impact.nativeSkill->melee || impact.nativeSkill->proceduresTransferred) return DomainStatus::Applied;
+    if(!impact.nativeSkill || !impact.nativeSkill->melee) return DomainStatus::Applied;
+    if(impact.nativeSkill->directFunction==163 || impact.nativeSkill->directFunction==153) {impact.nativeSkill->proceduresTransferred=true;return DomainStatus::Applied;}
     impact.areaDamage->hitFlags=0x20; // DrainItemDurability's local damage copy.
     const auto source=Participants{ports_.players,ports_.monsters,ports_.social}.find(impact.source);
     if(!source.id()) return DomainStatus::Stale;
-    const auto result=prepareContactProcedures(impact,source,target,tick);if(result!=DomainStatus::Applied) return result;
-    auto &contact=*impact.missileContact;
-    if(impact.playerContact) {
-        auto &execution=*impact.playerContact;
-        execution.extras=contact.playerExtras;execution.itemEvents=std::move(contact.itemEvents);
-        execution.adjustment.crushing=contact.playerExtras.crushing;
-        if(contact.playerExtras.woundRate>0) execution.adjustment.wound=OpenWoundsApplication{
-            contact.playerExtras.woundRate,source.id(),impact.binding.credit,tick.tick+200,tick.tick+1};
-        execution.remainingLife=std::max<int64_t>(0,int64_t(target.player->persistent.player.hp.raw())-contact.playerExtras.crushing);
-        execution.victim.tick=execution.attacker.tick=tick.tick;
-    } else if(impact.monsterContact) {
-        impact.monsterContact->extras=contact.extras;impact.monsterContact->itemEvents=std::move(contact.itemEvents);
+    if(!impact.nativeSkill->proceduresTransferred) {
+        const auto result=prepareContactProcedures(impact,source,target,tick);if(result!=DomainStatus::Applied) return result;
+        auto &contact=*impact.missileContact;
+        if(impact.playerContact) {
+            auto &execution=*impact.playerContact;
+            execution.extras=contact.playerExtras;execution.itemEvents=std::move(contact.itemEvents);
+            execution.adjustment.crushing=contact.playerExtras.crushing;
+            if(contact.pd2Wound) execution.adjustment.wound=contact.pd2Wound;
+            else if(contact.playerExtras.woundRate>0) execution.adjustment.wound=OpenWoundsApplication{
+                contact.playerExtras.woundRate,source.id(),impact.binding.credit,tick.tick+200,tick.tick+1};
+            execution.remainingLife=std::max<int64_t>(0,int64_t(target.player->persistent.player.hp.raw())-contact.playerExtras.crushing);
+            execution.victim.tick=execution.attacker.tick=tick.tick;
+        } else if(impact.monsterContact) {
+            impact.monsterContact->extras=contact.extras;impact.monsterContact->itemEvents=std::move(contact.itemEvents);
+        }
+        impact.nativeSkill->proceduresTransferred=true;
     }
-    impact.nativeSkill->proceduresTransferred=true;return DomainStatus::Applied;
+    auto &execution=*impact.nativeSkill;
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,source.id());
+    if(!execution.splashItemsComplete && !impact.suppressSourceEvents && caster && caster->programs() && caster->programs()->pd2) {
+        if(!execution.splashItems) {
+            const auto weaponStats=ports_.effects.unitStatValues(source.id(),tick.tick,
+                impact.weapon && impact.weapon->weapon.item?std::optional{impact.weapon->weapon.item}:std::nullopt);
+            if(!weaponStats) return DomainStatus::Unavailable;
+            auto events=ports_.itemTriggers.prepare(caster->context(ports_.areas,tick.tick),{ItemSkillEvent::MeleeSplash},
+                target.id(),target.position(),&*weaponStats);
+            if(!events) return events.status;
+            execution.splashItems=std::make_shared<reactions::ItemEventPlan>(std::move(*events.value));
+        }
+        if(ports_.itemTriggers.advance(*execution.splashItems,tick.tick)==StepStatus::Blocked) return DomainStatus::Capacity;
+        execution.splashItemsComplete=true;
+    }
+    return DomainStatus::Applied;
 }
 DomainStatus System::finishMissileArmor(SpellImpact &impact,ParticipantView target,TickContext tick) {
     auto &contact=*impact.missileContact;
     if(contact.armorCommitted) return DomainStatus::Applied;
-    if(impact.nativeSkill && impact.nativeSkill->melee) {
+    if(impact.nativeSkill && impact.nativeSkill->melee && impact.nativeSkill->directFunction!=163 && impact.nativeSkill->directFunction!=153) {
         if(!contact.weaponWearCommitted) {
             if(const auto *player=ports_.players.findActor(impact.source)) {
             const auto &attack=*impact.weapon;const auto item=player->persistent.inventory.items.find(attack.weapon.item);

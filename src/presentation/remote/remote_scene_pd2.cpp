@@ -1,6 +1,7 @@
 #include "remote_scene_impl.hpp"
 #include "gameplay/skills/cast_timing.hpp"
 #include "gameplay/actions/timing.hpp"
+#include "gameplay/skills/projectile_path.hpp"
 
 namespace d2x {
 namespace {
@@ -20,11 +21,7 @@ uint32_t RemoteScene::Impl::nextPd2PathSeed(OnlineUnitKey owner) {
     auto &seed=pd2VisualSeeds.try_emplace(owner,Pd2VisualSeed{initialRandom(owner.id),0}).first->second;
     // CN 37C460 initially uses (type<<28)^GUID, masked to 20 bits.
     // 37C400/37C470 then multiply the low bits and wrap the 12-bit counter.
-    if(!seed.path) seed.path=owner.id&0xfffff;
-    else {
-        const uint32_t counter=(seed.path>>20)<0xfff?(seed.path>>20)+1:1;
-        seed.path=(((seed.path&0xfffff)+(counter<<20))*0x6ac690c6u&0xfffff)+(counter<<20);
-    }
+    seed.path=pd2MissilePathSeed(seed.path,owner.type,owner.id);
     return seed.path;
 }
 
@@ -254,14 +251,7 @@ void RemoteScene::Impl::emitPd2Stream(Channel &channel,OnlineUnitKey owner,Vec s
     while(channel.next<=time && callbacks++<8) {
         const int spreadRoll=int32_t(rollPd2VisualRandom(randomState));
         const int extension=count>1 && spreadRoll%100<40?count:0;
-        const auto delta=target-start;
-        const float distance=delta.length();
-        Vec center=target;
-        if(distance>0) {
-            const float reach=float(count/2+extension+8);
-            center={float(int(start.x+delta.x*reach/distance))+.5f,
-                    float(int(start.y+delta.y*reach/distance))+.5f};
-        }
+        const auto center=pd2MissileEndpoint(start,target,count/2+extension+8);
         const auto layout=pd2MissileFanLayout(start,center,count);
         for(int index=0;index<count;++index) {
             const int random=int32_t(rollPd2VisualRandom(randomState));

@@ -70,7 +70,8 @@ void System::prepareStagedItemAuras(AuraUnitPublication &plan,uint64_t tick,cons
         if(source==plan.sources.end()) {
             prepareUnitItemAuras(plan,candidate,tick,recipient);
             // Inherited summon aura slots are selected at birth, before AI.
-            if(candidate.druidPet && !ports_.monsters.find(id) && candidate.rule.auraPrograms)
+            const bool inheritedAura=candidate.druidPet || candidate.necroSummon;
+            if(inheritedAura && !ports_.monsters.find(id) && candidate.rule.auraPrograms)
                 for(const auto skill:candidate.nativeSkillOrder)
                     if(candidate.rule.auraPrograms->contains(skill))
                         prepareUnitAuraSelection(plan,id,skill,tick,recipient);

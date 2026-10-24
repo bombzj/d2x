@@ -36,7 +36,8 @@ std::shared_ptr<const StatList> prepareBirthProperties(monsters::Actor &unit) {
         int first=0;
         for(const auto &operation:property.program) {
             int value=0;
-            if(operation.function==17 && property.parameter) value=property.parameter;
+            if(operation.function==11) value=0; // Proc rank/chance are prepared by the property program, without a range draw.
+            else if(operation.function==17 && property.parameter) value=property.parameter;
             else if(operation.function==8 && first) value=first;
             else {
                 const auto minimum=std::min(property.minimum,property.maximum),maximum=std::max(property.minimum,property.maximum);
@@ -47,7 +48,7 @@ std::shared_ptr<const StatList> prepareBirthProperties(monsters::Actor &unit) {
             if(rolls.empty()) first=value;
             rolls.push_back(value);
         }
-        const PropertyProgramInput input{first,property.parameter,property.minimum,property.maximum,unit.rule.level,unit.rule.level,{},rolls};
+        const PropertyProgramInput input{first,property.parameter,property.minimum,property.maximum,unit.rule.level,unit.rule.level,property.skill,rolls};
         for(const auto &stat:evaluatePropertyProgram(property.program,input)) {
             if(!properties) {
                 properties=std::make_shared<StatList>();properties->extended=false;properties->ownerKind=StatOwnerKind::Item;
@@ -55,6 +56,8 @@ std::shared_ptr<const StatList> prepareBirthProperties(monsters::Actor &unit) {
             }
             if(stat.set) setNativeStat(*properties,rules,stat.name,stat.value,uint16_t(stat.layer));
             else addNativeStat(*properties,rules,stat.name,stat.value,uint16_t(stat.layer));
+            const StatKey key{rules.names.at(stat.name),uint16_t(stat.layer)};
+            refreshItemStatEvents(unit.itemStatEvents,rules,key,properties->base.at(key));
         }
     }
     unit.birthProperties=properties;unit.birthPropertiesPrepared=true;
@@ -587,7 +590,7 @@ NativeUnitStats prepareSummonStatSources(monsters::Actor &unit,const SummonCastS
     for(const auto &[id,rank]:program.prePassiveSkills) assignSummonSkill(unit,resources,assigned,id,rank,{});
     if(program.assassinShadow) {
         resources.writeBaseStat("level",summon.stats.level,{});
-        if(program.rank>1) {
+        if(program.rank>1 || program.individualShadowSlots) {
             const auto maximum=resources.read().maximum.raw();
             const auto life=nativeAdd(maximum,nativePercentage(maximum,program.lifePercent,100));
             resources.writeBaseStat("maxhp",life,{});resources.seedLife(Fixed8::fromRaw(life));
@@ -607,10 +610,12 @@ NativeUnitStats prepareSummonStatSources(monsters::Actor &unit,const SummonCastS
                 list->base.insert_or_assign(StatKey{key->second,0},*value);
                 resources.replaceIntrinsicSource(std::make_shared<const StatList>(*list),{});
             };
-            // Do49 uses calculation index 1 for ALL slots, including zeros.
-            for(int i=1;i<=6;++i) write("aurastat"+std::to_string(i),"aurastatcalc2");
-            for(int i=1;i<=5;++i) write("passivestat"+std::to_string(i),"passivecalc2");
+            // Retail Do49 uses calc2 for every slot. Current PD2 helper
+            // 0x36F830 evaluates each slot independently, including rank 1.
+            for(int i=1;i<=6;++i) write("aurastat"+std::to_string(i),program.individualShadowSlots?"aurastatcalc"+std::to_string(i):"aurastatcalc2");
+            for(int i=1;i<=5;++i) write("passivestat"+std::to_string(i),program.individualShadowSlots?"passivecalc"+std::to_string(i):"passivecalc2");
         }
+        for(const auto &[id,rank]:program.inheritedSkills) assignSummonSkill(unit,resources,assigned,id,rank,{});
     } else applySummonPassiveStats(unit,resources,program,assigned,{});
     if(!program.materialBeforeStats) postEquipment();
     if(program.finalLevel) resources.writeBaseStat("level",*program.finalLevel,{});

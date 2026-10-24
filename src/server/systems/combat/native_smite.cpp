@@ -18,7 +18,8 @@ namespace d2x::server::combat {
 DomainStatus System::prepareNativeSmite(SpellImpact &impact,const PlayerState &player,TickContext tick) {
     auto &execution=*impact.nativeSkill;if(execution.rolled) return DomainStatus::Applied;
     const auto &gear=player.totals.equipment;
-    if(!gear.shield || !nativeMeleeReach(impact,0)) return DomainStatus::Unavailable;
+    const bool splash=execution.directFunction==163;
+    if(!gear.shield || (!splash && !nativeMeleeReach(impact,0))) return DomainStatus::Unavailable;
     const auto &rules=*player.rules.skills;const auto &catalog=*rules.formulas;
     const auto hand=player.totals.handStats.find(impact.weapon->weapon.item);
     const auto &stats=hand==player.totals.handStats.end()?player.totals.nativeStats:hand->second;
@@ -62,11 +63,17 @@ DomainStatus System::prepareNativeSmite(SpellImpact &impact,const PlayerState &p
     low=nativeAdd(low,nativePercentage(low,nativeAdd(percent,stat("item_mindamage_percent")),100));
     high=nativeAdd(high,nativePercentage(high,nativeAdd(percent,stat("item_maxdamage_percent")),100));
     MissileHitDamage damage;damage.channels[0]=std::max(0,nativeAdd(low,high>low?int32_t(limitedRandom(random,uint32_t(nativeSubtract(high,low)))):0));
-    const auto stun=calculation("calc2");const auto &row=catalog.skills.at(execution.skill);
+    const auto stun=splash?0:calculation("calc2");const auto &row=catalog.skills.at(execution.skill);
     // Do150 evaluates conversion, but HitFlags 2 skips the Fill stage that
     // would apply it. Do not turn this into generic weapon conversion.
-    if(row.elementType) (void)calculation("calc4");
+    if(!splash && row.elementType) (void)calculation("calc4");
     rollNativeSkillElement(damage,values,execution.skill,execution.rank,random);
+    if(splash) {
+        const auto range=values.physicalRange(execution.skill,execution.rank,false);
+        if(!range) throw std::logic_error("Missing PD2 Smite splash physical damage");
+        damage.channels[0]=nativeAdd(damage.channels[0],nativeAdd(range->first,
+            int32_t(limitedRandom(random,uint32_t(nativeSubtract(range->second,range->first))))));
+    }
     damage.stunLength=stun;damage.hitClass=0x65;damage.knockback=(row.number("resultflags")&8)!=0;
     const auto consumed=ports_.transactions.consumeRandom({player.player,player.actor,player.area,
         ports_.areas.at(player.area).generation,0,tick.tick},expected,random);

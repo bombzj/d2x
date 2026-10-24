@@ -295,7 +295,7 @@ DomainResult<> System::advanceNativeCallback(NativeContactBatch &batch,uint64_t 
         slow=nativeSlowPercentage(slow,bool(other.player),championOrUnique);
         const auto &state=unit.monster->necroPet->slowState;
         const auto &rules=*(other.player?other.player->rules.character->stats:other.monster->rule.stats);
-        const auto duration=curseStateDuration(750,other.player?other.player->totals.character.combat.curseResistance:unitCurseResistance(callback.other,tick),state.curse);
+        const auto duration=curseStateDuration(750,unitCurseResistance(callback.other,tick),state.curse);
         if(!duration) return done();
         CombatEffectSpec spec;spec.state=state;spec.duration=uint32_t(*duration);spec.source={CombatEffectSource::Skill,callback.unit,0,1};
         spec.stacking=EffectStacking::CurseLevel;spec.nativeState=true;spec.nativeRemoval=NativeStateRemoval::BasicAura;spec.refreshPassivesOnRemoval=true;
@@ -304,6 +304,7 @@ DomainResult<> System::advanceNativeCallback(NativeContactBatch &batch,uint64_t 
             const StatKey key{rules.names.at(name),0};program.nativeWrites.push_back({key,-slow});program.nativeValues->emplace(key,-slow);
         }
         program.primaryStat=program.nativeWrites.front().key;spec.nativeValues=program.nativeValues;
+        if(!configurePd2Curse(spec,callback.other,tick)) return done();
         if(other.player) {
             const auto &player=*other.player;const auto &area=ports_.areas.at(player.area);
             auto next=state_;auto &recovery=next.players[player.actor];

@@ -16,6 +16,6 @@ struct MindBlastPulse {
     int chance{},duration{},durationBase{},durationRange{};
     uint32_t hitFlags{};uint16_t resultFlags{};
     std::optional<uint64_t> occurrence;
-    bool prepared{},manaPaid{},complete{};
+    bool prepared{},manaPaid{},progressivePosted{},complete{};
 };
 }

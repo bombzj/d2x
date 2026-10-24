@@ -87,7 +87,11 @@ struct MonsterRule {
     int closeCurseState{-1},doomKnightBaseClass{-1};
     std::map<int,int> baseSkillRanks;
     std::vector<std::pair<int,int>> initialSkills;
-    struct BirthProperty {uint8_t chance{};int parameter{},minimum{},maximum{};std::vector<PropertyInstruction> program;};
+    struct BirthProperty {
+        uint8_t chance{};int parameter{},minimum{},maximum{};
+        std::vector<PropertyInstruction> program;
+        std::optional<PropertySkillLevels> skill;
+    };
     std::vector<BirthProperty> birthProperties;
     struct BirthEquipment {
         struct Choice {std::string code;uint8_t body{},quality{};};

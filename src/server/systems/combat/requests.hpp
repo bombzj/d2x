@@ -52,6 +52,8 @@ struct NativeSkillContact {
     std::shared_ptr<effects::NativeContactBatch> drainEvents,thornsEvents;
     bool drainEventsComplete{},thornsComplete{};
     std::shared_ptr<reactions::ItemEventPlan> attackItems;
+    std::shared_ptr<reactions::ItemEventPlan> splashItems;
+    bool splashItemsComplete{};
     bool attackItemsComplete{};
     bool proceduresTransferred{};
     bool physicalCapped{};
@@ -69,6 +71,7 @@ struct NativeSkillContact {
     int32_t allocatedPhysical{};
     int32_t directHealing{};
     bool directHealingComplete{};
+    bool lifeHitClassUpdated{};
 };
 struct SpellImpact {
     EntityId projectile, source;

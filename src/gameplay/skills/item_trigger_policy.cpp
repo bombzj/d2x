@@ -2,7 +2,7 @@
 
 namespace d2x {
 ItemTriggerPolicy resolveItemTriggerPolicy(ItemSkillEvent event, ItemTriggerRule rule) {
-    const bool attack = event == ItemSkillEvent::Attack || event == ItemSkillEvent::Hit || event == ItemSkillEvent::Kill;
+    const bool attack = event == ItemSkillEvent::Attack || event == ItemSkillEvent::Hit || event == ItemSkillEvent::Kill || event == ItemSkillEvent::MeleeSplash;
     ItemTriggerPolicy result;
     result.alternativeProgram = attack && !rule.targetDo;
     result.death = event == ItemSkillEvent::Death;

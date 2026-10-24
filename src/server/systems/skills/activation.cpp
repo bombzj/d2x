@@ -8,12 +8,14 @@
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/missiles/system.hpp"
+#include "server/systems/missiles/native_birth.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/effects/corpse_explosion.hpp"
 #include "server/systems/effects/native_area.hpp"
 #include "evaluation.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2_corpse.hpp"
 #include "server/systems/companions/system.hpp"
 #include "server/systems/objects/system.hpp"
 #include "server/systems/inventory/system.hpp"
@@ -27,6 +29,7 @@
 #include "gameplay/skills/amazon_sequence.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/skills/targeting.hpp"
+#include "gameplay/skills/pd2_program.hpp"
 #include "server/movement.hpp"
 #include <cmath>
 #include "server/systems/loot/system.hpp"
@@ -91,6 +94,7 @@ DomainStatus System::activateWhirlwind(Release &pending,const ActorContext &acto
     pending.tick=actor.tick+1;return DomainStatus::Applied;
 }
 DomainStatus System::activateLeap(Release &pending,const ActorContext &actor,Vec landing) {
+    if(pending.skill.pd2) return activatePd2Leap(pending,actor,landing);
     const auto &owner=*ports_.players.find(actor.player);
     if(pending.landed) return weaponRelease(pending,actor,landing);
     if(!pending.leaping) {
@@ -139,6 +143,7 @@ DomainStatus System::activateLeap(Release &pending,const ActorContext &actor,Vec
 DomainStatus System::activateCorpseSearch(Release &pending,const ActorContext &actor,Vec center) {
     if(!ports_.monsters.usableCorpse(pending.unit,actor.area,actor.tick)) return DomainStatus::Unavailable;
     const auto &owner=*ports_.players.find(actor.player);const auto &corpse=*ports_.monsters.find(pending.unit);
+    if(pending.skill.pd2 && !pd2SearchableCorpseClass(corpse.rule.nativeClass)) return DomainStatus::Unavailable;
     if(pending.skill.corpseSearch->potion && !corpse.rule.softCorpse) return DomainStatus::Unavailable;
     // Wait for the original death treasure request to leave this source slot.
     if(ports_.loot.read().pending.contains(pending.unit)) return DomainStatus::Capacity;
@@ -183,6 +188,17 @@ DomainStatus System::activateGrimWard(Release &pending,const ActorContext &actor
     payment.publicFacts.emplace_back(StateFact{pending.unit,1,actor.area,skill.grimWard->noSelectState,true});
     payment.publicFacts.emplace_back(StateFact{pending.unit,1,actor.area,skill.grimWard->noDrawState,true});
     auto cost=ports_.transactions.prepare(std::move(payment));if(!cost) return cost.status;
+    if(skill.pd2) {
+        const auto size=corpse.rule.corpseSize;
+        const auto missile=skill.pd2->missiles.at(size==0?1:size==2?2:0);
+        if(missile<0) return DomainStatus::Unavailable;
+        const std::array births{missiles::NativeSpawn{actor.actor,actor.area,actor.areaGeneration,actor.tick,*location,{},missile,skill.sourceId,skill.rank}};
+        auto prepared=ports_.missiles.prepareNativeBirth(births);if(!prepared) return prepared.status;
+        cost.value->missileBirth=std::move(*prepared.value);
+        const auto result=ports_.transactions.commit(std::move(*cost.value));
+        if(result) ports_.monsters.consumeCorpse(pending.unit);
+        return result.status;
+    }
     missiles::Spawn request{actor,std::move(skill),{},*location,true};request.cost=std::move(*cost.value);
     const auto result=ports_.missiles.spawn(request);if(result) ports_.monsters.consumeCorpse(pending.unit);
     return result.status;
@@ -216,12 +232,14 @@ DomainStatus System::activateAmazonMagic(Release &pending, const ActorContext &a
     return ports_.effects.amazonMagic(actor, pending.skill).status;
 }
 DomainStatus System::activateTeleport(Release &pending, const ActorContext &actor, Vec target) {
+    if(pending.skill.pd2) return activatePd2Teleport(pending,actor,target);
     return ports_.travel.castTeleport(actor, {actor.area, actor.areaGeneration, target}, pending.skill.manaCost, pending.skill.charge,pending.skill.sourceId).status;
 }
 DomainStatus System::activateHydra(Release &pending, const ActorContext &actor, Vec target) {
     return ports_.companions.hydra(actor, pending.skill, target).status;
 }
 DomainStatus System::activateWarcry(Release &pending,const ActorContext &actor,Vec target) {
+    if(pending.skill.pd2) return activatePd2(pending,actor,target);
     if(!pending.manaPaid) {
         const auto result=ports_.effects.skill(actor,pending.skill);if(!result) return result.status;
         pending.manaPaid=true;
@@ -229,6 +247,7 @@ DomainStatus System::activateWarcry(Release &pending,const ActorContext &actor,V
     return ports_.missiles.spawn({actor,pending.skill,pending.collision,target,true}).status;
 }
 DomainStatus System::activateEffect(Release &pending, const ActorContext &actor, Vec) {
+    if(pending.skill.effect==SkillBehavior::AreaEnchant) return activatePd2Enchant(pending,actor);
     const auto &skill = pending.skill;
     if (skill.effect == SkillBehavior::Enchant && pending.unit && pending.unitType == 1)
         return ports_.effects.skillUnit(actor, skill, pending.unit).status;
@@ -271,7 +290,15 @@ DomainStatus System::activateStaticField(Release &pending, const ActorContext &a
         pending.manaPaid=true;pending.directSkill=std::move(pulse);
     }
     pending.nativeCallbackStarted=true;
-    const auto result=ports_.effects.nativeArea(pending.directSkill->spec,actor.tick,pending.directSkill);
+    auto result=ports_.effects.nativeArea(pending.directSkill->spec,actor.tick,pending.directSkill);
+    if(result && pending.skill.pd2 && pending.skill.curse) {
+        // Current Do160 (RVA 0x3AF930) completes Static Field damage before
+        // posting its six aura stat slots. The retained damage pulse prevents
+        // repeating hits if the later state publication encounters backpressure.
+        auto debuff=evaluate(*ports_.players.find(actor.player),pending.skill.sourceId,pending.skill.rank);
+        debuff.manaCost=debuff.startMana=0;debuff.charge.reset();
+        result=ports_.effects.curse(actor,debuff,ports_.players.find(actor.player)->position,{});
+    }
     if(result) pending.nativeCallbackStarted=false;
     return result.status;
 }
@@ -313,6 +340,10 @@ DomainStatus System::activateTelekinesis(Release &pending, const ActorContext &a
     }
 }
 DomainStatus System::activateCurse(Release &pending,const ActorContext &actor,Vec target) {
+    if(pending.skill.pd2 && pending.skill.pd2->doFunction==71) {
+        const auto *owner=ports_.players.find(actor.player);if(!owner) return DomainStatus::InvalidActor;
+        return ports_.effects.curse(actor,pending.skill,owner->position,{}).status;
+    }
     if(pending.skill.curse && pending.skill.curse->ai==CurseAi::Taunt) {
         const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
         const auto eligible=[&](const monsters::Actor *m) {return m && m->alive() && !m->owner &&
@@ -335,6 +366,7 @@ DomainStatus System::activateCurse(Release &pending,const ActorContext &actor,Ve
     return ports_.effects.curse(actor,pending.skill,target,pending.unit).status;
 }
 DomainStatus System::activateMissile(Release &pending, const ActorContext &actor, Vec target) {
+    if(pending.skill.pd2) return activatePd2(pending,actor,target);
     missiles::Spawn spawn{actor,pending.skill,pending.collision,target};spawn.guidedTarget=pending.unit;
     return ports_.missiles.spawn(spawn).status;
 }

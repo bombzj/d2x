@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "runtime.hpp"
+#include "pd2/requirements.hpp"
 #include "shape.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
@@ -43,7 +44,7 @@ void System::interrupt(const ActorContext &actor) {
 namespace {
 DomainResult<> applied() { return {DomainStatus::Applied, std::monostate{}}; }
 bool channelled(const SkillCastSpec &skill) {
-    return skill.effect==SkillBehavior::Inferno ||
+    return skill.effect==SkillBehavior::Inferno || pd2StreamSkill(skill) ||
         (skill.druid && skill.druid->program==DruidProgram::Arctic) ||
         (skill.assassin && skill.assassin->program==AssassinProgram::BladeFury);
 }
@@ -103,7 +104,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if(!player->rules.skills || !player->rules.skills->formulas) return {DomainStatus::Unavailable,{}};
         if(const auto result=ports_.effects.setNativeSkillState(actor.actor,player->rules.skills->formulas->infernoState,false,actor.tick);!result) return result;
         const auto channel=releases_.find(actor.actor);
-        if(channel!=releases_.end() && (channel->second.skill.effect==SkillBehavior::Inferno ||
+        if(channel!=releases_.end() && (channel->second.skill.effect==SkillBehavior::Inferno || pd2StreamSkill(channel->second.skill) ||
            (channel->second.skill.druid && channel->second.skill.druid->program==DruidProgram::Arctic))) {releases_.erase(channel);state_.interrupt(actor.actor,actor.tick);}
         // Original Rcv0x12 clears STATE_INFERNO only. A released mouse must
         // not cancel an ordinary attack's approach or pending action.

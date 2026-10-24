@@ -74,6 +74,11 @@ target_link_libraries(d2x_items PUBLIC d2x_core d2x_rules)
 
 add_library(d2x_content
   src/content/pd2_core_counters.cpp
+  src/content/pd2/skill_data.cpp
+    src/content/pd2/corpse_data.cpp
+    src/content/pd2/aura_data.cpp
+    src/content/pd2/summon_data.cpp
+    src/content/pd2/curse_data.cpp
   src/content/classic_data.cpp src/content/lod_data.cpp src/content/pd2/town_data.cpp src/content/world/world_catalog.cpp
   src/content/monsters/monster_catalog.cpp src/content/skills/description_formula.cpp
   src/content/skills/description_data.cpp src/content/skills/formula_data.cpp
@@ -143,6 +148,7 @@ add_library(d2x_gameplay
   src/gameplay/skills/cast_timing.cpp src/gameplay/skills/resolve.cpp
   src/gameplay/skills/curse_resolve.cpp src/gameplay/skills/summon_resolve.cpp
   src/gameplay/skills/amazon_summon_resolve.cpp src/gameplay/skills/projectile_path.cpp
+  src/gameplay/effects/pd2/curse_slots.cpp
   src/gameplay/skills/damage_curve.cpp src/gameplay/skills/formula_parameters.cpp
   src/gameplay/skills/mana_payment.cpp src/gameplay/skills/passive_stats.cpp
   src/gameplay/monsters/mode_stats.cpp src/gameplay/monsters/life_stats.cpp
@@ -242,6 +248,23 @@ add_library(d2x_server
   src/server/systems/skills/imp.cpp src/server/systems/skills/monster_mosquito.cpp
   src/server/systems/skills/monster_leap.cpp src/server/systems/skills/monster_run.cpp
   src/server/systems/skills/monster_whirlwind.cpp
+  src/server/systems/skills/pd2/state_skills.cpp
+  src/server/systems/skills/pd2/teleport.cpp
+  src/server/systems/skills/pd2/requirements.cpp
+  src/server/systems/skills/pd2/projectiles.cpp
+  src/server/systems/skills/pd2/splash.cpp
+  src/server/systems/skills/pd2/summons.cpp
+  src/server/systems/skills/pd2/healing.cpp
+  src/server/systems/skills/pd2/movement.cpp
+  src/server/systems/skills/pd2/vengeance.cpp
+  src/server/systems/skills/pd2/corpses.cpp
+  src/server/systems/skills/pd2/charge.cpp
+  src/server/systems/skills/pd2/bash.cpp
+  src/server/systems/missiles/pd2/hit.cpp
+  src/server/systems/missiles/pd2/programs.cpp
+  src/server/systems/effects/pd2/curses.cpp
+  src/server/systems/effects/pd2/dark_pact.cpp
+  src/server/systems/effects/pd2/sacrifice.cpp
   src/server/systems/skills/monster_leap_attack.cpp src/server/systems/skills/activation.cpp
   src/server/systems/skills/shape.cpp src/server/systems/skills/druid_active.cpp
   src/server/systems/skills/druid_pet.cpp src/server/systems/skills/druid_melee.cpp
@@ -255,6 +278,12 @@ add_library(d2x_server
   src/server/systems/effects/corpse_explosion.cpp src/server/systems/effects/native_area.cpp
   src/server/systems/combat/native_skill_contact.cpp src/server/systems/combat/native_smite.cpp
   src/server/systems/combat/monster_melee.cpp src/server/systems/combat/progressive_contact.cpp
+  src/server/systems/combat/pd2/progressive.cpp
+  src/server/systems/combat/pd2/progressive_births.cpp
+  src/server/systems/combat/pd2/crushing.cpp
+  src/server/systems/combat/pd2/wounds.cpp
+  src/server/systems/combat/pd2/splash.cpp
+  src/server/systems/combat/pd2/bash.cpp
   src/server/systems/missiles/native_weapon_contact.cpp src/server/systems/effects/druid.cpp
   src/server/systems/effects/state_group.cpp src/server/systems/effects/assassin.cpp
   src/server/systems/effects/blade_shield.cpp src/server/systems/effects/mind_blast.cpp

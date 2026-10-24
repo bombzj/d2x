@@ -117,7 +117,7 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
         caster->persistent.player.mana<skill.manaCost) return {DomainStatus::InvalidActor,{}};
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     // SrvDo025: an unaligned Enchant target falls back to the caster.
-    if(skill.effect==SkillBehavior::Enchant && !participants.auraAligned({caster,nullptr},{target,nullptr})) target=caster;
+    if((skill.effect==SkillBehavior::Enchant || skill.effect==SkillBehavior::AreaEnchant) && !participants.auraAligned({caster,nullptr},{target,nullptr})) target=caster;
     auto next=state_;auto &recovery=next.players[target->actor];
     auto spec=*skill.appliedEffect;spec.source={CombatEffectSource::Skill,caster->actor,skill.sourceId,skill.rank};
     PlayerResourceTrace resources(*target,actor.tick,target==caster?skill.manaCost:Fixed8{},ports_.areas.statTime(target->area));
@@ -131,9 +131,9 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     edit.transient=projectEffectAttributes(recovery.states,actor.tick);
     edit.resourceBase=resources.maximum();
     for(const int state:application.clearedStates) if(!recovery.states.hasState(state,actor.tick)) edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,state,false});
-    for(const auto &removed:application.removed) if(!recovery.states.hasState(removed.effect.spec.state.id,actor.tick))
+    for(const auto &removed:application.removed) if(removed.effect.spec.state.id>=0 && !recovery.states.hasState(removed.effect.spec.state.id,actor.tick))
         edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,removed.effect.spec.state.id,false});
-    if(skill.effect!=SkillBehavior::BoneArmor) {
+    if(skill.effect!=SkillBehavior::BoneArmor && installed->spec.state.id>=0) {
         auto stats=nativeEffectStats(*caster->rules.skills,installed->spec);
         if(!installed->spec.nativeValues) {
             stats.emplace_back(caster->rules.skills->nativeStats.at("modifierlist_skill"),skill.sourceId);
@@ -252,7 +252,8 @@ DomainResult<> System::commitPlayerReception(PlayerReceptionPlan &&plan) {
     const auto result=ports_.transactions.commit(std::move(*prepared.value));if(result) publishPlayers(next.players);
     return result;
 }
-DomainResult<> System::nativeMeleeReaction(EntityId target,EntityId source,const MonsterHit &hit,int64_t amount,uint64_t tick) {
+DomainResult<> System::nativeMeleeReaction(EntityId target,EntityId source,const MonsterHit &hit,int64_t amount,uint64_t tick,bool *lifeUpdate) {
+    if(lifeUpdate) *lifeUpdate=false;
     const auto *player=ports_.players.findActor(target);if(!player || !player->entered) return {DomainStatus::Unavailable,{}};
     const auto &area=ports_.areas.at(player->area);
     if(player->persistent.player.hp<=0) {
@@ -262,12 +263,13 @@ DomainResult<> System::nativeMeleeReaction(EntityId target,EntityId source,const
     }
     const bool interruptible=!ports_.skills.uninterruptible(target);
     const auto clock=reactionTiming(*player,"gh"),knockbackClock=hit.knockback?reactionTiming(*player,"kb"):std::optional<AnimationTiming>{};
-    const bool knockback=source && amount>0 && knockbackClock && interruptible;
+    const bool knockback=source && hit.knockback && knockbackClock && interruptible;
     auto random=player->combatRandom;const auto states=unitEffects(target);
     const bool getHit=source && hit.getHit.value_or(!hit.softHit) && (amount>0 || hit.stunFrames) && !hit.knockback && clock && interruptible &&
         monsterHitRecovery(amount,player->totals.character.maxLifeFixed.raw(),hit.hitClass,false,
             hit.channels[5]>0 && std::all_of(hit.channels.begin(),hit.channels.begin()+5,[](auto n){return n==0;}),true,random,
             player->rules.skills && states && states->hasState(player->rules.skills->stunned.id,tick));
+    if(lifeUpdate) *lifeUpdate=interruptible && !hit.knockback && !getHit && (hit.getHit.value_or(!hit.softHit) || hit.softHit);
     if(!getHit && !knockback && random==player->combatRandom) return {DomainStatus::Applied,std::monostate{}};
     if(getHit || knockback) {const auto ended=endMode(target,tick);if(!ended) return ended;}
     const ActorContext actor{player->player,target,player->area,area.generation,0,tick};
@@ -386,11 +388,13 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
     }
     if(edit.player.hp>0 && adjustment.wound && p->rules.skills && p->rules.skills->openWounds.id>=0) {
         const auto &definition=p->rules.skills->openWounds;
-        const auto rate=recovery.wound?recovery.wound->rate:adjustment.wound->rate;
-        const std::array<StatValue,1> writes{{{p->rules.skills->stats->names.at("hpregen"),nativeSubtract(0,nativeChecked(rate))}}};
+        const auto rate=adjustment.wound->pd2Stacks?adjustment.wound->rate:recovery.wound?recovery.wound->rate:adjustment.wound->rate;
+        std::vector<StatValue> writes{{p->rules.skills->stats->names.at("hpregen"),nativeSubtract(0,nativeChecked(rate))}};
+        if(adjustment.wound->pd2Stacks) writes.emplace_back(StatKey{p->rules.skills->stats->names.at("openwounds_stack"),0},int32_t(adjustment.wound->pd2Stacks));
         applyNativeStatus(states,definition,{CombatEffectSource::NativeState,source,0,1},adjustment.wound->until,
             actor.tick,*p->rules.skills->stats,writes,{},observe);
-        if(recovery.wound && recovery.wound->until>actor.tick) recovery.wound->until=adjustment.wound->until;
+        if(adjustment.wound->pd2Stacks) recovery.wound=adjustment.wound;
+        else if(recovery.wound && recovery.wound->until>actor.tick) recovery.wound->until=adjustment.wound->until;
         else recovery.wound=adjustment.wound;
     }
 
@@ -442,7 +446,7 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
         inventory.random=resource.random;
         change=std::move(inventory);
     }
-    auto itemEvents=itemTriggers_.prepare(actor,successfulHit?std::initializer_list{ItemSkillEvent::GetHit,ItemSkillEvent::Death}:
+    auto itemEvents=itemTriggers_.prepare(actor,adjustment.suppressEvents?std::initializer_list<ItemSkillEvent>{}:successfulHit?std::initializer_list{ItemSkillEvent::GetHit,ItemSkillEvent::Death}:
         std::initializer_list{ItemSkillEvent::Death},source,source?combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source).position():p->position);
     if(!itemEvents) return {itemEvents.status,{}};
     auto plan = ports_.transactions.prepare(std::move(change)); if (!plan) return {plan.status,{}};

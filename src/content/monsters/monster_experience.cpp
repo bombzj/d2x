@@ -15,7 +15,7 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
         result.deferred = std::move(reason);
         return result;
     };
-    if (data.profile != "lod-named-txt-v1" || request.difficulty < 0 || request.difficulty > 2 ||
+    if ((data.profile != "lod-named-txt-v1" && !data.pd2Host) || request.difficulty < 0 || request.difficulty > 2 ||
         request.playerLevel < 1)
         return defer("Unsupported monster experience profile or difficulty");
     const auto *monster = request.identity.nativeClass>=0?monsters.find(request.identity.nativeClass):monsters.find(request.identity.monster);

@@ -52,6 +52,9 @@ DomainResult<std::shared_ptr<actions::SkillRelease>> System::startShadowSkill(co
             if(program.dualWield && !dual) return {DomainStatus::Unavailable,{}};
             release.weapon=main;
             if(dual) release.offhand=gear.weapons[1];
+            if(program.allocatesMeleeAtStart()) {
+                const auto started=startWeaponMelee(release,actor,&attack);if(!started) return {started.status,{}};
+            }
             if(release.skill.assassin && (release.skill.assassin->program==AssassinProgram::DragonTalon ||
                release.skill.assassin->program==AssassinProgram::DragonTail || release.skill.assassin->program==AssassinProgram::DragonFlight)) {
                 // Kicks use their own held-combat cursor; the weapon is a
@@ -82,7 +85,9 @@ DomainResult<bool> System::releaseShadowSkill(MonsterRelease &pending,TickContex
     const auto position=ports_.monsters.targetPosition(unit.id,pending.area);
     const auto target=pending.request.position?*pending.request.position:position?position->first:release.target.position;
     DomainStatus status;
-    if(release.weapon) {
+    if(release.weaponMelee) status=drainWeaponMelee(release,actor);
+    else if(release.weapon && release.weapon->ranged && release.skill.pd2) status=activatePd2(release,actor,target);
+    else if(release.weapon) {
         if(!release.nativeMeleeOccurrence) {
             const auto &weapon=release.offhand && pending.nextRelease%2?*release.offhand:*release.weapon;
             WeaponSkillDamage damage;damage.weapon=weapon;damage.level=caster->level();

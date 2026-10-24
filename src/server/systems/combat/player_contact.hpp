@@ -20,10 +20,11 @@ struct MissileContactExecution {
     bool damageProgramDomainPrepared{};
     std::optional<std::pair<uint64_t,uint64_t>> damageFormulaSeed;
     bool flagsPrepared{};
-    bool resultSuccessful{true};
+    bool resultSuccessful{true},suppressEvents{};
     bool proceduresPrepared{},armorCommitted{};
     bool weaponWearCommitted{},defenderWearCommitted{};
     WeaponHitEffects extras;
+    std::optional<OpenWoundsApplication> pd2Wound;
     WeaponHitResult playerExtras;
     reactions::ItemEventPlan itemEvents;
     uint64_t drainExpected{},drainRandom{};
@@ -61,7 +62,8 @@ struct MonsterContactExecution {
     std::optional<bool> getHit;
     effects::NativeContactBatch callbacks;
     std::optional<effects::UnitReceptionPlan> defense;
-    int64_t amount{},absorbed{},physical{};
+    int64_t amount{},absorbed{},physical{},beforeDamage{};
+    bool sacrificeComplete{};
     uint64_t cold{},stun{},freeze{};
     std::optional<PoisonApplication> poison;
     WeaponHitEffects extras;

@@ -59,6 +59,11 @@ DomainStatus System::activateAssassin(Release &pending,const ActorContext &actor
         if(state_.skillParameter(caster->id(),slot,0)>=nativeNarrow(uint32_t(actor.tick))) return DomainStatus::Applied;
         missiles::NativeSpawn spawn{caster->id(),actor.area,actor.areaGeneration,actor.tick,caster->position(),target,
             pending.skill.missileId,pending.skill.sourceId,pending.skill.rank};
+        if(pending.skill.pd2) {
+            const auto rating=values.parameter(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"toht");
+            if(!rating) throw std::logic_error("Missing PD2 Blade Fury attack rating");
+            spawn.attackBonus=*rating;
+        }
         auto prepared=ports_.missiles.prepareNativeBirth(std::span{&spawn,size_t{1}});if(!prepared) return prepared.status;
         DomainStatus status;
         if(caster->player) {

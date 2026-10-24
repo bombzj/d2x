@@ -2,6 +2,7 @@
 #include "runtime.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -40,6 +41,7 @@ std::unique_ptr<System::Advance> System::immediateHit(const Missile &source,Enti
 }
 std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
     auto &missile=plan.next;const auto &rule=missile.nativeDamage->rule;
+    if(missile.rules && missile.rules->pd2) if(const auto result=pd2Hit(plan,target)) return result;
     const auto child=rule.hitSubMissiles[0];
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(!participants.find(missile.owner).id() && (rule.serverHitFunction==1 || rule.serverHitFunction==29 ||
@@ -119,24 +121,32 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
     case 7: {
         const auto recipient=participants.find(target),owner=participants.find(missile.owner);
         if(!recipient.id()) return 1;
+        const bool pd2=missile.rules && missile.rules->pd2;
         const auto skill=rule.damageFormulas->skills.find(missile.skill.sourceId);
         const bool heal=rule.hitParameters[0] && owner.id() && skill!=rule.damageFormulas->skills.end() &&
-            participants.skillFriendlyTarget(owner,recipient,skill->second.number("targetpet")!=0,skill->second.number("targetally")!=0);
+            (participants.skillFriendlyTarget(owner,recipient,skill->second.number("targetpet")!=0,skill->second.number("targetally")!=0) ||
+             (pd2 && owner.alignment()==recipient.alignment()));
         if(!heal) {
-            if(!rule.hitParameters[1]) return 3;
+            if(!rule.hitParameters[1]) return pd2?2:3;
             if(recipient.player) return 4;
-            return (rule.hitParameters[1]==2?recipient.monster->rule.demon:recipient.monster->rule.undead)?3:4;
+            return (rule.hitParameters[1]==2?recipient.monster->rule.demon:recipient.monster->rule.undead)?(pd2?2:3):4;
         }
         const auto minimum=missileSkillFormula(plan,"calc1"),maximum=missileSkillFormula(plan,"calc2");
         if(!minimum || !maximum) return 1;
-        const auto low=nativeShiftLeft(*minimum,8),high=nativeShiftLeft(*maximum,8);
-        auto amount=nativeAdd(low,int32_t(limitedRandom(plan.damageRolls->random,uint32_t(nativeSubtract(high,low)))));
+        int32_t amount;
+        if(pd2) {
+            const auto high=*maximum<=*minimum?nativeAdd(*minimum,1):*maximum;
+            amount=nativeShiftLeft(nativeAdd(*minimum,int32_t(limitedRandom(plan.damageRolls->random,uint32_t(nativeSubtract(high,*minimum))))),8);
+        } else {
+            const auto low=nativeShiftLeft(*minimum,8),high=nativeShiftLeft(*maximum,8);
+            amount=nativeAdd(low,int32_t(limitedRandom(plan.damageRolls->random,uint32_t(nativeSubtract(high,low)))));
+        }
         if(amount<=0) amount=rollMissileDamage(plan.damageRolls->data.physical,plan.damageRolls->random);
         const auto current=recipient.player?recipient.player->persistent.player.hp.raw():nativeChecked(recipient.monster->life);
         const auto limit=recipient.player?recipient.player->totals.character.maxLifeFixed.raw():nativeChecked(recipient.monster->maximumLife);
         plan.operations.push_back({Advance::OperationKind::Resource,plan.resources.size()});
         plan.resources.push_back({Advance::ResourceWrite::Kind::Life,target,std::min(nativeAdd(current,amount),limit),rule.programOverlay});
-        return 1;
+        return pd2?5:1;
     }
     case 1: {
         auto radius=rule.hitParameters[0];

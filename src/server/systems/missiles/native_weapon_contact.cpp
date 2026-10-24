@@ -31,7 +31,7 @@ DomainResult<DirectContact> System::nativeWeaponContact(const Spawn &request,std
         caster->monster->nativeActionRevision+(request.nativeMeleeHeld?1:0);
     hit.nativeDrainHeld=request.nativeMeleeHeld;
     hit.nativeSkill->melee=true;hit.nativeSkill->progressive=hit.nativeSkill->kick || request.skill.weapon->commonAttack ||
-        (request.skill.assassin && request.skill.assassin->program==AssassinProgram::DragonClaw);
+        (request.skill.assassin && (request.skill.assassin->program==AssassinProgram::DragonClaw || request.skill.assassin->doFunction==170));
     hit.nativeSkill->initialDamage=request.nativeMeleeBase;
     // SrvDo001 fills ordinary Attack with 128, independently of Skills.srcdam.
     if(request.skill.weapon->commonAttack) hit.nativeSkill->sourceDamage=128;

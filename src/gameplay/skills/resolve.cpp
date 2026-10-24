@@ -46,13 +46,14 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         throw std::runtime_error("Unsupported original skill rank or shift");
     SkillCastSpec result;
     result.effect = spec.effect;
+    result.pd2=spec.pd2;
     result.assassin = spec.assassin;
     result.druid = spec.druid;
     result.rank = rank;
     result.warcry = spec.warcry;
     if(spec.leap) {
         auto leap=std::make_shared<LeapSpec>(*spec.leap);
-        leap->range=skillDiminishingRatioBonus({leap->rangeMinimum,leap->rangeMaximum},rank);
+        leap->range=spec.pd2?calculation("aurarangecalc"):skillDiminishingRatioBonus({leap->rangeMinimum,leap->rangeMaximum},rank);
         leap->knockbackRadius+=(rank-1)*leap->knockbackPerLevel;
         result.leap=std::move(leap);
     }
@@ -63,7 +64,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     }
     if(spec.corpseSearch) {
         auto search=std::make_shared<CorpseSearchSpec>(*spec.corpseSearch);
-        search->chance=skillDiminishingRatioBonus({search->minimumChance,search->maximumChance},rank);
+        search->chance=spec.pd2?calculation("calc1"):skillDiminishingRatioBonus({search->minimumChance,search->maximumChance},rank);
         result.corpseSearch=std::move(search);
     }
     if (spec.amazonMagic) {
@@ -133,14 +134,16 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         CombatEffectSpec shield;
         shield.state = spec.state;
         shield.source = {CombatEffectSource::Skill, {}, spec.sourceId, rank};
-        shield.duration = EffectFrame(spec.armorParameters[0] + int64_t(rank - 1) * spec.armorParameters[1]);
-        const auto synergy = learned.find(spec.armorSynergySkills.front());
-        auto &combat = shield.modifiers.combat;
-        combat.shieldDefensePercent = spec.armorParameters[2] + (rank - 1) * spec.armorParameters[3] +
-            (synergy == learned.end() ? 0 : synergy->second) * spec.armorParameters[7];
-        combat.blockBonus = skillDiminishingRatioBonus({spec.armorParameters[4],spec.armorParameters[5]},rank);
-        combat.smiteMinimum = spec.minimumDamage + int(skillLevelBonus(rank, spec.minimumPerLevel));
-        combat.smiteMaximum = spec.maximumDamage + int(skillLevelBonus(rank, spec.maximumPerLevel));
+        if(!input.nativeFormulas) {
+            shield.duration = EffectFrame(spec.armorParameters[0] + int64_t(rank - 1) * spec.armorParameters[1]);
+            const auto synergy = learned.find(spec.armorSynergySkills.front());
+            auto &combat = shield.modifiers.combat;
+            combat.shieldDefensePercent = spec.armorParameters[2] + (rank - 1) * spec.armorParameters[3] +
+                (synergy == learned.end() ? 0 : synergy->second) * spec.armorParameters[7];
+            combat.blockBonus = skillDiminishingRatioBonus({spec.armorParameters[4],spec.armorParameters[5]},rank);
+            combat.smiteMinimum = spec.minimumDamage + int(skillLevelBonus(rank, spec.minimumPerLevel));
+            combat.smiteMaximum = spec.maximumDamage + int(skillLevelBonus(rank, spec.maximumPerLevel));
+        }
         result.appliedEffect = std::move(shield);
     }
     if (spec.effect == SkillBehavior::HolyBolt) {
@@ -153,7 +156,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
             result.healingMaximum=Fixed8(calculation("calc2"));
         }
     }
-    result.delayFrames = (spec.assassin || spec.druid) && input.nativeFormulas?calculation("delay"):spec.delayFrames;
+    result.delayFrames = (spec.pd2 || spec.assassin || spec.druid) && input.nativeFormulas?calculation("delay"):spec.delayFrames;
     result.blizzard = spec.blizzard;
     result.telekinesisRange = spec.telekinesisRange;
     if (spec.hydraDuration) {
@@ -319,6 +322,9 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     if (result.weapon) {
         if(input.nativeFormulas && spec.assassin && spec.assassin->program==AssassinProgram::DragonClaw)
             result.weapon->damagePercent=calculation("calc1");
+        if(spec.pd2 && input.nativeFormulas && spec.assassin &&
+           (spec.assassin->program==AssassinProgram::DragonTalon || spec.assassin->program==AssassinProgram::DragonFlight))
+            result.weapon->damagePercent=calculation("calc2");
         result.delayFrames=std::max(result.delayFrames,result.weapon->delayFrames);
         if (result.weapon->spear) {
             auto program = std::make_shared<SpearSkillSpec>(*result.weapon->spear);
@@ -464,7 +470,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         result.appliedEffect=std::move(effect);
     }
     const bool nativeTimedBuff=spec.effect==SkillBehavior::EnergyShield || spec.effect==SkillBehavior::Blaze || spec.effect==SkillBehavior::ThunderStorm || bladeShield || druidState;
-    if(input.nativeFormulas && result.appliedEffect && (defensiveBuff || spec.effect==SkillBehavior::Enchant || nativeWarcry || nativeTimedBuff)) {
+    if(input.nativeFormulas && result.appliedEffect && (defensiveBuff || spec.effect==SkillBehavior::Enchant || spec.effect==SkillBehavior::AreaEnchant || nativeWarcry || nativeTimedBuff)) {
         auto &effect=*result.appliedEffect;effect.nativeValues.emplace();
         effect.stacking=(nativeWarcry || druidState)?EffectStacking::ReuseState:EffectStacking::SkillLevel;
         effect.nativeState=true;effect.refreshPassivesOnRemoval=!druidState;
@@ -480,7 +486,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         for(const auto &stat:input.nativeFormulas->auraStats(spec.sourceId,rank,6,true)) {
             result.nativeEffectWrites.push_back(stat);
             effect.nativeValues->insert_or_assign(stat.key,stat.value);
-            if(spec.effect!=SkillBehavior::Enchant && stat.key.id==rules.names.at("attackrate")) {
+            if(spec.effect!=SkillBehavior::Enchant && spec.effect!=SkillBehavior::AreaEnchant && stat.key.id==rules.names.at("attackrate")) {
                 effect.nativeValues->insert_or_assign(StatKey{rules.names.at("other_animrate"),0},stat.value);
                 result.nativeEffectWrites.emplace_back(StatKey{rules.names.at("other_animrate"),0},stat.value);
             }

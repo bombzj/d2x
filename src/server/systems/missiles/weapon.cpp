@@ -135,13 +135,17 @@ System::Advance System::advanceWeapon(const Missile &original) const {
 }
 void System::continueMissileFlight(Advance &plan) const {
     auto &m=plan.next;auto &flight=*plan.collisionFlight;
-    if(!flight.continueFlight) {plan.finished=true;return;}
+    // PD2 Do40 (0x3A5020) turns the standard collision callback's removal
+    // result into continuation while CurrentFrame remains positive.
+    const bool pd2Continuation=m.rules && m.rules->pd2 && m.nativeDamage &&
+        m.nativeDamage->rule.serverDoFunction==40 && m.currentFrame()>0;
+    if(!flight.continueFlight && !pd2Continuation) {plan.finished=true;return;}
     while(flight.next<flight.contacts.size()) {
         const auto [fraction,id]=flight.contacts[flight.next++];
         if(!id) {
             m.position=flight.end;
             if(!nativeHit(plan,{})) {if(flight.weapon) weaponImpact(plan,m.position);else if(m.enemy) throw std::logic_error("Unsupported native monster missile hit program");else projectileImpact(plan,{});}
-            plan.finished=true;return;
+            plan.finished=!pd2Continuation;return;
         }
         if(!unitPosition(m,id) || !canCollide(m,id)) continue;
         const auto &nativeRule=m.enemy?m.enemy->rule:m.nativeDamage->rule;
@@ -174,7 +178,7 @@ void System::continueMissileFlight(Advance &plan) const {
     m.position=flight.end;
     if(flight.wall) {
         if(!nativeHit(plan,{})) {if(flight.weapon) weaponImpact(plan,m.position);else if(m.enemy) throw std::logic_error("Unsupported native monster missile hit program");else projectileImpact(plan,{});}
-        plan.finished=true;
+        plan.finished=!pd2Continuation;
     }
     ++m.revision;
 }

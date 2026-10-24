@@ -3,6 +3,7 @@
 #include "druid_summon_content.hpp"
 #include "item_content.hpp"
 #include "content/classic_data.hpp"
+#include "content/skills/table_values.hpp"
 #include "content/items/item_quality.hpp"
 #include "content/items/item_properties.hpp"
 #include "gameplay/items/equipment_stats.hpp"
@@ -70,11 +71,12 @@ void equipIronGolem(server::companions::Prepared &prepared,const ClassicData &da
 }
 server::companions::Prepared prepareNecro(const server::companions::Preparation &source,Archives &archives,const ClassicData &data) {
     server::companions::Prepared result;result.source=source;result.summon=source.summon;result.random=source.seed;
-    MonsterCatalog catalog(archives,data.tables.at("monstats"));
+    MonsterCatalog catalog(archives,data.tables.at("monstats"),data.pd2Host?MonsterPreparation::TownActors:MonsterPreparation::FullRules);
     const auto *record=catalog.find(source.summon.monster);
     if(!record) throw std::runtime_error("Missing original necromancer pet monster");
     AnimDataTable animations(archives.read("data/global/animdata.d2"));
     auto &rule=result.rule;rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;
+    if(data.pd2Host) rule.auraPrograms=data.nativeAuraPrograms;
     rule.nativeClass=record->index;rule.size=record->collisionSize;
     rule.collision=record->movementRule();rule.spawnCollision=record->spawnRule();
     rule.nativeVelocity=record->walkVelocity.value_or(0);rule.meleeRange=record->meleeRange;
@@ -82,15 +84,20 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
     rule.hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
     rule.demon=record->demon;rule.undead=record->undead;rule.corpseSelectable=false;rule.noTreasure=true;
     const auto &table=data.tables.at("monstats");const auto suffix=source.difficulty==0?"":source.difficulty==1?"(N)":"(H)";
+    if(data.pd2Host) {
+        prepareMonsterSkillRanks(data,record->sourceRow,rule);
+        prepareMonsterBirthProperties(data,record->sourceRow,rule);
+    }
     const auto &skills=data.tables.at("skills"),&pets=data.tables.at("pettype");
     for(size_t row=0;row<skills.rows().size();++row) if(skills.number(row,"Id")==source.skill)
-        for(size_t pet=0;pet<pets.rows().size();++pet) if(pets.value(pet,"pet type")==skills.value(row,"pettype")) rule.petType=pets.number(pet,"Id").value_or(int(pet));
+        for(size_t pet=0;pet<pets.rows().size();++pet) if(pets.value(pet,"pet type")==skills.value(row,"pettype")) rule.petType=skillTableNumber(pets,pet,"idx");
     result.summon.petType=rule.petType;
     rule.decisionTicks=table.number(record->sourceRow,source.difficulty==0?"aidel":source.difficulty==1?"aidel(N)":"aidel(H)").value_or(1);
     rule.drain=table.number(record->sourceRow,std::string("Drain")+suffix).value_or(0);
     rule.threat=table.number(record->sourceRow,"threat").value_or(0);
     const bool mage=source.summon.necro && source.summon.necro->kind==NecroSummonKind::Mage;
-    const auto attack=loadMonsterAttackTiming(animations,record->token,1,monsterModeWeapon(archives,record->token,"a1",record->baseWeapon),mage?2:1);
+    const bool archer=source.summon.necro && source.summon.necro->kind==NecroSummonKind::Archer;
+    const auto attack=loadMonsterAttackTiming(animations,record->token,1,monsterModeWeapon(archives,record->token,"a1",record->baseWeapon),mage || archer?2:1);
     const auto death=loadMonsterMotionTiming(animations,record->token,"dt",monsterModeWeapon(archives,record->token,"dt",record->baseWeapon));
     if((!attack && source.summon.kind!=MonsterKind::BoneWall) || !death || !prepareMonsterLifecycle(archives,data,animations,*record,rule)) throw std::runtime_error("Missing original necromancer pet lifecycle");
     if(source.ownerRandom && !source.refresh && source.summon.kind!=MonsterKind::BoneWall) {
@@ -112,9 +119,18 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
         const auto aiSkill=data.nativeFormulas->skillIds.find(skillName);
         if(aiSkill==data.nativeFormulas->skillIds.end()) throw std::runtime_error("Missing BoneWall AI lifetime skill");
         rule.summonLifeFrames=data.nativeFormulas->skills.at(aiSkill->second).number("param2");
-        const auto birth=loadMonsterMotionTiming(animations,record->token,"s2",monsterModeWeapon(archives,record->token,"s2",record->baseWeapon));
-        if(!birth || rule.summonLifeFrames<=0) throw std::runtime_error("Missing original BoneWall birth/lifetime");
-        rule.summonBirthTicks=animationSecondsTicks(birth->duration);
+        const auto &skills=data.tables.at("skills");
+        const auto skill=findSkillTableRow(skills,"Id",std::to_string(source.summon.native->skill));
+        const auto mode=skills.value(skill,"summode");
+        if(rule.summonLifeFrames<=0) throw std::runtime_error("Missing native BoneWall lifetime");
+        // SrvDo60/62 pass Skills.summode to SummonPet. Their following
+        // sub_6FC40280(...,9) selects a target-list node, not monster mode S2.
+        if(mode=="NU") {rule.spawnMode=1;rule.summonBirthTicks=0;}
+        else if(mode=="S1") {
+            const auto birth=loadMonsterMotionTiming(animations,record->token,"s1",monsterModeWeapon(archives,record->token,"s1",record->baseWeapon));
+            if(!birth) throw std::runtime_error("Missing native BoneWall birth animation");
+            rule.spawnMode=8;rule.summonBirthTicks=animationSecondsTicks(birth->duration);
+        } else throw std::runtime_error("Unsupported native BoneWall summon mode");
     }
     if(attack) {
         auto &action=rule.attacks.emplace(4,server::MonsterAttackRule{0,0,0,rule.attackTicks,rule.impactTick,{}}).first->second;
@@ -137,6 +153,15 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
                 rule.skillActions.emplace(uint16_t(*id),rule.attacks.at(4));
             }
     }
+    if(archer) {
+        const auto skill=findSkillTableRow(skills,"skill",table.value(record->sourceRow,"Skill1"));
+        const auto &missiles=data.tables.at("missiles");
+        const auto missile=findSkillTableRow(missiles,"Missile",skills.value(skill,"srvmissile"));
+        auto &action=rule.attacks.at(4);
+        action.missile=prepareMonsterMissile(data,skillTableNumber(missiles,missile,"Id"),1);
+        if(!action.missile) throw std::runtime_error("Missing PD2 Skeleton Archer missile");
+        rule.skillActions.emplace(uint16_t(skillTableNumber(skills,skill,"Id")),action);
+    }
     if(source.material) equipIronGolem(result,data);
     return result;
 }
@@ -145,7 +170,7 @@ server::companions::Prepared prepare(const server::companions::Preparation &sour
     const auto &pet=*source.summon.amazon;auto random=source.seed;
     auto &stats=result.summon.stats;auto &attributes=stats.attributes;
     if(!result.summon.native || !result.rule.stats) throw std::runtime_error("Missing native Amazon summon preparation");
-    MonsterCatalog catalog(archives,data.tables.at("monstats"));const auto *record=catalog.find(source.summon.monster);
+    MonsterCatalog catalog(archives,data.tables.at("monstats"),data.pd2Host?MonsterPreparation::TownActors:MonsterPreparation::FullRules);const auto *record=catalog.find(source.summon.monster);
     if(!record || !prepareMonsterComponents(data,*record,result.rule) || result.rule.totalPieces>2)
         throw std::runtime_error("Missing native Amazon summon components");
     result.rule.spawnCollision=record->spawnRule();result.rule.collision=record->movementRule();

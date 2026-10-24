@@ -12,7 +12,7 @@ struct ItemSkillGrant {
     int skill = -1, rank = 0;
 };
 // Native ItemStatCost layer: skill ID in the high bits, level in six low bits.
-enum class ItemSkillEvent { Attack, Hit, Kill, GetHit, Death, LevelUp };
+enum class ItemSkillEvent { Attack, Hit, Kill, GetHit, Death, LevelUp, MeleeSplash };
 struct SkillCharge { ItemHandle item; int layer{}; };
 struct ChargedSkill { ItemHandle item; int skill{}, rank{}, charges{}, maximum{}, layer{}; };
 struct ItemSkillLayer { int skill{}, rank{}; };

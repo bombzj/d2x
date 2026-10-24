@@ -30,6 +30,7 @@ std::vector<ChargedSkill> statListChargedSkills(const StatList &root,const StatR
 std::optional<ItemSkillEvent> itemSkillEvent(std::string_view stat) {
     if (stat == "item_skillonattack") return ItemSkillEvent::Attack;
     if (stat == "item_skillonhit") return ItemSkillEvent::Hit;
+    if (stat == "item_splashonhit") return ItemSkillEvent::MeleeSplash;
     if (stat == "item_skillonkill") return ItemSkillEvent::Kill;
     if (stat == "item_skillongethit") return ItemSkillEvent::GetHit;
     if (stat == "item_skillondeath") return ItemSkillEvent::Death;

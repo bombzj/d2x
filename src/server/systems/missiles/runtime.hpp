@@ -7,6 +7,7 @@ namespace d2x::server::effects {struct AuraUnitPublication;}
 namespace d2x::server::monsters {class NativeBirthPublication;}
 
 namespace d2x::server::missiles {
+struct Pd2DelayedSkillMissiles {EntityId owner;RegionId area;uint64_t generation{},due{};Vec position;size_t next{};};
 struct System::Advance {
     Missile next;
     std::vector<Missile> children;
@@ -14,7 +15,8 @@ struct System::Advance {
     bool finished{};
     std::vector<EntityId> curseTargets{};
     std::vector<EntityId> buffTargets{};
-    enum class OperationKind { Child,Impact,Curse,Buff,ContactPrelude,ContactContinue,SourceHeal,TargetManaDrain,SkillState,OwnerSeed,Resource,TargetBurst,Fear,BaalFx,CairnPortal,ReleaseRoom,Redemption,OrbMist,BoneSegment,MissileField,NativeCollision,LevelSpawn,TowerOpen,TowerGold,TowerSound,BaalWave };
+    enum class OperationKind { Child,Impact,Curse,Buff,ContactPrelude,ContactContinue,SourceHeal,TargetManaDrain,SkillState,OwnerSeed,Resource,TargetBurst,Fear,BaalFx,CairnPortal,ReleaseRoom,Redemption,OrbMist,BoneSegment,MissileField,NativeCollision,LevelSpawn,TowerOpen,TowerGold,TowerSound,BaalWave,Pd2DelayedSkill };
+    std::vector<Pd2DelayedSkillMissiles> pd2DelayedSkills{};
     struct BaalWave {RegionId area;Vec position;int mappedPreset{};};
     std::vector<BaalWave> baalWaves{};
     struct TowerGold {RegionId area;Vec observer,position;std::optional<GroundLocation> destination{};bool resolved{};};
@@ -58,6 +60,7 @@ struct System::Advance {
         bool seedCommitted{};
         effects::NativeSkillStateProcedure procedure{effects::NativeSkillStateProcedure::FingerMageSpider};
         std::shared_ptr<bool> posted{};
+        std::optional<effects::NativeSkillStateValues> values{};
     };
     std::vector<SkillState> skillStates{};
     struct Operation {OperationKind kind;size_t index;};
@@ -105,5 +108,7 @@ struct System::Advance {
 };
 struct System::Runtime {
     std::map<EntityId, Advance> pending;
+    std::map<EntityId,uint32_t> pd2PathSeeds;
+    std::map<FrameEventHandle,Pd2DelayedSkillMissiles> pd2DelayedSkills;
 };
 }

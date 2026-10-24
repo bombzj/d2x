@@ -19,7 +19,7 @@ server::companions::Prepared prepareDruidSummon(const server::companions::Prepar
     server::companions::Prepared result;result.source=source;result.summon=source.summon;result.random=source.seed;
     if(!source.summon.druid || !result.summon.native) throw std::runtime_error("Missing native druid summon definition");
     const auto &pet=*source.summon.druid->definition;
-    MonsterCatalog catalog(archives,data.tables.at("monstats"));const auto *record=catalog.find(source.summon.monster);
+    MonsterCatalog catalog(archives,data.tables.at("monstats"),data.pd2Host?MonsterPreparation::TownActors:MonsterPreparation::FullRules);const auto *record=catalog.find(source.summon.monster);
     if(!record || record->index!=pet.nativeClass) throw std::runtime_error("Missing original druid summon identity");
     const auto *probe=catalog.find("necroskeleton");if(!probe) throw std::runtime_error("Missing native PetMove probe monster");
     auto definition=std::make_shared<DruidPetDefinition>(pet);definition->warpProbeClass=probe->index;definition->warpProbeCollision=probe->spawnRule();

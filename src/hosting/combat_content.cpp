@@ -1,4 +1,5 @@
 #include "combat_content.hpp"
+#include "content/pd2/corpse_data.hpp"
 #include "environment_content.hpp"
 #include "monster_actions_content.hpp"
 #include "npc_content.hpp"
@@ -35,13 +36,14 @@ void prepareSelfResurrection(Archives &archives,const ClassicData &data,const An
 std::shared_ptr<const MonsterRegionRules> prepareMonsterRegionRules(Archives &archives,const ClassicData &data) {
     return archives.prepared<MonsterRegionRules>([&] {
         MonsterRegionRules result;
-        const auto catalog=archives.prepared<MonsterCatalog>([&] {return MonsterCatalog(archives,data.tables.at("monstats"));});
+        const auto catalog=archives.prepared<MonsterCatalog>([&] {return MonsterCatalog(archives,data.tables.at("monstats"),
+            data.pd2Host?MonsterPreparation::TownActors:MonsterPreparation::FullRules);});
         const auto world=sharedWorldCatalog(archives,0);
         for(const auto &[nativeClass,record]:catalog->nativeClasses()) {
             (void)nativeClass;const auto &code=record.id;
             server::MonsterRule components;
             const bool prepared=prepareMonsterComponents(data,record,components);
-            if(record.randomSpawn && !prepared) throw std::runtime_error("Missing native region components: "+code);
+            if(record.randomSpawn && !prepared && !data.pd2Host) throw std::runtime_error("Missing native region components: "+code);
             result.classes.emplace(record.index,MonsterRegionClass{code,record.index,record.rarity,
                 record.randomSpawn,record.ranged,prepared,components.componentCounts});
         }
@@ -284,7 +286,8 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
 std::optional<server::PreparedMonster> prepareCombatMonster(Archives &archives, const ClassicData &data,
     AreaGenerationRequest request, MonsterIdentity identity, Vec position) {
     const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;
-    const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats")); });
+    const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats"),
+        data.pd2Host?MonsterPreparation::TownActors:MonsterPreparation::FullRules); });
     const auto &catalog = *catalogSource;
     const auto animationSource = archives.prepared<AnimDataTable>([&] { return AnimDataTable(archives.read("data/global/animdata.d2")); });
     const auto &animations = *animationSource;
@@ -473,6 +476,10 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         else deferred.insert("Native spawn profile pending: "+code);
     }
     std::vector<int> required=selection.classes;
+    if(data.pd2Host) {
+        area.pd2CorpsePools=preparePd2CorpsePools(data,request.level,request.difficulty);
+        for(const auto &pool:area.pd2CorpsePools) for(const int definition:pool) if(definition>=0) required.push_back(definition);
+    }
     if(request.act==4) {
         // Do140 selects by difficulty and the original NextInClass chain.
         // The clone's different BaseId takes GetMinionSpawnInfo's class-0

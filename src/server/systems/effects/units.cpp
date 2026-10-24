@@ -92,7 +92,10 @@ void retainPreparedUnitControl(monsters::LifeChange &next,const monsters::LifeCh
     next.changed|=previous.changed;
 }
 int System::unitCurseResistance(EntityId id,uint64_t tick) const {
-    if(const auto *player=ports_.players.findActor(id)) return player->totals.character.combat.curseResistance;
+    if(const auto *player=ports_.players.findActor(id)) {
+        const auto value=player->totals.character.combat.curseResistance;
+        return player->rules.skills && player->rules.skills->pd2?std::min(value,75):value;
+    }
     const auto *unit=ports_.monsters.find(id);if(!unit) return 0;
     if(const auto values=unitStatValues(id,tick)) return logicalStatValue(*values,*unit->rule.stats,"curse_resistance");
     return nativeAdd(unit->petStats.attributes.combat.curseResistance,unitModifiers(id,tick).combat.curseResistance);
@@ -198,12 +201,12 @@ DomainResult<> System::endConversion(EntityId id,uint64_t tick) {
 DomainResult<> System::skillUnit(const ActorContext &actor,const SkillCastSpec &skill,EntityId id) {
     const auto *caster=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
     if(!caster || !caster->entered || caster->actor!=actor.actor || caster->area!=actor.area || caster->persistent.player.hp<=0 ||
-       !area || area->generation!=actor.areaGeneration || (skill.effect!=SkillBehavior::Enchant && !skill.warcry) || !skill.appliedEffect ||
+       !area || area->generation!=actor.areaGeneration || (skill.effect!=SkillBehavior::Enchant && skill.effect!=SkillBehavior::AreaEnchant && !skill.warcry) || !skill.appliedEffect ||
        caster->persistent.player.mana<skill.manaCost) return {DomainStatus::InvalidActor,{}};
     const auto *m=ports_.monsters.find(id);
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const bool allied=m && m->alive() && ports_.areas.at(m->area).definition.act==area->definition.act && participants.auraAligned({caster,nullptr},{nullptr,m});
-    if(skill.effect==SkillBehavior::Enchant && !allied && m && m->alive() && ports_.areas.at(m->area).definition.act==area->definition.act) return this->skill(actor,skill);
+    if((skill.effect==SkillBehavior::Enchant || skill.effect==SkillBehavior::AreaEnchant) && !allied && m && m->alive() && ports_.areas.at(m->area).definition.act==area->definition.act) return this->skill(actor,skill);
     if(!allied) return {DomainStatus::InvalidRequest,{}};
     // Enchant uses sub_6FD10EC0; BasicShout allocates its own list after
     // its aura filter. Those procedures do not share the NPC posting gate.

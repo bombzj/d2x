@@ -222,10 +222,14 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now,
     if (spec.duration && *spec.duration > std::numeric_limits<EffectFrame>::max() - now)
         throw std::overflow_error("Combat effect handle or lifetime exhausted");
     if(spec.nativeState && spec.state.id<0) throw std::invalid_argument("Missing native list state identity");
-    if (spec.state.curse && !spec.nativeDirectAllocation)
+    if (spec.state.curse && !spec.nativeDirectAllocation && !spec.pd2CurseSlots)
         for (const auto &effect : storage_->effects)
             if (effect.activeAt(now) && effect.spec.curseAi == CurseAi::Attract)
                 return {effect.handle, {}, false};
+    // PD2 normalizes existing curse-slot metadata before its same-state
+    // skill/level comparison, including a rejected lower-level reapplication.
+    const auto cursePosting=spec.state.curse && spec.pd2CurseSlots?preparePd2CurseSlots(storage_->effects,spec,now):Pd2CursePosting{};
+    if(cursePosting.changed && observe) observe();
     // D2Game::sub_6FD10EC0 compares state/skill/level, irrespective of caster.
     // Equal-level curses only renew the deadline; ownership and stats survive.
     if (spec.stacking == EffectStacking::CurseLevel || spec.stacking==EffectStacking::SkillLevel)
@@ -274,8 +278,9 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now,
     if (effect.spec.duration) effect.expiresAt = now + *effect.spec.duration;
     renewExpiration(effect,effect.spec,now);
     auto replaces = [&](const ActiveCombatEffect &existing) {
-        if (existing.spec.curseAi == CurseAi::Attract && effect.spec.curseAi != CurseAi::Attract) return false;
-        if (!effect.spec.nativeDirectAllocation && effect.spec.state.curse && existing.spec.state.curse) return true;
+        if (!effect.spec.pd2CurseSlots && existing.spec.curseAi == CurseAi::Attract && effect.spec.curseAi != CurseAi::Attract) return false;
+        if (!effect.spec.nativeDirectAllocation && effect.spec.state.curse && existing.spec.state.curse)
+            return effect.spec.pd2CurseSlots?existing.handle.value==cursePosting.replacement:true;
         if (!effect.spec.nativeDirectAllocation && effect.spec.state.group > 0 && existing.spec.state.group == effect.spec.state.group)
             return true;
         if (existing.spec.state.id != effect.spec.state.id) return false;

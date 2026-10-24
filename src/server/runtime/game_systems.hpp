@@ -37,6 +37,7 @@ struct GameSystems {
                 EventOutbox &, const PreparedRules &, const GameSettings &);
     GameSystems(const GameSystems &) = delete;
     GameSystems &operator=(const GameSystems &) = delete;
+    uint32_t pd2ProgramRandom;
     MovementSystem movement;
     FrameEventQueue frameEvents;
     actions::State actionState;

@@ -2,16 +2,21 @@
 #include "cast_spec.hpp"
 #include "behavior.hpp"
 #include "bone_spec.hpp"
+#include "pd2_program.hpp"
 
 namespace d2x {
 SkillActivationProgram skillActivationProgram(const SkillCastSpec &skill) {
     using Program = SkillActivationProgram;
+    if(skill.pd2 && skill.pd2->doFunction==165) return Program::Pd2;
     switch (skill.effect) {
     case SkillBehavior::ItemSkill: return Program::Item;
     case SkillBehavior::Unsummon: return Program::Unsummon;
     case SkillBehavior::Kick: return Program::Kick;
     case SkillBehavior::Assassin: return Program::Assassin;
     case SkillBehavior::Druid: return Program::Druid;
+    case SkillBehavior::Pd2: return Program::Pd2;
+    case SkillBehavior::StaticField: return Program::StaticField;
+    case SkillBehavior::Hydra: return Program::Hydra;
     default: break;
     }
     if (skill.summon || (skill.bone && skill.bone->barrier)) return Program::AmazonSummon;
@@ -19,7 +24,6 @@ SkillActivationProgram skillActivationProgram(const SkillCastSpec &skill) {
     switch (skill.effect) {
     case SkillBehavior::Teleport: return Program::Teleport;
     case SkillBehavior::Leap: return Program::Leap;
-    case SkillBehavior::Hydra: return Program::Hydra;
     default: break;
     }
     if (skill.warcry) return Program::Warcry;

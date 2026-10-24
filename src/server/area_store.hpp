@@ -137,6 +137,7 @@ struct AreaDefinition : AreaMetadata {
     std::vector<std::string> populationDeferred;
     std::vector<RoomPopulationLayout> populationRooms;
     std::vector<NativeLevelSpawnEntry> normalSpawnRoster;
+    std::vector<std::array<int,25>> pd2CorpsePools;
     std::map<int,PreparedMonster> nativeMonsterClasses;
     std::map<int,int> nativeSummonClasses; // Common region family selection, prepared from MPQ.
 };

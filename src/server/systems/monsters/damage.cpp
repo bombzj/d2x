@@ -17,6 +17,8 @@
 #include "server/systems/effects/system.hpp"
 #include "server/systems/loot/system.hpp"
 #include "server/systems/combat/participants.hpp"
+#include "server/systems/reactions/item_triggers.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -53,6 +55,16 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     if(actor.delayedDeathSource && (amount || uninterruptable)) return {DomainStatus::Unavailable,{}};
     const bool delayDeath=!life && uninterruptable;
     const bool dead=!life && !delayDeath && !status.deferAction;
+    reactions::ItemEventPlan itemEvents;
+    if(!status.suppressEvents && ports_.skillPrograms && ports_.skillPrograms->pd2 && (dead || (!status.actionOnly && !poisonOnly))) {
+        const combat::Participants participants{ports_.players,*this,ports_.social};
+        const auto attacker=participants.find(status.source?status.source:actor.lastAttacker);
+        const ActorContext context{actor.owner.value_or(PlayerId{}),actor.id,actor.area,ports_.areas.at(actor.area).generation,0,tick};
+        auto events=ports_.itemTriggers.prepare(context,status.actionOnly || poisonOnly?std::initializer_list{ItemSkillEvent::Death}:
+            std::initializer_list{ItemSkillEvent::GetHit,ItemSkillEvent::Death},attacker.id(),attacker.id()?attacker.position():actor.position);
+        if(!events) return {events.status,{}};
+        itemEvents=std::move(*events.value);
+    }
     const bool freezable=!actor.hireling && !actor.rule.boss && !nativeUniqueMonster(actor.identity.rank);
     coldFrames=coldHitDuration(coldFrames,ports_.effects.unitResistance(id,DamageType::Cold,tick,coldPierce),0,
         modifiers.cannotBeFrozen,modifiers.halfFreezeDuration);
@@ -147,7 +159,8 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     else if(wound) {
         // Native same-state/same-skill refresh extends the existing stat list;
         // its original rate and source survive instead of stacking wounds.
-        if(actor.wound) actor.wound->until=wound->until;
+        if(wound->pd2Stacks) actor.wound=std::move(wound);
+        else if(actor.wound) actor.wound->until=wound->until;
         else actor.wound=std::move(wound);
     }
     if(recovery || frozen>tick || stunned>tick || dead) {
@@ -175,6 +188,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     if(!event) return {event.status,{}};
     if(dead) publication.actors->actors.at(id).deathOccurrence=*event.value;
     ports_.effects.publishAuraUnits(publication);
+    ports_.itemTriggers.commit(std::move(itemEvents),dead);
     if(dead) {
         ports_.frameEvents.cancel({FrameEventUnit::Monster,id},FrameEventType::PeriodicSkills);
         ports_.frameEvents.cancel({FrameEventUnit::Monster,id},FrameEventType::PeriodicStats);

@@ -41,6 +41,7 @@ DomainStatus System::activateDruid(Release &pending,const ActorContext &actor,Ve
     const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
     if(!caster || !caster->programs() || !pending.skill.druid) return DomainStatus::InvalidActor;
     const auto &rules=*caster->programs();const auto &program=*pending.skill.druid;
+    if(rules.pd2 && program.program==DruidProgram::Raven) return activatePd2Raven(pending,actor,target);
     if(program.program==DruidProgram::Raven || program.program==DruidProgram::Vine || program.program==DruidProgram::Summon) {
         auto skill=pending.skill;if(pending.manaPaid || caster->monster) {skill.manaCost=0;skill.charge.reset();}
         return ports_.companions.druid(actor,skill,target).status;

@@ -105,7 +105,8 @@ void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candida
         }
     }
     if(damage.woundApplied && actor.wound) {
-        const std::array<StatValue,1> writes{{{rules.names.at("hpregen"),nativeSubtract(0,nativeChecked(actor.wound->rate))}}};
+        std::vector<StatValue> writes{{rules.names.at("hpregen"),nativeSubtract(0,nativeChecked(actor.wound->rate))}};
+        if(actor.wound->pd2Stacks) writes.emplace_back(StatKey{rules.names.at("openwounds_stack"),0},int32_t(actor.wound->pd2Stacks));
         if(actor.wound->until>=tick) applyNativeStatus(unit.states,actor.rule.states->at(actor.rule.openWoundsState),
             {CombatEffectSource::NativeState,actor.wound->source,0,1},actor.wound->until,tick,rules,writes,{},observe);
     }

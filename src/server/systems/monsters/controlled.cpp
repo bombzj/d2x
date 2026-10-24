@@ -129,7 +129,7 @@ DomainResult<std::map<EntityId,Actor>> System::prepareNecro(const ActorContext &
     }
     if(summon.kind==MonsterKind::BoneWall) {
         actor.nativeMinionOwner=owner.actor;actor.killMinionsOnDeath=true;
-        actor.aiPose=9;actor.busyUntil=actor.riseUntil=actor.poseUntil=owner.tick+uint64_t(rule.summonBirthTicks);
+        actor.aiPose=rule.spawnMode;actor.busyUntil=actor.riseUntil=actor.poseUntil=owner.tick+uint64_t(rule.summonBirthTicks);
     }
     if(components) actor.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
         {{},{FrameEventUnit::Monster,actor.id},FrameEventType::AiThink,owner.tick+25}));

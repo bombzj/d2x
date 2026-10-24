@@ -9,6 +9,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/monsters/life_stats.hpp"
 #include "gameplay/skills/native_damage.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
 #include <algorithm>
@@ -45,18 +46,35 @@ DomainResult<> System::corpseExplosion(EntityId sourceId,EntityId corpseId,int s
         const auto &table=corpse->rule.lifeTables.at(size_t(corpse->rule.difficulty));if(!table) throw std::logic_error("Missing original corpse life table");
         const auto bounds=monsterLifeBounds(*table,corpse->rule.level,corpse->rule.difficulty,corpse->rule.statGameType);
         const int maximumHp=nativeShiftLeft(nativeAdd(bounds.minimum,bounds.maximum),7);
-        const int radius=calc("aurarangecalc"),minimum=nativePercentage(calc("calc1"),maximumHp,100),maximum=nativePercentage(calc("calc2"),maximumHp,100);
+        const auto *programs=source.player?source.player->rules.skills.get():ports_.monsters.skillPrograms();
+        const bool pd2=programs && programs->pd2;
+        const auto percentage=[&](int32_t value,int32_t factor,int32_t denominator) {
+            if(!pd2) return nativePercentage(value,factor,denominator);
+            const auto result=double(value)*double(factor)/double(std::max(uint32_t(denominator),1u));
+            return result>INT32_MAX?INT32_MAX:result<INT32_MIN?INT32_MIN:int32_t(result);
+        };
+        const int radius=calc("aurarangecalc"),minimum=percentage(calc("calc1"),maximumHp,100),maximum=percentage(calc("calc2"),maximumHp,100);
         int damage=nativeAdd(minimum,int32_t(limitedRandom(random,uint32_t(nativeSubtract(maximum,minimum)))));
         const auto level=values.stat("level");if(!level) throw std::logic_error("Missing native corpse explosion caster level");
-        if(corpse->rule.level && *level<corpse->rule.level) damage=nativePercentage(damage,*level,corpse->rule.level);
+        if(corpse->rule.level && *level<corpse->rule.level) damage=percentage(damage,*level,corpse->rule.level);
         const int percent=std::clamp(calc("calc3"),0,100);
         const auto &row=catalog->skills.at(skill);
         if(percent>0 && row.elementType) {
             const auto length=values.parameter(FormulaDomain::Skill,skill,rank,"edln");if(!length) throw std::logic_error("Missing corpse explosion elemental length");
-            addNativeSkillElement(pulse.base,MissileDamageElement(row.elementType),nativePercentage(damage,percent,100),*length,ownerRandom);
-            damage=nativePercentage(damage,100-percent,100);
+            addNativeSkillElement(pulse.base,MissileDamageElement(row.elementType),percentage(damage,percent,100),*length,ownerRandom);
+            damage=percentage(damage,100-percent,100);
         }
-        pulse.base.channels[0]=damage;pulse.source=sourceId;pulse.corpse=corpseId;pulse.area=corpse->area;
+        pulse.base.channels[0]=damage;
+        if(pd2) {
+            // Current Do55 (0x3AD6B0) adds flat skill element and physical
+            // damage after splitting the corpse-HP contribution, in that order.
+            rollNativeSkillElement(pulse.base,values,skill,rank,ownerRandom);
+            const auto physical=values.physicalRange(skill,rank,false);
+            if(!physical) throw std::logic_error("Missing PD2 corpse explosion physical range");
+            pulse.base.channels[0]=nativeAdd(pulse.base.channels[0],nativeAdd(physical->first,
+                int32_t(limitedRandom(ownerRandom,uint32_t(nativeSubtract(physical->second,physical->first))))));
+        }
+        pulse.source=sourceId;pulse.corpse=corpseId;pulse.area=corpse->area;
         pulse.skill=skill;pulse.rank=rank;pulse.center=corpse->position;pulse.physicalRadiusSquared=(radius/2)*(radius/2);
         pulse.targets=nativeAuraCandidateRecipients({sourceId,corpse->area,(radius+1)/2,uint32_t(row.number("aurafilter")),false,
             corpse->position+ports_.areas.at(corpse->area).definition.origin,NativeAuraTargetMode::TargetRange,tick});

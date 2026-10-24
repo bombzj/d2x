@@ -75,6 +75,7 @@ struct Missile {
     std::optional<WeaponSkillDamage> weapon{};
     EntityId guidance{};
     int pierces{};
+    int pierceCount{};
     std::set<EntityId> weaponContacts{};
     bool guidanceSearched{};
     std::optional<EnemyProjectile> enemy;
@@ -83,6 +84,7 @@ struct Missile {
     std::optional<MissileDamageRange> damageRange;
     std::optional<NativeDamage> nativeDamage;
     std::array<int32_t,2> nativeResources{}; // Native missile HITPOINTS/MANA, distinct from its owner's resources.
+    int32_t initialDamagePercent{};
 };
 struct State { std::map<EntityId, Missile> missiles; };
 }

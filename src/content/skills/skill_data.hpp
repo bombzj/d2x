@@ -44,6 +44,7 @@ struct SkillRecord : SkillMetadata {
 struct SkillCatalog {
     std::shared_ptr<const SkillDescriptionCatalog> descriptions;
     std::optional<HydraSpec> hydra;
+    std::map<int,HydraSpec> hydraPrograms;
     std::map<int,ShapeProfile> shapes;
     std::string currentLevelLabel, nextLevelLabel, firstLevelLabel;
     struct CastTiming { int frames = 0, speed = 0, actionFrame = 0; std::vector<uint8_t> events; };

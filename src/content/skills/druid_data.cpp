@@ -2,6 +2,7 @@
 #include "table_values.hpp"
 #include "aura_data.hpp"
 #include "content/classic_data.hpp"
+#include "content/pd2/skill_data.hpp"
 #include "gameplay/skills/druid_spec.hpp"
 #include "gameplay/skills/druid_summon.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
@@ -128,11 +129,21 @@ void loadDruidSkills(ClassicData &data,Archives &archives) {
     }
     for(size_t row=0;row<skills.rows().size();++row) {
         if(skills.value(row,"charclass")!="dru") continue;
-        const int id=skillTableNumber(skills,row,"Id");auto &entry=data.skills.skills.at(id);
+        const int id=skillTableNumber(skills,row,"Id");
+        // PD2 retains disabled class placeholders outside the character's
+        // learned/catalog slots. They do not define executable skills.
+        if(data.pd2Host && !data.skills.skills.contains(id)) continue;
+        auto &entry=data.skills.skills.at(id);
         // Lycanthropy has no passive list: the two morph formulas query its rank.
         if(entry.passive) continue;
         auto native=std::make_shared<DruidSkillSpec>();
         native->startFunction=uint16_t(skills.number(row,"srvstfunc").value_or(0));native->doFunction=uint16_t(skills.number(row,"srvdofunc").value_or(0));
+        // Do115 and Do119 retain the native summon/base/passive sequence;
+        // their summon identities, limits, levels and inherited skills come
+        // from the active tables. Other replaced programs use PD2 callbacks.
+        if(data.pd2Host && native->doFunction!=114 && native->doFunction!=115 && native->doFunction!=119 &&
+            native->doFunction!=116 && native->doFunction!=120 && native->doFunction!=121 &&
+            native->doFunction!=123 && native->doFunction!=124) continue;
         native->program=procedure(native->doFunction);native->mode=skills.value(row,"anim");
         for(auto &letter:native->mode) letter=char(std::tolower(static_cast<unsigned char>(letter)));
         native->sequence=skills.number(row,"seqnum").value_or(-1);native->restriction=skills.number(row,"restrict").value_or(0);
@@ -153,7 +164,8 @@ void loadDruidSkills(ClassicData &data,Archives &archives) {
                     if(states.number(index,"group").value_or(0)==native->state.group) native->removalGroupStates.push_back(skillTableNumber(states,index,"id"));
             }
         }
-        SkillSpec spec=entry.spell?*entry.spell:SkillSpec{};spec.sourceId=id;spec.druid=std::move(native);
+        SkillSpec spec=data.pd2Host?preparePd2SkillDefinition(data,row):entry.spell?*entry.spell:SkillSpec{};
+        spec.sourceId=id;spec.druid=std::move(native);
         spec.effect=spec.druid->program==DruidProgram::Defensive?SkillBehavior::NativeDefensiveBuff:SkillBehavior::Druid;
         spec.state=spec.druid->state;
         spec.mana=skillTableNumber(skills,row,"mana");spec.minimumMana=skillTableNumber(skills,row,"minmana");

@@ -462,7 +462,7 @@ void prepareMonsterBirthProperties(const ClassicData &data,size_t monsterRow,ser
         const std::string difficulty=rule.difficulty==1?" (N)":rule.difficulty==2?" (H)":"";
         for(int slot=1;slot<=6;++slot) {
             const auto suffix=std::to_string(slot)+difficulty;
-            const auto code=properties.value(propertyRow,"prop"+suffix);if(code.empty()) break;
+            const auto code=properties.value(propertyRow,"prop"+suffix);if(code.empty()) continue;
             server::MonsterRule::BirthProperty property;
             property.chance=uint8_t(properties.number(propertyRow,"chance"+suffix).value_or(0));
             property.parameter=properties.number(propertyRow,"par"+suffix).value_or(0);
@@ -470,11 +470,27 @@ void prepareMonsterBirthProperties(const ClassicData &data,size_t monsterRow,ser
             property.maximum=properties.number(propertyRow,"max"+suffix).value_or(0);
             size_t programRow=0;
             while(programRow<programs.rows().size() && programs.value(programRow,"code")!=code) ++programRow;
-            if(programRow==programs.rows().size()) throw std::runtime_error("Missing original monster property program");
+            if(programRow==programs.rows().size()) {
+                // The native Properties name linker emits -1 for absent
+                // names, and MonProp skips that slot. Current monprop.bin
+                // confirms this for the wolves' invalid radius property.
+                if(data.pd2Host) continue;
+                throw std::runtime_error("Missing original monster property program");
+            }
             for(int operation=1;operation<=7;++operation) {
                 const auto number=std::to_string(operation);
                 const int function=programs.number(programRow,"func"+number).value_or(0);if(!function) break;
-                if(function!=1 && function!=8 && function!=17) throw std::runtime_error("Unsupported monster birth property function");
+                if(function!=1 && function!=8 && function!=17 &&
+                    !(data.pd2Host && (function==11 || function==22 || function==24)))
+                    throw std::runtime_error("Unsupported monster birth property: "+std::string(monster)+" / "+std::string(code)+" / "+std::to_string(function));
+                if(function==11) {
+                    const auto &skills=data.tables.at("skills");
+                    const auto parameter=properties.value(propertyRow,"par"+suffix);
+                    const auto skillRow=properties.number(propertyRow,"par"+suffix)?
+                        findSkillTableRow(skills,"Id",std::to_string(property.parameter)):findSkillTableRow(skills,"skill",parameter);
+                    property.parameter=skillTableNumber(skills,skillRow,"Id");
+                    property.skill=PropertySkillLevels{skills.number(skillRow,"reqlevel").value_or(0),skills.number(skillRow,"maxlvl").value_or(0)};
+                }
                 const auto stat=programs.value(programRow,"stat"+number);
                 if(stat.empty() || !data.nativeStats || !data.nativeStats->names.contains(stat))
                     throw std::runtime_error("Missing original monster property stat");

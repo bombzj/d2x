@@ -33,6 +33,7 @@ struct HydraRules {
     std::vector<std::array<int,6>> defenseRatios;
 };
 struct SkillRules {
+    bool pd2{};
     std::shared_ptr<const StatRuleCatalog> stats;
     std::shared_ptr<const SkillFormulaCatalog> formulas;
     struct Aura { AuraSkillSpec spec; bool immediate{}; };
@@ -48,6 +49,11 @@ struct SkillRules {
     std::set<int> slowableMissiles, pierceableMissiles, alwaysExplodingMissiles;
     std::map<int,std::pair<int,int>> missileVelocities;
     std::optional<HydraRules> hydra;
+    std::map<int,HydraRules> hydraPrograms;
+    const HydraRules *hydraProgram(int skill) const {
+        const auto found=hydraPrograms.find(skill);
+        return found!=hydraPrograms.end()?&found->second:hydra?&*hydra:nullptr;
+    }
     std::map<int, SkillDefinition> definitions;
     std::map<int,ShapeProfile> shapes;
     std::map<int,SkillShapeRestriction> shapeRestrictions;
@@ -55,6 +61,7 @@ struct SkillRules {
     std::map<std::string, AttackAnimation, std::less<>> weaponAnimations;
     std::map<std::string, AnimationTiming, std::less<>> recoveryAnimations;
     std::map<int, MissileCollisionRule> collisions;
+    std::set<std::string,std::less<>> normalWeaponCodes;
     std::map<int, bool> returnFire, clientSend;
     std::array<int, 3> staticMinimum{}, coldDivisor{}, freezeDivisor{};
     std::array<int,3> aiCurseDivisor{1,1,1};

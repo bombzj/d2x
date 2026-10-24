@@ -274,7 +274,16 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
     const uint64_t expires=skill.bone && skill.bone->barrier?actor.tick+uint64_t(rule.summonLifeFrames):UINT64_MAX;
     auto next=state_;
     for(const auto &[key,body]:actors) {(void)body;Companion pet{key,actor.player,iron?Kind::IronGolem:Kind::Summon,uint16_t(skill.sourceId)};pet.rank=skill.rank;pet.expires=expires;pet.nextDecision=actor.tick+(ready->second.components || (skill.bone && skill.bone->barrier)?25:1);pet.ownerTeleport=owner->teleportRevision;pet.ownerLevel=owner->persistent.player.level;pet.effectiveRanks=owner->totals.skillRanks;pet.hardRanks=owner->persistent.player.skillRanks;next.companions.emplace(key,std::move(pet));}
-    const auto sameType=[&](const Companion &existing) {if(existing.sourceSkill==uint16_t(skill.sourceId)) return true;if(!summon.golem || !existing.sourceSkill) return false;const auto found=owner->rules.skills->definitions.find(*existing.sourceSkill);return found!=owner->rules.skills->definitions.end() && found->second.spec.summon && found->second.spec.summon->golem;};
+    const auto sameType=[&](const Companion &existing) {
+        if(existing.sourceSkill==uint16_t(skill.sourceId)) return true;
+        if(owner->rules.skills->pd2) {
+            const auto *body=ports_.monsters.find(existing.actor);
+            return body && body->rule.petType==ready->second.summon.petType;
+        }
+        if(!summon.golem || !existing.sourceSkill) return false;
+        const auto found=owner->rules.skills->definitions.find(*existing.sourceSkill);
+        return found!=owner->rules.skills->definitions.end() && found->second.spec.summon && found->second.spec.summon->golem;
+    };
     size_t count=0;for(const auto &[key,existing]:next.companions) {(void)key;if(existing.owner==actor.player && sameType(existing) && !existing.removeAt) ++count;}
     std::vector<EntityId> retire;
     for(auto &[key,existing]:next.companions) {
@@ -330,7 +339,7 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
         transactions::CharacterEdit edit{actor,owner->inventoryRevision,owner->characterRevision,owner->persistent.player};
         edit.player.mana-=skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.charge=skill.charge;
         if(ownerRandom) edit.random=transactions::UnitRandomEdit{owner->combatRandom,*ownerRandom};
-        if(summon.golem && !iron && owner->persistent.ironGolem) edit.ironGolem=std::optional<ItemInstance>{};
+        if(summon.golem && !iron && owner->persistent.ironGolem && !owner->rules.skills->pd2) edit.ironGolem=std::optional<ItemInstance>{};
         auto cost=ports_.transactions.prepare(std::move(edit),nullptr,{},auraUnits);if(!cost) return {cost.status,{}};
         cost.value->missileBirth=std::move(makers);
         if(!positions.empty() && !missileRandom) cost.value->gameRandom=transactions::UnitRandomEdit{prior->second.birthRandom->first,gameRandom};
@@ -372,10 +381,10 @@ StepStatus System::necroStep(Companion &pet,TickContext tick) {
     if(target) {
         if(body->revived()) return StepStatus::Complete; // Its prepared original family AI owns combat decisions.
         const auto enemy=participants.find(target);
-        const bool mage=body->necroPet && body->necroPet->kind==NecroSummonKind::Mage;
+        const bool mage=body->necroPet && (body->necroPet->kind==NecroSummonKind::Mage || body->necroPet->kind==NecroSummonKind::Archer);
         if((mage && missileDistance(body->position,enemy.position())<=25) || meleeDistance(body->position,body->rule.size,enemy.position(),enemy.size())<=body->rule.meleeRange) {
             ports_.monsters.stop(pet.actor);
-            const uint16_t skill=body->necroPet && body->necroPet->kind==NecroSummonKind::Mage && !body->rule.skillActions.empty()?body->rule.skillActions.begin()->first:0;
+            const uint16_t skill=mage && !body->rule.skillActions.empty()?body->rule.skillActions.begin()->first:0;
             const auto result=requestAction(pet,{pet.actor,skill,UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
             if(isDeferred(result.status)) return StepStatus::Blocked;
         } else ports_.monsters.requestMove({pet.actor,{body->area,area.generation,enemy.position()},target,body->rule.meleeRange,75,false});
@@ -410,6 +419,7 @@ DomainResult<bool> System::growBoneWall(EntityId source,EntityId root,int skillI
     if(parent->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     SummonCastSpec summon;summon.monster="bonewall";summon.kind=MonsterKind::BoneWall;summon.limit=INT32_MAX;summon.petType=rule.petType;
     summon.stats=skill.bone->barrierStats.at(size_t(owner->persistent.difficulty));summon.native=*skill.bone->barrierNative;summon.native->base=summon.stats;
+    summon.native->initialLife=summon.stats.attributes.maxLifeFixed;
     ActorContext context{owner->player,source,region,area->generation,0,tick};
     const auto expectedRandom=ports_.random;
     auto random=expectedRandom,seed=childRandom(random);

@@ -1,6 +1,8 @@
 #include "skill_content.hpp"
 #include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
+#include "content/pd2/skill_data.hpp"
+#include "gameplay/skills/spec.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/skills/aura_data.hpp"
 #include "content/skills/table_values.hpp"
@@ -9,12 +11,14 @@
 #include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/skills/druid_spec.hpp"
+#include "gameplay/skills/assassin_summon.hpp"
+#include "gameplay/skills/bow_spec.hpp"
+#include "gameplay/skills/spear_spec.hpp"
 #include <cctype>
 #include <stdexcept>
 namespace d2x {
 namespace {
-std::optional<server::HydraRules> prepareHydraRules(const ClassicData &data) {
-    if(!data.skills.hydra) return {};
+server::HydraRules prepareHydraRules(const ClassicData &data,const HydraSpec &definition) {
     server::HydraRules hydra;
     const auto &monsters=data.tables.at("monstats"),&levels=data.tables.at("levels"),&monlvl=data.tables.at("monlvl");
     const auto number=[](const DataTable &table,size_t row,const std::string &field) {
@@ -37,7 +41,7 @@ std::optional<server::HydraRules> prepareHydraRules(const ClassicData &data) {
         hydra.defenseRatios.push_back(entry);
     }
     for(size_t index=0;index<hydra.heads.size();++index) {
-        auto &head=hydra.heads[index];head.definition=data.skills.hydra->heads[index];
+        auto &head=hydra.heads[index];head.definition=definition.heads[index];
         size_t row=0;while(row<monsters.rows().size() && monsters.number(row,"hcIdx")!=head.definition.nativeClass) ++row;
         if(row==monsters.rows().size()) throw std::runtime_error("Missing native Hydra base stats");
         MonsterRecord record;record.sourceRow=row;
@@ -100,6 +104,12 @@ std::optional<server::HydraRules> prepareHydraRules(const ClassicData &data) {
 }
 void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, const CharacterDefinition &character) {
     auto prepared = std::make_shared<server::SkillRules>();
+    prepared->pd2=data.pd2Host;
+    if(data.pd2Host) {
+        const auto &weapons=data.tables.at("weapons");
+        for(size_t row=0;row<weapons.rows().size();++row) if(weapons.value(row,"code")==weapons.value(row,"normcode"))
+            prepared->normalWeaponCodes.emplace(weapons.value(row,"code"));
+    }
     prepared->monsterTypes=data.nativeMonsterTypes;
     prepared->justHit=data.states.at("justhit").definition;
     prepared->uninterruptable=data.states.at("uninterruptable").definition;
@@ -164,7 +174,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     for (const auto &[id, skill] : data.skills.skills) {
         // Item grants/charges use the skill's program on any owning class.
         if (skill.classCode != "sor" && skill.classCode != "ama" && skill.classCode != "pal" &&
-            !(skill.classCode=="nec" && id>=66 && id<=95) && skill.classCode != "bar" && skill.classCode != "ass" && skill.classCode != "dru") continue;
+            skill.classCode != "nec" && skill.classCode != "bar" && skill.classCode != "ass" && skill.classCode != "dru") continue;
         if(skill.auraImplemented) prepared->auras.emplace(id,server::SkillRules::Aura{prepareAura(data,id),skill.auraImmediate});
         if (!skill.spell || skill.spell->effect==SkillBehavior::None) continue;
         const auto &spec = *skill.spell;
@@ -198,6 +208,25 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         }
         prepared->definitions.emplace(id, std::move(definition));
     }
+    if(data.pd2Host) for(const auto &[id,record]:data.skills.skills) {
+        (void)id;
+        if(!record.spell || !record.spell->summon || !record.spell->summon->assassin) continue;
+        for(const auto skill:record.spell->summon->assassin->skills) {
+            if(skill<0 || prepared->definitions.contains(skill)) continue;
+            const auto row=findSkillTableRow(skillTable,"Id",std::to_string(skill));
+            const auto start=skillTable.number(row,"srvstfunc").value_or(0),action=skillTable.number(row,"srvdofunc").value_or(0);
+            if(!((start==8 && action==12) || (start==10 && action==14))) continue;
+            auto spec=preparePd2SkillDefinition(data,row);spec.effect=SkillBehavior::WeaponProjectile;
+            auto &weapon=spec.weapon.emplace();weapon.mode="a1";weapon.requiredType=skillTable.value(row,"itypea1");
+            if(start==8) {
+                auto bow=std::make_shared<BowSkillSpec>();bow->strafe=true;weapon.bow=std::move(bow);
+                weapon.noAmmo=true;weapon.rollbackPercent=skillTable.number(row,"Param6").value_or(0);
+            } else {
+                auto spear=std::make_shared<SpearSkillSpec>();spear->kind=SpearSkillSpec::Kind::Strike;weapon.spear=std::move(spear);
+            }
+            prepared->definitions.emplace(skill,server::SkillDefinition{spec.rules(),false,{}});
+        }
+    }
     // Do124 also belongs to monster skills such as Diablogeddon. Prepare its
     // state and active callback without adding it to a character skill tree.
     for(size_t row=0;row<skillTable.rows().size();++row) {
@@ -216,6 +245,13 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         spec.hitShift=skillTableNumber(skillTable,row,"HitShift",SkillNumberPolicy::BlankIsZero);
         spec.hitClass=skillTableNumber(skillTable,row,"HitClass",SkillNumberPolicy::BlankIsZero);
         prepared->definitions.emplace(id,server::SkillDefinition{std::move(spec),skillTable.number(row,"InTown").value_or(0)!=0,{}});
+    }
+    if(data.pd2Host) for(size_t row=0;row<skillTable.rows().size();++row) {
+        if(!skillTable.value(row,"charclass").empty() || skillTable.number(row,"srvstfunc").value_or(0) || skillTable.number(row,"ItemEffect")!=1) continue;
+        const auto action=skillTable.number(row,"srvdofunc").value_or(0);
+        if(action!=163 && action!=169 && (action || skillTable.value(row,"srvmissile").empty())) continue;
+        auto spec=preparePd2SkillDefinition(data,row);spec.effect=SkillBehavior::Pd2;
+        prepared->definitions.emplace(spec.sourceId,server::SkillDefinition{spec.rules(),skillTable.number(row,"InTown").value_or(0)!=0,{}});
     }
     // General skills are prepared for every class; availability still comes
     // from that class's CharStats, not from point-backed skill ranks.
@@ -265,7 +301,9 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             if(petTypes.value(pet,"pet type")==type && petTypes.number(pet,"unsummon").value_or(0))
                 prepared->dismissibleSummons.insert(skillTable.number(row,"Id").value());
     }
-    prepared->hydra=prepareHydraRules(data);
+    if(data.skills.hydra) prepared->hydra=prepareHydraRules(data,*data.skills.hydra);
+    for(const auto &[skill,definition]:data.skills.hydraPrograms)
+        prepared->hydraPrograms.emplace(skill,prepareHydraRules(data,definition));
     prepared->collisions = data.missileCollisions;
     prepared->returnFire = data.missileReturnFire;
     prepared->staticMinimum = data.staticFieldMinimum;

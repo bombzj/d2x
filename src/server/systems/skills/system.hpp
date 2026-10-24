@@ -24,7 +24,7 @@ struct Request { Action action; uint16_t skill{}; bool right{}, repeat{}, statio
 using CastRequest = actions::MonsterCastRequest;
 using Cast = actions::SkillAction;
 using State = actions::State;
-struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; loot::System &loot; const social::System &social; actions::State &actions; reactions::ItemTriggers &itemTriggers; const spatial::System &spatial; FrameEventQueue &frameEvents; ai::System &ai; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; loot::System &loot; const social::System &social; actions::State &actions; reactions::ItemTriggers &itemTriggers; const spatial::System &spatial; FrameEventQueue &frameEvents; ai::System &ai; uint32_t &pd2Random; };
 class System {
   State &state_;
     const Ports ports_;
@@ -62,9 +62,18 @@ class System {
     DomainStatus activateAmazonSummon(Release &, const ActorContext &, Vec);
     DomainStatus activateAmazonMagic(Release &, const ActorContext &, Vec);
     DomainStatus activateTeleport(Release &, const ActorContext &, Vec);
+    DomainStatus activatePd2Teleport(Release &, const ActorContext &, Vec);
     DomainStatus activateLeap(Release &,const ActorContext &,Vec);
     DomainStatus activateHydra(Release &, const ActorContext &, Vec);
     DomainStatus activateEffect(Release &, const ActorContext &, Vec);
+    DomainStatus activatePd2Enchant(Release &, const ActorContext &);
+    DomainStatus activatePd2(Release &,const ActorContext &,Vec);
+    DomainStatus activatePd2Splash(Release &,const ActorContext &);
+    DomainStatus activatePd2Bash(Release &,const ActorContext &);
+    DomainStatus activatePd2Raven(Release &,const ActorContext &,Vec);
+    DomainStatus activatePd2HolyLight(Release &,const ActorContext &);
+    DomainStatus activatePd2Leap(Release &,const ActorContext &,Vec);
+    DomainStatus activatePd2Joust(Release &,const ActorContext &,Vec);
     DomainStatus activateWarcry(Release &,const ActorContext &,Vec);
     DomainStatus activateCurse(Release &, const ActorContext &, Vec);
     DomainStatus activateCorpse(Release &,const ActorContext &,Vec);

@@ -95,6 +95,9 @@ void loadLodTreasureData(ClassicData &data) {
                 if (tc.empty())
                     continue;
                 auto found = indices.find(tc);
+                // Unused PD2 event monsters can name absent treasure rows.
+                // Preserve their source row and defer when actually queried.
+                if(found==indices.end() && data.pd2Host) continue;
                 if (found == indices.end())
                     throw std::runtime_error("Unknown monster TreasureClassEx: " + std::string(tc));
                 record.treasureClasses[difficulty][slot] = found->second;

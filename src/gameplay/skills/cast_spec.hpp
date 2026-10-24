@@ -19,8 +19,10 @@ struct LeapSpec;
 struct GrimWardSpec;
 struct AssassinSkillSpec;
 struct DruidSkillSpec;
+struct Pd2SkillProgram;
 struct SkillCastSpec {
     SkillBehavior effect{};
+    std::shared_ptr<const Pd2SkillProgram> pd2;
     std::shared_ptr<const BoneSkillSpec> bone;
     std::shared_ptr<const AmazonMagicSpec> amazonMagic;
     std::shared_ptr<const CorpseSearchSpec> corpseSearch;

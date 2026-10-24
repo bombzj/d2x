@@ -7,7 +7,9 @@
 #include "gameplay/actions/monster_timing.hpp"
 
 namespace d2x::server::skills {
+struct Pd2VengeanceTimers;
 struct System::Runtime {
+    std::shared_ptr<Pd2VengeanceTimers> pd2Vengeance;
     struct Pending { ActorContext actor; Request request; };
     std::map<PlayerId,Pending> pending;
     struct ImpEjection {EntityId rider;std::optional<Vec> landing;bool prepared{},interrupted{},kill{},complete{};};

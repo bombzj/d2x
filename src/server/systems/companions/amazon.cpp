@@ -38,6 +38,10 @@ DomainResult<> System::install(Prepared prepared) {
             const auto range=source.summon.druid->definition->lifeRanges.at(size_t(source.difficulty));
             minimum=range.first;maximum=range.second;
         }
+        else if(source.summon.assassin) {
+            const auto range=source.summon.assassin->definition->lifeRanges.at(size_t(source.difficulty));
+            minimum=range.first;maximum=range.second;
+        }
         if(minimum<0 || maximum<minimum) return {DomainStatus::InvalidRequest,{}};
         const int life=rollMonsterLife(minimum,maximum,random);
         if(source.summon.amazon && !source.summon.amazon->decoy) {
@@ -63,6 +67,19 @@ DomainResult<> System::install(Prepared prepared) {
         limitedRandom(unitRandom,1);
         if(components!=*prepared.components || palettes!=*prepared.componentPalettes || unitRandom!=prepared.random)
             return {DomainStatus::InvalidRequest,{}};
+    }
+    if(prepared.deferred.empty() && source.componentPalettes && !source.ownerRandom) {
+        if(!source.summon.assassin || !prepared.componentPalettes || !prepared.components || !prepared.summon.native)
+            return {DomainStatus::InvalidRequest,{}};
+        auto palettes=*source.componentPalettes;auto random=source.seed;
+        const auto components=chooseRegionMonsterComponents(prepared.rule.componentCounts,prepared.rule.nativeClass,prepared.rule.totalPieces,palettes,random);
+        const auto range=source.summon.assassin->definition->lifeRanges.at(size_t(source.difficulty));
+        const auto life=rollMonsterLife(range.first,range.second,random);
+        // ShadowMaster's MonEquip alternatives continue on the unit seed
+        // after this spawn prefix; equipment seeds have their own validation.
+        const bool shadowEquipment=source.summon.assassin->definition->warp;
+        if(components!=*prepared.components || palettes!=*prepared.componentPalettes || (!shadowEquipment && random!=prepared.random) ||
+           prepared.summon.native->initialLife.raw()!=nativeShiftLeft(std::min(life,(1<<23)-1),8)) return {DomainStatus::InvalidRequest,{}};
     }
     if(prepared.deferred.empty() && prepared.equipmentRandom) {
         if(!it->second.birthRandom || prepared.allocatedEquipment!=prepared.equipment.inventory.items.size()) return {DomainStatus::InvalidRequest,{}};

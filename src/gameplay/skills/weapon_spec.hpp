@@ -56,12 +56,14 @@ struct WeaponSkillSpec {
     CombatStateDefinition conversionSaveState;
     int conversionFramesPerLevel{};
     int startFunction{},doFunction{};
+    bool usesConcentrateStart() const {return startFunction==32 || (startFunction==68 && doFunction==164);}
     bool allocatesMeleeAtStart() const {
         return (doFunction==2 && (startFunction==2 || startFunction==6 || startFunction==7 || startFunction==32 || startFunction==35 || startFunction==39)) ||
             (startFunction==29 && doFunction==64) || (startFunction==16 && doFunction==32) || (startFunction==32 && doFunction==79) ||
-            (startFunction==6 && doFunction==11) || (startFunction==10 && doFunction==14) || (startFunction==42 && doFunction==83);
+            (startFunction==6 && doFunction==11) || (startFunction==10 && doFunction==14) || (startFunction==42 && doFunction==83) ||
+            (startFunction==32 && doFunction==158) || (startFunction==68 && doFunction==164);
     }
     bool nativeMelee() const {return commonAttack || allocatesMeleeAtStart() || doFunction==7 || doFunction==9 || doFunction==13 ||
-        doFunction==67 || doFunction==70 || doFunction==76 || doFunction==78 || doFunction==109 || doFunction==150;}
+        doFunction==67 || doFunction==70 || doFunction==76 || doFunction==78 || doFunction==109 || doFunction==150 || doFunction==162 || doFunction==174 || doFunction==180;}
 };
 } // namespace d2x

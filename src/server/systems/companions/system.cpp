@@ -66,13 +66,15 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skill,Vec target) {
-    const auto *p=ports_.players.find(actor.player);if(!p || !p->rules.skills || !p->rules.skills->hydra || !skill.summon || !skill.summon->native || skill.hydraLimit<=0 || skill.hydraFrames<=0) return {DomainStatus::Unavailable,{}};
+    const auto *p=ports_.players.find(actor.player);
+    const auto *program=p && p->rules.skills?p->rules.skills->hydraProgram(skill.sourceId):nullptr;
+    if(!program || !skill.summon || !skill.summon->native || skill.hydraLimit<=0 || skill.hydraFrames<=0) return {DomainStatus::Unavailable,{}};
     const auto *area=ports_.areas.find(actor.area);
     if(!p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !area ||
         area->generation!=actor.areaGeneration || area->definition.town) return {DomainStatus::InvalidActor,{}};
     const auto expectedRandom=ports_.random;
     auto random=expectedRandom;
-    const auto &rules=*p->rules.skills->hydra;
+    const auto &rules=*program;
     constexpr std::array<Vec,3> offsets{{{-1,-1},{0,0},{1,-1}}};
     std::array<std::optional<Vec>,3> positions;
     std::map<RoomView,RoomRandomLoan> loans;
@@ -110,7 +112,7 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skil
     auto actors=ports_.monsters.prepareHydra(actor,rules,*skill.summon,positions,random);if(!actors) return {actors.status,{}};
     auto next=state_;
     for(const auto &[id,monster]:*actors.value) {
-        const auto &head=*std::find_if(p->rules.skills->hydra->heads.begin(),p->rules.skills->hydra->heads.end(),[&](const auto &head) {return head.definition.nativeClass==monster.rule.nativeClass;});
+        const auto &head=*std::find_if(rules.heads.begin(),rules.heads.end(),[&](const auto &head) {return head.definition.nativeClass==monster.rule.nativeClass;});
         Companion entry{id,actor.player,Kind::Summon,uint16_t(skill.sourceId)};
         entry.rank=skill.rank;entry.attackSkill=head.definition.attackSkill;entry.expires=actor.tick+uint64_t(skill.hydraFrames);
         entry.nextDecision=actor.tick+25;next.companions.emplace(id,std::move(entry));

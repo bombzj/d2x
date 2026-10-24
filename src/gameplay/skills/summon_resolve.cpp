@@ -11,7 +11,7 @@
 
 namespace d2x {
 SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery, int resist,
-                            int ownerLevel, int difficulty, const std::map<int, int> &hardRanks,SkillFormulaValues *formulas,int skill) {
+                            int ownerLevel, int difficulty, const std::map<int, int> &hardRanks,SkillFormulaValues *formulas,int skill,bool pd2) {
     if (rank <= 0 || rank > 255 || difficulty < 0 || difficulty > 2 || ownerLevel < 1)
         throw std::runtime_error("Invalid summon level or difficulty");
     SummonCastSpec result;
@@ -69,6 +69,7 @@ SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery,
         native.summonResistance=*resistance;
         native.materialBeforeStats=spec.necro && spec.necro->kind==NecroSummonKind::Iron;
     }
+    if(!pd2) {
     const auto skeleton = evaluateNecromancerPassive({NecromancerPassiveSpec::Kind::SkeletonMastery,
         {spec.masteryLife,spec.masteryDamage}},mastery);
     attributes.maxLife = int((int64_t(attributes.maxLife) + skeleton.skeletonLife) *
@@ -85,13 +86,15 @@ SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery,
         attributes.fireResist += resistance; attributes.coldResist += resistance;
         attributes.lightningResist += resistance; attributes.poisonResist += resistance;
     }
+    }
     if (spec.necro) {
         const auto &program = *spec.necro;
         auto pet = std::make_shared<NecroPetSpec>(); pet->kind = program.kind;
         auto rankOf = [&](int id) { return skillRank(hardRanks,id); };
         const auto &p = program.parameters;
         const auto &m = program.masteryParameters;
-        pet->resistPercent = resistance;
+        pet->resistPercent = result.native?result.native->summonResistance:
+            evaluateNecromancerPassive({NecromancerPassiveSpec::Kind::SummonResist,{spec.resistMinimum,spec.resistMaximum}},resist).resistance;
         pet->healOverlay = program.healOverlay; pet->healOverlayDuration = program.healOverlayDuration;
         if (program.kind == NecroSummonKind::Mage) {
             const int missileRank = mastery + (rank < 4 ? 0 : (rank - 2) / 2);
@@ -109,6 +112,12 @@ SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery,
             }
             result.shieldChance = 0; result.shieldVariants = 1;
             result.necro = std::move(pet); return result;
+        }
+        if(pd2) {
+            // Current skills supply passive/aura writes, inherited skills and
+            // PetMax. Retail's derived Golem formulas must not overwrite them.
+            pet->slowState=program.slowState;result.shieldChance=0;
+            result.necro=std::move(pet);return result;
         }
         const auto golem = evaluateNecromancerPassive({NecromancerPassiveSpec::Kind::GolemMastery,m},mastery);
         const int masteryLife = golem.golemLife;

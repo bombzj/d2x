@@ -11,8 +11,8 @@
 #include <algorithm>
 
 namespace d2x {
-void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const DataTable &weapons,
-                         std::span<const CharacterDefinition> characters, Archives &archives) {
+void loadPlayerSkillAnimations(SkillCatalog &catalog, const DataTable &weapons,
+                               std::span<const CharacterDefinition> characters, Archives &archives) {
     const AnimDataTable animations(archives.read("data/global/animdata.d2"));
     std::set<std::string> classes{"hth", "1js", "1jt", "1ss", "1st", "ht2"};
     for (size_t row = 0; row < weapons.rows().size(); ++row)
@@ -54,14 +54,21 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
                 }
             }
     }
-    const DataTable monsters(archives.read("data/global/excel/monstats.txt"));
-    const DataTable extras(archives.read("data/global/excel/monstats2.txt"));
+}
+HydraSpec loadHydraHeadAnimations(const DataTable &skills,const DataTable &monsters,
+                                 const DataTable &extras,Archives &archives,std::string_view firstHead) {
+    const AnimDataTable animations(archives.read("data/global/animdata.d2"));
+    int firstClass=-1;
+    for(size_t row=0;row<monsters.rows().size();++row) if(monsters.value(row,"Id")==firstHead)
+        firstClass=monsters.number(row,"hcIdx").value_or(-1);
+    if(firstClass<0) throw std::runtime_error("Missing native Hydra summon class");
     HydraSpec hydra;
     for(size_t index=0;index<hydra.heads.size();++index) {
-        auto &head=hydra.heads[index];head.code="hydra"+std::to_string(index+1);
+        auto &head=hydra.heads[index];
         bool found=false;
         for(size_t row=0;row<monsters.rows().size();++row) {
-            if(monsters.value(row,"Id")!=head.code) continue;
+            if(monsters.number(row,"hcIdx")!=firstClass+int(index)) continue;
+            head.code=monsters.value(row,"Id");
             const auto token=monsters.value(row,"Code");
             std::string_view weapon;
             for(size_t extra=0;extra<extras.rows().size();++extra) if(extras.value(extra,"Id")==monsters.value(row,"MonStatsEx")) {weapon=extras.value(extra,"BaseW");break;}
@@ -83,7 +90,13 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
         }
         if(!found) throw std::runtime_error("Missing original Hydra head");
     }
-    catalog.hydra=std::move(hydra);
-
+    return hydra;
+}
+void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const DataTable &weapons,
+                         std::span<const CharacterDefinition> characters, Archives &archives) {
+    loadPlayerSkillAnimations(catalog,weapons,characters,archives);
+    const DataTable monsters(archives.read("data/global/excel/monstats.txt"));
+    const DataTable extras(archives.read("data/global/excel/monstats2.txt"));
+    catalog.hydra=loadHydraHeadAnimations(skills,monsters,extras,archives,"hydra1");
 }
 } // namespace d2x

@@ -18,6 +18,7 @@
 #include "server/systems/companions/system.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "server/systems/skills/evaluation.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include "core/random.hpp"
@@ -79,11 +80,14 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                 flight.piercing=false;
                 if(rule.pierce && plan.next.pierces>0) {
                     const auto values=ports_.effects.unitStatValues(missile.owner,tick.tick);
-                    if(values && rule.damageStats &&
-                        (values->get({rule.damageStats->names.at("skill_pierce"),0}) || values->get({rule.damageStats->names.at("item_pierce"),0}))) {
+                    const bool pd2=plan.next.rules && plan.next.rules->pd2;
+                    if(pd2 || (values && rule.damageStats &&
+                        (values->get({rule.damageStats->names.at("skill_pierce"),0}) || values->get({rule.damageStats->names.at("item_pierce"),0})))) {
                         --plan.next.pierces;flight.piercing=true;
+                        if(pd2) ++plan.next.pierceCount;
                     }
                 }
+                if(plan.damageRolls) plan.damageRolls->pierceCount=plan.next.pierceCount;
                 flight.piercePrepared=true;
             }
             plan.started=true;
@@ -128,6 +132,16 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
             if(isDeferred(consumed.status)) return consumed.status;
             if(!consumed) throw std::logic_error("Native missile formula owner seed changed");
             plan.started=true;
+        } else if(operation.kind==Advance::OperationKind::Pd2DelayedSkill) {
+            const auto &shot=plan.pd2DelayedSkills.at(operation.index);
+            const auto owner=participants.find(shot.owner);
+            if(owner.id()) {
+                auto timer=ports_.frameEvents.prepareInsertion({{}, {owner.player?FrameEventUnit::Player:FrameEventUnit::Monster,shot.owner},
+                    FrameEventType::MonsterModifier,shot.due,false,pd2SkillMissileTimerHandler});
+                runtime_->pd2DelayedSkills.emplace(timer.handle(),shot);
+                ports_.frameEvents.publish(std::move(timer));
+            }
+            plan.started=true;
         } else if(operation.kind==Advance::OperationKind::SkillState) {
             auto &state=plan.skillStates.at(operation.index);const auto source=participants.find(state.source);
             if(!source.id() || !participants.find(state.target).id()) {++plan.nextOperation;continue;}
@@ -160,7 +174,8 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                 if(!consumed) throw std::logic_error("Native missile skill duration seed changed");
                 state.seedCommitted=true;plan.started=true;
             }
-            const auto applied=ports_.effects.skillAuraState(state.source,state.target,state.skill,state.rank,*state.duration,tick.tick,state.procedure);
+            const auto applied=ports_.effects.skillAuraState(state.source,state.target,state.skill,state.rank,*state.duration,tick.tick,state.procedure,
+                state.values?&*state.values:nullptr);
             if(isDeferred(applied.status)) return applied.status;
             if(applied.status==DomainStatus::Conflict || applied.status==DomainStatus::Stale) return applied.status;
             if(state.posted) *state.posted=bool(applied);

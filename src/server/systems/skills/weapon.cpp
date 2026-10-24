@@ -5,6 +5,10 @@
 #include "shape.hpp"
 #include "druid_melee.hpp"
 #include "weapon_melee.hpp"
+#include "pd2/vengeance.hpp"
+#include "pd2/charge.hpp"
+#include "pd2/execution.hpp"
+#include "gameplay/units/distance.hpp"
 #include "gameplay/skills/druid_spec.hpp"
 #include "evaluation.hpp"
 #include "server/player_store.hpp"
@@ -23,11 +27,15 @@
 #include "gameplay/skills/amazon_sequence.hpp"
 #include "gameplay/skills/barbarian_sequence.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
+#include "gameplay/skills/assassin_progressive.hpp"
+#include "gameplay/skills/pd2_program.hpp"
 #include "gameplay/skills/assassin_sequence.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/skills/common_actions.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
+#include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/effects/queries.hpp"
 #include "gameplay/skills/targeting.hpp"
 #include "server/systems/effects/attribute_projection.hpp"
 #include <algorithm>
@@ -79,12 +87,18 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     auto skill=evaluate(p,id,effectiveRank);
     if(source->charged) {skill.charge=SkillCharge{source->charged->item,source->charged->layer};skill.manaCost=skill.startMana=0;}
     const auto &program=*skill.weapon;
+    const auto matchesWeapon=[&](const WeaponDamage &weapon) {
+        const auto matches=[&](const std::string &type) {return !type.empty() && std::find(weapon.types.begin(),weapon.types.end(),type)!=weapon.types.end();};
+        if(matches(program.requiredType)) return true;
+        if(skill.pd2) for(const auto &type:skill.pd2->weaponTypes) if(matches(type)) return true;
+        return false;
+    };
     if(program.smite && !p.totals.equipment.shield) return {DomainStatus::Unavailable,{}};
     if(p.persistent.player.mana<skill.manaCost && (program.frenzy || (program.spear && program.spear->attackWithoutMana) || skill.effect==SkillBehavior::PoisonDagger)) return attack(actor,request,0);
     const auto *weapon=program.commonAttack?commonAttackWeapon(p.totals.equipment,program.thrown,program.leftHand):std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
         [&](const auto &w){return !w.leftHand && (program.smite ||
             ((skill.assassin || skill.druid) && !w.item && program.requiredType=="mele") ||
-            std::find(w.types.begin(),w.types.end(),program.requiredType)!=w.types.end());});
+            matchesWeapon(w));});
     if(!weapon || weapon==p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount || weapon->fasterAttack<=-120 ||
         (program.thrown && !weapon->throwable) || p.persistent.player.mana<skill.manaCost) return {DomainStatus::Unavailable,{}};
     if((program.commonAttack || program.dualWield) && (weapon->ranged || program.thrown)) {
@@ -95,14 +109,14 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(program.dualWield) {
         const auto last=p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount;
         const auto second=std::find_if(p.totals.equipment.weapons.begin(),last,[&](const auto &w){return w.leftHand && w.item &&
-            std::find(w.types.begin(),w.types.end(),program.requiredType)!=w.types.end() && (!program.thrown || w.throwable);});
+            matchesWeapon(w) && (!program.thrown || w.throwable);});
         if(second==last || !weapon->item) return {DomainStatus::Unavailable,{}};
         offhand=&*second;
     }
-    if(program.whirlwind) for(const auto &other:p.totals.equipment.weapons) if(other.item && other.leftHand && std::find(other.types.begin(),other.types.end(),program.requiredType)!=other.types.end()) offhand=&other;
+    if(program.whirlwind) for(const auto &other:p.totals.equipment.weapons) if(other.item && other.leftHand && matchesWeapon(other)) offhand=&other;
     if(skill.assassin && skill.assassin->program==AssassinProgram::ElementalCharge)
         for(const auto &other:p.totals.equipment.weapons)
-            if(other.item && other.leftHand && std::find(other.types.begin(),other.types.end(),program.requiredType)!=other.types.end()) offhand=&other;
+            if(other.item && other.leftHand && matchesWeapon(other)) offhand=&other;
     const bool fend=program.spear && program.spear->kind==SpearSkillSpec::Kind::Fend;
     const bool zeal=skill.effect==SkillBehavior::Zeal || (skill.druid && skill.druid->program==DruidProgram::Fury);
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
@@ -127,6 +141,12 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(!std::isfinite(destination.x) || !std::isfinite(destination.y) || std::abs(destination.x-p.position.x)>50 || std::abs(destination.y-p.position.y)>50 ||
         destination.x<0 || destination.y<0 || destination.x>=area.definition.collision.width || destination.y>=area.definition.collision.height) return {DomainStatus::InvalidRequest,{}};
     const auto mode=program.mode.empty()?(program.thrown?"th":"a1"):program.mode.c_str();
+    int modeRate{};
+    if(skill.pd2 && skill.pd2->startFunction==79) {
+        auto input=formulaInput(p);SkillFormulaValues values(*rules.formulas,input);
+        for(const auto &write:values.auraStats(id,effectiveRank,6,true))
+            if(write.key.id==rules.stats->names.at("attackrate")) modeRate=nativeAdd(modeRate,write.value);
+    }
     AttackAnimation a;WeaponAttackTiming timing;
     const auto *shape=activeShape(rules,ports_.effects.unitStates(actor.actor,actor.tick));
     if(shape) {
@@ -135,7 +155,7 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     } else {
         const auto animation=rules.weaponAnimations.find(std::string(mode)+p.totals.equipment.animationClass);
         if(animation==rules.weaponAnimations.end()) return {DomainStatus::Unavailable,{}};
-        a=animation->second;timing={mode,a.frames,effectiveAttackSpeed(a.speed,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate),a.actionFrame,a.startFrame};
+        a=animation->second;timing={mode,a.frames,effectiveAttackSpeed(a.speed,weapon->fasterAttack,weapon->baseSpeed,nativeAdd(p.totals.character.combat.attackRate,modeRate)),a.actionFrame,a.startFrame};
     }
     std::vector<int> hits{timing.actionTick()};
     std::optional<ActionTimeline> timeline;
@@ -225,7 +245,29 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
             writes.push_back(write);
             if(write.key.id==rules.names.at("attackrate")) writes.emplace_back(StatKey{rules.names.at("other_animrate"),0},write.value);
         }};
-        append(formulas.auraStats(id,effectiveRank,6,true));
+        if(skill.pd2 && skill.pd2->startFunction==78) {
+            // Current St78 (0x3B4860) owns a mode-only state 224. Its
+            // splash stat samples the old charges, before Do9 adds a stack.
+            const auto amount=formulas.calculation(FormulaDomain::Skill,id,effectiveRank,"calc2");
+            if(!amount) return {DomainStatus::Unavailable,{}};
+            int32_t splash=*amount;
+            if(skill.weapon->frenzy) {
+                splash=0;
+                if(const auto states=ports_.effects.unitEffects(actor.actor))
+                    if(const auto previous=states->findState(program.frenzyState.id))
+                        if(const auto stats=combatEffectNativeValues(previous->spec)) {
+                            const auto count=StatSnapshot{*stats}.get({rules.names.at("skill_frenzy"),0});
+                            const auto divisor=formulas.calculation(FormulaDomain::Skill,id,effectiveRank,"calc4");
+                            if(!divisor) return {DomainStatus::Unavailable,{}};
+                            splash=int32_t(std::min(double(INT32_MAX),double(*amount)*double(count)/double(std::max(uint32_t(*divisor),1u))));
+                        }
+            } else if(skill.assassin) {
+                splash=0;
+                for(const auto &charge:ports_.effects.progressiveCharges(actor.actor)) if(charge.skill==id && charge.count<3)
+                    splash=nativeMultiply(*amount,charge.count);
+            }
+            writes.emplace_back(StatKey{rules.names.at("inc_splash_radius"),0},splash);
+        } else append(formulas.auraStats(id,effectiveRank,6,true));
         if(program.whirlwind) {
             const auto length=formulas.calculation(FormulaDomain::Skill,id,effectiveRank,"auralencalc");
             if(!length) return {DomainStatus::Unavailable,{}};
@@ -291,6 +333,10 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(program.smite) release.shield=p.totals.equipment.shield;
     if(program.chargeVelocity>0) {
         release.charging=true;release.tick=actor.tick+1;
+        if(skill.pd2 && skill.pd2->doFunction==180) {
+            release.pd2Execution=std::make_shared<Pd2CastExecution>();
+            release.pd2Execution->chargeDistance=unitCoordinateDistance(int(p.position.x),int(p.position.y),int(destination.x),int(destination.y));
+        }
         release.chargeSpeed=float(p.definition.runVelocity)*25.f/16.f*float(program.chargeVelocity+std::max(50,p.totals.character.velocityPercent))/100.f;
     }
     auto cast=Cast{actor.actor,uint16_t(id),actor.tick,actor.sequence,actor.tick+uint64_t(volleyDuration),actor.area,target};
@@ -350,8 +396,17 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         if(next) {pending.unit=next;pending.unitType=ports_.players.findActor(next)?0:1;}
         else pending.rewindRemaining=1;
     };
+    if(pending.skill.pd2 && pending.skill.pd2->doFunction==180) {
+        const auto prepared=pd2ChargeBeforeHit(ports_,pending,actor);if(prepared!=DomainStatus::Applied) return prepared;
+    }
     if(pending.nativeMeleeOccurrence) {
         if(ports_.combat.advanceAuraPulse(actor.actor,*pending.nativeMeleeOccurrence,{actor.tick})==StepStatus::Blocked) return DomainStatus::Capacity;
+        if(pending.skill.pd2 && pending.skill.pd2->doFunction==174) {
+            const auto follow=pd2VengeanceAfterHit(ports_,pending,actor,runtime_->pd2Vengeance);if(follow!=DomainStatus::Applied) return follow;
+        }
+        if(pending.skill.pd2 && pending.skill.pd2->doFunction==175) {
+            const auto follow=activatePd2(pending,actor,destination);if(follow!=DomainStatus::Applied) return follow;
+        }
         pending.nativeMeleeOccurrence.reset();pending.nativeCallbackStarted=false;advanceVolley();return DomainStatus::Applied;
     }
     const auto &p=*ports_.players.find(actor.player);
@@ -398,6 +453,12 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         pending.skill.charge->item=source->second.handle();
     }
     std::optional<transactions::Plan> cost;
+    if(projectile && pending.skill.pd2 && !pending.skill.weapon->commonAttack) {
+        pending.weapon=*found;pending.unit=selectedTarget;
+        const auto result=activatePd2(pending,actor,destination);
+        if(result==DomainStatus::Applied) {ports_.itemTriggers.commit(std::move(*event.value),true);advanceVolley();}
+        return result;
+    }
     if(!pending.manaPaid || (projectile && !strafe && !pending.skill.weapon->noAmmo)) {
         auto prepared=ports_.inventory.weaponCost(actor,*found,pending.skill,!pending.manaPaid,projectile && !strafe);
         if(!prepared) return prepared.status;
@@ -433,6 +494,12 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         pending.nativeMeleeOccurrence=result.value->occurrence;
         pending.nativeCallbackStarted=true;
         if(ports_.combat.advanceAuraPulse(actor.actor,*pending.nativeMeleeOccurrence,{actor.tick})==StepStatus::Blocked) return DomainStatus::Capacity;
+        if(pending.skill.pd2 && pending.skill.pd2->doFunction==174) {
+            const auto follow=pd2VengeanceAfterHit(ports_,pending,actor,runtime_->pd2Vengeance);if(follow!=DomainStatus::Applied) return follow;
+        }
+        if(pending.skill.pd2 && pending.skill.pd2->doFunction==175) {
+            const auto follow=activatePd2(pending,actor,destination);if(follow!=DomainStatus::Applied) return follow;
+        }
         pending.nativeMeleeOccurrence.reset();pending.nativeCallbackStarted=false;
     }
     advanceVolley();return DomainStatus::Applied;

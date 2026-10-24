@@ -2,9 +2,11 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/monsters/native_birth.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "gameplay/monsters/native_spawn.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
 #include "gameplay/skills/druid_summon.hpp"
@@ -40,6 +42,10 @@ DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpe
             owner->persistent.difficulty,owner->persistent.player.level,owner->persistent.player.skillRanks,*skill.summon,{}};
         source.birthRandom=std::pair{ports_.random,random};
         source.effectiveRanks=owner->totals.skillRanks;source.token=nextPreparation_++;
+        if(pet && !pet->definition->inheritOwnerSkills) {
+            const auto palettes=ports_.monsters.read().componentPalettes.find(actor.area);
+            source.componentPalettes=palettes==ports_.monsters.read().componentPalettes.end()?area.definition.componentPalettes:palettes->second;
+        }
         if(shadow) source.ownerEquipment=owner->persistent;
         pending_.emplace(actor.actor,std::move(source));return {DomainStatus::Capacity,{}};
     }
@@ -51,10 +57,27 @@ DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpe
     if(prior->second.birthRandom && prior->second.birthRandom->first!=ports_.random) {
         cancel(actor.actor);return nativeSummon(actor,skill,target);
     }
+    if(prior->second.componentPalettes) {
+        const auto palettes=ports_.monsters.read().componentPalettes.find(actor.area);
+        const auto &current=palettes==ports_.monsters.read().componentPalettes.end()?area.definition.componentPalettes:palettes->second;
+        if(current!=*prior->second.componentPalettes) {cancel(actor.actor);return nativeSummon(actor,skill,target);}
+    }
     const auto ready=prepared_.find(actor.actor);if(ready==prepared_.end()) return {DomainStatus::Capacity,{}};
     if(!ready->second.deferred.empty()) {cancel(actor.actor);return {DomainStatus::Unavailable,{}};}
     const auto &prepared=ready->second;const auto origin=controlled?caster->position:owner->position;
-    const Vec center=blade || shadow?origin:target;
+    if(controlled && owner->rules.skills->pd2 && pet &&
+       (ai==AssassinPetDefinition::Ai::Sentry || ai==AssassinPetDefinition::Ai::DeathSentry)) {
+        size_t count{};
+        for(const auto &[id,entry]:state_.companions) {
+            const auto *body=ports_.monsters.find(id);
+            if(entry.owner==actor.player && !entry.removeAt && body && body->alive() &&
+               body->rule.petType==prepared.summon.petType) ++count;
+        }
+        // Current Do45 refuses a shadow's placement once the controlling
+        // player's trap pool is full; a player cast can replace the oldest.
+        if(count>=size_t(std::max(0,prepared.summon.limit))) {cancel(actor.actor);return {DomainStatus::Unavailable,{}};}
+    }
+    const Vec center=blade || (shadow && pet->definition->inheritOwnerSkills)?origin:target;
     const auto global=center+area.definition.origin;
     const auto room=ports_.areas.roomAtPosition(actor.area,origin,int(global.x),int(global.y));if(!room) return {DomainStatus::Unavailable,{}};
     auto roomSeed=ports_.areas.roomRandom(*room);if(!roomSeed) return {roomSeed.status,{}};
@@ -81,7 +104,7 @@ DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpe
     if(shadow) {
         auto &skills=summon.native->prePassiveSkills;
         if(!prepared.rule.baseSkillRanks.contains(0)) skills.emplace_back(0,1);
-        if(ai==AssassinPetDefinition::Ai::ShadowMaster) for(const auto &[id,row]:owner->rules.skills->formulas->skills) {
+        if(ai==AssassinPetDefinition::Ai::ShadowMaster && pet->definition->inheritOwnerSkills) for(const auto &[id,row]:owner->rules.skills->formulas->skills) {
             if(row.classId!=int(owner->definition.sourceRow)) continue;
             const auto definition=owner->rules.skills->definitions.find(id);
             if(definition!=owner->rules.skills->definitions.end() && definition->second.spec.summon &&
@@ -152,6 +175,10 @@ DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpe
         prior->second.birthRandom?std::optional{prior->second.birthRandom->second}:std::nullopt;
     if(nextRandom) plan.value->gameRandom=transactions::UnitRandomEdit{prior->second.birthRandom->first,*nextRandom};
     const auto result=ports_.transactions.commit(std::move(*plan.value));if(!result) return result;
+    if(prepared.componentPalettes) {
+        monsters::NativeBirthBatch components;components.palettes.emplace(actor.area,*prepared.componentPalettes);
+        ports_.monsters.publishBirthComponents(components);
+    }
     state_.companions.swap(next.companions);cancel(actor.actor);return {DomainStatus::Applied,std::monostate{}};
 }
 }

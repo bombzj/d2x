@@ -80,9 +80,16 @@ DomainResult<> System::startAssassinKick(Release &pending,const ActorContext &ac
     auto input=caster->formulaInput(ports_.effects,actor.tick);SkillFormulaValues values(*caster->programs()->formulas,input);
     if(role==AssassinProgram::DragonTail && !kick.modeStats) {
         CombatEffectSpec mode;mode.stacking=EffectStacking::ReplaceSource;mode.nativeDirectAllocation=true;mode.nativeValues.emplace();
+        if(pending.skill.pd2) mode.state=pending.skill.assassin->state;
         mode.source={CombatEffectSource::Skill,caster->id(),pending.skill.sourceId,pending.skill.rank};
         mode.modeActionRevision=caster->player?actor.sequence:caster->monster->nativeActionRevision+1;
-        const std::array<StatValue,1> writes{{{StatKey{caster->programs()->stats->names.at("attackrate"),0},values.skillNumber(pending.skill.sourceId,"param4")}}};
+        std::vector<StatValue> writes;
+        if(pending.skill.pd2) {
+            writes=values.auraStats(pending.skill.sourceId,pending.skill.rank,6,true);
+            const auto rate=caster->programs()->stats->names.at("attackrate");
+            const auto speed=std::find_if(writes.begin(),writes.end(),[&](const auto &write){return write.key.id==rate;});
+            if(speed!=writes.end()) writes.emplace_back(StatKey{caster->programs()->stats->names.at("other_animrate"),0},speed->value);
+        } else writes.emplace_back(StatKey{caster->programs()->stats->names.at("attackrate"),0},values.skillNumber(pending.skill.sourceId,"param4"));
         if(caster->player) {
             const auto *player=caster->player;
             auto states=ports_.effects.skillState(actor,std::move(mode),writes);if(!states) return fail(states.status);
@@ -141,6 +148,9 @@ DomainStatus System::activateAssassinKick(Release &pending,const ActorContext &a
                 ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,free->position},Fixed8{});
             if(!moved) return moved.status;
             kick.phase=Phase::FlightAllocation;
+            // Current PD2 Do178 teleports, allocates and drains within one
+            // callback. Retail Do52 waits for the second sequence event.
+            if(pending.skill.pd2) continue;
             if(pending.weaponHits.size()<2) return DomainStatus::Unavailable;
             kick.nextEvent=state_.casts.contains(actor.actor)?state_.casts.at(actor.actor).started+uint64_t(pending.weaponHits[1]):actor.tick+uint64_t(pending.weaponHits[1]-pending.weaponHits[0]);
             pending.tick=kick.nextEvent;return DomainStatus::Applied;

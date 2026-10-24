@@ -38,7 +38,7 @@ SkillCastSpec evaluateNativeSkill(const NativeCaster &caster,const effects::Syst
         // inherited stats are evaluated against that top-level player.
         auto ownerInput=skills::formulaInput(*caster.controller);SkillFormulaValues ownerValues(*programs->formulas,ownerInput);
         result.summon=resolveAssassinSummon(*definition.summon,rank,caster.controller->persistent.player.level,
-            caster.monster->rule.difficulty,ownerValues,skill);
+            caster.monster->rule.difficulty,ownerValues,skill,programs->pd2);
     }
     result.manaCost=result.startMana=0;return result;
 }

@@ -6,6 +6,7 @@
 #include "gameplay/skills/curse_resolve.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "server/systems/skills/system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "gameplay/effects/queries.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "server/player_store.hpp"
@@ -52,16 +53,19 @@ DomainResult<> System::castMonsterCurse(EntityId source,const AuraDefinition &a,
             const auto &rules=*recipient.monster->rule.stats;
             const auto &name=rules.definitions.at(write.key.id).name;
             if(name=="damageresist" || name=="magicresist" || name=="fireresist" || name=="lightresist" || name=="coldresist" || name=="poisonresist")
-                write.value=curseResistanceAdjustment(write.value,baseStatValue(rules,*recipient.monster->nativeStats->sources,write.key),true,recipient.monster->hireling);
+                write.value=curseResistanceAdjustment(write.value,baseStatValue(rules,*recipient.monster->nativeStats->sources,write.key),true,recipient.monster->hireling,
+                    ports_.monsters.skillPrograms() && ports_.monsters.skillPrograms()->pd2);
         }
         program.nativeValues->insert_or_assign(write.key,write.value);
     }
     program.modifiers=nativeCharacterModifiers(StatSnapshot{*program.nativeValues},*emitter->rule.stats,a.modifiers);
     CombatEffectSpec spec;spec.state=a.state;spec.source={CombatEffectSource::Skill,source,a.skill,a.rank};
     spec.stacking=EffectStacking::CurseLevel;spec.modifiers=program.modifiers;spec.nativeValues=program.nativeValues;
-    const auto duration=curseStateDuration(length,recipient.player?recipient.player->totals.character.combat.curseResistance:unitCurseResistance(target,tick),a.state.curse);
+    const auto duration=curseStateDuration(length,unitCurseResistance(target,tick),a.state.curse,
+        ports_.monsters.skillPrograms() && ports_.monsters.skillPrograms()->pd2);
     if(!duration) return {DomainStatus::Unavailable,{}};
     if(*duration) spec.duration=uint32_t(*duration);
+    if(!configurePd2Curse(spec,target,tick)) return {DomainStatus::Unavailable,{}};
     if(recipient.player) {
         const auto &player=*recipient.player;auto next=state_.players;auto &states=next[target].states;
         PlayerResourceTrace resources(player,tick,{},ports_.areas.statTime(player.area));

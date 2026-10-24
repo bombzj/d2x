@@ -18,8 +18,9 @@
 
 namespace d2x::server::actions {struct State;}
 namespace d2x::server::combat {
-struct State { std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}, reflectionOccurrence{},progressiveOccurrence{}; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; effects::System &effects; inventory::System &inventory; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; actions::State &actions; };
+struct NativeLifeNotification {uint64_t tick{};uint8_t sentLife{};bool dirty{};};
+struct State { std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}, reflectionOccurrence{},progressiveOccurrence{}; std::map<EntityId,NativeLifeNotification> lifeNotifications; std::map<EntityId,uint64_t> pd2AvoidUntil; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; effects::System &effects; inventory::System &inventory; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; actions::State &actions; uint32_t &pd2Random; };
 class System {
     State state_;
     const Ports ports_;
@@ -29,6 +30,10 @@ class System {
     DomainStatus prepareNativeSkillContact(SpellImpact &,ParticipantView,ParticipantView,TickContext);
     DomainStatus postNativeMeleeAllocation(SpellImpact &,TickContext);
     DomainStatus prepareNativeSmite(SpellImpact &,const PlayerState &,TickContext);
+    DomainStatus preparePd2SplashDamage(SpellImpact &,ParticipantView,TickContext);
+    DomainStatus preparePd2SplashDefense(SpellImpact &,ParticipantView,ParticipantView,TickContext);
+    void preparePd2LifeNotification(ParticipantView,TickContext);
+    void finishPd2LifeNotification(SpellImpact &,ParticipantView,bool getHit,bool softHit,int64_t damage,bool recovery,TickContext);
     DomainStatus prepareContactProcedures(SpellImpact &,ParticipantView,ParticipantView,TickContext);
     DomainStatus prepareMeleeDrainProcedures(SpellImpact &,ParticipantView,TickContext);
     bool nativeMeleeReach(const SpellImpact &,int range=-1) const;

@@ -35,13 +35,34 @@ DomainResult<> System::mindBlast(const ActorContext &actor,const SkillCastSpec &
             return low>=high?low:nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));
         };
         auto input=caster->formulaInput(*this,actor.tick,draw);SkillFormulaValues values(*rules.formulas,input);
-        auto radius=values.calculation(FormulaDomain::Skill,pulse.skill.sourceId,pulse.skill.rank,"prgcalc1");
+        auto radius=pulse.skill.pd2?values.calculation(FormulaDomain::Skill,pulse.skill.sourceId,pulse.skill.rank,"aurarangecalc"):
+            values.calculation(FormulaDomain::Skill,pulse.skill.sourceId,pulse.skill.rank,"prgcalc1");
         if(!radius) throw std::logic_error("Unavailable native Mind Blast progressive range");
         if(!*radius) radius=values.calculation(FormulaDomain::Skill,pulse.skill.sourceId,pulse.skill.rank,"aurarangecalc");
         if(!radius) throw std::logic_error("Unavailable native Mind Blast range");
         auto base=std::make_shared<const MissileHitDamage>(rollNativeSkillDamage(values,pulse.skill.sourceId,pulse.skill.rank,random));
         const auto &native=rules.formulas->skills.at(pulse.skill.sourceId);
-        auto targets=nativeAuraCandidateRecipients({caster->id(),actor.area,*radius,uint32_t(native.number("aurafilter")),false,
+        if(pulse.skill.pd2) {
+            // Current Do51 (RVA 0x3AD370) retains an owner-side stack list.
+            // Both radius and expiration use max(oldCount,1), before the
+            // count is incremented. PD2 does not run retail conversion.
+            const auto key=values.auraStatKey(pulse.skill.sourceId,1);
+            const auto duration=values.calculation(FormulaDomain::Skill,pulse.skill.sourceId,pulse.skill.rank,"auralencalc");
+            const auto maximum=values.calculation(FormulaDomain::Skill,pulse.skill.sourceId,pulse.skill.rank,"calc2");
+            const auto increment=values.calculation(FormulaDomain::Skill,pulse.skill.sourceId,pulse.skill.rank,"calc1");
+            if(!key || !duration || !maximum || !increment) throw std::logic_error("Missing PD2 Mind Blast stack inputs");
+            int count=0;
+            if(const auto *states=unitEffects(caster->id())) if(const auto *old=states->findState(pulse.skill.assassin->state.id))
+                if(old->spec.nativeValues) if(const auto it=old->spec.nativeValues->find(*key);it!=old->spec.nativeValues->end()) count=it->second;
+            const auto previous=std::max(count,1);
+            *radius=nativeAdd(*radius,nativeMultiply(previous-1,*increment));
+            CombatEffectSpec effect;effect.state=pulse.skill.assassin->state;effect.nativeState=effect.nativeDirectAllocation=true;
+            effect.nativeValues.emplace();effect.duration=uint32_t(nativeMultiply(previous,*duration));
+            effect.nativeExpiration=NativeStateExpiration::EvenZeroDuration;effect.stacking=EffectStacking::ReuseState;
+            effect.source={CombatEffectSource::Skill,caster->id(),pulse.skill.sourceId,pulse.skill.rank};
+            pulse.skill.appliedEffect=std::move(effect);pulse.skill.nativeEffectWrites={{*key,count<*maximum?nativeAdd(count,1):count}};
+        }
+        auto targets=nativeAuraCandidateRecipients({caster->id(),actor.area,*radius,pulse.skill.pd2?0x8583u:uint32_t(native.number("aurafilter")),false,
             pulse.center+area.definition.origin,NativeAuraTargetMode::TargetRange,actor.tick});
         if(caster->player) {
             const auto *player=caster->player;
@@ -55,6 +76,12 @@ DomainResult<> System::mindBlast(const ActorContext &actor,const SkillCastSpec &
         pulse.hitFlags=uint32_t(native.number("hitflags"));pulse.resultFlags=uint16_t(native.number("resultflags"));
         pulse.base=std::move(base);pulse.targets=std::move(targets);pulse.prepared=pulse.manaPaid=true;
     }
+    if(pulse.skill.pd2 && !pulse.progressivePosted) {
+        auto applied=pulse.skill;applied.manaCost=applied.startMana=0;applied.charge.reset();
+        const auto result=caster->monster?unitSkill(caster->id(),applied,actor.tick):this->skill(actor,applied);
+        if(!result) return result;
+        pulse.progressivePosted=true;
+    }
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     while(pulse.next<pulse.targets.size()) {
         const auto target=participants.find(pulse.targets[pulse.next]);
@@ -62,7 +89,7 @@ DomainResult<> System::mindBlast(const ActorContext &actor,const SkillCastSpec &
         if(pulse.phase==MindBlastPulse::Phase::Select) {
             if(!target.aliveIn(target.player?target.player->area:target.monster->area)) {++pulse.next;continue;}
             const auto *monster=target.monster;
-            const bool eligible=monster && !monster->hireling && monster->alignment()==UnitAlignment::Evil &&
+            const bool eligible=!pulse.skill.pd2 && monster && !monster->hireling && monster->alignment()==UnitAlignment::Evil &&
                 skillAiControlAllowed(monster->identity.rank,monster->rule.switchAi,monster->rule.boss);
             bool convertTarget=false;
             if(eligible) {

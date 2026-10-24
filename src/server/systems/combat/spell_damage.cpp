@@ -89,7 +89,18 @@ DomainResult<> System::enqueue(SpellImpact impact) {
     commitSpells(std::move(*plan.value)); return {DomainStatus::Applied, std::monostate{}};
 }
 StepStatus System::drainNativeMelee(EntityId source,uint64_t occurrence,TickContext tick) {
-    for(auto &impact:state_.spells) if(impact.source==source && impact.occurrence==occurrence) impact.nativeDrainHeld=false;
+    for(auto &impact:state_.spells) if(impact.source==source && impact.occurrence==occurrence) {
+        if(impact.weapon && impact.weapon->wearSkill.pd2 && impact.weapon->wearSkill.weapon &&
+            impact.weapon->wearSkill.weapon->doFunction==158 && impact.nativeSkill && impact.nativeSkill->directFunction!=158) {
+            // Do158 clears the primary AllocCombat's knockback before Drain.
+            impact.knockback=false;impact.weapon->knockback=false;
+            if(impact.areaDamage) {impact.areaDamage->resultFlags&=~uint16_t{8};if(impact.areaDamage->rolled && impact.areaDamage->rolled->value) impact.areaDamage->rolled->value->knockback=false;}
+            if(impact.missileRolled) impact.missileRolled->second.knockback=false;
+            if(impact.missileContact) impact.missileContact->damage.knockback=false;
+            if(impact.playerContact) impact.playerContact->hit.knockback=false;
+        }
+        impact.nativeDrainHeld=false;
+    }
     return resolveSpells(tick,std::pair{source,occurrence});
 }
 void System::discardNativeMelee(EntityId source,uint64_t occurrence) {
@@ -204,7 +215,9 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                         if(sourceArea) execution->attacker={source.player->player,source.id(),source.player->area,sourceArea->generation,0,tick.tick};
                     }
                     execution->adjustment.crushing=contact.playerExtras.crushing;
-                    if(contact.playerExtras.woundRate>0) execution->adjustment.wound=OpenWoundsApplication{contact.playerExtras.woundRate,source.id(),impact.binding.credit,tick.tick+200,tick.tick+1};
+                    execution->adjustment.suppressEvents=contact.suppressEvents;
+                    if(contact.pd2Wound) execution->adjustment.wound=contact.pd2Wound;
+                    else if(contact.playerExtras.woundRate>0) execution->adjustment.wound=OpenWoundsApplication{contact.playerExtras.woundRate,source.id(),impact.binding.credit,tick.tick+200,tick.tick+1};
                     execution->extras=contact.playerExtras;execution->itemEvents=std::move(contact.itemEvents);
                     execution->remainingLife=std::max<int64_t>(0,int64_t(player.persistent.player.hp.raw())-contact.playerExtras.crushing);
                     execution->nativeMissile=execution->hostile=true;execution->missile=!impact.melee;
@@ -216,6 +229,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     execution->manaDrain=rolled.mana;execution->staminaDrain=rolled.stamina;
                     execution->cold=rolled.coldFrames;execution->stun=rolled.stunFrames;execution->hitClass=rolled.hitClass;
                     execution->statuses={impact.source,rolled.burn,rolled.burnFrames};
+                    execution->statuses.suppressEvents=contact.suppressEvents;
                     execution->freeze=rolled.freezeFrames;execution->getHit=rolled.getHit;
                     execution->nativeMissile=execution->hostile=true;
                     execution->extras=contact.extras;execution->itemEvents=std::move(contact.itemEvents);

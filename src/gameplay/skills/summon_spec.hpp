@@ -32,6 +32,7 @@ struct NativeSummonStats {
     bool setBaseStats{true}; // SkillNec::SetSummonBaseStats is a separate call.
     bool allowZeroLife{}; // Native untargetable units can have MAXHP == 0.
     bool assassinShadow{}; // Do49 evaluates its posted slots against the pet.
+    bool individualShadowSlots{}; // PD2 fixes the retail all-slots-use-calc2 writer.
     std::optional<int> prePassiveLevel,finalLevel;
 };
 struct SummonSkillSpec {

@@ -24,7 +24,9 @@ void expect(const DataTable &t, size_t r, std::string_view field, std::string_vi
 SummonSkillSpec nativePet(const DataTable &monstats, const DataTable &monstats2, const DataTable &monlvl, std::string code) {
     const auto monster = rowOf(monstats, "Id", code);
     const auto extra = rowOf(monstats2, "Id", monstats.value(monster, "MonStatsEx"));
-    expect(monstats, monster, "noRatio", "1"); expect(monstats, monster, "AI", "NecroPet");
+    expect(monstats, monster, "noRatio", "1");
+    if(monstats.value(monster,"AI")!="NecroPet" && monstats.value(monster,"AI")!="BoneWall")
+        throw std::runtime_error("Unsupported native necromancer summon AI");
     SummonSkillSpec spec; spec.monster = std::move(code); spec.kind = monsterImplementation(spec.monster).kind;
     for (int difficulty = 0; difficulty < 3; ++difficulty) {
         const std::string suffix = difficulty == 0 ? "" : difficulty == 1 ? "(N)" : "(H)";
@@ -51,8 +53,8 @@ SummonSkillSpec nativePet(const DataTable &monstats, const DataTable &monstats2,
         attributes.poisonResist = resistance("ResPo" + suffix);
         attributes.walkSpeed = float(number(monstats, monster, "Velocity") * 256 * 75 / 100) * 25.f / 4096.f;
         stats.monsterResistanceRules = true; stats.undead = monstats.value(monster, "undead") == "1";
-        stats.followVelocityBonus = std::min(100, 100 * number(monstats, monster, "Run") /
-            number(monstats, monster, "Velocity") - 100);
+        const auto velocity=number(monstats,monster,"Velocity");
+        stats.followVelocityBonus=velocity?std::min(100,100*number(monstats,monster,"Run")/velocity-100):0;
         stats.block = number(monstats, monster, "ToBlock" + suffix);
         stats.collisionSize = number(monstats2, extra, "SizeX");
         stats.damageRegen = number(monstats, monster, "DamageRegen");
@@ -72,6 +74,9 @@ SummonSkillSpec nativePet(const DataTable &monstats, const DataTable &monstats2,
     }
     return spec;
 }
+}
+SummonSkillSpec prepareNativeNecromancerPet(const ClassicData &data,std::string code) {
+    return nativePet(data.tables.at("monstats"),data.tables.at("monstats2"),data.tables.at("monlvl"),std::move(code));
 }
 void loadRemainingNecromancerSummons(SkillCatalog &catalog, const DataTable &skills, const DataTable &monstats,
     const DataTable &monstats2, const DataTable &monlvl, const DataTable &sounds, const DataTable &missiles, const CombatStateCatalog &states, Archives &archives, const ClassicData &content) {

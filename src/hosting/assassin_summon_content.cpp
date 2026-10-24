@@ -24,7 +24,8 @@ namespace {
 void shadowEquipment(server::companions::Prepared &result,Archives &archives,const ClassicData &data) {
     const auto &source=result.source;const auto &pet=*source.summon.assassin;auto &random=result.random;
     const DataTable table(archives.read("data/global/excel/monequip.txt"));
-    auto &equipment=result.equipment;equipment.player.id=EntityId{1};equipment.player.characterClass="ass";
+    const auto &characterClass=pet.definition->transformClass;
+    auto &equipment=result.equipment;equipment.player.id=EntityId{1};equipment.player.characterClass=characterClass;
     equipment.player.level=source.ownerLevel;equipment.containers.equipment=EntityId{1};
     equipment.inventory.containers.emplace(EntityId{1},ContainerState{EntityId{1},{EntityId{1},ContainerKind::Equipment,int(EquipmentSlot::Count),1}});
     std::map<EquipmentSlot,ItemDefinition> definitions;std::set<EntityId> unidentified;
@@ -63,12 +64,12 @@ void shadowEquipment(server::companions::Prepared &result,Archives &archives,con
         loadout.inventory.push_back({&stored,&bound});
     }
     auto &stats=result.summon.stats;auto &attributes=stats.attributes;
-    const EquipmentActor actor{"ass",attributes.strength,attributes.dexterity,stats.level};
+    const EquipmentActor actor{characterClass,attributes.strength,attributes.dexterity,stats.level};
     std::vector<EquipmentContribution> contributions;
     EquipmentContributionSource instructions{{},[&](const ItemInstance &item,int level){return resolveItemStats(data,item,level);},{},{},{},
         [&](EquipmentContribution value){contributions.push_back(std::move(value));}};
     const auto modifiers=deriveEquipmentModifiers(loadout,actor,instructions);
-    const EquipmentActor improved{"ass",actor.strength+modifiers.strength,actor.dexterity+modifiers.dexterity,stats.level};
+    const EquipmentActor improved{characterClass,actor.strength+modifiers.strength,actor.dexterity+modifiers.dexterity,stats.level};
     auto gear=deriveEquipmentStats(loadout,improved,attributes.defense+modifiers.defense,modifiers.combat,attributes.attackRating+modifiers.attackRating);
     for(auto &weapon:gear.weapons) if(weapon.item) {
         const auto &definition=*data.items.find(equipment.inventory.items.at(weapon.item).definition);
@@ -89,7 +90,7 @@ server::companions::Prepared prepareAssassinSummon(const server::companions::Pre
     server::companions::Prepared result;result.source=source;result.summon=source.summon;result.random=source.seed;
     if(!source.summon.assassin || !result.summon.native) throw std::runtime_error("Missing native assassin summon definition");
     const auto &pet=*source.summon.assassin->definition;
-    MonsterCatalog catalog(archives,data.tables.at("monstats"));const auto *record=catalog.find(source.summon.monster);
+    MonsterCatalog catalog(archives,data.tables.at("monstats"),data.pd2Host?MonsterPreparation::TownActors:MonsterPreparation::FullRules);const auto *record=catalog.find(source.summon.monster);
     if(!record || record->index!=pet.nativeClass) throw std::runtime_error("Missing original assassin summon identity");
     if(pet.warp) {
         const auto *probe=catalog.find("necroskeleton");
@@ -107,14 +108,24 @@ server::companions::Prepared prepareAssassinSummon(const server::companions::Pre
     rule.hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
     rule.demon=record->demon;rule.undead=record->undead;rule.corpseSelectable=false;rule.noTreasure=rule.noExperience=true;
     rule.petType=source.summon.petType;rule.damageRegen=result.summon.native->base.damageRegen;
-    if(!prepareMonsterComponents(data,*record,rule) || rule.totalPieces>2)
+    if(!prepareMonsterComponents(data,*record,rule) || (rule.totalPieces>2 && !source.componentPalettes))
         throw std::runtime_error("Missing native assassin pet component preparation");
-    result.components=chooseMonsterComponents(rule.componentCounts,{},result.random);
-    limitedRandom(result.random,1);result.summon.native->initialLife=result.summon.native->base.attributes.maxLifeFixed;
+    if(source.componentPalettes) {
+        result.componentPalettes=source.componentPalettes;
+        result.components=chooseRegionMonsterComponents(rule.componentCounts,record->index,rule.totalPieces,*result.componentPalettes,result.random);
+    } else result.components=chooseMonsterComponents(rule.componentCounts,{},result.random);
+    const auto lifeRange=pet.lifeRanges.at(size_t(source.difficulty));
+    const auto life=rollMonsterLife(lifeRange.first,lifeRange.second,result.random);
+    result.summon.native->initialLife=Fixed8::fromRaw(nativeShiftLeft(std::min(life,(1<<23)-1),8));
     std::string token=record->token,weaponClass=record->baseWeapon;
     if(pet.warp) {
         shadowEquipment(result,archives,data);weaponClass=result.equipmentStats->animationClass;
-        const auto &character=*std::find_if(data.characters.begin(),data.characters.end(),[](const auto &value){return value.code=="ass";});
+    }
+    const bool transformed=pet.warp && !pet.transformClass.empty();
+    if(transformed) {
+        const auto characterRecord=std::find_if(data.characters.begin(),data.characters.end(),[&](const auto &value){return value.code==pet.transformClass;});
+        if(characterRecord==data.characters.end()) throw std::runtime_error("Missing native summon disguise character");
+        const auto &character=*characterRecord;
         token=character.appearance;rule.nativeVelocity=character.walkVelocity;
         auto &base=result.summon.native->base;
         base.attributes.walkSpeed=float(character.walkVelocity*256*75/100)*25.f/4096.f;
@@ -127,13 +138,14 @@ server::companions::Prepared prepareAssassinSummon(const server::companions::Pre
         }
         for(const auto mode:{std::string_view("gh"),std::string_view("bl")}) {
             const auto clock=loadMonsterMotionTiming(animations,token,mode,weaponClass);
-            if(!clock) throw std::runtime_error("Missing transformed shadow recovery animation");
+            if(!clock && mode=="bl" && !result.equipmentStats->shield) continue;
+            if(!clock) throw std::runtime_error("Missing transformed shadow recovery animation: "+token+std::string(mode)+weaponClass);
             const AnimationTiming timing{clock->frames,clock->speed};
             (mode=="gh"?rule.hitRecoveryAnimation:rule.blockAnimation)=timing;
             (mode=="gh"?rule.hitRecoveryTicks:rule.blockTicks)=animationSecondsTicks(clock->duration);
         }
     } else if(!prepareMonsterLifecycle(archives,data,animations,*record,rule)) throw std::runtime_error("Missing original assassin pet lifecycle");
-    const auto death=loadMonsterMotionTiming(animations,token,"dt",pet.warp?"hth":monsterModeWeapon(archives,token,"dt",weaponClass));
+    const auto death=loadMonsterMotionTiming(animations,token,"dt",transformed?"hth":monsterModeWeapon(archives,token,"dt",weaponClass));
     if(!death) throw std::runtime_error("Missing original assassin pet death animation");
     rule.deathTicks=animationSecondsTicks(death->duration);
     if(!pet.warp && pet.summonMode=="S1") {
@@ -152,8 +164,8 @@ server::companions::Prepared prepareAssassinSummon(const server::companions::Pre
             }
         }
         for(auto &c:lower) c=char(std::tolower(static_cast<unsigned char>(c)));
-        const auto displayMode=pet.warp && lower=="a1"?std::string("kk"):lower;
-        const auto weapon=pet.warp?weaponClass:monsterModeWeapon(archives,token,displayMode,weaponClass);
+        const auto displayMode=transformed && pet.transformClass=="ass" && lower=="a1"?std::string("kk"):lower;
+        const auto weapon=transformed?weaponClass:monsterModeWeapon(archives,token,displayMode,weaponClass);
         if(!mode.starts_with("seq_")) {
             auto key=token+displayMode+weapon;
             for(auto &c:key) c=char(std::toupper(static_cast<unsigned char>(c)));
@@ -182,7 +194,7 @@ server::companions::Prepared prepareAssassinSummon(const server::companions::Pre
         const auto skill=pet.skills[index];if(skill<0 || !rule.baseSkillRanks.contains(skill)) continue;
         prepareAction(skill,std::string(stats.value(record->sourceRow,"Sk"+std::to_string(index+1)+"mode")));
     }
-    if(pet.warp) {
+    if(pet.warp && pet.inheritOwnerSkills) {
         for(const auto &[skill,definition]:data.nativeFormulas->skills) {
             if(definition.classId!=data.nativeFormulas->skills.at(pet.skills[0]).classId || rule.skillActions.contains(uint16_t(skill))) continue;
             const auto mode=std::string(definition.reference("monanim"));

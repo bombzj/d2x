@@ -260,7 +260,10 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
     }
     if(n("TargetAlly") || n("TargetPet")) {
         // SrvDo025 uses SUNIT_AreUnitsAligned, including unowned GOOD units.
-        if(n("srvdofunc")==25) return (allied(unit) || hostileSource(unit)) &&
+        const auto profile=session_.read().protocolProfile;
+        const bool pd2HolyLight=n("srvdofunc")==176 && (profile==net::protocol::clientCompatibility(
+            net::protocol::ClientProfile::Pd2CnNormal20261020).id || profile==net::protocol::clientCompatibility(net::protocol::ClientProfile::Pd2Local).id);
+        if(n("srvdofunc")==25 || pd2HolyLight) return (allied(unit) || hostileSource(unit)) &&
             (unit.key.type==1 ? !onlineMonsterCorpse(unit) : unit.key.type==0 &&
              !session_.read().world.corpseOwners.contains(unit.key.id) &&
              (unit.nativeMode ? unit.mode!=0 && unit.mode!=17 : unit.mode!=8 && unit.mode!=9));

@@ -10,7 +10,8 @@
 #include <vector>
 
 namespace d2x::server::effects {struct BladeShieldPulse;struct MindBlastPulse;struct CorpseExplosionPulse;struct NativeAreaPulse;struct MonsterCursePulse;}
-namespace d2x::server::skills {struct AssassinKickExecution;struct DruidMeleeExecution;struct WeaponMeleeExecution;}
+namespace d2x::server::effects {struct Pd2DarkPactPulse;}
+namespace d2x::server::skills {struct AssassinKickExecution;struct DruidMeleeExecution;struct WeaponMeleeExecution;struct Pd2CastExecution;}
 namespace d2x::server::combat {struct NativeSkillContact;}
 namespace d2x::server::monsters {struct SkillChildrenExecution;}
 namespace d2x::server::actions {
@@ -55,9 +56,11 @@ struct SkillRelease {
     std::shared_ptr<effects::MindBlastPulse> mindBlastPulse{};
     std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion{};
     std::shared_ptr<effects::NativeAreaPulse> directSkill{};
+    std::shared_ptr<effects::Pd2DarkPactPulse> pd2DarkPact{};
     std::shared_ptr<skills::AssassinKickExecution> assassinKick{};
     std::shared_ptr<skills::DruidMeleeExecution> druidMelee{};
     std::shared_ptr<skills::WeaponMeleeExecution> weaponMelee{};
+    std::shared_ptr<skills::Pd2CastExecution> pd2Execution{};
 };
 struct MonsterRelease {
     MonsterCastRequest request;

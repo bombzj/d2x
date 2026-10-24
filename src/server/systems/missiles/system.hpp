@@ -22,6 +22,7 @@ namespace d2x::server {struct SkillRules;struct RoomUnitRegistration;}
 namespace d2x {class SkillFormulaValues;}
 namespace d2x::server::actions {class State;}
 namespace d2x::server::missiles {
+inline constexpr uint32_t pd2SkillMissileTimerHandler=0x5044324du;
 class NativeBirthPublication;
 struct Ports {
     AreaStore &areas; const PlayerStore &players; monsters::System &monsters;
@@ -35,6 +36,7 @@ struct Ports {
     world::System &world;
     objects::System &objects;
     companions::System &companions;
+    uint32_t &pd2Random;
 };
 class System {
     friend class NativeBirthPublication;
@@ -58,10 +60,13 @@ class System {
     void planCollisionChild(Advance &,int radius,int period,int definition,uint16_t mask) const;
     std::unique_ptr<Advance> advanceNative(const Missile &) const;
     std::optional<uint8_t> nativeHit(Advance &,EntityId) const;
+    std::optional<uint8_t> pd2Hit(Advance &,EntityId) const;
+    bool preparePd2Program(Advance &) const;
     std::unique_ptr<Advance> immediateHit(const Missile &,EntityId,uint64_t tick) const;
     std::optional<int32_t> missileSkillFormula(Advance &,std::string_view) const;
     std::optional<int32_t> missileSelfFormula(Advance &,std::string_view,int skill=-1,int rank=-1) const;
     RuleNumber withMissileOwnerFormula(Advance &,const std::function<RuleNumber(SkillFormulaValues &)> &) const;
+    RuleNumber withMissileOwnerRandom(Advance &,const std::function<RuleNumber(SkillFormulaValues &,uint64_t &)> &) const;
     void initializePierce(Missile &) const;
     void initializePath(Missile &) const;
     void initializeGuidance(Missile &,EntityId target,Vec point) const;
@@ -120,5 +125,6 @@ class System {
     void removeTransient(EntityId);
     DomainResult<DirectContact> directContact(const Spawn &,std::vector<EntityId>);
     DomainResult<> frameEvent(EntityId,TickContext);
+    DomainResult<> pd2SkillMissileEvent(const FrameEvent &,TickContext);
 };
 }

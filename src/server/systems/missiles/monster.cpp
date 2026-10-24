@@ -44,6 +44,8 @@ struct NativeBirthPublication::Data {
     std::map<EntityId,Missile> missiles;
     std::vector<System::Admission> timers;
     std::vector<DomainFact> facts;
+    std::optional<uint32_t> pathSeedExpected;
+    std::map<EntityId,uint32_t> pathSeeds;
 };
 NativeBirthPublication::NativeBirthPublication(std::unique_ptr<Data> data):data_(std::move(data)) {}
 NativeBirthPublication::~NativeBirthPublication()=default;
@@ -54,6 +56,10 @@ bool NativeBirthPublication::changesOwnerSeed() const {return data_->ownerExpect
 bool NativeBirthPublication::validate(size_t prefix) const {
     const auto &d=*data_;const auto &ports=d.system->ports_;
     if(d.published || d.prefix!=prefix || ports.ids.cursor()!=d.cursor || ports.random!=d.randomExpected) return false;
+    if(d.pathSeedExpected) {
+        const auto current=d.system->runtime_->pd2PathSeeds.find(d.owner);
+        if((current==d.system->runtime_->pd2PathSeeds.end()?0:current->second)!=*d.pathSeedExpected) return false;
+    }
     const auto *area=ports.areas.find(d.context.area);
     if(!area || area->generation!=d.context.areaGeneration) return false;
     if(d.monster) {
@@ -79,6 +85,9 @@ void NativeBirthPublication::publish() noexcept {
             ports.transactions.consumeRandom(d.context,d.ownerExpected,d.ownerNext);
         if(!consumed) std::terminate();
     }
+    for(const auto &[id,seed]:d.pathSeeds)
+        if(const auto current=system.runtime_->pd2PathSeeds.find(id);current!=system.runtime_->pd2PathSeeds.end()) current->second=seed;
+    system.runtime_->pd2PathSeeds.merge(d.pathSeeds);
     for(size_t i=0;i<d.missiles.size();++i) ports.ids.allocate();
     system.state_.missiles.merge(d.missiles);system.publishTimers(d.timers);
     ports.random=d.randomNext;d.published=true;
@@ -120,6 +129,8 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
         }
         spawn.nativeSkill=request.skill;spawn.parameters=request.parameters;spawn.directConstructor=!request.copyMonsterAttackBonus;spawn.distanceCountdown=request.distanceCountdown;spawn.startFrame=request.startFrame;spawn.totalFrames=request.totalFrames;
         spawn.guidedTarget=request.guidedTarget;
+        spawn.initialDamagePercent=request.initialDamagePercent;
+        spawn.weapon=request.weapon;
         if(request.nativeVelocity) {
             if(*request.nativeVelocity<0) return {DomainStatus::InvalidRequest,{}};
             spawn.nativeVelocityRaw=request.velocityFixed?*request.nativeVelocity:nativeShiftLeft(*request.nativeVelocity,8);
@@ -129,7 +140,42 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
         bool drawn{};auto built=buildMonster(spawn,data->randomNext,data->ownerNext,drawn);
         if(!built) return {built.status,{}};
         for(auto &missile:*built.value) {
-            if(request.initialization==NativeSpawn::Initialization::ChargedSkill || request.initialization==NativeSpawn::Initialization::DiabWall) {
+            if(request.activateFrame) missile.nativeActivateFrame=nativeMissileFrameCount(nativeSubtract(missile.nativeTotalFrames,*request.activateFrame));
+            if(request.attackBonus && missile.nativeDamage) missile.nativeDamage->attackBonus=*request.attackBonus;
+            if(request.damageAdds && missile.nativeDamage) {
+                auto &damage=missile.nativeDamage->data;const auto &adds=*request.damageAdds;
+                damage.physical.minimum=nativeAdd(damage.physical.minimum,adds.minimumPhysical);
+                damage.physical.maximum=nativeAdd(damage.physical.maximum,adds.maximumPhysical);
+                damage.poison.minimum=nativeAdd(damage.poison.minimum,adds.minimumPoison);
+                damage.poison.maximum=nativeAdd(damage.poison.maximum,adds.maximumPoison);
+                damage.poisonLength=nativeAdd(damage.poisonLength,adds.poisonLength);
+                damage.poisonCount=nativeAdd(damage.poisonCount,adds.poisonCount);
+            }
+            missile.suppressSourceEvents=request.suppressSourceEvents;
+            if(request.initialization==NativeSpawn::Initialization::Pd2Firestorm) {
+                if(!data->pathSeedExpected) {
+                    const auto current=runtime_->pd2PathSeeds.find(lead.owner);
+                    data->pathSeedExpected=current==runtime_->pd2PathSeeds.end()?0:current->second;
+                    data->pathSeeds.emplace(lead.owner,*data->pathSeedExpected);
+                }
+                auto &seed=data->pathSeeds.at(lead.owner);
+                seed=pd2MissilePathSeed(seed,monster?1:0,uint32_t(lead.owner.value));
+                const auto frames=std::min(missile.nativeTotalFrames,77);
+                if(missile.nativeTotalFrames>77) {missile.nativeTotalFrames=77;missile.setCurrentFrame(77);}
+                missile.random=(missile.random&0xffffffff00000000ULL)|seed;
+                const auto path=chargedBoltPath(missile.position,request.target,frames,missile.random);
+                missile.path.assign(path.begin(),path.end());
+            } else if(request.initialization==NativeSpawn::Initialization::BlessedHammer) {
+                const auto path=blessedHammerPath(missile.position);missile.path.assign(path.begin(),path.end());
+                const auto &catalog=*ports_.nativeRules->formulas;
+                const auto concentration=catalog.skillIds.find("concentration");
+                if(concentration!=catalog.skillIds.end() && missile.nativeDamage) {
+                    const auto state=catalog.skills.at(concentration->second).auraState;
+                    const auto bonus=nativeMultiplyDivide(ports_.effects.stateModifiers(request.owner,state,request.tick).combat.damagePercent,
+                        catalog.skills.at(request.skill).number("param1"),100);
+                    missile.nativeDamage->data.magic=scaleMissileDamage(missile.nativeDamage->data.magic,nativeAdd(100,bonus));
+                }
+            } else if(request.initialization==NativeSpawn::Initialization::ChargedSkill || request.initialization==NativeSpawn::Initialization::DiabWall) {
                 missile.pathInitialization={request.initialization==NativeSpawn::Initialization::DiabWall?
                     MissilePathInitialization::Kind::DiabWall:MissilePathInitialization::Kind::ChargedSkill,request.initializationIndex};initializePath(missile);
             } else if(request.initialization!=NativeSpawn::Initialization::None) {
@@ -280,7 +326,7 @@ DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &requ
         if(playerEmitter) {missile.player=player->player;missile.playerActor=player->actor;}
         if(source && (source->hireling || source->necroSummon || source->conversion || source->hydra()) && source->owner) missile.player=*source->owner;
         missile.area=request.area;missile.generation=request.generation;missile.created=missile.executionTick=request.tick;
-        missile.parameters=request.parameters;
+        missile.parameters=request.parameters;missile.initialDamagePercent=request.initialDamagePercent;
         if(rule.serverHitFunction==12) missile.parameters[0]=rule.chainCount;
         missile.guidance=request.guidedTarget.value_or(!request.directConstructor && source?source->movementTarget:EntityId{});
         missile.remainingHits=rule.chainCount;missile.initializeFrames(request.totalFrames.value_or(rule.frames),rule.activate,request.startFrame);missile.definition=rule.definition;
@@ -324,6 +370,10 @@ DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &requ
         if(rule.behavior==MonsterMissileRule::Behavior::Charged) {
             missile.pathInitialization={MissilePathInitialization::Kind::ChargedSkill,int(index%2)};initializePath(missile);
         }
+        if(request.weapon) {
+            missile.weapon=prepareWeaponSkillProcedures(request.weapon->weapon,buffs.combat,
+                request.weapon->wearSkill,request.weapon->level,true);
+        }
         NativeDamage damage;damage.rule=rule;damage.attackBonus=missile.enemy->rating;
         damage.data=prepareDamage(missile,rule,request.attack.modeStats,ownerRandom,ownerDrawn,nullptr,{},&damage.monsterTypeBonuses);
         missile.nativeDamage=std::move(damage);initializePierce(missile);initializeGuidance(missile,missile.guidance,aim);missile.enemy->criticalChance=request.critical;
@@ -353,7 +403,7 @@ DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &requ
             if(!values || !source->rule.stats) return {DomainStatus::Unavailable,{}};
             hit.knockback=logicalStatValue(*values,*source->rule.stats,"item_knockback")!=0;
         }
-        missile.enemy->hit=hit;missile.enemy->weapon=std::move(hirelingWeapon);
+        missile.enemy->hit=hit;missile.enemy->weapon=request.weapon?missile.weapon:std::move(hirelingWeapon);
         if(creationRoom(missile) && townAllowed(missile)) launched.push_back(std::move(missile));
     }
     return {DomainStatus::Applied,std::move(launched)};

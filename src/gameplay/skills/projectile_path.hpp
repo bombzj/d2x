@@ -46,6 +46,8 @@ Vec missileWallDirection(Vec caster, Vec target);
 std::vector<Vec> missileFanTargets(Vec origin, Vec target, int count, Vec facing);
 struct MissileFanLayout { Vec first, step; };
 MissileFanLayout pd2MissileFanLayout(Vec origin, Vec target, int count);
+Vec pd2MissileEndpoint(Vec origin,Vec target,int distance);
+uint32_t pd2MissilePathSeed(uint32_t previous,uint32_t type,uint32_t id);
 // Native GUID order: next larger eligible GUID, then wrap to the smallest.
 uint64_t missileChainSuccessor(uint64_t hit, std::span<const uint64_t> eligible);
 // Blizzard uses independent client/server random streams but the same seeded

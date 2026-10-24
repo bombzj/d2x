@@ -99,12 +99,12 @@ SkillCastSpec evaluate(const PlayerState &player, int skill, int rank) {
         {rank, player.persistent.player.skillRanks,player.totals.character.combat.fireSkillDamagePercent,
          player.totals.character.combat.lightningSkillDamagePercent, player.totals.character.combat.coldSkillDamagePercent,
          player.totals.character.combat.poisonSkillDamagePercent,&formulas});
-    if(definition.summon && definition.summon->assassin) result.summon=resolveAssassinSummon(*definition.summon,rank,player.persistent.player.level,player.persistent.difficulty,formulas,skill);
+    if(definition.summon && definition.summon->assassin) result.summon=resolveAssassinSummon(*definition.summon,rank,player.persistent.player.level,player.persistent.difficulty,formulas,skill,rules.pd2);
     else if(definition.summon && definition.summon->druid) result.summon=resolveDruidSummon(*definition.summon,rank,player.persistent.difficulty,formulas,skill);
     else if(definition.summon && definition.summon->amazon) result.summon=resolveAmazonSummon(*definition.summon,rank,player.persistent.player.level,player.persistent.difficulty,player.totals.character,player.persistent.player.skillRanks,&formulas,skill);
     else if(definition.summon) {
         const auto effective=[&](int id) {const auto found=player.totals.skillRanks.find(id);return found==player.totals.skillRanks.end()?0:found->second;};
-        result.summon=resolveSummon(*definition.summon,rank,effective(definition.summon->masterySkill),effective(definition.summon->resistSkill),player.persistent.player.level,player.persistent.difficulty,player.persistent.player.skillRanks,&formulas,skill);
+        result.summon=resolveSummon(*definition.summon,rank,effective(definition.summon->masterySkill),effective(definition.summon->resistSkill),player.persistent.player.level,player.persistent.difficulty,player.persistent.player.skillRanks,&formulas,skill,rules.pd2);
     }
     return result;
 }

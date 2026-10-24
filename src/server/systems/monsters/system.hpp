@@ -43,6 +43,7 @@
 #include <vector>
 namespace d2x { struct PersistentCharacter; struct MonsterSnapshot; }
 namespace d2x::server::effects {struct AuraUnitPublication;}
+namespace d2x::server::reactions {class ItemTriggers;}
 
 namespace d2x::server {struct HydraRules;struct SkillRules;struct RoomUnitRegistration;struct NpcRule;struct RoomView;struct RoomRandomLoan;}
 namespace d2x::server::monsters {
@@ -273,7 +274,7 @@ struct State {
     // Scoped to the actual instance/area/class, including dynamically born units.
     ComponentPaletteState componentPalettes;
 };
-struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; std::shared_ptr<const SkillRules> skillPrograms; loot::System &loot; const spatial::System &spatial; };
+struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; std::shared_ptr<const SkillRules> skillPrograms; loot::System &loot; const spatial::System &spatial; reactions::ItemTriggers &itemTriggers; };
 class System {
     friend class NativeBirthPublication;
     State state_;

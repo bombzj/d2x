@@ -40,7 +40,8 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
         ++seedIndex;
         return *value;
     };
-    if (!cache.monsters) cache.monsters = std::make_shared<const MonsterCatalog>(archives, data.tables.at("monstats"));
+    if (!cache.monsters) cache.monsters = std::make_shared<const MonsterCatalog>(archives, data.tables.at("monstats"),
+        data.pd2Host?MonsterPreparation::TownActors:MonsterPreparation::FullRules);
     auto &world = cache.worlds[request.request.source.difficulty];
     if (!world) world = std::make_shared<const WorldCatalog>(archives, request.request.source.difficulty);
     LootPlan plan;

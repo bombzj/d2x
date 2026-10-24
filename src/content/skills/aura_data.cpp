@@ -1,6 +1,7 @@
 #include "table_values.hpp"
 #include "aura_data.hpp"
 #include "content/classic_data.hpp"
+#include "content/pd2/aura_data.hpp"
 #include <array>
 #include <stdexcept>
 #include <string>
@@ -107,7 +108,9 @@ AuraSkillSpec prepare(const ClassicData &data, int skill, int prayerRank) {
     return spec;
 }
 } // namespace
-AuraSkillSpec prepareAura(const ClassicData &data, int skill) { return prepare(data, skill, 1); }
+AuraSkillSpec prepareAura(const ClassicData &data, int skill) {
+    return data.pd2Host?preparePd2Aura(data,skill):prepare(data,skill,1);
+}
 void loadAuraSkills(ClassicData &data) {
     const auto &table = data.tables.at("skills");
     auto programs=std::make_shared<std::map<int,AuraSkillSpec>>();
@@ -140,6 +143,16 @@ void loadAuraSkills(ClassicData &data) {
     data.nativeAuraPrograms=std::move(programs);
 }
 AuraDefinition resolveBaseAura(const ClassicData &data, int skill, int rank) {
+    if(data.pd2Host) {
+        // Monster enchantments and AI carry only the skill/state identity to
+        // the server. Their actual caster stats/ranks are available there;
+        // do not feed PD2 formulas through the retail content-only evaluator.
+        const auto spec=preparePd2Aura(data,skill);
+        AuraDefinition result;result.skill=skill;result.rank=rank;
+        result.state=spec.state;result.ownerState=spec.ownerState;result.filter=spec.filter;
+        result.periodFrames=spec.periodFrames;result.serverDoFunction=spec.serverDoFunction;
+        return result;
+    }
     return evaluateBaseAura(prepare(data, skill, 0), rank);
 }
 std::optional<AuraDefinition> resolveAura(const ClassicData &data, int skill, int rank,
@@ -147,6 +160,7 @@ std::optional<AuraDefinition> resolveAura(const ClassicData &data, int skill, in
     int lightningMasteryPercent, int coldDamagePercent, int prayerRank) {
     const auto *record = data.skills.find(skill);
     if (!record || !record->auraImplemented || rank <= 0) return std::nullopt;
+    if(data.pd2Host) return resolveBaseAura(data,skill,rank);
     return evaluateAura(prepare(data, skill, prayerRank), rank, ranks, fireMasteryPercent,
         lightningMasteryPercent, coldDamagePercent, prayerRank);
 }

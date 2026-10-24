@@ -12,7 +12,7 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
         result.reason = std::move(reason);
         return result;
     };
-    if (data.profile != "lod-named-txt-v1")
+    if (data.profile != "lod-named-txt-v1" && !data.pd2Host)
         return defer("Unsupported monster loot data profile");
     if (request.difficulty < 0 || request.difficulty > 2)
         return defer("Invalid loot difficulty");
@@ -84,6 +84,8 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
     if (questClass && request.questFirstKill)
         slot = 3;
     auto entry = source->treasureClasses[request.difficulty][slot];
+    if(!superUnique && !entry && !table.value(row,"TreasureClass"+std::to_string(slot+1)+suffix[request.difficulty]).empty())
+        return defer("Unknown monster treasure class in source table");
     if (superUnique)
         result.treasureClass = superUnique->treasureClasses[request.difficulty];
     else if (entry)

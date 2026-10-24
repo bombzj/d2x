@@ -86,6 +86,7 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
         execution.callbacks=ports_.effects.prepareDamageEvents(impact.source,target.actor,execution.defense.damage.channels[0].dealt,
             execution.defense.damage.dealt,execution.missile,impact.returnFire || !execution.missile,tick.tick,impact.reaction);
         execution.callbacks.suppressAttacker=impact.suppressSourceEvents;
+        if(execution.adjustment.suppressEvents) execution.callbacks.suppress=true;
         if(impact.nativeSkill && impact.nativeSkill->melee) execution.callbacks.thorns=0;
         if(impact.nativeDamageFlagsOnly && impact.areaDamage && !(impact.areaDamage->hitFlags&0x20)) execution.callbacks.suppress=true;
         execution.callbacksPrepared=true;
@@ -110,6 +111,7 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
         reception.drain.stamina=impact.missileContact->drain.staminaField;
     }
     if(!execution.damageCommitted) {
+        preparePd2LifeNotification({&target,nullptr},tick);
         // Held AllocCombat contacts do not reserve the defender's future
         // recovery seed. Earlier contacts and callbacks may have consumed it.
         const auto received=ports_.effects.receiveMonster(execution.victim,impact.source,execution.hit,execution.states,execution.wear,
@@ -135,10 +137,13 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
     }
     if(impact.nativeSkill && impact.nativeSkill->melee) {
         if(!impact.nativeSkill->actionComplete) {
+            bool lifeUpdate=false;
             const auto action=impact.nativeSkill->defense.block?
                 ports_.effects.block({target.player,target.actor,target.area,ports_.areas.at(target.area).generation,0,tick.tick}):
-                ports_.effects.nativeMeleeReaction(target.actor,impact.source,execution.hit,execution.callbacks.total,tick.tick);
+                ports_.effects.nativeMeleeReaction(target.actor,impact.source,execution.hit,execution.callbacks.total,tick.tick,&lifeUpdate);
             if(!action) return action.status;
+            finishPd2LifeNotification(impact,{&target,nullptr},execution.hit.getHit.value_or(!execution.hit.softHit),
+                execution.hit.softHit,execution.callbacks.total,!lifeUpdate,tick);
             impact.nativeSkill->actionComplete=true;
         }
     }
@@ -192,6 +197,7 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     if(!execution.callbacksPrepared) {
         execution.callbacks=ports_.effects.prepareDamageEvents(impact.source,execution.target,execution.physical,execution.amount,missile,impact.returnFire,tick.tick,impact.reaction);
         execution.callbacks.suppressAttacker=impact.suppressSourceEvents;
+        if(execution.statuses.suppressEvents) execution.callbacks.suppress=true;
         if(impact.nativeSkill && impact.nativeSkill->melee) execution.callbacks.thorns=0;
         if(impact.nativeDamageFlagsOnly && impact.areaDamage && !(impact.areaDamage->hitFlags&0x20)) execution.callbacks.suppress=true;
         execution.callbacksPrepared=true;
@@ -237,6 +243,8 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     const auto poisonContact=execution.poison?std::max<int64_t>(0,execution.poison->rate):0;
     const auto direct=nativeSubtract(nativeChecked(execution.callbacks.total),nativeChecked(poisonContact));
     if(!execution.damageCommitted) {
+        preparePd2LifeNotification({nullptr,live},tick);
+        execution.beforeDamage=live->life;
         execution.statuses.deferAction=bool(impact.nativeSkill);
         const auto result=ports_.monsters.damage(live->id,impact.binding.credit,direct,tick.tick,
             execution.cold,impact.freeze,execution.hitClass,execution.poison,
@@ -259,12 +267,27 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
         if(completed!=DomainStatus::Applied) return completed;
     }
     if(impact.nativeSkill && !impact.nativeSkill->actionComplete) {
+        const auto previous=live->hitOccurrence;
         const auto action=impact.nativeSkill->defense.block && live->life>0 && !impact.knockback?
             ports_.monsters.block(execution.target,tick.tick):
             ports_.monsters.finishDamageAction(execution.target,impact.binding.credit,execution.callbacks.total,tick.tick,execution.hitClass,
                 impact.softHit,execution.getHit);
         if(!action) return action.status;
+        live=ports_.monsters.find(execution.target);
+        if(live) finishPd2LifeNotification(impact,{nullptr,live},execution.getHit.value_or(!impact.softHit),
+            impact.softHit,execution.callbacks.total,live->hitOccurrence!=previous,tick);
         impact.nativeSkill->actionComplete=true;
+    }
+    if(!execution.sacrificeComplete) {
+        if(execution.beforeDamage>0 && !live->alive()) {
+            const auto overkill=nativeSubtract(nativeChecked(execution.callbacks.total),nativeChecked(execution.beforeDamage));
+            // Only a real source missile supplies an associated skill in the
+            // native death hook. Area pulses otherwise inspect used-skill.
+            const auto skill=impact.allocatedMissile && impact.missileDamage?impact.missileDamage->skill:0;
+            const auto result=ports_.effects.pd2SacrificeKill(impact.source,execution.target,overkill,skill,tick.tick);
+            if(!result) return result.status;
+        }
+        execution.sacrificeComplete=true;
     }
     if(!execution.monsterModifierComplete) {
         if(direct>0 && !(impact.type==DamageType::Poison && !impact.weapon)) {

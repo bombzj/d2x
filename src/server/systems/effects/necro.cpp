@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "server/systems/skills/native_caster.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "attribute_projection.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/event_frame.hpp"
@@ -56,7 +57,8 @@ DomainResult<std::shared_ptr<AuraUnitPublication>> System::prepareFear(const Nat
     MonsterResourceTrace resources(*unit,tick,&recipient.states);
     // AIUTIL deliberately uses Terror / level 1 and its ordinary state
     // removal callback, regardless of the originating Howl/GrimWard skill.
-    const auto duration=curseStateDuration(request.frames,unitCurseResistance(id,tick),state.curse);
+    const auto duration=curseStateDuration(request.frames,unitCurseResistance(id,tick),state.curse,
+        ports_.monsters.skillPrograms() && ports_.monsters.skillPrograms()->pd2);
     auto publication=std::make_shared<AuraUnitPublication>();
     bool posted{};
     if(duration && unit->rule.stateTarget.acceptsCurseList()) {
@@ -65,6 +67,7 @@ DomainResult<std::shared_ptr<AuraUnitPublication>> System::prepareFear(const Nat
         spec.stacking=EffectStacking::CurseLevel;spec.nativeValues.emplace();spec.nativeState=true;spec.refreshPassivesOnRemoval=true;
         if(*duration) spec.duration=uint32_t(*duration);
         CurseSpec direct;direct.state=state;direct.targetProcedure=CurseSpec::TargetProcedure::DirectList;direct.nativeValues.emplace();direct.rejectZeroPrimary=false;
+        if(!configurePd2Curse(spec,id,tick)) return {DomainStatus::Unavailable,{}};
         const auto installed=applyCurseState(recipient.states,direct,spec,{},*unit->rule.stats,tick,[&]{resources.sample(recipient.states,true);});
         if(installed.accepted) {
             posted=true;
@@ -153,7 +156,7 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
     }
     // Curse allocation can fail (resistance/Attract protection) after the
     // neutral alignment and nearby selectors have already been prepared.
-    const auto adjusted=curseStateDuration(duration,unitCurseResistance(selected,actor.tick),program.state.curse);
+    const auto adjusted=curseStateDuration(duration,unitCurseResistance(selected,actor.tick),program.state.curse,player->rules.skills->pd2);
     if(adjusted && monster->rule.curseable) {
         auto shadow=*monster;shadow.nativeStats=selectedLife.intrinsic;shadow.life=selectedLife.life.raw();shadow.maximumLife=selectedLife.maximum.raw();
         MonsterResourceTrace resources(shadow,actor.tick,&target.states);
@@ -161,8 +164,10 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
         curse.stacking=EffectStacking::CurseLevel;curse.curseAi=CurseAi::Attract;curse.nativeValues.emplace();
         if(*adjusted) curse.duration=uint32_t(*adjusted);
         auto allocation=program;allocation.primaryStat.reset();allocation.nativeValues.emplace();allocation.nativeWrites.clear();
-        const auto applied=applyCurseState(target.states,allocation,curse,{},*player->rules.skills->stats,actor.tick,
-            [&]{resources.sample(target.states,true);});
+        auto applied=EffectApplication{{},{},false};
+        if(configurePd2Curse(curse,selected,actor.tick))
+            applied=applyCurseState(target.states,allocation,curse,{},*player->rules.skills->stats,actor.tick,
+                [&]{resources.sample(target.states,true);});
         if(applied.accepted) {
             auto life=resources.take();retainPreparedUnitControl(life,selectedLife);selectedLife=std::move(life);
             for(const auto &removed:applied.removed) if(!target.states.hasState(removed.effect.spec.state.id,actor.tick)) {
@@ -189,6 +194,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
        !area || area->generation!=actor.areaGeneration || !skill.curse || player->persistent.player.mana<skill.manaCost)
         return {DomainStatus::InvalidActor,{}};
     const auto &program=*skill.curse;
+    const bool pd2=caster->programs() && caster->programs()->pd2;
     if(caster->monster && program.targetProcedure!=CurseSpec::TargetProcedure::Cloak) return {DomainStatus::Unavailable,{}};
     if(program.targetProcedure==CurseSpec::TargetProcedure::TerrorUtility) return nativeTerror(actor,skill,selected);
     if(program.ai==CurseAi::Attract) return nativeAttract(actor,skill,selected);
@@ -251,7 +257,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
             const auto &recipient=*peer;
             if(!(program.targetFilter&1) || (!cloak && program.ai!=CurseAi::None) || !recipient.entered || recipient.persistent.player.hp<=0 ||
                !participants.canHarm(actor.actor,id)) continue;
-            const auto duration=curseStateDuration(program.permanent?0:program.frames,recipient.totals.character.combat.curseResistance,program.state.curse);
+            const auto duration=curseStateDuration(program.permanent?0:program.frames,unitCurseResistance(recipient.actor,actor.tick),program.state.curse,pd2);
             if(!duration) continue;
             auto &states=nextPlayers[recipient.actor].states;
             if(program.skipActive && states.hasState(program.state.id,actor.tick)) continue;
@@ -259,6 +265,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
             curse.source={CombatEffectSource::Skill,actor.actor,skill.sourceId,skill.rank};curse.modifiers=program.modifiers;
             curse.nativeValues=program.nativeValues;
             if(*duration) curse.duration=uint32_t(*duration);
+            if(!configurePd2Curse(curse,id,actor.tick)) continue;
             PlayerResourceTrace resources(recipient,actor.tick,{},ports_.areas.statTime(recipient.area));
             const auto applied=applyCurseState(states,program,curse,program.nativeWrites,*player->rules.skills->stats,actor.tick,
                 [&]{resources.sample(states,true);});
@@ -293,7 +300,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         };
         const int resistance=unitCurseResistance(id,actor.tick);
         const int divisor=program.ai==CurseAi::None || program.ignoreDifficultyDivisor?1:player->rules.skills->aiCurseDivisor.at(size_t(player->persistent.difficulty));
-        const auto duration=curseStateDuration(program.permanent?0:(divisor?nativeDivide(program.frames,divisor):program.frames),resistance,program.state.curse);
+        const auto duration=curseStateDuration(program.permanent?0:(divisor?nativeDivide(program.frames,divisor):program.frames),resistance,program.state.curse,pd2);
         if(!duration) {if(program.ai==CurseAi::Taunt) resetTaunt();continue;}
         auto &recipient=next[id];recipient.area=monster.area;
         CombatEffectSpec curse;curse.state=program.state;curse.stacking=EffectStacking::CurseLevel;
@@ -309,23 +316,24 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
                 return baseStatValue(*monster.rule.stats,*monster.nativeStats->sources,{monster.rule.stats->names.at(std::string(name)),0});
             return monster.rule.resistances[channel];
         };
-        modifiers.combat.physicalResist=curseResistanceAdjustment(modifiers.combat.physicalResist,baseResistance("damageresist",0),true,monster.hireling);
-        modifiers.combat.magicResist=curseResistanceAdjustment(modifiers.combat.magicResist,baseResistance("magicresist",1),true,monster.hireling);
-        modifiers.fireResist=curseResistanceAdjustment(modifiers.fireResist,baseResistance("fireresist",2),true,monster.hireling);
-        modifiers.lightningResist=curseResistanceAdjustment(modifiers.lightningResist,baseResistance("lightresist",3),true,monster.hireling);
-        modifiers.coldResist=curseResistanceAdjustment(modifiers.coldResist,baseResistance("coldresist",4),true,monster.hireling);
-        modifiers.poisonResist=curseResistanceAdjustment(modifiers.poisonResist,baseResistance("poisonresist",5),true,monster.hireling);
+        modifiers.combat.physicalResist=curseResistanceAdjustment(modifiers.combat.physicalResist,baseResistance("damageresist",0),true,monster.hireling,pd2);
+        modifiers.combat.magicResist=curseResistanceAdjustment(modifiers.combat.magicResist,baseResistance("magicresist",1),true,monster.hireling,pd2);
+        modifiers.fireResist=curseResistanceAdjustment(modifiers.fireResist,baseResistance("fireresist",2),true,monster.hireling,pd2);
+        modifiers.lightningResist=curseResistanceAdjustment(modifiers.lightningResist,baseResistance("lightresist",3),true,monster.hireling,pd2);
+        modifiers.coldResist=curseResistanceAdjustment(modifiers.coldResist,baseResistance("coldresist",4),true,monster.hireling,pd2);
+        modifiers.poisonResist=curseResistanceAdjustment(modifiers.poisonResist,baseResistance("poisonresist",5),true,monster.hireling,pd2);
         if(program.nativeValues) {
             curse.nativeValues=program.nativeValues;
             const std::array<std::string_view,6> names{"damageresist","magicresist","fireresist","lightresist","coldresist","poisonresist"};
             for(size_t channel=0;channel<names.size();++channel) {
                 const auto stat=player->rules.skills->stats->names.at(std::string(names[channel]));
                 if(auto value=curse.nativeValues->find({stat,0});value!=curse.nativeValues->end())
-                    value->second=curseResistanceAdjustment(value->second,baseResistance(names[channel],channel),true,monster.hireling);
+                    value->second=curseResistanceAdjustment(value->second,baseResistance(names[channel],channel),true,monster.hireling,pd2);
                 for(auto &write:nativeWrites) if(write.key.id==stat)
-                    write.value=curseResistanceAdjustment(write.value,baseResistance(names[channel],channel),true,monster.hireling);
+                    write.value=curseResistanceAdjustment(write.value,baseResistance(names[channel],channel),true,monster.hireling,pd2);
             }
         }
+        if(!configurePd2Curse(curse,id,actor.tick)) continue;
         std::optional<MonsterResourceTrace> resources;
         if(monster.nativeStats && monster.nativeStats->sources && monster.rule.stats) resources.emplace(monster,actor.tick,&recipient.states);
         const bool targetControl=program.ai==CurseAi::Confuse || program.ai==CurseAi::Attract;

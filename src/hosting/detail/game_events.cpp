@@ -115,14 +115,14 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             if(auto old=peer.groundItems.find(restored->item);old!=peer.groundItems.end()) old->second=restored->revision;
         }
         else if(const auto *trigger=std::get_if<server::ItemSkillFact>(&fact)) {
-            if(!visibleActor(trigger->owner,0)) continue;
+            if(!visibleActor(trigger->owner,trigger->ownerType)) continue;
             const auto origin=shared.terrain.at(binding->game).at(trigger->area).origin;
             if(trigger->target) delta.push_back(encodeServerPacket(ServerMessage::CastUnitAlternate,[&](auto &out){
-                out.u8(0);out.u32(uint32_t(trigger->owner.value));out.u16(uint16_t(trigger->skill));out.u8(uint8_t(trigger->rank));
+                out.u8(trigger->ownerType);out.u32(uint32_t(trigger->owner.value));out.u16(uint16_t(trigger->skill));out.u8(uint8_t(trigger->rank));
                 out.u8(trigger->targetType);out.u32(uint32_t(trigger->target.value));out.u16(trigger->flags);
             }));
             else delta.push_back(encodeServerPacket(ServerMessage::CastPointAlternate,[&](auto &out){
-                out.u8(0);out.u32(uint32_t(trigger->owner.value));out.u32(uint32_t(trigger->skill));out.u8(uint8_t(trigger->rank));
+                out.u8(trigger->ownerType);out.u32(uint32_t(trigger->owner.value));out.u32(uint32_t(trigger->skill));out.u8(uint8_t(trigger->rank));
                 out.u16(uint16_t(std::floor(trigger->position.x+origin.x)));out.u16(uint16_t(std::floor(trigger->position.y+origin.y)));out.u16(trigger->flags);
             }));
         }

@@ -4,6 +4,7 @@
 #include "gameplay/skills/targeting.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "server/player_store.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -38,6 +39,7 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto recipientView=participants.find(id);
     const auto source=emitter?participants.find(emitter):combat::ParticipantView{caster,nullptr};
+    const bool pd2=emittingUnit?(ports_.monsters.skillPrograms() && ports_.monsters.skillPrograms()->pd2):caster && caster->rules.skills && caster->rules.skills->pd2;
     const RegionId region=recipientView.player?recipientView.player->area:recipientView.monster?recipientView.monster->area:actor.area;
     const RegionId sourceRegion=source.player?source.player->area:source.monster?source.monster->area:actor.area;
     if(region!=sourceRegion && !ports_.areas.nearby(sourceRegion,source.position(),region,recipientView.position())) return {DomainStatus::InvalidActor,{}};
@@ -83,7 +85,7 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
                 for(const auto &[stat,channel]:resistanceStats) if(name==stat) {
                     const int base=monster->nativeStats && monster->nativeStats->sources?
                         baseStatValue(rules,*monster->nativeStats->sources,write.key):monster->rule.resistances[channel];
-                    if(base>=100) write.value/=5;
+                    if(base>=100) write.value/=pd2?2:5;
                     break;
                 }
             }

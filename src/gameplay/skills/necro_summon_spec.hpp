@@ -8,7 +8,7 @@
 #include "gameplay/missiles/definition.hpp"
 namespace d2x {
 struct ItemInstance;
-enum class NecroSummonKind { Clay, Mage, Blood, Iron, Fire, Revive };
+enum class NecroSummonKind { Clay, Mage, Blood, Iron, Fire, Revive, Archer };
 struct NecroMissileDefinition {
     int id = -1, hitShift = 8, frames = 0, maximum = 0;
     DamageType element = DamageType::Fire;

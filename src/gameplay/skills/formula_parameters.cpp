@@ -273,6 +273,10 @@ RuleNumber SkillFormulaValues::damage(FormulaDomain domain,const SkillFormulaRec
     return value;
 }
 RuleNumber SkillFormulaValues::parameter(FormulaDomain domain,const SkillFormulaRecord &source,int rank,std::string_view token) {
+    // SkillsTbls::sub_6FD49990 links a four-byte code, truncating longer
+    // identifiers. Current Bone Wall's "par34" compiles to callback 10
+    // (par3), as confirmed by Skills.bin + SkillsCode.bin.
+    token=token.substr(0,4);
     const bool missile=domain==FormulaDomain::Missile;
     if(token=="lvl") return rank;
     if(!missile && token=="ulvl") return stat("level");

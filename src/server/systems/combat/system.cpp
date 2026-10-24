@@ -7,6 +7,8 @@ void System::cancel(EntityId source) {
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     state_.targetAttempts=0;
+    std::erase_if(state_.lifeNotifications,[&](const auto &entry){return entry.second.tick!=tick.tick;});
+    std::erase_if(state_.pd2AvoidUntil,[&](const auto &entry){return entry.second<=tick.tick;});
     bool blocked=resolveSpells(tick)==StepStatus::Blocked;
     while(ports_.effects.hasContactEffects()) {
         if(ports_.effects.finishContacts(tick.tick)==StepStatus::Blocked) {blocked=true;break;}

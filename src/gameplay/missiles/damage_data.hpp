@@ -52,6 +52,7 @@ struct MissileDamageRollState {
     bool getHit{},softHit{};
     uint8_t knockbackChance{};
     int uninterruptableState{-1};
+    int pierceCount{};
 };
 struct MissileDamageTarget {bool present{},demon{},undead{};int32_t monsterTypePercent{};};
 struct MissileHitDamage {

@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "pd2/vengeance.hpp"
+#include "pd2/corpses.hpp"
 #include "runtime.hpp"
 #include "native_caster.hpp"
 #include "server/player_store.hpp"
@@ -45,6 +47,8 @@ DomainStatus System::startDruidPeriodic(Release &pending,const ActorContext &act
     return DomainStatus::Applied;
 }
 DomainResult<> System::activeStateEvent(const FrameEvent &event,uint64_t tick) {
+    if(event.handler==pd2CorpseTimerHandler) return pd2CorpseEvent(ports_,event,tick);
+    if(event.handler==pd2VengeanceTimerHandler) return pd2VengeanceEvent(ports_,event,tick,runtime_->pd2Vengeance);
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
     if(event.owner.type==FrameEventUnit::Monster) if(const auto *unit=ports_.monsters.find(event.owner.unit);
         unit && unit->rule.ai.kind==MonsterAiKind::Imp && event.customId==unit->rule.skillIds[0])

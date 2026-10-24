@@ -10,6 +10,8 @@ struct WeaponMeleeExecution {
     std::optional<uint64_t> occurrence;
     bool allocated{},postAllocated{},recoilComplete{},drained{};
     std::optional<bool> conversion;
+    std::optional<bool> bashKnockback;
+    std::optional<uint64_t> bashOccurrence;
     int conversionFrames{};
 };
 }

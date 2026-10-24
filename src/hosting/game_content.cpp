@@ -11,6 +11,7 @@
 #include "content/character/character_attributes.hpp"
 #include "content/items/item_properties.hpp"
 #include "resources/data_table.hpp"
+#include "content/skills/table_values.hpp"
 #include "gameplay/areas/waypoint.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -83,7 +84,9 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     bool fixedPosition=true;
     const auto &levelTable=content.tables.at("levels");
     for(size_t row=0;row<levelTable.rows().size();++row) if(levelTable.number(row,"Id")==request.level) {
-        const auto value=levelTable.number(row,"Position");if(!value) throw std::runtime_error("Missing original Levels.Position");
+        const auto value=content.pd2Host?std::optional<int>{skillTableNumber(levelTable,row,"Position",SkillNumberPolicy::BlankIsZero)}:
+            levelTable.number(row,"Position");
+        if(!value) throw std::runtime_error("Missing original Levels.Position");
         fixedPosition=*value!=0;
         area.saveMonsters=levelTable.number(row,"SaveMonsters").value_or(0)!=0;
         break;
@@ -200,8 +203,7 @@ WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &con
     result.authority.persistent = server::admitCharacter(std::move(saved));
     result.authority.rules.items = std::move(items);
     prepareCharacterRules(result.authority.rules, content, result.authority.persistent);
-    result.authority.rules.monsterRegions=content.pd2Host ? hosting::pd2::prepareTownRegionRules(archives)
-        : prepareMonsterRegionRules(archives,content);
+    result.authority.rules.monsterRegions=prepareMonsterRegionRules(archives,content);
     auto prepared = prepareWorldArea(archives, content, {result.authority.settings.mapSeed, town.act, town.id, result.authority.settings.difficulty,result.authority.settings.ladderMonsterStats()});
     result.terrain = std::move(prepared.terrain); result.authority.area = std::move(prepared.authority);
     const auto &area = result.authority.area;

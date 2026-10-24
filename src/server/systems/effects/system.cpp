@@ -207,6 +207,13 @@ EffectApplication applyCurseState(CombatEffectSet &states,const CurseSpec &progr
         seed.nativeValues.emplace();seed.nativeValues->clear();
         if(program.primaryStat && !values.empty() && values.front().key==*program.primaryStat && (!targetControl || values.front().value))
             seed.nativeValues->insert_or_assign(values.front().key,values.front().value);
+        if(seed.pd2CurseSlots && seed.pd2CurseSlots->effectiveness && program.primaryStat) {
+            const auto primary=seed.nativeValues->find(*program.primaryStat);
+            if(primary!=seed.nativeValues->end() && primary->second) {
+                primary->second=pd2CursePrimaryValue(primary->second,seed.pd2CurseSlots->effectiveness);
+                if(!primary->second) return {{},{},false};
+            }
+        }
         seed.modifiers=nativeCharacterModifiers(StatSnapshot{*seed.nativeValues},rules,spec.modifiers);
     }
     auto result=states.apply(std::move(seed),tick,observe);

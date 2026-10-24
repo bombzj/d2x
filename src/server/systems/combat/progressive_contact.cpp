@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "progressive_execution.hpp"
+#include "pd2/progressive.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -19,13 +21,6 @@
 #include <stdexcept>
 
 namespace d2x::server::combat {
-struct ProgressiveContactExecution {
-    enum class Phase { Select,Write,Program,Notify,Remove,Complete } phase{};
-    int lastState{-1};AssassinCharge charge;
-    std::vector<AssassinProgressiveStep> steps;size_t next{};
-    uint32_t clientSeed{};bool mainDrained{},areaQueued{};
-    std::vector<uint64_t> areaOccurrences;size_t areaNext{};
-};
 DomainResult<bool> System::advanceProgressive(SpellImpact &impact,TickContext tick,bool drained) {
     if(!impact.nativeSkill || !impact.nativeSkill->progressive) return {DomainStatus::Applied,true};
     if(!impact.nativeSkill->progressiveReleaseChecked) {
@@ -61,19 +56,29 @@ DomainResult<bool> System::advanceProgressive(SpellImpact &impact,TickContext ti
         if(!target.id()) return {DomainStatus::Stale,{}};
         if(execution.phase==Phase::Select) {
             const auto charges=ports_.effects.progressiveCharges(caster->id());
-            const auto next=std::find_if(charges.begin(),charges.end(),[&](const auto &entry){return entry.state>execution.lastState;});
+            const auto next=std::find_if(charges.begin(),charges.end(),[&](const auto &entry){return execution.gather?
+                entry.skill==impact.nativeSkill->skill:entry.state>execution.lastState;});
             if(next==charges.end()) {execution.phase=Phase::Complete;continue;}
             if(!unitMeleeReach(area.definition.collision,caster->position(),caster->player?2:caster->monster->rule.size,target.position(),target.size(),
                 caster->player && impact.weapon?impact.weapon->weapon.rangeAdder:caster->monster?caster->monster->rule.meleeRange:0)) return {DomainStatus::Applied,true};
             execution.charge=*next;execution.charge.count=std::clamp(execution.charge.count,1,3);
             const auto &program=*execution.charge.program;
-            execution.steps=assassinProgressiveSteps(execution.charge.count,program.progressiveStack,program.progressiveFunctions);
+            execution.steps=execution.gather?std::vector<AssassinProgressiveStep>{{execution.charge.count,program.progressiveFunctions[size_t(execution.charge.count-1)]}}:
+                assassinProgressiveSteps(execution.charge.count,program.progressiveStack,program.progressiveFunctions);
+            if(rules.pd2) {
+                std::vector<AssassinProgressiveStep> expanded;
+                for(const auto &step:execution.steps) {
+                    if(step.function==39) expanded.push_back({step.charge,38}); // Current Do39 calls retail Do38, then Do39.
+                    expanded.push_back(step);
+                }
+                execution.steps=std::move(expanded);
+            }
             execution.next=0;auto seed=caster->random();execution.clientSeed=rollRandom(seed);
             execution.phase=Phase::Write;
         }
         if(execution.phase==Phase::Write) {
             const auto &step=execution.steps.at(execution.next);
-            if(execution.charge.program->progressiveStack) {
+            if(!execution.gather && execution.charge.program->progressiveStack) {
                 const auto result=ports_.effects.progressiveValue(actor,execution.charge,step.charge);
                 if(!result) return {result.status,{}};
             }
@@ -137,7 +142,11 @@ DomainResult<bool> System::advanceProgressive(SpellImpact &impact,TickContext ti
                     };
                     std::vector<missiles::NativeSpawn> births;
                     const auto at=target.position();
-                    if(step.function==40) births.push_back(make(at,at));
+                    if(rules.pd2 && (step.function==171 || step.function==172 || step.function==139)) {
+                        auto prepared=preparePd2ProgressiveBirths(ports_,impact,charge,step,target,tick,ownerRandom);
+                        if(!prepared) return {prepared.status,{}};
+                        births=std::move(*prepared.value);
+                    } else if(step.function==40) births.push_back(make(at,at));
                     else if(step.function==36) {
                         const auto &definition=rules.formulas->missiles.at(missile);
                         const auto velocity=nativeAdd(formula("calc1"),nativeAdd(definition.number("vel"),nativeMultiply(charge.rank,definition.number("vellev"))/8));
@@ -192,6 +201,7 @@ DomainResult<bool> System::advanceProgressive(SpellImpact &impact,TickContext ti
             execution.phase=Phase::Remove;
         }
         if(execution.phase==Phase::Remove) {
+            if(execution.gather) {execution.phase=Phase::Complete;continue;}
             const auto result=ports_.effects.removeState(actor,execution.charge.state);if(!result) return {result.status,{}};
             execution.lastState=execution.charge.state;execution.phase=Phase::Select;
         }

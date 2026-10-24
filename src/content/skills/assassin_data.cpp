@@ -2,6 +2,7 @@
 #include "table_values.hpp"
 #include "missile_effects.hpp"
 #include "content/classic_data.hpp"
+#include "content/pd2/skill_data.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
@@ -37,7 +38,7 @@ SummonSkillSpec summonDefinition(const ClassicData &data,const AssassinSkillSpec
         const std::string suffix=difficulty==0?"":difficulty==1?"(N)":"(H)";
         auto &stats=spec.base[difficulty];auto &a=stats.attributes;
         a.maxLife=number(monstats,row,difficulty?"MinHP"+suffix:"minHP");a.maxLifeFixed=Fixed8(a.maxLife);
-        if(a.maxLife!=number(monstats,row,difficulty?"MaxHP"+suffix:"maxHP")) throw std::runtime_error("Unsupported native assassin pet life range");
+        pet->lifeRanges[difficulty]={a.maxLife,number(monstats,row,difficulty?"MaxHP"+suffix:"maxHP")};
         stats.level=number(monstats,row,"Level"+suffix);a.defense=number(monstats,row,"AC"+suffix);a.attackRating=number(monstats,row,"A1TH"+suffix);
         stats.minimumDamage=float(number(monstats,row,"A1MinD"+suffix));stats.maximumDamage=float(number(monstats,row,"A1MaxD"+suffix));
         a.combat.physicalResist=number(monstats,row,"ResDm"+suffix);a.combat.magicResist=number(monstats,row,"ResMa"+suffix);
@@ -85,6 +86,7 @@ AssassinProgram program(int function) {
     case 50:return AssassinProgram::DragonTail;
     case 51:return AssassinProgram::MindBlast;
     case 52:return AssassinProgram::DragonFlight;
+    case 178:return AssassinProgram::DragonFlight;
     case 54:return AssassinProgram::BladeShield;
     default:throw std::runtime_error("Unsupported original assassin skill program");
     }
@@ -94,8 +96,12 @@ void loadAssassinSkills(ClassicData &data,Archives &archives) {
     const auto &skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
     const auto &monsters=data.tables.at("monstats"),&pets=data.tables.at("pettype");
     for(size_t row=0;row<skills.rows().size();++row) {
-        if(skills.value(row,"charclass")!="ass") continue;
-        const auto id=skillTableNumber(skills,row,"Id");auto &entry=data.skills.skills.at(id);
+        const bool amazon=data.pd2Host && skills.value(row,"charclass")=="ama" &&
+            (skills.number(row,"srvdofunc")==16 || skills.number(row,"srvdofunc")==49);
+        if(skills.value(row,"charclass")!="ass" && !amazon) continue;
+        const auto id=skillTableNumber(skills,row,"Id");
+        if(data.pd2Host && !data.skills.skills.contains(id)) continue;
+        auto &entry=data.skills.skills.at(id);
         // Both passives use the native five-slot refresh and parameter layers.
         if(entry.passive) {
             if(data.nativeFormulas->skills.at(id).passiveState<0)
@@ -105,7 +111,11 @@ void loadAssassinSkills(ClassicData &data,Archives &archives) {
         auto native=std::make_shared<AssassinSkillSpec>();
         native->startFunction=uint16_t(skills.number(row,"srvstfunc").value_or(0));
         native->doFunction=uint16_t(skills.number(row,"srvdofunc").value_or(0));
-        native->program=program(native->doFunction);native->mode=skills.value(row,"anim");
+        if(data.pd2Host && !amazon && native->doFunction!=42 && native->doFunction!=43 && native->doFunction!=44 && native->doFunction!=45 &&
+           native->doFunction!=46 && native->doFunction!=47 && native->doFunction!=48 && native->doFunction!=49 &&
+           native->doFunction!=50 && native->doFunction!=51 && native->doFunction!=54 && native->doFunction!=170 && native->doFunction!=178) continue;
+        native->program=amazon?AssassinProgram::Shadow:native->doFunction==170?(skills.value(row,"anim")=="A2"?AssassinProgram::ElementalCharge:AssassinProgram::Charge):program(native->doFunction);
+        native->mode=skills.value(row,"anim");
         for(auto &letter:native->mode) letter=char(std::tolower(static_cast<unsigned char>(letter)));
         native->sequence=skills.number(row,"seqnum").value_or(-1);
         native->useAttackRate=skills.number(row,"UseAttackRate").value_or(0)!=0;
@@ -117,6 +127,7 @@ void loadAssassinSkills(ClassicData &data,Archives &archives) {
             return found->second.definition;
         };
         native->state=state("aurastate");native->targetState=state("auratargetstate");
+        if(amazon && native->doFunction==16) native->state=data.states.at("valkyrie").definition;
         if(native->program==AssassinProgram::MindBlast) {
             native->conversionState=data.states.at("conversion").definition;
             native->conversionSaveState=data.states.at("conversion_save").definition;
@@ -145,7 +156,7 @@ void loadAssassinSkills(ClassicData &data,Archives &archives) {
             native->summonClass=skillTableNumber(monsters,findSkillTableRow(monsters,"Id",native->summon),"hcIdx");
             native->petType=skillTableNumber(pets,findSkillTableRow(pets,"pet type",skills.value(row,"pettype")),"idx");
         }
-        SkillSpec spec=entry.spell?*entry.spell:SkillSpec{};
+        SkillSpec spec=data.pd2Host?preparePd2SkillDefinition(data,row):entry.spell?*entry.spell:SkillSpec{};
         spec.assassin=std::move(native);spec.sourceId=id;
         if(spec.assassin->program!=AssassinProgram::Defensive) spec.effect=SkillBehavior::Assassin;
         spec.mana=skillTableNumber(skills,row,"mana");spec.minimumMana=skillTableNumber(skills,row,"minmana");
@@ -154,8 +165,15 @@ void loadAssassinSkills(ClassicData &data,Archives &archives) {
         spec.hitShift=skills.number(row,"HitShift").value_or(0);spec.hitClass=skills.number(row,"HitClass").value_or(0);
         spec.state=spec.assassin->state;const auto main=skills.value(row,"srvmissile");
         const auto role=spec.assassin->program;
-        if(role==AssassinProgram::Sentry || role==AssassinProgram::BladeSentinel || role==AssassinProgram::Shadow)
+        if(role==AssassinProgram::Sentry || role==AssassinProgram::BladeSentinel || role==AssassinProgram::Shadow) {
             spec.summon=summonDefinition(data,*spec.assassin,row);
+            if(amazon) {
+                auto definition=std::make_shared<AssassinPetDefinition>(*spec.summon->assassin);
+                definition->inheritOwnerSkills=false;definition->summonFunction=spec.assassin->doFunction;
+                definition->transformClass=spec.assassin->doFunction==16?"ama":"";
+                spec.summon->assassin=std::move(definition);
+            }
+        }
         if(role==AssassinProgram::Charge || role==AssassinProgram::ElementalCharge || role==AssassinProgram::DragonClaw) {
             spec.effect=SkillBehavior::WeaponProjectile;spec.weapon.emplace();
             spec.weapon->requiredType=skills.value(row,"itypea1");
@@ -164,6 +182,8 @@ void loadAssassinSkills(ClassicData &data,Archives &archives) {
             spec.weapon->dualWield=role==AssassinProgram::DragonClaw;
             spec.weapon->attackRating=skills.number(row,"ToHit").value_or(0);
             spec.weapon->attackRatingPerLevel=skills.number(row,"LevToHit").value_or(0);
+            if(data.pd2Host && spec.assassin->startFunction==78)
+                spec.weapon->attackState=data.states.at("temp_skill_buff").definition;
         }
         if(role==AssassinProgram::DragonTalon || role==AssassinProgram::DragonTail || role==AssassinProgram::DragonFlight) {
             spec.weapon.emplace();spec.weapon->mode="kk";spec.weapon->sequence=spec.assassin->sequence;

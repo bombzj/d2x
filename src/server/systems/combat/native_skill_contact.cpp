@@ -1,5 +1,7 @@
 #include "system.hpp"
 #include "player_contact.hpp"
+#include "progressive_execution.hpp"
+#include "pd2/progressive.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -79,7 +81,7 @@ DomainStatus System::postNativeMeleeAllocation(SpellImpact &impact,TickContext t
     if(!impact.nativeSkill || !impact.nativeSkill->melee || impact.nativeSkill->postAllocationComplete) return DomainStatus::Applied;
     auto &execution=*impact.nativeSkill;
     const auto &skill=impact.weapon->wearSkill;
-    if(skill.weapon->doFunction==70 || (execution.monsterProgram && skill.weapon->startFunction==32)) {
+    if(skill.weapon->doFunction==70 || (execution.monsterProgram && skill.weapon->usesConcentrateStart())) {
         const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,impact.source);if(!caster) return DomainStatus::Stale;
         auto input=caster->formulaInput(ports_.effects,tick.tick);SkillFormulaValues values(*caster->programs()->formulas,input);
         const auto flat=values.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,"calc2");
@@ -156,6 +158,38 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
     const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,source.id());
     if(!caster || !caster->programs()) return DomainStatus::InvalidActor;
     const auto &programs=*caster->programs();
+    if(execution.directFunction==158) {
+        // Do158's second AllocCombat has HitFlags 1 / ResultFlags 8, with
+        // no SUCCESSFULHIT. It never fills or calculates another HP hit.
+        execution.melee=true;execution.hit=false;
+        execution.accuracyPrepared=execution.defensePrepared=true;
+        return finishNativeMeleeMiss(impact,target,tick);
+    }
+    {const auto prepared=preparePd2Gather(ports_,impact,tick);if(prepared!=DomainStatus::Applied) return prepared;}
+    if(execution.directFunction==163 || execution.directFunction==153) {
+        // Do163 calls AllocCombat directly, without a melee reach test or
+        // DrainItemDurability. Only damage without HitFlags 2 enters Fill.
+        execution.melee=true;
+        if(execution.directFunction==163) execution.hit=execution.accuracyHit=execution.accuracyPrepared=execution.defensePrepared=true;
+        execution.progressive=false;execution.physicalCapped=execution.drainRangeChecked=true;
+        execution.sourceDamage=catalog.skills.at(execution.skill).number("srcdam");
+        if(!execution.skill) execution.sourceDamage=128;
+        if(execution.directFunction==153 && !execution.accuracyPrepared) {
+            const auto expected=caster->random();auto random=expected;
+            const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {
+                return low>=high?low:nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));
+            };
+            auto input=caster->formulaInput(ports_.effects,tick.tick,draw);SkillFormulaValues values(catalog,input);
+            const auto rating=values.parameter(FormulaDomain::Skill,execution.skill,execution.rank,"toht");
+            if(!rating) throw std::logic_error("Missing PD2 Leap Attack area accuracy");
+            auto attack=*impact.weapon;attack.weapon.attackRatingPercent=nativeAdd(attack.weapon.attackRatingPercent,*rating);
+            const bool hit=weaponContact(attack,target.id(),tick.tick,random);
+            const auto consumed=caster->monster?ports_.monsters.consumeRandom(source.id(),expected,random):
+                ports_.transactions.consumeRandom(caster->context(ports_.areas,tick.tick),expected,random);
+            if(!consumed) return consumed.status;
+            execution.hit=execution.accuracyHit=hit;execution.accuracyPrepared=true;
+        }
+    }
     const auto sourceStats=[&]() {
         if(source.player) {
             const auto hand=impact.weapon?source.player->totals.handStats.find(impact.weapon->weapon.item):source.player->totals.handStats.end();
@@ -216,7 +250,7 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
     const bool vengeance=execution.melee && impact.weapon && impact.weapon->wearSkill.weapon->startFunction==35 && impact.weapon->wearSkill.weapon->doFunction==2;
     const bool startProgram=execution.melee && impact.weapon && !vengeance && !fireHit && !basicKick && (impact.weapon->wearSkill.weapon->allocatesMeleeAtStart() ||
         impact.weapon->wearSkill.weapon->doFunction==7 || impact.weapon->wearSkill.weapon->doFunction==9 || impact.weapon->wearSkill.weapon->doFunction==67 ||
-        impact.weapon->wearSkill.weapon->doFunction==70 || impact.weapon->wearSkill.weapon->doFunction==76 || impact.weapon->wearSkill.weapon->doFunction==78);
+        impact.weapon->wearSkill.weapon->doFunction==70 || impact.weapon->wearSkill.weapon->doFunction==76 || impact.weapon->wearSkill.weapon->doFunction==78 || impact.weapon->wearSkill.weapon->doFunction==162 || impact.weapon->wearSkill.weapon->doFunction==180);
     const bool repeatedProgram=execution.melee && impact.weapon &&
         (impact.weapon->wearSkill.weapon->doFunction==13 || impact.weapon->wearSkill.weapon->doFunction==109);
     const bool prefilledPhysical=startProgram && (impact.weapon->wearSkill.weapon->startFunction==7 || impact.weapon->wearSkill.weapon->startFunction==29);
@@ -244,7 +278,7 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         execution.monsterProgram->modeStats=profile;impact.weapon=std::move(staged);
         execution.monsterProfilePrepared=true;return DomainStatus::Applied;
     };
-    if(execution.melee && (impact.weapon->wearSkill.weapon->startFunction==32 || impact.weapon->wearSkill.weapon->doFunction==70) && !execution.modeRatePrepared) {
+    if(execution.melee && (impact.weapon->wearSkill.weapon->usesConcentrateStart() || impact.weapon->wearSkill.weapon->doFunction==70) && !execution.modeRatePrepared) {
         const auto expected=caster->random();auto random=expected;
         const auto rate=evaluate(random,[&](SkillFormulaValues &values) {
             const auto value=values.calculation(FormulaDomain::Skill,execution.skill,execution.rank,"calc3");
@@ -257,6 +291,9 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
     }
     if(smite) {
         const auto prepared=prepareNativeSmite(impact,*source.player,tick);if(prepared!=DomainStatus::Applied) return prepared;
+    }
+    if(execution.directFunction==163) {
+        const auto prepared=preparePd2SplashDamage(impact,source,tick);if(prepared!=DomainStatus::Applied) return prepared;
     }
     if(monsterSmite && !execution.programPrefilled) {
         const auto profile=monsterProfile(5);if(profile!=DomainStatus::Applied) return profile;
@@ -285,7 +322,7 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         if(!execution.accuracyPrepared) {
             const auto expected=caster->random();auto random=expected;
             auto attack=*impact.weapon;
-            if(smite || monsterSmite || fireHit || startProgram || repeatedProgram || vengeance) {
+            if(smite || monsterSmite || fireHit || startProgram || repeatedProgram || vengeance || attack.wearSkill.weapon->doFunction==174) {
                 const auto toHit=smite || monsterSmite || (execution.monsterProgram && execution.monsterProgram->alwaysHit) ||
                     (startProgram && (attack.wearSkill.weapon->startFunction==6 || attack.wearSkill.weapon->startFunction==10))?0:evaluate(random,[&](SkillFormulaValues &values) {
                     const auto value=values.parameter(FormulaDomain::Skill,execution.skill,execution.rank,"toht");
@@ -330,7 +367,7 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
             if(result!=DomainStatus::Applied) return result;
             execution.defense=defense;execution.hit=(!defense.block || (smite && !defense.weaponBlock)) && defense.avoidance==WeaponAvoidance::None;execution.defensePrepared=true;
         }
-        if(smite) {
+        if(smite && execution.directFunction!=163) {
             // Smite forces only SUCCESSFULHIT, not GetResultFlags' GETHIT.
             // A failed accuracy roll or a blocked hit must retain that distinction.
             const auto &defense=execution.defense;
@@ -343,9 +380,10 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
             impact.areaDamage->resultFlags=result|uint16_t(catalog.skills.at(execution.skill).number("resultflags"));
         }
         if(execution.accuracyOnly) return DomainStatus::Applied;
+        {const auto posted=postPd2Gather(ports_,impact,tick);if(posted!=DomainStatus::Applied) return posted;}
         // SrvDo001 calls FillDamageValues even on a miss/block. Other migrated
         // skill programs enter FillDamageValues only after a successful hit.
-        if(!execution.hit && !impact.weapon->wearSkill.weapon->commonAttack && impact.weapon->wearSkill.weapon->doFunction!=67)
+        if(!execution.hit && !impact.weapon->wearSkill.weapon->commonAttack && impact.weapon->wearSkill.weapon->doFunction!=67 && impact.weapon->wearSkill.weapon->doFunction!=174 && execution.directFunction!=153)
             return finishNativeMeleeMiss(impact,target,tick);
         if(execution.hit) impact.unblockable=true; // GetResultFlags already consumed block/dodge.
         if((fireHit || monsterSmite) && execution.hit) {
@@ -383,7 +421,7 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
                 if(!conversion) throw std::logic_error("Missing native melee conversion percentage");
                 skill.weapon->magicConversionPercent=*conversion;
             }
-            if(skill.weapon->startFunction==32) skill.weapon->physicalFlat=0;
+            if(skill.weapon->usesConcentrateStart()) skill.weapon->physicalFlat=0;
             if(skill.weapon->startFunction==10) {
                 const auto low=values.parameter(FormulaDomain::Skill,execution.skill,execution.rank,"enms");
                 const auto high=values.parameter(FormulaDomain::Skill,execution.skill,execution.rank,"exms");
@@ -422,9 +460,9 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
             if(row.number("hitclass")) damage.hitClass=uint8_t(row.number("hitclass"));
         }
         damage.knockback|=(impact.areaDamage->resultFlags&8)!=0;
-        if(skill.weapon->doFunction==67 || skill.weapon->doFunction==78) {
+        if(skill.weapon->doFunction==67 || skill.weapon->doFunction==78 || skill.weapon->doFunction==180) {
             damage.knockback=true;impact.areaDamage->resultFlags|=8;
-            if(skill.weapon->doFunction==67) damage.hitClass=0x70;
+            if(skill.weapon->doFunction==67 || skill.weapon->doFunction==180) damage.hitClass=0x70;
         }
         const auto srcDamage=row.number("srcdam");execution.sourceDamage=srcDamage?srcDamage:128;
         stagedWeapon.wearSkill=std::move(skill);
@@ -434,7 +472,7 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         }
         execution.initialDamage=std::make_shared<MissileHitDamage>(std::move(damage));execution.programPrefilled=true;
     }
-    if(execution.melee && !execution.hit && !impact.weapon->wearSkill.weapon->commonAttack)
+    if(execution.melee && !execution.hit && !impact.weapon->wearSkill.weapon->commonAttack && execution.directFunction!=153)
         return finishNativeMeleeMiss(impact,target,tick);
     if(execution.melee && source.monster && impact.weapon->wearSkill.weapon->doFunction==67) {
         // SkillPal Do67 selects the original class-specific damage mode.
@@ -477,7 +515,7 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         const auto expected=source.player?source.player->combatRandom:source.monster->combatRandom;auto random=expected;
         auto enchantment=source.monster?source.monster->enchantmentDamage:MonsterEnchantmentDamageState{};
         auto weapon=impact.weapon;
-        const auto damage=evaluate(random,[&](SkillFormulaValues &values) {
+        auto damage=evaluate(random,[&](SkillFormulaValues &values) {
             if(!execution.melee) {
                 auto damage=execution.directFunction==100?MissileHitDamage{}:rollNativeSkillDamage(values,execution.skill,execution.rank,random);
                 if(execution.directFunction==100) {
@@ -517,6 +555,13 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
             const auto stats=sourceStats();if(!stats) throw std::logic_error("Missing native melee source stat view");
             const auto modifiers=source.player?source.player->totals.character.combat:ports_.effects.combatModifiers(source.id(),tick.tick);
             auto equipment=base;
+            if(skill.pd2 && skill.weapon->doFunction==162) {
+                const auto bonus=values.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,"calc2");
+                if(!bonus) throw std::logic_error("Missing PD2 Joust critical chance");
+                auto critical=weapon->weapon.nativeModifiers?*weapon->weapon.nativeModifiers:modifiers;
+                critical.criticalStrike=std::min(100,nativeAdd(critical.criticalStrike,*bonus));
+                weapon->weapon.nativeModifiers=std::make_shared<const CombatModifiers>(std::move(critical));
+            }
             if(skill.druid && (skill.druid->program==DruidProgram::Rabies || skill.druid->program==DruidProgram::BearSmite)) {
                 rollNativeSkillElement(equipment,values,execution.skill,execution.rank,random);
                 if(skill.druid->program==DruidProgram::Rabies) equipment.poisonLength=std::max(equipment.poisonLength,10);
@@ -606,6 +651,10 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         const auto committed=consume(expected,random);if(committed!=DomainStatus::Applied) return committed;
         if(execution.monsterProgram && source.monster->rule.enchantment)
             ports_.monsters.commitEnchantmentDamage(source.id(),std::move(enchantment));
+        if(execution.directFunction==163 && damage.poisonLength)
+            damage.poisonLength=std::max(1,int32_t(uint32_t(damage.poisonLength)/2u));
+        if(execution.directFunction==153 && damage.poisonLength)
+            damage.poisonLength=std::max(1,int32_t(uint32_t(damage.poisonLength)/3u));
         impact.areaDamage->rolled->value=damage;impact.weapon=std::move(weapon);execution.rolled=true;
     }
     if(execution.directFunction==107 && !execution.directHealingComplete) {
@@ -657,7 +706,9 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
     }
     if(execution.melee && !execution.elementsComplete) {
         const auto expected=caster->random();auto random=expected;auto weapon=*impact.weapon;
-        if(execution.hit && execution.progressive) ports_.effects.progressiveDamage(source.id(),weapon,random);
+        const bool gatheredElement=!pd2Gathering(impact) ||
+            (execution.release->gather->chargeCount==1 && impact.weapon->wearSkill.assassin->chargeStat!=319);
+        if(execution.hit && execution.progressive && gatheredElement) ports_.effects.progressiveDamage(source.id(),weapon,random);
         auto damage=*impact.areaDamage->rolled->value;
         const auto channels=targetWeaponChannels(weapon,target.monster && target.monster->rule.demon,target.monster && target.monster->rule.undead);
         for(size_t channel=0;channel<channels.size();++channel) damage.channels[channel]=nativeChecked(channels[channel]);
@@ -696,12 +747,19 @@ DomainStatus System::finishNativeMeleeMiss(SpellImpact &impact,ParticipantView t
     if(impact.nativeDrainHeld || execution.skipMissDrain || !nativeMeleeDrainReach(impact)) return DomainStatus::Applied;
     // Drain callbacks precede ExecuteMissileDamage's final block/dodge mode.
     const auto drained=finishNativeMeleeDrain(impact,0,tick);if(drained!=DomainStatus::Applied) return drained;
-    if(impact.weapon->wearSkill.weapon->doFunction==67) {
+    if(impact.weapon->wearSkill.weapon->doFunction==67 ||
+        (impact.weapon->wearSkill.pd2 && impact.weapon->wearSkill.weapon->doFunction==180)) {
         const auto finished=finishNativeSkillFlags(impact,tick);if(finished!=DomainStatus::Applied) return finished;
     }
     if(!execution.reactionPrepared) {
         DomainStatus status=DomainStatus::Applied;
-        if(execution.defense.block) status=target.monster?ports_.monsters.block(target.id(),tick.tick).status:
+        if(execution.directFunction==158) {
+            if(target.monster) status=ports_.monsters.missileReaction(target.id(),impact.source,false,true,0,tick.tick).status;
+            else {
+                MonsterHit hit;hit.knockback=true;hit.getHit=false;
+                status=ports_.effects.nativeMeleeReaction(target.id(),impact.source,hit,0,tick.tick).status;
+            }
+        } else if(execution.defense.block) status=target.monster?ports_.monsters.block(target.id(),tick.tick).status:
             ports_.effects.block({target.player->player,target.id(),target.player->area,ports_.areas.at(target.player->area).generation,0,tick.tick}).status;
         else if(target.player && execution.defense.avoidance!=WeaponAvoidance::None)
             status=ports_.effects.avoidance({target.player->player,target.id(),target.player->area,ports_.areas.at(target.player->area).generation,0,tick.tick},execution.defense.avoidance,impact.source).status;
@@ -749,6 +807,7 @@ bool System::nativeMeleeDrainReach(SpellImpact &impact) {
 }
 DomainStatus System::finishNativeMeleeDrain(SpellImpact &impact,int64_t physical,TickContext tick) {
     if(!impact.nativeSkill || !impact.nativeSkill->melee) return DomainStatus::Applied;
+    if(impact.nativeSkill->directFunction==163 || impact.nativeSkill->directFunction==153) return DomainStatus::Applied;
     auto &execution=*impact.nativeSkill;
     if(!execution.attackItemsComplete) {
         if(const auto *player=ports_.players.findActor(impact.source)) {
@@ -777,14 +836,16 @@ DomainStatus System::finishNativeMeleeDrain(SpellImpact &impact,int64_t physical
 }
 DomainStatus System::finishNativeSkillFlags(SpellImpact &impact,TickContext tick) {
     if(!impact.nativeSkill || impact.nativeSkill->flagsComplete) return DomainStatus::Applied;
+    if(impact.nativeSkill->directFunction==163 || impact.nativeSkill->directFunction==153) {impact.nativeSkill->flagsComplete=true;return DomainStatus::Applied;}
     const auto &execution=*impact.nativeSkill;
     const Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto source=participants.find(impact.source),target=participants.find(impact.targets[impact.next]);
     if(!source.id() || !target.id()) return DomainStatus::Stale;
     if(execution.melee && impact.weapon) {
         const auto function=impact.weapon->wearSkill.weapon->doFunction;
-        if(function==67 || (function==78 && execution.hit)) {
-            const int overlay=function==67?147:impact.missileDamage->formulas->skills.at(execution.skill).serverOverlay;
+        const bool chargeOverlay=function==180 && impact.weapon->wearSkill.pd2;
+        if(function==67 || chargeOverlay || (function==78 && execution.hit)) {
+            const int overlay=function==67 || chargeOverlay?147:impact.missileDamage->formulas->skills.at(execution.skill).serverOverlay;
             if(!execution.terminalOverlayComplete) {
                 if(overlay>0) {
                     const auto published=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},impact.area},

@@ -20,10 +20,12 @@ struct LeapSpec;
 struct GrimWardSpec;
 struct AssassinSkillSpec;
 struct DruidSkillSpec;
+struct Pd2SkillProgram;
 // Typed values imported from Skills.txt and Missiles.txt. No archive data enters gameplay.
 struct SkillOverlayCue { int id=-1, frames=0; float fps=0; };
 struct SkillRuleSpec {
     SkillBehavior effect{};
+    std::shared_ptr<const Pd2SkillProgram> pd2;
     std::shared_ptr<const BoneSkillSpec> bone;
     std::shared_ptr<const AmazonMagicSpec> amazonMagic;
     std::shared_ptr<const CorpseSearchSpec> corpseSearch;

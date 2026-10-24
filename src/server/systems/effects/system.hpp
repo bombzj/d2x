@@ -38,12 +38,14 @@ namespace d2x::server::monsters {struct Actor;struct ActorPublication;}
 namespace d2x::server::combat {struct SpellImpact;}
 namespace d2x::server::attributes {class MonsterResourceTrace;}
 namespace d2x::server::effects {
+struct Pd2SacrificeTimers;
 inline constexpr uint32_t monsterModifierTimerHandler=0x4d4f4454;
 inline constexpr uint32_t modeEndTimerHandler=0x4d454e44;
 struct BladeShieldPulse;
 struct MindBlastPulse;
 struct CorpseExplosionPulse;
 struct NativeAreaSpec;struct NativeAreaPulse;
+struct Pd2DarkPactPulse;
 struct MonsterCursePulse {
     AuraDefinition aura;CurseSpec program;int32_t length{};uint64_t tick{};
     std::vector<EntityId> targets;size_t next{};bool prepared{},complete{};
@@ -60,6 +62,7 @@ struct PlayerHitAdjustment {
     int64_t crushing{};
     std::optional<OpenWoundsApplication> wound;
     EntityId credit;
+    bool suppressEvents{}; // Native damage ResultFlags 0x20.
 };
 struct ReceivedDamage {float dealt{};int64_t physical{};};
 // The native damage calculation runs before unit-event callbacks and HP
@@ -191,6 +194,7 @@ class System {
     DomainResult<> nativeTerror(const ActorContext &,const SkillCastSpec &,EntityId);
     DomainResult<std::shared_ptr<AuraUnitPublication>> prepareFear(const NativeFear &,uint64_t tick) const;
     DomainResult<> nativeAttract(const ActorContext &,const SkillCastSpec &,EntityId);
+    bool configurePd2Curse(CombatEffectSpec &,EntityId target,uint64_t tick) const;
     const Ports ports_;
     reactions::ItemTriggers &itemTriggers_;
     StepStatus advanceItemTriggers(uint64_t tick) {
@@ -219,6 +223,7 @@ class System {
     uint64_t bladeShieldOccurrence_{};
     uint64_t mindBlastOccurrence_{};
     uint64_t corpseExplosionOccurrence_{};
+    std::shared_ptr<Pd2SacrificeTimers> pd2Sacrifice_;
     uint64_t nativeAreaOccurrence_{};
     DomainResult<> advanceNativeCallback(NativeContactBatch &,uint64_t);
     struct PaladinCycle {
@@ -357,6 +362,9 @@ class System {
     DomainResult<> nativeArea(const NativeAreaSpec &,uint64_t tick,std::shared_ptr<NativeAreaPulse> &);
     DomainResult<> skillUnit(const ActorContext &, const SkillCastSpec &, EntityId);
     DomainResult<> curse(const ActorContext &,const SkillCastSpec &,Vec,EntityId);
+    DomainResult<> pd2SacrificeKill(EntityId source,EntityId target,int32_t overkill,int damageSkill,uint64_t tick);
+    DomainResult<> pd2SacrificeEvent(const FrameEvent &,uint64_t);
+    DomainResult<> pd2DarkPact(const ActorContext &,const SkillCastSpec &,Vec,EntityId,std::shared_ptr<Pd2DarkPactPulse> &);
     DomainResult<> unitSkill(EntityId,const SkillCastSpec &,uint64_t,std::optional<std::pair<uint64_t,uint64_t>> random={});
     DomainResult<> hirelingAura(EntityId,const AuraDefinition &,uint64_t);
     bool hirelingAuraActive(EntityId,int skill,int rank) const;
@@ -370,7 +378,7 @@ class System {
     CharacterModifiers unitModifiers(EntityId, uint64_t tick) const;
     CombatModifiers combatModifiers(EntityId,uint64_t tick) const;
     DomainResult<> skillAuraState(EntityId source,EntityId target,int skill,int rank,int32_t duration,uint64_t tick,
-        NativeSkillStateProcedure=NativeSkillStateProcedure::FingerMageSpider);
+        NativeSkillStateProcedure=NativeSkillStateProcedure::FingerMageSpider,const NativeSkillStateValues *values=nullptr);
     DomainResult<> nativeFear(const NativeFear &,uint64_t tick);
     DomainResult<std::shared_ptr<AuraUnitPublication>> prepareConsumedCorpse(EntityId,int state,uint64_t tick);
     DomainResult<std::shared_ptr<AuraUnitPublication>> prepareRedeemedCorpse(EntityId,uint64_t tick);
@@ -403,7 +411,7 @@ class System {
     }
     DomainResult<> block(const ActorContext &);
     DomainResult<> missileReaction(EntityId target,EntityId source,bool getHit,bool knockback,uint8_t hitClass,uint64_t tick);
-    DomainResult<> nativeMeleeReaction(EntityId target,EntityId source,const MonsterHit &,int64_t amount,uint64_t tick);
+    DomainResult<> nativeMeleeReaction(EntityId target,EntityId source,const MonsterHit &,int64_t amount,uint64_t tick,bool *lifeUpdate=nullptr);
     bool recovering(EntityId, uint64_t tick) const;
     bool missileHitAllowed(EntityId,uint64_t tick) const;
     DomainResult<> nativeMissileHitDelay(EntityId,const CombatStateDefinition &,uint64_t duration,uint64_t tick);

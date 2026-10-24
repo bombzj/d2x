@@ -1,6 +1,7 @@
 #include "curse_resolve.hpp"
 #include "rank_bonus.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/effects/pd2/curse_slots.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -8,13 +9,15 @@ namespace d2x {
 int32_t nativeSlowPercentage(int32_t amount,bool player,bool championOrUnique) {
     return std::min(amount,player || championOrUnique?50:90);
 }
-std::optional<int32_t> curseStateDuration(int32_t frames,int32_t resistance,bool curse) {
+std::optional<int32_t> curseStateDuration(int32_t frames,int32_t resistance,bool curse,bool pd2) {
     if(!curse) return frames;
     if(resistance>=100) return {};
+    if(pd2) return pd2CursePrimaryValue(frames,resistance);
     return nativeSubtract(frames,nativePercentage(frames,resistance,100));
 }
-int32_t curseResistanceAdjustment(int32_t amount,int32_t baseResistance,bool monster,bool hireling) {
-    return amount<=0 && monster && !hireling && baseResistance>=100?amount/5:amount;
+int32_t curseResistanceAdjustment(int32_t amount,int32_t baseResistance,bool monster,bool hireling,bool pd2) {
+    // Current PD2 core RVA 0x36C760 changes the immune-monster divisor.
+    return amount<=0 && monster && !hireling && baseResistance>=100?amount/(pd2?2:5):amount;
 }
 CurseSpec evaluateCurse(const CurseSpec &spec, int rank) {
     if (rank < 1 || rank > 255) throw std::runtime_error("Unsupported original curse rank");

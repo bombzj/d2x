@@ -59,7 +59,7 @@ DomainResult<> System::startWeaponMelee(Release &pending,const ActorContext &act
     // St32 adds calc2 after AllocCombat, hence after reception and conversion.
     // It is not weapon ED and must not be amplified by critical strike.
     if(!execution.postAllocated) {
-        if(!program && pending.skill.weapon->startFunction==32 && execution.contact->hit) {
+        if(!program && pending.skill.weapon->usesConcentrateStart() && execution.contact->hit) {
             auto input=caster->formulaInput(ports_.effects,actor.tick);SkillFormulaValues values(*caster->programs()->formulas,input);
             const auto flat=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"calc2");
             if(!flat) throw std::logic_error("Missing native St32 post-allocation damage");
@@ -108,7 +108,8 @@ DomainStatus System::drainWeaponMelee(Release &pending,const ActorContext &actor
         auto input=formulaInput(player);SkillFormulaValues values(*player.rules.skills->formulas,input);
         const auto percent=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"calc2");
         if(!percent) throw std::logic_error("Missing native Sacrifice recoil percentage");
-        const auto amount=nativePercentage(nativeChecked(std::min<int64_t>(execution.contact->allocatedPhysical,life)),*percent,100);
+        const auto base=pending.skill.pd2?player.persistent.player.hp.raw():nativeChecked(std::min<int64_t>(execution.contact->allocatedPhysical,life));
+        const auto amount=target.aliveIn(actor.area)?nativePercentage(base,*percent,100):0;
         if(amount>0 && player.persistent.player.hp>0) {
             // Do64 executes its already-computed physical total on itself with
             // HitFlags 0x1000 and no SUCCESSFULHIT: no mitigation or GetHit proc.
@@ -124,18 +125,29 @@ DomainStatus System::drainWeaponMelee(Release &pending,const ActorContext &actor
         if(ports_.combat.drainNativeMelee(actor.actor,*execution.occurrence,{actor.tick})==StepStatus::Blocked) return DomainStatus::Capacity;
         execution.drained=true;
     }
+    if(doFunction==158 && pending.skill.pd2) {
+        const auto status=activatePd2Bash(pending,actor);if(status!=DomainStatus::Applied) return status;
+    }
+    if(doFunction==164 && pending.skill.pd2) {
+        const auto target=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(pending.unit);
+        if(target.id()) {
+            const auto result=activatePd2(pending,actor,target.position());
+            if(result!=DomainStatus::Applied) return result;
+        }
+    }
     if(doFunction==11 || doFunction==14) {
-        const auto &player=*ports_.players.find(actor.player);
+        const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
+        if(!caster || !caster->programs()) return DomainStatus::InvalidActor;
         const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
         const auto target=participants.find(pending.unit);
         if(target.id()) {
-            auto input=formulaInput(player);SkillFormulaValues values(*player.rules.skills->formulas,input);
+            auto input=caster->formulaInput(ports_.effects,actor.tick);SkillFormulaValues values(*caster->programs()->formulas,input);
             const auto calculation=[&](std::string_view field) {
                 const auto result=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,field);
                 if(!result) throw std::logic_error("Missing native spear follow-up formula");
                 return *result;
             };
-            const auto &row=player.rules.skills->formulas->skills.at(pending.skill.sourceId);
+            const auto &row=caster->programs()->formulas->skills.at(pending.skill.sourceId);
             const auto missile=ports_.missiles.nativeDefinition(row.reference("srvmissilea"));
             if(!missile) return DomainStatus::Unavailable;
             std::vector<missiles::NativeSpawn> births;
@@ -143,7 +155,7 @@ DomainStatus System::drainWeaponMelee(Release &pending,const ActorContext &actor
                 const int count=calculation("calc1");
                 for(int index=0;index<count;++index) {
                     missiles::NativeSpawn spawn{actor.actor,actor.area,actor.areaGeneration,actor.tick,target.position(),
-                        target.position()*2.f-player.position,*missile,pending.skill.sourceId,pending.skill.rank};
+                        target.position()*2.f-caster->position(),*missile,pending.skill.sourceId,pending.skill.rank};
                     spawn.initialization=missiles::NativeSpawn::Initialization::ChargedSkill;spawn.initializationIndex=index;
                     births.push_back(std::move(spawn));
                 }

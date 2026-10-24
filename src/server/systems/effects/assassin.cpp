@@ -91,7 +91,10 @@ DomainResult<> System::progressiveValue(const ActorContext &actor,const Assassin
     if(!states.writeNativeStats(handle,writes,rules,spec,[&]{resources.sample(states,true);})) return {DomainStatus::Unavailable,{}};
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,resources.record()};
     edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,actor.tick);
-    auto prepared=ports_.transactions.prepare(std::move(edit));return prepared?ports_.transactions.commit(std::move(*prepared.value)):DomainResult<>{prepared.status,{}};
+    auto prepared=ports_.transactions.prepare(std::move(edit));if(!prepared) return {prepared.status,{}};
+    auto next=state_;next.players[actor.actor].states=std::move(states);
+    const auto committed=ports_.transactions.commit(std::move(*prepared.value));if(committed) publishPlayers(next.players);
+    return committed;
 }
 bool System::hasProgressive(EntityId actor) const {
     return !progressiveCharges(actor).empty();
@@ -115,6 +118,7 @@ void System::progressiveDamage(EntityId actor,WeaponSkillDamage &attack,uint64_t
     for(const auto &charge:progressiveViews(*caster->programs(),input,unitEffects(actor))) {
         const auto kind=charge.program->progressiveDamage;
         if(kind==2) {
+            if(caster->programs()->pd2) continue; // PD2 Cobra uses Do170's short contact list.
             const auto &source=caster->programs()->formulas->skills.at(charge.skill);
             const auto leech=nativeAdd(source.number("param1"),nativeMultiply(nativeSubtract(charge.rank,1),source.number("param2")));
             const auto [life,mana]=assassinCobraLeech(charge.count,leech);
@@ -152,7 +156,11 @@ DomainResult<> System::progressiveCharge(const ActorContext &actor,const SkillCa
     const auto key=StatKey{uint16_t(program.chargeStat),0};
     const auto oldValues=previous?combatEffectNativeValues(previous->spec):std::optional<std::map<StatKey,int32_t>>{};
     const auto old=oldValues?StatSnapshot{*oldValues}.get(key):0;
-    const auto next=assassinNextCharge(old);
+    int next=assassinNextCharge(old);
+    if(caster->programs()->pd2) {
+        int maximum{};for(const auto &charge:progressiveCharges(actor.actor)) maximum=std::max(maximum,charge.count);
+        next=std::min(maximum+1,3);
+    }
     auto input=caster->formulaInput(*this,actor.tick);SkillFormulaValues formulas(*caster->programs()->formulas,input);
     const auto duration=formulas.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,"auralencalc");
     if(!duration) return {DomainStatus::Unavailable,{}};
@@ -168,7 +176,11 @@ DomainResult<> System::progressiveCharge(const ActorContext &actor,const SkillCa
     }
     if(old!=next) {
         writes.emplace_back(key,next);
-        if(program.chargeHitStat>=0) {
+        if(caster->programs()->pd2) {
+            const auto previousStats=oldValues?StatSnapshot{*oldValues}:StatSnapshot{};
+            for(const auto &write:formulas.auraStats(skill.sourceId,skill.rank,6,false)) if(write.key!=key)
+                writes.emplace_back(write.key,nativeAdd(previousStats.get(write.key),nativeMultiply(write.value,next-old)));
+        } else if(program.chargeHitStat>=0) {
             const auto bonus=formulas.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,"aurastatcalc2");
             if(!bonus) return {DomainStatus::Unavailable,{}};
             const auto hit=StatKey{uint16_t(program.chargeHitStat),0};

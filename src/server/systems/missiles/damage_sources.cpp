@@ -86,7 +86,7 @@ MissileRule System::nativeChildRule(const Missile &parent,int definition) const 
     return rule;
 }
 void System::initializePierce(Missile &missile) const {
-    missile.pierces=0;if(!missile.nativeDamage || !missile.nativeDamage->rule.pierce) return;
+    missile.pierces=missile.pierceCount=0;if(!missile.nativeDamage || !missile.nativeDamage->rule.pierce) return;
     const auto &rule=missile.nativeDamage->rule;const auto *player=ports_.players.findActor(missile.owner);const auto *monster=ports_.monsters.find(missile.owner);
     const auto values=ports_.effects.unitStatValues(missile.owner,missile.created);
     const auto *base=player?player->totals.statSources.get():monster && monster->nativeStats?monster->nativeStats->sources.get():nullptr;
@@ -108,6 +108,7 @@ std::shared_ptr<MissileDamageRollState> System::damageRolls(const Missile &missi
     result->damageParameters=rule.damageParameters;result->programOverlay=rule.programOverlay;
     result->getHit=rule.getHit;result->softHit=rule.softHit;result->knockbackChance=rule.knockbackChance;
     result->uninterruptableState=rule.uninterruptableState;result->targetParameterX=missile.parameters[0];
+    result->pierceCount=missile.pierceCount;
     return result;
 }
 MissileDamageData System::prepareDamage(const Missile &missile,const MissileRule &rule,std::shared_ptr<const StatList> mode,
@@ -217,7 +218,8 @@ MissileDamageData System::prepareDamage(const Missile &missile,const MissileRule
         typeBonuses->clear();const auto id=stats.names.at("damage_vs_montype");
         for(const auto &[key,value]:owner.values) if(key.id==id && typeBonuses->size()<128) typeBonuses->emplace_back(key.layer,value);
     }
-    const StatSnapshot initial;
+    StatSnapshot initial;
+    if(missile.initialDamagePercent) initial.values.emplace(StatKey{stats.names.at("damagepercent"),0},missile.initialDamagePercent);
     const MissileDamageInput input{.physical=physical,.elemental=elemental,.element=element,.length=length,
         .unitSourceDamage=sourceDamage,.originSourceDamage=originDamage,.holy=rule.holy,.halfTwoHanded=rule.halfTwoHanded,
         .hireling=monster && monster->hireling,.bonusStats=bonus,.weapon=equipment,.owner=owner,.missile=initial,.origin=origin?&originStats:nullptr};

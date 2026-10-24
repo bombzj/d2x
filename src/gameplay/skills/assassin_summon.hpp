@@ -4,6 +4,8 @@
 #include "world/collision.hpp"
 #include <array>
 #include <memory>
+#include <string>
+#include <utility>
 
 namespace d2x {
 class SkillFormulaValues;
@@ -16,6 +18,12 @@ struct AssassinPetDefinition {
     int nativeClass{-1};
     int infernoFrames{},infernoAnimation{};
     bool attackable{},warp{};
+    // PD2 also assigns ShadowMaster AI to Amazon pets. AI identity does
+    // not imply the Assassin disguise or its owner-class skill inheritance.
+    bool inheritOwnerSkills{true};
+    std::string transformClass{"ass"};
+    int summonFunction{49};
+    std::array<std::pair<int,int>,3> lifeRanges{};
     int warpProbeClass{-1};
     MovementCollisionRule warpProbeCollision;
 };
@@ -24,5 +32,5 @@ struct AssassinPetSpec {
     int skill{-1},rank{},itemLevel{},lifeFrames{};
 };
 SummonCastSpec resolveAssassinSummon(const SummonSkillSpec &,int rank,int ownerLevel,int difficulty,
-    SkillFormulaValues &,int skill);
+    SkillFormulaValues &,int skill,bool pd2=false);
 }

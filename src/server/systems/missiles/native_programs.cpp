@@ -2,6 +2,7 @@
 #include "runtime.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -49,6 +50,9 @@ void System::initializePath(Missile &missile) const {
     missile.path.assign(path.begin(),path.end());
 }
 RuleNumber System::withMissileOwnerFormula(Advance &plan,const std::function<RuleNumber(SkillFormulaValues &)> &evaluate) const {
+    return withMissileOwnerRandom(plan,[&](SkillFormulaValues &values,uint64_t &)->RuleNumber {return evaluate(values);});
+}
+RuleNumber System::withMissileOwnerRandom(Advance &plan,const std::function<RuleNumber(SkillFormulaValues &,uint64_t &)> &evaluate) const {
     const auto &missile=plan.next;const auto &rule=missile.nativeDamage->rule;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto owner=participants.find(missile.owner);
@@ -56,7 +60,7 @@ RuleNumber System::withMissileOwnerFormula(Advance &plan,const std::function<Rul
     if(!owner.id()) {
         const std::map<int,int> ranks;const StatSnapshot stats;
         SkillFormulaInput input{ranks,ranks};input.statRules=rule.damageStats.get();input.stats=&stats;
-        SkillFormulaValues formulas(*rule.damageFormulas,input);return evaluate(formulas);
+        auto random=uint64_t{};SkillFormulaValues formulas(*rule.damageFormulas,input);return evaluate(formulas,random);
     }
     auto expected=owner.player?owner.player->combatRandom:owner.monster->combatRandom;
     for(size_t index=plan.nextOperation;index<plan.operations.size();++index) {
@@ -73,7 +77,7 @@ RuleNumber System::withMissileOwnerFormula(Advance &plan,const std::function<Rul
     if(owner.monster && !sampled) throw std::logic_error("Missing native missile formula owner stats");
     auto input=owner.player?skills::formulaInput(*owner.player,draw):skills::formulaInput(*owner.monster,*sampled,draw);
     SkillFormulaValues formulas(*rule.damageFormulas,input);
-    const auto value=evaluate(formulas);
+    const auto value=evaluate(formulas,random);
     if(random!=expected) {
         plan.operations.push_back({Advance::OperationKind::OwnerSeed,plan.formulaSeeds.size()});
         plan.formulaSeeds.push_back({owner.id(),expected,random});
@@ -111,6 +115,7 @@ Missile &System::planNativeChild(Advance &plan,int definition,Vec position,Vec d
     const auto rule=nativeChildRule(plan.next,definition);
     auto child=plan.next;child.id={};child.definition=definition;child.position=position;
     child.ageFrames=0;child.parameters={};child.lastHit={};child.guidance={};child.guidanceSearched=false;
+    child.initialDamagePercent=0;
     child.pathInitialization={};
     child.movedCell=false;child.motion.reset();child.pathRevision=0;
     child.hitOnCreation.reset();
@@ -148,7 +153,7 @@ void System::planCollisionChild(Advance &plan,int radius,int period,int definiti
 }
 std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) const {
     if(!original.nativeDamage) return {};
-    const auto function=original.nativeDamage->rule.serverDoFunction;
+    auto function=original.nativeDamage->rule.serverDoFunction;
     constexpr std::array commonHits{0,1,2,3,4,5,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59};
     const bool common=function==1 && std::find(commonHits.begin(),commonHits.end(),original.nativeDamage->rule.serverHitFunction)!=commonHits.end();
     const bool dedicated=common || function==0 || function==4 || function>=38 || function==2 || function==3 || function==5 || function==6 || function==7 || function==8 || function==9 || function==10 || function==11 || function==12 || function==13 || function==14 || function==15 || function==16 || function==17 || function==19 || function==20 || function==21 || function==22 || function==23 || function==24 || function==25 || function==26 || function==27 || function==28 || function==29 || function==30 || function==31 || function==32 || function==33 || function==34 || function==35 || function==36 || function==37;
@@ -159,6 +164,10 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
     plan.damageRolls=damageRolls(original);const auto &rule=missile.nativeDamage->rule;
     const auto countdown=missile.currentFrame(),elapsed=missile.elapsedFrames();
     const auto &area=ports_.areas.at(missile.area);
+    if(original.rules && original.rules->pd2 && function>=38 && function<=40) {
+        if(!preparePd2Program(plan)) return result;
+        function=1; // The PD2 callbacks finish through HandleMissileCollision.
+    }
     if(function==0 || function==4 || function>=38) return result; // Null native Do slots leave the missile untouched.
     if(function==18) {
         if(countdown==1) plan.operations.push_back({Advance::OperationKind::TowerSound,uint32_t(missile.parameters[0])});
@@ -228,7 +237,8 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
     }
     if(function==14 && elapsed%std::max(rule.serverParameters[0],1)==0) {
         if(missile.skill.sourceId<=0 || missile.skill.rank<=0) {plan.finished=true;return result;}
-        if(rule.serverParameters[1]!=30) throw std::logic_error("Unported skill Do callback from Grim Ward controller");
+        const bool pd2BattleCry=missile.rules && missile.rules->pd2 && rule.serverParameters[1]==65;
+        if(rule.serverParameters[1]!=30 && !pd2BattleCry) throw std::logic_error("Unported skill Do callback from Grim Ward controller");
         if(skill!=rule.damageFormulas->skills.end()) {
             const auto range=missileSelfFormula(plan,"aurarangecalc"),duration=missileSelfFormula(plan,"auralencalc");
             if(!range || !duration) throw std::logic_error("Missing Grim Ward missile formula context");
@@ -238,8 +248,14 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
                 uint32_t(skill->second.number("aurafilter")),false,missile.pathTarget+area.definition.origin,effects::NativeAuraTargetMode::TargetRange,
                 missile.executionTick,missile.position+area.definition.origin});
             for(const auto id:targets) if(const auto *unit=ports_.monsters.find(id);unit && unit->rule.states && unit->rule.states->contains(skill->second.auraTargetState)) {
-                plan.operations.push_back({Advance::OperationKind::Fear,plan.fears.size()});
-                plan.fears.push_back({id,missile.id,unit->rule.states->at(skill->second.auraTargetState),missile.skill.sourceId,missile.skill.rank,frames,false,{}});
+                if(pd2BattleCry) {
+                    plan.addSkillState(missile.owner,id,missile.skill.sourceId,missile.skill.rank,0);
+                    auto &state=plan.skillStates.back();state.procedure=effects::NativeSkillStateProcedure::BattleCry;
+                    state.duration=*duration;state.seedCommitted=true;
+                } else {
+                    plan.operations.push_back({Advance::OperationKind::Fear,plan.fears.size()});
+                    plan.fears.push_back({id,missile.id,unit->rule.states->at(skill->second.auraTargetState),missile.skill.sourceId,missile.skill.rank,frames,false,{}});
+                }
             }
         }
     }

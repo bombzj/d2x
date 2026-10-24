@@ -5,6 +5,7 @@
 #include "core/math.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/stats/stat_list.hpp"
+#include "pd2/curse_slots.hpp"
 #include <optional>
 #include <vector>
 
@@ -48,6 +49,7 @@ struct CombatEffectSpec {
     // nativeValues does not retain another live copy of their values.
     std::optional<StatKey> physicalShieldStat,physicalShieldMaximumStat;
     bool nativeDirectAllocation{}; // Direct D2Common list allocation bypasses the curse/group posting policy.
+    std::optional<Pd2CurseSlots> pd2CurseSlots;
     bool nativeState{}; // Explicit unit bit, independent of this list's expiry.
     std::vector<int> removalGroupStates; // Native shape callback walks States in index order.
     int clearStateOnRemoval=-1; // BasicAura owner callback also clears NoManaRegen.
