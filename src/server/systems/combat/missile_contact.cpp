@@ -33,7 +33,8 @@ DomainResult<MissilePreludeResult> System::missilePrelude(SpellImpact &impact,Ti
     const auto *area=ports_.areas.find(impact.area);
     if(!area || !target.aliveIn(impact.area) ||
         (source.id() && !impact.environment && !impact.collideFriend && !participants.canHarm(source,target))) return {DomainStatus::Applied,MissilePreludeResult::Ignore};
-    if(impact.nativeNextHit && !impact.missileContact && !ports_.effects.missileHitAllowed(target.id(),tick.tick))
+    if(impact.nativeNextHit && !impact.missileContact && !(impact.pd2NextHitKey?
+        ports_.effects.pd2MissileHitAllowed(target.id(),*impact.pd2NextHitKey):ports_.effects.missileHitAllowed(target.id(),tick.tick)))
         return {DomainStatus::Applied,MissilePreludeResult::Ignore};
     impact.binding=participants.bind(source);
     const auto result=prepareMissileContact(impact,source,target,area->generation,tick,true);
@@ -103,7 +104,8 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
         contact.accuracyPrepared=true;
     }
     if(!contact.delayPrepared && impact.nativeNextHit) {
-        const auto result=ports_.effects.nativeMissileHitDelay(target.id(),*impact.nativeNextHit,impact.nextDelay,tick.tick);
+        const auto result=impact.pd2NextHitKey?ports_.effects.pd2MissileHitDelay(target.id(),*impact.pd2NextHitKey,impact.nextDelay,tick.tick):
+            ports_.effects.nativeMissileHitDelay(target.id(),*impact.nativeNextHit,impact.nextDelay,tick.tick);
         if(!result) return result.status;
         contact.delayPrepared=true;
     }
@@ -132,6 +134,9 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
         if(!source.id() || !target.id()) return DomainStatus::Stale;
     }
     if(!contact.damagePrepared) {
+        const auto criticalCaster=skills::nativeCaster(ports_.players,ports_.monsters,source.id());
+        const bool pd2Missile=impact.allocatedMissile && criticalCaster && criticalCaster->programs() && criticalCaster->programs()->pd2;
+        if(pd2Missile) {const auto result=preparePd2MissileCritical(impact,source,tick);if(result!=DomainStatus::Applied) return result;}
         const auto *monster=target.monster;
         int32_t typeBonus{};
         if(monster && impact.missileDamage->monsterTypes) {
@@ -141,11 +146,16 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
         }
         auto &missile=*impact.missileDamage;
         const MissileDamageTarget damageTarget{true,monster && monster->rule.demon,monster && monster->rule.undead,typeBonus};
+        auto data=missile.data;if(pd2Missile) data.flags&=~uint32_t{2};
         if(impact.areaDamage && !impact.areaDamage->rolled) impact.areaDamage->rolled=std::make_shared<MissileAreaRoll>();
         if(impact.areaDamage && !impact.areaDamage->rolled->value)
-            impact.areaDamage->rolled->value=impact.areaDamage->full?rollMissileDamageData(missile.data,missile.mastery,damageTarget,missile.random):
-                rollMissileElementDamage(missile.data,impact.areaDamage->element,missile.mastery,damageTarget,missile.random).hit;
-        auto rolled=impact.areaDamage?*impact.areaDamage->rolled->value:rollMissileDamageData(missile.data,missile.mastery,damageTarget,missile.random);
+            impact.areaDamage->rolled->value=impact.areaDamage->full?rollMissileDamageData(data,missile.mastery,damageTarget,missile.random):
+                rollMissileElementDamage(data,impact.areaDamage->element,missile.mastery,damageTarget,missile.random).hit;
+        auto rolled=impact.areaDamage?*impact.areaDamage->rolled->value:rollMissileDamageData(data,missile.mastery,damageTarget,missile.random);
+        if(pd2Missile && contact.pd2Critical->kind) {
+            rolled.critical=true;
+            rolled.channels[0]=nativeMultiplyDivide(rolled.channels[0],contact.pd2Critical->percentage,100);
+        }
         if(impact.areaDamage) {
             const auto flags=impact.areaDamage->hitFlags;
             const auto result=impact.areaDamage->resultFlags;
@@ -335,6 +345,7 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
             const auto result=publishSeed(source,expected,random);if(result!=DomainStatus::Applied) return result;
             contact.damage=std::move(damage);
         }
+        if(contact.blocked) ports_.itemTriggers.schedulePd2Block(target.id(),source.id(),tick.tick);
         contact.criticalPrepared=true;
     }
     if(!contact.reactionPrepared) {
@@ -383,6 +394,11 @@ DomainStatus System::prepareContactProcedures(SpellImpact &impact,ParticipantVie
                 std::initializer_list{ItemSkillEvent::Kill},target.id(),target.position());
             if(!prepared) return prepared.status;
             events=std::move(*prepared.value);
+            if(!impact.suppressSourceEvents) {
+                auto healing=ports_.itemTriggers.prepare(actor,{ItemSkillEvent::HitHeal},target.id(),target.position());
+                if(!healing) return healing.status;
+                ports_.itemTriggers.append(events,std::move(*healing.value));
+            }
         }
         const auto result=source.monster?ports_.monsters.consumeRandom(source.id(),expected,random).status:
             ports_.transactions.consumeRandom({source.player->player,source.id(),source.player->area,

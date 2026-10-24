@@ -32,6 +32,7 @@ FrameEventQueue::PreparedEdit System::prepareStormTimers(const ActorContext &act
         for(const auto &effect:states.entries()) {
             const auto skill=effect.spec.source.definition;
             const auto definition=player.rules.skills->definitions.find(skill);
+            if(player.rules.skills->pd2 && totals.nativeStats.get({player.rules.skills->stats->names.at("item_skillonequip"),uint16_t(skill)})>0) continue;
             if(effect.spec.source.kind!=CombatEffectSource::Skill || definition==player.rules.skills->definitions.end() ||
                (definition->second.spec.effect!=SkillBehavior::ThunderStorm &&
                 !(definition->second.spec.assassin && definition->second.spec.assassin->program==AssassinProgram::BladeShield)) ||

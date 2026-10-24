@@ -282,6 +282,7 @@ void preparePd2SkillData(ClassicData &data,Archives &archives) {
             spec.state=state->second.definition;spec.linearDuration=std::pair{0,0};
             spec.effect=action==29?SkillBehavior::ThunderStorm:
                 record.sourceName=="Blaze"?SkillBehavior::Blaze:SkillBehavior::EnergyShield;
+            if(action==29) spec.missileId=spec.pd2->missiles[0];
             record.spell=std::make_shared<const SkillSpec>(std::move(spec));continue;
         }
         if(!record.passive && !start && (action==0 || action==8 || action==10 || action==17 || action==22 || action==24 || action==26 || action==28 || action==73 || action==118 || action==159 || action==166)) {

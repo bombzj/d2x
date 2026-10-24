@@ -18,15 +18,16 @@ std::pair<int32_t,int32_t> meleePhysicalRange(const WeaponSkillDamage &attack,bo
     return {nativeAdd(low,nativePercentage(low,nativeAdd(percent,attack.weapon.minimumDamagePercent),100)),
         nativeAdd(high,nativePercentage(high,nativeAdd(percent,attack.weapon.maximumDamagePercent),100))};
 }
-bool weaponCritical(const WeaponDamage &weapon,const CombatModifiers &mods,const SkillCastSpec &skill,bool projectile,uint64_t &random) {
+Pd2CriticalRoll weaponCritical(const WeaponDamage &weapon,const CombatModifiers &mods,const SkillCastSpec &skill,bool projectile,uint64_t &random) {
     const auto own=mods.weapons.find(weapon.item);const WeaponModifiers extra=own==mods.weapons.end()?WeaponModifiers{}:own->second;
     const int mastery=weapon.nativeModifiers?(weapon.throwable && skill.weapon->useThrowMastery?weapon.throwMastery[2]:weapon.meleeMastery[2]):
         projectile?weapon.projectileMasteryCritical:weapon.masteryCritical;
+    if(mods.pd2) return rollPd2Critical(*mods.pd2,mods.criticalStrike,mastery,nativeAdd(mods.deadlyStrike,extra.deadlyStrike),random);
     bool critical=mastery>0 && limitedRandom(random,100)<unsigned(std::clamp(mastery,0,100));
     if(!critical && mods.criticalStrike>0) critical=limitedRandom(random,100)<unsigned(mods.criticalStrike);
     const auto deadly=nativeAdd(mods.deadlyStrike,extra.deadlyStrike);
     if(!critical && deadly>0) critical=limitedRandom(random,100)<unsigned(deadly);
-    return critical;
+    return {critical?1:0,200};
 }
 }
 std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &attack,bool demon,bool undead) {
@@ -49,12 +50,13 @@ std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &attack,bool 
         channels[0]=attack.channels[0];
     } else if(attack.projectile) {
         const auto raw=nativeAdd(baseLow,baseHigh>baseLow?int32_t(attack.physicalRoll%uint32_t(nativeSubtract(baseHigh,baseLow))):0);
-        channels[0]=nativeMultiply(nativeAdd(raw,nativeMultiplyDivide(raw,percent,100)),attack.critical?2:1);
+        const auto amount=nativeAdd(raw,nativeMultiplyDivide(raw,percent,100));
+        channels[0]=!attack.critical?amount:attack.criticalPercent==200?nativeMultiply(amount,2):nativeMultiplyDivide(amount,attack.criticalPercent,100);
     } else {
         const auto [low,high]=meleePhysicalRange(attack,demon,undead);
         auto raw=std::max(0,nativeAdd(nativeChecked(attack.physicalAddition),nativeAdd(low,high>low?int32_t(attack.physicalRoll%uint32_t(nativeSubtract(high,low))):0)));
         if(attack.sourceDamage!=128) raw=nativePercentage(raw,attack.sourceDamage,128);
-        channels[0]=nativeMultiply(raw,attack.critical?2:1);
+        channels[0]=!attack.critical?raw:attack.criticalPercent==200?nativeMultiply(raw,2):nativeMultiplyDivide(raw,attack.criticalPercent,100);
     }
     channels[0]=nativeAdd(nativeChecked(channels[0]),nativeShiftLeft(attack.physicalFlat,8));
     const auto converted=nativePercentage(nativeChecked(channels[0]),attack.conversionPercent,100);
@@ -124,7 +126,8 @@ WeaponSkillDamage rollNativeWeaponPhysical(const WeaponDamage &weapon,const Comb
     auto value=prepareWeaponSkillProcedures(weapon,input,skill,level,false);const auto [low,high]=meleePhysicalRange(value,demon,undead);
     value.sourceDamage=native.sourceDamage?native.sourceDamage:128;value.physicalAddition=native.initialDamage;
     value.physicalRoll=high>low?limitedRandom(random,uint32_t(nativeSubtract(high,low))):0;
-    value.critical=native.critical && weaponCritical(weapon,mods,skill,false,random);
+    const auto critical=native.critical?weaponCritical(weapon,mods,skill,false,random):Pd2CriticalRoll{};
+    value.critical=critical.kind!=0;value.criticalPercent=critical.percentage;
     // FillDamageValues invokes its unit event before applying conversion.
     // Keep the original roll/parameters for the later conversion stage.
     auto physical=value;physical.conversionPercent=0;physical.physicalFlat=0;

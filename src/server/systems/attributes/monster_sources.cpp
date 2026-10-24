@@ -89,6 +89,7 @@ void recordMonsterItemAura(monsters::Actor &unit,StatValue write,EntityId source
     input.referenceRanks=prepareSkillFormulaRanks(unit.rule.baseSkillRanks,ranks,{},charges,formulas.maximumSkillRank);
     input.currentResources.emplace(StatKey{rules.names.at("hitpoints"),0},life.raw());
     SkillAuraChange change{source,refresh.skill,write.value,record->second.suppressionState};
+    change.equippedSkill=rules.pd2 && write.key.id==rules.names.at("item_skillonequip");
     change.formula=std::make_shared<SkillFormulaSnapshot>(captureSkillFormulaInput(input));
     if(write.value) {
         SkillFormulaValues values(formulas,input);const auto period=values.calculation(FormulaDomain::Skill,refresh.skill,write.value,"perdelay");

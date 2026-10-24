@@ -22,6 +22,7 @@ struct Preparation {
     Pending pending; PersistentCharacter character; std::string classCode;
     uint64_t inventoryRevision{}, characterRevision{}; int difficulty{}; bool storage{}, cube{};
     std::string npc;
+    uint32_t pd2Random{};
 };
 struct Output { ItemInstance item; std::optional<ItemHandle> replacement; EntityId container; };
 struct Prepared {
@@ -29,12 +30,14 @@ struct Prepared {
     std::shared_ptr<const EquipmentRules> equipment; std::string deferred;
     std::optional<CharacterRecord> character;
     std::optional<travel::SpecialPortalKind> portal;
+    std::optional<uint32_t> pd2Random;
 };
 struct State { std::map<PlayerId, Pending> pending; uint64_t next = 1; std::string deferred; };
 struct Ports {
     const PlayerStore &players; const AreaStore &areas; items::System &items; transactions::System &transactions;
     const ItemCatalog *definitions; const inventory::System &inventory;
     const GameSettings &settings; uint64_t &random; const npc::System &npc; travel::System &travel; EventOutbox &events; const quests::System &quests;
+    uint32_t &pd2Random;
 };
 class System {
     State state_;

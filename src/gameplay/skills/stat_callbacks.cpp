@@ -13,7 +13,7 @@ bool applyItemAuraTimerInstruction(std::vector<ItemAuraTimer> &timers,const Item
         return true;
     }
     if(instruction.kind==ItemAuraCallbackKind::ScheduleTimer) {
-        timers.push_back({instruction.change.source,instruction.change.skill,instruction.change.state,instruction.due,order,instruction.continuous});
+        timers.push_back({instruction.change.source,instruction.change.skill,instruction.change.state,instruction.due,order,instruction.continuous,instruction.change.equippedSkill});
         return true;
     }
     return false;
@@ -50,7 +50,7 @@ void refreshItemAuraTimers(std::vector<ItemAuraTimer> &timers,std::span<const Sk
 }
 int32_t itemAuraTimerRank(const StatRuleCatalog &rules,const StatSnapshot &values,const ItemAuraTimer &timer) {
     if(timer.skill<0 || timer.skill>UINT16_MAX) throw std::invalid_argument("Invalid native item aura skill layer");
-    return nativeStatValue(values,rules,"item_aura",uint16_t(timer.skill));
+    return nativeStatValue(values,rules,timer.equippedSkill?"item_skillonequip":"item_aura",uint16_t(timer.skill));
 }
 void refreshItemStatEvents(std::vector<ItemStatEvent> &events,const StatRuleCatalog &rules,StatKey key,int32_t value) {
     const auto &bindings=rules.definitions.at(key.id).itemEvents;
@@ -58,9 +58,9 @@ void refreshItemStatEvents(std::vector<ItemStatEvent> &events,const StatRuleCata
     if(!value) {std::erase_if(events,[&](const auto &event){return event.key==key;});return;}
     if(std::any_of(events.begin(),events.end(),[&](const auto &event){return event.key==key;})) return;
     for(const auto binding:bindings) {
-        // Fixed 1.13c event callback table has non-null slots 1 through 31.
-        // The native registration wrapper ignores every other function slot.
-        if(binding.event>0 && binding.function>0 && binding.function<=31)
+        // Retail has non-null slots 1..31; the PD2 table extends through 33.
+        // Registration ignores slots outside the active callback table.
+        if(binding.event>0 && binding.function>0 && binding.function<=(rules.pd2?33:31))
             events.insert(events.begin(),ItemStatEvent{key,binding});
     }
 }
@@ -81,6 +81,7 @@ SkillStatRefresh skillStatRefresh(const StatRuleCatalog &rules,const SkillFormul
     if(name=="item_allskills" || name=="item_elemskill") return {SkillStatRefreshKind::Passives,0};
     if(name=="item_charged_skill") return {SkillStatRefreshKind::Charges,decodeItemSkillLayer(key.layer).skill};
     if(name=="item_aura") return {SkillStatRefreshKind::Aura,key.layer};
+    if(rules.pd2 && name=="item_skillonequip") return {SkillStatRefreshKind::Aura,key.layer};
     return {};
 }
 }

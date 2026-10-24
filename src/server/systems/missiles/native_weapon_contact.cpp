@@ -23,7 +23,9 @@ DomainResult<DirectContact> System::nativeWeaponContact(const Spawn &request,std
         const auto stats=ports_.effects.unitStatValues(caster->id(),request.actor.tick,weapon.item?std::optional{weapon.item}:std::nullopt,
             request.nativeMeleeContact && request.nativeMeleeContact->monsterProgram?request.nativeMeleeContact->monsterProgram->modeStats:nullptr);
         if(!stats) return {DomainStatus::Unavailable,{}};
-        weapon=sampleNativeWeapon(weapon,*stats,*rules.stats,modifiers,true);
+        weapon=sampleNativeWeapon(weapon,*stats,*rules.stats,modifiers,true,0,
+            caster->monster->equipmentStats?&*caster->monster->equipmentStats:nullptr,rules.formulas.get(),
+            caster->monster->identity.monster=="shadowwarrior" || caster->monster->identity.monster=="shadowmaster");
     }
     hit.weapon=prepareWeaponSkillProcedures(weapon,modifiers,request.skill,request.weapon->level,false);
     hit.nativeSkill=request.nativeMeleeContact?request.nativeMeleeContact:std::make_shared<combat::NativeSkillContact>();hit.nativeSkill->skill=request.skill.sourceId;hit.nativeSkill->rank=request.skill.rank;

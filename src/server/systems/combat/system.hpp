@@ -32,6 +32,7 @@ class System {
     DomainStatus prepareNativeSmite(SpellImpact &,const PlayerState &,TickContext);
     DomainStatus preparePd2SplashDamage(SpellImpact &,ParticipantView,TickContext);
     DomainStatus preparePd2SplashDefense(SpellImpact &,ParticipantView,ParticipantView,TickContext);
+    DomainStatus preparePd2MissileCritical(SpellImpact &,ParticipantView,TickContext);
     void preparePd2LifeNotification(ParticipantView,TickContext);
     void finishPd2LifeNotification(SpellImpact &,ParticipantView,bool getHit,bool softHit,int64_t damage,bool recovery,TickContext);
     DomainStatus prepareContactProcedures(SpellImpact &,ParticipantView,ParticipantView,TickContext);

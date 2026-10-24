@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "pd2/item_pierce.hpp"
 #include "player_contact.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -43,6 +44,7 @@ DomainStatus System::resolvePlayerImpact(SpellImpact &impact,ParticipantView sou
     auto hitClass=state_.hitClassCursor;hit.hitClass=monsterDamageHitClass(hit,hit.hitClass,hitClass);
     effects::PlayerHitAdjustment adjustment;adjustment.credit=impact.binding.credit;
     adjustment.coldPierce=impact.coldPierce;adjustment.poisonPierce=impact.poisonPierce;
+    adjustment.pd2Pierce=pd2ItemPierce(ports_,impact,source,tick.tick);
     const auto &rules=*owner.rules.skills;
     auto events=source.player?ports_.itemTriggers.prepare(attacker,{ItemSkillEvent::Kill},target.actor,target.position):
         DomainResult<reactions::ItemEventPlan>{DomainStatus::Applied,reactions::ItemEventPlan{}};

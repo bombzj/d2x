@@ -1,6 +1,7 @@
 #pragma once
 #include "core/math.hpp"
 #include "core/id.hpp"
+#include "gameplay/events/frame_queue.hpp"
 #include <array>
 #include <cstddef>
 #include <optional>
@@ -10,6 +11,7 @@
 namespace d2x::server::skills {
 struct Pd2VengeancePulse;
 struct Pd2CastExecution {
+    std::optional<FrameEventQueue::PreparedInsertion> castItemTimer;
     std::shared_ptr<Pd2VengeancePulse> vengeance;
     int chargeDistance{};bool chargeState{};
     struct Ravens {int count{},next{};std::optional<Vec> point;};

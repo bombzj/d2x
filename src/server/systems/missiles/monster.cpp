@@ -152,6 +152,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
                 damage.poisonCount=nativeAdd(damage.poisonCount,adds.poisonCount);
             }
             missile.suppressSourceEvents=request.suppressSourceEvents;
+            missile.pd2SharedClassHitDelay=request.pd2SharedClassHitDelay;
             if(request.initialization==NativeSpawn::Initialization::Pd2Firestorm) {
                 if(!data->pathSeedExpected) {
                     const auto current=runtime_->pd2PathSeeds.find(lead.owner);
@@ -387,7 +388,8 @@ DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &requ
             if(weapon.nativeModifiers) {
                 const auto values=ports_.effects.unitStatValues(source->id,request.tick,weapon.item,request.attack.modeStats);
                 if(!values) return {DomainStatus::InvalidActor,{}};
-                weapon=sampleNativeWeapon(weapon,*values,*source->rule.stats,modifiers,true);
+                weapon=sampleNativeWeapon(weapon,*values,*source->rule.stats,modifiers,true,0,
+                    source->equipmentStats?&*source->equipmentStats:nullptr,source->rule.formulas.get());
             }
             if(!weapon.nativeModifiers) {
                 weapon.attackRatingPercent+=buffs.combat.attackRatingPercent;
@@ -459,7 +461,8 @@ combat::SpellImpact System::enemyImpact(Advance &plan,std::vector<EntityId> unit
         hit.freeze=enemy.weapon->freeze;
     }
     hit.returnFire=enemy.rule.returnFire;hit.hitClass=uint8_t(enemy.rule.hitClass);hit.nextDelay=unsigned(enemy.rule.nextDelay);
-    if(plan.damageRolls && enemy.rule.nextHit) hit.nativeNextHit=enemy.rule.nextHitState;
+    if(plan.damageRolls && enemy.rule.nextHit && (!missile.rules->pd2 || enemy.rule.nextDelay)) hit.nativeNextHit=enemy.rule.nextHitState;
+    hit.pd2NextHitKey=pd2NextHitKey(missile);
     return hit;
 }
 

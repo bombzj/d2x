@@ -11,6 +11,8 @@
 #include "gameplay/skills/druid_summon.hpp"
 #include "gameplay/skills/aura_resolve.hpp"
 #include "server/systems/attributes/monster_sources.hpp"
+#include "server/systems/attributes/pd2/item_values.hpp"
+#include "gameplay/stats/pd2/owner_values.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -59,6 +61,23 @@ SkillFormulaInput formulaInput(const PlayerState &player,const CharacterRecord &
     resource("hitpoints",record.hp);
     resource("mana",record.mana);
     resource("stamina",record.stamina);
+    if(input.statRules->pd2) {
+        const auto &rules=*input.statRules;
+        const auto source=weapon?statListWithWeapon(*totals.statSources,*weapon,rules):totals.statSources;
+        const StatQueryContext context{source.get(),StatCharacterContext{player.definition.lifePerVitality,player.definition.manaPerEnergy,
+            player.definition.staminaPerVitality,rules.names.at("maxstamina")},source->sampledActTime};
+        const auto sampled=samplePd2OwnerStats(rules,*source,evaluateStoredStatList(rules,*source,context),record.hp.raw(),
+            attributes::pd2EquippedEthereals(player.persistent,totals.activeEquipment),context);
+        input.sampledStats=std::make_shared<const StatSnapshot>(sampled.values);input.stats=input.sampledStats.get();
+        for(const auto name:{"equipped_eth","missing_hp","inc_splash_radius"}) {
+            const StatKey key{rules.names.at(name),0};input.currentResources.insert_or_assign(key,sampled.values.get(key));
+        }
+        if(selected) for(const auto &part:sampled.sources->contributions) if(part->unitRoot && part->source.owner==selected) {
+            auto itemContext=context;itemContext.unit=sampled.sources.get();
+            input.sampledWeaponStats=std::make_shared<const StatSnapshot>(evaluateStatList(rules,*part,itemContext));
+            input.weaponStats=input.sampledWeaponStats.get();break;
+        }
+    }
     return input;
 }
 SkillFormulaInput formulaInput(const monsters::Actor &unit,StatSnapshot sampled,RuleRandom random) {
@@ -72,6 +91,9 @@ SkillFormulaInput formulaInput(const monsters::Actor &unit,StatSnapshot sampled,
     const auto charges=attributes::monsterChargedSkills(unit,*input.actor);
     input.referenceRanks=prepareSkillFormulaRanks(unit.rule.baseSkillRanks,effective,{},charges,unit.rule.formulas->maximumSkillRank);
     input.currentResources.emplace(StatKey{rules.names.at("hitpoints"),0},nativeChecked(unit.life));
+    if(rules.pd2) for(const auto name:{"equipped_eth","missing_hp","inc_splash_radius"}) {
+        const StatKey key{rules.names.at(name),0};input.currentResources.insert_or_assign(key,input.stats->get(key));
+    }
     if(unit.petWeapon && unit.petWeapon->item) {
         const auto selected=unit.petWeapon->item;
         const auto readWeapon=[&](auto &&self,const StatList &list)->const StatList * {

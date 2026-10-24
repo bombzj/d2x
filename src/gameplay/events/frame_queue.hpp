@@ -14,7 +14,7 @@ enum class FrameEventType : uint8_t {
     ModeChange=0, EndAnimation=1, AiThink=2, StatRegeneration=3, Trap=4,
     ActiveState=5, FreeHover=6, MonsterModifier=7, PeriodicSkills=8,
     PeriodicStats=9, AiReset=10, DelayedPortal=11, RemoveState=12,
-    TradeOrVendor=13, RemoveSkillCooldown=14
+    TradeOrVendor=13, RemoveSkillCooldown=14, Pd2MissileHitDelay=15
 };
 struct FrameEventOwner {
     FrameEventUnit type{FrameEventUnit::Game};

@@ -18,6 +18,7 @@ struct MissileContactExecution {
     bool drainPrepared{},drainCommitted{};
     bool delayPrepared{};
     bool damageProgramDomainPrepared{};
+    std::optional<Pd2CriticalRoll> pd2Critical;
     std::optional<std::pair<uint64_t,uint64_t>> damageFormulaSeed;
     bool flagsPrepared{};
     bool resultSuccessful{true},suppressEvents{};

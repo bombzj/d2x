@@ -4,14 +4,15 @@
 namespace d2x {
 struct ItemTriggerRule {
     int effect{}, target{};
-    bool targetDo{}, checkStart{}, alternativeCompatible{};
+    bool targetDo{}, checkStart{}, alternativeCompatible{}, pd2{}, preparedStart{};
 };
 enum class ItemTriggerSupport { Ready, NoEffect, AlternativeProgram, TargetProgram };
-enum class ItemTriggerTarget { EventTarget, Self, RandomPosition };
+enum class ItemTriggerTarget { EventTarget, Self, RandomPosition, RandomCorpse };
 struct ItemTriggerPolicy {
     ItemTriggerSupport support{ItemTriggerSupport::NoEffect};
     ItemTriggerTarget target{ItemTriggerTarget::EventTarget};
     bool alternativeProgram{}, death{};
+    bool victimCasts{};
 };
 ItemTriggerPolicy resolveItemTriggerPolicy(ItemSkillEvent event, ItemTriggerRule rule);
 }

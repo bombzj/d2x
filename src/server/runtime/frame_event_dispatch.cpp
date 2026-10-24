@@ -3,9 +3,14 @@
 #include "server/systems/skills/pd2/vengeance.hpp"
 #include "server/systems/skills/pd2/corpses.hpp"
 #include "server/systems/effects/pd2/sacrifice.hpp"
+#include "server/systems/reactions/pd2/item_events.hpp"
 
 namespace d2x::server {
 DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,TickContext tick) {
+    if(!event.handler && event.type==FrameEventType::Pd2MissileHitDelay)
+        return {DomainStatus::Applied,std::monostate{}};
+    if(event.handler==reactions::pd2ItemEventTimerHandler && event.type==FrameEventType::MonsterModifier)
+        return systems.itemTriggers.frameEvent(event,tick.tick);
     if((event.handler==skills::pd2VengeanceTimerHandler || event.handler==skills::pd2CorpseTimerHandler) && event.type==FrameEventType::MonsterModifier)
         return systems.skills.activeStateEvent(event,tick.tick);
     if(event.handler==effects::pd2SacrificeTimerHandler && event.type==FrameEventType::MonsterModifier)

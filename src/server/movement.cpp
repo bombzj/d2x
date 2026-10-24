@@ -11,6 +11,7 @@
 #include "gameplay/actions/movement_timing.hpp"
 #include "gameplay/actions/shape_timing.hpp"
 #include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/rules/pd2_phasing.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "runtime/contracts.hpp"
 #include "world/interaction_geometry.hpp"
@@ -22,6 +23,12 @@
 
 namespace d2x::server {
 namespace {
+MovementCollisionRule movementCollision(const PlayerState &player) {
+    if(player.rules.skills && player.rules.skills->pd2 &&
+       std::any_of(player.transient.states.begin(),player.transient.states.end(),pd2PhasingState))
+        return {pd2PhasingMovementMask(false),playerMovement.size};
+    return playerMovement;
+}
 void advanceMovement(PlayerState &,const AreaState &,float,const Grid &,const Grid &,const ShapeProfile *);
 bool nativeUnitRequestRange(Vec player, Vec target) {
     // PlrMsg 02/04 use sub_6FC83C60: native integer X/Y deltas <=50.
@@ -78,7 +85,7 @@ DomainResult<bool> MovementSystem::chargeStep(const ActorContext &actor,Vec targ
     if(distance<=float(stopDistance)) {p.moving=false;return {DomainStatus::Applied,true};}
     const Vec next=p.position+delta.unit()*std::min(distance-float(stopDistance),speed*TickContext::seconds);
     const auto grid=ports_.spatial.navigationGrid(p.area,p.actor);
-    if(!grid.nativeMovementSegment(p.position+Vec{.5f,.5f},next+Vec{.5f,.5f},playerMovement)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
+    if(!grid.nativeMovementSegment(p.position+Vec{.5f,.5f},next+Vec{.5f,.5f},movementCollision(p))) {p.moving=false;return {DomainStatus::Unavailable,{}};}
     p.route.clear();p.position=next;ports_.areas.moveRoomUnit(p.actor,p.area,p.position);p.look=delta.unit();p.moving=true;p.runningNow=true;
     skillSteps_[actor.player]=actor.tick;
     return {DomainStatus::Applied,(target-next).length()<=float(stopDistance)+.001f};
@@ -300,7 +307,7 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
     // boundary; native packet coordinates name subtiles, not cell centers.
     const uint8_t targetType=command.target?command.target->type:
         command.action==MovementAction::ApproachNpc?1:command.action==MovementAction::ApproachCorpse?0:255;
-    auto route = grid.nativePlayerPath(player.position+center, target+center, playerMovement,targetType);
+    auto route = grid.nativePlayerPath(player.position+center, target+center, movementCollision(player),targetType);
     for(auto &point:route) point=point-center;
     if (route.empty()) {
         player.route.clear(); player.moving = false;
@@ -343,7 +350,7 @@ void advanceMovement(PlayerState &player, const AreaState &area, float seconds,c
         const Vec delta = player.route.front() - player.position;
         constexpr Vec center{.5f,.5f};
         const auto step = player.pathStep.advance(grid, player.position + center,
-            player.route.front() + center, remaining);
+            player.route.front() + center, remaining,movementCollision(player));
         player.look = delta.unit();
         player.moving = player.moving || step.travelled > 0;
         player.position = step.position - center;

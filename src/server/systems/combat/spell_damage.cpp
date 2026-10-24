@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "pd2/item_pierce.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
 #include "player_contact.hpp"
 #include "weapon_hit.hpp"
@@ -172,7 +173,8 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             if(impact.missileDamage) {
                 if(!source.id() || !participant.aliveIn(impact.area) || (!impact.environment && !impact.collideFriend && !participants.canHarm(source,participant)) ||
                     (impact.nativeNextHit && (!impact.missileContact || impact.missileContact->targetIndex!=impact.next) &&
-                        !ports_.effects.missileHitAllowed(participant.id(),tick.tick))) {++impact.next;continue;}
+                        !(impact.pd2NextHitKey?ports_.effects.pd2MissileHitAllowed(participant.id(),*impact.pd2NextHitKey):
+                          ports_.effects.missileHitAllowed(participant.id(),tick.tick)))) {++impact.next;continue;}
                 if(!impact.missileContact || impact.missileContact->targetIndex!=impact.next) impact.binding=participants.bind(source);
                 const auto prepared=prepareMissileContact(impact,source,participant,area->generation,tick);
                 if(prepared==DomainStatus::Capacity) return StepStatus::Blocked;
@@ -210,6 +212,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     execution->target=player.actor;execution->hit=rolled;execution->states=impact.monsterStates;
                     execution->adjustment.credit=impact.binding.credit;execution->hitClass=hitClass;
                     execution->adjustment.coldPierce=impact.coldPierce;execution->adjustment.poisonPierce=impact.poisonPierce;
+                    execution->adjustment.pd2Pierce=pd2ItemPierce(ports_,impact,source,tick.tick);
                     if(source.player) {
                         const auto *sourceArea=ports_.areas.find(source.player->area);
                         if(sourceArea) execution->attacker={source.player->player,source.id(),source.player->area,sourceArea->generation,0,tick.tick};
@@ -236,6 +239,9 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                             if(rolled.channels[5]>0) execution->poison=PoisonApplication{rolled.channels[5],rolled.poisonFrames,impact.monsterStates.poison.id};
                     const auto modifiers=ports_.effects.combatModifiers(source.id(),tick.tick);
                     execution->pierce={0,0,modifiers.firePierce,modifiers.lightningPierce,modifiers.coldPierce,modifiers.poisonPierce};
+                    if(const auto pierce=pd2ItemPierce(ports_,impact,source,tick.tick)) {
+                        execution->pierce[0]=pierce->at(0);execution->pierce[1]=pierce->at(1);
+                    }
                     const auto &flags=impact.missileRolled->second;
                     execution->bypass=(unit.rule.undead && flags.bypassUndead) || (unit.rule.demon && flags.bypassDemon) || (!unit.rule.undead && !unit.rule.demon && flags.bypassBeasts);
                     impact.monsterContact=std::move(execution);
@@ -346,8 +352,9 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             const auto scale=[&](int64_t value){return sourcePercent==100 || value<=0?nativeChecked(value):nativePercentage(nativeChecked(value),sourcePercent,100);};
             auto sourceModifiers=hirelingSource?monsterSource->petStats.attributes.combat:owner->totals.character.combat;
             if(monsterSource) mergeCombatModifiers(sourceModifiers,ports_.effects.unitModifiers(monsterSource->id,tick.tick).combat);
-            const std::array<int,6> pierce{0,0,sourceModifiers.firePierce,sourceModifiers.lightningPierce,
+            std::array<int,6> pierce{0,0,sourceModifiers.firePierce,sourceModifiers.lightningPierce,
                 impact.coldPierce?impact.coldPierce:sourceModifiers.coldPierce,impact.poisonPierce?impact.poisonPierce:sourceModifiers.poisonPierce};
+            if(const auto physical=pd2ItemPierce(ports_,impact,source,tick.tick)) {pierce[0]=physical->at(0);pierce[1]=physical->at(1);}
             int64_t physical=0;std::array<int64_t,6> contactChannels{};
             const auto received=ports_.effects.unitDamageFixed(target->id,scale(amount),impact.type,tick.tick,pierce[size_t(impact.type)]);
             amount=received.dealt;absorbed=received.absorbed;

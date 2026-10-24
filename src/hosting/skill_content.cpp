@@ -2,6 +2,7 @@
 #include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
 #include "content/pd2/skill_data.hpp"
+#include "pd2/equipped_skills.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/skills/aura_data.hpp"
@@ -282,6 +283,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         else throw std::runtime_error("Unsupported original general skill program");
         prepared->definitions.emplace(id,server::SkillDefinition{std::move(spec),skillTable.number(row,"InTown").value_or(0)!=0,{}});
     }
+    if(data.pd2Host) preparePd2EquippedSkills(data,*prepared);
     for(auto &[id,definition]:prepared->definitions) for(size_t row=0;row<skillTable.rows().size();++row) if(skillTable.number(row,"Id")==id) {
         if(definition.spec.weapon) {
             definition.spec.weapon->useThrowMastery=prepared->formulas->skills.at(id).useThrowMastery;
@@ -291,6 +293,8 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         definition.itemTargetDo=skillTable.number(row,"ItemTgtDo").value_or(0)!=0;
         definition.itemEffect=skillTable.number(row,"ItemEffect").value_or(0);
         definition.itemEffectUsesPreparedProgram=definition.itemEffect<=1 || definition.itemEffect==skillTable.number(row,"srvdofunc").value_or(0);
+        if(data.pd2Host && (definition.itemEffect==151 || definition.itemEffect==183 || definition.itemEffect==187 || definition.itemEffect==188))
+            definition.itemEffectUsesPreparedProgram=true;
         definition.itemTarget=skillTable.number(row,"ItemTarget").value_or(0);
         definition.itemCheckStart=skillTable.number(row,"ItemCheckStart").value_or(0)!=0;break;
     }

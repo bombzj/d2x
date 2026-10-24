@@ -2,6 +2,8 @@
 #include "calculation.hpp"
 #include "stat_sources.hpp"
 #include "skill_refresh.hpp"
+#include "pd2/item_values.hpp"
+#include "gameplay/stats/pd2/owner_values.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/combat/unit_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
@@ -612,6 +614,11 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
     result.nativeFullStats=candidateValues;
     result.itemFullStats=itemFullStats;
     result.statSources=statListWithFullValues(*native.root,candidateValues);result.nativeStats=std::move(native.values);result.itemStats=std::move(native.items);
+    if(rules.stats->pd2) {
+        auto sampled=samplePd2OwnerStats(*rules.stats,*result.statSources,result.nativeFullStats,record.hp.raw(),pd2EquippedEthereals(state,result.activeEquipment),
+            {result.statSources.get(),StatCharacterContext{definition.lifePerVitality,definition.manaPerEnergy,definition.staminaPerVitality,rules.stats->names.at("maxstamina")},time});
+        result.statSources=std::move(sampled.sources);result.nativeFullStats=std::move(sampled.full);result.nativeStats=std::move(sampled.values);
+    }
     result.character = deriveCharacterAttributes(definition, record.level, record.allocated, modifiers, rules.resistancePenalty,rules.stats.get(),&result.nativeStats);
     const auto nativeMasteries=[&](std::string_view group,auto &target) {
         target.clear();

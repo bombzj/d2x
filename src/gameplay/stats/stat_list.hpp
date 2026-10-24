@@ -57,6 +57,7 @@ struct StatRule {
 struct StatRuleCatalog {
     std::map<uint16_t,StatRule> definitions;
     std::map<std::string,uint16_t,std::less<>> names;
+    bool pd2{};
 };
 // Lists keep their own base values and source identity. A source is withdrawn
 // by omitting its list when the owning domain prepares the next snapshot.

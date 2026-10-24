@@ -81,6 +81,7 @@ struct Missile {
     std::optional<EnemyProjectile> enemy;
     CombatSourceBinding binding{};
     bool environment{},suppressSourceEvents{},creationRejected{},nativeProgram{};
+    bool pd2SharedClassHitDelay{};
     std::optional<MissileDamageRange> damageRange;
     std::optional<NativeDamage> nativeDamage;
     std::array<int32_t,2> nativeResources{}; // Native missile HITPOINTS/MANA, distinct from its owner's resources.

@@ -8,6 +8,7 @@
 #include "gameplay/combat/weapon_snapshot.hpp"
 #include "gameplay/missiles/damage_data.hpp"
 #include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/stats/pd2/item_values.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/rules/arithmetic.hpp"
@@ -192,7 +193,10 @@ MissileDamageData System::prepareDamage(const Missile &missile,const MissileRule
         if(!monster && !player) throw std::runtime_error("Native source damage requires owner attributes");
         int mastery{};
         if(weapon) {
-            const auto sampled=sampleNativeWeapon(*weapon,owner,stats,monster?monster->petStats.attributes.combat:player->totals.character.combat,bool(monster));
+            const auto *gear=player?&player->totals.equipment:monster->equipmentStats?&*monster->equipmentStats:nullptr;
+            const auto dual=player?(player->definition.code=="bar" || player->definition.code=="ass"):
+                monster->identity.monster=="shadowwarrior" || monster->identity.monster=="shadowmaster";
+            const auto sampled=sampleNativeWeapon(*weapon,owner,stats,monster?monster->petStats.attributes.combat:player->totals.character.combat,bool(monster),0,gear,&catalog,dual);
             weapon=sampled;
             const auto used=ports_.actions.usedSkill(missile.owner);
             const auto current=used?catalog.skills.find(used->skill):catalog.skills.end();
@@ -201,7 +205,13 @@ MissileDamageData System::prepareDamage(const Missile &missile,const MissileRule
             equipment=MissileDamageWeapon{sampled.twoHanded,sampled.throwable,player && player->totals.equipment.weaponCount==2,
                 sampled.blunt,int16_t(sampled.strengthBonus),int16_t(sampled.dexterityBonus),selected[1]};
         }
-        bonus=missileHasBonusStats(read("passive_critical_strike"),read("item_deadlystrike"),bool(weapon),mastery,ownerRandom);ownerDrawn=true;
+        if(stats.pd2) {
+            const auto used=ports_.actions.usedSkill(missile.owner);
+            const auto current=used?catalog.skills.find(used->skill):catalog.skills.end();
+            if(current!=catalog.skills.end() && (current->second.number("srcdam") || used->skill==240 || used->skill==245 || used->skill==243))
+                bonus=rollPd2Critical(pd2ItemModifiers(owner,stats),read("passive_critical_strike"),mastery,read("item_deadlystrike"),ownerRandom).kind!=0;
+        } else bonus=missileHasBonusStats(read("passive_critical_strike"),read("item_deadlystrike"),bool(weapon),mastery,ownerRandom);
+        ownerDrawn=true;
     }
     StatSnapshot originStats;
     const auto *originData=origin && origin->nativeDamage?&origin->nativeDamage->data:nullptr;
@@ -212,7 +222,7 @@ MissileDamageData System::prepareDamage(const Missile &missile,const MissileRule
         const auto critical=originStats.get({stats.names.at("passive_critical_strike"),0});
         const auto deadly=originStats.get({stats.names.at("item_deadlystrike"),0});
         if(!originRandom) throw std::runtime_error("Missing native origin missile seed loan");
-        bonus=missileHasBonusStats(critical,deadly,false,0,originRandom->get());
+        if(!stats.pd2) bonus=missileHasBonusStats(critical,deadly,false,0,originRandom->get());
     }
     if(typeBonuses) {
         typeBonuses->clear();const auto id=stats.names.at("damage_vs_montype");

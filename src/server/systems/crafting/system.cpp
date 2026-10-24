@@ -51,9 +51,14 @@ std::vector<Preparation> System::pending() const {
     std::vector<Preparation> result;
     for (const auto &[id, pending] : state_.pending) {
         Preparation source; source.pending = pending; source.difficulty = ports_.settings.difficulty;
+        source.pd2Random=ports_.pd2Random;
         if (const auto *p = ports_.players.find(id)) {
             source.character = p->persistent; source.classCode = p->definition.code;
-            source.inventoryRevision = pending.inventoryRevision; source.characterRevision = pending.characterRevision;
+            source.inventoryRevision = pending.inventoryRevision;
+            // The character snapshot is read now, after this frame's resource
+            // callbacks. Bind its actual revision; the request-time revision
+            // would reject even unchanged ingredients after regeneration.
+            source.characterRevision = p->characterRevision;
             source.storage = ports_.inventory.storageAccess(id);
             source.cube = ports_.inventory.cubeAccess(id);
             if(pending.conversation) {
@@ -91,6 +96,7 @@ DomainResult<> System::install(Prepared prepared) {
     if (p->inventoryRevision != source.inventoryRevision || p->characterRevision != source.characterRevision ||
         source.storage != ports_.inventory.storageAccess(actor.player) || source.cube!=ports_.inventory.cubeAccess(actor.player)) return fail(DomainStatus::Stale);
     if (!prepared.deferred.empty()) { state_.deferred = std::move(prepared.deferred); return fail(DomainStatus::Unavailable); }
+    if(prepared.pd2Random && ports_.pd2Random!=source.pd2Random) return fail(DomainStatus::Stale);
     // Check reliable output before allocating identities or preparing the
     // transaction. Queue pressure must retain the request and its random seed.
     if (!ports_.transactions.hasOutputCapacity(1)) return {DomainStatus::Capacity, {}};
@@ -158,6 +164,7 @@ DomainResult<> System::install(Prepared prepared) {
     auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return fail(plan.status);
     auto result = ports_.transactions.commit(std::move(*plan.value));
     if (!result) return result; // Backpressure preserves the seed and inputs.
+    if(prepared.pd2Random) ports_.pd2Random=*prepared.pd2Random;
     if(portal) ports_.travel.commitSpecialPortal(std::move(*portal));
     state_.pending.erase(queued); state_.deferred.clear(); return result;
 }

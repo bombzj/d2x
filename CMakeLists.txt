@@ -59,7 +59,9 @@ target_link_libraries(d2x_world PUBLIC d2x_content d2x_navigation)
 add_library(d2x_rules
   src/gameplay/units/direction.cpp src/gameplay/rules/arithmetic.cpp
   src/gameplay/rules/formula.cpp src/gameplay/stats/stat_list.cpp
-  src/gameplay/stats/modifier_values.cpp src/gameplay/combat/unit_values.cpp
+  src/gameplay/stats/modifier_values.cpp src/gameplay/stats/pd2/item_values.cpp src/gameplay/combat/unit_values.cpp
+  src/gameplay/combat/pd2/item_modifiers.cpp
+  src/gameplay/stats/pd2/owner_values.cpp
   src/gameplay/combat/weapon_snapshot.cpp src/gameplay/combat/drain.cpp
 )
 target_link_libraries(d2x_rules PUBLIC d2x_core)
@@ -76,6 +78,9 @@ add_library(d2x_content
   src/content/pd2_core_counters.cpp
   src/content/pd2/skill_data.cpp
     src/content/pd2/corpse_data.cpp
+  src/content/pd2/item_properties.cpp
+  src/content/pd2/cube.cpp
+  src/content/pd2/cube_inputs.cpp
     src/content/pd2/aura_data.cpp
     src/content/pd2/summon_data.cpp
     src/content/pd2/curse_data.cpp
@@ -208,6 +213,7 @@ add_library(d2x_server
   src/server/systems/inventory/quantities.cpp src/server/systems/inventory/eligibility.cpp
   src/server/systems/attributes/system.cpp src/server/systems/attributes/calculation.cpp
   src/server/systems/attributes/skill_refresh.cpp src/server/systems/attributes/stat_sources.cpp
+  src/server/systems/attributes/pd2/item_values.cpp
   src/server/systems/attributes/monster_sources.cpp src/server/systems/crafting/system.cpp
   src/server/systems/loot/system.cpp src/server/systems/population/system.cpp
   src/server/systems/monsters/system.cpp src/server/systems/monsters/inactive.cpp
@@ -249,6 +255,7 @@ add_library(d2x_server
   src/server/systems/skills/monster_leap.cpp src/server/systems/skills/monster_run.cpp
   src/server/systems/skills/monster_whirlwind.cpp
   src/server/systems/skills/pd2/state_skills.cpp
+  src/server/systems/skills/pd2/item_events.cpp
   src/server/systems/skills/pd2/teleport.cpp
   src/server/systems/skills/pd2/requirements.cpp
   src/server/systems/skills/pd2/projectiles.cpp
@@ -261,6 +268,7 @@ add_library(d2x_server
   src/server/systems/skills/pd2/charge.cpp
   src/server/systems/skills/pd2/bash.cpp
   src/server/systems/missiles/pd2/hit.cpp
+  src/server/systems/missiles/pd2/hit_delay.cpp
   src/server/systems/missiles/pd2/programs.cpp
   src/server/systems/effects/pd2/curses.cpp
   src/server/systems/effects/pd2/dark_pact.cpp
@@ -284,6 +292,11 @@ add_library(d2x_server
   src/server/systems/combat/pd2/wounds.cpp
   src/server/systems/combat/pd2/splash.cpp
   src/server/systems/combat/pd2/bash.cpp
+  src/server/systems/combat/pd2/critical.cpp
+  src/server/systems/combat/pd2/item_pierce.cpp
+  src/server/systems/effects/pd2/equipped_skills.cpp
+  src/server/systems/effects/pd2/equipped_storm.cpp
+  src/server/systems/effects/pd2/hit_delay.cpp
   src/server/systems/missiles/native_weapon_contact.cpp src/server/systems/effects/druid.cpp
   src/server/systems/effects/state_group.cpp src/server/systems/effects/assassin.cpp
   src/server/systems/effects/blade_shield.cpp src/server/systems/effects/mind_blast.cpp
@@ -299,6 +312,8 @@ add_library(d2x_server
   src/server/systems/effects/skills.cpp src/server/systems/effects/amazon.cpp
   src/server/systems/effects/necro.cpp src/server/systems/effects/units.cpp
   src/server/systems/effects/periodic.cpp src/server/systems/reactions/item_triggers.cpp
+  src/server/systems/reactions/pd2/item_heal.cpp
+  src/server/systems/reactions/pd2/item_events.cpp
   src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
   src/server/systems/combat/missile_contact.cpp src/server/systems/combat/missile_drain.cpp
   src/server/systems/effects/missile_delay.cpp src/server/systems/combat/player_damage.cpp
@@ -356,6 +371,9 @@ add_library(d2x_game_content
   src/hosting/skill_content.cpp src/hosting/combat_content.cpp
   src/hosting/environment_content.cpp src/hosting/monster_actions_content.cpp
     src/hosting/game_content.cpp src/hosting/pd2/town_host.cpp
+    src/hosting/pd2/equipped_skills.cpp
+    src/hosting/pd2/cube.cpp
+    src/hosting/pd2/item_reroll.cpp
   src/hosting/character_content.cpp src/hosting/character_creation.cpp
   src/hosting/crafting_content.cpp src/hosting/item_content.cpp src/hosting/object_content.cpp
   src/hosting/npc_content.cpp src/hosting/merchant_content.cpp src/hosting/companion_content.cpp

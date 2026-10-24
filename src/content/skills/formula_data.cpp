@@ -80,10 +80,13 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
             throw std::runtime_error("Duplicate native missile formula identity");
     }
     for(const auto &[id,source]:sources.skills) {
-        const bool prepared = !data.pd2Host || data.skills.find(id);
+        const auto action=source.number("srvdofunc").value_or(0);
+        const bool equipped=data.pd2Host && source.number("aura").value_or(0) &&
+            (action==18 || action==23 || action==29 || action==54 || action==124);
+        const bool prepared = !data.pd2Host || data.skills.find(id) || equipped;
         auto record=copy(source,prepared);
-        // Town hosting keeps formula references, but does not install cast
-        // eligibility for retired/monster programs outside its prepared catalog.
+        // Keep references for unsupported programs without granting class
+        // availability. Equipment-only aura records still own real metadata.
         if(!prepared) {
             result->skills.emplace(id,std::move(record));
             continue;

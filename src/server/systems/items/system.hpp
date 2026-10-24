@@ -47,16 +47,17 @@ class System {
     }
     // One clock per real item identity, retained across drop/pickup transfers.
     ItemRestorationClock &restorationClock(EntityId id,ItemRestoration rule,uint64_t tick) {
-        auto [it,created]=restoration_.try_emplace(id,ItemRestorationClock{itemRestorationDue(tick,rule.rate,true),rule.rate,rule.quantity});
-        if(!created && (it->second.rate!=rule.rate || it->second.quantity!=rule.quantity)) it->second={itemRestorationDue(tick,rule.rate,true),rule.rate,rule.quantity};
+        auto [it,created]=restoration_.try_emplace(id,ItemRestorationClock{itemRestorationDue(tick,rule,true),rule.rate,rule.quantity,rule.charges,rule.halfInterval});
+        if(!created && (it->second.rate!=rule.rate || it->second.quantity!=rule.quantity || it->second.charges!=rule.charges || it->second.halfInterval!=rule.halfInterval))
+            it->second={itemRestorationDue(tick,rule,true),rule.rate,rule.quantity,rule.charges,rule.halfInterval};
         if(!ports_.frameEvents.hasEvent({FrameEventUnit::Item,id},FrameEventType::StatRegeneration))
             ports_.frameEvents.insertPrepared({{},{FrameEventUnit::Item,id},FrameEventType::StatRegeneration,it->second.due});
         return it->second;
     }
     void rearmRestoration(EntityId id,ItemRestoration rule,uint64_t tick) {
-        const auto due=itemRestorationDue(tick,rule.rate,false);
+        const auto due=itemRestorationDue(tick,rule,false);
         auto timer=ports_.frameEvents.prepareInsertion({{},{FrameEventUnit::Item,id},FrameEventType::StatRegeneration,due});
-        restoration_.insert_or_assign(id,ItemRestorationClock{due,rule.rate,rule.quantity});
+        restoration_.insert_or_assign(id,ItemRestorationClock{due,rule.rate,rule.quantity,rule.charges,rule.halfInterval});
         ports_.frameEvents.cancelHandler({FrameEventUnit::Item,id},FrameEventType::StatRegeneration,0);
         ports_.frameEvents.publish(std::move(timer));
     }

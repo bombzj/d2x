@@ -2,6 +2,8 @@
 #include "core/id.hpp"
 #include "gameplay/items/skill_sources.hpp"
 #include "gameplay/combat/damage_type.hpp"
+#include "gameplay/combat/pd2/item_modifiers.hpp"
+#include <optional>
 #include <map>
 #include <array>
 #include <string>
@@ -32,6 +34,7 @@ struct WeaponModifiers {
     int poisonOverrideFrames = 0;
 };
 struct CombatModifiers {
+    std::optional<Pd2ItemModifiers> pd2;
     // Native passive mastery layers are weapon types, not global weapon ED.
     std::map<std::string, std::array<int, 3>, std::less<>> meleeMasteries, throwMasteries;
     AttackTargetModifiers target;

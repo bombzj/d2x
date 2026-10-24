@@ -98,6 +98,7 @@ struct NativeSpawn {
     std::optional<int> activateFrame{}; // Constructor flag0x800, independent of Range.
     std::optional<int> attackBonus{}; // Post-constructor STAT_TOHIT write.
     bool suppressSourceEvents{}; // Constructor flag0x10000 (outer multishot projectiles).
+    bool pd2SharedClassHitDelay{}; // Unit flag0x80000: NextHit key excludes a player owner's GUID.
     int32_t initialDamagePercent{}; // InitFunc stat write before SetDamageStats.
     std::optional<WeaponSkillDamage> weapon{};
     std::optional<DamageAdds> damageAdds{}; // Current PD2 0x36CD50, after SetDamageStats.

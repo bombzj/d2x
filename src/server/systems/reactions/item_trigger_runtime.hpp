@@ -2,6 +2,7 @@
 #include "item_triggers.hpp"
 #include "gameplay/skills/cast_spec.hpp"
 #include "gameplay/skills/item_trigger_policy.hpp"
+#include "gameplay/stats/stat_list.hpp"
 #include "world/collision.hpp"
 #include <optional>
 #include <memory>
@@ -23,6 +24,8 @@ struct ItemTrigger {
     ItemTriggerPhase phase{ItemTriggerPhase::ResolveTarget};
     uint8_t targetType{1};
     std::optional<bool> rolled;
+    std::optional<StatKey> healStat;
+    std::optional<ActorContext> effectActor;
     std::shared_ptr<actions::SkillRelease> continuation;
 };
 }

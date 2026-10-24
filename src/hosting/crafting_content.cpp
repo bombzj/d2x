@@ -6,6 +6,10 @@
 #include "content/items/socket_data.hpp"
 #include "content/items/item_magic_loot.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/pd2/cube.hpp"
+#include "content/pd2/cube_inputs.hpp"
+#include "pd2/cube.hpp"
+#include "pd2/item_reroll.hpp"
 #include "core/random.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
@@ -49,7 +53,7 @@ void sockets(const ClassicData &data, Prepared &result, const SocketItem &reques
     prepareSocketedItem(data,host,random);
     const auto container=at->container;result.consumed.push_back(request.filler); result.outputs.push_back({std::move(host),request.host,container});
 }
-void cube(const ClassicData &data, Prepared &result) {
+const CubeRecipe *cube(const ClassicData &data, Prepared &result,uint64_t &random,bool allowNoMatch=false) {
     const auto &s = result.source; const auto &c = s.character.containers;
     require(s.cube && carriedCube(data,s), "Cube must be open and carried in the backpack");
     std::vector<const ItemInstance *> inputs;
@@ -60,20 +64,16 @@ void cube(const ClassicData &data, Prepared &result) {
             inputs.push_back(&item);
         }
     }
-    const bool stacked=data.pd2Host && std::any_of(inputs.begin(),inputs.end(),[](const auto *item){return item->quantity>1;});
-    require(!stacked || inputs.size()==1,"PD2 CubeMain allocation across multiple stacks is not implemented");
     const CubeRecipe *matched = nullptr; std::vector<const ItemInstance *> ordered;
+    std::vector<std::pair<const ItemInstance *,unsigned>> consumed;
+    const bool corruption=data.pd2Host && pd2CubeCorruptionAvailable(data,inputs,s.character.player.level);
     for (const auto &recipe : data.cubeRecipes) {
         if (recipe.version > 100 || recipe.minimumDifficulty > s.difficulty ||
             (!recipe.characterClass.empty() && recipe.characterClass != s.classCode)) continue;
-        if(stacked) {
-            const auto &item=*inputs.front(); const auto *base=data.items.find(item.definition);
-            // Current PD2 RVA 0x363680 / 0x363c20 matches quantity, then
-            // decrements normal stacks one unit at a time, retaining the rest.
-            if(recipe.inputs.size()==1 && base && base->maxStack>1 && item.quality==ItemQuality::Normal &&
-                item.quantity>=recipe.inputs.front().quantity &&
-                matchesCubeInput(recipe.inputs.front(),item,*base,data.cubeBases.at(item.definition))) {
-                matched=&recipe; ordered=inputs; break;
+        if(data.pd2Host) {
+            if((recipe.pd2Continuation==1 || recipe.pd2Continuation==3) && !corruption) continue;
+            if(auto allocation=matchPd2CubeInputs(data,recipe,inputs,s.character.player.level,s.difficulty)) {
+                matched=&recipe;ordered=std::move(allocation->ordered);consumed=std::move(allocation->consumed);break;
             }
             continue;
         }
@@ -86,6 +86,7 @@ void cube(const ClassicData &data, Prepared &result) {
             for (size_t i=0;i<inputs.size();++i) {
                 const auto &item = *inputs[i]; const auto *base = data.items.find(item.definition);
                 if (used[i] || !base || !matchesCubeInput(wanted,item,*base,data.cubeBases.at(item.definition)) ||
+                    (data.pd2Host && slot==0 && !matchesPd2CubeCondition(data,recipe,item,s.character.player.level)) ||
                     (recipe.operation == 28 && base->questTag && item.nativeQuestDifficulty < unsigned(s.difficulty))) continue;
                 used[i]=true; ordered.push_back(&item);
                 if (match(slot,count+1)) return true;
@@ -93,20 +94,36 @@ void cube(const ClassicData &data, Prepared &result) {
             }
             return false;
         };
-        if (match(0,0)) { matched=&recipe; break; }
+        if (match(0,0)) { matched=&recipe;for(const auto *item:ordered) consumed.emplace_back(item,1);break; }
     }
+    if(!matched && allowNoMatch) return nullptr;
     require(matched, "No original CubeMain recipe matches these inputs");
+    if(data.pd2Host && matched->operation==31) {
+        const auto &original=*ordered.front();
+        auto item=rerollPd2DemonicItem(data,original,random,s.difficulty);
+        uint64_t temporary=1;for(const auto &[id,owned]:s.character.inventory.items) temporary=std::max(temporary,id.value+1);
+        item.id=EntityId{temporary};item.location=ContainerLocation{c.cube,{}};
+        for(const auto &[input,quantity]:consumed) {
+            if(input!=&original && input->quantity>quantity) {
+                auto remainder=*input;remainder.quantity-=quantity;
+                result.outputs.push_back({std::move(remainder),input->handle(),c.cube});
+            } else result.consumed.push_back(input->handle());
+        }
+        result.outputs.push_back({std::move(item),{},c.cube});return matched;
+    }
     require(!matched->outputs.empty(),"PD2 CubeMain operation or property program is not implemented");
-    require(!stacked || (matched->operation==0 && std::all_of(matched->outputs.begin(),matched->outputs.end(),[](const auto &out){
+    const auto &original = *ordered.front();
+    const auto targetConsumption=std::find_if(consumed.begin(),consumed.end(),[&](const auto &part){return part.first==&original;});
+    const bool partialTarget=data.pd2Host && targetConsumption!=consumed.end() && targetConsumption->second<original.quantity;
+    require(!partialTarget || (matched->operation==0 && std::all_of(matched->outputs.begin(),matched->outputs.end(),[](const auto &out){
         return out.kind==CubeOutputKind::Code && !out.copy && !out.tier;
     })),"PD2 stacked CubeMain item transformations are not implemented");
-    const auto &original = *ordered.front(); auto random = s.pending.seed;
     const auto retainedOutputs=std::count_if(matched->outputs.begin(),matched->outputs.end(),[](const auto &out){return out.kind==CubeOutputKind::UseItem && !out.copy;});
     require(retainedOutputs<=1,"Multiple CubeMain outputs cannot retain the same item identity");
     const bool keepsOriginal=retainedOutputs!=0;
-    for (const auto *input : ordered) if(!keepsOriginal || input!=&original) {
-        if(stacked && input->quantity>matched->inputs.front().quantity) {
-            auto remainder=*input; remainder.quantity-=matched->inputs.front().quantity;
+    for (const auto &[input,quantity] : consumed) if(!keepsOriginal || input!=&original) {
+        if(data.pd2Host && input->quality==ItemQuality::Normal && data.items.find(input->definition)->maxStack>1 && input->quantity>quantity) {
+            auto remainder=*input; remainder.quantity-=quantity;
             result.outputs.push_back({std::move(remainder),input->handle(),c.cube});
         } else result.consumed.push_back(input->handle());
     }
@@ -182,11 +199,21 @@ void cube(const ClassicData &data, Prepared &result) {
         if(output.repair) { auto stats=resolveItemStats(data,item,s.character.player.level); item.durability=itemMaximumDurability(data,item,stats); item.nativeFlags&=~0x100u; }
         if(output.recharge) rechargeItemSkills(item);
         if(output.ethereal && !(item.nativeFlags&0x400000u)) { item.nativeFlags|=0x400000u; if(base->family==ItemFamily::Armor) item.defense=item.defense*3/2; }
+        if(data.pd2Host && matched->pd2Continuation==3 && !(item.nativeFlags&0x400000u) && (original.nativeFlags&0x400000u)) {
+            item.nativeFlags|=0x400000u;
+            if(base->family==ItemFamily::Armor) item.defense=item.defense*3/2;
+            if(item.nativeMaxDurability) item.nativeMaxDurability=item.nativeMaxDurability/2+1;
+        }
+        if(data.pd2Host && matched->pd2Continuation==3) {
+            auto programRandom=result.pd2Random.value_or(s.pd2Random);
+            if(applyPd2DestroyedCorruption(data,item,random,programRandom)) result.pd2Random=programRandom;
+        }
         prepareSocketedItem(data,item,random); updateCubeRequiredLevel(data,item);
         const bool replacement=output.kind==CubeOutputKind::UseItem && !output.copy;
         item.id=replacement?original.id:EntityId{temporary++};item.location=ContainerLocation{c.cube,{}};
         result.outputs.push_back({std::move(item),replacement?std::optional{original.handle()}:std::nullopt,c.cube});
     }
+    return matched;
 }
 void questService(const ClassicData &data,Prepared &result) {
     const auto &s=result.source;
@@ -246,7 +273,10 @@ void questService(const ClassicData &data,Prepared &result) {
 Prepared prepare(const ClassicData &data, Preparation source) {
     Prepared result; result.source=std::move(source);
     if (const auto *socket=std::get_if<SocketItem>(&result.source.pending.request.intent)) sockets(data,result,*socket);
-    else if(std::holds_alternative<TransmuteCube>(result.source.pending.request.intent)) cube(data,result);
+    else if(std::holds_alternative<TransmuteCube>(result.source.pending.request.intent)) {
+        if(data.pd2Host) preparePd2Cube(data,result,[&](Prepared &stage,uint64_t &random,bool optional){return cube(data,stage,random,optional);});
+        else {auto random=result.source.pending.seed;cube(data,result,random);}
+    }
     else questService(data,result);
     auto projection=result.source.character; projection.inventory.items.clear();
     for(const auto &out:result.outputs) projection.inventory.items.emplace(out.item.id,out.item);

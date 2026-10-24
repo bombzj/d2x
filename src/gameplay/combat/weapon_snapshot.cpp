@@ -1,12 +1,14 @@
 #include "weapon_snapshot.hpp"
 #include "unit_values.hpp"
 #include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/stats/pd2/item_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <stdexcept>
 namespace d2x {
 WeaponDamage sampleNativeWeapon(const WeaponDamage &input,const StatSnapshot &values,const StatRuleCatalog &rules,
-    const CombatModifiers &procedures,bool monster,int classFactor) {
+    const CombatModifiers &procedures,bool monster,int classFactor,const EquipmentStats *equipment,
+    const SkillFormulaCatalog *formulas,bool dualWield) {
     auto result=input;
     const auto stat=[&](std::string_view name){return logicalStatValue(values,rules,name);};
     const auto mastery=[&](std::string_view group) {
@@ -23,7 +25,9 @@ WeaponDamage sampleNativeWeapon(const WeaponDamage &input,const StatSnapshot &va
         }
         return result;
     };
-    result.nativeModifiers=std::make_shared<const CombatModifiers>(nativeCombatModifiers(values,rules,procedures));
+    auto modifiers=nativeCombatModifiers(values,rules,procedures);
+    if(modifiers.pd2 && formulas) applyPd2WeaponParameters(*modifiers.pd2,values,rules,input,equipment,*formulas,dualWield);
+    result.nativeModifiers=std::make_shared<const CombatModifiers>(std::move(modifiers));
     result.meleeMastery=mastery("melee");result.throwMastery=mastery("throw");
     result.statDamagePercent=stat("damagepercent");
     result.attributeDamagePercent=input.item?nativeAdd(nativeMultiplyDivide(input.strengthBonus,stat("strength"),100),

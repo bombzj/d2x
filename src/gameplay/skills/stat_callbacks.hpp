@@ -18,6 +18,7 @@ struct SkillAuraChange {
     int skill{},rank{},state{-1},period{};
     bool immediate{};
     std::shared_ptr<const SkillFormulaSnapshot> formula{}; // Callback point, never the final equipment total.
+    bool equippedSkill{};
 };
 // PeriodicStats custom ID is the source GUID, not (GUID, skill). Native
 // activation replaces all timers of that source and appends the new timer.
@@ -26,6 +27,7 @@ struct ItemAuraTimer {
     int skill{},state{-1};
     uint64_t next{};
     uint64_t order{};bool continuous{};
+    bool equippedSkill{};
 };
 enum class ItemAuraCallbackKind { RemoveState,CancelTimers,ScheduleTimer,ExecuteImmediate };
 struct ItemAuraCallbackInstruction {

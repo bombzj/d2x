@@ -73,6 +73,7 @@ DomainResult<bool> System::directDefense(SpellImpact &impact,ParticipantView sou
         else if(target.player && cursor.result.avoidance!=WeaponAvoidance::None)
             result=ports_.effects.avoidance({target.player->player,target.id(),target.player->area,ports_.areas.at(target.player->area).generation,0,tick.tick},cursor.result.avoidance,impact.source);
         if(!result) return {result.status,{}};
+        if(cursor.result.block) ports_.itemTriggers.schedulePd2Block(target.id(),source.id(),tick.tick);
         cursor.reactionComplete=true;
     }
     return {DomainStatus::Applied,cursor.hit && !cursor.result.block && cursor.result.avoidance==WeaponAvoidance::None};
@@ -192,6 +193,8 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
     }
     const auto sourceStats=[&]() {
         if(source.player) {
+            if(programs.pd2) return ports_.effects.unitStatValues(source.id(),tick.tick,
+                impact.weapon?std::optional{impact.weapon->weapon.item}:std::nullopt);
             const auto hand=impact.weapon?source.player->totals.handStats.find(impact.weapon->weapon.item):source.player->totals.handStats.end();
             return std::optional<StatSnapshot>{hand==source.player->totals.handStats.end()?source.player->totals.nativeStats:hand->second};
         }
@@ -265,7 +268,8 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
             std::optional{impact.weapon->weapon.item}:std::nullopt,profile);
         if(!stats) return DomainStatus::Unavailable;
         const auto modifiers=ports_.effects.combatModifiers(unit.id,tick.tick);
-        auto sample=sampleNativeWeapon(impact.weapon->weapon,*stats,*programs.stats,modifiers,true);
+        auto sample=sampleNativeWeapon(impact.weapon->weapon,*stats,*programs.stats,modifiers,true,0,
+            unit.equipmentStats?&*unit.equipmentStats:nullptr,programs.formulas.get(),unit.identity.monster=="shadowwarrior" || unit.identity.monster=="shadowmaster");
         if(rules.enchantment) {
             sample.statDamagePercent=nativeAdd(sample.statDamagePercent,rules.enchantment->damagePercent);
             sample.damagePercent=nativeAdd(sample.damagePercent,rules.enchantment->damagePercent);
@@ -554,6 +558,9 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
             const auto base=execution.initialDamage?*execution.initialDamage:MissileHitDamage{};
             const auto stats=sourceStats();if(!stats) throw std::logic_error("Missing native melee source stat view");
             const auto modifiers=source.player?source.player->totals.character.combat:ports_.effects.combatModifiers(source.id(),tick.tick);
+            if(programs.pd2 && source.player) weapon->weapon=sampleNativeWeapon(weapon->weapon,*stats,*programs.stats,modifiers,false,
+                source.player->definition.toHitFactor,&source.player->totals.equipment,programs.formulas.get(),
+                source.player->definition.code=="bar" || source.player->definition.code=="ass");
             auto equipment=base;
             if(skill.pd2 && skill.weapon->doFunction==162) {
                 const auto bonus=values.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,"calc2");
@@ -764,6 +771,7 @@ DomainStatus System::finishNativeMeleeMiss(SpellImpact &impact,ParticipantView t
         else if(target.player && execution.defense.avoidance!=WeaponAvoidance::None)
             status=ports_.effects.avoidance({target.player->player,target.id(),target.player->area,ports_.areas.at(target.player->area).generation,0,tick.tick},execution.defense.avoidance,impact.source).status;
         if(isDeferred(status)) return status;
+        if(execution.defense.block) ports_.itemTriggers.schedulePd2Block(target.id(),impact.source,tick.tick);
         execution.reactionPrepared=true;
     }
     return DomainStatus::Applied;

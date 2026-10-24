@@ -13,6 +13,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | architecture | 大模块、依赖、数据流、设计依据；MULTIPLAYER维护后续顺序 | 重复的当前包清单、逐技能验收 |
 | modules | 代码入口、状态所有权、接口与失败边界 | 复制各职业／物品／任务规则和全部运行记录 |
 | gameplay及分类README | 分类入口、原版规则与参考结果、当前实现范围及明确缺口 | 自研运行台账、跨专题重复记录、无范围的完成宣称 |
+| pd2 | 按领域维护固定版本的PD2功能差异、分析依据、代码消费者和未核实边界 | 会话日志、跨分册重复规则、把解析／显示当成权威实现 |
 | development | 编码与验证方法、构建／启停／诊断、原版对照方法及部署边界 | 历次构建／打包流水、历史包身份、业务实现清单 |
 | resources／licenses | 原资源、参考来源、固定版本与许可 | 玩法完成宣称 |
 
@@ -27,7 +28,8 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 独立控制台D2GS、PvPGN后端配置、启动／关闭与恢复 | [PvPGN服务端](development/PVPGN_SERVER.md) |
 | 内核子系统、状态所有权、命令／固定步／事务／可靠事件与空实现入口 | [内核子系统](modules/SERVER_SYSTEMS.md) |
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |
-| 原版与PD2／CN版本选择、发行方式、初始化及资源／协议差异 | [版本选择与兼容设计](architecture/PD2_COMPATIBILITY.md#版本选择与发布方式)、[CN样本DLL／位流取证](resources/PD2_CN_DLL_ANALYSIS.md)、[当前核心服务端技能依据](resources/PD2_CN_DLL_ANALYSIS.md#自有宿主技能的当前核心依据)、[ProjectDiablo完整函数目录与概览](resources/pd2-core/README.md) |
+| PD2技能／物品／地图／怪物／城镇与协议存档差异 | [PD2功能差异基线及维护约定](pd2/README.md)、[目标版本与证据边界](pd2/BUILDS.md) |
+| 原版与PD2／CN版本选择、发行方式、初始化及资源／协议差异 | [版本选择与兼容设计](architecture/PD2_COMPATIBILITY.md#版本选择与发布方式)、[CN样本DLL／位流取证](resources/PD2_CN_DLL_ANALYSIS.md)、[ProjectDiablo完整函数目录与概览](resources/pd2-core/README.md) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[崩溃记录](development/CRASH_REPORTS.md) |
 | 原版人物数值对照的存档装配、覆盖矩阵与截图数据契约 | [对照存档计划](development/CHARACTER_REFERENCE_FIXTURES.md) |
 | 原版DLL地图对照与实机房间恢复排查 | [地图对照排查](development/MAP_PARITY.md) |
@@ -63,6 +65,8 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | UI | [HUD／技能菜单／传送点](gameplay/ui/CLASSIC_HUD.md)；库存／NPC操作归对应专题 |
 
 ## 维护约定
+
+PD2规则及发现统一更新[pd2分册](pd2/README.md)，按功能归属修订规则、证据、消费者和未知项；原版专题仅保留入口及必要公共关系。架构页维护隔离与组合，不重复逐技能／属性算法；resources保留底层协议、地址索引和取证材料。迁移正文保留旧锚点或修正引用，不同时维护两份规则基线。
 
 技能分类与归属更新skills/README，公共规范／跨职业计算／状态更新COMMON；逐技能分派／专属Clt与Srv差异更新负责专题，复用同一技能只链接原页。MONSTERS登记怪物专用技能，COMPANIONS登记单位使用入口，ITEM_SKILLS登记物品来源与专用程序，SPECIAL保留未归档条目；原版依据和参考结果归所属职业、怪物、佣兵或物品专题，不复制运行流水。原模块调用证据更新REFERENCE_DESIGN；保存、人物投影、协议分别链接SAVES、CHARACTER、NETWORK；描述程序／公式／原版截图约束统一维护skills/DESCRIPTIONS。
 

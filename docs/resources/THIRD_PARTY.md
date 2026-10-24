@@ -47,7 +47,7 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 
 四类主要参考分工：D2MOO核对原服／D2Common规则，OpenD2核对旧格式／协议与菜单，OpenDiablo2核对原图布局／字段，Diablerie交叉核对客户端动画／输入／声音。DGEngine及其core补充DCC／DS1／DT1与图形偏移证据。D2MOO没有完整D2Client，DGEngine偏Diablo I，简化客户端不认证经典版精确行为。
 
-PD2参考用于区分原版共用路径与有源码依据的局部扩展，不加入构建或运行依赖。初始化补丁入口、官方／历史CN的MCP布局分歧、MPQ辅助读取与全局挂载的区别、物品位流及D2X适配边界统一见[原版与PD2／CN兼容分析](../architecture/PD2_COMPATIBILITY.md)。所列公开仓库未提供完整ProjectDiablo.dll核心及PD2_EXT.dll实现，不足以据此重建完整PD2游戏服务；目标协议与资源须按配套版本核实。
+PD2参考用于区分原版共用路径与有源码依据的局部扩展，不加入构建或运行依赖。已确认功能、代码消费者及未知项统一维护于[PD2领域基线](../pd2/README.md)，目标核心／资源摘要及地址解释见[版本与证据](../pd2/BUILDS.md)。初始化、发行与代码隔离见[兼容设计](../architecture/PD2_COMPATIBILITY.md)，具体协议和位流见[DLL取证](PD2_CN_DLL_ANALYSIS.md)。所列公开仓库未提供完整ProjectDiablo.dll核心及PD2_EXT.dll实现，不足以据此重建完整PD2游戏服务；目标协议与资源须按配套版本核实。
 
 固定核心的[完整函数目录与功能概览](pd2-core/README.md)保存地址、真实分析器函数边界、调用关系、补丁与程序表登记、原生解析绑定及未归属范围。目录是静态分析事实，不是公开核心源码；自动名称和BH地址匹配均保留证据级别。目标二进制、整批反编译文本、Ghidra工程及分析脚本仍留在忽略的reference目录。
 

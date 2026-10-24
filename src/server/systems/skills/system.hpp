@@ -68,6 +68,8 @@ class System {
     DomainStatus activateEffect(Release &, const ActorContext &, Vec);
     DomainStatus activatePd2Enchant(Release &, const ActorContext &);
     DomainStatus activatePd2(Release &,const ActorContext &,Vec);
+    DomainStatus preparePd2CastItemEvent(Release &,const ActorContext &,Vec);
+    void commitPd2CastItemEvent(Release &) noexcept;
     DomainStatus activatePd2Splash(Release &,const ActorContext &);
     DomainStatus activatePd2Bash(Release &,const ActorContext &);
     DomainStatus activatePd2Raven(Release &,const ActorContext &,Vec);

@@ -186,6 +186,12 @@ DomainResult<PlayerReceptionPlan> System::preparePlayerReception(const ActorCont
         defenses.rawResistances=raw;
     }
     defenses.rawResistances->at(2)=nativeSubtract(defenses.rawResistances->at(2),sourceModifiers.firePierce);
+    auto pd2Pierce=adjustment.pd2Pierce;
+    if(!pd2Pierce && sourceModifiers.pd2) if(const auto stats=unitStatValues(source,actor.tick)) {
+        const auto &rules=*(attacker.player?attacker.player->rules.character->stats:attacker.monster->rule.stats);
+        pd2Pierce=std::array{stats->get({rules.names.at("passive_phys_pierce"),0}),stats->get({rules.names.at("passive_mag_pierce"),0})};
+    }
+    if(pd2Pierce) for(size_t index=0;index<2;++index) defenses.rawResistances->at(index)=nativeSubtract(defenses.rawResistances->at(index),pd2Pierce->at(index));
     defenses.rawResistances->at(3)=nativeSubtract(defenses.rawResistances->at(3),sourceModifiers.lightningPierce);
     defenses.rawResistances->at(4)=nativeSubtract(defenses.rawResistances->at(4),adjustment.coldPierce?adjustment.coldPierce:sourceModifiers.coldPierce);
     const auto poisonPierce=adjustment.poisonPierce?adjustment.poisonPierce:sourceModifiers.poisonPierce;

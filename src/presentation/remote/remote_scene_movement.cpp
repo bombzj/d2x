@@ -1,4 +1,5 @@
 #include "remote_scene_impl.hpp"
+#include "gameplay/rules/pd2_phasing.hpp"
 
 namespace d2x {
 
@@ -88,6 +89,9 @@ int RemoteScene::Impl::unitSize(const OnlineUnit &u) const {
 }
 
 MovementCollisionRule RemoteScene::Impl::movementRule(const OnlineUnit &u) const {
+    if(pd2 && combatBinding) if(const auto snapshot=combatBinding->states().find(u.key);snapshot!=combatBinding->states().end() && snapshot->second.decoded)
+        for(const auto &[state,entry]:snapshot->second.states) if(pd2PhasingState(state))
+            return {pd2PhasingMovementMask(u.key.type==1),unitSize(u)};
     if (u.key.type == 0) return playerMovement;
     const auto row = monsterRows.find(unitClass(u).value_or(UINT16_MAX));
     if (row == monsterRows.end()) return {};

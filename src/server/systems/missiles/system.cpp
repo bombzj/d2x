@@ -42,7 +42,7 @@ bool System::canCollide(const Missile &missile,EntityId id) const {
     if(rule.collisionMode==1 && !unit.player && unit.alignment()!=UnitAlignment::Good) return false;
     if((rule.collisionMode==2 || rule.collisionMode==5) && !unit.monster) return false;
     if(participants.find(missile.owner).id() && !missile.environment && !rule.collideFriend && !participants.canHarm(missile.owner,id)) return false;
-    return !rule.nextHit || ports_.effects.missileHitAllowed(id,missile.executionTick);
+    return !rule.nextHit || missileHitAllowed(missile,id);
 }
 DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickContext tick) {
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};

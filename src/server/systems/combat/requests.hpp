@@ -102,6 +102,7 @@ struct SpellImpact {
     bool missileCriticalCommitted{};
     std::shared_ptr<MissileContactExecution> missileContact{};
     std::optional<CombatStateDefinition> nativeNextHit{};
+    std::optional<std::array<int32_t,2>> pd2NextHitKey{};
     MonsterHitStates monsterStates{};
     int monsterRating{}, monsterLevel{};
     bool monsterToHit{};

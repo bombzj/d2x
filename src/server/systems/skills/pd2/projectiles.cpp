@@ -164,10 +164,14 @@ DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec 
         if(program.missile<0) return DomainStatus::NotImplemented;
         append(position,target,program.missile).distanceCountdown=row.number("lob")!=0;
         break;
-    case 188: {
+    case 187:case 188: {
         const auto definition=program.missile>0?program.missile:program.missiles[0];
         if(definition<=0) return DomainStatus::Unavailable;
-        append(position,target,definition).copyMonsterAttackBonus=true;
+        if(program.doFunction==187 && !pending.unit) return DomainStatus::Unavailable;
+        auto &spawn=append(position,target,definition);
+        spawn.copyMonsterAttackBonus=program.doFunction==188;
+        spawn.suppressSourceEvents=program.doFunction==187;
+        if(program.doFunction==187) spawn.guidedTarget=pending.unit;
         break;
     }
     case 8: {
@@ -219,13 +223,15 @@ DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec 
         }
         break;
     }
-    case 22:case 68: {
+    case 22:case 68:case 183: {
         if(program.missiles[0]<0) return DomainStatus::Unavailable;
         const auto &missile=rules.formulas->missiles.at(program.missiles[0]);
-        const int velocity=program.doFunction==68?0:nativeAdd(formula("calc1"),
+        const int velocity=program.doFunction==68 || program.doFunction==183?0:nativeAdd(formula("calc1"),
             nativeAdd(missile.number("vel"),nativeMultiply(missile.number("vellev"),pending.skill.rank)/8));
+        const auto center=program.doFunction==183 && pending.unit?target:position;
         for(int direction=0;direction<64;++direction) {
-            auto &spawn=append(position,position+missileRingDirection(direction),program.missiles[0]);
+            auto &spawn=append(center,center+missileRingDirection(direction),program.missiles[0]);
+            spawn.pd2SharedClassHitDelay=program.doFunction==183;
             if(velocity) spawn.nativeVelocity=velocity;
         }
         break;
@@ -242,6 +248,10 @@ DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec 
         if(program.missiles[1]>=0) append(target,{},program.missiles[1]);
         break;
     }
+    case 151:
+        if(program.missiles[0]<0) return DomainStatus::Unavailable;
+        append(pending.unit?target:position,target,program.missiles[0]).copyMonsterAttackBonus=true;
+        births.back().finalParameters=std::array{formula("calc1"),0};break;
     case 26:
         if(program.missiles[0]<0) return DomainStatus::Unavailable;
         append(position,target,program.missiles[0]).finalParameters=std::array{formula("calc1"),0};break;

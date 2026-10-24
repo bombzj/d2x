@@ -59,6 +59,7 @@ struct RightAuraTimerChange {bool replace{};std::optional<FrameEvent> event;};
 struct PlayerEffectsPublication {EntityId actor;CombatEffectSet states;std::map<EntityId,Recovery> insertion;std::optional<std::optional<PoisonStatus>> poison;std::optional<uint64_t> expectedPoisonRevision;FrameEventQueue::PreparedEdit timers,skillTimers;};
 struct PlayerHitAdjustment {
     int coldPierce{},poisonPierce{};
+    std::optional<std::array<int,2>> pd2Pierce;
     int64_t crushing{};
     std::optional<OpenWoundsApplication> wound;
     EntityId credit;
@@ -233,8 +234,12 @@ class System {
         AuraTargetProgress progress;std::optional<int32_t> damage;bool recipientsPrepared{};
         std::optional<ItemAuraTimer> itemTimer,itemReplacement;
         bool itemDecisionPrepared{},itemCancel{},itemReplacementPrepared{};
+        std::shared_ptr<actions::SkillRelease> equippedRelease;
+        std::shared_ptr<BladeShieldPulse> equippedBladeShield;
+        std::optional<StormPulse> equippedStorm;
     };
     std::map<EntityId,PaladinCycle> paladinCycles_;
+    DomainResult<> advancePd2EquippedStorm(const ActorContext &,const SkillCastSpec &,StormPulse &);
     std::map<EntityId,PaladinCycle> unitAuraCycles_;
     std::map<std::pair<EntityId,EntityId>,PaladinCycle> itemAuraCycles_; // (unit, timer custom GUID).
     uint64_t necroOccurrence_{};
@@ -249,6 +254,7 @@ class System {
     uint64_t paladinOccurrence_{};
     DomainResult<> rightAuraEvent(const FrameEvent &,uint64_t);
     DomainResult<> itemAuraEvent(const FrameEvent &,uint64_t);
+    StepStatus advancePd2EquippedSkill(const ActorContext &,PaladinCycle &,uint64_t);
     StepStatus advanceAuraCycle(const ActorContext &,const PlayerState &,const AuraSkillSpec &,PaladinCycle &,uint64_t);
     DomainResult<> paladinAura(const ActorContext &,const AuraDefinition &,EntityId,uint64_t,bool owner=false,bool healing=false,EntityId emitter={},bool *committedAffected=nullptr);
     DomainResult<> consumeAuraMana(const ActorContext &,const AuraDefinition &,bool affected);
@@ -414,6 +420,8 @@ class System {
     DomainResult<> nativeMeleeReaction(EntityId target,EntityId source,const MonsterHit &,int64_t amount,uint64_t tick,bool *lifeUpdate=nullptr);
     bool recovering(EntityId, uint64_t tick) const;
     bool missileHitAllowed(EntityId,uint64_t tick) const;
+    bool pd2MissileHitAllowed(EntityId,const std::array<int32_t,2> &) const;
+    DomainResult<> pd2MissileHitDelay(EntityId,const std::array<int32_t,2> &,uint64_t duration,uint64_t tick);
     DomainResult<> nativeMissileHitDelay(EntityId,const CombatStateDefinition &,uint64_t duration,uint64_t tick);
     void missileHitDelay(EntityId,uint64_t until);
     void triggerMonsterCurse(EntityId,uint64_t tick);

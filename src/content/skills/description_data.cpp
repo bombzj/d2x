@@ -45,7 +45,7 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
             static const std::set<std::string,std::less<>> scalars{
                 "emin","emax","elen","mindam","maxdam","mindamage","maxdamage","hitshift",
                 "mana","lvlmana","manashift","minmana","tohit","levtohit","srcdam",
-                "noratio","hcidx","level","level(n)","level(h)","passive","kick","immediate","periodic",
+                "noratio","hcidx","level","level(n)","level(h)","passive","aura","kick","immediate","periodic","seqnum",
                 "intown","srvstfunc","srvdofunc","cltstfunc","usemanaondo","decquant","aurafilter","targetpet","targetally","pcltdofunc","pclthitfunc",
                 "aitype","aibonus","attackrank","reqlevel","progressive","useattackrate","restrict","nocostinstate",
                 "srcdamage","srcmissdmg","holy","missileskill","half2hsrc","applymastery","explosion",

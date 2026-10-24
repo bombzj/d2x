@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "pd2/equipped_skills.hpp"
 #include "gameplay/skills/mana_payment.hpp"
 #include "attribute_projection.hpp"
 #include "gameplay/skills/targeting.hpp"
@@ -271,6 +272,29 @@ void System::prepareUnitItemAura(AuraUnitPublication &plan,monsters::Actor &cand
         ItemAuraCandidateHooks hooks;
         hooks.reserveEventOrder=[&]{return reserveAuraEventOrder();};
         hooks.executeImmediate=[&](const SkillAuraChange &activation) {
+            if(activation.equippedSkill) {
+                const auto programs=ports_.monsters.skillPrograms();
+                if(!programs || !candidate.rule.states) throw std::runtime_error("Missing immediate PD2 unit equipped skill program");
+                auto source=current();
+                if(!plan.units.contains(candidate.id)) {
+                    UnitEffect state;state.area=source.area;
+                    if(const auto live=units_.find(candidate.id);live!=units_.end()) state=live->second;
+                    prepareUnitEffects(plan,candidate.id,state,monsters::LifeChange{source.id,source.revision,
+                        Fixed8::fromRaw(nativeChecked(source.life)),Fixed8::fromRaw(nativeChecked(source.maximumLife)),source.nativeStats,false},tick);
+                }
+                auto &state=plan.units.at(candidate.id);
+                const auto active=plan.activeSources.find(candidate.id);
+                auto *borrowed=active==plan.activeSources.end()?nullptr:active->second;
+                std::optional<MonsterResourceTrace> local;if(!borrowed) local.emplace(source,tick,&state.states);
+                auto &resources=borrowed?*borrowed:*local;
+                applyPd2EquippedBuff(state.states,caster,activation,*programs,*candidate.rule.states,
+                    [&](attributes::AuraSourceObservation){resources.sample(state.states,true);},plan.facts,true);
+                auto life=borrowed?resources.read():resources.take();life.changed=true;
+                plan.life.insert_or_assign(candidate.id,std::move(life));
+                if(const auto *installed=state.states.findState(activation.state)) state.nativeStats[activation.state]=nativeEffectStats(*programs,installed->spec);
+                plan.velocity[candidate.id]=state.states.modifiers(tick).velocityPercent;
+                return;
+            }
             const auto &record=candidate.rule.formulas->skills.at(activation.skill);
             if(!activation.formula || !candidate.rule.auraPrograms->contains(activation.skill))
                 throw std::runtime_error("Missing immediate unit aura program");

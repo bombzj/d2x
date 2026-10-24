@@ -77,10 +77,14 @@ void loadCubeData(ClassicData &data) {
         CubeRecipe recipe; recipe.row = row;
         recipe.version = table.number(row, "version").value_or(0);
         recipe.ladder = table.number(row, "ladder").value_or(0) != 0;
+        if(data.pd2Host) recipe.pd2Continuation=table.number(row,"ladder").value_or(0);
         recipe.minimumDifficulty = table.number(row, "min diff").value_or(0);
         recipe.characterClass = table.value(row, "class");
         recipe.operation = table.number(row, "op").value_or(0);
-        const bool supportedOperation=recipe.operation==0 || recipe.operation==28;
+        recipe.operationParameter=table.number(row,"param").value_or(0);
+        recipe.operationValue=table.number(row,"value").value_or(0);
+        const bool supportedOperation=recipe.operation==0 || recipe.operation==28 ||
+            (data.pd2Host && (recipe.operation==16 || recipe.operation==18 || recipe.operation==31));
         if (!supportedOperation && !data.pd2Host) throw std::runtime_error("Unsupported original cube operation");
         recipe.inputCount = unsigned(table.number(row, "numinputs").value_or(0));
         unsigned count = 0;
@@ -169,7 +173,7 @@ void loadCubeData(ClassicData &data) {
                 auto found = std::find_if(data.properties.begin(), data.properties.end(), [&](const auto &property) { return property.code == code; });
                 if (found == data.properties.end()) throw std::runtime_error("Unknown cube property: " + std::string(code));
                 for (const auto &operation : found->operations)
-                    if (operation.function != 23 && operation.function != 36 && (operation.function < 1 || operation.function > 24 ||
+                    if (operation.function != 23 && operation.function != 36 && !(data.pd2Host && operation.function==25) && (operation.function < 1 || operation.function > 24 ||
                         operation.function == 18))
                         {if(data.pd2Host) supportedProperties=false;else throw std::runtime_error("Unsupported cube property function");}
                 output.properties.push_back({{std::string(code), std::string(table.value(row, prefix + " param")),
@@ -178,7 +182,7 @@ void loadCubeData(ClassicData &data) {
             }
             recipe.outputs.push_back(std::move(output));
         }
-        if (recipe.outputs.empty()) throw std::runtime_error("Cube recipe has no original output");
+        if (recipe.outputs.empty() && !(data.pd2Host && recipe.operation==31)) throw std::runtime_error("Cube recipe has no original output");
         if(!supportedProperties) recipe.outputs.clear();
         data.cubeRecipes.push_back(std::move(recipe));
     }

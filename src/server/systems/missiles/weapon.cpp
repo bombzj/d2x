@@ -149,7 +149,7 @@ void System::continueMissileFlight(Advance &plan) const {
         }
         if(!unitPosition(m,id) || !canCollide(m,id)) continue;
         const auto &nativeRule=m.enemy?m.enemy->rule:m.nativeDamage->rule;
-        if(nativeRule.nextHit && !ports_.effects.missileHitAllowed(id,m.executionTick)) continue;
+        if(nativeRule.nextHit && !missileHitAllowed(m,id)) continue;
         m.position=flight.end;m.lastHit=id;
         // HandleMissileCollision returns after the first selected unit.
         // A piercing missile resumes from its path endpoint next frame.
@@ -165,7 +165,8 @@ void System::continueMissileFlight(Advance &plan) const {
         hit.allocatedMissile=true;hit.collideFriend=rule.collideFriend;
         hit.monsterToHit=rule.toHit;hit.monsterRating=m.nativeDamage->attackBonus;
         hit.returnFire=rule.returnFire;hit.hitClass=uint8_t(rule.hitClass);hit.nextDelay=uint64_t(std::max(0,rule.nextDelay));
-        if(rule.nextHit) hit.nativeNextHit=rule.nextHitState;
+        if(rule.nextHit && (!m.rules->pd2 || rule.nextDelay)) hit.nativeNextHit=rule.nextHitState;
+        hit.pd2NextHitKey=pd2NextHitKey(m);
         const auto &states=*m.rules;
 
         hit.monsterStates.poison=states.poisoned;hit.monsterStates.cold=states.chilled;

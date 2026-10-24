@@ -230,11 +230,19 @@ DomainResult<> System::restoreGround(EntityId id,uint64_t tick) {
     if(!ground || !base || !state_.equipment.items.contains(id)) {clearRestoration(id);return {DomainStatus::Applied,std::monostate{}};}
     const auto &values=state_.equipment.at(id,1);
     const auto rule=itemRestoration(item,*base,values.stats,values.maximumDurability);
-    if(!rule || (rule->quantity?item.quantity:item.durability)>=rule->maximum) {clearRestoration(id);return {DomainStatus::Applied,std::monostate{}};}
+    if(!rule || !itemRestorationActive(item,*rule)) {clearRestoration(id);return {DomainStatus::Applied,std::monostate{}};}
+    if(rule->charges && itemRestorationValue(item,*rule)>=rule->maximum) {rearmRestoration(id,*rule,tick);return {DomainStatus::Applied,std::monostate{}};}
     if(item.revision==UINT64_MAX || state_.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},ground->region},{GroundRestoredFact{id,item.revision+1}}});
     if(!sent) return {sent.status,{}};
-    ++(rule->quantity?item.quantity:item.durability);++item.revision;++state_.revision;
+    if(rule->charges) {
+        pd2RestoreCharge(item,rule->layer);
+        for(auto &level:state_.equipment.items.at(id).levels) {
+            pd2RestoreChargeValues(level.stats,rule->layer);
+            for(auto &stats:level.setStats) pd2RestoreChargeValues(stats,rule->layer);
+        }
+    } else ++(rule->quantity?item.quantity:item.durability);
+    ++item.revision;++state_.revision;
     rearmRestoration(id,*rule,tick);return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::step(TickContext tick,FrameFacts &) {
@@ -262,8 +270,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         if(base && ground && state_.equipment.items.contains(item.id)) {
             const auto &values=state_.equipment.at(item.id,1);
             if(const auto rule=itemRestoration(item,*base,values.stats,values.maximumDurability)) {
-                auto &value=rule->quantity?item.quantity:item.durability;
-                if(value<rule->maximum) {
+                if(itemRestorationActive(item,*rule)) {
                     restorationClock(item.id,*rule,tick.tick);
 
                 } else clearRestoration(item.id);

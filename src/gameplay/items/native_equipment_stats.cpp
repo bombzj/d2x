@@ -3,6 +3,7 @@
 #include "state.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/stats/pd2/item_values.hpp"
 #include "gameplay/combat/unit_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
@@ -148,6 +149,12 @@ EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &loadout,const 
         result.animationClass=primary=="ht1" && secondary=="ht1"?"ht2":primary=="1ht"?(secondary=="1ht"?"1jt":"1st"):(secondary=="1ht"?"1js":"1ss");
         const auto speed=nativeDivide(nativeAdd(result.weapons[0].baseSpeed,result.weapons[1].baseSpeed),2);
         for(auto &weapon:result.weapons) weapon.baseSpeed=speed;
+    }
+    if(input.rules.pd2) for(auto &weapon:result.weapons) if(weapon.nativeModifiers && weapon.nativeModifiers->pd2) {
+        auto modifiers=*weapon.nativeModifiers;
+        applyPd2WeaponParameters(*modifiers.pd2,input.hands.at(weapon.item),input.rules,weapon,&result,input.formulas,
+            actor.characterClass=="bar" || actor.characterClass=="ass");
+        weapon.nativeModifiers=std::make_shared<const CombatModifiers>(std::move(modifiers));
     }
     return result;
 }

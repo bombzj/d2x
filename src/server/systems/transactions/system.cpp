@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/effects/pd2/equipped_skills.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "gameplay/skills/mana_payment.hpp"
 #include "gameplay/combat/life.hpp"
@@ -361,6 +362,11 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
             ItemAuraCandidateHooks hooks;
             hooks.reserveEventOrder=[&]{return ports_.effects.reserveAuraEventOrder();};
             hooks.executeImmediate=[&](const SkillAuraChange &activation) {
+                if(activation.equippedSkill) {
+                    if(!auraStates) auraStates.emplace();
+                    effects::applyPd2EquippedBuff(*auraStates,request->actor,activation,*player->rules.skills,*player->rules.character->states,observe,auraFacts);
+                    return;
+                }
                 if(!activation.formula || !player->rules.skills || !player->rules.skills->formulas ||
                    !player->rules.skills->auras.contains(activation.skill)) throw std::runtime_error("Missing immediate item aura definition");
                 const auto &catalog=*player->rules.skills->formulas;const auto &record=catalog.skills.at(activation.skill);

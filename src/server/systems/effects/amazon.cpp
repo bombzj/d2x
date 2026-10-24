@@ -11,6 +11,8 @@
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/effects/queries.hpp"
 #include "server/systems/attributes/monster_sources.hpp"
+#include "server/systems/attributes/pd2/item_values.hpp"
+#include "gameplay/stats/pd2/owner_values.hpp"
 #include <algorithm>
 #include <optional>
 #include <utility>
@@ -37,8 +39,9 @@ std::optional<StatSnapshot> System::unitStatValues(EntityId id,uint64_t tick,std
         if(!player->entered || !player->rules.character || !player->rules.character->stats || !player->totals.statSources) return {};
         const auto &rules=*player->rules.character->stats;
         auto sampled=player->totals.nativeStats;
+        auto source=player->totals.statSources;
         if(weapon || mode) {
-            auto source=mode?attributes::withUnitModeStats({player->totals.statSources,player->totals.nativeStats},rules,std::move(mode)).sources:player->totals.statSources;
+            source=mode?attributes::withUnitModeStats({player->totals.statSources,rules.pd2?player->totals.nativeFullStats:player->totals.nativeStats},rules,std::move(mode)).sources:player->totals.statSources;
             if(weapon) source=statListWithWeapon(*source,*weapon,rules);
             sampled=evaluateStatList(rules,*source,{source.get(),{}, {}});
         }
@@ -48,6 +51,16 @@ std::optional<StatSnapshot> System::unitStatValues(EntityId id,uint64_t tick,std
         sampled.values.insert_or_assign(StatKey{rules.names.at("hitpoints"),0},player->persistent.player.hp.raw());
         sampled.values.insert_or_assign(StatKey{rules.names.at("mana"),0},player->persistent.player.mana.raw());
         sampled.values.insert_or_assign(StatKey{rules.names.at("stamina"),0},player->persistent.player.stamina.raw());
+        if(rules.pd2) {
+            const auto full=evaluateStoredStatList(rules,*source,{source.get(),{}, {}});
+            sampled=samplePd2OwnerStats(rules,*source,full,player->persistent.player.hp.raw(),
+                attributes::pd2EquippedEthereals(player->persistent,player->totals.activeEquipment),
+                {source.get(),StatCharacterContext{player->definition.lifePerVitality,player->definition.manaPerEnergy,
+                    player->definition.staminaPerVitality,rules.names.at("maxstamina")},source->sampledActTime}).values;
+            sampled.values.insert_or_assign(StatKey{rules.names.at("hitpoints"),0},player->persistent.player.hp.raw());
+            sampled.values.insert_or_assign(StatKey{rules.names.at("mana"),0},player->persistent.player.mana.raw());
+            sampled.values.insert_or_assign(StatKey{rules.names.at("stamina"),0},player->persistent.player.stamina.raw());
+        }
         return sampled;
     }
     const auto *unit=ports_.monsters.find(id);
@@ -55,6 +68,19 @@ std::optional<StatSnapshot> System::unitStatValues(EntityId id,uint64_t tick,std
     auto source=mode?attributes::withUnitModeStats(*unit->nativeStats,*unit->rule.stats,std::move(mode)).sources:unit->nativeStats->sources;
     if(weapon) source=statListWithWeapon(*source,*weapon,*unit->rule.stats);
     auto sampled=evaluateStatListWithSources(*unit->rule.stats,*source,unitStatSources(id,tick));
+    if(unit->rule.stats->pd2) {
+        auto root=std::make_shared<StatList>(*source);root->fullValues.reset();
+        std::erase_if(root->contributions,[](const auto &part){return part && part->source.kind==StatSourceKind::State;});
+        for(const auto &part:unitStatSources(id,tick)) root->contributions.push_back(prepareModifierStatSource(*unit->rule.stats,part,StatOwnerKind::Monster));
+        int ethereals{};
+        if(unit->equipment) {
+            std::set<EntityId> active;
+            for(const auto &part:root->contributions) if(part && part->ownerKind==StatOwnerKind::Item) active.insert(part->source.owner);
+            ethereals=attributes::pd2EquippedEthereals(*unit->equipment,active);
+        }
+        const auto full=evaluateStoredStatList(*unit->rule.stats,*root,{root.get(),{},root->sampledActTime});
+        sampled=samplePd2OwnerStats(*unit->rule.stats,*root,full,nativeChecked(unit->life),ethereals,{root.get(),{},root->sampledActTime}).values;
+    }
     sampled.values.insert_or_assign(StatKey{unit->rule.stats->names.at("hitpoints"),0},nativeChecked(unit->life));
     return sampled;
 }

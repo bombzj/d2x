@@ -4,6 +4,7 @@
 #include "gameplay/items/property_program.hpp"
 #include "gameplay/stats/stat_list.hpp"
 #include "socket_data.hpp"
+#include "content/pd2/item_properties.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <charconv>
@@ -92,6 +93,7 @@ void loadPropertyData(ClassicData &data) {
 }
 std::shared_ptr<const StatRuleCatalog> prepareNativeStatRules(const ClassicData &data) {
     auto rules=std::make_shared<StatRuleCatalog>();
+    rules->pd2=data.pd2Host;
     std::map<uint16_t,const ItemStatDefinition*> originals;
     for(const auto &definition:data.itemStats) {
         if(!definition.id || *definition.id<0 || *definition.id>=512) throw std::runtime_error("Invalid native stat identity");
@@ -210,6 +212,9 @@ SpecialPropertyRoll rollItemProperties(const ClassicData &data,std::span<const P
                 returned=maximum;break;
             }
             case 20: case 23: value=returned=1;break;
+            case 25:
+                if(!data.pd2Host) throw std::runtime_error("PD2 property function outside its host profile");
+                value=rollPd2SorceressProperty(result.randomState);returned=value;break;
             default: throw std::runtime_error("Unsupported generated property function: "+std::to_string(operation.function));
             }
             if(operation.function==12) {
@@ -233,6 +238,8 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
     const auto found = std::find_if(data.properties.begin(), data.properties.end(),
         [&](const auto &p) { return samePropertyCode(data,p.code,property.code); });
     if (found == data.properties.end()) return result;
+    if(data.pd2Host && found->operations.size()==1 && found->operations.front().function==25)
+        return resolvePd2SorceressProperty(data,property,operations.empty()?roll:operations.front(),level);
     auto number = [](std::string_view text) {
         int value = 0;
         const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
@@ -242,7 +249,7 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
     if (!property.parameter.empty() && !parameter)
         if (auto skills = data.tables.find("skills"); skills != data.tables.end())
             for (size_t row = 0; row < skills->second.rows().size(); ++row)
-                if (skills->second.value(row, "skill") == property.parameter)
+                if (samePropertyCode(data,skills->second.value(row, "skill"),property.parameter))
                     parameter = skills->second.number(row, "Id").value_or(0);
     PropertyProgramInput input{roll,parameter,property.minimum.value_or(0),property.maximum.value_or(0),level,itemLevel,{}};
     input.operationRolls=operations;

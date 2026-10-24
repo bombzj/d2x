@@ -7,6 +7,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/combat/pd2/leech.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -52,8 +53,12 @@ DomainStatus System::advanceMissileDrain(SpellImpact &impact,ParticipantView tar
         const auto &player=*source.player;const auto *area=ports_.areas.find(player.area);if(!area) return DomainStatus::Stale;
         transactions::CharacterEdit edit{{player.player,player.actor,player.area,area->generation,0,tick.tick},
             player.inventoryRevision,player.characterRevision,player.persistent.player};
-        if(player.persistent.player.hp>0 && contact.drain.lifeGain>0)
-            edit.player.hp=Fixed8::fromRaw(std::min(player.totals.character.maxLifeFixed.raw(),nativeAdd(edit.player.hp.raw(),contact.drain.lifeGain)));
+        if(player.persistent.player.hp>0 && contact.drain.lifeGain>0) {
+            const auto next=std::min(player.totals.character.maxLifeFixed.raw(),nativeAdd(edit.player.hp.raw(),contact.drain.lifeGain));
+            const auto &pd2=player.totals.character.combat.pd2;
+            if(!pd2 || pd2LifeDrainWriteAllowed(edit.player.hp.raw(),next,player.totals.character.maxLifeFixed.raw(),pd2->lifeDrainCap))
+                edit.player.hp=Fixed8::fromRaw(next);
+        }
         if(contact.drain.manaGain>0)
             edit.player.mana=Fixed8::fromRaw(std::min(player.totals.character.maxManaFixed.raw(),nativeAdd(edit.player.mana.raw(),contact.drain.manaGain)));
         edit.random=transactions::UnitRandomEdit{contact.drainExpected,contact.drainRandom};edit.publicFacts=std::move(facts);
@@ -63,8 +68,12 @@ DomainStatus System::advanceMissileDrain(SpellImpact &impact,ParticipantView tar
         const auto &monster=*source.monster;
         attributes::MonsterResourceTrace resources(monster,tick.tick);const auto sources=ports_.effects.unitStatSources(monster.id,tick.tick);
         resources.sampleSources(sources);
-        if(monster.life>0 && contact.drain.lifeGain>0)
-            resources.seedLife(Fixed8::fromRaw(std::min(nativeChecked(monster.maximumLife),nativeAdd(nativeChecked(monster.life),contact.drain.lifeGain))));
+        if(monster.life>0 && contact.drain.lifeGain>0) {
+            const auto next=std::min(nativeChecked(monster.maximumLife),nativeAdd(nativeChecked(monster.life),contact.drain.lifeGain));
+            const auto pd2=ports_.effects.combatModifiers(source.id(),tick.tick).pd2;
+            if(!pd2 || pd2LifeDrainWriteAllowed(nativeChecked(monster.life),next,nativeChecked(monster.maximumLife),pd2->lifeDrainCap))
+                resources.seedLife(Fixed8::fromRaw(next));
+        }
         if(contact.drain.manaGain>0) {
             const auto values=resources.values(sources);const auto &stats=*monster.rule.stats;
             const auto maximum=values.get({stats.names.at("maxmana"),0});

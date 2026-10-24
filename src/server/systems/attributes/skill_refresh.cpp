@@ -107,6 +107,7 @@ void PlayerSkillRefresh::changed(StatKey key,int32_t value,EntityId source) {
         const auto found=input_.formulas.skills.find(request.skill);
         if(found==input_.formulas.skills.end() || !found->second.restore.aura || found->second.suppressionState<0) return;
         SkillAuraChange change{source,request.skill,value,found->second.suppressionState};
+        change.equippedSkill=input_.stats.pd2 && key.id==input_.stats.names.at("item_skillonequip");
         change.formula=std::make_shared<SkillFormulaSnapshot>(formulaSnapshot());
         const auto context=change.formula->input(input_.stats);
         if(value) {

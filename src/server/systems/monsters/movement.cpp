@@ -2,6 +2,7 @@
 #include "server/systems/attributes/monster_sources.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2_phasing.hpp"
 #include "gameplay/units/resources.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "server/area_store.hpp"
@@ -92,7 +93,11 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     // Fenris and resource vines must be able to approach a real corpse.
     if (actor.rule.nativeVelocity <= 0 || (request.target && !nativePathTarget(ports_.players,*this,request.target,actor.area)) || request.stopDistance<0 || request.stopDistance>255 ||
         request.velocityPercent<25 || request.velocityPercent>INT16_MAX) return {DomainStatus::InvalidRequest,{}};
-    const auto collision=(actor.airborne || actor.submerged)?MovementCollisionRule{0,1}:actor.rule.collision;
+    auto collision=(actor.airborne || actor.submerged)?MovementCollisionRule{0,1}:actor.rule.collision;
+    if(collision.mask && actor.rule.stats && actor.rule.stats->pd2) {
+        const auto states=ports_.effects.unitStates(actor.id,ports_.frameEvents.currentFrame());
+        if(std::any_of(states.begin(),states.end(),pd2PhasingState)) collision.mask=pd2PhasingMovementMask(true);
+    }
     uint8_t pathType=request.circleTurn?1:request.pathType;
     // MonsterMode's default obstacle-search distance is 5; pet tactics supply
     // their own 40/100 bounds. Circling is
@@ -240,6 +245,11 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         const auto &grid=ports_.areas.at(actor.area).definition.collision;
         AreaStore::CollisionMove collisionMove{ports_.areas,actor.id,actor.area};
         const auto movementGrid=ports_.spatial.movementGrid(actor.area,collisionMove);
+        auto collision=(actor.airborne || actor.submerged)?MovementCollisionRule{0,1}:actor.rule.collision;
+        if(collision.mask && actor.rule.stats && actor.rule.stats->pd2) {
+            const auto states=ports_.effects.unitStates(actor.id,tick.tick);
+            if(std::any_of(states.begin(),states.end(),pd2PhasingState)) collision.mask=pd2PhasingMovementMask(true);
+        }
         auto arrived=[&](Vec position) {
             // Coordinate paths finish by consuming their last precise point,
             // not by an extra floating stopping radius.
@@ -257,7 +267,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             constexpr Vec center{.5f,.5f};
             const auto previousStep=actor.pathStep;
             const auto step=actor.pathStep.advance(movementGrid,actor.position+center,actor.route.front()+center,
-                remaining,(actor.airborne || actor.submerged)?MovementCollisionRule{0,1}:actor.rule.collision);
+                remaining,collision);
             const Vec next=step.position-center;
             const bool atGoal=arrived(next);
             const auto previous=actor.position;actor.position=next;

@@ -14,34 +14,13 @@
 
 公共入口复用既有NPC、库存、角色、事务和保存领域；较大差异由`content/pd2/town_data`准备，`hosting/pd2/town_host`控制区域准入，`persistence/pd2_save_profile`管理原生存档格式边界。没有装载ProjectDiablo.dll或安装Hook。客户端仍用RemoteDisplay元数据，不把客户端技能图标／公式准备视为宿主技能实现。MonsterCatalog的TownActors准备保留身份、几何与动画生命周期，不要求原版佣兵施法程序；本地PD2佣兵只准备城镇生命周期和装备，不借用原版攻击／光环。
 
-当前范围是普通城镇入局、移动、对话、商店、个人库存／仓库、金币及佣兵服务。普通五幕区域（原Level ID 1–136）已开放作技能宿主验证，七职业技能程序已接入并按代表性场景验证；扩展地图仍拒绝，共享／材料仓库、腐化／强化等高级加工不在本阶段范围内。Force Move等新增服务端程序尚未实现，普通点击移动继续使用公共移动命令。无窗口PD2和独立PvPGN宿主尚未开放。
+当前支持普通城镇入局、移动、对话、商店、个人库存／仓库、金币及佣兵服务。普通五幕区域（原Level ID 1–136）已开放作技能宿主验证，七职业技能程序已接入并按代表性场景验证。普通装备／属性、充能、装备技能及腐化／恶魔方块重掷已增加独立PD2准备与执行入口，参数、原生依据和剩余触发／加工组合见[物品属性规则](../pd2/ITEMS.md)。扩展地图仍拒绝，共享／材料仓库不在本地宿主范围内。Force Move等新增服务端程序尚未实现，普通点击移动继续使用公共移动命令。无窗口PD2和独立PvPGN宿主尚未开放。
 
-方块沿当前CubeMain输入／输出准备操作0及28；非堆叠路径以各输入qty总和匹配实际物件，不把PD2 numinputs直接当原版总物件数。普通品质的单个堆叠支持操作0的具体物品输出：按输入qty扣量，保留原GUID及余量，耗尽才移除；同时放入多个物件且含堆叠，以及堆叠物品变换仍明确拒绝。数量与扣量依据当前核心17d5fb1b的RVA `0x363680`／`0x363C20`，材料资格与数量来自当前MPQ。新增操作16／18／30／31与不支持的属性程序保留原行匹配顺序并拒绝执行，不消耗材料。佣兵装备槽从Inventory.Hireling有效矩形准备为纯值掩码，内核不读取资源或profile；盾牌仍受实际佣兵类型限制。
-
-表格兼容按实际编译类型处理：Levels.MonLvl1及Objects数值空格编译为零，MonStats2.MeleeRng为BYTE（当前spiritofbarbs的999在BIN中为231）；来源为D2MOO的LevelsTbls／ObjectsTbls／MonsterTbls与当前MPQ对应BIN。四个TXT覆盖图名称缺失的飞弹仅在当前missiles.bin的ProgOverlay为FFFF时接受无覆盖图，不生成资源或猜映射。维修报价上限250000来自当前核心RVA `0x2E8140`；详细函数材料位于`reference/pd2-cn-analysis/town-queries/current-functions/0x102e8140.json`。这些字段核对不代表完整PD2战斗规则实现。
+方块、堆叠数量、腐化及重掷规则归[物品基线](../pd2/ITEMS.md)，表编译／区域链接归[地图](../pd2/MAPS.md)与[怪物](../pd2/MONSTERS.md)，客户端覆盖图与技能程序归[技能](../pd2/SKILLS.md)，计价归[城镇](../pd2/TOWN.md)。佣兵装备槽从Inventory.Hireling有效矩形准备为纯值掩码，内核不读取资源或profile，盾牌仍受实际佣兵类型限制。
 
 ### 自有技能宿主
 
-当前核心依据为SHA256 `17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57`的ProjectDiablo.dll及同一副本MPQ。仅静态核对替换表、调用点及回调，不装载DLL。七职业可见节点按当前Skills的起手、执行、状态和飞弹链接准备；被动与协同使用当前公式。参数、飞弹、状态、召唤身份、数量和持续时间取当前表，玩法内核不读取MPQ。当前核心的包装器纠正、回调RVA、接触／传播顺序与未认证项见[服务端技能逆向依据](../resources/PD2_CN_DLL_ANALYSIS.md#自有宿主技能的当前核心依据)。
-
-较大差异分在`content/pd2/{skill_data,aura_data,curse_data,summon_data,corpse_data}`、`server/systems/{skills,combat,missiles,effects}/pd2`与`gameplay/effects/pd2`；未替换的程序复用已有原版执行器，小差异在原调用边界按PD2规则分支。当前普通区域及召唤物仍沿公共世界、事务、帧事件和原生存档生命周期。
-
-| 职业／机制 | 当前执行范围及入口 |
-| --- | --- |
-| 女巫 | 当前喷流、Blaze移动留火、传送附加状态、Static Field减抗、Combustion、Meteor／Blizzard、强化范围、Hydra／Lesser Hydra独立召唤定义；投射物按当前SrvHit／SrvDmg推进 |
-| 亚马逊 | 当前弓／投掷／标枪程序、Exploding Arrow延迟扇形、Lightning Bolt／Fury、Strafe及近战序列；Valkyrie／Decoy读取各自MonStats与隐藏攻击技能 |
-| 死灵 | 当前诅咒槽数、Curse Mastery、Dark Pact、Blood Warp、Desecrate、Poison Strike、尸爆与骨墙／骨牢；骷髅、法师、弓手及四类石魔读取当前身份、MonProp、PetType、隐藏技能和数量／生命公式 |
-| 圣骑士 | Smite盾牌及Holy Shield伤害、额外Crushing Blow、Joust、Charge移动与临时溅射状态、Holy Light友敌分流、Holy Sword装备门槛、Vengeance延迟传播、Sacrifice反伤与死亡爆炸；光环按当前原表准备 |
-| 野蛮人 | Bash主命中清除击退及条件二次无伤害击退、当前Concentrate／Berserk／Frenzy、Double Swing／Double Throw、Split Throw、Leap／Leap Attack、尸体搜索与战吼 |
-| 德鲁伊 | 当前变形、Fire Claws／Firestorm、Gust落点范围、Hunger吞尸、Raven每次多召与隐藏攻击、藤蔓／狼／熊／灵体及当前召唤属性 |
-| 刺客 | 当前蓄气阶段、元素环／扇形与终结释放、踢击、Dragon Flight、Mind Blast渐进伤害／状态、Blade Fury碰撞与反射、陷阱及影子隐藏技能 |
-| 接触与触发 | Do163以主目标为中心并排除主目标；按指定技能Calc取ED，Smite用盾牌伤害、踢击复制已分配伤害；按武器类型读取参数化溅射／Crushing Blow属性；Open Wounds使用PD2伤害、期限与三层上限，层数和期限只在运行态保存 |
-
-Do163的基础半径由隐藏技能Calc3准备；无参数inc_splash_radius不重复计入，再叠加匹配武器类型的参数层及原武器类别修正。Smite与Charge的状态224保留已有期限，显式零值覆盖先前溅射加成。武器item_splashonhit按本次攻击的实际手位属性注册，在主接触仍存在时同步执行；双持不固定读取右手，踢击不从后续帧猜测主命中伤害。溅射防御另读当前核心的武器格挡、Avoid／Evade及玩家4帧间隔。怪物MonProp触发经实际单位事件执行，通知保留当前攻击动作。当前fenris行虽然TXT写有inc_splash_radius名称，对应monprop.bin三难度属性ID均为FFFFFFFF，原生跳过该槽，宿主同样跳过。
-
-Dark Pact按原列表顺序保留最旧有限时诅咒，移除其余诅咒，以移除前数量计算魔法范围伤害；无诅咒不产生伤害。Desecrate从当前区域／原生后备区域的合法怪物池创建无经验、无掉落的尸体；出生遇碰撞可保留此前已生成的尸体，全部成功后才生成毒云并支付消耗，400帧后剩余尸体失去选择资格。不能把隐藏、udead或已消费尸体放宽为普通可用尸体。
-
-当前为七职业程序接入及代表性技能验证，不等同于全部数值、种子消费、碰撞、画面或多人认证。完整装备／触发／PvP／难度与跨区组合仍待覆盖；Iron Golem材料与恢复、复活怪物的全部动作、伙伴跨区及复杂物品属性组合仍须进一步验证。特殊地图／首领、佣兵战斗及职业范围以外的新增单位程序不因这些入口而获得完整支持；Open Wounds对扩展首领935／936的镜像写入尚未接入。未知程序继续明确拒绝，不猜测原版替代行为。
+七职业技能、状态、飞弹、召唤和接触程序按当前PD2资源准备。较大差异位于`content/pd2`、`hosting/pd2`及所属server系统的`pd2`目录，公共世界、事务、帧事件与原生存档继续复用现有内核。职业范围、原生规则、当前代码入口和未核实项统一维护于[PD2技能基线](../pd2/SKILLS.md)；装备与触发归[物品基线](../pd2/ITEMS.md)，伙伴与新增怪物归[怪物基线](../pd2/MONSTERS.md)。
 
 ### 当前代码接入范围
 

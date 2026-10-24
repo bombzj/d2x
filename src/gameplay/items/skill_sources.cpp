@@ -35,6 +35,11 @@ std::optional<ItemSkillEvent> itemSkillEvent(std::string_view stat) {
     if (stat == "item_skillongethit") return ItemSkillEvent::GetHit;
     if (stat == "item_skillondeath") return ItemSkillEvent::Death;
     if (stat == "item_skillonlevelup") return ItemSkillEvent::LevelUp;
+    if (stat == "item_skilloncast") return ItemSkillEvent::Cast;
+    if (stat == "item_skillonblock") return ItemSkillEvent::Block;
+    if (stat == "item_skilloncrit") return ItemSkillEvent::Critical;
+    if (stat == "item_skillonpierce") return ItemSkillEvent::Pierce;
+    if (stat == "item_healafterhit") return ItemSkillEvent::HitHeal;
     return {};
 }
 }

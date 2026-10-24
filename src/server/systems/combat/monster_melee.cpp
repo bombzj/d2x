@@ -25,7 +25,8 @@ DomainResult<> System::monsterMelee(EntityId source,EntityId target,const Monste
             unit->petWeapon && unit->petWeapon->item?std::optional{unit->petWeapon->item}:std::nullopt,program.modeStats);
         if(!stats) return {DomainStatus::Unavailable,{}};
         auto modifiers=ports_.effects.combatModifiers(source,tick.tick);
-        auto weapon=sampleNativeWeapon(unit->petWeapon.value_or(WeaponDamage{}),*stats,*rules.stats,modifiers,true);
+        auto weapon=sampleNativeWeapon(unit->petWeapon.value_or(WeaponDamage{}),*stats,*rules.stats,modifiers,true,0,
+            unit->equipmentStats?&*unit->equipmentStats:nullptr,rules.formulas.get(),unit->identity.monster=="shadowwarrior" || unit->identity.monster=="shadowmaster");
         if(unit->rule.enchantment) {
             weapon.statDamagePercent=nativeAdd(weapon.statDamagePercent,unit->rule.enchantment->damagePercent);
             weapon.damagePercent=nativeAdd(weapon.damagePercent,unit->rule.enchantment->damagePercent);

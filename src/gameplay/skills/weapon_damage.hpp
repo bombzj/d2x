@@ -11,6 +11,7 @@ struct WeaponSkillDamage {
     WeaponDamage weapon;
     int level{}, physicalPercent{}, pierceChance{}, coldFrames{}, poisonFrames{};
     bool automatic{}, freeze{}, projectile{}, critical{};
+    int criticalPercent{200};
     int64_t physicalMinimum{},physicalMaximum{},physicalAddition{};
     uint32_t physicalRoll{}; int sourceDamage{128};
     int conversionPercent{}; DamageType conversionElement{DamageType::Magic};

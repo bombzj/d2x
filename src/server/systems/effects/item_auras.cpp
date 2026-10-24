@@ -65,8 +65,8 @@ DomainResult<> System::itemAuraEvent(const FrameEvent &event,uint64_t tick) {
             }
             cycle.itemCancel=rank<=0 || timer.state<0;
             if(!cycle.itemCancel) {
-                if((player && (!player->rules.skills || !player->rules.skills->auras.contains(timer.skill))) ||
-                   (unit && (!unit->rule.auraPrograms || !unit->rule.auraPrograms->contains(timer.skill)))) {
+                if(!timer.equippedSkill && ((player && (!player->rules.skills || !player->rules.skills->auras.contains(timer.skill))) ||
+                   (unit && (!unit->rule.auraPrograms || !unit->rule.auraPrograms->contains(timer.skill))))) {
                     state_.itemAuraDeferred="Original item aura program is not implemented: "+std::to_string(timer.skill);
                     return {DomainStatus::NotImplemented,{}};
                 }
@@ -82,7 +82,7 @@ DomainResult<> System::itemAuraEvent(const FrameEvent &event,uint64_t tick) {
     }
     // Forced periodic execution preserves used/left/right selections. Each
     // source GUID owns its callback even when several sources share a layer.
-    const auto status=player?advanceAuraCycle(actor,*player,player->rules.skills->auras.at(cycle.skill).spec,cycle,tick):
+    const auto status=timer.equippedSkill?advancePd2EquippedSkill(actor,cycle,tick):player?advanceAuraCycle(actor,*player,player->rules.skills->auras.at(cycle.skill).spec,cycle,tick):
         advanceUnitAuraCycle(actor,id,cycle,tick);
     if(status==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
     if(!cycle.itemReplacementPrepared) {
@@ -90,6 +90,12 @@ DomainResult<> System::itemAuraEvent(const FrameEvent &event,uint64_t tick) {
         int32_t period{};
         if(player) {
             auto input=skills::formulaInput(*player);SkillFormulaValues values(*player->rules.skills->formulas,input);
+            const auto delay=values.calculation(FormulaDomain::Skill,cycle.skill,cycle.rank,"perdelay");
+            if(!delay) return {DomainStatus::Unavailable,{}};
+            period=*delay;
+        } else if(timer.equippedSkill) {
+            const auto sampled=unitStatValues(id,tick);if(!sampled) return {DomainStatus::Unavailable,{}};
+            auto input=skills::formulaInput(*unit,*sampled);SkillFormulaValues values(*unit->rule.formulas,input);
             const auto delay=values.calculation(FormulaDomain::Skill,cycle.skill,cycle.rank,"perdelay");
             if(!delay) return {DomainStatus::Unavailable,{}};
             period=*delay;

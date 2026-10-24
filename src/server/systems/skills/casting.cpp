@@ -503,6 +503,9 @@ StepStatus System::release(TickContext tick,EntityId only) {
             ++it;continue;
             }
         }
+        const auto castItemEvent=preparePd2CastItemEvent(pending,actor,target);
+        if(isDeferred(castItemEvent)) {blocked=true;++it;continue;}
+        if(castItemEvent!=DomainStatus::Applied) {it=releases_.erase(it);continue;}
         DomainStatus status;
         {
         auto execution=state_.executingRelease(actor.actor);
@@ -522,6 +525,7 @@ StepStatus System::release(TickContext tick,EntityId only) {
         }
         if(isDeferred(status)) {blocked=true;++it;continue;}
         if(status==DomainStatus::Applied) {
+            commitPd2CastItemEvent(pending);
             auto &cast=state_.casts.at(actor.actor);
             if(pending.assassinKick && pending.assassinKick->phase!=AssassinKickExecution::Phase::Complete) {
                 cast.until=std::max(cast.until,tick.tick+uint64_t(std::max(1,pending.weaponFrames)));
@@ -594,7 +598,8 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
         skill.manaCost=skill.startMana=skill.delayFrames=0;skill.charge.reset();
         std::shared_ptr<Release> local;auto &pending=continuation?*continuation:local;
         if(!pending) pending=std::make_shared<Release>(Release{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick,uint8_t(ports_.players.findActor(target)?0:1)});
-        const auto result=activatePd2(*pending,actor,position);
+        const auto result=pending->skill.appliedEffect && !pending->skill.druid && !pending->skill.assassin?
+            ports_.effects.unitSkill(actor.actor,pending->skill,actor.tick).status:activate(*pending,actor,position);
         if(result!=DomainStatus::Capacity) pending.reset();
         return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
     }

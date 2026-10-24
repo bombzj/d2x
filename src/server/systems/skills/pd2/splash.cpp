@@ -100,7 +100,9 @@ DomainStatus System::activatePd2Splash(Release &pending,const ActorContext &acto
         if(caster->monster) {
             const auto sampled=ports_.effects.unitStatValues(actor.actor,actor.tick,weapon.item?std::optional{weapon.item}:std::nullopt);
             if(!sampled) return DomainStatus::Unavailable;
-            weapon=sampleNativeWeapon(weapon,*sampled,*rules.stats,modifiers,true);
+            weapon=sampleNativeWeapon(weapon,*sampled,*rules.stats,modifiers,true,0,
+                caster->monster->equipmentStats?&*caster->monster->equipmentStats:nullptr,rules.formulas.get(),
+                caster->monster->identity.monster=="shadowwarrior" || caster->monster->identity.monster=="shadowmaster");
         }
         auto contact=std::make_shared<combat::SpellImpact>();
         contact->projectile=contact->source=actor.actor;

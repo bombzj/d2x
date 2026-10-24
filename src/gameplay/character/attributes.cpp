@@ -3,6 +3,7 @@
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/combat/unit_values.hpp"
 #include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/stats/pd2/item_values.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -68,6 +69,7 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
     const bool native=statRules && nativeStats;
     const auto stat=[&](std::string_view name){return logicalStatValue(*nativeStats,*statRules,name);};
     if(native) {
+        if(statRules->pd2) m.combat.pd2=pd2ItemModifiers(*nativeStats,*statRules);
         m.fireResist=stat("fireresist");m.lightningResist=stat("lightresist");m.coldResist=stat("coldresist");m.poisonResist=stat("poisonresist");
         m.lightRadius=stat("item_lightradius");m.fasterMoveVelocity=stat("item_fastermovevelocity");m.velocityPercent=stat("velocitypercent");m.otherAnimationRate=stat("other_animrate");
         m.staminaRecoveryBonus=stat("staminarecoverybonus");m.staminaDrainPercent=stat("item_staminadrainpct");

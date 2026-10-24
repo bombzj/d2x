@@ -1,4 +1,5 @@
 #include "modifier_values.hpp"
+#include "pd2/item_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -153,10 +154,12 @@ CombatModifiers nativeCombatModifiers(const StatSnapshot &values,const StatRuleC
     result.target={stat("item_demondamage_percent"),stat("item_undeaddamage_percent"),stat("item_demon_tohit"),
         stat("item_undead_tohit"),stat("item_fractionaltargetac"),stat("item_ignoretargetac")!=0};
     result.cannotBeFrozen=stat("item_cannotbefrozen")!=0;result.halfFreezeDuration=stat("item_halffreezeduration")!=0;
+    if(rules.pd2) result.pd2=pd2ItemModifiers(values,rules);
     return result;
 }
 void appendNativeModifierValues(StatList &list,const StatRuleCatalog &rules,const CharacterModifiers &m) {
     const auto &c=m.combat;
+    if(rules.pd2 && c.pd2) appendPd2ItemModifiers(list,rules,*c.pd2);
     // These are stat values. Skill procedure parameters, owner-only Holy
     // Shield calculations and weapon-type mastery catalogs keep their roles.
     const std::pair<std::string_view,int32_t> values[]{

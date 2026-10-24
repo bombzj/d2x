@@ -254,6 +254,10 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
             if (definition != statRows_.end() && cost.value(definition->second, "Stat") == "item_charged_skill") {
                 if (update.value > 65535 || (update.value & 0xff) > (update.value >> 8))
                     throw std::runtime_error("Invalid incremental charged skill counts");
+                // PD2 restores charges while an item is unidentified. Its
+                // property lists are intentionally absent from that packet;
+                // retain the ordinary item so it can still be identified.
+                if(pd2 && !item.identified) continue;
                 unsigned matches = 0;
                 auto replace = [&](auto &stats) {
                     for (auto &stat : stats) {

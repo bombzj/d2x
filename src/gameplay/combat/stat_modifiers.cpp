@@ -19,6 +19,7 @@ void mergeAttackTargetModifiers(AttackTargetModifiers &a, const AttackTargetModi
     a.ignoreDefense |= b.ignoreDefense;
 }
 void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
+    if(b.pd2) {if(!a.pd2) a.pd2.emplace();mergePd2ItemModifiers(*a.pd2,*b.pd2);}
     for (const auto &[type, bonus] : b.meleeMasteries)
         for (size_t i = 0; i < bonus.size(); ++i) a.meleeMasteries[type][i] = std::max(a.meleeMasteries[type][i], bonus[i]);
     for (const auto &[type, bonus] : b.throwMasteries)

@@ -58,7 +58,8 @@ combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, st
         const auto &rule=m.nativeDamage->rule;
         result.monsterToHit=rule.toHit;result.monsterRating=m.nativeDamage->attackBonus;result.hitClass=uint8_t(rule.hitClass);
         result.nextDelay=uint64_t(std::max(0,rule.nextDelay));
-        if(rule.nextHit) result.nativeNextHit=rule.nextHitState;
+        if(rule.nextHit && (!rules.pd2 || rule.nextDelay)) result.nativeNextHit=rule.nextHitState;
+        result.pd2NextHitKey=pd2NextHitKey(m);
         result.monsterStates={rules.chilled,rules.poisoned,{}};
     }
     if(!result.missileDamage && !damage && m.damageRange && !healingContact) {
@@ -330,8 +331,8 @@ System::Advance System::advance(const Missile &sourceMissile,TickContext tick) c
                 if(m.program==Program::Arc && (m.skill.effect==SkillBehavior::ChainLightning || (m.skill.weapon && m.skill.weapon->spear && m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike))) {
                     const Vec at=next;std::vector<uint64_t> eligible;
                     if(m.remainingHits>1) for(const auto candidate:nearbyUnits(m)) {
-                        const auto point=unitPosition(m,candidate);const auto tick=m.executionTick;
-                        if(!point || !participants.canHarm(m.owner,candidate) || candidate==id || (!ports_.effects.missileHitAllowed(candidate,tick)) ||
+                        const auto point=unitPosition(m,candidate);
+                        if(!point || !participants.canHarm(m.owner,candidate) || candidate==id || !missileHitAllowed(m,candidate) ||
                             !radius(at,*point,m.skill.arc->range) || !area.definition.collision.missileSegment(at,*point,{4,1})) continue;
                         eligible.push_back(candidate.value);
                     }
@@ -401,7 +402,7 @@ bool System::projectileImpact(Advance &plan,EntityId target) const {
         const auto &area=ports_.areas.at(m.area);std::vector<uint64_t> eligible;
         if(m.remainingHits>1) for(const auto id:nearbyUnits(m)) {
             const auto point=unitPosition(m,id);
-            if(point && participants.canHarm(m.owner,id) && id!=target && ports_.effects.missileHitAllowed(id,m.executionTick) &&
+            if(point && participants.canHarm(m.owner,id) && id!=target && missileHitAllowed(m,id) &&
                 radius(m.position,*point,m.skill.arc->range) && area.definition.collision.missileSegment(m.position,*point,{4,1})) eligible.push_back(id.value);
         }
         const EntityId next{missileChainSuccessor(target.value,eligible)};

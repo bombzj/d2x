@@ -90,7 +90,8 @@ DomainResult<> System::activeStateEvent(const FrameEvent &event,uint64_t tick) {
             uint32_t(native.number("aurafilter")),uint32_t(native.number("hitflags")),uint16_t(native.number("resultflags"))};
         if(program.activeFunction==145) execution.area.damage=rollNativeSkillDamage(values,event.customId,event.customParameter,random);
         else if(program.activeFunction==146) {
-            if(!input.referenceRanks || !input.referenceRanks->effective.contains(event.customId) || definition->second.spec.missileId<=0) return finish();
+            const bool equipped=rules.pd2 && input.stats && input.stats->get({rules.stats->names.at("item_skillonequip"),uint16_t(event.customId)})>0;
+            if((!equipped && (!input.referenceRanks || !input.referenceRanks->effective.contains(event.customId))) || definition->second.spec.missileId<=0) return finish();
             random=initialRandom(uint32_t(state_.skillParameter(caster->id(),{event.customId,EntityId{event.payload}},0)));
             execution.nextParameter=int(rollRandom(random)%1000000);
             for(int attempt=0;attempt<5;++attempt) {

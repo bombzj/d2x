@@ -32,7 +32,9 @@ struct CubeOutput {
 struct CubeRecipe {
     size_t row = 0;
     int version = 0, minimumDifficulty = 0, operation = 0;
+    int operationParameter = 0, operationValue = 0;
     bool ladder = false;
+    int pd2Continuation = 0; // Current CubeMain ladder modes 2 (recurse), 3 (corruption result).
     std::string characterClass;
     unsigned inputCount = 0;
     std::vector<CubeInput> inputs;

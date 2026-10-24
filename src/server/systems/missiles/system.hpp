@@ -106,6 +106,8 @@ class System {
     std::vector<DomainFact> visuals(const std::vector<Missile> &) const;
     std::vector<EntityId> collisionCandidates(const Missile &, Vec next) const;
     bool canCollide(const Missile &,EntityId) const;
+    std::optional<std::array<int32_t,2>> pd2NextHitKey(const Missile &) const;
+    bool missileHitAllowed(const Missile &,EntityId) const;
 
   public:
     explicit System(Ports ports);
