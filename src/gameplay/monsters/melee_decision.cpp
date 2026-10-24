@@ -4,7 +4,7 @@
 #include <algorithm>
 namespace d2x {
 bool hasMeleeDecision(MonsterAiKind kind) {
-    return hasSkirmishDecision(kind) || kind == MonsterAiKind::Skeleton || kind == MonsterAiKind::Zombie || kind == MonsterAiKind::Brute || kind == MonsterAiKind::Fallen || kind == MonsterAiKind::Wraith || kind == MonsterAiKind::CorruptRogue || kind == MonsterAiKind::Goatman || kind == MonsterAiKind::CorruptLancer || kind == MonsterAiKind::DoomKnight || kind == MonsterAiKind::BloodLord || kind == MonsterAiKind::DeathMauler;
+    return hasSkirmishDecision(kind) || kind == MonsterAiKind::FlyingScimitar || kind == MonsterAiKind::Skeleton || kind == MonsterAiKind::Zombie || kind == MonsterAiKind::Brute || kind == MonsterAiKind::Fallen || kind == MonsterAiKind::Wraith || kind == MonsterAiKind::CorruptRogue || kind == MonsterAiKind::Goatman || kind == MonsterAiKind::CorruptLancer || kind == MonsterAiKind::DoomKnight || kind == MonsterAiKind::BloodLord || kind == MonsterAiKind::DeathMauler;
 }
 std::optional<MonsterDecision> decideMeleeMonster(const MonsterAiProfile &rules, MonsterDecisionInput input) {
     if (!hasMeleeDecision(rules.kind) || input.difficulty < 0 || input.difficulty > 2) return {};
@@ -14,6 +14,18 @@ std::optional<MonsterDecision> decideMeleeMonster(const MonsterAiProfile &rules,
     result.alerted = input.alerted;
     const auto &p = rules.params;
     auto chance = [&](int percent) { return limitedRandom(result.random, 100) < unsigned(percent); };
+    if(rules.kind==MonsterAiKind::FlyingScimitar) {
+        result.waitFrames=p[2];
+        if(input.contact) {
+            if(chance(p[1])) result.action=MonsterDecisionAction::Attack;
+            else if(chance(p[3])) {result.action=MonsterDecisionAction::Circle;result.stopDistance=2;}
+        } else if(chance(p[0])) {
+            result.action=MonsterDecisionAction::Approach;result.approachRadius=8;result.pathSteps=1;
+        } else if(chance(p[0])) {
+            result.action=MonsterDecisionAction::Approach;
+        }
+        return result;
+    }
     if(rules.kind==MonsterAiKind::DeathMauler) {
         result.pathSteps=1;result.waitFrames=15;
         if(input.contact) {if(chance(p[0])) result.action=MonsterDecisionAction::Attack;}

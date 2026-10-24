@@ -260,6 +260,7 @@ add_library(d2x_server
   src/server/systems/skills/pd2/teleport.cpp
   src/server/systems/skills/pd2/requirements.cpp
   src/server/systems/skills/pd2/projectiles.cpp
+  src/server/systems/skills/pd2/monster_skills.cpp
   src/server/systems/skills/pd2/splash.cpp
   src/server/systems/skills/pd2/summons.cpp
   src/server/systems/skills/pd2/healing.cpp
@@ -373,6 +374,7 @@ add_library(d2x_game_content
   src/hosting/environment_content.cpp src/hosting/monster_actions_content.cpp
     src/hosting/game_content.cpp src/hosting/pd2/town_host.cpp
     src/hosting/pd2/equipped_skills.cpp
+    src/hosting/pd2/monster_actions.cpp
     src/hosting/pd2/cube.cpp
     src/hosting/pd2/item_reroll.cpp
   src/hosting/character_content.cpp src/hosting/character_creation.cpp

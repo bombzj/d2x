@@ -127,7 +127,10 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const bool nova=slot.action==MonsterAttackRule::Action::Nova && rule.formulas->skills.at(request.skill).number("srvdofunc")==22;
     const bool corpseArea=slot.action==MonsterAttackRule::Action::NativeSpell && rule.formulas->skills.at(request.skill).number("srvdofunc")==141;
     const bool coordinateSpell=slot.action==MonsterAttackRule::Action::NativeSpell && request.position && rule.formulas->skills.at(request.skill).number("srvdofunc")==28;
-    const bool selfAction=coordinateSpell || coordinateNativeMissile || corpseArea || nova || tentacles || periodic || slot.action==MonsterAttackRule::Action::Whirlwind || (slot.action==MonsterAttackRule::Action::NativeSpell && rule.formulas->skills.at(request.skill).number("srvdofunc")==68) || slot.action==MonsterAttackRule::Action::SpawnMinion || slot.action==MonsterAttackRule::Action::DefensiveBuff || nativeNest || shadowSelf || druidTeleport || slot.action==MonsterAttackRule::Action::Teleport || slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay || slot.action==MonsterAttackRule::Action::Submerge;
+    const bool pd2SelfProjectile=slot.action==MonsterAttackRule::Action::Pd2Projectile &&
+        (request.position || rule.formulas->skills.at(request.skill).number("srvdofunc")==22 ||
+         rule.formulas->skills.at(request.skill).number("srvdofunc")==183);
+    const bool selfAction=pd2SelfProjectile || coordinateSpell || coordinateNativeMissile || corpseArea || nova || tentacles || periodic || slot.action==MonsterAttackRule::Action::Whirlwind || (slot.action==MonsterAttackRule::Action::NativeSpell && rule.formulas->skills.at(request.skill).number("srvdofunc")==68) || slot.action==MonsterAttackRule::Action::SpawnMinion || slot.action==MonsterAttackRule::Action::DefensiveBuff || nativeNest || shadowSelf || druidTeleport || slot.action==MonsterAttackRule::Action::Teleport || slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay || slot.action==MonsterAttackRule::Action::Submerge;
     const bool special=slot.action!=MonsterAttackRule::Action::Damage;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(overseerSupport && (target->id==monster->id || !(victim?victim->alive():participants.find(target->id).player && participants.find(target->id).player->persistent.player.hp>0))) return {DomainStatus::InvalidActor,{}};
@@ -538,6 +541,7 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
             specialResult=ports_.effects.unitSkill(source->id,skill,tick.tick);break;
         }
         case MonsterAttackRule::Action::NativeSpell: specialResult=releaseMonsterSpell(pending,tick);break;
+        case MonsterAttackRule::Action::Pd2Projectile: specialResult=releasePd2MonsterProjectile(pending,tick);break;
         case MonsterAttackRule::Action::NativeMissile: {
             const auto target=pending.launch?std::optional{std::pair{pending.launch->second,0}}:ports_.monsters.nativeTargetPosition(unit.id,source->area);
             if(!target || !pending.attack.missile) {specialResult={DomainStatus::InvalidActor,{}};break;}
@@ -718,7 +722,7 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
         }
         if(special) {
             if(isDeferred(specialResult.status)) {blocked=true;++it;continue;}
-            if(specialResult && ++pending.nextRelease<pending.releaseFrames.size()) {pending.formulaPrepared=false;pending.releaseRankPrepared=false;pending.curse.reset();pending.children.reset();pending.tentacles.reset();pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;}
+            if(specialResult && ++pending.nextRelease<pending.releaseFrames.size()) {if(pending.attack.action==MonsterAttackRule::Action::Pd2Projectile) pending.nativeSkill.reset();pending.formulaPrepared=false;pending.releaseRankPrepared=false;pending.curse.reset();pending.children.reset();pending.tentacles.reset();pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;}
             it=monsterReleases_.erase(it);continue;
         }
         const auto target=ports_.monsters.targetPosition(unit.id,pending.area);

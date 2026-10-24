@@ -4,6 +4,7 @@
 #include "content/classic_data.hpp"
 #include "content/pd2/skill_data.hpp"
 #include "pd2/equipped_skills.hpp"
+#include "pd2/monster_actions.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/skills/aura_data.hpp"
@@ -284,7 +285,10 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         else throw std::runtime_error("Unsupported original general skill program");
         prepared->definitions.emplace(id,server::SkillDefinition{std::move(spec),skillTable.number(row,"InTown").value_or(0)!=0,{}});
     }
-    if(data.pd2Host) preparePd2EquippedSkills(data,*prepared);
+    if(data.pd2Host) {
+        preparePd2EquippedSkills(data,*prepared);
+        hosting::pd2::prepareMonsterSkillPrograms(data,*prepared);
+    }
     for(auto &[id,definition]:prepared->definitions) for(size_t row=0;row<skillTable.rows().size();++row) if(skillTable.number(row,"Id")==id) {
         if(definition.spec.weapon) {
             definition.spec.weapon->useThrowMastery=prepared->formulas->skills.at(id).useThrowMastery;

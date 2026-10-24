@@ -5,7 +5,7 @@ namespace d2x {
 enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatman, QuillRat,
                            Wraith, CorruptLancer, CorruptArcher, SkeletonBow, Bighead,
                            SkeletonMage, Fetish, Vampire, FallenShaman, FoulCrowNest, BloodHawk,
-                           Arach, Smith, Griswold, BloodRaven, Countess, Andariel, GargoyleTrap,
+                           Arach, Smith, Griswold, BloodRaven, Countess, Andariel, GargoyleTrap, FlyingScimitar,
                            SandRaider, SandMaggot, SandMaggotQueen, MaggotEgg, MaggotLarva,
                            ClawViper, SandLeaper, Swarm, Scarab, GreaterMummy, Mummy,
                            PantherWoman, PantherJavelin, Baboon, Vulture, BatDemon, PinHead,

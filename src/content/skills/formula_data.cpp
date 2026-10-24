@@ -85,6 +85,13 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
             (action==18 || action==23 || action==29 || action==54 || action==124);
         const bool prepared = !data.pd2Host || data.skills.find(id) || equipped;
         auto record=copy(source,prepared);
+        // State links belong to the compiled skill record, including skills
+        // used only by monsters. Program admission must not erase them.
+        const auto sourceState=[&](std::string_view field) {
+            const auto found=data.states.find(source.reference(field));
+            return found==data.states.end()?-1:found->second.definition.id;
+        };
+        record.auraState=sourceState("aurastate");record.auraTargetState=sourceState("auratargetstate");
         // Keep references for unsupported programs without granting class
         // availability. Equipment-only aura records still own real metadata.
         if(!prepared) {

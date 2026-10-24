@@ -29,7 +29,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if(request.action==Action::AllowLoot) {
             const auto &code=player->definition.code;
             const bool female=code=="ama" || code=="sor" || code=="ass";
-            PlayerMessageFact notice{7}; notice.value=uint32_t(actor.actor.value); notice.parameter=uint8_t(request.enabled?(female?2:1):(female?11:10));
+            PlayerMessageFact notice{};notice.type=7;notice.value=uint32_t(actor.actor.value);notice.parameter=uint8_t(request.enabled?(female?2:1):(female?11:10));
             batches.push_back({0,actor.tick,{}, {AudienceKind::Player,peer->player,peer->area},{std::move(notice)}});
         }
         const auto sent=ports_.events.publishGroup(std::move(batches));

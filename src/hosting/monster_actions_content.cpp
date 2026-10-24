@@ -1,5 +1,6 @@
 #include "content/monsters/monster_identity.hpp"
 #include "monster_actions_content.hpp"
+#include "pd2/monster_actions.hpp"
 #include <stdexcept>
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
@@ -228,6 +229,7 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
         action.duration=monsterAnimationTicks(*action.animation);action.release=1;
         rule.attacks.insert_or_assign(4,std::move(action));return true;
     }
+    if(data.pd2Host && !hosting::pd2::prepareMonsterActions(archives,data,animations,record,rule)) return false;
     if(hasAct2MonsterSkills(record.ai) || record.ai=="Vampire") return prepareAct2MonsterSkills(archives,data,animations,record,rule);
     const auto &stats=data.tables.at("monstats");const auto &skills=data.tables.at("skills");
     const auto &missiles=data.tables.at("missiles");const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
@@ -242,9 +244,10 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
             (record.ai=="Andariel" && slot<2) || (record.ai=="BloodRaven" && slot<2) || (record.ai=="GargoyleTrap" && slot==0) || (rule.ai.kind==MonsterAiKind::Countess && slot==0);
         if(!required) continue;
         const auto field=std::to_string(slot+1);const auto skillName=stats.value(record.sourceRow,"Skill"+field);
-        size_t row=0;while(row<skills.rows().size() && skills.value(row,"skill")!=skillName) ++row;
+        size_t row=0;while(row<skills.rows().size() && !sameNativeSkillName(skills.value(row,"skill"),skillName)) ++row;
         if(row==skills.rows().size()) return false;
         const auto skillId=skills.number(row,"Id");
+        if(skillId && rule.skillActions.contains(uint16_t(*skillId))) {rule.skillIds[slot]=uint16_t(*skillId);continue;}
         const int rank=stats.number(record.sourceRow,"Sk"+field+"lvl").value_or(0)+bonus;
         if(!skillId || *skillId<1 || *skillId>UINT16_MAX || rank<1 || rank>255) return false;
         server::MonsterAttackRule action;action.rank=uint8_t(rank);
@@ -291,19 +294,12 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
             if(!data.nativeFormulas->missileIds.contains("spidergoolay") || !data.nativeFormulas->missileIds.contains("spidergoo")) return false;
         } else {
             auto name=skills.value(row,"srvmissile");if(name.empty()) name=skills.value(row,"srvmissilea");
-            size_t missileRow=0;while(missileRow<missiles.rows().size() && missiles.value(missileRow,"Missile")!=name) ++missileRow;
+            size_t missileRow=0;while(missileRow<missiles.rows().size() && !sameNativeSkillName(missiles.value(missileRow,"Missile"),name)) ++missileRow;
             if(missileRow==missiles.rows().size()) return false;
             int definition=missiles.number(missileRow,"Id").value_or(-1);
             if(record.ai=="FallenShaman" && skills.number(row,"srvdofunc").value_or(0)==85) {
                 // SrvDo085 selects the missile by position in the BaseId chain.
-                int offset=0;std::string next=record.base;
-                while(next!=record.id && offset<255) {
-                    size_t chain=0;while(chain<stats.rows().size() && stats.value(chain,"Id")!=next) ++chain;
-                    if(chain==stats.rows().size()) return false;
-                    next=stats.value(chain,"NextInClass");++offset;
-                }
-                if(next!=record.id) return false;
-                definition+=offset;
+                definition+=compiledMonsterChainIndex(stats,record.sourceRow);
             }
             action.missile=prepareMonsterMissile(data,definition,rank);if(!action.missile) return false;
             if(record.ai=="GargoyleTrap") action.action=server::MonsterAttackRule::Action::Trap;
@@ -638,6 +634,10 @@ bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTa
     return true;
 }
 }
+bool prepareMonsterActionClock(Archives &archives,const AnimDataTable &animations,const DataTable &sequences,
+    const MonsterRecord &record,std::string_view mode,int event,server::MonsterAttackRule &action) {
+    return clockAction(archives,animations,sequences,record,mode,event,action);
+}
 bool hasAct2MonsterSkills(std::string_view ai) {
     if(ai=="Tentacle" || ai=="TentacleHead" || ai=="CatapultSpotter" || ai=="HellMeteor" || ai=="BaalTaunt" || ai=="BaalThrone" || ai=="BaalCrab" || ai=="BaalCrabClone" || ai=="Overseer" || ai=="SuicideMinion" || ai=="MinionSpawner" || ai=="Succubus" || ai=="SuccubusWitch" || ai=="Izual" || ai=="UberIzual" || ai=="Mephisto" || ai=="Diablo" || ai=="Nihlathak" || ai=="Ancient") return true;
     constexpr std::array names{"SandRaider","SandMaggot","SandMaggotQueen","MaggotEgg","MaggotLarva",
@@ -700,11 +700,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             rule.impBaseSkills[slot]=uint16_t(skillTableNumber(skills,findSkillTableRow(skills,"skill",name),"Id"));
             rule.impBaseModes[slot]=nativeMode(stats.value(base,"Sk"+field+"mode"));
         }
-        auto chain=record.base;
-        while(!chain.empty() && chain!=record.id && rule.monsterChainOffset<255) {
-            chain=stats.value(findSkillTableRow(stats,"Id",chain),"NextInClass");++rule.monsterChainOffset;
-        }
-        if(chain!=record.id) return false;
+        rule.monsterChainOffset=compiledMonsterChainIndex(stats,record.sourceRow);
         const auto clock=loadMonsterMotionTiming(animations,record.token,"s1",monsterModeWeapon(archives,record.token,"s1",record.baseWeapon));
         if(!clock) return false;
         rule.aiPoseTicks.emplace(8,monsterAnimationTicks({clock->frames,clock->speed}));
@@ -744,7 +740,15 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         // missile column. Reject this action so hostile identity fallback
         // can run; an empty reference must not abort the complete region.
         if(name.empty()) return {};
-        const auto row=findSkillTableRow(missiles,"Missile",name);
+        if(data.pd2Host) {
+            std::string key(name);for(auto &letter:key) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+            const auto linked=data.nativeFormulas->missileIds.find(key);
+            return linked==data.nativeFormulas->missileIds.end()?std::nullopt:prepareMonsterMissile(data,linked->second,rank);
+        }
+        size_t row=0;while(row<missiles.rows().size() && missiles.value(row,"Missile")!=name) ++row;
+        if(row==missiles.rows().size()) {
+            throw std::runtime_error("Missing original monster missile: "+std::string(name));
+        }
         return prepareMonsterMissile(data,skillTableNumber(missiles,row,"Id"),rank);
     };
     const auto baseAttack=[&](std::string_view mode)->server::MonsterAttackRule {
@@ -774,6 +778,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         if(row==skills.rows().size()) continue; // Unresolved native name-link compiles to -1.
         const auto name=skills.value(row,"skill");
         const int id=skillTableNumber(skills,row,"Id");
+        if(rule.skillActions.contains(uint16_t(id))) {rule.skillIds[slot]=uint16_t(id);continue;}
         int rank=stats.number(record.sourceRow,"Sk"+field+"lvl").value_or(0)+bonus;
         if(record.ai=="SiegeBeast" && name=="Charge") {rule.skillIds[slot]=uint16_t(id);continue;}
         if(record.ai=="WillOWisp") {rule.skillIds[slot]=uint16_t(id);continue;}
@@ -869,9 +874,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             if(!prepared) return false;
             if(towerBolt) event=4;
             if(name=="UnHolyBolt") {
-                int offset=0;auto chain=record.base;
-                while(!chain.empty() && chain!=record.id && offset<255) {const auto next=findSkillTableRow(stats,"Id",chain);chain=stats.value(next,"NextInClass");++offset;}
-                if(chain!=record.id) return false;
+                const int offset=compiledMonsterChainIndex(stats,record.sourceRow);
                 prepared=prepareMonsterMissile(data,prepared->definition+offset,rank);if(!prepared) return false;
             }
             if(const auto *entry=data.skills.find(id);entry && entry->spell && (name=="Glacial Spike" || name=="Fire Ball" || name=="Frost Nova")) {

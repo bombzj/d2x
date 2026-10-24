@@ -69,7 +69,7 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
                 } else if (const auto value=table.number(row,column)) result.numbers.emplace(key,*value);
                 else if (table.value(row,column).empty()) result.numbers.emplace(key,0);
             } else if ((missile && (key=="skill" || key=="progoverlay" || key.starts_with("submissile") || key.starts_with("hitsubmissile"))) || key=="etype" || key=="summon" || key=="submissile1" || key=="passivestate" || key.starts_with("srvmissile") ||
-                       key.starts_with("passivestat") || key.starts_with("aurastat") || key.starts_with("sumskill") || key=="monanim" || key=="anim" || key=="state1" || key=="state2" || key=="state3" || key=="range" || key=="pettype")
+                       key.starts_with("passivestat") || key.starts_with("aurastat") || key=="auratargetstate" || key.starts_with("sumskill") || key=="monanim" || key=="anim" || key=="state1" || key=="state2" || key=="state3" || key=="range" || key=="pettype")
                 result.references.emplace(key,lower(table.value(row,column)));
         }
     }

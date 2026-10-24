@@ -41,7 +41,7 @@ const FrameEventQueue::Chain &FrameEventQueue::chain(const FrameEvent &event) co
 FrameEventHandle FrameEventQueue::insert(FrameEventOwner owner,FrameEventType type,int32_t nativeFrame,uint64_t now,
     uint32_t handler,int32_t customId,int32_t customParameter) {
     queueIndex(owner.type);
-    if(uint8_t(type)>=15) throw std::invalid_argument("Unsupported native timer event type");
+    if(type>FrameEventType::Pd2MissileHitDelay) throw std::invalid_argument("Unsupported native timer event type");
     if(owner.type!=FrameEventUnit::Game && !owner.unit) throw std::invalid_argument("Native timer has no unit identity");
     if(frame_ && now<*frame_) throw std::logic_error("Native timer inserted from an earlier frame");
     const auto deadline=nativeEventDeadline(now,nativeFrame);
@@ -52,7 +52,7 @@ FrameEventHandle FrameEventQueue::insertPrepared(FrameEvent event) {
 }
 FrameEventQueue::PreparedInsertion FrameEventQueue::prepareInsertion(FrameEvent event) {
     queueIndex(event.owner.type);
-    if(uint8_t(event.type)>=15) throw std::invalid_argument("Unsupported native timer event type");
+    if(event.type>FrameEventType::Pd2MissileHitDelay) throw std::invalid_argument("Unsupported native timer event type");
     if(event.owner.type!=FrameEventUnit::Game && !event.owner.unit) throw std::invalid_argument("Native timer has no unit identity");
     if(frame_ && !event.continuous && event.due<=*frame_) throw std::logic_error("Prepared native timer is already due");
     if(next_==UINT64_MAX) throw std::overflow_error("Native timer identity exhausted");
@@ -60,7 +60,8 @@ FrameEventQueue::PreparedInsertion FrameEventQueue::prepareInsertion(FrameEvent 
     if(event.continuous) event.handler=0;
     PreparedInsertion plan;plan.queue_=this;
     plan.owners_.emplace(event.owner,FrameEventHandle{});
-    plan.nodes_.emplace(event.handle,Node{event});
+    Node node{};node.event=event;
+    plan.nodes_.emplace(event.handle,std::move(node));
     ++next_;
     return plan;
 }

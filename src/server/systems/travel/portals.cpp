@@ -42,7 +42,8 @@ void System::closePortals(RegionId region) {
         writePortalCollision(entry.second,false);return true;
     };
     std::erase_if(state_.portals,[&](const auto &entry) {
-        if(entry.second.field!=region) return false;writePortalCollision(entry.second,false);return true;
+        if(entry.second.field!=region) return false;
+        writePortalCollision(entry.second,false);return true;
     });
     std::erase_if(state_.specialPortals,close);
 }

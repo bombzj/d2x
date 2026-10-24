@@ -20,6 +20,8 @@ Levels.MonLvl1及Objects数值空白按原编译类型为零，来源为D2MOO的
 
 人口由公共`prepareMonsterRegionRules`／`prepareCombatPopulation`消费目标Levels.NumMon、mon/nmon、MonDen、MonUMin/Max及区域等级；仅准备城镇的`prepareTownRegionRules`不是扩展区域入口。未实现敌对AI仍依项目授权使用沉沦魔载体并保留真实身份；中立控制器不换敌人。特殊首领、事件、词缀和专属掉落没有因此补齐。
 
+扩展身份的技能准备由`src/hosting/pd2/monster_actions.cpp`按实际技能程序接入，原图和基础数值继续随真实MonStats身份读取；动作事件、链编号及首领专属AI的接入与限制见[怪物基线](MONSTERS.md#怪物技能程序准备)。区域地形可进入、敌对替身可战斗和真实怪物程序可执行须分别判断，不能用其中一项证明地图完整可玩。
+
 ## 扩展区域索引
 
 入口仅记录当前Misc.len；不代表物品已有自有开图执行。尺寸为Levels默认难度字段，噩梦／地狱仍各读SizeX/Y(N/H)；变体数来自唯一LvlPrest绑定。

@@ -6,6 +6,7 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/pd2_program.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/druid_spec.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
@@ -34,15 +35,20 @@ SkillSpec preparePd2SkillDefinition(const ClassicData &data,size_t row) {
     if(program->startFunction==73) program->requiredWeaponType=table.value(row,"itypea1");
     if(const auto state=data.states.find(table.value(row,"aurastate"));state!=data.states.end())
         program->state=state->second.definition;
-    const auto &missiles=data.tables.at("missiles");
+    const auto missile=[&](std::string_view name) {
+        std::string key(name);for(auto &letter:key) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+        const auto found=data.nativeFormulas->missileIds.find(key);
+        if(found==data.nativeFormulas->missileIds.end()) throw std::runtime_error("Missing native PD2 missile link: "+std::string(name));
+        return int(found->second);
+    };
     if(const auto name=table.value(row,"srvmissile");!name.empty())
-        program->missile=skillTableNumber(missiles,findSkillTableRow(missiles,"Missile",name),"Id");
+        program->missile=missile(name);
     for(size_t slot=0;slot<program->missiles.size();++slot) {
         // These direct callbacks never read the missile slots. Their current
         // TXT retains names with no Missile record; compiled links are FFFF.
         if(program->doFunction==176 || program->doFunction==158) break;
         const auto name=table.value(row,std::array{"srvmissilea","srvmissileb","srvmissilec"}[slot]);
-        if(!name.empty()) program->missiles[slot]=skillTableNumber(missiles,findSkillTableRow(missiles,"Missile",name),"Id");
+        if(!name.empty()) program->missiles[slot]=missile(name);
     }
     spec.pd2=std::move(program);
     return spec;

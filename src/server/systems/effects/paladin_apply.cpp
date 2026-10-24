@@ -161,17 +161,17 @@ static void applyImmediateAuraRecipient(CombatEffectSet &states,const ActorConte
         previousValues=prepareModifierStatSource(rules,{{},effect.spec.modifiers,combatEffectNativeValues(effect.spec)},StatOwnerKind::Player)->base;
         break;
     }
-    auto writes=owner?a.ownerWrites:a.targetWrites;const auto rawCallbacks=owner?a.ownerCallbackWrites:writes->size();
+    auto writes=owner?*a.ownerWrites:*a.targetWrites;const auto rawCallbacks=owner?a.ownerCallbackWrites:writes.size();
     std::vector<StatValue> adjusted;
     for(size_t index=0;index<rawCallbacks;++index) {
-        auto write=(*writes)[index];const auto &name=rules.definitions.at(write.key.id).name;
+        auto write=writes[index];const auto &name=rules.definitions.at(write.key.id).name;
         if(!write.value) continue;
         if(name=="velocitypercent" || name=="attackrate") write.value=std::max(write.value,-50);
         adjusted.push_back(write);
         if(name=="attackrate") adjusted.emplace_back(StatKey{rules.names.at("other_animrate"),0},write.value);
     }
     const auto callbacks=adjusted.size();
-    adjusted.insert(adjusted.end(),writes->begin()+rawCallbacks,writes->end());writes=std::move(adjusted);
+    adjusted.insert(adjusted.end(),writes.begin()+rawCallbacks,writes.end());writes=std::move(adjusted);
     const auto publish=[&](std::optional<ResourceValues> resources={},std::vector<int> withdrawn={}) {
         auto projection=projectEffectAttributes(states,actor.tick);
         observe({std::move(*projection.sources),std::move(projection.states),std::move(projection.effects),resources,std::move(withdrawn)});

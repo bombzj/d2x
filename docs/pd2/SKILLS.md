@@ -17,6 +17,10 @@
 | 刺客 | 当前蓄气阶段、元素环／扇形与终结释放、踢击、Dragon Flight、Mind Blast渐进伤害／状态、Blade Fury碰撞与反射、陷阱及影子隐藏技能 |
 | 接触与触发 | Do163以主目标为中心并排除主目标；按指定技能Calc取ED，Smite用盾牌伤害、踢击复制已分配伤害；按武器类型读取参数化溅射／Crushing Blow属性；Open Wounds使用PD2伤害、期限与三层上限，层数和期限只在运行态保存 |
 
+### 飞弹命中间隔的运行态事件
+
+当前核心RVA `0x3A6E10／0x3A6EF0`区分玩家与非玩家来源：非玩家共用命中门槛，玩家通常按拥有者／飞弹类区分；标志0x80000另去掉玩家拥有者维度。`src/server/systems/missiles/pd2/hit_delay.cpp`准备对应命中键，`combat/missile_contact.cpp`按实际NextDelay在接收者登记保护，`effects/pd2/hit_delay.cpp`检查并发布期限。`FrameEventType::Pd2MissileHitDelay`是D2X运行态事件15，由`runtime/frame_event_dispatch.cpp`在到期时消费；它不属于原版0–14定时器编号，也不是新增网络包或存档字段。公共`gameplay/events/frame_queue.cpp`的直接插入与准备插入均允许这个显式扩展，仍拒绝超出当前枚举的值，不能沿旧的`>=15`边界拒绝已经接入的PD2命中事件。
+
 ## 角色技能树与客户端程序
 
 固定原生D2Client样本（SHA-256 `dd8bc6025de921216a97c17f97cd1a50fbb85926e838ec60e13451448836d906`）公共飞弹推进RVA B18F7–B1959读取Missiles字节字段+0x12C（CltSrcTown）：正常递减CurrentFrame后，拥有者在城镇时将剩余帧封顶到该值；非LoopAnim且AnimLen大于上限时同步设置动画帧为差值左移8。原生找不到拥有者也进入封顶分支；拥有者存在但房间为空则跳过。D2X目前对已观察到的拥有者／房间应用封顶，未知身份／房间不据观察者位置猜测；Meteor静态落地图只限制寿命。当前PD2原表三种Meteor地面火CltSrcTown=12，而Town与服务端SrcTown属于另外的裁决条件；进入城镇不应触发所有客户端效果的清空。上述依据为静态调用链，完整实机表现仍待核对。

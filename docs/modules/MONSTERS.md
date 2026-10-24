@@ -9,6 +9,7 @@
 | [monster_catalog.cpp](../../src/content/monsters/monster_catalog.cpp)及content/monsters | 当前MonStats／MonStats2、AI、动作、数值、词缀／经验／掉落适配 |
 | [combat_content.cpp](../../src/hosting/combat_content.cpp) | 不可变区域规则、原型、预设描述及授权替身准备，不运行人口规划或持有活动AI |
 | [monster_actions_content.cpp](../../src/hosting/monster_actions_content.cpp) | 攻击／技能／弹体与原事件帧准备（含第二幕技能槽、MonSeq行时钟、固有光环及受击／死亡弹体的纯值准备），内核不读MPQ |
+| [pd2/monster_actions.cpp](../../src/hosting/pd2/monster_actions.cpp)／[skills/pd2/monster_skills.cpp](../../src/server/systems/skills/pd2/monster_skills.cpp) | PD2怪物槽按实际程序准备弹幕／诅咒／Inferno，复用已有非玩家施法和飞弹生命周期；已接程序及专属AI缺口见[PD2怪物基线](../pd2/MONSTERS.md) |
 | [population/system.cpp](../../src/server/systems/population/system.cpp) | 唯一自然人口执行器：实时密度、DS1／任务／物件出生游标、房间阶段及清场覆盖查询 |
 | [monsters/system.cpp](../../src/server/systems/monsters/system.cpp)、[special_actions.cpp](../../src/server/systems/monsters/special_actions.cpp)、[controlled.cpp](../../src/server/systems/monsters/controlled.cpp) | 活动实体、生命、组件、位置／路线、版本、home／节点、复活／出生／死亡连锁及伙伴实体 |
 | [monsters/inactive.cpp](../../src/server/systems/monsters/inactive.cpp) | 普通／特殊怪物及NPC共用压缩、恢复继续点、旧GUID复验和可见性完成边界 |
