@@ -170,7 +170,7 @@ void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &conte
 CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &content) {
     require(bytes.size() <= maxSaveBytes, "file too large");
     auto header = readD2sHeader(bytes);
-    validatePd2SaveProfile(bytes, content);
+    rejectPrivatePd2Save(bytes);
     // PlrSave rejects DEAD only in combination with HARDCORE. Softcore may
     // retain this flag after resurrection; its corpse is the JM section.
     require(!(header.flags & 0x40), "ladder character unsupported");
@@ -288,7 +288,10 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
             "invalid native Iron Golem metal item");
         snapshot.nextEntityId = temporary.nextEntityId;
     }
-    require(cursor == bytes.size(), "unexpected data after Iron Golem section");
+    if(content.pd2Host) {
+        validatePd2SaveExtension(bytes.subspan(cursor));
+        player.nativeSaveSections.append(reinterpret_cast<const char *>(bytes.data()+cursor),bytes.size()-cursor);
+    } else require(cursor == bytes.size(), "unexpected data after Iron Golem section");
     for (const auto &[id, item] : snapshot.inventory.items)
         reconcileD2sQuestItem(player, snapshot.difficulty, item.definition, item.nativeQuestDifficulty);
     verifyCharacter(snapshot, content);
@@ -304,9 +307,10 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     D2sHeader header;
     D2sFixedSections sections;
     if (!player.nativeSaveSections.empty()) {
-        require(player.nativeSaveSections.size() == fixedEnd, "invalid native metadata");
+        require(player.nativeSaveSections.size() >= fixedEnd, "invalid native metadata");
+        require(content.pd2Host || player.nativeSaveSections.size()==fixedEnd,"unexpected character extension");
         Bytes original(player.nativeSaveSections.begin(), player.nativeSaveSections.end());
-        validatePd2SaveProfile(original,content);
+        rejectPrivatePd2Save(original);
         std::copy_n(original.begin(), d2sHeaderSize, bytes.begin());
         sections = readD2sFixedSections(original);
         header.flags = dword(original, 0x24);
@@ -333,7 +337,7 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
         sections.introductions[0] = 1; sections.introductions[1] = 0x77; sections.introductions[2] = 52;
         header.hotkeys.fill(UINT32_MAX); header.appearance.fill(0xFF); header.colors.fill(0xFF);
     }
-    writePd2SaveProfile(bytes, content, header.skillCount);
+    preparePd2SaveHeader(content, header.skillCount);
     header.flags = (header.flags & ~4u) | (player.hardcore ? 4u : 0u);
     if (player.hardcore) header.flags = (header.flags & ~8u) | (player.hardcoreDead ? 8u : 0u);
     header.name = player.name; header.characterClass = uint8_t(found - classes.begin());
@@ -435,6 +439,11 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
         snapshot.inventory.items.emplace(item.id, item);
         auto encoded = writeD2sItem(exportD2sItem(snapshot, item, content), content);
         bytes.insert(bytes.end(), encoded.begin(), encoded.end());
+    }
+    if(content.pd2Host && player.nativeSaveSections.size()>fixedEnd) {
+        const auto tail=std::span(reinterpret_cast<const uint8_t *>(player.nativeSaveSections.data()+fixedEnd),player.nativeSaveSections.size()-fixedEnd);
+        validatePd2SaveExtension(tail);
+        bytes.insert(bytes.end(),tail.begin(),tail.end());
     }
     require(bytes.size() <= maxSaveBytes, "save too large");
     writeD2sHeader(bytes, header);

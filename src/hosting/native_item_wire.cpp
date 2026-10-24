@@ -1,3 +1,4 @@
+#include "content/pd2/item_encoding.hpp"
 #include "native_item_wire.hpp"
 #include "persistence/d2s_inventory.hpp"
 #include "network/protocol/wire.hpp"
@@ -34,25 +35,26 @@ Bytes itemStat(EntityId id,unsigned stat,uint32_t number,uint16_t layer=0) {
     return hosting::encodeServerPacket(hosting::ServerMessage::ItemStats,[&](auto &out){out.u8(uint8_t(payload.size()+2));out.append(payload);});
 }
 struct StatFormat { unsigned bits, params; int add; };
-StatFormat format(const ClassicData &data, unsigned id) {
+StatFormat format(const ClassicData &data, unsigned id, const D2sItem &item) {
+    const auto encoding=itemSaveEncoding(data.pd2Host,item.format,(item.flags&0x200000u)!=0);
     const auto &table = data.tables.at("itemstatcost");
     for (size_t row = 0; row < table.rows().size(); ++row) if (table.number(row, "ID") == int(id)) {
-        const int bits = table.number(row, "Save Bits").value_or(0), params = table.number(row, "Save Param Bits").value_or(0);
-        if (bits <= 0 || bits > 32 || params < 0 || params > 32) break;
-        return {unsigned(bits), unsigned(params), table.number(row, "Save Add").value_or(0)};
+        const int bits = table.number(row, encoding.bits).value_or(0), params = table.number(row, encoding.params).value_or(0);
+        if (bits < (data.pd2Host?0:1) || bits > 32 || params < 0 || params > 32) break;
+        return {unsigned(bits), unsigned(params), table.number(row, encoding.add).value_or(0)};
     }
     throw std::runtime_error("Missing native item stat format");
 }
-void value(BitWriter &bits, const ClassicData &data, unsigned id, int64_t number) {
-    const auto rule = format(data, id); number += rule.add;
+void value(BitWriter &bits, const ClassicData &data, unsigned id, int64_t number, const D2sItem &item) {
+    const auto rule = format(data, id, item); number += rule.add;
     if (number < 0 || number > UINT32_MAX) throw std::runtime_error("Native item stat overflow");
     bits.write(uint32_t(number), rule.bits);
 }
 unsigned followers(unsigned id) {
     return id == 17 || id == 48 || id == 50 || id == 52 ? 1 : id == 54 || id == 57 ? 2 : 0;
 }
-void stats(BitWriter &bits, const ClassicData &data, const std::vector<D2sStat> &source) {
-    const unsigned width=data.pd2Host?10:9;
+void stats(BitWriter &bits, const ClassicData &data, const std::vector<D2sStat> &source, const D2sItem &item) {
+    const unsigned width=itemSaveEncoding(data.pd2Host,item.format,false).statBits;
     const unsigned end=(1u<<width)-1;
     std::map<std::pair<unsigned, int32_t>, int64_t> remaining;
     for (const auto &stat : source) {
@@ -67,8 +69,8 @@ void stats(BitWriter &bits, const ClassicData &data, const std::vector<D2sStat> 
         bits.write(id, width);
         for (unsigned part = 0; part <= followers(id); ++part) {
             const auto found = remaining.find({id + part, key.second});
-            bits.write(uint32_t(key.second), followers(id) ? 0 : format(data, id + part).params);
-            value(bits, data, id + part, found == remaining.end() ? 0 : found->second);
+            bits.write(uint32_t(key.second), followers(id) ? 0 : format(data, id + part, item).params);
+            value(bits, data, id + part, found == remaining.end() ? 0 : found->second, item);
             if (found != remaining.end()) remaining.erase(found);
         }
     }
@@ -94,7 +96,7 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
     if ((item.flags & (0x200000u | 0x10000u)) == (0x200000u | 0x10000u)) ear();
     else bits.write(code, 32);
     if (item.flags & (0x200000 | 0x2000000)) {
-        if (flag("quest") && flag("questdiffcheck")) value(bits, data, 356, item.questDifficulty);
+        if (flag("quest") && flag("questdiffcheck")) value(bits, data, 356, item.questDifficulty, item);
         if (def->equipment.isType("gold")) { bits.write(item.quantity > 4095, 1); bits.write(item.quantity, item.quantity > 4095 ? 32 : 12); }
         return bits.release();
     }
@@ -123,19 +125,19 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
     if (item.flags & 0x4000000) bits.write(item.runewordId, 16);
     if (item.flags & 0x10000) ear();
     else if (item.flags & 0x1000000) { for (const unsigned char c : item.personalizedName) bits.write(c, 7); bits.write(0, 7); }
-    if (def->family == ItemFamily::Armor) value(bits, data, 31, item.defense);
+    if (def->family == ItemFamily::Armor) value(bits, data, 31, item.defense, item);
     if (def->family != ItemFamily::Misc) {
-        value(bits, data, 73, item.maxDurability); if (item.maxDurability) value(bits, data, 72, item.durability);
+        value(bits, data, 73, item.maxDurability, item); if (item.maxDurability) value(bits, data, 72, item.durability, item);
     }
     if (flag("stackable")) bits.write(item.quantity, 9);
-    if (item.flags & 0x800) bits.write(item.sockets, format(data, 194).bits);
+    if (item.flags & 0x800) bits.write(item.sockets, format(data, 194, item).bits);
     if (identified) {
         unsigned mask = 0;
         for (size_t i = 0; i < item.setStats.size(); ++i) if (!item.setStats[i].empty()) mask |= 1u << i;
         if (item.quality == 5) bits.write(mask, 5);
-        stats(bits, data, item.stats);
-        for (const auto &list : item.setStats) if (!list.empty()) stats(bits, data, list);
-        if (item.flags & 0x4000000) stats(bits, data, item.runewordStats);
+        stats(bits, data, item.stats, item);
+        for (const auto &list : item.setStats) if (!list.empty()) stats(bits, data, list, item);
+        if (item.flags & 0x4000000) stats(bits, data, item.runewordStats, item);
     }
     return bits.release();
 }

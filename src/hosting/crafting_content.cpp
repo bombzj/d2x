@@ -57,14 +57,27 @@ void cube(const ClassicData &data, Prepared &result) {
         (void)id; const auto *at = std::get_if<ContainerLocation>(&item.location);
         require(!at || at->container != c.cursor, "Cursor must be empty before transmutation");
         if (at && at->container == c.cube) {
-            require(!data.pd2Host || item.quantity==1,"PD2 stacked CubeMain consumption is not implemented");
             inputs.push_back(&item);
         }
     }
+    const bool stacked=data.pd2Host && std::any_of(inputs.begin(),inputs.end(),[](const auto *item){return item->quantity>1;});
+    require(!stacked || inputs.size()==1,"PD2 CubeMain allocation across multiple stacks is not implemented");
     const CubeRecipe *matched = nullptr; std::vector<const ItemInstance *> ordered;
     for (const auto &recipe : data.cubeRecipes) {
         if (recipe.version > 100 || recipe.minimumDifficulty > s.difficulty ||
-            (!recipe.characterClass.empty() && recipe.characterClass != s.classCode) || recipe.inputCount != inputs.size()) continue;
+            (!recipe.characterClass.empty() && recipe.characterClass != s.classCode)) continue;
+        if(stacked) {
+            const auto &item=*inputs.front(); const auto *base=data.items.find(item.definition);
+            // Current PD2 RVA 0x363680 / 0x363c20 matches quantity, then
+            // decrements normal stacks one unit at a time, retaining the rest.
+            if(recipe.inputs.size()==1 && base && base->maxStack>1 && item.quality==ItemQuality::Normal &&
+                item.quantity>=recipe.inputs.front().quantity &&
+                matchesCubeInput(recipe.inputs.front(),item,*base,data.cubeBases.at(item.definition))) {
+                matched=&recipe; ordered=inputs; break;
+            }
+            continue;
+        }
+        if(recipe.inputCount!=inputs.size()) continue;
         std::vector<bool> used(inputs.size()); ordered.clear();
         std::function<bool(size_t,unsigned)> match = [&](size_t slot, unsigned count) {
             if (slot == recipe.inputs.size()) return ordered.size() == inputs.size();
@@ -84,11 +97,19 @@ void cube(const ClassicData &data, Prepared &result) {
     }
     require(matched, "No original CubeMain recipe matches these inputs");
     require(!matched->outputs.empty(),"PD2 CubeMain operation or property program is not implemented");
+    require(!stacked || (matched->operation==0 && std::all_of(matched->outputs.begin(),matched->outputs.end(),[](const auto &out){
+        return out.kind==CubeOutputKind::Code && !out.copy && !out.tier;
+    })),"PD2 stacked CubeMain item transformations are not implemented");
     const auto &original = *ordered.front(); auto random = s.pending.seed;
     const auto retainedOutputs=std::count_if(matched->outputs.begin(),matched->outputs.end(),[](const auto &out){return out.kind==CubeOutputKind::UseItem && !out.copy;});
     require(retainedOutputs<=1,"Multiple CubeMain outputs cannot retain the same item identity");
     const bool keepsOriginal=retainedOutputs!=0;
-    for (const auto *input : ordered) if(!keepsOriginal || input!=&original) result.consumed.push_back(input->handle());
+    for (const auto *input : ordered) if(!keepsOriginal || input!=&original) {
+        if(stacked && input->quantity>matched->inputs.front().quantity) {
+            auto remainder=*input; remainder.quantity-=matched->inputs.front().quantity;
+            result.outputs.push_back({std::move(remainder),input->handle(),c.cube});
+        } else result.consumed.push_back(input->handle());
+    }
     // Travel and quest rewards belong to their domains. Do not consume materials
     // until those domains can validate the corresponding native quest/portal.
     if(matched->operation==28) {

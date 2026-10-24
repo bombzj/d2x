@@ -3,7 +3,8 @@
 #include <span>
 namespace d2x {
 struct ClassicData;
-// D2X-owned PD2 town saves; never an importer for native ProjectDiablo saves.
-void validatePd2SaveProfile(std::span<const uint8_t>, const ClassicData &);
-void writePd2SaveProfile(Bytes &, const ClassicData &, uint8_t &skillCount);
+// Native PD2 header/extension rules; old private D2X prototypes are rejected.
+void rejectPrivatePd2Save(std::span<const uint8_t>);
+void preparePd2SaveHeader(const ClassicData &, uint8_t &skillCount);
+void validatePd2SaveExtension(std::span<const uint8_t>);
 }

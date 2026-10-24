@@ -6,7 +6,7 @@
 
 **一套客户端，两种权威来源。** Single Player／自研TCP/IP使用自研宿主，原服使用D2GS；入局共用D2GS请求与同一客户端副本。TCP/IP按原版直连游戏端口并交换本机角色字节，选角复用内部内存MCP；账号Realm路径继续使用远端MCP。单机是内存字节传输，断线不切换成本地权威。
 
-PD2区分CN远端与自有城镇宿主。`app/frontend`共用RealmFrontend／RealmSession和Remote*；原版与`--pd2-local`创建EmbeddedRealm，CN仍仅连接远端。内容准备分为OriginalRules、RemoteDisplay、Pd2TownHost，PD2客户端元数据与宿主战斗程序分开；本地角色与原版／原生PD2存档隔离。PD2差异准备位于`content/pd2`、`hosting/pd2`及`persistence/pd2_save_profile`，公共领域继续复用现有内核，未实现的野外规则明确拒绝。固定构建、认证和边界见[PD2兼容设计](PD2_COMPATIBILITY.md#自有pd2城镇宿主)。
+PD2区分CN远端与自有城镇宿主。`app/frontend`共用RealmFrontend／RealmSession和Remote*；原版与`--pd2-local`创建EmbeddedRealm，CN仍仅连接远端。内容准备分为OriginalRules、RemoteDisplay、Pd2TownHost，PD2客户端元数据与宿主战斗程序分开；本地角色目录与原版隔离，编码沿用原生PD2格式并保留扩展段。PD2差异准备位于`content/pd2`、`hosting/pd2`及`persistence/pd2_save_profile`，公共领域继续复用现有内核，未实现的野外规则明确拒绝。固定构建、认证和边界见[PD2兼容设计](PD2_COMPATIBILITY.md#自有pd2城镇宿主)。
 
 | 大模块（相对src/） | 放什么／不能放什么 |
 | --- | --- |

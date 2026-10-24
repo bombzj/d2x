@@ -1,5 +1,6 @@
 #include "d2s_items.hpp"
 #include "d2s_bits.hpp"
+#include "content/pd2/item_encoding.hpp"
 #include <algorithm>
 #include <limits>
 #include <map>
@@ -13,14 +14,15 @@ void require(bool value, const char *reason) {
     if (!value) throw std::runtime_error(std::string("Unsupported or invalid D2S item: ") + reason);
 }
 struct StatFormat { unsigned bits, params; int add; };
-StatFormat format(const ClassicData &content, unsigned id) {
+StatFormat format(const ClassicData &content, unsigned id, const D2sItem &item) {
+    const auto encoding=itemSaveEncoding(content.pd2Host,item.format,(item.flags&compact)!=0);
     const auto &table = content.tables.at("itemstatcost");
     for (size_t row = 0; row < table.rows().size(); ++row)
         if (table.number(row, "ID") == int(id)) {
-            const int bits = table.number(row, "Save Bits").value_or(0);
-            const int params = table.number(row, "Save Param Bits").value_or(0);
-            require(bits > 0 && bits <= 32 && params >= 0 && params <= 32, "stat bit widths");
-            return {unsigned(bits), unsigned(params), table.number(row, "Save Add").value_or(0)};
+            const int bits = table.number(row, encoding.bits).value_or(0);
+            const int params = table.number(row, encoding.params).value_or(0);
+            require(bits >= (content.pd2Host?0:1) && bits <= 32 && params >= 0 && params <= 32, "stat bit widths");
+            return {unsigned(bits), unsigned(params), table.number(row, encoding.add).value_or(0)};
         }
     throw std::runtime_error("Unknown D2S item stat ID");
 }
@@ -31,12 +33,12 @@ unsigned followers(unsigned id) {
     default: return 0;
     }
 }
-int64_t readValue(D2sBitReader &bits, const ClassicData &content, unsigned id) {
-    const auto rule = format(content, id);
+int64_t readValue(D2sBitReader &bits, const ClassicData &content, unsigned id, const D2sItem &item) {
+    const auto rule = format(content, id, item);
     return int64_t(bits.read(rule.bits)) - rule.add;
 }
-void writeValue(D2sBitWriter &bits, const ClassicData &content, unsigned id, int64_t value) {
-    const auto rule = format(content, id);
+void writeValue(D2sBitWriter &bits, const ClassicData &content, unsigned id, int64_t value, const D2sItem &item) {
+    const auto rule = format(content, id, item);
     value += rule.add;
     require(value >= 0 && value <= UINT32_MAX, "stat range");
     bits.write(uint32_t(value), rule.bits);
@@ -112,21 +114,21 @@ void writeEar(D2sBitWriter &bits, const D2sItem &item) {
     writeName(bits, item.ear->name);
 }
 void readStats(D2sBitReader &bits, const ClassicData &content, D2sItem &item) {
-    const unsigned width = content.pd2Host ? 10 : 9;
+    const unsigned width = itemSaveEncoding(content.pd2Host,item.format,false).statBits;
     const unsigned end = (1u << width) - 1;
     for (size_t count = 0; count <= end; ++count) {
         const auto id = bits.read(width);
         if (id == end) return;
         for (unsigned next = 0; next <= followers(id); ++next) {
-            const auto rule = format(content, id + next);
+            const auto rule = format(content, id + next, item);
             const auto parameter = bits.read(rule.params);
-            item.stats.push_back({uint16_t(id + next), readValue(bits, content, id + next), int32_t(parameter)});
+            item.stats.push_back({uint16_t(id + next), readValue(bits, content, id + next, item), int32_t(parameter)});
         }
     }
     throw std::runtime_error("D2S item stat list exceeds limit");
 }
 void writeStats(D2sBitWriter &bits, const ClassicData &content, const D2sItem &item) {
-    const unsigned width = content.pd2Host ? 10 : 9;
+    const unsigned width = itemSaveEncoding(content.pd2Host,item.format,false).statBits;
     const unsigned end = (1u << width) - 1;
     std::map<std::pair<unsigned, int32_t>, int64_t> values;
     for (const auto &stat : item.stats) {
@@ -140,10 +142,10 @@ void writeStats(D2sBitWriter &bits, const ClassicData &content, const D2sItem &i
         else if (id == 56 || id == 59) id -= 2;
         bits.write(id, width);
         for (unsigned next = 0; next <= followers(id); ++next) {
-            const auto rule = format(content, id + next);
+            const auto rule = format(content, id + next, item);
             auto found = values.find({id + next, key.second});
             bits.write(uint32_t(key.second), rule.params);
-            writeValue(bits, content, id + next, found == values.end() ? 0 : found->second);
+            writeValue(bits, content, id + next, found == values.end() ? 0 : found->second, item);
             if (found != values.end()) values.erase(found);
         }
     }
@@ -176,7 +178,7 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
     if (item.flags & compact) {
         require(item.code != "gld", "loose gold in character inventory");
         if (flag(content, *definition, "quest") && flag(content, *definition, "questdiffcheck"))
-            item.questDifficulty = unsigned(readValue(bits, content, 356));
+            item.questDifficulty = unsigned(readValue(bits, content, 356, item));
     } else {
         children = bits.read(3);
         item.seed = bits.read(32);
@@ -217,23 +219,23 @@ D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &conte
         item.realmIdentity = identity;
     }
     if (!(item.flags & compact)) {
-        if (definition->family == ItemFamily::Armor) item.defense = unsigned(readValue(bits, content, 31));
+        if (definition->family == ItemFamily::Armor) item.defense = unsigned(readValue(bits, content, 31, item));
         if (definition->family != ItemFamily::Misc) {
-            item.maxDurability = unsigned(readValue(bits, content, 73));
-            if (item.maxDurability) item.durability = unsigned(readValue(bits, content, 72));
+            item.maxDurability = unsigned(readValue(bits, content, 73, item));
+            if (item.maxDurability) item.durability = unsigned(readValue(bits, content, 72, item));
         }
         if (flag(content, *definition, "stackable")) item.quantity = bits.read(9);
-        if (item.flags & 0x800u) item.sockets = unsigned(readValue(bits, content, 194));
+        if (item.flags & 0x800u) item.sockets = unsigned(readValue(bits, content, 194, item));
         const auto setMask = item.quality == 5 ? bits.read(5) : 0;
         readStats(bits, content, item);
         for (size_t index = 0; index < item.setStats.size(); ++index)
             if (setMask & (1u << index)) {
-                D2sItem bonus;
+                D2sItem bonus; bonus.format=item.format;
                 readStats(bits, content, bonus);
                 item.setStats[index] = std::move(bonus.stats);
             }
         if (item.flags & 0x4000000u) {
-            D2sItem bonus; readStats(bits, content, bonus);
+            D2sItem bonus; bonus.format=item.format; readStats(bits, content, bonus);
             item.runewordStats = std::move(bonus.stats);
         }
     }
@@ -265,7 +267,7 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
     if (item.flags & compact) {
         require(item.stats.empty() && item.quality == 2, "compact properties");
         if (flag(content, *definition, "quest") && flag(content, *definition, "questdiffcheck"))
-            writeValue(bits, content, 356, item.questDifficulty);
+            writeValue(bits, content, 356, item.questDifficulty, item);
     } else {
         bits.write(unsigned(item.socketedItems.size()), 3); bits.write(item.seed, 32); bits.write(item.level, 7); bits.write(item.quality, 4);
         bits.write(item.hasGraphic, 1);
@@ -304,13 +306,13 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
     bits.write(item.realmIdentity.has_value(), 1);
     if (item.realmIdentity) for (const auto word : *item.realmIdentity) bits.write(word, 32);
     if (!(item.flags & compact)) {
-        if (definition->family == ItemFamily::Armor) writeValue(bits, content, 31, item.defense);
+        if (definition->family == ItemFamily::Armor) writeValue(bits, content, 31, item.defense, item);
         if (definition->family != ItemFamily::Misc) {
-            writeValue(bits, content, 73, item.maxDurability);
-            if (item.maxDurability) writeValue(bits, content, 72, item.durability);
+            writeValue(bits, content, 73, item.maxDurability, item);
+            if (item.maxDurability) writeValue(bits, content, 72, item.durability, item);
         }
         if (flag(content, *definition, "stackable")) bits.write(item.quantity, 9);
-        if (item.flags & 0x800u) writeValue(bits, content, 194, item.sockets);
+        if (item.flags & 0x800u) writeValue(bits, content, 194, item.sockets, item);
         unsigned setMask = 0;
         for (size_t index = 0; index < item.setStats.size(); ++index)
             if (!item.setStats[index].empty()) setMask |= 1u << index;
@@ -319,12 +321,12 @@ Bytes writeD2sItem(const D2sItem &item, const ClassicData &content) {
         writeStats(bits, content, item);
         for (const auto &stats : item.setStats)
             if (!stats.empty()) {
-                D2sItem bonus;
+                D2sItem bonus; bonus.format=item.format;
                 bonus.stats = stats;
                 writeStats(bits, content, bonus);
             }
         if (item.flags & 0x4000000u) {
-            D2sItem bonus; bonus.stats = item.runewordStats;
+            D2sItem bonus; bonus.format=item.format; bonus.stats = item.runewordStats;
             writeStats(bits, content, bonus);
         }
     }

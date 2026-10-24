@@ -123,8 +123,7 @@ void loadCubeData(ClassicData &data) {
         }
         if (!count || (!data.pd2Host && count != recipe.inputCount)) throw std::runtime_error("Cube original input count mismatch");
         if(data.pd2Host) {
-            // Only the verified non-stacked path is executable. Keep custom
-            // input predicates in table order as explicit unsupported matches,
+            // Keep custom input predicates in table order as unsupported matches,
             // rather than dropping them and falling through to another recipe.
             recipe.inputCount=count;
             if(!supportedOperation) {data.cubeRecipes.push_back(std::move(recipe));continue;}

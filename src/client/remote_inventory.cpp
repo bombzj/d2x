@@ -1,5 +1,6 @@
 #include "remote_inventory.hpp"
 #include "content/pd2_stash.hpp"
+#include "content/pd2/item_encoding.hpp"
 #include "content/pd2_core_counters.hpp"
 #include "gameplay/items/quality.hpp"
 #include "gameplay/items/equipment_rules.hpp"
@@ -136,15 +137,11 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
         // Core 0x382E40 selects S12 below format 103, S13 at 103, current
         // Save columns above it. Compact remains the original D2Common reader
         // (RVA 0x2C0C0), using current columns. Outer network version is 96.
-        const std::string_view bitsColumn = pd2 && !item.compact && item.format < 103 ? "Save Bits S12"
-            : pd2 && !item.compact && item.format == 103 ? "Save Bits S13" : "Save Bits";
-        const std::string_view addColumn = pd2 && !item.compact && item.format < 103 ? "Save Add S12"
-            : pd2 && !item.compact && item.format == 103 ? "Save Adds S13" : "Save Add";
-        const std::string_view paramColumn = pd2 && !item.compact && item.format < 103 ? "Save Param Bits S12"
-            : pd2 && !item.compact && item.format == 103 ? "Save Param Bits S13" : "Save Param Bits";
+        const auto encoding=itemSaveEncoding(pd2,item.format,item.compact);
+        const auto bitsColumn=encoding.bits, addColumn=encoding.add, paramColumn=encoding.params;
         for (const auto column : {bitsColumn, addColumn, paramColumn})
             if (!cost.has(column)) throw std::runtime_error("Missing native item encoding column: " + std::string(column));
-        const unsigned statIdBits = pd2 && item.format >= 102 ? 10 : 9;
+        const unsigned statIdBits=encoding.statBits;
         const unsigned statTerminator = (1u << statIdBits) - 1;
         auto statValue = [&](unsigned id) -> int64_t {
             const auto row = statRows_.find(id);

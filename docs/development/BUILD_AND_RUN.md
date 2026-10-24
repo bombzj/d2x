@@ -75,7 +75,7 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## PD2自有单机与TCP/IP城镇宿主
 
-先显式构建当前EXE，使用`PlayPD2Local.cmd`（等价于`PlayPD2.cmd -Local`）启动。该入口使用与CN客户端相同的固定资源核对，但默认进入本机选角，角色保存在`saves/pd2`；不要求账号登录，不装载原DLL。已有`pd2.local.json`可直接复用；首次独立本地配置写入Git忽略的`pd2-host.local.json`。具体功能和限制见[PD2城镇宿主](../architecture/PD2_COMPATIBILITY.md#自有pd2城镇宿主)，原生PD2存档不可直接导入。
+先显式构建当前EXE，使用`PlayPD2Local.cmd`（等价于`PlayPD2.cmd -Local`）启动。该入口使用与CN客户端相同的固定资源核对，但默认进入本机选角，角色保存在`saves/pd2`；不要求账号登录，不装载原DLL。已有`pd2.local.json`可直接复用；首次独立本地配置写入Git忽略的`pd2-host.local.json`。具体功能和限制见[PD2城镇宿主](../architecture/PD2_COMPATIBILITY.md#自有pd2城镇宿主)，存档采用原生PD2格式，先复制原档到独立目录再用`--load`打开；格式与未支持组合见[存档边界](../modules/SAVES.md#d2x-pd2本地存档)。
 
 ```powershell
 .\PlayPD2Local.cmd -Pd2Directory 'D:\Games\DiabloII-PD2-Copy\pd2'

@@ -217,7 +217,7 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     output.flags = item.nativeProperties ? item.nativeFlags : (0x00800000u | (item.nativeFlags & 0x4400000u));
     output.flags = (output.flags & ~0x00080110u) | 0x00800000u | (item.identified ? 0x10u : 0u);
     if (definition->maxDurability && !item.durability) output.flags |= 0x100;
-    output.format = content.pd2Host ? 104 : item.nativeFormat;
+    output.format = item.nativeFormat;
     output.hasGraphic = item.nativeHasGraphic;
     output.graphic = item.nativeGraphic;
     output.autoAffix = item.nativeAutoAffix;
