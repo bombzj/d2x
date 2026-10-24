@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "skill_content.hpp"
 #include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
@@ -43,7 +44,7 @@ server::HydraRules prepareHydraRules(const ClassicData &data,const HydraSpec &de
     }
     for(size_t index=0;index<hydra.heads.size();++index) {
         auto &head=hydra.heads[index];head.definition=definition.heads[index];
-        size_t row=0;while(row<monsters.rows().size() && monsters.number(row,"hcIdx")!=head.definition.nativeClass) ++row;
+        size_t row=0;while(row<monsters.rows().size() && (monsters.value(row,"hcIdx").empty() || compiledMonsterIndex(monsters,row)!=head.definition.nativeClass)) ++row;
         if(row==monsters.rows().size()) throw std::runtime_error("Missing native Hydra base stats");
         MonsterRecord record;record.sourceRow=row;
         const auto &extra=data.tables.at("monstats2");
@@ -191,7 +192,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             for(size_t row=0;row<monsters.rows().size();++row) if(monsters.value(row,"Id")==spec.summon->monster) {
                 server::MonsterRule pet;
                 pet.stats=data.nativeStats;pet.formulas=data.nativeFormulas;
-                pet.nativeClass=monsters.number(row,"hcIdx").value();
+                pet.nativeClass=compiledMonsterIndex(monsters,row);
                 pet.nativeVelocity=monsters.number(row,"Velocity").value_or(0);
                 prepareMonsterStateRules(data,row,pet);
                 pet.coldEffect=monsters.number(row,"ColdEffect").value_or(0);

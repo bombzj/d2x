@@ -22,8 +22,8 @@
 $ErrorActionPreference='Stop'
 if($Pd2Local -and -not $ClientProfile){throw '-Pd2Local requires -ClientProfile.'}
 if($HostLan -and $Lan){throw 'Choose either -HostLan or -Lan.'}
-if($ClientProfile -and ($Mpq -or $OnlineConfig -or ($HostPacketLog -and -not $Pd2Local))){
-    throw '-ClientProfile owns its resources and service selection; a local host is unavailable.'
+if($ClientProfile -and ($Mpq -or $OnlineConfig)){
+    throw '-ClientProfile owns its resources and online configuration.'
 }
 if($OnlinePlay -and ($OnlineCharacter -or $OnlineCreateGame -or $OnlineJoinGame)){throw '-OnlinePlay cannot be combined with manual quick-entry options.'}
 if($OnlineCreateGame -and $OnlineJoinGame){throw 'Choose either -OnlineCreateGame or -OnlineJoinGame.'}
@@ -40,7 +40,7 @@ if($Diagnostic){
     $diagnosticRoot=Join-Path $projectRoot "artifacts/diagnostics/$runName"
     New-Item -ItemType Directory -Path $diagnosticRoot -Force | Out-Null
     $GamePacketLog=Join-Path $diagnosticRoot 'client-packets.jsonl'
-    if(-not $ClientProfile -or $Pd2Local){$HostPacketLog=Join-Path $diagnosticRoot 'host-packets.jsonl'}
+    $HostPacketLog=Join-Path $diagnosticRoot 'host-packets.jsonl'
 }
 if($GamePacketLog){$GamePacketLog=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($GamePacketLog)}
 if($HostPacketLog){$HostPacketLog=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HostPacketLog)}

@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "remote_town.hpp"
 #include <algorithm>
 #include <cmath>
@@ -35,12 +36,12 @@ RemoteTown::RemoteTown(Archives &a, bool reportAutomapRoomsPd2)
     for (size_t row = 0; row < objects_.rows().size(); ++row)
         if (auto id = objects_.number(row, "Id")) objectRows_.emplace(*id, row);
     for (size_t row = 0; row < monsters_.rows().size(); ++row)
-        if (auto id = monsters_.number(row, "hcIdx")) monsterRows_.emplace(*id, row);
+        if (!monsters_.value(row,"hcIdx").empty()) monsterRows_.emplace(compiledMonsterIndex(monsters_,row), row);
     for (size_t row = 0; row < monsterSizes_.rows().size(); ++row)
         monsterSizeRows_.emplace(std::string(monsterSizes_.value(row, "Id")), row);
 }
 void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition) {
-    automapPlayerPresentPd2_ = v.load.playerUnitId && v.world.units.contains({0, *v.load.playerUnitId});
+    automapPlayerPresentPd2_ = v.remoteLobbyOnly && v.load.playerUnitId && v.world.units.contains({0, *v.load.playerUnitId});
     std::optional<OnlinePoint> point;
     if (displayPosition && std::isfinite(displayPosition->x) && std::isfinite(displayPosition->y) &&
         displayPosition->x >= 0 && displayPosition->y >= 0 && displayPosition->x <= UINT16_MAX && displayPosition->y <= UINT16_MAX)
@@ -634,7 +635,7 @@ void RemoteTown::record_automap_room_pd2() {
         std::chrono::steady_clock::now().time_since_epoch()).count()));
 }
 void RemoteTown::refresh_automap_rooms_pd2(const OnlineView &v) {
-    if (!reportAutomapRoomsPd2_ || !nativeMap_ || !nativePlayerRoom_ || !v.load.playerUnitId) return;
+    if (!reportAutomapRoomsPd2_ || !v.remoteLobbyOnly || !nativeMap_ || !nativePlayerRoom_ || !v.load.playerUnitId) return;
     const auto position = displayPlayerPosition_ ? displayPlayerPosition_ : v.world.playerPosition;
     if (!position) return;
     const int dx = std::abs(int(position->x) - automapPositionPd2_.x);

@@ -6,11 +6,11 @@
 
 namespace d2x {
 void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &action) {
-    // Remote profiles cannot construct or dispatch a local host, even through UI commands.
+    // Local menu commands require the application's prepared character host.
     if (!state.embedded && (action.command == FrontendCommand::TcpIp ||
         action.command == FrontendCommand::OpenJoinHost || action.command == FrontendCommand::JoinLan || action.command == FrontendCommand::HostLan ||
         action.command == FrontendCommand::SinglePlayer)) {
-        state.notice = "This profile supports remote Battle.net only.";
+        state.notice = "The local character host is unavailable.";
         return;
     }
     switch (action.command) {
@@ -73,6 +73,7 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
     case FrontendCommand::Online:
         try { if (state.embedded) state.embedded->close(); }
         catch (const std::exception &e) { state.notice = e.what(); break; }
+        state.session.logout();
         state.localConnection = state.enterLocalGame = state.lanConnection = false;
         state.page = FrontendPage::Login;
         break;

@@ -1,4 +1,5 @@
 #include "item_properties.hpp"
+#include "content/monsters/monster_identity.hpp"
 #include "item_appearance.hpp"
 #include "gameplay/items/state.hpp"
 #include <algorithm>
@@ -166,15 +167,11 @@ std::vector<std::string> describeItemStats(const ClassicData &data, std::span<co
         else if (placement == 2 && !amount.empty()) description += " " + amount;
         if (function == 23) {
             const auto &monsters = data.tables.at("monstats");
-            bool found = false;
-            for (size_t row = 0; row < monsters.rows().size(); ++row)
-                if (data.profile == "remote-display-txt-v1" ? layer >= 0 && row == size_t(layer)
-                    : monsters.number(row, "hcIdx") == layer) {
-                    const auto name = text(monsters.value(row, "NameStr"));
-                    if (name.empty()) return {};
-                    description += " " + name; found = true; break;
-                }
-            if (!found) return {};
+            const auto row=findCompiledMonsterRow(monsters,layer);
+            if(!row) return {};
+            const auto name = text(monsters.value(*row, "NameStr"));
+            if (name.empty()) return {};
+            description += " " + name;
         } else if (function == 22) {
             const auto &types = data.tables.at("montype");
             if (layer < 0 || size_t(layer) >= types.rows().size()) return {};

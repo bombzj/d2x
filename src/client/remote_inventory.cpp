@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "remote_inventory.hpp"
 #include "content/pd2_stash.hpp"
 #include "content/pd2/item_encoding.hpp"
@@ -349,7 +350,7 @@ bool RemoteInventory::reject(std::string reason) { reason_ = std::move(reason); 
 bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand command) {
     if (command.action == OnlineItemAction::StorageRename)
         return reject("Stash rename is unavailable on the current CN service; no request was sent");
-    const bool pd2Items = profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020;
+    const bool pd2Items = session.read().remoteLobbyOnly;
     const bool pd2Equipment = profile_ != net::protocol::ClientProfile::Lod113c;
     if (pd2Items && (!onlinePd2ItemAction(command.action) ||
         (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 2 && command.page != 3 && command.page != 4)))
@@ -378,9 +379,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         const auto unit = world.units.find({1, command.npc});
         if (unit == world.units.end() || !unit->second.classId) return {};
         const auto &monsters = tables_.at("monstats");
-        for (size_t row = 0; row < monsters.rows().size(); ++row)
-            if (pd2Items ? row == *unit->second.classId : monsters.number(row, "hcIdx") == *unit->second.classId)
-                return monsters.value(row, "Id");
+        if(const auto row=findCompiledMonsterRow(monsters,*unit->second.classId))
+            return monsters.value(*row, "Id");
         return {};
     };
     if (command.action >= OnlineItemAction::TradeOpen && command.action <= OnlineItemAction::QuestService) {

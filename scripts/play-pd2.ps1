@@ -8,7 +8,7 @@
     [string]$Lang='',
     [switch]$Diagnostic,
     [switch]$Hidden,
-    [switch]$Local,
+    [switch]$Local, # Legacy alias; all three modes are available in the menu.
     [string]$HostLan='',
     [string]$Lan='',
     [ValidateRange(1,65535)][int]$GamePort=4000,
@@ -18,11 +18,12 @@
 )
 $ErrorActionPreference='Stop'
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-if($Local -and $OnlineCharacter){throw '-Local selects characters from the local Single Player / TCP-IP menu.'}
-if(-not $Local -and ($HostLan -or $Lan -or $HostSaves -or $PSBoundParameters.ContainsKey('GamePort'))){throw 'Local host options require -Local.'}
 if(-not $Profile){
     $Profile=Join-Path $projectRoot 'pd2.local.json'
-    if($Local -and -not (Test-Path -LiteralPath $Profile)){$Profile=Join-Path $projectRoot 'pd2-host.local.json'}
+    if(-not (Test-Path -LiteralPath $Profile)){
+        $legacyProfile=Join-Path $projectRoot 'pd2-host.local.json'
+        if(Test-Path -LiteralPath $legacyProfile){$Profile=$legacyProfile}
+    }
 }
 $Profile=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Profile)
 if(-not (Test-Path -LiteralPath $Profile -PathType Leaf)){
@@ -32,7 +33,6 @@ if(-not (Test-Path -LiteralPath $Profile -PathType Leaf)){
     if(-not (Test-Path -LiteralPath (Join-Path $Pd2Directory 'ProjectDiablo.dll') -PathType Leaf)){
         throw 'ProjectDiablo.dll was not found in the selected PD2 CN directory.'
     }
-    if($Local -and -not $AccountHost){$AccountHost='127.0.0.1'}
     if(-not $AccountHost){$AccountHost=$env:D2X_PD2_ACCOUNT_HOST}
     if(-not $AccountHost){
         $ipFile=Join-Path $Pd2Directory 'zylpd2.ip'
@@ -40,8 +40,8 @@ if(-not (Test-Path -LiteralPath $Profile -PathType Leaf)){
             $AccountHost=Get-Content -LiteralPath $ipFile | Where-Object {$_ -match '^\d{1,3}(\.\d{1,3}){3}$'} | Select-Object -First 1
         }
     }
-    if(-not $AccountHost){$AccountHost=Read-Host 'PD2 CN account server hostname (TCP, direct connection)'}
-    if(-not $AccountHost -or $AccountHost -match '[\s/\\]'){throw 'An account server hostname or IP is required.'}
+    # Local play needs no account endpoint. Battle.net validates it on login.
+    if($AccountHost -match '[\s/\\]'){throw 'The account server must be a hostname or IP.'}
     # Paths and service configuration only. Account passwords are entered in D2X
     # and use its existing per-configuration credential storage.
     [ordered]@{
@@ -58,7 +58,6 @@ if($OnlineCharacter){$parameters.OnlineCharacter=$OnlineCharacter}
 if($Diagnostic){$parameters.Diagnostic=$true}
 if($Hidden){$parameters.Hidden=$true}
 if($NoDebugPipe){$parameters.NoDebugPipe=$true}
-if($Local){$parameters.Pd2Local=$true;$parameters.PipeName='d2x-pd2-local'}
 if($HostLan){$parameters.HostLan=$HostLan}
 if($Lan){$parameters.Lan=$Lan}
 if($HostSaves){$parameters.HostSaves=$HostSaves}

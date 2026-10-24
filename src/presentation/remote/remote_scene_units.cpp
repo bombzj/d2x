@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "remote_scene_impl.hpp"
 
 namespace d2x {
@@ -145,8 +146,8 @@ std::string RemoteScene::Impl::monsterSkillMode(size_t monster, uint16_t skill) 
             return lower(std::string(monstats.value(monster,"Sk"+std::to_string(slot)+"mode")));
     // Hireling skills use Hireling.ModeN; their player Skills.monanim is
     // intentionally "xx". MonStats still takes precedence for Jab's sequence.
-    const auto cls=monstats.number(monster,"hcIdx");
-    if(cls) if(const auto mode=hirelingSkillModes.find({*cls,int(skill)});mode!=hirelingSkillModes.end()) return mode->second;
+    const auto cls=compiledMonsterIndex(monstats,monster);
+    if(const auto mode=hirelingSkillModes.find({cls,int(skill)});mode!=hirelingSkillModes.end()) return mode->second;
     return lower(std::string(skills.value(row->second,"monanim")));
 }
 

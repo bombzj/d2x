@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "object_content.hpp"
 #include "monster_actions_content.hpp"
 #include "gameplay/skills/spec.hpp"
@@ -38,11 +39,11 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     const DataTable groups(archives.read("data/global/excel/objgroup.txt"));
     const auto &monsters=content.tables.at("monstats");
     for(size_t row=0;row<monsters.rows().size();++row) {
-        const auto index=monsters.number(row,"hcIdx");
-        if(!index) continue;
-        if(*index<0 || *index>=UINT16_MAX) throw std::runtime_error("Invalid native Zoo monster index");
-        if(area.zooCandidates.size()<=size_t(*index)) area.zooCandidates.resize(size_t(*index)+1);
-        area.zooCandidates[size_t(*index)]=uint8_t(monsters.number(row,"zoo").value_or(0)!=0);
+        if(monsters.value(row,"hcIdx").empty()) continue;
+        const int index=compiledMonsterIndex(monsters,row);
+        if(index<0 || index>=UINT16_MAX) throw std::runtime_error("Invalid native Zoo monster index");
+        if(area.zooCandidates.size()<=size_t(index)) area.zooCandidates.resize(size_t(index)+1);
+        area.zooCandidates[size_t(index)]=uint8_t(monsters.number(row,"zoo").value_or(0)!=0);
     }
     area.objectPopulation.groups=catalog.level(request.level).objectGroups;
     area.objectPopulation.probabilities=catalog.level(request.level).objectProbabilities;

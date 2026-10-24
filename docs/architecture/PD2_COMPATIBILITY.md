@@ -6,15 +6,15 @@
 
 优先保持现有 LoD 1.13c 路径，在客户端外围增加有版本依据的资源集合与协议差异适配，是目前最合适的方向。公开 BH 仍调用原游戏模块、沿用多条原 C2S 命令，支持大量基础设施复用；但不能据此认定 PD2 全协议、物品位流或地图程序均与原版相同。
 
-产品控制方式为**同一套客户端程序，启动时显式选择版本配置，连接前固定协议与资源上下文**。兼容实现随源码构建，资源／服务连接由配置绑定；切换版本重新启动同一个EXE。Play.cmd保留原版入口，PlayPD2.cmd选择固定CN样本并直接显示账号页，PlayPD2Local.cmd使用同一资源绑定进入自有城镇宿主。方案比较及更新规则见[版本选择与发布方式](#版本选择与发布方式)。
+产品控制方式为**同一套客户端程序，启动时显式选择版本配置，连接前固定协议与资源上下文**。兼容实现随源码构建，资源／服务连接由配置绑定；切换版本重新启动同一个EXE。Play.cmd保留原版入口，PlayPD2.cmd选择固定PD2资源并显示共用主菜单；Single Player、TCP/IP和Battle.net在同一前端选择。方案比较及更新规则见[版本选择与发布方式](#版本选择与发布方式)。
 
 ### 自有PD2城镇宿主
 
-`--client-profile <资源配置> --pd2-local`选择`pd2-local`协议与`Pd2TownHost`内容准备；单机使用内存字节连接，TCP/IP使用既有直连与角色字节传输。MCP／D2GS沿用原版信封，完整物品按各自PD2 format选择9／10位属性ID及S12／S13／当前Save列；不发送CN认证、周期报告、GS／loot字节或共享仓库控制。此协议只用于D2X客户端之间，不声明原生PD2客户端兼容。默认存档目录`saves/pd2`，格式、版本及跨规则拒绝见[存档](../modules/SAVES.md#d2x-pd2本地存档)。
+`--client-profile <资源配置>`固定资源，主菜单的Single Player／TCP/IP接入选择`pd2-local`协议与`Pd2TownHost`内容准备；单机使用内存字节连接，TCP/IP使用既有直连与角色字节传输。MCP／D2GS沿用原版信封，完整物品按各自PD2 format选择9／10位属性ID及S12／S13／当前Save列；不发送CN认证、周期报告、GS／loot字节或共享仓库控制。此协议只用于D2X客户端之间，不声明原生PD2客户端兼容。默认存档目录`saves/pd2`，格式、版本及跨规则拒绝见[存档](../modules/SAVES.md#d2x-pd2本地存档)。
 
 公共入口复用既有NPC、库存、角色、事务和保存领域；较大差异由`content/pd2/town_data`准备，`hosting/pd2/town_host`控制区域准入，`persistence/pd2_save_profile`管理原生存档格式边界。没有装载ProjectDiablo.dll或安装Hook。客户端仍用RemoteDisplay元数据，不把客户端技能图标／公式准备视为宿主技能实现。MonsterCatalog的TownActors准备保留身份、几何与动画生命周期，不要求原版佣兵施法程序；本地PD2佣兵只准备城镇生命周期和装备，不借用原版攻击／光环。
 
-当前支持普通城镇入局、移动、对话、商店、个人库存／仓库、金币及佣兵服务。普通五幕区域（原Level ID 1–136）已开放作技能宿主验证，七职业技能程序已接入并按代表性场景验证。普通装备／属性、充能、装备技能及腐化／恶魔方块重掷已增加独立PD2准备与执行入口，参数、原生依据和剩余触发／加工组合见[物品属性规则](../pd2/ITEMS.md)。扩展地图仍拒绝，共享／材料仓库不在本地宿主范围内。Force Move等新增服务端程序尚未实现，普通点击移动继续使用公共移动命令。无窗口PD2和独立PvPGN宿主尚未开放。
+当前支持普通城镇入局、移动、对话、商店、个人库存／仓库、金币及佣兵服务。普通五幕区域（原Level ID 1–136）已开放作技能宿主验证，七职业技能程序已接入并按代表性场景验证。普通装备／属性、充能、装备技能及腐化／恶魔方块重掷已增加独立PD2准备与执行入口，参数、原生依据和剩余触发／加工组合见[物品属性规则](../pd2/ITEMS.md)。扩展预设布局已接公共地形、原表人口和管理旅行，物品开图、地图词缀、事件及特殊首领仍未完成，见[地图基线](../pd2/MAPS.md)；共享／材料仓库不在本地宿主范围内。Force Move等新增服务端程序尚未实现，普通点击移动继续使用公共移动命令。无窗口PD2和独立PvPGN宿主尚未开放。
 
 方块、堆叠数量、腐化及重掷规则归[物品基线](../pd2/ITEMS.md)，表编译／区域链接归[地图](../pd2/MAPS.md)与[怪物](../pd2/MONSTERS.md)，客户端覆盖图与技能程序归[技能](../pd2/SKILLS.md)，计价归[城镇](../pd2/TOWN.md)。佣兵装备槽从Inventory.Hireling有效矩形准备为纯值掩码，内核不读取资源或profile，盾牌仍受实际佣兵类型限制。
 
@@ -31,7 +31,7 @@
 | 代码入口 | 已接入范围 | 尚未完成的边界 |
 | --- | --- | --- |
 | [启动绑定](../../src/app/client_setup.cpp)／[PlayPD2](../../PlayPD2.cmd) | 挂载前核对固定核心、认证输入和目标MPQ摘要；配置绑定原副本／pd2目录；不装载native DLL | 仅本Normal／TCP样本；未知关键文件拒绝，不自动更新或降级 |
-| [共用前端](../../src/app/frontend.cpp)／[RealmSession](../../src/network/realm_session.hpp) | 固定会话版本，共用Remote*；建角（可选专家级／天梯）、删角按原编码提交，由CN服务裁定；CN远端不创建EmbeddedRealm、本地角色存储或TCP/IP传档 | 无窗口PD2和房间详情未开放 |
+| [共用前端](../../src/app/frontend.cpp)／[RealmSession](../../src/network/realm_session.hpp) | 每个连接固定协议，共用Remote*；建角（可选专家级／天梯）、删角按原编码提交，由CN服务裁定；CN连接不使用本地角色或传档；前端的EmbeddedRealm服务本地菜单分支 | 无窗口PD2和房间详情未开放 |
 | [认证](../../src/network/protocol/auth.cpp)／[MPQ资源](../../src/network/protocol/native_auth_resource.cpp) | CN ASCII小写BSHA1、独立Realm摘要、MPQ来源key／owner和0x51证明获当前服务接受；秘密仅内存使用 | 非MPQ来源、未知校验模块、D2X重新注册与native逐字节比对未完成 |
 | [MCP](../../src/network/realm_session_mcp.cpp) | 角色／Ladder、带filter列表和两字节列表扩展；建房追加GS／loot分配字节；创建和加入成功 | 已通过建房后入场／城镇显示及退局；公开Join已获票据并建立GS，完整Join场景组合另验 |
 | [角色原图](../../src/content/character/realm_portrait.cpp) | 已知版本4／10／13；按原连续前缀规则构造组件编号，支持当前CN无装备及基础装备的职业预览 | 非FF染色、新PD2全部装备组件未完成 |
@@ -406,7 +406,7 @@ CN入场选项通过`send_game_options_pd2`在本人指派且身份匹配后每�
 - [D2gsStream](../../src/network/protocol/d2gs_stream.cpp) 已改为持有固定 `ClientProfile` 并调用对应长度选择，SID／MCP 也消费同一会话定义；`reset()` 只清理流状态。CN已允许请求GS连接，但完整消息消费者仍有原版假设，未知消息与未支持交互明确拒绝；开放请求不代表游戏兼容认证。预认证 Realm／TCP/IP 入口也核对配置，不能靠仅在登录时设置标志覆盖全部入口。
 - [sharedClassicData](../../src/content/classic_data.cpp) 缓存属于传入的 Archives；`Archives::prepared<T>` 按类型保存，原版ClassicData和RemoteDisplay包装类型使用独立缓存，不能把原版宿主规则与远端显示准备混用。[RemoteUiClients](../../src/client/remote_ui_clients.cpp)、[RemoteScene](../../src/presentation/remote/remote_scene.cpp) 及其他资源消费者会保留引用。为每个活动配置创建独立资源集合和消费者；不在原对象上追加 PD2 包后继续沿用旧定义。
 - 网络解码、内容准备和表现可能都要扩展公共值的表达范围，例如新的 stat ID／存储身份；共享模型应能表示这些事实，原版限制继续在原版边界校验。UI 使用已归一化状态和从 MPQ 准备的布局，不直接判断品牌名来决定包偏移或属性位宽。
-- CN仅作远端客户端，由frontend共用账号／选角／大厅和Remote*，不构造EmbeddedRealm或PD2本地宿主。原版Single Player／TCP/IP和v96保存范围按原契约保留。
+- PD2前端共用账号／选角／大厅、EmbeddedRealm和Remote*，由菜单选择当前连接的权威来源；CN连接不运行本地角色玩法，Single Player／TCP/IP使用自有PD2宿主。原版默认规则与保存边界保持独立。
 
 实现可先采用模块函数、只读表和少量必要策略，不需要把每个包都改成虚函数。分帧／MCP／item codec 等真实差异单独归属；相同的传输、会话生命周期、客户端副本及 UI 请求契约继续共用。客户端需要的技能／地图程序也由明确的内容与程序选择承接，不把协议配置变成第二套权威结算。
 

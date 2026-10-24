@@ -71,6 +71,7 @@ void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data
     std::set<int> waypointNumbers;
     for(size_t row=0;row<waypointTable.rows().size();++row) {
         const auto level=waypointTable.number(row,"Id"), index=waypointTable.number(row,"Waypoint");
+        if(level && *level>0 && *level<256 && (data.pd2Host || *level<=136)) character->areaIds.insert(RegionId(*level));
         if(!level || *level<=0 || !index || *index==255 || *index<0) continue;
         if(*level>136 || !nativeWaypointIndex(*index) || !waypointNumbers.insert(*index).second ||
             !character->waypointIndices.emplace(RegionId(*level),*index).second)

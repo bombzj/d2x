@@ -10,10 +10,13 @@
 
 | 消费者 | 当前入口／边界 |
 | --- | --- |
-| 预设名称与单位类型 | `src/world/preset_identity.cpp`；与公共怪物目录的hcIdx来源分别核对 |
+| 预设名称与单位类型 | `src/world/retail/preset_scan.cpp`；名称取首次链接，数值类保留每个编译记录；段外DS1怪物标记保留直接原生编号，详见[地图](MAPS.md#ds1怪物标记与编译身份) |
 | 物品交互／怪物属性文案 | `src/client/remote_inventory.cpp`、`src/content/items/item_descriptions.cpp`；原版保持既有身份匹配，详见[物品表现](../gameplay/items/PRESENTATION.md) |
-| 怪物目录、类型与专用来源 | `src/content/monsters/{monster_catalog,monster_type_data}.cpp`；存在hcIdx消费者，不视为全部编译身份已统一 |
-| Desecrate池 | `src/content/pd2/corpse_data.cpp`当前按名称取记录后读取hcIdx；扩展身份存在缺号时须继续核对，不能由预设修复推断本路径也已对齐 |
+| 怪物目录、类型与专用来源 | `src/content/monsters/{monster_catalog,monster_type_data,monster_identity}.cpp`按跳过分隔行的编译顺序；模式／生命表、出生／AI类、掉落准备与声音使用相同身份，不能用TXT物理行号或hcIdx代替 |
+| Desecrate与召唤池 | `src/content/pd2/corpse_data.cpp`按名称取首次记录后转换编译编号；德鲁伊变形、Hydra、刺客及专用AI来源也使用该转换；SuperUniques仍有独立索引 |
+| 客户端区域与渲染 | `src/client/remote_{town,combat,ui_npc}.cpp`及`src/presentation/remote/remote_scene{,_units}.cpp`使用相同编译身份；怪物大小、目标资格、动画／变换、灯光和姓名不再在1198之后错位 |
+
+扩展怪物不一定在原版BaseId／NextInClass链中；依赖该链的Imp、CatapultSpotter及UnHolyBolt准备遇到链尾时返回未支持，而不继续查询空Id。替换技能缺少原版飞弹字段也返回未支持，不把空Missile引用升级为整图加载失败。敌对实体随后可沿现有保留身份的替身路径准备，未因此恢复该专用AI。入口为`src/hosting/monster_actions_content.cpp`。
 
 ## 编译字段宽度与MonProp
 
@@ -22,6 +25,8 @@ MonStats2.MeleeRng按原BYTE编译。当前spiritofbarbs的TXT值999对应BIN值
 当前fenris的TXT虽然列出inc_splash_radius，配套`monprop.bin`三个难度的该属性ID均为FFFFFFFF，原生跳过该槽。宿主也跳过，不能仅因属性名称存在而补成478。MonProp及召唤定义的具体边界见[召唤与诅咒](SKILLS.md#desecrate召唤和诅咒的数据边界)。
 
 骷髅MonProp溅射使用真实单位接触事件；触发通知保留正在进行的攻击动作，不能重新播放施法／攻击造成短暂消失。算法、手位和伤害来源归[Do163](SKILLS.md#do163实际手位分配伤害与独立防御)，通用原包表现归[怪物表现](../gameplay/monsters/PRESENTATION.md)。
+
+MonStats技能名称按原NAMETOWORD忽略大小写链接，失败编译为-1；D2MOO `MONSTERS_Initialize`不授予该槽。当前putriddefiler1dungeon（编译类1051）的Skill4=MonLowRes在Skills已无定义；配套monstats.bin的+0x170八槽为`335,92,588,-1,-1,-1,-1,-1`。准备已跳过这个原生无效槽，AI动作按链接后的Skills名称选择；表中存在但公式未准备的技能仍报出具体名称，不默默省略。
 
 ## 召唤实体与伙伴
 

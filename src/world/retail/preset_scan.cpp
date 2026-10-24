@@ -140,9 +140,11 @@ std::optional<RetailPresetUnit> RetailPresetScan::resolveUnit(const MapObject &s
     if (unit.type == 1) {
         if (version <= 4) return {}; // The native file loader discards these.
         const auto &ids = monsterPresets_[size_t(act)];
-        if (unit.id < 0 || size_t(unit.id) >= ids.size())
-            throw std::runtime_error("Native DS1 monster has no MPQ MonPreset entry");
-        unit.id = ids[size_t(unit.id)];
+        if (unit.id < 0) return {};
+        // LoadDrlgFile only translates IDs inside the act's MonPreset
+        // section. Its release branch retains an out-of-range ID as the
+        // native class; PD2 map files contain these direct class markers.
+        if (size_t(unit.id) < ids.size()) unit.id = ids[size_t(unit.id)];
         result.mode = 1;
         // LoadDrlgFile converts these MonPreset markers to object identities.
         if (act == 2 && (unit.id == 297 || unit.id == 366)) {

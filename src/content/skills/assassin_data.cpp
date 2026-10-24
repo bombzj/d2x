@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "assassin_data.hpp"
 #include "table_values.hpp"
 #include "missile_effects.hpp"
@@ -153,7 +154,7 @@ void loadAssassinSkills(ClassicData &data,Archives &archives) {
         }
         native->summon=skills.value(row,"summon");
         if(!native->summon.empty()) {
-            native->summonClass=skillTableNumber(monsters,findSkillTableRow(monsters,"Id",native->summon),"hcIdx");
+            native->summonClass=compiledMonsterIndex(monsters,findSkillTableRow(monsters,"Id",native->summon));
             native->petType=skillTableNumber(pets,findSkillTableRow(pets,"pet type",skills.value(row,"pettype")),"idx");
         }
         SkillSpec spec=data.pd2Host?preparePd2SkillDefinition(data,row):entry.spell?*entry.spell:SkillSpec{};

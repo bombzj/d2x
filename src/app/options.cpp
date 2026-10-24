@@ -11,7 +11,8 @@ namespace d2x {
 AppOptions parseOptions(int argc, char **argv) {
     AppOptions options;
     bool explicitMpq = false;
-    bool explicitOnlineConfig=false, explicitHostSaves=false, explicitPort=false;
+    bool explicitOnlineConfig=false, explicitHostSaves=false;
+    bool legacyPd2Local=false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         auto value = [&]() {
@@ -24,12 +25,11 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--headless") options.headlessProfile = value();
         else if (arg == "--online-config") { options.onlineConfig = value(); explicitOnlineConfig=true; }
         else if (arg == "--client-profile") options.clientProfile = value();
-        else if (arg == "--pd2-local") options.pd2Local = true;
+        else if (arg == "--pd2-local") legacyPd2Local = true;
         else if (arg == "--host-lan") options.hostLan = value();
         else if (arg == "--lan") options.lan = value();
         else if (arg == "--host-saves") { options.hostSaves = value(); explicitHostSaves=true; }
         else if (arg == "--realm-port" || arg == "--game-port") {
-            explicitPort=true;
             const auto text = value(); unsigned port{};
             const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), port);
             if (error != std::errc{} || end != text.data() + text.size() || !port || port > UINT16_MAX)
@@ -60,11 +60,11 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--help") options.help = true;
         else throw std::runtime_error("Unknown option: " + arg);
     }
-    if (options.pd2Local && options.clientProfile.empty())
+    if (legacyPd2Local && options.clientProfile.empty())
         throw std::runtime_error("--pd2-local requires --client-profile to bind the PD2 resource build");
-    if (!options.clientProfile.empty() && (explicitMpq || explicitOnlineConfig || (!options.pd2Local && (explicitHostSaves || explicitPort))))
-        throw std::runtime_error("--client-profile owns resources and service configuration; do not combine with MPQ, online, host or port overrides");
-    if (options.pd2Local && !explicitHostSaves) options.hostSaves = "saves/pd2";
+    if (!options.clientProfile.empty() && (explicitMpq || explicitOnlineConfig))
+        throw std::runtime_error("--client-profile owns resources and online configuration; do not combine with MPQ or online overrides");
+    if (!options.clientProfile.empty() && !explicitHostSaves) options.hostSaves = "saves/pd2";
     if (!options.headlessProfile.empty() && (!options.load.empty() || !options.save.empty() ||
         !options.characterClass.empty() || !options.hostLan.empty() || !options.lan.empty() ||
         !options.onlinePlay.empty() || !options.onlineCharacter.empty() || !options.onlineCreateGame.empty() ||

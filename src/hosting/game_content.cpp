@@ -28,7 +28,7 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     PreparedWorldArea result;
     const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;
     const auto &level = world.level(request.level);
-    if(content.pd2Host) hosting::pd2::validateTownArea(level);
+    if(content.pd2Host) hosting::pd2::validateArea(level);
     result.terrain = std::move(terrain);
     auto &area = result.authority;
     area.id = RegionId(request.level); area.waypointIndex=level.waypoint;

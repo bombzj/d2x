@@ -75,7 +75,9 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats, Monst
         MonsterRecord m;
         m.id = stats.value(row, "Id");
         m.sourceRow = row;
-        m.index = n("hcIdx");
+        // DATATBLS' class index is the compiled record ordinal. hcIdx is an
+        // authoring column, with gaps in the PD2 rows after 1197.
+        m.index = int(nativeClasses_.size());
         m.base = stats.value(row, "BaseId");
         m.next = stats.value(row, "NextInClass");
         m.name = stats.value(row, "NameStr");
@@ -266,7 +268,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats, Monst
             m.web = loadMonsterWeb(archives, stats, row, skills, missiles);
         }
         if (!indices_.emplace(m.index, m.id).second)
-            throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
+            throw std::runtime_error("Duplicate compiled MonStats index: " + std::to_string(m.index));
         nativeClasses_.emplace(m.index,m);
         if (!monsters_.emplace(m.id, m).second) {
             // Shipped monstats.bin verifies first-name linker precedence:

@@ -312,7 +312,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
         }
         case AdminOperation::Travel: {
             const auto &destination=std::get<AdminTravel>(request.arguments);
-            if(destination.level<1 || destination.level>136) return {AdminStatus::InvalidArguments,"Original area must be 1..136"};
+            if(destination.level<1 || destination.level>255) return {AdminStatus::InvalidArguments,"Area must have a native byte level identity (1..255)"};
             const auto result=host.relocate(*binding,RegionId(destination.level),destination.position);
             if(!result) return {AdminStatus::Unavailable,"Area content is preparing, position is unavailable, or output capacity is blocked; retry after inspecting the host snapshot"};
             publishEvents();return {AdminStatus::Applied,"Host relocated the player through prepared native collision and original travel facts; no task or waypoint was granted"};

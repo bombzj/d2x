@@ -1,4 +1,5 @@
 #include "loot_content.hpp"
+#include "content/monsters/monster_identity.hpp"
 #include "item_content.hpp"
 #include "character_content.hpp"
 #include "combat_content.hpp"
@@ -201,10 +202,7 @@ void preparePendingLoot(GameHost &host, GameHandle game, Archives &archives, con
             const AreaGenerationRequest generation{settings->mapSeed,area->definition.act,int(request->area),settings->difficulty,settings->ladderMonsterStats()};
             const auto actualIdentity=[&](const server::monsters::ModifierPreparation::Unit &unit) {
                 auto identity=unit.identity;const auto &stats=data.tables.at("monstats");
-                for(size_t row=0;row<stats.rows().size();++row) if(stats.number(row,"hcIdx")==unit.nativeClass) {
-                    identity.monster=std::string(stats.value(row,"Id"));return identity;
-                }
-                throw std::runtime_error("Missing actual native modifier class");
+                identity.monster=std::string(stats.value(compiledMonsterRow(stats,unit.nativeClass),"Id"));return identity;
             };
             const auto leader=prepareSelectedMonster(archives,data,generation,actualIdentity(request->leader),
                 request->leader.level,request->selection);

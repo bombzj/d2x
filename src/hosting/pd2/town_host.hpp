@@ -5,9 +5,9 @@ class Archives;
 struct LevelRecord;
 struct MonsterRegionRules;
 namespace hosting::pd2 {
-// The first self-hosted slice admits real town definitions only. Unknown
-// PD2 combat/map programs must not silently execute the original rules.
-void validateTownArea(const LevelRecord &);
+// Layout admission only; opening an item and running map events are separate
+// authoritative programs. All geometry still comes from the current MPQ.
+void validateArea(const LevelRecord &);
 std::shared_ptr<const MonsterRegionRules> prepareTownRegionRules(Archives &);
 }
 }

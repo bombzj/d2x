@@ -75,6 +75,7 @@ add_library(d2x_items
 target_link_libraries(d2x_items PUBLIC d2x_core d2x_rules)
 
 add_library(d2x_content
+  src/content/monsters/monster_identity.cpp
   src/content/pd2_core_counters.cpp
   src/content/pd2/skill_data.cpp
     src/content/pd2/corpse_data.cpp

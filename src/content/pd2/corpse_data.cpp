@@ -1,5 +1,6 @@
 #include "corpse_data.hpp"
 #include "content/classic_data.hpp"
+#include "content/monsters/monster_identity.hpp"
 #include "content/skills/table_values.hpp"
 #include <algorithm>
 #include <set>
@@ -33,7 +34,7 @@ std::vector<std::array<int,25>> preparePd2CorpsePools(const ClassicData &data,in
             const auto monster=findSkillTableRow(monsters,"Id",name);
             if(monsters.number(monster,"PartyMin").value_or(0) || monsters.number(monster,"PartyMax").value_or(0) ||
                !monsters.value(monster,"spawn").empty()) continue;
-            pool[slot]=skillTableNumber(monsters,monster,"hcIdx");
+            pool[slot]=compiledMonsterIndex(monsters,monster);
         }
         result.push_back(pool);
         if(result.size()==1 && std::any_of(pool.begin(),pool.end(),[](int entry){return entry>=0;})) break;

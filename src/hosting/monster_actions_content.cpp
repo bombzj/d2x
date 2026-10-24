@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "monster_actions_content.hpp"
 #include <stdexcept>
 #include "content/classic_data.hpp"
@@ -21,6 +22,12 @@
 #include <vector>
 
 namespace d2x {
+namespace {
+bool sameNativeSkillName(std::string_view first,std::string_view second) {
+    return first.size()==second.size() && std::equal(first.begin(),first.end(),second.begin(),
+        [](unsigned char left,unsigned char right){return std::tolower(left)==std::tolower(right);});
+}
+}
 std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicData &data,int definition,int rank) {
     const auto &table=data.tables.at("missiles");
     size_t row=0;while(row<table.rows().size() && table.number(row,"Id")!=definition) ++row;
@@ -416,7 +423,7 @@ void prepareMonsterPlacementRules(const ClassicData &data,size_t monsterRow,serv
     const auto name=monsters.value(monsterRow,"MonStatsEx");
     size_t row=0;while(row<extra.rows().size() && extra.value(row,"Id")!=name) ++row;
     if(row==extra.rows().size()) throw std::runtime_error("Missing original monster placement rule");
-    const auto nativeId=monsters.number(monsterRow,"hcIdx").value_or(-1);
+    const auto nativeId=compiledMonsterIndex(monsters,monsterRow);
     const auto spawn=extra.number(row,"spawnCol").value_or(0);
     rule.spawnCollision=monsterSpawnCollision(spawn,extra.number(row,"SizeX").value_or(0));
     rule.nativeSpawnFloor=spawn==1 && nativeId!=153 && !(nativeId>=258 && nativeId<=263);
@@ -517,7 +524,15 @@ void prepareMonsterSkillRanks(const ClassicData &data,size_t monsterRow,server::
         if(name.empty() || rank<=0) continue;
         std::string key(name);for(auto &letter:key) letter=char(std::tolower(static_cast<unsigned char>(letter)));
         const auto skill=data.nativeFormulas->skillIds.find(key);
-        if(skill==data.nativeFormulas->skillIds.end()) throw std::runtime_error("Missing native monster skill definition");
+        if(skill==data.nativeFormulas->skillIds.end()) {
+            // NameToWord emits -1 for a removed skill. MONSTERS_Initialize
+            // skips that slot (PD2 putriddefiler1dungeon's MonLowRes).
+            const auto &skills=data.tables.at("skills");
+            bool defined=false;
+            for(size_t row=0;row<skills.rows().size();++row) if(sameNativeSkillName(skills.value(row,"skill"),name)) {defined=true;break;}
+            if(defined) throw std::runtime_error("Missing native monster skill definition: "+std::string(name));
+            continue;
+        }
         rule.baseSkillRanks.insert_or_assign(skill->second,rank+bonus);
         rule.initialSkills.emplace_back(skill->second,rank+bonus);
     }
@@ -635,23 +650,23 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
     using Action=server::MonsterAttackRule::Action;
     const auto &stats=data.tables.at("monstats"),&skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
     if(record.base=="baalcrab") {
-        rule.spawnFallbackClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","baalclone"),"hcIdx");
+        rule.spawnFallbackClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","baalclone"));
         auto code=std::string("baaltentacle1");
         for(auto &nativeClass:rule.baalTentacleClasses) {
             const auto row=findSkillTableRow(stats,"Id",code);
-            nativeClass=skillTableNumber(stats,row,"hcIdx");code=stats.value(row,"NextInClass");
+            nativeClass=compiledMonsterIndex(stats,row);code=stats.value(row,"NextInClass");
         }
     }
-    if(record.ai=="BaalCrabClone") rule.spawnFallbackClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","skeleton1"),"hcIdx");
+    if(record.ai=="BaalCrabClone") rule.spawnFallbackClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","skeleton1"));
     if(record.ai=="UberIzual" && (stats.value(record.sourceRow,"Skill2").empty() || stats.value(record.sourceRow,"Skill3").empty())) return false;
     if(record.ai=="SuccubusWitch" && stats.value(record.sourceRow,"Skill5").empty()) return false;
     if(record.ai=="Overseer" || record.ai=="Nihlathak") {
-        if(record.ai=="Nihlathak") rule.spawnFallbackClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","minion1"),"hcIdx");
+        if(record.ai=="Nihlathak") rule.spawnFallbackClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","minion1"));
         auto child=std::string(skills.value(findSkillTableRow(skills,"skill","Overseer Whip"),"summon"));
         auto minion=std::string("minion1");
         for(unsigned index=0;!minion.empty() && index<256;++index) {
             const auto parentRow=findSkillTableRow(stats,"Id",minion);
-            rule.whipClasses.emplace(skillTableNumber(stats,parentRow,"hcIdx"),child.empty()?-1:skillTableNumber(stats,findSkillTableRow(stats,"Id",child),"hcIdx"));
+            rule.whipClasses.emplace(compiledMonsterIndex(stats,parentRow),child.empty()?-1:compiledMonsterIndex(stats,findSkillTableRow(stats,"Id",child)));
             minion=stats.value(parentRow,"NextInClass");
             if(!child.empty()) child=stats.value(findSkillTableRow(stats,"Id",child),"NextInClass");
         }
@@ -661,18 +676,18 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         if(!clock) return false;
         rule.aiPoseTicks.emplace(8,monsterAnimationTicks({clock->frames,clock->speed}));
     }
-    if(record.ai=="SiegeBeast") rule.impBaseClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","imp1"),"hcIdx");
+    if(record.ai=="SiegeBeast") rule.impBaseClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","imp1"));
     if(record.ai=="CatapultSpotter") {
         auto chain=record.base;
-        while(chain!=record.id && rule.monsterChainOffset<4) {
+        while(!chain.empty() && chain!=record.id && rule.monsterChainOffset<4) {
             chain=stats.value(findSkillTableRow(stats,"Id",chain),"NextInClass");++rule.monsterChainOffset;
         }
         if(chain!=record.id || rule.monsterChainOffset>=4) return false;
     }
     if(record.ai=="Imp") {
         rule.attachedState=data.states.at("attached").definition.id;
-        rule.siegeBeastBaseClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","siegebeast1"),"hcIdx");
-        rule.barricadeTowerBaseClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","barricadetower"),"hcIdx");
+        rule.siegeBeastBaseClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","siegebeast1"));
+        rule.barricadeTowerBaseClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","barricadetower"));
         for(size_t index=0;index<rule.impParameters.size();++index) {
             const auto source=findSkillTableRow(stats,"Id","imp"+std::to_string(index+1));
             const auto profile=loadMonsterAiProfile(stats,source,"Imp",rule.difficulty);if(!profile) return false;
@@ -686,7 +701,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             rule.impBaseModes[slot]=nativeMode(stats.value(base,"Sk"+field+"mode"));
         }
         auto chain=record.base;
-        while(chain!=record.id && rule.monsterChainOffset<255) {
+        while(!chain.empty() && chain!=record.id && rule.monsterChainOffset<255) {
             chain=stats.value(findSkillTableRow(stats,"Id",chain),"NextInClass");++rule.monsterChainOffset;
         }
         if(chain!=record.id) return false;
@@ -696,9 +711,9 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
     }
     if(record.ai=="PutridDefiler") {
         rule.pregnantState=data.states.at("pregnant").definition.id;
-        rule.painwormBaseClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","painworm1"),"hcIdx");
+        rule.painwormBaseClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","painworm1"));
     }
-    if(record.ai=="OblivionKnight") rule.doomKnightBaseClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","doomknight1"),"hcIdx");
+    if(record.ai=="OblivionKnight") rule.doomKnightBaseClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","doomknight1"));
     if(record.ai=="Diablo") {
         const auto clock=loadMonsterMotionTiming(animations,record.token,"s4",monsterModeWeapon(archives,record.token,"s4",record.baseWeapon));
         if(!clock) return false;
@@ -724,7 +739,11 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
     }
     const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
     const int bonus=data.tables.at("difficultylevels").number(size_t(rule.difficulty),"MonsterSkillBonus").value_or(0);
-    const auto missile=[&](std::string_view name,int rank) {
+    const auto missile=[&](std::string_view name,int rank)->std::optional<server::MonsterMissileRule> {
+        // An unprepared PD2 replacement may no longer use the retail
+        // missile column. Reject this action so hostile identity fallback
+        // can run; an empty reference must not abort the complete region.
+        if(name.empty()) return {};
         const auto row=findSkillTableRow(missiles,"Missile",name);
         return prepareMonsterMissile(data,skillTableNumber(missiles,row,"Id"),rank);
     };
@@ -749,9 +768,12 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         return value;
     };
     for(size_t slot=0;slot<rule.skillIds.size();++slot) {
-        const auto field=std::to_string(slot+1);const auto name=stats.value(record.sourceRow,"Skill"+field);
-        if(name.empty()) continue;
-        const auto row=findSkillTableRow(skills,"skill",name);const int id=skillTableNumber(skills,row,"Id");
+        const auto field=std::to_string(slot+1);const auto linked=stats.value(record.sourceRow,"Skill"+field);
+        if(linked.empty()) continue;
+        size_t row=0;while(row<skills.rows().size() && !sameNativeSkillName(skills.value(row,"skill"),linked)) ++row;
+        if(row==skills.rows().size()) continue; // Unresolved native name-link compiles to -1.
+        const auto name=skills.value(row,"skill");
+        const int id=skillTableNumber(skills,row,"Id");
         int rank=stats.number(record.sourceRow,"Sk"+field+"lvl").value_or(0)+bonus;
         if(record.ai=="SiegeBeast" && name=="Charge") {rule.skillIds[slot]=uint16_t(id);continue;}
         if(record.ai=="WillOWisp") {rule.skillIds[slot]=uint16_t(id);continue;}
@@ -848,7 +870,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             if(towerBolt) event=4;
             if(name=="UnHolyBolt") {
                 int offset=0;auto chain=record.base;
-                while(chain!=record.id && offset<255) {const auto next=findSkillTableRow(stats,"Id",chain);chain=stats.value(next,"NextInClass");++offset;}
+                while(!chain.empty() && chain!=record.id && offset<255) {const auto next=findSkillTableRow(stats,"Id",chain);chain=stats.value(next,"NextInClass");++offset;}
                 if(chain!=record.id) return false;
                 prepared=prepareMonsterMissile(data,prepared->definition+offset,rank);if(!prepared) return false;
             }

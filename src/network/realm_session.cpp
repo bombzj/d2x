@@ -274,15 +274,33 @@ RealmSession::RealmSession(ClientProfile profile, bool retainGamePackets)
     snapshot_ = impl_->view;
     impl_->start();
 }
+void RealmSession::prepare_connection_profile(bool local) {
+    const auto profile=local?ClientProfile::Pd2Local:ClientProfile::Pd2CnNormal20261020;
+    std::unique_ptr<Impl> next;
+    {
+        std::lock_guard lock(impl_->mutex);
+        const auto &previous=*impl_;
+        if(previous.compatibility.profile==ClientProfile::Lod113c || previous.compatibility.profile==profile) return;
+        if(previous.view.stage!=OnlineStage::Idle || !previous.tcpIpSaves.empty())
+            throw ProtocolError("Leave the current connection and save its character before selecting another PD2 mode");
+        next=std::make_unique<Impl>(profile,previous.retainGamePackets);
+        next->view.connectionGeneration=previous.view.connectionGeneration+1;
+        next->view.gameGeneration=previous.view.gameGeneration+1;
+        next->view.revision=previous.view.revision+1;
+        next->errorSequence=previous.errorSequence;
+        next->itemSequence=previous.itemSequence;next->combatSequence=previous.combatSequence;
+        next->stashLayout=previous.stashLayout;next->playerDefaultSkill=previous.playerDefaultSkill;
+        next->gamePacketObserver=previous.gamePacketObserver;next->gameRequestObserver=previous.gameRequestObserver;
+    }
+    // Stop and join the retired worker before replacing its protocol state.
+    // The public session object and its client references remain stable.
+    impl_.reset();impl_=std::move(next);snapshot_=impl_->view;impl_->start();
+}
 void RealmSession::connect_realm(std::unique_ptr<IByteTransport> realmTransport,
     std::unique_ptr<IByteTransport> gameTransport, Endpoint endpoint, std::string name, uint16_t gamePort) {
+    prepare_connection_profile(true);
     std::lock_guard lock(impl_->mutex);
     auto &p = *impl_;
-    if (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020) {
-        p.snapshotDirty = true;
-        p.fail(OnlineErrorKind::Unsupported, "This client profile does not support preauthenticated or embedded Realms");
-        return;
-    }
     const auto connection = p.view.connectionGeneration + 1, game = p.view.gameGeneration + 1, revision = p.view.revision;
     p.shutdown(); p.view.clear(); p.view.connectionGeneration = connection; p.view.gameGeneration = game;
     p.view.revision = revision; p.requestCounter = 0; p.lastListRequest = 0;
@@ -320,14 +338,10 @@ void RealmSession::configure_player_default_skill(uint16_t skill) {
     impl_->playerDefaultSkill = skill;
 }
 void RealmSession::connect_tcpip(Endpoint endpoint, Bytes save, std::optional<OnlineCharacter> localIdentity) {
+    try {prepare_connection_profile(true);}
+    catch(...) {erase_secret(save);throw;}
     std::lock_guard lock(impl_->mutex);
     auto &p = *impl_;
-    if (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020) {
-        erase_secret(save);
-        p.snapshotDirty = true;
-        p.fail(OnlineErrorKind::Unsupported, "This client profile does not support TCP/IP character transfer");
-        return;
-    }
     if (localIdentity && (p.view.stage != OnlineStage::Idle || !character_name_valid(localIdentity->name) ||
         !localIdentity->characterClass || *localIdentity->characterClass>6))
         throw ProtocolError("Explicit TCP/IP identity requires an idle session and valid native character");
@@ -355,14 +369,11 @@ void RealmSession::register_account(LoginOptions options) {
     authenticate(std::move(options), true);
 }
 void RealmSession::authenticate(LoginOptions options, bool createAccount) {
+    try {prepare_connection_profile(false);}
+    catch(...) {erase_secret(options.password);erase_auth_secrets(options.originalClient);throw;}
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if(p.compatibility.profile == ClientProfile::Pd2Local) {
-        erase_secret(options.password);
-        p.fail(OnlineErrorKind::Unsupported, "PD2 local hosting supports Single Player and TCP/IP; select the CN profile for Battle.net");
-        return;
-    }
     p.shutdown();
     p.directRealm.reset();
     p.mcp.use(std::make_unique<TcpStream>()); p.gs.use(std::make_unique<TcpStream>());

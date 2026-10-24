@@ -149,7 +149,6 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     const auto configPath = std::filesystem::path(options.onlineConfig);
     const auto &pipeName = options.debugPipe;
     if (options.hidden && !pipeName.empty()) SetTargetFPS(60);
-    const bool remoteOnly = options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020;
     const bool pd2Resources = options.protocolProfile != net::protocol::ClientProfile::Lod113c;
     RealmFrontend ui(archives);
     profile.mark("frontend-assets-ready");
@@ -169,9 +168,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             log->record(generation,"C2S",bytes);
         });
     }
-    std::unique_ptr<EmbeddedRealm> embedded;
-    if (!remoteOnly) embedded = std::make_unique<EmbeddedRealm>(archives, options.hostSaves,
-        options.pd2Local ? ContentPreparation::Pd2TownHost : ContentPreparation::OriginalRules);
+    auto embedded = std::make_unique<EmbeddedRealm>(archives, options.hostSaves,
+        pd2Resources ? ContentPreparation::Pd2TownHost : ContentPreparation::OriginalRules);
     if (!options.hostPacketLog.empty()) {
         auto log = std::make_shared<GamePacketLog>(options.hostPacketLog,"host");
         embedded->observeGamePackets([log](uint64_t connection, hosting::GamePacketDirection direction, std::span<const uint8_t> bytes) {
@@ -366,10 +364,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     };
     const auto lang = languageOf(archives);
     ClassicStrings strings(archives, lang);
-    FrontendPage page = remoteOnly ? FrontendPage::Login : FrontendPage::Main;
-    std::string notice, gateway = remoteOnly ? "" : "D2X-Local";
+    FrontendPage page = FrontendPage::Main;
+    std::string notice, gateway = pd2Resources ? "" : "D2X-Local";
     const std::function<std::string()> prepareGame = [&]() -> std::string {
-        if (!remoteOnly) return {};
+        if (!pd2Resources) return {};
         try { sharedClassicData(archives, ContentPreparation::RemoteDisplay); return {}; }
         catch (const std::exception &error) { return "PD2 scene resources are unavailable: " + std::string(error.what()); }
     };
@@ -602,7 +600,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 }
                 if (session.read().stage == OnlineStage::Idle) {
                     ui.clearTransientPasswords();
-                    page = remoteOnly ? FrontendPage::Login : FrontendPage::Main;
+                    page = FrontendPage::Main;
                 }
             }
             auto reply = nlohmann::json::parse(response);
@@ -695,7 +693,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         if (view.stage == OnlineStage::RealmSelection) {
             const auto match = std::find_if(view.realms.begin(), view.realms.end(),
                                             [&](const auto &r) { return r.name == gateway; });
-            if (!manualRealm && remoteOnly && !view.realms.empty())
+            if (!manualRealm && view.remoteLobbyOnly && !view.realms.empty())
                 session.choose_realm(view.realms.front().name);
             else if (!manualRealm && match != view.realms.end())
                 session.choose_realm(match->name);

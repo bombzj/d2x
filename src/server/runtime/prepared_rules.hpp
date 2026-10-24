@@ -57,6 +57,7 @@ struct CharacterRules {
         std::string khalimWill;
     } laterQuests;
     std::map<RegionId,int> waypointIndices; // Immutable MPQ Levels identities, including unloaded areas.
+    std::set<RegionId> areaIds; // Prepared content; administrative travel never invents a level.
     std::set<int> innateSkills;
     std::vector<int> innateSkillOrder; // CharStats order, following native Attack initialization.
     std::map<std::string,ItemSkillRule,std::less<>> itemSkills;

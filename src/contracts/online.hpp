@@ -110,9 +110,10 @@ struct OnlineGameServerNotices {
     std::optional<uint64_t> removalAnnouncedMilliseconds;
 };
 struct OnlineView {
-    // Build identity survives clear(): one RealmSession has one immutable profile.
+    // The connection's profile survives clear(); explicit admission from Idle
+    // may rebuild the PD2 dialect state before establishing a new connection.
     std::string protocolProfile{"lod113c"};
-    bool remoteLobbyOnly{}; // Remote client: no local host, LAN or character save operations.
+    bool remoteLobbyOnly{}; // Active CN dialect: remote lobby/character operations, not local saves.
     bool gameEntryAvailable{true}; // Profile capability; independent of local host/character administration.
     bool allowLadderSelection{}; // Server-returned characters, independent of game admission.
     uint8_t maximumGameServer{}; // Profile capability, zero for the original create-game panel.

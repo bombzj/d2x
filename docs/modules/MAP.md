@@ -6,6 +6,8 @@
 
 ## 所有权与入口
 
+PD2扩展预设区域复用本模块的生成、房间物化、碰撞和原生出口；区域清单、额外DS1标记、编译怪物身份，以及地图物品／词缀／事件的执行边界统一见[PD2地图基线](../pd2/MAPS.md)。管理旅行只提供调试入口，不代表普通开图玩法已实现。
+
 | 入口 | 职责 |
 | --- | --- |
 | [world_catalog.cpp](../../src/content/world/world_catalog.cpp) | Levels／LvlTypes／LvlPrest／LvlMaze／LvlSub 等只读定义 |

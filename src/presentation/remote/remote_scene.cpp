@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "remote_scene_impl.hpp"
 #include "content/skills/description_values.hpp"
 #include "content/language.hpp"
@@ -63,8 +64,8 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
         }
     }
     for (size_t row = 0; row < monstats.rows().size(); ++row)
-        if (auto id = monstats.number(row, "hcIdx"))
-            monsterRows.emplace(*id, row);
+        if (!monstats.value(row,"hcIdx").empty())
+            monsterRows.emplace(compiledMonsterIndex(monstats,row), row);
     const DataTable hirelings(a.read("data/global/excel/hireling.txt"));
     constexpr std::array monsterModes{"dt","nu","wl","gh","a1","a2","bl","sc",
         "s1","s2","s3","s4","dd","kb","sq","rn"};

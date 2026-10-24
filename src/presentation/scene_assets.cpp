@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "contracts/inventory.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "content/classic_data.hpp"
@@ -213,11 +214,11 @@ void SceneAssets::loadWorldLightDefinitions() {
     std::map<std::string, size_t, std::less<>> rows;
     for (size_t row = 0; row < extra.rows().size(); ++row) rows.emplace(extra.value(row, "Id"), row);
     for (size_t row = 0; row < monsters.rows().size(); ++row) {
-        const auto id = monsters.number(row, "hcIdx");
         const auto entry = rows.find(monsters.value(row, "MonStatsEx"));
-        if (!id || entry == rows.end()) continue;
+        if (monsters.value(row,"hcIdx").empty() || entry == rows.end()) continue;
+        const int id=compiledMonsterIndex(monsters,row);
         const auto index = entry->second;
-        monsterLights.emplace(*id, MonsterLight{extra.number(index, "Light").value_or(0),
+        monsterLights.emplace(id, MonsterLight{extra.number(index, "Light").value_or(0),
             {uint8_t(extra.number(index, "light-r").value_or(0)),
              uint8_t(extra.number(index, "light-g").value_or(0)),
              uint8_t(extra.number(index, "light-b").value_or(0)), 255}});

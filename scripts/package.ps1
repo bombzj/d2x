@@ -57,6 +57,10 @@ if(Test-Path -LiteralPath $onlineProfile){
     }
 }
 $pd2Profile=Join-Path $projectRoot 'pd2.local.json'
+if(-not (Test-Path -LiteralPath $pd2Profile -PathType Leaf)){
+    $legacyPd2Profile=Join-Path $projectRoot 'pd2-host.local.json'
+    if(Test-Path -LiteralPath $legacyPd2Profile -PathType Leaf){$pd2Profile=$legacyPd2Profile}
+}
 if(Test-Path -LiteralPath $pd2Profile){
     $profile=Get-Content -LiteralPath $pd2Profile -Raw | ConvertFrom-Json
     if($profile.authentication -eq 'pd2-cn' -and $profile.clientProfile -eq 'pd2-cn-normal-20261020'){
@@ -77,9 +81,11 @@ if(Test-Path -LiteralPath $pd2Profile){
         }else{$script:unchangedFiles++}
     }
 }
-foreach($name in @('Play.cmd','PlayPD2.cmd','PlayPD2Local.cmd','Play-Diagnostic.cmd','README.md','BASELINE.md','LICENSE')){
+foreach($name in @('Play.cmd','PlayPD2.cmd','Play-Diagnostic.cmd','README.md','BASELINE.md','LICENSE')){
     Copy-ChangedFile (Join-Path $projectRoot $name) (Join-Path $destination $name)
 }
+$obsoletePd2Launcher=Join-Path $destination 'PlayPD2Local.cmd'
+if(Test-Path -LiteralPath $obsoletePd2Launcher -PathType Leaf){Remove-Item -LiteralPath $obsoletePd2Launcher}
 foreach($name in @('play.ps1','play-pd2.ps1','Send-D2XCommand.ps1')){
     Copy-ChangedFile (Join-Path $PSScriptRoot $name) (Join-Path $destination "scripts/$name")
 }

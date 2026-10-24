@@ -49,7 +49,8 @@ struct GamePacket {
 class RealmSession {
   public:
     explicit RealmSession(bool retainGamePackets = false);
-    // Fixed for this object's lifetime, including reconnects and stream resets.
+    // Fixed during a connection. Explicit PD2 local/remote admissions from
+    // Idle rebuild the dialect state; received packets never select a profile.
     explicit RealmSession(protocol::ClientProfile, bool retainGamePackets = false);
     // Preauthenticated Realm admission (embedded host today). Native MCP/D2GS
     // codecs, state reducer and all public gameplay commands remain unchanged.
@@ -149,6 +150,7 @@ class RealmSession {
     void observe_game_requests(std::function<void(uint64_t, std::span<const uint8_t>)> observer);
 
   private:
+    void prepare_connection_profile(bool local);
     void authenticate(LoginOptions options, bool createAccount);
     struct Impl;
     mutable OnlineView snapshot_;

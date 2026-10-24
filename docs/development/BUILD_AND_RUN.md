@@ -73,37 +73,38 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 启动测量在当次交付中说明程序版本、资源、启动参数及采样条件；临时测量文件可清理，不作为功能或原版一致性的长期依据。
 
-## PD2自有单机与TCP/IP城镇宿主
+## PD2统一入口
 
-先显式构建当前EXE，使用`PlayPD2Local.cmd`（等价于`PlayPD2.cmd -Local`）启动。该入口使用与CN客户端相同的固定资源核对，但默认进入本机选角，角色保存在`saves/pd2`；不要求账号登录，不装载原DLL。已有`pd2.local.json`可直接复用；首次独立本地配置写入Git忽略的`pd2-host.local.json`。具体功能和限制见[PD2城镇宿主](../architecture/PD2_COMPATIBILITY.md#自有pd2城镇宿主)，存档采用原生PD2格式，先复制原档到独立目录再用`--load`打开；格式与未支持组合见[存档边界](../modules/SAVES.md#d2x-pd2本地存档)。
+先显式构建当前EXE，再运行唯一的`PlayPD2.cmd`。默认进入与原版相同的主菜单，由玩家选择Single Player、TCP/IP或Battle.net；`PlayPD2Local.cmd`已移除。原版`Play.cmd`继续使用原版资源。两个入口共用同一EXE、前端、RealmSession、Remote客户端及`scripts/play.ps1`，PD2包装脚本仅负责准备固定资源／服务配置。
 
 ```powershell
-.\PlayPD2Local.cmd -Pd2Directory 'D:\Games\DiabloII-PD2-Copy\pd2'
-.\PlayPD2Local.cmd
-# TCP/IP两端使用相同PD2资源；各自选择独立的本机角色。
-.\PlayPD2Local.cmd -HostLan 127.0.0.1 -GamePort 14000 -HostSaves saves/pd2-host
-.\PlayPD2Local.cmd -Lan 127.0.0.1 -GamePort 14000 -HostSaves saves/pd2-guest
+# 首次配置资源；单机／TCP-IP不要求账号服务器。
+.\PlayPD2.cmd -Pd2Directory 'D:\Games\DiabloII-PD2-Copy\pd2'
+.\PlayPD2.cmd
+# 可选：诊断记录、自动远端选角或TCP/IP快捷入口。
+.\PlayPD2.cmd -Diagnostic
+.\PlayPD2.cmd -OnlineCharacter '<角色名>'
+.\PlayPD2.cmd -HostLan 127.0.0.1 -GamePort 14000 -HostSaves saves/pd2-host
+.\PlayPD2.cmd -Lan 127.0.0.1 -GamePort 14000 -HostSaves saves/pd2-guest -PipeName d2x-pd2-guest
 ```
 
-EXE参数为`--client-profile <file.json> --pd2-local`，可组合`--class`／`--save`／`--load`及`--host-saves`，默认调试管道`d2x-pd2-local`，窗口标题D2X - PD2 Single Player / TCP-IP。多客户端应各用不同`-PipeName`。本地协议不连接CN账号端点，`-OnlineCharacter`、PD2无窗口及独立PvPGN服务仍拒绝。
+默认使用Git忽略的`pd2.local.json`；该文件不存在但已有`pd2-host.local.json`时复用旧配置。首次创建可用`-Pd2Directory`或`D2X_PD2_DIRECTORY`提供资源目录。账号服务器取`-AccountHost`、`D2X_PD2_ACCOUNT_HOST`或原目录的`zylpd2.ip`；未知时可留空，Battle.net登录时才检查。已有配置不被参数静默覆盖，修改服务／资源须编辑该配置或显式选择新的`-Profile`文件。账号密码只在D2X登录界面输入，不写命令行或公开配置。
+
+EXE以`--client-profile <file.json>`固定资源构建；连接前按菜单的本地接入／账号认证选择PD2协议，当前连接期间不切换。旧`-Local`／`-Pd2Local`／`--pd2-local`参数只保留兼容，不再限制菜单模式。默认调试管道为`d2x-pd2-debug`，默认不开诊断文件记录；多进程使用不同`-PipeName`。
+
+## PD2自有单机与TCP/IP城镇宿主
+
+Single Player与TCP/IP使用自有宿主，默认角色目录`saves/pd2`，沿用原生PD2 D2S，和原版角色隔离。无需账号认证，不连接CN账号端点，不装载原DLL。TCP/IP两端使用相同PD2资源，各自选择本机角色；Host／Join页面、存档回传及返回主菜单复用原版流程。本地端口默认4000，与CN账号配置中的gamePort分开。
+
+可组合`--class`／`--save`／`--load`及`--host-saves`准备本机角色。PD2无窗口及独立PvPGN服务仍未开放；具体能力与限制见[自有宿主](../architecture/PD2_COMPATIBILITY.md#自有pd2城镇宿主)及[PD2协议与存档基线](../pd2/PROTOCOL_AND_SAVES.md#统一入口与连接生命周期)。
 
 ## PD2 CN远端账号大厅
 
-`PlayPD2.cmd`使用同一D2X程序和`scripts/play-pd2.ps1`，不会自动构建、安装／更新PD2或加载原DLL。先显式构建包含本功能的EXE；现有旧EXE不因新增脚本而获得兼容。默认普通`Play.cmd`仍为原版。
-
-首次启动指定隔离副本的pd2目录，脚本创建被Git忽略的`pd2.local.json`；端点可显式指定，否则取环境变量`D2X_PD2_ACCOUNT_HOST`或该目录`zylpd2.ip`首个IPv4候选。当前样本的首行162.14.106.45:6112已可完成账号流程；其他线路或更新后的文件行序须另核实，可用`-AccountHost`覆盖首次生成值。已有配置则直接编辑后重启。CN默认选择服务器返回的第一个Realm，直接显示角色列表；不伪造Realm名称。
-
-```powershell
-.\PlayPD2.cmd -Pd2Directory 'D:\Games\DiabloII-PD2-Copy\pd2' -AccountHost '<CN账号服务器>'
-# 后续沿用本机配置：
-.\PlayPD2.cmd
-# 只选既有角色并停在大厅；需先在该配置的UI内记忆一次账号：
-.\PlayPD2.cmd -OnlineCharacter '<角色名>'
-```
+在同一主菜单选择Battle.net，使用配置的CN账号服务；`-OnlineCharacter`仍可沿真实账号／Realm流程快捷进入，要求已通过UI记忆登录。脚本不自动构建、安装／更新PD2或加载原DLL。资源／认证绑定与原版相互隔离，修改配置后须重启。
 
 配置只保存`version=1`、`clientProfile=pd2-cn-normal-20261020`、`authentication=pd2-cn`、`originalClientDirectory`、`pd2Directory`、`accountHost/accountPort`、`gamePort`及`gateway`。原目录必须是pd2目录的父目录；相对路径按配置文件目录解析。账号密码在D2X界面输入，沿用每配置路径独立的Windows凭据管理器／Linux受限文件，不能写入启动命令、公开配置或文档。运行中修改配置定义会拒绝后续认证，需重启固定新服务与资源。
 
-EXE入口为`--client-profile <file.json>`，PD2窗口标题为D2X - PD2 CN。启动核对固定样本SHA-256，按已恢复顺序挂载原包、CN patch及四个PD2包；未知构建或资源不符明确停止。认证只读原MPQ的key／owner资源与pd2目录三份版本文件，不执行目标程序。已支持当前服务的账号登录、Realm、既有角色选择、大厅列表及返回；新账号注册尚未重测。已显示当前角色原图，建房／加入请求已接入，MCP已返回成功；修正游戏端口后已实际显示罗格营地、本人、NPC和HUD，并正常退局返回选角；此阶段仅认证基础入场和城镇显示。CN房间详情及PD2无窗口模式关闭；PD2单机／局域网须使用独立本地入口；建角按原MCP 0x02（可选专家级0x04、天梯0x40）、删角按原MCP 0x0A编码提交，成败以CN服务回复为准。未指定 `--lang` 时该 profile 默认 `chi`，读取CN副本 `Data/local` 的中文表、字形与菜单图，`-Lang eng` 可改回英文。PD2登录自动选择返回的第一个Realm，直接显示角色列表。CN Normal默认gamePort=4001，来自固定BH对D2Net的端口补丁；原版默认4000。若沿用旧pd2.local.json中的4000，需改为4001后重启；不会由更新原客户端自动修改D2X配置。配置可选gameServer整数1–9（默认1）、lootAllocation布尔值（默认true）。CN创建游戏页从CN副本的Data/local/Lng/Chi/PatchString.tbl只读加载GS1–GS9名称及标题，使用原gsselectbuttons按钮；初选采用配置值，同一账号连接内保留本次选择，每次建房提交自己的GS编号，不改写配置。GS不是端口或传输选择；资源虽有CreateGameGS10，已核实的原选择器仅创建九个按钮，因此不开放GS10，旧配置值10须改为1–9。完整限制见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)。
+EXE入口为`--client-profile <file.json>`，PD2窗口标题为D2X - PD2。启动核对固定样本SHA-256，按已恢复顺序挂载原包、CN patch及四个PD2包；未知构建或资源不符明确停止。认证只读原MPQ的key／owner资源与pd2目录三份版本文件，不执行目标程序。已支持当前服务的账号登录、Realm、既有角色选择、大厅列表及返回；新账号注册尚未重测。已显示当前角色原图，建房／加入请求已接入，MCP已返回成功；修正游戏端口后已实际显示罗格营地、本人、NPC和HUD，并正常退局返回选角；此阶段仅认证基础入场和城镇显示。CN房间详情及PD2无窗口模式关闭；单机／局域网通过同一主菜单进入；建角按原MCP 0x02（可选专家级0x04、天梯0x40）、删角按原MCP 0x0A编码提交，成败以CN服务回复为准。未指定 `--lang` 时该 profile 默认 `chi`，读取CN副本 `Data/local` 的中文表、字形与菜单图，`-Lang eng` 可改回英文。PD2登录自动选择返回的第一个Realm，直接显示角色列表。CN Normal默认gamePort=4001，来自固定BH对D2Net的端口补丁；原版默认4000。若沿用旧pd2.local.json中的4000，需改为4001后重启；不会由更新原客户端自动修改D2X配置。配置可选gameServer整数1–9（默认1）、lootAllocation布尔值（默认true）。CN创建游戏页从CN副本的Data/local/Lng/Chi/PatchString.tbl只读加载GS1–GS9名称及标题，使用原gsselectbuttons按钮；初选采用配置值，同一账号连接内保留本次选择，每次建房提交自己的GS编号，不改写配置。GS不是端口或传输选择；资源虽有CreateGameGS10，已核实的原选择器仅创建九个按钮，因此不开放GS10，旧配置值10须改为1–9。完整限制见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)。
 
 默认独立调试管道为`d2x-pd2-debug`，可用`-NoDebugPipe`关闭。大厅支持既有`online-login`、状态／列表别名、选Realm／角色、返回角色／Realm、取消列表、注销、`ui-input`、`screenshot`及`quit`，JSON请求格式沿用[调试指南](DEBUG_PIPE.md)。管道登录不记忆密码，状态仅给公开身份／挑战名称、包ID／计数和数值拒绝码，不保存认证载荷；需要记忆时仍通过UI登录。`-Hidden`建立隐藏的正常渲染窗口，便于沿相同入口自动操作和截图，不是无窗口协议模式。`-Diagnostic`记录程序身份、输出、启动节点及client-packets.jsonl的D2GS逻辑包；不记录SID／MCP原始认证载荷，0x68票据字段脱敏。没有到达GS收发阶段时文件可为空。游戏心跳问题可用`PlayPD2.cmd -Diagnostic`保留程序身份及游戏包记录，再取`online-status`的`gameHeartbeat`计数／时间及截图；只有游戏包完全断流才触发CN心跳超时。原版`Play-Diagnostic.cmd`语义保持原样。
 

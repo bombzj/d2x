@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "remote_combat.hpp"
 #include "remote_inventory.hpp"
 #include "item_skill_sources.hpp"
@@ -28,7 +29,10 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
         if (auto id = states.number(row, "Id"); id && *id >= 0 && *id < 255) states_.emplace(uint8_t(*id), row);
     const auto &monsters = tables_.at("monstats");
     for (size_t row = 0; row < monsters.rows().size(); ++row)
-        if (auto id = monsters.number(row, "hcIdx"); id && *id >= 0 && *id <= UINT16_MAX) monsters_.emplace(uint16_t(*id), row);
+        if (!monsters.value(row,"hcIdx").empty()) {
+            const int id=compiledMonsterIndex(monsters,row);
+            if(id<=UINT16_MAX) monsters_.emplace(uint16_t(id),row);
+        }
     const auto &extras = tables_.at("monstats2");
     constexpr std::array componentCodes{"HD","TR","LG","RA","LA","RH","LH","SH","S1","S2","S3","S4","S5","S6","S7","S8"};
     for (const auto &[id, row] : monsters_)

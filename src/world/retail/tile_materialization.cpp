@@ -99,7 +99,11 @@ std::vector<size_t> RetailTileMaterializer::establishNear(size_t current, const 
             // matched in an earlier slot cannot suppress this slot's fallback.
             bool paired = false;
             const int destination = from.visible[slot];
-            if (!destination) throw std::runtime_error("Native flagged room has no Vis destination");
+            // Authored PD2 presets can retain exit flags with Vis=0. The
+            // native path allocates the empty Levels[0] (DrlgType=0); it
+            // contributes no rooms or reciprocal links. Do not invent an
+            // exit or reject the otherwise valid source terrain.
+            if (!destination) continue;
             failed_ = false;
             ensureLevel(destination);
             failed_ = true;

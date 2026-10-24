@@ -8,6 +8,8 @@
 | --- | --- | --- |
 | 当前核心／ProjectDiablo.dll | `17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57` | 5,243,904字节；当前宿主技能、物品、价格的定点分析目标；各条目未另注明的核心RVA使用此版本 |
 | 当前pd2data.mpq | `cc42f5c71d61c9a38d5b948243ed2fe6a9a2bc0124fb3eaaff0f1943830e15cf` | 当前隔离目录实际资源摘要；表字段及记录身份须与此输入核对，历史解析结果有独立版本时保留其范围 |
+| 当前pd2maps.mpq | `fb9e21ae5d797caa7ae8051ed15752a71a35ac317b44c8cdde3c443ad62b25eb` | 当前扩展地图DS1／DT1输入，不能用旧地图包替代后宣称布局相同 |
+| 当前pd2assets.mpq | `2ceb83ca8e9f482fa46a94cda95d2ab80f8415a0d2c1047a44f64d4a95cf56af` | 当前配套图形资源，与地图包和数据表独立标识 |
 | 配套D2Common.dll | `0406922db7b9959484a08f83bcc6a0fe9d11a157cb2322a061033e8d37480217` | 当前包装器负序号的实际解析模块，不直接套D2MOO序号 |
 | 配套D2Game.dll | `24b293b86f95bea0228826c502ea04737ba21b91ca9832e52aac4b11fef14f53` | 当前服务端RVA的实际解析模块 |
 | 旧核心／ProjectDiablo.dll | `9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f` | 5,230,080字节；[完整函数目录](../resources/pd2-core/README.md)、旧补丁／程序表及未另标版的历史取证 |

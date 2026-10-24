@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "sound_catalog.hpp"
 #include "content/character/character_attributes.hpp"
 #include <algorithm>
@@ -50,11 +51,11 @@ SoundCatalog::SoundCatalog(Archives &archives) : sounds_(archives.read("data/glo
     }
     const DataTable monsters(archives.read("data/global/excel/monstats.txt"));
     for (size_t row = 0; row < monsters.rows().size(); ++row) {
-        const auto id = monsters.number(row,"hcIdx");
-        if (!id) continue;
+        if(monsters.value(row,"hcIdx").empty()) continue;
+        const int id=compiledMonsterIndex(monsters,row);
         const auto voice = monsters.value(row,"MonSound");
-        if (voice.empty()) monsters_.emplace(*id, MonsterSoundDefinition{}); // Intentional silent actor.
-        else if (const auto found = profiles.find(voice); found != profiles.end()) monsters_.emplace(*id, found->second);
+        if (voice.empty()) monsters_.emplace(id, MonsterSoundDefinition{}); // Intentional silent actor.
+        else if (const auto found = profiles.find(voice); found != profiles.end()) monsters_.emplace(id, found->second);
     }
     const DataTable characters(archives.read("data/global/excel/charstats.txt"));
     int identity = 0;

@@ -6,7 +6,7 @@
 
 **一套客户端，两种权威来源。** Single Player／自研TCP/IP使用自研宿主，原服使用D2GS；入局共用D2GS请求与同一客户端副本。TCP/IP按原版直连游戏端口并交换本机角色字节，选角复用内部内存MCP；账号Realm路径继续使用远端MCP。单机是内存字节传输，断线不切换成本地权威。
 
-PD2区分CN远端与自有宿主。`app/frontend`共用RealmFrontend／RealmSession和Remote*；原版与`--pd2-local`创建EmbeddedRealm，CN仍仅连接远端。内容准备分为OriginalRules、RemoteDisplay、Pd2TownHost，后者保留现有内部命名，当前已准备普通五幕城镇与七职业技能程序。PD2客户端元数据与宿主战斗程序分开；本地角色目录与原版隔离，编码沿用原生PD2格式并保留扩展段。差异准备位于`content/pd2`、`hosting/pd2`及`persistence/pd2_save_profile`，大块技能差异执行位于`server/systems/{skills,combat,missiles,effects}/pd2`，公共领域继续复用现有内核，未知程序明确拒绝。固定构建、认证和边界见[PD2兼容设计](PD2_COMPATIBILITY.md#自有技能宿主)，技能／物品／地图／怪物等规则、原生依据及边界统一见[PD2功能差异基线](../pd2/README.md)。
+PD2区分当前连接的CN远端与自有宿主协议，启动入口和主菜单统一。`app/frontend`共用RealmFrontend／RealmSession、EmbeddedRealm和Remote*；Single Player／TCP/IP使用本地宿主，Battle.net使用远端权威。PD2协议只在断开后的新连接入口选择，不随未知包或资源目录猜测切换。内容准备分为OriginalRules、RemoteDisplay、Pd2TownHost，后者保留现有内部命名，当前已准备普通五幕、七职业技能程序及PD2扩展预设布局／人口；地图物品开图、词缀与事件仍未实现。PD2客户端元数据与宿主战斗程序分开；本地角色目录与原版隔离，编码沿用原生PD2格式并保留扩展段。差异准备位于`content/pd2`、`hosting/pd2`及`persistence/pd2_save_profile`，大块技能差异执行位于`server/systems/{skills,combat,missiles,effects}/pd2`，公共领域继续复用现有内核，未知程序明确拒绝。固定构建、认证和边界见[PD2兼容设计](PD2_COMPATIBILITY.md#自有技能宿主)，技能／物品／地图／怪物等规则、原生依据及边界统一见[PD2功能差异基线](../pd2/README.md)。
 
 | 大模块（相对src/） | 放什么／不能放什么 |
 | --- | --- |

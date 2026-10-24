@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "druid_data.hpp"
 #include "table_values.hpp"
 #include "aura_data.hpp"
@@ -47,7 +48,7 @@ SummonSkillSpec summonDefinition(const ClassicData &data,size_t skillRow) {
     const auto row=findSkillTableRow(monsters,"Id",spec.monster),extra=findSkillTableRow(extras,"Id",monsters.value(row,"MonStatsEx"));
     spec.petType=number(data.tables.at("pettype"),findSkillTableRow(data.tables.at("pettype"),"pet type",skills.value(skillRow,"pettype")),"idx");
     if(number(monsters,row,"noRatio")!=1) throw std::runtime_error("Unsupported native druid pet ratios");
-    auto pet=std::make_shared<DruidPetDefinition>();pet->nativeClass=number(monsters,row,"hcIdx");
+    auto pet=std::make_shared<DruidPetDefinition>();pet->nativeClass=compiledMonsterIndex(monsters,row);
     pet->group=number(data.tables.at("pettype"),findSkillTableRow(data.tables.at("pettype"),"pet type",skills.value(skillRow,"pettype")),"group");
     pet->summonMode=skills.value(skillRow,"summode");pet->attackable=number(extras,extra,"isAtt")!=0;
     const auto ai=monsters.value(row,"AI");
@@ -103,7 +104,7 @@ void loadDruidSkills(ClassicData &data,Archives &archives) {
     for(size_t row=0;row<states.rows().size();++row) {
         if(states.number(row,"transform").value_or(0)==0 || states.number(row,"gfxtype").value_or(-1)!=1) continue;
         const int nativeClass=skillTableNumber(states,row,"gfxclass");
-        const auto monster=findSkillTableRow(monsters,"hcIdx",std::to_string(nativeClass));
+        const auto monster=compiledMonsterRow(monsters,nativeClass);
         const auto extra=findSkillTableRow(extras,"Id",monsters.value(monster,"MonStatsEx"));
         ShapeProfile shape;shape.state=skillTableNumber(states,row,"id");shape.nativeClass=nativeClass;
         shape.restrictSkills=states.number(row,"restrict").value_or(0)!=0;shape.meleeOnly=states.number(row,"meleeonly").value_or(0)!=0;

@@ -1,5 +1,6 @@
 #include "content/skills/description_data.hpp"
 #include "content/pd2/town_data.hpp"
+#include "content/monsters/monster_identity.hpp"
 #include "content/skills/formula_data.hpp"
 #include "content/monsters/mode_stat_data.hpp"
 #include "gameplay/skills/spec.hpp"
@@ -585,11 +586,12 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             const auto ratios=loadMonsterModeLevelRatios(data.tables.at("monlvl"));
             const auto lifeRatios=loadMonsterLifeLevelRatios(data.tables.at("monlvl"));
             const auto &monsters=data.tables.at("monstats");
-            for(size_t row=0;row<monsters.rows().size();++row) if(const auto id=monsters.number(row,"hcIdx"))
+            for(size_t row=0;row<monsters.rows().size();++row) if(!monsters.value(row,"hcIdx").empty())
                 for(int difficulty=0;difficulty<3;++difficulty) {
-                    if(!data.nativeMonsterModes.emplace(std::pair{*id,difficulty},loadMonsterModeTable(monsters,row,difficulty,ratios)).second)
+                    const int id=compiledMonsterIndex(monsters,row);
+                    if(!data.nativeMonsterModes.emplace(std::pair{id,difficulty},loadMonsterModeTable(monsters,row,difficulty,ratios)).second)
                         throw std::runtime_error("Duplicate native monster mode table identity");
-                    if(!data.nativeMonsterLives.emplace(std::pair{*id,difficulty},loadMonsterLifeTable(monsters,row,difficulty,lifeRatios)).second)
+                    if(!data.nativeMonsterLives.emplace(std::pair{id,difficulty},loadMonsterLifeTable(monsters,row,difficulty,lifeRatios)).second)
                         throw std::runtime_error("Duplicate native monster life table identity");
                 }
         }

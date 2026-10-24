@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "remote_ui_clients_impl.hpp"
 
 namespace d2x {
@@ -88,7 +89,7 @@ std::string RemoteUiClients::Impl::npcIdentity() const {
         auto unit=w.units.find({1,w.npcConversation->source});
         if(unit==w.units.end() || !unit->second.classId) return {};
         const auto &mon=data.tables.at("monstats");
-        for(size_t row=0;row<mon.rows().size();++row) if(mon.number(row,"hcIdx")==*unit->second.classId) return std::string(mon.value(row,"Id"));
+        if(const auto row=findCompiledMonsterRow(mon,*unit->second.classId)) return std::string(mon.value(*row,"Id"));
         return {};
     }
 void RemoteUiClients::Impl::projectMap() {
@@ -110,15 +111,13 @@ void RemoteUiClients::Impl::projectInteractions() {
         for (const auto &key:w.questAlerts) {
             const auto unit=w.units.find(key);
             if (key.type!=1 || unit==w.units.end() || !unit->second.classId) continue;
-            for (size_t row=0; row<mon.rows().size(); ++row) {
-                if (mon.number(row,"hcIdx")!=*unit->second.classId || !mon.number(row,"interact").value_or(0)) continue;
-                for (size_t sub=0; sub<extra.rows().size(); ++sub)
-                    if (extra.value(sub,"Id")==mon.value(row,"MonStatsEx")) {
-                        npcScene.npcs[npcId(key.id)]={true,extra.number(sub,"OverlayHeight").value_or(0)-1};
-                        break;
-                    }
-                break;
-            }
+            const auto row=findCompiledMonsterRow(mon,*unit->second.classId);
+            if(!row || !mon.number(*row,"interact").value_or(0)) continue;
+            for (size_t sub=0; sub<extra.rows().size(); ++sub)
+                if (extra.value(sub,"Id")==mon.value(*row,"MonStatsEx")) {
+                    npcScene.npcs[npcId(key.id)]={true,extra.number(sub,"OverlayHeight").value_or(0)-1};
+                    break;
+                }
         }
         if(scene && scene->npcConversation) {
             const auto &d=*scene->npcConversation; npcView.npc=npcId(d.source); npcView.valid=true; npcView.speaker=d.speaker;

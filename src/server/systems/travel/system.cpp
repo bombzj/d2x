@@ -332,8 +332,14 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
 }
 DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::optional<Vec> requested) {
     const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(target);
-    if(!p || !p->entered || p->actor!=actor.actor || p->persistent.player.hp<=0 || int(target)<1 || int(target)>136) return {DomainStatus::InvalidActor,{}};
+    if(!p || !p->entered || p->actor!=actor.actor || p->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
+    if(!p->rules.character || !p->rules.character->areaIds.contains(target)) return {DomainStatus::InvalidRequest,{}};
     if(!area) {const auto result=ports_.world.request(target);return {result?DomainStatus::Unavailable:result.status,{}};}
+    if(!requested && int(target)>136) {
+        const auto marker=ports_.world.nativeActSpawnLocationEx(target,11,2);
+        if(!marker || marker->area!=target) return {DomainStatus::Unavailable,{}};
+        requested=marker->position;
+    }
     const Vec desired=requested.value_or(area->definition.town?area->definition.spawn:
         area->definition.portalArrival.value_or(area->definition.exits.empty()?area->definition.spawn:area->definition.exits.front().arrival));
     if(!std::isfinite(desired.x) || !std::isfinite(desired.y) || desired.x<0 || desired.y<0 || desired.x>=area->definition.collision.width || desired.y>=area->definition.collision.height) return {DomainStatus::InvalidRequest,{}};

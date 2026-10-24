@@ -30,9 +30,7 @@ Windows 构建需要 CMake 3.25+、支持 C++20 的编译器和 Git；首次配�
 .\Play.cmd -Mpq assets/mpq2
 ```
 
-PD2 CN可用`PlayPD2.cmd`，需独立副本与当前固定版本资源；已支持登录、既有角色、大厅和基础罗格营地显示，玩法与扩展仍有限制，见[PD2入口](docs/development/BUILD_AND_RUN.md#pd2-cn远端账号大厅)。
-
-`PlayPD2Local.cmd`使用同一PD2资源进入自有单机／TCP/IP城镇宿主，角色隔离保存在`saves/pd2`。当前只开放城镇与普通服务；采用原生PD2存档；野外战斗、多堆叠方块分配及高级加工仍有缺口，见[本地PD2入口](docs/development/BUILD_AND_RUN.md#pd2自有单机与tcpip城镇宿主)。
+PD2使用单一入口`PlayPD2.cmd`，按固定配置核对PD2资源后进入同一主菜单，选择Single Player、TCP/IP或Battle.net。单机／局域网角色隔离保存在`saves/pd2`并沿用原生PD2格式；Battle.net连接配置的CN服务。具体启动参数、配置与当前限制见[PD2统一入口](docs/development/BUILD_AND_RUN.md#pd2统一入口)。
 
 进入主菜单后选择 Single Player、TCP/IP 或 Battle.net。单机／局域网使用本地角色；原服角色由原服保存。联机配置、启动参数及 Linux 构建步骤见[构建与运行](docs/development/BUILD_AND_RUN.md)。Linux 保留构建路径，尚未实际编译或运行验证。
 

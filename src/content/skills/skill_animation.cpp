@@ -1,3 +1,4 @@
+#include "content/monsters/monster_identity.hpp"
 #include "resources/archive.hpp"
 #include "skill_animation.hpp"
 #include "resources/anim_data.hpp"
@@ -60,14 +61,14 @@ HydraSpec loadHydraHeadAnimations(const DataTable &skills,const DataTable &monst
     const AnimDataTable animations(archives.read("data/global/animdata.d2"));
     int firstClass=-1;
     for(size_t row=0;row<monsters.rows().size();++row) if(monsters.value(row,"Id")==firstHead)
-        firstClass=monsters.number(row,"hcIdx").value_or(-1);
+        firstClass=compiledMonsterIndex(monsters,row);
     if(firstClass<0) throw std::runtime_error("Missing native Hydra summon class");
     HydraSpec hydra;
     for(size_t index=0;index<hydra.heads.size();++index) {
         auto &head=hydra.heads[index];
         bool found=false;
         for(size_t row=0;row<monsters.rows().size();++row) {
-            if(monsters.number(row,"hcIdx")!=firstClass+int(index)) continue;
+            if((monsters.value(row,"hcIdx").empty() || compiledMonsterIndex(monsters,row)!=firstClass+int(index))) continue;
             head.code=monsters.value(row,"Id");
             const auto token=monsters.value(row,"Code");
             std::string_view weapon;
@@ -77,7 +78,7 @@ HydraSpec loadHydraHeadAnimations(const DataTable &skills,const DataTable &monst
             const auto death=loadMonsterMotionTiming(animations,token,"dt",monsterModeWeapon(archives,token,"dt",weapon));
             if(!attack || !rise || !death || monsters.value(row,"AI")!="Hydra" || monsters.value(row,"Sk1mode")!="A1")
                 throw std::runtime_error("Missing original Hydra lifecycle animation");
-            head.nativeClass=monsters.number(row,"hcIdx").value();
+            head.nativeClass=compiledMonsterIndex(monsters,row);
             head.attackTicks=animationSecondsTicks(attack->duration);
             head.impactTick=animationSecondsTicks(attack->impact);
             head.attackAnimation={attack->frames,attack->speed};head.actionFrame=attack->actionFrame;
