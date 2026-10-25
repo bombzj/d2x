@@ -2,13 +2,49 @@
 #include "gameplay/skills/cast_timing.hpp"
 #include "gameplay/actions/timing.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "network/protocol/bits.hpp"
 #include "content/pd2/map_description.hpp"
 #include "gameplay/stats/stat_list.hpp"
 #include "core/random.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include <chrono>
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <vector>
 
 namespace d2x {
+std::optional<int32_t> RemoteScene::Impl::pd2ReplicaFormulaStat(OnlineUnitKey owner,std::string_view name) const {
+    if(!pd2) return {};
+    if(owner.type==0) {
+        if(!uiClients) return {};
+        if(!playerId || owner.id!=*playerId) return uiClients->pd2ObservedStat(owner,name);
+        const auto &values=uiClients->skillFormulaStats();const auto value=values.find(name);
+        if(value==values.end()) return {};
+        for(const auto &stat:monsterText->itemStats) if(stat.name==name && stat.valueShift>=0 && stat.valueShift<=15) {
+            const auto raw=value->second*double(1<<stat.valueShift);
+            if(std::isfinite(raw) && raw>=INT32_MIN && raw<=INT32_MAX) return int32_t(raw);
+        }
+        return {};
+    }
+    // These PD2 extension stats have no retail monster constructor value.
+    // The original client queries its own property/state lists, not the pet
+    // owner's private equipment or the server's hidden monster inventory.
+    if(owner.type!=1 || !combatBinding ||
+       (name!="item_leap_speed" && name!="extra_bonespears" && name!="extra_holybolts")) return {};
+    const auto unit=world().units.find(owner);if(unit==world().units.end()) return {};
+    const auto properties=combatBinding->monsterPropertyStats(unit->second);
+    const auto states=combatBinding->states().find(owner);
+    if(!properties || states==combatBinding->states().end() || !states->second.decoded ||
+       states->second.sequence!=unit->second.stateSequence) return {};
+    const auto stat=std::find_if(monsterText->itemStats.begin(),monsterText->itemStats.end(),[&](const auto &entry){return entry.name==name;});
+    if(stat==monsterText->itemStats.end() || !stat->id) return {};
+    int32_t value=0;
+    const auto add=[&](const auto &list) {for(const auto &entry:list) if(entry.id==*stat->id && !entry.parameter) value=nativeAdd(value,nativeNarrow(entry.value));};
+    add(*properties);for(const auto &[id,list]:states->second.states) {(void)id;add(list.stats);}
+    return value;
+}
 std::optional<RemoteScene::Impl::Pd2RoyalFire> RemoteScene::Impl::preparePd2RoyalFire(
     size_t row,const OnlineCombatEvent &event,const OnlineUnit &actor) {
     // Current 3A8BE0 delegates to retail 40F00 only for Skills.CltDo83.
@@ -106,12 +142,137 @@ std::optional<size_t> RemoteScene::Impl::pd2DoomKnightMissile(size_t skillRow,co
     return result==missileRows.end()?std::nullopt:std::optional{result->second};
 }
 
+std::optional<std::pair<int,int>> RemoteScene::Impl::findPd2LeapLanding(
+    const OnlineUnit &u,Vec start,Vec target,int range,const Map &map,Vec origin) const {
+    const int x=int(std::floor(start.x)),y=int(std::floor(start.y));
+    int tx=int(std::floor(target.x)),ty=int(std::floor(target.y));
+    const int distance=std::max(1,unitCoordinateDistance(x,y,tx,ty));
+    if(distance>range) {tx=x+nativeMultiply(tx-x,range)/distance;ty=y+nativeMultiply(ty-y,range)/distance;}
+    const int dx=std::clamp(ty-y,-2,2),dy=std::clamp(x-tx,-2,2);
+    const auto collision=navigationCollision(map.grid,origin,u.key);
+    const auto clear=[&](int column,int line) {
+        // Linked collision rooms already return FFFF for unavailable cells.
+        return collision.walkable(Vec{float(column),float(line)}-origin,{0x1c09,unitSize(u)});
+    };
+    for(const auto &[cx,cy]:{std::pair{tx,ty},std::pair{tx+dx,ty+dy},std::pair{tx-dx,ty-dy}}) {
+        const auto free=nativeSpawnCoordinate(cx,cy,50,clear);
+        if(free && unitCoordinateDistance(x,y,free->first,free->second)<=range &&
+           map.grid.collisionSegment(Vec{float(x),float(y)}-origin,Vec{float(free->first),float(free->second)}-origin,0x804)) return free;
+    }
+    return {};
+}
+bool RemoteScene::Impl::displayPd2MonsterCharge(const OnlineUnit &u,Motion &m,const Map &map,Vec origin) {
+    if(!combatBinding || !u.actionSkill || onlineMonsterCorpse(u)) {m.scriptedSequence.reset();return false;}
+    if(m.pd2InvalidatedMovement==u.actionRevision) return false;
+    const auto skill=skillRows.find(*u.actionSkill),monster=monsterRows.find(unitClass(u).value_or(UINT16_MAX));
+    if(skill==skillRows.end() || monster==monsterRows.end()) return false;
+    const auto pose=monsterSkillMode(monster->second,*u.actionSkill);
+    const auto sequence=monsterSequenceFlags.find(pose);
+    const bool sequenced=sequence!=monsterSequenceFlags.end() && !sequence->second.empty();
+    const auto clock=monsterChargeTimings.find({*unitClass(u),pose});
+    const auto properties=combatBinding->monsterPropertyStats(u);
+    const auto snapshot=combatBinding->states().find(u.key);
+    if((!sequenced && clock==monsterChargeTimings.end()) || !properties ||
+       snapshot==combatBinding->states().end() || !snapshot->second.decoded || snapshot->second.sequence!=u.stateSequence) return false;
+    const int nativeFrames=sequenced?int(sequence->second.size()):15;
+    const auto stat=[&](int id,int base) {
+        const auto add=[&](const auto &list) {for(const auto &entry:list) if(entry.id==id && !entry.parameter) base=nativeAdd(base,nativeNarrow(entry.value));};
+        add(*properties);for(const auto &[state,list]:snapshot->second.states) {(void)state;add(list.stats);}
+        return base;
+    };
+    const int itemIAS=stat(93,0);if(itemIAS<=-120) return false;
+    const int animationSpeed=sequenced?256:effectiveAttackSpeed(clock->second.speed,itemIAS,0,nativeSubtract(stat(68,100),100));
+    const auto collision=movementRule(u);const auto grid=navigationCollision(map.grid,origin,u.key,u.destinationUnit);
+    auto destination=u.destination?std::optional{Vec{float(u.destination->x),float(u.destination->y)}}:
+        u.destinationUnit?localUnitPosition(*u.destinationUnit):std::nullopt;
+    if(!destination) return false;
+    if(!m.scriptedSequence || m.scriptedSequence->revision!=u.actionRevision) {
+        // Retail Client 4D610 initializes monster rate stats to 100; the
+        // previous walking packet's velocity includes another mode's scaling.
+        const int percent=stat(67,100);
+        const auto speed=monstats.number(monster->second,"Run");if(!speed || *speed<=0) return false;
+        const int raw=nativePercentage(nativeShiftLeft(*speed,8),nativeAdd(skills.number(skill->second,"Param1").value_or(0),std::max(50,percent)),100);
+        Motion::ScriptedSequence run;run.revision=u.actionRevision;run.nativeFrame=true;
+        run.animation.remaining=(sequenced?nativeFrames:clock->second.frames)*256;
+        run.destination=*destination;run.velocity=float(raw)*25.f/4096.f;run.nextTick=time+NativePathStep::seconds;run.moving=true;
+        const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+        if(u.actionReceivedMilliseconds && now>=u.actionReceivedMilliseconds) run.nextTick-=float(now-u.actionReceivedMilliseconds)/1000.f;
+        m.scriptedSequence=std::move(run);m.route.clear();m.goal.reset();m.pathStep.reset();m.correction={};m.correctionLeft=0;
+    }
+    auto &run=*m.scriptedSequence;
+    const int eventFrame=!sequenced || sequence->second.front()?7:-1; // Retail 2B6E0 reads the first MonSeq event byte repeatedly.
+    for(const auto &[id,list]:snapshot->second.states) {(void)id;if(list.name=="freeze") {run.nextTick=time+NativePathStep::seconds;return true;}}
+    const auto inReach=[&](const OnlineUnit &target) {
+        const auto point=localUnitPosition(target.key);
+        return point && unitMeleeReach(grid,m.position-origin,unitSize(u),*point-origin,unitSize(target),monstats.number(monster->second,"MeleeRng").value_or(0));
+    };
+    while(!run.ended && run.nextTick<=time+1e-5f) {
+        run.nextTick+=NativePathStep::seconds;
+        if(run.animation.remaining<=0) {run.ended=true;run.moving=false;break;}
+        if(run.moving) {
+            if(!m.goal || std::floor(m.goal->x)!=std::floor(destination->x) || std::floor(m.goal->y)!=std::floor(destination->y)) {
+                const Vec center{.5f,.5f};m.route.clear();
+                const auto path=grid.nativeUnitPath(m.position-origin+center,*destination-origin+center,2,30,collision,u.destinationUnit.has_value());
+                for(const auto point:path) m.route.push_back(point+origin-center);
+                m.goal=*destination;m.pathStep.reset();
+            }
+            bool contact=false,retargeted=false;
+            if(u.destinationUnit) if(const auto target=world().units.find(*u.destinationUnit);target!=world().units.end()) contact=inReach(target->second);
+            bool stopped=m.route.empty();
+            if(!contact && !stopped) {
+                const Vec center{.5f,.5f},next=m.route.front();m.look=next-m.position;
+                const auto step=m.pathStep.advance(grid,m.position+center,next+center,run.velocity*NativePathStep::seconds,collision,origin);
+                m.position=step.position-center;if(step.blocked) m.route.clear();else if(step.reached) m.route.pop_front();
+                stopped=m.route.empty();
+                if(u.destinationUnit) if(const auto target=world().units.find(*u.destinationUnit);target!=world().units.end()) contact=inReach(target->second);
+            }
+            if(stopped && !contact) {
+                // Native 2B680/ A09F0 selects a GUID successor in range3,
+                // then tests melee reach; it does not choose nearest distance.
+                std::vector<EntityId> candidates;
+                for(const auto &[key,target]:world().units) if(combatBinding->pd2ChargeTargetEligible(u,target)) {
+                    const auto point=localUnitPosition(key);
+                    if(point && unitCoordinateDistance(int(std::floor(m.position.x)),int(std::floor(m.position.y)),
+                        int(std::floor(point->x)),int(std::floor(point->y)))<=3 &&
+                       map.grid.collisionSegment(m.position-origin,*point-origin,4)) candidates.push_back(EntityId{key.id});
+                }
+                const auto selected=nativeSkillSuccessor(candidates,uint32_t(run.chargeSearchParameter));
+                for(const auto &[key,target]:world().units) if(key.id==selected.value &&
+                    combatBinding->pd2ChargeTargetEligible(u,target)) {contact=inReach(target);retargeted=contact;break;}
+            }
+            if(contact || stopped) {
+                run.moving=false;run.stopping=true;m.route.clear();m.goal.reset();
+                if(retargeted) run.animation.remaining=nativeFrames*256-(sequenced?run.animation.frame:0);
+                else if(contact) {
+                    run.animation.frame=(run.animation.frame&255)+(eventFrame+1)*256;
+                    run.animation.remaining=nativeFrames*256;
+                } else {
+                    const auto base=monstats.value(monster->second,"BaseId");
+                    if(base!="reanimatedhorde1" && base!="siegebeast1") run.animation.remaining=256;
+                }
+            } else {
+                // Native 2B8A0 reads dwSeqFrame, which is not the ordinary
+                // graphics cursor when MonStats selects A2 instead of SQ.
+                if(sequenced && (run.animation.frame>>8)>=eventFrame) {run.animation.frame&=255;run.animation.remaining=nativeFrames*256;}
+                run.chargeSearchParameter=std::min(run.chargeSearchParameter+1,2);
+            }
+        }
+        const auto step=advanceMonsterAnimation(run.animation,sequenced?nativeFrames:std::max(1,run.animation.remaining>>8),
+            animationSpeed,0,sequenced,sequenced?sequence->second:clock->second.flags);
+        run.event=step.event;
+        if(!sequenced && step.ended) {run.ended=true;run.moving=false;m.route.clear();m.goal.reset();}
+    }
+    return true;
+}
 bool RemoteScene::Impl::displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,const Map &map,Vec origin) {
-    const auto row=localCast?skillRows.find(localCast->command.skill):skillRows.end();
-    if(u.key.type!=0 || u.key.id!=playerId || !localCast || localCast->started<0 ||
+    const bool controlled=u.key.id==playerId;
+    const bool local=controlled && localCast && localCast->started>=0;
+    const auto skill=local?std::optional<int>{localCast->command.skill}:!controlled && u.actionSkill?std::optional<int>{*u.actionSkill}:std::nullopt;
+    const auto row=skill?skillRows.find(*skill):skillRows.end();
+    if(u.key.type!=0 || !skill ||
        row==skillRows.end() || skills.number(row->second,"cltdofunc")!=112 || playerDead(u)) {
-        if(!localCast && m.pd2PlayerCharge && m.pd2PlayerCharge->confirmed && m.pd2PlayerCharge->attackAt>=0 &&
-           (!world().movementRequest || world().movementRequest->revision<=m.pd2PlayerCharge->revision)) {
+        if(m.pd2PlayerCharge && m.pd2PlayerCharge->confirmed && m.pd2PlayerCharge->attackAt>=0 &&
+           (!controlled || (!localCast && (!world().movementRequest || world().movementRequest->revision<=m.pd2PlayerCharge->revision)))) {
             // The last native stop sample can follow skill_move removal.
             // Reconcile it before discarding the skill's path ownership;
             // the old walk handoff must not classify it as a lagging walk.
@@ -132,16 +293,21 @@ bool RemoteScene::Impl::displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,con
     // CltSt57 computes the owner's path immediately. Waiting for the
     // server state first adds a round trip and ends short of native contact.
     // Near-target CltSt57 falls back to the ordinary melee action instead.
-    if(!travelling && !m.pd2PlayerCharge && std::isfinite(localCast->duration)) return false;
-    const auto target=localCast->command.target;
+    if(!travelling && !m.pd2PlayerCharge && (!local || std::isfinite(localCast->duration))) return false;
+    const auto revision=local?localCast->revision:u.actionRevision;
+    if(m.pd2InvalidatedMovement==revision) return false;
+    const auto target=local?localCast->command.target:u.destinationUnit;
     const auto victim=target?world().units.find(*target):world().units.end();
-    const auto point=target?localUnitPosition(*target):std::nullopt;
-    if(victim==world().units.end() || !point) return false;
+    const auto coordinates=local?localCast->command.point:u.destination;
+    const auto point=target?localUnitPosition(*target):coordinates?
+        std::optional{Vec{float(coordinates->x),float(coordinates->y)}}:std::nullopt;
+    if(!point || (target && victim==world().units.end())) return false;
     const auto cls=unitClass(u);
-    const auto &attributes=uiClients->skillFormulaStats();
-    const auto velocity=attributes.find("velocitypercent");
-    const auto timing=uiClients->attackTiming();
-    if(!cls || *cls>=characterRows.size() || velocity==attributes.end() || !timing || timing->itemIAS<=-120) {
+    std::optional<int> velocity,attackRate,itemIAS;
+    if(const auto rates=uiClients->pd2PlayerRates(u.key)) {
+        velocity=rates->velocityPercent;attackRate=rates->attackRate;itemIAS=rates->itemIAS;
+    }
+    if(!cls || *cls>=characterRows.size() || !velocity || !attackRate || !itemIAS || *itemIAS<=-120) {
         effectLimitations.insert("PD2 charge velocity or attack rate unresolved");return false;
     }
     const auto runSpeed=charstats.number(characterRows[*cls],"RunVelocity");
@@ -149,15 +315,12 @@ bool RemoteScene::Impl::displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,con
     // PlayerStats/PlrSave2 initialize stat 67/68 to 100. The projection
     // carries equipment/state/passive contributions, and weapon speed is
     // the equipped weapon's native negative stat 68 contribution.
-    const int base=world().playerAttributes.contains(67)?0:100;
-    const int percent=skills.number(row->second,"Param1").value_or(0)+std::max(50,nativeAdd(base,int(velocity->second)));
+    const int percent=nativeAdd(skills.number(row->second,"Param1").value_or(0),std::max(50,*velocity));
     const float speed=float(nativePercentage(nativeShiftLeft(*runSpeed,8),percent,100))*25.f/4096.f;
-    if(!m.pd2PlayerCharge || m.pd2PlayerCharge->revision!=localCast->revision) {
-        const int attack=std::min(256,nativeAdd(nativeSubtract(nativeAdd(100,
-            nativeAdd(effectiveFasterRate(timing->itemIAS),timing->skillRate)),timing->weaponSpeed),
-            skills.number(row->second,"Param6").value_or(0)));
+    if(!m.pd2PlayerCharge || m.pd2PlayerCharge->revision!=revision) {
+        const int attack=std::min(256,nativeAdd(nativeAdd(effectiveFasterRate(*itemIAS),*attackRate),skills.number(row->second,"Param6").value_or(0)));
         if(attack<=0) {effectLimitations.insert("PD2 charge nonpositive attack rate");return false;}
-        m.pd2PlayerCharge=Motion::Pd2PlayerCharge{localCast->revision,time+NativePathStep::seconds,-1,attack};
+        m.pd2PlayerCharge=Motion::Pd2PlayerCharge{revision,time+NativePathStep::seconds,-1,attack};
         m.route.clear();m.goal.reset();m.pathStep.reset();m.correction={};m.correctionLeft=0;
     }
     auto &charge=*m.pd2PlayerCharge;
@@ -173,29 +336,34 @@ bool RemoteScene::Impl::displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,con
         m.pathMoving=false;return true;
     }
     const auto grid=navigationCollision(map.grid,origin,u.key,target);
-    int reach=0;
+    std::array<std::optional<int>,2> weaponReach;
     for(const auto &[id,item]:world().items) {
-        (void)id;if(item.ownerType!=0 || item.owner!=u.key.id || item.mode!=1 || item.body!=4 || (item.flags&0x4100u)) continue;
+        (void)id;if(item.ownerType!=0 || item.owner!=u.key.id || item.mode!=1 ||
+            (item.body!=4 && item.body!=5) || (item.flags&0x4100u)) continue;
         for(size_t weapon=0;weapon<weapons.rows().size();++weapon)
-            if(weapons.value(weapon,"code")==item.code) reach=weapons.number(weapon,"rangeadder").value_or(0);
+            if(weapons.value(weapon,"code")==item.code) weaponReach[size_t(item.body-4)]=weapons.number(weapon,"rangeadder").value_or(0);
     }
-    const auto inReach=[&] {return playerMeleeReach(grid,m.position-origin,*point-origin,unitSize(victim->second),reach+(walking(victim->second)?1:0));};
+    const int reach=weaponReach[0].value_or(weaponReach[1].value_or(0));
+    const auto inReach=[&] {return victim!=world().units.end() &&
+        playerMeleeReach(grid,m.position-origin,*point-origin,unitSize(victim->second),reach+(walking(victim->second)?1:0));};
+    const auto victimDead=[&] {return victim!=world().units.end() &&
+        (onlineMonsterCorpse(victim->second) || playerDead(victim->second));};
     const auto finish=[&](bool attack) {
         m.route.clear();m.goal.reset();m.pathMoving=false;charge.attackAt=time;
-        localCast->duration=time-localCast->started+(attack?float((7*256+charge.attackSpeed-1)/charge.attackSpeed)/25.f:1.f/25.f);
+        if(local) localCast->duration=time-localCast->started+(attack?float((7*256+charge.attackSpeed-1)/charge.attackSpeed)/25.f:1.f/25.f);
     };
-    if((charge.confirmed && !travelling) || onlineMonsterCorpse(victim->second) || playerDead(victim->second)) {
+    if((charge.confirmed && !travelling) || victimDead()) {
         if(!travelling) {
             const Vec displayed=m.position+m.correction;
             m.position={float(u.position->x),float(u.position->y)};
             m.correction=displayed-m.position;m.correctionLeft=.12f;
         }
-        finish(!onlineMonsterCorpse(victim->second) && !playerDead(victim->second) && inReach());return true;
+        finish(!victimDead() && inReach());return true;
     }
     if(inReach()) {finish(true);return true;}
     const Vec center{.5f,.5f};
     if(!m.goal || std::floor(m.goal->x)!=std::floor(point->x) || std::floor(m.goal->y)!=std::floor(point->y)) {
-        auto route=grid.nativePlayerPath(m.position-origin+center,*point-origin+center,playerMovement,target->type);
+        auto route=grid.nativeUnitPath(m.position-origin+center,*point-origin+center,7,100,playerMovement,target.has_value());
         m.route.clear();for(auto cell:route) m.route.push_back(cell+origin-center);
         m.goal=*point;m.pathStep.reset();
     }
@@ -213,11 +381,22 @@ bool RemoteScene::Impl::displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,con
 }
 
 bool RemoteScene::Impl::displayPd2PlayerLeap(const OnlineUnit &u,Motion &m,const Map &map,Vec origin) {
-    const auto row=localCast?skillRows.find(localCast->command.skill):skillRows.end();
-    if(u.key.type!=0 || u.key.id!=playerId || !localCast || localCast->started<0 ||
+    const bool controlled=u.key.id==playerId;
+    const bool local=controlled && localCast && localCast->started>=0;
+    const auto skill=local?std::optional<int>{localCast->command.skill}:
+        !controlled && u.actionSkill?std::optional<int>{*u.actionSkill}:
+        !controlled && m.pd2PlayerLeap && m.pd2PlayerLeap->revision==u.actionRevision?
+            std::optional<int>{m.pd2PlayerLeap->skill}:std::nullopt;
+    const auto row=skill?skillRows.find(*skill):skillRows.end();
+    if(u.key.type!=0 || !skill ||
        row==skillRows.end() || skills.number(row->second,"cltdofunc")!=97 || playerDead(u)) {
         m.pd2PlayerLeap.reset();return false;
     }
+    const auto revision=local?localCast->revision:!u.actionSkill && m.pd2PlayerLeap?m.pd2PlayerLeap->revision:u.actionRevision;
+    if(m.pd2InvalidatedMovement==revision) return false;
+    const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    const float age=u.actionReceivedMilliseconds && now>=u.actionReceivedMilliseconds?float(now-u.actionReceivedMilliseconds)/1000.f:0.f;
+    const float started=local?localCast->started:m.pd2PlayerLeap && m.pd2PlayerLeap->revision==revision?m.pd2PlayerLeap->started:time-age;
     const auto snapshot=combatBinding->states().find(u.key);
     if(snapshot==combatBinding->states().end() || !snapshot->second.decoded || snapshot->second.sequence!=u.stateSequence)
         return false;
@@ -227,50 +406,39 @@ bool RemoteScene::Impl::displayPd2PlayerLeap(const OnlineUnit &u,Motion &m,const
         if(state!=stateRows.end() && states.value(state->second,"state")=="skill_move") flying=true;
     }
     // The server's movement-state removal can precede the final position
-    // packet. A confirmed local flight still owns its native arc/landing.
+    // packet. A confirmed flight still owns its native arc/landing.
     if(!flying && !m.pd2PlayerLeap) return false;
-    if(m.leapRevision==localCast->revision && m.leapLanding>=0) return false;
+    if(m.leapRevision==revision && m.leapLanding>=0) return false;
     const auto sequence=playerCastSequence(skills.number(row->second,"seqnum").value_or(-1));
     if(!sequence || sequence->fixedSpeed<=0 ||
-       time<localCast->started+float(playerCastSequenceTiming(*sequence,sequence->fixedSpeed).impact)/25.f)
+       time<started+float(playerCastSequenceTiming(*sequence,sequence->fixedSpeed).impact)/25.f)
         return false;
-    if(!m.pd2PlayerLeap || m.pd2PlayerLeap->revision!=localCast->revision) {
-        auto destination=localCast->command.point;
-        if(localCast->command.target) destination=targetPosition(*localCast->command.target);
-        const auto rank=world().playerSkills.find(localCast->command.skill);
-        if(!destination || rank==world().playerSkills.end()) return false;
-        const auto range=skillCalculation(localCast->command.skill,rank->second,"aurarangecalc",u.key);
-        const auto speed=skillCalculation(localCast->command.skill,rank->second,"calc2",u.key);
+    if(!m.pd2PlayerLeap || m.pd2PlayerLeap->revision!=revision) {
+        auto destination=local?localCast->command.point:u.destination;
+        const auto target=local?localCast->command.target:u.destinationUnit;
+        if(target) destination=targetPosition(*target);
+        int rank=u.actionSkillLevel.value_or(0);
+        if(local) {
+            const auto *known=uiClients->character().read().skill(*skill,localCast->command.owner);
+            if(!known || !known->effectiveRankKnown) return false;
+            rank=known->effectiveRank;
+        }
+        if(!destination || rank<1) return false;
+        const auto range=skillCalculation(*skill,rank,"aurarangecalc",u.key);
+        const auto speed=skillCalculation(*skill,rank,"calc2",u.key);
         if(!range || !speed || *range<1) {
             effectLimitations.insert("PD2 leap range or velocity unresolved");return false;
         }
         // Retail CltSt29/C66A0 uses the range formula, then three rotated
         // candidates with the original free-coordinate search and 804 ray.
         const int x=int(std::floor(m.position.x)),y=int(std::floor(m.position.y));
-        int tx=destination->x,ty=destination->y;
-        const int distance=std::max(1,unitCoordinateDistance(x,y,tx,ty));
-        if(distance>*range) {tx=x+nativeMultiply(tx-x,*range)/distance;ty=y+nativeMultiply(ty-y,*range)/distance;}
-        const int dx=std::clamp(ty-y,-2,2),dy=std::clamp(x-tx,-2,2);
-        const auto collision=navigationCollision(map.grid,origin,u.key);
-        const auto clear=[&](int column,int line) {
-            // Remote maps use linked native collision rooms. Their absent
-            // cells are FFFF; the self-hosted RoomLayout is not that index.
-            return collision.walkable(Vec{float(column),float(line)}-origin,{0x1c09,unitSize(u)});
-        };
-        std::optional<std::pair<int,int>> landing;
-        for(const auto &[cx,cy]:{std::pair{tx,ty},std::pair{tx+dx,ty+dy},std::pair{tx-dx,ty-dy}}) {
-            const auto free=nativeSpawnCoordinate(cx,cy,50,clear);
-            if(free && unitCoordinateDistance(x,y,free->first,free->second)<=*range &&
-               map.grid.collisionSegment(Vec{float(x),float(y)}-origin,Vec{float(free->first),float(free->second)}-origin,0x804)) {
-                landing=free;break;
-            }
-        }
+        const auto landing=findPd2LeapLanding(u,m.position,Vec{float(destination->x),float(destination->y)},*range,map,origin);
         if(!landing) {effectLimitations.insert("PD2 leap landing unavailable");return false;}
         // CN CltDo97: Calc2*41+2560, with the native minimum of 2560.
         const int velocity=std::max(2560,nativeAdd(nativeMultiply(*speed,41),2560));
         const int travel=std::max(1,unitCoordinateDistance(x,y,landing->first,landing->second));
         int frames=travel*16/(velocity>>8);if(frames>1) --frames;frames=std::max(1,frames);
-        Motion::Pd2PlayerLeap run;run.revision=localCast->revision;run.position=m.position;
+        Motion::Pd2PlayerLeap run;run.revision=revision;run.position=m.position;run.skill=*skill;run.started=started;
         run.destination={float(landing->first),float(landing->second)};
         run.velocity=float(velocity)*25.f/4096.f;run.nextTick=time+NativePathStep::seconds;
         // Retail C65B0/C7C80: distance-dependent gravity and zero initial
@@ -278,7 +446,7 @@ bool RemoteScene::Impl::displayPd2PlayerLeap(const OnlineUnit &u,Motion &m,const
         const int gravity=std::max(500,travel<27?8462-270*travel:1224-72*travel);
         run.graphics.flags=2;run.graphics.remaining=frames;run.graphics.acceleration[2]=-gravity;
         run.graphics.velocity[2]=nativeDivide(nativeMultiply(nativeMultiply(frames,frames),gravity)/2,frames);
-        m.pd2PlayerLeap=std::move(run);m.leapRevision=localCast->revision;m.leapFlying=true;m.leapLanding=-1;
+        m.pd2PlayerLeap=std::move(run);m.leapRevision=revision;m.leapFlying=true;m.leapLanding=-1;
         m.route.clear();m.goal.reset();m.correction={};m.correctionLeft=0;m.pathStep.reset();
     }
     auto &run=*m.pd2PlayerLeap;

@@ -327,7 +327,8 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         if(change.kind==ItemChangeKind::ChargeChanged) {
             const auto &item=state.inventory.items.at(change.item);std::optional<uint32_t> value;
             const auto locate=[&](const auto &list){for(const auto &stat:list) if(stat.id==204 && unsigned(stat.parameter)==change.statParameter) {if(value) throw std::logic_error("Ambiguous charge layer");value=uint32_t(stat.value);}};
-            locate(item.savedStats);locate(item.runewordStats);for(const auto &list:item.savedSetStats) locate(list);
+            if(change.statValue) value=uint32_t(*change.statValue);
+            else {locate(item.savedStats);locate(item.runewordStats);for(const auto &list:item.savedSetStats) locate(list);}
             if(!value || change.statParameter>UINT16_MAX) throw std::logic_error("Missing charge delta");
             result.push_back(itemStat(item.id,204,*value,uint16_t(change.statParameter)));continue;
         }

@@ -114,6 +114,15 @@ void System::edited(PlayerId id,uint64_t tick,bool removedOffer) noexcept {
         return;
     }
 }
+void System::refreshItem(PlayerId id,transactions::InventoryEdit &change) const {
+    const auto *exchange=find(id);if(!exchange || !exchange->open) return;
+    const auto &own=offer(*exchange,id);
+    const auto &player=*ports_.players.find(id);
+    auto projection=mirrors(player,own,change);
+    if(!projection.removed.empty() || !projection.projection.inventory.items.empty())
+        change.directed.push_back({other(*exchange,id).player,{std::move(projection)}});
+    change.playerTrade=true;
+}
 DomainResult<> System::execute(const ActorContext &actor,const Request &request) {
     const auto *p=ports_.players.find(actor.player); const auto *area=ports_.areas.find(actor.area);
     if (!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !area || area->generation!=actor.areaGeneration)
@@ -287,7 +296,12 @@ DomainResult<> System::cancelFor(PlayerId id,uint64_t tick) {
             for (auto &[key,item] : change.inventory.items) {
                 const auto current=p.persistent.inventory.items.find(key);
                 if(current==p.persistent.inventory.items.end() || current->second.revision==UINT64_MAX) return {DomainStatus::Stale,{}};
-                if(current->second.location==item.location) { item.revision=current->second.revision; continue; }
+                if(current->second.location==item.location) {
+                    if(current->second.revision==item.revision) continue;
+                    item.revision=current->second.revision+1;
+                    change.changes.push_back({key,item.revision,ItemChangeKind::PropertiesChanged,current->second.location,item.location,item.quantity});
+                    continue;
+                }
                 item.revision=current->second.revision+1;
                 change.changes.push_back({key,item.revision,ItemChangeKind::Moved,current->second.location,item.location,item.quantity});
             }
@@ -298,6 +312,14 @@ DomainResult<> System::cancelFor(PlayerId id,uint64_t tick) {
         }
         auto prepared=ports_.transactions.prepareGroup(std::move(changesToPrepare));if(!prepared) return {prepared.status,{}};
         const auto result=ports_.transactions.commitInventories(std::move(*prepared.value)); if(!result) return result;
+        // Native sub_6FC90AE0 removes the live inventory before loading its
+        // saved copy. Its item events disappear with those units. Our GUIDs
+        // survive rollback, so explicitly discard their old runtime clocks.
+        for(const auto *own:{&e.first,&e.second}) {
+            const auto *player=ports_.players.find(own->player);
+            if(player && player->rules.character->stats->pd2)
+                for(const auto &[id,item]:own->original.items) {(void)item;ports_.items.clearRestoration(id);}
+        }
     }
     state_.cooldown.swap(cooldown); state_.exchanges.erase(e.transaction); return applied();
 }

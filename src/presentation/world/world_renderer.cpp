@@ -176,7 +176,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         items.push_back(entry);
     }
     for (const auto &effect : clientMissiles_) {
-        if (effect.age < 0 || effect.hiddenUntilCurrentFrame) continue;
+        if (effect.age < 0 || effect.initialHidden || effect.hiddenUntilCurrentFrame) continue;
         WorldDrawItem entry; entry.missile = effect.missileId;
         entry.suppressMissileLight=effect.suppressLight;
         entry.position = clientMissilePosition(effect, map.grid, scene.terrainOrigin) - scene.terrainOrigin;
@@ -314,7 +314,7 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
     if (found == assets_.projectileAnimations.end()) return;
     const auto &animation = found->second;
     const auto visual = assets_.projectileVisuals.at(id);
-    if (age * 25.f + .00001f < visual.initSteps) return;
+    if (!nativeFrame && age * 25.f + .00001f < visual.initSteps) return;
     const int frames = visual.frames > 0 ? std::min(animation.count, visual.frames) : animation.count;
     if (frames <= 0) return;
     int frame = nativeFrame.value_or(int(age * visual.fps + .00001f));

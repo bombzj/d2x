@@ -41,6 +41,10 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             monster.modeAlive && !monster.maximumLife?uint8_t{128}:monsterLifeRatio(monster.life,monster.maximumLife),
             mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monsters::movementPercent(monster,tick), monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
         result.back().equipment=monster.equipment;
+        if(monster.birthProperties) for(const auto &[stat,value]:monster.birthProperties->base) {
+            if(result.back().assignmentStats.size()==16) break;
+            result.back().assignmentStats.emplace_back(stat,value);
+        }
         result.back().pathSteps=std::max(uint8_t{1},monster.pathSteps);
         result.back().pathType=monster.pathType;result.back().pathDistance=monster.pathDistance;
         result.back().hostile=monster.enemyTarget();

@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <map>
 
 namespace d2x {
@@ -21,6 +22,7 @@ struct ClassicData;
 struct OnlineSceneView;
 struct OnlineUnitKey;
 struct UnitLightAttributes { int32_t radiusModifier{}; uint32_t color{}; };
+struct Pd2PlayerRates { int velocityPercent{},attackRate{},itemIAS{}; };
 class RemoteInventory;
 class RemoteCombat;
 class RemoteControl;
@@ -40,6 +42,7 @@ class RemoteUiClients {
     IActorClient &actor();
     IInventoryClient &inventory();
     ICharacterClient &character();
+    const ICharacterClient &character() const;
     INpcClient &npc();
     IQuestClient &quests();
     IMapClient &map();
@@ -52,5 +55,7 @@ class RemoteUiClients {
     std::optional<UnitLightAttributes> light(OnlineUnitKey) const;
     std::optional<MovementTiming> movement(OnlineUnitKey,bool running) const;
     std::optional<KnownAttackTiming> attackTiming() const;
+    std::optional<Pd2PlayerRates> pd2PlayerRates(OnlineUnitKey) const;
+    std::optional<int32_t> pd2ObservedStat(OnlineUnitKey,std::string_view) const;
 };
 }

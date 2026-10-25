@@ -6,6 +6,7 @@
 #include "gameplay/combat/weapon_values.hpp"
 #include "server/runtime/prepared_rules.hpp"
 #include "gameplay/monsters/components.hpp"
+#include "gameplay/items/replenishment.hpp"
 #include <vector>
 #include <memory>
 namespace d2x::server::companions {
@@ -32,6 +33,7 @@ struct Prepared {
     size_t allocatedEquipment{};
     std::optional<uint64_t> ownerRandom;
     std::optional<std::map<int,MonsterComponentPalette>> componentPalettes;
+    std::optional<ItemRestoration> materialRestoration;
 };
 inline bool sameHirelingIdentity(const HirelingRecord &current,const HirelingRecord &prepared) {
     return current.sourceRow==prepared.sourceRow && current.level==prepared.level && current.classId==prepared.classId &&

@@ -43,6 +43,9 @@ void NativeRealmHost::advance(double seconds) {
     // Resource preparation never occupies the simulation scheduler. Consume
     // only the oldest request per game so completion timing cannot reorder IDs.
     for (auto &[game, areas] : terrain) {
+        // Failed unpublished map openings retire authority before the host's
+        // decoded terrain. Never leave an old map occupying a future handoff.
+        std::erase_if(areas,[&](const auto &entry){return !host.areaMetadata(game,entry.first);});
         preparePendingLoot(host, game, archives, *content, lootContent);
         prepareMerchant(host, game, *content);
         prepareCrafting(host, game, *content);

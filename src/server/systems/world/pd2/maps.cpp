@@ -1,18 +1,32 @@
 #include "../system.hpp"
 #include "gameplay/maps/pd2/definition.hpp"
+#include "server/player_store.hpp"
 #include <algorithm>
 
 namespace d2x::server::world {
 bool System::cancelPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &map) {
     if(!map) return false;
-    // A materialized DRLG has shared room/tile state and cannot be erased as
-    // if it were an async job. Only cancel an instance not installed anywhere.
+    std::vector<RegionId> regions;
     for(const auto &[id,area]:ports_.areas.all()) {
-        (void)id;if(area.definition.pd2Map==map) return false;
+        if(area.definition.pd2Map!=map) continue;
+        if(!area.provisionalPd2Map || std::any_of(area.unitHeads.begin(),area.unitHeads.end(),[](EntityId unit){return bool(unit);})) return false;
+        for(const auto &[player,state]:ports_.players.all()) {
+            (void)player;if(state.area==id) return false;
+        }
+        regions.push_back(id);
     }
+    if(!discardPreparedRooms(regions)) return false;
     std::erase_if(state_.preparation,[&](const auto &request){return request.pd2Map==map;});
-    // A failed content handoff must not permanently occupy this map's level.
-    failed_.erase(RegionId(map->destination.level));
+    std::erase_if(failed_,[&](const auto &entry){return entry.second.pd2Map==map;});
+    for(const auto region:regions) {
+        ports_.areas.areas_.erase(region);state_.residency.erase(region);
+    }
+    if(!regions.empty()) {link();invalidateRooms();refreshRoomTerrain();}
     return true;
+}
+void System::commitPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &map) noexcept {
+    for(auto &[id,area]:ports_.areas.areas_) {
+        (void)id;if(area.definition.pd2Map==map) area.provisionalPd2Map=false;
+    }
 }
 }

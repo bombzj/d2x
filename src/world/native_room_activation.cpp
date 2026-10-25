@@ -163,6 +163,19 @@ bool NativeRoomActivation::retire(size_t room) {
     operations_.release(room);state.active=false;activeRooms_.remove(room);
     return true;
 }
+bool NativeRoomActivation::discardUnreferenced(size_t room) {
+    if(failed_) throw std::runtime_error("Discard failed native room activation session");
+    const auto found=states_.find(room);if(found==states_.end()) return true;
+    const auto &state=found->second;
+    if(state.status<=1 || std::any_of(state.references.begin(),state.references.end(),[](auto count){return count!=0;})) return false;
+    failed_=true;
+    if(state.active) operations_.release(room);
+    activeRooms_.remove(room);
+    for(auto &list:statusRooms_) list.remove(room);
+    if(prefetchCursor_==room) prefetchCursor_.reset();
+    states_.erase(found);failed_=false;
+    return true;
+}
 void NativeRoomActivation::update(uint64_t tick, const std::function<bool(size_t)> &retain) {
     if (side_==Side::Client) {updateDrlg();return;}
     if (failed_) throw std::runtime_error("Discard failed native room activation session");

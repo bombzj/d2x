@@ -61,10 +61,21 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         if (content.profile=="remote-display-txt-v1") program.rules=ClientMissileProgram::Rules::Pd2Cn;
         program.animation={number("animrate"),number("AnimLen"),number("SubStart"),number("SubStop"),number("LoopAnim")!=0,number("SubLoop")!=0};
         program.function = callback("pcltdofunc");
+        if(content.nativeFormulas) {
+            const auto skill=content.nativeFormulas->missiles.at(id).reference("skill");
+            if(!skill.empty()) program.linkedSkill=content.nativeFormulas->skillIds.at(std::string(skill));
+        }
+        else {
+            auto skillName=std::string(table.value(row,"Skill"));
+            for(auto &letter:skillName) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+            const auto skill=content.skills.descriptions->skillIds.find(skillName);
+            if(skill!=content.skills.descriptions->skillIds.end()) program.linkedSkill=skill->second;
+        }
         // Skill CltDo35 supplies the hammer path even without host rules.
         program.blessedHammer=hammerMissiles.contains(id);
         program.localBlood = number("LocalBlood") != 0;
         program.clientSend=number("ClientSend")!=0;
+        program.activationDelay=number("Activate");
         program.deathFlame=table.value(row,"Missile")=="andycolumnfire";
         const auto serverHitFunction=table.value(row,"pSrvHitFunc");
         program.holyBolt=!serverHitFunction.starts_with('*') && number("pSrvHitFunc")==7;

@@ -70,6 +70,9 @@ void preparePd2SkillData(ClassicData &data,Archives &archives) {
         if(!id || !data.skills.skills.contains(*id)) continue;
         auto &record=data.skills.skills.at(*id);
         const int action=table.number(row,"srvdofunc").value_or(0);
+        // Display metadata does not admit every monster ItemEffect as a
+        // player executor. The charged curse uses the existing native Do30.
+        if(record.classCode.empty() && !table.number(row,"general").value_or(0) && action!=30) continue;
         if(!record.passive && (((action==155 || action==156) && !table.number(row,"srvstfunc").value_or(0)) ||
             (action==157 && table.number(row,"srvstfunc")==66))) {
             auto spec=preparePd2SkillDefinition(data,row);spec.effect=SkillBehavior::Teleport;
@@ -269,7 +272,7 @@ void preparePd2SkillData(ClassicData &data,Archives &archives) {
             spec.curse=std::move(debuff);
             record.spell=std::make_shared<const SkillSpec>(std::move(spec));continue;
         }
-        if(!record.passive && !start && action==6) {
+        if(!record.passive && !start && (action==6 || action==30)) {
             auto spec=preparePd2SkillDefinition(data,row);spec.effect=SkillBehavior::Curse;
             CurseSpec debuff;debuff.state=data.states.at(std::string(table.value(row,"auratargetstate"))).definition;
             debuff.targetFilter=table.number(row,"aurafilter").value_or(0);

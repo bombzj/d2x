@@ -94,7 +94,10 @@ SkillMetadata loadSkillEligibilityMetadata(const DataTable &table, size_t row, c
             if (id && *id >= 0) { result.prerequisites.push_back(*id); found = true; }
             break;
         }
-        if (!found) throw std::runtime_error("Invalid original skill prerequisite: " + std::string(name));
+        // Classless item/monster records can retain retired TXT names. The
+        // native linker leaves those at -1; they are not learnable nodes.
+        if (!found && !result.classCode.empty())
+            throw std::runtime_error("Invalid original skill prerequisite: " + std::string(name));
     }
     return result;
 }

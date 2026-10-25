@@ -31,6 +31,7 @@ class System {
     struct NativeLinkPosition {RegionId area;uint64_t generation{};Vec position;std::optional<RoomView> room;};
     std::map<EntityId,NativeLinkPosition> nativeLinks_;
     std::optional<Portal> pd2OpeningPortal_;
+    bool pd2Cancelling_{};
     const AreaObject *waypointAccess(const ActorContext &,EntityId,std::optional<uint64_t> revision = {}) const;
     bool waypointBusy(PlayerId) const;
     StepStatus expireSynchronizations(TickContext);

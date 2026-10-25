@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -31,7 +32,7 @@ class System {
     State state_;
     const Ports ports_;
     uint64_t nextRequest_ = 1;
-    std::map<RegionId, uint64_t> failed_;
+    std::map<RegionId, PrepareArea> failed_;
     struct RoomRuntime;
     std::unique_ptr<RoomRuntime> rooms_;
     std::set<RegionId> openedTombs_;
@@ -45,6 +46,8 @@ class System {
     void refreshRoomTerrain();
     DomainResult<uint64_t> request(RegionId,std::shared_ptr<const pd2::MapInstance> = {});
     bool cancelPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &);
+    void commitPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &) noexcept;
+    bool discardPreparedRooms(std::span<const RegionId>);
     void link();
     void assign(AreaDefinition &);
     void registerAreaUnits(RegionId);

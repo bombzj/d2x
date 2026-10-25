@@ -10,11 +10,23 @@
 #include "server/systems/reactions/pd2/item_events.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/pd2/cast_events.hpp"
+#include "gameplay/skills/assassin_spec.hpp"
 #include <array>
 #include <algorithm>
 #include <cmath>
 
 namespace d2x::server::skills {
+void System::rearmPd2MonsterCastItemEvent(MonsterRelease &pending,size_t previousRelease) {
+    const auto *source=ports_.monsters.find(pending.request.actor);
+    if(!source || !source->rule.stats || !source->rule.stats->pd2 || pending.nativeCallbackStarted) return;
+    // Called after an accepted, continuing Do. Retained kick/flight subphases
+    // and output retries still belong to the same event registration.
+    const bool bladeFury=pending.nativeSkill && pending.nativeSkill->skill.assassin &&
+        pending.nativeSkill->skill.assassin->program==AssassinProgram::BladeFury;
+    const bool trapInferno=source->assassinPet && !source->assassinPet->definition->warp &&
+        source->rule.formulas->skills.at(pending.request.skill).number("srvdofunc")==95;
+    if(bladeFury || trapInferno || pending.nextRelease!=previousRelease) pending.pd2CastEventPosted=false;
+}
 void System::postPd2MonsterCastItemEvent(MonsterRelease &pending,uint64_t tick) {
     if(pending.pd2CastEventPosted) return;
     const auto caster=nativeCaster(ports_.players,ports_.monsters,pending.request.actor);

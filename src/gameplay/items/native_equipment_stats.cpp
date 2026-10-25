@@ -60,9 +60,14 @@ EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &loadout,const 
     // Parameterized PD2 mastery checks the opposite hand. Prepare both
     // identities before deriving either weapon's rating and damage.
     EquipmentStats hands;hands.shield=result.shield;
+    hands.registeredWeapon=input.registeredWeapon;
     for(const auto *item:{right,left}) if(item && loadout.find(item->id).definition->equipment.isType("weap")) {
         auto &hand=hands.weapons[item==left?1:0];hand.item=item->id;hand.leftHand=item==left;
+        const auto &definition=loadout.find(item->id).definition->equipment;
+        hand.types=definition.types;
+        for(const auto &[id,type]:input.formulas.itemTypes) if(definition.isType(type)) hand.typeLayers.push_back(id);
     }
+    if(!hands.registeredWeapon) hands.registeredWeapon=hands.weapons[0].item?hands.weapons[0].item:hands.weapons[1].item;
     const bool dualWield=actor.characterClass=="bar" || actor.characterClass=="ass";
     int count=0;
     for(const auto *item:{right,left}) {
@@ -158,6 +163,7 @@ EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &loadout,const 
         const auto speed=nativeDivide(nativeAdd(result.weapons[0].baseSpeed,result.weapons[1].baseSpeed),2);
         for(auto &weapon:result.weapons) weapon.baseSpeed=speed;
     }
+    result.registeredWeapon=input.registeredWeapon.value_or(result.weapons[0].item);
     if(input.rules.pd2) for(auto &weapon:result.weapons) if(weapon.nativeModifiers && weapon.nativeModifiers->pd2) {
         auto modifiers=*weapon.nativeModifiers;
         applyPd2WeaponParameters(*modifiers.pd2,input.hands.at(weapon.item),input.rules,weapon,&result,input.formulas,

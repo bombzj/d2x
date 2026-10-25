@@ -237,7 +237,10 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         const bool remoteItemSkill = preparation == ContentPreparation::RemoteDisplay &&
             skills.number(row, "srvdofunc") == 113 && skills.number(row, "scroll") == 1 &&
             skills.number(row, "InGame") == 1;
-        if (!requestedCommon.contains(normalized(name)) && !remoteItemSkill) continue;
+        const bool itemEffect=!requestedCommon.contains(normalized(name)) && !remoteItemSkill &&
+            preparation==ContentPreparation::RemoteDisplay && skills.number(row,"InGame")==1 &&
+            skills.number(row,"ItemEffect").value_or(0)>0;
+        if (!requestedCommon.contains(normalized(name)) && !remoteItemSkill && !itemEffect) continue;
         auto description = descriptionsByKey.find(normalized(skills.value(row, "skilldesc")));
         // A missing description cannot supply a visible node or its icon/layout.
         if (preparation == ContentPreparation::RemoteDisplay && description == descriptionsByKey.end()) continue;
@@ -252,8 +255,8 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         entry.iconCell = descriptions.number(description->second, "IconCel").value_or(-1);
         entry.listRow = descriptions.number(description->second, "ListRow").value_or(-1);
         entry.listPool = descriptions.number(description->second, "ListPool").value_or(0);
-        entry.requiredLevel = 1;
-        entry.maximumRank = 1;
+        if(itemEffect && entry.iconCell<0) continue;
+        if(!itemEffect) {entry.requiredLevel=1;entry.maximumRank=1;}
         if (entry.iconCell < 0 || !catalog.skills.emplace(entry.id, std::move(entry)).second ||
             !commonByName.emplace(normalized(name), *id).second)
             throw std::runtime_error("Invalid original common skill");

@@ -177,8 +177,12 @@ void RemoteScene::Impl::plan(Motion &m, Vec goal, const Map &map, Vec origin, Mo
 
 bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,const Map &map,Vec origin,MovementCollisionRule collision) {
     const auto skill=u.actionSkill?skillRows.find(*u.actionSkill):skillRows.end();
+    if(pd2 && u.key.type==1 && skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==37)
+        return displayPd2MonsterCharge(u,m,map,origin);
     const bool whirlwind=skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==45;
-    const bool leap=skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==44;
+    const bool pd2Leap=pd2 && skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==97;
+    if(pd2Leap && m.pd2InvalidatedMovement==u.actionRevision) return false;
+    const bool leap=skill!=skillRows.end() && (skills.number(skill->second,"cltdofunc")==44 || pd2Leap);
     if(u.key.type!=1 || skill==skillRows.end() || (!whirlwind && !leap && skills.number(skill->second,"cltdofunc")!=59) || onlineMonsterCorpse(u)) {
         m.scriptedSequence.reset();return false;
     }
@@ -191,9 +195,16 @@ bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,co
         auto destination=u.destination?std::optional{Vec{float(u.destination->x),float(u.destination->y)}}:
             u.destinationUnit?localUnitPosition(*u.destinationUnit):std::nullopt;
         if(!destination) return false;
-        if(leap) {
+        if(pd2Leap) {
+            if(!u.actionSkillLevel) return false;
+            const auto range=skillCalculation(*u.actionSkill,*u.actionSkillLevel,"aurarangecalc",u.key);
+            if(!range || *range<1) return false;
+            const auto landing=findPd2LeapLanding(u,m.position,*destination,*range,map,origin);
+            if(!landing) return false;
+            destination=Vec{float(landing->first),float(landing->second)};
+        } else if(leap) {
             const int x=int(std::floor(m.position.x)),y=int(std::floor(m.position.y));
-            const int tx=int(std::floor(destination->x)),ty=int(std::floor(destination->y));
+            int tx=int(std::floor(destination->x)),ty=int(std::floor(destination->y));
             const int distance=unitCoordinateDistance(x,y,tx,ty);if(!distance) return false;
             int landingX=tx+2*(tx-x)/distance,landingY=ty+2*(ty-y)/distance;
             std::map<std::pair<int,int>,uint16_t> occupied;
@@ -267,7 +278,13 @@ bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,co
                 if(run.leapFlags&0x100) {
                     const int distance=unitCoordinateDistance(int(std::floor(m.position.x)),int(std::floor(m.position.y)),int(run.destination.x),int(run.destination.y));
                     if(run.leapGraphics && (run.leapGraphics->position[2]>>11)>0 && distance) {
-                        run.animation.frame=(run.animation.frame&255)+(distance<2?12:10)*256;
+                        bool distanceFrame=!pd2Leap || unitClass(u)==991;
+                        if(pd2Leap) {
+                            const auto base=monstats.value(monster->second,"BaseId");
+                            for(const int id:{78,540}) if(const auto row=monsterRows.find(id);row!=monsterRows.end() &&
+                                monstats.value(row->second,"Id")==base) distanceFrame=true;
+                        }
+                        run.animation.frame=(run.animation.frame&255)+(distanceFrame && distance<2?12:10)*256;
                         run.animation.remaining=(run.animation.remaining&~255)+256;
                     } else {
                         run.leapGraphics.reset();run.moving=false;m.route.clear();m.goal.reset();
@@ -386,8 +403,14 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     } else if (m.discontinuity != u.positionDiscontinuity) {
         m.position = target; m.correction = {}; m.correctionLeft = 0;
         m.route.clear(); m.samples.clear(); m.goal.reset(); m.pathMoving = false;
+        if(pd2) {
+            m.pd2InvalidatedMovement=own && localCast?localCast->revision:u.actionRevision;
+            if(own && localCast && (m.pd2PlayerLeap || m.pd2PlayerCharge)) localCast.reset();
+            m.pd2PlayerLeap.reset();m.pd2PlayerCharge.reset();m.scriptedSequence.reset();
+            m.leapFlying=false;m.leapLanding=-1;
+        }
         m.castHandoff.reset();
-        if (beginCast) m.castRevision = localCast->revision;
+        if (beginCast && localCast) m.castRevision = localCast->revision;
         if (request) m.invalidatedRequest = request->revision;
         activeRequest = false;
     } else if (own && !request && m.requestRevision && !beginCast) {

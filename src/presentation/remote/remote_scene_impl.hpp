@@ -93,6 +93,7 @@ struct RemoteScene::Impl {
     struct Motion {
         struct Pd2PlayerLeap {
             uint64_t revision{};
+            int skill{-1};float started{};
             Vec position,destination;
             float velocity{},nextTick{};
             NativePathStep path;
@@ -106,13 +107,15 @@ struct RemoteScene::Impl {
             bool confirmed{};
         };
         std::optional<Pd2PlayerCharge> pd2PlayerCharge;
+        uint64_t pd2InvalidatedMovement{};
         struct ScriptedSequence {
             MonsterAnimationCursor animation;
             uint8_t event{};
             uint64_t revision{};
             float nextTick{},velocity{};
             Vec destination;
-            bool moving{},ended{},stopping{};
+            bool moving{},ended{},stopping{},nativeFrame{};
+            int chargeSearchParameter{};
             uint16_t leapFlags{0x1080};
             std::optional<ClientMissileGraphics> leapGraphics;
         };
@@ -229,6 +232,7 @@ struct RemoteScene::Impl {
     std::map<std::pair<int,int>,std::string> hirelingSkillModes;
     std::map<std::string, size_t, std::less<>> monsterExtra;
     std::map<std::string,std::vector<uint8_t>,std::less<>> monsterSequenceFlags;
+    std::map<std::pair<int,std::string>,MonsterMotionTiming> monsterChargeTimings;
     struct MonsterIdentity { bool champion{},unique{},minion{},ghostly{}; std::optional<uint16_t> superUnique; uint16_t nameSeed{}; std::vector<uint8_t> modifiers; };
     std::map<OnlineUnitKey,MonsterIdentity> monsterIdentities;
     std::map<OnlineUnitKey,std::pair<int,bool>> monsterTransforms;
@@ -298,7 +302,10 @@ struct RemoteScene::Impl {
               const OnlineUnit &unit, std::optional<OnlineUnitKey> target={});
     bool displayScriptedSequence(const OnlineUnit &u,Motion &m,const Map &map,Vec origin,MovementCollisionRule collision);
     bool displayPd2PlayerLeap(const OnlineUnit &u,Motion &m,const Map &map,Vec origin);
+    std::optional<std::pair<int,int>> findPd2LeapLanding(const OnlineUnit &,Vec start,Vec target,int range,const Map &,Vec origin) const;
     bool displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,const Map &map,Vec origin);
+    bool displayPd2MonsterCharge(const OnlineUnit &,Motion &,const Map &,Vec origin);
+    std::optional<int32_t> pd2ReplicaFormulaStat(OnlineUnitKey,std::string_view) const;
     Vec displayPosition(const OnlineUnit &u, const Map &map, OnlinePoint mapOrigin,const RemoteUiClients &clients);
     std::string monsterSkillMode(size_t monster, uint16_t skill) const;
     std::pair<std::string,std::string> monsterCaption(const OnlineUnit &unit, bool includeResistances = false) const;

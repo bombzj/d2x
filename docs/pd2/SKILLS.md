@@ -59,11 +59,11 @@ ProjectDiablo核心的技能CltDo／渐进回调及喷流程序同时用于`pd2-
 
 环形 helper 旧版 0x369AF0／更新版 0x36BBC0 使用64项原整数方向，数量为0或大于64时取64，否则步进为整数 `64/count`，不是浮点均分圆周。因此请求6实际生成7条。数量、弹体与半径继续来自当前 MPQ／公式；显示公式走公共只读目录，不准备自研宿主的 PD2 规则。以上发射入口尚未完成全部施放／像素验收，弹体自身的 CltDo／CltHit 仍可能未支持，不能将发射入口接入等同于完整技能完成。
 
-当前MPQ的直接CltDo调用者须与程序表区分：83的新增皇家火分支用于568／574；109用于453PoisonEggSpawn；114用于575LucionDash，归特殊首领范围。108／115目前没有Skills直接引用，不据此臆造普通职业入口，也不排除间接程序调用。83的零售渐进委托仍必须保留。普通97／112的非本人角色位移显示仍待核对；94的LobSkill分支是未覆盖边界，不能把本人Leap／Charge预测或线性弹体接入推广为全部客户端组合完成。
+当前MPQ的直接CltDo调用者须与程序表区分：83的新增皇家火分支用于568／574；109用于453PoisonEggSpawn；114用于575LucionDash，归特殊首领范围。108／115目前没有Skills直接引用，不据此臆造普通职业入口，也不排除间接程序调用。83的零售渐进委托仍必须保留。普通97已接本人、非本人及怪物序列；112已补地面目标并保留非本人真实属性门槛；94的LobSkill分支是未覆盖边界，不能把本人Leap／Charge预测或线性弹体接入推广为全部客户端组合完成。
 
 当前Clt94唯一直接调用者为335DoomKnightMissile，lob为空。当前3A8CF0在Skills+4的bit1分流：置位委托39F1D0抛物线创建，否则委托39F1B0；现有普通发射分支对应后者，不能将未覆盖的LobSkill写成当前335缺必需弹道。配套Client A1540的坐标距离门槛比较平方距离10000，沿用现有非零目标坐标与平方距离检查。材料为`town-queries/gap-clt94`，其他单位、隐式调用和像素表现仍未认证。
 
-隐藏佣兵技能的服务端执行不补足客户端未知属性：第四幕佣兵Bone Spear84的CltDo17仍读取当前Calc1中的extra_bonespears；当公开单位／装备／状态没有提供该属性时，当前显示公式明确不可用，不借用主人的数值，也不把缺失事实当成零。该输入投影属于普通伙伴表现的剩余缺口；服务端弹数由实际佣兵公式独立结算。
+隐藏佣兵技能的客户端输入按原客户端自身副本求值：第四幕佣兵Bone Spear84的CltDo17读取Calc1中的extra_bonespears，该扩展属性没有原版怪物构造器初值，使用零初始化加本单位已收到的MonProp／状态列表。服务端0xAC现按原SCmd发送MonProp基础列表的前16条再筛Send Other；客户端独立解码尾部，未知／损坏列表仍拒绝求值，不借用主人或隐藏服务端装备。原生未发出的材料装备值不能当作他人可见属性；服务端弹数仍由实际佣兵公式独立结算。
 
 ### 皇家火CltDo83
 
@@ -89,7 +89,7 @@ ProjectDiablo核心的技能CltDo／渐进回调及喷流程序同时用于`pd2-
 
 `presentation/world/client_missile_view.cpp`已补该公共回调及每弹的上一帧换格记忆，复用当前SEED、飞弹创建、固定寿命和suppressLight输入；原先移动后只生第一种子弹的路径已移除。当前981有982／firesmall／firemedium三个候选，CltParam1=4；997仅998，仍抽光照门控，998寿命20后由CltHit53生999。`CelFile=null`早已有imageLessProjectiles消费者，997无需补图或替换原图；空文件和真正缺资源继续不可用。
 
-CltHit53为原Client B5A10，读取CltHitSubMissile1与父路径首点，再把cHitPar1／2／3传入子图形的弹跳／初始轨迹；当前998三项均零。服务端原Do6及Hit48分别见D2MOO MissMode的对应回调，并以配套Game为后续核对入口。指令材料为`town-queries/gap-royal-fire/client-b92b0-instructions.json`及`client-b5a10-instructions.json`；InitSteps在B3535设置初始隐藏标志，B1862按原生经过帧数解除，并非预先移动；其显示边界、首路径点在路径耗尽时的保存仍未闭合、原视觉种子初态、完整同帧交错及逐像素表现，不能据此把两端整条技能标为完成。
+CltHit53为原Client B5A10，读取CltHitSubMissile1与父DynamicPath目标坐标（+0x10／+0x12；配套Common10983／10764），再把cHitPar1／2／3传入子图形的弹跳／初始轨迹；当前998三项均零。服务端原Do6及Hit48分别见D2MOO MissMode的对应回调，并以配套Game为后续核对入口。指令材料为`town-queries/gap-royal-fire/client-b92b0-instructions.json`及`client-b5a10-instructions.json`；InitSteps在B3535设置初始隐藏标志，B1862按原生经过帧数解除，并非预先移动；客户端已保存绝对路径目标而非用移动后的当前位置加旧方向，避免子体偏移；“首路径点”是原反编译命名误导，实际不是PathPoints[0]。InitSteps初始隐藏只约束绘制，只有激活且原生经过帧严格大于InitSteps才解除；B195C之后的原碰撞分支不读取隐藏位，因此隐藏不能额外屏蔽地形／单位接触。绘制不再以动画年龄重复裁剪，接触独立保留原激活门控。原视觉种子初态、完整同帧交错及逐像素表现仍需原生对照，本轮修改待最终统一构建实测。
 
 ### PoisonEggSpawn的双端委托
 
@@ -103,7 +103,7 @@ CltHit53为原Client B5A10，读取CltHitSubMissile1与父路径首点，再把c
 
 渐进事件0xA3现接106／107：旧0x3A6FD0／0x3A7130，更新0x3A9490／0x3A95F0。阶段由原事件与PrgStack重放，按阶段选择CltMissileA/B/C和CltCalc1–3；106从施法者向目标处的整数扇形发射，107以目标为圆心按64项整数方向发射。当前表对应Fists of Fire第二／三阶段及Cobra Strike第一／三阶段，不能只接普通CltDo入口。106保留原do-while至少一次，107的零或大于64数量取64。弹体选择旧39E3B0最终绑定1.13c D2Client RVA40550，读取AuraState/AuraStat1并将弹体槽阶段限至1–3；原事件阶段重放不依赖较新的累计状态。扇形helper旧379710／新37B960以施法者减目标，围绕目标生成端点；平方距离小于4时原指令把deltaY替换为此前平方距离，不能照搬普通扇形。纯几何入口为pd2MissileFanLayout，未改变原版missileFanTargets。
 
-83替换旧3A6720仅在Skills.CltDoFunc本身为83时走专用路径，否则转回原回调；因此Blades of Ice／Royal Strike的渐进83仍沿原路径，不可整体屏蔽。83专用分支已接下述皇家火发射，109已接毒虫卵委托；108／114–115仍未完整恢复，当前MPQ直接调用范围见上段；94已有普通发射消费者，其他变体待核对。本人97／112路径已接入，其他单位与组合仍待核对。97／112／114还读原技能运行标志和路径阶段。
+83替换旧3A6720仅在Skills.CltDoFunc本身为83时走专用路径，否则转回原回调；因此Blades of Ice／Royal Strike的渐进83仍沿原路径，不可整体屏蔽。83专用分支已接下述皇家火发射，109已接毒虫卵委托；108／114–115仍未完整恢复，当前MPQ直接调用范围见上段；94已有普通发射消费者，其他变体待核对。97已接本人、其他玩家及怪物；112接本人及其他玩家，怪物原Clt37另有消费者，不能将三者共用同一速度或序列。114属于M04的Lucion专用控制链。
 
 ### 尸体血迹与Sacrifice表现
 
@@ -111,7 +111,7 @@ CltHit53为原Client B5A10，读取CltHitSubMissile1与父路径首点，再把c
 
 ### 跳跃表现
 
-本人Leap未收到4C时使用当前skill_move确认起飞，按序列13第5帧释放。97旧3A6930读取Calc2，速度为max(2560,Calc2×41+2560)；原1.13c D2Client C66A0依AuraRangeCalc及三个旋转候选找落点，C65B0确定距离相关帧数／重力，C7C80设置高度与竖直速度。客户端复用原碰撞、25Hz路径和图形累加器；状态先移除而末端坐标尚未到达时，已确认的飞行仍完成原弧线。非本人／怪物97、全部障碍与装备组合仍待恢复或认证。未确认的预测沿既有15秒预算回收。
+本人Leap未收到4C时使用当前skill_move确认起飞，按序列13第5帧释放。97旧3A6930读取Calc2，速度为max(2560,Calc2×41+2560)；原1.13c D2Client C66A0依AuraRangeCalc及三个旋转候选找落点，C65B0确定距离相关帧数／重力，C7C80设置高度与竖直速度。客户端复用原碰撞、25Hz路径和图形累加器；状态先移除而末端坐标尚未到达时，已确认的飞行仍完成原弧线。非本人玩家已接同一程序，使用4C／4D实际技能、等级、目标和接收时刻及该玩家状态，不读取本人的localCast或私有属性；缺公式／目标输入仍拒绝求值。怪物97已复用独立PD2落点helper及真实MonSeq，速度读MonStats.Run左移8位，不求玩家Calc2；普通飞行保持第10帧，sandleaper／ancientbarb1基础身份及991沿原距离切10／12。原生包装器39F150→5DED84→328D50的当前表4A7B54首项为Client C6AA0，3A8DF0另有991专用分支。此扩展已构建，全部障碍与装备组合仍待运行对照。未确认的预测沿既有15秒预算回收。
 
 ### Mind Blast状态输入
 
@@ -131,13 +131,19 @@ CltHit6旧3A1DC0／更新3A4140只在无接触单位、当前帧大于1且介于
 
 服务端HitPar数组在当前TXT中的列名是sHitPar1–3；`client_missile_assets`已修正从这三个实际列准备serverHitParameters，旧HitPar查找会静默得到零。当前bladefragment1实际为3／5／2。服务端description_data已有sHitPar→hitpar归一化；当前1063条Missiles的TXT数组与BIN+0x4C三项逐记录一致，没有新增BIN覆盖器；表身份与对照材料为`p3-current-tables/missiles-identity.json`。
 
+普通预设出生的SrvHit6直接调用者为859／864／909／953／979，当前模式均为NU或S1。979的0x402001E除了NOXP／NOTC，还在出生后设置完整目标位及INITSEEDSET；`monsters/pd2/missile_spawn`已补这组标志，不重新掷出生种子。其他未核实模式、部分目标位组合和专用预设仍拒绝，不能把当前五条数据范围扩大为所有预设出生已完成。
+
 ### PD2传送落点与怪物Blink
 
 当前`3AF240／3AF4F0／3AF610／3AFD50→36B570`在实际位移前检查状态214／disable_tele，不能只在技能起手检查。玩家Teleport／Gust／Blood Warp与Joust已补该施放检查；已移动而等后继发布的重入不重复位移。`travel/pd2/teleport.cpp::pd2TeleportLanding`承接区域规则，公共castTeleport只在PD2规则下调用，Joust及怪物Blink共用。
 
 Teleport=2通过原0x804射线检查，按来源尺寸与固定目标尺寸2缩短两端；公共Grid::interactionSegment增加掩码和来源尺寸输入，原调用默认仍为0x804／2。Teleport=3先用来源尺寸／0x80D寻位，失败仍沿原坐标；37E170拼接当前与目标房间的NearRoom数组，按各自单位链为613／614／615选首个最近物件，距离为Common10522的去尺寸后`2*max+min`。613在距离小于25且任一轴没有严格同侧时触发检查；614要求X没有严格同侧且与来源Y差小于25；615交换两轴。触发后同时检查目标3×3／0x80D矩形与0x80D缩短射线。当前对应Levels152／164／171／194，物件名blocker_teleport_xy／x／y，读取实际MPQ位置；不自造墙或禁传区域。
 
-怪物当前直接调用者357Blink与573LucionBlink已由hosting准备为真实Teleport动作，`activatePd2MonsterTeleport`执行上述区域／状态门控，再走0x1C09落点与公共怪物位置发布；573按Calc2=32经36BAA0的64方向整数步进生成落地环。飞弹批次和阶段跨背压保留，已移动后不再次位移。当前两技能没有掌握减益；未核定的怪物减益组合和跨区域落点明确拒绝。Hell条件下36B570还查全局5DC81C集合，写入／配置来源未闭合；不能把本次区域规则补缺称为全部原生传送等价。玩家附加飞弹分支也未因此推广为完成。
+怪物当前直接调用者357Blink与573LucionBlink已由hosting准备为真实Teleport动作，`activatePd2MonsterTeleport`执行上述区域／状态门控，再走0x1C09落点与公共怪物位置发布；573按Calc2=32经36BAA0的64方向整数步进生成落地环。已补同幕邻房跨区域落点：复验目的区域代次、原邻房可达及碰撞，转移单位房间／占位，并同步内外两层技能续办区域及缓存坐标。已移动后不再次位移，落地环在新区域创建。当前两技能没有掌握减益，其他怪物减益组合仍拒绝。
+
+Do155落地环已抽为同领域私有消费者，玩家／怪物共用SrvMissileA及Calc2输入；当前普通玩家Teleport没有SrvMissileA，不能据此编造附加弹。Gust的落地飞弹及范围脉冲分别保留准备／发布阶段。移动／费用一旦提交，续办立即绑定当前区域并保留nativeCallbackStarted，避免最后一次充能移除技能指针、换区或飞弹背压使后继效果被丢弃。该组修正已构建，跨区／末次充能／多人交错待最终验证。
+
+Hell条件下36B570在param5非零时查询5DC81C集合。当前核心`190C50→292A40→292F90／293240`仅初始化空容器，`3D4960`登记析构；当前模块对根地址只见初始化、两处查询及析构引用，对相邻计数地址5DC820没有直接引用。尚未发现填充入口，不为当前目标自造一份禁传区域清单；外部模块／间接配置修改仍不在这条静态结论内，不能称为所有发行版均无禁传集合。
 
 原指令与辅助器材料为`town-queries/gap-blink`、`pd2-area-skill/36B570`和`skill-helpers/36BAA0`；配套Common040692…的10686→315E0、10522→7FBD0分别核定射线与距离。当前States／Levels／Objects表摘要见`p3-current-tables/teleport-identity.json`。已构建，尚未逐场景运行对照，物件休眠／重新安装和全部跨区交错仍需核对。
 
@@ -147,11 +153,22 @@ CltHit67旧3A2330／更新3A46B0要求真实接触单位，在其位置生成Clt
 
 ### 冲锋表现
 
-112旧核心3A7660和CltSt57旧3A8500控制冲锋的接近／攻击两段：玩家速度为CharStats.RunSpeed左移8位，再乘Param1加max(Stat67,50)的百分比；玩家路径沿原初始Straight路径和碰撞。攻击切到序列第8步，剩7帧，速度min(256,有效物品IAS+Stat68+Param6)，有效物品IAS对应D2Common RVA323E0的120递减公式。原PlayerStats／PlrSave2初始化Stat67／68为100，武器速度保留原负Stat68贡献。当前本人路径使用完整装备／状态输入并接入接近、攻击及末端坐标收敛；地面目标、其他单位及完整打断／装备／障碍组合仍待恢复或认证。
+112旧核心3A7660和CltSt57旧3A8500控制冲锋的接近／攻击两段：玩家速度为CharStats.RunSpeed左移8位，再乘Param1加max(Stat67,50)的百分比；玩家路径沿原初始Straight路径和碰撞。攻击切到序列第8步，剩7帧，速度min(256,有效物品IAS+Stat68+Param6)，有效物品IAS对应D2Common RVA323E0的120递减公式。原PlayerStats／PlrSave2初始化Stat67／68为100，武器速度保留原负Stat68贡献。本人路径使用完整装备／状态输入并接入接近、攻击及末端坐标收敛。其他玩家经`client/pd2/player_rates.cpp`使用自己的0x20基础值、9D公开装备及同序号A8／AA状态求FullStats。当前表真实列名为`Send Other`，67／68／93均为1；此前把不存在的`SendOther`列读作空值的结论已撤销。Send Other不等于另发完整属性包：原PlrMsg::sub_6FC82830只初次发送67／68／12／0／2的BaseStats，物品IAS来自原公开装备／状态列表；D2X宿主已有这条发送链，不增加额外0x20或私有同步。Client191E0对所有玩家初始化67／68／69为100，缺省93是零初始化属性；只有装备／状态解码完整才合并，不借本人localCast或IAS。武器基础速度与真实活动手位独立准备，双持沿原平均速度。地面目标已接原坐标及Straight路径，终止不伪造接触；服务端原有地面到达搜敌／接触链继续负责裁决。新消费者已构建，怪物独立Charge37见下节，特殊首领114另按实际程序处理，完整打断／装备／障碍组合仍待运行对照。
+
+### 怪物冲锋表现
+
+怪物原CltDo37／Client2B6E0与CltSt25／2BF40单独由`remote_scene_pd2.cpp::displayPd2MonsterCharge`消费。客户端4D610初始化67／68／69为100；起手速度读MonStats.Run左移8位、Param1及max(50,Stat67)，路径保持怪物初始Toward2、距离30。序列事件按原函数重复读MonSeq第一条事件字节，移动段回卷、直接目标接触、停路搜敌及未找到目标的剩余帧分别处理；reanimatedhorde1／siegebeast1保留原停路例外。2B680以A283和范围3调用A1860／A1620，按可攻击标志、施法者自身阵营／主人敌对关系及mask4射线筛选，再由A09F0取GUID后继；不按观察者敌对或最近距离选目标。服务端St31近距回退仅ClawViper／Duriel用A2，其余A1。以上为普通Charge37消费者，不接管Lucion114控制器，已纳入双端构建，完整场景尚待实测。
+
+Charge37的非序列模式也按当前MonStats实际声明准备：`RemoteScene::Impl`仅为真实37调用槽缓存对应模式的AnimData／COF时钟及事件字节，包含非序列A2；不以通用序列替代。程序维护原移动／攻击帧，渲染直接读取该帧，避免旧通用Charge裁剪再次覆盖。原0x15重定位会撤销该动作的旧预测，后续新动作才重新准备；完整接触、打断和多人观察仍待实测。
 
 ### 技能等级公告与陷阱
 
 原1.13c D2Client RVA A1CF0接收4C／4D时安装远端单位技能，17B0读取Skills.maxlvl，非正取20；公告等级超过上限的部分作为额外等级。D2X给怪物保留本次公告技能的基础等级及实际等级，其他技能仍未知。Charged Bolt Sentry隐藏BoltSentry的Calc1读取blvl，基础等级与额外等级不可合并后再作为该输入。99／9A效果通知不作为技能等级公告。
+
+本人释放事件及Leap落点公式按技能ID和真实来源物品GUID查询CharacterView技能等级，充能技能使用该物品记录的effectiveRank，不能从已学技能表借等级。充能降至零仍保留其已知等级供已接受动作完成；普通非充能技能继续使用自身有效等级。冲锋射程优先真实活动主手武器，只有副手武器时回退副手；盾不构成武器射程。本人速率查询也独立于主手UI时序提示，遵循原初始化及真实装备／状态输入。原0x15重定位撤销旧PD2移动预测，同一动作不从过期目的地重新起飞／冲锋；后续新动作才重新准备，连续远端Leap不复用上一跳的起点时刻。
+
+PD2远端玩家的item_leap_speed／extra_bonespears／extra_holybolts同样从其公开装备、原初始化值和状态求取。怪物AC尾部的16项原属性列表已按当前Send Bits／Send Param Bits及Signed解码缓存，三项扩展属性按该怪物自身原属性列表与状态列表求值；其原零售构造没有这些扩展属性初值，未出现记录时在这个客户端副本中为零，不将主人或服务端隐藏装备填入副本。缺失／损坏的属性尾部、装备或状态仍明确未知。该修正同步覆盖伙伴Bone Spear84等客户端Calc1，数值只用于原客户端表现，不参加权威伤害或存档。
+
 
 Inferno Sentry的本怪物技能槽须按原NAMETOWORD链接，文本大小写不能改变身份。当前MonStats BIN为1283行、步长0x1A8，infernosentry行415的+0x170为311，下一技能为262；TXT的Mon Inferno Sentry对应Skills中的mon inferno sentry。Sk1mode为seq_infernosentry，当前MonSeq有14步、第9步event1。客户端使用此槽的序列，修复错误回退monanim=xx而使动作及喷流缺失的问题。原1.13c D2Client CltSt52 RVA C4370以Calc2设置期限，CltDo77 RVA C5BA0复用74930创建喷流，再以CltCalc1经C7E30设置图形坐标并置0x20；当前值为-37。完整PvE接收者及逐像素表现仍待核对。
 
@@ -165,6 +182,10 @@ Inferno Sentry的本怪物技能槽须按原NAMETOWORD链接，文本大小写�
 
 客户端飞弹程序表另有独立替换，不能由技能发射入口推定子弹体完成。以下旧／新RVA均对上上述两份核心，只有已恢复的显示语义进入SceneAssets／ClientMissileView；不结算命中或状态。
 
+当前新增飞弹对零售CltDo的直接依赖中，已补10／12／15／25的公共消费者。依据为配套Client dd8b…的表DD8A0及RVA BBD40／B2D00／B8BC0／B83D0；不是PD2新增同号程序。10先选择CltSubMissile1–2，再以等级／CltParam3求半径和周期，发射时重置父视觉SEED为X+elapsed、高字666，按0x4检查出生格；B8DF0／B2E00读取子表CltParam1／2设置高度、下落速度及独立Total／CurrentFrames。12在elapsed0按CltParam2的秒数分成三段屏幕震动。25按elapsed周期依次抽方向X／Y、出生X／Y，不能交换四次随机顺序。
+
+15区分CurrentFrame与TargetX有符号计数器：非正计数逐次递减，到负CltParam2结束；正计数才追踪和产子。子创建flags5启用显式零速度，父TotalFrames−1虽写入+0x4C但没有8000标志，原创建器不使用该值；因此子体保持表寿命、TargetX=0并原地淡出，不能覆盖寿命或让它沿零射线对角移动。优先使用已知弹体目标，再取原主人已观察到的路径目标；缺目标事实不另选敌人。当前消费者包括740／1062、785／1010、900／950及684；技能CltDo57已按Client RVA58070补正计数来源：196／441／608的实际技能等级写入新弹TargetX，真实技能ID／等级传入创建结构，单位目标优先否则取原路径目标。Calc1写入循环数，但flags3没有8，不能据此延长寿命。独立73不含这些字段时仍保留未知，待同一创建配对补充。Missiles.Activate已按原创建器设置倒计时阈值，73配对保留已知的显式激活参数。新消费者及65／67技能身份修正已构建，完整视觉种子初态、低帧率交错和双端场景仍待最终核对。
+
 | 飞弹回调 | 旧／新RVA | 当前显示行为 |
 | --- | --- | --- |
 | CltDo8 | 0x3A18C0／0x3A3C40 | CltParam2小于1取100、大于100截100；CltParam3为正时加其乘CurrentFrame再除4。每回调抽一次百分比，选择原闪电尾迹或普通移动；视觉随机流不宣称与原全局随机轨迹一致 |
@@ -172,7 +193,7 @@ Inferno Sentry的本怪物技能槽须按原NAMETOWORD链接，文本大小写�
 | CltDo70 | 0x3A1A50／0x3A3DD0 | 返回物追踪原主人，距离小于2时结束；缺主人时继续原移动，不选其他单位替代 |
 | CltDo71 | 0x3A1AB0／0x3A3E30 | 主人有效时按CurrentFrame对CltParam1取模，同处顺序创建三个有效CltSubMissile；非正周期不生成 |
 | CltDo72 | 0x3A1B90／0x3A3F10 | 设置路径移动检测mask=0x100后普通推进。旧0x30A200包装器的1.13c目标为D2Common ordinal11164／RVA348B0（MD5 ee1238806ef6d6d9801d12a09d128fe1），写路径+0x50；不是螺旋轨迹算法。锤子轨迹仍由Skills.CltDo35独立准备 |
-| CltHit65 | 0x3A2120／0x3A44A0 | 命中位置创建CltHitSubMissile1，再以cHitPar1的整数64方向步进创建CltHitSubMissile2环；需要真实主人，等级由父弹体继承，通用技能身份的完整传递仍待补 |
+| CltHit65 | 0x3A2120／0x3A44A0 | 命中位置创建CltHitSubMissile1，再以cHitPar1的整数64方向步进创建CltHitSubMissile2环；需要真实主人，等级由父弹体继承；子体技能显式取父Missiles.Skill（BIN+0x194有符号WORD，空为-1），不取主人当前技能 |
 
 CltHit5（旧3A1C50／更新3A3FD0）及66的有效子弹体范围回调仍未恢复，明确拒绝，不沿用原版同号效果。66旧3A2250在CltHitSubMissile1无效时直接返回成功，不做范围回调；当前Missiles BIN为1063行、步长0x1A4，holylightdelay行695的+0x2C为FFFF，已接这个空子体分支。本地原生PD2组队对另一账号施放Holy Light，生命150→188；该结果不能认证66的有效子体分支。6／67已接范围与依据见上文。不能把收到73当作完整命中程序已完成。
 

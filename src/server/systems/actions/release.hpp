@@ -73,6 +73,7 @@ struct MonsterRelease {
     std::vector<int> releaseFrames{};
     size_t nextRelease{};
     uint64_t started{};
+    int sequenceSpeed{};
     std::shared_ptr<effects::MonsterCursePulse> curse{};
     std::shared_ptr<monsters::SkillChildrenExecution> children{};
     bool formulaPrepared{};

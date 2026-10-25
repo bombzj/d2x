@@ -90,5 +90,6 @@ struct MonsterSnapshot {
     EntityId hirelingOwner{};
     int64_t hirelingLife{};
     std::map<std::string,int64_t,std::less<>> hirelingAttributes{};
+    std::vector<StatValue> assignmentStats{}; // First sixteen base entries of the monster's MonProp list.
 };
 } // namespace d2x

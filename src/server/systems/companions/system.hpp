@@ -36,13 +36,15 @@ struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint
     uint64_t observedAiThinkRevision{};
 };
 struct State { std::map<EntityId, Companion> companions; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; const spatial::System &spatial; ai::System &ai; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; const spatial::System &spatial; ai::System &ai; items::System &items; };
 class System {
     State state_;
     const Ports ports_;
     std::map<EntityId,Preparation> pending_;
     std::map<EntityId,Prepared> prepared_;
     uint64_t nextPreparation_{1};
+    std::set<EntityId> materialRestorations_;
+    void synchronizeMaterialRestoration(uint64_t tick);
     StepStatus synchronizeIronGolems(TickContext);
     DomainResult<> revive(const ActorContext &,const SkillCastSpec &,EntityId);
     std::map<PlayerId,PreparedHireling> hirelingRules_;
@@ -79,6 +81,7 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
+    std::optional<DomainResult<>> restoreMaterial(EntityId item,uint64_t tick);
     std::string hirelingDeferred(PlayerId player) const {
         const auto found=hirelingRules_.find(player);return found==hirelingRules_.end()?std::string{}:found->second.deferred;
     }

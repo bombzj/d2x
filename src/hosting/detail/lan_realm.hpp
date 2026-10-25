@@ -10,8 +10,9 @@ class LanRealm {
     net::TcpListener network_;
     struct Peer {
         uint64_t socket{};
-        bool closed{}, closing{}, draining{}, cleanupAttempted{};
+        bool closed{}, closing{}, draining{}, cleanupComplete{};
         std::chrono::steady_clock::time_point deadline;
+        std::chrono::steady_clock::time_point recoveryRetry;
         ClientPacketStream packets;
         std::unique_ptr<NativeRealmService> service;
     };

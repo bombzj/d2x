@@ -66,7 +66,7 @@ void NativeRealmService::publishMonsters() {
             packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(1);out.u32(uint32_t(monster.id.value));}));
             entry->second={};fresh=true;
         }
-        if (fresh) packets.push_back(nativeMonsterAssignment(monster, origin));
+        if (fresh) packets.push_back(nativeMonsterAssignment(*content,monster, origin));
         if(fresh || !entry->second.life) entry->second.life=monster.life;
         else if(monster.hostile && (std::abs(int(monster.life)-int(*entry->second.life))>4 || (!monster.life && *entry->second.life))) {
             // MonsterMode stat regeneration uses >4 on the native 0..128

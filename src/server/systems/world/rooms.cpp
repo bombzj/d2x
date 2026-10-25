@@ -286,6 +286,29 @@ struct System::RoomRuntime {
 };
 System::System(Ports ports) : ports_(ports), rooms_(std::make_unique<RoomRuntime>(*this)) {}
 System::~System() = default;
+bool System::discardPreparedRooms(std::span<const RegionId> regions) {
+    const auto selected=[&](const RoomRuntime::Room &room) {
+        return std::find(regions.begin(),regions.end(),room.area)!=regions.end();
+    };
+    // Only unpublished, unreferenced rooms may be discarded. Logical decoded
+    // room inputs can remain cached in the act; their live area binding cannot.
+    for(size_t id=0;id<rooms_->rooms.size();++id) {
+        const auto &room=rooms_->rooms[id];if(!selected(room)) continue;
+        const auto &act=rooms_->acts.at(size_t(room.act));if(!act.activation) continue;
+        const auto state=act.activation->states().find(id);
+        if(state!=act.activation->states().end() &&
+           (state->second.status<=1 || std::any_of(state->second.references.begin(),state->second.references.end(),[](auto count){return count!=0;})))
+            return false;
+    }
+    for(size_t id=0;id<rooms_->rooms.size();++id) {
+        auto &room=rooms_->rooms[id];if(!selected(room)) continue;
+        auto &act=rooms_->acts.at(size_t(room.act));
+        if(act.activation && !act.activation->discardUnreferenced(id)) return false;
+        if(room.index!=SIZE_MAX) rooms_->identities.erase({room.area,room.index});
+        room.index=SIZE_MAX;
+    }
+    return true;
+}
 void System::invalidateRooms() { rooms_->dirty = true; }
 void System::refreshRoomTerrain() {
     rooms_->rebuild();
@@ -361,7 +384,7 @@ void System::updateRooms(TickContext tick) {
             // DRLG neighbour prefetch precedes the player's exit command.
             // A child prepared without its map would later reject that same
             // immutable context and could never be entered through the warp.
-            request(destination,int(destination)>136 && int(destination)<=210?map:nullptr);
+            request(destination,map);
         };
         prepare(room.area);
         for (const auto near : room.near)

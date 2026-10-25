@@ -50,6 +50,7 @@ class System {
     DomainResult<std::shared_ptr<Release>> startPd2HirelingStrafe(const CastRequest &,const MonsterAttackRule &,int speed);
     DomainStatus pd2MonsterStaticField(Release &,const ActorContext &);
     void postPd2MonsterCastItemEvent(MonsterRelease &,uint64_t tick);
+    void rearmPd2MonsterCastItemEvent(MonsterRelease &,size_t previousRelease);
     DomainResult<> monsterRunEvent(const FrameEvent &,uint64_t tick);
     DomainResult<Vec> startMonsterLeap(const CastRequest &);
     DomainResult<bool> releaseMonsterLeap(MonsterRelease &,TickContext);
@@ -72,6 +73,7 @@ class System {
     DomainStatus activateTeleport(Release &, const ActorContext &, Vec);
     DomainStatus activatePd2Teleport(Release &, const ActorContext &, Vec);
     DomainStatus activatePd2MonsterTeleport(Release &,const ActorContext &,Vec);
+    DomainStatus releasePd2TeleportMissiles(Release &,const ActorContext &);
     DomainStatus activateLeap(Release &,const ActorContext &,Vec);
     DomainStatus activateHydra(Release &, const ActorContext &, Vec);
     DomainStatus activateEffect(Release &, const ActorContext &, Vec);

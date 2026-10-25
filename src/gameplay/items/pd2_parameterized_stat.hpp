@@ -7,8 +7,17 @@
 #include <string_view>
 
 namespace d2x {
-inline int32_t pd2ParameterizedItemStat(const StatSnapshot &stats,uint16_t stat,const WeaponDamage &weapon,
+inline int32_t pd2ParameterizedItemStat(const StatSnapshot &stats,uint16_t stat,const WeaponDamage &skillWeapon,
     const EquipmentStats *equipment,const std::map<uint16_t,std::string> &types,bool dualWield) {
+    // 37F760 calls Common's inventory GUID getter, not Game's skill getter.
+    const WeaponDamage *selected=&skillWeapon;
+    if(equipment && equipment->registeredWeapon) {
+        selected=nullptr;
+        for(const auto &candidate:equipment->weapons)
+            if(candidate.item && candidate.item==*equipment->registeredWeapon) {selected=&candidate;break;}
+        if(!selected) return 0;
+    }
+    const auto &weapon=*selected;
     if(!weapon.item) return 0;
     const auto isType=[&](std::string_view type){return std::find(weapon.types.begin(),weapon.types.end(),type)!=weapon.types.end();};
     EntityId other;

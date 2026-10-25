@@ -77,7 +77,7 @@ std::optional<StatSnapshot> System::unitStatValues(EntityId id,uint64_t tick,std
             std::set<EntityId> active;
             for(const auto &part:root->contributions) if(part && part->ownerKind==StatOwnerKind::Item) active.insert(part->source.owner);
             ethereals=attributes::pd2EquippedEthereals(*unit->equipment,active);
-        }
+        } else if(unit->necroMaterial) ethereals=attributes::pd2EquippedMaterialEthereals(*unit->necroMaterial,*root);
         const auto full=evaluateStoredStatList(*unit->rule.stats,*root,{root.get(),{},root->sampledActTime});
         sampled=samplePd2OwnerStats(*unit->rule.stats,*root,full,nativeChecked(unit->life),ethereals,{root.get(),{},root->sampledActTime}).values;
     }

@@ -49,7 +49,7 @@ D2X的prepareWeaponSkillProcedures从实际CombatModifiers携带PD2缩放标记�
 
 D2X现由`content/pd2/skill_data.cpp`准备技能端Throwable，未开放怪物技能也保留这一元数据；实际物品仍检查自身Throwable。独立`pd2WeaponMastery`复用参数层算法，供装备派生与执行时sampleNativeWeapon使用；原版继续取最大值。双手身份先准备再派生数值，以免第一件武器计算时漏掉另一手。代码已构建；完整当前武器选择、FullStats来源、32条截取与技能运行阶段仍未认证。
 
-330B90已解析为当前D2Game RVA372C0，对照D2MOO sub_6FC7C7B0：非双持返回已装备武器；双持按当前技能WeapSel、技能标志0x2000或序列奇偶选手，随后验证武器和装备资格。它与37F760内部30BC90→Common ordinal10061／RVA20320的库存已选GUID查询是不同入口。当前飞弹接触固定weapons[0]尚未覆盖这些阶段语义，不应因掌握求和修正而宣布手位闭合。
+330B90已解析为当前D2Game RVA372C0，对照D2MOO sub_6FC7C7B0：非双持返回已装备武器；双持按当前技能WeapSel、技能标志0x2000或序列奇偶选手，随后验证武器和装备资格。它与37F760内部30BC90→Common ordinal10061／RVA20320的库存已选GUID查询是不同入口。飞弹接触现通过独立gameplay/combat/pd2/weapon_selection按当前used-skill的WeapSel选择；飞弹原技能仍单独控制srcdam资格及投掷掌握门槛。动作系统提供当前序列时钟及旋风逐次切手标志，库存切组后重新从当前可用装备查找。37F760参数层改读EquipmentStats中的实际registeredWeapon，缺失或已不在活动双手时返回0，不再将本次伤害手位误当库存登记武器。登记GUID来自既有装备资格／插入／移除流程，不新增持久字段；派生前同时准备两手的真实类型及父类编译ID。新改动已统一构建，单手近战路径通过运行回归，双持及逐调用数值仍待对照；影子／怪物连续动作及完整出生／接触随机顺序仍须专项核对。
 
 ## 动态主人属性
 
@@ -61,7 +61,7 @@ D2X现由`content/pd2/skill_data.cpp`准备技能端Throwable，未开放怪物�
 
 `0x2FAE70`在op4／5求值时通过上述查询取真实主人的basis。当前ItemStatCost将484／487分别链接equipped_eth／missing_hp并作用于物品伤害百分比；不能把条件求值后的结果覆盖保存的系数。`0x2FAD10`在装备属性变化后向客户端发送相关物品属性更新，也不等于将条件结果永久写回物品。
 
-代码中动态采样位于`src/gameplay/stats/pd2/owner_values.cpp`，活动无形装备计数位于`src/server/systems/attributes/pd2/item_values.cpp`。临时结果仅供当前查询／接触／公式使用，角色资源仍归CharacterRecord，物品保存原属性系数。装备资格交错、全部伙伴装备与极端回绕值还需逐项对照。
+代码中动态采样位于`src/gameplay/stats/pd2/owner_values.cpp`，活动无形装备计数位于`src/server/systems/attributes/pd2/item_values.cpp`。临时结果仅供当前查询／接触／公式使用，角色资源仍归CharacterRecord，物品保存原属性系数。装备资格交错、全部伙伴装备与极端回绕值还需逐项对照。飞弹／原生近战共用的advanceMissileDrain在玩家提交时亦重新查询lifedrain_percentcap，怪物路径原已调用实时unitStatValues；仅该安全吸血入口应用F03，普通治疗／击杀回血不据此新增限制。铁魔材料沿D2MOO SkillNec Do57的实际装备调用核对：实时equipped_eth现在纳入保留材料的真实GUID、无形位及活动Item来源，不借主人装备；材料武器补当前ItemTypes父类编译ID与StrBonus／DexBonus，保存仍只保留既有kf材料，不增加另一份装备存档。制造材料已改用实际最大耐久和原BROKEN资格；Do57经ItemMode::sub_6FC45060执行普通装备，不能把最大耐久强置零来接受零耐久材料。原生制造后的全部属性组合仍需运行对照。
 
 ## 物品充能恢复
 
@@ -69,7 +69,9 @@ D2X现由`content/pd2/skill_data.cpp`准备技能端Throwable，未开放怪物�
 
 回调从原生属性列表／FullStats中的第一条204 item_charged_skill层取当前值，按原属性编码比较当前数量与上限，不遍历补满全部技能。未满时只加1，保持上限及技能层；有玩家主人时发送原3E属性增量。间隔为`2500/rate+1`帧，特殊PvP区域157／159／166先将商除2再加1；没有普通耐久再生的125帧下限。即使该层已满仍重新登记，不能拿满充能取消其他层或替换成另一层。
 
-已复用物品原帧事件、库存事务及ChargeChanged原包；纯充能层操作在`src/gameplay/items/pd2/charges.hpp`，物品恢复入口仍由inventory／items所属系统持有。运行时钟不写D2S，保存数量保持原204编码。全部套装／符文之语复合充能层及携带位置组合尚待覆盖。
+已复用物品原帧事件、库存事务及ChargeChanged原包；纯充能层操作在`src/gameplay/items/pd2/charges.hpp`，物品恢复入口仍由inventory／items所属系统持有。运行时钟不写D2S，保存数量保持原204编码。源列表与缓存更新已分离且已统一构建；当前MPQ的Demonlimb已覆盖地面恢复、施放20→19→20、未报价物品交易内恢复及取消后20→19、报价镜像19→20、完成交换及接收方保存后新进程重入。此为单层正速率路径，复合列表及全部携带位置仍未完整认证。
+
+隐藏充能技能也由实际物品204层建立。原D2Common_10954按技能、物品GUID、等级和数量创建／更新玩家技能，没有Skills.charclass限制；当前The Gavel of Pain的9gm金属底材使用442 AmpDmg Proc、等级4、3次充能及rep-charge。客户端现为InGame且有ItemEffect及真实SkillDesc／图标的隐藏记录保留元数据，来源校验仍要求该物品确有可用充能；不加入职业技能树。自研服务端同步准备可用的隐藏ItemEffect执行器，SrvDo30复用原生诅咒范围、时长、属性公式与费用／充能事务；不会将隐藏技能当作普通已学等级授予角色。该接线已构建，但隐藏元数据准入仍导致通用图标加载错误，当前不能宣称已完成选择／施放验证；修复范围见[F22](FUNCTION_PARITY.md#f22-充能技能源d2common_10954与隐藏itemeffect)。
 
 未鉴定物品的完整包不包含可分配的充能属性列表，但仍可能收到3E数量更新。PD2客户端此时校验数量边界，保留已解码物品，不把缺少属性层当成整件物品损坏；鉴定后以新的完整属性列表恢复对应充能层。
 
@@ -85,11 +87,16 @@ D2X现由`content/pd2/skill_data.cpp`准备技能端Throwable，未开放怪物�
 4. 通过3081B0取主人，仅主人为玩家、相关数据与客户端指针存在时调用3A0560通知。没有可通知玩家不取消已经发生的属性修改。
 5. 无论本次是否加1，再读属性422。值为0不重新登记；非零先做有符号64位`2500/rate`，玩家主人位于37A9C0所判区域时对商的低32位逻辑右移1，最后以游戏帧+商+1调用3166D0登记事件3。
 
-当前编码元数据已从当前pd2data的ItemStatCost BIN核实：511条、步长0x15C，204行Multiply=256、SaveBits=16、Encode=3；摘要eea4bed2894fb094f695ba935b0178e6d953dc77518b140328cb812f92596cdf（charges-identity.json）。30C530经版本表49A080绑定配套Common ordinal10195／384F0→37F40：从pMyLastList逆链找第一张含0x40的列表，未走0x2000的pMyStats支链。30D630经499C50绑定ordinal11037／3A790→3A1D0，按给定列表及层写新值并传播差值；不会同时加满其他列表。保存层与运行链顺序、套装激活／符文之语的列表身份仍需闭合，因此当前跨保存列表取最小层尚不能视为等价。
+当前编码元数据已从当前pd2data的ItemStatCost BIN核实：511条、步长0x15C，204行Multiply=256、SaveBits=16、Encode=3；摘要eea4bed2894fb094f695ba935b0178e6d953dc77518b140328cb812f92596cdf（charges-identity.json）。30C530经版本表49A080绑定配套Common ordinal10195／384F0→37F40：从pMyLastList逆链找第一张含0x40的列表，未走0x2000的pMyStats支链。30D630经499C50绑定ordinal11037／3A790→3A1D0，按给定列表及层写新值并传播差值；不会同时加满其他列表。D2MOO Items读档逐列表顺序及PostStatToStatList确认基础列表先登记、符文之语列表后登记；0x2040条件套装列表归pMyStats，不参与本次0x40逆链。D2X现选实际符文之语列表（存在该身份即选择，即使没有204也不退回基础列表），否则选基础列表，再在该列表内按层升序找首条204；不跨保存列表选最小层，也不恢复条件套装或镶嵌子物品的同层。缓存按该列表对应的源记录位置更新一份，3E携带实际新值；PD2客户端按逆链找到该层后只改一份，重复层不会污染其他列表或令整件物品解码失败。普通充能消耗与再生的搜索不同：沿Common ItemMods::GetItemCharges／UpdateItemWithSkillCharges，按指定层先查符文之语、未找到再查基础列表；已接事务扣费和即时光环扣费，精确源值沿既有3E发出，不因跨列表同层而拒绝或同时扣多份。已登记技能的物品GUID／层不因再生数量改变而失效；PD2扣费复验当时实际可用技能来源与事务代次，不用起手时旧物品revision误拒绝跨帧施放。
 
 3451E0只有属性422非零且没有事件3才安排首次回调；已有事件不因重新登记请求而重排。当前restorationClock的hasEvent门控与此局部对应，回调按当时主人区域计算后继间隔；不能擅自增加跨区即时重置。
 
+铁魔材料再生由`companions/pd2/material_restoration.cpp`消费同一Items StatRegeneration时钟。材料转入铁魔时保留真实GUID和已登记事件；物品时钟清理同时识别主人原有ironGolem记录。内容准备实际耐久／数量／充能优先规则，非玩家不使用PvP半间隔。恢复一次只修改选中原保存记录，并以同一CharacterEdit＋AuraUnitPublication提交主人材料、实体材料及其Item来源；204差值沿MonsterResourceTrace进入充能技能回调，不把隐藏材料伪装为玩家装备或发送玩家3E。满层继续rearm；死亡、撤出和离局撤销时钟。刷新内容复验材料revision，避免异步旧属性覆盖新充能；运行时钟不写入D2S，重入从原材料重新登记。该材料再生实现已通过双端构建；实际材料消耗、定时恢复及原生kf保存／重入尚待闭环实测。
+
+
 因此“充满后仍重新登记”的前提是上述两个204记录均存在且rate非零；缺列表、缺记录或速率撤销时不会从本回调续订。正常正速率下，特殊区域的半速间隔是先除法、再右移、最后加1，不是先将rate加倍，也不是把最终帧数除2。负速率及溢出回绕不属于已经认证的参数范围，不能根据正值公式自行钳成125帧或立即执行。
+
+交易期间充能事件继续执行，已补对手所见交易镜像；取消交易沿原PlrTrade的保存快照恢复，源item revision变化时发送完整Properties更新，防止同位置物品仍显示较新充能。交易完成沿现有原子交换转移当前物品及缓存；计时仍绑定真实物品ID，拾取／丢弃／换持有人不重排已有事件。取消交易是原生先删除库存单位再载入快照的例外：D2X保留GUID但清除旧物品时钟，下一次库存登记按回滚后的当前速率重建，防止旧期限穿过重建边界。地面恢复先准备物品及缓存候选，再发布事实并提交，背压重试不提前加1。
 
 该函数没有调用随机helper；它恢复物品既有层，不抽新技能，不重建物品。初次注册、耐久／数量分支优先级仍由3451E0及上游再生分派决定，不能用单个回调说明全部生命周期。原版既有StatRegeneration机制与PD2新增充能消费者也须区分，PD2并非另建一套永久存档时钟。
 
@@ -123,9 +130,11 @@ Properties的fireskill／coldskill／ltngskill／poisskill／magskill通过函�
 
 玩家施法事件通常要求SC，或序列6／12／18的SQ；怪物按实际模式7／14判断，没有玩家的序列编号限制。`0x190E20`初始化强制集合242、251、256、261、262、313、272、276、392；`0x190E90`初始化排除集合277、57、219、220、514、217、218、513。怪物强制集合可绕过模式，符合条件时在原Do调用前登记，即使Do随后失败也保留5帧后事件；空目标类型／GUID照原值保存。消费者为`skills/pd2/item_events.cpp`，通用怪物释放、喷射及独立MonsterWhirlwind路径分别接入，背压续办不重复登记同一次回调。每次普通Do均可登记，物品／光环强制Do不递归触发此事件；其余独立连续伙伴程序的完整回调组合仍待核对。ItemStatCost中的docrit／dopierce回调槽可登记，但当前核心未发现实际发送事件16／17的入口，也没有当前物品使用它们，不能自行加进暴击／穿透循环。
 
-施法触发使用ItemEffect替代程序；攻击类是否使用替代程序还取决于ItemTgtDo。当前183（核心`0x3B2BF0`）以实际目标或自身为中心发射64向环；187（`0x3B3420`）要求真实目标并抑制来源物品事件；188（`0x3B3530`）走Skills_CreateMissile；151保留零售Chain Lightning替代程序从目标坐标出生的行为。ItemTgtDo由原主人掷概率，再由受害者作为实际施法单位；ItemTarget3按原AuraFilter0x1002、范围10寻找第一个可用尸体，不能额外消费随机数。已准备的Hydra／Bone Prison起手程序可由ItemCheckStart使用，其他未准备的起手程序明确拒绝。独立执行仍归skills／reactions的PD2目录。
+施法触发使用ItemEffect替代程序；攻击类是否使用替代程序还取决于ItemTgtDo。当前183（核心`0x3B2BF0`）以实际目标或自身为中心发射64向环；187（`0x3B3420`）要求真实目标并抑制来源物品事件；188（`0x3B3530`）走Skills_CreateMissile；151保留零售Chain Lightning替代程序从目标坐标出生的行为。ItemTgtDo由原主人掷概率，再由受害者作为实际施法单位；ItemTarget3按原AuraFilter0x1002、范围10寻找第一个可用尸体，不能额外消费随机数。已准备的Hydra／Bone Prison起手程序可由ItemCheckStart使用。空SrvStFunc按原空回调准入，已修Raven虽有Druid执行器却因没有Pd2SkillProgram对象被误拒绝的问题；这不跳过有实际起手程序的资格。当前ItemCheckStart直接调用者为62／88／221／361／383／421／454／578，除221为空外分别依赖14／19；未准备的变体仍明确拒绝，不因共享一个回调号就宣称资源／召唤身份齐全。独立执行仍归skills／reactions的PD2目录，新修正已构建，完整来源组合尚待实测。
 
 普通玩家Do的5帧路径与`0x345520`喷射状态的4帧路径分别登记。喷射要求当前inferno状态、有效Skills／SkillDesc、Anim=SQ且SeqNum为6或18；以人物类为键，狼139、熊140依次覆盖，读取实际item_fastercastrate，在有符号全局帧可整除周期时登记事件14。城镇及原PvP安全矩形排除，目标使用当前动作的真实单位。触发时仍采样当前装备，不因物品／光环强制Do递归登记。怪物普通SC／SQ包装已由`postPd2MonsterCastItemEvent`接入通用释放、Inferno及MonsterWhirlwind；独立连续伙伴回调、完整ItemCheckStart及装备组合仍未齐。
+
+连续影子Blade Fury、陷阱Inferno和独立影子多次武器释放，已在一个Do被接受且仍需继续后重新允许下一次施法事件登记；容量续办和踢击／飞行的内部子阶段不重新登记。分类及重置归`skills/pd2/item_events.cpp::rearmPd2MonsterCastItemEvent`，公共怪物分派只传入已接受回调及先前释放序号。它补的是原36E240每次Do前登记的消费者，不改变5帧延迟、SC／SQ／强制／排除集合、执行时属性采样或防递归边界。材料物品再生另沿本页充能恢复条目实现；该组修正已构建，全部装备组合和完整原生随机交错仍待认证。
 
 FCR周期来自当前核心`0x12FE80`的档位向量、`0x1303B0`的基础帧和`0x37BB90`的有符号比较，不由MPQ的喷射动画帧数代替。七职业基础帧依原类编号为19／13／15／15／13／18／16，狼／熊为16；每通过一个门槛减1，不先钳制负FCR。纯算法位于`gameplay/skills/pd2/cast_events.hpp`，独立登记由`server/systems/reactions/pd2/item_events.cpp`在Effects的物品事件阶段成功完成后执行，背压重试不重复登记；普通Do仍归`skills/pd2/item_events.cpp`。SkillDesc是否成功链接由内容准备提供，内核不读取表。
 

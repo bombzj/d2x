@@ -85,7 +85,10 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
         const auto action=source.number("srvdofunc").value_or(0);
         const bool equipped=data.pd2Host && source.number("aura").value_or(0) &&
             (action==18 || action==23 || action==29 || action==54 || action==124);
-        const bool prepared = !data.pd2Host || data.skills.find(id) || equipped;
+        const auto *display=data.skills.find(id);
+        const bool playerProgram=display && (!display->classCode.empty() || display->itemSkill ||
+            source.number("general").value_or(0) || action==30);
+        const bool prepared = !data.pd2Host || playerProgram || equipped;
         auto record=copy(source,prepared);
         // State links belong to the compiled skill record, including skills
         // used only by monsters. Program admission must not erase them.

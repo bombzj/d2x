@@ -48,7 +48,7 @@ MonStats技能名称按原NAMETOWORD忽略大小写链接，失败编译为-1；
 | 无起手的Do0且有srvmissile | 沿NativeMissile默认发射入口，保留原怪物攻击加成复制；空Do0不视为攻击程序 |
 | 无起手的Do30且存在真实目标状态，排除dark_pact | 沿MonsterCurse的原状态／属性列表、目标筛选和发布生命周期；MonWeaken、MonLowerRes、MonAmplifyDamage等不再因名称不同而落入缺失飞弹分支。Dark Pact另走专用程序，不能当普通诅咒 |
 | St53／Do95 | 沿已有怪物Inferno的实际事件帧、InfernoAnim／InfernoLen和持续发射，不按MegademonInferno等旧名称决定资格 |
-| 无起手Do18／150／162、St31／Do67 | 分别准备真实状态防御技能、怪物Smite、Joust与Charge；状态、等级、模式和动画读当前表。Smite沿公共接触的A2属性与Calc2眩晕；Joust保留实际怪物模式属性，移动／接触／增益分阶段续办；坐标Charge允许空单位目标，释放时沿公共近距离搜索。尚未构建／实机对照，Charge路径及跨帧时序仍受公共动作边界约束 |
+| 无起手Do18／150／162、St31／Do67 | 分别准备真实状态防御技能、怪物Smite、Joust与Charge；状态、等级、模式和动画读当前表。Smite沿公共接触的A2属性与Calc2眩晕；Joust保留实际怪物模式属性，移动／接触／增益分阶段续办；坐标Charge允许空单位目标，释放时沿公共近距离搜索。已构建，尚未完成实机对照，Charge路径及跨帧时序仍受公共动作边界约束 |
 
 准备只保留正基础技能等级，加原难度MonsterSkillBonus；施放和释放仍从真实单位属性采样等级。怪物技能程序加入实例的只读程序目录，不添加人物技能树节点，也不授予玩家技能。现有人物定义仅补必要的PD2程序元数据。重复序列事件重建每次回调的求值输入，背压等待同一释放，不重复提交已经出生的飞弹。
 
@@ -106,7 +106,7 @@ FlyingScimitar的普通Fn047已沿D2MOO恢复到公共AI：aip1为靠近概率�
 | 当前编译身份 | 当前核心入口／条件 | 差异与消费者边界 |
 | --- | --- | --- |
 | ubermephisto／704、uberdiablo／705、uberbaal／709 | `0x3579E0`、`0x357B90`、`0x357D40`按MonStats首WORD比较704／705／709 | 在委托原首领AI前另有仆从计数、随机选择和出生；专属数量／位置／所属关系未接入，普通首领AI不包含这层行为 |
-| leoricMapBoss／998 | `0x35D820`比较998且有目标 | `server/systems/ai/pd2/leoric.cpp`已接专用决策和真实属性446写回；五槽动作准备见上表。无目标仍委托原ReanimatedHorde；完整场景尚未构建／实机对照，不能计为P3完成 |
+| leoricMapBoss／998 | `0x35D820`比较998且有目标 | `server/systems/ai/pd2/leoric.cpp`已接专用决策和真实属性446写回；五槽动作准备见上表。无目标仍委托原ReanimatedHorde；消费者已构建，完整场景尚未实机对照，不能计为P3完成 |
 | GuardianOfFate／1064、GuardianOfFateClone／1065 | `0x35A470`比较1064／1065且有目标 | 已接专用CRT决策、FIFO寻位和Blink；909的SrvHit6出生消费者已接，完整场景／生命周期未闭合 |
 | ImperialPalaceBossJerhyn／1168 | `0x357180`比较1168 | Npc回调中拥有计数和独立动作，属于专用控制程序，不能由普通城镇NPC服务或敌对替身代替 |
 
@@ -122,7 +122,7 @@ GuardianOfFate的`0x35A470`使用CRT流，三项AI记忆为延后Blink标记、�
 
 当前召唤依赖550→908GuardianOfFateSummonOrb→909GuardianOfFateSummonHit。909的SrvHit6在安装器3A6D8C挂到3A5360，经39F0A0及当前版本表4A710C绑定配套Game47CF0的预设出生；sHitPar1／2／3为1065／1／67239936，即克隆身份、NU模式及0x4020000的无经验／无掉落标志。三项在当前TXT与BIN一致，不能从错误列名HitPar读空值。hosting按当前SrvHit6依赖准备真实原型；`missiles/pd2/hit.cpp`记录有序出生操作，`monsters/pd2/missile_spawn.cpp`复用原房间搜索、普通预设首次-1及可重试类的4环后备、NativeBirthPublication。半径零也消耗方向／符号抽样，后备继承首次的房间随机；不先探测再重复出生。克隆不自动建立主人／仆从归属，因为该原回调没有这一步。
 
-当前只接普通、无附属碰撞物件、NU／S1模式及无经验／无掉落标志的SrvHit6路径；859→999 Leoric守卫及864→1001攻城兽火山的sHitPar2均为8，按实际S1资源准备birthTicks并沿公共出生等待／模式事实，缺动画明确暂缓；这不证明其他技能阶段已恢复。其他模式、特殊预设／暗金ID或额外单位标志保持未实现。核心与绑定材料为`town-queries/gap-guardian-summon`，出生基础调用对照D2MOO MonsterRegion／MonsterSpawn。Guardian决策、Blink、Orb和克隆出生已接源码并构建；管理准入已观察本体357／493／550及克隆357／493技能，完整战斗场景未验；Hell禁传集合、跨区Blink、完整休眠重建、全局随机交错及场景死亡／奖励／释放仍未闭合，不据此宣布P3场景完成。
+当前SrvHit6接普通、无附属碰撞物件的NU／S1出生；859→999 Leoric守卫及864→1001攻城兽火山的sHitPar2均为8，按实际S1资源准备birthTicks并沿公共出生等待／模式事实，缺动画明确暂缓。979额外的完整目标位及INITSEEDSET已接，其他未核实模式、特殊预设／暗金ID或部分目标位仍拒绝；当前五个直接调用者见[技能](SKILLS.md#刀刃反射)。出生基础调用对照D2MOO MonsterRegion／MonsterSpawn。Guardian决策、Orb和克隆出生的先前构建及管理准入已观察本体357／493／550及克隆357／493技能，完整战斗场景未验；新补的跨区Blink及出生标志已构建，完整跨区／出生场景尚待验证。Hell集合的空初始化证据及外部配置边界见[传送门控](SKILLS.md#pd2传送落点与怪物blink)；完整休眠重建、全局随机交错及场景死亡／奖励／释放仍未闭合，不据此宣布P3场景完成。
 
 ## 召唤实体与伙伴
 
@@ -138,7 +138,9 @@ GuardianOfFate的`0x35A470`使用CRT流，三项AI记忆为延后Blink标记、�
 
 罗格Strafe使用实际佣兵武器、原范围／射数公式及GUID后继选择；每次Do12后按Param6回卷公共原生动作时间线。第三幕Static Field以佣兵为实际施法者执行Do160与难度生命下限，随后施加原目标状态；第五幕战吼对实际佣兵及合资格目标生效。程序位于`skills/pd2/monster_skills.cpp`，复杂装备、极端速度及全部佣兵类型组合仍需分别核对。
 
-伙伴换区后，旧房间可能已经停止AI事件。`companions::System::step`对离开主人活动房间／区域或主人传送版本变化的伙伴调用既有think／跟随程序并重新安排AI，保持原跟随距离、碰撞、失效和繁忙门槛。Iron Golem沿既有金属材料消费、装备来源及原生ironGolem保存／恢复；Revive保留原实体、家族动作、限时及所属关系，家庭AI与伙伴跟随分别调度，不能将复活等同于替换怪物类型。单个家族可运行不代表全部复活家族已认证。
+伙伴换区后，旧房间可能已经停止AI事件。`companions::System::step`对离开主人活动房间／区域或主人传送版本变化的伙伴调用既有think／跟随程序并重新安排AI，保持原跟随距离、碰撞、失效和繁忙门槛。Iron Golem沿既有金属材料消费、装备来源及原生ironGolem保存／恢复；Revive保留原实体、家族动作、限时及所属关系，家庭AI与伙伴跟随分别调度，不能将复活等同于替换怪物类型。单个家族可运行不代表全部复活家族已认证。 铁魔材料的持续耐久／数量／充能已接原物品时钟及实体／主人材料原子提交，具体规则见[材料再生](ITEMS.md#物品充能恢复)。刷新装备来源时递归比较Item子列表，避免只比较根base而漏掉参数层变化；原版消费者共用该来源更新修正。新代码已通过双端构建，召唤、换区、死亡、离局／读档实测仍未完成。
+
+地图状态198的出生与玩家换区回调已分别核定，现有伙伴不直接套用仅限UnitType0的389040；规则和未闭合重建范围见[地图来源](MAP_PROPERTIES.md#路由和单位属性)。连续影子／陷阱的施法事件重新登记及Raven空起手的ItemCheckStart已补源码，资格、延迟和未准备的召唤变体仍沿[物品触发](ITEMS.md#装备触发与装备自带技能)。铁魔材料已接真实耐久上限／破损装备资格及持续恢复时钟，仍需统一运行覆盖跨区、死亡和原生kf保存／恢复；全部Revive家族的等价认证独立保留。隐藏佣兵Bone Spear的extra_bonespears使用怪物自己的零初始化扩展属性加AC的MonProp与状态，损坏／缺失列表保留未知，不借用主人值。
 
 ## 新增怪物、首领与掉落
 

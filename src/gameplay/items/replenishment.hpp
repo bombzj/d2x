@@ -23,8 +23,11 @@ inline std::optional<ItemRestoration> itemRestoration(const ItemInstance &item,c
     }
     if(maximumDurability && !(item.nativeFlags&0x100u) && repair>0) return ItemRestoration{false,repair,maximumDurability};
     if(base.maxStack>1 && quantity>0) return ItemRestoration{true,quantity,unsigned(std::clamp(int(base.maxStack)+extra,1,511))};
-    if(charges>0) if(const auto first=pd2FirstChargeLayer(item))
-        return ItemRestoration{false,charges,(unsigned(first->value)>>8)&255,true,first->layer};
+    if(charges>0) if(const auto first=pd2FirstChargeLayer(item)) {
+        const bool fullStatsHasCharges=std::any_of(stats.begin(),stats.end(),[](const auto &stat){return stat.name=="item_charged_skill";});
+        if(fullStatsHasCharges && first->value>=0 && first->value<=65535)
+            return ItemRestoration{false,charges,(unsigned(first->value)>>8)&255,true,first->layer};
+    }
     return {};
 }
 inline unsigned itemRestorationValue(const ItemInstance &item,const ItemRestoration &rule) {

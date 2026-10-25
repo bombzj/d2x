@@ -42,6 +42,8 @@ struct WeaponDamage {
     std::vector<uint16_t> typeLayers;
 };
 struct EquipmentStats {
+    // Native inventory registered GUID, distinct from the current skill hand.
+    std::optional<EntityId> registeredWeapon{};
     std::string animationClass = "hth";
     std::array<std::string, size_t(EquipmentSlot::Count)> appearanceDefinitions{};
     std::array<WeaponDamage, 2> weapons;

@@ -13,6 +13,7 @@
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/inventory_order.hpp"
 #include "gameplay/items/weapon_registration.hpp"
+#include "gameplay/items/pd2/charges.hpp"
 #include "server/systems/actions/state.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/effects/attribute_projection.hpp"
@@ -322,24 +323,36 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
         }
     }
     if(charge) {
+        const bool pd2Charges=player->rules.character->stats->pd2;
         const auto original=player->persistent.inventory.items.find(charge->item.id);
-        if(original==player->persistent.inventory.items.end() || original->second.revision!=charge->item.revision || std::none_of(player->totals.chargedSkills.begin(),player->totals.chargedSkills.end(),[&](const auto &c){return c.item.id==charge->item.id && c.item.revision==charge->item.revision && c.layer==charge->layer && c.charges>0;})) return {DomainStatus::Stale,{}};
+        // A regeneration count update keeps the native skill's item GUID and
+        // layer alive. Qualification still comes from the current skill list;
+        // the inventory/character revisions guard the transaction itself.
+        if(original==player->persistent.inventory.items.end() || (!pd2Charges && original->second.revision!=charge->item.revision) || std::none_of(player->totals.chargedSkills.begin(),player->totals.chargedSkills.end(),[&](const auto &c){return c.item.id==charge->item.id && (pd2Charges || c.item.revision==charge->item.revision) && c.layer==charge->layer && c.charges>0;})) return {DomainStatus::Stale,{}};
         const auto found=next.persistent.inventory.items.find(charge->item.id);
         if(found==next.persistent.inventory.items.end() || found->second.revision==UINT64_MAX) return {DomainStatus::Stale,{}};
         auto &item=found->second;ItemInstance::SavedStat *value=nullptr;
         const auto locate=[&](auto &list) {for(auto &stat:list) if(stat.id==204 && stat.parameter==charge->layer) {if(value) return false;value=&stat;}return true;};
-        bool valid=locate(item.savedStats) && locate(item.runewordStats);
-        for(auto &list:item.savedSetStats) valid=valid && locate(list);
+        const auto pd2=player->rules.character->stats->pd2?pd2FindChargeLayer(item,charge->layer):std::nullopt;
+        bool valid=true;
+        if(player->rules.character->stats->pd2) {
+            if(pd2) value=&(pd2->runeword?item.runewordStats:item.savedStats)[pd2->index];
+        } else {
+            valid=locate(item.savedStats) && locate(item.runewordStats);
+            for(auto &list:item.savedSetStats) valid=valid && locate(list);
+        }
         if(!valid || !value || value->value<0 || value->value>65535 || !(value->value&255) || (value->value&255)>((value->value>>8)&255)) return {DomainStatus::Unavailable,{}};
         --value->value;++item.revision;
         auto updated=std::make_shared<EquipmentRules>(*equipment);
         for(auto &level:updated->items.at(item.id).levels) {
+            if(pd2) {auto changed=*pd2;changed.value=value->value;pd2WriteChargeValues(level.stats,item,changed);continue;}
             const auto debit=[&](auto &list){for(auto &stat:list) if(stat.effect=="item_charged_skill" && stat.layer==charge->layer) {--stat.rawValue;--stat.value;}};
             debit(level.stats);for(auto &list:level.setStats) debit(list);
         }
         equipment=std::move(updated);
         // Both edits keep their original facts and character lifecycle fields.
         next.changes.push_back({item.id,item.revision,ItemChangeKind::ChargeChanged,item.location,item.location,item.quantity,unsigned(charge->layer)});next.inventoryChanged=true;
+        if(pd2) next.changes.back().statValue=value->value;
     }
     ResourceMaximums resourceMaximum{player->totals.character.maxLifeFixed,player->totals.character.maxManaFixed,player->totals.character.maxStaminaFixed};
     const auto &resourceBase=characterEdit?characterEdit->resourceBase:inventoryEdit->resourceBase;
@@ -405,7 +418,10 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
                             if(saved) throw std::runtime_error("Ambiguous native aura charge source");
                             saved=&stat;
                         }};
-                        locate(item->second.savedStats);locate(item->second.runewordStats);for(auto &list:item->second.savedSetStats) locate(list);
+                        const auto pd2=rules.pd2?pd2FindChargeLayer(item->second,charged->layer):std::nullopt;
+                        if(rules.pd2) {
+                            if(pd2) saved=&(pd2->runeword?item->second.runewordStats:item->second.savedStats)[pd2->index];
+                        } else {locate(item->second.savedStats);locate(item->second.runewordStats);for(auto &list:item->second.savedSetStats) locate(list);}
                         if(saved && (saved->value&255)>0 && (saved->value>>8)>0 && (saved->value>>8)<=255) {
                             if(!callbackEquipment || item->second.revision==UINT64_MAX) throw std::runtime_error("Native aura charge candidate is unavailable");
                             const auto old=saved->value;const auto maximum=old>>8;
@@ -413,12 +429,14 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
                             saved->value=(maximum<<8)|remaining;++item->second.revision;
                             const auto delta=nativeSubtract(saved->value,old);
                             for(auto &level:callbackEquipment->items.at(item->first).levels) {
+                                if(pd2) {auto changed=*pd2;changed.value=saved->value;pd2WriteChargeValues(level.stats,item->second,changed);continue;}
                                 const auto update=[&](auto &stats) {for(auto &stat:stats) if(stat.effect=="item_charged_skill" && stat.layer==charged->layer) {
                                     stat.rawValue=nativeAdd(stat.rawValue,delta);stat.value=nativeAdd(stat.value,delta);
                                 }};
                                 update(level.stats);for(auto &stats:level.setStats) update(stats);
                             }
                             next.changes.push_back({item->first,item->second.revision,ItemChangeKind::ChargeChanged,item->second.location,item->second.location,item->second.quantity,unsigned(charged->layer)});
+                            if(pd2) next.changes.back().statValue=saved->value;
                             next.inventoryChanged=true;
                             auto projection=effects::projectEffectAttributes(*auraStates,request->actor.tick);
                             attributes::AuraSourceObservation observation{std::move(*projection.sources),std::move(projection.states),std::move(projection.effects),{}};

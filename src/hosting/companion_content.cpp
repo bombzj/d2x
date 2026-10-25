@@ -12,6 +12,7 @@
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 #include "resources/anim_data.hpp"
 #include "resources/archive.hpp"
@@ -44,9 +45,14 @@ void equipIronGolem(server::companions::Prepared &prepared,const ClassicData &da
     const auto slot=std::find(definition.equipment.slots.begin(),definition.equipment.slots.end(),true);
     if(slot==definition.equipment.slots.end()) throw std::runtime_error("Metal material has no native equipment slot");
     EquipmentLoadout loadout;loadout.equipped[size_t(slot-definition.equipment.slots.begin())]={&item,&definition};loadout.requirementPercent=[](const ItemInstance &){return 0;};loadout.skipRequirements=true;
-    // The material is consumed, rather than worn; its durability does not
-    // disable the properties copied onto the golem.
-    loadout.maximumDurability=[](const ItemInstance &){return 0u;};
+    // Native Do57 uses the ordinary item equip path, including BROKEN.
+    loadout.maximumDurability=[&](const ItemInstance &value) {
+        return itemMaximumDurability(data,value,resolveItemStats(data,value,prepared.summon.stats.level));
+    };
+    if(data.pd2Host) {
+        const auto values=resolveItemStats(data,source,prepared.summon.stats.level);
+        prepared.materialRestoration=itemRestoration(source,*original,values,itemMaximumDurability(data,source,values));
+    }
     auto &stats=prepared.summon.stats;auto &attributes=stats.attributes;const EquipmentActor actor{"",0,0,stats.level};
     std::vector<EquipmentContribution> nativeContributions;
     const EquipmentContributionSource instructions{{},[&](const ItemInstance &value,int level){return resolveItemStats(data,value,level);},{},{},{},
@@ -66,7 +72,13 @@ void equipIronGolem(server::companions::Prepared &prepared,const ClassicData &da
     attributes.fireResist+=modifiers.fireResist;attributes.coldResist+=modifiers.coldResist;attributes.lightningResist+=modifiers.lightningResist;attributes.poisonResist+=modifiers.poisonResist;
     attributes.maxLife=applyLifeModifiers(attributes.maxLife,modifiers.combat.lifePercent,modifiers.maxLife);
     modifiers.combat.lifePercent=0;mergeCombatModifiers(attributes.combat,modifiers.combat);
-    if(gear.weapons[0].item) {prepared.weapon=gear.weapons[0];prepared.weapon.meleeBaseMinimum+=int(stats.minimumDamage*256.f);prepared.weapon.meleeBaseMaximum+=int(stats.maximumDamage*256.f);}
+    if(gear.weapons[0].item) {
+        prepared.weapon=gear.weapons[0];
+        prepared.weapon.strengthBonus=original->base.strengthBonus.value_or(0);
+        prepared.weapon.dexterityBonus=original->base.dexterityBonus.value_or(0);
+        for(const auto &[id,type]:data.nativeFormulas->itemTypes) if(original->equipment.isType(type)) prepared.weapon.typeLayers.push_back(id);
+        prepared.weapon.meleeBaseMinimum+=int(stats.minimumDamage*256.f);prepared.weapon.meleeBaseMaximum+=int(stats.maximumDamage*256.f);
+    }
     for(const auto &stat:resolveItemStats(data,source,stats.level)) if(stat.effect=="item_slow") {auto pet=std::make_shared<NecroPetSpec>(*prepared.summon.necro);pet->slowPercent=stat.value;prepared.summon.necro=std::move(pet);}
 }
 server::companions::Prepared prepareNecro(const server::companions::Preparation &source,Archives &archives,const ClassicData &data) {
@@ -228,6 +240,7 @@ server::companions::Prepared prepare(const server::companions::Preparation &sour
     }
     if(!gear.weapons[0].item) throw std::runtime_error("Valkyrie MonEquip has no weapon");
     equipment.inventory.containers.at(equipment.containers.equipment).registeredWeapon=gear.weapons[0].item;
+    gear.registeredWeapon=gear.weapons[0].item;
     std::stable_sort(nativeContributions.begin(),nativeContributions.end(),[](const auto &first,const auto &second){return first.item<second.item;});
     result.equipmentSources=prepareNativeEquipmentSources(data.items,*result.rule.stats,nativeContributions,EntityId{1},
         [&](EntityId id)->const ItemInstance & {return equipment.inventory.items.at(id);},gear.weapons[0].item,StatOwnerKind::Monster).contributions;

@@ -381,6 +381,8 @@ DomainResult<std::map<EntityId,Actor>> System::prepareNativePet(const ActorConte
         equipment->inventory.containers.clear();equipment->inventory.containers.emplace(actor.id,std::move(container));
     }
     if(equipmentStats) {
+        if(equipmentStats->registeredWeapon && *equipmentStats->registeredWeapon)
+            equipmentStats->registeredWeapon=itemIds.at(*equipmentStats->registeredWeapon);
         for(auto &hand:equipmentStats->weapons) if(hand.item) hand.item=itemIds.at(hand.item);
         if(equipmentStats->shield) equipmentStats->shield=itemIds.at(equipmentStats->shield);
         actor.equipmentStats=std::move(equipmentStats);

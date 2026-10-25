@@ -161,6 +161,13 @@ DomainResult<> System::releasePd2MonsterSkill(MonsterRelease &pending,TickContex
         }
     }
     const auto result=teleport?activatePd2MonsterTeleport(*pending.nativeSkill,actor,*destination):activatePd2(*pending.nativeSkill,actor,*destination);
+    if(teleport && pending.nativeSkill->manaPaid && caster->area()!=pending.area) {
+        const auto &next=ports_.areas.at(caster->area());
+        const auto offset=ports_.areas.at(pending.area).definition.origin-next.definition.origin;
+        if(pending.request.position) *pending.request.position=*pending.request.position+offset;
+        if(pending.launch) {pending.launch->first=pending.launch->first+offset;pending.launch->second=pending.launch->second+offset;}
+        pending.area=caster->area();pending.generation=next.generation;
+    }
     pending.nativeCallbackStarted=pending.nativeSkill->nativeCallbackStarted;
     return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
 }

@@ -780,13 +780,29 @@ DomainResult<> System::slow(EntityId id,int state,int percent,uint64_t frames,ui
     ports_.effects.publishAuraUnits(plan);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::teleport(EntityId id,Vec point,uint64_t tick,int heal,bool nativeFreePosition) {
+    const auto *source=find(id);if(!source) return {DomainStatus::InvalidActor,{}};
+    return teleport(id,PointTarget{source->area,ports_.areas.at(source->area).generation,point},tick,heal,nativeFreePosition);
+}
+DomainResult<> System::teleport(EntityId id,PointTarget target,uint64_t tick,int heal,bool nativeFreePosition) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
-    auto &m=it->second;const auto grid=ports_.spatial.navigationGrid(m.area,id);
+    auto &m=it->second;const auto *destination=ports_.areas.find(target.area);
+    const auto &source=ports_.areas.at(m.area);
+    if(!destination || destination->generation!=target.generation || destination->provisionalPd2Map ||
+       source.definition.act!=destination->definition.act || !std::isfinite(target.position.x) || !std::isfinite(target.position.y))
+        return {DomainStatus::Stale,{}};
+    if(target.area!=m.area && !nativeFreePosition) return {DomainStatus::InvalidRequest,{}};
+    if(target.area!=m.area) {
+        const auto global=target.position+destination->definition.origin;
+        const auto room=ports_.areas.roomAtPosition(m.area,m.position,int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)));
+        if(!room || room->area!=target.area) return {DomainStatus::Unavailable,{}};
+    }
+    if(m.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    const auto grid=ports_.spatial.navigationGrid(target.area,id);const auto point=target.position;
     const Vec center{.5f,.5f};
     if(!grid.walkable(point+center,{uint16_t(nativeFreePosition?0x1c09:0x3c01),m.rule.size}) ||
        (!nativeFreePosition && !grid.segment(m.position+center,point+center,{}, {0x0c01,1}))) return {DomainStatus::Unavailable,{}};
     // Native monster relocation is projected by 0x6D snapshot correction.
-    (void)tick;stop(id);m.position=point;ports_.areas.moveRoomUnit(id,m.area,m.position);refreshCollision(m);m.life=std::min(m.maximumLife,m.life+int64_t(std::max(0,heal))*256);++m.revision;
+    (void)tick;stop(id);m.area=target.area;m.position=point;ports_.areas.moveRoomUnit(id,m.area,m.position);refreshCollision(m);m.life=std::min(m.maximumLife,m.life+int64_t(std::max(0,heal))*256);++m.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
 

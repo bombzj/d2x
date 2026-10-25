@@ -81,6 +81,9 @@ struct State {
     PreparedSkillUse prepareUsedSkill(EntityId actor,NativeSkillSlot) const;
     void commitUsedSkill(PreparedSkillUse) noexcept;
     std::optional<NativeSkillSlot> usedSkill(EntityId actor) const;
+    std::optional<int> activeSkill(EntityId actor) const;
+    struct WeaponPhase {bool secondary{};uint32_t sequenceFrame{};};
+    WeaponPhase weaponPhase(EntityId actor,uint64_t tick) const;
     void removeUsedSkills(EntityId actor,std::span<const SkillUseRemoval>) noexcept;
     void pruneUsedSkills(const PlayerStore &players);
     int32_t skillParameter(EntityId,NativeSkillSlot,size_t index) const;

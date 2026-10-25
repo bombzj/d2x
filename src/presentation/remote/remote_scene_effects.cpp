@@ -482,6 +482,26 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 launch(departure->second,start,start,event.level.value_or(1),-age,{},event.source);
         }
         const int function = skills.number(row->second, "cltdofunc").value_or(0);
+        if(function==57) {
+            // Retail Client 58070: coordinate ray, explicit runtime skill and
+            // rank in missile TargetX. Calc1's loop field has no flag8 and
+            // therefore does not extend the constructor's table lifetime.
+            if(!castAnimation || castAnimation->releaseTime<0 || !event.level) return;
+            const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
+            auto target=event.point;
+            const auto unit=event.target?event.target:actor.destinationUnit;
+            if(unit) target=targetPosition(*unit);
+            if(!target) target=actor.destination;
+            if(missile==missileNames.end() || !target) return;
+            const int rank=*event.level;
+            if(!skillCalculation(*event.skill,rank,"calc1",event.source)) return;
+            ClientMissileInitialization init;init.sourceSkill=*event.skill;init.parameters=std::array<int32_t,2>{rank,0};
+            const Vec start=presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
+            shared.cancelPendingClientMissiles(effectOwner(event.source));missileCastRevisions[event.source]=source->second.actionRevision;
+            launch(missile->second,start,{float(target->x)+.5f,float(target->y)+.5f},rank,
+                castAnimation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+            return;
+        }
         // Current CltDo109 (3A9710) delegates to retail Do25, then Do46
         // with skill159. Do46 only stops sequence speed; the actor renderer
         // holds that sequence at its callback frame, without changing authority.
@@ -564,10 +584,12 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 launch(*missile,start,end,event.level.value_or(1),castAnimation->releaseTime-age,{},event.source);
                 return;
             }
-            if (function == 97 && actor.key.type==0 && actor.key.id==playerId)
-                return; // Controlled player flight is advanced by displayPd2PlayerLeap.
-            if (function == 112 && actor.key.type==0 && actor.key.id==playerId)
-                return; // Controlled player path/attack phases are advanced separately.
+            if (function == 97 && actor.key.type<=1)
+                return; // Player flight / monster sequence owns movement and graphics.
+            if (function == 112 && actor.key.type==0)
+                return; // Player path/attack phases validate their own observed inputs.
+            if (function == 37 && actor.key.type==1)
+                return; // Native monster charge owns its path and sequence.
             if (function == 105) {
                 // Core 3A6F30 reads Skills.SrvMissileA, not CltMissileA.
                 const auto missile = missileNames.find(skills.value(row->second,"srvmissilea"));
@@ -1565,8 +1587,12 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     motion[u.key].animation.startedAt = time;
                     OnlineCombatEvent event; event.source = u.key; event.skill = actor.actionSkill;
                     event.point = target; event.target = localCast->command.target;
-                    if (const auto rank = v.world.playerSkills.find(*event.skill); rank != v.world.playerSkills.end())
-                        event.level = rank->second;
+                    if(uiClients) {
+                        if(const auto *rank=uiClients->character().read().skill(*event.skill,localCast->command.owner);
+                           rank && rank->effectiveRankKnown) event.level=rank->effectiveRank;
+                    } else if(localCast->command.owner==UINT32_MAX) {
+                        if(const auto rank=v.world.playerSkills.find(*event.skill);rank!=v.world.playerSkills.end()) event.level=rank->second;
+                    }
                     const auto &display = motion[u.key];
                     skillEffect(event, display.last ?
                         std::optional{display.position + display.correction + Vec{.5f, .5f}} : std::nullopt);

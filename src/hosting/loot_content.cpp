@@ -189,6 +189,7 @@ void preparePendingLoot(GameHost &host, GameHandle game, Archives &archives, con
                     if(!types.value(row,"Code").empty() && definition.equipment.isType(types.value(row,"Code"))) weapon.typeLayers.push_back(uint16_t(row));
             }
             equipment->inventory.containers.at(request->actor).registeredWeapon=gear.weapons[0].item;
+            gear.registeredWeapon=gear.weapons[0].item;
             std::stable_sort(contributions.begin(),contributions.end(),[](const auto &first,const auto &second){return first.item<second.item;});
             prepared.sources=prepareNativeEquipmentSources(data.items,*request->rule.stats,contributions,request->actor,
                 [&](EntityId id)->const ItemInstance &{return equipment->inventory.items.at(id);},gear.weapons[0].item,StatOwnerKind::Monster).contributions;

@@ -6,6 +6,7 @@
 #include "gameplay/combat/alignment.hpp"
 #include <array>
 #include <map>
+#include <vector>
 
 namespace d2x {
 class RemoteInventory;
@@ -38,7 +39,7 @@ class RemoteCombat {
     std::vector<OnlineCombatSkillView> catalog_;
     std::map<OnlineUnitKey, OnlineCombatUnitStates> unitStates_;
     std::map<OnlineUnitKey,std::pair<uint64_t,uint16_t>> changedClasses_;
-    struct Ownership { uint64_t revision{}; bool decoded{}; std::optional<uint32_t> player; unsigned rank{}; };
+    struct Ownership { uint64_t revision{}; bool decoded{}; std::optional<uint32_t> player; unsigned rank{}; std::vector<OnlineItemStat> stats{}; bool statsDecoded{}; };
     std::map<OnlineUnitKey, Ownership> unitOwners_;
     std::map<uint16_t, std::array<unsigned, 16>> componentBits_;
     uint64_t game_{~uint64_t{}}, area_{~uint64_t{}};
@@ -60,9 +61,11 @@ class RemoteCombat {
     void update();
     bool hostile(const OnlineUnit &) const;
     bool hostileSource(const OnlineUnit &) const;
+    bool pd2ChargeTargetEligible(const OnlineUnit &source,const OnlineUnit &target) const;
     uint8_t ownershipTransform(const OnlineUnit &) const;
     std::optional<OnlineUnitKey> storedOwner(const OnlineUnit &) const;
     std::optional<uint16_t> monsterClass(const OnlineUnit &) const;
+    const std::vector<OnlineItemStat> *monsterPropertyStats(const OnlineUnit &) const;
     bool corpseSelectable(const OnlineUnit &) const;
     bool monsterTargetEligible(const OnlineUnit &, bool targetCorpse) const;
     bool skillTargetEligible(const OnlineUnit &, uint16_t skill) const;

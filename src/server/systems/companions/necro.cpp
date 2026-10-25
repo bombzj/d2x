@@ -48,7 +48,9 @@ StepStatus System::refreshNecro(Companion &pet,TickContext tick) {
         if(waiting->second.inventoryRevision!=owner->inventoryRevision || waiting->second.ownerLevel!=owner->persistent.player.level ||
             waiting->second.rank!=skill.rank || waiting->second.hardRanks!=owner->persistent.player.skillRanks ||
             waiting->second.effectiveRanks!=owner->totals.skillRanks || waiting->second.actor.area!=owner->area ||
-            waiting->second.actor.areaGeneration!=area.generation) {cancel(owner->actor);return StepStatus::Complete;}
+            waiting->second.actor.areaGeneration!=area.generation ||
+            (body->necroMaterial && (!waiting->second.material || waiting->second.material->id!=body->necroMaterial->id ||
+                waiting->second.material->revision!=body->necroMaterial->revision))) {cancel(owner->actor);return StepStatus::Complete;}
         const auto ready=prepared_.find(owner->actor);if(ready==prepared_.end()) return StepStatus::Complete;
         if(!ready->second.deferred.empty()) {cancel(owner->actor);return StepStatus::Complete;}
         auto updated=*body;updated.rule=ready->second.rule;updated.rule.statGameType=body->rule.statGameType;
@@ -74,6 +76,7 @@ StepStatus System::refreshNecro(Companion &pet,TickContext tick) {
         updated.petStats.attributes.combat=nativeCombatModifiers(updated.nativeStats->values,*updated.rule.stats,updated.petStats.attributes.combat);
         if(body->necroMaterial && updated.nativeStats && updated.nativeStats->sources) {
             auto replacement=*body;replacement.rule=updated.rule;replacement.petStats=updated.petStats;replacement.necroPet=updated.necroPet;
+            replacement.necroMaterialRestoration=ready->second.materialRestoration;
             if(replacement.revision==UINT64_MAX) return StepStatus::Blocked;
             ++replacement.revision;
             replacement.petWeapon=ready->second.weapon.item?std::optional{ready->second.weapon}:std::nullopt;
@@ -264,7 +267,7 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
         }
         auto candidate=ports_.monsters.prepareNecro(actor,rule,position,ready->second.summon,
             random,actors.size(),ready->second.equipmentSources,components,shield);if(!candidate) return {candidate.status,{}};
-        if(iron) {auto &body=candidate.value->begin()->second;body.necroMaterial=material;body.petWeapon=ready->second.weapon.item?std::optional{ready->second.weapon}:std::nullopt;}
+        if(iron) {auto &body=candidate.value->begin()->second;body.necroMaterial=material;body.necroMaterialRestoration=ready->second.materialRestoration;body.petWeapon=ready->second.weapon.item?std::optional{ready->second.weapon}:std::nullopt;}
         actors.merge(*candidate.value);}
     const EntityId id=actors.empty()?EntityId{}:actors.begin()->first;
     if(id && skill.bone && skill.bone->prison) {
@@ -349,6 +352,7 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
     if(!debit) return debit;
     ports_.monsters.publishBirthComponents(components);
     state_.companions.swap(next.companions);
+    synchronizeMaterialRestoration(actor.tick);
     if(summon.corpse) ports_.monsters.consumeCorpse(corpse);
     cancel(actor.actor);
     return {DomainStatus::Applied,std::monostate{}};

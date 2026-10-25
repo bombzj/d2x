@@ -22,6 +22,7 @@
 #include "gameplay/skills/druid_summon.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
 #include "gameplay/units/restoration.hpp"
+#include "gameplay/items/replenishment.hpp"
 #include "gameplay/units/resources.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/skills/stat_callbacks.hpp"
@@ -91,6 +92,7 @@ struct Actor {
     bool revived() const {return necroPet && necroPet->kind==NecroSummonKind::Revive;}
     std::shared_ptr<const NecroPetSpec> necroPet;
     std::optional<ItemInstance> necroMaterial;
+    std::optional<ItemRestoration> necroMaterialRestoration;
     using CurseControl=d2x::server::monsters::CurseControl;
     CurseControl curseControl;
     EntityId attractionTarget;uint64_t attractionUntil{};
@@ -443,6 +445,7 @@ class System {
     DomainResult<std::optional<Vec>> findBaalTeleportPosition(EntityId,uint64_t,
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0,bool nativeFreePosition = false);
+    DomainResult<> teleport(EntityId,PointTarget,uint64_t tick,int heal,bool nativeFreePosition);
     bool canNativeTeleport(EntityId,Vec,const std::function<uint16_t(RoomView,int32_t,int32_t)> &) const;
     DomainResult<> nativeTeleport(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> activateWeb(EntityId,int skill,int rank,uint64_t tick);

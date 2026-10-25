@@ -429,7 +429,8 @@ const RemoteScene::Impl::Art *RemoteScene::Impl::monster(const OnlineUnit &u, bo
                             }
                         }
                         const auto name=skills.value(skill->second,"skill");
-                        if(name=="Charge" || name=="SerpentCharge") {
+                        if((name=="Charge" || name=="SerpentCharge") &&
+                           !(pd2 && motion[u.key].scriptedSequence && motion[u.key].scriptedSequence->nativeFrame)) {
                             const bool travelling=motion[u.key].leapFlying && motion[u.key].leapLanding<0;
                             // Charge's native server rewind bounds are 7;
                             // Duriel initializes its movement bound to 15.

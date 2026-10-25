@@ -63,7 +63,10 @@ DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,T
         if(event.type==FrameEventType::ModeChange) return systems.missiles.frameEvent(event.owner.unit,tick);
         break;
     case FrameEventUnit::Item:
-        if(event.type==FrameEventType::StatRegeneration) return systems.inventory.replenishItem(event.owner.unit,tick.tick);
+        if(event.type==FrameEventType::StatRegeneration) {
+            if(const auto material=systems.companions.restoreMaterial(event.owner.unit,tick.tick)) return *material;
+            return systems.inventory.replenishItem(event.owner.unit,tick.tick);
+        }
         break;
     case FrameEventUnit::Object:
         return systems.objects.frameEvent(event,tick.tick);

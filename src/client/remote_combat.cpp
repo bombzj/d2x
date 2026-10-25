@@ -71,7 +71,8 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
         const auto &skills = tables_.at("skills");
         const bool itemSkill = skills.number(row, "srvdofunc") == 113 && skills.number(row, "scroll") == 1 &&
             skills.number(row, "InGame") == 1;
-        if (remoteOnly && skills.value(row, "charclass").empty() && !innate && !itemSkill) continue;
+        const bool itemEffect=skills.number(row,"InGame")==1 && skills.number(row,"ItemEffect").value_or(0)>0;
+        if (remoteOnly && skills.value(row, "charclass").empty() && !innate && !itemSkill && !itemEffect) continue;
         skillMetadata_.emplace(id, loadSkillEligibilityMetadata(tables_.at("skills"), row, &tables_.at("skilldesc")));
     }
     std::optional<uint16_t> defaultSkill;
@@ -169,6 +170,11 @@ std::optional<OnlineUnitKey> RemoteCombat::storedOwner(const OnlineUnit &unit) c
         if(owner && *owner) return OnlineUnitKey{type.value_or(0),*owner};
     }
     return {};
+}
+const std::vector<OnlineItemStat> *RemoteCombat::monsterPropertyStats(const OnlineUnit &unit) const {
+    const auto found=unitOwners_.find(unit.key);
+    return found!=unitOwners_.end() && found->second.revision==unit.appearanceRevision && found->second.statsDecoded?
+        &found->second.stats:nullptr;
 }
 std::optional<uint16_t> RemoteCombat::monsterClass(const OnlineUnit &unit) const {
     if(unit.key.type!=1) return unit.classId;
@@ -542,8 +548,23 @@ void RemoteCombat::update() {
                         if (bits.read(1)) owner.player = bits.read(32);
                     }
                     if (bits.read(1)) owner.player = bits.read(31);
-                    owner.decoded = true;
-                } catch (const std::exception &) { owner.player.reset(); }
+                    owner.decoded=true;
+                    if(bits.read(1)) {
+                        const auto &table=tables_.at("itemstatcost");
+                        for(;;) {
+                            const auto id=uint16_t(bits.read(9));if(id==511) break;
+                            const auto row=stats_.find(id);
+                            if(row==stats_.end() || owner.stats.size()>=16) throw std::runtime_error("Invalid native monster property list");
+                            const int width=table.number(row->second,"Send Bits").value_or(0),param=table.number(row->second,"Send Param Bits").value_or(0);
+                            if(width<1 || width>32 || param<0 || param>32) throw std::runtime_error("Invalid native monster stat width");
+                            OnlineItemStat stat;stat.id=id;stat.parameter=bits.read(unsigned(param));
+                            const auto raw=bits.read(unsigned(width));stat.value=raw;
+                            if(table.number(row->second,"Signed").value_or(0) && (raw&(uint32_t{1}<<(width-1)))) stat.value-=int64_t{1}<<width;
+                            owner.stats.push_back(stat);
+                        }
+                    }
+                    owner.statsDecoded=true;
+                } catch (const std::exception &) { if(!owner.decoded) owner.player.reset();owner.stats.clear();owner.statsDecoded=false; }
             }
         }
         if (!unit.stateSequence) continue;

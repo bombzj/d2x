@@ -4,10 +4,12 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/runtime/skill_rules.hpp"
+#include "server/systems/actions/state.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/skills/native_caster.hpp"
 #include "gameplay/combat/weapon_snapshot.hpp"
+#include "gameplay/combat/pd2/weapon_selection.hpp"
 #include "gameplay/stats/pd2/item_values.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include <algorithm>
@@ -27,13 +29,19 @@ DomainStatus System::preparePd2MissileCritical(SpellImpact &impact,ParticipantVi
         (!record->second.number("srcdam") && id!=240 && id!=245 && id!=243)) {
         contact.pd2Critical=Pd2CriticalRoll{};return DomainStatus::Applied;
     }
-    WeaponDamage weapon=source.player?source.player->totals.equipment.weapons[0]:source.monster->petWeapon.value_or(WeaponDamage{});
-    const auto values=ports_.effects.unitStatValues(source.id(),tick.tick,weapon.item?std::optional{weapon.item}:std::nullopt);
-    if(!values) return DomainStatus::Unavailable;
-    auto modifiers=pd2ItemModifiers(*values,*rules.stats);
     const auto *equipment=source.player?&source.player->totals.equipment:source.monster->equipmentStats?&*source.monster->equipmentStats:nullptr;
     const bool dual=source.player?(source.player->definition.code=="bar" || source.player->definition.code=="ass"):
         source.monster->identity.monster=="shadowwarrior" || source.monster->identity.monster=="shadowmaster";
+    const auto used=ports_.actions.activeSkill(source.id());
+    std::optional<int> selection;
+    if(used) if(const auto current=rules.formulas->skills.find(*used);current!=rules.formulas->skills.end())
+        selection=current->second.number("weapsel");
+    const auto phase=ports_.actions.weaponPhase(source.id(),tick.tick);
+    WeaponDamage weapon=equipment?pd2SkillWeapon(*equipment,dual,selection,phase.secondary,phase.sequenceFrame):
+        source.monster->petWeapon.value_or(WeaponDamage{});
+    const auto values=ports_.effects.unitStatValues(source.id(),tick.tick,weapon.item?std::optional{weapon.item}:std::nullopt);
+    if(!values) return DomainStatus::Unavailable;
+    auto modifiers=pd2ItemModifiers(*values,*rules.stats);
     applyPd2WeaponParameters(modifiers,*values,*rules.stats,weapon,equipment,*rules.formulas,dual);
     int mastery{};
     if(weapon.item) {

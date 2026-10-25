@@ -16,7 +16,8 @@ StepStatus System::replenish(TickContext tick) {
             if(!at || !base || p.persistent.inventory.containers.at(at->container).spec.kind==ContainerKind::Corpse) continue;
             const auto &values=p.rules.equipment->at(id,p.persistent.player.level);
             auto rule=itemRestoration(item,*base,values.stats,values.maximumDurability);
-            if(rule && rule->charges) rule->halfInterval=int(p.area)==157 || int(p.area)==159 || int(p.area)==166;
+            if(rule && rule->charges) rule->halfInterval=at->container!=p.persistent.containers.hirelingEquipment &&
+                (int(p.area)==157 || int(p.area)==159 || int(p.area)==166);
             if(!rule || !itemRestorationActive(item,*rule)) ports_.items.clearRestoration(id);
             else ports_.items.restorationClock(id,*rule,tick.tick);
         }
@@ -36,21 +37,22 @@ DomainResult<> System::replenishItem(EntityId id,uint64_t tick) {
            p.persistent.inventory.containers.at(at->container).spec.kind==ContainerKind::Corpse) break;
         const auto &values=p.rules.equipment->at(id,p.persistent.player.level);
         auto rule=itemRestoration(item,*base,values.stats,values.maximumDurability);
-        if(rule && rule->charges) rule->halfInterval=int(p.area)==157 || int(p.area)==159 || int(p.area)==166;
+        if(rule && rule->charges) rule->halfInterval=at->container!=p.persistent.containers.hirelingEquipment &&
+            (int(p.area)==157 || int(p.area)==159 || int(p.area)==166);
         if(!rule || !itemRestorationActive(item,*rule)) break;
         if(rule->charges && itemRestorationValue(item,*rule)>=rule->maximum) {
             ports_.items.rearmRestoration(id,*rule,tick);return {DomainStatus::Applied,std::monostate{}};
         }
-        if(ports_.trade.find(playerId)) {ports_.items.rearmRestoration(id,*rule,tick);return {DomainStatus::Applied,std::monostate{}};}
+        if(!rule->charges && ports_.trade.find(playerId)) {ports_.items.rearmRestoration(id,*rule,tick);return {DomainStatus::Applied,std::monostate{}};}
         transactions::InventoryEdit edit{{playerId,p.actor,p.area,area->generation,0,tick},
             p.inventoryRevision,p.characterRevision,p.persistent.inventory,{},p.persistent.player.weaponSet};
         auto &candidate=edit.inventory.items.at(id);
         if(rule->charges) {
-            pd2RestoreCharge(candidate,rule->layer);
+            const auto restored=pd2RestoreCharge(candidate,rule->layer);
+            if(!restored) return {DomainStatus::Stale,{}};
             auto equipment=std::make_shared<EquipmentRules>(*p.rules.equipment);
             for(auto &level:equipment->items.at(id).levels) {
-                pd2RestoreChargeValues(level.stats,rule->layer);
-                for(auto &stats:level.setStats) pd2RestoreChargeValues(stats,rule->layer);
+                pd2WriteChargeValues(level.stats,candidate,*restored);
             }
             edit.equipment=std::move(equipment);
         } else ++(rule->quantity?candidate.quantity:candidate.durability);
@@ -58,6 +60,8 @@ DomainResult<> System::replenishItem(EntityId id,uint64_t tick) {
         edit.changes.push_back({id,candidate.revision,rule->charges?ItemChangeKind::ChargeChanged:
             rule->quantity?ItemChangeKind::QuantityChanged:ItemChangeKind::DurabilityChanged,
             item.location,item.location,candidate.quantity,unsigned(rule->layer)});
+        if(rule->charges) edit.changes.back().statValue=pd2FirstChargeLayer(candidate)->value;
+        if(rule->charges) ports_.trade.refreshItem(playerId,edit);
         auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
         const auto committed=ports_.transactions.commit(std::move(*plan.value));if(!committed) return committed;
         ports_.items.rearmRestoration(id,*rule,tick);return {DomainStatus::Applied,std::monostate{}};

@@ -131,9 +131,10 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             onlineMonsterCorpse(unit)) continue;
         const bool enemy = combat.hostile(unit);
         if (!enemy && ((key.type==0 && (world().corpseOwners.contains(key.id) || playerDead(unit))) || (key.type!=0 && key.type!=1))) continue;
-        missileTargets.push_back({effectOwner(key), displayPosition(unit, map, origin,clients) + Vec{.5f, .5f},
-            movementRule(unit).size, enemy});
+        missileTargets.push_back({.id=effectOwner(key),.position=displayPosition(unit,map,origin,clients)+Vec{.5f,.5f},
+            .size=movementRule(unit).size,.hostile=enemy,.target={}});
         missileTargets.back().monster=key.type==1;
+        if(unit.destinationUnit) missileTargets.back().target=effectOwner(*unit.destinationUnit);
         if(key.type==1 && monsterText->nativeMonsterTypes) if(const auto size=monsterText->nativeMonsterTypes->dimensions.find(unitClass(unit).value_or(UINT16_MAX));size!=monsterText->nativeMonsterTypes->dimensions.end()) missileTargets.back().large=size->second.second;
         if(key.type==1) if(const auto row=monsterRows.find(unitClass(unit).value_or(UINT16_MAX));row!=monsterRows.end())
             missileTargets.back().undead=monstats.number(row->second,"lUndead").value_or(0)!=0 || monstats.number(row->second,"hUndead").value_or(0)!=0;
@@ -490,7 +491,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         }
         const float runClock=m.scriptedSequence?float(m.scriptedSequence->animation.frame)/256.f/25.f:0;
         const auto *image = key.type == 2 ? visual->sample(objectElapsed, objectElapsed, m.look)
-            : m.scriptedSequence && !completedAction?visual->sample(runClock,runClock,m.look)
+            : m.scriptedSequence && !completedAction?visual->sample(runClock,runClock,m.look,
+                m.scriptedSequence->nativeFrame?std::optional{float(m.scriptedSequence->animation.frame)/256.f}:std::nullopt)
             : visual->sample(animationClock, animationElapsed, m.look,m.animationFrame());
           const auto p = screen(feet) + visual->offset+m.riderOffset+
               (m.scriptedSequence && m.scriptedSequence->leapGraphics?m.scriptedSequence->leapGraphics->offset():Vec{})+

@@ -2,6 +2,7 @@
 #include "player_contact.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -55,7 +56,12 @@ DomainStatus System::advanceMissileDrain(SpellImpact &impact,ParticipantView tar
             player.inventoryRevision,player.characterRevision,player.persistent.player};
         if(player.persistent.player.hp>0 && contact.drain.lifeGain>0) {
             const auto next=std::min(player.totals.character.maxLifeFixed.raw(),nativeAdd(edit.player.hp.raw(),contact.drain.lifeGain));
-            const auto &pd2=player.totals.character.combat.pd2;
+            auto pd2=player.totals.character.combat.pd2;
+            if(pd2) {
+                const auto values=ports_.effects.unitStatValues(source.id(),tick.tick);
+                if(!values || !player.rules.skills || !player.rules.skills->stats) return DomainStatus::Unavailable;
+                pd2->lifeDrainCap=values->get({player.rules.skills->stats->names.at("lifedrain_percentcap"),0});
+            }
             if(!pd2 || pd2LifeDrainWriteAllowed(edit.player.hp.raw(),next,player.totals.character.maxLifeFixed.raw(),pd2->lifeDrainCap))
                 edit.player.hp=Fixed8::fromRaw(next);
         }

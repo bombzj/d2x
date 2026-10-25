@@ -452,6 +452,18 @@ void refreshMonsterStatSources(monsters::Actor &unit,std::shared_ptr<const StatL
     const auto same=[](const StatSource &a,const StatSource &b) {
         return a.kind==b.kind && a.owner==b.owner && a.definition==b.definition && a.occurrence==b.occurrence;
     };
+    const auto sameValues=[&](const auto &self,const StatList &a,const StatList &b)->bool {
+        if(&a==&b) return true;
+        if(!same(a.source,b.source) || a.base!=b.base || a.fullValues!=b.fullValues ||
+           a.ownerKind!=b.ownerKind || a.handWeapon!=b.handWeapon || a.excludeDamage!=b.excludeDamage ||
+           a.unitRoot!=b.unitRoot || a.extended!=b.extended || a.hasUnit!=b.hasUnit || a.hasOwner!=b.hasOwner || a.hasAct!=b.hasAct ||
+           a.contributions.size()!=b.contributions.size()) return false;
+        for(size_t index=0;index<a.contributions.size();++index) {
+            const auto &left=a.contributions[index],&right=b.contributions[index];
+            if(bool(left)!=bool(right) || (left && !self(self,*left,*right))) return false;
+        }
+        return true;
+    };
     const auto old=resources.read().intrinsic->sources->contributions;
     const auto refreshable=[](const StatList &part) {
         return part.source.kind!=StatSourceKind::Mode && part.source.kind!=StatSourceKind::State;
@@ -463,7 +475,7 @@ void refreshMonsterStatSources(monsters::Actor &unit,std::shared_ptr<const StatL
         const auto root=resources.read().intrinsic->sources;
         const auto present=std::find_if(root->contributions.begin(),root->contributions.end(),[&](const auto &entry){return entry && same(entry->source,part->source);});
         if(present==root->contributions.end()) resources.postIntrinsicSource(part,{});
-        else if((*present)->base!=part->base) resources.replaceIntrinsicSource(part,{});
+        else if(!sameValues(sameValues,**present,*part)) resources.replaceIntrinsicSource(part,{});
     }
     resources.refreshItemSkills(unit,{SkillStatRefreshKind::Passives,0},0);
     auto change=resources.take();unit.nativeStats=change.intrinsic;unit.life=change.life.raw();unit.maximumLife=change.maximum.raw();

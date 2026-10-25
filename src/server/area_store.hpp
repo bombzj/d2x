@@ -151,6 +151,7 @@ struct AreaState {
     AreaDefinition definition;
     uint64_t generation = 1;
     std::optional<uint64_t> levelRandom;
+    bool provisionalPd2Map{}; // Terrain may prepare a portal; population waits for item commit.
     struct RoomState {
         std::array<uint16_t, 4> references{};
         uint8_t status{4};

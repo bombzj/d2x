@@ -5,7 +5,7 @@
 
 namespace d2x::net::protocol {
 std::optional<Bytes> TcpIpSaveTransfer::append(uint32_t total, std::span<const uint8_t> part, bool first) {
-    if (!total || total >= tcpIpSaveLimit || part.size() > 255)
+    if (!total || total >= tcpIpSaveLimit || part.empty() || part.size() > 255)
         throw ProtocolError("Invalid native TCP/IP character size");
     if (first) {
         if (total_) throw ProtocolError("Interrupted native TCP/IP character transfer");

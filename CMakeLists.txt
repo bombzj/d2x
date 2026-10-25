@@ -375,6 +375,7 @@ add_library(d2x_server
   src/server/systems/inventory/storage.cpp src/server/systems/death/settlement.cpp
   src/server/systems/death/recovery.cpp src/server/systems/companions/hireling.cpp
   src/server/systems/companions/pd2/hireling.cpp
+  src/server/systems/companions/pd2/material_restoration.cpp
   src/server/systems/effects/monster_pregnancy.cpp
   src/server/systems/effects/monster_enchantments.cpp
   src/server/systems/effects/suicide_minion.cpp src/server/systems/ai/unique_actions.cpp
@@ -440,6 +441,8 @@ add_library(d2x_remote_scene
   src/client/remote_town.cpp src/client/remote_control.cpp src/client/remote_inventory.cpp
   src/client/remote_combat.cpp src/client/remote_ui_clients.cpp src/client/remote_ui_actor.cpp
   src/client/remote_ui_inventory.cpp src/client/remote_ui_character.cpp
+  src/client/pd2/player_rates.cpp
+  src/client/pd2/charge_targets.cpp
   src/client/remote_ui_npc.cpp src/client/remote_ui_items.cpp
 )
 target_link_libraries(d2x_remote_scene PUBLIC d2x_client d2x_world d2x_remote_client)

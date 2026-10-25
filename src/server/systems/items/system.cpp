@@ -233,23 +233,30 @@ DomainResult<> System::restoreGround(EntityId id,uint64_t tick) {
     if(!rule || !itemRestorationActive(item,*rule)) {clearRestoration(id);return {DomainStatus::Applied,std::monostate{}};}
     if(rule->charges && itemRestorationValue(item,*rule)>=rule->maximum) {rearmRestoration(id,*rule,tick);return {DomainStatus::Applied,std::monostate{}};}
     if(item.revision==UINT64_MAX || state_.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    auto candidate=item;
+    std::optional<EquipmentValues> equipment;
+    if(rule->charges) {
+        const auto restored=pd2RestoreCharge(candidate,rule->layer);
+        if(!restored) return {DomainStatus::Stale,{}};
+        equipment=state_.equipment.items.at(id);
+        for(auto &level:equipment->levels) pd2WriteChargeValues(level.stats,candidate,*restored);
+    } else ++(rule->quantity?candidate.quantity:candidate.durability);
+    ++candidate.revision;
     const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},ground->region},{GroundRestoredFact{id,item.revision+1}}});
     if(!sent) return {sent.status,{}};
-    if(rule->charges) {
-        pd2RestoreCharge(item,rule->layer);
-        for(auto &level:state_.equipment.items.at(id).levels) {
-            pd2RestoreChargeValues(level.stats,rule->layer);
-            for(auto &stats:level.setStats) pd2RestoreChargeValues(stats,rule->layer);
-        }
-    } else ++(rule->quantity?item.quantity:item.durability);
-    ++item.revision;++state_.revision;
+    item=std::move(candidate);
+    if(equipment) state_.equipment.items.at(id)=std::move(*equipment);
+    ++state_.revision;
     rearmRestoration(id,*rule,tick);return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::step(TickContext tick,FrameFacts &) {
     bool blocked=false;
     std::set<EntityId> present;
     for(const auto &[id,item]:state_.world.items) present.insert(id);
-    for(const auto &[id,player]:ports_.players.all()) for(const auto &[itemId,item]:player.persistent.inventory.items) present.insert(itemId);
+    for(const auto &[id,player]:ports_.players.all()) {
+        for(const auto &[itemId,item]:player.persistent.inventory.items) present.insert(itemId);
+        if(player.persistent.ironGolem) present.insert(player.persistent.ironGolem->id);
+    }
     std::vector<EntityId> stale;for(const auto &[id,clock]:restoration_) if(!present.contains(id)) stale.push_back(id);
     for(const auto id:stale) clearRestoration(id);
     for(auto it=state_.world.items.begin();it!=state_.world.items.end();) {

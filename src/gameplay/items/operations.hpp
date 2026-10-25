@@ -13,6 +13,7 @@ struct ItemChange {
     std::optional<ItemLocation> before, after;
     unsigned quantity;
     unsigned statParameter{};
+    std::optional<int32_t> statValue{}; // Exact source value when multiple lists share a layer.
 };
 struct InventoryResult {
     InventoryError error = InventoryError::None;

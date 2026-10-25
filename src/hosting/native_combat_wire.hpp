@@ -20,7 +20,7 @@ Bytes nativeMissile(const server::MissileFact &,Vec origin);
 Bytes nativeState(const ClassicData &,const server::StateFact &);
 Bytes nativeStateSnapshot(const ClassicData &,EntityId,uint8_t,const std::set<int> &,
     const std::map<int,std::vector<StatValue>> &);
-Bytes nativeMonsterAssignment(const MonsterSnapshot &, Vec origin);
+Bytes nativeMonsterAssignment(const ClassicData &,const MonsterSnapshot &, Vec origin);
 Bytes nativeMonsterMotion(const MonsterSnapshot &, Vec origin);
 std::vector<Bytes> nativeAttack(const server::AttackFact &, Vec origin);
 Bytes nativeReposition(const server::RepositionFact &, Vec origin);

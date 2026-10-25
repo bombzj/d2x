@@ -9,6 +9,9 @@
 #include <string>
 
 namespace d2x::pd2 {
+// Current core 37A740: unsigned (level - 137) < 74. This is a
+// map-state boundary, not admission to every special scene in that range.
+constexpr bool isMapRegion(int level) noexcept { return uint32_t(level)-137u<74u; }
 struct MapItemDefinition {int level{},portal{};uint32_t itemIndex{};};
 struct MapCatalog {
     MapPropertyRules properties;

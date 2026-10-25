@@ -176,6 +176,7 @@ std::optional<KnownAttackTiming> RemoteUiClients::attackTiming() const {return i
 IActorClient &RemoteUiClients::actor(){return impl_->actor;}
 IInventoryClient &RemoteUiClients::inventory(){return impl_->inventory;}
 ICharacterClient &RemoteUiClients::character(){return impl_->character;}
+const ICharacterClient &RemoteUiClients::character() const{return impl_->character;}
 INpcClient &RemoteUiClients::npc(){return impl_->npc;}
 IQuestClient &RemoteUiClients::quests(){return impl_->quests;}
 IMapClient &RemoteUiClients::map(){return impl_->map;}

@@ -177,8 +177,11 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             animation.frames,animation.speed,animation.actionFrame,attackStartingFrame(character.code,key.substr(character.appearance.size()+2),key.substr(character.appearance.size(),2)),animation.events});
     for (const auto &[id, skill] : data.skills.skills) {
         // Item grants/charges use the skill's program on any owning class.
-        if (skill.classCode != "sor" && skill.classCode != "ama" && skill.classCode != "pal" &&
-            skill.classCode != "nec" && skill.classCode != "bar" && skill.classCode != "ass" && skill.classCode != "dru") continue;
+        const bool playerClass=skill.classCode=="sor" || skill.classCode=="ama" || skill.classCode=="pal" ||
+            skill.classCode=="nec" || skill.classCode=="bar" || skill.classCode=="ass" || skill.classCode=="dru";
+        const bool itemEffect=data.pd2Host && skill.classCode.empty() && skill.spell &&
+            data.nativeFormulas->skills.at(id).number("itemeffect")>0;
+        if(!playerClass && !itemEffect) continue;
         if(skill.auraImplemented) prepared->auras.emplace(id,server::SkillRules::Aura{prepareAura(data,id),skill.auraImmediate});
         if (!skill.spell || skill.spell->effect==SkillBehavior::None) continue;
         const auto &spec = *skill.spell;

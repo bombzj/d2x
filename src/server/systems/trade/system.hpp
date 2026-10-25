@@ -38,6 +38,7 @@ class System {
     // Attach immutable peer mirrors/reset facts before the inventory commit.
     // Only withdrawing an existing offer starts/extends the confirmation lock.
     DomainResult<> decorate(PlayerId, transactions::InventoryEdit &, bool removedOffer);
+    void refreshItem(PlayerId,transactions::InventoryEdit &) const;
     void edited(PlayerId, uint64_t tick, bool removedOffer) noexcept;
     void normalize(PlayerId, PersistentCharacter &) const;
     StepStatus step(TickContext);

@@ -98,6 +98,28 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
     const DataTable sequences(a.read("data/global/excel/monseq.txt"));
     for(size_t row=0;row<sequences.rows().size();++row)
         monsterSequenceFlags[std::string(sequences.value(row,"sequence"))].push_back(uint8_t(sequences.number(row,"event").value_or(0)));
+    std::map<std::string,int,std::less<>> chargeSkills;
+    for(const auto &[skill,entry]:skillRows) if(skills.number(entry,"cltdofunc")==37)
+        chargeSkills.emplace(lower(std::string(skills.value(entry,"skill"))),skill);
+    for(const auto &[id,row]:monsterRows) {
+        const auto extra=monsterExtra.find(monstats.value(row,"MonStatsEx"));if(extra==monsterExtra.end()) continue;
+        for(int slot=1;slot<=8;++slot) {
+            const auto skill=chargeSkills.find(lower(std::string(monstats.value(row,"Skill"+std::to_string(slot)))));
+            if(skill==chargeSkills.end()) continue;
+            const auto mode=monsterSkillMode(row,uint16_t(skill->second));
+            if(mode.empty() || mode.starts_with("seq_") || mode=="xx") continue;
+            const auto token=lower(std::string(monstats.value(row,"Code")));
+            const auto weapon=monsterModeWeapon(a,token,mode,monstats2.value(extra->second,"BaseW"));
+            if(weapon.empty()) continue;
+            if(auto timing=loadMonsterMotionTiming(animations,token,mode,weapon)) {
+                auto key=token+mode+weapon;for(auto &letter:key) letter=char(std::toupper(static_cast<unsigned char>(letter)));
+                const auto *clock=animations.find(key);
+                timing->flags.resize(std::max(timing->flags.size(),clock->frameFlags.size()));
+                std::copy(clock->frameFlags.begin(),clock->frameFlags.end(),timing->flags.begin());
+                monsterChargeTimings.emplace(std::pair{id,mode},std::move(*timing));
+            }
+        }
+    }
     std::map<std::string_view,size_t,std::less<>> baseRows;
     for(const auto &[id,row]:monsterRows) { (void)id;baseRows.emplace(monstats.value(row,"Id"),row); }
     for(const auto &[id,row]:monsterRows) {
@@ -207,6 +229,14 @@ std::optional<int32_t> RemoteScene::Impl::skillCalculation(int skill,int level,s
             if (shift != catalog.statShifts.end() && shift->second >= 0 && shift->second <= 15)
                 stats.insert_or_assign(std::string(stat), double(count) / double(1 << shift->second));
         }
+        if(pd2 && owner.type<=1 && (owner.type==1 || !playerId || owner.id!=*playerId))
+            for(const std::string_view name:{"velocitypercent","attackrate","item_fasterattackrate","item_leap_speed","extra_bonespears","extra_holybolts"}) {
+                const auto shift=catalog.statShifts.find(name);
+                if(shift==catalog.statShifts.end() || shift->second<0 || shift->second>15) continue;
+                if(const auto value=pd2ReplicaFormulaStat(owner,name))
+                    stats.insert_or_assign(std::string(name),double(*value)/double(1<<shift->second));
+                else stats.erase(std::string(name));
+            }
         SkillDescriptionInput input{skill,level,base,effective,stats};
         input.baseRanksComplete = baseComplete;
         SkillDescriptionValues values(catalog,input,source->second);
@@ -215,6 +245,11 @@ std::optional<int32_t> RemoteScene::Impl::skillCalculation(int skill,int level,s
     const auto &catalog=*monsterText->nativeFormulas;SkillFormulaInput input{base,effective};
     input.statRules=monsterText->nativeStats.get();input.stats=&observed;input.actor=&actor;
     input.referenceRanks=prepareSkillFormulaRanks(base,effective,{}, {},catalog.maximumSkillRank);
+    if(pd2) for(const std::string_view name:{"velocitypercent","attackrate","item_fasterattackrate","item_leap_speed","extra_bonespears","extra_holybolts"}) {
+        const auto id=input.statRules->names.find(name);if(id==input.statRules->names.end()) continue;
+        if(const auto value=pd2ReplicaFormulaStat(owner,name)) observed.values[{id->second,0}]=*value;
+        else input.unavailableStats.insert(std::string(name));
+    }
     const auto row=skillRows.find(skill);
     if(row!=skillRows.end()) {
         const auto stat=skills.value(row->second,"aurastat1");const auto key=monsterText->nativeStats->names.find(stat);

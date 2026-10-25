@@ -84,9 +84,11 @@ DomainResult<ItemEventPlan> ItemTriggers::prepare(const ActorContext &actor,std:
         const int id=source.skill,rank=source.rank;
         if(programs.definitions.contains(id)) {
             const auto &definition=programs.definitions.at(id);job.skill=skills::evaluateNativeSkill(*caster,ports_.effects,id,rank,actor.tick);job.collision=definition.collision;
-            const bool preparedStart=programs.pd2 && (definition.spec.effect==SkillBehavior::Hydra ||
-                (definition.spec.pd2 && (!definition.spec.pd2->startFunction ||
-                 (definition.spec.pd2->startFunction==19 && definition.spec.effect==SkillBehavior::BonePrison))));
+            const int start=programs.pd2?programs.formulas->skills.at(id).number("srvstfunc"):0;
+            // A null native St is already prepared, including Raven's Druid
+            // program. It does not require a Pd2SkillProgram wrapper.
+            const bool preparedStart=programs.pd2 && (!start || definition.spec.effect==SkillBehavior::Hydra ||
+                (start==19 && definition.spec.effect==SkillBehavior::BonePrison));
             job.policy=resolveItemTriggerPolicy(job.event,{definition.itemEffect,definition.itemTarget,definition.itemTargetDo,definition.itemCheckStart,definition.itemEffectUsesPreparedProgram,programs.pd2,preparedStart});
             if(programs.pd2 && job.policy.alternativeProgram && definition.itemEffect>1 && job.skill.pd2) {
                 auto program=std::make_shared<Pd2SkillProgram>(*job.skill.pd2);

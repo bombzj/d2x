@@ -267,9 +267,16 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
                         ++matches;
                     }
                 };
-                replace(item.stats);
-                replace(item.runewordStats);
-                for (auto &stats : item.setStats) replace(stats);
+                if(pd2) {
+                    const bool runeword=item.runeword && std::any_of(item.runewordStats.begin(),item.runewordStats.end(),
+                        [&](const auto &stat){return stat.id==id && stat.parameter==parameter && stat.value;});
+                    replace(runeword?item.runewordStats:item.stats);
+                }
+                else {
+                    replace(item.stats);
+                    replace(item.runewordStats);
+                    for (auto &stats : item.setStats) replace(stats);
+                }
                 if (matches != 1) throw std::runtime_error("Charged skill update has no unambiguous assigned property");
                 continue;
             }

@@ -46,11 +46,22 @@ DomainStatus System::activatePd2MonsterTeleport(Release &pending,const ActorCont
         const auto landing=ports_.areas.nativeFreeCoordinates(*room,int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)),
             caster->monster->rule.size,0x1c09,ports_.spatial.nativeCollisionSample(0x1c09));
         if(!landing) return DomainStatus::Unavailable;
-        if(landing->room.area!=actor.area) return DomainStatus::NotImplemented;
-        const auto moved=ports_.monsters.teleport(actor.actor,landing->position,actor.tick,0,true);
+        const auto &destination=ports_.areas.at(landing->room.area);
+        const auto moved=ports_.monsters.teleport(actor.actor,PointTarget{landing->room.area,destination.generation,landing->position},actor.tick,0,true);
         if(!moved) return moved.status;
         pending.manaPaid=true;
+        pending.actor=caster->context(ports_.areas,actor.tick);
+        pending.target={landing->room.area,destination.generation,landing->position};
+        if(const auto cast=state_.casts.find(actor.actor);cast!=state_.casts.end()) cast->second.area=landing->room.area;
     }
+    pending.nativeCallbackStarted=true;
+    pending.actor.tick=actor.tick;
+    const auto result=releasePd2TeleportMissiles(pending,pending.actor);
+    if(result==DomainStatus::Applied) pending.nativeCallbackStarted=false;
+    return result;
+}
+DomainStatus System::releasePd2TeleportMissiles(Release &pending,const ActorContext &actor) {
+    const auto &program=*pending.skill.pd2;
     if(program.missiles[0]>=0 && !pending.pulses) {
         if(!pending.pd2Execution) pending.pd2Execution=std::make_shared<Pd2CastExecution>();
         auto &birth=pending.pd2Execution->teleportMissiles;
@@ -79,13 +90,12 @@ DomainStatus System::activatePd2MonsterTeleport(Release &pending,const ActorCont
             pending.pulses=1;
         }
     }
-    pending.nativeCallbackStarted=false;
     return DomainStatus::Applied;
 }
 DomainStatus System::activatePd2Teleport(Release &pending,const ActorContext &actor,Vec target) {
     const auto &program=*pending.skill.pd2;
     if(program.doFunction!=155 && program.doFunction!=156 && program.doFunction!=157) return DomainStatus::NotImplemented;
-    if(program.missiles[0]>=0 && program.doFunction!=156) return DomainStatus::NotImplemented;
+    if(program.missiles[0]>=0 && program.doFunction==157) return DomainStatus::NotImplemented;
     if(!pending.manaPaid) {
         // Current 36B570 checks STATE_DISABLE_TELE (214) at release,
         // including Gust and Blood Warp. A start-time check is insufficient.
@@ -94,6 +104,19 @@ DomainStatus System::activatePd2Teleport(Release &pending,const ActorContext &ac
         const auto moved=ports_.travel.castTeleport(actor,{actor.area,actor.areaGeneration,target},pending.skill.manaCost,pending.skill.charge,pending.skill.sourceId);
         if(!moved) return moved.status;
         pending.manaPaid=true;
+        const auto current=nativeCaster(ports_.players,ports_.monsters,actor.actor);
+        pending.actor=current->context(ports_.areas,actor.tick);
+        pending.actor.sequence=actor.sequence;
+        pending.target={current->area(),pending.actor.areaGeneration,current->position()};
+        if(const auto cast=state_.casts.find(actor.actor);cast!=state_.casts.end()) cast->second.area=current->area();
+    }
+    // Movement/payment has committed. All remaining effects belong to this
+    // callback even after a last charge removes the used-skill pointer.
+    pending.nativeCallbackStarted=true;
+    auto recipient=pending.actor;recipient.tick=actor.tick;
+    if(program.doFunction==155) {
+        const auto ring=releasePd2TeleportMissiles(pending,recipient);
+        if(ring!=DomainStatus::Applied) return ring;
     }
     const auto &owner=*ports_.players.find(actor.player);
     if(program.doFunction==156) {
@@ -107,19 +130,25 @@ DomainStatus System::activatePd2Teleport(Release &pending,const ActorContext &ac
             if(!frames || !radius) throw std::logic_error("Missing PD2 Gust area formulas");
             auto pulse=std::make_shared<effects::NativeAreaPulse>();auto &area=pulse->spec;
             const auto &row=owner.rules.skills->formulas->skills.at(pending.skill.sourceId);
-            area.source=actor.actor;area.area=actor.area;area.center=owner.position;
+            area.source=actor.actor;area.area=recipient.area;area.center=owner.position;
             area.skill=pending.skill.sourceId;area.rank=pending.skill.rank;area.radius=*radius;area.filter=0x8583;
             area.hitFlags=uint32_t(row.number("hitflags"));area.resultFlags=uint16_t(row.number("resultflags"));
             area.damage.stunLength=*frames;area.damage.hitClass=row.number("hitclass");
-            if(program.missiles[0]>=0) {
-                missiles::NativeSpawn spawn{actor.actor,actor.area,actor.areaGeneration,actor.tick,owner.position,{},
+            pending.directSkill=std::move(pulse);
+        }
+        if(program.missiles[0]>=0 && !pending.pulses) {
+            if(!pending.pd2Execution) pending.pd2Execution=std::make_shared<Pd2CastExecution>();
+            auto &birth=pending.pd2Execution->teleportMissiles;
+            if(!birth) {
+                missiles::NativeSpawn spawn{actor.actor,recipient.area,recipient.areaGeneration,actor.tick,owner.position,{},
                     program.missiles[0],pending.skill.sourceId,pending.skill.rank};
                 spawn.copyMonsterAttackBonus=true;
                 const std::array births{spawn};
-                auto birth=ports_.missiles.prepareNativeBirth(births);if(!birth) return birth.status;
-                const auto born=ports_.missiles.commitNativeBirth(std::move(*birth.value));if(!born) return born.status;
+                auto prepared=ports_.missiles.prepareNativeBirth(births);if(!prepared) return prepared.status;
+                birth=std::move(*prepared.value);
             }
-            pending.directSkill=std::move(pulse);
+            const auto born=ports_.missiles.commitNativeBirth(birth);if(!born) return born.status;
+            pending.pulses=1;
         }
         pending.nativeCallbackStarted=true;
         const auto result=ports_.effects.nativeArea(pending.directSkill->spec,actor.tick,pending.directSkill);
@@ -138,7 +167,7 @@ DomainStatus System::activatePd2Teleport(Release &pending,const ActorContext &ac
         const auto key=StatKey{owner.rules.skills->stats->names.at("hpregen"),0};
         const auto regeneration=nativeAdd(nativeDivide(cost,*duration),1);
         effect.nativeValues->emplace(key,regeneration);
-        transactions::CharacterEdit payment{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};
+        transactions::CharacterEdit payment{recipient,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};
         payment.player.hp=Fixed8::fromRaw(nativeSubtract(payment.player.hp.raw(),cost));
         auto plan=ports_.transactions.prepare(std::move(payment));if(!plan) return plan.status;
         const auto paid=ports_.transactions.commit(std::move(*plan.value));if(!paid) return paid.status;
@@ -163,10 +192,10 @@ DomainStatus System::activatePd2Teleport(Release &pending,const ActorContext &ac
         effect.modifiers=nativeCharacterModifiers(StatSnapshot{*effect.nativeValues},stats,{});
         pending.skill.appliedEffect=std::move(effect);
     }
-    if(!pending.skill.appliedEffect) return DomainStatus::Applied;
+    if(!pending.skill.appliedEffect) {pending.nativeCallbackStarted=false;return DomainStatus::Applied;}
     auto debuff=pending.skill;debuff.manaCost=debuff.startMana=0;debuff.charge.reset();
     pending.nativeCallbackStarted=true;
-    const auto applied=ports_.effects.skill(actor,debuff);
+    const auto applied=ports_.effects.skill(recipient,debuff);
     if(applied) pending.nativeCallbackStarted=false;
     return applied.status;
 }

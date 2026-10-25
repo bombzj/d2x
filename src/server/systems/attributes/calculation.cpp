@@ -653,7 +653,8 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
         if(entry && entry.definition->equipment.isType("weap")) hand(entry.instance->id);
     }
     result.equipment = deriveNativeEquipmentStats(view, actor,
-        {*rules.stats,result.handStats,result.itemStats,*rules.formulas,modifiers.combat,definition.toHitFactor});
+        {*rules.stats,result.handStats,result.itemStats,*rules.formulas,modifiers.combat,definition.toHitFactor,
+            NativeEquipmentInput::MonsterBlock::RequireShield,primaryWeapon});
     result.character.baseAttackRating=result.equipment.weapons[0].baseAttackRating;
     result.character.attackRating=result.equipment.weapons[0].attackRating;
     const auto stat=[&](std::string_view name){return logicalStatValue(result.nativeStats,*rules.stats,name);};

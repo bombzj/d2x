@@ -28,6 +28,10 @@ bool availableMapPrograms(const pd2::MapProperties &properties) {
 }
 }
 DomainResult<> System::createPd2Map(const ActorContext &actor,ItemHandle requested) {
+    if(pd2Cancelling_) {
+        discardPd2MapPreparation();
+        if(pd2Cancelling_) return {DomainStatus::Unavailable,{}};
+    }
     const auto result=finishPd2Map(actor,requested);
     if(isDeferred(result.status) && state_.pd2Map && !state_.pd2MapPortal) {
         // World preparation is asynchronous. Keep the original item revision
@@ -41,11 +45,15 @@ DomainResult<> System::createPd2Map(const ActorContext &actor,ItemHandle request
     return result;
 }
 void System::discardPd2MapPreparation() {
-    if(state_.pd2Map && !state_.pd2MapPortal && ports_.world.cancelPd2Preparation(state_.pd2Map)) {
-        state_.pendingPd2Map.reset();state_.pd2Map.reset();pd2OpeningPortal_.reset();
+    if(state_.pd2Map && !state_.pd2MapPortal) {
+        pd2Cancelling_=true;
+        state_.pendingPd2Map.reset();
+        if(!ports_.world.cancelPd2Preparation(state_.pd2Map)) return;
+        state_.pd2Map.reset();pd2OpeningPortal_.reset();pd2Cancelling_=false;
     }
 }
 void System::advancePd2Map(TickContext tick) {
+    if(pd2Cancelling_) {discardPd2MapPreparation();return;}
     if(!state_.pendingPd2Map) return;
     auto actor=*state_.pendingPd2Map;actor.tick=tick.tick;
     const auto result=finishPd2Map(actor,state_.pd2Map->item);
@@ -129,6 +137,7 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
     auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value));
     if(result) {
+        ports_.world.commitPd2Preparation(map);
         state_.pd2MapPortal=portal.fieldId;state_.mapReports.swap(reports);
         const auto field=portal.field,town=portal.town;
         const auto from=portal.fieldPosition,to=portal.townPosition;

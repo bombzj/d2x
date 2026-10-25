@@ -59,6 +59,9 @@ class NativeRoomActivation {
     // is available for DLL diagnostics, but GAME_Update does not call it.
     void updateDrlg();
     bool retire(size_t);
+    // Roll back unpublished preparation only. The owner must first prove that
+    // no gameplay units occupy the room; ordinary retirement uses retire().
+    bool discardUnreferenced(size_t);
     // Server GAME_Update retirement / client DRLGACTIVATE_Update. Retention covers portals,
     // town-wide client references and pending authoritative unit operations.
     void update(uint64_t tick, const std::function<bool(size_t)> &retain = {});

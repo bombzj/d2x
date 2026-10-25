@@ -108,6 +108,7 @@ void NativeRealmService::connectTcpIp() {
     if (binding || peer.phase != GamePhase::Closed) throw ProtocolError("TCP/IP peer is already connected");
     diagnosticConnection = ++shared.nextDiagnosticConnection;
     directTcpIp = true; tcpIpUploadComplete = false; tcpIpUploadSize = 0; tcpIpUpload.reset();
+    tcpIpLastSave.clear();tcpIpRecoverySave.reset();tcpIpRecoveryWritten=false;
     peer = {}; peer.phase = GamePhase::Connected; sendGame({0xAF, 0});
     externalSave = [this](const PersistentCharacter &character) {
         const auto bytes = encodeSave(character, *content);
@@ -116,19 +117,24 @@ void NativeRealmService::connectTcpIp() {
     };
 }
 void NativeRealmService::recoverTcpIpSave() {
+    if(tcpIpRecoveryWritten) return;
     if (!directTcpIp || (!binding && tcpIpLastSave.empty())) return;
-    Bytes bytes = tcpIpLastSave;
-    if (binding) {
-        const auto saved = host.exportCharacter(*binding);
-        if (!saved) throw std::runtime_error("TCP/IP recovery character is unavailable");
-        bytes = encodeSave(*saved, *content);
+    if(!tcpIpRecoverySave) {
+        Bytes bytes=tcpIpLastSave;
+        if(binding) {
+            const auto saved=host.exportCharacter(*binding);
+            if(!saved) throw std::runtime_error("TCP/IP recovery character is unavailable");
+            bytes=encodeSave(*saved,*content);
+        }
+        decodeSave(bytes,*content);
+        tcpIpRecoverySave=std::move(bytes);
     }
-    decodeSave(bytes, *content);
     const auto directory = root / "tcpip-recovery";
     std::filesystem::create_directories(directory);
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto path = directory / ("character-" + std::to_string(stamp) + ".d2s");
-    writeFileAtomically(path, bytes, false);
+    writeFileAtomically(path, *tcpIpRecoverySave, false);
+    tcpIpRecoveryWritten=true;
     counters.lastFailure = "TCP/IP disconnected; host recovery save: " + path.string();
 }
 void NativeRealmService::resetRealm() {

@@ -169,7 +169,8 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         (request.monsterMode != 9 && !ordinaryBowRetaliation && meleeDistance(monster->position,monster->rule.size,destination->first,destination->second)>rule.meleeRange) ||
         !area.definition.collision.segment(monster->position,destination->first)))) return {DomainStatus::Unavailable,{}};
     if(slot.action==MonsterAttackRule::Action::Charge && !coordinateCharge && meleeDistance(monster->position,rule.size,destination->first,destination->second)<=rule.meleeRange)
-        return requestCast({request.actor,0,request.target,request.tick,5});
+        // Original St31 selects A2 only for ClawViper/Duriel base identities.
+        return requestCast({request.actor,0,request.target,request.tick,uint8_t(rule.baseClass==73 || rule.baseClass==211?5:4)});
     std::optional<Vec> leapDestination;
     if(slot.action==MonsterAttackRule::Action::Leap) {
         const auto started=startMonsterLeap(request);
@@ -289,6 +290,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     {
         MonsterRelease release{request,slot,monster->area,area.generation,request.tick+releaseTick,monster->interruption,{}};
         release.started=request.tick;
+        release.sequenceSpeed=timing.speed;
         release.leapDestination=leapDestination;
         if(nativeNest && !rule.nestChild) release.nestClass=monster->minionSpawnClass;
         release.nativeSkill=std::move(shadow);
@@ -514,9 +516,11 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
         }
         if(pending.attack.action==MonsterAttackRule::Action::Assassin) {
             postPd2MonsterCastItemEvent(pending,tick.tick);
+            const auto releaseIndex=pending.nextRelease;
             DomainResult<bool> result;
             {auto execution=state_.executingRelease(source->id);result=releaseAssassinPet(pending,tick);}
             if(isDeferred(result.status)) {blocked=true;++it;continue;}
+            if(result && !*result.value) rearmPd2MonsterCastItemEvent(pending,releaseIndex);
             if(result && !*result.value && !pending.cancelled) {++it;continue;}
             if(pending.nativeSkill && pending.nativeSkill->assassinKick && pending.nativeSkill->assassinKick->occurrence)
                 ports_.combat.discardNativeMelee(pending.request.actor,*pending.nativeSkill->assassinKick->occurrence);

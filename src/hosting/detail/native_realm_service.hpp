@@ -39,6 +39,8 @@ struct NativeRealmService {
     uint32_t tcpIpUploadSize{};
     net::protocol::TcpIpSaveTransfer tcpIpUpload;
     Bytes tcpIpLastSave;
+    std::optional<Bytes> tcpIpRecoverySave;
+    bool tcpIpRecoveryWritten{};
     uint32_t hash{};
     uint16_t token{};
     // TCP peers receive the interface reached by their MCP connection; memory

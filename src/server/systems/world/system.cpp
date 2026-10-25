@@ -1,6 +1,8 @@
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/travel/system.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
 #include <algorithm>
 namespace d2x::server::world {
 void System::prepareActTime(int act) {
@@ -87,13 +89,17 @@ void System::initialize() {
     }
 }
 DomainResult<uint64_t> System::request(RegionId destination,std::shared_ptr<const pd2::MapInstance> map) {
+    // Exits, neighbour prefetch and portal returns share this boundary. A
+    // map's original five-act destination must not inherit its properties.
+    if(map && !pd2::isMapRegion(int(destination))) map.reset();
     if (const auto *area = ports_.areas.find(destination)) {
+        if(area->provisionalPd2Map && (!map || area->definition.pd2Map!=map)) return {DomainStatus::Conflict,{}};
         if(map && area->definition.pd2Map!=map) return {DomainStatus::Conflict,{}};
         activateAct(destination);return {DomainStatus::Applied, area->generation};
     }
     if (failed_.contains(destination)) return {DomainStatus::Unavailable, {}};
     for (const auto &pending : state_.preparation) if (pending.destination == destination) {
-        if(map && pending.pd2Map!=map) return {DomainStatus::Conflict,{}};
+        if(pending.pd2Map!=map) return {DomainStatus::Conflict,{}};
         return {DomainStatus::Applied, pending.request};
     }
     if (state_.preparation.size() >= 16 || nextRequest_ == UINT64_MAX) return {DomainStatus::Capacity, {}};
@@ -134,6 +140,7 @@ DomainResult<> System::install(PreparedArea prepared) {
     assign(prepared.definition);
     const auto id = prepared.definition.id;
     ports_.areas.areas_.emplace(id, AreaState{std::move(prepared.definition), 1, {}});
+    ports_.areas.areas_.at(id).provisionalPd2Map=bool(ports_.areas.areas_.at(id).definition.pd2Map) && !ports_.travel.read().pd2MapPortal;
     registerAreaUnits(id);
     state_.residency.emplace(id, AreaLease{id, 1, Residency::Prepared});
     state_.preparation.erase(pending); link(); invalidateRooms();
@@ -142,7 +149,7 @@ DomainResult<> System::install(PreparedArea prepared) {
 void System::fail(uint64_t requestId) {
     auto &pending = state_.preparation;
     const auto found = std::find_if(pending.begin(), pending.end(), [&](const auto &p) { return p.request == requestId; });
-    if (found != pending.end()) { failed_[found->destination] = requestId; pending.erase(found); }
+    if (found != pending.end()) { failed_[found->destination] = *found; pending.erase(found); }
 }
 void System::openTombWall(RegionId id) {
     openedTombs_.insert(id);

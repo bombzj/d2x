@@ -14,6 +14,7 @@ struct NativeEquipmentInput {
     const CombatModifiers &procedures;
     int attackRatingClassFactor{};
     MonsterBlock monsterBlock{MonsterBlock::RequireShield};
+    std::optional<EntityId> registeredWeapon{};
 };
 EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &,const EquipmentActor &,const NativeEquipmentInput &);
 }

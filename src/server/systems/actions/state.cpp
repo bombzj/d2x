@@ -85,6 +85,30 @@ void State::removeUsedSkills(EntityId actor,std::span<const SkillUseRemoval> rem
         });
     }
 }
+State::WeaponPhase State::weaponPhase(EntityId actor,uint64_t tick) const {
+    const auto frame=[](uint64_t elapsed,int speed,int frames) {
+        if(speed<=0 || frames<=0) return uint32_t{};
+        return uint32_t((elapsed*uint64_t(speed)%uint64_t(frames*256))>>8);
+    };
+    if(const auto monster=releases_->monsters.find(actor);monster!=releases_->monsters.end()) {
+        const auto &release=monster->second;
+        const auto elapsed=tick>release.started?tick-release.started:0;
+        return {release.nativeSkill && bool(release.nativeSkill->whirlwindAttackHand%2),
+            frame(elapsed,release.sequenceSpeed,release.attack.animation?release.attack.animation->frames:0)};
+    }
+    const auto found=releases_->pending.find(actor);
+    if(found==releases_->pending.end()) return {};
+    const auto &release=found->second;
+    const auto elapsed=std::max<int64_t>(0,int64_t(tick)-release.animationAnchor);
+    // Whirlwind St38 clears 0x2000; Do76 toggles it after each hand and
+    // RemoveWhirlwindStats clears it again. No flag survives the release.
+    return {bool(release.whirlwindAttackHand%2),frame(uint64_t(elapsed),release.weaponSpeed,release.weaponFrames)};
+}
+std::optional<int> State::activeSkill(EntityId actor) const {
+    if(const auto used=usedSkill(actor)) return used->skill;
+    if(const auto monster=releases_->monsters.find(actor);monster!=releases_->monsters.end()) return monster->second.request.skill;
+    return {};
+}
 int32_t State::skillParameter(EntityId actor,NativeSkillSlot skill,size_t index) const {
     const auto owner=skillParameters_.find(actor);if(owner==skillParameters_.end()) return 0;
     const auto value=owner->second.find(skill);return value==owner->second.end()?0:value->second.at(index);

@@ -146,6 +146,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
     if(hirelings!=StepStatus::Complete && hirelings!=StepStatus::Blocked) return hirelings;
     bool blocked=hirelings==StepStatus::Blocked;
     blocked|=synchronizeIronGolems(tick)==StepStatus::Blocked;
+    synchronizeMaterialRestoration(tick.tick);
     // A pet's old room can stop receiving AI events as soon as its owner
     // changes area. Give the existing follow/warp procedure an opportunity
     // to move it before relying on that room's next active AI callback.

@@ -20,6 +20,7 @@ struct ClientMissileAreaEmission {
 struct ClientMissileInitialization {
     enum class Path { None,Charged,Spiral,DiabWall } path{};
     std::optional<uint32_t> seed;
+    std::optional<int> sourceSkill; // Explicit native creation skill; absent means unobserved.
     std::optional<int> animationRate,pixelHeight,ballisticHeight;
     std::optional<ClientMissileGraphics> graphics;
     bool distanceLimited{};
@@ -38,7 +39,8 @@ struct ClientMissileInitialization {
 struct ClientMissileProgram {
     enum class Rules { Original, Pd2Cn } rules{};
     int function{}, hitFunction{}, velocity{}, velocityPerLevel{}, acceleration{}, maximumVelocity{};
-    int frames{}, framesPerLevel{}, explosion{-1};
+    int frames{}, framesPerLevel{}, activationDelay{}, explosion{-1};
+    int linkedSkill{-1}; // Signed Missiles.Skill (native +0x194); blank remains -1.
     MissileAnimationRule animation;
     MissileCollisionRule collision;
     bool collide{}, killOnContact{}, explodeOnExpiry{};
@@ -76,17 +78,19 @@ struct ClientMissileVisual {
     // Existing static effects leave flight false. Flights advance at native 25 Hz.
     bool flight{}, deathProgram{}, movedCell{};
     int level{1}, frame{}, velocityFixed{}, acceleration{}, directionIndex{};
+    std::optional<int> sourceSkill;
     std::optional<int> impactCount;
     // frame counts processed local callbacks. Native countdown resets must not
     // rewind callbacks or animation; TotalFrames changes only for explicit native writes.
     int nativeTotalFrames{}, nativeCurrentFrames{},nativeSequenceFrame{};
     std::optional<int> animationRate;
     bool suppressLight{};
+    bool initialHidden{};
     std::optional<int> hiddenUntilCurrentFrame;
     std::optional<int> activateAtCurrentFrame;
     int elapsedFrames() const { return nativeSubtract(nativeTotalFrames,nativeCurrentFrames); }
     void setCurrentFrame(int frames) { nativeCurrentFrames=nativeMissileFrameCount(frames); }
-    Vec turnTarget;
+    Vec turnTarget, pathTarget; // Native DynamicPath target coordinates, independent of the consumed path queue.
     int emissionCountdown{};
     std::optional<std::array<int32_t,2>> nativeParameters;
     int streamMissile{-1},streamRange{},streamPeriod{};
@@ -115,6 +119,7 @@ struct ClientMissileTarget {
     bool hostile{};
     int retaliation{-1},retaliationRank{1};
     bool undead{},monster{},large{};
+    EntityId target; // Observed path target; used by the native owner's-target fallback.
 };
 // Prepared from imported skill data by SceneAssets; no damage or cast rules.
 struct BlizzardVisual {

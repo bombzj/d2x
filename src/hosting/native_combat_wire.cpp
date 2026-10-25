@@ -108,7 +108,7 @@ Bytes monsterBlock(EntityId actor, const std::optional<MotionTarget> &target) {
     });
 }
 }
-Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
+Bytes nativeMonsterAssignment(const ClassicData &data,const MonsterSnapshot &monster, Vec origin) {
     return encodeServerPacket(ServerMessage::AssignNpc, [&](auto &out) {
         out.u32(uint32_t(monster.id.value)); out.u16(uint16_t(monster.nativeClass)); point(out, monster.position + origin);
         out.u8(monster.life);
@@ -138,7 +138,23 @@ Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
             if(!*monster.storedOwner || monster.storedOwner->value>0x7fffffff) throw std::runtime_error("Native stored owner exceeds 31 bits");
             bits.write(uint32_t(monster.storedOwner->value),31);
         }
-        bits.write(0,1); // No assignment stat list; state packets follow.
+        // SCmd::sub_6FC3FC80 copies sixteen base entries before filtering.
+        // This is the monster's MonProp list, never hidden inventory totals.
+        const auto &table=data.tables.at("itemstatcost");bool sent=false;
+        for(size_t index=0;index<std::min(size_t{16},monster.assignmentStats.size());++index) {
+            const auto &stat=monster.assignmentStats[index];
+            size_t row=0;while(row<table.rows().size() && table.number(row,"ID")!=stat.key.id) ++row;
+            if(row==table.rows().size() || !table.number(row,"Send Other").value_or(0)) continue;
+            const int width=table.number(row,"Send Bits").value_or(0),parameter=table.number(row,"Send Param Bits").value_or(0);
+            if(!width) continue;
+            if(stat.key.id>=511 || width<1 || width>32 || parameter<0 || parameter>32)
+                throw std::runtime_error("Invalid native monster assignment stat widths");
+            if(!sent) {bits.write(1,1);sent=true;}
+            bits.write(stat.key.id,9);
+            if(parameter) bits.write(uint32_t(stat.key.layer)&(parameter==32?UINT32_MAX:(uint32_t{1}<<parameter)-1),unsigned(parameter));
+            bits.write(uint32_t(stat.value)&(width==32?UINT32_MAX:(uint32_t{1}<<width)-1),unsigned(width));
+        }
+        if(sent) bits.write(511,9);else bits.write(0,1);
         auto tail=bits.release();out.u8(uint8_t(13+tail.size()));out.append(tail);
     });
 }

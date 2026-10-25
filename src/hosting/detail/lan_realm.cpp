@@ -10,12 +10,18 @@ void LanRealm::listen(std::string address, uint16_t gamePort) {
     host_.initialize(); network_.listen(net::Endpoint{std::move(address), gamePort});
 }
 void LanRealm::retire(Peer &peer) {
-    if (peer.cleanupAttempted) return;
-    peer.cleanupAttempted = true;
+    if (peer.cleanupComplete) return;
     // TCP/IP has no disk-save acknowledgment. Keep an isolated host recovery
     // copy, including the last queued save if transport closes after retirement.
-    try { peer.service->recoverTcpIpSave(); peer.service->close(false); }
-    catch (const std::exception &error) { peer.service->counters.lastFailure = error.what(); }
+    try {
+        peer.service->recoverTcpIpSave(); peer.service->close(false);
+        peer.cleanupComplete=true;
+    } catch (const std::exception &error) {
+        if(peer.service->counters.lastFailure!=error.what()) {
+            peer.service->counters.lastFailure=error.what();++peer.service->counters.failures;
+        }
+        peer.recoveryRetry=std::chrono::steady_clock::now()+std::chrono::seconds(1);
+    }
 }
 void LanRealm::fail(Peer &peer, std::string error) {
     if(!peer.closed && !peer.closing && (peer.service->peer.phase==GamePhase::Connected || peer.service->peer.phase==GamePhase::LoggedOn)) {
@@ -45,7 +51,10 @@ void LanRealm::collect() {
     const auto now = std::chrono::steady_clock::now();
     for (auto &[id, peer] : peers_) {
         (void)id;
-        if (peer->closed) continue;
+        if (peer->closed) {
+            if(!peer->cleanupComplete && now>=peer->recoveryRetry) retire(*peer);
+            continue;
+        }
         if (peer->service->peer.phase == GamePhase::Closed) {
             // B3/B0 are processed by the original client's game loop. An
             // immediate FIN can be observed as a lost connection before B0.
@@ -61,7 +70,7 @@ void LanRealm::collect() {
         } else if (peer->service->peer.phase != GamePhase::Entered && now >= peer->deadline)
             fail(*peer, "Native TCP/IP character admission timed out");
     }
-    std::erase_if(peers_, [](const auto &entry) { return entry.second->closed && !entry.second->service->binding; });
+    std::erase_if(peers_, [](const auto &entry) { return entry.second->closed && entry.second->cleanupComplete && !entry.second->service->binding; });
 }
 void LanRealm::poll() {
     for (auto &event : network_.poll()) {
