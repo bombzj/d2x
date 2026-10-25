@@ -270,12 +270,13 @@ void RealmSession::Impl::expect(OnlineStage value) const {
 
 RealmSession::RealmSession(bool retainGamePackets) : RealmSession(ClientProfile::Lod113c, retainGamePackets) {}
 RealmSession::RealmSession(ClientProfile profile, bool retainGamePackets)
-    : impl_(std::make_unique<Impl>(profile, retainGamePackets)) {
+    : configuredProfile_(profile),impl_(std::make_unique<Impl>(profile, retainGamePackets)) {
     snapshot_ = impl_->view;
     impl_->start();
 }
 void RealmSession::prepare_connection_profile(bool local) {
-    const auto profile=local?ClientProfile::Pd2Local:ClientProfile::Pd2CnNormal20261020;
+    const auto profile=configuredProfile_==ClientProfile::Lod113c?ClientProfile::Lod113c:
+        local?ClientProfile::Pd2Local:configuredProfile_;
     std::unique_ptr<Impl> next;
     {
         std::lock_guard lock(impl_->mutex);

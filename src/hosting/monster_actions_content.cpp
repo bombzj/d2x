@@ -149,6 +149,7 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     case 19:break; // FingerMageSpider posts its native six-slot recipient state.
     case 54:break; // Baal Monster Spawn resolves its owner's live preset parameter.
     case 55:break; // BaalInferno uses the shared direct hit plus ordered mana withdrawal.
+    case 6:if(!data.pd2Host) return {};break; // PD2 uses the otherwise unused slot for preset monster births.
     case 4:case 5:case 7:case 8:case 9:case 10:case 11:case 17:case 18:case 20:case 21:case 22:case 26:case 27:case 28:case 29:case 32:case 33:case 35:case 36:case 37:case 38:case 40:case 43:case 44:case 45:case 47:case 48:case 50:case 51:case 52:case 53:case 56:case 57:case 58:case 59:break;
     case 0:break;
     default:return {};

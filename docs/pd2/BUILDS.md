@@ -10,12 +10,16 @@
 | 当前pd2data.mpq | `cc42f5c71d61c9a38d5b948243ed2fe6a9a2bc0124fb3eaaff0f1943830e15cf` | 当前隔离目录实际资源摘要；表字段及记录身份须与此输入核对，历史解析结果有独立版本时保留其范围 |
 | 当前pd2maps.mpq | `fb9e21ae5d797caa7ae8051ed15752a71a35ac317b44c8cdde3c443ad62b25eb` | 当前扩展地图DS1／DT1输入，不能用旧地图包替代后宣称布局相同 |
 | 当前pd2assets.mpq | `2ceb83ca8e9f482fa46a94cda95d2ab80f8415a0d2c1047a44f64d4a95cf56af` | 当前配套图形资源，与地图包和数据表独立标识 |
+| 当前pd2monchars.mpq | `ae2abade85c5f393db5d8089cb4b6566b2cfed2adea0f573bc0f4220ef733217` | 当前怪物图形包；自研宿主资源配置与其余四个MPQ一起核对 |
+| 当前patch_d2.mpq | `b976e7847dda696f54198a9477819f96579c4894f54381c72afb4937e919e0a9` | 当前PD2目录补丁包；覆盖原目录后再挂载data／assets／maps／monchars，不作为原版补丁身份 |
 | 配套D2Common.dll | `0406922db7b9959484a08f83bcc6a0fe9d11a157cb2322a061033e8d37480217` | 当前包装器负序号的实际解析模块，不直接套D2MOO序号 |
 | 配套D2Game.dll | `24b293b86f95bea0228826c502ea04737ba21b91ca9832e52aac4b11fef14f53` | 当前服务端RVA的实际解析模块 |
 | 旧核心／ProjectDiablo.dll | `9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f` | 5,230,080字节；[完整函数目录](../resources/pd2-core/README.md)、旧补丁／程序表及未另标版的历史取证 |
 | 旧pd2data.mpq | `6ce1d885dfcb16ac0ff7a183d56c56baeaad591d8779ce9e843e16dfc2756002` | [首批样本摘要](../architecture/PD2_COMPATIBILITY.md#已取得的-cn-目标样本)对应的资源，不能与当前资源混称同一输入 |
 
 当前摘要的可复核输入为隔离目录`D:/Downloads/Diablo II V1.13C-PD2-Analysis/pd2/`的同名文件；路径只供定位，不能作为版本身份。核心和MPQ可以分别更新，因此同一核心摘要不自动证明资源相同。其他资源、BH、mdll1、PD2_EXT、Bnclient和原客户端等模块按[样本取证](../resources/PD2_CN_DLL_ANALYSIS.md)各负责段落的摘要解释，不套用核心的版本标识。
+
+上述两份ProjectDiablo.dll的PE文件属性均未提供FileVersion／ProductVersion。代码中的`Normal20261020`／`Normal20261021`分别标识9c2b…／17d5…样本，属于本项目的构建枚举，不是DLL自带的产品版本号；`pd2-cn-normal-20261020`是兼容协议配置名，已明确接受这两份核心身份，不能仅按名称判断实际文件版本。
 
 CN Normal／bnet／TCP是已有目标范围；旧快照主文件与`.sn`摘要相同，`.ss`不同。不能把此事实推广到其他发布、赛季、官方版或KCP／QUIC。CN附加模块提供的存储、认证和控制扩展须注明模块，不一概归为ProjectDiablo核心功能。
 
@@ -25,7 +29,7 @@ CN Normal／bnet／TCP是已有目标范围；旧快照主文件与`.sn`摘要�
 
 该启动链的engine／ProjectDiablo.dll摘要为上表旧核心`9c2b…`，engine／pd2data.mpq为当前`cc42…`，D2Game为上表配套`24b2…`。D2Server.dll另为`2b70b83e8324e27b186e87dbf1fcc9e9ef7ff861ccf276a6c47312b2d0eb05f3`；实验桥接`source/native-d2gs/src/d2gs/pd2_bootstrap.c::InstallPd2Bootstrap`要求这两份DLL的完整摘要及原指令字节，随后在预初始化和表加载之间装载核心。它没有接受新核心的声明，不能仅复制`17d5…`覆盖文件或放宽摘要校验。
 
-这是“旧核心＋当前表”的独立对照组合。可用它采样已分别确认的共有规则、客户端原包及原生保存；结果必须标记该组合，不能直接认证当前`17d5…`核心的全部行为。自有宿主的Pd2Local与实验Realm的CN方言也不同，按命令含义、原字段及可观察结果对照，不要求两套信封逐字节相同。部署及入口见[原生引擎实验](../development/PVPGN_SERVER.md#pd2-cn原生引擎隔离实验)。
+这是“旧核心＋当前表”的独立对照组合。可用它采样已分别确认的共有规则、客户端原包及原生保存；结果必须标记该组合，不能直接认证当前`17d5…`核心的全部行为。自有宿主的Pd2Local与实验Realm的CN方言也不同，按命令含义、原字段及可观察结果对照，不要求两套信封逐字节相同。部署及入口见[原生引擎实验](NATIVE_REALM_LAB.md#原生实验部署与证据边界)。
 
 ## 地址与证据
 

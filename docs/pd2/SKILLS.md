@@ -31,7 +31,7 @@ ProjectDiablo核心的技能CltDo／渐进回调及喷流程序同时用于`pd2-
 
 固定原生D2Client样本（SHA-256 `dd8bc6025de921216a97c17f97cd1a50fbb85926e838ec60e13451448836d906`）公共飞弹推进RVA B18F7–B1959读取Missiles字节字段+0x12C（CltSrcTown）：正常递减CurrentFrame后，拥有者在城镇时将剩余帧封顶到该值；非LoopAnim且AnimLen大于上限时同步设置动画帧为差值左移8。原生找不到拥有者也进入封顶分支；拥有者存在但房间为空则跳过。D2X目前对已观察到的拥有者／房间应用封顶，未知身份／房间不据观察者位置猜测；Meteor静态落地图只限制寿命。当前PD2原表三种Meteor地面火CltSrcTown=12，而Town与服务端SrcTown属于另外的裁决条件；进入城镇不应触发所有客户端效果的清空。上述依据为静态调用链，完整实机表现仍待核对。
 
-已有配套TXT／BIN对照记录：Skills为610条／步长0x23C，SkillDesc为262条／步长0x120；该记录未单列资源摘要，资源更新后仍须按[版本口径](BUILDS.md#目标版本)复核，不能仅凭核心摘要沿用。职业技能的 ID、描述及三项前置技能链接、maxlvl、reqlevel、四项属性需求、CltSt／CltDo 及描述的页／行／列／ListRow／ListPool／IconCel 与 BIN 对应字段一致。前置链接位于0x17E／0x180／0x182，为有符号 WORD；180条非空引用均对应，空引用为-1。Skills 偏移分别为 0、0x194、0x12C、0x174–0x17C、0xF2／0xF4；SkillDesc 的链接序号为 WORD 0，六项布局为字节 2–7。ListRow 的 -1 对应 0xFF。同时对上职业技能的法力字段（0x184／0x186／0x188／0x18A／0x18C）、HitShift（0x1A4）与 EMin／EMax（0x1E0／0x1E4），保留起手／基础／递增法力的有符号 WORD。运行时在 RemoteDisplay 导入前执行相同字段校验；不据此声称 TXT 公式与编译表达式已经全部逐条对齐。女巫三系截图及两个新增技能的英文 TBL／提示对应见[技能描述](../gameplay/skills/DESCRIPTIONS.md#pd2-cn-的技能树与显示边界)。
+已有配套TXT／BIN对照记录：Skills为610条／步长0x23C，SkillDesc为262条／步长0x120；该记录未单列资源摘要，资源更新后仍须按[版本口径](BUILDS.md#目标版本)复核，不能仅凭核心摘要沿用。职业技能的 ID、描述及三项前置技能链接、maxlvl、reqlevel、四项属性需求、CltSt／CltDo 及描述的页／行／列／ListRow／ListPool／IconCel 与 BIN 对应字段一致。前置链接位于0x17E／0x180／0x182，为有符号 WORD；180条非空引用均对应，空引用为-1。Skills 偏移分别为 0、0x194、0x12C、0x174–0x17C、0xF2／0xF4；SkillDesc 的链接序号为 WORD 0，六项布局为字节 2–7。ListRow 的 -1 对应 0xFF。同时对上职业技能的法力字段（0x184／0x186／0x188／0x18A／0x18C）、HitShift（0x1A4）与 EMin／EMax（0x1E0／0x1E4），保留起手／基础／递增法力的有符号 WORD。运行时在 RemoteDisplay 导入前执行相同字段校验；不据此声称 TXT 公式与编译表达式已经全部逐条对齐。女巫三系截图及两个新增技能的英文 TBL／提示对应见[技能描述](SKILL_DISPLAY.md#技能显示技能树与资源覆盖)。
 
 按页／行／列有效且 maxlvl 大于零统计，可见节点为 ama 29、bar 29、ass 31、dru 31、nec／pal／sor 各33。Avoid、Sword／Mace／Spear Mastery、Shattering Arrow 和 Blade Dance 为有等级的隐藏记录。原 DC6 图标仍按当前包读取，布局与技能参数不硬编码为原版30节点。
 
@@ -40,6 +40,7 @@ ProjectDiablo核心的技能CltDo／渐进回调及喷流程序同时用于`pd2-
 | CltDo | 旧版／更新版 RVA | 已恢复的输入与显示行为 |
 | --- | --- | --- |
 | 8 | 0x3A65C0／0x3A8A80 | Mind Blast 在目标处生成 CltMissileA，子弹体取 B；基础半径 AuraRangeCalc，加本单位 AuraState 列表中 `max(AuraStat1,1)-1` 乘 Calc1。缺少状态／属性事实时暂缓，不借累计属性猜充能 |
+| 83 | 更新版0x3A8BE0 | 仅Skills.CltDo83走专用：单位位置中心、1113固定场地分支、路径种子重置及原40F00螺旋环；渐进83继续原版委托 |
 | 94 | 更新版0x3A8CF0 | DoomKnightMissile335从SrvMissileA加怪物S3组件值；968／969／1106／1107分别固定偏移0／1／2／3。读取原appearance位流的组件10，缺事实不猜元素；保留非零目标坐标与100子格距离门槛。消费者为remote_scene_pd2／effects |
 | 98 | 0x3A6B20／0x3A8FE0 | Double Throw按两手真实武器的Items.MissileType选择A／B／C，沿序列15两次释放；Calc2为连锁次数，AuraRangeCalc为半径。Common10321读取基础物品+0xFA，不是ItemTypes编号 |
 | 100 | 0x3A6C30／0x3A90F0 | Combustion 以本人为圆心，A 为弹体、Calc2 为环形数量。堆栈副本中的字段对应 Skills +0x13C，不能误读为 Calc1 |
@@ -47,6 +48,7 @@ ProjectDiablo核心的技能CltDo／渐进回调及喷流程序同时用于`pd2-
 | 102 | 0x3A6E10／0x3A92D0 | Poison Dagger 必须有单位目标，在该位置以 A 请求6条方向 |
 | 103 | 0x3A6EA0／0x3A9360 | 空 CltDo 返回成功；不从这个入口另造光环弹体，继续消费服务器状态 |
 | 105 | 0x3A6F30／0x3A93F0 | 在施法者位置创建 Skills.SrvMissileA（+0x48）；不误用CltMissileA |
+| 109 | 更新版0x3A9710 | 先调用原CltDo25生成毒环，再以技能159、原等级调用CltDo46暂停MonSeq；当前消费者为PoisonEggSpawn453，双端链见下节 |
 | 110 | 0x3A7280／0x3A9740 | Fire Claws要求真实单位目标，以A生成Calc2条ChargedBolt路径 |
 | 111 | 0x3A7390／0x3A9850 | Inferno／Arctic Blast读取Calc1帧数与Calc3宽度，按施法者视觉随机消费40%分支及有符号余数；8020只覆盖TotalFrames，随后设置CurrentFrame，未置04时不应用创建结构的速度字段 |
 | 113 | 0x3A7890／0x3A9D50 | CltMissileA 与 CltCalc1（+0x114）形成本人中心环，数量非正时不生成 |
@@ -57,15 +59,51 @@ ProjectDiablo核心的技能CltDo／渐进回调及喷流程序同时用于`pd2-
 
 环形 helper 旧版 0x369AF0／更新版 0x36BBC0 使用64项原整数方向，数量为0或大于64时取64，否则步进为整数 `64/count`，不是浮点均分圆周。因此请求6实际生成7条。数量、弹体与半径继续来自当前 MPQ／公式；显示公式走公共只读目录，不准备自研宿主的 PD2 规则。以上发射入口尚未完成全部施放／像素验收，弹体自身的 CltDo／CltHit 仍可能未支持，不能将发射入口接入等同于完整技能完成。
 
-当前MPQ的直接CltDo调用者须与程序表区分：83的新增皇家火分支用于568／574；109用于453PoisonEggSpawn；114用于575LucionDash，归特殊首领范围。108／115目前没有Skills直接引用，不据此臆造普通职业入口，也不排除间接程序调用。83的零售渐进委托仍必须保留。普通97／112的非本人角色位移显示，以及94的LobSkill等变体仍待核对，不能把本人Leap／Charge预测或线性弹体接入推广为全部客户端组合完成。
+当前MPQ的直接CltDo调用者须与程序表区分：83的新增皇家火分支用于568／574；109用于453PoisonEggSpawn；114用于575LucionDash，归特殊首领范围。108／115目前没有Skills直接引用，不据此臆造普通职业入口，也不排除间接程序调用。83的零售渐进委托仍必须保留。普通97／112的非本人角色位移显示仍待核对；94的LobSkill分支是未覆盖边界，不能把本人Leap／Charge预测或线性弹体接入推广为全部客户端组合完成。
+
+当前Clt94唯一直接调用者为335DoomKnightMissile，lob为空。当前3A8CF0在Skills+4的bit1分流：置位委托39F1D0抛物线创建，否则委托39F1B0；现有普通发射分支对应后者，不能将未覆盖的LobSkill写成当前335缺必需弹道。配套Client A1540的坐标距离门槛比较平方距离10000，沿用现有非零目标坐标与平方距离检查。材料为`town-queries/gap-clt94`，其他单位、隐式调用和像素表现仍未认证。
 
 隐藏佣兵技能的服务端执行不补足客户端未知属性：第四幕佣兵Bone Spear84的CltDo17仍读取当前Calc1中的extra_bonespears；当公开单位／装备／状态没有提供该属性时，当前显示公式明确不可用，不借用主人的数值，也不把缺失事实当成零。该输入投影属于普通伙伴表现的剩余缺口；服务端弹数由实际佣兵公式独立结算。
+
+### 皇家火CltDo83
+
+当前`3A8BE0`只在Skills.CltDo为83时执行专用分支，否则委托原回调；不能将渐进83一起替换。`37E710`更新单位+CC的路径种子，再将其写到单位+20的随机低DWORD，高DWORD不变。`37BB50`取的是施法者自身路径坐标：原调用ECX=EDI，不能据失真伪代码改为目标坐标。只有当前class1113／LucionControl将中心替换为`(seed+13)%40+0x620F,(seed+19)%40+0x17CD`，按uint32回绕和无符号余数处理；这是DLL明示的特定场地分支。
+
+发射用CltMissileA及Calc1，`3A25C0`经构造器213320、getter319FA0及表4A76A4委托配套D2Client RVA40F00；局部SEED以该路径种子及高字666初始化。按64项原整数方向、Calc1作为下标步长逐枚推进局部随机，原40200回调为螺旋路径且最多77帧；每枚创建后以Skills+14C即Param2加1写TargetX。不是均分成Calc1枚，也不是追踪玩家的散射。
+
+`remote_scene_pd2.cpp::preparePd2RoyalFire`负责专用种子／中心／参数，effects分派复用公共螺旋与飞弹创建；缺身份／资源／公式或步长非正则暂缓。当前直接调用者568／574、981／997 maker及原CltDo6已有表现消费者。已构建；服务器SrvDo143已按下节接入；完整子体、同帧回调、视觉随机起点及场景控制器仍待闭合，不以此宣称完整首领技能完成。
+
+### 皇家火SrvDo143
+
+当前36A270在36A47A将服务端Do表+23C（槽143）写为3AE960；该函数只在Skills.SrvDo==143时执行新分支，否则保留原渐进委托。37E710更新一次路径种子，并只覆盖主人SEED低DWORD；以施法者位置为圆心，仅怪物1113使用与客户端一致的固定场地中心。SrvMissileA及Calc1分别提供弹体和原64方向的下标步长，不是总弹数：当前568／574的步长13／21分别产生5／4枚。
+
+3A2580经全局5DED8C、构造器213310、getter319EF0和版本表4A830C绑定配套Game RVA93D60。原函数以路径种子／高字666初始化局部SEED，每枚调用一次RollRandom交给91040螺旋初始化，寿命上限77。原服务端仅当飞弹ID568（royalstrikechainlightning）才以技能280的Param2+1写TargetX；不能照抄客户端对所有弹体写入当前技能Param2+1。当前皇家火981／997不触发这个分支。静态指令证据见`town-queries/gap-royal-fire`，Game摘要24b293…。
+
+独立`server/systems/missiles/pd2/royal_fire.cpp`准备中心、局部种子及螺旋请求，`skills/pd2/projectiles`走现有权威飞弹／费用事务；内容准入和怪物selfAction接入143。路径种子和主人随机均随同一出生批次复验、提交；容量等待保留已准备批次，身份／种子／ID游标过期则拒绝，不用新的随机重掷替换已准备结果。场地绝对坐标先转换为当前区域局部坐标；客户端保持其原绝对坐标口径。
+
+当前表依赖闭包为981→982（Radament）和997→998→999（Lucion）。SrvDo6在换格时生子体，998的SrvHit48及CltHit53负责延时后子体，后继沿原技能链接、NextDelay及接触程序处理。客户端CltDo6补缺及剩余边界见下一节；此项已构建，尚未逐场景运行对照，未关闭首领AI、特殊控制器和全场景奖励缺口。
+
+### 皇家火子弹与公共CltDo6
+
+配套Client dd8b…的CltDo表DD8A0槽6为B92B0，未被本条当作PD2专用新算法。它在公共运动／碰撞前读取上次路径更新的换格标记；以CltSubMissile1为必需的基础子弹，第二／第三槽均存在时抽0／1／2分别选择第二／第三／第一槽，只存在第二槽时抽0才替换。先读第一槽Range，非零时作为选中变体的固定总帧数，不能让firesmall／firemedium使用各自Range或LevRange；之后独立抽CltParam1，零或抽样非零时添加创建标志0x4000抑制光照。子弹创建后按Common11080／11168取得的父弹精确坐标覆盖子弹坐标，不取整到换格后的新位置。
+
+`presentation/world/client_missile_view.cpp`已补该公共回调及每弹的上一帧换格记忆，复用当前SEED、飞弹创建、固定寿命和suppressLight输入；原先移动后只生第一种子弹的路径已移除。当前981有982／firesmall／firemedium三个候选，CltParam1=4；997仅998，仍抽光照门控，998寿命20后由CltHit53生999。`CelFile=null`早已有imageLessProjectiles消费者，997无需补图或替换原图；空文件和真正缺资源继续不可用。
+
+CltHit53为原Client B5A10，读取CltHitSubMissile1与父路径首点，再把cHitPar1／2／3传入子图形的弹跳／初始轨迹；当前998三项均零。服务端原Do6及Hit48分别见D2MOO MissMode的对应回调，并以配套Game为后续核对入口。指令材料为`town-queries/gap-royal-fire/client-b92b0-instructions.json`及`client-b5a10-instructions.json`；InitSteps在B3535设置初始隐藏标志，B1862按原生经过帧数解除，并非预先移动；其显示边界、首路径点在路径耗尽时的保存仍未闭合、原视觉种子初态、完整同帧交错及逐像素表现，不能据此把两端整条技能标为完成。
+
+### PoisonEggSpawn的双端委托
+
+当前核心`36A270`将CltDo109设为`3A9710`：以原技能／等级先调用原表25，再以技能159／相同等级调用原表46。配套D2Client的25为RVA73CB0，读取CltMissile及CltCalc1，沿原64方向毒环发射；46为RVA56780，只将单位dwSeqSpeed清零并返回成功，不另生子怪／飞弹。`remote_scene_effects.cpp`为109复用环形创建，ClientSend不抑制此原生客户端回调；`remote_scene_units.cpp`在MonSeq首个动作事件保持帧，后续权威动作再更新动画请求。当前卵的UseAttackRate为空；非标准序列倍率的跨帧停留时刻尚未运行核对。
+
+服务端安装`36A560`将SrvDo173设为`3B1090`：原技能／等级调用原Do22，再以技能159／相同等级调用原Do84，并忽略第一次返回值。SrvSt43仍是原版清目标标志／死亡碰撞。当前MPQ的453PoisonEggSpawn使用St43／Do173／Clt109，MonStats880 torajanBossPoisonEgg的AI为GargoyleTrap，Skill1模式为seq_maggotegg；子怪来自该行spawn（torajanBossMaggot）、spawnmode。不能因AI名相同而准备为普通陷阱射线。
+
+`hosting/pd2/monster_actions.cpp`独立准备该动作，`skills/pd2/monster_skills.cpp`只编排Do22→Do84，复用公共毒环和孵化能力；数量用当前Skills159.calc1及本次等级，实际子怪／动画／碰撞从MPQ准备。毒环完成标记与孵化发布状态跨容量重试保留，不重复发环或创建已发布子体；孵化终止本体，沿公共无经验子怪和死亡处理。代码已构建，完整场景入口、出生／死亡随机交错及非本人像素表现仍未认证，不据此解除Torajan场景控制器的拒绝。
 
 ### 渐进事件与扇形
 
 渐进事件0xA3现接106／107：旧0x3A6FD0／0x3A7130，更新0x3A9490／0x3A95F0。阶段由原事件与PrgStack重放，按阶段选择CltMissileA/B/C和CltCalc1–3；106从施法者向目标处的整数扇形发射，107以目标为圆心按64项整数方向发射。当前表对应Fists of Fire第二／三阶段及Cobra Strike第一／三阶段，不能只接普通CltDo入口。106保留原do-while至少一次，107的零或大于64数量取64。弹体选择旧39E3B0最终绑定1.13c D2Client RVA40550，读取AuraState/AuraStat1并将弹体槽阶段限至1–3；原事件阶段重放不依赖较新的累计状态。扇形helper旧379710／新37B960以施法者减目标，围绕目标生成端点；平方距离小于4时原指令把deltaY替换为此前平方距离，不能照搬普通扇形。纯几何入口为pd2MissileFanLayout，未改变原版missileFanTargets。
 
-83替换旧3A6720仅在Skills.CltDoFunc本身为83时走专用路径，否则转回原回调；因此Blades of Ice／Royal Strike的渐进83仍沿原路径，不可整体屏蔽。83专用分支及108–109／114–115仍未完整恢复，当前MPQ直接调用范围见上段；94已有普通发射消费者，其他变体待核对。本人97／112路径已接入，其他单位与组合仍待核对。97／112／114还读原技能运行标志和路径阶段。
+83替换旧3A6720仅在Skills.CltDoFunc本身为83时走专用路径，否则转回原回调；因此Blades of Ice／Royal Strike的渐进83仍沿原路径，不可整体屏蔽。83专用分支已接下述皇家火发射，109已接毒虫卵委托；108／114–115仍未完整恢复，当前MPQ直接调用范围见上段；94已有普通发射消费者，其他变体待核对。本人97／112路径已接入，其他单位与组合仍待核对。97／112／114还读原技能运行标志和路径阶段。
 
 ### 尸体血迹与Sacrifice表现
 
@@ -90,6 +128,18 @@ PD2 Blaze的当前States行未填原版setfunc3，匹配配置从Skills的Blaze 
 ### 刀刃反射
 
 CltHit6旧3A1DC0／更新3A4140只在无接触单位、当前帧大于1且介于ActivateFrame与TotalFrames内时考虑反弹；TargetX保存反弹次数，cHitPar3为次数上限。它先以原碰撞0x806及路径大小加1检查当前位置，再从当前拥有者到碰撞点的射线依次尝试X／Y反射。HitPar1–3（零值各取1）决定分支数量、64向角度步长和剩余帧损失，cHitPar1／2决定首跳最小剩余帧及终止阈值；子体只改CurrentFrame，保留TotalFrames。37CDF0只检查前方一个半径处的占地，不检查整条反射射线。客户端已接当前bladefragment1这条原表路径，单位命中不能触发墙面反射。当前MPQ的ClientSend=1不能跳过拥有者发射，原版D2Client CltDo6 RVA413A0直接调用B30F0构造飞弹，未以该字段拒绝；原版同入口仍保留普通飞弹创建路径。
+
+服务端HitPar数组在当前TXT中的列名是sHitPar1–3；`client_missile_assets`已修正从这三个实际列准备serverHitParameters，旧HitPar查找会静默得到零。当前bladefragment1实际为3／5／2。服务端description_data已有sHitPar→hitpar归一化；当前1063条Missiles的TXT数组与BIN+0x4C三项逐记录一致，没有新增BIN覆盖器；表身份与对照材料为`p3-current-tables/missiles-identity.json`。
+
+### PD2传送落点与怪物Blink
+
+当前`3AF240／3AF4F0／3AF610／3AFD50→36B570`在实际位移前检查状态214／disable_tele，不能只在技能起手检查。玩家Teleport／Gust／Blood Warp与Joust已补该施放检查；已移动而等后继发布的重入不重复位移。`travel/pd2/teleport.cpp::pd2TeleportLanding`承接区域规则，公共castTeleport只在PD2规则下调用，Joust及怪物Blink共用。
+
+Teleport=2通过原0x804射线检查，按来源尺寸与固定目标尺寸2缩短两端；公共Grid::interactionSegment增加掩码和来源尺寸输入，原调用默认仍为0x804／2。Teleport=3先用来源尺寸／0x80D寻位，失败仍沿原坐标；37E170拼接当前与目标房间的NearRoom数组，按各自单位链为613／614／615选首个最近物件，距离为Common10522的去尺寸后`2*max+min`。613在距离小于25且任一轴没有严格同侧时触发检查；614要求X没有严格同侧且与来源Y差小于25；615交换两轴。触发后同时检查目标3×3／0x80D矩形与0x80D缩短射线。当前对应Levels152／164／171／194，物件名blocker_teleport_xy／x／y，读取实际MPQ位置；不自造墙或禁传区域。
+
+怪物当前直接调用者357Blink与573LucionBlink已由hosting准备为真实Teleport动作，`activatePd2MonsterTeleport`执行上述区域／状态门控，再走0x1C09落点与公共怪物位置发布；573按Calc2=32经36BAA0的64方向整数步进生成落地环。飞弹批次和阶段跨背压保留，已移动后不再次位移。当前两技能没有掌握减益；未核定的怪物减益组合和跨区域落点明确拒绝。Hell条件下36B570还查全局5DC81C集合，写入／配置来源未闭合；不能把本次区域规则补缺称为全部原生传送等价。玩家附加飞弹分支也未因此推广为完成。
+
+原指令与辅助器材料为`town-queries/gap-blink`、`pd2-area-skill/36B570`和`skill-helpers/36BAA0`；配套Common040692…的10686→315E0、10522→7FBD0分别核定射线与距离。当前States／Levels／Objects表摘要见`p3-current-tables/teleport-identity.json`。已构建，尚未逐场景运行对照，物件休眠／重新安装和全部跨区交错仍需核对。
 
 ### Claws of Thunder子体
 

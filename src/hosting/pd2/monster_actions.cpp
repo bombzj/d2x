@@ -40,7 +40,9 @@ void prepareMonsterSkillPrograms(const ClassicData &data,server::SkillRules &rul
     }
     for(size_t row=0;row<skills.rows().size();++row) {
         const auto id=skills.number(row,"Id");
-        if(!id || !linked.contains(nativeName(skills.value(row,"skill"))) || !projectile(data,row)) continue;
+        const bool joust=!skills.number(row,"srvstfunc").value_or(0) && skills.number(row,"srvdofunc").value_or(0)==162;
+        const bool blink=!skills.number(row,"srvstfunc").value_or(0) && skills.number(row,"srvdofunc").value_or(0)==155;
+        if(!id || !linked.contains(nativeName(skills.value(row,"skill"))) || (!joust && !blink && !projectile(data,row))) continue;
         auto spec=preparePd2SkillDefinition(data,row);spec.effect=SkillBehavior::Pd2;
         if(const auto found=rules.definitions.find(*id);found!=rules.definitions.end()) {
             if(!found->second.spec.pd2) found->second.spec.pd2=spec.pd2;
@@ -67,14 +69,39 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
         const auto state=skills.value(row,"auratargetstate");
         const bool curse=!start && function==30 && state!="dark_pact" && data.states.contains(state);
         const bool inferno=start==53 && function==95;
-        if(!curse && !inferno && !projectile(data,row)) continue;
+        const bool armor=!start && function==18 && data.states.contains(skills.value(row,"aurastate"));
+        const bool joust=!start && function==162;
+        const bool smite=!start && function==150;
+        const bool charge=start==31 && function==67;
+        const bool poisonEgg=start==43 && function==173;
+        const bool blink=!start && function==155 && skills.value(row,"aurastate").empty();
+        if(!curse && !inferno && !armor && !joust && !smite && !charge && !poisonEgg && !blink && !projectile(data,row)) continue;
         const int baseRank=stats.number(record.sourceRow,"Sk"+field+"lvl").value_or(0);
         if(baseRank<=0) continue;
         const int rank=baseRank+bonus;
         const int id=skillTableNumber(skills,row,"Id");
         if(rank<1 || rank>255 || id<1 || id>UINT16_MAX) return false;
         server::MonsterAttackRule action;action.action=server::MonsterAttackRule::Action::Pd2Projectile;action.rank=uint8_t(rank);
-        if(curse) {
+        if(charge || smite) {
+            // Native Do67 uses A1; Do150 fills the monster's A2 profile even
+            // when its declared animation is A1 (Leoric). The contact engine
+            // owns formulas, stun, source damage and the release-time profile.
+            const auto base=rule.attacks.find(charge?4:5);
+            if(base==rule.attacks.end()) return false;
+            action=base->second;action.missile.reset();action.rank=uint8_t(rank);
+            action.action=charge?server::MonsterAttackRule::Action::Charge:server::MonsterAttackRule::Action::Damage;
+            if(charge) {action.knockback=true;action.alwaysHit=true;action.hitClass=0x70;}
+        } else if(poisonEgg) {
+            // Current core 3B1090 delegates Do22, then Do84 with skill 159.
+            const auto missile=data.nativeFormulas->missileIds.find(nativeName(skills.value(row,"srvmissilea")));
+            if(missile==data.nativeFormulas->missileIds.end()) return false;
+            action.missile=prepareMonsterMissile(data,missile->second,rank);
+            if(!action.missile || !data.nativeFormulas->skills.contains(159)) return false;
+            action.action=server::MonsterAttackRule::Action::Pd2PoisonEgg;
+        } else if(blink) action.action=server::MonsterAttackRule::Action::Teleport;
+        else if(armor) action.action=server::MonsterAttackRule::Action::DefensiveBuff;
+        else if(joust) action.action=server::MonsterAttackRule::Action::Pd2Joust;
+        else if(curse) {
             action.action=server::MonsterAttackRule::Action::Curse;
             if(state=="decrepify") rule.closeCurseState=data.states.at(std::string(state)).definition.id;
         } else if(inferno) {
@@ -94,7 +121,12 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
         }
         auto mode=stats.value(record.sourceRow,"Sk"+field+"mode");
         int event=record.ai=="Izual" || record.ai=="UberIzual" || record.ai=="BaalCrab" || record.ai=="BaalCrabClone"?1:2;
+        if(charge || smite) event=1;
         if(!hasAct2MonsterSkills(record.ai) && mode=="A1" && !record.attack1Projectile) event=1;
+        // Guardian reuses CS A1 for Blink and summon. Its melee action flag
+        // is 1; the Regurgitator family's default skill flag 2 is absent.
+        if((rule.nativeClass==1064 || rule.nativeClass==1065) && mode=="A1") event=1;
+        if(poisonEgg) event=4;
         if(inferno) {
             event=name=="horror arctic blast"?1:2;
             // Fn135 casts the stream in S1, not its declared sequence.
@@ -102,10 +134,14 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
         }
         if(!prepareMonsterActionClock(archives,animations,sequences,record,mode,event,action)) return false;
         if(inferno && action.infernoFrame>=action.animation->frames) return false;
+        if(charge) {action.release=1;action.animationAction=0;action.releaseFrames.clear();action.animationEvents.clear();}
         const auto sourceMode=stats.value(record.sourceRow,"Sk"+field+"mode");
         action.useAttackRate=sourceMode=="A1" || sourceMode=="A2" || skills.number(row,"UseAttackRate").value_or(0)!=0;
         rule.skillIds[slot]=uint16_t(id);rule.skillActions.insert_or_assign(uint16_t(id),std::move(action));
     }
+    if(rule.nativeClass==1064 || rule.nativeClass==1065)
+        for(size_t slot=0;slot<(rule.nativeClass==1064?3u:2u);++slot)
+            if(!rule.skillIds[slot] || !rule.skillActions.contains(rule.skillIds[slot])) return false;
     return true;
 }
 }

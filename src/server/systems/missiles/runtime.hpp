@@ -15,7 +15,9 @@ struct System::Advance {
     bool finished{};
     std::vector<EntityId> curseTargets{};
     std::vector<EntityId> buffTargets{};
-    enum class OperationKind { Child,Impact,Curse,Buff,ContactPrelude,ContactContinue,SourceHeal,TargetManaDrain,SkillState,OwnerSeed,Resource,TargetBurst,Fear,BaalFx,CairnPortal,ReleaseRoom,Redemption,OrbMist,BoneSegment,MissileField,NativeCollision,LevelSpawn,TowerOpen,TowerGold,TowerSound,BaalWave,Pd2DelayedSkill };
+    enum class OperationKind { Child,Impact,Curse,Buff,ContactPrelude,ContactContinue,SourceHeal,TargetManaDrain,SkillState,OwnerSeed,Resource,TargetBurst,Fear,BaalFx,CairnPortal,ReleaseRoom,Redemption,OrbMist,BoneSegment,MissileField,NativeCollision,LevelSpawn,TowerOpen,TowerGold,TowerSound,BaalWave,Pd2DelayedSkill,Pd2MonsterSpawn };
+    struct Pd2MonsterSpawn {RegionId area;Vec observer,position;int definition{},mode{};uint32_t flags{};std::shared_ptr<monsters::NativeBirthPublication> publication;};
+    std::vector<Pd2MonsterSpawn> pd2MonsterSpawns{};
     std::vector<Pd2DelayedSkillMissiles> pd2DelayedSkills{};
     struct BaalWave {RegionId area;Vec position;int mappedPreset{};};
     std::vector<BaalWave> baalWaves{};

@@ -30,12 +30,14 @@ class System {
     void writePortalCollision(const Portal &,bool) noexcept;
     struct NativeLinkPosition {RegionId area;uint64_t generation{};Vec position;std::optional<RoomView> room;};
     std::map<EntityId,NativeLinkPosition> nativeLinks_;
+    std::optional<Portal> pd2OpeningPortal_;
     const AreaObject *waypointAccess(const ActorContext &,EntityId,std::optional<uint64_t> revision = {}) const;
     bool waypointBusy(PlayerId) const;
     StepStatus expireSynchronizations(TickContext);
     StepStatus synchronizePd2MapReports(TickContext);
     DomainResult<> finishPd2Map(const ActorContext &,ItemHandle);
     void advancePd2Map(TickContext);
+    void discardPd2MapPreparation();
     DomainResult<SpecialPortalPlan> prepareWorldPortal(RegionId,int,uint64_t,Vec,const PortalRule &,bool blue,bool exactSource,bool durielOpening=false);
   public:
     explicit System(Ports ports) : ports_(ports) {}
@@ -61,6 +63,7 @@ class System {
     }
     DomainResult<> teleport(const ActorContext &, PointTarget, Fixed8 manaCost,std::optional<SkillCharge> charge = {},int skill=-1);
     DomainResult<> castTeleport(const ActorContext &, PointTarget, Fixed8 manaCost,std::optional<SkillCharge> charge = {},int skill=-1);
+    DomainResult<Vec> pd2TeleportLanding(RegionId,Vec source,Vec target,int size) const;
     DomainResult<> relocate(const ActorContext &,RegionId,std::optional<Vec>); // Local host administration, never a wire command.
     void cancel(PlayerId id) { state_.transitions.erase(id); }
     void closePlayerPortal(PlayerId);

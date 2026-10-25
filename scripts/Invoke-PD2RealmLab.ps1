@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory=$true)]
     [ValidateSet('Start','Status','Stop')][string]$Action,
-    [string]$LabRoot=(Join-Path $PSScriptRoot '../artifacts/pd2-native-realm-lab')
+    [string]$LabRoot=(Join-Path $PSScriptRoot '../artifacts/d2gs-local/pd2-native-realm-lab')
 )
 $ErrorActionPreference='Stop'
 $LabRoot=[IO.Path]::GetFullPath($LabRoot)
@@ -40,7 +40,7 @@ if($Action -eq 'Status'){
             ListeningProcess=($listeners.OwningProcess -join ',')
         }
     }
-    Write-Host 'Backend status only. PD2 game engine bootstrap is not implemented.'
+    Write-Host 'Backend status only. The native PD2 game engine is managed separately.'
     return
 }
 if($Action -eq 'Stop'){

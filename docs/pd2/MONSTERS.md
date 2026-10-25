@@ -48,6 +48,7 @@ MonStats技能名称按原NAMETOWORD忽略大小写链接，失败编译为-1；
 | 无起手的Do0且有srvmissile | 沿NativeMissile默认发射入口，保留原怪物攻击加成复制；空Do0不视为攻击程序 |
 | 无起手的Do30且存在真实目标状态，排除dark_pact | 沿MonsterCurse的原状态／属性列表、目标筛选和发布生命周期；MonWeaken、MonLowerRes、MonAmplifyDamage等不再因名称不同而落入缺失飞弹分支。Dark Pact另走专用程序，不能当普通诅咒 |
 | St53／Do95 | 沿已有怪物Inferno的实际事件帧、InfernoAnim／InfernoLen和持续发射，不按MegademonInferno等旧名称决定资格 |
+| 无起手Do18／150／162、St31／Do67 | 分别准备真实状态防御技能、怪物Smite、Joust与Charge；状态、等级、模式和动画读当前表。Smite沿公共接触的A2属性与Calc2眩晕；Joust保留实际怪物模式属性，移动／接触／增益分阶段续办；坐标Charge允许空单位目标，释放时沿公共近距离搜索。尚未构建／实机对照，Charge路径及跨帧时序仍受公共动作边界约束 |
 
 准备只保留正基础技能等级，加原难度MonsterSkillBonus；施放和释放仍从真实单位属性采样等级。怪物技能程序加入实例的只读程序目录，不添加人物技能树节点，也不授予玩家技能。现有人物定义仅补必要的PD2程序元数据。重复序列事件重建每次回调的求值输入，背压等待同一释放，不重复提交已经出生的飞弹。
 
@@ -105,9 +106,23 @@ FlyingScimitar的普通Fn047已沿D2MOO恢复到公共AI：aip1为靠近概率�
 | 当前编译身份 | 当前核心入口／条件 | 差异与消费者边界 |
 | --- | --- | --- |
 | ubermephisto／704、uberdiablo／705、uberbaal／709 | `0x3579E0`、`0x357B90`、`0x357D40`按MonStats首WORD比较704／705／709 | 在委托原首领AI前另有仆从计数、随机选择和出生；专属数量／位置／所属关系未接入，普通首领AI不包含这层行为 |
-| leoricMapBoss／998 | `0x35D820`比较998且有目标 | 独立计数、技能轮换、自身状态及远近攻击选择；不能只执行原ReanimatedHorde |
-| GuardianOfFate／1064、GuardianOfFateClone／1065 | `0x35A470`比较1064／1065且有目标 | 使用AI参数记忆、位置随机化和动作概率增长；克隆与本体分支不同，未恢复完整执行 |
+| leoricMapBoss／998 | `0x35D820`比较998且有目标 | `server/systems/ai/pd2/leoric.cpp`已接专用决策和真实属性446写回；五槽动作准备见上表。无目标仍委托原ReanimatedHorde；完整场景尚未构建／实机对照，不能计为P3完成 |
+| GuardianOfFate／1064、GuardianOfFateClone／1065 | `0x35A470`比较1064／1065且有目标 | 已接专用CRT决策、FIFO寻位和Blink；909的SrvHit6出生消费者已接，完整场景／生命周期未闭合 |
 | ImperialPalaceBossJerhyn／1168 | `0x357180`比较1168 | Npc回调中拥有计数和独立动作，属于专用控制程序，不能由普通城镇NPC服务或敌对替身代替 |
+
+Uber三包装器的已核定边界为：704／3579E0要求目标存在，先用36DB70抽一次，357860计数后以有符号`(60-count)*2`比较且要求count<40；705／357B90要求目标存在，先抽小于30，再计数并要求第二类count<15；709／357D40不加该目标门槛，先抽小于20，再计数并要求第三类count<20。357860只遍历本房NearRoom单位链，三类分别是725–730、712、731–732，不按主人GUID计数；它还处理非首领12模式单位的后继，不能由统计存活仆从替代。选池额外消费CRT，落点两轴使用36DB70；半径按MonStats+0x52的难度字节减AITick+0x14再限3–20。池容器、坐标查询ABI、死亡后继、出生及归属339CB0仍待闭合，现有原首领AI未接这些附加程序；不据概率／数量已知就放开事件。
+
+Leoric的当前指令链`0x35D820→0x36DB70`每次专用思考只抽一次PD2单位随机并取模100，不能使用普通SEED或CRT。读取总属性446／mon_cooldown1；小于1时把同一结果模10加15写回基础属性，调用第一技能槽；否则先减一。随后小于20且无状态14时对自身调用第三槽；小于60时距离大于15调用第四槽，小于30且距离小于10时先登记30帧等待再向采样坐标调用第二槽，其余接触范围调用第五槽。剩余分支在接触范围普通A1，否则走向目标并使用MonStats+0x51的等待。`0x39F500`五个栈参数为技能、单位目标、X、Y、模式；第二槽明确传空单位，不能从失真的伪代码把X当0。当前五槽为LeoricSummonNova／MonCharge／Bone Armor／Joust／MonSmite，技能ID／等级及动画不在AI内写死；冷却保留在单位原StatList而非只存AI私有计数。
+
+GuardianOfFate的`0x35A470`使用CRT流，三项AI记忆为延后Blink标记、召唤概率累加及已召唤计数；本体最多六次，克隆不走召唤分支。延后Blink先清标记并各抽X／Y偏移[-8,7]，寻位成功即施放并返回；失败后才继续本轮百分比。召唤未命中时本体累加`6-计数`，普通分支小于80施放VoidBolt、80–94再次尝试Blink，其余按难度aidel等待。当前MPQ确认1064／1065分别为本体／克隆，AI字段均为Regurgitator；前三槽是Blink357、VoidBolt493、GuardianOfFateSummon550，克隆没有第三槽。`server/systems/ai/pd2/guardian.cpp`已在真实身份／有目标时接此分支，无目标仍走原家族；CRT借用现有宿主pd2ProgramRandom，三项记忆沿公共AI切换清零，待执行动作保留坐标和决定，不因容量重试重掷。
+
+这两个身份的Blink与本体召唤使用MonStats的A1、CS原图；`data/global/monsters/cs/cof/csa1hth.cof`只有动作事件1，不能套Regurgitator普通技能默认的事件2。`hosting/pd2/monster_actions.cpp`已对1064／1065的A1选择事件1，修复克隆因动作时钟准备失败而落入沉沦魔替身的问题。复查Blood Moor准备结果已无Guardian克隆替身；管理出生分别保留真实本体／克隆代码及三项／两项技能。此项验证不包含完整AI随机轨迹、Orb命中出生及首领场景。
+
+寻位`0x387C60`不是原版空位搜索的简单包装：它从网格(10,10)开始，经`0x387C10`限制到半开范围[10-r,10+r)，r=min(传入范围,10)；坐标间距固定4，候选为输入坐标加网格偏移乘4。方向常量`0x44DFA0／0x44ECC0`按(-1,0)、(0,1)、(1,0)、(0,-1)排列；容器经38B5E0在offset+size处写入并增加size，38B3E0读offset处、38B3C0递增offset，已确认先进先出；邻居入队立即标记访问，因此是按上述固定方向的广度优先搜索。Guardian传范围4、尺寸2、掩码0x101及不偏移结果；`0x387BB0`每个候选先更新房间再调用原2×2矩形查询，区别于原生size2的五格十字。专用AI已按此恢复；Blink的同区消费者、区域阻挡及剩余边界见[传送落点](SKILLS.md#pd2传送落点与怪物blink)。
+
+当前召唤依赖550→908GuardianOfFateSummonOrb→909GuardianOfFateSummonHit。909的SrvHit6在安装器3A6D8C挂到3A5360，经39F0A0及当前版本表4A710C绑定配套Game47CF0的预设出生；sHitPar1／2／3为1065／1／67239936，即克隆身份、NU模式及0x4020000的无经验／无掉落标志。三项在当前TXT与BIN一致，不能从错误列名HitPar读空值。hosting按当前SrvHit6依赖准备真实原型；`missiles/pd2/hit.cpp`记录有序出生操作，`monsters/pd2/missile_spawn.cpp`复用原房间搜索、普通预设首次-1及可重试类的4环后备、NativeBirthPublication。半径零也消耗方向／符号抽样，后备继承首次的房间随机；不先探测再重复出生。克隆不自动建立主人／仆从归属，因为该原回调没有这一步。
+
+当前只接普通、无附属碰撞物件、NU／S1模式及无经验／无掉落标志的SrvHit6路径；859→999 Leoric守卫及864→1001攻城兽火山的sHitPar2均为8，按实际S1资源准备birthTicks并沿公共出生等待／模式事实，缺动画明确暂缓；这不证明其他技能阶段已恢复。其他模式、特殊预设／暗金ID或额外单位标志保持未实现。核心与绑定材料为`town-queries/gap-guardian-summon`，出生基础调用对照D2MOO MonsterRegion／MonsterSpawn。Guardian决策、Blink、Orb和克隆出生已接源码并构建；管理准入已观察本体357／493／550及克隆357／493技能，完整战斗场景未验；Hell禁传集合、跨区Blink、完整休眠重建、全局随机交错及场景死亡／奖励／释放仍未闭合，不据此宣布P3场景完成。
 
 ## 召唤实体与伙伴
 
@@ -128,6 +143,8 @@ FlyingScimitar的普通Fn047已沿D2MOO恢复到公共AI：aip1为靠近概率�
 ## 新增怪物、首领与掉落
 
 PD2自有宿主使用当前MonStats／Skills等定义并复用公共人口、AI、战斗及掉落系统。`src/content/pd2/town_data.cpp`调用公共掉落准备；没有独立的“全部PD2新增怪物已实现”保证。地图新增怪物及首领的出生、特殊AI、免疫／伤害、死亡程序和专属掉落需逐条定位。
+
+当前880 torajanBossPoisonEgg的Skill1已从普通Trap射线分派修正为PD2毒环后孵化；子怪仍按MonStats.spawn准备，客户端同时消费毒环与序列暂停。当前DLL／原版回调、消费者和未验证边界见[PoisonEggSpawn双端委托](SKILLS.md#poisoneggspawn的双端委托)。此处只是技能链补缺，不代表Torajan场景控制器完成。
 
 Open Wounds对扩展首领935／936的镜像写入尚未接入；该编号限定当前版本，规则归[物品](ITEMS.md#open-wounds与crushing-blow)。Do163对攻击者1112的特殊防御修正限定该接触程序，不能推广成所有怪物攻击的统一减免。
 

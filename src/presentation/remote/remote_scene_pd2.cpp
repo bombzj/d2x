@@ -3,31 +3,49 @@
 #include "gameplay/actions/timing.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "network/protocol/bits.hpp"
-#include "content/items/item_properties.hpp"
+#include "content/pd2/map_description.hpp"
+#include "gameplay/stats/stat_list.hpp"
+#include "core/random.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 
 namespace d2x {
+std::optional<RemoteScene::Impl::Pd2RoyalFire> RemoteScene::Impl::preparePd2RoyalFire(
+    size_t row,const OnlineCombatEvent &event,const OnlineUnit &actor) {
+    // Current 3A8BE0 delegates to retail 40F00 only for Skills.CltDo83.
+    // Its progressive callback remains the separate retail delegate.
+    const auto missile=missileNames.find(skills.value(row,"cltmissilea"));
+    const auto step=skillCalculation(*event.skill,event.level.value_or(1),"calc1",event.source);
+    if(missile==missileNames.end() || !step || *step<=0) {
+        effectLimitations.insert("PD2 Royal Fire missile or positive step unavailable");return {};
+    }
+    const auto identity=unitClass(actor);
+    if(actor.key.type==1 && !identity) return {};
+    const bool arenaOrigin=actor.key.type==1 && identity && *identity==1113;
+    if(!actor.position) return {};
+    const auto seed=nextPd2PathSeed(event.source);
+    auto &random=pd2VisualSeeds.at(event.source).random;
+    random=(random&0xffffffff00000000ULL)|seed; // Only unit seed's low DWORD is overwritten.
+    // These coordinates are the current DLL's class1113 arena branch,
+    // not inferred map dimensions or fallback locations for other actors.
+    const Vec center=arenaOrigin?Vec{float((seed+13u)%40u+0x620fu)+.5f,float((seed+19u)%40u+0x17cdu)+.5f}:
+        Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f};
+    // 40F00 reads Skills+14C (Param2), then writes Param2+1 to TargetX.
+    return Pd2RoyalFire{missile->second,center,*step,nativeAdd(skills.number(row,"Param2").value_or(0),1),initialRandom(seed)};
+}
 std::vector<std::string> RemoteScene::Impl::pd2MapDescription(const OnlinePd2State::MapAttributeReport &report) const {
     // Current 0x391930 -> 0x36C9B0 describes the original item stats,
     // rather than the translated player/monster/global attribute lists.
-    std::vector<ResolvedItemStat> values;
+    std::vector<StatValue> values;
     for(const auto &attribute:report.attributes) {
-        if(attribute.stat==360 || attribute.stat==361 || attribute.stat==458) continue;
-        const auto definition=std::find_if(monsterText->itemStats.begin(),monsterText->itemStats.end(),
-            [&](const auto &stat){return stat.id==attribute.stat;});
-        if(definition!=monsterText->itemStats.end()) values.push_back({definition->name,{},attribute.value,attribute.parameter,attribute.value});
+        values.emplace_back(StatKey{attribute.stat,attribute.parameter},attribute.value);
     }
-    auto lines=describeItemStats(*monsterText,values);
-    for(auto &line:lines) line=std::string("\xff" "c3")+line;
+    std::string_view name;
     const auto &levels=monsterText->tables.at("levels");
     for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Id")==report.area) {
-        const auto name=strings.find(levels.value(row,"LevelName"));
-        if(!name.empty()) {
-            const char color=report.quality==4?'3':report.quality==6?'9':report.quality==7?'4':'0';
-            lines.push_back(std::string("\xff" "c")+color+std::string(name));
-        }
+        name=strings.find(levels.value(row,"LevelName"));
         break;
     }
-    return lines;
+    return pd2::describeMap(*monsterText,values,name,report.quality);
 }
 namespace {
 uint32_t rollPd2VisualRandom(uint64_t &state) {

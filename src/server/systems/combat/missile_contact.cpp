@@ -18,6 +18,7 @@
 #include "gameplay/combat/unit_values.hpp"
 #include "gameplay/combat/avoidance.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2/arithmetic.hpp"
 #include "gameplay/rules/pd2_random.hpp"
 #include "core/random.hpp"
 #include <algorithm>
@@ -154,7 +155,7 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
         auto rolled=impact.areaDamage?*impact.areaDamage->rolled->value:rollMissileDamageData(data,missile.mastery,damageTarget,missile.random);
         if(pd2Missile && contact.pd2Critical->kind) {
             rolled.critical=true;
-            rolled.channels[0]=nativeMultiplyDivide(rolled.channels[0],contact.pd2Critical->percentage,100);
+            rolled.channels[0]=pd2MultiplyDivide(rolled.channels[0],contact.pd2Critical->percentage,100);
         }
         if(impact.areaDamage) {
             const auto flags=impact.areaDamage->hitFlags;

@@ -17,7 +17,7 @@ struct WeaponSkillSpec {
     bool commonAttack = false, leftHand = false;
     std::string requiredType;
     bool thrown = false, manaOnRelease = false;
-    bool useThrowMastery = false; // Native ITypeA[0] thrown ancestry and Range==2.
+    bool useThrowMastery = false; // Prepared skill-side gate; actual weapon must also be throwable.
     bool dualWield = false;
     int sequence = -1;
     int attackRating = 0, attackRatingPerLevel = 0, delayFrames = 0;

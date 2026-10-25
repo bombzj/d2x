@@ -31,7 +31,7 @@ struct SkillFormulaRecord {
     std::array<int,3> descriptionMissiles{-1,-1,-1};
     SkillRestoreRule restore;
     std::array<SkillUnitEventBinding,3> unitEvents;
-    bool useThrowMastery{}; // D2Common_11024: current used skill's Range/ITypeA[0].
+    bool useThrowMastery{}; // Retail Range/ITypeA[0]; PD2 direct ITypeA[0].Throwable.
     int32_t number(std::string_view) const;
     std::string_view reference(std::string_view) const;
 };

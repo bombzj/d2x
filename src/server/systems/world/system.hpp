@@ -44,6 +44,7 @@ class System {
     void invalidateRooms();
     void refreshRoomTerrain();
     DomainResult<uint64_t> request(RegionId,std::shared_ptr<const pd2::MapInstance> = {});
+    bool cancelPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &);
     void link();
     void assign(AreaDefinition &);
     void registerAreaUnits(RegionId);

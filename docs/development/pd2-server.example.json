@@ -1,0 +1,13 @@
+{
+  "ruleset": "pd2-local",
+  "mpq": "D:/Games/Diablo II V1.13C",
+  "pd2Directory": "D:/Games/Diablo II V1.13C/pd2",
+  "recovery": "../../artifacts/pd2-pvpgn-recovery",
+  "stopFile": "../../artifacts/pd2-pvpgn-control/stop.request",
+  "realm": "",
+  "version": 0,
+  "maximumGames": 16,
+  "listen": { "host": "0.0.0.0", "port": 4000 },
+  "d2cs": { "host": "127.0.0.1", "port": 6113 },
+  "d2dbs": { "host": "127.0.0.1", "port": 6114 }
+}

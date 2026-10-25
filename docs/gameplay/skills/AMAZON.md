@@ -1,10 +1,10 @@
 # 亚马逊技能
 
+PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版／公共规则及必要的版本边界。
+
 更新：2026-10-09。自研服务端执行24项主动、6项被动，原服与自研使用同一原协议客户端。本页维护逐技能职责、亚马逊专属Clt／Srv差异、原版依据和缺口；公共规范见[COMMON](COMMON.md)。
 
 内视／慢速箭从当前MPQ AuraRangeCalc／AuraLenCalc／AuraStatCalc1读取原公式，公共期限算子保留Curse状态的抗性取整。首项属性在原始列表投递前分配，同级重施保留原首项；状态事实读取实际复用列表。玩家费用、目标属性／资源、旧诅咒撤出及控制回调随同一候选提交，不再只改变单位状态显示。依据D2MOO SkillAma::SrvDo006及AuraCallback_InnerSight_SlowMissiles。内视／慢速箭使用与光环共用的nativeAuraCandidateRecipients：半径保留signed32、目标按当前MPQ相邻房间及房间单位链顺序采样，保留NoAura、Boss过滤、城镇／伤害资格／敌意及整数距离。玩家PvP接收者和非玩家共用首项来源／同级复用规则，扣费与多个玩家／单位候选一起复验；跨区域状态事实按接收者区域发送。零或负半径不遍历目标。全部等级／多人／跨房组合、原资格掩码完整闭包及全局事件时序仍待对齐。
-
-PD2远端使用当前MPQ的独立职业布局。本地原生PD2已观察Fire Arrow／Cold Arrow击杀、Multiple Shot目标生命下降、Poison Javelin根弹体14及毒云141；Power Strike的CltDo22生成原表692，不能用原版同名技能的弹体代替。该初始目标选择允许唯一敌人GUID回绕到本次目标，其他命中连锁仍排除当前单位；原版资源隔离宿主已核对Lightning Strike单目标232及后续99。上述事实不等于全部箭矛伤害、毒持续、穿透／连锁和装备组合完成，范围见[PD2技能边界](README.md#pd2远端技能范围)。
 
 ## 30项职责核对
 

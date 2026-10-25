@@ -51,6 +51,8 @@ PD2参考用于区分原版共用路径与有源码依据的局部扩展，不�
 
 固定核心的[完整函数目录与功能概览](pd2-core/README.md)保存地址、真实分析器函数边界、调用关系、补丁与程序表登记、原生解析绑定及未归属范围。目录是静态分析事实，不是公开核心源码；自动名称和BH地址匹配均保留证据级别。目标二进制、整批反编译文本、Ghidra工程及分析脚本仍留在忽略的reference目录。
 
+公开BH源码的模块分析、直接抽取与独立实现的许可边界、原客户端注入层替换及D2X接入方式见[BH独立接入方案](../architecture/BH_CODE_ISOLATION.md)。该方案未将BH源码加入产品，也未证明当前BH.dll与公开提交一致；不能因目录另含Apache许可文本就将整个BH改标为Apache。
+
 REA属于开发期分析工具，不进入D2X构建或玩法依赖。上述快照的`docs/windows-ghidra-p0.md`及`src/ghidra/GhidraProviderCapabilities.ts`支持Windows x64上的原生x86／x64 PE与DLL只读分析；本次已用固定npm版本实际查询核心、Storm、当前BH及原D2Client，并将有效Evidence与失败诊断分开。运行依赖与main文档须分开核对；npm6.7.0使用`--mcp`启动stdio，并不提供main文档中所有CLI形式。静态DLL导入使用不可变副本，不调用目标入口。`docs/native-function-matching.md`及`src/domain/native/functionMatching.ts`基于已有Evidence给出名称、完整函数字节或结构候选关系，不证明行为等价或恢复原始源码。用于PD2时先从公开BH／原D2MOO定位，再定点追查核心DLL的初始化补丁登记、收发包与物品位流入口；保留目标摘要、模块／RVA、调用关系和未知项。运行时改写须另追补丁目标，不能把磁盘原函数或客户端可见逻辑当作当前服务器完整实现。
 
 ## 当前代码的证据入口
@@ -132,7 +134,7 @@ D2Client的03处理RVA `ADB50`读取幕号、地图种子、城镇及尾部种�
 
 ## 补充资料的边界
 
-PD2账号大厅的新增静态依据为固定CN核心`9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f`与Bnclient `3631ca889dfa3cb149dd5b1722d3231851661b40514d4fbb4f00c529e76a56f5`：核心RVA1E7560／1E75C0／1E7620／1E76E0、3943E0、393F80、3947E0恢复分组／掩码、MPQ比较与0x51；Bnclient RVA158F0／15960／15E70／16070、12260／12390／125E0、16810／16EC0恢复认证资源解码。原资源、密钥和目标DLL不提交或分发，不执行native模块；算法范围、限制及当前源码状态见[DLL证据](PD2_CN_DLL_ANALYSIS.md#三个掩码与原认证资源)。新增SHA-256按[NIST FIPS 180-4](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)第4.2.2／5.1.1／6.2.2节实现，不表示经过NIST认证。
+PD2认证资源的固定模块、地址与SHA-256依据见[认证资源证据](../pd2/RESOURCE_LOADING.md#认证资源证据)；原资源、密钥和目标DLL不提交或分发，不执行native模块。
 
 当前MPQ的MonStats重复名称以编译`monstats.bin`交叉核对：734行、每行0x1A8，第617／723行的名称链接ID均为617，616行NextInClass也指向617；字符串使用首行，数值类别仍保持各自索引。源码据此保留重复行的独立属性／经验／掉落，原二进制与提取不纳入源码提交。
 

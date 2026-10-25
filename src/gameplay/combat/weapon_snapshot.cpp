@@ -12,6 +12,10 @@ WeaponDamage sampleNativeWeapon(const WeaponDamage &input,const StatSnapshot &va
     auto result=input;
     const auto stat=[&](std::string_view name){return logicalStatValue(values,rules,name);};
     const auto mastery=[&](std::string_view group) {
+        if(rules.pd2) {
+            if(!formulas) throw std::logic_error("PD2 weapon mastery requires item type metadata");
+            return pd2WeaponMastery(values,rules,input,equipment,*formulas,dualWield,group);
+        }
         std::array<int,3> result{};
         const std::array<std::string_view,3> suffixes{"th","dmg","crit"};
         for(size_t index=0;index<suffixes.size();++index) {

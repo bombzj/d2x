@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "clientProfile": "pd2-local",
+  "authentication": "pvpgn",
+  "originalClientDirectory": "D:/Games/Diablo II V1.13C",
+  "pd2Directory": "D:/Games/Diablo II V1.13C/pd2",
+  "gateway": "D2X-PD2",
+  "accountHost": "127.0.0.1",
+  "accountPort": 6112,
+  "gamePort": 4000
+}

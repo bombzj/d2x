@@ -1,8 +1,14 @@
 #include "../system.hpp"
 #include "../runtime.hpp"
 #include "../evaluation.hpp"
+#include "../native_caster.hpp"
+#include "execution.hpp"
 #include "requirements.hpp"
 #include "server/player_store.hpp"
+#include "server/area_store.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -12,26 +18,79 @@
 #include "gameplay/skills/pd2_program.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2/arithmetic.hpp"
+#include "gameplay/skills/projectile_path.hpp"
 #include <array>
+#include <algorithm>
 #include <cmath>
-#include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace d2x::server::skills {
-namespace {
-int scaledMastery(int value,int reduction) {
-    // Current core RVA 0x37A6F0: multiply in double, divide, saturate high.
-    const double scaled=double(value)*double(reduction)/100.0;
-    if(scaled>double(INT32_MAX)) return INT32_MAX;
-    if(scaled<double(INT32_MIN)) return INT32_MIN;
-    return int(std::trunc(scaled));
-}
+DomainStatus System::activatePd2MonsterTeleport(Release &pending,const ActorContext &actor,Vec target) {
+    const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    if(!caster || !caster->monster || !caster->programs() || !pending.skill.pd2) return DomainStatus::InvalidActor;
+    const auto &program=*pending.skill.pd2;
+    // Current monster callers 357/573 have no mastery debuff. Do155 owns
+    // the movement and optional landing ring, independently of player travel.
+    if(program.doFunction!=155 || program.state.id>=0) return DomainStatus::NotImplemented;
+    if(!pending.manaPaid) {
+        const auto *states=ports_.effects.unitEffects(actor.actor);
+        if(states && states->hasState(214,actor.tick)) return DomainStatus::Unavailable;
+        const auto adjusted=ports_.travel.pd2TeleportLanding(actor.area,caster->position(),target,caster->monster->rule.size);
+        if(!adjusted) return adjusted.status;
+        const auto &area=ports_.areas.at(actor.area).definition;
+        const auto global=*adjusted.value+area.origin;
+        const auto room=ports_.areas.roomAtPosition(actor.area,caster->position(),int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)));
+        if(!room) return DomainStatus::Unavailable;
+        const auto landing=ports_.areas.nativeFreeCoordinates(*room,int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)),
+            caster->monster->rule.size,0x1c09,ports_.spatial.nativeCollisionSample(0x1c09));
+        if(!landing) return DomainStatus::Unavailable;
+        if(landing->room.area!=actor.area) return DomainStatus::NotImplemented;
+        const auto moved=ports_.monsters.teleport(actor.actor,landing->position,actor.tick,0,true);
+        if(!moved) return moved.status;
+        pending.manaPaid=true;
+    }
+    if(program.missiles[0]>=0 && !pending.pulses) {
+        if(!pending.pd2Execution) pending.pd2Execution=std::make_shared<Pd2CastExecution>();
+        auto &birth=pending.pd2Execution->teleportMissiles;
+        pending.nativeCallbackStarted=true;
+        if(!birth) {
+            const auto current=nativeCaster(ports_.players,ports_.monsters,actor.actor);
+            if(!current) return DomainStatus::Stale;
+            auto input=current->formulaInput(ports_.effects,actor.tick);
+            SkillFormulaValues values(*current->programs()->formulas,input);
+            const auto count=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"calc2");
+            if(!count) throw std::logic_error("Missing PD2 Blink landing ring formula");
+            if(*count>0) {
+                const int step=64/std::min(*count,64);
+                std::vector<missiles::NativeSpawn> ring;
+                for(int direction=0;direction<64;direction+=step)
+                    ring.push_back({actor.actor,actor.area,actor.areaGeneration,actor.tick,current->position(),
+                        current->position()+missileRingDirection(direction),program.missiles[0],pending.skill.sourceId,pending.skill.rank});
+                auto prepared=ports_.missiles.prepareNativeBirth(ring);
+                if(!prepared) return prepared.status;
+                birth=std::move(*prepared.value);
+            } else pending.pulses=1;
+        }
+        if(birth) {
+            const auto committed=ports_.missiles.commitNativeBirth(birth);
+            if(!committed) return committed.status;
+            pending.pulses=1;
+        }
+    }
+    pending.nativeCallbackStarted=false;
+    return DomainStatus::Applied;
 }
 DomainStatus System::activatePd2Teleport(Release &pending,const ActorContext &actor,Vec target) {
     const auto &program=*pending.skill.pd2;
     if(program.doFunction!=155 && program.doFunction!=156 && program.doFunction!=157) return DomainStatus::NotImplemented;
     if(program.missiles[0]>=0 && program.doFunction!=156) return DomainStatus::NotImplemented;
     if(!pending.manaPaid) {
+        // Current 36B570 checks STATE_DISABLE_TELE (214) at release,
+        // including Gust and Blood Warp. A start-time check is insufficient.
+        const auto *states=ports_.effects.unitEffects(actor.actor);
+        if(states && states->hasState(214,actor.tick)) return DomainStatus::Unavailable;
         const auto moved=ports_.travel.castTeleport(actor,{actor.area,actor.areaGeneration,target},pending.skill.manaCost,pending.skill.charge,pending.skill.sourceId);
         if(!moved) return moved.status;
         pending.manaPaid=true;
@@ -97,7 +156,7 @@ DomainStatus System::activatePd2Teleport(Release &pending,const ActorContext &ac
         const auto &stats=*owner.rules.skills->stats;
         for(const auto name:{"passive_fire_mastery","passive_cold_mastery","passive_ltng_mastery","passive_pois_mastery"}) {
             const auto value=logicalStatValue(owner.totals.nativeStats,stats,name);
-            const int adjusted=nativeSubtract(0,nativeAdd(scaledMastery(value,factor),factor));
+            const int adjusted=nativeSubtract(0,nativeAdd(pd2MultiplyDivide(value,factor,100),factor));
             const auto key=StatKey{stats.names.at(name),0};
             effect.nativeValues->emplace(key,adjusted);pending.skill.nativeEffectWrites.emplace_back(key,adjusted);
         }

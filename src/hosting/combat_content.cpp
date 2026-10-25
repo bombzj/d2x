@@ -220,7 +220,10 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         if(!child) return {};
         rule.deathReinitialize=std::make_shared<const server::PreparedMonster>(std::move(*child));
     }
-    if(record->ai=="EvilHole" || record->ai=="MinionSpawner" || record->ai=="GenericSpawner" || record->ai=="Nihlathak" || record->ai=="FoulCrowNest" || record->ai=="VileMother" || record->ai=="BloodRaven" || record->ai=="SandMaggot" || record->ai=="SandMaggotQueen" || record->ai=="MaggotEgg" || record->ai=="Sarcophagus") {
+    const bool poisonEgg=std::any_of(rule.skillActions.begin(),rule.skillActions.end(),[](const auto &entry) {
+        return entry.second.action==server::MonsterAttackRule::Action::Pd2PoisonEgg;
+    });
+    if(poisonEgg || record->ai=="EvilHole" || record->ai=="MinionSpawner" || record->ai=="GenericSpawner" || record->ai=="Nihlathak" || record->ai=="FoulCrowNest" || record->ai=="VileMother" || record->ai=="BloodRaven" || record->ai=="SandMaggot" || record->ai=="SandMaggotQueen" || record->ai=="MaggotEgg" || record->ai=="Sarcophagus") {
         const auto spawn=data.tables.at("monstats").value(record->sourceRow,"spawn");
         const auto code=record->nest?record->nest->child:std::string(spawn);
         if(!catalog.find(code) && record->ai!="GenericSpawner" && record->ai!="Nihlathak") return {};
@@ -503,6 +506,27 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         else deferred.insert("Native spawn profile pending: "+code);
     }
     std::vector<int> required=selection.classes;
+    if(data.pd2Host) for(const auto &[missile,program]:data.nativeFormulas->missiles) {
+        (void)missile;
+        if(program.number("psrvhitfunc")!=6) continue;
+        const auto *record=catalog.find(program.number("hitpar1"));
+        if(!record || record->critter || record->npc) continue;
+        const auto &extra=data.tables.at("monstats2");
+        const auto extraId=data.tables.at("monstats").value(record->sourceRow,"MonStatsEx");
+        bool objectCollision=false;
+        for(size_t row=0;row<extra.rows().size();++row)
+            if(extra.value(row,"Id")==extraId) {objectCollision=extra.number(row,"ObjCol").value_or(0)!=0;break;}
+        if(objectCollision) continue;
+        const bool retry=record->id!="radament" && record->base!="maggotqueen1" && record->id!="window1" && record->id!="window2";
+        auto &spawn=area.pd2MissileSpawns[record->index];spawn.retry=retry;
+        if(program.number("hitpar2")==8) {
+            const auto clock=loadMonsterMotionTiming(animations,record->token,"s1",
+                monsterModeWeapon(archives,record->token,"s1",record->baseWeapon));
+            if(clock) spawn.skillOneTicks=monsterAnimationTicks({clock->frames,clock->speed});
+            else deferred.insert("PD2 missile S1 birth animation pending: "+record->id);
+        }
+        required.push_back(record->index);
+    }
     for(const auto &entry:populationRules.roster) required.push_back(entry.definition);
     if(data.pd2Host) {
         area.pd2CorpsePools=preparePd2CorpsePools(data,request.level,request.difficulty);

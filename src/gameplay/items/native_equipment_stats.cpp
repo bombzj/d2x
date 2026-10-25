@@ -12,7 +12,8 @@
 namespace d2x {
 namespace {
 std::array<int,3> mastery(const StatSnapshot &stats,const StatRuleCatalog &rules,const SkillFormulaCatalog &formulas,
-    const EquipmentDefinition &item,std::string_view group) {
+    const EquipmentDefinition &item,std::string_view group,const WeaponDamage &weapon,const EquipmentStats &hands,bool dualWield) {
+    if(rules.pd2) return pd2WeaponMastery(stats,rules,weapon,&hands,formulas,dualWield,group);
     std::array<int,3> result{};
     const std::array<std::string_view,3> suffixes{"th","dmg","crit"};
     for(size_t index=0;index<suffixes.size();++index) {
@@ -56,6 +57,13 @@ EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &loadout,const 
     } else if(result.shield) result.blockChance=unitBlockChance(nativeAdd(common("toblock"),actor.blockFactor),common("dexterity"),std::max(1,common("level")));
     result.defense=unitDefense(common("dexterity"),common("armorclass"),common("item_armor_percent"),common("skill_armor_percent"),
         result.shield?input.procedures.shieldDefensePercent:0,common("armor_override_percent"));
+    // Parameterized PD2 mastery checks the opposite hand. Prepare both
+    // identities before deriving either weapon's rating and damage.
+    EquipmentStats hands;hands.shield=result.shield;
+    for(const auto *item:{right,left}) if(item && loadout.find(item->id).definition->equipment.isType("weap")) {
+        auto &hand=hands.weapons[item==left?1:0];hand.item=item->id;hand.leftHand=item==left;
+    }
+    const bool dualWield=actor.characterClass=="bar" || actor.characterClass=="ass";
     int count=0;
     for(const auto *item:{right,left}) {
         if(!item) continue;
@@ -77,8 +85,8 @@ EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &loadout,const 
         weapon.fasterAttack=stat("item_fasterattackrate");weapon.itemAttackSpeed=own("item_fasterattackrate");
         weapon.itemAttackRate=own("attackrate");
         weapon.nativeModifiers=std::make_shared<const CombatModifiers>(nativeCombatModifiers(stats,input.rules,input.procedures));
-        weapon.meleeMastery=mastery(stats,input.rules,input.formulas,definition.equipment,"melee");
-        weapon.throwMastery=mastery(stats,input.rules,input.formulas,definition.equipment,"throw");
+        weapon.meleeMastery=mastery(stats,input.rules,input.formulas,definition.equipment,"melee",weapon,hands,dualWield);
+        weapon.throwMastery=mastery(stats,input.rules,input.formulas,definition.equipment,"throw",weapon,hands,dualWield);
         weapon.masteryCritical=weapon.meleeMastery[2];
         const auto projectileMastery=weapon.throwable?weapon.throwMastery:weapon.meleeMastery;
         weapon.projectileMasteryCritical=projectileMastery[2];

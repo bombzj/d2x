@@ -92,7 +92,7 @@ void NativeBirthPublication::publish() noexcept {
     system.state_.missiles.merge(d.missiles);system.publishTimers(d.timers);
     ports.random=d.randomNext;d.published=true;
 }
-DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth(std::span<const NativeSpawn> requests,size_t prefix,std::span<const DomainFact> extraFacts,std::optional<std::pair<uint64_t,uint64_t>> gameRandom) {
+DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth(std::span<const NativeSpawn> requests,size_t prefix,std::span<const DomainFact> extraFacts,std::optional<std::pair<uint64_t,uint64_t>> gameRandom,std::optional<std::pair<uint32_t,uint32_t>> pd2PathSeed) {
     if(requests.empty() || requests.size()>512 || !ports_.nativeRules || !ports_.nativeRules->formulas)
         return {DomainStatus::InvalidRequest,{}};
     if(gameRandom && gameRandom->first!=ports_.random) return {DomainStatus::Stale,{}};
@@ -108,6 +108,12 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
     data->ownerExpected=data->ownerNext=monster?monster->combatRandom:player->combatRandom;
     data->randomExpected=data->randomNext=ports_.random;
     if(gameRandom) data->randomNext=gameRandom->second;
+    if(pd2PathSeed) {
+        const auto current=runtime_->pd2PathSeeds.find(lead.owner);
+        if((current==runtime_->pd2PathSeeds.end()?0:current->second)!=pd2PathSeed->first) return {DomainStatus::Stale,{}};
+        data->pathSeedExpected=pd2PathSeed->first;
+        data->pathSeeds.emplace(lead.owner,pd2PathSeed->second);
+    }
     std::vector<Missile> launched;
     for(const auto &request:requests) {
         if(request.owner!=lead.owner || request.tick!=lead.tick || request.transient!=lead.transient || request.rank<0 ||

@@ -24,12 +24,12 @@ inline OnlineConfiguration configuration(const std::filesystem::path &path,
     OnlineConfiguration result;
     std::string preparationError;
     try {
-        if(profile == net::protocol::ClientProfile::Pd2CnNormal20261020)
+        if(profile != net::protocol::ClientProfile::Lod113c)
             verifyClientProfileDefinition(path,profileDigest);
         file >> json;
-        if(profile == net::protocol::ClientProfile::Pd2CnNormal20261020)
+        if(profile != net::protocol::ClientProfile::Lod113c)
             verifyClientProfileDefinition(path,profileDigest);
-        const auto port = json.value("accountPort", 6112), gamePort = json.value("gamePort", profile == net::protocol::ClientProfile::Lod113c ? 4000 : 4001);
+        const auto port = json.value("accountPort", 6112), gamePort = json.value("gamePort", profile == net::protocol::ClientProfile::Pd2CnNormal20261020 ? 4001 : 4000);
         if (port < 1 || port > 65535 || gamePort < 1 || gamePort > 65535)
             throw std::runtime_error("Invalid port");
         result.login.accountServer = {json.at("accountHost").get<std::string>(), uint16_t(port)};
@@ -60,6 +60,12 @@ inline OnlineConfiguration configuration(const std::filesystem::path &path,
             return result;
         }
         constexpr std::array names{"Game.exe", "Bnclient.dll", "D2Client.dll"};
+        if(profile==net::protocol::ClientProfile::Pd2Local) {
+            if(json.value("version",0)!=1 || json.value("clientProfile",std::string{})!="pd2-local" ||
+               json.value("authentication",std::string("pvpgn"))!="pvpgn")
+                throw std::runtime_error("Mismatched self-hosted PD2 profile");
+        }
+        result.login.originalClient.profile=profile;
         for (size_t i = 0; i < names.size(); ++i) {
             result.login.originalClient.files[i] = directory / names[i];
             if (!std::filesystem::is_regular_file(result.login.originalClient.files[i]))

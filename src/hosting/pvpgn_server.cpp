@@ -66,7 +66,10 @@ struct PvpgnServer::Impl {
     bool authenticated{}, stopping{}, started{}, databaseFailed{};
     Clock::time_point csDeadline = Clock::now() + std::chrono::seconds(30);
     Impl(Archives &archives, PvpgnServerOptions config, std::function<void(std::string_view)> logger)
-        : options(std::move(config)), log(std::move(logger)), host(archives, options.recovery) {}
+        : options(std::move(config)), log(std::move(logger)), host(archives, options.recovery,options.preparation) {
+        if(options.preparation!=ContentPreparation::OriginalRules && options.preparation!=ContentPreparation::Pd2TownHost)
+            throw ProtocolError("Unsupported dedicated server content preparation");
+    }
     uint32_t nextSequence() {
         if (sequence == UINT32_MAX) throw ProtocolError("Backend sequence exhausted; restart required");
         return ++sequence;

@@ -54,6 +54,11 @@ void NativeRealmHost::advance(double seconds) {
             }
         const auto pending = host.pendingAreas(game);
         if (!pending) continue;
+        std::erase_if(areaPreparations,[&](const auto &entry) {
+            if(entry.first.first!=game || std::any_of(pending->begin(),pending->end(),
+                [&](const auto &request){return request.request==entry.first.second;})) return false;
+            areaPreparation->cancel(entry.second);return true;
+        });
         for (const auto &request : *pending) {
             const auto key = std::pair{game, request.request};
             try {

@@ -120,7 +120,8 @@ class System {
     DomainResult<MonsterLaunch> spawnMonster(const MonsterSpawn &);
     std::optional<int> nativeDefinition(std::string_view) const;
     DomainResult<EntityId> spawnNative(const NativeSpawn &);
-    DomainResult<std::shared_ptr<NativeBirthPublication>> prepareNativeBirth(std::span<const NativeSpawn>,size_t actorPrefix=0,std::span<const DomainFact> extraFacts={},std::optional<std::pair<uint64_t,uint64_t>> gameRandom={});
+    DomainResult<std::shared_ptr<NativeBirthPublication>> prepareNativeBirth(std::span<const NativeSpawn>,size_t actorPrefix=0,std::span<const DomainFact> extraFacts={},std::optional<std::pair<uint64_t,uint64_t>> gameRandom={},std::optional<std::pair<uint32_t,uint32_t>> pd2PathSeed={});
+    DomainResult<std::shared_ptr<NativeBirthPublication>> preparePd2RoyalFire(const NativeSpawn &,int step);
     DomainResult<EntityId> commitNativeBirth(std::shared_ptr<NativeBirthPublication>);
     std::optional<combat::SpellImpact> nativeAreaContact(EntityId,bool collisionCallback=false) const;
     void finishNativeAreaContact(const combat::SpellImpact &);

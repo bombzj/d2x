@@ -155,7 +155,8 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
     if(!original.nativeDamage) return {};
     auto function=original.nativeDamage->rule.serverDoFunction;
     constexpr std::array commonHits{0,1,2,3,4,5,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59};
-    const bool common=function==1 && std::find(commonHits.begin(),commonHits.end(),original.nativeDamage->rule.serverHitFunction)!=commonHits.end();
+    const bool common=function==1 && (std::find(commonHits.begin(),commonHits.end(),original.nativeDamage->rule.serverHitFunction)!=commonHits.end() ||
+        (original.rules && original.rules->pd2 && original.nativeDamage->rule.serverHitFunction==6));
     const bool dedicated=common || function==0 || function==4 || function>=38 || function==2 || function==3 || function==5 || function==6 || function==7 || function==8 || function==9 || function==10 || function==11 || function==12 || function==13 || function==14 || function==15 || function==16 || function==17 || function==19 || function==20 || function==21 || function==22 || function==23 || function==24 || function==25 || function==26 || function==27 || function==28 || function==29 || function==30 || function==31 || function==32 || function==33 || function==34 || function==35 || function==36 || function==37;
     if(!original.nativeProgram && !dedicated && function!=18) return {};
     if(function!=0 && function!=1 && function!=3 && function!=5 && function!=6 && function!=18 && !dedicated)

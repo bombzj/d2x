@@ -1,5 +1,7 @@
 # 野蛮人技能
 
+PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版／公共规则及必要的版本边界。
+
 更新：2026-10-11。自研宿主已接当前 MPQ 的 30 项野蛮人技能（126–155）：20 项主动、10 项被动。本页维护当前实现、原版依据与缺口；入口齐备不表示全部装备、等级和多人组合已对齐。
 
 定义入口为 `src/content/skills/barbarian_data.cpp`；纯规则在 `gameplay/skills`，动作、移动、弹体、命中、状态和尸体消耗分别由 server 对应系统拥有。客户端读取原协议状态、播放当前 MPQ 原图并提交命令。MPQ 数值、公式、武器类型、状态、弹体及尸体尺寸动态准备；本地 D2MOO 的 `SkillBar.cpp`、`MissMode.cpp`、`SequenceTbls.cpp`、武器速度和路径函数仅作职责及算法证据，见[资料来源](../../resources/THIRD_PARTY.md)。
@@ -47,13 +49,11 @@
 
 ## 生命周期与限制
 
-PD2远端Double Throw走替换CltDo98，按两手真实Items.MissileType选择A／B／C及两次动画释放；Split Throw走118及原整数扇形，连锁次数与半径由当前公式／弹体输入准备。本人跳跃在服务器省略4C时消费最新skill_move状态结束飞行、进入落地动画；未确认预测沿既有15秒预算回收，新技能可替换失效预测。104中Find Potion／Find Item已接原38／40的尸体血迹，本地原服确认搜索后corpse_noselect及原血迹飞弹；原版模式的Find Potion也已核对。CltDo97已恢复本人经skill_move确认的飞行：按当前AuraRangeCalc准备落点、Calc2*41+2560取速度，原序列第5帧起飞，复用原整数路径步进及距离重力。移动状态提前撤出时仍完成已确认弧线，避免画面停在最终坐标之前。本地原服核对Leap／Leap Attack二十子格位移、落地及随后正常走路；其他玩家／怪物的97、全部碰撞及装备速度组合仍待覆盖。依据与范围见[核心分析](../../resources/PD2_CN_DLL_ANALYSIS.md#角色技能树与客户端程序)。
-
 友方Shout／Battle Orders／Battle Command已接原始列表生命周期：当前MPQ AuraLenCalc的signed32结果保留为原移除帧，同状态复用列表，六个非零AuraStat按顺序写入，随后执行公共被动刷新；零期限也登记移除事件，列表与状态位不因时间查询提前消失。移除先撤出属性，再清状态和刷新被动。人物费用、资源上限和效果使用已准备资源记录提交，避免把逐写上限回调重放到已经调整过的资源上。依据D2MOO SkillBar::SKILLS_ApplyWarcryStats、SkillDruid::sub_6FCFE0E0及Skills::sub_6FD14C30。完整敌方AI函数／参数、飞弹传播和全局事件排序仍有缺口。敌方Howl／Taunt的原始列表共用RestoreAi移除候选，状态撤出与普通AI恢复随同一单位提交；特殊目标重置与AI函数恢复的区别见[死灵专题](NECROMANCER.md)。
 
 学习、前置、技能上限、左右键、法力、充能和城镇资格仍按共用入口校验。六精通按真实武器类型匹配，同类加成取最高值；空手不冒充武器。双挥／双投／Frenzy 必须同时有两个合格武器，换装后释放复验来源；Whirlwind 允许单武器。投掷分别消耗各手真实数量，整次技能不重复扣法力。被动随有效技能等级和装备重新计算。
 
-Find Potion／Find Item 搜索保留尸体显示并设置 `corpse_noselect`；Grim Ward 消耗并隐藏尸体。这些操作复用原死亡掉落完成资格，避免覆盖未提交的原掉落。尸体不可重复用于搜索、召唤、重生或其他消耗。Grim Ward 的恐惧原点固定为图腾位置。恐惧与嘲讽不控制首领或不允许切换 AI 的单位；War Cry／Stun 复用怪物眩晕资格和精英几率。本地原生PD2已核对Howl的terror56、Battle Cry的89状态及36／171减值；Taunt靠近目标后收到27状态及25／119各−5，先前目标已逃远的请求不算通过。完整AI行为、精英与玩家目标组合仍待核对。
+Find Potion／Find Item 搜索保留尸体显示并设置 `corpse_noselect`；Grim Ward 消耗并隐藏尸体。这些操作复用原死亡掉落完成资格，避免覆盖未提交的原掉落。尸体不可重复用于搜索、召唤、重生或其他消耗。Grim Ward 的恐惧原点固定为图腾位置。恐惧与嘲讽不控制首领或不允许切换 AI 的单位；War Cry／Stun 复用怪物眩晕资格和精英几率。PD2专项说明见[职业技能：战吼观察边界](../../pd2/CLASS_SKILLS.md#职业技能战吼观察边界)。
 
 Battle Command 在被动求值前加入临时技能来源；协同仍只读基础技能等级。佣兵的临时全技能加成参与内容缓存重算，生效和到期都更新实际技能等级；刷新保留 Battle Orders 的生命上限，BO基数仍取装备后的未加成生命。状态、Frenzy 层数、移动动作、图腾、尸体标记和弹体不写 D2S；技能基础等级与选择沿原 v96 字段保存。保存与校验边界见[存档](../../modules/SAVES.md)。
 

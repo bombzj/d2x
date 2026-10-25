@@ -28,11 +28,14 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 独立控制台D2GS、PvPGN后端配置、启动／关闭与恢复 | [PvPGN服务端](development/PVPGN_SERVER.md) |
 | 内核子系统、状态所有权、命令／固定步／事务／可靠事件与空实现入口 | [内核子系统](modules/SERVER_SYSTEMS.md) |
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |
-| PD2技能／物品／地图／怪物／城镇与协议存档差异 | [PD2功能差异基线及维护约定](pd2/README.md)、[目标版本与证据边界](pd2/BUILDS.md) |
+| PD2技能／物品／地图／怪物／城镇与协议存档差异 | [PD2差异阅读导航](pd2/README.md#如何理解pd2对原版的修改)、[逐函数契约入口与未完成范围](pd2/README.md#逐函数说明入口)、[目标版本与证据边界](pd2/BUILDS.md) |
+| PD2能力、启动部署与客户端专项 | [能力状态](pd2/STATUS.md)、[运行与部署](pd2/OPERATIONS.md)、[客户端接入](pd2/CLIENT_INTEGRATION.md)、[专项分册目录](pd2/README.md#分册与归属) |
+| BH源码模块、过滤与客户端增强的独立接入 | [BH模块分析与代码隔离方案](architecture/BH_CODE_ISOLATION.md)，含官方／历史CN边界、许可路线、D2X适配及实施顺序 |
 | 原版与PD2／CN版本选择、发行方式、初始化及资源／协议差异 | [版本选择与兼容设计](architecture/PD2_COMPATIBILITY.md#版本选择与发布方式)、[CN样本DLL／位流取证](resources/PD2_CN_DLL_ANALYSIS.md)、[ProjectDiablo完整函数目录与概览](resources/pd2-core/README.md) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[崩溃记录](development/CRASH_REPORTS.md) |
 | 原版人物数值对照的存档装配、覆盖矩阵与截图数据契约 | [对照存档计划](development/CHARACTER_REFERENCE_FIXTURES.md) |
 | 原版DLL地图对照与实机房间恢复排查 | [地图对照排查](development/MAP_PARITY.md) |
+| 原版Glide／3dfx渲染证据、D2X差异与后续改造 | [Glide渲染分析与方案](architecture/DIABLO2_GLIDE_RENDERING.md) |
 
 已完成的结构改造内容并入架构／现有模块，不再维护第二份历史重构计划；已删除执行器的SESSION／UNITS／SKILL_RUNTIME／REWARDS说明不再作为模块入口。原版结构比较仍见[参考设计](architecture/REFERENCE_DESIGN.md)。后续服务端精确复刻的目标结构、D2MOO证据、公共函数边界及重构验收统一见[服务端战斗复刻目标架构](architecture/SERVER_COMBAT_RECONSTRUCTION.md)，该页是目标设计，不是当前实现状态；全局顺序仍由[总计划](architecture/MULTIPLAYER.md)维护。
 

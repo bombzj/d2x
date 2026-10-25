@@ -19,6 +19,15 @@
 #include <stdexcept>
 
 namespace d2x {
+bool pd2SkillUsesThrowMastery(const ClassicData &data,std::string_view primaryType) {
+    // Core 3067B0 reads Skills.ITypeA[0] -> ItemTypes.Throwable directly;
+    // unlike retail mastery, neither Range nor type ancestry is a gate.
+    if(primaryType.empty()) return false;
+    const auto &types=data.tables.at("itemtypes");
+    for(size_t row=0;row<types.rows().size();++row)
+        if(types.value(row,"Code")==primaryType) return types.number(row,"Throwable").value_or(0)!=0;
+    throw std::runtime_error("Missing PD2 mastery item type");
+}
 SkillSpec preparePd2SkillDefinition(const ClassicData &data,size_t row) {
     const auto &table=data.tables.at("skills");
     const auto number=[&](std::string_view field) {return skillTableNumber(table,row,field,SkillNumberPolicy::BlankIsZero);};

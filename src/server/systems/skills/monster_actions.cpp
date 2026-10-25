@@ -113,6 +113,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const bool priestHealing=healing && (rule.ai.kind==MonsterAiKind::ZakarumPriest || rule.ai.kind==MonsterAiKind::HighPriest);
     const bool coordinateHydra=slot.action==MonsterAttackRule::Action::Hydra && !target->id && request.position;
     const bool coordinateNativeMissile=slot.action==MonsterAttackRule::Action::NativeMissile && request.position.has_value();
+    const bool coordinateCharge=slot.action==MonsterAttackRule::Action::Charge && !target->id && request.position;
     const bool nativeNest=slot.action==MonsterAttackRule::Action::Nest && (rule.ai.kind==MonsterAiKind::FoulCrowNest || rule.ai.kind==MonsterAiKind::VileMother || rule.ai.kind==MonsterAiKind::GenericSpawner);
     if(nativeNest && !rule.nestChild && (monster->minionSpawnClass<=0 || !area.definition.nativeMonsterClasses.contains(monster->minionSpawnClass))) return {DomainStatus::Unavailable,{}};
     const bool pregnancy=slot.action==MonsterAttackRule::Action::Impregnate;
@@ -129,16 +130,18 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const bool coordinateSpell=slot.action==MonsterAttackRule::Action::NativeSpell && request.position && rule.formulas->skills.at(request.skill).number("srvdofunc")==28;
     const bool pd2SelfProjectile=slot.action==MonsterAttackRule::Action::Pd2Projectile &&
         (request.position || rule.formulas->skills.at(request.skill).number("srvdofunc")==22 ||
+         rule.formulas->skills.at(request.skill).number("srvdofunc")==143 ||
          rule.formulas->skills.at(request.skill).number("srvdofunc")==183);
     const bool pd2HirelingSelf=monster->hireling && slot.action==MonsterAttackRule::Action::Skill && rule.formulas->skills.at(request.skill).number("srvdofunc")==68;
-    const bool selfAction=pd2HirelingSelf || pd2SelfProjectile || coordinateSpell || coordinateNativeMissile || corpseArea || nova || tentacles || periodic || slot.action==MonsterAttackRule::Action::Whirlwind || (slot.action==MonsterAttackRule::Action::NativeSpell && rule.formulas->skills.at(request.skill).number("srvdofunc")==68) || slot.action==MonsterAttackRule::Action::SpawnMinion || slot.action==MonsterAttackRule::Action::DefensiveBuff || nativeNest || shadowSelf || druidTeleport || slot.action==MonsterAttackRule::Action::Teleport || slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay || slot.action==MonsterAttackRule::Action::Submerge;
+    const bool poisonEgg=slot.action==MonsterAttackRule::Action::Pd2PoisonEgg;
+    const bool selfAction=poisonEgg || pd2HirelingSelf || pd2SelfProjectile || coordinateSpell || coordinateNativeMissile || corpseArea || nova || tentacles || periodic || slot.action==MonsterAttackRule::Action::Whirlwind || (slot.action==MonsterAttackRule::Action::NativeSpell && rule.formulas->skills.at(request.skill).number("srvdofunc")==68) || slot.action==MonsterAttackRule::Action::SpawnMinion || slot.action==MonsterAttackRule::Action::DefensiveBuff || nativeNest || shadowSelf || druidTeleport || slot.action==MonsterAttackRule::Action::Teleport || slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay || slot.action==MonsterAttackRule::Action::Submerge;
     const bool special=slot.action!=MonsterAttackRule::Action::Damage;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(overseerSupport && (target->id==monster->id || !(victim?victim->alive():participants.find(target->id).player && participants.find(target->id).player->persistent.player.hp>0))) return {DomainStatus::InvalidActor,{}};
     const bool nativeExplosion=slot.action==MonsterAttackRule::Action::NativeSpell && rule.formulas->skills.at(request.skill).number("srvdofunc")==55;
     const bool corpseSkill=nativeExplosion || (monster->assassinPet && rule.formulas->skills.at(request.skill).number("srvdofunc")==55) ||
         (monster->druidPet && request.skill && (rule.formulas->skills.at(request.skill).number("srvstfunc")==63 || rule.formulas->skills.at(request.skill).number("srvdofunc")==137));
-    if(!prison && !overseerSupport && !pregnancy && !eating && !coordinateHydra && !coordinateWisp && !resurrection && !healing && !selfAction && !corpseSkill && !continuingLeap && !participants.canHarm(monster->id,target->id)) return {DomainStatus::InvalidActor,{}};
+    if(!prison && !overseerSupport && !pregnancy && !eating && !coordinateHydra && !coordinateWisp && !coordinateCharge && !resurrection && !healing && !selfAction && !corpseSkill && !continuingLeap && !participants.canHarm(monster->id,target->id)) return {DomainStatus::InvalidActor,{}};
     if(eating) {
         if(!victim || victim->hireling || !ports_.monsters.deadMode(target->id,request.tick)) return {DomainStatus::Unavailable,{}};
         destination=std::pair{victim->position+ports_.areas.at(victim->area).definition.origin-area.definition.origin,victim->rule.size};
@@ -155,7 +158,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         destination=std::pair{*request.position,0};
     }
     if(resurrection && ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick)) destination=std::pair{victim->position,victim->rule.size};
-    if(!destination || target->type>(prison?2:1) || (target->type==1 && !victim && !selfAction && !coordinateHydra) || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
+    if(!destination || target->type>(prison?2:1) || (target->type==1 && !victim && !selfAction && !coordinateHydra && !coordinateCharge) || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
     if(slot.action==MonsterAttackRule::Action::Hydra) {
         const auto global=destination->first+area.definition.origin;
         const auto room=ports_.areas.roomAtPosition(monster->area,monster->position,int(std::floor(global.x)),int(std::floor(global.y)));
@@ -165,7 +168,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     if ((area.definition.town && !(((monster->assassinPet && monster->assassinPet->definition->warp) || monster->druidPet || monster->hireling) && rule.formulas->skills.at(request.skill).number("intown"))) || (!special && (slot.missile ? false :
         (request.monsterMode != 9 && !ordinaryBowRetaliation && meleeDistance(monster->position,monster->rule.size,destination->first,destination->second)>rule.meleeRange) ||
         !area.definition.collision.segment(monster->position,destination->first)))) return {DomainStatus::Unavailable,{}};
-    if(slot.action==MonsterAttackRule::Action::Charge && meleeDistance(monster->position,rule.size,destination->first,destination->second)<=rule.meleeRange)
+    if(slot.action==MonsterAttackRule::Action::Charge && !coordinateCharge && meleeDistance(monster->position,rule.size,destination->first,destination->second)<=rule.meleeRange)
         return requestCast({request.actor,0,request.target,request.tick,5});
     std::optional<Vec> leapDestination;
     if(slot.action==MonsterAttackRule::Action::Leap) {
@@ -339,7 +342,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         monsterReleases_.erase(monster->id);return {event.status,{}};
     }
     if(!petAttack) ports_.monsters.commitCombatRandom(monster->id,reserved);
-    if(slot.action==MonsterAttackRule::Action::Hatch) ports_.monsters.beginHatch(monster->id);
+    if(slot.action==MonsterAttackRule::Action::Hatch || poisonEgg) ports_.monsters.beginHatch(monster->id);
     if(monster->assassinPet && monster->assassinPet->definition->warp) runtime_->assassinStarts.erase(monster->id);
     if((monster->assassinPet || slot.action==MonsterAttackRule::Action::Inferno) &&
        (rule.formulas->skills.at(request.skill).number("srvstfunc")==53 || rule.formulas->skills.at(request.skill).number("srvstfunc")==59))
@@ -385,6 +388,55 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         ports_.frameEvents.publish(std::move(modeTimer));
     }
     return begun;
+}
+DomainResult<> System::releaseMonsterHatch(MonsterRelease &pending,TickContext tick,int formulaSkill) {
+    const auto *source=ports_.monsters.find(pending.request.actor);
+    if(!source) return {DomainStatus::InvalidActor,{}};
+    if(!pending.formulaPrepared) {
+        const auto sampled=ports_.effects.unitStatValues(source->id,tick.tick);
+        if(!sampled) return {DomainStatus::Unavailable,{}};
+        const auto expected=source->combatRandom;auto random=expected;
+        const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {
+            return low>=high?low:nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));
+        };
+        auto input=formulaInput(*source,*sampled,draw);SkillFormulaValues values(*source->rule.formulas,input);
+        const auto count=values.calculation(FormulaDomain::Skill,formulaSkill,pending.attack.rank,"calc1");
+        if(!count) return {DomainStatus::Unavailable,{}};
+        const auto consumed=ports_.monsters.consumeRandom(source->id,expected,random);if(!consumed) return consumed;
+        pending.formulaValue=*count;pending.formulaPrepared=true;
+    }
+    pending.nativeCallbackStarted=true;
+    const auto result=ports_.monsters.spawnSkillChildren(source->id,source->position,pending.formulaValue,true,tick.tick,pending.children);
+    pending.nativeCallbackStarted=pending.children && pending.children->published && !pending.children->complete;
+    return result;
+}
+DomainResult<> System::releaseMonsterNova(MonsterRelease &pending,TickContext tick) {
+    const auto *source=ports_.monsters.find(pending.request.actor);
+    if(!source) return {DomainStatus::InvalidActor,{}};
+    if(!pending.attack.missile) return {DomainStatus::Unavailable,{}};
+    if(!pending.formulaPrepared) {
+        const auto sampled=ports_.effects.unitStatValues(source->id,tick.tick);
+        if(!sampled) return {DomainStatus::Unavailable,{}};
+        auto input=formulaInput(*source,*sampled);SkillFormulaValues values(*source->rule.formulas,input);
+        const auto extra=values.calculation(FormulaDomain::Skill,pending.request.skill,pending.attack.rank,"calc1");
+        if(!extra) throw std::logic_error("Missing native Nova velocity formula");
+        const auto &missile=source->rule.formulas->missiles.at(pending.attack.missile->definition);
+        const auto velocity=nativeAdd(missile.number("vel"),nativeMultiply(pending.attack.rank,missile.number("vellev"))/8);
+        pending.formulaValue=nativeAdd(velocity,*extra);pending.formulaPrepared=true;
+    }
+    std::vector<missiles::NativeSpawn> births;
+    for(const auto heading:missileRingBurst(1)) {
+        missiles::NativeSpawn spawn{source->id,source->area,pending.generation,tick.tick,source->position,source->position+heading,
+            pending.attack.missile->definition,pending.request.skill,pending.attack.rank};
+        // SrvDo022 uses raw params (flags3|4), not CreateMissile's
+        // monster attack bonus / multishot wrapper.
+        if(pending.formulaValue) spawn.nativeVelocity=pending.formulaValue;
+        births.push_back(spawn);
+    }
+    const auto prepared=ports_.missiles.prepareNativeBirth(births);
+    if(!prepared) return {prepared.status,{}};
+    const auto born=ports_.missiles.commitNativeBirth(*prepared.value);
+    return {born.status,born?std::optional{std::monostate{}}:std::nullopt};
 }
 StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
     auto &monsterReleases_=runtime_->monsters;
@@ -556,7 +608,8 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
             specialResult=ports_.effects.unitSkill(source->id,skill,tick.tick);break;
         }
         case MonsterAttackRule::Action::NativeSpell: specialResult=releaseMonsterSpell(pending,tick);break;
-        case MonsterAttackRule::Action::Pd2Projectile: specialResult=releasePd2MonsterProjectile(pending,tick);break;
+        case MonsterAttackRule::Action::Pd2Projectile:
+        case MonsterAttackRule::Action::Pd2Joust: specialResult=releasePd2MonsterSkill(pending,tick);break;
         case MonsterAttackRule::Action::NativeMissile: {
             const auto target=pending.launch?std::optional{std::pair{pending.launch->second,0}}:ports_.monsters.nativeTargetPosition(unit.id,source->area);
             if(!target || !pending.attack.missile) {specialResult={DomainStatus::InvalidActor,{}};break;}
@@ -621,22 +674,8 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
             specialResult=target?ports_.monsters.spawnSkillChildren(source->id,target->first,1,false,tick.tick,pending.children):DomainResult<>{DomainStatus::InvalidActor,{}};
             pending.nativeCallbackStarted=pending.children && pending.children->published && !pending.children->complete;break;
         }
-        case MonsterAttackRule::Action::Hatch: {
-            if(!pending.formulaPrepared) {
-                const auto sampled=ports_.effects.unitStatValues(source->id,tick.tick);if(!sampled) {specialResult={DomainStatus::Unavailable,{}};break;}
-                const auto expected=source->combatRandom;auto random=expected;
-                const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {return low>=high?low:nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));};
-                auto input=formulaInput(*source,*sampled,draw);SkillFormulaValues values(*source->rule.formulas,input);
-                const auto count=values.calculation(FormulaDomain::Skill,pending.request.skill,pending.attack.rank,"calc1");
-                if(!count) {specialResult={DomainStatus::Unavailable,{}};break;}
-                specialResult=ports_.monsters.consumeRandom(source->id,expected,random);if(!specialResult) break;
-                pending.formulaValue=*count;pending.formulaPrepared=true;
-            }
-            pending.nativeCallbackStarted=true;
-            specialResult=ports_.monsters.spawnSkillChildren(source->id,source->position,pending.formulaValue,true,tick.tick,pending.children);
-            pending.nativeCallbackStarted=pending.children && pending.children->published && !pending.children->complete;
-            break;
-        }
+        case MonsterAttackRule::Action::Hatch: specialResult=releaseMonsterHatch(pending,tick,pending.request.skill);break;
+        case MonsterAttackRule::Action::Pd2PoisonEgg: specialResult=releasePd2PoisonEgg(pending,tick);break;
         case MonsterAttackRule::Action::SwarmMove: {
             const auto target=ports_.monsters.targetPosition(unit.id,source->area);
             specialResult=target?ports_.monsters.startSwarmMove(source->id,target->first,tick.tick):DomainResult<>{DomainStatus::InvalidActor,{}};break;
@@ -680,6 +719,10 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
             const auto result=ports_.missiles.spawnNative(spawn);specialResult={result.status,result?std::optional{std::monostate{}}:std::nullopt};break;
         }
         case MonsterAttackRule::Action::Teleport:
+            if(source->rule.stats && source->rule.stats->pd2 && pending.request.skill &&
+               source->rule.formulas->skills.at(pending.request.skill).number("srvdofunc")==155) {
+                specialResult=releasePd2MonsterSkill(pending,tick);break;
+            }
             if(pending.request.skill && source->rule.formulas->skills.at(pending.request.skill).number("srvdofunc")==129) {
                 const auto target=ports_.monsters.targetPosition(unit.id,source->area);
                 const auto at=pending.request.position?pending.request.position:target?std::optional{target->first}:std::nullopt;
@@ -691,34 +734,11 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
                 specialResult=pending.request.position?ports_.monsters.nativeTeleport(source->id,*pending.request.position,tick.tick,ports_.spatial.nativeCollisionSample(0x1c09)):DomainResult<>{DomainStatus::InvalidRequest,{}};break;
             }
             specialResult=pending.request.position?ports_.monsters.teleport(source->id,*pending.request.position,tick.tick,ports_.effects.unitStates(source->id,tick.tick).contains(source->rule.preventHealState)?0:pending.request.teleportHeal):DomainResult<>{DomainStatus::InvalidRequest,{}};break;
-        case MonsterAttackRule::Action::Nova: {
-            const auto &program=source->rule.formulas->skills.at(pending.request.skill);
-            if(program.number("srvdofunc")!=22) {special=false;break;}
-            if(!pending.attack.missile) {specialResult={DomainStatus::Unavailable,{}};break;}
-            if(!pending.formulaPrepared) {
-                const auto sampled=ports_.effects.unitStatValues(source->id,tick.tick);
-                if(!sampled) {specialResult={DomainStatus::Unavailable,{}};break;}
-                auto input=formulaInput(*source,*sampled);SkillFormulaValues values(*source->rule.formulas,input);
-                const auto extra=values.calculation(FormulaDomain::Skill,pending.request.skill,pending.attack.rank,"calc1");
-                if(!extra) throw std::logic_error("Missing native Nova velocity formula");
-                const auto &missile=source->rule.formulas->missiles.at(pending.attack.missile->definition);
-                const auto velocity=nativeAdd(missile.number("vel"),nativeMultiply(pending.attack.rank,missile.number("vellev"))/8);
-                pending.formulaValue=nativeAdd(velocity,*extra);pending.formulaPrepared=true;
-            }
-            std::vector<missiles::NativeSpawn> births;
-            for(const auto heading:missileRingBurst(1)) {
-                missiles::NativeSpawn spawn{source->id,source->area,pending.generation,tick.tick,source->position,source->position+heading,
-                    pending.attack.missile->definition,pending.request.skill,pending.attack.rank};
-                // SrvDo022 uses raw params (flags3|4), not CreateMissile's
-                // monster attack bonus / multishot wrapper.
-                if(pending.formulaValue) spawn.nativeVelocity=pending.formulaValue;
-                births.push_back(spawn);
-            }
-            const auto prepared=ports_.missiles.prepareNativeBirth(births);
-            if(!prepared) {specialResult={prepared.status,{}};break;}
-            const auto born=ports_.missiles.commitNativeBirth(*prepared.value);
-            specialResult={born.status,born?std::optional{std::monostate{}}:std::nullopt};break;
-        }
+        case MonsterAttackRule::Action::Nova:
+            if(source->rule.formulas->skills.at(pending.request.skill).number("srvdofunc")==22)
+                specialResult=releaseMonsterNova(pending,tick);
+            else special=false;
+            break;
         // Dedicated actions do not use this generic release path.
         case MonsterAttackRule::Action::Assassin:
         case MonsterAttackRule::Action::Druid:
@@ -740,7 +760,7 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
             if(specialResult && pending.nativeSkill && pending.nativeSkill->rewindRemaining>0) {
                 pending.pd2CastEventPosted=false;pending.releaseRankPrepared=false;pending.due=tick.tick+1;++it;continue;
             }
-            if(specialResult && ++pending.nextRelease<pending.releaseFrames.size()) {if(pending.attack.action==MonsterAttackRule::Action::Pd2Projectile) pending.nativeSkill.reset();pending.formulaPrepared=false;pending.pd2CastEventPosted=false;pending.releaseRankPrepared=false;pending.curse.reset();pending.children.reset();pending.tentacles.reset();pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;}
+            if(specialResult && ++pending.nextRelease<pending.releaseFrames.size()) {if(pending.attack.action==MonsterAttackRule::Action::Pd2Projectile || pending.attack.action==MonsterAttackRule::Action::Pd2Joust) pending.nativeSkill.reset();pending.formulaPrepared=false;pending.pd2CastEventPosted=false;pending.releaseRankPrepared=false;pending.curse.reset();pending.children.reset();pending.tentacles.reset();pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;}
             it=monsterReleases_.erase(it);continue;
         }
         const auto target=ports_.monsters.targetPosition(unit.id,pending.area);

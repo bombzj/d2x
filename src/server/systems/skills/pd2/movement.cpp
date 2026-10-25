@@ -30,8 +30,12 @@ DomainStatus System::activatePd2Joust(Release &pending,const ActorContext &actor
     if(!caster || !caster->programs() || !pending.unit) return DomainStatus::InvalidActor;
     const auto &rules=*caster->programs();
     if(!pending.pulses) {
+        const auto *states=ports_.effects.unitEffects(actor.actor);
+        if(states && states->hasState(214,actor.tick)) return DomainStatus::Unavailable;
         const auto &area=ports_.areas.at(actor.area).definition;
-        if(!area.teleportMode || (area.teleportMode==2 && !area.collision.collisionSegment(caster->position(),target,0x804))) return DomainStatus::Unavailable;
+        const auto landing=ports_.travel.pd2TeleportLanding(actor.area,caster->position(),target,caster->monster?caster->monster->rule.size:2);
+        if(!landing) return landing.status;
+        target=*landing.value;
         const auto global=target+area.origin;
         const auto room=ports_.areas.roomAtPosition(actor.area,caster->position(),int(global.x),int(global.y));
         if(!room) return DomainStatus::Unavailable;
@@ -51,6 +55,7 @@ DomainStatus System::activatePd2Joust(Release &pending,const ActorContext &actor
         WeaponSkillDamage weapon;weapon.weapon=current->player?current->player->totals.equipment.weapons[0]:current->monster->petWeapon.value_or(WeaponDamage{});
         weapon.level=current->level();
         missiles::Spawn request{actor,attack,{},target,pending.manaPaid || bool(current->monster)};request.weapon=std::move(weapon);
+        request.nativeMeleeContact=pending.nativeContact;
         const auto queued=ports_.missiles.directContact(request,{pending.unit});if(!queued) return queued.status;
         pending.manaPaid=true;pending.nativeMeleeOccurrence=queued.value->occurrence;pending.pulses=2;
     }

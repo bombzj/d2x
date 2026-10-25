@@ -58,6 +58,17 @@ DomainResult<> System::pd2SkillMissileEvent(const FrameEvent &event,TickContext 
 std::optional<uint8_t> System::pd2Hit(Advance &plan,EntityId target) const {
     auto &missile=plan.next;const auto &rule=missile.nativeDamage->rule;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    if(rule.serverHitFunction==6) {
+        if(!rule.damageFormulas || !rule.damageFormulas->skills.contains(missile.skill.sourceId) || rule.hitParameters[0]==-1) return 1;
+        const int mode=uint32_t(rule.hitParameters[1])<16?rule.hitParameters[1]:1;
+        const auto flags=uint32_t(std::max(rule.hitParameters[2],0));
+        auto observer=missile.position;
+        if(const auto live=state_.missiles.find(missile.id);live!=state_.missiles.end() && live->second.area==missile.area)
+            observer=live->second.position;
+        plan.operations.push_back({Advance::OperationKind::Pd2MonsterSpawn,plan.pd2MonsterSpawns.size()});
+        plan.pd2MonsterSpawns.push_back({missile.area,observer,missile.position,rule.hitParameters[0],mode,flags,{}});
+        return 1;
+    }
     if(rule.serverHitFunction==63) {
         const auto owner=participants.find(missile.owner);if(!owner.id()) return 1;
         for(const auto definition:rule.hitSubMissiles) if(definition>0)

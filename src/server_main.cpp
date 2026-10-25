@@ -1,5 +1,6 @@
 #include "hosting/pvpgn_server.hpp"
 #include "resources/archive.hpp"
+#include "resources/pd2/archives.hpp"
 #include <nlohmann/json.hpp>
 #include <csignal>
 #include <chrono>
@@ -50,8 +51,16 @@ int main(int argc, char **argv) {
         if (std::filesystem::exists(stopFile)) throw std::runtime_error("Stale stop request exists; remove it before starting");
         std::filesystem::create_directories(stopFile.parent_path());
         std::signal(SIGINT, stopSignal); std::signal(SIGTERM, stopSignal);
-        logLine("Loading original MPQ content; no window or audio device will be created");
-        archives.mountDirectory(path("mpq"));
+        const auto ruleset=config.value("ruleset",std::string("lod113c"));
+        if(ruleset=="pd2-local") {
+            options.preparation=d2x::ContentPreparation::Pd2TownHost;
+            logLine("Loading PD2 resource rules for the self-hosted game server");
+            d2x::mountPd2HostArchives(archives,path("mpq"),path("pd2Directory"));
+        } else if(ruleset=="lod113c") {
+            if(config.contains("pd2Directory")) throw std::runtime_error("pd2Directory requires ruleset pd2-local");
+            logLine("Loading original MPQ content; no window or audio device will be created");
+            archives.mountDirectory(path("mpq"));
+        } else throw std::runtime_error("Unsupported server ruleset");
         if (archives.names.empty()) throw std::runtime_error("No original MPQs mounted");
         server = std::make_unique<d2x::PvpgnServer>(archives, std::move(options), logLine);
         server->start();

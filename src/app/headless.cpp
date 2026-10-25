@@ -1,5 +1,6 @@
 #include "headless.hpp"
 #include "options.hpp"
+#include "client_setup.hpp"
 #include "debug/debug_pipe.hpp"
 #include "debug/server_commands.hpp"
 #include "hosting/embedded_realm.hpp"
@@ -60,6 +61,7 @@ struct Action {
 };
 struct Agent {
     net::RealmSession session;
+    explicit Agent(net::protocol::ClientProfile profile) : session(profile) {}
     Bytes input;
     D2sHeader header;
     std::filesystem::path source,destination;
@@ -211,7 +213,7 @@ int runHeadless(const AppOptions &options) {
     std::vector<std::unique_ptr<Agent>> agents;
     std::set<std::string> names;
     for(const auto &config:clients) {
-        auto agent=std::make_unique<Agent>();
+        auto agent=std::make_unique<Agent>(options.protocolProfile);
         agent->source=pathAt(config,"save",profilePath.parent_path());
         const auto size=std::filesystem::file_size(agent->source);
         if(size<d2sHeaderSize || size>=net::protocol::tcpIpSaveLimit) throw std::invalid_argument("Character outside native TCP/IP save size");
@@ -219,7 +221,8 @@ int runHeadless(const AppOptions &options) {
         if(agent->input.size()>=net::protocol::tcpIpSaveLimit) throw std::invalid_argument("Character changed size during read");
         if(!names.insert(folded(agent->header.name)).second) throw std::invalid_argument("Duplicate character name");
         agent->destination=output/"saves"/(agent->header.name+".d2s");
-        if(config.contains("area")) agent->area=uint16_t(integer(config,"area",1,1,136));
+        if(config.contains("area")) agent->area=uint16_t(integer(config,"area",1,1,
+            options.protocolProfile==net::protocol::ClientProfile::Pd2Local?210:136));
         const auto readPoint=[](const Json &value,int minimum,int maximum){
             if(!value.is_array() || value.size()!=2) throw std::invalid_argument("Point needs two integer coordinates");
             std::array<int,2> point{};
@@ -252,6 +255,9 @@ int runHeadless(const AppOptions &options) {
         }
         agents.push_back(std::move(agent));
     }
+    Archives archives;
+    const bool pd2=options.protocolProfile==net::protocol::ClientProfile::Pd2Local;
+    if(hosting || pd2) mountClientResources(archives,options);
     // Every output is isolated. Original input files are only read, never leased or overwritten.
     std::filesystem::create_directories(output.parent_path());
     if(!std::filesystem::create_directory(output)) throw std::invalid_argument("Headless output must be a new directory");
@@ -259,13 +265,12 @@ int runHeadless(const AppOptions &options) {
     for(const auto &agent:agents) writeFileAtomically(agent->destination,agent->input);
     { std::ofstream savedProfile(output/"profile.json");savedProfile.exceptions(std::ios::badbit|std::ios::failbit);savedProfile<<profile.dump(2); }
     std::ofstream samples(output/"samples.jsonl");samples.exceptions(std::ios::badbit|std::ios::failbit);
-    Archives archives;
     std::unique_ptr<EmbeddedRealm> host;
     std::string ownerName;
     if(hosting) {
-        archives.mountDirectory(options.mpq);
         if(archives.names.empty()) throw std::runtime_error("No original MPQ content mounted for host");
-        host=std::make_unique<EmbeddedRealm>(archives,output/"saves");
+        host=std::make_unique<EmbeddedRealm>(archives,output/"saves",
+            options.protocolProfile==net::protocol::ClientProfile::Pd2Local?ContentPreparation::Pd2TownHost:ContentPreparation::OriginalRules);
         ownerName=host->prepareStartup(agents.front()->destination.string(),{},{});
         host->listen(address,uint16_t(port)); host->setTcpIpHost(true);
         auto transports=host->connect();

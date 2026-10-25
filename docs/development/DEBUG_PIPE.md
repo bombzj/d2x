@@ -1,5 +1,7 @@
 # Windows调试管道
 
+PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版／公共规则及必要的版本边界。
+
 直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算；功能范围及缺口见[基线](../../BASELINE.md)，构建／运行方法见[开发指南](BUILD_AND_RUN.md)。
 
 Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。
@@ -32,15 +34,9 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 `online-status.gameServerNotices`保留最近八条原系统通道0x26消息，含相对入场`elapsedMilliseconds`、原字段及`senderBytes/textBytes`字节数组；中文可能为GBK，不能假定UTF-8。`removalAnnouncedMilliseconds`只标识首次完整匹配已知管理移除通知的时刻，不代表原因码或保存成功。故障后与`gameHeartbeat`一并保留；若先有移除通知、后有断流，终态错误优先显示服务器已通知移除并保留底层断流信息。下一局或显式退出清空，不能用上一局公告归因新连接。
 
-`online-status.online.pd2Reports`独立记录CN周期报告：`ticksSent/tickEchoes/unmatchedEchoes`对应5C/FF00及9D/2C回显，`positionsSent`对应5C/4，`bhReportsSent`对应特殊聊天通道的BH文件CRC。另有`lastTick/lastEcho/roundTripMilliseconds/lastPosition`；发送计数表示入队，只有匹配tick的回显才计确认，坐标／CRC没有已核实的独立ACK。异常断开后保留，下一局清空；原版不发送这些消息。它不包含认证材料，也不是全部反外挂检查通过标记。实现和待验限制见[周期报告](../resources/PD2_CN_DLL_ANALYSIS.md#原客户端抓包确认的周期上报与候选修复)。
-
 根目录`Play-Diagnostic.cmd`调用现有`play.ps1 -Diagnostic`：使用与Play相同的EXE、MPQ和角色目录，开启默认`d2x-debug`管道，每次创建独立`artifacts/diagnostics/<时间>-<随机标识>/`，保存`client-packets.jsonl`、`host-packets.jsonl`、`stdout.log`、`stderr.log`及含实际EXE路径／SHA256的`run.json`。该入口不构建、迁移角色或覆盖旧日志；Windows PowerShell原生stderr按诊断输出记录，不因非致命提示中断游戏。自选文件可用`play.ps1 -GamePacketLog <新文件> -HostPacketLog <另一新文件>`，不能与Diagnostic合用。宿主无游戏连接时宿主日志可为空；原服Join只产生客户端游戏消息。
 
 旧版`s2c.jsonl`只有S2C，不能补取过去的请求字段。问题出现后保持原局，读取`online-items`／`online-status`的最近请求及副本、`server-snapshot`的真实库存／Cursor和命令状态，另看`server-protocol`拒绝计数；与原消息顺序一起保存。最近物品请求另含x／y／page／body／equipVariant，避免混淆原InvPage与S2C的page=InvPage+1。默认Play不开启文件记录；超时只表示缺少关联确认，不能仅凭物品暂时不显示认定服务端已删除。
-
-`online-status.online.pd2State`返回CN扩展副本：`discovery`含全量是否已知、收包计数和已发现暗金／套装索引；全量未知时未列出项不代表未发现。`coreMaterials.mappingAvailable`表示已核验核心版本且已准备索引映射；`knownSlots`列出已知槽及计数，增量先于全量时不补造其余零值；`snapshotCounts`为全量及后续增量合并结果，`unmappedUpdates`仅在版本／准备缺失时保留原类型报告。它不等于CN共享材料计数，也不授予存取能力。`effectReports`是83原字段与本人A9移除后的报告，不是已还原计时器；`hotkeys`只保存16槽服务器绑定。另有84编号／默认值、地图索引、外观资格、分配与剩余怪物。换区保留、退局清空，无新增写入命令或认证材料。
-
-`pd2State.mapAttributes`为最近一次55地图属性广播，含两个未命名头字段、区域、品质、物品记录索引及最多24条`stat/parameter/value`；未收到时为null。它不是地图布局、种子或本人的使用回执，不能用其判断地图已打开。原属性合并与文字展示仍待接入。
 
 ## 嵌入宿主管理命令
 
@@ -83,7 +79,7 @@ JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／Pla
 | `object-spawn` | code为Objects定义的十进制字符串，x／y为可选原世界坐标，shrine／trap可选；仅本地管理入口，生成原物件以准备观察条件，不直接授予祭坛效果或结算陷阱 |
 | `grant-hireling` | code为当前MPQ Hireling原Id十进制字符串，level为1至主人等级；按原Id保留来源难度并选等级段、姓名与成长，原子替换旧佣兵和装备。仅宿主管理准备，不代替NPC雇佣验证 |
 | `monster-damage`、`monster-kill` | id为当前区域存活怪物；damage另需amount正整数生命点，kill扣除其剩余生命。走monsters正常伤害事实，后续固定步执行死亡、经验、掉落及任务统计，不直接改任务或客户端 |
-| `travel` | level为当前宿主准备的Levels身份（原版1–136，PD2包含扩展预设区域），可选x／y为目的地局部subtile；本地宿主准备真实MPQ地图后按碰撞定位，等待内容时返回Unavailable，可检查server-snapshot后重试。PD2扩展区域未给坐标时使用原tile11／固定位置后备与权威空位搜索；通过原旅行事实同步，不授予任务或传送点。用于准备冒烟条件，不能当作开图、事件或首领资格认证 |
+| `travel` | level为当前宿主准备的Levels身份（原版1–136，PD2包含扩展预设区域），可选x／y为目的地局部subtile；本地宿主准备真实MPQ地图后按碰撞定位，等待内容时返回Unavailable，可检查server-snapshot后重试。扩展区域定位见[PD2管理旅行](../pd2/OPERATIONS.md#管理旅行)；通过原旅行事实同步，不授予任务或传送点。用于准备冒烟条件，不能当作开图、事件或首领资格认证 |
 | `unlock-waypoints` | 必须二选一：`level`为当前MPQ中带传送点的原区域ID（1–136），或`all:true`解锁完整目录。只修改所选角色当前难度的个人激活记录，重复调用保留已有记录；不要求目标地图已生成，不授予任务或改变物件模式。经人物事务提交，当前有有效传送菜单时发送原0x63刷新，否则下次正常打开菜单时显示；沿原D2S保存，命令本身不写盘 |
 | `reset-attributes` | 无玩法参数；退还已分配的四项基础属性点，保留技能分配。经progression／人物事务重算装备资格和派生值，生命／法力／体力限制到新上限，不补满资源；只允许存活、已入局且没有活动技能的角色 |
 | `reset-skills` | 无玩法参数；退还已分配的基础技能点，清除两套武器的技能选择、来源GUID和16个技能快捷键，保留属性分配；固有／物品授予技能仍由规则派生。资格同reset-attributes，两项命令均不消耗Akara次数或Token、不改任务资格；重复调用不重复发点，正常保存或save写入原D2S |
@@ -179,8 +175,8 @@ $spec.preview=$false
 | `online-cast` | hand；坐标x／y或真实unitId／unitType（默认1）二选一。stationary默认false；单位目标false允许原服靠近，true原地请求。repeat默认false，true发原Hold包一次，调用方负责继续提交／停止，不创建客户端循环。各轴≤50、活动地图及MPQ城镇限制，单位目标按MPQ资格区分PvE敌怪／尸体、Enchant友方、Unsummon本人7A／PetType许可的召唤物及Telekinesis物件／物品；自施技能用本人坐标 |
 | `online-attack` | 同cast目标及stationary／repeat，固定左手；先选择MPQ Attack技能并等确认。伤害、追击与命中由原服处理 |
 | `online-stop-skill` | 发原0x12停止地狱火状态；停止重复提交Hold请求由调用方负责。这不是全部技能的通用撤销包 |
-| `online-learn-skill` | skillId；检查职业、已学前置、等级、属性、MPQ最大等级和原服可用点。原0x3B；固定CN配置追加数量BYTE=1，等待基础技能等级增加和余点减少，允许两类回包按不同顺序到达；原服无通用失败包，超时结果未知，不自动重试 |
-| `online-spend-attribute` | statId：0力量／1精力／2敏捷／3体力；count：1–100，默认1，需有足够原服属性点。原0x3A打包count-1于高字节，等待对应绝对属性增加和余点减少；固定CN配置的低字节0–3沿原属性分配；CN扩展控制从0x10开始，不与加点混用 |
+| `online-learn-skill` | skillId；检查职业、已学前置、等级、属性、MPQ最大等级和原服可用点。原0x3B；CN编码见[成长请求](../pd2/CLIENT_INTEGRATION.md#客户端接入成长请求编码)；等待基础技能等级增加和余点减少，允许两类回包按不同顺序到达；原服无通用失败包，超时结果未知，不自动重试 |
+| `online-spend-attribute` | statId：0力量／1精力／2敏捷／3体力；count：1–100，默认1，需有足够原服属性点。原0x3A打包count-1于高字节，等待对应绝对属性增加和余点减少；CN边界见[成长请求](../pd2/CLIENT_INTEGRATION.md#客户端接入成长请求编码) |
 | `online-move` | x、y为服务端全局subtile整数（0–65535），run默认true；ProtocolReady、角色存活、目标属于已加载原地图且各轴距本人采样≤50时接受。直接发原0x01／0x03目标，至少间隔100ms，不切18格短段等待回包；可达点／障碍由原服处理。accepted表示命令已发送，不表示已到达；鼠标使用同帧显示坐标作投影范围提示，原服仍按真实位置校验50格范围 |
 | `online-move-to-unit` | unitId、unitType（默认2，支持1／2／5）、run（默认true）；限定当前scene.mapTargets真实单位及各轴50-subtile范围，直接发原0x02／0x04跟随真实GUID，不发交谈 |
 | `online-use-exit` | unitId为online-world返回的真实type5单位ID，要求原生地图可用／角色存活；发送0x13交互，不接受用LvlWarp类型编号替代单位ID |
@@ -216,12 +212,9 @@ $spec.preview=$false
 
 `online-item-action`的`storage-index`要求`amount=0/1/2`表示普通／索引／主索引；页号与域绑定当前确认页，不能修改其他页。要求空Cursor、普通仓库已同步且无其他待办，等待9D/18的flags确认；超时不重试。`storage-rename`及聊天`/rp`明确拒绝且不发包：当前服务清空页名后发生断流，兼容性尚未闭合。`inventory.storage`提供只读`pageName`及可空`sharedGold`，个人goldbank与该共享余额分开。
 
-合成请求保存提交时方块材料的GUID／revision，仅相关材料变化或新方块物品更新结束等待；`Updated`仍只表示相关服务端更新，不表示完整配方或全部产物已经验收。普通金币请求按提交前余额及金额核对已知双方变化，材料升级核对双方计数，可按任意顺序收包。固定CN的无限书使用记为`SentNoAck`，不等待不会发生的源物品消耗，也不将发送当作成功鉴定／开门。
+合成请求保存提交时方块材料的GUID／revision，仅相关材料变化或新方块物品更新结束等待；`Updated`仍只表示相关服务端更新，不表示完整配方或全部产物已经验收。普通金币请求按提交前余额及金额核对已知双方变化，材料升级核对双方计数，可按任意顺序收包。PD2专项说明见[运行与部署：无限书确认](../pd2/OPERATIONS.md#运行与部署无限书确认)。
 
-`online-item-action`新增`belt-auto`（本人背包`itemId`，原0x63）及`cube-store`（Cursor／地面`itemId`、本人已存方块`targetId`，原0x2A），复用现有身份／revision与请求等待。两者只发送原请求，不生成材料或授予方块合成资格。CN候选的`storage-page`改为mdll1控制链：`page`为一基目标页（32位，固定样本元数据支持范围1–500，不代表线上总页数），`shared`为目标账号共享域。跨域仅允许目标首页，同域仅允许相邻页，分别发C2S 3A/1B、1C或19、1A；不发核心55，不为9D/function18补发5A。要求已初始化、同步、打开仓库且空Cursor；首次打开自动发送一次3A1B00，未确认时不把核心首屏视为个人仓库；若已是个人首页可无回包，仍允许切共享首页取得确认，之后须匹配域和页的9D确认。`online-snapshot`报告`shared`、`cnConfirmed`、`requestedShared`及两个原始flags，`online-items`每件物品增加`sharedStash`。不循环枚举、不自动重试；超时暂停仓库。已核实实际个人／共享切换和共享相邻翻页回包；已选中的首页在原模块中不重复回确认，不应靠重发取ACK；原版不开放此命令。
-
-CN仓库还支持`storage-page`的`navigation`字段：`previous-index`／`next-index`／`first`／`last-nonempty`／`previous-main-index`／`next-main-index`，此时不填page，shared须与当前域一致；结果页取9D/18。`storage-materials`用`amount=1/0`切材料页，不等待普通选页ACK。`material-withdraw`用`code`、`amount=1/5/20/50`及`toCursor`（Cursor仅1）；`materialOperation`默认`withdraw`，`cube`只允许非Cursor且须有真实可访问的本人方块，客户端自动填写并复验方块GUID／revision；`upgrade`用源code、消耗量3／15／150且非Cursor，仅允许原生3:1配对及已同步的双方计数。`ground`不受支持，CSL／CSR实际选择方块而非地面；`material-deposit`用当前Cursor或本人背包的itemId／itemRevision。材料存取要求98项代码计数初始化完成，并等待真实计数／物品事实；状态在`inventory.storage.materials`，不伪造物品GUID。普通页、材料页、共享／个人域的权限独立。
-
+`online-item-action`新增`belt-auto`（本人背包`itemId`，原0x63）及`cube-store`（Cursor／地面`itemId`、本人已存方块`targetId`，原0x2A），复用现有身份／revision与请求等待。两者只发送原请求，不生成材料或授予方块合成资格。PD2专项说明见[运行与部署：仓库翻页命令](../pd2/OPERATIONS.md#运行与部署仓库翻页命令)。
 
 传送点观察需区分首次激活与菜单：野外中性物件第一次`online-interact`只启动／激活，收到原0x0E后结束等待；第二次点击mode1／2才出现0x63菜单。城镇传送点初始mode2，可直接打开。`server-snapshot.area`及`areas`新增`waypointIndex`和可空`waypointAnchor`（全局subtile）；`waypoints`仍列本人当前难度激活区域，`objects`列真实模式，`travel`列待过渡。用于观察原流程，不授予激活权限；源码规则及未认证范围见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。
 
@@ -233,7 +226,7 @@ world.mapEventSequence／First／Count与scene.nativeMapReason定位地图缺口
 
 world.dead／deathPhase／respawnRequest／corpses描述死亡、回城请求及尸体归属；resources／repositioned组合用于回城确认。scene.effectLimitations只列遇到的未支持客户端程序，空数组不表示全技能认证。network包计数／unconsumed按SID／MCP／game诊断，不回显密码／key／票据或原认证包。
 
-world.quests.npcIntroductionReports按零基幕号返回最后收到的0x91原报告（12个WORD，未收到为null，65535为空项而非清除指令），换局清空，未联动对白或任务奖励。world.ignoredPackets及protocol.game.packets[].unconsumed统计已完整分帧但尚未消费的消息；这类消息不再因缺少客户端消费者而中断PD2会话，未知包长和损坏消息仍按协议错误处理。
+world.quests.npcIntroductionReports按零基幕号返回最后收到的0x91原报告（12个WORD，未收到为null，65535为空项而非清除指令），换局清空，未联动对白或任务奖励。world.ignoredPackets及protocol.game.packets[].unconsumed统计已完整分帧但尚未消费的消息；未知包长和损坏消息仍按协议错误处理；PD2未消费消息边界见[客户端接入](../pd2/CLIENT_INTEGRATION.md)。
 
 scene.players 按实际已指派玩家返回 id／name／classId、local、visible、moving、dead、显示 position 及不可见 reason。visible 只表示本帧原图进入视口，名册存在不表示可见；位置不写回副本或授权操作。world.units.attributes 保留原 1.13c 0x20 的玩家公开属性，不能当作本人的私有属性／库存。
 
@@ -241,7 +234,7 @@ scene.players 按实际已指派玩家返回 id／name／classId、local、visib
 
 `online-status` 附带 `characterUi`／`hirelingUi`，读取当前共享 UI 端口的实际数值（含伤害／命中与 unknownStats、佣兵 known），便于和页面截图核对。它们不读取服务端 Totals、不补私有字段、不改变人物；原包事实仍在 online 下，宿主权威对照使用 server-snapshot。
 
-`online-status`的`online.gameHeartbeat`给出游戏心跳sent／received／pending、相对入局的elapsedMilliseconds及最后packet／ping／pong时间，不含认证或消息载荷。CN心跳独立持续发送；缺少一次Pong不阻塞后续心跳或断开仍在收游戏数据的连接。真正断流仍按既有timeout失败，失败快照保留计数。
+`online-status`的`online.gameHeartbeat`给出游戏心跳sent／received／pending、相对入局的elapsedMilliseconds及最后packet／ping／pong时间，不含认证或消息载荷。PD2专项说明见[运行与部署：心跳判断](../pd2/OPERATIONS.md#运行与部署心跳判断)。
 
 先用online-items查询实际GUID、revision与decoded；mode为0存储、1装备、2腰带、3地面、4Cursor、5掉落过渡、6孔内。page是原InvPage+1：1背包、4方块、5箱子。本人所有权为ownerType=0且owner等于load.playerUnitId；孔内子项ownerType=4、owner为宿主物品GUID；货架ownerType=1且owner为当前NPC。online-ground也返回完整快照，请按mode=3筛选。
 
@@ -277,7 +270,7 @@ scene.players 按实际已指派玩家返回 id／name／classId、local、visib
 | identify-all | 无itemId；当前五幕凯恩交谈及空Cursor；任务资格／费用／效果由原服决定 |
 | quest-service | 本人Cursor itemId；真实Charsi／Larzuk／Anya交谈；复用原0x38 action0与0x58确认，服务器复验资格、一次性消耗及结果。取物到Cursor需先用take并等待位置更新 |
 
-`online.inventory`含revision、gameGeneration、columns／rows、stashColumns／stashRows、cubeColumns／cubeRows、beltSlots、cursor、weaponSet、items和request。storage列kind／requested／source／requestedSource／revision及CN page／requestedPage／initialized／synchronized；分页超时撤回仓库访问，不将旧页号视作已确认；shopRequested／shopSource绑定货架；tradeResult列原result／flags／itemId／gold／revision。物品含基础name／artKey、品质／词缀、位置／所有者、数量／耐久、防御／金币、孔数及统计列表；0x3E baseStats保留服务器单位。未知／截断数据decoded=false并给出reason，不允许操作。
+`online.inventory`含revision、gameGeneration、columns／rows、stashColumns／stashRows、cubeColumns／cubeRows、beltSlots、cursor、weaponSet、items和request。storage列kind／requested／source／requestedSource／revision；CN分页字段及确认边界见[仓库诊断](../pd2/OPERATIONS.md#仓库诊断)；shopRequested／shopSource绑定货架；tradeResult列原result／flags／itemId／gold／revision。物品含基础name／artKey、品质／词缀、位置／所有者、数量／耐久、防御／金币、孔数及统计列表；0x3E baseStats保留服务器单位。未知／截断数据decoded=false并给出reason，不允许操作。
 
 accepted仅表示请求已排队。request.sequence区分连续操作；Pending等待相关回包，Updated需再查位置／数量／余额；TimedOut结果未知，Interrupted为死亡／换幕／退局，Rejected为NPC明确失败（原码在tradeResult／online.error），SentNoAck表示存储关闭或已核实无限书等没有独立ACK的请求已发送，不代表执行成功。买卖／维修／批量鉴定等待0x2A；初步物品变化不提前结束请求。待请求结束后再提交下一项，不自动重发；storage-close例外允许取消。拾取／合成应同时核对所有权、原材料、产物及world.attributes，不能把地面消失或Updated直接当成功。箱子先从scene.mapTargets查询interaction=stash的真实单位，再用online-interact；商店先用online-npc-interact并等npcConversation。公共背包／货架及玩家交易UI已接，原服药水／金币交易消息见[联网参考](../modules/NETWORK.md#原服物件与交易观察)；全部物品交易、赌博／多买、佣兵装备仍待完整核对。
 

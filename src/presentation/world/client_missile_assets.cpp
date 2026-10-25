@@ -109,7 +109,7 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         program.serverTurnPeriod=number("Param1");
         for (size_t i = 0; i < program.hitParameters.size(); ++i) {
             program.hitParameters[i] = number("cHitPar" + std::to_string(i + 1));
-            program.serverHitParameters[i] = number("HitPar" + std::to_string(i + 1));
+            program.serverHitParameters[i] = number("sHitPar" + std::to_string(i + 1));
             program.children[i] = linked(row, "CltSubMissile" + std::to_string(i + 1));
         }
         for (size_t i = 0; i < program.hitChildren.size(); ++i)

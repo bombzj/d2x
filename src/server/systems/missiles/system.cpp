@@ -50,7 +50,17 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
     // Finish each accepted contact before moving to the next child or target.
     while(plan.nextOperation<plan.operations.size()) {
         const auto operation=plan.operations[plan.nextOperation];
-        if(operation.kind==Advance::OperationKind::LevelSpawn) {
+        if(operation.kind==Advance::OperationKind::Pd2MonsterSpawn) {
+            auto &entry=plan.pd2MonsterSpawns.at(operation.index);
+            if(!entry.publication) {
+                auto prepared=ports_.monsters.preparePd2MissileSpawn(entry.area,entry.observer,entry.position,
+                    entry.definition,entry.mode,entry.flags,tick.tick,ports_.spatial.nativeCollisionSample());
+                if(!prepared) return prepared.status;
+                entry.publication=std::move(*prepared.value);
+            }
+            if(!entry.publication->validate()) return DomainStatus::Stale;
+            entry.publication->publish();plan.started=true;
+        } else if(operation.kind==Advance::OperationKind::LevelSpawn) {
             auto &entry=plan.levelSpawns.at(operation.index);
             if(!entry.publication) {
                 auto prepared=ports_.monsters.prepareLevelSpawn(entry.area,entry.observer,entry.position,tick.tick,

@@ -90,7 +90,7 @@ Missile System::make(const Spawn &r, Vec origin, Vec direction, int id, int fram
             // ToHitFactor. Only the actual launch initializer writes TOHIT.
             if(program==74) damage.attackBonus=nativeAdd(damage.attackBonus,r.skill.weapon->attackRating);
             else if(program==3 || program==5) {
-                const bool throwing=r.skill.weapon->useThrowMastery;
+                const bool throwing=r.skill.weapon->useThrowMastery && (!rules.pd2 || r.weapon->weapon.throwable);
                 if(throwing) {
                     damage.attackBonus=nativeAdd(damage.attackBonus,r.weapon->weapon.throwMastery[0]);
                     damage.data.damagePercent=nativeAdd(damage.data.damagePercent,r.weapon->weapon.throwMastery[1]);

@@ -37,8 +37,8 @@ DomainStatus System::preparePd2MissileCritical(SpellImpact &impact,ParticipantVi
     applyPd2WeaponParameters(modifiers,*values,*rules.stats,weapon,equipment,*rules.formulas,dual);
     int mastery{};
     if(weapon.item) {
-        weapon=sampleNativeWeapon(weapon,*values,*rules.stats,{},bool(source.monster));
-        mastery=(record->second.useThrowMastery?weapon.throwMastery:weapon.meleeMastery)[2];
+        weapon=sampleNativeWeapon(weapon,*values,*rules.stats,{},bool(source.monster),0,equipment,rules.formulas.get(),dual);
+        mastery=(weapon.throwable && record->second.useThrowMastery?weapon.throwMastery:weapon.meleeMastery)[2];
     }
     const auto expected=caster->random();auto random=expected;
     const auto critical=rollPd2Critical(modifiers,values->get({rules.stats->names.at("passive_critical_strike"),0}),mastery,

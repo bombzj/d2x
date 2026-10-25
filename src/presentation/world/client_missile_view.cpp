@@ -603,6 +603,28 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
             }
             if (!frame) assets_.sceneAudio.playRegistered("missile-release:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
             switch (program.function) {
+            case 6: {
+                // Retail B92B0 samples the previous path update before the
+                // common move/collision step. Variants retain child A's Range.
+                if(!effect.movedCell) break;
+                const auto base=assets_.clientMissilePrograms.find(program.children[0]);
+                if(base==assets_.clientMissilePrograms.end()) {finished=true;continue;}
+                int child=program.children[0];
+                if(program.children[1]>=0) {
+                    if(program.children[2]>=0) {
+                        const auto choice=limitedRandom(effect.random,3);
+                        if(choice<2) child=program.children[size_t(choice)+1];
+                    } else if(!limitedRandom(effect.random,2)) child=program.children[1];
+                }
+                ClientMissileInitialization initialization;
+                if(base->second.frames) initialization.totalFrames=base->second.frames;
+                initialization.suppressLight=!program.parameters[0] ||
+                    limitedRandom(effect.random,uint32_t(program.parameters[0]))!=0;
+                // The native callback restores the parent's precise path
+                // coordinates after construction, without snapping to a cell.
+                emit(child,effect.pos,{},effect,childAge,-1,0,-1,initialization);
+                break;
+            }
             case 70: {
                 if (program.rules!=ClientMissileProgram::Rules::Pd2Cn) break;
                 const auto owner=std::find_if(targets.begin(),targets.end(),[&](const auto &target){return target.id==effect.owner;});
@@ -897,7 +919,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                 const auto definition=assets_.clientMissilePrograms.find(child);
                 if(definition!=assets_.clientMissilePrograms.end()) emit(child,{float(int(next.x))+.5f,float(int(next.y))+.5f},{},effect,childAge,-1,0,assets_.clientMissilePrograms.at(program.children[0]).frames);
             }
-            if ((program.function==6 || program.function==22 || program.function==27) && !wall && missileChangedCell(start,next))
+            if ((program.function==22 || program.function==27) && !wall && missileChangedCell(start,next))
                 emit(program.children[0],{float(int(next.x))+.5f,float(int(next.y))+.5f},{},effect,childAge);
             std::vector<std::pair<float, const ClientMissileTarget *>> contacts;
             if (activated && !effect.hiddenUntilCurrentFrame && program.collide && program.function != 19)
@@ -948,6 +970,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                         std::max(0.f, childAge - float(i) / (25.f * loops)));
             }
             effect.pos = start + (next - start) * fraction;
+            effect.movedCell=missileChangedCell(start,effect.pos);
             effect.pixelOffset=effect.pixelOffset+effect.pixelVelocity;
             effect.pixelVelocity=effect.pixelVelocity+effect.pixelAcceleration;
             if(effect.graphics) {

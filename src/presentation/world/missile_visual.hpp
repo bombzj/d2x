@@ -74,7 +74,7 @@ struct ClientMissileVisual {
     float age = 0, duration = 0;
     Vec direction;
     // Existing static effects leave flight false. Flights advance at native 25 Hz.
-    bool flight{}, deathProgram{};
+    bool flight{}, deathProgram{}, movedCell{};
     int level{1}, frame{}, velocityFixed{}, acceleration{}, directionIndex{};
     std::optional<int> impactCount;
     // frame counts processed local callbacks. Native countdown resets must not

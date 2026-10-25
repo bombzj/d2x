@@ -19,8 +19,9 @@ add_library(d2x_resources
   src/resources/atomic_file.cpp src/resources/archive.cpp src/resources/formats.cpp
   src/resources/dcc.cpp src/resources/data_table.cpp src/resources/text.cpp
   src/resources/anim_data.cpp src/resources/monster_palshift.cpp src/resources/presets.cpp
+  src/resources/pd2/archives.cpp
 )
-target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm)
+target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm d2x_hash)
 add_library(d2x_hash src/core/sha256.cpp)
 target_link_libraries(d2x_hash PUBLIC d2x_core)
 
@@ -58,6 +59,7 @@ target_link_libraries(d2x_world PUBLIC d2x_content d2x_navigation)
 # Read-only item definitions and property calculations; no inventory authority.
 add_library(d2x_rules
   src/gameplay/units/direction.cpp src/gameplay/rules/arithmetic.cpp
+  src/gameplay/rules/pd2/arithmetic.cpp
   src/gameplay/rules/formula.cpp src/gameplay/stats/stat_list.cpp
   src/gameplay/stats/modifier_values.cpp src/gameplay/stats/pd2/item_values.cpp src/gameplay/combat/unit_values.cpp
   src/gameplay/combat/pd2/item_modifiers.cpp
@@ -84,6 +86,7 @@ add_library(d2x_content
     src/content/pd2/corpse_data.cpp
   src/content/pd2/item_properties.cpp
   src/content/pd2/map_data.cpp
+  src/content/pd2/map_description.cpp
   src/content/pd2/cube.cpp
   src/content/pd2/cube_inputs.cpp
     src/content/pd2/aura_data.cpp
@@ -209,6 +212,7 @@ add_library(d2x_server
   src/server/runtime/game_systems.cpp src/server/runtime/command_dispatch.cpp
   src/server/runtime/simulation.cpp src/server/systems/actions/state.cpp
   src/server/runtime/events.cpp src/server/systems/world/system.cpp
+  src/server/systems/world/pd2/maps.cpp
   src/server/systems/world/quest_placement.cpp src/server/systems/quests/orb.cpp
   src/server/systems/effects/redemption.cpp src/server/systems/effects/damage_absorption.cpp
   src/server/systems/world/rooms.cpp src/server/area_store.cpp src/server/native_collision.cpp
@@ -226,6 +230,7 @@ add_library(d2x_server
   src/server/systems/monsters/lifecycle.cpp src/server/systems/monsters/modifiers.cpp
   src/server/systems/monsters/movement.cpp src/server/systems/monsters/damage.cpp
   src/server/systems/monsters/special_actions.cpp src/server/systems/monsters/act2_skills.cpp
+  src/server/systems/monsters/pd2/missile_spawn.cpp
   src/server/systems/monsters/diablo_prison.cpp src/server/systems/monsters/imp.cpp
   src/server/systems/monsters/leap.cpp src/server/systems/monsters/controlled.cpp
   src/server/systems/ai/system.cpp src/server/systems/ai/family_actions.cpp
@@ -251,6 +256,8 @@ add_library(d2x_server
   src/server/systems/ai/ancient_madawc.cpp src/server/systems/ai/nihlathak.cpp
   src/server/systems/ai/putrid_defiler.cpp src/server/systems/ai/baal_minion.cpp
   src/server/systems/ai/frozen_horror.cpp src/server/systems/ai/reanimated_horde.cpp
+  src/server/systems/ai/pd2/leoric.cpp
+  src/server/systems/ai/pd2/guardian.cpp
   src/server/systems/ai/megademon.cpp src/server/systems/monsters/pregnancy.cpp
   src/server/systems/monsters/hydra.cpp src/server/systems/skills/system.cpp
   src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
@@ -277,6 +284,7 @@ add_library(d2x_server
   src/server/systems/missiles/pd2/hit.cpp
   src/server/systems/missiles/pd2/hit_delay.cpp
   src/server/systems/missiles/pd2/programs.cpp
+  src/server/systems/missiles/pd2/royal_fire.cpp
   src/server/systems/effects/pd2/curses.cpp
   src/server/systems/effects/pd2/dark_pact.cpp
   src/server/systems/effects/pd2/sacrifice.cpp
@@ -348,6 +356,7 @@ add_library(d2x_server
   src/server/systems/travel/position_sync.cpp src/server/systems/travel/waypoints.cpp
   src/server/systems/travel/portals.cpp src/server/systems/social/system.cpp
   src/server/systems/travel/pd2/maps.cpp
+  src/server/systems/travel/pd2/teleport.cpp
   src/server/systems/social/party.cpp src/server/systems/trade/system.cpp
   src/server/systems/transactions/system.cpp src/server/systems/transactions/character_group.cpp
   src/server/systems/transactions/resources.cpp src/server/systems/replication/system.cpp

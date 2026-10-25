@@ -42,7 +42,10 @@ class System {
     DomainResult<bool> releaseMonsterMosquito(MonsterRelease &,TickContext);
     DomainResult<> releaseOverseer(MonsterRelease &,TickContext);
     DomainResult<> releaseMonsterSpell(MonsterRelease &,TickContext);
-    DomainResult<> releasePd2MonsterProjectile(MonsterRelease &,TickContext);
+    DomainResult<> releasePd2MonsterSkill(MonsterRelease &,TickContext);
+    DomainResult<> releaseMonsterNova(MonsterRelease &,TickContext);
+    DomainResult<> releaseMonsterHatch(MonsterRelease &,TickContext,int formulaSkill);
+    DomainResult<> releasePd2PoisonEgg(MonsterRelease &,TickContext);
     DomainResult<> releasePd2HirelingSkill(MonsterRelease &,TickContext);
     DomainResult<std::shared_ptr<Release>> startPd2HirelingStrafe(const CastRequest &,const MonsterAttackRule &,int speed);
     DomainStatus pd2MonsterStaticField(Release &,const ActorContext &);
@@ -68,6 +71,7 @@ class System {
     DomainStatus activateAmazonMagic(Release &, const ActorContext &, Vec);
     DomainStatus activateTeleport(Release &, const ActorContext &, Vec);
     DomainStatus activatePd2Teleport(Release &, const ActorContext &, Vec);
+    DomainStatus activatePd2MonsterTeleport(Release &,const ActorContext &,Vec);
     DomainStatus activateLeap(Release &,const ActorContext &,Vec);
     DomainStatus activateHydra(Release &, const ActorContext &, Vec);
     DomainStatus activateEffect(Release &, const ActorContext &, Vec);

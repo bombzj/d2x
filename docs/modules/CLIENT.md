@@ -59,7 +59,7 @@ RemoteUiClients按原协议副本／物品解码版本、游戏与区域代次�
 
 世界沿 WorldDrawView → SceneView.drawWorld，动画沿 ActorAnimationCatalog／ActorAnimationState；自动地图沿共同 AutomapCatalog／AutomapExploration → drawAutomap。删除无人使用的旧小地图状态／投影、IMapAssetSource 和旧资源预热，原服地图适配保留必要坐标／资源事实。声音沿 SoundCatalog → PresentationSoundEvent／SoundActorView／ItemDropSoundEvent → SceneAudio → SoundBank，不在两端解释 MonSounds；物品原表落地声音及25Hz触发帧同样只在公共配置入口读取。
 
-地形GPU纹理按原DT1图像边界与当前视口相交后才上传；瓦片选择、动画帧、显示排序和发现判断不变。发现仍核对基础瓦片的原边界及有效纹理，与当帧动画／高亮分开。按幕／DT1指针缓存并持有原库寿命，地图改变只重建索引，进入视口时同步准备所需原图，不预载屏外整套DT1。`RemoteScene`持有共享`ClassicData`并只读复用怪物、职业、技能、飞弹、武器、难度和物件表；PD2使用独立RemoteDisplay缓存，不准备原版宿主程序、装备派生或面板几何，未登记的飞弹程序与公式显示不可用；状态／Overlay表仍保留独立读取，以维持公共技能准备失败时的既有显示边界。未改07／08消费、04生效门槛或地图随机；DCC解码与角色合成仍同步，首次技能／姿态及公共场景UI准备仍可能造成长帧，未引入异步图元或近似资源。
+地形GPU纹理按原DT1图像边界与当前视口相交后才上传；瓦片选择、动画帧、显示排序和发现判断不变。发现仍核对基础瓦片的原边界及有效纹理，与当帧动画／高亮分开。按幕／DT1指针缓存并持有原库寿命，地图改变只重建索引，进入视口时同步准备所需原图，不预载屏外整套DT1。`RemoteScene`持有共享`ClassicData`并只读复用怪物、职业、技能、飞弹、武器、难度和物件表；PD2专项说明见[客户端接入：显示缓存](../pd2/CLIENT_INTEGRATION.md#客户端接入显示缓存)。状态／Overlay表仍保留独立读取，以维持公共技能准备失败时的既有显示边界。未改07／08消费、04生效门槛或地图随机；DCC解码与角色合成仍同步，首次技能／姿态及公共场景UI准备仍可能造成长帧，未引入异步图元或近似资源。
 
 Single Player的暂停策略由app/frontend在菜单输入处理后传入RemoteScene；单机宿主沿既有EmbeddedRealm.pump暂停，不增加协议消息。RemoteScene暂停移动预测、人物／怪物／物件动画、弹体与效果时钟，SceneView.advanceWorldPresentation同步冻结地面物品翻转及世界提示动画，世界声音流同步暂停。SceneView.refreshUi只推进菜单与面板UI；暂停期间及恢复首帧更新墙钟锚点但不增加世界时间，避免恢复追帧或将暂停识别成长帧加载而清除效果。共享房间／原服不因ESC菜单或失焦冻结世界表现。
 

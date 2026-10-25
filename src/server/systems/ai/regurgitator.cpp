@@ -11,6 +11,8 @@
 namespace d2x::server::ai {
 StepStatus System::regurgitatorFamily(EntityId id,std::optional<UnitTarget> target,Vec point,int size,TickContext tick,Controller &controller) {
     const auto &unit=*ports_.monsters.find(id);const auto &area=ports_.areas.at(unit.area);const auto &params=unit.rule.ai.params;
+    if(target && unit.rule.stats && unit.rule.stats->pd2 && (unit.rule.nativeClass==1064 || unit.rule.nativeClass==1065))
+        return pd2Guardian(id,*target,tick,controller);
     const auto chance=[&](int percent){return int(limitedRandom(controller.random,100))<percent;};
     const auto position=[&](const monsters::Actor &other){return other.position+ports_.areas.at(other.area).definition.origin-area.definition.origin;};
     const auto squared=[&](Vec at) {

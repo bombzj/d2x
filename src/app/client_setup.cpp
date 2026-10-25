@@ -4,6 +4,7 @@
 #include "network/protocol/auth.hpp"
 #include "network/protocol/native_auth_resource.hpp"
 #include "resources/archive.hpp"
+#include "resources/pd2/archives.hpp"
 #include <nlohmann/json.hpp>
 #include <array>
 #include <algorithm>
@@ -123,13 +124,26 @@ void preparePd2Authentication(net::protocol::OriginalClientAuth &auth, const std
 }
 void resolveClientSetup(AppOptions &options) {
     if (options.clientProfile.empty()) return;
-    if(!options.headlessProfile.empty() || !options.pack.empty())
-        throw std::runtime_error("PD2 uses the shared graphical frontend; headless profiles and resource packing are unavailable");
+    if(!options.pack.empty()) throw std::runtime_error("PD2 resource packing is unavailable");
     options.clientProfileDigest=fileDigest(options.clientProfile);
     std::ifstream input(options.clientProfile);
     if (!input) throw std::runtime_error("Client profile is unavailable");
     const auto json = nlohmann::json::parse(input);
     verifyClientProfileDefinition(options.clientProfile,options.clientProfileDigest);
+    if(json.value("version",0)==1 && json.value("clientProfile",std::string{})=="pd2-local") {
+        if(json.value("authentication",std::string("pvpgn"))!="pvpgn")
+            throw std::runtime_error("The self-hosted PD2 realm uses PvPGN authentication");
+        const auto base=std::filesystem::absolute(options.clientProfile).parent_path();
+        options.mpq=profilePath(json,"originalClientDirectory",base).string();
+        options.pd2Directory=profilePath(json,"pd2Directory",base).string();
+        options.mpqSupplement.clear();
+        options.protocolProfile=net::protocol::ClientProfile::Pd2Local;
+        options.onlineConfig=std::filesystem::absolute(options.clientProfile).string();
+        if(options.language.empty()) options.language="chi";
+        return;
+    }
+    if(!options.headlessProfile.empty())
+        throw std::runtime_error("Use a pd2-local resource profile for self-hosted headless PD2");
     if (json.value("version", 0) != 1 ||
         json.value("clientProfile", std::string{}) != "pd2-cn-normal-20261020" ||
         json.value("authentication", std::string{}) != "pd2-cn")
@@ -151,6 +165,10 @@ void resolveClientSetup(AppOptions &options) {
     options.onlineConfig = std::filesystem::absolute(options.clientProfile).string();
 }
 void mountClientResources(Archives &archives, const AppOptions &options) {
+    if(options.protocolProfile==net::protocol::ClientProfile::Pd2Local) {
+        mountPd2HostArchives(archives,options.mpq,options.pd2Directory);
+        return;
+    }
     if (options.protocolProfile == net::protocol::ClientProfile::Lod113c) {
         std::error_code error;
         if (!options.mpqSupplement.empty() &&

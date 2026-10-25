@@ -1,5 +1,6 @@
 #pragma once
 #include "network/byte_transport.hpp"
+#include "content/content_preparation.hpp"
 #include <filesystem>
 #include <functional>
 
@@ -10,6 +11,7 @@ struct PvpgnServerOptions {
     std::filesystem::path recovery;
     std::string realm;
     uint32_t version{}, maximumGames{16};
+    ContentPreparation preparation = ContentPreparation::OriginalRules;
 };
 class PvpgnServer {
     struct Impl;

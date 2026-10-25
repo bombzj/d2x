@@ -260,6 +260,8 @@ struct RemoteScene::Impl {
     uint32_t nextPd2PathSeed(OnlineUnitKey owner);
     std::optional<size_t> pd2ThrownMissile(size_t skillRow,int weaponMissile,bool split) const;
     std::optional<size_t> pd2DoomKnightMissile(size_t skillRow,const OnlineUnit &) const;
+    struct Pd2RoyalFire {size_t missile;Vec center;int step,targetX;uint64_t random;};
+    std::optional<Pd2RoyalFire> preparePd2RoyalFire(size_t skillRow,const OnlineCombatEvent &,const OnlineUnit &);
     std::vector<std::string> pd2MapDescription(const OnlinePd2State::MapAttributeReport &) const;
     std::optional<int32_t> skillCalculation(int skill,int level,std::string_view field,OnlineUnitKey owner,int count=0) const;
     bool playerDead(const OnlineUnit &u) const;

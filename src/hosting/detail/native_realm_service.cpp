@@ -29,7 +29,7 @@ void NativeRealmService::sendRealm(uint8_t id, Writer out) {
     ++counters.realmResponses[id];
 }
 void NativeRealmService::sendGame(Bytes packet) {
-    validateServerPacket(packet);
+    validateServerPacket(packet,content && content->pd2Host?net::protocol::ClientProfile::Pd2Local:net::protocol::ClientProfile::Lod113c);
     const auto id = packet[0];
     Bytes observed;
     if (shared.gamePacketObserver) observed = packet;
@@ -231,7 +231,7 @@ NativeRealmService::PreparedGame NativeRealmService::prepareGame(PersistentChara
     const auto staged = host.create(std::move(prepared.authority));
     try {
         auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged), host.area(staged.game, RegionId(prepared.terrain.request.level))->definition, *host.questProjection(staged),host.environment(staged.game,RegionId(prepared.terrain.request.level)).value(),host.objectSeed(staged.game).value());
-        for (const auto &packet : packets) validateServerPacket(packet);
+        for (const auto &packet : packets) validateServerPacket(packet,content->pd2Host?net::protocol::ClientProfile::Pd2Local:net::protocol::ClientProfile::Lod113c);
         host.pause(staged.game, true);
         shared.terrain[staged.game].emplace(RegionId(prepared.terrain.request.level), prepared.terrain);
         return {staged, std::move(prepared.terrain), std::move(packets)};

@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "native_birth.hpp"
+#include "native_birth_data.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "gameplay/monsters/movement_math.hpp"
@@ -24,18 +25,6 @@
 #include <utility>
 #include <exception>
 namespace d2x::server::monsters {
-struct NativeBirthPublication::Data {
-    System *system{};
-    RegionId area;uint64_t generation{};
-    std::optional<RoomRandomLoan> room;
-    std::optional<RoomRandomLoan> sourceRoom;
-    uint64_t randomExpected{},randomNext{};
-    ActorPublication actors;
-    ComponentPaletteState palettes;
-    EntityId actor;
-    std::optional<Vec> position;
-    bool published{};
-};
 NativeBirthPublication::NativeBirthPublication(std::unique_ptr<Data> data):data_(std::move(data)) {}
 NativeBirthPublication::~NativeBirthPublication()=default;
 EntityId NativeBirthPublication::actor() const {return data_->actor;}

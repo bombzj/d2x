@@ -416,6 +416,18 @@ const RemoteScene::Impl::Art *RemoteScene::Impl::monster(const OnlineUnit &u, bo
                     const auto skill=skillRows.find(*u.actionSkill);
                     if(skill!=skillRows.end()) {
                         request.sequenceUsesAttackRate=skills.number(skill->second,"UseAttackRate").value_or(0)!=0;
+                        const int clientProgram=skills.number(skill->second,"cltdofunc").value_or(0);
+                        if(clientProgram==46 || (pd2 && clientProgram==109)) {
+                            // Retail 56780 clears dwSeqSpeed at the action
+                            // event. Current PD2 3A9710 calls it after Nova.
+                            // The next server action selects a new request;
+                            // never replace the hatched egg with an idle pose.
+                            if(const auto flags=monsterSequenceFlags.find(pose);flags!=monsterSequenceFlags.end()) {
+                                const auto event=std::find_if(flags->second.begin(),flags->second.end(),
+                                    [](uint8_t flag){return flag==1 || flag==2 || flag==4;});
+                                if(event!=flags->second.end()) request.animationHoldFrame=int(event-flags->second.begin());
+                            }
+                        }
                         const auto name=skills.value(skill->second,"skill");
                         if(name=="Charge" || name=="SerpentCharge") {
                             const bool travelling=motion[u.key].leapFlying && motion[u.key].leapLanding<0;

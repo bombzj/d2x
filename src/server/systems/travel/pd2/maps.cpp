@@ -35,13 +35,24 @@ DomainResult<> System::createPd2Map(const ActorContext &actor,ItemHandle request
         state_.pendingPd2Map=actor;
         return {DomainStatus::Applied,{}};
     }
+    if(!result && !isDeferred(result.status) && state_.pd2Map && state_.pd2Map->owner==actor.actor &&
+       state_.pd2Map->item.id==requested.id && state_.pd2Map->item.revision==requested.revision)
+        discardPd2MapPreparation();
     return result;
+}
+void System::discardPd2MapPreparation() {
+    if(state_.pd2Map && !state_.pd2MapPortal && ports_.world.cancelPd2Preparation(state_.pd2Map)) {
+        state_.pendingPd2Map.reset();state_.pd2Map.reset();pd2OpeningPortal_.reset();
+    }
 }
 void System::advancePd2Map(TickContext tick) {
     if(!state_.pendingPd2Map) return;
     auto actor=*state_.pendingPd2Map;actor.tick=tick.tick;
     const auto result=finishPd2Map(actor,state_.pd2Map->item);
-    if(!isDeferred(result.status)) state_.pendingPd2Map.reset();
+    if(!isDeferred(result.status)) {
+        state_.pendingPd2Map.reset();
+        if(!result) discardPd2MapPreparation();
+    }
 }
 DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle requested) {
     const auto *player=ports_.players.find(actor.player);const auto *origin=ports_.areas.find(actor.area);
@@ -79,24 +90,35 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
         candidate->quality=uint8_t(std::find(nativeItemQualities.begin()+1,nativeItemQualities.end(),item->quality)-nativeItemQualities.begin());
         map=std::move(candidate);
     }
+    const auto portalRule=origin->definition.questPortalRules.find(map->destination.portal);
+    if(portalRule==origin->definition.questPortalRules.end()) return {DomainStatus::Unavailable,{}};
     const auto prepared=ports_.world.request(RegionId(map->destination.level),map);
     if(!prepared) return {prepared.status,{}};
     state_.pd2Map=map;
     if(!ports_.areas.find(RegionId(map->destination.level))) return {DomainStatus::PendingContent,{}};
-    const auto portalRule=origin->definition.questPortalRules.find(map->destination.portal);
-    if(portalRule==origin->definition.questPortalRules.end()) return {DomainStatus::Unavailable,{}};
-    const auto source=ports_.world.nativeFreeSpace(actor.area,player->position,player->position,1);
-    if(!source || source->area!=actor.area) return {DomainStatus::Unavailable,{}};
-    auto portals=prepareWorldPortal(actor.area,map->destination.level,actor.tick,source->position,portalRule->second,false,true);
-    if(!portals) return {portals.status,{}};
-    auto &consumed=draft.edit.inventory.items.at(item->id);++consumed.revision;--consumed.quantity;
-    const bool removed=!consumed.quantity;
+    if(!pd2OpeningPortal_) {
+        const auto source=ports_.world.nativeFreeSpace(actor.area,player->position,player->position,1);
+        if(!source || source->area!=actor.area) return {DomainStatus::Unavailable,{}};
+        auto portals=prepareWorldPortal(actor.area,map->destination.level,actor.tick,source->position,portalRule->second,false,true);
+        if(!portals) return {portals.status,{}};
+        pd2OpeningPortal_=std::move(portals.value->next.rbegin()->second);
+    }
+    // Keep the chosen native landing and allocated IDs across output pressure.
+    // Only cache this portal: replaying a whole old map would erase unrelated
+    // portals created or closed while the inventory transaction was deferred.
+    SpecialPortalPlan portals{state_.specialPortals};
+    portals.next.emplace(pd2OpeningPortal_->fieldId,*pd2OpeningPortal_);
+    auto &consumed=draft.edit.inventory.items.at(item->id);++consumed.revision;
+    // pSpell12 only decrements a stacked normal-quality map. All other
+    // successful uses return 1 to the item-use caller and remove the item.
+    const bool removed=map->quality!=2 || consumed.quantity<=1;
+    if(removed) consumed.quantity=0;else --consumed.quantity;
     draft.edit.changes.push_back({item->id,consumed.revision,removed?ItemChangeKind::Removed:ItemChangeKind::QuantityChanged,
         item->location,removed?std::nullopt:std::optional{item->location},consumed.quantity});
     if(removed) draft.edit.inventory.items.erase(item->id);
     transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(draft.edit.inventory),
         std::move(draft.edit.changes),player->persistent.player.weaponSet};
-    const auto &portal=portals.value->next.rbegin()->second;
+    const auto &portal=*pd2OpeningPortal_;
     Pd2MapAttributesFact report{portal.fieldId,RegionId(map->destination.level),map->destination.itemIndex,map->quality,map->properties.original};
     auto reports=state_.mapReports;reports.insert_or_assign(actor.player,portal.fieldId);
     edit.facts.emplace_back(report);
@@ -110,8 +132,9 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
         state_.pd2MapPortal=portal.fieldId;state_.mapReports.swap(reports);
         const auto field=portal.field,town=portal.town;
         const auto from=portal.fieldPosition,to=portal.townPosition;
-        commitSpecialPortal(std::move(*portals.value));
+        commitSpecialPortal(std::move(portals));
         ports_.world.retainControllerRoom(field,from,true);ports_.world.retainControllerRoom(town,to,true);
+        pd2OpeningPortal_.reset();
     }
     return result;
 }

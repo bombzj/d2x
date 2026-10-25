@@ -8,6 +8,7 @@
 #include "server/runtime/skill_rules.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/effects/native_area.hpp"
+#include "server/systems/combat/requests.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/targeting.hpp"
 #include "gameplay/actions/volley.hpp"
@@ -18,6 +19,19 @@
 #include "gameplay/monsters/pd2/skill_program.hpp"
 #include <variant>
 namespace d2x::server::skills {
+DomainResult<> System::releasePd2PoisonEgg(MonsterRelease &pending,TickContext tick) {
+    // Core 17d5… 3B1090: Do22(original skill/rank), then Do84(159,rank).
+    // The native wrapper ignores Do22's return. Host capacity retries must
+    // finish its publication first, without replaying it during hatching.
+    if(!pending.pd2EggNovaReleased) {
+        const auto nova=releaseMonsterNova(pending,tick);
+        if(isDeferred(nova.status)) return nova;
+        pending.pd2EggNovaReleased=true;pending.formulaPrepared=false;
+    }
+    const auto result=releaseMonsterHatch(pending,tick,159);
+    if(isDeferred(result.status)) pending.nativeCallbackStarted=true;
+    return result;
+}
 DomainResult<std::shared_ptr<actions::SkillRelease>> System::startPd2HirelingStrafe(const CastRequest &request,const MonsterAttackRule &attack,int speed) {
     const auto caster=nativeCaster(ports_.players,ports_.monsters,request.actor);
     if(!caster || !caster->monster || !caster->monster->hireling || !caster->monster->petWeapon || !caster->programs() ||
@@ -117,14 +131,20 @@ DomainResult<> System::releasePd2HirelingSkill(MonsterRelease &pending,TickConte
     pending.nativeCallbackStarted=release.nativeCallbackStarted;
     return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
 }
-DomainResult<> System::releasePd2MonsterProjectile(MonsterRelease &pending,TickContext tick) {
+DomainResult<> System::releasePd2MonsterSkill(MonsterRelease &pending,TickContext tick) {
     const auto caster=nativeCaster(ports_.players,ports_.monsters,pending.request.actor);
     if(!caster || !caster->monster || !caster->programs() || !caster->programs()->pd2 ||
         !caster->programs()->definitions.contains(pending.request.skill)) return {DomainStatus::Unavailable,{}};
     const auto &row=caster->monster->rule.formulas->skills.at(pending.request.skill);
-    if(!pd2MonsterProjectileProgram(row.number("srvstfunc"),row.number("srvdofunc"))) return {DomainStatus::NotImplemented,{}};
+    const bool joust=pending.attack.action==MonsterAttackRule::Action::Pd2Joust &&
+        !row.number("srvstfunc") && row.number("srvdofunc")==162;
+    const bool teleport=pending.attack.action==MonsterAttackRule::Action::Teleport &&
+        !row.number("srvstfunc") && row.number("srvdofunc")==155;
+    if(!joust && !teleport && !pd2MonsterProjectileProgram(row.number("srvstfunc"),row.number("srvdofunc"))) return {DomainStatus::NotImplemented,{}};
     const auto victim=std::get<UnitTarget>(pending.request.target);
-    const auto destination=pending.launch?std::optional{pending.launch->second}:
+    const auto destination=row.number("srvdofunc")==143?std::optional{caster->position()}:
+        pending.request.position?pending.request.position:
+        pending.launch?std::optional{pending.launch->second}:
         [&]()->std::optional<Vec> {
             const auto point=ports_.monsters.nativeTargetPosition(victim.id,pending.area);
             return point?std::optional{point->first}:std::nullopt;
@@ -135,8 +155,13 @@ DomainResult<> System::releasePd2MonsterProjectile(MonsterRelease &pending,TickC
         auto skill=evaluateNativeSkill(*caster,ports_.effects,pending.request.skill,pending.attack.rank,tick.tick);
         pending.nativeSkill=std::make_shared<Release>(Release{actor,std::move(skill),{},
             {pending.area,pending.generation,*destination},victim.id,tick.tick,victim.type});
+        if(joust) {
+            pending.nativeSkill->nativeContact=std::make_shared<combat::NativeSkillContact>();
+            pending.nativeSkill->nativeContact->monsterProgram=pending.attack;
+        }
     }
-    const auto result=activatePd2(*pending.nativeSkill,actor,*destination);
+    const auto result=teleport?activatePd2MonsterTeleport(*pending.nativeSkill,actor,*destination):activatePd2(*pending.nativeSkill,actor,*destination);
+    pending.nativeCallbackStarted=pending.nativeSkill->nativeCallbackStarted;
     return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
 }
 }

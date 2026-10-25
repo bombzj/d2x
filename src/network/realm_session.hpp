@@ -153,6 +153,7 @@ class RealmSession {
     void prepare_connection_profile(bool local);
     void authenticate(LoginOptions options, bool createAccount);
     struct Impl;
+    const protocol::ClientProfile configuredProfile_;
     mutable OnlineView snapshot_;
     std::unique_ptr<Impl> impl_;
 };

@@ -13,6 +13,7 @@
 #include "server/systems/quests/system.hpp"
 #include "server/systems/social/system.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
@@ -129,7 +130,7 @@ DomainResult<> System::castTeleport(const ActorContext &actor,PointTarget target
     if(!definition.teleportMode) return {DomainStatus::Unavailable,{}};
     const Vec global=target.position+definition.origin;
     if(global.x<0 || global.y<0 || global.x>UINT16_MAX || global.y>UINT16_MAX) return {DomainStatus::InvalidRequest,{}};
-    const int column=int(std::floor(global.x+.5f)),row=int(std::floor(global.y+.5f));
+    int column=int(std::floor(global.x+.5f)),row=int(std::floor(global.y+.5f));
     const auto *bounds=definition.activation.room(player->position+Vec{.5f,.5f});
     if(!bounds) return {DomainStatus::Unavailable,{}};
     const RoomView current{actor.area,(int(definition.origin.x)+bounds->x)/5,(int(definition.origin.y)+bounds->y)/5};
@@ -149,7 +150,13 @@ DomainResult<> System::castTeleport(const ActorContext &actor,PointTarget target
         if(acquire(room)) {acquired=true;break;}
     if(!acquired) return {DomainStatus::Unavailable,{}};
     // UNITS_TestCollisionByCoordinates shortens both ends by unit size 2.
-    if(definition.teleportMode==2 && !definition.collision.interactionSegment(player->position,target.position,2,{}))
+    if(player->rules.skills && player->rules.skills->pd2) {
+        const auto landing=pd2TeleportLanding(actor.area,player->position,target.position,2);
+        if(!landing) return {landing.status,{}};
+        target.position=*landing.value;
+        column=int(std::floor(target.position.x+definition.origin.x+.5f));
+        row=int(std::floor(target.position.y+definition.origin.y+.5f));
+    } else if(definition.teleportMode==2 && !definition.collision.interactionSegment(player->position,target.position,2,{}))
         return {DomainStatus::Unavailable,{}};
     const auto room=ports_.areas.roomAtPosition(actor.area,player->position+Vec{.5f,.5f},column,row);
     if(!room) return {DomainStatus::Unavailable,{}};

@@ -200,7 +200,7 @@ MissileDamageData System::prepareDamage(const Missile &missile,const MissileRule
             weapon=sampled;
             const auto used=ports_.actions.usedSkill(missile.owner);
             const auto current=used?catalog.skills.find(used->skill):catalog.skills.end();
-            const bool throwing=current!=catalog.skills.end() && current->second.useThrowMastery;
+            const bool throwing=current!=catalog.skills.end() && current->second.useThrowMastery && (!stats.pd2 || sampled.throwable);
             const auto &selected=throwing?sampled.throwMastery:sampled.meleeMastery;mastery=selected[2];
             equipment=MissileDamageWeapon{sampled.twoHanded,sampled.throwable,player && player->totals.equipment.weaponCount==2,
                 sampled.blunt,int16_t(sampled.strengthBonus),int16_t(sampled.dexterityBonus),selected[1]};

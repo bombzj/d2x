@@ -340,6 +340,8 @@ class System {
     DomainResult<bool> probeDiabloPrison(RegionId,Vec,int nativeClass,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareLevelSpawn(RegionId,Vec roomPosition,Vec requested,uint64_t tick,
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
+    DomainResult<std::shared_ptr<NativeBirthPublication>> preparePd2MissileSpawn(RegionId,Vec observer,Vec position,int definition,
+        int mode,uint32_t flags,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareRoomSpawn(const Admission &,RoomRandomLoan,int attempts,
         std::optional<size_t> logicalRegion,bool probe,
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision,bool stagedAdmission=false);

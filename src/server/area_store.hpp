@@ -127,6 +127,8 @@ struct AreaDefinition : AreaMetadata {
     std::map<std::string,PreparedMonster,std::less<>> environmentMonsters;
     std::vector<std::string> populationRoster;
     std::vector<std::pair<int,bool>> genericSpawnRoster; // Actual MonReg selections and original genericSpawn flags.
+    struct Pd2MissileSpawn {bool retry{};int skillOneTicks{};};
+    std::map<int,Pd2MissileSpawn> pd2MissileSpawns;
     int genericSpawnFallback{-1};
     std::map<int,ShrineRule> shrineRules;
     std::vector<ShrineGenerationEntry> shrineGeneration;

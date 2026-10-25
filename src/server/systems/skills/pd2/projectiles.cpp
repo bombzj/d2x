@@ -1,5 +1,6 @@
 #include "../system.hpp"
 #include "corpses.hpp"
+#include "execution.hpp"
 #include "../runtime.hpp"
 #include "../evaluation.hpp"
 #include "../native_caster.hpp"
@@ -84,6 +85,12 @@ DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec 
         return births.back();
     };
     switch(program.doFunction) {
+    case 143:
+        // Core 3AE960 has a dedicated Do143 branch. Progressive143 is
+        // still owned by the assassin executor, not this direct callback.
+        if(program.missiles[0]<0) return DomainStatus::Unavailable;
+        append(position,position,program.missiles[0]);
+        break;
     case 164: {
         if(!pending.weapon || program.missiles[0]<0) return DomainStatus::Unavailable;
         const auto stats=ports_.effects.unitStatValues(actor.actor,actor.tick);
@@ -284,7 +291,18 @@ DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec 
         append(position,{},program.missiles[0]);break;
     default:return DomainStatus::NotImplemented;
     }
-    auto prepared=ports_.missiles.prepareNativeBirth(births);if(!prepared) return prepared.status;
+    DomainResult<std::shared_ptr<missiles::NativeBirthPublication>> prepared;
+    if(program.doFunction==143) {
+        if(!pending.pd2Execution) pending.pd2Execution=std::make_shared<Pd2CastExecution>();
+        auto &retained=pending.pd2Execution->royalFire;
+        if(!retained) {
+            prepared=ports_.missiles.preparePd2RoyalFire(births.front(),formula("calc1"));
+            if(!prepared) return prepared.status;
+            retained=*prepared.value;
+        }
+        prepared={DomainStatus::Applied,retained};
+    } else prepared=ports_.missiles.prepareNativeBirth(births);
+    if(!prepared) return prepared.status;
     if(caster->monster) {
         const auto committed=ports_.missiles.commitNativeBirth(*prepared.value);
         if(committed && program.doFunction==68) {pending.manaPaid=true;return finishShout();}

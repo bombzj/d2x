@@ -1,6 +1,6 @@
 # 库存与物品模块入口
 
-更新：2026-10-21。本页只维护代码入口、状态归属及领域协作。规则、分类和证据统一见[物品目录](../gameplay/items/README.md)。原服／自研宿主共用原1.13c物品包、RealmSession／RemoteInventory／RemoteUiClients及公共UI。固定PD2 CN在网络物品解码和内容准备处选择版本，复用同一只读投影／界面；开放本人背包／Cursor／地面、当前装备及腰带的基础移物，扩展容器和其他物品操作仍拒绝。能力门控由online_items.hpp统一查询，UI、RemoteInventory与RealmSession各自复验；CN装备／腰带请求按最终模式、部位／格子和交换两侧状态确认，不把相关属性更新当作安置完成。边界见[PD2兼容](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)。
+更新：2026-10-21。本页只维护代码入口、状态归属及领域协作。规则、分类和证据统一见[物品目录](../gameplay/items/README.md)。原服／自研宿主共用原1.13c物品包、RealmSession／RemoteInventory／RemoteUiClients及公共UI。PD2专项说明见[客户端接入：库存协议边界](../pd2/CLIENT_INTEGRATION.md#客户端接入库存协议边界)。
 
 ## 内容与领域
 

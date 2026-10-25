@@ -3,6 +3,7 @@
 #include "skill_eligibility.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include "content/classic_data.hpp"
+#include "content/pd2/skill_data.hpp"
 #include <cctype>
 #include <stdexcept>
 #include <set>
@@ -93,6 +94,7 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
             return found==data.states.end()?-1:found->second.definition.id;
         };
         record.auraState=sourceState("aurastate");record.auraTargetState=sourceState("auratargetstate");
+        if(data.pd2Host) record.useThrowMastery=pd2SkillUsesThrowMastery(data,source.reference("itypea1"));
         // Keep references for unsupported programs without granting class
         // availability. Equipment-only aura records still own real metadata.
         if(!prepared) {
@@ -110,7 +112,7 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
                     return self(self,types.value(type,"Equiv1")) || self(self,types.value(type,"Equiv2"));
                 throw std::runtime_error("Missing native skill weapon type");
             };
-            record.useThrowMastery=skills.value(row,"range")=="rng" && thrown(thrown,skills.value(row,"itypea1"));
+            if(!data.pd2Host) record.useThrowMastery=skills.value(row,"range")=="rng" && thrown(thrown,skills.value(row,"itypea1"));
             for(size_t slot=0;slot<record.unitEvents.size();++slot) {
                 const auto suffix=std::to_string(slot+1);
                 const auto name=skills.value(row,"auraevent"+suffix);

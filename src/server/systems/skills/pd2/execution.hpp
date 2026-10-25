@@ -8,11 +8,14 @@
 #include <memory>
 #include <vector>
 
+namespace d2x::server::missiles {class NativeBirthPublication;}
 namespace d2x::server::skills {
 struct Pd2VengeancePulse;
 struct Pd2CastExecution {
     std::optional<FrameEventQueue::PreparedInsertion> castItemTimer;
     std::shared_ptr<Pd2VengeancePulse> vengeance;
+    std::shared_ptr<missiles::NativeBirthPublication> royalFire;
+    std::shared_ptr<missiles::NativeBirthPublication> teleportMissiles;
     int chargeDistance{};bool chargeState{};
     struct Ravens {int count{},next{};std::optional<Vec> point;};
     std::optional<Ravens> ravens;

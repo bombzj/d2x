@@ -93,6 +93,7 @@ struct MonsterRelease {
     int mosquitoLoops{};
     bool nativeCallbackStarted{},cancelled{};
     bool pd2CastEventPosted{};
+    bool pd2EggNovaReleased{};
     std::shared_ptr<SkillRelease> nativeSkill{};
 };
 }

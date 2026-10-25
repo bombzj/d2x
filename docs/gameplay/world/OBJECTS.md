@@ -1,5 +1,7 @@
 # 地图物件与交互
 
+PD2专项内容：[城镇服务](../../pd2/TOWN_CLIENT.md)。本页保留原版／公共规则及必要的版本边界。
+
 Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸、模式／动画、名称、AutoMap及灯光。静态地形物件与原服可交互GUID分开；操作、开门、井水、神坛、宝箱锁／陷阱、掉落和任务效果由所连接的服务端执行；自研实际范围见下文，不把原服支持当作自研已实现。
 
 ## 碰撞与靠近
@@ -17,8 +19,6 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 蓝色回城门按当前Objects.Selectable模式及已收到目的地区域开放交互。ObjMode15在服务端检查主人、队伍及任务资格；不能因为创建时中立模式留下的TARGETABLE清位而隐藏已经打开的门。此例外仅用于OperateFn15、原class59和mode1／2且目的地已知的蓝门，不放宽其他物件的目标资格。依据D2MOO `OBJECTS_InitObject`初始Selectable检查及`D2GAME_CreatePortalObject_6FD13DF0`／`OBJECTS_OperateFunction15_Portal`。
 
 RemoteTown从真实物件／目标和原Selectable／TARGETABLE投影资格；SceneController提交靠近／0x13。神坛InteractType结合Shrines.Code与TBL ShrId显示真实名称，不本地授予效果。开箱状态取0x0E，掉落取真实物品通知，传送点取0x63及原服旅行位置；0x77属于玩家交易，不能当开箱回执。
-
-PD2 CN基础物件交互共用上述原请求，已删除早期只放行仓库的配置拒绝；传送点仍由0x63确认打开、按服务器已解锁记录发送0x49选择／关闭。距离、当前GUID、区域／交互代次和服务器确认校验保留，不因PD2跳过，也不本地解锁目的地。本次为源码修正，CN激活、菜单及跨区旅行仍待实服补验。
 
 传送点OperateFn23在mode1／2保留点击例外，启动后衔接ON动画／灯光，详见[联网实现](../../modules/NETWORK.md#本批源码修正)；共用模式投影也更新原MPQ对象碰撞，不改副本模式或解锁。
 

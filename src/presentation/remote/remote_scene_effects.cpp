@@ -482,6 +482,10 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 launch(departure->second,start,start,event.level.value_or(1),-age,{},event.source);
         }
         const int function = skills.number(row->second, "cltdofunc").value_or(0);
+        // Current CltDo109 (3A9710) delegates to retail Do25, then Do46
+        // with skill159. Do46 only stops sequence speed; the actor renderer
+        // holds that sequence at its callback frame, without changing authority.
+        const bool pd2PoisonEgg=pd2 && function==109;
         if(function==34) {
             // Retail CltDo34 / RVA 2B530 emits one blood missile opposite
             // the facing, with a three-slot spread and CltCalc1 variants.
@@ -533,6 +537,21 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             // Core CltDo replacements apply to both local and CN hosts.
             // Their resource programs do not depend on CN wire extensions.
             if (function == 103) return; // Aura visuals arrive through unit states.
+            if(function==83) {
+                if(!castAnimation || castAnimation->releaseTime<0) return;
+                auto plan=preparePd2RoyalFire(row->second,event,actor);if(!plan) return;
+                shared.cancelPendingClientMissiles(effectOwner(event.source));
+                missileCastRevisions[event.source]=source->second.actionRevision;
+                for(int direction=0;direction<64;) {
+                    ClientMissileInitialization init;init.path=ClientMissileInitialization::Path::Spiral;
+                    init.seed=rollRandom(plan->random);init.parameters=std::array<int32_t,2>{plan->targetX,0};
+                    launch(plan->missile,plan->center,plan->center+missileRingDirection(direction),event.level.value_or(1),
+                        castAnimation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Program,{},0,init);
+                    if(plan->step>=64-direction) break;
+                    direction+=plan->step;
+                }
+                return;
+            }
             if(function==94) {
                 if(!castAnimation || castAnimation->releaseTime<0) return;
                 const auto missile=pd2DoomKnightMissile(row->second,actor);
@@ -803,10 +822,10 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         // Retail CltDo6 (RVA 413A0) creates the owner's Blade Fury
         // missile directly; ClientSend does not suppress that callback.
         const bool bladeFury = function == 6 && skills.value(row->second,"charclass") == "ass";
-        if (!pd2MindBlast && !bladeFury && function != 26 && function != 28 && function!=55 && function!=58 && function!=70 && function!=76 && missiles.number(missile->second, "ClientSend").value_or(0)) return;
+        if (!pd2MindBlast && !bladeFury && !pd2PoisonEgg && function != 26 && function != 28 && function!=55 && function!=58 && function!=70 && function!=76 && missiles.number(missile->second, "ClientSend").value_or(0)) return;
         auto target = event.point;
         if (!target && event.target) target=targetPosition(*event.target);
-        if (!target && (function == 25 || function==55)) target = actor.position; // Nova has no required target.
+        if (!target && (function == 25 || function==55 || pd2PoisonEgg)) target = actor.position; // Nova has no required target.
         if (!target) return;
         const auto *animation = castAnimation;
         if (!animation || animation->animation.frames.empty() || animation->releaseTime < 0) return;
@@ -1055,11 +1074,16 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             const int step=std::max(*spacing,1);
             if(step>1) for(int index=0;index<15;index+=step) emitCloud(index+1,2);
         }
-        else if (function == 25 || function==61) {
+        else if (function == 25 || function==61 || pd2PoisonEgg) {
             // Retail CltDo25 / RVA 73CB0 -> A0DB0 emits all 64 integer
             // ring directions. Trap Nova shares this with Nova/Frost Nova.
-            const int bonus=skills.value(row->second,"cltcalc1")=="par1 * (lvl-1)"
+            int bonus=skills.value(row->second,"cltcalc1")=="par1 * (lvl-1)"
                 ?skills.number(row->second,"Param1").value_or(0)*(level-1):0;
+            if(pd2PoisonEgg && !skills.value(row->second,"cltcalc1").empty()) {
+                const auto value=skillCalculation(*event.skill,level,"cltcalc1",event.source);
+                if(!value) {effectLimitations.insert("PD2 egg nova velocity unavailable");return;}
+                bonus=*value;
+            }
             for (int direction = 0; direction < 64; ++direction)
                 launch(missile->second,start,start+missileRingDirection(direction),level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Program,{},bonus);
         } else if (function == 51 && actor.key.type == 1) {

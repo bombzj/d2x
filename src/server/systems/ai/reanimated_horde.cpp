@@ -3,13 +3,16 @@
 #include "server/systems/monsters/system.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/monsters/movement_math.hpp"
+#include "gameplay/stats/modifier_values.hpp"
 #include "core/random.hpp"
 #include <cmath>
 
 namespace d2x::server::ai {
 StepStatus System::reanimatedHordeFamily(EntityId id,std::optional<UnitTarget> target,Vec point,int size,int distance,TickContext tick,Controller &controller) {
-    ports_.monsters.monsterTargetable(id,true);
     const auto &unit=*ports_.monsters.find(id);const auto &area=ports_.areas.at(unit.area);const auto &params=unit.rule.ai.params;
+    if(target && unit.rule.stats && unit.rule.stats->pd2 && unit.rule.nativeClass==998)
+        return pd2Leoric(id,*target,point,size,distance,tick,controller);
+    ports_.monsters.monsterTargetable(id,true);
     const auto chance=[&](int percent){return int(limitedRandom(controller.random,100))<percent;};
     const auto idle=[&](int frames){ports_.monsters.stop(id);controller.pursuing=false;controller.nextDecision=tick.tick+uint64_t(frames);};
     const auto attack=[&](uint16_t skill,uint8_t mode) {

@@ -48,7 +48,7 @@ struct Controller {
     std::deque<std::function<DomainResult<>()>> pending;
 };
 struct State { std::map<EntityId, Controller> controllers; };
-struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; quests::System &quests; const travel::System &travel; };
+struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; quests::System &quests; const travel::System &travel; uint32_t &pd2Random; };
 class System {
     State state_;
     const Ports ports_;
@@ -102,6 +102,8 @@ class System {
     StepStatus baalMinionFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
     StepStatus frozenHorrorFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
     StepStatus reanimatedHordeFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus pd2Leoric(EntityId,UnitTarget,Vec,int,int,TickContext,Controller &);
+    StepStatus pd2Guardian(EntityId,UnitTarget,TickContext,Controller &);
     StepStatus megademonFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
     std::optional<StepStatus> uniqueAction(EntityId,UnitTarget,Vec,TickContext,Controller &);
     void commandParty(const monsters::Actor &);

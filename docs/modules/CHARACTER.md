@@ -1,6 +1,10 @@
 # 角色属性、技能与显示投影
 
+PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留原版／公共规则及必要的版本边界。
+
 客户端的角色状态来自连接的权威服务端；原服由D2GS执行，自研嵌入宿主由server独立领域执行，二者均通过原包更新同一客户端。旧会话执行器不恢复。操作及提示规则见[属性](../gameplay/characters/ATTRIBUTES.md)和[公共技能](../gameplay/skills/COMMON.md)。
+
+属性加点与单点学习记录提交前余点，只有目标属性／基础技能增加且余点减少才确认；两类更新允许任意到达顺序。未知值、拒绝与超时不补成本地成功。RemoteDisplay的本人走跑与元素支配共用knownSelfStat，读取完整装备、状态和当前Skills被动，避免重复计算已携带数值的被动；装备按级属性按effect而非原始属性名归并。
 
 ## 自研服务端属性与成长基础
 
@@ -36,15 +40,13 @@ Akara每难度免费重置使用原slot41资格及0x38 parameter0，与Token共�
 
 技能资格元数据与只读判断在content/skills/skill_eligibility，人物投影与RemoteCombat共用；未收到基础等级不能按零授权学习，原reqstr／reqdex／reqvit／reqint门槛也使用已知属性。
 
-CN属性0–3与扩展3A控制从0x10开始的分界已核实，普通属性分配不再整体禁用。属性加点与单点学习记录提交前余点，只有目标属性／基础技能增加且余点减少才确认；两类更新允许任意到达顺序。未知值、拒绝与超时不补成本地成功。RemoteDisplay的本人走跑与元素支配共用knownSelfStat，读取完整装备、状态和当前Skills被动，避免重复计算已携带数值的被动；装备按级属性按effect而非原始属性名归并。
-
 原 0x94 全量技能清单（含空清单）区分未学习与未收到；0x21分别维护基础／加成等级。0x23维护左右键选择和 owner，0x7B恢复绑定。基础技能、已学前置、等级上限及属性门槛按原表交给 evaluateSkillEligibility；未知基础等级、点数或必需属性不授权学习。Attack／CharStats.Skill 1–10 由同一个导入函数确认，不要求原0x94再次列出；0x3A／3B请求等待原服属性／基础等级变化，超时结果未知。
 
 ## 显示边界
 
 角色面板由[character_panel.cpp](../../src/presentation/hud/character_panel.cpp)消费同一CharacterView，使用当前MPQ invchar6、font6／font16／font8、原TBL strchr系列、level／levelsocket／skillpoints及buysellbtn关闭图。按用户原版截图恢复左右技能伤害／命中行、资源最大值／当前值分列、两行抗性与红色剩余属性点，去掉原版没有的额外属性行；经验加千位分隔，抗性数字不加百分号。资源格灰底属于原图，用户确认常驻，不按悬停绘制。标签／数值基线、加点位置、长姓名字体切换及资源／防御大数值切换核对原1.13c静态布局；字体使用原字形和TBL字宽，随侧栏统一适配。已知负抗性用原PL2红色；最终抗性与最大抗性输入已接共用装备／状态投影；增减属性颜色与封顶抗性金色暂未还原。完整像素仍待原版对照，布局入口及依据见[HUD](../gameplay/ui/CLASSIC_HUD.md#角色面板)。
 
-世界角色外观由RealmPortraitCatalog将原服装备身份与当前MPQ Armor／Weapons／ArmType解析为ActorAppearance，交给公共ActorAnimationCatalog合成。真实身体组件与未实现的装饰效果分开：魔法等品质、自动词缀、无形及符文之语不使整个人物不可绘制，equipmentEffectsKnown标记组件染色／无形透明缺口并由场景诊断报告；缺少真实组件或原COF／DCC仍明确不可用，不替换裸装。选角肖像接受已知编码版本4／10／13；当前CN首次进场前的33字节版本4头像可按原图绘制，组件全FF时只表示无装备预览，不补造起始装备。组件编号表按原初始化顺序构造：去重只扫描已推进的连续前缀，不能扫描全部255个预留槽，否则后续头盔／护甲的线上编号会偏移。依据为D2MOO INVENTORY_InitializeComponentArray及本机1.13c D2Common（MD5 ee1238806ef6d6d9801d12a09d128fe1）RVA 0x1E920，0x1EAB9–0x1EAE0确认去重循环以当前前缀为界；固定类别表位于文件偏移0x9D888。当前CN普通帽子的编号61须解析为cap，不能误作gth并导致完整合成失败。非FF染色字节及全部PD2新增组件映射尚未支持，与世界装备组件可绘制性分开。
+世界角色外观由RealmPortraitCatalog将原服装备身份与当前MPQ Armor／Weapons／ArmType解析为ActorAppearance，交给公共ActorAnimationCatalog合成。真实身体组件与未实现的装饰效果分开：魔法等品质、自动词缀、无形及符文之语不使整个人物不可绘制，equipmentEffectsKnown标记组件染色／无形透明缺口并由场景诊断报告；缺少真实组件或原COF／DCC仍明确不可用，不替换裸装。选角肖像接受已知编码版本4／10／13；PD2专项说明见[客户端接入：选角预览](../pd2/CLIENT_INTEGRATION.md#客户端接入选角预览)。组件编号表按原初始化顺序构造：去重只扫描已推进的连续前缀，不能扫描全部255个预留槽，否则后续头盔／护甲的线上编号会偏移。依据为D2MOO INVENTORY_InitializeComponentArray及本机1.13c D2Common（MD5 ee1238806ef6d6d9801d12a09d128fe1）RVA 0x1E920，0x1EAB9–0x1EAE0确认去重循环以当前前缀为界；固定类别表位于文件偏移0x9D888。PD2专项说明见[客户端接入：肖像组件边界](../pd2/CLIENT_INTEGRATION.md#客户端接入肖像组件边界)。
 
 技能标题、图标、页／行／列来自Skills／SkillDesc／TBL。选择器与技能树已接共用MPQ表驱动描述层，按原描述程序分别生成通用、当前等级、首次／下一等级及协同区；不依赖自研技能执行是否实现。原版分组／等级调用、公式、已知值、截图条件及缺口由[技能描述](../gameplay/skills/DESCRIPTIONS.md)唯一维护。
 

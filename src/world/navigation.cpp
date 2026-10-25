@@ -473,31 +473,32 @@ bool Grid::collisionSegment(Vec a, Vec b, uint16_t mask) const {
         return !(movementMask(x, y) & mask);
     }, false);
 }
-bool Grid::interactionSegment(Vec a, Vec b, int targetSize, EntityId target) const {
+bool Grid::interactionSegment(Vec a, Vec b, int targetSize, EntityId target,uint16_t mask,int sourceSize) const {
     const CollisionQueryScope collisionScope{*this};
     if (!neighbours.empty()) {
         Vec origin; const auto view = linkedNavigation(origin);
-        return view.interactionSegment(a - origin, b - origin, targetSize, target);
+        return view.interactionSegment(a - origin, b - origin, targetSize, target,mask,sourceSize);
     }
     if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(b.x) || !std::isfinite(b.y) ||
         a.x < 0 || a.y < 0 || a.x >= width || a.y >= height ||
-        b.x < 0 || b.y < 0 || b.x >= width || b.y >= height || targetSize < 0) return false;
+        b.x < 0 || b.y < 0 || b.x >= width || b.y >= height || targetSize < 0 || sourceSize<0) return false;
     int x = int(std::floor(a.x+.5f)), y = int(std::floor(a.y+.5f));
     int endX = int(std::floor(b.x+.5f)), endY = int(std::floor(b.y+.5f));
     const int dx = std::abs(endX - x), dy = std::abs(endY - y);
     const int size = std::min(targetSize, 2);
+    sourceSize=std::min(sourceSize,2);
     // UNITS_TestCollisionBetweenInteractingUnits removes only the interacting
     // units. UNITS_TestCollision shortens the ray on its dominant axes by
     // their sizes; the ray uses DOOR | MISSILE_BARRIER (0x0804), not walking.
-    if (dx + dy < 2 + size) return true;
+    if (dx + dy < sourceSize + size) return true;
     if (dx >= dy) {
         const int direction = endX <= x ? -1 : 1;
-        x += 2 * direction;
+        x += sourceSize * direction;
         endX -= size * direction;
     }
     if (dy >= dx) {
         const int direction = endY <= y ? -1 : 1;
-        y += 2 * direction;
+        y += sourceSize * direction;
         endY -= size * direction;
     }
     // COLLISION_RayTrace advances the major axis first, with deviation=0.
@@ -507,7 +508,7 @@ bool Grid::interactionSegment(Vec a, Vec b, int targetSize, EntityId target) con
     const int steps = std::max(rayX, rayY);
     int deviation = 0;
     for (int step = 0; step <= steps; ++step) {
-        if (movementMask(x, y, target) & 0x0804) return false;
+        if (movementMask(x, y, target) & mask) return false;
         if (step == steps) return true;
         if (rayX >= rayY) {
             x += stepX;
