@@ -3,10 +3,12 @@
 #include <chrono>
 
 namespace d2x {
+namespace pd2 {struct MapInstance;}
 struct AreaGenerationRequest {
     uint32_t seed{};
     int act{}, level{1}, difficulty{};
     bool ladderMonsterStats{true}; // Native nGameType || dwGameType, prepared by hosting.
+    std::shared_ptr<const pd2::MapInstance> pd2Map{};
 };
 struct GeneratedArea {
     AreaGenerationRequest request;

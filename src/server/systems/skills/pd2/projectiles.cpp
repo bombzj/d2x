@@ -260,10 +260,10 @@ DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec 
         append(position,target,program.missiles[0]).initialization=missiles::NativeSpawn::Initialization::BlessedHammer;
         break;
     case 159: {
-        // Current Do159 (RVA 0x3AF870) calls 0x36BAA0 with Calc1 as
+        // Current Do159 (RVA 0x3AF870) calls 0x36BAA0 with Calc2 as
         // the ring subdivision count and -1 as the velocity override.
         if(program.missiles[0]<0) return DomainStatus::Unavailable;
-        int count=formula("calc1");if(count<0) return DomainStatus::Unavailable;
+        int count=formula("calc2");if(count<0) return DomainStatus::Unavailable;
         if(!count || count>64) count=64;
         for(int direction=0;direction<64;direction+=64/count)
             append(position,position+missileRingDirection(direction),program.missiles[0]);

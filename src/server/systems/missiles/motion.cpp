@@ -69,9 +69,11 @@ std::vector<std::pair<float,EntityId>> System::collisionContacts(const Missile &
         }
         for(const auto id:candidates) {
             const auto target=participants.find(id);const auto position=unitPosition(missile,id);
+            // Actor positions omit PATH's half-cell center. Match the cell
+            // used by AreaStore::patternFootprint and native position packets.
             const bool overlaps=position && (missile.nativeDamage?
-                nativeMissileUnitOverlap(missile.collision.size,target.size(),int(std::floor(cell.x))-int(std::floor(position->x)),
-                    int(std::floor(cell.y))-int(std::floor(position->y))):bool(missileUnitIntersection(cell,cell,missile.collision.size,*position,target.size())));
+                nativeMissileUnitOverlap(missile.collision.size,target.size(),int(std::floor(cell.x))-int(std::floor(position->x+.5f)),
+                    int(std::floor(cell.y))-int(std::floor(position->y+.5f))):bool(missileUnitIntersection(cell,cell,missile.collision.size,*position,target.size())));
             if(overlaps)
                 return {{float(step),id}};
         }

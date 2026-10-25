@@ -113,6 +113,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
             const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
                 {AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,uint16_t(selected),uint8_t(current.skill.rank)}}});
             if(!sent) return {sent.status,{}};
+            state_.casts.at(actor.actor).target=unit;
             current.target=target;current.unit=unit;current.unitType=type;
         }
         return {DomainStatus::Applied,std::monostate{}};

@@ -1,4 +1,5 @@
 #include "native_realm_service.hpp"
+#include "hosting/pd2/map_wire.hpp"
 #include "hosting/native_item_wire.hpp"
 #include "hosting/native_character_wire.hpp"
 #include "hosting/native_quest_wire.hpp"
@@ -12,7 +13,7 @@ namespace d2x::hosting {
 void NativeRealmService::sendGameBatch(std::vector<Bytes> packets) {
     size_t size = 0;
     for (const auto &packet : packets) {
-        validateServerPacket(packet);
+        validateServerPacket(packet,content && content->pd2Host?net::protocol::ClientProfile::Pd2Local:net::protocol::ClientProfile::Lod113c);
         if (packet.size() > std::numeric_limits<size_t>::max() - size) throw std::runtime_error("Native output batch overflow");
         size += packet.size();
     }
@@ -44,7 +45,11 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             changeArea(*travel); continue;
         }
         std::vector<Bytes> delta;
-        if (const auto *list = std::get_if<server::HirelingListFact>(&fact)) {
+        if(const auto *map=std::get_if<server::Pd2MapAttributesFact>(&fact)) {
+            if(!content->pd2Host) throw std::logic_error("PD2 map report in an original game");
+            delta.push_back(pd2MapAttributes(*map));
+        }
+        else if (const auto *list = std::get_if<server::HirelingListFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::HirelingListReset,[](auto &){}));
             for(const auto &[name,seed]:list->offers)
                 delta.push_back(encodeServerPacket(ServerMessage::HirelingOffer,[&](auto &out){out.u16(name);out.u32(seed);}));
@@ -93,6 +98,9 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         }
         else if (const auto *drop = std::get_if<server::GroundDropFact>(&fact)) {
             const auto &at = std::get<GroundLocation>(drop->item.location);
+            // Area audiences include distant rooms. Match the ground snapshot's
+            // room interest before 9C asks the retail client to attach an item.
+            if(!host.visiblePoint(*binding,at.region,at.position)) continue;
             delta.push_back(nativeGroundItem(*content, drop->item,
                 shared.terrain.at(binding->game).at(at.region).origin, GroundItemAction::Drop));
             peer.groundItems.insert_or_assign(drop->item.id, drop->item.revision);

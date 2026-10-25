@@ -2,6 +2,7 @@
 #include "gameplay/rules/event_frame.hpp"
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <exception>
 #include <utility>
 #include <algorithm>
@@ -54,7 +55,10 @@ FrameEventQueue::PreparedInsertion FrameEventQueue::prepareInsertion(FrameEvent 
     queueIndex(event.owner.type);
     if(event.type>FrameEventType::Pd2MissileHitDelay) throw std::invalid_argument("Unsupported native timer event type");
     if(event.owner.type!=FrameEventUnit::Game && !event.owner.unit) throw std::invalid_argument("Native timer has no unit identity");
-    if(frame_ && !event.continuous && event.due<=*frame_) throw std::logic_error("Prepared native timer is already due");
+    if(frame_ && !event.continuous && event.due<=*frame_) throw std::logic_error(
+        "Prepared native timer is already due (unit="+std::to_string(event.owner.unit.value)+
+        ", type="+std::to_string(unsigned(event.type))+", due="+std::to_string(event.due)+
+        ", frame="+std::to_string(*frame_)+")");
     if(next_==UINT64_MAX) throw std::overflow_error("Native timer identity exhausted");
     event.handle={next_};
     if(event.continuous) event.handler=0;

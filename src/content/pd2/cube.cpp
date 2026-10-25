@@ -9,14 +9,16 @@
 #include <stdexcept>
 
 namespace d2x {
-bool applyPd2DestroyedCorruption(const ClassicData &data,ItemInstance &item,uint64_t &itemRandom,uint32_t &programRandom) {
-    for(const auto &stat:resolveItemStats(data,item,int(item.level)))
+bool applyPd2AutomaticCorruption(const ClassicData &data,ItemInstance &item,uint64_t &itemRandom,uint32_t &programRandom) {
+    auto visible=item;visible.identified=true;
+    for(const auto &stat:resolveItemStats(data,visible,int(item.level)))
         if(stat.name=="corrupted" && stat.rawValue) return false;
     const auto *base=data.items.find(item.definition);
     if(!base) return false;
     int threshold=0;uint32_t roll=0;bool drawn=false;
-    // Core 0x3632D0 scans the enabled table directly. It tests the fresh
-    // rare's input identity, not the destroyed unique's operation value.
+    // Core 0x3632D0 scans enabled corruption rows against the current item.
+    // Automatic map corruption and a bricked rare both use this attribute
+    // program; it never destroys/replaces the item as a manual WSS input can.
     for(const auto &recipe:data.cubeRecipes) {
         if((recipe.operation!=16 && recipe.operation!=18) || recipe.operationParameter!=361 ||
             !recipe.operationValue || recipe.inputs.empty() || recipe.outputs.empty()) continue;

@@ -13,6 +13,7 @@
 #include "content/string_table.hpp"
 #include <algorithm>
 #include <cmath>
+#include <set>
 namespace d2x {
 namespace {
 // Native callback identities where the authored preset is not an Objects row.
@@ -94,7 +95,13 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     }
     WorldObject redPortal;redPortal.appearance.category="objects";redPortal.objectClass=60;configureWorldObject(redPortal,rows);
     if(portalResources && redPortal.operateFn==15 && redPortal.reach>0) area.specialPortalRule=portalRule(redPortal,0);
-    for(const int code:{565,566}) {
+    std::set<int> portalClasses{565,566};
+    if(content.pd2Host) {
+        const auto &misc=content.tables.at("misc");
+        for(size_t row=0;row<misc.rows().size();++row) if(misc.number(row,"pSpell")==12)
+            portalClasses.insert(misc.number(row,"missiletype").value_or(0)?misc.number(row,"missiletype").value():60);
+    }
+    for(const int code:portalClasses) {
         WorldObject questPortal;questPortal.appearance.category="objects";questPortal.objectClass=code;configureWorldObject(questPortal,rows);
         if(portalResources && questPortal.reach>0) area.questPortalRules.emplace(code,portalRule(questPortal,0));
     }

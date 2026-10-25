@@ -20,7 +20,7 @@ struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, s
 struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{};std::optional<RoomView> fieldRoom{},townRoom{}; };
 struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, revision{}; };
 struct PositionSynchronization { uint64_t until{}; std::array<uint64_t,5> attempts{}; };
-struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; };
+struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; std::shared_ptr<const pd2::MapInstance> pd2Map; EntityId pd2MapPortal;std::map<PlayerId,EntityId> mapReports;std::optional<ActorContext> pendingPd2Map; };
 struct SpecialPortalPlan {std::map<EntityId,Portal> next;};
 struct Ports { PlayerStore &players; AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; uint64_t &random; const GameSettings &settings; const spatial::System &spatial; };
 class System {
@@ -33,6 +33,9 @@ class System {
     const AreaObject *waypointAccess(const ActorContext &,EntityId,std::optional<uint64_t> revision = {}) const;
     bool waypointBusy(PlayerId) const;
     StepStatus expireSynchronizations(TickContext);
+    StepStatus synchronizePd2MapReports(TickContext);
+    DomainResult<> finishPd2Map(const ActorContext &,ItemHandle);
+    void advancePd2Map(TickContext);
     DomainResult<SpecialPortalPlan> prepareWorldPortal(RegionId,int,uint64_t,Vec,const PortalRule &,bool blue,bool exactSource,bool durielOpening=false);
   public:
     explicit System(Ports ports) : ports_(ports) {}
@@ -40,6 +43,7 @@ class System {
     DomainResult<> openWaypoint(const ActorContext &,EntityId,bool menu,std::optional<int> remoteRange = {});
     DomainResult<> unlockWaypoints(const ActorContext &,std::optional<RegionId>); // Local host administration; absent destination selects all.
     DomainResult<> createPortal(const ActorContext &,std::optional<ItemHandle> = {},std::optional<int> skill = {});
+    DomainResult<> createPd2Map(const ActorContext &,ItemHandle);
     DomainResult<SpecialPortalPlan> prepareSpecialPortal(const ActorContext &,SpecialPortalKind,uint64_t seed,std::optional<Vec> source = {});
     DomainResult<SpecialPortalPlan> prepareNativePermanentPortal(RegionId,Vec,int destination,uint64_t tick);
     DomainResult<> linkNativePortal(EntityId source,uint64_t tick);

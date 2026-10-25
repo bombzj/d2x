@@ -7,6 +7,79 @@ EntityId RemoteScene::Impl::effectOwner(OnlineUnitKey key) {
     return {(uint64_t(key.type) << 32) + key.id + 1};
 }
 
+const RemoteScene::Impl::BoneArmorVisual &RemoteScene::Impl::boneArmorVisual(
+        const OnlineUnit &unit,const OnlineCombatStateView &state,size_t stateRow,SceneView &shared) {
+    auto &visual=boneArmorVisuals[{unit.key,state.id}];
+    bool reset=visual.assignment!=unit.assignmentRevision;
+    for(const auto &message:unit.stateMessages) if(message.sequence>visual.sequence)
+        reset|=message.kind==OnlineStateMessage::Kind::Snapshot ||
+            (message.kind==OnlineStateMessage::Kind::Disable && message.state==state.id);
+    if(reset) visual={};
+    visual.assignment=unit.assignmentRevision;visual.sequence=unit.stateSequence;
+    const auto tick=uint64_t(double(time)*25.0);
+    using Piece=BoneArmorVisual::Piece;
+    using Phase=Piece::Phase;
+    const auto overlayId=[&](std::string_view field) {
+        const auto found=overlayNames.find(states.value(stateRow,field));
+        return found==overlayNames.end()?-1:int(found->second);
+    };
+    const int cast=overlayId("castoverlay");
+    const auto timing=[&](int id) -> std::pair<int64_t,int64_t> {
+        if(id<0 || size_t(id)>=overlays.rows().size()) return {};
+        // Type-7 null overlays are invisible timers, but their real DCC
+        // length still controls when the native callback creates a bone.
+        if(const auto *asset=shared.overlayVisual(id))
+            return {int64_t(asset->frames)*256,int64_t(asset->fps*256.f/25.f)};
+        return {};
+    };
+    // Native 1.13c RVA 6C130 restarts its list walk after a replacement:
+    // a child emerge/loop advances on the very tick that creates it.
+    for(auto &piece:visual.pieces) {
+        auto ticks=tick-visual.tick;
+        while(ticks && piece.phase!=Phase::None && piece.phase!=Phase::Orbit) {
+            const auto [length,step]=timing(piece.overlay);
+            if(length<=0 || step<=0) {
+                effectLimitations.insert("Bone Armor overlay timing unavailable");piece={};break;
+            }
+            const auto until=uint64_t((length-piece.frame+step-1)/step);
+            if(ticks<until) {piece.frame+=int64_t(ticks)*step;break;}
+            ticks-=until;piece.frame=0;piece.born=tick-ticks;
+            if(piece.phase==Phase::Delay) {piece.phase=Phase::Emerge;piece.overlay=cast;}
+            else piece.phase=Phase::Orbit;
+            ++ticks;
+        }
+    }
+    visual.tick=tick;
+    const auto stat=[&](std::string_view name) {
+        const auto found=monsterText->nativeStats->names.find(std::string(name));
+        if(found!=monsterText->nativeStats->names.end())
+            for(const auto &value:state.stats) if(value.id==found->second && !value.parameter)
+                return nativeChecked(value.value);
+        return 0;
+    };
+    // RVA 73230 uses raw pool thirds, with strict comparisons. Its scratch
+    // shortparam1 stays local; it is not a new authoritative stat or save field.
+    const int current=stat("bonearmor"),third=stat("bonearmormax")/3;
+    const int count=(current<third?2:3)-(current<2*third?1:0);
+    if(count>visual.count) {
+        visual.pieces={};
+        if(cast>=0 && overlayId("overlay1")>=0 && overlayId("overlay2")>=0)
+            visual.pieces[0]={Phase::Emerge,cast,0,tick};
+        if(count>=3 && overlayId("overlay3")>=0)
+            visual.pieces[1]={Phase::Delay,overlayId("overlay3"),0,tick};
+        if(count>=2 && overlayId("overlay4")>=0)
+            visual.pieces[2]={Phase::Delay,overlayId("overlay4"),0,tick};
+    } else for(int removed=count;removed<visual.count;++removed) {
+        // Native removes the first front/back pair in its head-inserted list;
+        // pending delays/emerges survive, and older orbit phases keep running.
+        auto *newest=static_cast<Piece *>(nullptr);
+        for(auto &piece:visual.pieces) if(piece.phase==Phase::Orbit && (!newest || piece.born>newest->born)) newest=&piece;
+        if(newest) *newest={};
+    }
+    visual.count=count;
+    return visual;
+}
+
 void RemoteScene::Impl::emitSound(PresentationSoundEvent::Kind kind, const OnlineUnit &source, float age,
                int skill, float releaseTime, std::string sound, int mode) {
     soundEvents.push_back({kind,effectOwner(source.key),source.actionRevision,skill,age,releaseTime,std::move(sound),mode});
@@ -192,6 +265,19 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         if(const auto snapshot=combat.states().find(owner);snapshot!=combat.states().end() && snapshot->second.decoded)
             for(const auto &[state,definition]:snapshot->second.states) { (void)state;for(const auto &stat:definition.stats) if(stat.id==slowMissileStat) slow=int(stat.value); }
         const int function=missiles.number(row,"pCltDoFunc").value_or(0);
+        if(id && function==13 && !initialization.areaEmission) {
+            const auto skill=missileSkills.find(*id);
+            int32_t radius=0,period=0;
+            if(skill!=missileSkills.end()) {
+                radius=skillCalculation(skill->second,level,"calc1",owner).value_or(0);
+                period=skillCalculation(skill->second,level,"calc2",owner).value_or(0);
+            }
+            if(radius<=1 || period<=0) {
+                effectLimitations.insert("Blizzard client emission inputs unavailable: "+std::string(missiles.value(row,"Missile")));
+                return false;
+            }
+            initialization.areaEmission=ClientMissileAreaEmission{radius,period};
+        }
         if(id && (function==48 || function==50)) if(const auto skill=missileSkills.find(*id);skill!=missileSkills.end()) {
             if(!initialization.streamRange) initialization.streamRange=skillCalculation(skill->second,level,function==48?"calc1":"aurarangecalc",owner).value_or(0);
             if(!initialization.streamPeriod) initialization.streamPeriod=skillCalculation(skill->second,level,function==48?"calc2":"calc4",owner).value_or(0);
@@ -443,9 +529,9 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 castAnimation->releaseTime-age,event.source,shared,collision,worldOrigin);
             return;
         }
-        if (v.protocolProfile == "pd2-cn-normal-20261020") {
-            // Fixed CN CltDo table: these callbacks replace native code, not
-            // skill identities. Details and both DLL versions are in PD2_CN_DLL_ANALYSIS.
+        if (pd2) {
+            // Core CltDo replacements apply to both local and CN hosts.
+            // Their resource programs do not depend on CN wire extensions.
             if (function == 103) return; // Aura visuals arrive through unit states.
             if (function == 97 && actor.key.type==0 && actor.key.id==playerId)
                 return; // Controlled player flight is advanced by displayPd2PlayerLeap.
@@ -701,7 +787,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         // Retail CltDo28 creates its center at the aimed point (RVA 73DF0
         // -> A1540 -> AFF10), including ClientSend missiles. The flag
         // permits native visibility synchronization; it is not a cast gate.
-        const bool pd2MindBlast = function == 8 && v.protocolProfile == "pd2-cn-normal-20261020";
+        const bool pd2MindBlast = function == 8 && pd2;
         // Retail CltDo6 (RVA 413A0) creates the owner's Blade Fury
         // missile directly; ClientSend does not suppress that callback.
         const bool bladeFury = function == 6 && skills.value(row->second,"charclass") == "ass";
@@ -1161,7 +1247,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     event.level.value_or(1), 0, float(event.auxiliary) / 25.f, event.source, -1, event.pierce.value_or(0),
                     ClientMissileSource::Synchronization);
                 } else if(event.kind==OnlineCombatEvent::Kind::Skill && event.packet==0xA3 && event.skill && !event.target && event.point &&
-                                    !(v.protocolProfile == "pd2-cn-normal-20261020" && event.flags > 0 && event.flags <= 3 &&
+                                    !(pd2 && event.flags > 0 && event.flags <= 3 &&
                                         skillRows.contains(*event.skill) && skills.number(skillRows.at(*event.skill),"progressive")==1)) {
             const auto row=skillRows.find(*event.skill);if(row==skillRows.end()) continue;
             const int function=skills.number(row->second,"cltprgfunc1").value_or(0),rank=event.level.value_or(1);
@@ -1189,7 +1275,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 }
             }
         } else if(event.kind==OnlineCombatEvent::Kind::Skill && event.packet==0xA3 && event.skill &&
-                  (event.target || (v.protocolProfile == "pd2-cn-normal-20261020" && event.flags > 0 && event.flags <= 3))) {
+                  (event.target || (pd2 && event.flags > 0 && event.flags <= 3))) {
             const auto row=skillRows.find(*event.skill);const auto target=v.world.units.find(event.target.value_or(event.source));
             if(row!=skillRows.end() && target!=v.world.units.end() && target->second.position && event.flags>0 && event.flags<=3 && skills.number(row->second,"progressive")==1) {
                 const auto at=*target->second.position;const Vec point{float(at.x)+.5f,float(at.y)+.5f};
@@ -1204,7 +1290,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                         effectLimitations.insert("PD2 progressive target/path unresolved: " + std::to_string(function));
                         continue;
                     }
-                    if (v.protocolProfile == "pd2-cn-normal-20261020" &&
+                    if (pd2 &&
                         ((function == 83 && skills.number(row->second,"cltdofunc")==83) || function == 94 || function == 97 || function == 98 ||
                          (function >= 104 && function <= 119 && function != 106 && function != 107))) {
                         effectLimitations.insert("PD2 progressive client program unavailable: " + std::to_string(function));
@@ -1218,14 +1304,14 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     const auto name=skills.value(row->second,"cltmissile"+std::string(1,char('a'+step.charge-1)));
                     const auto missile=missileNames.find(name);
                     if(missile==missileNames.end()) {
-                        if (v.protocolProfile == "pd2-cn-normal-20261020" && (function == 106 || function == 107))
+                        if (pd2 && (function == 106 || function == 107))
                             effectLimitations.insert("PD2 progressive missile missing: " + std::to_string(*event.skill));
                         continue;
                     }
                     const auto emit=[&](Vec start,Vec end,ClientMissileInitialization initialization={}) {
                         launch(missile->second,start,end,level,0,{},event.source,-1,0,ClientMissileSource::Cast,{},0,initialization);
                     };
-                    if (v.protocolProfile == "pd2-cn-normal-20261020" && function == 106) {
+                    if (pd2 && function == 106) {
                         const auto caster = v.world.units.find(event.source);
                         const auto count = calculate("cltcalc"+std::to_string(step.charge),step.charge);
                         if (caster == v.world.units.end() || !caster->second.position || !count) {
@@ -1244,7 +1330,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                         }
                         continue;
                     }
-                    if (v.protocolProfile == "pd2-cn-normal-20261020" && function == 107) {
+                    if (pd2 && function == 107) {
                         const auto count = calculate("cltcalc"+std::to_string(step.charge),step.charge);
                         if (!count || *count < 0) {
                             effectLimitations.insert("PD2 progressive ring count unresolved: " + std::to_string(*event.skill));
@@ -1384,8 +1470,12 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         const bool charge=pd2 && pendingRow!=skillRows.end() && skills.number(pendingRow->second,"cltdofunc")==112;
         const auto &chargePhase=motion[u.key].pd2PlayerCharge;
         const bool unconfirmedCharge=charge && localCast->started>=0 && (!chargePhase || !chargePhase->confirmed);
+        const bool movementInterrupt=v.world.movementRequest && v.world.movementRequest->revision>localCast->revision &&
+            !localCastBlocksMovement() && (localCast->started<0 || time<localCast->started+localCast->duration);
+        // A move arriving at normal completion must not cancel a Clt missile
+        // that becomes due in this frame's later missile advancement.
         if (!u.position || onlinePlayerDead(v.world) || interrupted ||
-             (v.world.movementRequest && v.world.movementRequest->revision > localCast->revision) ||
+            movementInterrupt ||
             ((localCast->started < 0 || unconfirmedLeap || unconfirmedCharge) && time - localCast->requested > 15.f)) {
             if (playerId) shared.cancelPendingClientMissiles(effectOwner({0, *playerId}));
             localCast.reset();
@@ -1483,7 +1573,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         const Vec start=Vec{float(owner->second.position->x)+.5f,float(owner->second.position->y)+.5f};
         const Vec end{float(channel.destination.x)+.5f,float(channel.destination.y)+.5f};
         const int channelFunction=skills.number(channel.skillRow,"cltdofunc").value_or(0);
-        if(v.protocolProfile=="pd2-cn-normal-20261020" && channelFunction==111) {
+        if(pd2 && channelFunction==111) {
             emitPd2Stream(channel,it->first,start,end,shared,combat);
             ++it;continue;
         }

@@ -141,8 +141,13 @@ void requirePhase(const MessageDescriptor &entry, GamePhase phase) {
         ? phase == GamePhase::LoggedOn || phase == GamePhase::Entered : phase == GamePhase::Entered);
     if (!valid) throw ProtocolError("Packet is unavailable in this game phase: " + std::string(entry.name));
 }
-void validateServerPacket(std::span<const uint8_t> bytes) {
+void validateServerPacket(std::span<const uint8_t> bytes,net::protocol::ClientProfile profile) {
     if (bytes.empty()) throw ProtocolError("Empty server packet");
+    if(profile==net::protocol::ClientProfile::Pd2Local && bytes[0]==0x55) {
+        if(net::protocol::clientCompatibility(profile).serverPacketSize(bytes)!=bytes.size())
+            throw ProtocolError("Invalid outgoing PD2 map report size");
+        return;
+    }
     const auto &entry = serverMessage(bytes[0]);
     if (entry.support == MessageSupport::Stub)
         throw ProtocolError("Server serializer is not implemented: " + std::string(entry.name));

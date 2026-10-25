@@ -61,7 +61,7 @@ void NativeRealmHost::advance(double seconds) {
                 if (found == areaPreparations.end()) {
                     const auto catalog = sharedWorldCatalog(archives, request.settings.difficulty);
                     const auto &level = catalog->level(int(request.destination));
-                    const auto ticket = areaPreparation->submit({request.settings.mapSeed, level.act, level.id, request.settings.difficulty,request.settings.ladderMonsterStats()});
+                    const auto ticket = areaPreparation->submit({request.settings.mapSeed, level.act, level.id, request.settings.difficulty,request.settings.ladderMonsterStats(),request.pd2Map});
                     areaPreparations.emplace(key, ticket);
                     break;
                 }

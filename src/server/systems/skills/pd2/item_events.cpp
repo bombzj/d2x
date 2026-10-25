@@ -7,24 +7,17 @@
 #include "server/systems/reactions/item_triggers.hpp"
 #include "server/systems/reactions/pd2/item_events.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
+#include "gameplay/skills/pd2/cast_events.hpp"
 #include <array>
 #include <algorithm>
 #include <cmath>
 
 namespace d2x::server::skills {
-namespace {
-bool itemCastSafeZone(int level,Vec position) {
-    // Current core 0x37B650 uses two fixed PvP rectangles, not a DT1 bit.
-    const auto x=uint32_t(int32_t(std::floor(position.x))),y=uint32_t(int32_t(std::floor(position.y)));
-    return (level==157 && x-0x50b0u<=0x2au && y-0x281cu<=0x36u) ||
-        (level==159 && x-0x4ff9u<=0x2cu && y-0x2d79u<=0x1fu);
-}
-}
 DomainStatus System::preparePd2CastItemEvent(Release &pending,const ActorContext &actor,Vec) {
     const auto *player=ports_.players.find(actor.player);
     if(!player || !player->rules.skills->pd2) return DomainStatus::Applied;
     const auto &area=ports_.areas.at(actor.area).definition;
-    if(area.town || itemCastSafeZone(int(actor.area),player->position+area.origin)) return DomainStatus::Applied;
+    if(area.town || pd2::itemCastSafeZone(int(actor.area),player->position+area.origin)) return DomainStatus::Applied;
     // Core 0x190E20 / 0x190E90 initialize the forced and excluded sets.
     constexpr std::array excluded{277,57,219,220,514,217,218,513};
     constexpr std::array included{242,251,256,261,262,313,272,276,392};

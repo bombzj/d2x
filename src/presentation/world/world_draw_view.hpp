@@ -28,6 +28,7 @@ struct WorldDrawItem {
     bool loop = false;
     int height = 1;
     std::optional<int> missileFrame;
+    std::optional<int> overlayFrame;
     bool suppressMissileLight{};
 };
 struct WorldDrawView {

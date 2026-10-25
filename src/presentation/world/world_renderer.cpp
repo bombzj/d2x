@@ -235,7 +235,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
             if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(alert->position), true);
             if (item.shadow) spriteShadow(entry.image, entry.at);
             if (item.missile >= 0) drawMissile(item.missile, item.position, item.heading, item.age, item.remaining,item.pixelOffset,item.missileFrame,&palette,light);
-            else if (item.overlay >= 0) drawSpellOverlay(item.overlay, item.position, item.age, item.loop, item.height,&palette,light);
+            else if (item.overlay >= 0) drawSpellOverlay(item.overlay, item.position, item.age, item.loop, item.height,&palette,light,item.overlayFrame);
             else if (item.ground) drawGroundItem(*item.ground, item.highlighted,&palette,light);
             else drawSelectableSprite(entry.image, entry.at, item.highlighted,WHITE,{2,1},&palette,light);
             if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(alert->position), false);
@@ -354,12 +354,13 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
     if (translucent) EndBlendMode();
 }
 void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop, int height,
-                                const PaletteBlendView *lighting, Color light) const {
+                                const PaletteBlendView *lighting, Color light,std::optional<int> preciseFrame) const {
     const auto found = assets_.spellOverlays.find(id);
     if (found == assets_.spellOverlays.end()) return;
     const auto &overlay = found->second;
     if (overlay.visual.frames <= 0 || overlay.visual.fps <= 0) return;
-    const int elapsed = std::max(0, int(age * overlay.visual.fps));
+    const double ticks = std::floor(std::max(0.0,double(age))*25.0+1e-5);
+    const int elapsed = preciseFrame.value_or(int(ticks*overlay.visual.fps/25.0));
     const int frame = loop ? elapsed % overlay.visual.frames : std::min(overlay.visual.frames - 1, elapsed);
     const int heightOffset = height < 0 ? 75 : overlay.visual.heights[std::clamp(height, 0, 3)];
     const Vec at = screen(position) + overlay.visual.offset + Vec{0, float(heightOffset)};

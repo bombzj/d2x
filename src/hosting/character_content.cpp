@@ -3,6 +3,7 @@
 #include "content/skills/skill_eligibility.hpp"
 #include "content/classic_data.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/pd2/map_data.hpp"
 #include "gameplay/areas/waypoint.hpp"
 #include <stdexcept>
 #include <algorithm>
@@ -55,6 +56,7 @@ std::shared_ptr<const server::EquipmentRules> prepareEquipmentRules(const Classi
 void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data, const PersistentCharacter &saved) {
     rules.potions = std::make_shared<const server::PotionRules>(data.potions);
     auto character = std::make_shared<server::CharacterRules>();
+    if(data.pd2Host) character->maps=pd2::prepareMapCatalog(data);
     character->stats=data.nativeStats;
     character->states=data.nativeStates;
     if(!character->stats) throw std::runtime_error("Missing shared native stat catalog");

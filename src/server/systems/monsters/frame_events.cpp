@@ -75,15 +75,18 @@ DomainResult<> System::modeEvent(const FrameEvent &event,uint64_t tick) {
     if(!unit || (!unit->alive() && !unit->delayedDeathSource && tick>=unit->busyUntil)) ports_.frameEvents.cancel(event.handle);
     return {DomainStatus::Applied,std::monostate{}};
 }
-void System::scheduleAi(EntityId id,uint64_t due) {
+void System::scheduleAi(EntityId id,uint64_t due,uint64_t notBefore) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end()) return;
     const auto &unit=found->second;
     const FrameEventOwner owner{FrameEventUnit::Monster,id};
     if((!unit.alive() && (!unit.owner || unit.conversion)) || !unit.nativeAi()) {
         ports_.frameEvents.cancelHandler(owner,FrameEventType::AiThink,0);return;
     }
-    due=std::max(due,ports_.frameEvents.currentFrame()+1);
-    auto timer=ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::AiThink,due});
+    // Payload retains the requested decision frame. A wake deferred by an
+    // action lock is not an explicit future AI wait at ENDANIM.
+    const auto decisionAt=std::max(uint64_t{1},due);
+    due=std::max({due,notBefore,ports_.frameEvents.currentFrame()+1});
+    auto timer=ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::AiThink,due,false,0,0,0,decisionAt});
     ports_.frameEvents.cancelHandler(owner,FrameEventType::AiThink,0);
     ports_.frameEvents.publish(std::move(timer));
 }

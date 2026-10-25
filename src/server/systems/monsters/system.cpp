@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/attributes/pd2/map_values.hpp"
 #include "server/systems/attributes/monster_sources.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "gameplay/rules/arithmetic.hpp"
@@ -154,6 +155,8 @@ DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,Entit
         auto change=resources.take();actor.nativeStats=std::move(change.intrinsic);
         actor.life=change.life.raw();actor.maximumLife=change.maximum.raw();
     }
+    if(const auto *area=ports_.areas.find(actor.area);area && area->definition.pd2Map)
+        attributes::preparePd2MapMonster(actor,*area->definition.pd2Map,request.tick,request.deadMode);
     actor.roomAdmission=ports_.areas.prepareRoomUnit(id,1,actor.area,actor.position);
     return {DomainStatus::Applied,std::move(actor)};
 }

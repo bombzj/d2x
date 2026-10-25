@@ -35,7 +35,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     pd2=v.protocolProfile!="lod113c";
     uiClients=&clients;
     artPalette = binding.palette.value_or(0);
-    if(gameGeneration!=v.gameGeneration) pd2VisualSeeds.clear();
+    if(gameGeneration!=v.gameGeneration) {pd2VisualSeeds.clear();boneWallVisualRandom.clear();}
     if (gameGeneration != v.gameGeneration || areaGeneration != v.world.areaGeneration) {
         gameGeneration = v.gameGeneration;
         areaGeneration = v.world.areaGeneration;
@@ -44,7 +44,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         monsterTransforms.clear();
         deathCallbacks.clear(); preparedDeaths.clear();
         monsterEffects.clear();
-        shared.clearClientMissiles(); channels.clear(); ownerMissiles.clear(); blazeTrails.clear(); effectLimitations.clear(); missileCastRevisions.clear(); overlayVisuals.clear(); stateTimes.clear(); shattered.clear();
+        shared.clearClientMissiles(); channels.clear(); ownerMissiles.clear(); blazeTrails.clear(); effectLimitations.clear(); missileCastRevisions.clear(); overlayVisuals.clear(); stateTimes.clear(); boneArmorVisuals.clear(); shattered.clear();
         soundEvents.clear();
         combatSequence = v.world.combatSequence;
         localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
@@ -556,7 +556,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             entry.shadow = visual->shadow; entry.orderFlag = visual->order; draw.push_back(entry);
         }
     }
-    auto addOverlay = [&](int id, OnlineUnitKey key, float born, bool loop) {
+    auto addOverlay = [&](int id, OnlineUnitKey key, float born, bool loop,std::optional<int> frame = {}) {
         const float age = time - born;
         if(age<0) return;
         const auto actor = v.world.units.find(key);
@@ -567,6 +567,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             displayPosition(actor->second, map, origin,clients) - Vec{float(origin.x), float(origin.y)} + Vec{.5f, .5f};
         WorldDrawItem entry; entry.position = feet;
         entry.overlay = id; entry.age = age; entry.loop = loop;
+        entry.overlayFrame = frame;
         entry.lightOwner = effectOwner(key); entry.lightStartedAt = born;
         entry.height = objectUnit ? 0 : 1;
         if (objectUnit)
@@ -597,6 +598,29 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             const auto identity = std::pair{key,id}; activeStates.insert(identity);
             const auto [epoch,inserted]=stateTimes.try_emplace(identity,time);
             const float born=epoch->second;
+            if(states.number(row->second,"setfunc")==6) {
+                const auto &unit=v.world.units.at(key);
+                if(snapshot.sequence!=unit.stateSequence) continue;
+                const auto &armor=boneArmorVisual(unit,state,row->second,shared);
+                for(const auto &piece:armor.pieces) {
+                    using Phase=BoneArmorVisual::Piece::Phase;
+                    const float started=float(double(piece.born)/25.0);
+                    if(piece.phase==Phase::Emerge)
+                        addOverlay(piece.overlay,key,started,false,int(piece.frame/256));
+                    else if(piece.phase==Phase::Orbit) for(const auto field:{"overlay2","overlay1"}) {
+                        const auto overlay=overlayNames.find(states.value(row->second,field));
+                        if(overlay==overlayNames.end()) continue;
+                        const int id=int(overlay->second);
+                        if(const auto *asset=shared.overlayVisual(id)) {
+                            const auto ticks=armor.tick-piece.born+1;
+                            const auto step=int64_t(asset->fps*256.f/25.f);
+                            const int frame=int((ticks*step/256)%asset->frames);
+                            addOverlay(id,key,started,true,frame);
+                        }
+                    }
+                }
+                continue;
+            }
             if(inserted) {
                 if(states.number(row->second,"setfunc")==2) {
                     int skill=-1,rank=0;
@@ -642,6 +666,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         }
     }
     std::erase_if(stateTimes,[&](const auto &entry) { return !activeStates.contains(entry.first); });
+    std::erase_if(boneArmorVisuals,[&](const auto &entry) { return !activeStates.contains(entry.first); });
     // An interactable under the pointer owns both hover and click; an
     // earlier overlapping monster candidate must not turn an NPC click
     // into an attack. Resolve before drawing any selection effects.
@@ -775,7 +800,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     hit.targetingAvailable = !shared.ui().blocksInput() && !shared.ui().skillPicker &&
         !shared.ui().inventory.drag && !shared.ui().inventory.goldDialog &&
         !shared.ui().inventory.identify && !shared.characterView().dead && !waypointOpen && !v.world.npcConversation;
-    hit.movementAvailable = binding.movementAvailable;
+    hit.movementAvailable = binding.movementAvailable && !localCastBlocksMovement();
     hit.origin = {float(origin.x), float(origin.y)};
     hit.size = {float(binding.width), float(binding.height)};
     hit.observer = observer;

@@ -331,7 +331,8 @@ class SceneView {
         std::erase_if(clientMissiles_, [&](const auto &value) { return value.flight && value.age < 0 && value.owner == owner; });
     }
     void drawSpellOverlay(int id, Vec position, float age, bool loop, int height = 1,
-                          const PaletteBlendView *lighting = nullptr, Color light = WHITE) const;
+                          const PaletteBlendView *lighting = nullptr, Color light = WHITE,
+                          std::optional<int> preciseFrame = {}) const;
     void drawGroundLabels(Vec mouse) const { drawLootLabels(mouse); }
     void drawDeathNotice() const;
     void drawCorpseLabel(const std::string &label, Vec screenPosition) const;

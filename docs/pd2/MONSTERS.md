@@ -40,7 +40,7 @@ MonStats技能名称按原NAMETOWORD忽略大小写链接，失败编译为-1；
 
 ## 怪物技能程序准备
 
-`src/hosting/pd2/monster_actions.cpp`按Skills的srvstfunc／srvdofunc、MonStats八个技能槽及真实动画准备PD2动作，不再要求新增技能沿用原版技能名称。服务端较大差异归`src/server/systems/skills/pd2/monster_skills.cpp`；原版动作准备和调度保持公共入口。
+`src/hosting/pd2/monster_actions.cpp`按Skills的srvstfunc／srvdofunc、MonStats八个技能槽及真实动画准备PD2动作，不再要求新增技能沿用原版技能名称。服务端较大差异归`src/server/systems/skills/pd2/monster_skills.cpp`；原版动作准备和调度保持公共入口。普通ENDANIM后的NU等待复用[公共动作与AI时钟](../gameplay/monsters/COMMON.md#动作死亡与奖励)，使用当前PD2表的aidel；动作锁导致的唤醒推迟不视作独立AI等待，专用程序显式登记的未来等待仍保留，完整组合待实机核对。
 
 | 程序 | 当前消费者与边界 |
 | --- | --- |
@@ -116,6 +116,8 @@ FlyingScimitar的普通Fn047已沿D2MOO恢复到公共AI：aip1为靠近概率�
 弓手复用受控远程角色的实现载体，但保留自身原生class、组件、飞弹、技能及属性，不把实际身份替换为法师。Desecrate死态实体无经验／掉落、部分出生失败保留已创建尸体及到期取消选择的规则归[技能负责条目](SKILLS.md#desecrate召唤和诅咒的数据边界)，不与自然人口生成混为一条路径。
 
 佣兵服务、装备槽／资格及战斗程序是不同能力。CN七槽原请求及当前资格见[佣兵](../gameplay/characters/HIRELINGS.md)，服务回调见[城镇](TOWN.md)；它们不证明自有宿主具备全部PD2佣兵战斗差异。
+
+自有宿主当前有明确执行缺口：`src/hosting/hireling_content.cpp::preparePendingHirelings`在`data.pd2Host`分支提交身份、装备与生命周期后直接continue，跳过下面的攻击／施法动作准备。因此不能把能雇佣、装备或复活佣兵描述成PD2佣兵已可完整战斗；需恢复当前Hireling技能、AI及相关光环／装备触发后再核对野外行为。
 
 ## 新增怪物、首领与掉落
 

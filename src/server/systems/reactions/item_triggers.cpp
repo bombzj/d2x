@@ -16,6 +16,7 @@
 #include "gameplay/rules/pd2_random.hpp"
 #include "gameplay/skills/pd2_program.hpp"
 #include "gameplay/skills/behavior.hpp"
+#include "pd2/item_events.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -104,7 +105,11 @@ DomainResult<ItemEventPlan> ItemTriggers::prepare(const ActorContext &actor,std:
     return {DomainStatus::Applied,std::move(plan)};
 }
 StepStatus ItemTriggers::advance(uint64_t tick) {
-    return advanceJobs(pending_,tick);
+    const auto result=advanceJobs(pending_,tick);
+    // Effects advances this phase once per completed frame. Do not schedule
+    // again while an earlier item job is waiting on reliable-output capacity.
+    if(result==StepStatus::Complete) schedulePd2StreamItemEvents(ports_,tick);
+    return result;
 }
 StepStatus ItemTriggers::advance(ItemEventPlan &plan,uint64_t tick) {
     return advanceJobs(plan.jobs,tick);

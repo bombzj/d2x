@@ -5,6 +5,7 @@
 #include "resources/atomic_file.hpp"
 #include <algorithm>
 #include <fstream>
+#include <optional>
 #include <set>
 #include <stdexcept>
 
@@ -49,15 +50,26 @@ CharacterRosterView CharacterStore::list(bool includeQuick, std::string_view fil
     view.revision = ++revision_;
     entries_.clear();
     versions_.clear();
-    std::vector<std::filesystem::path> files;
+    struct SaveFile {
+        std::filesystem::path path;
+        std::optional<std::filesystem::file_time_type> modified;
+    };
+    std::vector<SaveFile> files;
     for (const auto &entry : std::filesystem::directory_iterator(root_))
         if (folded(entry.path().extension().string()) == ".d2s" && (includeQuick || folded(entry.path().stem().string()) != "quick") &&
-            (fileName.empty() || entry.path().filename().string() == fileName))
-            files.push_back(entry.path());
-    std::sort(files.begin(), files.end(), [](const auto &a, const auto &b) { return folded(a.filename().string()) < folded(b.filename().string()); });
+            (fileName.empty() || entry.path().filename().string() == fileName)) {
+            std::error_code error;
+            const auto modified = entry.last_write_time(error);
+            files.push_back({entry.path(), error ? std::nullopt : std::optional{modified}});
+        }
+    // LoD D2Launch CharSel (1.13c RVA 0xCC50 / 0xCA41) orders local saves
+    // by file last-write time, newest first; equal times keep enumeration order.
+    // Missing metadata must not hide an existing invalid/unavailable save entry.
+    std::stable_sort(files.begin(), files.end(), [](const auto &a, const auto &b) { return a.modified > b.modified; });
     std::map<std::string, unsigned> names, stems;
-    for (const auto &path : files) ++stems[folded(path.stem().string())];
-    for (const auto &path : files) {
+    for (const auto &file : files) ++stems[folded(file.path.stem().string())];
+    for (const auto &file : files) {
+        const auto &path = file.path;
         CharacterRosterEntry entry;
         entry.id = entries_.size() + 1;
         entry.name = path.stem().string();

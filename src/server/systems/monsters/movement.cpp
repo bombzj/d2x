@@ -191,7 +191,16 @@ void System::finishAction(EntityId id,uint64_t tick) {
     if(actor.skillMotion && (actor.skillMotion->leaperRecovery || actor.skillMotion->eventDriven)) {actor.skillMotion.reset();actor.moving=false;}
     if(actor.neutralAt) actor.neutralAt=tick;
     ++actor.revision;
-    const auto next=ports_.frameEvents.nextDue({FrameEventUnit::Monster,id},FrameEventType::AiThink).value_or(tick);
+    const FrameEventOwner owner{FrameEventUnit::Monster,id};
+    const auto wake=ports_.frameEvents.nextDue(owner,FrameEventType::AiThink);
+    auto next=wake.value_or(tick);
+    if(wake) for(const auto &event:ports_.frameEvents.events(owner))
+        if(event.type==FrameEventType::AiThink && !event.handler && !event.continuous && event.due==*wake &&
+           ports_.frameEvents.find(event.handle)) {
+            // Raw native timers have no payload; scheduleAi retains the
+            // decision deadline separately from a deferred physical wake.
+            next=event.payload?event.payload:event.due;break;
+        }
     scheduleAi(id,resumeAi(id,tick,next));
 }
 

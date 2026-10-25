@@ -92,7 +92,7 @@ void autoProperties(const ClassicData &data,const ItemDefinition &base,ItemInsta
     }
 }
 }
-ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t &random, int difficulty,int staffmodBias) {
+ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t &random, int difficulty,int staffmodBias,uint64_t *itemRandom) {
     const auto *definition = data.items.find(drop.code);
     if (!definition || !drop.quantity || drop.quantity > definition->maxStack || drop.level < 1 || drop.level > 127)
         throw std::runtime_error("Invalid prepared item generation");
@@ -177,7 +177,7 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
     if(generation.forceEthereal && !canEthereal)
         throw std::runtime_error("This item cannot be ethereal under the original item rules");
     const bool rolledEthereal=canEthereal && generation.rollNaturalEthereal && limitedRandom(local,100)<5;
-    const bool generatedEthereal=generation.forceEthereal || rolledEthereal;
+    const bool generatedEthereal=generation.forceEthereal || rolledEthereal || (canEthereal && generation.etherealDropFlag);
     if(forcedEthereal || generatedEthereal) {
         item.nativeFlags|=0x400000u;
         if(definition->family==ItemFamily::Armor) item.defense=item.defense*3/2;
@@ -201,6 +201,7 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
         ? std::min(maximumDurability,baseDurability*generation.durabilityMultiplier):maximumDurability;
     updateCubeRequiredLevel(data,item);item.identified=visible;
     item.nativeQuestDifficulty = unsigned(difficulty);
+    if(itemRandom) *itemRandom=local;
     return item;
 }
 }

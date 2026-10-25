@@ -370,9 +370,9 @@ std::optional<ItemSeeds> GameHost::reserveLootSeeds(GameHandle game,EntityId sou
 std::optional<server::loot::Preparation> GameHost::beginLootPreparation(GameHandle game,EntityId source) {
     auto *slot=find(game);return slot?slot->game->beginLootPreparation(source):std::nullopt;
 }
-server::DomainResult<> GameHost::installLoot(GameHandle game, EntityId source, server::items::PreparedBatch batch, std::string deferred,std::optional<uint64_t> random,std::optional<uint64_t> objectRandom) {
+server::DomainResult<> GameHost::installLoot(GameHandle game, EntityId source, server::items::PreparedBatch batch, std::string deferred,std::optional<uint64_t> random,std::optional<uint64_t> objectRandom,std::optional<uint32_t> pd2Random) {
     auto *slot = find(game); if (!slot) return {server::DomainStatus::InvalidActor, {}};
-    auto result = slot->game->installLoot(source, std::move(batch), std::move(deferred),random,objectRandom); if (result) publish(size_t(game.slot)); return result;
+    auto result = slot->game->installLoot(source, std::move(batch), std::move(deferred),random,objectRandom,pd2Random); if (result) publish(size_t(game.slot)); return result;
 }
 }
 

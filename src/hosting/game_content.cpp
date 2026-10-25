@@ -5,6 +5,8 @@
 #include "object_content.hpp"
 #include "npc_content.hpp"
 #include "pd2/town_host.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
+#include "gameplay/maps/pd2/region_program.hpp"
 #include "server/character_admission.hpp"
 #include "content/classic_data.hpp"
 #include "content/world/world_catalog.hpp"
@@ -35,6 +37,12 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     area.townRegion = RegionId(actTownLevels.at(size_t(request.act)));
     area.act = request.act; area.town = level.town; area.origin = result.terrain.origin;
     area.monsterLevel=level.population.level.at(size_t(request.difficulty));
+    if(request.pd2Map) {
+        if(!content.pd2Host || request.level<137 || request.level>210 || level.town)
+            throw std::runtime_error("Invalid PD2 map instance area");
+        area.pd2Map=request.pd2Map;
+        area.monsterLevel=pd2::prepareMapRegionProperties(request.pd2Map->properties,{area.monsterLevel,0,0,0,{}}).level;
+    }
     area.staffTomb=result.terrain.staffTomb;
     area.collision = result.terrain.map->grid;
     area.roomTerrain=result.terrain.roomTerrain;

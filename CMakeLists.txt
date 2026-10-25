@@ -62,6 +62,9 @@ add_library(d2x_rules
   src/gameplay/stats/modifier_values.cpp src/gameplay/stats/pd2/item_values.cpp src/gameplay/combat/unit_values.cpp
   src/gameplay/combat/pd2/item_modifiers.cpp
   src/gameplay/stats/pd2/owner_values.cpp
+  src/gameplay/maps/pd2/property_program.cpp
+  src/gameplay/maps/pd2/region_program.cpp
+  src/gameplay/maps/pd2/loot_program.cpp
   src/gameplay/combat/weapon_snapshot.cpp src/gameplay/combat/drain.cpp
 )
 target_link_libraries(d2x_rules PUBLIC d2x_core)
@@ -80,6 +83,7 @@ add_library(d2x_content
   src/content/pd2/skill_data.cpp
     src/content/pd2/corpse_data.cpp
   src/content/pd2/item_properties.cpp
+  src/content/pd2/map_data.cpp
   src/content/pd2/cube.cpp
   src/content/pd2/cube_inputs.cpp
     src/content/pd2/aura_data.cpp
@@ -215,6 +219,7 @@ add_library(d2x_server
   src/server/systems/attributes/system.cpp src/server/systems/attributes/calculation.cpp
   src/server/systems/attributes/skill_refresh.cpp src/server/systems/attributes/stat_sources.cpp
   src/server/systems/attributes/pd2/item_values.cpp
+  src/server/systems/attributes/pd2/map_values.cpp
   src/server/systems/attributes/monster_sources.cpp src/server/systems/crafting/system.cpp
   src/server/systems/loot/system.cpp src/server/systems/population/system.cpp
   src/server/systems/monsters/system.cpp src/server/systems/monsters/inactive.cpp
@@ -299,6 +304,8 @@ add_library(d2x_server
   src/server/systems/effects/pd2/equipped_skills.cpp
   src/server/systems/effects/pd2/equipped_storm.cpp
   src/server/systems/effects/pd2/hit_delay.cpp
+  src/server/systems/effects/pd2/map_state.cpp
+  src/server/systems/effects/birth_states.cpp
   src/server/systems/missiles/native_weapon_contact.cpp src/server/systems/effects/druid.cpp
   src/server/systems/effects/state_group.cpp src/server/systems/effects/assassin.cpp
   src/server/systems/effects/blade_shield.cpp src/server/systems/effects/mind_blast.cpp
@@ -340,6 +347,7 @@ add_library(d2x_server
   src/server/systems/progression/system.cpp src/server/systems/travel/system.cpp
   src/server/systems/travel/position_sync.cpp src/server/systems/travel/waypoints.cpp
   src/server/systems/travel/portals.cpp src/server/systems/social/system.cpp
+  src/server/systems/travel/pd2/maps.cpp
   src/server/systems/social/party.cpp src/server/systems/trade/system.cpp
   src/server/systems/transactions/system.cpp src/server/systems/transactions/character_group.cpp
   src/server/systems/transactions/resources.cpp src/server/systems/replication/system.cpp
@@ -375,6 +383,8 @@ add_library(d2x_game_content
     src/hosting/game_content.cpp src/hosting/pd2/town_host.cpp
     src/hosting/pd2/equipped_skills.cpp
     src/hosting/pd2/monster_actions.cpp
+    src/hosting/pd2/map_wire.cpp
+    src/hosting/pd2/map_loot.cpp
     src/hosting/pd2/cube.cpp
     src/hosting/pd2/item_reroll.cpp
   src/hosting/character_content.cpp src/hosting/character_creation.cpp

@@ -6,7 +6,8 @@
 
 namespace d2x::net {
 bool RealmSession::Impl::handle_player_state_pd2(const Packet &packet) {
-    if (compatibility.profile != ClientProfile::Pd2CnNormal20261020) return false;
+    if (compatibility.profile != ClientProfile::Pd2CnNormal20261020 &&
+        !(compatibility.profile==ClientProfile::Pd2Local && packet.id==0x55)) return false;
     switch (packet.id) {
     case 0x2E: {
         if (packet.body.size() != 17 || !view.load.playerUnitId || packet.body[0] > 4)

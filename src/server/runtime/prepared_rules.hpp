@@ -26,6 +26,7 @@
 #include <vector>
 
 namespace d2x {class CombatEffectSet;}
+namespace d2x::pd2 {struct MapCatalog;}
 namespace d2x::server {
 using EffectRules = std::map<int, CombatStateDefinition>;
 using TreasureRules = std::vector<TreasureClass>;
@@ -43,6 +44,7 @@ enum class ItemSkillAction { Identify, Portal };
 struct ItemSkillRule { int skill{}; bool book{}; ItemSkillAction action{}; int cursor{-1}; };
 enum class QuestConsumable { SkillBook, LifePotion, ResistanceScroll, RespecToken };
 struct CharacterRules {
+    std::shared_ptr<const pd2::MapCatalog> maps;
     std::shared_ptr<const CombatStateRules> states;
     std::shared_ptr<const StatRuleCatalog> stats;
     std::shared_ptr<const SkillFormulaCatalog> formulas;

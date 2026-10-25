@@ -350,9 +350,22 @@ void System::updateRooms(TickContext tick) {
     for (const auto &act : rooms_->acts) if (act.activation) for (const auto &[id, state] : act.activation->states()) {
         if (state.status >= 3) continue;
         const auto &room = rooms_->rooms.at(id);
-        if (!ports_.areas.find(room.area)) request(room.area);
+        const auto *area=ports_.areas.find(room.area);
+        auto map=area?area->definition.pd2Map:nullptr;
+        if(!area) for(const auto near:room.near) {
+            const auto *source=ports_.areas.find(rooms_->rooms.at(near).area);
+            if(source && source->definition.pd2Map) {map=source->definition.pd2Map;break;}
+        }
+        const auto prepare=[&](RegionId destination) {
+            if(ports_.areas.find(destination)) return;
+            // DRLG neighbour prefetch precedes the player's exit command.
+            // A child prepared without its map would later reject that same
+            // immutable context and could never be entered through the warp.
+            request(destination,int(destination)>136 && int(destination)<=210?map:nullptr);
+        };
+        prepare(room.area);
         for (const auto near : room.near)
-            if (!ports_.areas.find(rooms_->rooms.at(near).area)) request(rooms_->rooms.at(near).area);
+            prepare(rooms_->rooms.at(near).area);
     }
 }
 bool System::clientRoomsReady(PlayerId id) const {

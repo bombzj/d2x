@@ -23,6 +23,7 @@
 #include <functional>
 
 namespace d2x {class PreparedRoomTerrain;}
+namespace d2x::pd2 {struct MapInstance;}
 namespace d2x::server {
 namespace world { class System; }
 struct RoomView {
@@ -50,6 +51,7 @@ struct PortalRule {
 };
 struct TerrainCell { size_t index{}; uint8_t blocked{},light{},terrain{}; uint16_t full{}; };
 struct AreaMetadata {
+    std::shared_ptr<const pd2::MapInstance> pd2Map;
     int waypointIndex = -1;
     std::optional<Vec> waypointAnchor; // Native spawn marker, resolved against current collision at travel commit.
     std::optional<Vec> portalArrival;
@@ -103,6 +105,7 @@ struct AreaDefinition : AreaMetadata {
         int questVariant{-1};
         bool prisonDoor{};
         std::optional<Vec> sourcePosition;
+        bool extraMapBoss{}; // A second native preset invocation; order remains the authored DS1 identity.
     };
     std::vector<NativePresetMonster> nativePresetMonsters;
     std::map<std::string,NativePresetMonster,std::less<>> nativeQuestMonsters;

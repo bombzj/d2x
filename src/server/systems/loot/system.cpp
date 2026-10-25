@@ -7,6 +7,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/objects/system.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
 namespace d2x::server::loot {
 std::optional<Preparation> System::beginPreparation(EntityId source) {
     const auto found=state_.pending.find(source);
@@ -14,8 +15,16 @@ std::optional<Preparation> System::beginPreparation(EntityId source) {
     auto &pending=found->second;
     if(!pending.prepared) {
         pending.uniques=state_.uniques;
+        pending.pd2Random=ports_.pd2Random;
+        if(const auto *area=ports_.areas.find(pending.request.source.region)) pending.pd2Map=area->definition.pd2Map;
         if(pending.monsterSeed) if(const auto *monster=ports_.monsters.find(source)) {
             pending.seed=monster->combatRandom;pending.monsterSeed=pending.seed;
+            if(const auto *area=ports_.areas.find(monster->area);area && area->definition.pd2Map && monster->nativeStats && !pending.request.source.ignoreNoDrop) {
+                pending.pd2Map=area->definition.pd2Map;
+                const int identity=monster->identity.nativeClass>=0?monster->identity.nativeClass:monster->rule.nativeClass;
+                pending.pd2Monster=pd2::MapMonsterLoot{monster->pd2DeathStats?*monster->pd2DeathStats:monster->nativeStats->values,pending.pd2Map->catalog->loot.bosses.contains(identity),
+                    monster->identity.rank==MonsterRank::Minion,int(monster->area)};
+            }
         }
         if(pending.objectSeed) {
             const auto object=ports_.objects.read().objects.find(source);
@@ -60,6 +69,8 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
         return {DomainStatus::InvalidRequest,{}};
     Preparation pending{request, player?player->persistent:PersistentCharacter{}, player?player->definition.code:std::string{}, 0,
         player?player->totals.character.combat.magicFind:0, player?player->totals.character.combat.goldFind:0, state_.uniques};
+    if(const auto *area=ports_.areas.find(request.source.region);area && area->definition.pd2Map)
+        pending.request.source.areaLevel=area->definition.monsterLevel;
     pending.magicFind=int(std::clamp(int64_t(pending.magicFind)+request.additionalMagicFind,int64_t(INT32_MIN),int64_t(INT32_MAX)));
     pending.goldFind=int(std::clamp(int64_t(pending.goldFind)+request.additionalGoldFind,int64_t(INT32_MIN),int64_t(INT32_MAX)));
     if(request.environment) pending.magicFind=pending.goldFind=0;
@@ -94,7 +105,7 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
     return {DomainStatus::Applied, std::monostate{}};
 }
 DomainResult<> System::install(EntityId source, TickContext tick, items::PreparedBatch batch, std::string deferred,
-    std::optional<uint64_t> sourceRandom,std::optional<uint64_t> objectRandom) {
+    std::optional<uint64_t> sourceRandom,std::optional<uint64_t> objectRandom,std::optional<uint32_t> pd2Random) {
     const auto found = state_.pending.find(source);
     if (found == state_.pending.end()) return {DomainStatus::Stale, {}};
     std::set<size_t> uniques = state_.uniques;
@@ -110,6 +121,7 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
         return {DomainStatus::Applied, std::monostate{}};
     }
     if(!found->second.prepared) {
+        if(pd2Random && found->second.pd2Random!=ports_.pd2Random) return {DomainStatus::Stale,{}};
         if(found->second.roomSeed && !ports_.areas.validateRoomRandom(*found->second.roomSeed)) return {DomainStatus::Stale,{}};
         if(found->second.monsterSeed) if(const auto *monster=ports_.monsters.find(source))
             if(monster->combatRandom!=*found->second.monsterSeed) return {DomainStatus::Conflict,{}};
@@ -119,6 +131,7 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
         }
         found->second.prepared=std::move(batch);
         state_.uniques.swap(uniques);
+        if(pd2Random) ports_.pd2Random=*pd2Random;
         if(found->second.roomSeed && sourceRandom) {
             auto loan=*found->second.roomSeed;loan.next=*sourceRandom;ports_.areas.publishRoomRandom(loan);
         }

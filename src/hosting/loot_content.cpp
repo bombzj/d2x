@@ -3,6 +3,8 @@
 #include "item_content.hpp"
 #include "character_content.hpp"
 #include "combat_content.hpp"
+#include "pd2/map_loot.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/monsters/monster_loot.hpp"
 #include "content/world/world_catalog.hpp"
@@ -100,7 +102,9 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
             break;
         }
         const auto entry = resolveMonsterLoot(data, *cache.monsters, *world, sourceRequest);
-        if (entry.status == LootEntryStatus::Ready)
+        if(request.pd2Map && request.pd2Monster && entry.status!=LootEntryStatus::Deferred)
+            plan=planPd2MapLoot(data,request,entry,seeds);
+        else if (entry.status == LootEntryStatus::Ready)
             plan = planItemLoot(data, data.tables.at("itemratio"), entry.treasureClass, entry.itemLevel,
                 entry.upgradeLevel, request.seed, request.uniques, request.classCode, request.magicFind, request.goldFind,{},request.effectivePlayers,sourceRequest.ignoreNoDrop,
                 sourceRequest.identity.monster=="hellbovine",seeds);
@@ -113,15 +117,20 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
     auto random = plan.randomState;
     server::items::PreparedBatch batch;
     uint64_t id = 1;
+    auto programRandom=request.pd2Random;
     for (auto &drop : plan.drops) {
         if(!drop.generation.seeds) drop.generation.seeds=seeds();
-        auto item = prepareItem(data, drop, random, request.request.source.difficulty);
+        if(request.pd2Map) preparePd2MapItemDrop(request.pd2Map->properties,drop,programRandom);
+        uint64_t itemRandom{};
+        auto item = prepareItem(data, drop, random, request.request.source.difficulty,0,&itemRandom);
+        if(request.pd2Map) finishPd2MapItemDrop(data,request.pd2Map->properties,item,itemRandom,programRandom);
         if (item.quality == ItemQuality::Unique && item.specialRow >= 0 && !data.tables.at("uniqueitems").number(size_t(item.specialRow), "nolimit").value_or(0)) batch.limitedUniques.insert(size_t(item.specialRow));
         item.id = EntityId{id++}; item.location = ContainerLocation{character.containers.backpack, {}};
         character.inventory.items.emplace(item.id, item); batch.items.push_back(std::move(item));
     }
     batch.equipment = prepareEquipmentRules(data, character);
-    host.installLoot(game, source, std::move(batch), std::move(plan.deferred),plan.randomState,objectRandom);
+    host.installLoot(game, source, std::move(batch), std::move(plan.deferred),plan.randomState,objectRandom,
+        programRandom!=request.pd2Random?std::optional{programRandom}:std::nullopt);
 }
 }
 
@@ -199,7 +208,7 @@ void preparePendingLoot(GameHost &host, GameHandle game, Archives &archives, con
         try {
             const auto settings=host.settings(game);const auto area=host.area(game,request->area);
             if(!settings || !area || area->generation!=request->generation) throw std::runtime_error("Native modifier area expired");
-            const AreaGenerationRequest generation{settings->mapSeed,area->definition.act,int(request->area),settings->difficulty,settings->ladderMonsterStats()};
+            const AreaGenerationRequest generation{settings->mapSeed,area->definition.act,int(request->area),settings->difficulty,settings->ladderMonsterStats(),area->definition.pd2Map};
             const auto actualIdentity=[&](const server::monsters::ModifierPreparation::Unit &unit) {
                 auto identity=unit.identity;const auto &stats=data.tables.at("monstats");
                 identity.monster=std::string(stats.value(compiledMonsterRow(stats,unit.nativeClass),"Id"));return identity;

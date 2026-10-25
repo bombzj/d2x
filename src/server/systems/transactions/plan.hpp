@@ -84,6 +84,9 @@ struct CharacterEdit {
     std::optional<UnitRandomEdit> random{};
     bool cancelItemAuras{};
     std::optional<SkillManaPayment> skillPayment{};
+    // Prepared destination for source-controlled region effects. The travel
+    // owner publishes placement only after this character transaction commits.
+    std::optional<RegionId> environmentRegion{};
 };
 using Change = std::variant<ItemTransfer, Reward, Exchange, InventoryEdit, CharacterEdit>;
 struct PreparedPlayer {

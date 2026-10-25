@@ -42,7 +42,7 @@ Coverage System::coverage(RegionId region,std::optional<Neighborhood> neighborho
             required=true;
             if(!source.deferred.empty()) ++result.deferred;
             else if(population) {
-                const auto cursor=population->presets.find(source.order);
+                const auto cursor=population->presets.find({source.order,source.extraMapBoss});
                 if(cursor!=population->presets.end() && !cursor->second.deferred.empty()) ++result.deferred;
             }
         }
@@ -159,7 +159,7 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
     }
     const auto *preset=object || (quest && quest->position)?&objectSource:quest?&definition.nativeQuestMonsters.at(quest->name):presetIndex?&definition.nativePresetMonsters.at(*presetIndex):nullptr;
     auto &population=state_.areas.at(region);
-    auto &cursor=object?object->cursor:quest?quest->cursor:preset?population.presets[preset->order]:population.density[roomIndex];
+    auto &cursor=object?object->cursor:quest?quest->cursor:preset?population.presets[{preset->order,preset->extraMapBoss}]:population.density[roomIndex];
     const auto &bounds=definition.activation.rooms().at(roomIndex);
     const auto &rules=definition.populationRules;
     for(const auto &[id,unit]:ports_.monsters.read().actors)
@@ -260,7 +260,7 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
     const auto key=[&](std::string_view suffix) {
         if(object) return std::string(object->elite?"object.urn.":object->birthTicks?"object.trap.":"object.afterglow.")+std::to_string(object->source.value)+"."+std::to_string(object->occurrence)+"."+std::string(suffix);
         if(quest) return "quest."+quest->name+(suffix=="leader"?std::string{}:"."+std::string(suffix));
-        if(preset) return "ds1."+std::to_string(preset->order)+"."+std::string(suffix);
+        if(preset) return "ds1."+std::to_string(preset->order)+(preset->extraMapBoss?".pd2extra.":".")+std::string(suffix);
         return "density."+std::to_string(roomIndex)+"."+std::to_string(cursor.occurrence)+"."+std::string(suffix);
     };
     const auto drawCount=[&](EntityId id,int minimum,int maximum,bool always)->DomainResult<int> {

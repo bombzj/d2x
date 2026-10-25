@@ -36,9 +36,10 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
         auto area = world.levels().find(int(request.region));
         if (area == world.levels().end() || !area->second.population.supported)
             return defer("Missing area monster level");
-        level = area->second.population.level[request.difficulty];
+        level = data.pd2Host && request.areaLevel?*request.areaLevel:area->second.population.level[request.difficulty];
     }
-    if (!level || *level < 1 || *level > 99)
+    const int maximumItemLevel=data.pd2Host?127:99;
+    if (!level || *level < 1 || *level > maximumItemLevel)
         return defer("Unsupported monster level");
     int slot = 0;
     int bonus = 0;
@@ -76,7 +77,7 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
         return defer("Super unique identity conflicts with monster rank");
     if (request.rewardModifiers) bonus = request.rewardModifiers->levelBonus;
     result.itemLevel = *level + bonus;
-    if (result.itemLevel > 99)
+    if (result.itemLevel > maximumItemLevel)
         return defer("Monster item level exceeds supported instance range");
     result.upgradeLevel = scales ? result.itemLevel : 0;
     const bool questClass = table.number(row, "TCQuestId").value_or(0) &&

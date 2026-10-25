@@ -78,11 +78,13 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
     };
     const bool bloodMana=(skill>=0 || cost>0) && player.rules.character && player.transient.effects &&
         player.transient.effects->hasState(player.rules.character->bloodManaState,actor.tick);
-    if(charge || bloodMana) {
+    const bool mapTravel=relocation && relocation->area!=actor.area && player.rules.character && player.rules.character->maps;
+    if(charge || bloodMana || mapTravel) {
         CharacterEdit edit{actor,player.inventoryRevision,expected,player.persistent.player};edit.player.mana-=cost;edit.charge=charge;
         if(skill<0) if(const auto used=ports_.actions.usedSkill(actor.actor)) skill=used->skill;
-        if(!charge && skill<0) return {DomainStatus::Unavailable,{}};
-        edit.skillPayment=SkillManaPayment{cost,skill};
+        if(bloodMana && !charge && skill<0) return {DomainStatus::Unavailable,{}};
+        if(charge || bloodMana) edit.skillPayment=SkillManaPayment{cost,skill};
+        if(mapTravel) edit.environmentRegion=relocation->area;
         edit.random=random;
         edit.publicFacts=std::move(publicFacts);
         if(relocation) {

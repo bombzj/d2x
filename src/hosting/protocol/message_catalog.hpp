@@ -1,6 +1,7 @@
 #pragma once
 #include "network/protocol/wire.hpp"
 #include "network/protocol/message_schema.hpp"
+#include "network/protocol/client_profile.hpp"
 
 namespace d2x::hosting {
 enum class MessageDomain { Lifecycle, Movement, Combat, Inventory, Interaction, Progression, Social, World, Character, Reserved };
@@ -42,7 +43,7 @@ std::string_view phaseName(GamePhase);
 size_t clientPacketSize(std::span<const uint8_t>);
 void requirePhase(const MessageDescriptor &, GamePhase);
 // Reuses the SAME 1.13c S2C framer as the client. No second output length table.
-void validateServerPacket(std::span<const uint8_t>);
+void validateServerPacket(std::span<const uint8_t>,net::protocol::ClientProfile = net::protocol::ClientProfile::Lod113c);
 // One typed output entry for every registered S2C message. A stub refuses to
 // serialize before invoking its body encoder; it cannot produce an empty ACK.
 template<class Encode> Bytes encodeServerPacket(ServerMessage message, Encode encode) {

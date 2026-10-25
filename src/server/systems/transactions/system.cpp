@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "server/systems/effects/pd2/equipped_skills.hpp"
+#include "server/systems/effects/pd2/map_state.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "gameplay/skills/mana_payment.hpp"
 #include "gameplay/combat/life.hpp"
@@ -259,6 +260,9 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
         [](const auto &entry){return entry.second.spec.kind==ContainerKind::Trade;})) return {DomainStatus::Conflict,{}};
     if (inventoryEdit && inventoryEdit->world && inventoryEdit->world->expected != ports_.items.state_.revision) return {DomainStatus::Stale, {}};
     const auto *characterEdit = std::get_if<CharacterEdit>(&change);
+    const auto environment=characterEdit && characterEdit->environmentRegion?characterEdit->environmentRegion:
+        characterEdit && characterEdit->revival?std::optional{characterEdit->revival->area}:std::nullopt;
+    if(environment && !ports_.areas.find(*environment)) return {DomainStatus::Unavailable,{}};
     const auto &randomEdit=inventoryEdit?inventoryEdit->random:characterEdit->random;
     if(randomEdit && randomEdit->expected!=player->combatRandom) return {DomainStatus::Stale,{}};
     auto transient = inventoryEdit && inventoryEdit->transient ? *inventoryEdit->transient :
@@ -470,6 +474,13 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
             if(const auto pending=graph.initial.find(player->player);pending!=graph.initial.end()) {
                 auto invocation=std::move(pending->second);graph.initial.erase(pending);
                 graph.active.at(player->player)(invocation.caster,invocation.aura,invocation.change,invocation.passiveState);
+            }
+            if(environment && player->rules.character->maps) {
+                if(!auraStates) auraStates.emplace();
+                const auto &destination=ports_.areas.at(*environment);
+                const auto changed=effects::preparePd2MapPlayerState(*auraStates,*player->rules.character->maps,destination.definition.pd2Map.get(),
+                    *player->rules.character->stats,player->actor,request->actor.tick,synchronize);
+                if(changed) auraFacts.emplace_back(StateFact{player->actor,0,player->area,changed->state,changed->active,changed->values});
             }
             if(initialAura) {
                 if(!auraStates) {

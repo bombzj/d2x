@@ -112,6 +112,10 @@ struct UnitEffect {
     bool converted{};
     int64_t baseLife{}, adjustedLife{};
 };
+struct BirthEffectsPublication {
+    std::map<EntityId,UnitEffect> units;
+    std::map<EntityId,CombatEffectSet> expected;
+};
 struct UnitDamageStates {
     EntityId source;
     uint64_t chilledUntil{},frozenUntil{},stunnedUntil{};
@@ -297,6 +301,9 @@ class System {
     void registerPlayer(EntityId,uint64_t tick);
     DomainResult<> regeneratePlayer(EntityId,uint64_t tick);
     void forgetUnit(EntityId) noexcept;
+    BirthEffectsPublication prepareBirthEffects(const std::map<EntityId,monsters::Actor> &) const;
+    bool validateBirthEffects(const BirthEffectsPublication &) const;
+    void publishBirthEffects(BirthEffectsPublication &) noexcept;
     AuraUnitPublication prepareDamageStates(monsters::Actor,UnitDamageStates,uint64_t tick) const;
     void stageDamageStates(AuraUnitPublication &,monsters::Actor,UnitDamageStates,uint64_t tick) const;
     const State &read() const { return state_; }

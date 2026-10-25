@@ -42,7 +42,7 @@
 #include <string_view>
 #include <vector>
 namespace d2x { struct PersistentCharacter; struct MonsterSnapshot; }
-namespace d2x::server::effects {struct AuraUnitPublication;}
+namespace d2x::server::effects {struct AuraUnitPublication;struct BirthEffectsPublication;}
 namespace d2x::server::reactions {class ItemTriggers;}
 
 namespace d2x::server {struct HydraRules;struct SkillRules;struct RoomUnitRegistration;struct NpcRule;struct RoomView;struct RoomRandomLoan;}
@@ -57,6 +57,11 @@ struct MoveRequest {
     uint8_t pathType{13},pathDistance{5};
 };
 struct Actor {
+    // Prepared before admission; Effects takes ownership in the same publication.
+    std::shared_ptr<const CombatEffectSet> initialEffects;
+    // Native PD2 death drops run before state198 is withdrawn. Keep that input,
+    // rather than retaining the live map modifiers on the corpse.
+    std::shared_ptr<const StatSnapshot> pd2DeathStats;
     std::shared_ptr<RoomUnitRegistration> roomAdmission;
     std::shared_ptr<FrameEventQueue::PreparedInsertion> initialAiTimer;
     std::shared_ptr<FrameEventQueue::PreparedInsertion> initialModeTimer,initialWakeTimer;
@@ -223,6 +228,7 @@ struct Actor {
 int movementPercent(const Actor &, uint64_t tick);
 void recordNativeMode(Actor &,uint8_t mode);
 struct ActorPublication {
+    std::shared_ptr<effects::BirthEffectsPublication> birthEffects;
     std::map<EntityId,Actor> actors;
     std::map<EntityId,uint64_t> expected;
     uint64_t cursor{};
@@ -369,7 +375,7 @@ class System {
     DomainResult<> finishDamageAction(EntityId,EntityId source,int64_t amount,uint64_t tick,uint8_t hitClass,bool softHit,std::optional<bool> getHit);
     uint64_t resumeAi(EntityId, uint64_t tick, uint64_t scheduled);
     void finishAction(EntityId,uint64_t tick);
-    void scheduleAi(EntityId,uint64_t due);
+    void scheduleAi(EntityId,uint64_t due,uint64_t notBefore=0);
     void roomClientsChanged(RoomView,bool present,uint64_t tick);
     void resumeMode(EntityId,uint64_t tick);
     DomainResult<> modeEvent(const FrameEvent &,uint64_t tick);

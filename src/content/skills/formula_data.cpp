@@ -34,6 +34,7 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
     const auto copy=[&](const SkillDescriptionSource &source, bool bindElement = true) {
         SkillFormulaRecord record;
         record.id=source.id;record.numbers=source.numbers;record.formulas=source.formulas;record.references=source.references;
+        record.numbers.emplace("hasdescription",int(source.hasDescription));
         const auto element=source.reference("etype");
         // Missiles.txt uses spaces for some absent element links; these are
         // element zero in the original compiled table, just like empty cells.

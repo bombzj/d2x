@@ -58,7 +58,9 @@ const SkillOverlayVisual *SceneAssets::ensureOverlay(int id) {
     const size_t row = size_t(id);
     SkillOverlayVisual visual;
     visual.id = id; visual.frames = table.number(row, "Frames").value_or(0);
-    visual.fps = float(table.number(row, "AnimRate").value_or(0));
+    // D2Client 1.13c RVA 6B558/6C1BB: AnimRate << 4 is an 8-bit
+    // fixed-point frame increment, applied once per 25 Hz game tick.
+    visual.fps = float(table.number(row, "AnimRate").value_or(0)) * 25.f / 16.f;
     visual.trans = table.number(row, "Trans").value_or(5);
     visual.preDraw = table.number(row, "PreDraw").value_or(0) != 0;
     visual.offset = {-float(table.number(row, "Xoffset").value_or(0)), float(table.number(row, "Yoffset").value_or(0))};
@@ -68,6 +70,7 @@ const SkillOverlayVisual *SceneAssets::ensureOverlay(int id) {
     if (file.empty() || visual.frames <= 0 || visual.fps <= 0 || !archives_.contains(visual.art)) return nullptr;
     auto animation = unitsGraphics_.single(visual.art, visual.trans == 3);
     if (animation.count < visual.frames) return nullptr;
+    visual.frames = animation.count;
     unavailableOverlays.erase(id);
     return &spellOverlays.emplace(id, SpellOverlay{std::move(animation), std::move(visual)}).first->second.visual;
 }

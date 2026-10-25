@@ -120,12 +120,12 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         const auto &definition=areas_.at(region).definition;
         for(const auto &[order,cursor]:population.presets) {
             const auto source=std::find_if(definition.nativePresetMonsters.begin(),definition.nativePresetMonsters.end(),
-                [&](const auto &entry){return entry.order==order;});
+                [&](const auto &entry){return entry.order==order.first && entry.extraMapBoss==order.second;});
             if(source==definition.nativePresetMonsters.end()) continue;
             const auto *room=definition.activation.room(source->position);if(!room) continue;
             result.densityPopulation.push_back({region,size_t(room-definition.activation.rooms().data()),cursor.logical,
                 densityPhases.at(size_t(cursor.phase)),cursor.deferred,cursor.definition,cursor.trial,cursor.search,cursor.remaining,
-                cursor.partyRemaining,cursor.champions,population.processedRooms,population.successfulRooms,population.uniqueCount,cursor.leader,order});
+                cursor.partyRemaining,cursor.champions,population.processedRooms,population.successfulRooms,population.uniqueCount,cursor.leader,order.first});
         }
     }
     const auto appendBirth=[&](RegionId region,Vec point,const population::DensityRoom &cursor,std::string quest,EntityId object,

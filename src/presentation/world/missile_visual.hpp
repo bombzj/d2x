@@ -14,6 +14,9 @@
 #include <optional>
 
 namespace d2x {
+struct ClientMissileAreaEmission {
+    int radius{},period{};
+};
 struct ClientMissileInitialization {
     enum class Path { None,Charged,Spiral,DiabWall } path{};
     std::optional<uint32_t> seed;
@@ -23,6 +26,7 @@ struct ClientMissileInitialization {
     std::optional<std::array<int,3>> bounce; // count, restitution %, native initial arc frames.
     std::optional<std::array<int32_t,2>> parameters;
     std::optional<int> streamMissile,streamRange,streamPeriod;
+    std::optional<ClientMissileAreaEmission> areaEmission;
     std::optional<int> totalFrames,hiddenUntilCurrentFrame;
     std::optional<int> activationDelay;
     std::optional<int> impactCount; // Catapult calc4 fallback, prepared from the cast skill.
@@ -86,6 +90,7 @@ struct ClientMissileVisual {
     int emissionCountdown{};
     std::optional<std::array<int32_t,2>> nativeParameters;
     int streamMissile{-1},streamRange{},streamPeriod{};
+    std::optional<ClientMissileAreaEmission> areaEmission;
     std::optional<ClientMissileGraphics> graphics;
     Vec pixelOffset, pixelVelocity, pixelAcceleration;
     EntityId owner;

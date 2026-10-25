@@ -129,6 +129,7 @@ DomainResult<std::map<EntityId,Actor>> System::prepareNecro(const ActorContext &
     }
     if(summon.kind==MonsterKind::BoneWall) {
         actor.nativeMinionOwner=owner.actor;actor.killMinionsOnDeath=true;
+        actor.riseMode=rule.spawnMode;
         actor.aiPose=rule.spawnMode;actor.busyUntil=actor.riseUntil=actor.poseUntil=owner.tick+uint64_t(rule.summonBirthTicks);
     }
     if(components) actor.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
@@ -258,10 +259,13 @@ ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors
             candidate.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
                 {{},{FrameEventUnit::Monster,id},FrameEventType::ModeChange,ports_.frameEvents.currentFrame()+1,true}));
     }
+    auto birthEffects=ports_.effects.prepareBirthEffects(result.actors);
+    if(!birthEffects.units.empty()) result.birthEffects=std::make_shared<effects::BirthEffectsPublication>(std::move(birthEffects));
     if(!validateActors(result)) throw std::invalid_argument("Invalid staged actor publication");
     return result;
 }
 bool System::validateActors(const ActorPublication &plan) const {
+    if(plan.birthEffects && !ports_.effects.validateBirthEffects(*plan.birthEffects)) return false;
     if(plan.uniquesExpected && *plan.uniquesExpected!=ports_.loot.read().uniques) return false;
     if(plan.allocatedIds && (plan.cursor>UINT32_MAX || plan.allocatedIds>UINT32_MAX-plan.cursor)) return false;
     if(plan.identities && (!ports_.ids.validate(*plan.identities) || plan.identities->first()!=plan.cursor ||
@@ -310,6 +314,7 @@ void System::publishActors(ActorPublication &plan) noexcept {
         auto node=plan.actors.extract(plan.actors.begin());registerPet(node.mapped());const auto live=state_.actors.find(node.key());
         if(live==state_.actors.end() && node.mapped().wanderTargetOrder) node.mapped().wanderTargetOrder=state_.nextWanderTargetOrder++;
         node.mapped().birthUniquesExpected.reset();node.mapped().birthLimitedUniques.clear();
+        node.mapped().initialEffects.reset();
         publishInitialAi(node.mapped());
         if(!node.mapped().alive() && (!node.mapped().owner || node.mapped().conversion))
             ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,node.key()},FrameEventType::AiThink,0);
@@ -320,6 +325,7 @@ void System::publishActors(ActorPublication &plan) noexcept {
         }
         else {ports_.areas.publishRoomUnit(*node.mapped().roomAdmission);const auto inserted=state_.actors.insert(std::move(node));refreshCollision(inserted.position->second);}
     }
+    if(plan.birthEffects) ports_.effects.publishBirthEffects(*plan.birthEffects);
     std::erase_if(birthEquipment_,[&](const auto &entry){return state_.actors.contains(entry.second.first.actor);});
     if(plan.uniquesNext) ports_.loot.commitUniques(std::move(*plan.uniquesNext));
 }

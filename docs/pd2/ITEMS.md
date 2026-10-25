@@ -56,7 +56,11 @@ Properties的fireskill／coldskill／ltngskill／poisskill／magskill通过函�
 
 施法触发使用ItemEffect替代程序；攻击类是否使用替代程序还取决于ItemTgtDo。当前183（核心`0x3B2BF0`）以实际目标或自身为中心发射64向环；187（`0x3B3420`）要求真实目标并抑制来源物品事件；188（`0x3B3530`）走Skills_CreateMissile；151保留零售Chain Lightning替代程序从目标坐标出生的行为。ItemTgtDo由原主人掷概率，再由受害者作为实际施法单位；ItemTarget3按原AuraFilter0x1002、范围10寻找第一个可用尸体，不能额外消费随机数。已准备的Hydra／Bone Prison起手程序可由ItemCheckStart使用，其他未准备的起手程序明确拒绝。独立执行仍归skills／reactions的PD2目录。
 
-普通玩家Do的5帧路径已接入；`0x345520`还含喷射状态中按FCR周期登记、延迟4帧的独立路径，怪物的普通施法包装也有单独条件。这两条尚未完整恢复，不能用普通玩家施法通过代替认证。
+普通玩家Do的5帧路径与`0x345520`喷射状态的4帧路径分别登记。喷射要求当前inferno状态、有效Skills／SkillDesc、Anim=SQ且SeqNum为6或18；以人物类为键，狼139、熊140依次覆盖，读取实际item_fastercastrate，在有符号全局帧可整除周期时登记事件14。城镇及原PvP安全矩形排除，目标使用当前动作的真实单位。触发时仍采样当前装备，不因物品／光环强制Do递归登记。怪物普通施法包装及完整ItemCheckStart仍未齐。
+
+FCR周期来自当前核心`0x12FE80`的档位向量、`0x1303B0`的基础帧和`0x37BB90`的有符号比较，不由MPQ的喷射动画帧数代替。七职业基础帧依原类编号为19／13／15／15／13／18／16，狼／熊为16；每通过一个门槛减1，不先钳制负FCR。纯算法位于`gameplay/skills/pd2/cast_events.hpp`，独立登记由`server/systems/reactions/pd2/item_events.cpp`在Effects的物品事件阶段成功完成后执行，背压重试不重复登记；普通Do仍归`skills/pd2/item_events.cpp`。SkillDesc是否成功链接由内容准备提供，内核不读取表。
+
+持续喷射切换单位／地面目标时，已接受的释放与动作目标一并更新；周期事件采样当前目标，不继续锁定第一次起手的单位。停止喷射只结束inferno状态，已经登记的延迟物品事件仍按原回调处理。
 
 属性191通过当前`0x36DE90`／`0x345DF0`安装及周期执行装备技能，保留原选中和使用技能。当前表包含Energy Shield、Chilling Armor、Burst of Speed、Blade Shield、Armageddon、Thunder Storm、Phasing的专用记录。准备入口为`src/hosting/pd2/equipped_skills.cpp`，状态及周期执行位于effects的PD2目录；雷暴／刀刃之盾不重复创建手动技能的第二条周期事件。相关技能的状态、回调、aura和周期元数据必须同时准备，不能只复制显示公式。
 
@@ -73,6 +77,8 @@ Phasing及Blaze改变真实移动碰撞规则。核心`0x373980`／`0x346000`观
 ItemEffect183的环形helper `0x36BAA0`会设置0x80000。它不等于构造参数0x10000的“抑制来源事件”。D2X分别保存两项，并由effects／missiles的`pd2/hit_delay.cpp`使用实例帧事件队列持有期限，不写入存档。原版仍使用原状态门槛。
 
 ## 方块链与重掷
+
+地图物品、区域词缀、额外TC、自动腐化／孔数／无形的执行归[地图物品与词缀](MAP_PROPERTIES.md)。自动腐化复用当前`applyPd2AutomaticCorruption`属性程序；不消耗WSS，也不把自动属性程序等同于手动方块的破坏／替换分支。
 
 当前CubeMain启用op0、16、18、28、30、31。op16／18是第一个输入物品的属性比较，分别为小于等于及等于，value按ItemStatCost.ValShift作逻辑右移；比较包含镶嵌子物品。输入数量可跨多个材料堆叠分配，不能把一个堆叠等同一份材料。代码位于`src/content/pd2/cube{,_inputs}.cpp`。
 
@@ -97,7 +103,7 @@ Crushing Blow Fn016为RVA `0x3469B0`，对应`src/server/systems/combat/pd2/crus
 | 项目 | 当前边界 |
 | --- | --- |
 | 普通物品／属性 | 暴击、动态主人属性、穿抗／吸取门槛、充能及已列出的装备技能／方块程序已有消费者；完整数值、双持、伙伴、镶嵌及多人组合未全部认证 |
-| 喷射与怪物施法触发 | 按FCR周期登记的4帧额外路径、怪物普通施法包装的条件尚未完整恢复，属于待实现项 |
+| 喷射与怪物施法触发 | 玩家SQ6／18的FCR周期4帧路径已接；怪物普通施法包装的条件仍待恢复 |
 | 起手与替代程序 | 已准备的程序按明确资格执行；其余ItemCheckStart及未恢复的替代程序拒绝，不能按原版猜测放行 |
 | 地图及特殊来源 | 开图／区域生命周期、词缀全链、扩展首领与特殊掉落未完成，分别归[地图](MAPS.md)和[怪物](MONSTERS.md)维护 |
 

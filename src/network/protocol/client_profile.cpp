@@ -6,6 +6,10 @@
 namespace d2x::net::protocol {
 namespace {
 size_t cn_server_packet_size(std::span<const uint8_t>);
+size_t pd2_local_server_packet_size(std::span<const uint8_t> bytes) {
+    if(!bytes.empty() && bytes.front()==0x55) return 210;
+    return lod113c_packet_size(bytes);
+}
 void validate_cn_client_packet(std::span<const uint8_t>);
 constexpr ClientCompatibility original{
     ClientProfile::Lod113c, "lod113c", AccountPasswordCase::Preserve,
@@ -16,7 +20,7 @@ constexpr ClientCompatibility original{
 constexpr ClientCompatibility pd2Local{
     ClientProfile::Pd2Local, "pd2-local", AccountPasswordCase::Preserve,
     RealmPasswordSource::AccountLogonProof, 1024, 0, 0, 0, {}, {},
-    lod113c_packet_size, validateClientPacket};
+    pd2_local_server_packet_size, validateClientPacket};
 // Core RVA 0x393E00 inserts GS and loot bytes before MCP 03 room strings.
 constexpr ClientCompatibility cnNormal{
     ClientProfile::Pd2CnNormal20261020, "pd2-cn-normal-20261020", AccountPasswordCase::LowerAscii,

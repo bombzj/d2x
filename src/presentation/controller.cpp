@@ -625,6 +625,7 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
             gesture_ = Gesture::Interact;
         } else {
             gesture_ = Gesture::Move;
+            pendingMove_ = true;
             nextMove_ = inputTime_;
         }
     }

@@ -26,6 +26,14 @@
 
 以上规则核对当前MPQ Skills／Missiles／DifficultyLevels、本地D2MOO MonsterUnique／MonsterMode／SUnitDmg、SkillSor Do20／21／23／29、PlrModes、Path/Step及SkillMonst；1.13c与参考转录的差异和地址见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。仍待核对重复修饰符／复合强化、冻结死亡、自然死亡／退休／上限替换、主人换区、同步回调背压，及静态力场下限／抗性、心灵传动各类目标、雷云通知顺序、移动轨迹／跨房间生成和St／Do之间属性变化。这里是源码入口核对，未完成全部逐ID／来源组合、当前MPQ完整数值或原版逐帧对齐。
 
+## 客户端普通施法与移动输入
+
+原1.13c D2Client（SHA-256 `dd8bc6025de921216a97c17f97cd1a50fbb85926e838ec60e13451448836d906`，ImageBase 0x6FAB0000）的地图点击入口RVA `0x1BF20`，左键按下`0x1BDE0`与按住`0x1BCC0`先调用输入资格`0xA54A0`。该函数对玩家当前模式CAST（10）返回不允许，攻击／格挡／投掷等也有各自模式分支；SEQUENCE另走`0xA4C50`，不能一律当普通施法。后续`0x29F30`才检查已用技能的`Skills.interrupt`位。普通SC动作的左键限制不能只看interrupt：当前原表Fire Bolt与Ice Bolt的interrupt均为1，仍先受CAST模式门槛约束。此处是固定原DLL静态调用链，不能把允许受击打断解释成允许鼠标移动提前结束动作。
+
+`src/presentation/remote/remote_scene.cpp::localCastBlocksMovement`对MPQ `anim=SC`且已开始、尚未结束的本人施法使用完整动画时钟，不以释放帧作为结束。`remote_scene_draw.cpp`据此提供移动输入资格，`presentation/controller.cpp`只在仍按住左键时保留待发送移动；提前松开则撤销这次手势。`remote_scene_effects.cpp`和`remote_scene_movement.cpp`还对其他入口已提交的移动请求延后中断／预测，保留施法原点及尚未到释放帧的Clt飞弹。动作正常完成当帧的移动走正常结束清理，不取消该帧稍后推进时刚到释放时点的飞弹。移动请求不是服务端已接受的模式切换；客户端副本、权威施放和扣费不由这个显示门槛改写。
+
+真实受击／击退／死亡及换区仍沿原有动作中断清理；已发射的飞弹继续拥有自己的寿命，取消待释放飞弹只作用于尚未出生的显示请求。此修正共用于原版与PD2普通SC施法，喷流和各专用序列保留原执行路径，不据此宣称其他模式、全部FCR／变形、延迟和多人交错已逐帧对齐。
+
 ## 当前持续效果入口
 
 `CombatEffectSet`持有状态位、列表、原有符号移除期限和队列1技能事件登记表。当前MPQ的Events／Skills提供事件号、三个AuraEvent／AuraEventFunc槽及覆盖图身份；列表逐写后撤销旧登记并按槽顺序插入链头。触发保存本次节点快照，尚未开始的节点复验是否仍登记，已开始的节点跨背压完成；后续单位的事件在进入该阶段时重新取链。召唤贡献完成后登记石魔事件，没有为无AuraState的宠物编造状态列表。登记表与属性列表投递／撤出分开，骨甲、能量盾和飓风装甲按AbsorbDamage登记链处理；每个回调复验登记，按技能AuraState查最新投递的实际首列表，耗尽走公共撤出。

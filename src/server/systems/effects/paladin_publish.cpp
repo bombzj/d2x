@@ -66,6 +66,13 @@ void System::stageAuraSource(AuraUnitPublication &plan,EntityId id,AuraUnitPubli
 void System::prepareStagedItemAuras(AuraUnitPublication &plan,uint64_t tick,const AuraRecipientPreparation &recipient) {
     if(!plan.actors) return;
     for(auto &[id,candidate]:plan.actors->actors) {
+        if(candidate.initialEffects && !ports_.monsters.find(id) && !plan.units.contains(id)) {
+            UnitEffect unit;unit.area=candidate.area;unit.states=*candidate.initialEffects;
+            for(const auto &effect:unit.states.entries()) if(effect.spec.nativeState)
+                unit.nativeStats.emplace(effect.spec.state.id,nativeEffectStats(*candidate.rule.stats,effect.spec));
+            prepareUnitEffects(plan,id,unit,monsters::LifeChange{id,candidate.revision,
+                Fixed8::fromRaw(nativeChecked(candidate.life)),Fixed8::fromRaw(nativeChecked(candidate.maximumLife)),candidate.nativeStats,false},tick);
+        }
         const auto source=plan.sources.find(id);
         if(source==plan.sources.end()) {
             prepareUnitItemAuras(plan,candidate,tick,recipient);

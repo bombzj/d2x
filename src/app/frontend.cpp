@@ -667,7 +667,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         }
         if (localConnection && enterLocalGame && view.stage == OnlineStage::Lobby) {
             const auto chosen = std::find_if(view.characters.begin(), view.characters.end(), [&](const auto &c) { return c.name == view.selectedCharacter; });
-            const bool chooseDifficulty = lanConnection && lanJoinAddress.empty() && !localDifficultyChosen &&
+            const bool chooseDifficulty = (!lanConnection || lanJoinAddress.empty()) && !localDifficultyChosen &&
                 chosen != view.characters.end() && chosen->progression.value_or(0) >= 5;
             if (chooseDifficulty) page = FrontendPage::Difficulty;
             else {

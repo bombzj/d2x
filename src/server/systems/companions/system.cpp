@@ -58,10 +58,15 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
                     due=std::min(due,std::max(tick.tick+1,controller->second.nextDecision));
             }
         }
+        auto decisionAt=due;
         if(body->alive()) due=std::max(due,std::max({body->busyUntil,body->stunnedUntil,body->knockedUntil}));
-        if(found->second.removeAt) due=std::min(due,std::max(tick.tick+1,found->second.removeAt));
-        else if(found->second.expires!=UINT64_MAX) due=std::min(due,std::max(tick.tick+1,found->second.expires+1));
-        ports_.monsters.scheduleAi(id,due);
+        const auto capWake=[&](uint64_t deadline) {
+            deadline=std::max(tick.tick+1,deadline);
+            due=std::min(due,deadline);decisionAt=std::min(decisionAt,deadline);
+        };
+        if(found->second.removeAt) capWake(found->second.removeAt);
+        else if(found->second.expires!=UINT64_MAX) capWake(found->second.expires+1);
+        ports_.monsters.scheduleAi(id,decisionAt,due);
     }
     return {DomainStatus::Applied,std::monostate{}};
 }

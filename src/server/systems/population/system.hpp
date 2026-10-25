@@ -4,6 +4,7 @@
 #include "server/runtime/events.hpp"
 #include "gameplay/monsters/region_generation.hpp"
 #include <map>
+#include <utility>
 #include <optional>
 #include <set>
 #include <string>
@@ -38,7 +39,7 @@ struct Coverage {
     bool complete() const {return !pendingRooms && !deferred;}
 };
 struct Neighborhood {Vec center;float radius;};
-struct AreaPopulation { uint64_t generation{}; uint64_t validatedGeneration{}; std::map<size_t,uint8_t> roomStages; std::map<size_t,uint64_t> readyRoomCreations; std::set<EntityId> admittedNpcs; std::map<size_t,DensityRoom> density,presets; int processedRooms{},successfulRooms{},uniqueCount{}; std::set<EntityId> countedUniques; };
+struct AreaPopulation { uint64_t generation{}; uint64_t validatedGeneration{}; std::map<size_t,uint8_t> roomStages; std::map<size_t,uint64_t> readyRoomCreations; std::set<EntityId> admittedNpcs; std::map<size_t,DensityRoom> density; std::map<std::pair<size_t,bool>,DensityRoom> presets; int processedRooms{},successfulRooms{},uniqueCount{}; std::set<EntityId> countedUniques; };
 struct QuestBirth {RegionId area;uint64_t generation{};std::string name;DensityRoom cursor;std::optional<Vec> position;};
 struct ObjectBirth {RegionId area;uint64_t generation{};EntityId source;Vec position;int definition{-1};DensityRoom cursor;bool elite{true};unsigned occurrence{};int retryAttempts{},finalRetryAttempts{},birthTicks{};};
 struct WanderRoom {

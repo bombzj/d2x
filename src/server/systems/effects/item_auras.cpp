@@ -15,7 +15,7 @@ DomainResult<> System::itemAuraEvent(const FrameEvent &event,uint64_t tick) {
     const bool monster=event.owner.type==FrameEventUnit::Monster;
     const auto *player=monster?nullptr:ports_.players.findActor(id);
     const auto *unit=monster?ports_.monsters.find(id):nullptr;
-    if((!player || !player->entered) && !unit) {
+    if(!player && !unit) {
         ports_.frameEvents.cancelOwner(event.owner);return {DomainStatus::InvalidActor,{}};
     }
     const EntityId source{uint32_t(event.customId)};
@@ -49,6 +49,21 @@ DomainResult<> System::itemAuraEvent(const FrameEvent &event,uint64_t tick) {
         change.periodicEvents=prepareItemAuraEvents(event.owner,*change.itemAuraTimers);
         return ports_.monsters.commitLife(std::move(change))?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{DomainStatus::Stale,{}};
     };
+    if(player && !player->entered) {
+        // TCP admission can precede the client's EnterGame by many frames.
+        // The unit still owns its equipment and regeneration/mode events.
+        // Retain this source until gameplay admission, rather than cancelling
+        // every owner event and leaving an expired timer in character totals.
+        if(event.continuous) {itemAuraCycles_.erase(key);return {DomainStatus::Applied,std::monostate{}};}
+        if(!cycle.itemReplacementPrepared) {
+            auto replacement=timer;replacement.next=tick+1;
+            replacement.order=reserveAuraEventOrder();
+            cycle.itemReplacement=replacement;cycle.itemReplacementPrepared=true;
+        }
+        const auto result=finish(cycle.itemReplacement);
+        if(result) itemAuraCycles_.erase(key);
+        return result;
+    }
     if(!cycle.itemDecisionPrepared) {
         // The default monster event table suppresses PeriodicStats while
         // living/frozen. Timed callbacks are consumed; continuous ones wait.

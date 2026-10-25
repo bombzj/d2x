@@ -1,5 +1,7 @@
 #include "combat_content.hpp"
 #include "content/pd2/corpse_data.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
+#include "gameplay/maps/pd2/region_program.hpp"
 #include "environment_content.hpp"
 #include "monster_actions_content.hpp"
 #include "npc_content.hpp"
@@ -96,7 +98,8 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     const auto implementation=monsterImplementation(record->id).kind;
     const bool staticCombatant=implementation==MonsterKind::PrisonDoor || implementation==MonsterKind::Window || implementation==MonsterKind::EvilHole;
     auto profile = loadMonsterCombatProfile(data.tables.at("monstats"), record->sourceRow, data.tables.at("monlvl"),
-        request.difficulty, level.population.level.at(size_t(request.difficulty)),currentLevel,request.ladderMonsterStats,
+        request.difficulty,request.pd2Map?pd2::prepareMapRegionProperties(request.pd2Map->properties,
+            {level.population.level.at(size_t(request.difficulty)),0,0,0,{}}).level:level.population.level.at(size_t(request.difficulty)),currentLevel,request.ladderMonsterStats,
         staticCombatant?MonsterStatPurpose::StaticCombatant:record->hostile()?MonsterStatPurpose::Combatant:MonsterStatPurpose::NativeNpc);
     std::optional<MonsterEnchantment> enchantment;
     const auto *fixed = identity.superUnique.empty() ? nullptr : catalog.superUnique(identity.superUnique);
@@ -455,11 +458,35 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         if(entry.prisonDoor) {entry.sourcePosition=entry.position;entry.position.x-=1;}
         if(request.level==110 && (record->id=="catapult2" || record->id=="catapultspotter2"))
             entry.questVariant=classId(record->id=="catapult2"?"catapult3":"catapultspotter3");
-        area.nativePresetMonsters.push_back(std::move(entry));
+        const bool extraBoss=request.pd2Map && pd2::mapGlobalValue(request.pd2Map->properties,5)>0 &&
+            (record->index==1044 || request.pd2Map->catalog->loot.bosses.contains(record->index));
+        area.nativePresetMonsters.push_back(entry);
+        if(extraBoss) {entry.extraMapBoss=true;area.nativePresetMonsters.push_back(std::move(entry));}
     }
     for(const auto &code:area.populationRoster) {
         const auto &record=*catalog.find(code);
         populationRules.roster.push_back({record.index,record.rarity,classId(record.spawn),record.placeSpawn});
+    }
+    if(request.pd2Map) {
+        auto mapRegion=pd2::prepareMapRegionProperties(request.pd2Map->properties,{level.population.level.at(size_t(request.difficulty)),
+            populationRules.density,populationRules.uniqueMinimum,populationRules.uniqueMaximum,populationRules.roster});
+        populationRules.density=mapRegion.density;populationRules.uniqueMinimum=mapRegion.uniqueMinimum;
+        populationRules.uniqueMaximum=mapRegion.uniqueMaximum;populationRules.roster=std::move(mapRegion.roster);
+        std::erase_if(area.componentPalettes,[&](const auto &entry) {
+            return std::none_of(populationRules.roster.begin(),populationRules.roster.end(),[&](const auto &choice){return choice.definition==entry.first;});
+        });
+        for(const auto &program:request.pd2Map->properties.global) if(program.key.id==3) {
+            const int added=uint16_t(program.value);
+            if(std::any_of(populationRules.roster.begin(),populationRules.roster.end(),[&](const auto &choice){return choice.definition==added;}))
+                area.componentPalettes.insert_or_assign(added,MonsterComponentPalette{MonsterComponents{}});
+        }
+        area.populationRoster.clear();area.genericSpawnRoster.clear();
+        for(const auto &entry:populationRules.roster) {
+            const auto *record=catalog.find(entry.definition);
+            if(!record) throw std::runtime_error("Missing PD2 map added monster class");
+            area.populationRoster.push_back(record->id);
+            area.genericSpawnRoster.emplace_back(record->index,data.tables.at("monstats").number(record->sourceRow,"genericSpawn").value_or(0)!=0);
+        }
     }
     for(const auto &code:level.population.unique) populationRules.uniques.push_back(classId(code));
     // Hit39 uses the full normal Levels list, not the region's randomly
@@ -476,6 +503,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         else deferred.insert("Native spawn profile pending: "+code);
     }
     std::vector<int> required=selection.classes;
+    for(const auto &entry:populationRules.roster) required.push_back(entry.definition);
     if(data.pd2Host) {
         area.pd2CorpsePools=preparePd2CorpsePools(data,request.level,request.difficulty);
         for(const auto &pool:area.pd2CorpsePools) for(const int definition:pool) if(definition>=0) required.push_back(definition);

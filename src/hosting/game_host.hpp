@@ -75,7 +75,7 @@ class GameHost {
     std::optional<ItemSeeds> reserveLootSeeds(GameHandle,EntityId,uint64_t occurrence,size_t index);
     std::optional<server::loot::Preparation> beginLootPreparation(GameHandle,EntityId);
     std::set<size_t> usedUniques(GameHandle) const;
-    server::DomainResult<> installLoot(GameHandle, EntityId, server::items::PreparedBatch, std::string,std::optional<uint64_t> random={},std::optional<uint64_t> objectRandom={});
+    server::DomainResult<> installLoot(GameHandle, EntityId, server::items::PreparedBatch, std::string,std::optional<uint64_t> random={},std::optional<uint64_t> objectRandom={},std::optional<uint32_t> pd2Random={});
     std::vector<RegionId> visibleAreas(PlayerBinding) const;
     std::vector<server::RoomView> visibleRooms(PlayerBinding) const;
     bool clientLoadReady(PlayerBinding) const;

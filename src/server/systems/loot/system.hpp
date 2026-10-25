@@ -7,6 +7,7 @@
 #include "gameplay/loot/request.hpp"
 #include "gameplay/loot/plan.hpp"
 #include "gameplay/loot/chest.hpp"
+#include "gameplay/maps/pd2/loot_program.hpp"
 #include "server/systems/items/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include <map>
@@ -18,9 +19,9 @@ namespace d2x::server::loot {
 // Treasure selection only; a selected plan is not materialized or committed loot.
 struct ObjectSource { int definition{}, operation{}; std::optional<ChestState> chest; ItemHandle key; std::string dropCode{}; int dropCount{},dropLevel{}; ItemHandle ingredient{}; bool reportCompletion{true}; };
 struct Request { uint64_t occurrence{}; LootRequest source; PlayerId beneficiary; Vec position; std::optional<ObjectSource> object{}; std::optional<CharacterRecord> questClaimant{}; bool towerGold{},environment{}; int additionalMagicFind{},additionalGoldFind{}; };
-struct Preparation { Request request; PersistentCharacter character; std::string classCode; uint64_t seed{}; int magicFind{}, goldFind{}; std::set<size_t> uniques; unsigned effectivePlayers=1; std::vector<ItemSeeds> itemSeeds{}; std::optional<items::PreparedBatch> prepared{}; std::optional<uint64_t> monsterSeed{},objectSeed{}; std::optional<RoomRandomLoan> roomSeed{}; uint64_t order{}; };
+struct Preparation { Request request; PersistentCharacter character; std::string classCode; uint64_t seed{}; int magicFind{}, goldFind{}; std::set<size_t> uniques; unsigned effectivePlayers=1; std::vector<ItemSeeds> itemSeeds{}; std::optional<items::PreparedBatch> prepared{}; std::optional<uint64_t> monsterSeed{},objectSeed{}; std::optional<RoomRandomLoan> roomSeed{}; uint64_t order{}; std::shared_ptr<const pd2::MapInstance> pd2Map{}; std::optional<pd2::MapMonsterLoot> pd2Monster{}; uint32_t pd2Random{}; };
 struct State { std::map<EntityId, Preparation> pending; std::set<size_t> uniques; std::string deferred; std::map<EntityId, bool> completed; uint64_t nextOrder{1}; };
-struct Ports { const PlayerStore &players; const quests::System &quests; items::System &items; transactions::System &transactions; uint64_t &random; const TreasureRules *definitions; const GameSettings &settings; EventOutbox &events; const social::System &social; monsters::System &monsters; objects::System &objects; AreaStore &areas; const spatial::System &spatial; };
+struct Ports { const PlayerStore &players; const quests::System &quests; items::System &items; transactions::System &transactions; uint64_t &random; const TreasureRules *definitions; const GameSettings &settings; EventOutbox &events; const social::System &social; monsters::System &monsters; objects::System &objects; AreaStore &areas; const spatial::System &spatial; uint32_t &pd2Random; };
 class System {
     State state_;
     const Ports ports_;
@@ -34,7 +35,7 @@ class System {
     std::optional<Preparation> beginPreparation(EntityId);
     std::optional<bool> takeCompletion(EntityId);
     DomainResult<> install(EntityId source, TickContext, items::PreparedBatch, std::string deferred,
-      std::optional<uint64_t> sourceRandom = {},std::optional<uint64_t> objectRandom = {});
+      std::optional<uint64_t> sourceRandom = {},std::optional<uint64_t> objectRandom = {},std::optional<uint32_t> pd2Random = {});
     StepStatus step(TickContext, FrameFacts &);
 };
 }

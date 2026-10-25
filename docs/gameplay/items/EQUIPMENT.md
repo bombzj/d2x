@@ -38,6 +38,8 @@ ItemAuraTimer候选已沿物品GUID保存激活／撤销顺序：激活先取消
 
 飞弹／周期模块把这些计时器接入GameSystems.frameEvents的PeriodicStats 9；effects/item_auras逐GUID事件读取当前聚合等级，保留跨背压阶段并在程序结束后采样当前PerDelay重排。旧全单位光环扫描已撤出；玩家右手及单位技能周期分别使用PeriodicSkills 8，完整原事件优先级、物品队列2交错及同步重入仍待闭合。共享来源与算法入口见[COMMON](../skills/COMMON.md#当前持续效果入口)。
 
+TCP/IP已经分配人物单位但客户端尚未完成EnterGame时，单位与装备来源仍存在；不得按断线销毁整个单位事件队列。`effects/item_auras`在这段传输等待期间保留持续事件，一次性事件通过人物事务延至下一逻辑帧，保持原物品GUID并在容量重试时沿用同一替换候选；入场后按实际PerDelay继续。真正移除单位才取消其事件。此等待适配不修改物品属性或D2S，也不把过期时间重新发布到当前帧之前。
+
 当前Weapons的sst短法杖单手mindam／maxdam为空，双手2handmindam／2handmaxdam为1／5；纯双手武器不能被要求同时具有单手伤害。prepareNativeEquipmentSources现在独立准备单手、双手通道，合法空白取0且不借用另一通道，也不因劣质最低伤害补出不存在的近战通道；投掷通道仍以原MaxMisDam门处理。全武器品质／无形组合仍需原版对照。
 
 需求使用公共nativePercentage(base,pct,100)后原signed32加值及无形减10，不将负需求钳为零；原资格还要求单位力量／敏捷各自大于零。数量拒绝只针对原主类型book；D2X书本的原QUANTITY保存在charges，普通装备／弹药不因实例quantity为零统一失去属性贡献。固定1.13c D2Common.dll（MD5 `ee1238806ef6d6d9801d12a09d128fe1`）ordinal10244／RVA26DB0，26E7F–26E9F调用RVA11E0共享比例，26EBF–26EC9无形减值，26EDD起确认正属性条件；27040–27059仅为怪物hcIdx0x230／0x231接受原bar职业例外。佣兵携带真实nativeClass，不用人物职业外观代替该条件。箭袋活动贡献通过quiverReady按当前组另一手的原Quiver类型判断；1.13c D2Game D1830–D188E将非装备操作的资格与箭袋条件组合，库存更新D51A0随后按体位处理。铁魔材料的原强制装备通过显式skipRequirements策略保留，已鉴定／金属资格仍由材料入口复验，不伪造力量／敏捷以通过公共需求。

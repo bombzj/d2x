@@ -1,7 +1,9 @@
 #include "system.hpp"
 #include "attribute_projection.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/area_store.hpp"
 #include "gameplay/effects/native_status.hpp"
+#include "gameplay/effects/queries.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include <array>
@@ -115,6 +117,10 @@ void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candida
     if(actor.alive() && (damage.resetRegeneration || newPotion ||
         (damage.burn>0 && damage.burnFrames && !unit.states.hasState(actor.rule.fireShrineState,tick)))) plan.resetRegeneration.insert(id);
     if(!actor.alive()) {
+        if(rules.pd2 && ports_.areas.at(actor.area).definition.pd2Map)
+            if(const auto *previous=ports_.monsters.find(id);previous && previous->alive())
+                plan.actors->actors.at(id).pd2DeathStats=std::make_shared<const StatSnapshot>(
+                    resources.values(combatEffectStatSources(unit.states.entries(),tick,true)));
         const auto kind=actor.rule.boss?EffectUnitKind::Boss:EffectUnitKind::Monster;
         unit.states.onDeath(kind,observe);unit.states.clearNonDeathStates(kind,*actor.rule.states,tick,observe);
     }

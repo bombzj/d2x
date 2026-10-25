@@ -1,6 +1,6 @@
 # 地面物品、拾取与寿命
 
-更新：2026-10-20。本页维护世界物品安装、落点、拾取与过期；生成概率归[LOOT](LOOT.md)，金币特例归[GOLD](GOLD.md)，身份／版本归[MODEL](MODEL.md)。
+更新：2026-10-25。本页维护世界物品安装、落点、拾取与过期；生成概率归[LOOT](LOOT.md)，金币特例归[GOLD](GOLD.md)，身份／版本归[MODEL](MODEL.md)。
 
 ## 落地与拾取
 
@@ -21,5 +21,7 @@ items唯一持有地面库存与规则，准备全部根／子身份和合法落
 地面寿命采用ITEMS_GetGroundRemovalTime：任务物品不消失；稀有／套装／暗金／Crafted或超过10000金币45000帧，可镶嵌填料30000帧，其他15000帧。可靠0A移除接受后清理世界物品和规则。
 
 自恢复按GUID延续独立时钟，规则归[DURABILITY](DURABILITY.md)。普通箱桶／怪物新生掉落、手动丢弃及死亡落地发布GroundDropFact，编码原9C action=2；静态地面同步action=0不重播。原flippy／声音、mode=5不可拾取及反馈成功条件归[PRESENTATION](PRESENTATION.md)。
+
+`hosting/detail/game_events.cpp::receiveEvent`在编码GroundDropFact前，按每个接收者调用`GameHost::visiblePoint`，与`GameInstance::groundItems`的地面快照使用同一房间近邻资格；Area受众只作区域粗筛，不能向同区远处未加载该房间的客户端发送9C，也不能提前登记其地面物品缓存。后来进入可见房间时由常规地面快照指派。依据为D2MOO `Level::LEVEL_AddClient`先发07再同步该房间单位，以及`LEVEL_UpdateUnitsInAdjacentRooms`只遍历接收者近邻房间；原版1.13c消费者缺房间时会Halt，现场及明确边界见[原版互通](../../modules/NETWORK.md#tcpip原版互通参考与缺口)。
 
 地面物品、落地代次和时钟不保存到人物D2S；拾入人物后按原字段保存。全部品质／金币阈值／区域卸载／多人争用与背压仍待原版核对，自恢复中的revision变化不得使同次落地的待拾取请求失效。

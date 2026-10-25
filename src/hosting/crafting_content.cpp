@@ -206,7 +206,7 @@ const CubeRecipe *cube(const ClassicData &data, Prepared &result,uint64_t &rando
         }
         if(data.pd2Host && matched->pd2Continuation==3) {
             auto programRandom=result.pd2Random.value_or(s.pd2Random);
-            if(applyPd2DestroyedCorruption(data,item,random,programRandom)) result.pd2Random=programRandom;
+            if(applyPd2AutomaticCorruption(data,item,random,programRandom)) result.pd2Random=programRandom;
         }
         prepareSocketedItem(data,item,random); updateCubeRequiredLevel(data,item);
         const bool replacement=output.kind==CubeOutputKind::UseItem && !output.copy;

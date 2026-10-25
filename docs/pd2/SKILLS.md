@@ -4,7 +4,7 @@
 
 ## 当前实现入口
 
-较大差异位于`src/content/pd2/{skill_data,aura_data,curse_data,summon_data,corpse_data}.cpp`、`src/server/systems/{skills,combat,missiles,effects}/pd2`及`src/gameplay/effects/pd2`；德鲁伊／刺客复用各自领域执行器并按固定规则选择分支。参数来自当前MPQ，内核不读取MPQ。
+较大差异位于`src/content/pd2/{skill_data,aura_data,curse_data,summon_data,corpse_data}.cpp`、`src/server/systems/{skills,combat,missiles,effects}/pd2`及`src/gameplay/effects/pd2`；德鲁伊／刺客复用各自领域执行器并按固定规则选择分支。参数来自当前MPQ，内核不读取MPQ。PD2普通飞弹接触同样经过公共`missiles/motion::collisionContacts`，单位位置到原生子格的转换与动态占位保持一致，规则及未验证边界见[公共飞弹接触](../modules/SERVER_SYSTEMS.md#飞弹数值与接触收尾源码)；这不是PD2专属尺寸或命中范围改动。
 
 | 职业／机制 | 当前执行范围及入口 |
 | --- | --- |
@@ -22,6 +22,12 @@
 当前核心RVA `0x3A6E10／0x3A6EF0`区分玩家与非玩家来源：非玩家共用命中门槛，玩家通常按拥有者／飞弹类区分；标志0x80000另去掉玩家拥有者维度。`src/server/systems/missiles/pd2/hit_delay.cpp`准备对应命中键，`combat/missile_contact.cpp`按实际NextDelay在接收者登记保护，`effects/pd2/hit_delay.cpp`检查并发布期限。`FrameEventType::Pd2MissileHitDelay`是D2X运行态事件15，由`runtime/frame_event_dispatch.cpp`在到期时消费；它不属于原版0–14定时器编号，也不是新增网络包或存档字段。公共`gameplay/events/frame_queue.cpp`的直接插入与准备插入均允许这个显式扩展，仍拒绝超出当前枚举的值，不能沿旧的`>=15`边界拒绝已经接入的PD2命中事件。
 
 ## 角色技能树与客户端程序
+
+ProjectDiablo核心的技能CltDo／渐进回调及喷流程序同时用于`pd2-local`与CN连接；`src/presentation/remote/remote_scene_effects.cpp`按当前PD2规则分派，不能只匹配CN协议标识。CN专属网络扩展仍由协议层选择，不作为核心技能表现的开关。
+
+普通`anim=SC`施法在完整动作结束前的移动输入门槛与原版共用，原DLL依据、消费者及序列边界见[客户端普通施法与移动输入](../gameplay/skills/COMMON.md#客户端普通施法与移动输入)。不另加PD2职业／技能ID白名单，也不把允许受击打断等同于允许移动取消待释放的Clt飞弹。
+
+骨甲setfunc6的分阶段浮现、按吸收池减少骨片、Overlay定点帧速率及骨墙出生朝向由公共客户端路径消费当前MPQ；当前PD2骨甲沿用相同状态回调与资源名称。原1.13c DLL证据、代码入口及随机流／逐帧核对边界见[死灵依据与入口](../gameplay/skills/NECROMANCER.md#依据与入口)，不作为PD2独有技能重写。
 
 固定原生D2Client样本（SHA-256 `dd8bc6025de921216a97c17f97cd1a50fbb85926e838ec60e13451448836d906`）公共飞弹推进RVA B18F7–B1959读取Missiles字节字段+0x12C（CltSrcTown）：正常递减CurrentFrame后，拥有者在城镇时将剩余帧封顶到该值；非LoopAnim且AnimLen大于上限时同步设置动画帧为差值左移8。原生找不到拥有者也进入封顶分支；拥有者存在但房间为空则跳过。D2X目前对已观察到的拥有者／房间应用封顶，未知身份／房间不据观察者位置猜测；Meteor静态落地图只限制寿命。当前PD2原表三种Meteor地面火CltSrcTown=12，而Town与服务端SrcTown属于另外的裁决条件；进入城镇不应触发所有客户端效果的清空。上述依据为静态调用链，完整实机表现仍待核对。
 
@@ -135,6 +141,12 @@ RemoteDisplay独立准备Gems的武器／头盔护甲／盾牌属性元数据，
 
 原生模块解析与易误读调用关系统一见[版本与证据](BUILDS.md#包装器解析与反编译纠正)。
 
+### Blizzard与Combustion：发射输入
+
+当前MPQ的Blizzard59使用技能CltDo28／SrvDo28，`CltMissileA`／`SrvMissileA`均为blizzardcenter158。该中心的`Missiles.Skill`为空，客户端CltDo13（原D2Client RVA BBC10／B8DF0）从创建时的技能身份取Calc1半径和Calc2间隔；当前分别为Param1和Param3。`src/presentation/remote/remote_scene.cpp`按技能CltMissileA补足中心的关联，`remote_scene_effects.cpp`按实际拥有者和等级求值，随`ClientMissileInitialization.areaEmission`传入实例；`src/presentation/world/client_missile_view.cpp`用实例半径／间隔创建原表冰块变体。不能依赖仅原版宿主准备的`SkillSpec.blizzard`，否则PD2的无图形中心不会产生落冰。施法重建和原包同步两种创建均经过相同输入准备，配对后保留已准备的实例值。
+
+Combustion376（当前中文表“烈焰爆发”）SrvDo159为当前核心RVA `0x3AF870`：从Skills结构`+0x13C`读取Calc2，经公式helper `0x30AF50`求值后传给环形helper `0x36BAA0`，速度覆盖为-1。栈中副本起点EBP-0x248、读取位置EBP-0x10C，差值为0x13C，不能误读成Calc1。客户端CltDo100同样使用Calc2，见上表。`src/server/systems/skills/pd2/projectiles.cpp`已修正为Calc2；`remote_scene_effects.cpp`在本地PD2连接也执行现有CltDo100火球环。数量、弹体和环形整数步进仍取原表与原程序；本地／远端全部等级和画面组合未逐项核对。
+
 ### Do163：实际手位、分配伤害与独立防御
 
 主入口RVA `0x3AFEB0`，范围回调`0x303360`，技能ED选择`0x306090`，Smite盾伤`0x3062A0`，分配后结算`0x305A50`，独立防御`0x3037C0`，参数层筛选`0x37F760`。对应代码为`src/server/systems/skills/pd2/splash.cpp`、`src/server/systems/combat/pd2/splash.cpp`与`src/gameplay/items/pd2_parameterized_stat.hpp`。
@@ -193,4 +205,4 @@ Hit63为RVA `0x3A6410`，延迟回调`0x304680`，扇形helper `0x37F3E0`；对�
 
 ## 待核实与未完成
 
-尚未逐项认证全部装备／技能组合、随机初态、极端数值、碰撞、画面、难度、跨区、PvP及多人。喷射状态中按FCR周期登记的额外施法触发、怪物施法触发及部分ItemCheckStart仍未完整恢复，见[物品触发](ITEMS.md#装备触发与装备自带技能)。Iron Golem材料／恢复、Revive完整动作和伙伴跨区见[怪物边界](MONSTERS.md#待核实与未完成)。未知程序明确拒绝，不以图标、扣血或构建成功作为规则依据。
+尚未逐项认证全部装备／技能组合、随机初态、极端数值、碰撞、画面、难度、跨区、PvP及多人。喷射状态中的FCR周期额外施法触发已有独立消费者；怪物施法触发及部分ItemCheckStart仍未完整恢复，见[物品触发](ITEMS.md#装备触发与装备自带技能)。Iron Golem材料／恢复、Revive完整动作和伙伴跨区见[怪物边界](MONSTERS.md#待核实与未完成)。未知程序明确拒绝，不以图标、扣血或构建成功作为规则依据。

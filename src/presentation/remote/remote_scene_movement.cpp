@@ -335,6 +335,17 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         m = {};
         m.assignmentRevision = u.assignmentRevision;
     }
+    if(u.key.type==1 && !m.boneWallDirection && playerId)
+        if(const auto row=monsterRows.find(unitClass(u).value_or(UINT16_MAX));row!=monsterRows.end() &&
+            monstats.value(row->second,"Id")=="bonewall") {
+            // Native D2Client 1.13c RVA 4CF2A rolls the local player's visual
+            // seed once on assignment, then PATH_SetDirection(random & 63).
+            const OnlineUnitKey owner{0,*playerId};
+            auto &random=boneWallVisualRandom.try_emplace(owner,initialRandom(owner.id)).first->second;
+            m.boneWallDirection=uint8_t(rollRandom(random)&63);
+            const float angle=(float(*m.boneWallDirection)-7.5f)*2.f*pi/64.f;
+            m.look={-std::sin(angle),std::cos(angle)};
+        }
     const Vec target{float(u.position->x), float(u.position->y)};
     const Vec origin{float(mapOrigin.x), float(mapOrigin.y)};
     // Camera and actor rendering consult this method in the same frame.
@@ -343,6 +354,10 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     m.updatedAt = time;
     const bool own = u.key.type == 0 && u.key.id == playerId;
     auto request = own ? world().movementRequest : std::nullopt;
+    // An intent is not an accepted mode change. Preserve the cast's precise
+    // origin and pending Clt missiles until its input lock ends, including
+    // requests submitted outside the world mouse controller.
+    if(request && localCastBlocksMovement()) request.reset();
     bool approachingCast = false;
     if (own && !request && localCast && localCast->started < 0 && castMeleeRange(u, localCast->command)) {
         approachingCast = true;

@@ -17,5 +17,6 @@ struct LootRequest {
     unsigned monsterPlayerCount = 8; // Original admission-time cap; objects use the room count.
     bool ignoreNoDrop = false; // Native Find Item's DropTC a7 flag.
     std::optional<uint64_t> random;
+    std::optional<int> areaLevel; // Captured authoritative map instance's MonReg level.
 };
 } // namespace d2x

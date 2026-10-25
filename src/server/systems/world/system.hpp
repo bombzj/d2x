@@ -14,7 +14,7 @@ namespace d2x::server::world {
 // Area activation and prepared-area handoff; generation stays in the host.
 enum class Residency { Prepared, Active, Sleeping };
 struct AreaLease { RegionId area; uint64_t generation{}; Residency residency; };
-struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; };
+struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; std::shared_ptr<const pd2::MapInstance> pd2Map{}; };
 struct PreparedArea { uint64_t request{}; AreaDefinition definition; };
 struct EnvironmentNotice {EnvironmentFact value;uint64_t revision{};};
 struct QuestPosition {RegionId area;Vec position;std::optional<RoomView> room{};};
@@ -43,7 +43,7 @@ class System {
     void updateRooms(TickContext);
     void invalidateRooms();
     void refreshRoomTerrain();
-    DomainResult<uint64_t> request(RegionId);
+    DomainResult<uint64_t> request(RegionId,std::shared_ptr<const pd2::MapInstance> = {});
     void link();
     void assign(AreaDefinition &);
     void registerAreaUnits(RegionId);

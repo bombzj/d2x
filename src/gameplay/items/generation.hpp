@@ -39,5 +39,6 @@ struct ItemGeneration {
     std::optional<uint64_t> propertyRandom;
     std::optional<uint64_t> unitRandom;
     std::vector<std::vector<int32_t>> operationRolls;
+    bool etherealDropFlag{}; // Native ALWAYSETH; ignored for ineligible bases/qualities.
 };
 } // namespace d2x

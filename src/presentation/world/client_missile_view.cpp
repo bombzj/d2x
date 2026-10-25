@@ -101,6 +101,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
             if(initialization.velocityRaw) {it->velocityFixed=velocity;it->velocity=(target-start).unit()*(float(velocity)*25.f/4096.f);}
             if(initialization.streamRange) it->streamRange=*initialization.streamRange;
             if(initialization.streamPeriod) it->streamPeriod=*initialization.streamPeriod;
+            if(initialization.areaEmission) it->areaEmission=initialization.areaEmission;
             if(initialization.graphics) {
                 it->graphics=initialization.graphics;
                 for(int frame=0;frame<it->frame;++frame) it->graphics->step();
@@ -119,6 +120,9 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     ClientMissile effect{id, start, (target - start).unit() * (float(velocity) * 25.f / 4096.f),
         -delay, duration, target - start};
     effect.flight = true; effect.level = level;
+    effect.areaEmission=initialization.areaEmission;
+    if(!effect.areaEmission && program.blizzard)
+        effect.areaEmission=ClientMissileAreaEmission{program.blizzard->radius,program.blizzard->emissionPeriod};
     effect.suppressLight=initialization.suppressLight.value_or(false);
     effect.deathProgram=source==ClientMissileSource::Death;
     effect.slowPercent=slowPercent;effect.guidance=guidedTarget;
@@ -820,13 +824,13 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                 if(program.children[0]>=0) emit(program.children[0],effect.pos,{},effect,childAge);
                 break;
             case 13: {
-                if (!program.blizzard) break;
-                const auto &b=*program.blizzard;
+                if (!effect.areaEmission) break;
+                const auto &b=*effect.areaEmission;
                 // Retail RVA BBC10 / B8DF0: variant is chosen before the
                 // remaining-frame gate; placement reseeds from global X.
                 const int first=program.children[0],last=program.children[1];
                 const int variant=first+int(limitedRandom(effect.random,uint32_t(std::max(1,last-first+1))));
-                if(missileEmissionDue(elapsedFrames,b.emissionPeriod)) {
+                if(missileEmissionDue(elapsedFrames,b.period)) {
                     const Vec at=effect.pos+blizzardOffset(uint32_t(std::floor(effect.pos.x)),elapsedFrames,b.radius,true,effect.random);
                     if(grid.missileSegment(at-origin,at-origin,{4,1})) emit(variant,at,{},effect,childAge);
                 }

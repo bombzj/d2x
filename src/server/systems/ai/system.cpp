@@ -511,7 +511,8 @@ StepStatus System::think(EntityId id,TickContext tick) {
             controller.randomPublished=true;
         }
         if(!controller.pending.empty()) return StepStatus::Blocked;
-        ports_.monsters.scheduleAi(id,std::max({controller.nextDecision,live->busyUntil,live->frozenUntil,live->stunnedUntil,live->knockedUntil}));
+        ports_.monsters.scheduleAi(id,controller.nextDecision,
+            std::max({live->busyUntil,live->frozenUntil,live->stunnedUntil,live->knockedUntil}));
     }
     return StepStatus::Complete;
 }

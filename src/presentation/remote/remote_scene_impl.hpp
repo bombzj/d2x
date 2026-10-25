@@ -119,6 +119,7 @@ struct RemoteScene::Impl {
         std::optional<ScriptedSequence> scriptedSequence;
         std::optional<OnlinePoint> last;
         Vec look;
+        std::optional<uint8_t> boneWallDirection;
         bool pathMoving{};
         std::optional<MovementTiming> movementTiming;
         ActorAnimationState animation;
@@ -187,6 +188,20 @@ struct RemoteScene::Impl {
     std::map<OnlineUnitKey, uint64_t> missileCastRevisions;
     std::deque<OverlayVisual> overlayVisuals;
     std::map<std::pair<OnlineUnitKey, uint8_t>, float> stateTimes;
+    struct BoneArmorVisual {
+        struct Piece {
+            enum class Phase { None, Delay, Emerge, Orbit };
+            Phase phase{Phase::None};
+            int overlay{-1};
+            int64_t frame{};
+            uint64_t born{};
+        };
+        uint64_t assignment{},sequence{},tick{};
+        int count{};
+        std::array<Piece,3> pieces;
+    };
+    std::map<std::pair<OnlineUnitKey,uint8_t>,BoneArmorVisual> boneArmorVisuals;
+    std::map<OnlineUnitKey,uint64_t> boneWallVisualRandom;
     std::set<OnlineUnitKey> shattered;
     std::map<OnlineUnitKey,int> stateColorShifts;
     uint64_t combatSequence{};
@@ -238,6 +253,8 @@ struct RemoteScene::Impl {
     uint8_t worldDifficulty{};
 
     bool channelSkill(int id) const;
+    const BoneArmorVisual &boneArmorVisual(const OnlineUnit &,const OnlineCombatStateView &,size_t stateRow,SceneView &);
+    bool localCastBlocksMovement() const;
     void emitPd2Stream(Channel &channel,OnlineUnitKey owner,Vec start,Vec target,
                        SceneView &shared,const RemoteCombat &combat);
     uint32_t nextPd2PathSeed(OnlineUnitKey owner);

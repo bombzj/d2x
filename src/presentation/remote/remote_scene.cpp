@@ -35,6 +35,13 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
     std::map<std::string_view,int,std::less<>> skillNames;
     for(const auto &[id,row]:skillRows) skillNames.emplace(skills.value(row,"skill"),id);
     for(const auto &[id,row]:missileRows) if(const auto skill=skillNames.find(missiles.value(row,"Skill"));skill!=skillNames.end()) missileSkills.emplace(id,skill->second);
+    // Blizzard's invisible center has no Missiles.Skill. Its CltDo13
+    // evaluates the skill supplied by Skills.CltMissileA instead.
+    for(const auto &[skill,row]:skillRows) if(skills.number(row,"cltdofunc")==28) {
+        const auto missile=missileNames.find(skills.value(row,"cltmissilea"));
+        if(missile!=missileNames.end() && missiles.number(missile->second,"pCltDoFunc")==13)
+            missileSkills.emplace(missiles.number(missile->second,"Id").value(),skill);
+    }
     constexpr std::array bloodNames{"blood1", "blood2", "bigblood1", "bigblood2"};
     for (size_t index = 0; index < bloodNames.size(); ++index)
         if (const auto found = missileNames.find(bloodNames[index]); found != missileNames.end() &&
@@ -133,6 +140,15 @@ bool RemoteScene::Impl::channelSkill(int id) const {
         (pd2 && skills.number(row->second,"cltdofunc")==111)) &&
         (skills.number(row->second,"seqnum")==6 || skills.number(row->second,"seqnum")==18)) ||
         (skills.number(row->second,"cltdofunc")==6 && skills.value(row->second,"charclass")=="ass"));
+}
+
+bool RemoteScene::Impl::localCastBlocksMovement() const {
+    if(!localCast || localCast->started<0 || time>=localCast->started+localCast->duration) return false;
+    const auto row=skillRows.find(localCast->command.skill);
+    // Retail D2Client A54A0 rejects left-click input throughout PLRMODE_CAST,
+    // before the later Skills.interrupt check at 29F30. Use the complete
+    // animation clock, not its missile release frame; channels use other modes.
+    return row!=skillRows.end() && skills.value(row->second,"anim")=="SC";
 }
 
 std::optional<int32_t> RemoteScene::Impl::skillCalculation(int skill,int level,std::string_view field,OnlineUnitKey owner,int count) const {

@@ -86,13 +86,19 @@ void System::initialize() {
         state_.residency.emplace(id, AreaLease{id, area.generation, Residency::Prepared});
     }
 }
-DomainResult<uint64_t> System::request(RegionId destination) {
-    if (const auto *area = ports_.areas.find(destination)) {activateAct(destination);return {DomainStatus::Applied, area->generation};}
+DomainResult<uint64_t> System::request(RegionId destination,std::shared_ptr<const pd2::MapInstance> map) {
+    if (const auto *area = ports_.areas.find(destination)) {
+        if(map && area->definition.pd2Map!=map) return {DomainStatus::Conflict,{}};
+        activateAct(destination);return {DomainStatus::Applied, area->generation};
+    }
     if (failed_.contains(destination)) return {DomainStatus::Unavailable, {}};
-    for (const auto &pending : state_.preparation) if (pending.destination == destination) return {DomainStatus::Applied, pending.request};
+    for (const auto &pending : state_.preparation) if (pending.destination == destination) {
+        if(map && pending.pd2Map!=map) return {DomainStatus::Conflict,{}};
+        return {DomainStatus::Applied, pending.request};
+    }
     if (state_.preparation.size() >= 16 || nextRequest_ == UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto id = nextRequest_;
-    state_.preparation.push_back({destination, id, ports_.settings});
+    state_.preparation.push_back({destination, id, ports_.settings,std::move(map)});
     ++nextRequest_;
     return {DomainStatus::Applied, id};
 }
@@ -105,7 +111,7 @@ DomainResult<uint64_t> System::requestArea(const ActorContext &actor, RegionId d
     if (!std::any_of(definition.exits.begin(), definition.exits.end(), [&](const auto &exit) { return exit.destination == destination; }) &&
         !std::any_of(definition.boundaries.begin(), definition.boundaries.end(), [&](const auto &edge) { return edge.destination == destination; }))
         return {DomainStatus::InvalidRequest, {}};
-    return request(destination);
+    return request(destination,source->definition.pd2Map);
 }
 void System::link() {
     for (auto &[id, area] : ports_.areas.areas_) {
@@ -122,7 +128,7 @@ void System::link() {
 }
 DomainResult<> System::install(PreparedArea prepared) {
     const auto pending = std::find_if(state_.preparation.begin(), state_.preparation.end(), [&](const auto &p) { return p.request == prepared.request; });
-    if (pending == state_.preparation.end() || pending->destination != prepared.definition.id || ports_.areas.find(prepared.definition.id))
+    if (pending == state_.preparation.end() || pending->destination != prepared.definition.id || pending->pd2Map!=prepared.definition.pd2Map || ports_.areas.find(prepared.definition.id))
         return {DomainStatus::Stale, {}};
     AreaStore::validate(prepared.definition);
     assign(prepared.definition);

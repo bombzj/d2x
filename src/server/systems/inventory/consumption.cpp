@@ -8,6 +8,7 @@
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include "gameplay/character/respec.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
 #include <algorithm>
 namespace d2x::server::inventory {
 DomainResult<> System::consume(const ActorContext &actor, const UseItem &request, Source source) {
@@ -24,6 +25,8 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
         (draft.cube && location->container == containers.cube));
     if (!allowed || !draft.owned(*location) || draft.at({containers.cursor,{}})) return {DomainStatus::InvalidRequest, {}};
     if(const auto *definition=ports_.definitions->find(item->definition);definition && definition->opensCube) return openCube(actor,request.item);
+    if(player->rules.character->maps && player->rules.character->maps->items.contains(item->definition))
+        return ports_.travel.createPd2Map(actor,request.item);
     if(const auto rule=player->rules.character->itemSkills.find(item->definition);rule!=player->rules.character->itemSkills.end())
         return rule->second.action==ItemSkillAction::Identify?beginIdentify(actor,request.item):ports_.travel.createPortal(actor,request.item);
     if(const auto special=player->rules.character->questConsumables.find(item->definition);special!=player->rules.character->questConsumables.end()) {

@@ -59,11 +59,11 @@ hosting准备纯值，server/population持有唯一自然生成游标，monsters
 
 ## 动作、死亡与奖励
 
-怪物动作结束与下一次AI决策使用两个时钟：`busyUntil`只表示动作锁，`neutralAt`记录待处理的ENDANIM。普通攻击、技能、GH／BL及复活结束进入NU时，`monsters::resumeAi`按当前难度的MonStats `aidel／aidel(N)／aidel(H)`安排思考；非正值沿原规则取15。等待从动作结束算起，不能把AI分支的默认1帧重试当成攻击间隔，也不能把站立等待拼进动画长度。原先已安排且晚于结束时点的AI事件保留，不额外叠加等待；移动结束仍沿即时决策路径。佣兵的轮询间隔与NU等待分别保存，避免把固定5帧轮询错当其原表1帧aidel。召唤物也接同一结束处理，重生怪物只由原家族AI消费该时钟。
+怪物动作结束与下一次AI决策使用两个时钟：`busyUntil`只表示动作锁，`neutralAt`记录待处理的ENDANIM。普通攻击、技能、GH／BL及复活结束进入NU时，`monsters::resumeAi`按当前难度的MonStats `aidel／aidel(N)／aidel(H)`安排思考；非正值沿原规则取15。等待从动作结束算起，不能把AI分支的默认1帧重试当成攻击间隔，也不能把站立等待拼进动画长度。`scheduleAi`分别接收决策期限与动作／冻结等唤醒下界，在AiThink事件payload保留原决策期限；`finishAction`据原期限判断是否已有未来等待，不能把为避开动作锁而推迟的物理唤醒误当成AI主动等待。原始／出生定时器没有该payload时仍使用原事件期限。只有真正晚于结束时点的AI等待保留，移动结束仍沿即时决策路径。佣兵的轮询间隔与NU等待分别保存，召唤物调度也保留决策期限及到期／撤出上限，重生怪物只由原家族AI消费该时钟。该payload只属于运行态，不增加原包或D2S字段。
 
 依据为本地D2MOO `MonsterMode::sub_6FC63680`（通用结束）、`sub_6FC64310`（NU和未来AI事件保留）及`SUnit::sub_6FCBCE70`（事件与ENDANIM排程）。`SplEndGeneric`先按BaseId查原表，再为秃鹰S1、蝙蝠S3／S4等原有例外保留直接思考；Hydra／环境陷阱的专用调度不套普通NU等待。移动技能延长动作时同步延后结束时点，GH／BL替换被打断动作的结束时点，换区传送／重生清旧时钟；这些值不写D2S。
 
-怪物ENDANIM使用公共`monsterAnimationTicks`：`max(2,ceil((frames-startFrame)×256/speed))`，不借用玩家普通动作的减一帧规则。服务端A1／A2、技能和恢复与自有客户端怪物动画共用此结束计算，包含使用玩家图形的女武神；命中仍在原事件帧，只由权威结算。当前MPQ既有导出中，`ZMA1HTH／ZMA2HTH`均16帧、速度256、事件帧9，zombie1三难度aidel为15／14／13；无速度加成、中断或额外AI等待时，源码计算的连续起手间隔为31／30／29个25Hz帧。它是静态推导，不是本次运行测量。
+怪物动作准备使用公共`monsterAnimationTicks`：`max(2,ceil((frames-startFrame)×256/speed))`，不借用玩家普通动作的减一帧规则。实际持续动作由`advanceMonsterAnimation`逐帧消费事件并依据原`UNITS_IsAtEndOfFrameCycle`条件结束，ENDANIM发生时重设动作锁与NU起点；预估动作锁不代替实际结束事件。当前MPQ既有导出中，`ZMA1HTH／ZMA2HTH`均16帧、速度256、事件帧9，zombie1三难度aidel为15／14／13。连续起手间隔必须按实际ENDANIM加对应难度的站立等待核对，不能仅将预估动画时长与aidel相加宣称实机间隔；命中仍在原事件帧，只由权威结算。
 
 完整中途变速重排、击退结束转GH的特殊事件链及全怪物／全部词缀组合仍待核对，不能把通用时钟修正称为全MonStats逐帧复刻。
 

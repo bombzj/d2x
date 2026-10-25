@@ -51,8 +51,17 @@ DomainResult<> System::walked(const ActorContext &actor) {
     // D2MOO Step::PATH_RecacheRoomAtCoordIfNeeded: preserve the continuous
     // position and remaining path; room ownership follows the occupied cell.
     // Publish before transferring authority, so backpressure can retry safely.
-    const auto output = ports_.events.publish({0, actor.tick, {}, {AudienceKind::Player, actor.player, destination->definition.id},
-        {TravelFact{actor.player, actor.actor, actor.area, destination->definition.id, destination->generation, position, true}}});
+    const TravelFact travel{actor.player,actor.actor,actor.area,destination->definition.id,destination->generation,position,true};
+    const auto output=[&]()->DomainResult<> {
+        if(player->rules.character->maps) {
+            transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
+            edit.environmentRegion=destination->definition.id;edit.facts.emplace_back(travel);
+            auto plan=ports_.transactions.prepare(std::move(edit));
+            return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
+        }
+        const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,destination->definition.id},{travel}});
+        return {sent.status,sent?std::optional{std::monostate{}}:std::nullopt};
+    }();
     if (!output) return {output.status, {}};
     ports_.npc.close(actor.player); ports_.inventory.close(actor.player); state_.waypoints.erase(actor.player); cancel(actor.player);
     const Vec offset = source->definition.origin - destination->definition.origin;
@@ -151,6 +160,8 @@ DomainResult<> System::castTeleport(const ActorContext &actor,PointTarget target
     return teleport(actor,{free->room.area,destination.generation,free->position},manaCost,charge,skill);
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    advancePd2Map(tick);
+    if(synchronizePd2MapReports(tick)==StepStatus::Blocked) return StepStatus::Blocked;
     const auto synchronizationStatus=expireSynchronizations(tick);
     std::erase_if(state_.portals,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);if(p && p->entered) return false;writePortalCollision(entry.second,false);return true;});
     std::erase_if(state_.waypoints,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || p->area!=entry.second.area || p->persistent.player.hp<=0;});
@@ -293,8 +304,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (exitWalk) route = playerRoute(ports_.spatial.navigationGrid(transition.to,player.actor),arrival,*exitWalk);
         EventBatch event{0, tick.tick, {}, {AudienceKind::Player, player.player, transition.to},
             {TravelFact{player.player, player.actor, transition.from, transition.to, destination->generation, arrival, false}}};
-        if(transition.kind==Kind::Npc || (int(transition.from)==102 && int(transition.to)==103) || (int(transition.from)==103 && int(transition.to)==109) || (int(transition.from)==132 && int(transition.to)==109)) {
+        if(player.rules.character->maps || transition.kind==Kind::Npc || (int(transition.from)==102 && int(transition.to)==103) || (int(transition.from)==103 && int(transition.to)==109) || (int(transition.from)==132 && int(transition.to)==109)) {
             transactions::CharacterEdit edit{{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick},player.inventoryRevision,player.characterRevision,player.persistent.player};
+            if(player.rules.character->maps) edit.environmentRegion=transition.to;
             if(int(transition.to)==40 && int(transition.from)==1) {
                 edit.player.quests.at(size_t(player.persistent.difficulty)).at(questIndex(QuestId::SistersToTheSlaughter)).stage=uint32_t(SlaughterStage::Completed);
                 edit.player.completedActs.at(size_t(player.persistent.difficulty)).at(0)=true;
@@ -349,7 +361,17 @@ DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::o
     const auto arrival=ports_.world.nativePlayerPosition(target,desired,actor.actor);
     if(!arrival || arrival->area!=target || (arrival->position-desired).length()>8) return {DomainStatus::Unavailable,{}};
     const Vec at=arrival->position;
-    const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,target},{TravelFact{actor.player,actor.actor,p->area,target,area->generation,at,false}}});
+    const TravelFact travel{actor.player,actor.actor,p->area,target,area->generation,at,false};
+    const auto sent=[&]()->DomainResult<> {
+        if(p->rules.character->maps) {
+            transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
+            edit.environmentRegion=target;edit.facts.emplace_back(travel);
+            auto plan=ports_.transactions.prepare(std::move(edit));
+            return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
+        }
+        const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,target},{travel}});
+        return {output.status,output?std::optional{std::monostate{}}:std::nullopt};
+    }();
     if(!sent) return {sent.status,{}};
     ports_.npc.close(actor.player);ports_.inventory.close(actor.player);state_.waypoints.erase(actor.player);cancel(actor.player);
     auto &player=ports_.players.players_.at(actor.player);player.route.clear();player.moving=false;player.area=target;player.position=at;ports_.areas.moveRoomUnit(player.actor,player.area,player.position);
