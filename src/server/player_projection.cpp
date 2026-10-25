@@ -1,5 +1,6 @@
 #include "player_projection.hpp"
 #include "server/systems/inventory/item_skills.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 
 namespace d2x::server {
 PlayerSnapshot projectPlayer(const PlayerState &p) {
@@ -9,6 +10,21 @@ PlayerSnapshot projectPlayer(const PlayerState &p) {
     result.inventoryRevision = p.inventoryRevision; result.characterRevision = p.characterRevision;
     result.name = p.persistent.player.name; result.characterClass = p.persistent.player.characterClass;
     result.states = p.transient.states; result.itemSkills=inventory::itemSkills(p);
+    // Native passive lists have real state/level/value metadata even though
+    // they are not timed effects in the player's transient effect set.
+    const auto passiveStates=[&](auto &&self,const StatList &list)->void {
+        if(list.source.kind==StatSourceKind::Passive && !list.base.empty() && p.rules.character && p.rules.character->formulas) {
+            const auto skill=p.rules.character->formulas->skills.find(list.source.definition);
+            if(skill!=p.rules.character->formulas->skills.end() && skill->second.passiveState>0) {
+                const auto state=skill->second.passiveState;
+                result.states.insert(state);
+                auto &values=result.stateStats[state];
+                for(const auto &[key,value]:list.base) values.emplace_back(key,value);
+            }
+        }
+        for(const auto &source:list.contributions) if(source) self(self,*source);
+    };
+    if(p.totals.statSources) passiveStates(passiveStates,*p.totals.statSources);
     result.level = p.persistent.player.level; result.entered = p.entered;
     result.life = p.persistent.player.hp;
     result.mana = p.persistent.player.mana; result.stamina = p.persistent.player.stamina;

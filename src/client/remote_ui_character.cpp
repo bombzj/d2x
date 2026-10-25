@@ -1,5 +1,10 @@
 #include "remote_ui_clients_impl.hpp"
 #include "gameplay/skills/amazon_passive_spec.hpp"
+#include "gameplay/stats/stat_list.hpp"
+#include <array>
+#include <cmath>
+#include <memory>
+#include <set>
 
 namespace d2x {
 const CharacterView &RemoteUiClients::Impl::Character::read() const { return o.characterView; }
@@ -297,6 +302,43 @@ void RemoteUiClients::Impl::projectSkillUseFacts(CharacterProjectionInput &input
                 observed->second.states.contains(bloodMana->second.definition.id),
                 observed->second.states.contains(inferno->second.definition.id)};
     }
+void RemoteUiClients::Impl::projectObservedAttributes(CharacterProjectionInput &input,const CharacterDefinition &definition) const {
+        if(!data.nativeStats || !input.combatEquipment) return;
+        const auto &rules=*data.nativeStats;
+        constexpr std::array names{"strength","dexterity","vitality","energy","maxhp","maxmana","maxstamina"};
+        std::set<uint16_t> dependencies;
+        const auto collect=[&](auto &&self,uint16_t id)->void {
+            if(!dependencies.insert(id).second) return;
+            for(const auto &operation:rules.definitions.at(id).operations) {
+                if(!operation.code) break;
+                self(self,operation.source);
+                if(operation.base) self(self,*operation.base);
+            }
+        };
+        for(const auto *name:names) {
+            if(!input.stats.contains(name)) return;
+            collect(collect,rules.names.at(name));
+        }
+        StatList root;root.ownerKind=StatOwnerKind::Player;root.unitRoot=true;root.hasOwner=true;root.hasUnit=true;
+        for(const auto &[id,value]:session.read().world.playerAttributes)
+            if(rules.definitions.contains(id)) root.base.emplace(StatKey{id,0},int32_t(value));
+        auto observed=std::make_shared<StatList>();observed->extended=false;
+        for(const auto id:dependencies) {
+            const auto &rule=rules.definitions.at(id);
+            const auto value=knownSelfEquipmentStat(rule.name,input.combatEquipment->actor.level);
+            if(!value) return;
+            if(*value) observed->base.emplace(StatKey{id,0},*value);
+        }
+        root.contributions.push_back(std::move(observed));
+        const StatCharacterContext character{definition.lifePerVitality,definition.manaPerEnergy,
+            definition.staminaPerVitality,rules.names.at("maxstamina")};
+        StatQueryContext context;context.unit=&root;context.character=character;
+        const auto full=evaluateStatList(rules,root,context);
+        for(const auto *name:names) {
+            const auto id=rules.names.at(name);
+            input.stats.insert_or_assign(name,double(full.get({id,0}))/std::ldexp(1.,rules.definitions.at(id).valueShift));
+        }
+    }
 void RemoteUiClients::Impl::projectCharacter() {
         const auto &online = session.read(); const auto &w = online.world;
         CharacterProjectionInput input;
@@ -402,6 +444,8 @@ void RemoteUiClients::Impl::projectCharacter() {
                 input.attackTiming=KnownAttackTiming{weapon.fasterAttack,weapon.baseSpeed,equipment.modifiers.combat.attackRate,weapon.itemBaseSpeed,weapon.itemAttackSpeed,bool(weapon.item)};
             }
         }
+        if(input.characterClass && *input.characterClass<data.characters.size())
+            projectObservedAttributes(input,data.characters[*input.characterClass]);
         if(input.combatEquipment && stat("vitality") && stat("energy") && stat("maxhp") && stat("maxmana") && stat("maxstamina"))
             for(const auto *name:{"statpts","newskills","experience"}) input.stats.try_emplace(name,0);
         characterView = projectCharacterDisplay(data, input);

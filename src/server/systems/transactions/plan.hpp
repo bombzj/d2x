@@ -54,6 +54,7 @@ struct InventoryEdit {
     std::optional<ResourceMaximums> resourceBase{};
     std::optional<UnitRandomEdit> random{};
     std::optional<SkillManaPayment> skillPayment{};
+    bool explicitResources{};
 };
 struct ItemAuraTimerCompletion {
     EntityId source;
@@ -87,6 +88,7 @@ struct CharacterEdit {
     // Prepared destination for source-controlled region effects. The travel
     // owner publishes placement only after this character transaction commits.
     std::optional<RegionId> environmentRegion{};
+    bool explicitResources{};
 };
 using Change = std::variant<ItemTransfer, Reward, Exchange, InventoryEdit, CharacterEdit>;
 struct PreparedPlayer {

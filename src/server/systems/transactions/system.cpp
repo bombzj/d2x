@@ -58,8 +58,10 @@ void refresh(CharacterRecord &record, const CharacterRecord &previous, const Cha
     } else {
         applyResourceMaximums(record.hp,record.mana,record.stamina,maximum,{next.maxLifeFixed,next.maxManaFixed,next.maxStaminaFixed});
     }
-    record.hp = std::clamp(record.hp, Fixed8{}, next.maxLifeFixed);
-    record.mana = std::clamp(record.mana, Fixed8{}, next.maxManaFixed);
+    // An unchanged maximum does not imply an upper clamp. Native saves can
+    // retain HP above the current maximum after a temporary buff expires.
+    record.hp = std::max(record.hp,Fixed8{});
+    record.mana = std::max(record.mana,Fixed8{});
     const auto staminaLimit=mode==ResourceRefresh::StaminaPotion?
         Fixed8::fromRaw(nativeAdd(next.maxStaminaFixed.raw(),256)):next.maxStaminaFixed;
     record.stamina = std::clamp(record.stamina, Fixed8{}, staminaLimit);
@@ -79,6 +81,8 @@ void retainPreparedHistory(Plan &next,Plan previous,bool keepPreviousEdit) {
             std::visit([&](auto &old) {
                 using Old=std::decay_t<decltype(old)>;
                 if constexpr(std::is_same_v<Old,InventoryEdit> || std::is_same_v<Old,CharacterEdit>) {
+                    latest.explicitResources=latest.explicitResources || old.explicitResources;
+                    old.explicitResources=latest.explicitResources;
                     if(keepPreviousEdit) {
                         append(latest,old);old.facts=std::move(latest.facts);old.publicFacts=std::move(latest.publicFacts);
                         if(latest.transient) old.transient=std::move(latest.transient);
@@ -781,8 +785,10 @@ DomainResult<> System::commit(Plan plan) {
         batch.facts.emplace_back(std::move(fact));
     }
     const auto *characterChange = std::get_if<CharacterEdit>(&plan.change);
+    const bool explicitResources=edit?edit->explicitResources:
+        characterChange->explicitResources || characterChange->revival.has_value();
     batch.facts.emplace_back(CharacterFact{player.persistent.player, next.persistent.player, player.totals, next.totals,
-        characterChange ? characterChange->selectedHand : std::nullopt});
+        characterChange ? characterChange->selectedHand : std::nullopt,explicitResources});
     // No authority writes until the complete immutable batch is accepted.
     const auto &extra = edit ? edit->facts : characterChange->facts;
     batch.facts.insert(batch.facts.end(), extra.begin(), extra.end());
@@ -799,7 +805,8 @@ DomainResult<> System::commit(Plan plan) {
     for(const auto &peer:plan.auraPlayers) {
         const auto &change=std::get<CharacterEdit>(peer.change);const auto &target=*ports_.players.find(change.actor.player);
         EventBatch delivery{0,request->actor.tick,plan.id,{AudienceKind::Player,target.player,target.area},
-            {CharacterFact{target.persistent.player,peer.player->persistent.player,target.totals,peer.player->totals,change.selectedHand}}};
+            {CharacterFact{target.persistent.player,peer.player->persistent.player,target.totals,peer.player->totals,change.selectedHand,
+                change.explicitResources || change.revival.has_value()}}};
         if(peer.player->inventoryChanged) {
             auto projection=peer.player->persistent;
             projection.inventory.containers.insert(target.persistent.inventory.containers.begin(),target.persistent.inventory.containers.end());

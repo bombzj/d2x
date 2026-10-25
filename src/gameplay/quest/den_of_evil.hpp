@@ -4,6 +4,8 @@
 namespace d2x {
 enum class DenStage : uint32_t { Unstarted, Assigned, Entered, Cleared, Rewarded };
 inline constexpr uint32_t denRespecUsed = 1;
+inline constexpr uint32_t denStarted = 2, denLeftTown = 4, denEntered = 8;
+inline constexpr uint32_t denFlags = denRespecUsed | denStarted | denLeftTown | denEntered;
 
 bool denAdvanceOnTalk(QuestRecord &record);
 bool denAdvanceOnEntry(QuestRecord &record);

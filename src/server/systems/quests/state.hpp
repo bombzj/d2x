@@ -10,6 +10,7 @@ namespace d2x::server::quests {
 // World state is per act and per game; personal progression stays in PlayerStore.
 struct ActOneState {
     bool denCleared{};
+    bool denLeftTown{}, denEntered{};
     bool denHasKills{};
     unsigned denRemaining{};
     std::map<PlayerId,EntityId> contributors;
@@ -44,11 +45,13 @@ struct ActTwoState {
 };
 struct Goal {
     uint32_t stage{};
+    uint32_t flags{};
     std::set<PlayerId> eligible;
     std::map<PlayerId,EntityId> actors;
     std::map<PlayerId,uint64_t> experience;
-    bool attributeReward{}, consumeForgeItems{}, consumeKhalimItems{}, primaryGoal=true;
+    bool attributeReward{}, consumeForgeItems{}, consumeKhalimItems{}, primaryGoal=true, notifyQuest=true;
 };
+struct StatusNotice { uint8_t status{}; std::optional<EntityId> deactivateNpc{}; };
 struct ActThreeState {
     EntityId figurineSource{};
     RegionId figurineArea{};

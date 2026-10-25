@@ -6,6 +6,10 @@
 
 ## 技能执行路径源码核对
 
+怪物动作的1／2标记先于同帧ENDANIM兑现，`monsterActionEvent`不能因该帧同时结束动画而跳过SrvDo或最后一次原生联系；原版依据为D2MOO MonsterMode的技能动作回调和`sub_6FD13410`。当前MPQ的E9S2HTH仅两帧，第二帧标记1，陷阱的实际飞弹出生依赖这一公共顺序，不能只发布4C动作而漏掉服务端效果。
+
+伙伴AI区分逻辑决策期限与动作锁造成的实际唤醒期限；后者不属于原版显式未来AITHINK等待。AI101／104成功UseSkill后保留已到期的逻辑期限，公共ENDANIM沿MonStats aidel设置下一次思考；`companions::think`不把物理延迟改写成逻辑等待。依据D2MOO AiThink::AITHINK_Fn101_AssassinSentry及MonsterMode::sub_6FC64310；其他AI显式等待保持其原逻辑期限。不同宿主墙钟推进速度应先校准，不能据原包秒数直接替换帧参数。
+
 核对范围按七职业主动／被动、通用技能、怪物／精英、佣兵／召唤物和物品来源的生产入口追踪。玩家动作由`skills::cast/weaponCast`发布actions时间线，非玩家由`requestCast`发布怪物动作事件；战斗、飞弹、状态及归属分别归对应领域。被动通过属性来源的原生技能刷新／StatList计算，不为每项被动制造施法动作。公共入口相同不要求不同原St／Do、资格或采样时点被强行合并。
 
 当前源码已修正以下分歧；专用路径与原版的完整行为仍待核对：

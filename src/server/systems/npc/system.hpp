@@ -6,10 +6,11 @@
 #include "gameplay/npc/intents.hpp"
 #include <deque>
 #include <span>
+#include <utility>
 namespace d2x::server::npc {
 using Intent = std::variant<TalkToNpc, EndNpcConversation>;
 struct Request { Intent intent; };
-struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::optional<uint16_t> pendingMessage; bool quest{}; EntityId actor{}; uint64_t areaGeneration{}; QuestId questId=QuestId::DenOfEvil; std::optional<uint16_t> pendingIntroduction{}; };
+struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::map<uint16_t,QuestId> pendingQuests; EntityId actor{}; uint64_t areaGeneration{}; std::optional<uint16_t> pendingIntroduction{}; bool refresh{}; };
 struct ServiceAccess { const AreaNpc *npc; const Conversation *conversation; };
 struct Escape {RegionId area;Vec destination;std::deque<Vec> route;bool escaped{};};
 struct HirelingSlot {uint16_t name{};uint32_t seed{};bool available{},hired{};};
@@ -22,6 +23,7 @@ class System {
     struct Approach { ActorContext actor; Request request; uint64_t locomotion; };
     std::map<PlayerId,Approach> approaches_;
     Vec position(const ActorContext &, const AreaNpc &) const;
+    std::pair<Conversation,NpcMessagesFact> offer(const ActorContext &,const AreaNpc &,const CharacterRecord &) const;
     HirelingRoster prepareHirelings(std::span<const uint16_t>,uint64_t revision,uint64_t &random) const;
   public:
     explicit System(Ports ports) : ports_(ports) {}

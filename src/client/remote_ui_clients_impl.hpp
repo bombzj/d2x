@@ -185,6 +185,7 @@ struct RemoteUiClients::Impl {
     std::optional<int> knownSelfEquipmentStat(std::string_view name,int level) const;
     std::optional<int> knownSelfStat(std::string_view name,int level) const;
     void projectSkillUseFacts(CharacterProjectionInput &input) const;
+    void projectObservedAttributes(CharacterProjectionInput &input,const CharacterDefinition &) const;
     void projectCharacter();
     ItemInstance itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const;
     std::optional<ItemInstance> completeItem(const OnlineItem &native, const OnlineDecodedItem &detail, ItemLocation location) const;

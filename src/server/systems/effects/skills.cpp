@@ -133,7 +133,7 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     for(const int state:application.clearedStates) if(!recovery.states.hasState(state,actor.tick)) edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,state,false});
     for(const auto &removed:application.removed) if(removed.effect.spec.state.id>=0 && !recovery.states.hasState(removed.effect.spec.state.id,actor.tick))
         edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,removed.effect.spec.state.id,false});
-    if(skill.effect!=SkillBehavior::BoneArmor && installed->spec.state.id>=0) {
+    if(installed->spec.state.id>=0) {
         auto stats=nativeEffectStats(*caster->rules.skills,installed->spec);
         if(!installed->spec.nativeValues) {
             stats.emplace_back(caster->rules.skills->nativeStats.at("modifierlist_skill"),skill.sourceId);
@@ -141,9 +141,6 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
         }
         edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,skill.appliedEffect->state.id,true,std::move(stats)});
     }
-    if(skill.effect==SkillBehavior::BoneArmor) edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,skill.appliedEffect->state.id,true,
-        {{caster->rules.skills->nativeStats.at("bonearmor"),installed->spec.physicalShield},
-         {caster->rules.skills->nativeStats.at("bonearmormax"),installed->spec.physicalShieldMaximum}}});
     if(skill.effect==SkillBehavior::BoneArmor && skill.castOverlayId>=0) edit.publicFacts.emplace_back(OverlayFact{target->actor,0,target->area,skill.castOverlayId});
     std::vector<transactions::Change> changesToPrepare;
     if(target==caster) {edit.charge=skill.charge;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.publicFacts.insert(edit.publicFacts.end(),facts.begin(),facts.end());}

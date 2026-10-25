@@ -58,7 +58,9 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
                     due=std::min(due,std::max(tick.tick+1,controller->second.nextDecision));
             }
         }
-        auto decisionAt=due;
+        // Keep the logical deadline when a past decision is physically deferred
+        // by an action. A future wake alone must not bypass ENDANIM's aidel.
+        auto decisionAt=std::min(due,found->second.nextDecision);
         if(body->alive()) due=std::max(due,std::max({body->busyUntil,body->stunnedUntil,body->knockedUntil}));
         const auto capWake=[&](uint64_t deadline) {
             deadline=std::max(tick.tick+1,deadline);

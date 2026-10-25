@@ -54,9 +54,11 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             for(const auto &[name,seed]:list->offers)
                 delta.push_back(encodeServerPacket(ServerMessage::HirelingOffer,[&](auto &out){out.u16(name);out.u32(seed);}));
         }
-        else if (const auto *life = std::get_if<server::LifeFact>(&fact)) delta = nativeLife(*content, *life);
-        else if (const auto *mana = std::get_if<server::ManaFact>(&fact)) delta = nativeMana(*content, *mana);
-        else if (const auto *resources = std::get_if<server::ResourcesFact>(&fact)) delta = nativeResources(*content, *resources);
+        else if (std::holds_alternative<server::LifeFact>(fact) || std::holds_alternative<server::ManaFact>(fact) || std::holds_alternative<server::ResourcesFact>(fact)) {
+            // Ordinary costs and per-frame regeneration are observed by
+            // publishMotion's native 18/95/96 checks. Keep domain diagnostics
+            // without a second 1D/E/F stream for the same resource writes.
+        }
         else if (const auto *position = std::get_if<server::RepositionFact>(&fact)) {
             if(!position->notifyOwner && position->actor==host.read(*binding)->actor.id) continue;
             if (position->actor != host.read(*binding)->actor.id &&
@@ -158,12 +160,12 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 const auto entry = peer.monsters.find(state->actor);
                 if(entry==peer.monsters.end()) continue;
                 if(state->enabled) {entry->second.states.insert(state->state);entry->second.stateStats[state->state]=state->stats;}
-                else {entry->second.states.erase(state->state);entry->second.stateStats.erase(state->state);}
+                else {if(!entry->second.states.erase(state->state)) continue;entry->second.stateStats.erase(state->state);}
             }
             if(state->type==0 && state->actor!=host.read(*binding)->actor.id && std::none_of(peer.visible.begin(),peer.visible.end(),[&](const auto &entry){return entry.second.actor==state->actor;})) continue;
             if(state->type==0) {
-                if(state->enabled) peer.states[state->actor].insert(state->state);
-                else peer.states[state->actor].erase(state->state);
+                if(state->enabled) {peer.states[state->actor].insert(state->state);peer.stateStats[state->actor][state->state]=state->stats;}
+                else {if(!peer.states[state->actor].erase(state->state)) continue;peer.stateStats[state->actor].erase(state->state);}
             }
             auto packet=nativeState(*content,*state);
             if(!packet.empty()) delta.push_back(std::move(packet));
@@ -250,11 +252,15 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             if(npc->type==1) {
                 const auto quests=host.questProjection(*binding);
                 if(!quests) throw std::logic_error("NPC interaction quest projection unavailable");
-                for(auto &packet:nativeQuestUpdate(*content,*quests,npc->npc)) delta.push_back(std::move(packet));
+                if(npc->activate) {
+                    for(auto &packet:nativeQuestUpdate(*content,*quests,npc->npc)) delta.push_back(std::move(packet));
+                } else delta.push_back(encodeServerPacket(ServerMessage::GameQuests,[&](auto &out) {
+                    for(const auto word:quests->gameFlags) out.u16(word);
+                }));
             }
         } else if (const auto *merchant = std::get_if<server::MerchantFact>(&fact)) {
             if (merchant->refreshShop) peer.shopItems.clear();
-            delta.push_back(encodeServerPacket(ServerMessage::MerchantResult,[&](auto &out) {out.u8(merchant->operation);out.u8(merchant->result);out.u32(0);out.u32(merchant->result==2?UINT32_MAX:uint32_t(merchant->item.value));out.u32(merchant->gold);}));
+            else delta.push_back(encodeServerPacket(ServerMessage::MerchantResult,[&](auto &out) {out.u8(merchant->operation);out.u8(merchant->result);out.u32(0);out.u32(merchant->result==2?UINT32_MAX:uint32_t(merchant->item.value));out.u32(merchant->gold);}));
         } else if (const auto *waypoint=std::get_if<server::WaypointFact>(&fact)) {
             std::array<uint16_t,8> history{}; history[0]=0x102; history[1]=1; const auto &levels=content->tables.at("levels");
             for(const auto region:waypoint->unlocked) for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Id")==int(region)) {

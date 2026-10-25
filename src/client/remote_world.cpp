@@ -1020,7 +1020,10 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         r.finish();
         if ((target.type == 1 && w.npcRequested == target.id) || (target.type==2 && w.units.contains(target))) {
             w.questAlerts.erase(target);
-            auto &current=target.type==1?w.npcPendingConversation:w.npcConversation;
+            // A new conversation waits for NPC-context 28. Native speech
+            // refreshes use 27/29 only and replace the already active list.
+            const bool active=target.type==1 && w.npcConversation && w.npcConversation->source==target.id;
+            auto &current=target.type==1 && !active?w.npcPendingConversation:w.npcConversation;
             if (!current || current->source != target.id)
                 current = OnlineNpcConversation{target.id, 0, {}, {}};
             auto &conversation = *current;

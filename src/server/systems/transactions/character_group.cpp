@@ -99,7 +99,8 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
         const auto &publicFacts=inventory?inventory->publicFacts:character->publicFacts;
         if(!publicFacts.empty()) batches.push_back({0,tick,plan.id,{AudienceKind::Area,{},player->area},publicFacts});
         EventBatch batch{0,tick,plan.id,{AudienceKind::Player,player->player,player->area},
-            {CharacterFact{player->persistent.player,plan.player->persistent.player,player->totals,plan.player->totals,character?character->selectedHand:std::nullopt}}};
+            {CharacterFact{player->persistent.player,plan.player->persistent.player,player->totals,plan.player->totals,character?character->selectedHand:std::nullopt,
+                character?(character->explicitResources || character->revival.has_value()):inventory->explicitResources}}};
         if(plan.player->inventoryChanged) {
             InventoryFact projection{plan.player->persistent,plan.player->changes,plan.player->switchedWeapons};
             projection.projection.inventory.containers.insert(player->persistent.inventory.containers.begin(),player->persistent.inventory.containers.end());

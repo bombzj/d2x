@@ -75,9 +75,11 @@ void PlayerStore::admit(PlayerId id, CharacterDefinition definition,
     std::vector<ItemChange> admissionChanges;
     inventory::synchronizeEquipment(player.persistent, player.totals, *rules.equipment, admissionChanges);
     auto &record = player.persistent.player;
-    record.hp = std::clamp(record.hp, Fixed8{}, player.totals.character.maxLifeFixed);
-    record.mana = std::clamp(record.mana, Fixed8{}, player.totals.character.maxManaFixed);
-    record.stamina = std::clamp(record.stamina, Fixed8{}, player.totals.character.maxStaminaFixed);
+    // PLRSAVE2_InitializeStats restores saved HP/mana after equipment/passives,
+    // including values above today's unbuffed maxima. Stamina starts full.
+    record.hp = std::max(record.hp, Fixed8{});
+    record.mana = std::max(record.mana, Fixed8{});
+    record.stamina = player.totals.character.maxStaminaFixed;
     auto room=areas.prepareRoomUnit(player.actor,0,player.area,player.position);
     if(!room) throw std::runtime_error("Missing native player entry room");
     players_.emplace(id, std::move(player));

@@ -24,6 +24,10 @@ merchant准备请求及打开货架绑定交谈revision，持续复验NPC距离�
 
 购买未合并的新原件时，按原拾取装备规则尝试空槽自动装备，条件不满足再放腰带／背包；2A成功回执使用新购原件GUID及原版1.13c录包的flags4，不能回指货架原GUID。入书／合堆回执仍指向被增加数量的原件。
 
+自动装备只排除未鉴定原件及原版Missile Potion（类型tpot），不能排除包含箭／弩矢的整个Missile（misl）类型族；弹药还需按MPQ Quiver／Shoots与已装备武器匹配。购买和拾取共用`inventory::Draft::autoEquip`。依据D2MOO ItemMode::sub_6FC42F20及原版先买Short Bow、再买箭矢自动装另一手的有限对照。
+
+金币不足及失效上下文等拒绝回执使用item=FFFFFFFF、flags=0，不回指请求中的商品；成功买卖仍按其原结果携带物品。依据为D2MOO SUnitNpc的购买、出售、修理失败出口及原版1.13c Host随身0金币购买30金币hp1的result12实包。自动安置共用库存`Draft::space`的D2Common加权搜索：一行物品从右下按列扫描，多行物品从左上按行扫描，优先贴合已有物品或边界，同权重保留先到格；腰带另用原匹配列规则。不是商店／药剂专属坐标策略。
+
 ## 公共报价与原版依据
 
 itemTradePrice／itemGamblePrice两端共用，只对完整已知值报价。自动词缀、未鉴定、StaffMods、词缀、孔内、符文之语、触发／充能、按时间属性、耳朵／身体部件、自修复与投掷售价按原字段计算。未知孔内掷值不以seed=0重掷。原1.13c D2Common MD5 EE1238806EF6D6D9801D12A09D128FE1提供整数顺序补证：RVA 0x29947–0x2996f自修复，0x29beb–0x29bfb投掷售价，0x258d2–0x25934充能成本；书本按Books索引核对配对及CostPerCharge。

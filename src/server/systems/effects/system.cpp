@@ -353,7 +353,8 @@ DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {
     if(!player->rules.character) return {DomainStatus::Unavailable,{}};
     PotionPlan plan{state_,player->persistent.player,{}};auto &recovery=plan.next.players[actor.actor];
     PlayerResourceTrace resources(*player,actor.tick,{},ports_.areas.statTime(player->area));
-    const auto maximum=resources.maximum();resources.seedResources(maximum.life,maximum.mana,maximum.stamina);
+    const auto maximum=resources.maximum();const auto current=resources.record();
+    resources.seedResources(std::max(current.hp,maximum.life),std::max(current.mana,maximum.mana),std::max(current.stamina,maximum.stamina));
     const auto removePlayerState=[&](int state) {
         const auto *list=recovery.states.findState(state);if(!list) return;
         const auto removed=recovery.states.remove(list->handle,[&]{resources.sample(recovery.states,true);});
@@ -437,6 +438,7 @@ DomainResult<WellRestoration> System::restoreWell(const ActorContext &actor,Fixe
     }
     if(recovery.poison && !recovery.states.hasState(recovery.poison->damage.state,actor.tick)) recovery.poison.reset();
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
+    edit.explicitResources=true;
     edit.player=resources.record();edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(recovery.states,actor.tick);
     for(const auto &effect:removedStates) if(!recovery.states.hasState(effect.effect.spec.state.id,actor.tick))
         edit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,effect.effect.spec.state.id,false});

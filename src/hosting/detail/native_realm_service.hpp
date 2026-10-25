@@ -85,6 +85,7 @@ struct NativeRealmService {
         std::map<EntityId,uint16_t> npcQuestAlerts;
         EntityId shopOwner;
         std::map<EntityId, std::set<int>> states;
+        std::map<EntityId,std::map<int,std::vector<StatValue>>> stateStats;
         std::map<EntityId,uint64_t> hover;
     } peer;
     // Only retained inside one NativeRealmHost publication scope. The shared

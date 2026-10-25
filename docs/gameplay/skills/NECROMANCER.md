@@ -8,6 +8,8 @@ PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版
 
 ## 30项职责核对
 
+骨甲的StateFact与其他防御状态共用`nativeEffectStats`，从实际安装列表读取吸收池及modifierlist_skill／modifierlist_level；不再另造只有两个吸收字段的包。D2MOO SkillSor::SKILLS_SrvDo018_DefensiveBuff明确写入来源元数据，原版2级骨甲有限对照为bonearmor／bonearmormax各23040、来源技能68／等级2；护盾受击后的余量仍以唯一效果列表为准。
+
 | 技能ID／名称 | 权威执行与客户端入口 |
 | --- | --- |
 | 66伤害加深、71微暗灵视、72削弱、76攻击反噬、77恐惧、81迷乱、82偷取生命、86吸引、87衰老、91降低抵抗 | curse_resolve准备等级／范围／持续／贡献；effects/necro安装诅咒及原状态属性。ai/system处理失明、逃跑、混乱和诱引；combat提交接触后反伤与生命吸取。原CltDo30、States及Overlay只生成表现。 |

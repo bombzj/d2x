@@ -75,12 +75,59 @@ std::optional<ContainerLocation> Draft::space(EntityId id, EntityId destination)
         }
         return {};
     }
-    for (int y = 0; y < c->spec.rows; ++y)
-        for (int x = 0; x < c->spec.columns; ++x) {
-            const ContainerLocation target{destination, {x, y}};
-            if (fits(id, target)) return target;
+    const auto *base=catalog.find(edit.inventory.items.at(id).definition);
+    if(!base) return {};
+    const bool slot=c->spec.kind==ContainerKind::Cursor || c->spec.kind==ContainerKind::Equipment ||
+        c->spec.kind==ContainerKind::BeltEquipment;
+    if(slot) {
+        for(int y=0;y<c->spec.rows;++y) for(int x=0;x<c->spec.columns;++x) {
+            const ContainerLocation target{destination,{x,y}};
+            if(fits(id,target)) return target;
         }
-    return {};
+        return {};
+    }
+    // D2Common INVENTORY_GetFreePosition scores occupied edges and grid
+    // boundaries. One-row items scan columns from the bottom right; taller
+    // items scan rows from the top left. Equal scores keep the first cell.
+    const int width=base->width,height=base->height;
+    if(width<1 || height<1) return {};
+    const auto occupied=[&](int x,int y) {
+        if(x<0 || y<0 || x>=c->spec.columns || y>=c->spec.rows) return true;
+        for(const auto &[otherId,other]:edit.inventory.items) {
+            if(otherId==id) continue;
+            const auto *location=std::get_if<ContainerLocation>(&other.location);
+            if(!location || location->container!=destination) continue;
+            const auto *definition=catalog.find(other.definition);
+            if(definition && x>=location->cell.x && x<location->cell.x+definition->width &&
+                y>=location->cell.y && y<location->cell.y+definition->height) return true;
+        }
+        return false;
+    };
+    std::optional<ContainerLocation> best;
+    int bestWeight=0;
+    const auto consider=[&](int x,int y) {
+        const ContainerLocation target{destination,{x,y}};
+        if(!fits(id,target)) return false;
+        int weight=0;
+        for(int row=0;row<height;++row) {
+            weight+=occupied(x-1,y+row);
+            weight+=occupied(x+width,y+row);
+        }
+        for(int column=0;column<width;++column) {
+            weight+=occupied(x+column,y-1);
+            weight+=occupied(x+column,y+height);
+        }
+        if(weight>bestWeight) {bestWeight=weight;best=target;}
+        return weight==2*(width+height);
+    };
+    if(height==1) {
+        for(int x=c->spec.columns-1;x>=0;--x)
+            for(int y=c->spec.rows-1;y>=0;--y) if(consider(x,y)) return best;
+    } else {
+        for(int y=0;y<c->spec.rows;++y)
+            for(int x=0;x<c->spec.columns;++x) if(consider(x,y)) return best;
+    }
+    return best;
 }
 DomainStatus Draft::move(EntityId id, ContainerLocation destination) {
     auto &item = edit.inventory.items.at(id);

@@ -133,7 +133,9 @@ StepStatus System::assassinStep(Companion &pet,TickContext tick) {
     const auto started=requestAction(pet,{body->id,uint16_t(skill),UnitTarget{victim,0,uint8_t(victim==target->unit.id?target->unit.type:1)},tick.tick,mode});
     if(isDeferred(started.status)) return StepStatus::Blocked;
     --pet.assassinAi[1];if(victim!=target->unit.id) pet.lastCorpse=victim;
-    if(started) {pet.nextDecision=body->busyUntil;}
+    // AI101/104 leaves no future AITHINK wait after UseSkill. ENDANIM
+    // installs the ordinary MonStats aidel; the action lock is only a wake gate.
+    if(started) {pet.nextDecision=tick.tick;}
     else pet.nextDecision=tick.tick+uint64_t(std::max(1,param(1)));
     return StepStatus::Complete;
 }

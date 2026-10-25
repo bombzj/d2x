@@ -8,6 +8,8 @@ PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留
 
 ## 自研服务端属性与成长基础
 
+本人四属性及生命／法力／耐力上限的1D／1E／1F表示基础列表，不能发送含装备／状态的最终值来补客户端派生。`native_character_wire`从CharStats、分配点及永久任务生命计算基础值；入场也不依赖临时拼装Totals里并不存在的来源图。`RemoteUiClients::projectObservedAttributes`只读完整装备／状态，按当前ItemStatCost运算依赖及CharStats上下文调用公共StatList求值，再投影四属性与资源上限，不能按技能名添加百分比。原版有限依据：10级Battle Orders状态携带生命／法力／耐力百分比62，不另发最终上限；同一角色应由1033／199派生1673／322。Wolf／Bear的上限切换沿同一入口，全部装备、按时间属性与复杂来源组合仍未认证。
+
 本节维护属性、成长与保存的实际入口；原版依据和缺口由对应专题登记，自研运行结果只在当次交付中说明。
 
 - hosting/character_content准备MPQ经验阈值、Skills学习门槛／前置、CharStats职业定义、难度抗性惩罚和入场物品在全部支持等级的属性值。server不持有Archives／ClassicData或MPQ求值回调。
@@ -15,7 +17,7 @@ PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留
 - PlayerStore唯一持有持久CharacterRecord及当前Totals；admit／transactions在公开状态之前同步总值，不设dirty队列或下一帧修补。attributes.evaluate只读快照，step无额外改写。
 - progression.execute接原3A属性打包数量（1–100点）及3B单点学技，核对活人、余点、职业、原所需等级＋基础等级、最大基础等级、四属性门槛及基础前置技能。物品授予／加成技能不充当前置；学点不等于施放能力已恢复。
 - progression.award为可信服务端结算入口，输入已决定的经验量和局内按玩家递增发生标识。累计值以原最高等级阈值封顶，支持跨多个等级；每级属性点取CharStats，技能点按原规则每级一。发生标识仅在成功事务后提交，拒绝过期／重复，不保留无界集合。普通怪物击杀经验、邪恶洞穴技能点、第二幕技能书及后三幕生命／属性／技能点／抗性／古代人经验奖励已有权威来源；附近同队经验分配和分任务奖励资格已接；完整房间邻接及特殊多人事件仍有限制，经验范围见[组队](NETWORK.md#组队邀请客户端)，不接受客户端授予。任务奖励与服务见[任务系统](../gameplay/quests/SYSTEM.md)；古代人升级沿人物事务提交LevelUp触发。
-- transactions.CharacterEdit与InventoryEdit共同复验人物／库存revision，重算派生值并发布不可变CharacterFact／InventoryFact。升级补满存活人物生命／法力／耐力；体力／精力加点按CharStats四分之一单位增量增加对应资源，再限制到新上限；换装仅限制，不当作治疗。入场按真实总值限制资源，死亡语义沿已有入场规则。
+- transactions.CharacterEdit与InventoryEdit共同复验人物／库存revision，重算派生值并发布不可变CharacterFact／InventoryFact。升级补满存活人物生命／法力／耐力；体力／精力加点按CharStats四分之一单位增量增加对应资源；装备／状态造成的最大资源变化沿原回调按比例调整并限幅，不当作治疗；上限不变的普通事务不额外裁剪已存在的超上限生命／法力。入场恢复保存的生命／法力，耐力按原版补满，死亡语义沿已有规则。
 - hosting/native_character_wire共用入场／增量编码：ItemStatCost提供身份、ValShift和Signed，原1F发绝对属性，94发基础清单，21更新基础／额外技能等级（含装备来源撤销后的零等级）。增量仅发改变值，无私有成功ACK或模式分支。人物投影独立细节修复已获用户确认：按当前MPQ的item_poisonlengthresist（ID 110）／item_absorbfire_percent（ID 142）读取毒持续时间抗性／百分比火焰吸收。RemoteUiClients仍按原表Stat／ID／ValShift读取实际收到的属性；旧名在当前表中不存在，修正同时适用于原服，不是自研协议适配。
 
 grant-experience已接GameHost → progression → transactions → 原包输出，暂停实例也可使用；原服拒绝宿主管理。D2S保存基础分配、经验／等级、余点、基础技能与当前资源；总值、有效等级、缓存及奖励发生标识不写盘。v96不变，保存与校验边界见[存档](SAVES.md)；未分配随机套装值／条件套装需求明确不可用，不重掷或静默忽略。全部装备组合、成长及存档往返仍需完整核对。攻击显示的实现与原版依据见[人物属性](../gameplay/characters/ATTRIBUTES.md#原数据与显示)，完整战斗由战斗及职业专题维护。

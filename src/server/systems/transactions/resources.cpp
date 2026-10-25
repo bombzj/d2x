@@ -129,7 +129,12 @@ DomainResult<> System::resources(const ActorContext &actor, uint64_t expected, F
     const auto *area = ports_.areas.find(actor.area);
     if (!player.entered || player.actor != actor.actor || player.area != actor.area || player.persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     if (!area || area->generation != actor.areaGeneration || player.characterRevision != expected) return {DomainStatus::Stale, {}};
-    if (life <= 0 || life > totals.maxLifeFixed || mana < 0 || mana > totals.maxManaFixed || stamina < 0 || stamina > totals.maxStaminaFixed) return {DomainStatus::InvalidRequest, {}};
+    const auto &current=player.persistent.player;
+    // A narrow resource write may preserve or reduce an admitted surplus,
+    // but cannot create a new value above both the old value and the maximum.
+    if (life <= 0 || life > std::max(totals.maxLifeFixed,current.hp) ||
+        mana < 0 || mana > std::max(totals.maxManaFixed,current.mana) ||
+        stamina < 0 || stamina > std::max(totals.maxStaminaFixed,current.stamina)) return {DomainStatus::InvalidRequest, {}};
     const bool changed = life != player.persistent.player.hp || mana != player.persistent.player.mana || stamina != player.persistent.player.stamina;
     if (!changed && publicFacts.empty()) return {DomainStatus::Applied, std::monostate{}};
     if (expected == UINT64_MAX) return {DomainStatus::Capacity, {}};

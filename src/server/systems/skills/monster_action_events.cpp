@@ -69,7 +69,7 @@ DomainResult<> System::monsterActionEvent(const FrameEvent &event,uint64_t tick)
     bool scripted=false;
     const bool inferno=program.action==MonsterAttackRule::Action::Inferno;
     const bool actionFlag=mode.step.event==program.animationEvent;
-    if(!runtime_->monsters.contains(event.owner.unit) && actionFlag && !mode.step.ended && mode.repeated)
+    if(!runtime_->monsters.contains(event.owner.unit) && actionFlag && mode.repeated)
         runtime_->monsters.emplace(event.owner.unit,*mode.repeated);
     const auto current=runtime_->monsters.find(event.owner.unit);
     if(current!=runtime_->monsters.end()) {
@@ -84,7 +84,9 @@ DomainResult<> System::monsterActionEvent(const FrameEvent &event,uint64_t tick)
                 (skill.assassin && skill.assassin->program==AssassinProgram::BladeFury) ||
                 (skill.druid && skill.druid->program==DruidProgram::Arctic);
         }
-        if(continuing || scripted || (!mode.step.ended && actionFlag)) {
+        // MonMode executes the action marker before ENDANIM, including when
+        // both occur in one frame (for example a two-frame monster skill).
+        if(continuing || scripted || actionFlag) {
             if(!scripted) current->second.due=tick;
             if(releaseMonsters({tick},event.owner.unit)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
         }

@@ -10,6 +10,7 @@
 #include "server/systems/world/system.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
+#include "gameplay/quest/den_of_evil.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_four_state.hpp"
@@ -25,6 +26,7 @@ bool System::pendingGoals(PlayerId player) const {
         const auto &goal=entry.second;
         return goal.eligible.contains(player) && goal.actors.at(player)==p->actor &&
             (p->persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(entry.first)].stage<goal.stage ||
+             (p->persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(entry.first)].flags&goal.flags)!=goal.flags ||
              goal.consumeForgeItems || goal.consumeKhalimItems);
     });
 }
@@ -113,6 +115,11 @@ void System::initialize(const CharacterRecord &creator) {
         if(q.id!=QuestId::HoradricStaff && (stage>=q.completedStage || pending)) state_.initialFlags[q.nativeSlot]=0x8000;
     }
     const auto &book=creator.quests.at(size_t(ports_.settings.difficulty));
+    for(const auto &definition:questDefinitions)
+        if(book[questIndex(definition.id)].stage) state_.started.insert(definition.id);
+    const auto &den=book[questIndex(QuestId::DenOfEvil)];
+    state_.actOne.denLeftTown=(den.flags&denLeftTown) || den.stage>=uint32_t(DenStage::Entered);
+    state_.actOne.denEntered=(den.flags&denEntered)!=0;
     state_.actOne.cainOffer=(state_.initialFlags[2]&0x8000)!=0;
     state_.actOne.burialOffer=(state_.initialFlags[1]&0x8000)!=0;
     state_.actOne.toolsOffer=(state_.initialFlags[4]&0x8000)!=0;
@@ -193,8 +200,8 @@ void System::captureGoal(QuestId quest,uint32_t stage,std::set<PlayerId> eligibl
     queueGoal(quest,std::move(goal));
     state_.objectives.at(questIndex(quest))=true;
 }
-void System::shareProgress(QuestId quest,uint32_t stage,std::set<PlayerId> eligible) {
-    Goal goal;goal.stage=stage;goal.eligible=std::move(eligible);goal.primaryGoal=false;
+void System::shareProgress(QuestId quest,uint32_t stage,std::set<PlayerId> eligible,bool notifyQuest,uint32_t flags) {
+    Goal goal;goal.stage=stage;goal.flags=flags;goal.eligible=std::move(eligible);goal.primaryGoal=false;goal.notifyQuest=notifyQuest;
     queueGoal(quest,std::move(goal));
 }
 void System::queueGoal(QuestId quest,Goal goal) {
@@ -229,7 +236,7 @@ StepStatus System::flushGoals(TickContext tick) {
                 [](const auto &entry){return entry.second.spec.kind==ContainerKind::Trade;});
             const bool consumeItems=it->second.consumeForgeItems || (it->second.consumeKhalimItems && !trading);
             const bool alreadyApplied=quest.stage>=it->second.stage;
-            if(alreadyApplied && !consumeItems) {member=it->second.eligible.erase(member);continue;}
+            if(alreadyApplied && (quest.flags&it->second.flags)==it->second.flags && !consumeItems) {member=it->second.eligible.erase(member);continue;}
             if(!alreadyApplied) {
                 quest.stage=it->second.stage;
                 if(it->first==QuestId::RiteOfPassage) {
@@ -245,16 +252,22 @@ StepStatus System::flushGoals(TickContext tick) {
                     if(record.unspentAttributes>INT32_MAX-lamTomeAttributeReward) {blocked=true;++member;continue;}
                     record.unspentAttributes+=lamTomeAttributeReward;
                 }
-                if(it->first==QuestId::RadamentsLair && !(quest.flags&radamentBookUsed)) quest.flags|=radamentBookPending;
-                if(it->first==QuestId::ArcaneSanctuary) quest.flags|=arcaneCommentPending;
-                if(it->first==QuestId::Guardian) quest.flags|=guardianSpeechPending;
-                if(it->first==QuestId::TerrorsEnd) quest.flags|=terrorTyraelPending|terrorCainPending;
-                if(it->first==QuestId::RescueOnMountArreat) quest.flags=(quest.flags&~rescueCountMask)|state_.actFive.rescued;
-                if(it->first==QuestId::KhalimsWill) {
-                    auto &temple=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::BlackenedTemple)];
-                    if(temple.stage==3) temple.stage=4;
+                // Shared progress uses the same reliable queue but is not a
+                // primary-goal/reward callback. Starting Radament must not
+                // manufacture a skill-book entitlement at stage1.
+                if(it->second.primaryGoal) {
+                    if(it->first==QuestId::RadamentsLair && !(quest.flags&radamentBookUsed)) quest.flags|=radamentBookPending;
+                    if(it->first==QuestId::ArcaneSanctuary) quest.flags|=arcaneCommentPending;
+                    if(it->first==QuestId::Guardian) quest.flags|=guardianSpeechPending;
+                    if(it->first==QuestId::TerrorsEnd) quest.flags|=terrorTyraelPending|terrorCainPending;
+                    if(it->first==QuestId::RescueOnMountArreat) quest.flags=(quest.flags&~rescueCountMask)|state_.actFive.rescued;
+                    if(it->first==QuestId::KhalimsWill) {
+                        auto &temple=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::BlackenedTemple)];
+                        if(temple.stage==3) temple.stage=4;
+                    }
                 }
             }
+            quest.flags|=it->second.flags;
             const auto &area=ports_.areas.at(p->area);
             const ActorContext actor{p->player,p->actor,p->area,area.generation,0,tick.tick};
             DomainResult<> result;
@@ -280,12 +293,64 @@ StepStatus System::flushGoals(TickContext tick) {
                 result=plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
             } else {
                 const bool levelUp=record.level>p->persistent.player.level;
-                result=commit(actor,std::move(record),levelUp);
+                result=commit(actor,std::move(record),levelUp,{},it->second.notifyQuest);
             }
             if(result) member=it->second.eligible.erase(member);
             else {blocked=true;++member;}
         }
         if(it->second.eligible.empty()) it=state_.goals.erase(it);else ++it;
+    }
+    return blocked?StepStatus::Blocked:StepStatus::Complete;
+}
+std::set<PlayerId> System::progressRecipients(QuestId quest) const {
+    std::set<PlayerId> result;
+    // UpdateQuestStateFlags iterates players independently of party and act.
+    // StatusCycler applies its separate same-act visibility filter.
+    for(const auto &[id,player]:ports_.players.all())
+        if(player.entered && !rewardPending(player.persistent.player,quest) &&
+            !unavailable(id,player.persistent.player,quest)) result.insert(id);
+    return result;
+}
+DomainResult<> System::startQuest(const ActorContext &actor,CharacterRecord record,QuestId quest,EntityId npc,uint32_t flags) {
+    const auto stage=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(quest)].stage;
+    auto recipients=progressRecipients(quest);
+    const auto result=commit(actor,std::move(record),false,{},false);
+    if(result) {
+        state_.started.insert(quest);
+        shareProgress(quest,stage,std::move(recipients),false,flags);
+        queueStatus(quest,1,npc);
+    }
+    return result;
+}
+void System::queueStatus(QuestId quest,uint8_t status,std::optional<EntityId> npc) {
+    state_.statusNotices.insert_or_assign(quest,StatusNotice{status,npc});
+}
+void System::npcDeactivated(EntityId npc) {
+    for(auto &[quest,notice]:state_.statusNotices) {
+        (void)quest;if(notice.deactivateNpc==npc) notice.deactivateNpc.reset();
+    }
+}
+StepStatus System::flushStatuses(TickContext tick) {
+    bool blocked=false;
+    for(auto it=state_.statusNotices.begin();it!=state_.statusNotices.end();) {
+        if(it->second.deactivateNpc || state_.goals.contains(it->first)) {++it;continue;}
+        const auto &definition=questDefinition(it->first);
+        std::vector<EventBatch> batches;
+        for(const auto &[id,player]:ports_.players.all()) {
+            const auto *area=ports_.areas.find(player.area);
+            if(!player.entered || !area || area->definition.act!=int(definition.act)) continue;
+            const auto &record=player.persistent.player;
+            const auto &quest=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(it->first)];
+            const bool missed=state_.objectives[questIndex(it->first)] && unavailable(id,record,it->first);
+            if((quest.stage>=definition.completedStage || (state_.initialFlags[definition.nativeSlot]&0x8000)) &&
+                !credited(id,it->first) && !missed) continue;
+            const auto counter=it->first==QuestId::DenOfEvil?uint16_t(state_.actOne.denRemaining):
+                it->first==QuestId::RescueOnMountArreat?uint16_t(15-std::min(state_.actFive.rescued,15u)):uint16_t(0);
+            batches.push_back({0,tick.tick,{}, {AudienceKind::Player,id,player.area},
+                {QuestStatusFact{it->first,missed?uint8_t(12):it->second.status,counter}}});
+        }
+        if(!batches.empty() && !ports_.events.publishGroup(std::move(batches))) {blocked=true;++it;continue;}
+        it=state_.statusNotices.erase(it);
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;
 }

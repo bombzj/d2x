@@ -115,7 +115,7 @@ DomainResult<> System::install(Prepared prepared) {
     const auto *player=ports_.players.find(actor.player);
     auto operation=uint8_t(request.action==Action::Buy?4:request.action==Action::Sell?3:request.action==Action::Repair || request.action==Action::RepairAll?1:5);
     const auto failure=[&](DomainStatus status,uint8_t result=9)->DomainResult<> {
-        if (player && player->entered) { auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,player->area},{MerchantFact{request.npc.id,request.item?request.item->id:EntityId{},0,result,player->persistent.player.gold}}}); if (!sent) return {sent.status,{}}; }
+        if (player && player->entered) { auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,player->area},{MerchantFact{request.npc.id,EntityId{UINT32_MAX},0,result,player->persistent.player.gold}}}); if (!sent) return {sent.status,{}}; }
         state_.pending.erase(queued); return {status,{}};
     };
     const auto access=ports_.npc.service(actor,request.npc.id);

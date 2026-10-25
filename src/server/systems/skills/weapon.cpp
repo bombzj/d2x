@@ -88,6 +88,10 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(source->charged) {skill.charge=SkillCharge{source->charged->item,source->charged->layer};skill.manaCost=skill.startMana=0;}
     const auto &program=*skill.weapon;
     const auto matchesWeapon=[&](const WeaponDamage &weapon) {
+        // D2Common sub_6FDB1130 accepts an empty hand for the generic
+        // weapon/melee/hand-to-hand requirements when no second hand is needed.
+        if(!weapon.item && !program.dualWield &&
+            (program.requiredType=="weap" || program.requiredType=="mele" || program.requiredType=="h2h")) return true;
         const auto matches=[&](const std::string &type) {return !type.empty() && std::find(weapon.types.begin(),weapon.types.end(),type)!=weapon.types.end();};
         if(matches(program.requiredType)) return true;
         if(skill.pd2) for(const auto &type:skill.pd2->weaponTypes) if(matches(type)) return true;
@@ -97,7 +101,6 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(p.persistent.player.mana<skill.manaCost && (program.frenzy || (program.spear && program.spear->attackWithoutMana) || skill.effect==SkillBehavior::PoisonDagger)) return attack(actor,request,0);
     const auto *weapon=program.commonAttack?commonAttackWeapon(p.totals.equipment,program.thrown,program.leftHand):std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
         [&](const auto &w){return !w.leftHand && (program.smite ||
-            ((skill.assassin || skill.druid) && !w.item && program.requiredType=="mele") ||
             matchesWeapon(w));});
     if(!weapon || weapon==p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount || weapon->fasterAttack<=-120 ||
         (program.thrown && !weapon->throwable) || p.persistent.player.mana<skill.manaCost) return {DomainStatus::Unavailable,{}};

@@ -22,6 +22,8 @@ struct State {
     std::map<PlayerId,std::set<QuestId>> credited;
     std::map<PlayerId,EntityId> creditedActors;
     std::multimap<QuestId,Goal> goals;
+    std::map<QuestId,StatusNotice> statusNotices;
+    std::set<QuestId> started;
     std::map<PlayerId,Preparation> pending;
     uint64_t next=1;
     std::string deferred;
@@ -32,7 +34,7 @@ struct Ports { const PlayerStore &players; const AreaStore &areas; population::S
 struct Dialogue {QuestId quest; NpcMessage message;};
 class System {
     State state_; const Ports ports_;
-    DomainResult<> commit(const ActorContext &,CharacterRecord,bool levelUp=false,std::optional<QuestId> primaryGoal={});
+    DomainResult<> commit(const ActorContext &,CharacterRecord,bool levelUp=false,std::optional<QuestId> primaryGoal={},bool notifyQuest=true);
     QuestFact fact(PlayerId,const CharacterRecord &,RegionId) const;
     DomainResult<> prepareReward(const ActorContext &,EntityId,RewardKind,bool conversation,std::optional<Vec> dropPosition = {});
     StepStatus denStep(TickContext);
@@ -45,9 +47,13 @@ class System {
     StepStatus ancientsStep(TickContext);
     StepStatus baalStep(TickContext);
     StepStatus flushGoals(TickContext);
+    StepStatus flushStatuses(TickContext);
     void captureGoal(QuestId,uint32_t,RegionId,std::optional<Vec> = {},std::optional<PlayerId> = {});
     void captureGoal(QuestId,uint32_t,std::set<PlayerId>,bool attributeReward=false,bool consumeForgeItems=false);
-    void shareProgress(QuestId,uint32_t,std::set<PlayerId>);
+    void shareProgress(QuestId,uint32_t,std::set<PlayerId>,bool notifyQuest=true,uint32_t flags=0);
+    std::set<PlayerId> progressRecipients(QuestId) const;
+    DomainResult<> startQuest(const ActorContext &,CharacterRecord,QuestId,EntityId,uint32_t flags=0);
+    void queueStatus(QuestId,uint8_t,std::optional<EntityId> deactivateNpc={});
     void queueGoal(QuestId,Goal);
     std::set<PlayerId> eligibleParty(QuestId,uint32_t,RegionId,std::optional<Vec>,std::optional<PlayerId>) const;
     std::set<PlayerId> eligibleDelivery(QuestId,uint32_t,PlayerId,bool allInAct=false) const;
@@ -99,12 +105,14 @@ class System {
     bool pendingGoals(PlayerId) const;
     QuestFact projection(PlayerId player,const CharacterRecord &record,RegionId area,bool fullStatus=true) const { auto result=fact(player,record,area);result.fullStatus=fullStatus;return result; }
     std::optional<Dialogue> dialogue(const ActorContext &,const NpcRule &) const;
+    std::vector<Dialogue> dialogues(const ActorContext &,const NpcRule &) const;
     DomainResult<> operate(const ActorContext &,EntityId,int definition,int operation,Vec);
     std::vector<Preparation> pending() const;
     DomainResult<> install(Prepared);
     std::optional<bool> takeCompletion(EntityId);
     bool npcVisible(const CharacterRecord &,std::string_view code,RegionId,int initFunction=0) const;
     DomainResult<> execute(const ActorContext &,const Request &);
+    void npcDeactivated(EntityId);
     bool allowsTravel(const CharacterRecord &,RegionId,RegionId) const;
     std::optional<int> objectMode(RegionId,EntityId,int definition,int operation,uint64_t tick) const;
     void onTownPortal(RegionId region) {if(int(region)==120) resetAncients();}

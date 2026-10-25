@@ -67,19 +67,20 @@ std::optional<Dialogue> System::actOneDialogue(const ActorContext &actor,const N
         if(!unavailable(actor.player,p->persistent.player,QuestId::SearchForCain) && cain==3 && detail::carried(*p,"bks",ports_.settings.difficulty)) return emit(QuestId::SearchForCain,112,0);
         if(cain==7) return emit(QuestId::SearchForCain,118);
         const auto den=stage(QuestId::DenOfEvil);
-        if((den==0 || den==3) && !unavailable(actor.player,p->persistent.player,QuestId::DenOfEvil)) return emit(QuestId::DenOfEvil,den==0?64:76,0);
+        if(((den==0 && !state_.started.contains(QuestId::DenOfEvil)) || den==3) && !unavailable(actor.player,p->persistent.player,QuestId::DenOfEvil)) return emit(QuestId::DenOfEvil,den==0?64:76,0);
         // A1Q2_SeqCallback activates Cain's offer after Blood Raven's
         // reward, or immediately when the creator already completed A1Q2.
         if(cain==0 && state_.actOne.cainOffer && !unavailable(actor.player,p->persistent.player,QuestId::SearchForCain)) return emit(QuestId::SearchForCain,97);
-        if(den==1 || den==2) return emit(QuestId::DenOfEvil,den==1?65:71,2);
+        if(den<3 && (den || state_.started.contains(QuestId::DenOfEvil))) return emit(QuestId::DenOfEvil,den<2 && !state_.actOne.denLeftTown?65:71,2);
     }
     if(npc.code=="kashya") {
         const auto burial=stage(QuestId::SistersBurialGrounds);
         // A1Q1 message76 advances A1Q2's sequence to its Kashya offer.
         // Killing Blood Raven without accepting the offer still qualifies.
-        if(burial==0 && !state_.actOne.burialOffer) return {};
-        if(burial==0 || burial==3) return emit(QuestId::SistersBurialGrounds,burial==0?81:92,burial==3?0:1);
-        if(burial==1 || burial==2) return emit(QuestId::SistersBurialGrounds,burial==1?82:87,2);
+        const bool started=state_.started.contains(QuestId::SistersBurialGrounds);
+        if(burial==0 && !state_.actOne.burialOffer && !started) return {};
+        if((burial==0 && !started) || burial==3) return emit(QuestId::SistersBurialGrounds,burial==0?81:92,burial==3?0:1);
+        if(burial<3 && (burial || started)) return emit(QuestId::SistersBurialGrounds,burial<2?82:87,2);
     }
     if(npc.code=="charsi") {
         const auto tools=stage(QuestId::ToolsOfTheTrade);
@@ -91,18 +92,39 @@ std::optional<Dialogue> System::actOneDialogue(const ActorContext &actor,const N
     if(npc.code=="warriv1" && stage(QuestId::SistersToTheSlaughter)==3) return emit(QuestId::SistersToTheSlaughter,183,0);
     return {};
 }
-DomainResult<> System::commit(const ActorContext &actor,CharacterRecord record,bool levelUp,std::optional<QuestId> primaryGoal) {
+std::vector<Dialogue> System::dialogues(const ActorContext &actor,const NpcRule &npc) const {
+    std::vector<Dialogue> result;
+    if(const auto primary=dialogue(actor,npc)) result.push_back(*primary);
+    const auto *player=ports_.players.find(actor.player);
+    const auto *area=ports_.areas.find(actor.area);
+    if(!player || !area) return result;
+    const auto &book=player->persistent.player.quests.at(size_t(ports_.settings.difficulty));
+    // These callbacks share the original AfterInit/EarlyReturn text chains.
+    // NPC identities and string IDs come from the prepared MPQ speech table.
+    for(const auto quest:{QuestId::DenOfEvil,QuestId::SistersBurialGrounds,QuestId::RadamentsLair}) {
+        const auto stage=book.at(questIndex(quest)).stage;
+        if(questDefinition(quest).act!=area->definition.act || stage>=3 ||
+            (!stage && !state_.started.contains(quest)) || unavailable(actor.player,player->persistent.player,quest) ||
+            std::any_of(result.begin(),result.end(),[&](const auto &entry){return entry.quest==quest;})) continue;
+        const bool early=stage>=2 || (quest==QuestId::DenOfEvil && state_.actOne.denLeftTown);
+        if(const auto comment=speech(npc,quest,early?"EarlyReturn":"AfterInit",2)) result.push_back(*comment);
+    }
+    return result;
+}
+DomainResult<> System::commit(const ActorContext &actor,CharacterRecord record,bool levelUp,std::optional<QuestId> primaryGoal,bool notifyQuest) {
     const auto *player=ports_.players.find(actor.player); if(!player) return {DomainStatus::InvalidActor,{}};
     auto triggers=levelUp?ports_.itemTriggers.prepare(actor,{ItemSkillEvent::LevelUp},{},player->position):DomainResult<reactions::ItemEventPlan>{DomainStatus::Applied,reactions::ItemEventPlan{}};
     if(!triggers) return {triggers.status,{}};
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
     if(levelUp) edit.resources=transactions::ResourceRefresh::LevelUp;
-    auto questFact=fact(actor.player,edit.player,actor.area);
-    if(primaryGoal) {
-        const auto index=questIndex(*primaryGoal);
-        questFact.credited[index]=true;questFact.entitled[index]=true;questFact.unavailable[index]=false;
+    if(notifyQuest) {
+        auto questFact=fact(actor.player,edit.player,actor.area);
+        if(primaryGoal) {
+            const auto index=questIndex(*primaryGoal);
+            questFact.credited[index]=true;questFact.entitled[index]=true;questFact.unavailable[index]=false;
+        }
+        edit.facts.emplace_back(std::move(questFact));
     }
-    edit.facts.emplace_back(std::move(questFact));
     auto plan=ports_.transactions.prepare(std::move(edit)); if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value));
     if(result && levelUp) ports_.itemTriggers.commit(std::move(*triggers.value),true);
@@ -160,17 +182,22 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
     }
     if(!request.npc || !request.message) return {DomainStatus::InvalidRequest,{}};
     const auto *npc=ports_.npc.find(actor,*request.npc,true);if(!npc) return {DomainStatus::InvalidRequest,{}};
-    const auto expected=dialogue(actor,npc->rule);
-    if(!expected || expected->quest!=request.quest || expected->message.text!=*request.message) return {DomainStatus::Stale,{}};
+    const auto expected=dialogues(actor,npc->rule);
+    if(std::none_of(expected.begin(),expected.end(),[&](const auto &entry){return entry.quest==request.quest && entry.message.text==*request.message;})) return {DomainStatus::Stale,{}};
     if(area->definition.act==1) return acknowledgeActTwo(actor,request,npc->rule);
     if(area->definition.act==2) return acknowledgeActThree(actor,request,npc->rule);
     if(area->definition.act==3) return acknowledgeActFour(actor,request,npc->rule);
     if(area->definition.act==4) return acknowledgeActFive(actor,request,npc->rule);
     auto record=p->persistent.player;auto &q=record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(request.quest));
     switch(*request.message) {
-    case 64: if(!denAdvanceOnTalk(q)) return {DomainStatus::Stale,{}};break;
+    case 64: {
+        if(!denAdvanceOnTalk(q)) return {DomainStatus::Stale,{}};
+        return startQuest(actor,std::move(record),QuestId::DenOfEvil,*request.npc,denStarted);
+    }
     case 76: if(!denClaimReward(q) || record.unspentSkills==INT32_MAX) return {DomainStatus::Conflict,{}}; ++record.unspentSkills;break;
-    case 81: if(!burialAdvanceOnTalk(q,state_.actOne.burialOffer)) return {DomainStatus::Stale,{}};break;
+    case 81:
+        if(!burialAdvanceOnTalk(q,state_.actOne.burialOffer)) return {DomainStatus::Stale,{}};
+        return startQuest(actor,std::move(record),QuestId::SistersBurialGrounds,*request.npc);
     case 92: return prepareReward(actor,*request.npc,RewardKind::Rogue,true);
     case 97: cainAdvance(q,CainStage::Assigned);break;
     case 112: return prepareReward(actor,*request.npc,RewardKind::TranslateScroll,true);
@@ -188,7 +215,7 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
 StepStatus System::step(TickContext tick,FrameFacts &) {
     std::erase_if(state_.credited,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || state_.creditedActors.at(entry.first)!=p->actor;});
     std::erase_if(state_.creditedActors,[&](const auto &entry){return !state_.credited.contains(entry.first);});
-    const auto den=denStep(tick),act=actOneStep(tick),two=actTwoStep(tick),three=actThreeStep(tick),four=actFourStep(tick),five=actFiveStep(tick),ancients=ancientsStep(tick),baal=baalStep(tick),goals=flushGoals(tick);
+    const auto den=denStep(tick),act=actOneStep(tick),two=actTwoStep(tick),three=actThreeStep(tick),four=actFourStep(tick),five=actFiveStep(tick),ancients=ancientsStep(tick),baal=baalStep(tick),goals=flushGoals(tick),statuses=flushStatuses(tick);
     bool publicationBlocked=false;
     const auto flags=gameFlags();
     if(flags!=state_.publishedFlags) {
@@ -204,9 +231,21 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         if(stale && !s.conversation && !s.dropPosition) state_.completed.insert_or_assign(s.source,false);
         return stale;
     });
-    return publicationBlocked || den==StepStatus::Blocked || act==StepStatus::Blocked || two==StepStatus::Blocked || three==StepStatus::Blocked || four==StepStatus::Blocked || five==StepStatus::Blocked || ancients==StepStatus::Blocked || baal==StepStatus::Blocked || goals==StepStatus::Blocked?StepStatus::Blocked:StepStatus::Complete;
+    return publicationBlocked || den==StepStatus::Blocked || act==StepStatus::Blocked || two==StepStatus::Blocked || three==StepStatus::Blocked || four==StepStatus::Blocked || five==StepStatus::Blocked || ancients==StepStatus::Blocked || baal==StepStatus::Blocked || goals==StepStatus::Blocked || statuses==StepStatus::Blocked?StepStatus::Blocked:StepStatus::Complete;
 }
 StepStatus System::denStep(TickContext tick) {
+    for(const auto &[id,player]:ports_.players.all()) {
+        if(!player.entered || int(player.area)==1 || rewardPending(player.persistent.player,QuestId::DenOfEvil) ||
+            unavailable(id,player.persistent.player,QuestId::DenOfEvil)) continue;
+        if(int(player.area)==8 && !state_.actOne.denEntered) {
+            shareProgress(QuestId::DenOfEvil,uint32_t(DenStage::Entered),progressRecipients(QuestId::DenOfEvil),false,denEntered);
+            state_.actOne.denLeftTown=true;state_.actOne.denEntered=true;state_.started.insert(QuestId::DenOfEvil);
+            queueStatus(QuestId::DenOfEvil,2);
+        } else if(!state_.actOne.denLeftTown && state_.started.contains(QuestId::DenOfEvil)) {
+            shareProgress(QuestId::DenOfEvil,uint32_t(DenStage::Assigned),progressRecipients(QuestId::DenOfEvil),false,denLeftTown);
+            state_.actOne.denLeftTown=true;
+        }
+    }
     const auto *area=ports_.areas.find(RegionId(8));
     if(area) {
         size_t alive=0,killed=0;

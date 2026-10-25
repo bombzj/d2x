@@ -2,6 +2,8 @@
 #include "hosting/native_game_wire.hpp"
 #include "hosting/native_item_wire.hpp"
 #include "hosting/native_character_wire.hpp"
+#include "hosting/native_combat_wire.hpp"
+#include "server/runtime/events.hpp"
 #include "gameplay/combat/life.hpp"
 #include <cmath>
 #include <algorithm>
@@ -167,15 +169,24 @@ void NativeRealmService::publishPlayers() {
             peer.hover.erase(hover);
         }
         auto &previous = peer.states[actor];
+        auto &previousStats=peer.stateStats[actor];
         const auto emit = [&](int state, bool enabled) {
-            packets.push_back(encodeServerPacket(enabled ? ServerMessage::EnableState : ServerMessage::DisableState,
-                [&](auto &out) { out.u8(0); out.u32(uint32_t(actor.value)); out.u8(uint8_t(state)); }));
+            const auto values=view->stateStats.find(state);
+            auto packet=nativeState(*content,server::StateFact{actor,0,view->actor.region,state,enabled,
+                enabled && values!=view->stateStats.end()?values->second:std::vector<StatValue>{}});
+            if(!packet.empty()) packets.push_back(std::move(packet));
         };
-        for (const auto state : previous) if (!view->states.contains(state)) emit(state, false);
-        for (const auto state : view->states) if (!previous.contains(state)) emit(state, true);
+        for (const auto state : previous) if (!view->states.contains(state)) {emit(state, false);previousStats.erase(state);}
+        for (const auto state : view->states) {
+            const auto values=view->stateStats.find(state);
+            const bool changed=values!=view->stateStats.end() && (!previousStats.contains(state) || previousStats.at(state)!=values->second);
+            if(!previous.contains(state) || changed) emit(state,true);
+            if(values!=view->stateStats.end()) previousStats[state]=values->second;
+        }
         previous = view->states;
     }
     std::erase_if(peer.states, [&](const auto &entry) { return !stateActors.contains(entry.first); });
+    std::erase_if(peer.stateStats, [&](const auto &entry) { return !stateActors.contains(entry.first); });
     std::erase_if(peer.hover, [&](const auto &entry) { return !stateActors.contains(entry.first); });
     if (!packets.empty()) sendGameBatch(std::move(packets));
 }

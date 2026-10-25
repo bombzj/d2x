@@ -113,6 +113,25 @@ const Conversation *System::conversation(PlayerId id) const {
     const ActorContext actor{id, player->actor, player->area, area->generation, 0, 0};
     return find(actor, current->second.npc, true) ? &current->second : nullptr;
 }
+std::pair<Conversation,NpcMessagesFact> System::offer(const ActorContext &actor,const AreaNpc &npc,const CharacterRecord &record) const {
+    Conversation next{npc.id,actor.area,state_.next,{}};NpcMessagesFact fact{npc.id,{}};
+    next.actor=actor.actor;next.areaGeneration=actor.areaGeneration;
+    for(const auto &message:ports_.quests.dialogues(actor,npc.rule)) {
+        next.pendingQuests.emplace(message.message.text,message.quest);
+        auto offered=message.message;
+        // QUESTS_InitScrollTextChain maps authored menu1 to wire menu0.
+        if(offered.menu==1) offered.menu=0;
+        fact.messages.push_back(offered);
+    }
+    if(!record.npcIntroductions.at(size_t(ports_.settings.difficulty)).contains(npc.rule.introduction)) {
+        const auto intro=npc.rule.introductions.find(record.characterClass);
+        if(intro!=npc.rule.introductions.end() && !next.pendingQuests.contains(intro->second)) {
+            next.pendingIntroduction=intro->second;
+            fact.messages.push_back({0,intro->second});
+        }
+    }
+    return {std::move(next),std::move(fact)};
+}
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
     if (const auto *end=std::get_if<EndNpcConversation>(&request.intent)) {
         const auto current=state_.conversations.find(actor.player);
@@ -140,10 +159,16 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         auto current = state_.conversations.find(actor.player);
         if (!find(actor,npc->id,true) || current == state_.conversations.end() || !talk.message) return {DomainStatus::Stale,{}};
         const bool introduction=current->second.pendingIntroduction==talk.message;
-        if(!introduction && current->second.pendingMessage!=talk.message) return {DomainStatus::Stale,{}};
-        if(current->second.quest && !introduction) {
-            auto result=ports_.quests.execute(actor,{quests::Action::Acknowledge,current->second.questId,npc->id,talk.message});
-            if(result) current->second.pendingMessage.reset();
+        const auto pending=current->second.pendingQuests.find(*talk.message);
+        if(!introduction && pending==current->second.pendingQuests.end()) return {DomainStatus::Stale,{}};
+        if(!introduction) {
+            auto result=ports_.quests.execute(actor,{quests::Action::Acknowledge,pending->second,npc->id,talk.message});
+            if(result) {
+                std::map<uint16_t,QuestId> next;
+                for(const auto &message:ports_.quests.dialogues(actor,npc->rule)) next.emplace(message.message.text,message.quest);
+                current->second.refresh=next!=current->second.pendingQuests;
+                current->second.pendingQuests.erase(pending);
+            }
             return result;
         }
         record.npcIntroductions.at(size_t(ports_.settings.difficulty)).insert(npc->rule.introduction);
@@ -151,29 +176,12 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         auto plan = ports_.transactions.prepare(transactions::CharacterEdit{actor,player.inventoryRevision,player.characterRevision,std::move(record)});
         if (!plan) return {plan.status,{}};
         auto result = ports_.transactions.commit(std::move(*plan.value));
-        if (result) {if(introduction) current->second.pendingIntroduction.reset();else current->second.pendingMessage.reset();}
+        if (result) current->second.pendingIntroduction.reset();
         return result;
     }
     if (talk.action != TalkToNpc::Action::Talk) return {};
     if (state_.next == UINT64_MAX) return {DomainStatus::Capacity, {}};
-    Conversation next{npc->id,actor.area,state_.next,{}}; NpcMessagesFact fact{npc->id,{}};
-    next.actor=actor.actor; next.areaGeneration=actor.areaGeneration;
-    if(const auto message=ports_.quests.dialogue(actor,npc->rule)) {
-        next.quest=true; next.questId=message->quest; next.pendingMessage=message->message.text;
-        auto offered=message->message;
-        // QUESTS_InitScrollTextChain converts authored menu 1 to wire menu 0.
-        // Wire menu 1 is an urgent interaction, not an ordinary quest offer.
-        if(offered.menu==1) offered.menu=0;
-        fact.messages.push_back(offered);
-    }
-    if (!record.npcIntroductions.at(size_t(ports_.settings.difficulty)).contains(npc->rule.introduction)) {
-        const auto intro = npc->rule.introductions.find(record.characterClass);
-        if (intro != npc->rule.introductions.end() && next.pendingMessage!=intro->second) {
-            if(next.pendingMessage) next.pendingIntroduction=intro->second;
-            else next.pendingMessage=intro->second;
-            fact.messages.push_back({0,intro->second});
-        }
-    }
+    auto [next,fact]=offer(actor,*npc,record);
     // Ordinary gossip is selected by the client from its MPQ, not appended
     // to the server's quest/intro text chain (27).
     auto conversations = state_.conversations; conversations[actor.player] = next;
@@ -184,14 +192,21 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         healing = std::move(*prepared.value); record = healing->character;
     }
     transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,std::move(record)}; edit.facts.emplace_back(std::move(fact));
-    if (healing) {edit.transient = healing->transient;edit.publicFacts=healing->publicFacts;edit.resourceBase=healing->resourceBase;}
+    if (healing) {edit.explicitResources=true;edit.transient = healing->transient;edit.publicFacts=healing->publicFacts;edit.resourceBase=healing->resourceBase;}
     if (healing && (healing->character.hp!=player.persistent.player.hp || healing->character.mana!=player.persistent.player.mana ||
         healing->character.stamina!=player.persistent.player.stamina || healing->transient.states!=player.transient.states || (healing->units && !healing->units->life.empty())))
         edit.publicFacts.emplace_back(SoundFact{npc->id,1,actor.area,10});
     auto plan = ports_.transactions.prepare(std::move(edit),nullptr,{},healing?healing->units:nullptr); if (!plan) return {plan.status,{}};
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) { if (healing) ports_.effects.commit(std::move(*healing)); state_.conversations.swap(conversations); ++state_.next; } return result;
 }
-DomainResult<> System::close(PlayerId player) { approaches_.erase(player);state_.conversations.erase(player); return {DomainStatus::Applied,std::monostate{}}; }
+DomainResult<> System::close(PlayerId player) {
+    approaches_.erase(player);
+    if(const auto current=state_.conversations.find(player);current!=state_.conversations.end()) {
+        ports_.quests.npcDeactivated(current->second.npc);
+        state_.conversations.erase(current);
+    }
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::escape(RegionId region,EntityId id,Vec destination) {
     if(state_.escapes.contains(id)) return {DomainStatus::Applied,std::monostate{}};
     const auto *area=ports_.areas.find(region);if(!area) return {DomainStatus::Unavailable,{}};
@@ -205,6 +220,19 @@ DomainResult<> System::escape(RegionId region,EntityId id,Vec destination) {
     return {DomainStatus::Stale,{}};
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    bool blocked=false;
+    for(auto &[id,current]:state_.conversations) {
+        if(!current.refresh) continue;
+        const auto *player=ports_.players.find(id);if(!player) continue;
+        const auto *area=ports_.areas.find(player->area);if(!area) continue;
+        const ActorContext actor{id,player->actor,player->area,area->generation,0,tick.tick};
+        const auto *npc=find(actor,current.npc,true);if(!npc) continue;
+        if(state_.next==UINT64_MAX) {blocked=true;continue;}
+        auto [next,fact]=offer(actor,*npc,player->persistent.player);
+        fact.activate=false;
+        if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Player,id,player->area},{std::move(fact)}})) {blocked=true;continue;}
+        current=std::move(next);++state_.next;
+    }
     for(auto it=approaches_.begin();it!=approaches_.end();) {
         auto pending=it->second;pending.actor.tick=tick.tick;
         const auto *player=ports_.players.find(it->first);
@@ -242,7 +270,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             escape.escaped=escaped;
         }
     }
-    std::erase_if(state_.conversations,[&](const auto &entry){return !conversation(entry.first);});
-    return StepStatus::Complete;
+    std::erase_if(state_.conversations,[&](const auto &entry){
+        if(conversation(entry.first)) return false;
+        ports_.quests.npcDeactivated(entry.second.npc);return true;
+    });
+    return blocked?StepStatus::Blocked:StepStatus::Complete;
 }
 }

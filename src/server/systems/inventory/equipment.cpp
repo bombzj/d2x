@@ -85,7 +85,7 @@ DomainResult<bool> Draft::autoEquip(EntityId id) {
     const auto &item = edit.inventory.items.at(id);
     const auto *definition = catalog.find(item.definition);
     if (!definition) return {DomainStatus::Unavailable, {}};
-    if (!item.identified || definition->equipment.isType("misl")) return {DomainStatus::Applied, false};
+    if (!item.identified || definition->equipment.isType("tpot")) return {DomainStatus::Applied, false};
     // ItemMode::sub_6FC42F20 refuses a quiver unless an equipped weapon uses it.
     if (!definition->equipment.quiver.empty()) {
         bool weapon = false;

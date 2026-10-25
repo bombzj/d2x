@@ -51,13 +51,14 @@ struct CharacterFact {
     CharacterRecord before, after;
     attributes::Totals previous, current;
     std::optional<bool> selectedHand{}; // Explicit selection also confirms an unchanged value.
+    bool explicitResources{}; // Native UpdateAttribute callbacks; ordinary changes use compact sampling.
 };
 struct TravelFact { PlayerId player; EntityId actor; RegionId from, to; uint64_t areaGeneration{}; Vec position; bool walking{}, revived{}; };
 struct ObjectFact { EntityId object, actor; RegionId area; uint64_t revision{}; };
 struct ChatFact { EntityId actor; std::string name, text; std::vector<PlayerId> recipients; uint8_t type{1}, language{}, unitType{2}, nameColor{}; };
 struct CommandFact { PlayerId player; uint64_t sequence{}; CommandStatus result; };
 struct NpcMessage { uint8_t menu{}; uint16_t text{}; };
-struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; uint8_t type=1; };
+struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; uint8_t type=1; bool activate=true; };
 struct MerchantFact { EntityId npc, item; uint8_t operation{}, result{}; uint32_t gold{}; bool refreshShop{}; };
 struct WaypointFact { EntityId source; std::vector<RegionId> unlocked; };
 struct UiFact { uint8_t action{}; };

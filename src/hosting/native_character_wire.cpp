@@ -6,6 +6,7 @@
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/stats/stat_list.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
+#include "gameplay/quest/acts/act_three_state.hpp"
 #include "protocol/message_catalog.hpp"
 #include <algorithm>
 #include <array>
@@ -34,17 +35,26 @@ Values values(const ClassicData &data, const CharacterRecord &record, const serv
     const auto &a = totals.character;
     const auto &c = a.combat;
     const int permanentResistance=questResistance(record.quests);
-    const auto baseStat = [&](std::string_view name) {
+    const auto definition=std::find_if(data.characters.begin(),data.characters.end(),[&](const auto &entry) {
+        return entry.name==record.characterClass;
+    });
+    if(definition==data.characters.end()) throw std::runtime_error("Missing native character base definition");
+    CharacterModifiers permanent;permanent.baseLife=questBaseLife(record.quests);
+    const auto natural=deriveCharacterAttributes(*definition,record.level,record.allocated,permanent);
+    const auto rawBaseStat = [&](std::string_view name) {
         const auto id = data.nativeStats->names.at(std::string(name));
-        return totals.statSources ? baseStatValue(*data.nativeStats,*totals.statSources,{id,0}) >>
-            data.nativeStats->definitions.at(id).valueShift : 0;
+        return totals.statSources ? baseStatValue(*data.nativeStats,*totals.statSources,{id,0}) : 0;
     };
-    return {{"strength", a.strength}, {"energy", a.energy}, {"dexterity", a.dexterity}, {"vitality", a.vitality},
+    const auto baseStat = [&](std::string_view name) {
+        return rawBaseStat(name)>>data.nativeStats->definitions.at(data.nativeStats->names.at(std::string(name))).valueShift;
+    };
+    return {{"strength", natural.strength}, {"energy", natural.energy}, {"dexterity", natural.dexterity}, {"vitality", natural.vitality},
         {"statpts", record.unspentAttributes}, {"newskills", record.unspentSkills},
-        {"hitpoints", record.hp}, {"maxhp", a.maxLifeFixed}, {"mana", record.mana}, {"maxmana", a.maxManaFixed},
-        {"stamina", record.stamina}, {"maxstamina", a.maxStaminaFixed}, {"level", record.level},
+        {"hitpoints", record.hp}, {"maxhp", natural.maxLifeFixed}, {"mana", record.mana}, {"maxmana", natural.maxManaFixed},
+        {"stamina", record.stamina}, {"maxstamina", natural.maxStaminaFixed}, {"level", record.level},
         {"experience", int64_t(record.experience)}, {"gold", record.gold}, {"goldbank", record.bankGold},
-        {"armorclass", a.defense}, {"tohit", a.attackRating}, {"toblock", c.blockBonus},
+        // The native player client derives defense, attack rating and block
+        // from item/state lists. They are not explicit player base-stat writes.
         // ACT5Q3_UpdateResistances sends only the permanent reward list.
         // Equipment, passive states and the difficulty penalty are client inputs.
         {"fireresist", permanentResistance}, {"coldresist", permanentResistance}, {"lightresist", permanentResistance}, {"poisonresist", permanentResistance},
@@ -120,10 +130,14 @@ int rank(const std::map<int, int> &ranks, int id) {
     const auto found = ranks.find(id); return found == ranks.end() ? 0 : found->second;
 }
 void emitAttributes(std::vector<Bytes> &packets, const ClassicData &data,const std::map<uint8_t, uint32_t> &current,
-                    const std::map<uint8_t, uint32_t> &previous = {}) {
+                    const std::map<uint8_t, uint32_t> &previous = {},bool explicitResources=false) {
     const auto experience=nativeValues(data,{{"experience",0}}).begin()->first;
     const auto gold=nativeValues(data,{{"gold",0}}).begin()->first;
+    const auto resources=explicitResources?std::map<uint8_t,uint32_t>{}:nativeValues(data,{{"hitpoints",0},{"mana",0},{"stamina",0}});
     for (const auto &[id, value] : current) {
+        // Ordinary resource changes share PlrMsg's compact checks. Only the
+        // original NPC, well and resurrection callbacks request direct stats.
+        if(resources.contains(id)) continue;
         const auto old = previous.find(id);
         if (old != previous.end() && old->second == value) continue;
         using hosting::ServerMessage;using hosting::encodeServerPacket;
@@ -140,16 +154,6 @@ void emitAttributes(std::vector<Bytes> &packets, const ClassicData &data,const s
         }
     }
 }
-}
-std::vector<Bytes> nativeMana(const ClassicData &data, const server::ManaFact &fact) {
-    std::vector<Bytes> packets;
-    emitAttributes(packets, data,nativeValues(data, {{"mana", fact.mana}}));
-    return packets;
-}
-std::vector<Bytes> nativeLife(const ClassicData &data, const server::LifeFact &fact) {
-    std::vector<Bytes> packets;
-    emitAttributes(packets, data,nativeValues(data, {{"hitpoints", fact.life}}));
-    return packets;
 }
 std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const CharacterRecord &record, const server::attributes::Totals &totals) {
     std::vector<Bytes> result;
@@ -193,7 +197,7 @@ std::vector<Bytes> nativePublicCharacterAttributes(const ClassicData &data, cons
 }
 std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::CharacterFact &fact) {
     std::vector<Bytes> result;
-    emitAttributes(result, data,nativeValues(data, values(data, fact.after, fact.current)), nativeValues(data, values(data, fact.before, fact.previous)));
+    emitAttributes(result, data,nativeValues(data, values(data, fact.after, fact.current)), nativeValues(data, values(data, fact.before, fact.previous)),fact.explicitResources);
     if((fact.before.hireling.hp>0)!=(fact.after.hireling.hp>0) || fact.before.hireling.seed!=fact.after.hireling.seed ||
         fact.before.hireling.sourceRow!=fact.after.hireling.sourceRow) hirelingStatus(result,data,fact.after.hireling);
     std::set<int> ids;
@@ -224,15 +228,6 @@ std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::C
             out.u16(uint16_t(std::max(0, fact.after.selectedSkills[index]))); out.u32(fact.after.selectedSkillOwners[index]);
         }));
     }
-    return result;
-}
-std::vector<Bytes> nativeResources(const ClassicData &data,const server::ResourcesFact &fact) {
-    std::vector<Bytes> result;
-    // Reuse the exact fixed-point/native attribute delta encoder, with only
-    // the three resources that can change in this transaction.
-    emitAttributes(result,data,
-        nativeValues(data,{{"hitpoints",fact.after.life},{"mana",fact.after.mana},{"stamina",fact.after.stamina}}),
-        nativeValues(data,{{"hitpoints",fact.before.life},{"mana",fact.before.mana},{"stamina",fact.before.stamina}}));
     return result;
 }
 }

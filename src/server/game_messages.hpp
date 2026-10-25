@@ -42,6 +42,7 @@ struct PlayerSnapshot {
     std::map<int, int> skillRanks;
     std::map<int,int> itemSkills;
     std::set<int> states;
+    std::map<int,std::vector<StatValue>> stateStats;
     Vec knockbackSource;
     CommandResult command;
     uint64_t movementSequence{}, inventoryRevision{}, characterRevision{};

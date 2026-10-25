@@ -36,7 +36,11 @@ void putWord(std::span<uint8_t> bytes, size_t at, unsigned value) {
 unsigned questBits(const QuestRecord &quest, size_t index) {
     const auto stage = quest.stage;
     switch (index) {
-    case 0: case 1:
+    case 0:
+        return stage >= 4 ? 0x2001 : (stage == 3 ? 0x2002u : 0u) |
+            ((quest.flags & denStarted) ? 4u : 0u) | ((quest.flags & denLeftTown) ? 8u : 0u) |
+            ((quest.flags & denEntered) ? 0x10u : 0u);
+    case 1:
         return stage >= 4 ? 0x2001 : stage == 3 ? 0x2002 : stage == 2 ? 0x1C : stage == 1 ? 4 : 0;
     case 2:
         if (quest.flags & cainRescuedByRogues) return 0x8000;
@@ -62,7 +66,12 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
             auto &quest = player.quests[difficulty][index];
             const bool rewarded = flags & 1, pending = flags & 2, entered = flags & 0x10, started = flags & 0xC;
             switch (index) {
-            case 0: case 1: quest.stage = rewarded ? 4 : pending ? 3 : entered ? 2 : started ? 1 : 0; break;
+            case 0:
+                quest.stage = rewarded ? 4 : pending ? 3 : entered ? 2 : started ? 1 : 0;
+                quest.flags = (flags & 4 ? denStarted : 0) | (flags & 8 ? denLeftTown : 0) |
+                    (flags & 0x10 ? denEntered : 0);
+                break;
+            case 1: quest.stage = rewarded ? 4 : pending ? 3 : entered ? 2 : started ? 1 : 0; break;
             case 2:
                 quest.stage = rewarded ? 8 : pending ? 7 : entered ? 4 : started ? 1 : 0;
                 quest.flags = !rewarded && (flags & 0x8000) ? cainRescuedByRogues : 0;
@@ -354,7 +363,9 @@ int validateD2sQuestRecords(const QuestBook &book) {
         const auto &guardian = difficulty[questIndex(QuestId::Guardian)];
         require(guardian.stage <= 4 && !(guardian.flags & ~guardianSpeechPending) && (!guardian.flags || guardian.stage == 4), "Guardian quest progress");
         const auto &den = difficulty[0];
-        require(den.stage <= uint32_t(DenStage::Rewarded) && !(den.flags & ~denRespecUsed) &&
+        require(den.stage <= uint32_t(DenStage::Rewarded) && !(den.flags & ~denFlags) &&
+                (!(den.flags & denEntered) || den.stage >= uint32_t(DenStage::Entered)) &&
+                (!(den.flags & (denStarted | denLeftTown)) || den.stage >= uint32_t(DenStage::Assigned)) &&
                 (!(den.flags & denRespecUsed) || den.stage == uint32_t(DenStage::Rewarded)),
             "Den of Evil quest progress");
         require(difficulty[1].stage <= uint32_t(BurialStage::Rewarded) && !difficulty[1].flags,

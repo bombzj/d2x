@@ -124,7 +124,7 @@ void NativeRealmService::changeArea(const server::TravelFact &fact) {
     const auto position = fact.position + terrain.origin;
     if (!fact.walking && !crossAct) sendGame(encodeServerPacket(ServerMessage::Reposition, [&](auto &out) {
         out.u8(0); out.u32(uint32_t(fact.actor.value));
-        out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y))); out.u8(0);
+        out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y))); out.u8(1);
     }));
     peer.lastMotion.clear(); peer.sentRevision = 0;
 }

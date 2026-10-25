@@ -28,7 +28,8 @@ std::optional<Dialogue> System::actTwoDialogue(const ActorContext &actor,const N
     if(npc.code=="meshif1" && tombs==uint32_t(TombsStage::JerhynConfirmed)) return emit(QuestId::SevenTombs,450,2);
     if(npc.code=="atma" && available(QuestId::RadamentsLair)) {
         const auto radament=stage(QuestId::RadamentsLair);
-        if(!radament || radament==uint32_t(RadamentStage::Slain)) return emit(QuestId::RadamentsLair,radament?334:304,radament?1:0);
+        if((!radament && !state_.started.contains(QuestId::RadamentsLair)) || radament==uint32_t(RadamentStage::Slain)) return emit(QuestId::RadamentsLair,radament?334:304,radament?1:0);
+        if(radament<uint32_t(RadamentStage::Slain) && (radament || state_.started.contains(QuestId::RadamentsLair))) return emit(QuestId::RadamentsLair,310,2);
     }
     const auto staff=stage(QuestId::HoradricStaff);
     if(npc.code=="cain2" && staff<uint32_t(StaffStage::Submitted)) {
@@ -74,7 +75,9 @@ DomainResult<> System::acknowledgeActTwo(const ActorContext &actor,const Request
     std::optional<travel::SpecialPortalPlan> portal;
     switch(message) {
     case 253: record.questPreludes.at(size_t(ports_.settings.difficulty)).at(size_t(QuestPreludeId::LutGholeinArrival))=true;break;
-    case 304: q.stage=uint32_t(RadamentStage::Assigned);break;
+    case 304:
+        q.stage=uint32_t(RadamentStage::Assigned);
+        return startQuest(actor,std::move(record),QuestId::RadamentsLair,*request.npc);
     case 334: if(q.stage!=uint32_t(RadamentStage::Slain)) return {DomainStatus::Stale,{}};q.stage=uint32_t(RadamentStage::Rewarded);break;
     case 335: return prepareReward(actor,*request.npc,RewardKind::ExplainStaffScroll,true);
     case 336: q.flags|=staffHeadExplained|staffScrollExplained;break;
