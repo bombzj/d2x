@@ -11,6 +11,7 @@
 namespace d2x::server::attributes {
 void preparePd2MapMonster(monsters::Actor &actor,const pd2::MapInstance &map,uint64_t tick,bool dead) {
     if(!actor.nativeStats || !actor.rule.stats || !actor.rule.stats->pd2) return;
+    if(actor.initialEffects && actor.initialEffects->findState(map.catalog->state.id)) return;
     const auto &rules=*actor.rule.stats;
     MonsterResourceTrace resources(actor,tick);
     const auto before=resources.values({});
@@ -27,7 +28,7 @@ void preparePd2MapMonster(monsters::Actor &actor,const pd2::MapInstance &map,uin
     for(const auto &value:pd2::prepareMapSunderProperties(map.catalog->properties,map.properties,int(actor.area),bases))
         writeNativeBaseStat(*spec.nativeValues,rules,value.key,value.value);
     spec.modifiers=nativeCharacterModifiers(StatSnapshot{*spec.nativeValues},rules);
-    auto states=std::make_shared<CombatEffectSet>();
+    auto states=actor.initialEffects?std::make_shared<CombatEffectSet>(*actor.initialEffects):std::make_shared<CombatEffectSet>();
     if(!states->apply(spec,tick).accepted) throw std::runtime_error("PD2 monster map state admission failed");
     resources.observeSourceWrites([&](StatValue value,EntityId owner,const StatSnapshot &values,std::shared_ptr<const StatList> root) {
         dispatchMonsterItemAura(actor,resources,value,owner,values,std::move(root),{});
@@ -38,7 +39,7 @@ void preparePd2MapMonster(monsters::Actor &actor,const pd2::MapInstance &map,uin
         const auto kind=actor.rule.boss?EffectUnitKind::Boss:EffectUnitKind::Monster;
         states->onDeath(kind,sample);states->clearNonDeathStates(kind,*actor.rule.states,tick,sample);
     }
-    if(!dead) resources.seedLife(resources.read().maximum);
+    if(!dead && !actor.owner) resources.seedLife(resources.read().maximum);
     auto next=resources.take();actor.nativeStats=std::move(next.intrinsic);
     actor.life=next.life.raw();actor.maximumLife=next.maximum.raw();
     actor.effectVelocity=states->modifiers(tick).velocityPercent;

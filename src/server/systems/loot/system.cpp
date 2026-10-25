@@ -19,11 +19,14 @@ std::optional<Preparation> System::beginPreparation(EntityId source) {
         if(const auto *area=ports_.areas.find(pending.request.source.region)) pending.pd2Map=area->definition.pd2Map;
         if(pending.monsterSeed) if(const auto *monster=ports_.monsters.find(source)) {
             pending.seed=monster->combatRandom;pending.monsterSeed=pending.seed;
-            if(const auto *area=ports_.areas.find(monster->area);area && area->definition.pd2Map && monster->nativeStats && !pending.request.source.ignoreNoDrop) {
-                pending.pd2Map=area->definition.pd2Map;
+            const auto *beneficiary=ports_.players.find(pending.request.beneficiary);
+            if(monster->nativeStats && monster->rule.stats && monster->rule.stats->pd2 && beneficiary &&
+                beneficiary->rules.character && beneficiary->rules.character->maps && !pending.request.source.ignoreNoDrop) {
+                pending.pd2Loot=beneficiary->rules.character->maps;
                 const int identity=monster->identity.nativeClass>=0?monster->identity.nativeClass:monster->rule.nativeClass;
-                pending.pd2Monster=pd2::MapMonsterLoot{monster->pd2DeathStats?*monster->pd2DeathStats:monster->nativeStats->values,pending.pd2Map->catalog->loot.bosses.contains(identity),
-                    monster->identity.rank==MonsterRank::Minion,int(monster->area)};
+                const int players=int(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;}));
+                pending.pd2Monster=pd2::MapMonsterLoot{monster->pd2DeathStats?*monster->pd2DeathStats:monster->nativeStats->values,pending.pd2Loot->loot.bosses.contains(identity),
+                    monster->identity.rank==MonsterRank::Minion,int(monster->area),monster->rule.difficulty,players,identity,monster->rule.undead};
             }
         }
         if(pending.objectSeed) {

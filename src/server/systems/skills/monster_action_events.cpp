@@ -49,7 +49,13 @@ DomainResult<> System::monsterActionEvent(const FrameEvent &event,uint64_t tick)
         const int speed=program.casting?effectiveCastSpeed(program.animation->speed,stat("item_fastercastrate")):
             program.useAttackRate?effectiveAttackSpeed(program.animation->speed,stat("item_fasterattackrate"),weapon?weapon->baseSpeed:0,rate):
             program.animationSequence?program.animation->speed:effectiveOtherAnimationSpeed(program.animation->speed,nativeSubtract(stat("other_animrate"),100));
-        mode.step=mode.frozenSequence?MonsterAnimationStep{}:advanceMonsterAnimation(mode.animation,program.animation->frames,speed,program.animationStartFrame,
+        if(mode.pd2Rewind) {
+            mode.step={};const auto elapsed=tick-mode.pd2RewindStarted;
+            const auto &timeline=*mode.pd2Rewind;
+            while(mode.pd2RewindCursor<timeline.events.size() && uint64_t(timeline.events[mode.pd2RewindCursor].tick)<=elapsed)
+                mode.step.event=uint8_t(timeline.events[mode.pd2RewindCursor++].event);
+            mode.step.ended=elapsed>=uint64_t(timeline.end);
+        } else mode.step=mode.frozenSequence?MonsterAnimationStep{}:advanceMonsterAnimation(mode.animation,program.animation->frames,speed,program.animationStartFrame,
             program.animationSequence,program.animationFlags);
         mode.lastFrame=tick;mode.advanced=true;
     }

@@ -381,6 +381,7 @@ class SceneView {
     void shakeScreen(int magnitude,int buildFrames,int holdFrames,int fadeFrames,float delay);
     Vec world(Vec position) const;
     void drawInteractionLabel(const std::string &, Vec, int offset = 70) const;
+    void drawInteractionDetails(const std::vector<std::string> &,Vec) const;
     void drawPlayerLabel(const std::string &, Vec, bool hostile) const;
     bool leftSkillAllowed(int skill) const;
     struct SkillPickerSlot { std::optional<int> skill; Rectangle bounds; uint32_t owner=UINT32_MAX; };

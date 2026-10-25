@@ -70,6 +70,7 @@ class System {
     StepStatus necroStep(Companion &,TickContext);
     StepStatus refreshNecro(Companion &,TickContext);
     StepStatus hirelingStep(Companion &,TickContext);
+    DomainResult<bool> maintainPd2Hireling(Companion &,const PreparedHireling &,TickContext);
     StepStatus advancePet(EntityId,TickContext);
     DomainResult<> requestAction(Companion &,const actions::MonsterCastRequest &);
     StepStatus synchronizeHirelings(TickContext);

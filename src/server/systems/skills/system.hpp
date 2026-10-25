@@ -43,6 +43,10 @@ class System {
     DomainResult<> releaseOverseer(MonsterRelease &,TickContext);
     DomainResult<> releaseMonsterSpell(MonsterRelease &,TickContext);
     DomainResult<> releasePd2MonsterProjectile(MonsterRelease &,TickContext);
+    DomainResult<> releasePd2HirelingSkill(MonsterRelease &,TickContext);
+    DomainResult<std::shared_ptr<Release>> startPd2HirelingStrafe(const CastRequest &,const MonsterAttackRule &,int speed);
+    DomainStatus pd2MonsterStaticField(Release &,const ActorContext &);
+    void postPd2MonsterCastItemEvent(MonsterRelease &,uint64_t tick);
     DomainResult<> monsterRunEvent(const FrameEvent &,uint64_t tick);
     DomainResult<Vec> startMonsterLeap(const CastRequest &);
     DomainResult<bool> releaseMonsterLeap(MonsterRelease &,TickContext);

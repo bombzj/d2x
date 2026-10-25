@@ -232,8 +232,8 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                       const std::set<size_t> &usedUniques, std::string_view characterClass,
                       int magicFind, int goldFind, std::optional<DropQuality> forcedQuality, unsigned effectivePlayers, bool ignoreNoDrop,
                       bool hellBovine,const ItemSeedSource &seeds) {
-    if ((data.profile != "lod-named-txt-v1" && !data.pd2Host) || itemLevel < 1 || itemLevel > 99 ||
-        upgradeLevel < 0 || upgradeLevel > 99)
+    if ((data.profile != "lod-named-txt-v1" && !data.pd2Host) || itemLevel < 1 || itemLevel > (data.pd2Host?127:99) ||
+        upgradeLevel < 0 || upgradeLevel > (data.pd2Host?127:99))
         throw std::runtime_error("Unsupported item loot profile or level");
     LootPlan plan;
     plan.randomState = seed;
@@ -248,7 +248,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
 }
 LootPlan planSelectedItem(const ClassicData &data,std::string_view code,int level,uint64_t seed,
     const std::set<size_t> &used,std::string_view characterClass,std::optional<DropQuality> forcedQuality,bool superiorFloor,const ItemSeedSource &seeds) {
-    if(level<1 || level>127) throw std::runtime_error("Selected item level is outside native bounds");
+    if(level<1 || (level>127 && !(data.pd2Host && level==131))) throw std::runtime_error("Selected item level is outside native bounds");
     LootPlan plan;auto random=seed;auto uniques=used;
     appendSelectedItem(data,data.tables.at("itemratio"),TreasureSelection{std::string(code),{},{}},level,characterClass,0,0,forcedQuality,superiorFloor,random,plan,uniques,false,seeds);
     plan.randomState=random;return plan;

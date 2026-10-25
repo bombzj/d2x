@@ -695,7 +695,12 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                     unit != v.world.units.end() && combat.hostileSource(unit->second));
             } else {
                 const auto localized = strings.find(target.name);
-                shared.drawInteractionLabel(localized.empty() ? target.name : std::string(localized), at);
+                const auto &report=v.pd2State.mapAttributes;
+                if(pd2 && report && report->headerFirst==selectedTarget.id && report->headerSecond==selectedTarget.type) {
+                    const auto lines=pd2MapDescription(*report);
+                    if(!lines.empty()) shared.drawInteractionDetails(lines,at);
+                    else shared.drawInteractionLabel(localized.empty()?target.name:std::string(localized),at);
+                } else shared.drawInteractionLabel(localized.empty() ? target.name : std::string(localized), at);
             }
             break;
         }

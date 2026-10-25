@@ -35,6 +35,9 @@ struct System::Runtime {
         uint64_t identity{},interruption{},lastFrame{},movementFrame{};
         bool advanced{},frozenSequence{},movementAdvanced{},runStopped{};
         MonsterAnimationStep step;
+        std::optional<ActionTimeline> pd2Rewind;
+        uint64_t pd2RewindStarted{};
+        size_t pd2RewindCursor{};
         std::optional<MonsterRelease> repeated;
         std::optional<uint64_t> whirlwindContact;
         std::optional<EntityId> whirlwindTarget;

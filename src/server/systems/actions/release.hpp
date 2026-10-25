@@ -57,6 +57,7 @@ struct SkillRelease {
     std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion{};
     std::shared_ptr<effects::NativeAreaPulse> directSkill{};
     std::shared_ptr<effects::Pd2DarkPactPulse> pd2DarkPact{};
+    std::shared_ptr<effects::MonsterCursePulse> monsterCurse{};
     std::shared_ptr<skills::AssassinKickExecution> assassinKick{};
     std::shared_ptr<skills::DruidMeleeExecution> druidMelee{};
     std::shared_ptr<skills::WeaponMeleeExecution> weaponMelee{};
@@ -91,6 +92,7 @@ struct MonsterRelease {
     std::shared_ptr<effects::NativeAreaPulse> directSkill{};
     int mosquitoLoops{};
     bool nativeCallbackStarted{},cancelled{};
+    bool pd2CastEventPosted{};
     std::shared_ptr<SkillRelease> nativeSkill{};
 };
 }

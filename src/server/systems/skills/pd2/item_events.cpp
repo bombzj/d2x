@@ -3,6 +3,8 @@
 #include "execution.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "../native_caster.hpp"
 #include "server/runtime/skill_rules.hpp"
 #include "server/systems/reactions/item_triggers.hpp"
 #include "server/systems/reactions/pd2/item_events.hpp"
@@ -13,6 +15,27 @@
 #include <cmath>
 
 namespace d2x::server::skills {
+void System::postPd2MonsterCastItemEvent(MonsterRelease &pending,uint64_t tick) {
+    if(pending.pd2CastEventPosted) return;
+    const auto caster=nativeCaster(ports_.players,ports_.monsters,pending.request.actor);
+    if(!caster || !caster->monster || !caster->programs() || !caster->programs()->pd2) return;
+    pending.pd2CastEventPosted=true;
+    const auto &area=ports_.areas.at(caster->area()).definition;
+    if(area.town || pd2::itemCastSafeZone(int(caster->area()),caster->position()+area.origin)) return;
+    constexpr std::array excluded{277,57,219,220,514,217,218,513};
+    constexpr std::array included{242,251,256,261,262,313,272,276,392};
+    const auto skill=pending.request.skill;
+    const auto contains=[&](const auto &set) {return std::find(set.begin(),set.end(),skill)!=set.end();};
+    // Core 0x36E240 uses the monster's actual mode, without the player's
+    // SQ6/12/18 restriction. Its forced set also admits non-SC/SQ modes.
+    if(!contains(included) && !((pending.request.monsterMode==7 || pending.request.monsterMode==14) && !contains(excluded))) return;
+    const auto target=std::get<UnitTarget>(pending.request.target);
+    auto timer=ports_.frameEvents.prepareInsertion({{}, {FrameEventUnit::Monster,caster->id()},
+        FrameEventType::MonsterModifier,tick+5,false,reactions::pd2ItemEventTimerHandler,14,int32_t(target.type),target.id.value});
+    // The native wrapper posts before SrvDo, including a failed callback.
+    // Retain the posted phase across domain backpressure retries.
+    ports_.frameEvents.publish(std::move(timer));
+}
 DomainStatus System::preparePd2CastItemEvent(Release &pending,const ActorContext &actor,Vec) {
     const auto *player=ports_.players.find(actor.player);
     if(!player || !player->rules.skills->pd2) return DomainStatus::Applied;

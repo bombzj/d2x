@@ -12,6 +12,7 @@
 #include "server/systems/effects/system.hpp"
 #include "server/systems/loot/system.hpp"
 #include "server/runtime/skill_rules.hpp"
+#include "server/systems/attributes/pd2/map_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <map>
 #include <vector>
@@ -259,6 +260,9 @@ ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors
             candidate.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
                 {{},{FrameEventUnit::Monster,id},FrameEventType::ModeChange,ports_.frameEvents.currentFrame()+1,true}));
     }
+    for(auto &[id,candidate]:result.actors) if(!find(id) && candidate.owner && candidate.nativeStats)
+        if(const auto *area=ports_.areas.find(candidate.area);area && area->definition.pd2Map)
+            attributes::preparePd2MapMonster(candidate,*area->definition.pd2Map,ports_.frameEvents.currentFrame(),!candidate.alive());
     auto birthEffects=ports_.effects.prepareBirthEffects(result.actors);
     if(!birthEffects.units.empty()) result.birthEffects=std::make_shared<effects::BirthEffectsPublication>(std::move(birthEffects));
     if(!validateActors(result)) throw std::invalid_argument("Invalid staged actor publication");

@@ -19,6 +19,14 @@
 
 CN Normal／bnet／TCP是已有目标范围；旧快照主文件与`.sn`摘要相同，`.ss`不同。不能把此事实推广到其他发布、赛季、官方版或KCP／QUIC。CN附加模块提供的存储、认证和控制扩展须注明模块，不一概归为ProjectDiablo核心功能。
 
+### 本地原生战网对照环境
+
+用户的`artifacts/d2gs-local/Play-pd2.bat`转入其下的`pd2-native-realm-lab`；另一个`artifacts/pd2-native-realm-lab`目录仍存在，二者不是同一路径，也不是链接。选择环境时显式传LabRoot并核对配置／进程路径，不能只按目录名认定目标。
+
+该启动链的engine／ProjectDiablo.dll摘要为上表旧核心`9c2b…`，engine／pd2data.mpq为当前`cc42…`，D2Game为上表配套`24b2…`。D2Server.dll另为`2b70b83e8324e27b186e87dbf1fcc9e9ef7ff861ccf276a6c47312b2d0eb05f3`；实验桥接`source/native-d2gs/src/d2gs/pd2_bootstrap.c::InstallPd2Bootstrap`要求这两份DLL的完整摘要及原指令字节，随后在预初始化和表加载之间装载核心。它没有接受新核心的声明，不能仅复制`17d5…`覆盖文件或放宽摘要校验。
+
+这是“旧核心＋当前表”的独立对照组合。可用它采样已分别确认的共有规则、客户端原包及原生保存；结果必须标记该组合，不能直接认证当前`17d5…`核心的全部行为。自有宿主的Pd2Local与实验Realm的CN方言也不同，按命令含义、原字段及可观察结果对照，不要求两套信封逐字节相同。部署及入口见[原生引擎实验](../development/PVPGN_SERVER.md#pd2-cn原生引擎隔离实验)。
+
 ## 地址与证据
 
 ProjectDiablo.dll静态ImageBase为0x10000000。文档使用所属模块内RVA；VA转RVA须减去该模块实际ImageBase，不能混用核心、D2Game、D2Common或D2Client地址。

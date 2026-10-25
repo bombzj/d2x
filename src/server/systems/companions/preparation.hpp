@@ -59,6 +59,7 @@ struct PreparedHireling {
     std::string weaponType;
     std::string weaponType2;
     int act{};
+    bool maintainPartyBuff{};
     uint16_t equipmentSlots{};
     std::vector<std::pair<SkillPassiveSpec,int>> passives;
     std::map<int,int> baseSkillRanks;

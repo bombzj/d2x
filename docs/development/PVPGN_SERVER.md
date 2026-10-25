@@ -6,7 +6,7 @@
 
 ### PD2 CN原生引擎隔离实验
 
-2026-10-23接续项目为忽略目录`artifacts/pd2-native-realm-lab`，不是`artifacts/d2gs-local`原版参考栈。前者有独立PvPGN源码副本、CN补丁、输入清单与已运行的实验`engine`；后者仍是1.13c原版D2GS。实验宿主实际加载固定摘要的ProjectDiablo.dll，不是仅替换MPQ。本任务没有修改D2X客户端逻辑，只使用本地连接配置。
+用户的`artifacts/d2gs-local/Play-pd2.bat`现转入`artifacts/d2gs-local/pd2-native-realm-lab`的独立实验栈；旧`artifacts/pd2-native-realm-lab`目录仍保留，不能混用默认路径。实验目录包含独立PvPGN源码副本、CN补丁、输入与engine，实际装载ProjectDiablo.dll。当前为旧核心9c2b＋当前数据cc42的组合，完整身份、桥接校验与对照限制见[PD2版本基线](../pd2/BUILDS.md#本地原生战网对照环境)；原版参考栈不因此变为PD2。
 
 实验后端以`D2X_PD2_CN_LAB_WIRE=ON`构建Win32 Debug的bnetd、d2cs、d2dbs，产物在`candidate-backend`，不覆盖`backend`内旧发布包。Realm为`D2X-PD2-Lab`，BNCS／MCP／DBS分别仅监听回环16112／16113／16114，附带w3route为16200。配置与数据库在`backend`，输入、参考源码和二进制不纳入源码提交。
 
@@ -18,18 +18,18 @@
 | 客户端资源 | `config/pd2-client.local.json`使用用户完整PD2安装，包含`Data/local`中文资源；旧冻结客户端缺该目录，不能作为当前默认语言启动入口。正式CN配置和凭据保持不变 |
 | 游戏引擎 | Win32隔离宿主在D2Server预初始化后、数据表加载前加载固定PD2核心；已经完成建房、角色进入、原生城镇同步、移动、正常保存与同角色重入。仅实验构建，不是完整战网或生产部署认证；共享仓库、专用规则和异常恢复未验证 |
 
-已有真实D2X PD2客户端证据覆盖本地注册／登录、Realm认证、一级普通非天梯角色创建／选角、大厅及空列表、严格版本检查与后端／客户端重启后的角色名册恢复；无GS建房实测返回MCP 0x03／0x32并留在大厅。原生阶段角色NativeTownFive进入TownUnlock后，地图种子125658548、城镇1、原生房间坐标匹配，玩家及卡夏／基得／恰西／瓦瑞夫、储藏箱可用于场景显示；移动从(5473,4708)到(5478,4708)收到实际位置回传。正常退局得到D2DBS的CHARSAVE／CHARINFO成功与UNLOCKED，再进TownReload加载保存角色成功，随后通过GS进程重启后的TownRestart回读。尚无多客户端或长期运行认证。首轮误连原版参考栈的故障不归作实验PD2后端结论。
+已接入本地注册／登录、Realm认证、普通非天梯角色创建／选角、大厅与列表、严格版本检查及名册恢复。原生引擎已有普通建房、城镇同步与移动、正常CHARSAVE／CHARINFO／UNLOCKED及同角色重入的消费者；无可用GS时MCP建房返回0x32。独立服务的正常保存／重入与异常退出恢复须分别核对；多客户端、长期战斗、全部技能／地图和复杂存档组合尚未认证。实验服务的成功不能替代正式CN或新版核心兼容证据。
 
 固定构建桥接位于实验源码`src/d2gs/pd2_bootstrap.c`。核心加载要求工作目录有真实Game.exe版本资源；基础MPQ位于引擎上级目录，PD2 MPQ位于引擎目录。使用原版Storm，不加载会写Game.exe固定地址的CN代理PD2_EXT。已证实并规避两处原生补丁冲突：D2Game 0x9D247的EB覆盖PD2 NOP块导致非法回跳；0x2E2E0的旧跳转略过原版游戏锁释放，导致递归计数11触发Fog断言。只调整摘要和字节校验后的进程内宿主补丁，不改输入DLL。数据库角色交付暂时调度到引擎线程，15秒超时采取结果未知的fail-stop，仍需生产化评审。
 
 已构建本机实验环境可使用[隔离后端管理入口](../../scripts/Invoke-PD2RealmLab.ps1)：
 
 ```powershell
-.\scripts\Invoke-PD2RealmLab.ps1 -Action Start
-.\scripts\Invoke-PD2RealmLab.ps1 -Action Status
-.\scripts\play.ps1 -ClientProfile .\artifacts\pd2-native-realm-lab\config\pd2-client.local.json -PipeName d2x-pd2-lab -Diagnostic
+.\scripts\Invoke-PD2RealmLab.ps1 -Action Start -LabRoot .\artifacts\d2gs-local\pd2-native-realm-lab
+.\scripts\Invoke-PD2RealmLab.ps1 -Action Status -LabRoot .\artifacts\d2gs-local\pd2-native-realm-lab
+.\scripts\play.ps1 -ClientProfile .\artifacts\d2gs-local\pd2-native-realm-lab\config\pd2-client.local.json -PipeName d2x-pd2-lab -Diagnostic
 # 先退出客户端；没有活动客户端或GS连接时才停止实验后端。
-.\scripts\Invoke-PD2RealmLab.ps1 -Action Stop
+.\scripts\Invoke-PD2RealmLab.ps1 -Action Stop -LabRoot .\artifacts\d2gs-local\pd2-native-realm-lab
 ```
 
 入口不构建、不下载、不启动GS；检查候选EXE、端口与PID／启动时间，不接管其他实例。Start只表示创建进程，须再查Status监听和`backend/var/d2cs.log`的Realm认证。Stop在无外部连接时终止拥有的后端进程，不承诺游戏服优雅保存；未来接入GS须先完成独立保存停服流程。构建、源码补丁和后续步骤维护于实验`NEXT-RUN.md`与`patches/pvpgn.patch`，这些本地文件不随源码交付。

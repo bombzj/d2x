@@ -94,7 +94,8 @@ void autoProperties(const ClassicData &data,const ItemDefinition &base,ItemInsta
 }
 ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t &random, int difficulty,int staffmodBias,uint64_t *itemRandom) {
     const auto *definition = data.items.find(drop.code);
-    if (!definition || !drop.quantity || drop.quantity > definition->maxStack || drop.level < 1 || drop.level > 127)
+    if (!definition || !drop.quantity || drop.quantity > definition->maxStack || drop.level < 1 ||
+        (drop.level > 127 && !(data.pd2Host && drop.level==131)))
         throw std::runtime_error("Invalid prepared item generation");
     if (definition->equipment.isType("body"))
         throw std::runtime_error("A body part requires its original player/monster identity; generic generation cannot create one");

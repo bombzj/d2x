@@ -36,13 +36,7 @@ void finishPd2MapItemDrop(const ClassicData &data,const pd2::MapProperties &prop
 LootPlan planPd2MapLoot(const ClassicData &data,const server::loot::Preparation &request,const MonsterLootEntry &entry,const ItemSeedSource &seeds) {
     LootPlan result;result.randomState=request.seed;
     auto uniques=request.uniques;
-    const auto visit=[&](std::string_view treasure,uint64_t &random) {
-        const bool original=treasure.empty();
-        if(original && entry.status==LootEntryStatus::Empty) return true;
-        const auto level=original?entry.itemLevel:std::clamp(request.pd2Monster->stats.get({data.nativeStats->names.at("level"),0}),1,127);
-        auto stage=planItemLoot(data,data.tables.at("itemratio"),original?entry.treasureClass:treasure,level,
-            original?entry.upgradeLevel:0,random,uniques,request.classCode,request.magicFind,request.goldFind,{},request.effectivePlayers,
-            original && request.request.source.ignoreNoDrop,false,seeds);
+    const auto append=[&](LootPlan stage,uint64_t &random) {
         if(!stage.deferred.empty()) {result.deferred=std::move(stage.deferred);return false;}
         random=stage.randomState;result.noDrops+=stage.noDrops;
         for(auto &drop:stage.drops) {
@@ -53,7 +47,32 @@ LootPlan planPd2MapLoot(const ClassicData &data,const server::loot::Preparation 
         }
         return true;
     };
-    if(pd2::visitMapBonusTreasure(request.pd2Map->catalog->loot,*request.pd2Monster,result.randomState,visit))
+    const auto special=[&](std::string_view code,int uniqueRow,uint64_t &random) {
+        std::string_view token=code;
+        if(uniqueRow>=0) {
+            // Native 0x37F550 clears this exact game's unique bit before a
+            // forced map creation; rarity0 does not disable this source.
+            uniques.erase(size_t(uniqueRow));
+            const auto definition=std::find_if(data.uniqueItems.begin(),data.uniqueItems.end(),
+                [&](const auto &item){return item.row==size_t(uniqueRow) && item.code==code;});
+            if(definition==data.uniqueItems.end()) {result.deferred="Missing native forced unique map";return false;}
+            token=definition->name;
+        }
+        return append(planSelectedItem(data,token,131,random,uniques,request.classCode,DropQuality::Unique,false,seeds),random);
+    };
+    const auto &rules=request.pd2Loot->loot;
+    if(!pd2::visitSpecialMonsterDrops(rules,*request.pd2Monster,result.randomState,special)) return result;
+    const auto visit=[&](std::string_view treasure,uint64_t &random) {
+        const bool original=treasure.empty();
+        if(original && entry.status==LootEntryStatus::Empty) return true;
+        const auto level=original?entry.itemLevel:std::clamp(request.pd2Monster->stats.get({data.nativeStats->names.at("level"),0}),1,127);
+        auto stage=planItemLoot(data,data.tables.at("itemratio"),original?entry.treasureClass:treasure,level,
+            original?entry.upgradeLevel:0,random,uniques,request.classCode,request.magicFind,request.goldFind,{},request.effectivePlayers,
+            original && request.request.source.ignoreNoDrop,original && request.request.source.identity.monster=="hellbovine",seeds);
+        return append(std::move(stage),random);
+    };
+    const auto area=request.pd2Monster->area;
+    if((area<137 || area>210 || pd2::visitMapBonusTreasure(rules,*request.pd2Monster,result.randomState,visit)))
         visit({},result.randomState);
     return result;
 }

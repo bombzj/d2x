@@ -268,6 +268,8 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},auraUnits);
         if(!plan || !ports_.transactions.commit(std::move(*plan.value))) return StepStatus::Blocked;
         pet.projectedSkillBonus=prepared.source.temporarySkillBonus;
+        body=ports_.monsters.find(pet.actor);p=ports_.players.find(pet.owner);
+        if(!body || !p) return StepStatus::Complete;
     }
     const float life=float(body->life)/256.f;
     if(p->persistent.player.hireling.hp!=life) {
@@ -291,6 +293,9 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
     // Fn061 returns while WALK/RUN is active instead of replacing a partially
     // executed detour every AI interval.
     if(walking) return StepStatus::Complete;
+    const auto maintained=maintainPd2Hireling(pet,prepared,tick);
+    if(isDeferred(maintained.status)) return StepStatus::Blocked;
+    if(maintained && *maintained.value) return StepStatus::Complete;
     if(body->area!=p->area || distanceToOwner>prepared.follow) {
         followOwnerTrail(ports_,pet,*p,*body,distanceToOwner);
         pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;
@@ -347,7 +352,13 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
             result=ports_.effects.hirelingAura(pet.actor,*chosen->aura,tick.tick);
             if(isDeferred(result.status)) {pet.pendingAura=*chosen->aura;result={DomainStatus::Applied,std::monostate{}};}
         }
-        else result=requestAction(pet,{pet.actor,uint16_t(chosen?chosen->skill:prepared.rule.skillIds[0]),UnitTarget{target,0,uint8_t(participants.find(target).player?0:1)},tick.tick,uint8_t(chosen?chosen->mode:4)});
+        else {
+            actions::MonsterCastRequest request{pet.actor,uint16_t(chosen?chosen->skill:prepared.rule.skillIds[0]),
+                UnitTarget{target,0,uint8_t(participants.find(target).player?0:1)},tick.tick,uint8_t(chosen?chosen->mode:4)};
+            if(chosen && body->rule.skillActions.at(uint16_t(chosen->skill)).action==MonsterAttackRule::Action::Whirlwind)
+                request.position=participants.find(target).position();
+            result=requestAction(pet,request);
+        }
         if(isDeferred(result.status)) return StepStatus::Blocked;
         pet.attackBias=0;
         if(result.status==DomainStatus::Unavailable && (!chosen || !chosen->aura)) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,participants.find(target).position()},target,body->rule.meleeRange,75,false});

@@ -533,6 +533,18 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             // Core CltDo replacements apply to both local and CN hosts.
             // Their resource programs do not depend on CN wire extensions.
             if (function == 103) return; // Aura visuals arrive through unit states.
+            if(function==94) {
+                if(!castAnimation || castAnimation->releaseTime<0) return;
+                const auto missile=pd2DoomKnightMissile(row->second,actor);
+                auto target=event.point;if(event.target) target=targetPosition(*event.target);
+                if(!missile || !target || !target->x || !target->y) return;
+                const Vec start=presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
+                const Vec end{float(target->x)+.5f,float(target->y)+.5f};
+                const auto delta=end-start;if(delta.x*delta.x+delta.y*delta.y>10000.f) return;
+                shared.cancelPendingClientMissiles(effectOwner(event.source));missileCastRevisions[event.source]=source->second.actionRevision;
+                launch(*missile,start,end,event.level.value_or(1),castAnimation->releaseTime-age,{},event.source);
+                return;
+            }
             if (function == 97 && actor.key.type==0 && actor.key.id==playerId)
                 return; // Controlled player flight is advanced by displayPd2PlayerLeap.
             if (function == 112 && actor.key.type==0 && actor.key.id==playerId)

@@ -22,6 +22,7 @@ DomainResult<bool> System::releaseMonsterInferno(MonsterRelease &pending,TickCon
     const auto &row=catalog.skills.at(skill);
     const bool imp=row.number("srvdofunc")==126;
     if((row.number("srvdofunc")!=95 && row.number("srvdofunc")!=152 && !imp) || pending.attack.infernoEndFrames<=0) return {DomainStatus::NotImplemented,{}};
+    postPd2MonsterCastItemEvent(pending,tick.tick);
     const auto finish=[&] {
         pending.hitReleased=true;
         pending.infernoEndAt=tick.tick+uint64_t(imp?13:pending.attack.infernoEndFrames);

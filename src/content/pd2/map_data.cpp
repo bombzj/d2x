@@ -53,6 +53,25 @@ std::shared_ptr<const MapCatalog> prepareMapCatalog(const ClassicData &data) {
         1026,800,1025,894,884,997,963,882,1149,1240,1243,
         826,998,883,809,1121,1122,755,964,747,1000,1103,743,1104,1105,
         1058,1061,1062,1063,1060,1096,1094,1148,1166,1164,1175,1174};
+    result->loot.uniqueMapBosses=result->loot.bosses;
+    for(const int id:{743,1104,1105,1058,1061,1062,1063,1060,1096,1094,1148,1166,1164,1175,1174})
+        result->loot.uniqueMapBosses.erase(id);
+    // Native initializers 0x1995D0/1996B0/1997B0 own these membership sets.
+    result->loot.tiers={std::set<int>{146,148,151,155,145,169,143,158,208},
+        std::set<int>{174,142,175,156,141,167,160,150,193,209,210},
+        std::set<int>{154,170,139,149,190,191,144,147,201}};
+    for(const int first:{998,1001,1004,1007,1010,1013,1016,1022,1039}) for(int difficulty=0;difficulty<3;++difficulty) {
+        const auto offset=first+difficulty;
+        if(offset>=data.treasures.end()-base) throw std::runtime_error("Missing PD2 special drop chance");
+        const auto &treasure=*(base+offset);
+        result->loot.specialChances.emplace(offset,MapLootRules::Chance{
+            uint16_t(treasure.quality[0].value_or(0)),uint16_t(treasure.quality[1].value_or(0))});
+    }
+    for(const int offset:{1020,1021,1025,1026,1027}) {
+        const auto &treasure=*(base+offset);
+        result->loot.specialChances.emplace(offset,MapLootRules::Chance{
+            uint16_t(treasure.quality[0].value_or(0)),uint16_t(treasure.quality[1].value_or(0))});
+    }
     const auto &misc=data.tables.at("misc"),&levels=data.tables.at("levels"),&objects=data.tables.at("objects");
     uint32_t itemIndex=0;
     for(const auto name:{"weapons","armor"}) {
@@ -72,6 +91,16 @@ std::shared_ptr<const MapCatalog> prepareMapCatalog(const ClassicData &data) {
             throw std::runtime_error("Invalid PD2 map item destination or portal");
         if(!result->items.emplace(code,MapItemDefinition{level,portal?portal:60,nativeIndex}).second)
             throw std::runtime_error("Duplicate PD2 map item");
+    }
+    constexpr std::array<std::pair<int,int>,8> uniqueMaps{{
+        {176,432},{181,433},{183,436},{180,453},{192,452},{195,472},{197,478},{200,482}}};
+    for(size_t index=0;index<uniqueMaps.size();++index) {
+        const auto [level,uniqueRow]=uniqueMaps[index];
+        const auto item=std::find_if(result->items.begin(),result->items.end(),[&](const auto &entry){return entry.second.level==level;});
+        const auto &uniques=data.tables.at("uniqueitems");
+        if(item==result->items.end() || size_t(uniqueRow)>=uniques.rows().size() || uniques.value(size_t(uniqueRow),"code")!=item->first)
+            throw std::runtime_error("PD2 unique map identity mismatch");
+        result->loot.uniqueMaps[index]={item->first,uniqueRow};
     }
     return result;
 }

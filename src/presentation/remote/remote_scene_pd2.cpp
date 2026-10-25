@@ -2,8 +2,33 @@
 #include "gameplay/skills/cast_timing.hpp"
 #include "gameplay/actions/timing.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "network/protocol/bits.hpp"
+#include "content/items/item_properties.hpp"
 
 namespace d2x {
+std::vector<std::string> RemoteScene::Impl::pd2MapDescription(const OnlinePd2State::MapAttributeReport &report) const {
+    // Current 0x391930 -> 0x36C9B0 describes the original item stats,
+    // rather than the translated player/monster/global attribute lists.
+    std::vector<ResolvedItemStat> values;
+    for(const auto &attribute:report.attributes) {
+        if(attribute.stat==360 || attribute.stat==361 || attribute.stat==458) continue;
+        const auto definition=std::find_if(monsterText->itemStats.begin(),monsterText->itemStats.end(),
+            [&](const auto &stat){return stat.id==attribute.stat;});
+        if(definition!=monsterText->itemStats.end()) values.push_back({definition->name,{},attribute.value,attribute.parameter,attribute.value});
+    }
+    auto lines=describeItemStats(*monsterText,values);
+    for(auto &line:lines) line=std::string("\xff" "c3")+line;
+    const auto &levels=monsterText->tables.at("levels");
+    for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Id")==report.area) {
+        const auto name=strings.find(levels.value(row,"LevelName"));
+        if(!name.empty()) {
+            const char color=report.quality==4?'3':report.quality==6?'9':report.quality==7?'4':'0';
+            lines.push_back(std::string("\xff" "c")+color+std::string(name));
+        }
+        break;
+    }
+    return lines;
+}
 namespace {
 uint32_t rollPd2VisualRandom(uint64_t &state) {
     // CN 36BAA0 uses SHRD 20 and an INT_MAX carry threshold. This is
@@ -34,6 +59,33 @@ std::optional<size_t> RemoteScene::Impl::pd2ThrownMissile(size_t skillRow,int we
     const int offset=split?(weaponMissile==37?1:weaponMissile==371?2:0):0;
     const auto missile=missileRows.find(missiles.number(base->second,"Id").value_or(-1)+offset);
     return missile==missileRows.end()?std::nullopt:std::optional{missile->second};
+}
+std::optional<size_t> RemoteScene::Impl::pd2DoomKnightMissile(size_t skillRow,const OnlineUnit &unit) const {
+    // Current CltDo94 (0x3A8CF0) reads SrvMissileA, then the monster's
+    // S3 component (MonsterData+0x0E), with four explicit class overrides.
+    const auto base=missileNames.find(skills.value(skillRow,"srvmissilea"));
+    if(base==missileNames.end()) return {};
+    unsigned offset=0;
+    if(unit.key.type==1) {
+        const auto identity=unitClass(unit);if(!identity) return {};
+        switch(*identity) {
+        case 968:offset=0;break;case 969:offset=1;break;
+        case 1106:offset=2;break;case 1107:offset=3;break;
+        default: {
+            const auto monster=monsterRows.find(*identity);if(monster==monsterRows.end()) return {};
+            const auto extra=monsterExtra.find(monstats.value(monster->second,"MonStatsEx"));if(extra==monsterExtra.end()) return {};
+            try {
+                net::protocol::BitReader bits(unit.appearanceBits);bits.read(4);const bool present=bits.read(1)!=0;
+                for(size_t component=0;component<=10;++component) {
+                    const auto choices=variants(monstats2.value(extra->second,std::string(componentCodes[component])+"v"));
+                    const auto value=present?bits.read(choices.size()>=3?std::bit_width(unsigned(choices.size()-1)):1):0;
+                    if(component==10) offset=value;
+                }
+            } catch(const std::exception &) {return {};}
+        }}
+    }
+    const auto result=missileRows.find(missiles.number(base->second,"Id").value_or(-1)+int(offset));
+    return result==missileRows.end()?std::nullopt:std::optional{result->second};
 }
 
 bool RemoteScene::Impl::displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,const Map &map,Vec origin) {

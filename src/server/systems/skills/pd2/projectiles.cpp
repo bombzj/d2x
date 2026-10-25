@@ -285,7 +285,11 @@ DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec 
     default:return DomainStatus::NotImplemented;
     }
     auto prepared=ports_.missiles.prepareNativeBirth(births);if(!prepared) return prepared.status;
-    if(caster->monster) return ports_.missiles.commitNativeBirth(*prepared.value).status;
+    if(caster->monster) {
+        const auto committed=ports_.missiles.commitNativeBirth(*prepared.value);
+        if(committed && program.doFunction==68) {pending.manaPaid=true;return finishShout();}
+        return committed.status;
+    }
     if(pending.weapon && pending.skill.weapon) {
         const bool payAmmo=(pending.weapon->ranged || pending.skill.weapon->thrown) && !(pending.skill.weapon->bow && pending.skill.weapon->bow->strafe);
         if(pending.manaPaid && (!payAmmo || pending.skill.weapon->noAmmo))

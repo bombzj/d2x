@@ -365,6 +365,7 @@ add_library(d2x_server
   src/server/systems/inventory/consumption.cpp src/server/systems/inventory/identification.cpp
   src/server/systems/inventory/storage.cpp src/server/systems/death/settlement.cpp
   src/server/systems/death/recovery.cpp src/server/systems/companions/hireling.cpp
+  src/server/systems/companions/pd2/hireling.cpp
   src/server/systems/effects/monster_pregnancy.cpp
   src/server/systems/effects/monster_enchantments.cpp
   src/server/systems/effects/suicide_minion.cpp src/server/systems/ai/unique_actions.cpp
@@ -383,6 +384,7 @@ add_library(d2x_game_content
     src/hosting/game_content.cpp src/hosting/pd2/town_host.cpp
     src/hosting/pd2/equipped_skills.cpp
     src/hosting/pd2/monster_actions.cpp
+    src/hosting/pd2/hirelings.cpp
     src/hosting/pd2/map_wire.cpp
     src/hosting/pd2/map_loot.cpp
     src/hosting/pd2/cube.cpp

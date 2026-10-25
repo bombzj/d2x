@@ -110,6 +110,7 @@ HirelingEquipment calculateHirelingEquipment(const PersistentCharacter &state, c
     auto &weapon=result.equipment.weapons[0];
     if(!weapon.item) {
         weapon.ranged=prepared.act==1;weapon.weaponClass=weapon.ranged?"bow":"hth";
+        result.equipment.animationClass=weapon.weaponClass;
         if(weapon.ranged) {
             weapon.minimum=nativeAdd(weapon.projectileMinimum,nativePercentage(weapon.projectileMinimum,weapon.projectileDamagePercent,100));
             weapon.maximum=nativeAdd(weapon.projectileMaximum,nativePercentage(weapon.projectileMaximum,weapon.projectileDamagePercent,100));

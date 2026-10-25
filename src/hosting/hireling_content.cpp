@@ -1,6 +1,7 @@
 #include "companion_content.hpp"
 #include "loot_content.hpp"
 #include "monster_actions_content.hpp"
+#include "pd2/hirelings.hpp"
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_animation.hpp"
 #include "gameplay/skills/spec.hpp"
@@ -15,6 +16,7 @@
 #include "gameplay/combat/attack_timing.hpp"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 namespace d2x {
 void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,const ClassicData &data,LootContent &cache) {
@@ -103,9 +105,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             if(rule.hitRecoveryAnimation) rule.hitRecoveryTicks=recovery(*rule.hitRecoveryAnimation,gear.modifiers.combat.fasterHitRecovery);
             if(rule.blockAnimation) rule.blockTicks=recovery(*rule.blockAnimation,gear.modifiers.combat.fasterBlock);
             if(data.pd2Host) {
-                // Town-only hosting prepares identity, equipment and lifecycle.
-                // PD2 combat programs require their own implementation before
-                // wilderness admission; do not borrow original skill actions.
+                hosting::pd2::prepareHirelingActions(archives,data,animations,*monster,*row,gear,result);
                 host.installHireling(game,std::move(result));
                 continue;
             }
@@ -207,7 +207,10 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                 }
                 result.actions.push_back(std::move(action));
             }
-        } catch(const std::exception &error) {result.deferred=error.what();}
+        } catch(const std::exception &error) {
+            result.deferred=error.what();
+            std::clog<<"[hireling-prepare] class="<<source.record.classId<<" level="<<source.record.level<<" deferred="<<result.deferred<<'\n';
+        }
         host.installHireling(game,std::move(result));
     }
 }

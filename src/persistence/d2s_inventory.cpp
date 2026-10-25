@@ -212,7 +212,10 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     require(definition != nullptr, "unknown base item");
     D2sItem output;
     output.code = item.definition;
-    output.level = item.level;
+    require(item.level>=1 && (item.level<=127 || (content.pd2Host && item.nativeFormat==104 && item.level==131)), "item level");
+    // Native CreateItem(0x83) retains level131 while in game. Common's item
+    // writer saturates its seven-bit level at127; it does not wrap to3.
+    output.level = std::min(item.level,127u);
     output.seed = item.nativeSeed;
     output.flags = item.nativeProperties ? item.nativeFlags : (0x00800000u | (item.nativeFlags & 0x4400000u));
     output.flags = (output.flags & ~0x00080110u) | 0x00800000u | (item.identified ? 0x10u : 0u);

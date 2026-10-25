@@ -146,6 +146,17 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
     if(hirelings!=StepStatus::Complete && hirelings!=StepStatus::Blocked) return hirelings;
     bool blocked=hirelings==StepStatus::Blocked;
     blocked|=synchronizeIronGolems(tick)==StepStatus::Blocked;
+    // A pet's old room can stop receiving AI events as soon as its owner
+    // changes area. Give the existing follow/warp procedure an opportunity
+    // to move it before relying on that room's next active AI callback.
+    std::vector<EntityId> departed;
+    for(const auto &[id,pet]:state_.companions) {
+        const auto *owner=ports_.players.find(pet.owner);const auto *body=ports_.monsters.find(id);
+        if(owner && owner->entered && body && body->alive() &&
+            (body->area!=owner->area || pet.ownerTeleport!=owner->teleportRevision ||
+             !ports_.areas.nearby(owner->area,owner->position,body->area,body->position))) departed.push_back(id);
+    }
+    for(const auto id:departed) blocked|=isDeferred(think(id,tick).status);
     std::vector<EntityId> stale;
     for(const auto &[id,source]:pending_) {
         const auto *p=ports_.players.find(source.actor.player);

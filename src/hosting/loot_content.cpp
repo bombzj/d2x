@@ -102,7 +102,7 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
             break;
         }
         const auto entry = resolveMonsterLoot(data, *cache.monsters, *world, sourceRequest);
-        if(request.pd2Map && request.pd2Monster && entry.status!=LootEntryStatus::Deferred)
+        if(request.pd2Loot && request.pd2Monster && entry.status!=LootEntryStatus::Deferred)
             plan=planPd2MapLoot(data,request,entry,seeds);
         else if (entry.status == LootEntryStatus::Ready)
             plan = planItemLoot(data, data.tables.at("itemratio"), entry.treasureClass, entry.itemLevel,

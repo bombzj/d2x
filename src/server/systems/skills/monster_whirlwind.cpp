@@ -83,6 +83,8 @@ DomainResult<> System::monsterWhirlwindEvent(const FrameEvent &event,uint64_t ti
         mode.movementFrame=tick;mode.movementAdvanced=true;
     }
     if(pending.nativeCallbackStarted || mode.step.event==1 || mode.step.event==2 || mode.step.event==4) {
+        if(!mode.whirlwindRolled && !mode.whirlwindContact && !pending.nativeCallbackStarted) pending.pd2CastEventPosted=false;
+        postPd2MonsterCastItemEvent(pending,tick);
         if(mode.whirlwindStopped) {
             pending.nativeCallbackStarted=true;
             {auto guard=state_.executingRelease(id);
