@@ -263,7 +263,8 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (object.mode && rule.operation != 22) return {DomainStatus::Conflict, {}};
     if (rule.shrine) {
         const auto result = shrine(actor, object); if (!result || object.pending) return result;
-        object.mode = 1; object.until = actor.tick + std::max(uint64_t{1},rule.openingTicks); object.reset = rule.shrine->reset > 0 ? actor.tick + uint64_t(rule.shrine->reset)+1 : 0;
+        object.operatorId=actor.player;object.operatorActor=actor.actor;
+        object.mode = 1; object.until = !rule.cycleOperating && rule.openedMode ? actor.tick + std::max(uint64_t{1},rule.openingTicks) : 0; object.reset = rule.shrine->reset > 0 ? actor.tick + uint64_t(rule.shrine->reset)+1 : 0;
         ++object.revision; collision(actor.area); return result;
     }
     if (rule.operation == 22) {
@@ -305,7 +306,14 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             (void)id; const auto *at = std::get_if<ContainerLocation>(&item.location); const auto *definition = player->rules.items->find(item.definition);
             if (at && at->container == player->persistent.containers.backpack && item.quantity && definition && definition->equipment.isType("key")) { key = item.handle(); break; }
         }
-        if (!key.id) return {DomainStatus::Conflict, {}};
+        if (!key.id) {
+            // OperateFunction04 handles a missing key without opening the chest.
+            // The prompt belongs to its player, including deferred approaches.
+            const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
+                {SoundFact{actor.actor,0,actor.area,22}}});
+            if(!sent) return {sent.status,{}};
+            return {DomainStatus::Applied,std::monostate{}};
+        }
     }
     if(rule.operation==5 && !ports_.events.hasCapacity(1)) return {DomainStatus::Capacity,{}};
     LootRequest source; source.source = object.id; source.region = object.area; source.difficulty = ports_.settings.difficulty;
@@ -530,7 +538,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const auto *player=ports_.players.find(object.operatorId);const auto &area=ports_.areas.at(object.area);
             DomainResult<> result{DomainStatus::Applied,std::monostate{}};
             if(object.rule.shrine->code!=18 && player) result=shrineMissiles({player->player,player->actor,object.area,area.generation,0,tick.tick},object);
-            if(result) {object.specialPending=false;object.mode=1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);object.reset=object.rule.shrine->reset>0?tick.tick+uint64_t(object.rule.shrine->reset)+1:0;++object.revision;changed.insert(object.area);}
+            if(result) {object.specialPending=false;object.mode=1;object.until=!object.rule.cycleOperating && object.rule.openedMode?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;object.reset=object.rule.shrine->reset>0?tick.tick+uint64_t(object.rule.shrine->reset)+1:0;++object.revision;changed.insert(object.area);}
         }
 
     }

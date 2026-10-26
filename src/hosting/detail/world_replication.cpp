@@ -211,10 +211,10 @@ void NativeRealmService::publishCorpses() {
 
 namespace d2x::hosting {
 void NativeRealmService::publishObjects() {
-    std::map<EntityId, uint64_t> next; std::vector<Bytes> packets;
+    std::map<EntityId, std::pair<uint64_t,int>> next; std::vector<Bytes> packets;
     for (const auto &object : host.visibleObjects(*binding)) {
-        next.emplace(object.id, object.revision);
-        const auto old = peer.objects.find(object.id); if (old != peer.objects.end() && old->second == object.revision) continue;
+        next.emplace(object.id, std::pair{object.revision,object.mode});
+        const auto old = peer.objects.find(object.id); if (old != peer.objects.end() && old->second.first == object.revision) continue;
         if(object.rule.operation==23 && old!=peer.objects.end()) {
             // ObjMode::sub_6FC752A0 sends3/TARGETABLE/native mode. A waypoint
             // keeps its initial target flag; ENDANIM writes ON silently.
@@ -225,11 +225,31 @@ void NativeRealmService::publishObjects() {
             }));
             continue;
         }
-        const auto position = object.position + shared.terrain.at(binding->game).at(object.area).origin;
-        packets.push_back(encodeServerPacket(ServerMessage::AssignObject, [&](auto &out) {
-            out.u8(2); out.u32(uint32_t(object.id.value)); out.u16(uint16_t(object.definition)); out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y)));
-            out.u8(uint8_t(object.mode)); out.u8(object.rule.shrine ? uint8_t(object.rule.shrine->code) : object.rule.chest ? uint8_t((object.rule.chest->locked ? 128 : 0) | object.rule.chest->trap) : object.rule.initialization==11 || object.rule.initialization==12 ? object.portalDestination : object.rule.operation==22 ? uint8_t(object.uses) : uint8_t(object.rule.trap));
-        }));
+        if(old!=peer.objects.end() && (object.rule.chest || object.rule.shrine)) {
+            // ENDANIM's OP -> ON is silent in native object replication.
+            // Still publish the current mode if batching skipped the OP observation.
+            if(old->second.second==1 && object.mode==2) continue;
+            // Existing units change mode through 0E. Reassigning through 51
+            // also overwrote the original locked-chest interaction metadata.
+            packets.push_back(encodeServerPacket(ServerMessage::UnitMode,[&](auto &out) {
+                out.u8(2);out.u32(uint32_t(object.id.value));out.u8(3);
+                out.u8(object.rule.shrine && object.mode==1?1:object.rule.selectable[size_t(object.mode)]?2:0);
+                out.u32(uint32_t(object.mode));
+            }));
+        } else {
+            const auto position = object.position + shared.terrain.at(binding->game).at(object.area).origin;
+            packets.push_back(encodeServerPacket(ServerMessage::AssignObject, [&](auto &out) {
+                out.u8(2); out.u32(uint32_t(object.id.value)); out.u16(uint16_t(object.definition)); out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y)));
+                out.u8(uint8_t(object.mode)); out.u8(object.rule.shrine ? uint8_t(object.rule.shrine->code) : object.rule.chest ? uint8_t((object.rule.chest->locked ? 128 : 0) | object.rule.chest->trap) : object.rule.initialization==11 || object.rule.initialization==12 ? object.portalDestination : object.rule.operation==22 ? uint8_t(object.uses) : uint8_t(object.rule.trap));
+            }));
+        }
+        // ObjMode::752A0 uses 4D for shrine operation: the usual skill and
+        // rank fields carry the operator GUID and the shrine table code.
+        if(object.mode==1 && (object.rule.subClass&1) && !(object.rule.subClass&4) && object.rule.shrine && object.operatorActor)
+            packets.push_back(encodeServerPacket(ServerMessage::CastPoint,[&](auto &out) {
+                out.u8(2);out.u32(uint32_t(object.id.value));out.u32(uint32_t(object.operatorActor.value));
+                out.u8(uint8_t(object.rule.shrine->code));out.u16(0);out.u16(0);out.u16(0);
+            }));
     }
     for (const auto &[id, revision] : peer.objects) if (!next.contains(id)) {
         (void)revision;

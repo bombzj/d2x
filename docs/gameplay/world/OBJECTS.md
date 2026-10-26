@@ -30,6 +30,10 @@ OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(Fr
 
 清单来自当前MPQ Objects.txt，以下计数是表内定义数，包含同族变体及不绘制的控制物件，不是随机生成数量。既有GUID交互、原图／各模式、掉落副本沿用公共入口；本批补动画结束衔接、碰撞及声音，没有重写箱子掉落、钥匙消耗或陷阱AI。
 
+自研锁箱按公共ChestState判定：非刺客只查本人背包的MPQ钥匙类型，无钥匙保留锁／中立模式并可靠私发0x2C事件22；成功打开在库存／掉落事务中私发事件11，刺客免钥匙也走该成功通知。钥匙消耗与掉落安装共同提交，容量受阻不能提前消费或重复通知。依据D2MOO `ObjMode::OBJECTS_OperateFunction04_Chest`、`D2GAME_DoKeyCheck`；1.13c普通TCP/IP对照已覆盖女巫无钥匙／有钥匙及刺客无钥匙，未认证全部锁箱变体和概率。
+
+箱子／祭坛首次可见使用0x51，后续模式变化使用0x0E，不以重新分配覆盖初始InteractType。观察者缓存分别保留权威revision与模式：已观察OP后的ENDANIM→ON不补发消息；若发布合并跨过OP，仍同步当前模式。祭坛记录操作者真实Actor GUID，SubClass位1且非位4的OP发布另发0x4D，字段为物件GUID／操作者GUID／Shrines.Code，不能伪装成玩家技能施放。神坛ENDANIM只在Objects.CycleAnim1=0且Mode2存在时安排，重置清操作者。依据D2MOO `ObjMode::sub_6FC752A0`／`OBJECTS_OperateFunction02_Shrine`；其他物件族仍沿既有发布入口，不据此认证井水、门和任务物件全部增量。
+
 | 类别 | OperateFn／定义数 | 表现与原服边界 |
 | --- | --- | --- |
 | 棺材、石棺 | 1／13 | OP→ON，原COF层序／阴影；怪物或掉落只取原服 |

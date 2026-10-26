@@ -14,6 +14,8 @@ Shift+1–4将药水交给佣兵，仅接受生命、回复、解毒、解冻药
 
 腰带卷轴沿原0x26使用：鉴定卷轴先等0x3F再选目标，回城卷轴仅野外成功创建门户后消耗，消耗后同列补位。回城卷轴／书也可经RemoteControl选择原技能并创建门户，真实type2门户与位置等原服；鉴定技能栏施放／原0x20使用由原0x3F准备光标，再0x27确认目标；背包右键沿原0x20请求准备来源。两条路径都等物品鉴定／来源消耗更新，不自动重试；界面不扣卷轴或书页。
 
+自研私人门户共用travel::createPortal：源端使用原房间大小3、0x3e01寻位及0x0c01字段检查；目标端复用world::nativeLinkPortalPosition的TileInfo11、房间激活和0xbe11寻位。城镇有准备锚点不代表落点房间已加载，不能直接用该锚点的未驻留碰撞拒绝开门。两端房间随门户保留，成功后才共同提交耗页／卷轴及旧门替换。依据D2MOO `Skills::D2GAME_CreatePortalObject_6FD13DF0`／`D2GAME_CreateLinkPortal_6FD13B20`；普通难度第一幕卷轴已对照开门、往返、主人返回关闭及替换，其他幕／门户资格和全部失败副作用仍待核对。
+
 ## 原版定位
 
 本地1.13c D2Client.dll（MD5 f5860c629d309b8fc1f96174babcf633）RVA29990／29B10为腰带数字键、Shift标志与底格查找，RVA26FEC–270AB为悬停展开／离开收起，RVA28DC0为展开绘制。D2Game.dll（MD5 978f6f74cd031bce6ecee602cd5988cc）RVAD4D30为取出，RVAD8BA0为使用，二者调用RVAD2540按列稳定补位；佣兵分支按原类型筛选并在没有存活佣兵时保留人物目标。D2MOO ItemMode::sub_6FC49140的重建索引有误，补位以同版本DLL为准。

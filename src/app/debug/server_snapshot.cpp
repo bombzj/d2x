@@ -33,6 +33,9 @@ Json area(const server::AreaView &value) {
     result["populationMissing"] = value.populationMissing;
     result["populationPendingRooms"] = value.populationPendingRooms;
     result["waypointAnchor"] = a.waypointAnchor ? point(*a.waypointAnchor + a.origin) : Json(nullptr);
+    result["townRegion"] = int(a.townRegion);
+    result["portalArrival"] = a.portalArrival ? point(*a.portalArrival + a.origin) : Json(nullptr);
+    result["portalSupported"] = a.portalRule.has_value();
     for (const auto &edge : a.boundaries) result["boundaries"].push_back({{"destination", int(edge.destination)}, {"side", edge.side},
         {"plane", edge.plane + (edge.side % 2 ? a.origin.x : a.origin.y)},
         {"start", edge.start + (edge.side % 2 ? a.origin.y : a.origin.x)},

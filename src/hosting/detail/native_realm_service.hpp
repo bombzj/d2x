@@ -77,7 +77,8 @@ struct NativeRealmService {
         std::set<EntityId> missiles;
         std::map<EntityId, Bytes> pets;
         std::map<EntityId, Bytes> petVitals;
-        std::map<EntityId, uint64_t> groundItems, corpses, objects, portals;
+        std::map<EntityId, uint64_t> groundItems, corpses, portals;
+        std::map<EntityId, std::pair<uint64_t,int>> objects; // Authority revision and last observed mode.
         std::map<EntityId, std::set<EntityId>> corpseEquipment;
         std::map<EntityId, EntityId> corpseOwners;
         std::map<int,int> itemSkills;

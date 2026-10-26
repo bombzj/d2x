@@ -203,7 +203,8 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
             state_.pending.erase(found);return {DomainStatus::Applied,std::monostate{}};
         }
     }
-    const size_t facts=batch.items.size()+(request.object?2:0);
+    const bool unlocked=request.object && request.object->operation==4 && request.object->chest && request.object->chest->locked;
+    const size_t facts=batch.items.size()+(request.object?2:0)+(unlocked?1:0);
     // Native NoDrop is a completed empty result, not an outbox reservation.
     if (facts && !ports_.events.hasCapacity(facts, request.object ? 2 : 1))
         return {DomainStatus::Capacity, {}};
@@ -241,6 +242,9 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
         transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision, std::move(draft.edit.inventory), std::move(draft.edit.changes), player->persistent.player.weaponSet};
         edit.world = transactions::WorldEdit{ports_.items.read().revision, std::move(*next.value)};
         edit.publicFacts=std::move(drops);
+        // Native locked-chest success also notifies an Assassin, who spends no key.
+        // Publish together with the inventory/drop transaction, once it can commit.
+        if(unlocked) edit.facts.emplace_back(SoundFact{player->actor,0,player->area,11});
         auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return {plan.status, {}};
         const auto committed = ports_.transactions.commit(std::move(*plan.value)); if (!committed) return committed;
         state_.completed.swap(completions);

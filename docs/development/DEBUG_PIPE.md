@@ -79,7 +79,7 @@ JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／Pla
 | `object-spawn` | code为Objects定义的十进制字符串，x／y为可选原世界坐标，shrine／trap可选；仅本地管理入口，生成原物件以准备观察条件，不直接授予祭坛效果或结算陷阱 |
 | `grant-hireling` | code为当前MPQ Hireling原Id十进制字符串，level为1至主人等级；按原Id保留来源难度并选等级段、姓名与成长，原子替换旧佣兵和装备。仅宿主管理准备，不代替NPC雇佣验证 |
 | `monster-damage`、`monster-kill` | id为当前区域存活怪物；damage另需amount正整数生命点，kill扣除其剩余生命。走monsters正常伤害事实，后续固定步执行死亡、经验、掉落及任务统计，不直接改任务或客户端 |
-| `travel` | level为当前宿主准备的Levels身份（原版1–136，PD2包含扩展预设区域），可选x／y为目的地局部subtile；本地宿主准备真实MPQ地图后按碰撞定位，等待内容时返回Unavailable，可检查server-snapshot后重试。扩展区域定位见[PD2管理旅行](../pd2/OPERATIONS.md#管理旅行)；通过原旅行事实同步，不授予任务或传送点。用于准备冒烟条件，不能当作开图、事件或首领资格认证 |
+| `travel` | level为当前宿主准备的Levels身份（原版1–136，PD2包含扩展预设区域），可选x／y为目的地局部subtile；本地宿主准备真实MPQ地图后按碰撞定位，等待内容时返回Unavailable，可检查server-snapshot后重试。快照area／areas另含townRegion、portalArrival全局锚点及portalSupported，锚点存在不证明对应房间当前驻留或可放门。扩展区域定位见[PD2管理旅行](../pd2/OPERATIONS.md#管理旅行)；通过原旅行事实同步，不授予任务或传送点。用于准备冒烟条件，不能当作开图、事件或首领资格认证 |
 | `unlock-waypoints` | 必须二选一：`level`为当前MPQ中带传送点的原区域ID（1–136），或`all:true`解锁完整目录。只修改所选角色当前难度的个人激活记录，重复调用保留已有记录；不要求目标地图已生成，不授予任务或改变物件模式。经人物事务提交，当前有有效传送菜单时发送原0x63刷新，否则下次正常打开菜单时显示；沿原D2S保存，命令本身不写盘 |
 | `reset-attributes` | 无玩法参数；退还已分配的四项基础属性点，保留技能分配。经progression／人物事务重算装备资格和派生值，生命／法力／体力限制到新上限，不补满资源；只允许存活、已入局且没有活动技能的角色 |
 | `reset-skills` | 无玩法参数；退还已分配的基础技能点，清除两套武器的技能选择、来源GUID和16个技能快捷键，保留属性分配；固有／物品授予技能仍由规则派生。资格同reset-attributes，两项命令均不消耗Akara次数或Token、不改任务资格；重复调用不重复发点，正常保存或save写入原D2S |

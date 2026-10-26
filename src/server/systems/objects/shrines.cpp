@@ -85,7 +85,7 @@ DomainResult<> System::specialShrine(const ActorContext &actor,Object &object) {
     output.dropLevel=player->persistent.player.level;
     LootRequest source;source.source=object.id;source.region=object.area;source.difficulty=ports_.settings.difficulty;
     const auto queued=ports_.loot.queue({object.revision,source,actor.player,player->position,std::move(output),{}});
-    if(queued) {object.pending=true;object.operatorId=actor.player;object.random=random;}
+    if(queued) {object.pending=true;object.operatorId=actor.player;object.operatorActor=actor.actor;object.random=random;}
     return queued;
 }
 DomainResult<> System::shrine(const ActorContext &actor,Object &object) {

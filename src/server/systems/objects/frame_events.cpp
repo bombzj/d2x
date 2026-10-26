@@ -67,7 +67,7 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
         if(object.mode==1) {object.mode=object.rule.operation==10 && int(object.area)==38?5:2;changed=true;}
         object.until=0;
     } else if(event.type==FrameEventType::ActiveState && object.reset==event.payload) {
-        object.mode=0;object.reset=0;changed=true;
+        object.mode=0;object.reset=0;object.operatorActor={};changed=true;
     } else if(event.type==FrameEventType::AiThink && object.rule.operation==22) {
         // ObjMode::74B40 restores one use per event installed by OperateWell.
         // Multiple uses retain distinct callbacks; there is no refill loop.

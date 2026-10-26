@@ -7,6 +7,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/quests/system.hpp"
 #include "server/systems/objects/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -75,7 +76,6 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !area || area->generation!=actor.areaGeneration || area->definition.town || !area->definition.portalRule || !p->rules.character) return {DomainStatus::InvalidActor,{}};
     const auto *town=ports_.areas.find(area->definition.townRegion);
     if(!town) { ports_.world.requestTown(actor); return {DomainStatus::Unavailable,{}}; }
-    if(!town->definition.portalArrival || !town->definition.collision.walkable(*town->definition.portalArrival,playerMovement)) return {DomainStatus::Unavailable,{}};
     inventory::detail::Draft draft(*p,*p->rules.items,*p->rules.equipment,*p->rules.character);
     const ItemInstance *item=nullptr; const ItemSkillRule *rule=nullptr;
     for(const auto &[id,value]:p->persistent.inventory.items) {
@@ -89,10 +89,22 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
         item=&value; rule=&found->second; break;
     }
     if(!item || item->revision==UINT64_MAX) return {DomainStatus::InvalidRequest,{}};
-    const auto field=area->definition.collision.nearest(p->position,playerMovement);
-    if((field-p->position).length()>5 || !area->definition.collision.walkable(field,playerMovement)) return {DomainStatus::Unavailable,{}};
+    if(!ports_.items.identityCapacity(2) || !ports_.events.hasCapacity(2)) return {DomainStatus::Capacity,{}};
+    const auto global=p->position+area->definition.origin;
+    const int column=int(std::floor(global.x)),row=int(std::floor(global.y));
+    const auto sourceRoom=ports_.areas.roomAtPosition(actor.area,p->position+Vec{.5f,.5f},column,row);
+    if(!sourceRoom) return {DomainStatus::Unavailable,{}};
+    // CreatePortalObject uses the native spawn footprint and expfield before
+    // CreateLinkPortal streams the destination's tile11 room. A prepared town
+    // anchor is not evidence that its current room collision is loaded/clear.
+    const auto field=ports_.areas.nativeFreeCoordinates(*sourceRoom,column,row,3,0x3e01,
+        ports_.spatial.nativeCollisionSample(),std::pair{column,row},0x0c01);
+    if(!field) return {DomainStatus::Unavailable,{}};
+    const auto linked=ports_.world.nativeLinkPortalPosition(area->definition.townRegion);
+    if(!linked) return {DomainStatus::Unavailable,{}};
     auto portals=state_.portals;
-    Portal portal{actor.player,actor.actor,ports_.items.reserveIdentity(),ports_.items.reserveIdentity(),p->persistent.player.name,actor.area,area->definition.townRegion,field,*town->definition.portalArrival,*area->definition.portalRule,actor.tick+uint64_t(area->definition.portalRule->openingTicks),1,false};
+    Portal portal{actor.player,actor.actor,ports_.items.reserveIdentity(),ports_.items.reserveIdentity(),p->persistent.player.name,field->room.area,linked->area,field->position,linked->position,*area->definition.portalRule,actor.tick+uint64_t(area->definition.portalRule->openingTicks),1,false};
+    portal.fieldRoom=field->room;portal.townRoom=linked->room;
     portals[actor.player]=portal;
     auto &consumed=draft.edit.inventory.items.at(item->id); ++consumed.revision;
     const bool remove=rule->book? (--consumed.charges,false):--consumed.quantity==0;
