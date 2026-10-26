@@ -64,7 +64,7 @@ CN个人／账号共享分页、共享材料操作涉及mdll1／BH，不能全�
 
 | 代码入口 | 已接入范围 | 尚未完成的边界 |
 | --- | --- | --- |
-| [启动绑定](../../src/app/client_setup.cpp)／[PlayPD2](../../PlayPD2.cmd) | 挂载前核对固定核心、认证输入和目标MPQ摘要；配置绑定原副本／pd2目录；不装载native DLL | 仅本Normal／TCP样本；未知关键文件拒绝，不自动更新或降级 |
+| [启动绑定](../../src/app/client_setup.cpp)／[PlayPD2](../../PlayPD2.cmd) | 配置绑定原副本／pd2目录；资源、CN认证与BH报告使用实际文件，不以旧样本摘要拦截兼容更新，不装载native DLL | 未知核心只保留未映射计数，未知认证模块／公式及不支持的格式仍拒绝；实际协议或格式变化仍需适配，见[资源加载](../pd2/RESOURCE_LOADING.md#更新与兼容性检查) |
 | [共用前端](../../src/app/frontend.cpp)／[RealmSession](../../src/network/realm_session.hpp) | 每个连接固定协议，共用Remote*；建角（可选专家级／天梯）、删角按原编码提交，由CN服务裁定；CN连接不使用本地角色或传档；前端的EmbeddedRealm服务本地菜单分支 | 自有pd2-local无窗口配置已有源码入口，端到端边界独立核对；CN无窗口及房间详情仍未开放，函数级任务见[补齐计划](../pd2/GAP_PLAN.md) |
 | [认证](../../src/network/protocol/auth.cpp)／[MPQ资源](../../src/network/protocol/native_auth_resource.cpp) | CN ASCII小写BSHA1、独立Realm摘要、MPQ来源key／owner和0x51证明获当前服务接受；秘密仅内存使用 | 非MPQ来源、未知校验模块、D2X重新注册与native逐字节比对未完成 |
 | [MCP](../../src/network/realm_session_mcp.cpp) | 角色／Ladder、带filter列表和两字节列表扩展；建房追加GS／loot分配字节；创建和加入成功 | 已通过建房后入场／城镇显示及退局；公开Join已获票据并建立GS，完整Join场景组合另验 |
@@ -396,7 +396,7 @@ BH 的 `px9c` 结构与物品钩子能提供原 0x9C／0x9D 路径的定位线�
 
 面向现有函数审查的详细分离设计见[PD2代码分离与基础能力复用计划](PD2_CODE_ISOLATION.md)：同领域PD2实现可保留为原System的private成员，内部helper按实际需求共享，跨领域副作用仍通过拥有者的窄能力；该页另维护状态、构建边界与迁移步骤。本节继续维护当前已隔离入口和兼容约束。
 
-玩家扩展状态独立于公共收包实现：[realm_session_pd2_state.cpp](../../src/network/realm_session_pd2_state.cpp)负责2E、83–88及A9附加行为，公共handle_game仅在原位置调用handle_player_state_pd2。函数入口按固定ClientProfile门控，返回true表示已消费；A9附加清理后返回false，仍进入公共状态移除。核心计数的两版映射由[专用内容准备](../../src/content/pd2_core_counters.cpp)提供，网络不读取MPQ或DLL；应用传递已核验的核心构建标识，不用remoteLobbyOnly猜版本。状态结构位于[online_pd2_state.hpp](../../src/contracts/online_pd2_state.hpp)，OnlineView保留唯一成员与既有清空时机，不建立第二份状态。
+玩家扩展状态独立于公共收包实现：[realm_session_pd2_state.cpp](../../src/network/realm_session_pd2_state.cpp)负责2E、83–88及A9附加行为，公共handle_game仅在原位置调用handle_player_state_pd2。函数入口按固定ClientProfile门控，返回true表示已消费；A9附加清理后返回false，仍进入公共状态移除。核心计数的两版映射由[专用内容准备](../../src/content/pd2_core_counters.cpp)提供，网络不读取MPQ或DLL；应用仅在已识别核心时传递对应计数映射标识；未知核心保留未映射原始计数，不阻止认证，也不用remoteLobbyOnly猜版本。状态结构位于[online_pd2_state.hpp](../../src/contracts/online_pd2_state.hpp)，OnlineView保留唯一成员与既有清空时机，不建立第二份状态。
 
 CN的handle_stash_pd2独立位于[realm_session_pd2_stash.cpp](../../src/network/realm_session_pd2_stash.cpp)，负责9D扩展action的个人／共享页确认、索引确认、页名读取、共享金币只读值、材料能力与计数、升级及存取回执，以及同控制链的分配掉落通知。此次仅迁移既有函数，字段、拒绝条件、首次材料请求及revision更新顺序保持不变。公共调用仍在原位置，tick回显优先处理，普通9D物品action继续原解码；未知扩展仍计未消费，不回落物品位流。状态仍归同一OnlineWorldView／OnlinePd2State，不新增缓存或第二份权威。65／66、核心选页和公共物品回包确认尚未随此项搬迁，不能将文件拆分视为这些流程或全部兼容性已经完成。
 

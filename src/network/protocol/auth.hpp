@@ -23,8 +23,8 @@ struct OriginalClientAuth {
     std::string classicKey, expansionKey, owner;
     ClientProfile profile{ClientProfile::Lod113c};
     bool nativeMpqKeys{}; // CN proof comparison/count semantics require this source.
-    std::optional<uint32_t> cnBhCrc32; // Actual SHA-verified BH file, not a fabricated check result.
-    std::optional<Pd2CoreBuild> cnCoreBuild;
+    std::optional<uint32_t> cnBhCrc32; // Actual selected BH file bytes, not a fabricated check result.
+    std::optional<Pd2CoreBuild> cnCoreBuild; // Known counter metadata only; unknown preserves unmapped raw updates.
 };
 struct KeyProof {
     uint32_t length{}, product{}, publicValue{};

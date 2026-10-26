@@ -11,8 +11,6 @@ namespace net::protocol { struct OriginalClientAuth; }
 // a fresh application/resource lifetime.
 void resolveClientSetup(AppOptions &);
 void mountClientResources(Archives &, const AppOptions &);
-void verifyPd2ClientFiles(const std::filesystem::path &);
-void verifyPd2AuthenticationFiles(const std::filesystem::path &);
 void verifyClientProfileDefinition(const std::filesystem::path &, std::string_view digest);
 void preparePd2Authentication(net::protocol::OriginalClientAuth &, const std::filesystem::path &pd2,
                                const std::filesystem::path &original);

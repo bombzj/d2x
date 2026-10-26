@@ -54,7 +54,6 @@ inline OnlineConfiguration configuration(const std::filesystem::path &path,
             if(!std::filesystem::equivalent(pd2.parent_path(),directory))
                 throw std::runtime_error("Mismatched client resource roots");
             try {
-                verifyPd2AuthenticationFiles(pd2);
                 preparePd2Authentication(result.login.originalClient,pd2,directory);
             } catch(const std::exception &error) {preparationError=error.what();throw;}
             return result;

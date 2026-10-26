@@ -23,7 +23,7 @@ PD2专用启动、配置、部署与诊断操作。公共构建和命令格式�
 
 默认使用Git忽略的`pd2.local.json`；该文件不存在但已有`pd2-host.local.json`时复用旧配置。首次创建可用`-Pd2Directory`或`D2X_PD2_DIRECTORY`提供资源目录。账号服务器取`-AccountHost`、`D2X_PD2_ACCOUNT_HOST`或原目录的`zylpd2.ip`；未知时可留空，Battle.net登录时才检查。已有配置不被参数静默覆盖，修改服务／资源须编辑该配置或显式选择新的`-Profile`文件。账号密码只在D2X登录界面输入，不写命令行或公开配置。
 
-EXE以`--client-profile <file.json>`固定资源构建；连接前按菜单的本地接入／账号认证选择PD2协议，当前连接期间不切换。旧`-Local`／`-Pd2Local`／`--pd2-local`参数只保留兼容，不再限制菜单模式。默认调试管道为`d2x-pd2-debug`，默认不开诊断文件记录；多进程使用不同`-PipeName`。
+EXE以`--client-profile <file.json>`选择资源目录和服务配置；本进程内保持同一资源集合，更新PD2后重启D2X。启动不按整包摘要白名单限制资源更新，具体检查见[资源加载](RESOURCE_LOADING.md#更新与兼容性检查)。连接前按菜单的本地接入／账号认证选择PD2协议，当前连接期间不切换。旧`-Local`／`-Pd2Local`／`--pd2-local`参数只保留兼容，不再限制菜单模式。默认调试管道为`d2x-pd2-debug`，默认不开诊断文件记录；多进程使用不同`-PipeName`。
 
 <a id="运行与部署单机与tcpip"></a>
 
@@ -45,7 +45,7 @@ Single Player与TCP/IP使用自有宿主，默认角色目录`saves/pd2`，沿�
 
 配置只保存`version=1`、`clientProfile=pd2-cn-normal-20261020`、`authentication=pd2-cn`、`originalClientDirectory`、`pd2Directory`、`accountHost/accountPort`、`gamePort`及`gateway`。原目录必须是pd2目录的父目录；相对路径按配置文件目录解析。账号密码在D2X界面输入，沿用每配置路径独立的Windows凭据管理器／Linux受限文件，不能写入启动命令、公开配置或文档。运行中修改配置定义会拒绝后续认证，需重启固定新服务与资源。
 
-EXE入口为`--client-profile <file.json>`，PD2窗口标题为D2X - PD2。启动核对固定样本SHA-256，按已恢复顺序挂载原包、CN patch及四个PD2包；未知构建或资源不符明确停止。认证只读原MPQ的key／owner资源与pd2目录三份版本文件，不执行目标程序。已支持当前服务的账号登录、Realm、既有角色选择、大厅列表及返回；新账号注册尚未重测。已显示当前角色原图，建房／加入请求已接入，MCP已返回成功；修正游戏端口后已实际显示罗格营地、本人、NPC和HUD，并正常退局返回选角；此阶段仅认证基础入场和城镇显示。CN房间详情及PD2无窗口模式关闭；单机／局域网通过同一主菜单进入；建角按原MCP 0x02（可选专家级0x04、天梯0x40）、删角按原MCP 0x0A编码提交，成败以CN服务回复为准。未指定 `--lang` 时该 profile 默认 `chi`，读取CN副本 `Data/local` 的中文表、字形与菜单图，`-Lang eng` 可改回英文。PD2登录自动选择返回的第一个Realm，直接显示角色列表。CN Normal默认gamePort=4001，来自固定BH对D2Net的端口补丁；原版默认4000。若沿用旧pd2.local.json中的4000，需改为4001后重启；不会由更新原客户端自动修改D2X配置。配置可选gameServer整数1–9（默认1）、lootAllocation布尔值（默认true）。CN创建游戏页从CN副本的Data/local/Lng/Chi/PatchString.tbl只读加载GS1–GS9名称及标题，使用原gsselectbuttons按钮；初选采用配置值，同一账号连接内保留本次选择，每次建房提交自己的GS编号，不改写配置。GS不是端口或传输选择；资源虽有CreateGameGS10，已核实的原选择器仅创建九个按钮，因此不开放GS10，旧配置值10须改为1–9。完整限制见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)。
+EXE入口为`--client-profile <file.json>`，PD2窗口标题为D2X - PD2。启动按统一顺序挂载原包、CN patch及四个PD2包，不按整包摘要拦截资源更新；CN认证在实际登录时读取当前文件，按服务端挑战计算校验和；未知核心不再按摘要拦截，只将未核实的核心计数保留为未映射数据。认证只读原MPQ的key／owner资源与pd2目录三份版本文件，不执行目标程序。已支持当前服务的账号登录、Realm、既有角色选择、大厅列表及返回；新账号注册尚未重测。已显示当前角色原图，建房／加入请求已接入，MCP已返回成功；修正游戏端口后已实际显示罗格营地、本人、NPC和HUD，并正常退局返回选角；此阶段仅认证基础入场和城镇显示。CN房间详情及PD2无窗口模式关闭；单机／局域网通过同一主菜单进入；建角按原MCP 0x02（可选专家级0x04、天梯0x40）、删角按原MCP 0x0A编码提交，成败以CN服务回复为准。未指定 `--lang` 时该 profile 默认 `chi`，读取CN副本 `Data/local` 的中文表、字形与菜单图，`-Lang eng` 可改回英文。PD2登录自动选择返回的第一个Realm，直接显示角色列表。CN Normal默认gamePort=4001，来自固定BH对D2Net的端口补丁；原版默认4000。若沿用旧pd2.local.json中的4000，需改为4001后重启；不会由更新原客户端自动修改D2X配置。配置可选gameServer整数1–9（默认1）、lootAllocation布尔值（默认true）。CN创建游戏页从CN副本的Data/local/Lng/Chi/PatchString.tbl只读加载GS1–GS9名称及标题，使用原gsselectbuttons按钮；初选采用配置值，同一账号连接内保留本次选择，每次建房提交自己的GS编号，不改写配置。GS不是端口或传输选择；资源虽有CreateGameGS10，已核实的原选择器仅创建九个按钮，因此不开放GS10，旧配置值10须改为1–9。完整限制见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)。
 
 默认独立调试管道为`d2x-pd2-debug`，可用`-NoDebugPipe`关闭。大厅支持既有`online-login`、状态／列表别名、选Realm／角色、返回角色／Realm、取消列表、注销、`ui-input`、`screenshot`及`quit`，JSON请求格式沿用[调试指南](../development/DEBUG_PIPE.md)。管道登录不记忆密码，状态仅给公开身份／挑战名称、包ID／计数和数值拒绝码，不保存认证载荷；需要记忆时仍通过UI登录。`-Hidden`建立隐藏的正常渲染窗口，便于沿相同入口自动操作和截图，不是无窗口协议模式。`-Diagnostic`记录程序身份、输出、启动节点及client-packets.jsonl的D2GS逻辑包；不记录SID／MCP原始认证载荷，0x68票据字段脱敏。没有到达GS收发阶段时文件可为空。游戏心跳问题可用`PlayPD2.cmd -Diagnostic`保留程序身份及游戏包记录，再取`online-status`的`gameHeartbeat`计数／时间及截图；只有游戏包完全断流才触发CN心跳超时。原版`Play-Diagnostic.cmd`语义保持原样。
 
@@ -63,7 +63,7 @@ PD2自研宿主可同时传入`--client-profile <pd2-local配置>`与`--headless
 
 来源：[docs/development/PVPGN_SERVER.md](../development/PVPGN_SERVER.md)。
 
-`ruleset=pd2-local`现沿同一个PvpgnServer／NativeRealmHost准备`Pd2TownHost`规则。新角从当前MPQ创建，D2DBS读写调用该内容的PD2存档codec；原版默认仍为`lod113c`。资源入口为`src/resources/pd2/archives.cpp`，按固定摘要核对当前五个MPQ并有序挂载，不读取ProjectDiablo.dll或BH.dll。单包、批次及初始同步按同一Pd2Local协议校验。该实验组装仅完成构建；自研PD2当前支持限单机／TCP/IP，不测试其作为PD2 GS接PvPGN，也不据此声明支持或P1验收完成。
+`ruleset=pd2-local`现沿同一个PvpgnServer／NativeRealmHost准备`Pd2TownHost`规则。新角从当前MPQ创建，D2DBS读写调用该内容的PD2存档codec；原版默认仍为`lod113c`。资源入口为`src/resources/pd2/archives.cpp`，检查五个MPQ可读并有序挂载，不读取ProjectDiablo.dll或BH.dll；表与格式由实际消费者校验，不以整包摘要拒绝更新。单包、批次及初始同步按同一Pd2Local协议校验。该实验组装仅完成构建；自研PD2当前支持限单机／TCP/IP，不测试其作为PD2 GS接PvPGN，也不据此声明支持或P1验收完成。
 
 <a id="运行与部署独立服务配置"></a>
 

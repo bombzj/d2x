@@ -7,38 +7,13 @@
 #include "resources/pd2/archives.hpp"
 #include <nlohmann/json.hpp>
 #include <array>
-#include <algorithm>
 #include <fstream>
-#include <iterator>
+#include <span>
 #include <stdexcept>
 #include <string_view>
-#include <utility>
 
 namespace d2x {
 namespace {
-constexpr std::pair<std::string_view, std::string_view> cnFiles[]{
-    {"ProjectDiablo.dll","9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f"},
-    {"Game.exe","065aedaa998adcd337b93ccf33457e3bac589bab3bfd894351b6fa834399985d"},
-    {"Bnclient.dll","3631ca889dfa3cb149dd5b1722d3231851661b40514d4fbb4f00c529e76a56f5"},
-    {"D2Client.dll","dd8bc6025de921216a97c17f97cd1a50fbb85926e838ec60e13451448836d906"},
-    {"ver-IX86-1.mpq","b5deb6ffeb88de8f58942b67e75b0f28aaa6703947cc968e1a0a21d378d18fef"},
-    {"patch_d2.mpq","b976e7847dda696f54198a9477819f96579c4894f54381c72afb4937e919e0a9"},
-    {"pd2data.mpq","6ce1d885dfcb16ac0ff7a183d56c56baeaad591d8779ce9e843e16dfc2756002"},
-    {"pd2assets.mpq","70baa8e5334b38dd2c4e3cb8f6517eab0a1cc46e49f667e111af687f764b7ac7"},
-    {"pd2maps.mpq","ad704b94aab4fa4142fb4fe37b38bd3fe7ae43a94c14518baf0d6cb0ca00d33a"},
-    {"pd2monchars.mpq","ae2abade85c5f393db5d8089cb4b6566b2cfed2adea0f573bc0f4220ef733217"},
-    {"BH.dll","ee619246b8b63ea0cb3a5e84da5e63674867a87cd81cc7dbbf2d6ba8b0dd6a8c"}};
-bool supportedClientDigest(std::string_view name, std::string_view actual, std::string_view expected) {
-    // The October 21 Normal update retains the item, inventory and level tables.
-    // Register its exact resource identities alongside the verified report core.
-    constexpr std::pair<std::string_view, std::string_view> updatedFiles[]{
-        {"ProjectDiablo.dll","17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57"},
-        {"pd2data.mpq","cc42f5c71d61c9a38d5b948243ed2fe6a9a2bc0124fb3eaaff0f1943830e15cf"},
-        {"pd2assets.mpq","2ceb83ca8e9f482fa46a94cda95d2ab80f8415a0d2c1047a44f64d4a95cf56af"},
-        {"pd2maps.mpq","fb9e21ae5d797caa7ae8051ed15752a71a35ac317b44c8cdde3c443ad62b25eb"}};
-    return actual == expected || std::any_of(std::begin(updatedFiles), std::end(updatedFiles),
-        [name, actual](const auto &entry) { return entry.first == name && entry.second == actual; });
-}
 std::string fileDigest(const std::filesystem::path &path, uint32_t *crc32 = nullptr) {
     std::ifstream input(path, std::ios::binary);
     if (!input) throw std::runtime_error("Required client file is unavailable: " + path.filename().string());
@@ -65,19 +40,6 @@ std::filesystem::path profilePath(const nlohmann::json &json, const char *key,
     return std::filesystem::weakly_canonical(value.is_absolute() ? value : base/value);
 }
 }
-void verifyPd2ClientFiles(const std::filesystem::path &root) {
-    for (const auto &[name, expected] : cnFiles)
-        if (!supportedClientDigest(name, fileDigest(root/std::string(name)), expected))
-            throw std::runtime_error("Unsupported PD2 CN build or changed client file: " + std::string(name));
-}
-void verifyPd2AuthenticationFiles(const std::filesystem::path &root) {
-    // The first five registered files bind the native auth implementation and
-    // CheckRevision inputs. Resource MPQs were verified before their handles
-    // and frontend assets were created; do not hash them again on every login.
-    for(const auto &[name,expected]:std::span(cnFiles).first(5))
-        if(!supportedClientDigest(name,fileDigest(root/std::string(name)),expected))
-            throw std::runtime_error("PD2 CN authentication file changed; restart after restoring the selected build");
-}
 void verifyClientProfileDefinition(const std::filesystem::path &path, std::string_view digest) {
     if(digest.empty() || fileDigest(path)!=digest)
         throw std::runtime_error("Client profile changed; restart D2X to select the new service/resources");
@@ -93,17 +55,18 @@ void preparePd2Authentication(net::protocol::OriginalClientAuth &auth, const std
         return decode_native_auth_resource(bytes);
     };
     try {
+        // This identity selects optional core-counter metadata only. An unknown
+        // core must not guess another layout or block unrelated account login.
+        auth.cnCoreBuild.reset();
         const auto coreDigest = fileDigest(pd2/"ProjectDiablo.dll");
         if (coreDigest == "9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f")
             auth.cnCoreBuild = Pd2CoreBuild::Normal20261020;
         else if (coreDigest == "17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57")
             auth.cnCoreBuild = Pd2CoreBuild::Normal20261021;
-        else throw std::runtime_error("Unsupported PD2 core counter build");
         uint32_t bhCrc{};
-        const auto bh = std::find_if(std::begin(cnFiles), std::end(cnFiles),
-            [](const auto &entry) { return entry.first == "BH.dll"; });
-        if (bh == std::end(cnFiles) || fileDigest(pd2/"BH.dll", &bhCrc) != bh->second)
-            throw std::runtime_error("PD2 CN BH file changed; select the supported build before login");
+        // Native BH reports its actual disk bytes. Keep reporting the selected
+        // file after updates rather than requiring an old sample's SHA-256.
+        fileDigest(pd2/"BH.dll", &bhCrc);
         auth.cnBhCrc32 = bhCrc;
         constexpr auto classicMember = "data/global/sfx/cursor/wavindx.wav";
         Archives sound;
@@ -116,7 +79,12 @@ void preparePd2Authentication(net::protocol::OriginalClientAuth &auth, const std
         if(auth.classicKey.size()!=26 || auth.expansionKey.size()!=26 || auth.owner.empty() || auth.owner.size()>64)
             throw std::runtime_error("PD2 CN requires the original 26-byte MPQ key resources and owner");
         constexpr std::array names{"Game.exe","Bnclient.dll","D2Client.dll"};
-        for(size_t i=0;i<names.size();++i) auth.files[i]=pd2/names[i];
+        for(size_t i=0;i<names.size();++i) {
+            auth.files[i]=pd2/names[i];
+            if(!std::filesystem::is_regular_file(auth.files[i]) ||
+               std::filesystem::file_size(auth.files[i])>64u*1024*1024)
+                throw std::runtime_error("PD2 CN authentication file missing or too large: "+std::string(names[i]));
+        }
         auth.profile=ClientProfile::Pd2CnNormal20261020;
         auth.submitKeys=true;
         auth.nativeMpqKeys=true;
@@ -154,7 +122,6 @@ void resolveClientSetup(AppOptions &options) {
     if (!std::filesystem::is_directory(pd2) || !std::filesystem::is_directory(original) ||
         !std::filesystem::equivalent(pd2.parent_path(), original))
         throw std::runtime_error("PD2 CN requires a pd2 directory inside the isolated original client copy");
-    verifyPd2ClientFiles(pd2);
     options.protocolProfile = net::protocol::ClientProfile::Pd2CnNormal20261020;
     options.mpq = original.string();
     options.pd2Directory = pd2.string();
@@ -165,26 +132,14 @@ void resolveClientSetup(AppOptions &options) {
     options.onlineConfig = std::filesystem::absolute(options.clientProfile).string();
 }
 void mountClientResources(Archives &archives, const AppOptions &options) {
-    if(options.protocolProfile==net::protocol::ClientProfile::Pd2Local) {
+    if(options.protocolProfile!=net::protocol::ClientProfile::Lod113c) {
         mountPd2HostArchives(archives,options.mpq,options.pd2Directory);
         return;
     }
-    if (options.protocolProfile == net::protocol::ClientProfile::Lod113c) {
-        std::error_code error;
-        if (!options.mpqSupplement.empty() &&
-            !std::filesystem::equivalent(options.mpqSupplement, options.mpq, error))
-            archives.mountDirectory(options.mpqSupplement);
-        archives.mountDirectory(options.mpq);
-        return;
-    }
+    std::error_code error;
+    if (!options.mpqSupplement.empty() &&
+        !std::filesystem::equivalent(options.mpqSupplement, options.mpq, error))
+        archives.mountDirectory(options.mpqSupplement);
     archives.mountDirectory(options.mpq);
-    const auto pd2 = std::filesystem::path(options.pd2Directory);
-    // Reverse search: monchars > maps > assets > data > CN patch > original.
-    for (const auto *name : {"patch_d2.mpq", "pd2data.mpq", "pd2assets.mpq", "pd2maps.mpq", "pd2monchars.mpq"})
-        archives.mount(pd2/name);
-    archives.gameDirectory = pd2;
-    // Chinese tables, fonts and menu art are loose files in the CN client and
-    // have no archive to mount; they win over every archive for their paths.
-    archives.mountLooseDirectory(pd2/"Data"/"local", "data/local");
 }
 } // namespace d2x

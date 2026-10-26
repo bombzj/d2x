@@ -5,8 +5,8 @@
 #include <string_view>
 
 namespace d2x::net::protocol {
-// A fixed source build's dialect. The application must bind and verify its
-// resource/authentication files before exposing it as a playable profile.
+// An explicitly selected wire dialect. Resources and authentication are read
+// from the selected files; packet and format consumers enforce their contracts.
 enum class ClientProfile { Lod113c, Pd2CnNormal20261020, Pd2Local };
 enum class Pd2CoreBuild { Normal20261020, Normal20261021 };
 enum class AccountPasswordCase { Preserve, LowerAscii };

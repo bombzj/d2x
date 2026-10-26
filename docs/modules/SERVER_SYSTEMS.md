@@ -374,7 +374,7 @@ replication的宠物归属投影独立于房间兴趣；hosting按原13字节7A�
 
 新增玩法按“准备原表纯值 → 领域状态／请求／规则 → 事务与失败边界 → 原S2C投影 → 开放命令”接入。先完整实现依赖与输出，再更改Scaffold状态；不能只修改目录让半个事务进入执行队列。玩家离开、换区、死亡时涉及的对话／交易／同行者清理，应由相应领域入口组合，不恢复一个全能GameSession。
 
-named pipe的server-systems只读返回28项目录、phase、scope和lastStep。lastStep=null表示尚未执行或该系统没有固定步入口，不表示完成；未接领域正常显示not-implemented，已接切片以scope为准。server-status.command表示最近实际命令结果，替代原来仅描述移动的字段；server-protocol仍负责原包覆盖与计数。这些诊断只在宿主管理端，不参与客户端世界同步。
+named pipe的server-systems只读返回29项目录、phase、scope和lastStep。lastStep=null表示尚未执行或该系统没有固定步入口，不表示完成；未接领域正常显示not-implemented，已接切片以scope为准。server-status.command表示最近实际命令结果，替代原来仅描述移动的字段；server-protocol仍负责原包覆盖与计数。这些诊断只在宿主管理端，不参与客户端世界同步。
 
 `runtime/simulation`按领域累计当前逻辑帧的同步调用耗时，阻塞重试保留累计值；事件回调归属其原拥有领域，嵌套调用不另拆成可相加的CPU成本。`hosting/performance.hpp`提供可选同步观察者，分别观察完整权威步进与宿主推进／内容交接／事件发布／状态发布；回调不能修改宿主或执行IO。无观察者时不启用宿主分段时钟。无窗口入口的导出、重试合并及CPU口径见[运行指南](../development/BUILD_AND_RUN.md#无窗口协议客户端)。
 
