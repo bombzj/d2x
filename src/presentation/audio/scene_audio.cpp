@@ -88,7 +88,11 @@ void SceneAudio::update(float clock, std::span<const SoundActorView> actors, std
             enqueue(rule,stamped,event.age,delay);
         };
         using Kind = PresentationSoundEvent::Kind;
-        if (event.kind == Kind::Original) submit(SoundRule{event.sound});
+        if (event.kind == Kind::Original) {
+            const auto name=event.nativeSound>=0 && size_t(event.nativeSound)<catalog_.sounds().rows().size()?
+                catalog_.sounds().value(size_t(event.nativeSound),"Sound"):std::string_view(event.sound);
+            submit(SoundRule{std::string(name)});
+        }
         else if (event.kind == Kind::ObjectMode) {
             if (const auto *sound = catalog_.object(source->identity,event.mode)) submit(*sound);
         }

@@ -40,6 +40,7 @@ void mountPd2HostArchives(Archives &archives,const std::filesystem::path &origin
     archives.mountDirectory(original);
     if(archives.names.empty()) throw std::runtime_error("No original MPQ content mounted");
     for(const auto &[name,expected]:files) { (void)expected;archives.mount(pd2/std::string(name)); }
+    archives.pd2Presets=true;
     archives.gameDirectory=pd2;
     if(std::filesystem::is_directory(pd2/"Data"/"local"))
         archives.mountLooseDirectory(pd2/"Data"/"local","data/local");

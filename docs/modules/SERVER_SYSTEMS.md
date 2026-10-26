@@ -6,7 +6,7 @@
 
 跨单位持续效果的新增源码统一接收标志准备、只读列表查询与复制状态来源；NPC与其他非玩家共用唯一MonsterActor、原生属性和资源，AreaNpc只保留出生／任务／服务元数据。是否接收仍由原技能filter及公共投递／直接分配策略分别决定。三种护盾、非玩家自施法、普通攻击的状态属性消费和召唤物死亡撤出共用实际单位候选；所有者边界、源码入口及未完成事件交错见[公共效果边界](../gameplay/skills/COMMON.md#跨单位接收与载体边界)。跨单位／生命周期的完整组合仍待核对。阶段和下一步统一见[总计划2.3节](../architecture/MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)。
 
-玩家入场、行走、库存／装备、人物成长、世界换区、多人投影、普通近战、女巫及亚马逊技能、掉落／消耗、玩家死亡、普通物件／NPC和五幕27项个人任务／奖励／旅行由权威内核执行。26个领域加玩家／移动形成28项目录；各自具有独立State、read、类型化请求及显式Ports，由GameSystems持有。inventory规划物品，attributes计算总值，progression规划成长，transactions提交人物事务；World管理区域准备／驻留，Travel提交位置／区域过渡，replication派生可见参与者，social实现广播／私聊、屏蔽关系、队伍邀请／成员权威及可见头顶消息，trade实现双人原子物品／金币交换。其他规则保持NotImplemented；总体未完成，当前范围以本页、[库存](INVENTORY.md)、[人物](CHARACTER.md)和[ACT1](../gameplay/quests/ACT1.md)为准。
+玩家入场、行走、库存／装备、人物成长、世界换区、多人投影、普通近战、女巫及亚马逊技能、掉落／消耗、玩家死亡、普通物件／NPC和五幕27项个人任务／奖励／旅行由权威内核执行。27个领域加玩家／移动形成29项目录；各自具有独立State、read、类型化请求及显式Ports，由GameSystems持有。inventory规划物品，attributes计算总值，progression规划成长，transactions提交人物事务；World管理区域准备／驻留，Travel提交位置／区域过渡，replication派生可见参与者，social实现广播／私聊、屏蔽关系、队伍邀请／成员权威及可见头顶消息，trade实现双人原子物品／金币交换。其他规则保持NotImplemented；总体未完成，当前范围以本页、[库存](INVENTORY.md)、[人物](CHARACTER.md)和[ACT1](../gameplay/quests/ACT1.md)为准。
 
 命令目录中的Scaffold在入队前被拒绝，不因有函数入口就宣称Queued。3A／3B成长、13的UNIT_TILE及15同局聊天已执行领域入口；传送点、门户、普通物件／NPC、城镇服务及跨幕旅行已接；队伍及有向敌意由social执行；玩家交易见[PLAYER_TRADE](../gameplay/items/PLAYER_TRADE.md)。普通攻击／选技／热键／停止已接skills；人口准入已准备的第一幕普通／精英／首领怪物。世界物品生成与普通掉落已接items／loot，不能据此宣称全部来源规则完成。
 
@@ -169,6 +169,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | effects | 状态效果、来源、持续时间 | apply／step；原状态定义由宿主准备 |
 | combat | 命中／减免／伤害结算请求 | enqueue／step；死亡转移归death |
 | death | 死亡发生标识、复活／尸体回收 | execute／step；死亡终态及击杀奖励去重；经验委托progression，已接死亡结算、城镇复活与本人尸体回收 |
+| maps | PD2地图场景运行阶段与特殊死亡游标 | 在普通死亡TC前协作计数、门户和奖励；World、Population、Loot、Travel保留各自权威；当前场景32已接首领技能依赖并在源码准入，尚未构建／运行 |
 | companions | 雇佣兵／召唤物／铁魔归属 | summon／execute／step；不复制活动实体 |
 | objects | 门、箱、祭坛及任务物件状态 | admit／execute／step；掉落／效果／任务各归其领域 |
 | npc | 对话会话和对白确认 | execute／close；商店、雇佣、工艺、旅行各自分派 |

@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -19,6 +20,9 @@ struct CharacterRecord {
     EntityId id; // Snapshot owner binding; regenerated on import, not a D2S field.
     std::string name = "Hero", characterClass = "Barbarian";
     std::string nativeSaveSections;
+    // Current native PD2 PlayerData[0x381..0x3A2], the 17 WORDs in st.
+    // The surrounding, unclassified extension bytes remain opaque metadata.
+    std::optional<std::array<uint16_t,17>> pd2Counters;
     bool hardcore{}, hardcoreDead{}; // Native HC/DEAD identity; death survives leaving the game.
     Fixed8 hp, mana, stamina;
     unsigned weaponSet = 0, gold = 0, bankGold = 0;

@@ -84,6 +84,7 @@ struct OnlineCombatEvent {
     std::optional<uint16_t> skill, level, overlay, missile;
     std::optional<uint8_t> action, hitClass, life, direction;
     uint32_t flags{}, auxiliary{};
+    bool directSound{};
 };
 struct OnlineStateMessage {
     enum class Kind { Snapshot, Enable, Disable };

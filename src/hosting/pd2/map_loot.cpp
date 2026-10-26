@@ -24,14 +24,24 @@ void finishPd2MapItemDrop(const ClassicData &data,const pd2::MapProperties &prop
     const int maximum=std::max(0,std::min({base->base.sockets.value_or(0),
         base->base.socketsByLevel[item.level>40?2:item.level>25?1:0],base->width*base->height,6}));
     if(!maximum || int(pd2CrtRandom(programRandom)%100)>=sockets) return;
+    applyPd2RandomSockets(data,item,itemRandom);
+}
+bool applyPd2RandomSockets(const ClassicData &data,ItemInstance &item,uint64_t &itemRandom) {
+    const auto *base=data.items.find(item.definition);
+    if(!base || item.sockets || !item.socketedItems.empty() || (item.nativeFlags&0x1900u) ||
+       (base->questTag && item.definition!="leg")) return false;
+    const int maximum=std::max(0,std::min({base->base.sockets.value_or(0),
+        base->base.socketsByLevel[item.level>40?2:item.level>25?1:0],base->width*base->height,6}));
+    if(!maximum) return false;
     // 0x363500 checks the actual primary ItemTypes identity, after the chance
     // draw. 0x37F700 then rolls 1..2 or 2..4 for the base's n2Handed flag.
     const auto &types=data.tables.at("itemtypes");
     for(const size_t id:{size_t(38),size_t(48),size_t(56)})
-        if(base->base.type==types.value(id,"Code")) return;
+        if(base->base.type==types.value(id,"Code")) return false;
     const auto low=base->equipment.twoHanded?2u:1u,high=base->equipment.twoHanded?4u:2u;
     item.sockets=std::min(unsigned(maximum),low+pd2UnitEventRandom(itemRandom)%(high-low+1));
     item.nativeFlags|=0x800u;
+    return true;
 }
 LootPlan planPd2MapLoot(const ClassicData &data,const server::loot::Preparation &request,const MonsterLootEntry &entry,const ItemSeedSource &seeds) {
     LootPlan result;result.randomState=request.seed;

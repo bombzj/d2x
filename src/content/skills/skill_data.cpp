@@ -245,6 +245,12 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         // A missing description cannot supply a visible node or its icon/layout.
         if (preparation == ContentPreparation::RemoteDisplay && description == descriptionsByKey.end()) continue;
         if (!id || *id < 0 || name.empty() || description == descriptionsByKey.end()) continue;
+        // Classless ItemEffects may reference a class skill's description for
+        // monster text. Its IconCel belongs to that class atlas, not the common
+        // picker atlas. Only an authored common layout supplies common art.
+        if (itemEffect && (descriptions.number(description->second,"SkillPage").value_or(0) ||
+            descriptions.number(description->second,"SkillRow").value_or(0) ||
+            descriptions.number(description->second,"SkillColumn").value_or(0))) continue;
         SkillRecord entry;
         static_cast<SkillMetadata &>(entry) = loadSkillEligibilityMetadata(skills, row);
         entry.animationMode = normalized(skills.value(row, "anim"));

@@ -10,4 +10,10 @@ struct MapRegionProperties {
 // Global MonReg programs are applied once, before any room is populated.
 MapRegionProperties prepareMapRegionProperties(const MapProperties &,MapRegionProperties);
 void appendMapGlobalUnitProperties(MapProperties &);
+// Current core 3899D0's deterministic ordinary-map preset replacement.
+// Special scene controllers own their additional mutations separately.
+int ordinaryMapPresetClass(int level,int nativeClass);
+int mapPresetClass(int level,int nativeClass,int controller);
+int fixedMapController(int level);
+bool suppressMapRoomPopulation(int level,int controller,int x,int y,int width,int height);
 }

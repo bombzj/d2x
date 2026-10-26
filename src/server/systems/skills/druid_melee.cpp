@@ -23,6 +23,7 @@ DomainStatus System::allocateDruidMelee(Release &pending,const ActorContext &act
         if(runtime_->nativeKickOccurrence>=(uint64_t{1}<<53)-1) return DomainStatus::Capacity;
         const uint64_t occurrence=(uint64_t{1}<<54)|(++runtime_->nativeKickOccurrence);
         auto contact=std::make_shared<combat::NativeSkillContact>();
+        if(execution.monsterProgram) contact->monsterProgram=*execution.monsterProgram;
         if(!skill.druid || skill.druid->program==DruidProgram::Rabies) contact->sourceDamage=128;
         missiles::Spawn request{actor,skill,{},pending.target.position,true};request.nativeMeleeContact=contact;
         request.nativeMeleeOccurrence=occurrence;request.nativeMeleeHeld=held;
@@ -38,7 +39,7 @@ DomainStatus System::allocateDruidMelee(Release &pending,const ActorContext &act
     if(execution.contact->cancelled || (held && !execution.contact->heldPrepared)) return DomainStatus::Unavailable;
     pending.nativeCallbackStarted=false;return DomainStatus::Applied;
 }
-DomainResult<> System::startDruidMelee(Release &pending,const ActorContext &actor) {
+DomainResult<> System::startDruidMelee(Release &pending,const ActorContext &actor,const MonsterAttackRule *program) {
     const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
     if(!caster || !caster->programs() || !pending.skill.druid || !pending.weapon) return {DomainStatus::InvalidActor,{}};
     auto old=runtime_->druidStarts.find(actor.actor);
@@ -49,8 +50,13 @@ DomainResult<> System::startDruidMelee(Release &pending,const ActorContext &acto
     auto [entry,created]=runtime_->druidStarts.try_emplace(actor.actor,pending);
     if(created) entry->second.druidMelee=std::make_shared<DruidMeleeExecution>();
     pending.druidMelee=entry->second.druidMelee;auto &execution=*pending.druidMelee;
+    if(program && !execution.monsterProgram) execution.monsterProgram=std::make_shared<const MonsterAttackRule>(*program);
     if(execution.startPrepared) return {DomainStatus::Applied,std::monostate{}};
     if(pending.skill.druid->program==DruidProgram::Rabies) {
+        if(execution.monsterProgram && !execution.accuracy) {
+            execution.accuracy=std::make_shared<combat::NativeSkillContact>();
+            execution.accuracy->monsterProgram=*execution.monsterProgram;
+        }
         const auto sampled=ports_.combat.sampleNativeSkillAccuracy(actor,pending.skill,*pending.weapon,pending.unit,execution.accuracy);
         if(!sampled) return {sampled.status,{}};
         if(!*sampled.value) {runtime_->druidStarts.erase(actor.actor);return {DomainStatus::Unavailable,{}};}

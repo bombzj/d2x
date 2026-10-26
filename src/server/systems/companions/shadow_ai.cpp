@@ -20,6 +20,7 @@
 #include "gameplay/units/direction.hpp"
 #include "gameplay/monsters/projectile_math.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2_random.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <climits>
@@ -28,7 +29,7 @@
 
 namespace d2x::server::companions {
 struct ShadowDecision {
-    enum class Phase { Follow,Idle,OwnerTarget,Basic,Score,Candidates,Fallback,Complete } phase{};
+    enum class Phase { Sync,Follow,Idle,OwnerTarget,Basic,Score,Candidates,Fallback,Complete } phase{};
     struct Choice {int skill{};EntityId target;bool gate{};};
     std::vector<Choice> choices;size_t next{},idle{};
     EntityId target;bool combat{},attemptReady{},warrior{},ownerTarget{};
@@ -43,6 +44,7 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
     const auto &program=*body->assassinPet->definition;const auto &catalog=*body->rule.formulas;
     const auto &area=ports_.areas.at(body->area);const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const bool warrior=program.ai==AssassinPetDefinition::Ai::ShadowWarrior;
+    const bool pd2Warrior=warrior && owner->rules.skills->pd2;
     const auto point=[&](combat::ParticipantView unit) {return unit.position()+ports_.areas.at(unit.player?unit.player->area:unit.monster->area).definition.origin-area.definition.origin;};
     const auto eligible=[&](int skill) {
         const auto &row=catalog.skills.at(skill);if(row.reference("summon").empty()) return true;
@@ -64,28 +66,58 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
     }
     if(!pet.shadowDecision) {
         auto decision=std::make_shared<ShadowDecision>();decision->warrior=warrior;
+        decision->phase=pd2Warrior?ShadowDecision::Phase::Sync:ShadowDecision::Phase::Follow;
         const auto target=ai::acquireNativeAiTarget({ports_.monsters,ports_.players,ports_.areas,ports_.social},*body,tick,false,false);
         if(target) {decision->target=target->unit.id;decision->combat=unitMeleeReach(area.definition.collision,body->position,body->rule.size,target->position,target->size,body->rule.meleeRange);}
         if(warrior) {
-            pet.assassinAi[1]-=1+program.parameters[3][size_t(body->rule.difficulty)];
-            if(pet.assassinAi[1]<0 || pet.assassinAi[1]>(std::clamp(program.parameters[7][2],1,256)<<6)) pet.assassinAi[1]=0;
-            if((target && target->distance>program.parameters[0][size_t(body->rule.difficulty)]) ||
-               unitCoordinateDistance(int(body->position.x),int(body->position.y),int(owner->position.x+ports_.areas.at(owner->area).definition.origin.x-area.definition.origin.x),int(owner->position.y+ports_.areas.at(owner->area).definition.origin.y-area.definition.origin.y))>program.parameters[1][size_t(body->rule.difficulty)]) decision->target={};
+            if(!pd2Warrior) {
+                pet.assassinAi[1]-=1+program.parameters[3][size_t(body->rule.difficulty)];
+                if(pet.assassinAi[1]<0 || pet.assassinAi[1]>(std::clamp(program.parameters[7][2],1,256)<<6)) pet.assassinAi[1]=0;
+            }
+            if(!pd2Warrior && ((target && target->distance>program.parameters[0][size_t(body->rule.difficulty)]) ||
+               unitCoordinateDistance(int(body->position.x),int(body->position.y),int(owner->position.x+ports_.areas.at(owner->area).definition.origin.x-area.definition.origin.x),int(owner->position.y+ports_.areas.at(owner->area).definition.origin.y-area.definition.origin.y))>program.parameters[1][size_t(body->rule.difficulty)])) decision->target={};
         } else if(target && target->distance>program.parameters[1][1]) decision->target={};
         pet.shadowDecision=std::move(decision);
     }
     auto &decision=*pet.shadowDecision;using Phase=ShadowDecision::Phase;
     const auto idle=[&](uint64_t frames) {pet.nextDecision=tick.tick+frames;pet.shadowDecision.reset();return StepStatus::Complete;};
     const auto draw=[&](uint32_t limit) {auto seed=body->combatRandom;const auto value=limitedRandom(seed,limit);ports_.monsters.commitCombatRandom(body->id,seed);return int(value);};
-    const auto lowBits=[&](uint32_t mask) {auto seed=body->combatRandom;const auto value=rollRandom(seed)&mask;ports_.monsters.commitCombatRandom(body->id,seed);return int(value);};
+    const auto lowBits=[&](uint32_t mask) {auto seed=body->combatRandom;const auto value=(pd2Warrior?pd2UnitEventRandom(seed):rollRandom(seed))&mask;ports_.monsters.commitCombatRandom(body->id,seed);return int(value);};
     const auto ownStates=[&] {return ports_.effects.unitStates(body->id,tick.tick);};
     const auto charge=[&](int skill) {for(const auto &entry:ports_.effects.progressiveCharges(body->id)) if(entry.skill==skill) return entry.count;return 0;};
+    const auto trapPoolAvailable=[&] {
+        // Current 35E990 reads PlayerPets' trap list at 17 * sizeof(PetList),
+        // independently of the proposed skill's own pet type.
+        constexpr int type=17;const auto &rules=*owner->rules.skills;
+        int limit=rules.petTypeBaseLimits.at(type),registeredLimit{};
+        auto input=skills::formulaInput(*owner);SkillFormulaValues values(*rules.formulas,input);
+        for(const auto &[id,rank]:owner->totals.skillRanks) {
+            const auto found=rules.skillPetTypes.find(id);if(found==rules.skillPetTypes.end() || found->second!=type) continue;
+            const auto maximum=values.calculation(FormulaDomain::Skill,id,rank,"petmax");
+            if(!maximum) throw std::logic_error("Missing native shadow trap capacity");
+            registeredLimit=std::max(registeredLimit,std::max(1,*maximum));
+        }
+        if(registeredLimit) limit=registeredLimit;
+        size_t count{};for(const auto &[id,entry]:state_.companions) {
+            const auto *candidate=ports_.monsters.find(id);
+            if(entry.owner==pet.owner && !entry.removeAt && candidate && candidate->alive() && candidate->rule.petType==type) ++count;
+        }
+        return count<size_t(std::max(0,limit));
+    };
     const auto groupActive=[&](int state) {
         if(state<0 || !body->rule.states || !body->rule.states->contains(state)) return false;
         const int group=body->rule.states->at(state).group;if(!group) return false;
         const auto active=ownStates();for(const auto &[id,value]:*body->rule.states) if(id!=state && value.group==group && active.contains(id)) return true;
         return false;
     };
+    const auto recordCooldown=[&](int skill) {
+        const auto sampled=ports_.effects.unitStatValues(body->id,tick.tick);
+        auto input=skills::formulaInput(*body,*sampled);SkillFormulaValues values(catalog,input);
+        const auto rank=input.referenceRanks->effective.find(skill);
+        pet.assassinAi[0]=int64_t(tick.tick)+18+values.calculation(FormulaDomain::Skill,skill,
+            rank==input.referenceRanks->effective.end()?1:std::max(1,rank->second),"auralencalc").value_or(0)/3;
+    };
+    bool approaching{},attemptedCast{};
     const auto use=[&](const ShadowDecision::Choice &choice)->DomainStatus {
         if(choice.target==owner->actor || choice.target==body->id) return DomainStatus::Unavailable;
         const auto action=body->rule.skillActions.find(uint16_t(choice.skill));if(action==body->rule.skillActions.end()) return DomainStatus::Unavailable;
@@ -97,32 +129,76 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
         if(melee && !combat) {
             if(!victim.id()) return DomainStatus::Unavailable;
             monsters::MoveRequest move{body->id,{body->area,area.generation,point(victim)},victim.id(),body->rule.meleeRange+1,75,true};
-            const auto moved=ports_.monsters.requestMove(move);if(moved) pet.nativePetMoving=true;return moved.status;
+            const auto moved=ports_.monsters.requestMove(move);if(moved) {pet.nativePetMoving=true;approaching=true;}return moved.status;
         }
+        attemptedCast=true;
         return ports_.skills.requestCast({body->id,uint16_t(choice.skill),UnitTarget{choice.target,0,uint8_t(victim.player?0:1)},tick.tick,action->second.nativeMode}).status;
     };
     for(;;) {
+        if(decision.phase==Phase::Sync) {
+            const auto ownerStates=ports_.effects.unitStates(owner->actor,tick.tick);
+            while(decision.idle<body->nativeSkillOrder.size()) {
+                const int skill=body->nativeSkillOrder[decision.idle];const auto &row=catalog.skills.at(skill);
+                if(row.number("aitype")!=1 || row.auraState<=0 || !ownerStates.contains(row.auraState) || ownStates().contains(row.auraState)) {++decision.idle;continue;}
+                const auto result=use({skill,{},false});if(isDeferred(result)) return StepStatus::Blocked;
+                recordCooldown(skill);
+                if(result!=DomainStatus::Applied) ports_.monsters.neutralMode(body->id);
+                pet.nextDecision=std::max(tick.tick+uint64_t(result==DomainStatus::Applied?1:10),body->busyUntil);pet.shadowDecision.reset();return StepStatus::Complete;
+            }
+            if(uint16_t(program.parameters[7][2])<=1) return idle(100);
+            pet.assassinAi[1]-=1+program.parameters[3][size_t(body->rule.difficulty)];
+            if(pet.assassinAi[1]<0 || pet.assassinAi[1]>int64_t(std::min(uint16_t(program.parameters[7][2]),uint16_t(256)))*64) pet.assassinAi[1]=0;
+            decision.phase=Phase::Follow;continue;
+        }
         if(decision.phase==Phase::Follow) {
+            if(pd2Warrior) {
+                const auto followed=followPd2Shadow(ports_,pet,*owner,*body,decision.target,tick.tick,{program.warpProbeClass,program.warpProbeCollision});
+                if(isDeferred(followed.status)) return StepStatus::Blocked;
+                if(followed && *followed.value) {pet.shadowDecision.reset();return StepStatus::Complete;}
+            }
             const int ownerDistance=squared(body->position,owner->position+ports_.areas.at(owner->area).definition.origin-area.definition.origin);
-            if((warrior || ownerDistance>program.parameters[1][2]*program.parameters[1][2]) && followNativePet(ports_,pet,*owner,*body,warrior?decision.target:EntityId{},decision.combat,tick.tick,{program.warpProbeClass,program.warpProbeCollision})) {
+            if(!pd2Warrior && (warrior || ownerDistance>program.parameters[1][2]*program.parameters[1][2]) && followNativePet(ports_,pet,*owner,*body,warrior?decision.target:EntityId{},decision.combat,tick.tick,{program.warpProbeClass,program.warpProbeCollision})) {
                 pet.shadowDecision.reset();return StepStatus::Complete;
             }
             if(warrior) {
-                if(!decision.target) return idle(25);
+                if(!pd2Warrior && !decision.target) return idle(25);
                 const int right=std::max(0,owner->persistent.player.selectedSkills[owner->persistent.player.weaponSet*2+1]);
                 const int left=std::max(0,owner->persistent.player.selectedSkills[owner->persistent.player.weaponSet*2]);
                 const auto rank=[&](int skill) {const auto source=owner->totals.skillRanks.find(skill);return std::max((source==owner->totals.skillRanks.end()?1:source->second)/2+int(pet.assassinAi[2])/3,1);};
-                const std::array<std::pair<int,int>,2> assignments{{{right,rank(right)},{left,rank(left)}}};
-                const auto assigned=ports_.effects.assignUnitSkills(body->id,assignments,tick.tick);
-                if(!assigned) {
-                    if(isDeferred(assigned.status) || assigned.status==DomainStatus::Stale || assigned.status==DomainStatus::Conflict) return StepStatus::Blocked;
-                    return idle(25);
+                if(!pd2Warrior) {
+                    const std::array<std::pair<int,int>,2> assignments{{{right,rank(right)},{left,rank(left)}}};
+                    const auto assigned=ports_.effects.assignUnitSkills(body->id,assignments,tick.tick);
+                    if(!assigned) {
+                        if(isDeferred(assigned.status) || assigned.status==DomainStatus::Stale || assigned.status==DomainStatus::Conflict) return StepStatus::Blocked;
+                        return idle(25);
+                    }
+                    body=ports_.monsters.find(pet.actor);
                 }
-                body=ports_.monsters.find(pet.actor);
-                int selected=lowBits(1)?left:right;
-                if(decision.combat && draw(100)<std::clamp(program.parameters[2][size_t(body->rule.difficulty)]-2*std::max(1,int(pet.assassinAi[2])),5,100)) selected=0;
+                const bool hasLeft=!pd2Warrior || body->rule.baseSkillRanks.contains(left);
+                const bool hasRight=!pd2Warrior || body->rule.baseSkillRanks.contains(right);
+                if(!hasLeft && !hasRight) return idle(25);
+                int selected=hasLeft && hasRight?(lowBits(1)?left:right):hasLeft?left:right;
+                if(!pd2Warrior && decision.combat && draw(100)<std::clamp(program.parameters[2][size_t(body->rule.difficulty)]-2*std::max(1,int(pet.assassinAi[2])),5,100)) selected=0;
                 const auto check=[&](int id) {
+                    if(pd2Warrior && !body->rule.baseSkillRanks.contains(id)) return false;
                     const auto &row=catalog.skills.at(id);const int ai=row.number("aitype");
+                    if(pd2Warrior) {
+                        if(row.classId!=int(owner->definition.sourceRow) || !eligible(id)) return false;
+                        const auto states=ownStates();bool qualified{};
+                        switch(ai) {
+                        case 1: qualified=row.auraState>0 && !states.contains(row.auraState);break;
+                        case 2: qualified=bool(decision.target) && (row.auraState<=0 || !states.contains(row.auraState)) &&
+                            (row.auraTargetState<=0 || !ports_.effects.unitStates(decision.target,tick.tick).contains(row.auraTargetState));break;
+                        case 3: qualified=bool(decision.target) && trapPoolAvailable();break;
+                        case 5: case 11: case 12: qualified=bool(decision.target);break;
+                        case 4: case 13: qualified=bool(decision.target) && decision.combat;break;
+                        default: break;
+                        }
+                        if(!qualified || (id && uint32_t(pet.assassinAi[0])>uint32_t(tick.tick))) return false;
+                        if(!id) return true;
+                        auto seed=body->combatRandom;const auto value=pd2UnitEventRandom(seed)%100;
+                        ports_.monsters.commitCombatRandom(body->id,seed);return value>=25;
+                    }
                     if(row.classId!=int(owner->definition.sourceRow) || !eligible(id) || (decision.combat?(ai!=4 && ai!=13):(ai==4 || ai==13))) return false;
                     const auto states=ownStates();
                     if(ai==1 && row.auraState>0 && states.contains(row.auraState)) return false;
@@ -280,15 +356,16 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
                     if(choice.gate && !lowBits(3)) {++decision.next;continue;}
                     decision.attemptReady=true;
                 }
-                const auto result=use(choice);if(result==DomainStatus::Capacity) return StepStatus::Blocked;
+                const auto result=use(choice);if(isDeferred(result)) return StepStatus::Blocked;
                 decision.attemptReady=false;++decision.next;
                 if(result==DomainStatus::Applied) {
-                    if(warrior) {
-                        const auto sampled=ports_.effects.unitStatValues(body->id,tick.tick);auto input=skills::formulaInput(*body,*sampled);SkillFormulaValues values(catalog,input);
-                        const auto rank=input.referenceRanks->effective.find(choice.skill);
-                        pet.assassinAi[0]=int64_t(tick.tick)+18+values.calculation(FormulaDomain::Skill,choice.skill,rank==input.referenceRanks->effective.end()?1:std::max(1,rank->second),"delay").value_or(0)/3;
-                    }
+                    if(warrior && !approaching) recordCooldown(choice.skill);
                     pet.nextDecision=std::max(tick.tick+1,body->busyUntil);pet.shadowDecision.reset();return StepStatus::Complete;
+                }
+                if(pd2Warrior) {
+                    if(attemptedCast) {recordCooldown(choice.skill);ports_.monsters.neutralMode(body->id);}
+                    pet.nextDecision=tick.tick+uint64_t(attemptedCast?10:1);
+                    pet.shadowDecision.reset();return StepStatus::Complete;
                 }
             }
             if(warrior) return idle(25);

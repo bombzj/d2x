@@ -2,6 +2,7 @@
 #include "content/classic_data.hpp"
 #include <algorithm>
 #include <array>
+#include <iterator>
 #include <map>
 #include <stdexcept>
 namespace d2x {
@@ -44,5 +45,35 @@ void validatePd2SaveExtension(std::span<const uint8_t> bytes) {
     section('s','u',3+size_t(bytes[cursor+2])*2);
     section('b','k',6); section('s','t',64); section('h','t',3); section('x','p',3); section('h','c',130);
     if(cursor!=bytes.size()) throw std::runtime_error("Unexpected data after PD2 save extension");
+}
+std::optional<std::array<uint16_t,17>> readPd2SavedCounters(std::span<const uint8_t> bytes) {
+    validatePd2SaveExtension(bytes);if(bytes.empty()) return {};
+    const size_t counters=4+3+size_t(bytes[6])*2+6+10;
+    std::array<uint16_t,17> result{};
+    for(size_t i=0;i<result.size();++i) result[i]=uint16_t(bytes[counters+2*i]|uint16_t(bytes[counters+2*i+1])<<8);
+    return result;
+}
+Bytes writePd2SavedCounters(std::span<const uint8_t> original,const std::optional<std::array<uint16_t,17>> &counters) {
+    validatePd2SaveExtension(original);Bytes result(original.begin(),original.end());
+    if(!counters) return result;
+    if(result.empty()) {
+        // The native writer also emits these sections for an old body. No
+        // private migration/version marker is introduced by a new statistic.
+        struct Section {char first,second;size_t size;};
+        constexpr Section sections[]{{'b','k',6},{'s','t',64},{'h','t',3},{'x','p',3},{'h','c',130}};
+        constexpr uint8_t header[]{'p','d',0x82,0x0a,'s','u',0};
+        size_t size=std::size(header);for(const auto &section:sections) size+=section.size;
+        result.assign(size,0);
+        std::copy(std::begin(header),std::end(header),result.begin());
+        size_t cursor=std::size(header);
+        for(const auto &section:sections) {
+            result[cursor]=uint8_t(section.first);result[cursor+1]=uint8_t(section.second);cursor+=section.size;
+        }
+    }
+    const size_t offset=4+3+size_t(result[6])*2+6+10;
+    for(size_t i=0;i<counters->size();++i) {
+        result[offset+2*i]=uint8_t((*counters)[i]);result[offset+2*i+1]=uint8_t((*counters)[i]>>8);
+    }
+    validatePd2SaveExtension(result);return result;
 }
 }

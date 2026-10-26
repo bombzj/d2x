@@ -331,11 +331,20 @@ DomainResult<> System::endMode(EntityId id,uint64_t tick,std::optional<uint64_t>
     if(!publication.facts.empty()) {const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},body->area},std::move(publication.facts)});if(!sent) return {sent.status,{}};}
     publishAuraUnits(publication);return {DomainStatus::Applied,std::monostate{}};
 }
-DomainResult<> System::removeUnitState(EntityId id,int state,uint64_t tick) {
+DomainResult<> System::removeUnitState(EntityId id,int state,uint64_t tick,size_t limit) {
     const auto *body=ports_.monsters.find(id);if(!body) return {DomainStatus::InvalidActor,{}};
     const auto found=units_.find(id);if(found==units_.end()) return {DomainStatus::Applied,std::monostate{}};
     auto unit=found->second;MonsterResourceTrace resources(*body,tick,&unit.states);
-    const auto removed=unit.states.removeState(state,[&]{resources.sample(unit.states,true);});
+    std::vector<RemovedCombatEffect> removed;
+    const auto observe=[&]{resources.sample(unit.states,true);};
+    if(limit==SIZE_MAX) removed=unit.states.removeState(state,observe);
+    else for(size_t index=0;index<limit;++index) {
+        const auto entries=unit.states.entries();
+        const auto found=std::find_if(entries.rbegin(),entries.rend(),[&](const auto &entry){return entry.spec.state.id==state;});
+        if(found==entries.rend()) break;
+        const auto values=unit.states.remove(found->handle,observe);
+        removed.insert(removed.end(),values.begin(),values.end());
+    }
     AuraUnitPublication publication;
     for(const auto &entry:removed) if(!unit.states.hasState(entry.effect.spec.state.id,tick))
         publication.facts.emplace_back(StateFact{id,1,body->area,entry.effect.spec.state.id,false});

@@ -54,5 +54,6 @@ class System {
     DomainResult<> resources(const ActorContext &, uint64_t expected, Fixed8 life, Fixed8 mana, Fixed8 stamina,
                              std::vector<DomainFact> publicFacts = {});
     DomainResult<> damage(const ActorContext &, uint64_t expectedCharacterRevision, int64_t amount);
+    DomainResult<> incrementPd2Counter(const ActorContext &,size_t index);
 };
 }

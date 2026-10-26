@@ -11,6 +11,6 @@ struct MonsterAttackTiming {
     std::vector<float> eventTimes = {};
     int speed{}, actionFrame{-1};
     std::vector<int> eventFrames{};
-    std::vector<uint8_t> flags;
+    std::vector<uint8_t> flags{};
 };
 } // namespace d2x

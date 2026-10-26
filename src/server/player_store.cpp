@@ -11,6 +11,15 @@
 #include <cmath>
 
 namespace d2x::server {
+std::vector<EntityId> PlayerStore::nativeActorOrder() const {
+    std::vector<EntityId> result;result.reserve(players_.size());
+    for(const auto &[id,player]:players_) result.push_back(player.actor);
+    std::sort(result.begin(),result.end(),[](EntityId first,EntityId second) {
+        const auto a=first.value&127,b=second.value&127;
+        return a==b?first.value>second.value:a<b;
+    });
+    return result;
+}
 void PlayerStore::admit(PlayerId id, CharacterDefinition definition,
                         PersistentCharacter persistent, AreaStore &areas, const PreparedRules &rules,uint64_t tick,uint64_t unitSeed,
                         RoomPoint arrival,const spatial::System &spatial,world::System &world) {

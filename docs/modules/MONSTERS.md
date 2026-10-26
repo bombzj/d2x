@@ -23,7 +23,7 @@
 
 combat拥有待命中计划，death／loot／progression分别提交死亡、掉落和经验；quests消费真实身份／出生来源与死亡事实。companions拥有主人与控制关系，monsters拥有活动实体。固定步、事务／可靠输出和调度统一见[SERVER_SYSTEMS](SERVER_SYSTEMS.md)，不将状态集中回会话。
 
-Actor的damageable／combatCompanion／amazonAttacker／standardAttackSource集中表达当前受伤、战斗伙伴和普通攻击入口能力，由monsters目标／伤害、skills怪物施法及combat命中复用。它们不包括生命、区域、距离、视线、动作或所有权授权，调用者仍逐次复验这些条件；不是完整阵营／PvP接口。Hydra保留专用施放和不可受伤路径，诱饵可受伤但不进入普通攻击，女武神和佣兵保留各自装备／AI规则。AreaStore保存NPC定义和预分配身份，monsters持有其唯一活动Actor，npc与quests提供服务／任务行为；NPC共用出生属性与发布，不运行敌怪AI。中立不可替换敌人。
+Actor的damageable／combatCompanion／amazonAttacker／standardAttackSource集中表达当前受伤、战斗伙伴和普通攻击入口能力，由monsters目标／伤害、skills怪物施法及combat命中复用。它们不包括生命、区域、距离、视线、动作或所有权授权，调用者仍逐次复验这些条件；不是完整阵营／PvP接口。Hydra保留专用施放和不可受伤路径，诱饵可受伤但不进入普通攻击，女武神和佣兵保留各自装备／AI规则。AreaStore保存NPC定义和预分配身份，monsters持有其唯一活动Actor，npc与quests提供服务／任务行为；NPC共用出生属性与发布；已核定的非战斗场景脚本可运行ScriptedNpc的公共移动／移除，不运行敌怪AI。中立不可替换敌人。
 
 ## 客户端入口
 

@@ -27,6 +27,7 @@ namespace d2x::server::skills {
 DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec target) {
     if(!pending.skill.pd2) return DomainStatus::NotImplemented;
     const auto &program=*pending.skill.pd2;
+    if(program.doFunction==43) return activateAssassin(pending,actor,target);
     if(program.doFunction==161) return pd2Desecrate(ports_,pending,actor,target);
     if(program.doFunction==176) return activatePd2HolyLight(pending,actor);
     if(program.doFunction==162) return activatePd2Joust(pending,actor,target);

@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cctype>
 #include <set>
 #include <map>
 
@@ -223,7 +224,11 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     const bool poisonEgg=std::any_of(rule.skillActions.begin(),rule.skillActions.end(),[](const auto &entry) {
         return entry.second.action==server::MonsterAttackRule::Action::Pd2PoisonEgg;
     });
-    if(poisonEgg || record->ai=="EvilHole" || record->ai=="MinionSpawner" || record->ai=="GenericSpawner" || record->ai=="Nihlathak" || record->ai=="FoulCrowNest" || record->ai=="VileMother" || record->ai=="BloodRaven" || record->ai=="SandMaggot" || record->ai=="SandMaggotQueen" || record->ai=="MaggotEgg" || record->ai=="Sarcophagus") {
+    const bool spawnSkill=std::any_of(rule.skillActions.begin(),rule.skillActions.end(),[](const auto &entry) {
+        return entry.second.action==server::MonsterAttackRule::Action::SpawnMinion;
+    });
+    const bool pd2WispSpawn=data.pd2Host && record->ai=="WillOWisp" && rule.ai.pd2Parameters[6][2] && !data.tables.at("monstats").value(record->sourceRow,"spawn").empty();
+    if(poisonEgg || spawnSkill || pd2WispSpawn || record->ai=="EvilHole" || record->ai=="MinionSpawner" || record->ai=="GenericSpawner" || record->ai=="Nihlathak" || record->ai=="FoulCrowNest" || record->ai=="VileMother" || record->ai=="BloodRaven" || record->ai=="SandMaggot" || record->ai=="SandMaggotQueen" || record->ai=="MaggotEgg" || record->ai=="Sarcophagus") {
         const auto spawn=data.tables.at("monstats").value(record->sourceRow,"spawn");
         const auto code=record->nest?record->nest->child:std::string(spawn);
         if(!catalog.find(code) && record->ai!="GenericSpawner" && record->ai!="Nihlathak") return {};
@@ -441,6 +446,11 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             deferred.insert(entry.deferred);area.nativePresetMonsters.push_back(std::move(entry));continue;
         }
         const auto *record=presetMonster.nativeClass>=0?catalog.find(presetMonster.nativeClass):catalog.find(presetMonster.id);
+        if(record && data.pd2Host && pd2::isMapRegion(request.level)) {
+            const auto replacement=pd2::mapPresetClass(request.level,record->index,request.pd2Map?request.pd2Map->controller:0);
+            if(replacement<0) continue;
+            if(replacement!=record->index) record=catalog.find(replacement);
+        }
         // Interactive NPCs have their service admission below the object
         // pass. Other non-critter presets, including friendly combatants and
         // invisible environmental controllers, use the native birth rules.
@@ -456,6 +466,16 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         if(request.level==110 && request.difficulty!=0 && (record->id=="minion1" || record->id=="deathmauler1")) continue;
         server::AreaDefinition::NativePresetMonster entry;
         entry.order=order;entry.definition=record->index;entry.collisionObject=collisionObject;
+        if(request.pd2Map && request.pd2Map->controller==9 && presetMonster.nativeClass==738 &&
+           (request.level==164 || request.level==171 || request.level==186)) entry.pd2Binding=0;
+        if(request.pd2Map && request.pd2Map->controller==34 && request.level==194) {
+            entry.retry=false;
+            entry.ignoreSpawnCollision=presetMonster.nativeClass==738;
+            if(presetMonster.nativeClass==738) entry.pd2Binding=0;
+            else if(presetMonster.nativeClass==739) entry.pd2Binding=1;
+            else if(presetMonster.nativeClass==740) entry.pd2Binding=2;
+            else if(presetMonster.nativeClass==786) entry.pd2Binding=3;
+        }
         entry.position={source.x+.5f,source.y+.5f};entry.retry=retry;
         entry.prisonDoor=record->id=="prisondoor";
         if(entry.prisonDoor) {entry.sourcePosition=entry.position;entry.position.x-=1;}
@@ -506,6 +526,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         else deferred.insert("Native spawn profile pending: "+code);
     }
     std::vector<int> required=selection.classes;
+    if(request.pd2Map && request.pd2Map->controller==9 && request.level==152) required.push_back(826);
     if(data.pd2Host) for(const auto &[missile,program]:data.nativeFormulas->missiles) {
         (void)missile;
         if(program.number("psrvhitfunc")!=6) continue;
@@ -553,6 +574,18 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         }
     }
     const auto &skillTable=data.tables.at("skills");
+    if(data.pd2Host) {
+        const auto lower=[](std::string_view name) {
+            std::string result(name);for(auto &letter:result) letter=char(std::tolower(static_cast<unsigned char>(letter)));return result;
+        };
+        std::set<std::string> linked;
+        const auto &monsters=data.tables.at("monstats");
+        for(size_t row=0;row<monsters.rows().size();++row) for(int slot=1;slot<=8;++slot)
+            linked.insert(lower(monsters.value(row,"Skill"+std::to_string(slot))));
+        for(size_t row=0;row<skillTable.rows().size();++row)
+            if(!skillTable.number(row,"srvstfunc").value_or(0) && skillTable.number(row,"srvdofunc").value_or(0)==49 &&
+                linked.contains(lower(skillTable.value(row,"skill")))) required.push_back(classId(skillTable.value(row,"summon")));
+    }
     {
         // Diabloclone can use Do104 outside Act IV. These are pure MPQ
         // prototypes; preparing them does not materialize rooms or units.

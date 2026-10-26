@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <map>
 #include <span>
+#include <vector>
 
 namespace d2x::server {
 class AreaStore;
@@ -37,5 +38,6 @@ class PlayerStore {
         return nullptr;
     }
     const std::map<PlayerId, PlayerState> &all() const { return players_; }
+    std::vector<EntityId> nativeActorOrder() const;
 };
 }

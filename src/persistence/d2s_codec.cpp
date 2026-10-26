@@ -117,6 +117,7 @@ void exportMerc(D2sHeader &header, const CharacterRecord &player, const ClassicD
 }
 void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &content) {
     const auto &player = snapshot.player;
+    require(content.pd2Host || !player.pd2Counters,"PD2 statistics in an original character");
     require(!player.hardcoreDead || (player.hardcore && player.hp <= 0), "invalid permanent death state");
     const auto &definition = characterDefinition(content, player.characterClass);
     require(snapshot.corpses.size() <= 1, "single-player corpse count");
@@ -290,6 +291,7 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     }
     if(content.pd2Host) {
         validatePd2SaveExtension(bytes.subspan(cursor));
+        player.pd2Counters=readPd2SavedCounters(bytes.subspan(cursor));
         player.nativeSaveSections.append(reinterpret_cast<const char *>(bytes.data()+cursor),bytes.size()-cursor);
     } else require(cursor == bytes.size(), "unexpected data after Iron Golem section");
     for (const auto &[id, item] : snapshot.inventory.items)
@@ -440,9 +442,10 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
         auto encoded = writeD2sItem(exportD2sItem(snapshot, item, content), content);
         bytes.insert(bytes.end(), encoded.begin(), encoded.end());
     }
-    if(content.pd2Host && player.nativeSaveSections.size()>fixedEnd) {
-        const auto tail=std::span(reinterpret_cast<const uint8_t *>(player.nativeSaveSections.data()+fixedEnd),player.nativeSaveSections.size()-fixedEnd);
-        validatePd2SaveExtension(tail);
+    if(content.pd2Host) {
+        const auto original=player.nativeSaveSections.size()>fixedEnd?
+            std::span(reinterpret_cast<const uint8_t *>(player.nativeSaveSections.data()+fixedEnd),player.nativeSaveSections.size()-fixedEnd):std::span<const uint8_t>{};
+        const auto tail=writePd2SavedCounters(original,player.pd2Counters);
         bytes.insert(bytes.end(),tail.begin(),tail.end());
     }
     require(bytes.size() <= maxSaveBytes, "save too large");

@@ -108,6 +108,7 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     phase_=Phase::Tail;
     }
     if(phase_==Phase::Tail) {
+    run(SystemId::Maps,[&]{return systems.maps.step(tick,facts_);});
     run(SystemId::Death,[&]{return systems.death.step(tick,facts_);});
     run(SystemId::Npc,[&]{return systems.npc.step(tick,facts_);});
     run(SystemId::Merchant,[&]{return systems.merchant.step(tick,facts_);});

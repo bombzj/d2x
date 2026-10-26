@@ -1,9 +1,15 @@
 #include "../system.hpp"
 #include "gameplay/maps/pd2/definition.hpp"
 #include "server/player_store.hpp"
+#include "server/systems/travel/system.hpp"
 #include <algorithm>
 
 namespace d2x::server::world {
+DomainResult<uint64_t> System::requestMapArea(RegionId destination,const std::shared_ptr<const pd2::MapInstance> &map) {
+    const auto &travel=ports_.travel.read();
+    if(!map || travel.pd2Map!=map || !travel.pd2MapPortal) return {DomainStatus::Stale,{}};
+    return request(destination,map);
+}
 bool System::cancelPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &map) {
     if(!map) return false;
     std::vector<RegionId> regions;

@@ -53,6 +53,7 @@ add_library(d2x_world
   src/world/cow_level.cpp src/world/maze/generation.cpp src/world/maze/resources.cpp
   src/world/maze/cave.cpp src/world/maze/crypt.cpp src/world/maze/barracks.cpp
   src/world/maze/jail.cpp src/world/maze/catacombs.cpp src/world/preset_identity.cpp
+  src/world/pd2/preset_identity.cpp
 )
 target_link_libraries(d2x_world PUBLIC d2x_content d2x_navigation)
 
@@ -258,6 +259,15 @@ add_library(d2x_server
   src/server/systems/ai/frozen_horror.cpp src/server/systems/ai/reanimated_horde.cpp
   src/server/systems/ai/pd2/leoric.cpp
   src/server/systems/ai/pd2/guardian.cpp
+  src/server/systems/ai/pd2/special.cpp
+  src/server/systems/ai/pd2/archer.cpp
+  src/server/systems/ai/pd2/willowisp.cpp
+  src/server/systems/ai/pd2/warlord.cpp
+  src/server/systems/ai/pd2/demon_pillar.cpp
+  src/server/systems/ai/pd2/rathma.cpp
+  src/server/systems/ai/pd2/scripted_npc.cpp
+  src/server/systems/monsters/pet_summon.cpp
+  src/server/systems/ai/pd2/treasure_fallen.cpp
   src/server/systems/ai/megademon.cpp src/server/systems/monsters/pregnancy.cpp
   src/server/systems/monsters/hydra.cpp src/server/systems/skills/system.cpp
   src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
@@ -345,6 +355,8 @@ add_library(d2x_server
   src/server/systems/objects/population.cpp src/server/systems/objects/shrines.cpp
   src/server/systems/objects/hazards.cpp src/server/systems/objects/traps.cpp
   src/server/systems/objects/tower.cpp src/server/systems/npc/system.cpp
+  src/server/systems/objects/native_portal.cpp
+  src/server/systems/maps/portals.cpp
   src/server/systems/merchant/system.cpp src/server/systems/quests/system.cpp
   src/server/systems/quests/act_one.cpp src/server/systems/quests/progress.cpp
   src/server/systems/quests/act_two.cpp src/server/systems/quests/act_three.cpp
@@ -355,6 +367,7 @@ add_library(d2x_server
   src/server/systems/progression/system.cpp src/server/systems/travel/system.cpp
   src/server/systems/travel/position_sync.cpp src/server/systems/travel/waypoints.cpp
   src/server/systems/travel/portals.cpp src/server/systems/social/system.cpp
+  src/server/systems/travel/native_object_portal.cpp
   src/server/systems/travel/pd2/maps.cpp
   src/server/systems/travel/pd2/teleport.cpp
   src/server/systems/social/party.cpp src/server/systems/trade/system.cpp
@@ -376,6 +389,12 @@ add_library(d2x_server
   src/server/systems/death/recovery.cpp src/server/systems/companions/hireling.cpp
   src/server/systems/companions/pd2/hireling.cpp
   src/server/systems/companions/pd2/material_restoration.cpp
+  src/server/systems/companions/pd2/shadow_move.cpp
+  src/server/systems/maps/system.cpp
+  src/server/systems/maps/placement.cpp
+  src/server/systems/maps/rewards.cpp
+  src/server/systems/objects/pd2/preset_birth.cpp
+  src/gameplay/maps/pd2/placement.cpp
   src/server/systems/effects/monster_pregnancy.cpp
   src/server/systems/effects/monster_enchantments.cpp
   src/server/systems/effects/suicide_minion.cpp src/server/systems/ai/unique_actions.cpp

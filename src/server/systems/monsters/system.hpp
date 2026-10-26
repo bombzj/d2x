@@ -154,8 +154,10 @@ struct Actor {
     std::vector<SkillAuraChange> preparedItemAuras; // Unconsumed preparation callbacks, not final aura totals.
     int64_t life{}, maximumLife{};
     bool modeAlive{}; // Zero-HP native units remain active until a death mode.
+    bool nativeRevive{}; // UNITFLAG_ISREVIVE; independent of player Revive ownership.
     std::optional<EntityId> delayedDeathSource;
     bool alive() const {return life>0 || modeAlive;}
+    bool reviveFlag() const {return nativeRevive || revived();}
     bool hydra() const {return implementation==MonsterKind::Hydra1 || implementation==MonsterKind::Hydra2 || implementation==MonsterKind::Hydra3;}
     unsigned admittedPlayerCount = 1;
     std::deque<Vec> route;
@@ -221,7 +223,7 @@ struct Actor {
         return owner || conversion?UnitAlignment::Good:UnitAlignment(rule.alignment);
     }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
-    bool nativeAi() const { return !questNpc || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter || rule.ai.kind==MonsterAiKind::NpcBarb; }
+    bool nativeAi() const { return !questNpc || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter || rule.ai.kind==MonsterAiKind::NpcBarb || rule.ai.kind==MonsterAiKind::ScriptedNpc; }
     bool damageable() const { return !restorationPending && !burrowed && !targetFlagsDisabled && !hatching && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
     bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || bool(druidPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
@@ -436,9 +438,10 @@ class System {
     DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick,Vec origin);
     bool canSpawnNestChild(EntityId,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision={}) const;
     DomainResult<> reserveNestSpawn(EntityId,Vec,bool active,uint64_t tick);
-    DomainResult<EntityId> spawnNativeNestChild(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,std::optional<int> fallbackClass={});
+    DomainResult<EntityId> spawnNativeNestChild(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,std::optional<int> fallbackClass={},int attempts=1,bool storedOwner=false);
     DomainResult<EntityId> spawnEvilHoleChild(EntityId,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<EntityId> spawnMinionChild(EntityId,Vec,int skill,MonsterSpawnParameters,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,MinionBirthProcedure=MinionBirthProcedure::Spawner);
+    DomainResult<EntityId> spawnNativePet(EntityId,Vec,MonsterSpawnParameters,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> assignBaalNova(EntityId,uint64_t tick);
     DomainResult<> assignBaalMonsterSpawn(EntityId,int mappedPreset,uint64_t tick);
     DomainResult<> setBaalThroneWave(EntityId,int expected,int next);
@@ -490,7 +493,7 @@ class System {
     DomainResult<> prepareModifiers(PreparedModifiers);
     StepStatus finishModifiers(TickContext);
     DomainResult<> finishTrap(EntityId,uint64_t tick);
-    DomainResult<> scriptDeath(EntityId,uint64_t tick,EntityId source={});
+    DomainResult<> scriptDeath(EntityId,uint64_t tick,EntityId source={},bool suppressTreasure=false);
     std::vector<Actor> prepareMinionDeaths(Actor,uint64_t tick,const std::map<EntityId,Actor> *staged=nullptr) const;
     DomainResult<> reduceShrineLife(EntityId,int64_t amount);
     DomainResult<> requestMove(const MoveRequest &);
@@ -501,6 +504,7 @@ class System {
     DomainResult<> missileReaction(EntityId target,EntityId source,bool getHit,bool knockback,uint8_t hitClass,uint64_t tick);
     bool canRemove(EntityId) const;
     DomainResult<> remove(EntityId);
+    DomainResult<> directSound(EntityId,uint16_t);
     void withdrawQuestGroup(RegionId,std::string_view);
     DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraRules &,const SummonCastSpec &,const std::array<std::optional<Vec>,3> &,uint64_t &random,std::optional<std::array<RegionId,3>> destinationAreas={}) const;
     DomainResult<> spawnHydra(EntityId,const HydraRules &,const SkillCastSpec &,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);

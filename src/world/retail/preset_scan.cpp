@@ -35,7 +35,7 @@ int resolveLink(const Linker &linker, std::string_view name) {
     return found->second.front();
 }
 }
-RetailPresetScan::RetailPresetScan(Archives &archives) {
+RetailPresetScan::RetailPresetScan(Archives &archives):pd2_(archives.pd2Presets) {
     const auto read = [&](const char *name) {
         return DataTable(archives.read(std::string("data/global/excel/") + name + ".txt"));
     };
@@ -162,7 +162,7 @@ std::optional<RetailPresetUnit> RetailPresetScan::resolveUnit(const MapObject &s
         }
     } else if (unit.type == 2) {
         if (version <= 5 && unit.id == 573) return {};
-        unit.id = originalObjectClass(source, version, act);
+        unit.id = pd2_?pd2ObjectClass(source,version,act):originalObjectClass(source,version,act);
     } else if (unit.type == 4) {
         result.mode = 3;
         result.identityResolved = version <= 4;

@@ -120,7 +120,16 @@ DomainResult<bool> System::sampleNativeSkillAccuracy(const ActorContext &actor,c
     cursor->melee=cursor->accuracyOnly=true;cursor->skill=skill.sourceId;cursor->rank=skill.rank;
     SpellImpact impact;impact.source=actor.actor;impact.area=actor.area;impact.targets={victim};impact.nativeSkill=cursor;
     const auto modifiers=source.player?source.player->totals.character.combat:ports_.effects.combatModifiers(source.id(),actor.tick);
-    impact.weapon=prepareWeaponSkillProcedures(weapon,modifiers,skill,caster->level(),false);
+    auto sampled=weapon;
+    if(source.monster) {
+        const auto stats=ports_.effects.unitStatValues(source.id(),actor.tick,weapon.item?std::optional{weapon.item}:std::nullopt,
+            cursor->monsterProgram?cursor->monsterProgram->modeStats:nullptr);
+        if(!stats) return {DomainStatus::Unavailable,{}};
+        sampled=sampleNativeWeapon(weapon,*stats,*caster->programs()->stats,modifiers,true,0,
+            source.monster->equipmentStats?&*source.monster->equipmentStats:nullptr,caster->programs()->formulas.get(),
+            source.monster->identity.monster=="shadowwarrior" || source.monster->identity.monster=="shadowmaster");
+    }
+    impact.weapon=prepareWeaponSkillProcedures(sampled,modifiers,skill,caster->level(),false);
     impact.missileDamage=std::make_shared<MissileDamageRollState>();impact.missileDamage->formulas=caster->programs()->formulas;
     const auto prepared=prepareNativeSkillContact(impact,source,target,{actor.tick});
     return {prepared,prepared==DomainStatus::Applied?std::optional{cursor->hit}:std::nullopt};

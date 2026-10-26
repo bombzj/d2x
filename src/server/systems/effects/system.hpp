@@ -1,5 +1,6 @@
 #pragma once
 #include <span>
+#include <cstdint>
 #include "server/runtime/contracts.hpp"
 #include "skill_state.hpp"
 #include "server/runtime/ports.hpp"
@@ -360,7 +361,7 @@ class System {
     DomainResult<> removeState(const ActorContext &,int state);
     DomainResult<> druidRage(const ActorContext &,const SkillCastSpec &);
     DomainResult<bool> removeStateGroup(const ActorContext &,int group);
-    DomainResult<> removeUnitState(EntityId,int state,uint64_t tick);
+    DomainResult<> removeUnitState(EntityId,int state,uint64_t tick,size_t limit=SIZE_MAX);
     DomainResult<> prepareUnitCurseRemoval(AuraUnitPublication &,EntityId,uint64_t tick) const;
     DomainResult<> setNativeSkillState(EntityId,int state,bool active,uint64_t tick);
     DomainResult<> postModeRate(EntityId,int skill,int rank,int32_t rate,uint64_t revision,uint64_t tick,std::pair<uint64_t,uint64_t> random);

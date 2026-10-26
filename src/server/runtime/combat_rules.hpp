@@ -39,8 +39,9 @@ struct MonsterAttackRule {
     std::vector<MonsterElementAttack> elements;
     std::optional<MonsterMissileRule> missile{};
     enum class Action { Damage, Resurrect, Nest, Web, Spray, Firewall, Teleport, Trap, Skill, Pd2Projectile, Pd2Joust, Pd2PoisonEgg,
-                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin, Druid, Inferno, Mosquito, Submerge, GroundMissile, Hydra, NativeMissile, EatCorpse, DefensiveBuff, Impregnate, Rally, Whip, SupportMissile, SpawnMinion, NativeSpell, DiabloRun, Whirlwind, LeapAttack } action{Action::Damage};
+                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin, Druid, Inferno, Mosquito, Submerge, GroundMissile, Hydra, NativeMissile, EatCorpse, DefensiveBuff, Impregnate, Rally, Whip, SupportMissile, SpawnMinion, NativeSpell, DiabloRun, Whirlwind, LeapAttack, NativeDruid, NativePetSummon } action{Action::Damage};
     uint8_t nativeMode{4}, rank{1};
+    std::optional<MonsterSpawnParameters> nativePetSummon{};
     std::optional<MonsterMissileRule> extraQuill{};
     std::vector<int> releaseFrames{};
     std::optional<MonsterMissileRule> groundFire{};
@@ -52,6 +53,7 @@ struct MonsterAttackRule {
     std::optional<AnimationTiming> animation{};
     int animationAction{-1};
     bool animationSequence{};
+    bool sequenceSkillEvents{}; // Native SQ skill callbacks accept action markers 1, 2 and 4.
     int submergeHoldFrame{-1}; // MonSeq clock point whose displayed frame is zero.
     uint8_t animationEvent{1};
     std::vector<int> animationEvents{};

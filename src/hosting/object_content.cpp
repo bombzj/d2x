@@ -3,6 +3,7 @@
 #include "monster_actions_content.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "content/classic_data.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
 #include "content/skills/state_data.hpp"
 #include "world/region.hpp"
 #include "world/chest.hpp"
@@ -100,10 +101,13 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         const auto &misc=content.tables.at("misc");
         for(size_t row=0;row<misc.rows().size();++row) if(misc.number(row,"pSpell")==12)
             portalClasses.insert(misc.number(row,"missiletype").value_or(0)?misc.number(row,"missiletype").value():60);
+        for(size_t row=0;row<objectTable.rows().size();++row) if(objectTable.number(row,"InitFn")==12 && objectTable.number(row,"OperateFn")==77)
+            portalClasses.insert(objectTable.number(row,"Id").value());
     }
     for(const int code:portalClasses) {
         WorldObject questPortal;questPortal.appearance.category="objects";questPortal.objectClass=code;configureWorldObject(questPortal,rows);
-        if(portalResources && questPortal.reach>0) area.questPortalRules.emplace(code,portalRule(questPortal,0));
+        if(portalResources && questPortal.reach>0) area.questPortalRules.emplace(code,portalRule(questPortal,
+            content.pd2Host && questPortal.operateFn==77?std::max(1,questPortal.animationRules[1].frames+1):0));
     }
     for(const auto &[code,source]:content.shrines) {
         server::ShrineRule shrine{source.code,source.argument0,source.argument1,source.durationFrames,source.resetFrames,{}};
@@ -178,6 +182,9 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     EntityIds ids(uint64_t{1} << 32); size_t symbol = 0;
     std::map<EntityId,int> presetCallbacks;
     std::map<EntityId,size_t> presetOrders;
+    std::map<EntityId,int> presetModes;
+    std::map<EntityId,int> presetBindings;
+    std::map<EntityId,pd2::MapPortalProgram> presetPortals;
     for (size_t sourceIndex=0;sourceIndex<region.map.terrain.data.objects.size();++sourceIndex) {
         const auto &source=region.map.terrain.data.objects[sourceIndex];
         if (source.type != 2 || !source.nativeIdentity || (source.flags&1u)) continue;
@@ -190,6 +197,48 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         WorldObject object; object.id = ids.allocate(); object.act = area.act;
         presetOrders.emplace(object.id,sourceIndex);
         object.objectClass = preset(source.id, area.act, request.level);
+        std::vector<std::pair<Vec,int>> boundObjects;
+        if(request.pd2Map && request.pd2Map->controller==30) {
+            if(request.level==176 && object.objectClass>=601 && object.objectClass<=603) {
+                const int destination=177+object.objectClass-601;
+                object.objectClass=598;presetModes.emplace(object.id,2);
+                presetPortals.emplace(object.id,pd2::MapPortalProgram{destination,11,598,2,2,{},true});
+            } else if(request.level>=177 && request.level<=179) {
+                if(object.objectClass==601) {
+                    const bool chosen=int(request.pd2Map->initSeed%3)==request.level-177;
+                    constexpr std::array<Vec,3> offsets{Vec{-25,15},Vec{-25,-25},Vec{15,-25}};
+                    object.objectClass=chosen?599:598;
+                    presetPortals.emplace(object.id,pd2::MapPortalProgram{176,chosen?0:11,587,0,1,
+                        chosen?Vec{}:offsets[size_t(request.level-177)],false});
+                } else if(object.objectClass==602) object.objectClass=600;
+            }
+        }
+        if(request.pd2Map && request.pd2Map->controller==35) {
+            if(request.level==195 && object.objectClass==102) object.objectClass=627;
+            else if(request.level==195 && object.objectClass==252) {object.objectClass=626;presetModes.emplace(object.id,2);}
+            else if(request.level==196 && object.objectClass==601) object.objectClass=458;
+        }
+        if(request.pd2Map && request.pd2Map->controller==34 && request.level==194 &&
+            object.objectClass>=314 && object.objectClass<=318) presetModes.emplace(object.id,2);
+        if(request.pd2Map && request.pd2Map->controller==9) {
+            if(request.level==152 && object.objectClass==601) {
+                object.objectClass=617;boundObjects.push_back({{},1});
+            } else if(request.level==164 && (object.objectClass==616 || object.objectClass==617)) {
+                for(int slot=0;slot<7;++slot) boundObjects.push_back({object.objectClass==617?
+                    Vec{float(-12+slot*4),0}:Vec{0,float(-12+slot*4)},slot+1});
+            } else if(request.level==171 && object.objectClass==617) {
+                boundObjects={{{-5,1},1},{{5,1},2}};
+            } else if(request.level==186 && object.objectClass==616) {
+                object.objectClass=618;boundObjects.push_back({{},1});
+            }
+        }
+        if(request.pd2Map && request.pd2Map->controller==32 && request.level==183 && object.objectClass>=601 && object.objectClass<=610) {
+            if(object.objectClass!=601) continue;
+            object.objectClass=612;presetModes.emplace(object.id,2);
+        }
+        // The native wrapper consumes unhandled core markers; they are not
+        // ordinary visible or interactive objects.
+        if(request.pd2Map && object.objectClass>=601 && object.objectClass<=610) continue;
         if(source.id==580 || source.id==581) presetCallbacks.emplace(object.id,source.id);
         if (source.id == 582) {
             if (request.level != 74) { area.objectDeferred.push_back(source.id); continue; }
@@ -198,10 +247,18 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
             object.objectClass = actTwoTombSymbols[offset >= missing ? offset + 1 : offset];
         }
         object.pos = {float(source.x), float(source.y)}; object.appearance.category = "objects"; object.appearance.mode = "nu";
+        if(const auto mode=presetModes.find(object.id);mode!=presetModes.end() && mode->second==2) object.appearance.mode="on";
         configureWorldObject(object, rows);
         if (source.id == 580) { object.chest.emplace(); object.chest->sparkly = true; }
         if (source.id >= 574 && source.id <= 579) object.shrineCode = source.id;
-        region.objects.push_back(std::move(object));
+        if(boundObjects.empty()) region.objects.push_back(std::move(object));
+        else for(size_t index=0;index<boundObjects.size();++index) {
+            auto copy=object;if(index) copy.id=ids.allocate();
+            copy.pos=object.pos+boundObjects[index].first;
+            presetOrders.insert_or_assign(copy.id,sourceIndex);
+            presetBindings.emplace(copy.id,boundObjects[index].second);
+            region.objects.push_back(std::move(copy));
+        }
     }
     // ACT5Q3_SpawnFrozenDrehya creates OBJECT_FROZEN_ANYA at the
     // authored Init67 marker; the invisible marker itself is not usable.
@@ -242,6 +299,10 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     }
     for (auto &object : region.objects) {
         server::AreaObject entry{object.id, object.objectClass, object.pos, {}}; auto &rule = entry.rule;
+        if(const auto mode=presetModes.find(object.id);mode!=presetModes.end()) entry.initialMode=mode->second;
+        if(const auto binding=presetBindings.find(object.id);binding!=presetBindings.end()) entry.pd2Binding=binding->second;
+        if(const auto portal=presetPortals.find(object.id);portal!=presetPortals.end()) entry.pd2Portal=portal->second;
+        if(request.pd2Map && request.pd2Map->controller==9 && request.level==152 && entry.pd2Binding==1) entry.pd2BirthClass=826;
         if(const auto callback=presetCallbacks.find(object.id);callback!=presetCallbacks.end()) entry.preset=callback->second;
         if(const auto order=presetOrders.find(object.id);order!=presetOrders.end()) entry.presetOrder=order->second;
         rule=area.objectRules.at(object.objectClass);

@@ -13,6 +13,18 @@ namespace d2x::pd2 {
 std::shared_ptr<const MapCatalog> prepareMapCatalog(const ClassicData &data) {
     if(!data.pd2Host || !data.nativeStats) throw std::invalid_argument("Missing PD2 map content");
     auto result=std::make_shared<MapCatalog>();
+    const auto &uniqueTable=data.tables.at("uniqueitems");
+    result->sceneUniques.resize(uniqueTable.rows().size());
+    for(size_t row=0;row<uniqueTable.rows().size();++row) {
+        uint32_t flags{};
+        for(const auto &[field,bit]:std::array<std::pair<std::string_view,unsigned>,4>{{{"enabled",0},{"nolimit",1},{"carry1",2},{"ladder",3}}})
+            if(uniqueTable.number(row,field).value_or(0)) flags|=1u<<bit;
+        const auto level=uint16_t(uniqueTable.number(row,"lvl").value_or(0));
+        const auto rarity=uint16_t(uniqueTable.number(row,"rarity").value_or(0));
+        const auto *base=data.items.find(uniqueTable.value(row,"code"));
+        result->sceneUniques[row]={flags && rarity && level>=1 && level<=99,
+            base && uint8_t(base->base.sockets.value_or(0))>0};
+    }
     const auto &costs=data.tables.at("itemstatcost");
     for(size_t row=0;row<costs.rows().size();++row) {
         const auto id=costs.number(row,"ID");if(!id) continue;

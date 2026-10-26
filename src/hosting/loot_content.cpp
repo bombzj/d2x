@@ -16,6 +16,8 @@
 #include "core/random.hpp"
 #include "persistence/d2s_quests.hpp"
 #include "persistence/d2s_fixed_sections.hpp"
+#include "gameplay/rules/pd2_random.hpp"
+#include "content/pd2/cube.hpp"
 #include <algorithm>
 #include <array>
 #include <set>
@@ -49,8 +51,39 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
     if (!world) world = std::make_shared<const WorldCatalog>(archives, request.request.source.difficulty);
     LootPlan plan;
     plan.randomState=request.seed;
+    auto programRandom=request.pd2Random;
     std::optional<uint64_t> objectRandom;
-    if(request.request.towerGold) {
+    if(!request.request.nativeDrops.empty()) {
+        auto uniques=request.uniques;
+        for(const auto &drop:request.request.nativeDrops) {
+            std::string token=drop.code;
+            if(drop.uniqueRow) {
+                if(drop.uniqueSelection==server::loot::NativeDrop::UniqueSelection::Base) {
+                    const auto &table=data.tables.at("uniqueitems");
+                    if(*drop.uniqueRow>=table.rows().size()) {plan.deferred="Missing native scene unique row";break;}
+                    token=table.value(*drop.uniqueRow,"code");
+                } else {
+                    const auto found=std::find_if(data.uniqueItems.begin(),data.uniqueItems.end(),[&](const auto &row){return row.row==*drop.uniqueRow;});
+                    if(found==data.uniqueItems.end()) {plan.deferred="Missing native scene unique record";break;}
+                    token=found->name;
+                }
+                if(drop.resetUnique) uniques.erase(*drop.uniqueRow);
+            }
+            // 382210 initializes a temporary seed from two CRT calls even
+            // though CreateItemEx(a3=0,bForce=0) retains its allocated seeds.
+            if(drop.crtInitialization) {pd2CrtRandom(programRandom);pd2CrtRandom(programRandom);}
+            if(!drop.placementValid && drop.uniqueSelection==server::loot::NativeDrop::UniqueSelection::Exact) continue;
+            auto stage=planSelectedItem(data,token,drop.level,plan.randomState,uniques,request.classCode,nativeDropQuality(drop.quality),false,seeds,
+                drop.preferredPrefix,drop.preferredSuffix);
+            if(!stage.deferred.empty()) {plan.deferred=std::move(stage.deferred);break;}
+            plan.randomState=stage.randomState;
+            for(auto &item:stage.drops) {
+                if(item.generation.quality==ItemQuality::Unique && item.generation.specialRow>=0)
+                    uniques.insert(size_t(item.generation.specialRow));
+                plan.drops.push_back(std::move(item));
+            }
+        }
+    } else if(request.request.towerGold) {
         const auto level=world->levels().find(int(request.request.source.region));
         if(level==world->levels().end() || level->second.population.level.at(size_t(request.request.source.difficulty))<=0) plan.deferred="Missing original tower gold area level";
         else {
@@ -117,14 +150,23 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
     auto random = plan.randomState;
     server::items::PreparedBatch batch;
     uint64_t id = 1;
-    auto programRandom=request.pd2Random;
+    size_t nativeIndex{};
     for (auto &drop : plan.drops) {
         if(!drop.generation.seeds) drop.generation.seeds=seeds();
-        if(request.pd2Map) preparePd2MapItemDrop(request.pd2Map->properties,drop,programRandom);
+        if(request.pd2Map && request.request.nativeDrops.empty()) preparePd2MapItemDrop(request.pd2Map->properties,drop,programRandom);
         uint64_t itemRandom{};
         auto item = prepareItem(data, drop, random, request.request.source.difficulty,0,&itemRandom);
-        if(request.pd2Map) finishPd2MapItemDrop(data,request.pd2Map->properties,item,itemRandom,programRandom);
+        if(request.pd2Map && request.request.nativeDrops.empty()) finishPd2MapItemDrop(data,request.pd2Map->properties,item,itemRandom,programRandom);
+        const auto *nativeDrop=request.request.nativeDrops.empty()?nullptr:&request.request.nativeDrops.at(nativeIndex++);
+        if(nativeDrop) {
+            if(nativeDrop->adjustment==server::loot::NativeDrop::Adjustment::Corruption)
+                applyPd2AutomaticCorruption(data,item,itemRandom,programRandom);
+            else if(nativeDrop->adjustment==server::loot::NativeDrop::Adjustment::RandomSockets)
+                applyPd2RandomSockets(data,item,itemRandom);
+            if(nativeDrop->uniqueSelection==server::loot::NativeDrop::UniqueSelection::Base) item.identified=false;
+        }
         if (item.quality == ItemQuality::Unique && item.specialRow >= 0 && !data.tables.at("uniqueitems").number(size_t(item.specialRow), "nolimit").value_or(0)) batch.limitedUniques.insert(size_t(item.specialRow));
+        if(nativeDrop && !nativeDrop->placementValid) continue;
         item.id = EntityId{id++}; item.location = ContainerLocation{character.containers.backpack, {}};
         character.inventory.items.emplace(item.id, item); batch.items.push_back(std::move(item));
     }

@@ -276,11 +276,11 @@ DomainResult<> System::missileReaction(EntityId id,EntityId source,bool getHit,b
 }
 void System::rewardComplete(EntityId id) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.rewardComplete = true; }
 bool System::canRemove(EntityId id) const {
-    const auto *unit=find(id);if(!unit || (!unit->owner && !unit->hydra() && unit->rule.ai.kind!=MonsterAiKind::BaalToStairs)) return false;
+    const auto *unit=find(id);if(!unit || (!unit->owner && !unit->hydra() && unit->rule.ai.kind!=MonsterAiKind::BaalToStairs && (unit->hostile || unit->rule.ai.kind!=MonsterAiKind::ScriptedNpc))) return false;
     return !ports_.frameEvents.hasHandler({FrameEventUnit::Monster,id},effects::monsterModifierTimerHandler);
 }
 DomainResult<> System::remove(EntityId id) {
-    const auto *unit=find(id);if(!unit || (!unit->owner && !unit->hydra() && unit->rule.ai.kind!=MonsterAiKind::BaalToStairs)) return {DomainStatus::InvalidActor,{}};
+    const auto *unit=find(id);if(!unit || (!unit->owner && !unit->hydra() && unit->rule.ai.kind!=MonsterAiKind::BaalToStairs && (unit->hostile || unit->rule.ai.kind!=MonsterAiKind::ScriptedNpc))) return {DomainStatus::InvalidActor,{}};
     if(!canRemove(id)) return {DomainStatus::Unavailable,{}};
     const auto it=state_.actors.find(id);
     stopScriptedMotion(id);

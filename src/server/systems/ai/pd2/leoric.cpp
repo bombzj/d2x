@@ -2,7 +2,6 @@
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/effects/system.hpp"
-#include "server/systems/attributes/monster_resources.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/pd2_random.hpp"
@@ -20,22 +19,12 @@ StepStatus System::pd2Leoric(EntityId id,UnitTarget target,Vec point,int size,in
     const int roll=int(pd2UnitEventRandom(controller.random)%100);
     const int cooldown=nativeStatValue(*values,*unit.rule.stats,"mon_cooldown1");
     const int next=cooldown<1?roll%10+15:cooldown-1;
-    const auto written=perform(controller,[this,id,next,tick]()->DomainResult<> {
-        const auto *current=ports_.monsters.find(id);
-        if(!current || !current->alive()) return {DomainStatus::InvalidActor,{}};
-        const auto sources=ports_.effects.unitStatSources(id,tick.tick);
-        attributes::MonsterResourceTrace trace(*current,tick.tick,ports_.effects.unitEffects(id));
-        trace.sampleSources(sources);
-        trace.writeBaseStat("mon_cooldown1",next,sources);
-        auto change=trace.take();
-        if(!ports_.monsters.canCommitLife(change)) return {DomainStatus::Stale,{}};
-        if(!ports_.monsters.commitLife(std::move(change))) return {DomainStatus::Stale,{}};
-        return {DomainStatus::Applied,std::monostate{}};
-    });
+    const auto written=setPd2AiStats(controller,tick,{{"mon_cooldown1",next}});
     if(!written) return isDeferred(written.status)?StepStatus::Blocked:StepStatus::Complete;
     const auto cast=[&](int slot,UnitTarget victim,std::optional<Vec> position={},int delay=1) {
         const auto skill=slot<0?uint16_t{}:unit.rule.skillIds[size_t(slot)];
         const auto mode=slot<0?uint8_t{4}:unit.rule.skillActions.at(skill).nativeMode;
+        if(slot>=0) return usePd2Skill(controller,{id,skill,victim,tick.tick,mode,position},delay==1?std::nullopt:std::optional{delay},delay!=1);
         const auto result=requestAction(controller,{id,skill,victim,tick.tick,mode,position});
         controller.nextDecision=tick.tick+uint64_t(delay);
         return isDeferred(result.status)?StepStatus::Blocked:StepStatus::Complete;

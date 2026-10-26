@@ -16,14 +16,16 @@ namespace {
 bool requiresMapController(int level) {
     // Current pSpell12's dedicated controller branches, plus PvP admission.
     switch(level) {
-    case 137:case 157:case 159:case 161:case 168:case 176:case 180:
-    case 181:case 183:case 185:case 188:case 192:case 195:case 197:return true;
+    case 137:case 157:case 159:case 161:case 168:case 180:
+    case 185:case 188:case 192:case 197:return true;
     default:return false;
     }
 }
 bool availableMapPrograms(const pd2::MapProperties &properties) {
     if(properties.forceEvent) return false;
-    for(const auto &program:properties.global) if(program.key.id>6 && (program.key.id<10 || program.key.id>14)) return false;
+    // Current 17d5 stores 7/8/9/15, but neither 389510 nor its global-table
+    // readers consume them. Preserve them without inventing name-based loot.
+    for(const auto &program:properties.global) if(program.key.id>15) return false;
     return true;
 }
 }
@@ -92,6 +94,8 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
         std::vector<StatValue> raw;for(const auto &[key,value]:values.values) raw.emplace_back(key,value);
         auto candidate=std::make_shared<pd2::MapInstance>();candidate->owner=actor.actor;candidate->item=requested;
         candidate->catalog=catalog;candidate->destination=rule->second;
+        candidate->controller=pd2::fixedMapController(rule->second.level);
+        candidate->initSeed=ports_.settings.mapSeed;
         candidate->properties=pd2::prepareMapProperties(catalog->properties,raw);
         if(!availableMapPrograms(candidate->properties)) return {DomainStatus::NotImplemented,{}};
         appendMapGlobalUnitProperties(candidate->properties);

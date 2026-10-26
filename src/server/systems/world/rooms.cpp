@@ -245,7 +245,8 @@ struct System::RoomRuntime {
             for (const auto &[key, state] : act.activation->states())
                 if (rooms.at(key).area == room.area && state.status <= 1) return true;
         if (room.index==SIZE_MAX) return false;
-        if(owner.ports_.areas.at(room.area).rooms.at(room.index).portalRetained) return true;
+        const auto &runtime=owner.ports_.areas.at(room.area).rooms.at(room.index);
+        if(runtime.portalRetained || !runtime.controllerRetainers.empty()) return true;
         const auto &source = owner.ports_.areas.at(room.area).definition;
         const auto contains = [&](RegionId region, Vec point) { return locate(region, point) == id; };
         const auto &ports = owner.ports_;

@@ -282,7 +282,7 @@ struct RemoteScene::Impl {
     std::optional<int> castMeleeRange(const OnlineUnit &actor, const OnlineCombatCommand &command) const;
     static EntityId effectOwner(OnlineUnitKey key);
     void emitSound(PresentationSoundEvent::Kind kind, const OnlineUnit &source, float age = 0,
-                   int skill = -1, float releaseTime = -1, std::string sound = {}, int mode = -1);
+                   int skill = -1, float releaseTime = -1, std::string sound = {}, int mode = -1,int nativeSound = -1);
     void monsterSoundEvent(const OnlineCombatEvent &event, const OnlineUnit &source, float age);
     void emitDruidStates(const OnlineView &view,SceneView &shared,const RemoteCombat &combat,bool town);
     void emitWoundBlood(const OnlineView &view, SceneView &shared, const RemoteCombat &combat,

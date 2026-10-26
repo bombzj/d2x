@@ -20,7 +20,7 @@ enum class RewardPhase { Restore, HirelingExperience, Loot, PlayerExperience };
 struct Reward { PlayerId player; EntityId actor; uint64_t amount{}; int life{},mana{}; CharacterRecord lootClaimant; std::optional<companions::HirelingExperienceAward> hireling{}; std::vector<ExperienceShare> shares{};size_t awarded{}; RewardPhase phase = RewardPhase::Restore; };
 struct Recovery { ActorContext actor; EntityId corpse; uint64_t locomotion{}; };
 struct State { std::map<EntityId, Transition> transitions; std::map<EntityId, Reward> rewards; std::map<PlayerId, Recovery> recoveries; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; progression::System &progression; skills::System &skills; loot::System &loot; items::System &items; transactions::System &transactions; world::System &world; MovementSystem &movement; const AreaStore &areas; const GameSettings &settings; companions::System &companions; const social::System &social; const effects::System &effects; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; progression::System &progression; skills::System &skills; loot::System &loot; items::System &items; transactions::System &transactions; world::System &world; MovementSystem &movement; const AreaStore &areas; const GameSettings &settings; companions::System &companions; const social::System &social; const effects::System &effects; maps::System &maps; };
 class System {
     State state_;
     const Ports ports_;

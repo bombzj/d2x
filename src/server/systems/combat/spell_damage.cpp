@@ -201,8 +201,8 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 auto rolled=contact.damage;
                 impact.knockback=rolled.knockback;impact.softHit=rolled.softHit;
                 if(!impact.damageScaled) scaleHitDamage(rolled,damageClassPercentage(
-                    {bool(source.player),monsterSource && monsterSource->hireling,monsterSource && monsterSource->revived(),monsterSource && monsterSource->rule.boss,monsterSource && monsterSource->rule.primeEvil},
-                    {bool(participant.player),participant.monster && participant.monster->hireling,participant.monster && participant.monster->revived(),participant.monster && participant.monster->rule.boss,participant.monster && participant.monster->rule.primeEvil},
+                    {bool(source.player),monsterSource && monsterSource->hireling,monsterSource && monsterSource->reviveFlag(),monsterSource && monsterSource->rule.boss,monsterSource && monsterSource->rule.primeEvil},
+                    {bool(participant.player),participant.monster && participant.monster->hireling,participant.monster && participant.monster->reviveFlag(),participant.monster && participant.monster->rule.boss,participant.monster && participant.monster->rule.primeEvil},
                     monsterSource?monsterSource->rule.hirelingBossDamagePercent:100));
                 auto hitClass=state_.hitClassCursor;rolled.hitClass=monsterDamageHitClass(rolled,rolled.hitClass,hitClass);
                 if(participant.player) {
@@ -273,8 +273,8 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 rolled.coldFrames=std::max(rolled.coldFrames,impact.coldFrames);rolled.poisonFrames=std::max(rolled.poisonFrames,impact.poisonFrames);
                 rolled.stunFrames=std::max(rolled.stunFrames,impact.stunFrames);rolled.knockback=rolled.knockback || impact.knockback;
                 if(!impact.monsterHit) rolled.channels[size_t(impact.type)]=impact.currentDamage();
-                if(!impact.damageScaled) scaleHitDamage(rolled,damageClassPercentage({false,monsterSource->hireling,monsterSource->revived(),monsterSource->rule.boss,monsterSource->rule.primeEvil},
-                    {bool(player),pet && pet->hireling,pet && pet->revived(),pet && pet->rule.boss,pet && pet->rule.primeEvil},monsterSource->rule.hirelingBossDamagePercent));
+                if(!impact.damageScaled) scaleHitDamage(rolled,damageClassPercentage({false,monsterSource->hireling,monsterSource->reviveFlag(),monsterSource->rule.boss,monsterSource->rule.primeEvil},
+                    {bool(player),pet && pet->hireling,pet && pet->reviveFlag(),pet && pet->rule.boss,pet && pet->rule.primeEvil},monsterSource->rule.hirelingBossDamagePercent));
                 auto hitClassCursor=state_.hitClassCursor;
                 if(!stateOnly) rolled.hitClass=monsterDamageHitClass(rolled,impact.hitClass,hitClassCursor);
                 if(stateOnly && pet) {

@@ -21,7 +21,7 @@ PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留
 
 **服务端三层边界：** hosting把原包转为绑定玩家的类型化命令，并从MPQ准备规则；server校验资格、执行领域操作、提交事实；hosting把事实编码成原回包，并持有保存／传输边界。`GameInstance`和`GameSystems`只组装，`runtime/simulation`只安排执行顺序，不成为万能游戏会话。
 
-**状态各有唯一主人：** PlayerStore持角色持久值与玩家状态，AreaStore持区域／碰撞和房间活动投影，world持各幕房间引用与纯值物化状态，monsters持活动及休眠非玩家实体，companions持伙伴控制关系，social持队伍关系。GameSystems中的frameEvents持原生实例定时器，与可靠输出EventOutbox分开；状态期限／AIRESET、飞弹／周期／再生及跨单位属性／接触已有切片；当前可达AI／动作／移动／物件及物品再生已迁入，完整世界休眠重建与原全局顺序仍有缺口。实际阶段见[总计划2.3节](MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)。actions状态持施放记录、玩家恢复动作及玩家／怪物待释放队列，skills解释技能程序并推进释放；missiles／effects分别持弹体／效果，reactions持物品触发队列。combat结算伤害，death处理死亡与奖励协作，transactions提交跨领域人物／物品变更。索引、客户端副本和诊断都不是第二份权威。
+**状态各有唯一主人：** PlayerStore持角色持久值与玩家状态，AreaStore持区域／碰撞和房间活动投影，world持各幕房间引用与纯值物化状态，monsters持活动及休眠非玩家实体，companions持伙伴控制关系，social持队伍关系。GameSystems中的frameEvents持原生实例定时器，与可靠输出EventOutbox分开；状态期限／AIRESET、飞弹／周期／再生及跨单位属性／接触已有切片；当前可达AI／动作／移动／物件及物品再生已迁入，完整世界休眠重建与原全局顺序仍有缺口。实际阶段见[总计划2.3节](MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)。actions状态持施放记录、玩家恢复动作及玩家／怪物待释放队列，skills解释技能程序并推进释放；missiles／effects分别持弹体／效果，reactions持物品触发队列。combat结算伤害，maps持PD2场景阶段及特殊死亡游标，death处理死亡与普通奖励协作，transactions提交跨领域人物／物品变更。索引、客户端副本和诊断都不是第二份权威。
 
 修改时先找状态所属领域，通过窄Ports协作；不把GameSystems、网络会话或内容加载器传给玩法。共享算法不共享运行态，协议值不等于磁盘值。混合出生通过EntityIds::Publication共享一次ID范围发布，AreaStore复验同一房间登记令牌；ActorPublication可携带带版本的退役集合，与新实体／人物事务共同验证。异步内容等待使用PendingContent，由isDeferred统一交给调度暂缓；准备队列的写入接口必须显式可变。新内容沿“MPQ准备 → 领域资格／执行 → 事务／事实 → 原包投影”接入，未实现路径明确拒绝。
 

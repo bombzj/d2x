@@ -21,7 +21,7 @@
 #include <stdexcept>
 
 namespace d2x::server::skills {
-DomainResult<std::shared_ptr<actions::SkillRelease>> System::startShadowSkill(const CastRequest &request,const MonsterAttackRule &attack) {
+DomainResult<std::shared_ptr<actions::SkillRelease>> System::startAssassinSkill(const CastRequest &request,const MonsterAttackRule &attack) {
     const auto caster=nativeCaster(ports_.players,ports_.monsters,request.actor);
     if(!caster || !caster->monster || !caster->programs()) return {DomainStatus::InvalidActor,{}};
     const auto unit=std::get<UnitTarget>(request.target);
@@ -43,15 +43,16 @@ DomainResult<std::shared_ptr<actions::SkillRelease>> System::startShadowSkill(co
     release.actor.tick=request.tick;
     if(!release.nativeStartPrepared) {
         if(release.skill.weapon) {
-            if(!caster->monster->equipmentStats) return {DomainStatus::Unavailable,{}};
-            const auto &gear=*caster->monster->equipmentStats;
-            const auto &main=gear.weapons[0];const auto &program=*release.skill.weapon;
-            if(!program.requiredType.empty() && program.requiredType!="mele" &&
+            const bool nativeMonster=!caster->monster->assassinPet;
+            if(!nativeMonster && !caster->monster->equipmentStats) return {DomainStatus::Unavailable,{}};
+            const auto *gear=caster->monster->equipmentStats?&*caster->monster->equipmentStats:nullptr;
+            const auto main=gear?gear->weapons[0]:caster->monster->petWeapon.value_or(WeaponDamage{});const auto &program=*release.skill.weapon;
+            if(!nativeMonster && !program.requiredType.empty() && program.requiredType!="mele" &&
                std::find(main.types.begin(),main.types.end(),program.requiredType)==main.types.end()) return {DomainStatus::Unavailable,{}};
-            const bool dual=gear.weaponCount>1 && gear.weapons[1].item;
+            const bool dual=gear && gear->weaponCount>1 && gear->weapons[1].item;
             if(program.dualWield && !dual) return {DomainStatus::Unavailable,{}};
             release.weapon=main;
-            if(dual) release.offhand=gear.weapons[1];
+            if(dual) release.offhand=gear->weapons[1];
             if(program.allocatesMeleeAtStart()) {
                 const auto started=startWeaponMelee(release,actor,&attack);if(!started) return {started.status,{}};
             }
@@ -76,7 +77,7 @@ DomainResult<std::shared_ptr<actions::SkillRelease>> System::startShadowSkill(co
     }
     return {DomainStatus::Applied,std::make_shared<Release>(release)};
 }
-DomainResult<bool> System::releaseShadowSkill(MonsterRelease &pending,TickContext tick) {
+DomainResult<bool> System::releaseAssassinSkill(MonsterRelease &pending,TickContext tick) {
     if(!pending.nativeSkill) return {DomainStatus::Unavailable,{}};
     auto &release=*pending.nativeSkill;const auto caster=nativeCaster(ports_.players,ports_.monsters,pending.request.actor);
     if(!caster || !caster->programs()) return {DomainStatus::InvalidActor,{}};
@@ -92,6 +93,10 @@ DomainResult<bool> System::releaseShadowSkill(MonsterRelease &pending,TickContex
             const auto &weapon=release.offhand && pending.nextRelease%2?*release.offhand:*release.weapon;
             WeaponSkillDamage damage;damage.weapon=weapon;damage.level=caster->level();
             missiles::Spawn request{actor,release.skill,{},target,true};request.weapon=damage;
+            if(!caster->monster->assassinPet) {
+                request.nativeMeleeContact=std::make_shared<combat::NativeSkillContact>();
+                request.nativeMeleeContact->monsterProgram=pending.attack;
+            }
             const auto contact=ports_.missiles.directContact(request,{unit.id});if(!contact) return {contact.status,{}};
             release.nativeMeleeOccurrence=contact.value->occurrence;release.nativeCallbackStarted=true;
         }
@@ -121,10 +126,11 @@ DomainResult<bool> System::releaseShadowSkill(MonsterRelease &pending,TickContex
 }
 DomainResult<bool> System::releaseAssassinPet(MonsterRelease &pending,TickContext tick) {
     const auto done=[] {return DomainResult<bool>{DomainStatus::Applied,true};};
-    const auto *body=ports_.monsters.find(pending.request.actor);if(!body || !body->assassinPet) return {DomainStatus::InvalidActor,{}};
+    const auto *body=ports_.monsters.find(pending.request.actor);if(!body) return {DomainStatus::InvalidActor,{}};
+    if(!body->assassinPet) return pending.nativeSkill && pending.nativeSkill->skill.assassin?releaseAssassinSkill(pending,tick):DomainResult<bool>{DomainStatus::InvalidActor,{}};
     const auto &catalog=*body->rule.formulas;const int skill=pending.request.skill,rank=pending.attack.rank;
     const auto &record=catalog.skills.at(skill);const int function=record.number("srvdofunc");
-    if(body->assassinPet->definition->warp) return releaseShadowSkill(pending,tick);
+    if(body->assassinPet->definition->warp) return releaseAssassinSkill(pending,tick);
     const auto unit=std::get<UnitTarget>(pending.request.target);
     if(function==55) {
         const auto result=ports_.effects.corpseExplosion(body->id,unit.id,skill,rank,tick.tick,pending.corpseExplosion);
@@ -175,6 +181,6 @@ DomainResult<bool> System::releaseAssassinPet(MonsterRelease &pending,TickContex
         }
         return done();
     }
-    return releaseShadowSkill(pending,tick);
+    return releaseAssassinSkill(pending,tick);
 }
 }

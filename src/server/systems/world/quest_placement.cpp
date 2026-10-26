@@ -160,6 +160,14 @@ void System::retainControllerRoom(RegionId region,Vec position,bool retain) {
     const auto index=size_t(room-layout.rooms().data());
     if(index<area.rooms.size()) area.rooms[index].portalRetained=retain;
 }
+void System::retainControllerUnitRoom(EntityId id,RegionId region,Vec position,bool retain) {
+    const auto found=ports_.areas.areas_.find(region);if(found==ports_.areas.areas_.end() || !id) return;
+    auto &area=found->second;const auto &layout=area.definition.activation;
+    const auto *room=layout.room(position);if(!room) return;
+    const auto index=size_t(room-layout.rooms().data());if(index>=area.rooms.size()) return;
+    auto &owners=area.rooms[index].controllerRetainers;
+    if(retain) owners.insert(id);else owners.erase(id);
+}
 std::optional<QuestPosition> System::questFreePosition(RegionId region,Vec roomPosition,Vec requested,int size,int radius,uint16_t mask) const {
     if(size<0 || radius<=1) return {};
     const auto &initial=ports_.areas.at(region).definition;

@@ -12,7 +12,7 @@ namespace {
 bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const TreasureSelection &selection,
     int itemLevel,std::string_view characterClass,int magicFind,int goldFind,std::optional<DropQuality> forcedQuality,
     bool superiorFloor,uint64_t &sourceRandom,LootPlan &plan,std::set<size_t> &selectedUniques,bool hellBovine,
-    const ItemSeedSource &seedSource,bool nativeCreation=false) {
+    const ItemSeedSource &seedSource,bool nativeCreation=false,int preferredPrefix=0,int preferredSuffix=0) {
     std::string_view code = selection.code;
     unsigned goldMultiplier = 256;
     if (code.size() >= 2 && code.front() == '"' && code.back() == '"')
@@ -131,7 +131,7 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
             auto generated = rollAffixItem(data, *item,
                                            requested == DropQuality::Magic ? ItemQuality::Magic
                                                                            : ItemQuality::Rare,
-                                           itemLevel, random, characterClass);
+                                           itemLevel, random, characterClass,preferredPrefix,preferredSuffix);
             random = generated.randomState;
             if (generated.deferred.empty()) {
                 const auto multiplier=generation.durabilityMultiplier;
@@ -247,10 +247,11 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
     return plan;
 }
 LootPlan planSelectedItem(const ClassicData &data,std::string_view code,int level,uint64_t seed,
-    const std::set<size_t> &used,std::string_view characterClass,std::optional<DropQuality> forcedQuality,bool superiorFloor,const ItemSeedSource &seeds) {
-    if(level<1 || (level>127 && !(data.pd2Host && level==131))) throw std::runtime_error("Selected item level is outside native bounds");
+    const std::set<size_t> &used,std::string_view characterClass,std::optional<DropQuality> forcedQuality,bool superiorFloor,const ItemSeedSource &seeds,
+    int preferredPrefix,int preferredSuffix) {
+    if(level<1 || level>(data.pd2Host?131:127)) throw std::runtime_error("Selected item level is outside native bounds");
     LootPlan plan;auto random=seed;auto uniques=used;
-    appendSelectedItem(data,data.tables.at("itemratio"),TreasureSelection{std::string(code),{},{}},level,characterClass,0,0,forcedQuality,superiorFloor,random,plan,uniques,false,seeds);
+    appendSelectedItem(data,data.tables.at("itemratio"),TreasureSelection{std::string(code),{},{}},level,characterClass,0,0,forcedQuality,superiorFloor,random,plan,uniques,false,seeds,false,preferredPrefix,preferredSuffix);
     plan.randomState=random;return plan;
 }
 LootPlan planCreatedItem(const ClassicData &data,std::string_view code,int level,

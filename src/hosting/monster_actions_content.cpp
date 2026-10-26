@@ -610,7 +610,8 @@ bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTa
             if(action.action==server::MonsterAttackRule::Action::Submerge && *frame==0 && action.submergeHoldFrame<0)
                 action.submergeHoldFrame=frames;
             action.animationFlags.push_back(uint8_t(sequences.number(row,"event").value_or(0)));
-            if(sequences.number(row,"event").value_or(0)==event) {
+            const int marker=sequences.number(row,"event").value_or(0);
+            if(action.sequenceSkillEvents?(marker==1 || marker==2 || marker==4):marker==event) {
                 action.animationEvents.push_back(frames);
                 action.releaseFrames.push_back(std::max(1,frames));
             }
@@ -809,7 +810,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         else if(name=="Baal Taunt" || name=="HellMeteor" || name=="Catapult Charged Ball" || name=="Catapult Spike Ball" || name=="CatapultBlizzard" || name=="CatapultPlague" || name=="CatapultMeteor") action.action=Action::NativeSpell;
         else if(name=="Baal Corpse Explode") {action.action=Action::NativeSpell;event=2;}
         else if(name=="Baal Cold Missiles") {action.action=Action::NativeSpell;event=1;}
-        else if(name=="Whirlwind") {action.action=Action::Whirlwind;event=1;}
+        else if(name=="Whirlwind") {action=baseAttack("A1");action.action=Action::Whirlwind;event=1;}
         else if(name=="Leap Attack") {action.action=Action::LeapAttack;event=1;}
         else if(name=="DiabRun") {action.action=Action::DiabloRun;event=1;}
         else if(name=="Cry Help") {action.action=Action::Rally;event=1;}

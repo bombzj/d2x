@@ -13,11 +13,13 @@
 
 namespace d2x::server::travel {
 // Travel/waypoint/portal transition preparation; destination content arrives through World.
-enum class Kind { Exit, Waypoint, Portal, Npc, SpecialPortal, QuestObject };
+enum class Kind { Exit, Waypoint, Portal, Npc, SpecialPortal, QuestObject, NativeObjectPortal };
 enum class SpecialPortalKind { Cow, Pandemonium, Finale, Tristram, CainRescue, Andariel, ArcaneCanyon, Tyrael, ActFive, AnyaTemple, BaalExit, Shrine };
 struct Request { Kind kind; UnitTarget source; std::optional<RegionId> destination; };
 struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, sequence{}; EntityId source; Vec approach, arrival; Kind kind=Kind::Exit; uint64_t npcConversation{}, waypointRevision{}; std::optional<uint64_t> arrivalGeneration{}; };
-struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{};std::optional<RoomView> fieldRoom{},townRoom{}; };
+struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{};std::optional<RoomView> fieldRoom{},townRoom{}; std::optional<bool> linkedOpened{};
+    bool isOpened(bool linked) const {return linked?linkedOpened.value_or(opened):opened;}
+};
 struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, revision{}; };
 struct PositionSynchronization { uint64_t until{}; std::array<uint64_t,5> attempts{}; };
 struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; std::shared_ptr<const pd2::MapInstance> pd2Map; EntityId pd2MapPortal;std::map<PlayerId,EntityId> mapReports;std::optional<ActorContext> pendingPd2Map; };
@@ -48,8 +50,9 @@ class System {
     DomainResult<> createPortal(const ActorContext &,std::optional<ItemHandle> = {},std::optional<int> skill = {});
     DomainResult<> createPd2Map(const ActorContext &,ItemHandle);
     DomainResult<SpecialPortalPlan> prepareSpecialPortal(const ActorContext &,SpecialPortalKind,uint64_t seed,std::optional<Vec> source = {});
-    DomainResult<SpecialPortalPlan> prepareNativePermanentPortal(RegionId,Vec,int destination,uint64_t tick);
+    DomainResult<SpecialPortalPlan> prepareNativePermanentPortal(RegionId,Vec,int destination,uint64_t tick,int definition=60);
     DomainResult<> linkNativePortal(EntityId source,uint64_t tick);
+    DomainResult<> useNativeObjectPortal(const ActorContext &,EntityId,std::optional<int> remoteRange={});
     void commitSpecialPortal(SpecialPortalPlan) noexcept;
     std::optional<Vec> portalPosition(const ActorContext &,EntityId) const;
     std::optional<std::pair<RegionId,Vec>> nativePortalPosition(EntityId) const;

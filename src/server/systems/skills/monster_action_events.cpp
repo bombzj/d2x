@@ -68,7 +68,8 @@ DomainResult<> System::monsterActionEvent(const FrameEvent &event,uint64_t tick)
     }
     bool scripted=false;
     const bool inferno=program.action==MonsterAttackRule::Action::Inferno;
-    const bool actionFlag=mode.step.event==program.animationEvent;
+    const bool actionFlag=program.animationSequence && program.sequenceSkillEvents?
+        mode.step.event==1 || mode.step.event==2 || mode.step.event==4:mode.step.event==program.animationEvent;
     if(!runtime_->monsters.contains(event.owner.unit) && actionFlag && mode.repeated)
         runtime_->monsters.emplace(event.owner.unit,*mode.repeated);
     const auto current=runtime_->monsters.find(event.owner.unit);

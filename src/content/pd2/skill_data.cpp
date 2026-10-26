@@ -14,6 +14,7 @@
 #include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/skills/grim_ward_spec.hpp"
 #include "gameplay/skills/leap_spec.hpp"
+#include "gameplay/skills/assassin_spec.hpp"
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>
@@ -58,6 +59,14 @@ SkillSpec preparePd2SkillDefinition(const ClassicData &data,size_t row) {
         if(program->doFunction==176 || program->doFunction==158) break;
         const auto name=table.value(row,std::array{"srvmissilea","srvmissileb","srvmissilec"}[slot]);
         if(!name.empty()) program->missiles[slot]=missile(name);
+    }
+    if(program->doFunction==43 && !program->startFunction) {
+        auto assassin=std::make_shared<AssassinSkillSpec>();
+        assassin->program=AssassinProgram::ShockWeb;assassin->doFunction=43;
+        spec.assassin=std::move(assassin);spec.missileId=program->missiles[0];
+    }
+    if(program->doFunction==68 && !program->startFunction) {
+        spec.effect=SkillBehavior::Shout;spec.linearDuration=std::pair{0,0};spec.warcry=true;
     }
     spec.pd2=std::move(program);
     return spec;

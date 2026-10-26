@@ -23,6 +23,12 @@
 
 #include "system_detail.hpp"
 namespace d2x::server::monsters {
+DomainResult<> System::directSound(EntityId id,uint16_t sound) {
+    const auto *unit=find(id);if(!unit) return {DomainStatus::InvalidActor,{}};
+    const auto sent=ports_.events.publish({0,ports_.frameEvents.currentFrame(),{}, {AudienceKind::Area,{},unit->area},
+        {SoundFact{id,1,unit->area,sound,true}}});
+    return {sent.status,sent?std::optional{std::monostate{}}:std::nullopt};
+}
 void System::maximumLife(EntityId id,int64_t value) {
     if(value<=0 || value>INT32_MAX) throw std::runtime_error("Monster maximum life outside native signed range");
     const auto found=state_.actors.find(id);if(found==state_.actors.end() || found->second.maximumLife==value) return;
@@ -220,12 +226,13 @@ std::vector<Actor> System::prepareMinionDeaths(Actor candidate,uint64_t tick,con
     for(const auto id:order) result.push_back(std::move(changed.at(id)));
     return result;
 }
-DomainResult<> System::scriptDeath(EntityId id,uint64_t tick,EntityId source) {
+DomainResult<> System::scriptDeath(EntityId id,uint64_t tick,EntityId source,bool suppressTreasure) {
     const auto *live=find(id);if(!live) return {DomainStatus::InvalidActor,{}};
     if(!live->alive()) return ports_.effects.monsterDeathEffect(id,tick);
     const auto &current=*live;
     auto prepared=prepareDeathActor(id,tick);if(!prepared) return {prepared.status,{}};
     auto unit=std::move(*prepared.value);if(source) unit.killer=source;
+    if(suppressTreasure) {unit.rule.noTreasure=true;unit.admissionRule=std::make_shared<const MonsterRule>(unit.rule);}
     auto cascades=prepareDeathSweep(unit,tick);
     auto publication=ports_.effects.prepareDamageStates(std::move(unit),{},tick);
     if(!ports_.effects.validateAuraUnits(publication)) return {DomainStatus::Stale,{}};

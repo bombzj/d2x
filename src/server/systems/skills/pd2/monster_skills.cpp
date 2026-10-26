@@ -142,7 +142,7 @@ DomainResult<> System::releasePd2MonsterSkill(MonsterRelease &pending,TickContex
         !row.number("srvstfunc") && row.number("srvdofunc")==155;
     if(!joust && !teleport && !pd2MonsterProjectileProgram(row.number("srvstfunc"),row.number("srvdofunc"))) return {DomainStatus::NotImplemented,{}};
     const auto victim=std::get<UnitTarget>(pending.request.target);
-    const auto destination=row.number("srvdofunc")==143?std::optional{caster->position()}:
+    const auto destination=row.number("srvdofunc")==143 || row.number("srvdofunc")==68?std::optional{caster->position()}:
         pending.request.position?pending.request.position:
         pending.launch?std::optional{pending.launch->second}:
         [&]()->std::optional<Vec> {

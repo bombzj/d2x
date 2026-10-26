@@ -84,6 +84,8 @@ StepStatus System::think(EntityId id,TickContext tick) {
         }
         ports_.monsters.scheduleAi(id,controller.nextDecision);return StepStatus::Complete;
     }
+    if(const auto found=state_.controllers.find(id);found!=state_.controllers.end() && found->second.pd2LootPending && pd2LootWaiting(id))
+        return StepStatus::Blocked;
     bool blocked=false, sampled=false;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     // One owner invocation. Early exits finish this native AI callback.
@@ -235,8 +237,14 @@ StepStatus System::think(EntityId id,TickContext tick) {
         // These families explicitly schedule AI while moving (AiThink /
         // AiBaal's trailing Idle); Madawc only does so for coordinate escape.
         const auto kind=monster.rule.ai.kind;
-        const bool timedMovement=kind==MonsterAiKind::Vulture || kind==MonsterAiKind::Baal ||
-            kind==MonsterAiKind::BaalClone || kind==MonsterAiKind::BaalMinion ||
+        const bool timedMovement=kind==MonsterAiKind::Vulture || kind==MonsterAiKind::Baal || kind==MonsterAiKind::ScriptedNpc ||
+            (monster.rule.stats && monster.rule.stats->pd2 && ((kind==MonsterAiKind::Brute && monster.rule.nativeClass==1103) ||
+             (kind==MonsterAiKind::SiegeBeast && monster.rule.nativeClass==1000) ||
+             (kind==MonsterAiKind::DoomKnight && monster.rule.nativeClass==1060) ||
+             (kind==MonsterAiKind::Fallen && monster.rule.ai.pd2Parameters[7][2]==1 && controller.pd2MovingTimer))) ||
+            kind==MonsterAiKind::BaalClone || (kind==MonsterAiKind::BaalMinion &&
+                !(monster.rule.stats && monster.rule.stats->pd2 && monster.rule.nativeClass!=938 &&
+                  (monster.rule.nativeClass==996 || monster.rule.ai.pd2Parameters[4][2]))) ||
             kind==MonsterAiKind::AncientTalic || kind==MonsterAiKind::AncientKorlic ||
             (kind==MonsterAiKind::AncientMadawc && !monster.movementTarget);
         if(!blind && !rescheduled && !timedMovement && !monster.burrowed && !monster.airborne &&
@@ -283,6 +291,9 @@ StepStatus System::think(EntityId id,TickContext tick) {
         }
         if(monster.rule.ai.kind==MonsterAiKind::NpcBarb) {
             blocked|=npcBarbFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::ScriptedNpc) {
+            blocked|=pd2ScriptedNpc(id,tick,controller)==StepStatus::Blocked;continue;
         }
         if(monster.rule.ai.kind==MonsterAiKind::CatapultSpotter) {
             blocked|=catapultSpotterFamily(id,tick,controller)==StepStatus::Blocked;continue;
@@ -380,6 +391,10 @@ StepStatus System::think(EntityId id,TickContext tick) {
             blocked|=tentacleFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;
         }
         if (!target) {
+            if(monster.rule.stats && monster.rule.stats->pd2)
+                if(const auto special=pd2SpecialAction(id,target,targetPosition,targetSize,distance,tick,controller)) {
+                    blocked|=*special==StepStatus::Blocked;continue;
+                }
             const auto kind=monster.rule.ai.kind;
             if(kind==MonsterAiKind::BaalTentacle) {blocked|=baalTentacleFamily(id,{},Vec{},0,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::SuicideMinion || monster.whippedAi) {blocked|=suicideMinionFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
@@ -446,6 +461,10 @@ StepStatus System::think(EntityId id,TickContext tick) {
             ports_.monsters.stop(id);controller.pursuing=false;controller.nextDecision=tick.tick+5;continue;
         }
         if(const auto unique=uniqueAction(id,*target,targetPosition,tick,controller)) {blocked|=*unique==StepStatus::Blocked;continue;}
+        if(monster.rule.stats && monster.rule.stats->pd2)
+            if(const auto special=pd2SpecialAction(id,target,targetPosition,targetSize,distance,tick,controller)) {
+                blocked|=*special==StepStatus::Blocked;continue;
+            }
         if(monster.rule.ai.kind==MonsterAiKind::FetishShaman) {
             blocked|=fetishShamanAction(id,target,targetPosition,tick,controller)==StepStatus::Blocked;continue;
         }

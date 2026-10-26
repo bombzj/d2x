@@ -7,6 +7,7 @@
 #include "server/systems/social/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/loot/system.hpp"
+#include "server/systems/maps/system.hpp"
 #include "gameplay/rewards/experience.hpp"
 #include <algorithm>
 
@@ -15,10 +16,11 @@ StepStatus System::advanceRewards(TickContext tick) {
     bool blocked = false;
     for (const auto &[id, monster] : ports_.monsters.read().actors) {
         if (monster.alive() || monster.rewardComplete) continue;
+        if(!ports_.maps.deathReady(monster)) continue;
         if(!monster.killer) {
             const PlayerState *beneficiary=nullptr;
             for(const auto &[key,player]:ports_.players.all()) {(void)key;if(player.entered && player.area==monster.area && player.persistent.player.hp>0) {beneficiary=&player;break;}}
-            if(!monster.rule.noTreasure && monster.enemyTarget() && beneficiary) {
+            if(!monster.rule.noTreasure && !ports_.maps.skipsTreasure(monster) && monster.enemyTarget() && beneficiary) {
                 LootRequest source;source.source=id;source.identity=monster.identity;source.region=monster.area;source.difficulty=monster.rule.difficulty;source.sourceSeed=true;source.rewardModifiers=monsterRewardModifiers(monster.rule.enchantment);source.monsterPlayerCount=monster.admittedPlayerCount;
                 loot::Request request{monster.deathOccurrence,source,beneficiary->player,monster.position};request.environment=true;
                 const auto queued=ports_.loot.queue(request);if(!queued && isDeferred(queued.status)) {blocked=true;continue;}
@@ -81,7 +83,7 @@ StepStatus System::advanceRewards(TickContext tick) {
             }
             reward->second.phase=RewardPhase::Loot;
         }
-        if(reward->second.phase==RewardPhase::Loot && monster.rule.noTreasure) reward->second.phase=RewardPhase::PlayerExperience;
+        if(reward->second.phase==RewardPhase::Loot && (monster.rule.noTreasure || ports_.maps.skipsTreasure(monster))) reward->second.phase=RewardPhase::PlayerExperience;
         if (reward->second.phase==RewardPhase::Loot) {
             LootRequest source; source.source = id; source.identity = monster.identity; source.region = monster.area; source.difficulty = monster.rule.difficulty; source.sourceSeed = true; source.rewardModifiers=monsterRewardModifiers(monster.rule.enchantment);
             source.monsterPlayerCount=monster.admittedPlayerCount;

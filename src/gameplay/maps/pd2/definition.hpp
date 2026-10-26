@@ -1,12 +1,15 @@
 #pragma once
 #include "property_program.hpp"
 #include "loot_program.hpp"
+#include "portal_program.hpp"
 #include "gameplay/items/handle.hpp"
 #include "gameplay/effects/definition.hpp"
+#include "core/math.hpp"
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace d2x::pd2 {
 // Current core 37A740: unsigned (level - 137) < 74. This is a
@@ -18,6 +21,8 @@ struct MapCatalog {
     CombatStateDefinition state;
     MapLootRules loot;
     std::map<std::string,MapItemDefinition,std::less<>> items;
+    struct SceneUnique {bool eligible{},socketable{};};
+    std::vector<SceneUnique> sceneUniques;
 };
 // Runtime map identity is the consumed item revision. This is deliberately
 // absent from character saves: a map belongs to its game, never to a D2S.
@@ -28,5 +33,7 @@ struct MapInstance {
     std::shared_ptr<const MapCatalog> catalog;
     MapProperties properties;
     uint8_t quality{};
+    int controller{};
+    uint32_t initSeed{};
 };
 }

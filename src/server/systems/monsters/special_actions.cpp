@@ -453,7 +453,7 @@ DomainResult<> System::reserveNestSpawn(EntityId id,Vec position,bool active,uin
     ++unit.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<EntityId> System::spawnNativeNestChild(EntityId id,Vec position,uint64_t tick,
-    const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision,std::optional<int> fallbackClass) {
+    const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision,std::optional<int> fallbackClass,int attempts,bool storedOwner) {
     const auto *source=find(id);if(!source) return {DomainStatus::InvalidActor,{}};
     if(source->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     const auto &area=ports_.areas.at(source->area).definition;
@@ -465,15 +465,16 @@ DomainResult<EntityId> System::spawnNativeNestChild(EntityId id,Vec position,uin
     const auto room=ports_.areas.roomAtPosition(source->area,source->position,int(std::floor(global.x)),int(std::floor(global.y)));
     if(!room) return {DomainStatus::Unavailable,{}};
     const auto loan=ports_.areas.roomRandom(*room);if(!loan) return {loan.status,{}};
-    auto identity=child.identity;identity.ownerSpawnKey.clear();identity.origin=SpawnOrigin::Summoned;
+    auto identity=child.identity;identity.ownerSpawnKey.clear();identity.origin=SpawnOrigin::Summoned;identity.pd2Binding=-1;
     identity.spawnKey=source->identity.spawnKey+".native-child."+std::to_string(ports_.ids.cursor());
     auto rule=child.rule;rule.noTreasure=rule.noExperience=true;
-    auto birth=prepareRoomSpawn({identity,child.implementation,room->area,global-ports_.areas.at(room->area).definition.origin,true,std::move(rule),{},tick},*loan.value,1,{},false,collision);
+    auto birth=prepareRoomSpawn({identity,child.implementation,room->area,global-ports_.areas.at(room->area).definition.origin,true,std::move(rule),{},tick},*loan.value,attempts,{},false,collision);
     if(!birth) return {birth.status,{}};
     if(!(*birth.value)->validate()) return {DomainStatus::Stale,{}};
     const auto born=(*birth.value)->actor();(*birth.value)->publish();
     if(born) {
         auto &unit=state_.actors.at(born);unit.rewardComplete=true;
+        if(storedOwner) setStoredOwner(unit,id);
         auto &parent=state_.actors.at(id);++parent.nestSpawned;++parent.revision;
     }
     return {DomainStatus::Applied,born};

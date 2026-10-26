@@ -18,8 +18,8 @@ namespace d2x::server::monsters {struct NativeBirthBatch;}
 namespace d2x::server::objects {
 // Runtime doors/chests/shrines/wells/quest objects; resource-only map decorations are separate.
 struct Request { UnitTarget target; };
-struct Admission { int definition{}; RegionId area; Vec position; std::optional<int> shrine,trap; int mode{}; uint64_t tick{};std::optional<RoomView> room{}; };
-struct Object { EntityId id; int definition{}; RegionId area; Vec position; uint64_t revision{}; int mode{}; ObjectRule rule; uint64_t until{}, reset{}; bool pending{}; int uses{}; uint64_t random{},hazardAt{},trapAt{}; int phase{},trap{}; PlayerId operatorId{}; bool specialPending{}; int spawnCount{},spawned{}; bool trapWarned{};uint64_t lootAt{};bool urnPending{},resurrected{};uint8_t sparkChest{},portalDestination{};uint64_t portalAt{}; };
+struct Admission { int definition{}; RegionId area; Vec position; std::optional<int> shrine,trap; int mode{}; uint64_t tick{};std::optional<RoomView> room{}; int pd2Binding{-1};bool collisionReleased{};EntityId nativePortalOwner{};std::optional<pd2::MapPortalProgram> pd2Portal{}; };
+struct Object { EntityId id; int definition{}; RegionId area; Vec position; uint64_t revision{}; int mode{}; ObjectRule rule; uint64_t until{}, reset{}; bool pending{}; int uses{}; uint64_t random{},hazardAt{},trapAt{}; int phase{},trap{}; PlayerId operatorId{}; bool specialPending{}; int spawnCount{},spawned{}; bool trapWarned{};uint64_t lootAt{};bool urnPending{},resurrected{};uint8_t sparkChest{},portalDestination{};uint64_t portalAt{}; int pd2Binding{-1};bool collisionReleased{};EntityId nativePortalOwner{};std::optional<pd2::MapPortalProgram> pd2Portal{}; };
 struct State { std::map<EntityId, Object> objects; std::optional<uint64_t> controlRandom; };
 struct ObjectRegionPopulation {
   uint64_t generation{};
@@ -33,7 +33,7 @@ struct GroundGenerationRequest {
   uint64_t request{};std::string code;int level{},difficulty{};ItemSeeds seeds;
   std::set<size_t> uniques;
 };
-struct Ports { const PlayerStore &players; AreaStore &areas; quests::System &quests; loot::System &loot; effects::System &effects; transactions::System &transactions; EntityIds &ids; world::System &world; monsters::System &monsters; const GameSettings &settings; inventory::System &inventory; travel::System &travel; skills::System &skills; EventOutbox &events; combat::System &combat; missiles::System &missiles; MovementSystem &movement; uint64_t &random; const spatial::System &spatial; items::System &items; FrameEventQueue &frameEvents; population::System &population; };
+struct Ports { const PlayerStore &players; AreaStore &areas; quests::System &quests; loot::System &loot; effects::System &effects; transactions::System &transactions; EntityIds &ids; world::System &world; monsters::System &monsters; const GameSettings &settings; inventory::System &inventory; travel::System &travel; skills::System &skills; EventOutbox &events; combat::System &combat; missiles::System &missiles; MovementSystem &movement; uint64_t &random; const spatial::System &spatial; items::System &items; FrameEventQueue &frameEvents; population::System &population; maps::System &maps; };
 class System {
     State state_;
     const Ports ports_;
@@ -70,6 +70,7 @@ class System {
       uint64_t frame{},reset{};
       bool locked{};
       uint8_t sparkChest{},portalDestination{};
+      int pd2Binding{-1};bool collisionReleased{};EntityId nativePortalOwner{};std::optional<pd2::MapPortalProgram> pd2Portal{};
     };
     std::map<std::pair<RegionId,size_t>,std::vector<InactiveObject>> inactive_;
     struct GroundGeneration {
@@ -86,6 +87,7 @@ class System {
     StepStatus populateRandomRoom(RegionId,size_t,TickContext);
     void collision(RegionId);
     void schedule(Object &);
+    void restoreNativePortalReferences(EntityId previous,EntityId current);
     DomainResult<> shrine(const ActorContext &, Object &);
     DomainResult<> specialShrine(const ActorContext &, Object &);
     DomainResult<> shrineMissiles(const ActorContext &,Object &);
@@ -98,6 +100,8 @@ class System {
       const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> prepareSoulPlaceholder(Object &,uint64_t tick,uint64_t &random,uint64_t &controlRandom,EntityIds &,
       monsters::NativeBirthBatch &,std::optional<RoomRandomLoan> &,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<EntityId> preparePairedPreset(const Object &,int definition,uint64_t tick,uint64_t &random,EntityIds &,
+      monsters::NativeBirthBatch &,std::optional<RoomRandomLoan> &);
     StepStatus hazardStep(TickContext,EntityId);
     struct TrapClock {uint64_t next{},release{},interruption{};int shots{};uint8_t mode{4};Vec aim;EntityId target;bool waiting{};int direction{};uint64_t delayUntil{},admissionRevision{};};
     std::map<EntityId,TrapClock> traps_;
@@ -125,6 +129,9 @@ class System {
     DomainResult<> execute(const ActorContext &, const Request &, std::optional<int> remoteRange = {});
     DomainResult<> openMonsterDoor(EntityId,Vec destination,uint64_t tick);
     DomainResult<> openOrbMist(EntityId,uint64_t tick);
+    DomainResult<> openNativeBlocker(EntityId,uint64_t tick);
+    DomainResult<> linkNativePortals(EntityId source,EntityId destination,bool mutual,uint64_t tick);
+    DomainResult<> setNativeMode(EntityId,int mode,uint64_t tick,bool animate=false);
     void activateAncientStatues(const std::array<EntityId,3> &,uint64_t tick);
     DomainResult<> openTowerChest(EntityId,uint64_t tick);
     DomainResult<> towerGold(GroundLocation,uint64_t tick);

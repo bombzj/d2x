@@ -19,5 +19,6 @@ struct MonsterIdentity {
     std::optional<size_t> presetOrder;
     std::string spawnParentKey;
     int nativeClass{-1}; // Numeric presets retain their exact MonStats row, including duplicate names.
+    int pd2Binding{-1}; // Current map controller slot; only the authored leader owns it.
 };
 } // namespace d2x

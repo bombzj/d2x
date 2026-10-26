@@ -151,6 +151,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         const bool returning=portal.town==actor.area && portal.townId==request.source.id;
         if(!returning && !(portal.field==actor.area && portal.fieldId==request.source.id)) continue;
         (void)destination;
+        if(!portal.isOpened(returning)) return {DomainStatus::Unavailable,{}};
         const auto target=returning?portal.field:portal.town;
         if(!ports_.quests.allowsTravel(p->persistent.player,actor.area,target)) return {DomainStatus::Conflict,{}};
         if(int(portal.town)==39 && p->persistent.player.cowKingKilled.at(size_t(p->persistent.difficulty))) return {DomainStatus::Unavailable,{}};

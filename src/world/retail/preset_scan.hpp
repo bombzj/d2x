@@ -14,6 +14,7 @@ struct RetailPresetUnit {
 using RetailPresetKey = std::tuple<int, int, int, int, int>; // level, preset, file, mapX, mapY
 // Current-MPQ linker identities only, without gameplay population or actors.
 class RetailPresetScan {
+    bool pd2_{};
     std::map<int, uint32_t> objectSubclasses_;
     std::array<std::vector<int>, 5> monsterPresets_;
     int monsterCount_{}, uniqueCount_{};

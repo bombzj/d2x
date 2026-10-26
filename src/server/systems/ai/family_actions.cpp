@@ -281,6 +281,11 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     controller.phase = monster.rule.ai.kind==MonsterAiKind::Countess?firewallPhase:decision->phase; controller.loop = decision->loop;controller.upgradeCooldown=decision->upgradeCooldown;
     if(boss) controller.summonChance=boss->summonChance;
     if(monster.rule.ai.kind==MonsterAiKind::Fetish && input.commanded) controller.commanded=false;
+    // 357730 posts Idle(2 * aidel(H)) before delegating Fn007. A delegate's
+    // explicit Idle replaces that event; a mode/path change retains it.
+    if(monster.rule.stats && monster.rule.stats->pd2 && monster.rule.ai.kind==MonsterAiKind::Brute &&
+       monster.rule.nativeClass==1103 && !decision->waitFrames)
+        actionWait=std::max(actionWait,tick.tick+uint64_t(2*monster.rule.ai.pd2FixedIdle));
     controller.nextDecision = std::max(actionWait,tick.tick + uint64_t(std::max(1, decision->waitFrames)));
     return StepStatus::Complete;
 }

@@ -263,6 +263,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     if(state_.objects.size()>=65536 || ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
     auto ids=ports_.ids;
     const auto id=ids.allocate();Object object{id,request.definition,request.area,request.position,1,request.mode,std::move(rule)};
+    object.pd2Binding=request.pd2Binding;object.collisionReleased=request.collisionReleased;object.nativePortalOwner=request.nativePortalOwner;object.pd2Portal=request.pd2Portal;
     auto random=ports_.random;
     auto controlRandom=state_.controlRandom.value();
     object.uses=2*object.rule.parameters[2];initialize(object,request.tick,random,controlRandom);
@@ -313,7 +314,8 @@ void System::compressRoom(RegionId region,size_t index,uint64_t tick) {
             if(mode==1 && !rule.cycleOperating && rule.openedMode) mode=2;
             const int trap=rule.chest?int(rule.chest->trap):rule.trap;
             saved.insert(saved.begin(),{id,preset,region,object.position,object.definition,mode,object.uses,trap,
-                rule.shrine?rule.shrine->code:0,tick,object.reset,rule.chest && rule.chest->locked,object.sparkChest,object.portalDestination});
+                rule.shrine?rule.shrine->code:0,tick,object.reset,rule.chest && rule.chest->locked,object.sparkChest,object.portalDestination,
+                object.pd2Binding,object.collisionReleased,object.nativePortalOwner,object.pd2Portal});
         }
         ports_.frameEvents.cancelOwner({FrameEventUnit::Object,id});
         ports_.areas.removeRoomUnit(id);
@@ -328,10 +330,14 @@ StepStatus System::restoreRoom(RegionId region,size_t index,uint64_t tick) {
     auto &saved=found->second;
     while(!saved.empty()) {
         const auto &source=saved.front();
-        const auto restored=admit({source.definition,region,source.position,{},{},source.mode,tick});
+        if(std::any_of(state_.objects.begin(),state_.objects.end(),[&](const auto &entry) {
+            return entry.second.nativePortalOwner==source.previous && entry.second.revision==UINT64_MAX;
+        })) return StepStatus::Blocked;
+        const auto restored=admit({source.definition,region,source.position,{},{},source.mode,tick,{},source.pd2Binding,source.collisionReleased,source.nativePortalOwner,source.pd2Portal});
         if(!restored) return isDeferred(restored.status) || restored.status==DomainStatus::Conflict || restored.status==DomainStatus::Stale?
             StepStatus::Blocked:StepStatus::NotImplemented;
         const auto id=*restored.value;auto &object=state_.objects.at(id);
+        restoreNativePortalReferences(source.previous,id);
         object.resurrected=true;
         if((object.rule.subClass&1) && source.frame) {
             if(source.shrine) object.rule.shrine=ports_.areas.at(region).definition.shrineRules.at(source.shrine);

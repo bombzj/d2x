@@ -16,6 +16,7 @@
 #include "server/systems/effects/system.hpp"
 #include "server/systems/combat/system.hpp"
 #include "server/systems/death/system.hpp"
+#include "server/systems/maps/system.hpp"
 #include "server/systems/companions/system.hpp"
 #include "server/systems/objects/system.hpp"
 #include "server/systems/npc/system.hpp"

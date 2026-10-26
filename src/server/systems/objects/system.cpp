@@ -14,6 +14,7 @@
 #include "server/systems/skills/system.hpp"
 #include "server/systems/quests/system.hpp"
 #include "server/systems/population/system.hpp"
+#include "server/systems/maps/system.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "world/interaction_geometry.hpp"
@@ -32,6 +33,8 @@ bool System::waypointArrival(const Object &object) const {
     });
 }
 void System::publishInitialization(const Object &object) {
+    ports_.maps.bind(object.pd2Binding,object.id,object.area,object.position,true);
+    if(ports_.maps.opensBlockerOnBirth(object.definition)) openNativeBlocker(object.id,ports_.frameEvents.currentFrame());
     ports_.quests.registerCainObject(object.id,object.definition,object.rule.initialization,object.area,object.position);
     if(waypointArrival(object)) waypointArrivals_.clear();
     if(object.portalAt) ports_.world.retainControllerRoom(object.area,object.position,true);
@@ -98,7 +101,7 @@ void System::collision(RegionId area) {
         schedule(object);
         const auto &rule = object.rule; const auto mode = size_t(object.mode);
         const bool statueReleased=rule.initialization>=63 && rule.initialization<=65 && (object.mode==3 || object.mode==4);
-        const bool colliding=rule.collision[mode] && !statueReleased;
+        const bool colliding=rule.collision[mode] && !statueReleased && !object.collisionReleased;
         if (rule.width <= 0 || rule.height <= 0 || !colliding) continue;
         values.push_back({id, int(object.position.x) - rule.width / 2, int(object.position.y) - rule.height / 2,
             rule.width, rule.height, rule.collisionMask, (rule.collisionMask & 0x22) != 0});
@@ -177,6 +180,9 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (object.pending || object.specialPending || object.revision == UINT64_MAX) return {DomainStatus::Conflict, {}};
     if(!remoteRange) ports_.movement.execute(actor,{MovementAction::Stop,{},false});
     if(rule.operation==15) return ports_.travel.useSpecial(actor,{travel::Kind::Portal,{object.id,object.revision,2},{}},remoteRange);
+    if((rule.operation==77 || rule.operation==80) && object.nativePortalOwner)
+        return ports_.travel.useNativeObjectPortal(actor,object.id,remoteRange);
+    if(rule.operation==80 && object.definition==600) return ports_.maps.operateTome(actor,object.id);
     if(rule.operation==23) {
         if(object.mode!=0 && object.mode!=1 && object.mode!=2) return {DomainStatus::Conflict,{}};
         // Native operation23 first activates and animates; only an operating
@@ -369,8 +375,8 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
         }
         if(source.questSpawn && (ports_.quests.read().actTwo.tomb!=region || !ports_.quests.read().actTwo.tombAt || tick.tick<ports_.quests.read().actTwo.tombAt)) continue;
         if(state_.objects.size()>=65536) return StepStatus::Blocked;
-        Object object{source.id,source.type,region,source.position,1,0,source.rule,0,0,false,2*source.rule.parameters[2]};
-        object.resurrected=true;
+        Object object{source.id,source.type,region,source.position,1,source.initialMode,source.rule,0,0,false,2*source.rule.parameters[2]};
+        object.resurrected=true;object.pd2Binding=source.pd2BirthClass>=0?-1:source.pd2Binding;object.pd2Portal=source.pd2Portal;
         auto random=ports_.random,controlRandom=state_.controlRandom.value();
         if(source.preset==580 || source.preset==581) {
             int selected=0;
@@ -396,6 +402,7 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
         if(source.rule.operation==10 && int(region)==38 && ports_.quests.read().actOne.cainRescued) object.mode=5;
         if(source.rule.operation==9 && int(region)==4 && ports_.quests.read().actOne.restoreCairnStones) object.mode=2;
         initialize(object,tick.tick,random,controlRandom);
+        if(object.pd2Portal) {object.mode=object.pd2Portal->sourceMode;object.until=0;}
         auto ids=ports_.ids;
         std::vector<std::pair<items::PreparedBatch,GroundLocation>> gold;
         std::vector<EntityId> goldIds;
@@ -405,6 +412,12 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
         std::optional<RoomRandomLoan> soulRandom;
         const auto souls=prepareSoulPlaceholder(object,tick.tick,random,controlRandom,ids,births,soulRandom,ports_.spatial.nativeCollisionSample());
         if(!souls) return isDeferred(souls.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+        EntityId paired;
+        if(source.pd2BirthClass>=0) {
+            const auto born=preparePairedPreset(object,source.pd2BirthClass,tick.tick,random,ids,births,soulRandom);
+            if(!born) return isDeferred(born.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+            paired=*born.value;
+        }
         auto actors=ports_.monsters.prepareActorPublication(std::move(births.actors),size_t(ids.cursor()-ports_.ids.cursor()));
         auto room=ports_.areas.prepareRoomUnit(source.id,2,region,object.position);
         const auto installed=ports_.items.installNativeGroundBatch(gold,tick.tick,goldIds,actors.identities);
@@ -421,6 +434,12 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
             towerChests_.push_back(source.id);
         ports_.monsters.publishBirthComponents(births);ports_.monsters.publishActors(actors);
         ports_.areas.publishRoomUnit(*room);
+        if(paired) {
+            const auto *unit=ports_.monsters.find(paired);
+            ports_.maps.bind(0,paired,unit->area,unit->position,false);
+            auto &object=state_.objects.at(source.id);object.pd2Binding=source.pd2Binding;
+            ports_.maps.bind(object.pd2Binding,object.id,object.area,object.position,true);
+        }
         if(soulRandom) ports_.areas.publishRoomRandom(*soulRandom);
         ports_.random=random;state_.controlRandom=controlRandom;changed.insert(region);
         collision(region);

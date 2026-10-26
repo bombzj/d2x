@@ -13,9 +13,10 @@
 namespace d2x::server::travel {
 namespace {
 std::array<NativeFootprint,2> portalFootprints(const AreaStore &areas,const Portal &portal) {
-    if(!portal.rule.collision[size_t(portal.opened?2:1)]) return {};
-    return {areas.rectangleFootprint(portal.field,portal.fieldPosition,portal.rule.width,portal.rule.height,portal.rule.collisionMask),
-        areas.rectangleFootprint(portal.town,portal.townPosition,portal.rule.width,portal.rule.height,portal.rule.collisionMask)};
+    std::array<NativeFootprint,2> result{};
+    if(portal.rule.collision[size_t(portal.isOpened(false)?2:1)]) result[0]=areas.rectangleFootprint(portal.field,portal.fieldPosition,portal.rule.width,portal.rule.height,portal.rule.collisionMask);
+    if(portal.rule.collision[size_t(portal.isOpened(true)?2:1)]) result[1]=areas.rectangleFootprint(portal.town,portal.townPosition,portal.rule.width,portal.rule.height,portal.rule.collisionMask);
+    return result;
 }
 template<class Key>
 void publishPortalCollision(AreaStore &areas,const std::map<Key,Portal> &before,const std::map<Key,Portal> &after) {
@@ -154,11 +155,14 @@ DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext 
     if(!level || (kind!=SpecialPortalKind::Shrine && exists(level))) return {DomainStatus::Conflict,{}};
     return prepareWorldPortal(actor.area,level,actor.tick,source.value_or(p->position),*rule,blue,false,kind==SpecialPortalKind::Tyrael);
 }
-DomainResult<SpecialPortalPlan> System::prepareNativePermanentPortal(RegionId region,Vec position,int destination,uint64_t tick) {
+DomainResult<SpecialPortalPlan> System::prepareNativePermanentPortal(RegionId region,Vec position,int destination,uint64_t tick,int definition) {
     const auto *area=ports_.areas.find(region);
     if(!area || destination<1 || destination>255) return {DomainStatus::InvalidRequest,{}};
-    if(!area->definition.specialPortalRule || area->definition.specialPortalRule->definition!=60) return {DomainStatus::Unavailable,{}};
-    return prepareWorldPortal(region,destination,tick,position,*area->definition.specialPortalRule,false,true);
+    const auto custom=area->definition.questPortalRules.find(definition);
+    const auto *rule=custom!=area->definition.questPortalRules.end()?&custom->second:
+        area->definition.specialPortalRule && area->definition.specialPortalRule->definition==definition?&*area->definition.specialPortalRule:nullptr;
+    if(!rule) return {DomainStatus::Unavailable,{}};
+    return prepareWorldPortal(region,destination,tick,position,*rule,false,true);
 }
 DomainResult<> System::linkNativePortal(EntityId source,uint64_t tick) {
     if(state_.specialPortals.contains(source)) {nativeLinks_.erase(source);return {DomainStatus::Applied,std::monostate{}};}
@@ -231,6 +235,7 @@ DomainResult<SpecialPortalPlan> System::prepareWorldPortal(RegionId region,int l
     if(!from || !to) return {DomainStatus::Conflict,{}};
     SpecialPortalPlan plan{state_.specialPortals};
     Portal portal{{},{},ports_.items.reserveIdentity(),ports_.items.reserveIdentity(),{},region,nativeTo?nativeTo->area:RegionId(level),*from,*to,rule,tick,1,true,true};
+    if(rule.openingTicks>0) {portal.opened=false;portal.ready=tick+uint64_t(rule.openingTicks);portal.linkedOpened=true;}
     if(nativeTo) portal.townRoom=nativeTo->room;
     plan.next.emplace(portal.fieldId,std::move(portal));return {DomainStatus::Applied,std::move(plan)};
 }

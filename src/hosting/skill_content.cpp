@@ -9,6 +9,7 @@
 #include "gameplay/skills/spec.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/skills/aura_data.hpp"
+#include "content/skills/assassin_data.hpp"
 #include "content/skills/table_values.hpp"
 #include "server/runtime/prepared_rules.hpp"
 #include "gameplay/skills/behavior.hpp"
@@ -234,6 +235,17 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             prepared->definitions.emplace(skill,server::SkillDefinition{spec.rules(),false,{}});
         }
     }
+    if(data.pd2Host) for(size_t row=0;row<skillTable.rows().size();++row) {
+        if(!skillTable.value(row,"charclass").empty() || skillTable.number(row,"srvstfunc")!=23 || skillTable.number(row,"srvdofunc")!=170) continue;
+        const int id=skillTableNumber(skillTable,row,"Id");
+        auto spec=preparePd2SkillDefinition(data,row);spec.effect=SkillBehavior::WeaponProjectile;
+        spec.assassin=prepareAssassinProgram(data,row);spec.state=spec.assassin->state;
+        auto &weapon=spec.weapon.emplace();weapon.requiredType=skillTable.value(row,"itypea1");weapon.mode=spec.assassin->mode;
+        weapon.attackRating=skillTable.number(row,"ToHit").value_or(0);weapon.attackRatingPerLevel=skillTable.number(row,"LevToHit").value_or(0);
+        weapon.interruptible=skillTable.number(row,"interrupt").value_or(0)!=0;
+        spec.missileId=spec.assassin->missiles[0];
+        prepared->definitions.emplace(id,server::SkillDefinition{std::move(spec),skillTable.number(row,"InTown").value_or(0)!=0,{}});
+    }
     // Do124 also belongs to monster skills such as Diablogeddon. Prepare its
     // state and active callback without adding it to a character skill tree.
     for(size_t row=0;row<skillTable.rows().size();++row) {
@@ -252,6 +264,29 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         spec.hitShift=skillTableNumber(skillTable,row,"HitShift",SkillNumberPolicy::BlankIsZero);
         spec.hitClass=skillTableNumber(skillTable,row,"HitClass",SkillNumberPolicy::BlankIsZero);
         prepared->definitions.emplace(id,server::SkillDefinition{std::move(spec),skillTable.number(row,"InTown").value_or(0)!=0,{}});
+    }
+    if(data.pd2Host) for(size_t row=0;row<skillTable.rows().size();++row) {
+        if(!skillTable.value(row,"charclass").empty() || skillTable.number(row,"srvstfunc")!=57 || skillTable.number(row,"srvdofunc")!=121) continue;
+        const int id=skillTableNumber(skillTable,row,"Id");
+        auto program=std::make_shared<DruidSkillSpec>();program->program=DruidProgram::Rabies;
+        program->startFunction=57;program->doFunction=121;
+        const auto state=skillTable.value(row,"auratargetstate");
+        if(!state.empty()) program->targetState=data.states.at(std::string(state)).definition;
+        for(size_t index=0;index<program->missiles.size();++index) {
+            const auto name=skillTable.value(row,std::array{"srvmissilea","srvmissileb","srvmissilec"}[index]);
+            if(!name.empty()) program->missiles[index]=skillTableNumber(data.tables.at("missiles"),findSkillTableRow(data.tables.at("missiles"),"Missile",name),"Id");
+        }
+        auto spec=preparePd2SkillDefinition(data,row);spec.effect=SkillBehavior::WeaponProjectile;
+        spec.missileId=program->missiles[0];
+        const auto element=skillTable.value(row,"EType");
+        spec.fireDamage=element=="fire";spec.coldDamage=element=="cold";spec.poisonDamage=element=="pois";
+        spec.physicalDamageCurve=element.empty();
+        spec.druid=std::move(program);spec.weapon.emplace();
+        spec.weapon->startFunction=57;spec.weapon->doFunction=121;
+        spec.weapon->attackRating=skillTable.number(row,"ToHit").value_or(0);
+        spec.weapon->attackRatingPerLevel=skillTable.number(row,"LevToHit").value_or(0);
+        spec.weapon->interruptible=skillTable.number(row,"interrupt").value_or(0)!=0;
+        prepared->definitions.insert_or_assign(id,server::SkillDefinition{spec.rules(),skillTable.number(row,"InTown").value_or(0)!=0,{}});
     }
     if(data.pd2Host) for(size_t row=0;row<skillTable.rows().size();++row) {
         if(!skillTable.value(row,"charclass").empty() || skillTable.number(row,"srvstfunc").value_or(0) || skillTable.number(row,"ItemEffect")!=1) continue;
@@ -309,11 +344,16 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         definition.itemCheckStart=skillTable.number(row,"ItemCheckStart").value_or(0)!=0;break;
     }
     const auto &petTypes=data.tables.at("pettype");
+    for(size_t pet=0;pet<petTypes.rows().size();++pet) if(!petTypes.value(pet,"pet type").empty())
+        prepared->petTypeBaseLimits.emplace(petTypes.number(pet,"idx").value_or(int(pet)),petTypes.number(pet,"basemax").value_or(0));
     for(size_t row=0;row<skillTable.rows().size();++row) {
         const auto type=skillTable.value(row,"pettype");if(type.empty()) continue;
-        for(size_t pet=0;pet<petTypes.rows().size();++pet)
-            if(petTypes.value(pet,"pet type")==type && petTypes.number(pet,"unsummon").value_or(0))
-                prepared->dismissibleSummons.insert(skillTable.number(row,"Id").value());
+        for(size_t pet=0;pet<petTypes.rows().size();++pet) if(petTypes.value(pet,"pet type")==type) {
+            if(const auto id=skillTable.number(row,"Id")) {
+                prepared->skillPetTypes.emplace(*id,petTypes.number(pet,"idx").value_or(int(pet)));
+                if(petTypes.number(pet,"unsummon").value_or(0)) prepared->dismissibleSummons.insert(*id);
+            }
+        }
     }
     if(data.skills.hydra) prepared->hydra=prepareHydraRules(data,*data.skills.hydra);
     for(const auto &[skill,definition]:data.skills.hydraPrograms)

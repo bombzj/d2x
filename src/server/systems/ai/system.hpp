@@ -13,6 +13,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <utility>
 namespace d2x::server::monsters {struct Actor;}
 
 namespace d2x::server::ai {
@@ -45,10 +46,12 @@ struct Controller {
     std::optional<Vec> homeCommand; // Native command10's global coordinates, captured on first boss think.
     uint64_t randomExpected{};
     bool randomPublished{};
+    bool pd2LootPending{};
+    bool pd2MovingTimer{};
     std::deque<std::function<DomainResult<>()>> pending;
 };
 struct State { std::map<EntityId, Controller> controllers; };
-struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; quests::System &quests; const travel::System &travel; uint32_t &pd2Random; };
+struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; quests::System &quests; const travel::System &travel; uint32_t &pd2Random; loot::System &loot; maps::System &maps; const world::System &world; };
 class System {
     State state_;
     const Ports ports_;
@@ -104,6 +107,19 @@ class System {
     StepStatus reanimatedHordeFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
     StepStatus pd2Leoric(EntityId,UnitTarget,Vec,int,int,TickContext,Controller &);
     StepStatus pd2Guardian(EntityId,UnitTarget,TickContext,Controller &);
+    DomainResult<> setPd2AiStats(Controller &,TickContext,std::vector<std::pair<std::string,int32_t>>);
+    StepStatus usePd2Skill(Controller &,const actions::MonsterCastRequest &,std::optional<int> wait={},bool waitAfter=false);
+    DomainResult<> walkToTargetWithFallback(Controller &,UnitTarget,Vec,TickContext);
+    std::optional<StepStatus> pd2SpecialAction(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    std::optional<StepStatus> pd2Willowisp(EntityId,std::optional<UnitTarget>,TickContext,Controller &);
+    StepStatus pd2Warlord(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    std::optional<StepStatus> pd2DemonPillar(EntityId,TickContext,Controller &);
+    std::optional<StepStatus> pd2RathmaSpire(EntityId,TickContext,Controller &);
+    StepStatus pd2ScriptedNpc(EntityId,TickContext,Controller &);
+    DomainResult<> setPd2Guard(Controller &,TickContext,bool active);
+    std::optional<StepStatus> pd2ArcherAction(EntityId,std::optional<UnitTarget>,TickContext,Controller &);
+    StepStatus pd2TreasureFallen(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    bool pd2LootWaiting(EntityId) const;
     StepStatus megademonFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
     std::optional<StepStatus> uniqueAction(EntityId,UnitTarget,Vec,TickContext,Controller &);
     void commandParty(const monsters::Actor &);

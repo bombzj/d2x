@@ -38,6 +38,7 @@ DomainResult<> System::compressRoom(RegionId region,size_t index,uint64_t tick) 
         }
         if(unit.rule.restore==0) compress=false;
         else if(unit.rule.restore==2) compress=true;
+        if(unit.nativeRevive) compress=false;
         decisions.emplace_back(id,compress);
         if(compress) {
             const auto prepared=ports_.effects.prepareUnitCurseRemoval(removal,id,tick);

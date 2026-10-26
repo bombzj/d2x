@@ -9,6 +9,10 @@
 #include <string_view>
 
 namespace d2x::pd2 {
+// Current 1019A3D0 constructs an ordered set, not a random engine. Its
+// values are native one-based MagicPrefix identities; MPQ owns the rolls.
+inline constexpr std::array<int,21> sceneCharmPrefixes{
+    430,431,432,442,443,444,454,455,456,466,467,468,478,479,480,490,491,492,502,503,504};
 struct MapLootRules {
     struct Chance {uint16_t denominator{},factor{};};
     struct UniqueMap {std::string code;int uniqueRow{-1};};

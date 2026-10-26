@@ -1042,6 +1042,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     case 0x2C: {
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Sound;
         event.source = key(r); event.auxiliary = r.u16(); r.finish();
+        if(event.source.type>=0xf0) {
+            event.source.type=uint8_t(event.source.type-0xf0);
+            if(event.source.type>=9) break;
+            event.directSound=true;
+        }
         combatEvent(w, std::move(event));
         break;
     }

@@ -19,7 +19,7 @@ namespace d2x::server::companions {
 enum class Kind { Hireling, Summon, IronGolem };
 enum class Action { Hire, Resurrect, Dismiss, List, Equipment, Potion };
 struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; std::optional<ItemHandle> item{}; bool belt{}; };
-struct ShadowDecision;struct DruidDecision;
+struct ShadowDecision;struct DruidDecision;struct Pd2ShadowFollow;
 struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint16_t> sourceSkill;
     int rank{}, attackSkill{}; uint64_t expires{}, nextDecision{}, release{}, removeAt{}; EntityId target{};
     uint64_t ownerTeleport{}; int attackBias{},projectedSkillBonus{};
@@ -30,6 +30,7 @@ struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint
     EntityId assassinMissile{},lastCorpse{};
     bool shadowInitialized{},nativePetMoving{};
     std::shared_ptr<ShadowDecision> shadowDecision{};
+    std::shared_ptr<Pd2ShadowFollow> pd2ShadowFollow{};
     std::shared_ptr<DruidDecision> druidDecision{};
     std::optional<actions::MonsterCastRequest> pendingAction{};
     std::optional<AuraDefinition> pendingAura{};

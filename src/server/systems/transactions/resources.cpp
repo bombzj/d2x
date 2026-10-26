@@ -10,6 +10,20 @@
 #include <utility>
 #include <vector>
 namespace d2x::server::transactions {
+DomainResult<> System::incrementPd2Counter(const ActorContext &actor,size_t index) {
+    const auto found=ports_.players.players_.find(actor.player);
+    if(found==ports_.players.players_.end()) return {DomainStatus::InvalidActor,{}};
+    auto &player=found->second;const auto *area=ports_.areas.find(actor.area);
+    if(!player.entered || player.actor!=actor.actor || player.area!=actor.area || !area || area->generation!=actor.areaGeneration ||
+       !player.rules.character || !player.rules.character->maps) return {DomainStatus::InvalidActor,{}};
+    if(index>=player.pd2SessionCounters.size()) return {DomainStatus::InvalidRequest,{}};
+    if(player.characterRevision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    if(!player.persistent.player.pd2Counters) player.persistent.player.pd2Counters.emplace();
+    auto &total=player.persistent.player.pd2Counters->at(index);
+    total=uint16_t(total+1);player.pd2SessionCounters[index]=uint16_t(player.pd2SessionCounters[index]+1);
+    ++player.characterRevision;player.totals.sourceRevision=player.characterRevision;
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::consumeRoomRandom(const RoomRandomLoan &loan) {
     if(!ports_.areas.validateRoomRandom(loan)) return {DomainStatus::Stale,{}};
     ports_.areas.publishRoomRandom(loan);return {DomainStatus::Applied,std::monostate{}};

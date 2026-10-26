@@ -247,7 +247,8 @@ void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryC
                 return p.type == source.type && p.id == source.id;
             });
             const int originalClass = source.type == 2
-                ? originalObjectClass(source, region.map.terrain.data.version, region.map.terrain.data.act) : -1;
+                ? (archives.pd2Presets?pd2ObjectClass(source,region.map.terrain.data.version,region.map.terrain.data.act):
+                   originalObjectClass(source, region.map.terrain.data.version, region.map.terrain.data.act)) : -1;
             int resolvedClass = resolveAct1ChestPreset(originalClass, int(region.definition.id), region.objectSeed);
             if (originalClass == 582 && int(region.definition.id) == 74) {
                 const auto missing = size_t(region.staffTombLevel - 66);

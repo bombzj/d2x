@@ -173,6 +173,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     std::erase_if(state_.portals,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);if(p && p->entered) return false;writePortalCollision(entry.second,false);return true;});
     std::erase_if(state_.waypoints,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || p->area!=entry.second.area || p->persistent.player.hp<=0;});
     for(auto &[owner,portal]:state_.portals) { (void)owner; if(!portal.opened && tick.tick>=portal.ready) {writePortalCollision(portal,false);portal.opened=true;++portal.revision;writePortalCollision(portal,true);} }
+    for(auto &[id,portal]:state_.specialPortals) { (void)id; if(!portal.opened && tick.tick>=portal.ready) {writePortalCollision(portal,false);portal.opened=true;++portal.revision;writePortalCollision(portal,true);} }
     for (auto pending = state_.transitions.begin(); pending != state_.transitions.end();) {
         const auto found = ports_.players.players_.find(pending->first);
         auto &transition = pending->second;
@@ -240,6 +241,17 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             arrival=transition.arrival;
         }
         std::optional<Vec> exitWalk;
+        if(transition.kind==Kind::NativeObjectPortal) {
+            const auto portal=ports_.objects.read().objects.find(transition.source);
+            const auto &objects=ports_.objects.read().objects;
+            if(portal==objects.end() || portal->second.area!=transition.from || portal->second.mode!=2 ||
+               int(transition.to)!=portal->second.portalDestination || !ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to)) {
+                pending=state_.transitions.erase(pending);continue;
+            }
+            const auto target=objects.find(portal->second.nativePortalOwner);
+            if(target==objects.end() || target->second.area!=transition.to) {pending=state_.transitions.erase(pending);continue;}
+            arrival=target->second.position;
+        }
         if(transition.kind==Kind::SpecialPortal && (!ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to) || std::none_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.fieldId==transition.source || entry.second.townId==transition.source;}))) {pending=state_.transitions.erase(pending);continue;}
         if (transition.kind==Kind::Portal) {
             const auto portal=std::find_if(state_.portals.begin(),state_.portals.end(),[&](const auto &entry){

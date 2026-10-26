@@ -20,9 +20,10 @@ std::optional<Preparation> System::beginPreparation(EntityId source) {
         if(pending.monsterSeed) if(const auto *monster=ports_.monsters.find(source)) {
             pending.seed=monster->combatRandom;pending.monsterSeed=pending.seed;
             const auto *beneficiary=ports_.players.find(pending.request.beneficiary);
-            if(monster->nativeStats && monster->rule.stats && monster->rule.stats->pd2 && beneficiary &&
-                beneficiary->rules.character && beneficiary->rules.character->maps && !pending.request.source.ignoreNoDrop) {
-                pending.pd2Loot=beneficiary->rules.character->maps;
+            const auto catalog=beneficiary && beneficiary->rules.character?beneficiary->rules.character->maps:
+                pending.pd2Map?pending.pd2Map->catalog:std::shared_ptr<const pd2::MapCatalog>{};
+            if(monster->nativeStats && monster->rule.stats && monster->rule.stats->pd2 && catalog && !pending.request.source.ignoreNoDrop) {
+                pending.pd2Loot=catalog;
                 const int identity=monster->identity.nativeClass>=0?monster->identity.nativeClass:monster->rule.nativeClass;
                 const int players=int(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;}));
                 pending.pd2Monster=pd2::MapMonsterLoot{monster->pd2DeathStats?*monster->pd2DeathStats:monster->nativeStats->values,pending.pd2Loot->loot.bosses.contains(identity),
@@ -63,10 +64,21 @@ std::set<size_t> System::prepareUniques(const std::set<size_t> &additions) const
     auto next=state_.uniques; next.insert(additions.begin(),additions.end()); return next;
 }
 DomainResult<> System::queue(const Request &request,std::optional<transactions::CharacterEdit> payment) {
-    if (state_.pending.contains(request.source.source)) return {DomainStatus::Applied, std::monostate{}};
+    if(request.nativeDrops.size()>1 || (!request.nativeDrops.empty() &&
+        (request.object || request.towerGold || request.source.sourceSeed))) return {DomainStatus::InvalidRequest,{}};
+    for(const auto &drop:request.nativeDrops) if((drop.code.empty() && !drop.uniqueRow) || drop.level<1 ||
+        drop.level>131 || drop.preferredPrefix<-1 || drop.preferredSuffix<-1) return {DomainStatus::InvalidRequest,{}};
+    if(const auto pending=state_.pending.find(request.source.source);pending!=state_.pending.end()) {
+        const auto &prior=pending->second.request;
+        if(prior.occurrence==request.occurrence && prior.environment==request.environment &&
+           prior.reportCompletion==request.reportCompletion && prior.nativeDrops==request.nativeDrops) return {DomainStatus::Applied,std::monostate{}};
+        // Another native drop by the same unit is a distinct invocation.
+        // In particular, death must wait for a living unit's pending drop.
+        return {DomainStatus::Capacity,{}};
+    }
     if (state_.pending.size() >= 256 || state_.nextOrder==UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto *player = ports_.players.find(request.beneficiary);
-    const bool ownerless=request.environment && !request.beneficiary.value && (request.object || request.towerGold);
+    const bool ownerless=request.environment && !request.beneficiary.value && (request.object || request.towerGold || request.source.sourceSeed || !request.nativeDrops.empty());
     if (!player && !ownerless) return {DomainStatus::InvalidActor, {}};
     if(ownerless && (payment || request.questClaimant || (request.object && (request.object->key.id || request.object->ingredient.id))))
         return {DomainStatus::InvalidRequest,{}};
@@ -104,6 +116,7 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
         const auto committed=ports_.transactions.commit(std::move(*plan.value));if(!committed) return committed;
     }
     state_.pending.merge(candidate);
+    for(const auto &drop:request.nativeDrops) if(drop.resetUnique && drop.uniqueRow) state_.uniques.erase(*drop.uniqueRow);
     ++state_.nextOrder;
     return {DomainStatus::Applied, std::monostate{}};
 }
@@ -119,7 +132,11 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
             state_.deferred=std::move(deferred);
             return {DomainStatus::Conflict,{}};
         }
-        if(request.object && request.object->reportCompletion) state_.completed.insert_or_assign(source, false);
+        if(pd2Random && !request.nativeDrops.empty()) {
+            if(found->second.pd2Random!=ports_.pd2Random) return {DomainStatus::Stale,{}};
+            ports_.pd2Random=*pd2Random;
+        }
+        if(request.reportCompletion || (request.object && request.object->reportCompletion)) state_.completed.insert_or_assign(source, false);
         state_.deferred = std::move(deferred); state_.pending.erase(found);
         return {DomainStatus::Applied, std::monostate{}};
     }
@@ -148,7 +165,7 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
     }
     batch=*found->second.prepared;
     const bool ownerless=request.environment && !request.beneficiary.value;
-    if(ownerless && request.object) {
+    if(ownerless && (request.object || !request.nativeDrops.empty())) {
         const auto *area=ports_.areas.find(request.source.region);
         if(!area || !batch.equipment) return {DomainStatus::InvalidRequest,{}};
         const auto global=request.position+area->definition.origin;
@@ -165,14 +182,15 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
             return mask;
         };
         for(auto &item:batch.items) {
-            const auto position=ports_.areas.nativeFreeSpace(*room,int(global.x),int(global.y),1,collision);
+            const auto position=!request.nativeDrops.empty() && request.nativeDrops.front().exactPosition?
+                std::optional<RoomPoint>{{*room,request.position}}:ports_.areas.nativeFreeSpace(*room,int(global.x),int(global.y),1,collision);
             if(!position) continue;
             items::PreparedBatch single;single.equipment=batch.equipment;
             single.items.push_back(std::move(item));
             placed.emplace_back(std::move(single),GroundLocation{position->room.area,position->position});
         }
         auto completions=state_.completed;
-        if(request.object->reportCompletion) completions.insert_or_assign(source,true);
+        if(request.reportCompletion || (request.object && request.object->reportCompletion)) completions.insert_or_assign(source,true);
         const auto installed=ports_.items.installNativeGroundBatch(placed,tick.tick);
         if(!installed) return installed;
         state_.completed.swap(completions);state_.pending.erase(found);state_.deferred.clear();
@@ -191,7 +209,7 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
         return {DomainStatus::Capacity, {}};
     // Allocate follow-up bookkeeping before any authority is committed.
     auto completions = state_.completed;
-    if (request.object && request.object->reportCompletion) completions.insert_or_assign(source, true);
+    if(request.reportCompletion || (request.object && request.object->reportCompletion)) completions.insert_or_assign(source,true);
     auto next = ports_.items.prepare(std::move(batch), {request.source.region, request.position});
     if (!next) return {next.status, {}};
     std::vector<DomainFact> drops;

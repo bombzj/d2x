@@ -5,8 +5,8 @@
 
 namespace d2x::server::combat {
 int hirelingDamagePercent(const monsters::Actor &source, const monsters::Actor &target) {
-    return damageClassPercentage({false,source.hireling,source.revived(),source.rule.boss,source.rule.primeEvil},
-        {false,target.hireling,target.revived(),target.rule.boss,target.rule.primeEvil},
+    return damageClassPercentage({false,source.hireling,source.reviveFlag(),source.rule.boss,source.rule.primeEvil},
+        {false,target.hireling,target.reviveFlag(),target.rule.boss,target.rule.primeEvil},
         source.rule.hirelingBossDamagePercent,source.id==target.id);
 }
 WeaponHitEffects weaponHitEffects(const WeaponSkillDamage &attack, const monsters::Actor &target, EntityId source,

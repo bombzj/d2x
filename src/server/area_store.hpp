@@ -10,8 +10,10 @@
 #include "gameplay/monsters/native_spawn.hpp"
 #include "gameplay/monsters/region_generation.hpp"
 #include "gameplay/environment/time.hpp"
+#include "gameplay/maps/pd2/portal_program.hpp"
 #include "server/systems/spatial/footprint_metrics.hpp"
 #include <map>
+#include <set>
 #include <cstdint>
 #include <stdexcept>
 #include <utility>
@@ -44,7 +46,7 @@ struct RoomRandomLoan {RoomView room;uint64_t areaGeneration{},revision{},expect
 // Prepared collision values only. No Map, DT1, Archives or renderer handles.
 struct AreaExit { EntityId id; RegionId destination; int warp{}, slot{}; Vec position, arrival; bool requiresQuest{}; Vec exitWalk; };
 struct AreaBoundary { RegionId destination; int side{}, plane{}, start{}, end{}; };
-struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; bool questSpawn{}; int preset{}; std::optional<size_t> presetOrder{}; };
+struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; bool questSpawn{}; int preset{}; std::optional<size_t> presetOrder{}; int initialMode{}; int pd2Binding{-1}; int pd2BirthClass{-1}; std::optional<pd2::MapPortalProgram> pd2Portal{}; };
 struct PortalRule {
     int definition{},range{},openingTicks{};
     int width{},height{};uint16_t collisionMask{};std::array<bool,8> collision{};
@@ -106,6 +108,8 @@ struct AreaDefinition : AreaMetadata {
         bool prisonDoor{};
         std::optional<Vec> sourcePosition;
         bool extraMapBoss{}; // A second native preset invocation; order remains the authored DS1 identity.
+        int pd2Binding{-1};
+        bool ignoreSpawnCollision{};
     };
     std::vector<NativePresetMonster> nativePresetMonsters;
     std::map<std::string,NativePresetMonster,std::less<>> nativeQuestMonsters;
@@ -162,6 +166,7 @@ struct AreaState {
         uint64_t creationOrder{};
         std::array<EntityId,4> lastDead{};
         uint8_t deathIndex{};
+        std::set<EntityId> controllerRetainers;
     };
     std::vector<RoomState> rooms{};
     std::vector<EntityId> unitHeads{}; // Native pUnitFirst, separate from room residency.

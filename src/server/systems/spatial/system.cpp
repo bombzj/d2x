@@ -48,9 +48,8 @@ std::optional<NativeFootprint> System::targetFootprint(EntityId target) const {
     if(item!=ports_.items.read().world.items.end()) if(const auto *at=std::get_if<GroundLocation>(&item->second.location))
         return ports_.areas.rectangleFootprint(at->region,at->position,1,1,0x200);
     const auto portal=[&](const travel::Portal &value)->std::optional<NativeFootprint> {
-        if(!value.rule.collision[size_t(value.opened?2:1)]) return {};
-        if(value.fieldId==target) return ports_.areas.rectangleFootprint(value.field,value.fieldPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
-        if(value.townId==target) return ports_.areas.rectangleFootprint(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
+        if(value.fieldId==target && value.rule.collision[size_t(value.isOpened(false)?2:1)]) return ports_.areas.rectangleFootprint(value.field,value.fieldPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
+        if(value.townId==target && value.rule.collision[size_t(value.isOpened(true)?2:1)]) return ports_.areas.rectangleFootprint(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
         return {};
     };
     for(const auto &[id,value]:ports_.travel.read().portals) { (void)id;if(auto footprint=portal(value)) return footprint; }
@@ -104,9 +103,8 @@ void System::restoreRoomFootprints(RoomView room) const {
         (void)id;if(const auto *at=std::get_if<GroundLocation>(&item.location)) rectangle(at->region,at->position,1,1,0x200);
     }
     const auto portal=[&](const travel::Portal &value) {
-        if(!value.rule.collision[size_t(value.opened?2:1)]) return;
-        rectangle(value.field,value.fieldPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
-        rectangle(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
+        if(value.rule.collision[size_t(value.isOpened(false)?2:1)]) rectangle(value.field,value.fieldPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
+        if(value.rule.collision[size_t(value.isOpened(true)?2:1)]) rectangle(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
     };
     for(const auto &[id,value]:ports_.travel.read().portals) {(void)id;portal(value);}
     for(const auto &[id,value]:ports_.travel.read().specialPortals) {(void)id;portal(value);}

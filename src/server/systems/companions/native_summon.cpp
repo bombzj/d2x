@@ -104,6 +104,13 @@ DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpe
     if(shadow) {
         auto &skills=summon.native->prePassiveSkills;
         if(!prepared.rule.baseSkillRanks.contains(0)) skills.emplace_back(0,1);
+        if(ai==AssassinPetDefinition::Ai::ShadowWarrior && owner->rules.skills->pd2 &&
+           pet->definition->inheritOwnerSkills && actor.actor==owner->actor)
+            for(const auto &[id,rank]:owner->totals.skillRanks) {
+                const auto row=owner->rules.skills->formulas->skills.find(id);
+                if(row!=owner->rules.skills->formulas->skills.end() && row->second.classId==int(owner->definition.sourceRow))
+                    skills.emplace_back(id,std::max(rank/2+skill.rank/3,1));
+            }
         if(ai==AssassinPetDefinition::Ai::ShadowMaster && pet->definition->inheritOwnerSkills) for(const auto &[id,row]:owner->rules.skills->formulas->skills) {
             if(row.classId!=int(owner->definition.sourceRow)) continue;
             const auto definition=owner->rules.skills->definitions.find(id);

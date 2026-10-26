@@ -35,6 +35,7 @@ class Archives {
   public:
     std::vector<std::string> names;
     mutable std::set<std::string> used;
+    bool pd2Presets{}; // Selected by the frozen PD2 resource mount, before preparing rooms.
     // Selected language resource set (shared by every consumer of this mount).
     // Primitive fields keep resources independent of content definitions.
     std::string languageDirectory{"eng"};

@@ -112,8 +112,8 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             delta.push_back(encodeServerPacket(ServerMessage::MonsterClassHint,[&](auto &out){out.u16(hint->nativeClass);}));
         }
         else if(const auto *sound=std::get_if<server::SoundFact>(&fact)) {
-            if(!visibleActor(sound->actor,sound->type)) continue;
-            delta.push_back(encodeServerPacket(ServerMessage::UnitSound,[&](auto &out){out.u8(sound->type);out.u32(uint32_t(sound->actor.value));out.u16(sound->sound);}));
+            if(!sound->directSound && !visibleActor(sound->actor,sound->type)) continue;
+            delta.push_back(encodeServerPacket(ServerMessage::UnitSound,[&](auto &out){out.u8(uint8_t(sound->type+(sound->directSound?0xf0:0)));out.u32(uint32_t(sound->actor.value));out.u16(sound->sound);}));
         }
         else if(const auto *overlay=std::get_if<server::OverlayFact>(&fact)) {
             if(!visibleActor(overlay->actor,overlay->type)) continue;

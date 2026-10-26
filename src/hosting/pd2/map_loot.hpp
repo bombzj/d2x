@@ -7,4 +7,5 @@ namespace d2x {
 LootPlan planPd2MapLoot(const ClassicData &,const server::loot::Preparation &,const MonsterLootEntry &,const ItemSeedSource &);
 void preparePd2MapItemDrop(const pd2::MapProperties &,LootDrop &,uint32_t &programRandom);
 void finishPd2MapItemDrop(const ClassicData &,const pd2::MapProperties &,ItemInstance &,uint64_t &itemRandom,uint32_t &programRandom);
+bool applyPd2RandomSockets(const ClassicData &,ItemInstance &,uint64_t &itemRandom);
 }

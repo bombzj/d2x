@@ -81,8 +81,8 @@ const RemoteScene::Impl::BoneArmorVisual &RemoteScene::Impl::boneArmorVisual(
 }
 
 void RemoteScene::Impl::emitSound(PresentationSoundEvent::Kind kind, const OnlineUnit &source, float age,
-               int skill, float releaseTime, std::string sound, int mode) {
-    soundEvents.push_back({kind,effectOwner(source.key),source.actionRevision,skill,age,releaseTime,std::move(sound),mode});
+               int skill, float releaseTime, std::string sound, int mode,int nativeSound) {
+    soundEvents.push_back({kind,effectOwner(source.key),source.actionRevision,skill,age,releaseTime,std::move(sound),mode,nativeSound});
 }
 
 void RemoteScene::Impl::monsterSoundEvent(const OnlineCombatEvent &event, const OnlineUnit &source, float age) {
@@ -1256,6 +1256,11 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 std::chrono::steady_clock::now().time_since_epoch()).count());
             const float age = event.receivedMilliseconds && now >= event.receivedMilliseconds
                 ? float(now-event.receivedMilliseconds)/1000.f : 0.f;
+            if(event.directSound) {
+                if(source!=v.world.units.end() && age<=.25f)
+                    emitSound(PresentationSoundEvent::Kind::Original,source->second,age,-1,-1,{},-1,int(event.auxiliary));
+                continue;
+            }
             if (source != v.world.units.end() && event.source.type==0 && event.auxiliary==2 && age<=.25f)
                 emitSound(PresentationSoundEvent::Kind::LevelUp,source->second,age);
             if (source != v.world.units.end() && age <= .25f) {

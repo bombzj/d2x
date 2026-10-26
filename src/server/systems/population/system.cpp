@@ -5,10 +5,12 @@
 #include "server/systems/monsters/native_birth.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "server/systems/world/system.hpp"
+#include "server/systems/maps/system.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "core/random.hpp"
 #include "gameplay/quest/catalog.hpp"
+#include "gameplay/maps/pd2/region_program.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iterator>
@@ -161,6 +163,10 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
     auto &population=state_.areas.at(region);
     auto &cursor=object?object->cursor:quest?quest->cursor:preset?population.presets[{preset->order,preset->extraMapBoss}]:population.density[roomIndex];
     const auto &bounds=definition.activation.rooms().at(roomIndex);
+    if(!preset && definition.pd2Map && pd2::suppressMapRoomPopulation(int(region),definition.pd2Map->controller,
+        int(bounds.x+definition.origin.x),int(bounds.y+definition.origin.y),bounds.width,bounds.height)) {
+        cursor.initialized=true;cursor.phase=DensityRoom::Phase::Done;return StepStatus::Complete;
+    }
     const auto &rules=definition.populationRules;
     for(const auto &[id,unit]:ports_.monsters.read().actors)
         if(unit.area==region && unit.identity.origin!=SpawnOrigin::Debug && !unit.owner &&
@@ -227,6 +233,7 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
         identity.rank=prototype->second.rule.boss?MonsterRank::Boss:MonsterRank::Normal;
         if(preset && preset->rank!=MonsterRank::Normal) identity.rank=preset->rank;
         identity.superUnique.clear();identity.ownerSpawnKey.clear();identity.spawnParentKey.clear();
+        identity.pd2Binding=preset && cursor.phase==DensityRoom::Phase::Leader && !preset->extraMapBoss?preset->pd2Binding:-1;
         if(preset) {
             if(!quest && !object) identity.presetOrder=preset->order;
             if(object) identity.origin=SpawnOrigin::Summoned;
@@ -236,6 +243,7 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
         const auto &family=rules.classes.at(type);
         monsters::Admission admission{identity,prototype->second.implementation,region,point,family.hostile,prototype->second.rule,{},tick.tick};
         admission.uncounted=preset && preset->place==8 && cursor.phase==DensityRoom::Phase::Leader;
+        admission.ignoreSpawnCollision=preset && cursor.phase==DensityRoom::Phase::Leader && preset->ignoreSpawnCollision;
         if(object && object->birthTicks && cursor.phase==DensityRoom::Phase::Leader) admission.birthTicks=object->birthTicks;
         admission.resurrected=presetIndex.has_value() && cursor.phase==DensityRoom::Phase::Leader;
         if(preset && cursor.phase==DensityRoom::Phase::Leader) admission.skillPositions=preset->skillPositions;
@@ -255,7 +263,10 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
     };
     const auto publish=[&](const std::shared_ptr<monsters::NativeBirthPublication> &birth) {
         if(!birth->validate()) return false;
-        birth->publish();return true;
+        birth->publish();
+        if(const auto *unit=ports_.monsters.find(birth->actor());unit && unit->identity.pd2Binding>=0)
+            ports_.maps.bind(unit->identity.pd2Binding,unit->id,unit->area,unit->position,false);
+        return true;
     };
     const auto key=[&](std::string_view suffix) {
         if(object) return std::string(object->elite?"object.urn.":object->birthTicks?"object.trap.":"object.afterglow.")+std::to_string(object->source.value)+"."+std::to_string(object->occurrence)+"."+std::string(suffix);

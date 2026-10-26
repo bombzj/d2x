@@ -116,6 +116,10 @@ DomainResult<> System::monsterWhirlwindEvent(const FrameEvent &event,uint64_t ti
                     const auto skill=evaluateNativeSkill(*caster,ports_.effects,pending.request.skill,found->second,tick);
                     missiles::Spawn request{caster->context(ports_.areas,tick),skill,{},source->position,true};
                     WeaponSkillDamage weapon;weapon.weapon=source->petWeapon.value_or(WeaponDamage{});weapon.level=caster->level();request.weapon=weapon;
+                    if(!source->petWeapon) {
+                        request.nativeMeleeContact=std::make_shared<combat::NativeSkillContact>();
+                        request.nativeMeleeContact->monsterProgram=pending.attack;
+                    }
                     const auto occurrence=(uint64_t{1}<<54)|(++runtime_->nativeKickOccurrence);request.nativeMeleeOccurrence=occurrence;
                     const auto contact=ports_.missiles.directContact(request,{target});
                     if(!contact) {--runtime_->nativeKickOccurrence;return {contact.status,{}};}

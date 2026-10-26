@@ -10,6 +10,16 @@
 #include "server/systems/missiles/native_birth.hpp"
 #include "server/systems/spatial/system.hpp"
 namespace d2x::server::objects {
+DomainResult<> System::openNativeBlocker(EntityId id,uint64_t tick) {
+    const auto found=state_.objects.find(id);
+    if(found==state_.objects.end()) return {DomainStatus::Applied,std::monostate{}};
+    auto &object=found->second;
+    if(object.collisionReleased) return {DomainStatus::Applied,std::monostate{}};
+    if(object.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    object.mode=1;object.until=tick+object.rule.openingTicks;object.collisionReleased=true;
+    ++object.revision;collision(object.area);
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::openTowerChest(EntityId id,uint64_t tick) {
     const auto found=state_.objects.find(id);
     if(found==state_.objects.end()) return {DomainStatus::Applied,std::monostate{}};

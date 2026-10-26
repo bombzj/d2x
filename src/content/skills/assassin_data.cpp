@@ -93,9 +93,60 @@ AssassinProgram program(int function) {
     }
 }
 }
-void loadAssassinSkills(ClassicData &data,Archives &archives) {
+std::shared_ptr<AssassinSkillSpec> prepareAssassinProgram(const ClassicData &data,size_t row) {
     const auto &skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
     const auto &monsters=data.tables.at("monstats"),&pets=data.tables.at("pettype");
+    const bool amazon=data.pd2Host && skills.value(row,"charclass")=="ama" &&
+        (skills.number(row,"srvdofunc")==16 || skills.number(row,"srvdofunc")==49);
+    auto native=std::make_shared<AssassinSkillSpec>();
+    native->startFunction=uint16_t(skills.number(row,"srvstfunc").value_or(0));
+    native->doFunction=uint16_t(skills.number(row,"srvdofunc").value_or(0));
+    native->program=amazon?AssassinProgram::Shadow:native->doFunction==170?(skills.value(row,"anim")=="A2"?AssassinProgram::ElementalCharge:AssassinProgram::Charge):program(native->doFunction);
+    native->mode=skills.value(row,"anim");
+    for(auto &letter:native->mode) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+    native->sequence=skills.number(row,"seqnum").value_or(-1);
+    native->useAttackRate=skills.number(row,"UseAttackRate").value_or(0)!=0;
+    native->useManaOnDo=skills.number(row,"usemanaondo").value_or(0)!=0;
+    const auto state=[&](std::string_view field) {
+        const auto name=skills.value(row,field);if(name.empty()) return CombatStateDefinition{};
+        const auto found=data.states.find(name);
+        if(found==data.states.end()) throw std::runtime_error("Missing original assassin state");
+        return found->second.definition;
+    };
+    native->state=state("aurastate");native->targetState=state("auratargetstate");
+    if(amazon && native->doFunction==16) native->state=data.states.at("valkyrie").definition;
+    if(native->program==AssassinProgram::MindBlast) {
+        native->conversionState=data.states.at("conversion").definition;
+        native->conversionSaveState=data.states.at("conversion_save").definition;
+    }
+    if(const auto name=skills.value(row,"tgtoverlay");!name.empty())
+        native->targetOverlay=int(findSkillTableRow(data.tables.at("overlay"),"overlay",name));
+    native->progressiveStack=skills.number(row,"prgstack").value_or(0)!=0;
+    native->progressiveDamage=skills.number(row,"prgdam").value_or(0);
+    const auto stat=[&](std::string_view field) {
+        const auto name=skills.value(row,field);if(name.empty()) return -1;
+        const auto found=data.nativeStats->names.find(name);
+        if(found==data.nativeStats->names.end()) throw std::runtime_error("Missing original assassin stat");
+        return int(found->second);
+    };
+    if(skills.number(row,"progressive").value_or(0)) {
+        native->chargeStat=stat("aurastat1");native->chargeHitStat=stat("aurastat2");
+        if(native->chargeStat<0 || native->state.id<0) throw std::runtime_error("Missing progressive list definition");
+    }
+    for(size_t index=0;index<3;++index) {
+        native->progressiveFunctions[index]=uint16_t(skills.number(row,"srvprgfunc"+std::to_string(index+1)).value_or(0));
+        const auto name=skills.value(row,std::array{"srvmissilea","srvmissileb","srvmissilec"}[index]);
+        if(!name.empty()) native->missiles[index]=skillTableNumber(missiles,findSkillTableRow(missiles,"Missile",name),"Id");
+    }
+    native->summon=skills.value(row,"summon");
+    if(!native->summon.empty()) {
+        native->summonClass=compiledMonsterIndex(monsters,findSkillTableRow(monsters,"Id",native->summon));
+        native->petType=skillTableNumber(pets,findSkillTableRow(pets,"pet type",skills.value(row,"pettype")),"idx");
+    }
+    return native;
+}
+void loadAssassinSkills(ClassicData &data,Archives &archives) {
+    const auto &skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
     for(size_t row=0;row<skills.rows().size();++row) {
         const bool amazon=data.pd2Host && skills.value(row,"charclass")=="ama" &&
             (skills.number(row,"srvdofunc")==16 || skills.number(row,"srvdofunc")==49);
@@ -109,54 +160,11 @@ void loadAssassinSkills(ClassicData &data,Archives &archives) {
                 throw std::runtime_error("Missing original assassin passive state");
             continue;
         }
-        auto native=std::make_shared<AssassinSkillSpec>();
-        native->startFunction=uint16_t(skills.number(row,"srvstfunc").value_or(0));
-        native->doFunction=uint16_t(skills.number(row,"srvdofunc").value_or(0));
-        if(data.pd2Host && !amazon && native->doFunction!=42 && native->doFunction!=43 && native->doFunction!=44 && native->doFunction!=45 &&
-           native->doFunction!=46 && native->doFunction!=47 && native->doFunction!=48 && native->doFunction!=49 &&
-           native->doFunction!=50 && native->doFunction!=51 && native->doFunction!=54 && native->doFunction!=170 && native->doFunction!=178) continue;
-        native->program=amazon?AssassinProgram::Shadow:native->doFunction==170?(skills.value(row,"anim")=="A2"?AssassinProgram::ElementalCharge:AssassinProgram::Charge):program(native->doFunction);
-        native->mode=skills.value(row,"anim");
-        for(auto &letter:native->mode) letter=char(std::tolower(static_cast<unsigned char>(letter)));
-        native->sequence=skills.number(row,"seqnum").value_or(-1);
-        native->useAttackRate=skills.number(row,"UseAttackRate").value_or(0)!=0;
-        native->useManaOnDo=skills.number(row,"usemanaondo").value_or(0)!=0;
-        const auto state=[&](std::string_view field) {
-            const auto name=skills.value(row,field);if(name.empty()) return CombatStateDefinition{};
-            const auto found=data.states.find(name);
-            if(found==data.states.end()) throw std::runtime_error("Missing original assassin state");
-            return found->second.definition;
-        };
-        native->state=state("aurastate");native->targetState=state("auratargetstate");
-        if(amazon && native->doFunction==16) native->state=data.states.at("valkyrie").definition;
-        if(native->program==AssassinProgram::MindBlast) {
-            native->conversionState=data.states.at("conversion").definition;
-            native->conversionSaveState=data.states.at("conversion_save").definition;
-        }
-        if(const auto name=skills.value(row,"tgtoverlay");!name.empty())
-            native->targetOverlay=int(findSkillTableRow(data.tables.at("overlay"),"overlay",name));
-        native->progressiveStack=skills.number(row,"prgstack").value_or(0)!=0;
-        native->progressiveDamage=skills.number(row,"prgdam").value_or(0);
-        const auto stat=[&](std::string_view field) {
-            const auto name=skills.value(row,field);if(name.empty()) return -1;
-            const auto found=data.nativeStats->names.find(name);
-            if(found==data.nativeStats->names.end()) throw std::runtime_error("Missing original assassin stat");
-            return int(found->second);
-        };
-        if(skills.number(row,"progressive").value_or(0)) {
-            native->chargeStat=stat("aurastat1");native->chargeHitStat=stat("aurastat2");
-            if(native->chargeStat<0 || native->state.id<0) throw std::runtime_error("Missing progressive list definition");
-        }
-        for(size_t index=0;index<3;++index) {
-            native->progressiveFunctions[index]=uint16_t(skills.number(row,"srvprgfunc"+std::to_string(index+1)).value_or(0));
-            const auto name=skills.value(row,std::array{"srvmissilea","srvmissileb","srvmissilec"}[index]);
-            if(!name.empty()) native->missiles[index]=skillTableNumber(missiles,findSkillTableRow(missiles,"Missile",name),"Id");
-        }
-        native->summon=skills.value(row,"summon");
-        if(!native->summon.empty()) {
-            native->summonClass=compiledMonsterIndex(monsters,findSkillTableRow(monsters,"Id",native->summon));
-            native->petType=skillTableNumber(pets,findSkillTableRow(pets,"pet type",skills.value(row,"pettype")),"idx");
-        }
+        const int function=skills.number(row,"srvdofunc").value_or(0);
+        if(data.pd2Host && !amazon && function!=42 && function!=43 && function!=44 && function!=45 &&
+           function!=46 && function!=47 && function!=48 && function!=49 &&
+           function!=50 && function!=51 && function!=54 && function!=170 && function!=178) continue;
+        auto native=prepareAssassinProgram(data,row);
         SkillSpec spec=data.pd2Host?preparePd2SkillDefinition(data,row):entry.spell?*entry.spell:SkillSpec{};
         spec.assassin=std::move(native);spec.sourceId=id;
         if(spec.assassin->program!=AssassinProgram::Defensive) spec.effect=SkillBehavior::Assassin;

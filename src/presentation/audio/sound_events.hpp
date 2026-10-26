@@ -25,6 +25,7 @@ struct PresentationSoundEvent {
     float age = 0, releaseTime = -1;
     std::string sound;
     int mode = -1;
+    int nativeSound = -1;
 };
 struct ItemDropSoundEvent {
     enum class Kind { Flip, Land };

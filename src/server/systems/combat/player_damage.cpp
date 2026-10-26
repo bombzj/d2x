@@ -38,7 +38,7 @@ DomainStatus System::resolvePlayerImpact(SpellImpact &impact,ParticipantView sou
     // SUNITDMG_CalculateTotalDamage: 17%, before absorb/reduction/resistance;
     // duration channels do not receive this penalty. Other pets retain 100%.
     const int percent=damageClassPercentage({bool(source.player),source.monster && source.monster->hireling,
-        source.monster && source.monster->revived(),source.monster && source.monster->rule.boss,
+        source.monster && source.monster->reviveFlag(),source.monster && source.monster->rule.boss,
         source.monster && source.monster->rule.primeEvil},{true},100,source.id()==target.actor);
     if(!impact.damageScaled) scaleHitDamage(hit,percent);
     auto hitClass=state_.hitClassCursor;hit.hitClass=monsterDamageHitClass(hit,hit.hitClass,hitClass);

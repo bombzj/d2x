@@ -56,8 +56,8 @@ class System {
     DomainResult<bool> releaseMonsterLeap(MonsterRelease &,TickContext);
     DomainResult<bool> releaseDruidPet(MonsterRelease &,TickContext);
     DomainResult<> startDruidPet(MonsterRelease &,TickContext);
-    DomainResult<bool> releaseShadowSkill(MonsterRelease &,TickContext);
-    DomainResult<std::shared_ptr<actions::SkillRelease>> startShadowSkill(const CastRequest &,const MonsterAttackRule &);
+    DomainResult<bool> releaseAssassinSkill(MonsterRelease &,TickContext);
+    DomainResult<std::shared_ptr<actions::SkillRelease>> startAssassinSkill(const CastRequest &,const MonsterAttackRule &);
     DomainResult<> cast(const ActorContext &, const Request &, int skill);
     DomainResult<> weaponCast(const ActorContext &, const Request &, int);
     DomainStatus weaponRelease(Release &, const ActorContext &, Vec);
@@ -100,7 +100,7 @@ class System {
     DomainStatus activateDruid(Release &, const ActorContext &, Vec);
     DomainStatus startDruidPeriodic(Release &,const ActorContext &);
     DomainResult<bool> startArctic(Release &,const ActorContext &,std::span<const DomainFact> facts={});
-    DomainResult<> startDruidMelee(Release &,const ActorContext &);
+    DomainResult<> startDruidMelee(Release &,const ActorContext &,const MonsterAttackRule *program=nullptr);
     DomainResult<> startWeaponMelee(Release &,const ActorContext &,const MonsterAttackRule *program=nullptr);
     DomainStatus drainWeaponMelee(Release &,const ActorContext &);
     DomainStatus activateDruidMelee(Release &,const ActorContext &,Vec);

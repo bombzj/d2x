@@ -45,6 +45,7 @@ struct SkillRules {
     std::shared_ptr<const MonsterTypeCatalog> monsterTypes;
     int poisonState{-1};
     std::set<int> dismissibleSummons;
+    std::map<int,int> petTypeBaseLimits,skillPetTypes;
     std::map<int,MonsterRule> amazonPetRules;
     std::set<int> slowableMissiles, pierceableMissiles, alwaysExplodingMissiles;
     std::map<int,std::pair<int,int>> missileVelocities;
