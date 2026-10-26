@@ -86,6 +86,7 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "Catapult") profile.kind = MonsterAiKind::Catapult;
     else if (ai == "CatapultSpotter") profile.kind = MonsterAiKind::CatapultSpotter;
     else if (ai == "NpcBarb") profile.kind = MonsterAiKind::NpcBarb;
+    else if (ai == "Ancient") profile.kind = MonsterAiKind::ScriptedNpc;
     else if (ai == "DeathMauler") profile.kind = MonsterAiKind::DeathMauler;
     else if (ai == "BloodLord") profile.kind = MonsterAiKind::BloodLord;
     else if (ai == "FrozenHorror") profile.kind = MonsterAiKind::FrozenHorror;

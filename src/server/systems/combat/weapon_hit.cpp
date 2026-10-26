@@ -18,7 +18,7 @@ WeaponHitEffects weaponHitEffects(const WeaponSkillDamage &attack, const monster
     const auto hit = calculateWeaponHitEffects(attack, input, physical, divisors, random);
     WeaponHitEffects result{hit.crushing, hit.life, hit.mana, {}};
     if (hit.woundRate > 0 && target.rule.openWoundsState >= 0)
-        result.wound = OpenWoundsApplication{hit.woundRate, source, credit, tick + 200, tick + 1};
+        result.wound = OpenWoundsApplication{hit.woundRate, source, credit, tick + 200, tick + 1,0,{},{},{}};
     return result;
 }
 }

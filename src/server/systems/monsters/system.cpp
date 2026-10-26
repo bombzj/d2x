@@ -30,6 +30,13 @@ void System::refreshCollision(const Actor &unit) noexcept {
         body=ports_.areas.rectangleFootprint(unit.area,unit.position,3,3,0x8000);
     else if(!unit.burrowed && !unit.airborne && !unit.submerged)
         body=ports_.areas.patternFootprint(unit.area,unit.position,unit.collisionPattern.value_or(unit.rule.collisionPattern),0x100);
+    if(unit.pd2NoPathDisabled && unit.alive()) {
+        const auto pattern=unit.collisionPattern.value_or(unit.rule.collisionPattern);
+        body=pattern==NativeCollisionPattern::BigUnit?
+            ports_.areas.rectangleFootprint(unit.area,unit.position,3,3,0x100):
+            ports_.areas.patternFootprint(unit.area,unit.position,NativeCollisionPattern::SmallNoPresence,0x100);
+    }
+    if(unit.pd2DashAbsent) body={};
     if(unit.spawnReservation) reservation=ports_.areas.patternFootprint(unit.area,*unit.spawnReservation,NativeCollisionPattern::SmallUnit,0x100);
     ports_.areas.setUnitCollision(unit.id,body,reservation,unit.alive());
 }
@@ -156,7 +163,8 @@ DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,Entit
         actor.life=change.life.raw();actor.maximumLife=change.maximum.raw();
     }
     if(const auto *area=ports_.areas.find(actor.area);area && area->definition.pd2Map)
-        attributes::preparePd2MapMonster(actor,*area->definition.pd2Map,request.tick,request.deadMode);
+        attributes::preparePd2MapMonster(actor,*area->definition.pd2Map,request.tick,request.deadMode,area->definition.pd2RuntimeGlobal);
+    if(request.pd2SceneLifePercent) attributes::preparePd2SceneMonster(actor,request.pd2SceneLifePercent,request.tick);
     actor.roomAdmission=ports_.areas.prepareRoomUnit(id,1,actor.area,actor.position);
     return {DomainStatus::Applied,std::move(actor)};
 }

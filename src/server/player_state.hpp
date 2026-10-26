@@ -34,6 +34,7 @@ struct PlayerState {
     uint64_t teleportRevision{};
     uint64_t inventoryRevision = 1, characterRevision = 1;
     std::array<uint16_t,17> pd2SessionCounters{};
+    uint32_t pd2AchievementSelection{}; // Native runtime PlayerData+1BC.
     uint64_t lastExperienceAward{};
     uint64_t combatRandom{}; // Native unit seed, runtime only.
     CommandResult result;

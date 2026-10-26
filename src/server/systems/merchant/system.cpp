@@ -29,7 +29,7 @@ std::optional<Cell> shelfPosition(const Stock &stock,const ItemDefinition &base,
 }
 const Stock *System::stock(PlayerId player, EntityId npc, bool gamble) const {
     if (gamble) {
-        const auto found = state_.gambles.find({player, npc});
+        const auto found = state_.gambles.find({gambleOwner(player,npc), npc});
         return found == state_.gambles.end() ? nullptr : &found->second;
     }
     const auto found = state_.stocks.find(npc);
@@ -56,6 +56,7 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
     const auto access = ports_.npc.service(actor, request.npc.id);
     if (!access) return {DomainStatus::InvalidRequest,{}};
     const auto *npc = access->npc;
+    if(npc->rule.pd2EventGheed) state_.sharedGheeds.insert(npc->id);
     const auto *conversation = access->conversation;
     if ((request.action==Action::Gamble || request.gamble) && !npc->rule.gamble) return {DomainStatus::InvalidRequest,{}};
     if ((request.action==Action::IdentifyAll && !npc->rule.identify) ||
@@ -82,11 +83,12 @@ std::vector<Preparation> System::pending() const {
         request.difficulty=ports_.settings.difficulty;
         request.uniques=ports_.loot.read().uniques;
         if (const auto *current = stock(id, pending.request.npc.id, pending.request.gamble);
-            current && (!pending.request.gamble || current->conversation == pending.conversation)) request.stock = *current;
+            current && (!pending.request.gamble || npc->rule.pd2EventGheed || current->conversation == pending.conversation)) request.stock = *current;
         if(pending.request.action==Action::Open && request.stock.refreshPending && std::count_if(ports_.npc.read().conversations.begin(),ports_.npc.read().conversations.end(),[&](const auto &entry){return entry.second.npc==pending.request.npc.id;})<=1) {request.stock.offers.clear();request.stock.generated=false;}
         if((pending.request.action==Action::Open || pending.request.action==Action::Gamble) && !request.stock.generated) {
             request.controlRandom=ports_.npc.read().controlRandom;request.gameRandom=ports_.random;
         }
+        if(npc->rule.pd2EventGheed) request.pd2Random=ports_.pd2Random;
         result.push_back(std::move(request));
     }
     return result;
@@ -123,6 +125,7 @@ DomainResult<> System::install(Prepared prepared) {
     if (source.inventoryRevision!=player->inventoryRevision || source.characterRevision!=player->characterRevision) return failure(DomainStatus::Stale);
     if(source.controlRandom && (ports_.npc.read().controlRandom!=source.controlRandom || ports_.random!=source.gameRandom))
         return {DomainStatus::Stale,{}};
+    if(prepared.pd2Random && source.pd2Random!=ports_.pd2Random) return {DomainStatus::Stale,{}};
     if (!prepared.deferred.empty()) { state_.deferred=std::move(prepared.deferred); return failure(DomainStatus::Unavailable); }
     // All shop transactions publish at most inventory, character and result.
     // Preserve the pending purchase and seed while reliable output is full.
@@ -134,9 +137,10 @@ DomainResult<> System::install(Prepared prepared) {
             (!source.controlRandom || !source.gameRandom || !prepared.controlRandom || !prepared.gameRandom)) return failure(DomainStatus::InvalidRequest);
         auto stocks=state_.stocks; auto gambles=state_.gambles; auto opened=state_.opened; auto gambling=state_.gambling;
         auto uniques=ports_.loot.prepareUniques(prepared.limitedUniques);
-        const bool exists=request.gamble?gambles.contains({actor.player,request.npc.id}):stocks.contains(request.npc.id);
-        const Stock *previous=request.gamble?(exists?&gambles.at({actor.player,request.npc.id}):nullptr):(exists?&stocks.at(request.npc.id):nullptr);
-        if (request.gamble && previous && previous->conversation!=pending.conversation) previous=nullptr;
+        const auto owner=gambleOwner(actor.player,request.npc.id);
+        const bool exists=request.gamble?gambles.contains({owner,request.npc.id}):stocks.contains(request.npc.id);
+        const Stock *previous=request.gamble?(exists?&gambles.at({owner,request.npc.id}):nullptr):(exists?&stocks.at(request.npc.id):nullptr);
+        if (request.gamble && !source.npc.pd2EventGheed && previous && previous->conversation!=pending.conversation) previous=nullptr;
         if(source.stock.generated && (!previous || !previous->generated)) return {DomainStatus::Stale,{}};
         if(previous && previous->revision!=source.stock.revision) return failure(DomainStatus::Stale);
         if(!request.gamble && previous && !source.stock.generated && previous->refreshPending &&
@@ -180,7 +184,7 @@ DomainResult<> System::install(Prepared prepared) {
                 offer.item.revision=1;stock.offers.emplace(offer.item.id,std::move(offer));
             }
             identityCount=allocations;
-            if(request.gamble) gambles.insert_or_assign(std::pair{actor.player,request.npc.id},std::move(stock));
+            if(request.gamble) gambles.insert_or_assign(std::pair{owner,request.npc.id},std::move(stock));
             else stocks.insert_or_assign(request.npc.id,std::move(stock));
         }
         opened[actor.player]={request.npc.id,pending.conversation};
@@ -199,6 +203,7 @@ DomainResult<> System::install(Prepared prepared) {
             ports_.npc.publishVendorControl(std::move(*control));
             ports_.random=*prepared.gameRandom;
         }
+        if(prepared.pd2Random) ports_.pd2Random=*prepared.pd2Random;
         ports_.loot.commitUniques(std::move(uniques));state_.pending.erase(queued);return {DomainStatus::Applied,std::monostate{}};
     }
     if (!ports_.definitions || !player->rules.equipment || !player->rules.character) return failure(DomainStatus::Unavailable);
@@ -232,11 +237,13 @@ DomainResult<> System::install(Prepared prepared) {
         }
         rules->includeSets(stock->setRules);
         if(!ports_.items.identityCapacity(itemIdentityCount+1+offer->second.item.socketedItems.size())) return failure(DomainStatus::Capacity);
-        total=prepared.prices.at(request.item->id); auto item=offer->second.item; item.identified=true;item.nativeFlags=(item.nativeFlags&~0x2000000u)|0x10u; item.id=allocateItem(); item.revision=1;
+        total=prepared.prices.at(request.item->id); auto item=prepared.purchase.value_or(offer->second.item);
+        item.identified=true;item.nativeFlags=(item.nativeFlags&~0x2000000u)|0x10u; item.id=allocateItem(); item.revision=1;
         receiptItem=item.id;
         for(size_t index=0;index<item.socketedItems.size();++index) {auto &child=item.socketedItems[index];child.id=allocateItem();child.revision=1;child.location=SocketLocation{item.id,unsigned(index)};}
         item.location=ContainerLocation{player->persistent.containers.cursor,{}};
-        draft.edit.inventory.items.emplace(item.id,item); rules->items.emplace(item.id,offer->second.equipment);
+        draft.edit.inventory.items.emplace(item.id,item);
+        rules->items.emplace(item.id,prepared.purchase && prepared.equipment?prepared.equipment->items.at(request.item->id):offer->second.equipment);
         const auto *base=ports_.definitions->find(item.definition); if(!base) return failure(DomainStatus::Unavailable);
         // Native scroll purchases fill a compatible book before taking space;
         // permanent potion multibuy fills the remaining belt, never the pack.
@@ -385,7 +392,8 @@ DomainResult<> System::install(Prepared prepared) {
     }
     if(changedStocks) state_.stocks.swap(*changedStocks);
     state_.bought.swap(bought);
-    if (soldOffer) { auto &stock=request.gamble?state_.gambles.at({actor.player,request.npc.id}):state_.stocks.at(request.npc.id); stock.offers.erase(soldOffer); ++stock.revision; }
+    if(prepared.pd2Random) ports_.pd2Random=*prepared.pd2Random;
+    if (soldOffer) { auto &stock=request.gamble?state_.gambles.at({gambleOwner(actor.player,request.npc.id),request.npc.id}):state_.stocks.at(request.npc.id); stock.offers.erase(soldOffer); ++stock.revision; }
     state_.pending.erase(queued); return result;
 }
 }
@@ -399,7 +407,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     };
     std::erase_if(state_.opened, [&](const auto &entry) { return !valid(entry.first, entry.second.npc, entry.second.conversation); });
     std::erase_if(state_.gambling,[&](PlayerId id){return !state_.opened.contains(id);});
-    std::erase_if(state_.gambles,[&](const auto &entry){return !valid(entry.first.first,entry.first.second,entry.second.conversation);});
+    std::erase_if(state_.gambles,[&](const auto &entry){return !state_.sharedGheeds.contains(entry.first.second) && !valid(entry.first.first,entry.first.second,entry.second.conversation);});
     std::erase_if(state_.pending, [&](const auto &entry) { return !valid(entry.first, entry.second.request.npc.id,entry.second.conversation); });
     for(auto &[id,stock]:state_.stocks) {(void)id;if(stock.refreshAt && tick.tick>stock.refreshAt) {stock.refreshPending=true;stock.refreshAt=tick.tick+6000;}}
     // SUNITPROXY_UpdateVendorInventory clears a town's inventory once the

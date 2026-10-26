@@ -20,4 +20,11 @@ inline uint32_t pd2UnitEventRandom(uint64_t &state) {
     state=(uint64_t(nextHigh)<<32)|nextLow;
     return nextLow;
 }
+// 41d49 RVA 380670: local tagged sequence, not a CRT/unit-seed draw.
+inline uint32_t pd2TaggedRandom(uint32_t &state) {
+    const uint32_t ordinal=(state>>20)<0xfff?(state>>20)+1:1;
+    const auto tagged=(state&0xfffffu)+(ordinal<<20);
+    state=((tagged*0x6ac690c6u)&0xfffffu)+(ordinal<<20);
+    return state;
+}
 }

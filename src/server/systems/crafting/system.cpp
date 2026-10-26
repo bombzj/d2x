@@ -6,6 +6,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/npc/system.hpp"
 #include "server/systems/quests/system.hpp"
+#include "server/systems/maps/system.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 
@@ -26,7 +27,12 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         return {DomainStatus::InvalidActor, {}};
     uint64_t conversation=0;
     auto normalized=request;
-    if (!std::holds_alternative<TransmuteCube>(request.intent) && !std::holds_alternative<SocketItem>(request.intent)) {
+    const auto *sacrifice=std::get_if<Pd2SacrificeItem>(&request.intent);
+    if(sacrifice) {
+        if(!sacrifice->input.id) return ports_.maps.closeSacrifice(actor,sacrifice->altar);
+        if(!ports_.maps.sacrificeAccess(actor,sacrifice->altar,sacrifice->input)) return {DomainStatus::InvalidRequest,{}};
+    }
+    if (!sacrifice && !std::holds_alternative<TransmuteCube>(request.intent) && !std::holds_alternative<SocketItem>(request.intent)) {
         const auto target=serviceNpc(request.intent);
         const auto access=ports_.npc.service(actor,target);
         if(!access) return {DomainStatus::InvalidRequest,{}};
@@ -43,15 +49,22 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (state_.pending.contains(actor.player)) return {DomainStatus::Conflict, {}};
     if (state_.pending.size() >= 8 || state_.next == UINT64_MAX) return {DomainStatus::Capacity, {}};
     auto random = ports_.random;
-    state_.pending.emplace(actor.player, Pending{actor, normalized, state_.next, initialRandom(rollRandom(random)),p->inventoryRevision,p->characterRevision,conversation});
+    state_.pending.emplace(actor.player, Pending{actor, normalized, state_.next,sacrifice?random:initialRandom(rollRandom(random)),p->inventoryRevision,p->characterRevision,conversation});
     ++state_.next; ports_.random = random;
     return {DomainStatus::Applied, std::monostate{}};
 }
 std::vector<Preparation> System::pending() const {
     std::vector<Preparation> result;
     for (const auto &[id, pending] : state_.pending) {
+        if(const auto ready=state_.retained.find(id);ready!=state_.retained.end()) {
+            auto source=ready->second.source;source.retained=true;result.push_back(std::move(source));continue;
+        }
         Preparation source; source.pending = pending; source.difficulty = ports_.settings.difficulty;
         source.pd2Random=ports_.pd2Random;
+        if(std::holds_alternative<Pd2SacrificeItem>(pending.request.intent)) {
+            source.pending.seed=ports_.random;
+            if(ports_.maps.read().instance) source.pd2BossDifficulty=ports_.maps.read().instance->bossDifficulty;
+        }
         if (const auto *p = ports_.players.find(id)) {
             source.character = p->persistent; source.classCode = p->definition.code;
             source.inventoryRevision = pending.inventoryRevision;
@@ -73,16 +86,26 @@ std::vector<Preparation> System::pending() const {
     return result;
 }
 DomainResult<> System::install(Prepared prepared) {
+    const auto retained=state_.retained.find(prepared.source.pending.actor.player);
+    if(retained!=state_.retained.end()) {
+        if(retained->second.source.pending.token!=prepared.source.pending.token) return {DomainStatus::Stale,{}};
+        prepared=retained->second;
+        if(const auto *current=ports_.players.find(prepared.source.pending.actor.player)) prepared.source.characterRevision=current->characterRevision;
+    }
     const auto &source = prepared.source; const auto &actor = source.pending.actor;
     const auto queued = state_.pending.find(actor.player);
     if (queued == state_.pending.end() || queued->second.token != source.pending.token) return {DomainStatus::Stale, {}};
     const auto fail = [&](DomainStatus status) -> DomainResult<> {
+        if(const auto *sacrifice=std::get_if<Pd2SacrificeItem>(&source.pending.request.intent)) {
+            const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{NpcServiceFact{sacrifice->altar,7}}});
+            if(!sent) return {sent.status,{}};
+        }
         if(source.pending.conversation) {
             const auto npc=serviceNpc(source.pending.request.intent);
             const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{NpcServiceFact{npc,7}}});
             if(!output) return {output.status,{}};
         }
-        state_.pending.erase(queued);return {status,{}};
+        state_.retained.erase(actor.player);state_.pending.erase(queued);return {status,{}};
     };
     const auto *p = ports_.players.find(actor.player);
     const auto *area = ports_.areas.find(actor.area);
@@ -97,6 +120,18 @@ DomainResult<> System::install(Prepared prepared) {
         source.storage != ports_.inventory.storageAccess(actor.player) || source.cube!=ports_.inventory.cubeAccess(actor.player)) return fail(DomainStatus::Stale);
     if (!prepared.deferred.empty()) { state_.deferred = std::move(prepared.deferred); return fail(DomainStatus::Unavailable); }
     if(prepared.pd2Random && ports_.pd2Random!=source.pd2Random) return fail(DomainStatus::Stale);
+    const auto *sacrifice=std::get_if<Pd2SacrificeItem>(&source.pending.request.intent);
+    if(sacrifice && (!ports_.maps.sacrificeAccess(actor,sacrifice->altar,sacrifice->input) ||
+        (prepared.nativeGameRandom && ports_.random!=source.pending.seed))) return fail(DomainStatus::Stale);
+    if(sacrifice && retained==state_.retained.end()) {
+        auto cached=prepared;cached.pd2Random.reset();cached.nativeGameRandom.reset();
+        state_.retained.emplace(actor.player,std::move(cached));
+        // Reserve this invocation's draws once. Reliable-output pressure
+        // retains the actual result rather than rolling the altar again.
+        if(prepared.pd2Random) ports_.pd2Random=*prepared.pd2Random;
+        if(prepared.nativeGameRandom) ports_.random=*prepared.nativeGameRandom;
+        prepared.pd2Random.reset();prepared.nativeGameRandom.reset();
+    }
     // Check reliable output before allocating identities or preparing the
     // transaction. Queue pressure must retain the request and its random seed.
     if (!ports_.transactions.hasOutputCapacity(1)) return {DomainStatus::Capacity, {}};
@@ -106,7 +141,7 @@ DomainResult<> System::install(Prepared prepared) {
     if(prepared.portal) {auto ready=ports_.travel.prepareSpecialPortal(actor,*prepared.portal,source.pending.seed);if(!ready) return isDeferred(ready.status)?DomainResult<>{ready.status,{}}:fail(ready.status);portal=std::move(*ready.value);}
     size_t identities=0;
     for(const auto &out:prepared.outputs) if(!out.replacement) identities+=1+out.item.socketedItems.size();
-    if(!ports_.items.identityCapacity(identities)) return fail(DomainStatus::Capacity);
+    if(!ports_.items.identityCapacity(identities)) return {DomainStatus::Capacity,{}};
     auto rules = std::make_shared<EquipmentRules>(*p->rules.equipment);
     inventory::detail::Draft draft(*p, *ports_.definitions, *rules, *p->rules.character); draft.storage = source.storage;
     for (const auto handle : prepared.consumed) {
@@ -137,7 +172,7 @@ DomainResult<> System::install(Prepared prepared) {
         if (!draft.fits(id, desired)) {
             const auto space = draft.space(id, output.container);
             if (!space) {
-                if(!source.pending.conversation) return fail(DomainStatus::Conflict);
+                if(!source.pending.conversation && !sacrifice) return fail(DomainStatus::Conflict);
                 draft.edit.spilled.push_back(item);draft.edit.inventory.items.erase(id);continue;
             }
             desired = *space;
@@ -150,23 +185,31 @@ DomainResult<> System::install(Prepared prepared) {
     rules->includeSets(*prepared.equipment);
     transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),p->persistent.player.weaponSet};
     if(!draft.edit.spilled.empty()) {
-        auto world=inventory::detail::prepareSpill(*p,draft.edit,*rules,ports_.items);if(!world) return fail(world.status);
-        for(const auto &item:draft.edit.spilled) edit.publicFacts.emplace_back(GroundDropFact{world.value->next.world.items.at(item.id)});
+        auto world=inventory::detail::prepareSpill(*p,draft.edit,*rules,ports_.items);if(!world) return isDeferred(world.status)?DomainResult<>{world.status,{}}:fail(world.status);
+        for(const auto &item:draft.edit.spilled) {
+            const auto &ground=world.value->next.world.items.at(item.id);
+            if(const auto original=p->persistent.inventory.items.find(item.id);original!=p->persistent.inventory.items.end())
+                edit.changes.push_back({item.id,item.revision,ItemChangeKind::Moved,original->second.location,ground.location,item.quantity});
+            edit.publicFacts.emplace_back(GroundDropFact{ground});
+        }
         edit.world=std::move(*world.value);
     }
     edit.equipment = std::move(rules);
+    if(sacrifice) edit.facts.emplace_back(NpcServiceFact{sacrifice->altar,7});
     if(prepared.character) {
         edit.character=std::move(prepared.character);
         edit.facts.emplace_back(ports_.quests.projection(actor.player,*edit.character,actor.area,false));
         if(source.pending.conversation) edit.facts.emplace_back(NpcServiceFact{serviceNpc(source.pending.request.intent),6});
     }
     if(std::holds_alternative<TransmuteCube>(source.pending.request.intent)) edit.facts.emplace_back(SoundFact{p->actor,0,p->area,4});
-    auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return fail(plan.status);
+    auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return isDeferred(plan.status)?DomainResult<>{plan.status,{}}:fail(plan.status);
     auto result = ports_.transactions.commit(std::move(*plan.value));
     if (!result) return result; // Backpressure preserves the seed and inputs.
     if(prepared.pd2Random) ports_.pd2Random=*prepared.pd2Random;
+    if(prepared.nativeGameRandom) ports_.random=*prepared.nativeGameRandom;
+    if(sacrifice) ports_.maps.completeSacrifice(actor,sacrifice->altar);
     if(portal) ports_.travel.commitSpecialPortal(std::move(*portal));
-    state_.pending.erase(queued); state_.deferred.clear(); return result;
+    state_.retained.erase(actor.player);state_.pending.erase(queued); state_.deferred.clear(); return result;
 }
 StepStatus System::step(TickContext,FrameFacts &) {
     std::erase_if(state_.pending,[&](const auto &entry) {
@@ -175,6 +218,7 @@ StepStatus System::step(TickContext,FrameFacts &) {
         const auto *lease=ports_.npc.conversation(entry.first);
         return pending.conversation && (!lease || lease->revision!=pending.conversation);
     });
+    std::erase_if(state_.retained,[&](const auto &entry){return !state_.pending.contains(entry.first);});
     return StepStatus::Complete;
 }
 }

@@ -282,3 +282,7 @@ Hit63为RVA `0x3A6410`，延迟回调`0x304680`，扇形helper `0x37F3E0`；对�
 ## 待核实与未完成
 
 尚未逐项认证全部装备／技能组合、随机初态、极端数值、碰撞、画面、难度、跨区、PvP及多人。喷射状态中的FCR周期额外施法触发已有独立消费者；怪物SC／SQ施法触发已有消费者，连续伙伴及部分ItemCheckStart组合仍待核对，见[物品触发](ITEMS.md#装备触发与装备自带技能)。Iron Golem材料／恢复、Revive家族动作及伙伴跨区的消费者和边界见[怪物](MONSTERS.md#召唤实体与伙伴)。未知程序明确拒绝，不以图标、扣血或构建成功作为规则依据。
+
+### 特殊场景技能
+
+当前41d49的St76／Do185／Clt114已分别接入monsters/pd2/dash、skills/pd2/dash及remote_scene_pd2_dash，沿当前MonSeq事件、路径9与起步／沿途／到达三槽执行。Srv184局部序列、Srv186 Act5强制73、召唤177／179及485状态写入的实际消费者和限制见[F61](FUNCTION_PARITY.md#f61-专属4145控制器的出生与事件依赖)；Skills.summon按当前MonStats编译身份链接，不按文本转数值。

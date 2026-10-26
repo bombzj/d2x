@@ -151,7 +151,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
         const auto *targetRoom=area.definition.activation.room(position);
         boss=decideBossMonster(monster.rule.ai,{input,monsterAiDistance(monster.home,0,monster.position),monsterAiDistance(monster.home,0,position),controller.summonChance,homeRoom==monsterRoom,firewallPhase<int(monster.skillPositions.size()),homeRoom==targetRoom});
     }
-    auto decision = boss?std::optional{boss->action}:monster.rule.ai.kind==MonsterAiKind::FallenShaman?std::optional{decideFallenShaman(monster.rule.ai,input,bool(corpse),corpse && ports_.monsters.resurrectionPlacement(corpse->id))}:
+    auto decision = boss?std::optional{boss->action}:monster.rule.ai.kind==MonsterAiKind::FallenShaman?std::optional{decideFallenShaman(monster.rule.ai,input,bool(corpse),corpse && monster.rule.skillIds[0] && ports_.monsters.resurrectionPlacement(corpse->id))}:
         hasRangedDecision(monster.rule.ai.kind)?decideRangedMonster(monster.rule.ai,input):hasSpecialDecision(monster.rule.ai.kind)?decideSpecialMonster(monster.rule.ai,input):decideMeleeMonster(monster.rule.ai,input);
     if (!decision) return StepStatus::NotImplemented;
     controller.random=decision->random;

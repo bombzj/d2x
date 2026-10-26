@@ -224,13 +224,26 @@ DomainResult<EntityId> System::spawnNative(const NativeSpawn &request) {
     if(result && !*result.value) return {DomainStatus::Unavailable,{}};
     return result;
 }
-DomainResult<EntityId> System::commitNativeBirth(std::shared_ptr<NativeBirthPublication> prepared) {
+DomainResult<EntityId> System::commitNativeBirth(std::shared_ptr<NativeBirthPublication> prepared,bool pd2ActFiveBroadcast) {
     if(!prepared) return {DomainStatus::InvalidRequest,{}};
     auto &publication=*prepared;
     if(!publication.validate()) return {DomainStatus::Stale,{}};
     const auto first=publication.first();
     std::vector<EventBatch> batches;
-    for(const auto &fact:publication.facts()) batches.push_back({0,prepared->data_->context.tick,{},
+    if(pd2ActFiveBroadcast) {
+        // Current 37FE90 explicitly sends to every entered act-five client,
+        // including clients with no local room/owner visibility.
+        std::vector<DomainFact> facts;
+        for(const auto &[id,missile]:prepared->data_->missiles) {
+            const int frames=missile.lifetimeFrames-missile.ageFrames;if(frames<=0) continue;
+            const auto target=missile.velocity.length()?(missile.path.empty()?missile.position+missile.turnTarget:missile.path.front()):Vec{};
+            facts.emplace_back(MissileFact{missile.owner,uint8_t(ports_.players.findActor(missile.owner)?0:1),missile.area,
+                missile.definition,missile.skill.rank,frames,missile.position,target,uint8_t(missile.pierces),id,true});
+        }
+        if(!facts.empty()) for(const auto &[id,player]:ports_.players.all())
+            if(player.entered && ports_.areas.at(player.area).definition.act==4)
+                batches.push_back({0,prepared->data_->context.tick,{}, {AudienceKind::Player,id,player.area},facts});
+    } else for(const auto &fact:publication.facts()) batches.push_back({0,prepared->data_->context.tick,{},
         {AudienceKind::Area,{},nativeBirthFactArea(fact)},{fact}});
     if(!batches.empty()) {
         const auto sent=ports_.events.publishGroup(std::move(batches));

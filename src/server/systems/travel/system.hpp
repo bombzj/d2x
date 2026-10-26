@@ -9,6 +9,7 @@
 #include <array>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace d2x::server::travel {
@@ -16,15 +17,15 @@ namespace d2x::server::travel {
 enum class Kind { Exit, Waypoint, Portal, Npc, SpecialPortal, QuestObject, NativeObjectPortal };
 enum class SpecialPortalKind { Cow, Pandemonium, Finale, Tristram, CainRescue, Andariel, ArcaneCanyon, Tyrael, ActFive, AnyaTemple, BaalExit, Shrine };
 struct Request { Kind kind; UnitTarget source; std::optional<RegionId> destination; };
-struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, sequence{}; EntityId source; Vec approach, arrival; Kind kind=Kind::Exit; uint64_t npcConversation{}, waypointRevision{}; std::optional<uint64_t> arrivalGeneration{}; };
+struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, sequence{}; EntityId source; Vec approach, arrival; Kind kind=Kind::Exit; uint64_t npcConversation{}, waypointRevision{}; std::optional<uint64_t> arrivalGeneration{}; bool pd2SceneEntry{}; };
 struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{};std::optional<RoomView> fieldRoom{},townRoom{}; std::optional<bool> linkedOpened{};
     bool isOpened(bool linked) const {return linked?linkedOpened.value_or(opened):opened;}
 };
 struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, revision{}; };
 struct PositionSynchronization { uint64_t until{}; std::array<uint64_t,5> attempts{}; };
-struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; std::shared_ptr<const pd2::MapInstance> pd2Map; EntityId pd2MapPortal;std::map<PlayerId,EntityId> mapReports;std::optional<ActorContext> pendingPd2Map; };
+struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; std::shared_ptr<const pd2::MapInstance> pd2Map; EntityId pd2MapPortal;std::map<PlayerId,EntityId> mapReports;std::optional<ActorContext> pendingPd2Map;std::set<PlayerId> pd2SceneEntrants;bool pd2SceneOpening{};std::set<RoomView> pd2SceneEntryRooms; };
 struct SpecialPortalPlan {std::map<EntityId,Portal> next;};
-struct Ports { PlayerStore &players; AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; uint64_t &random; const GameSettings &settings; const spatial::System &spatial; };
+struct Ports { PlayerStore &players; AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; uint64_t &random; const GameSettings &settings; const spatial::System &spatial; uint32_t &pd2Random; };
 class System {
     State state_;
     const Ports ports_;
@@ -32,6 +33,8 @@ class System {
     void writePortalCollision(const Portal &,bool) noexcept;
     struct NativeLinkPosition {RegionId area;uint64_t generation{};Vec position;std::optional<RoomView> room;};
     std::map<EntityId,NativeLinkPosition> nativeLinks_;
+    struct Pd2PortalLanding {NativeLinkPosition anchor;std::optional<NativeLinkPosition> landing;};
+    std::map<std::tuple<int,int,int,int,int>,Pd2PortalLanding> pd2PortalLandings_;
     std::optional<Portal> pd2OpeningPortal_;
     bool pd2Cancelling_{};
     const AreaObject *waypointAccess(const ActorContext &,EntityId,std::optional<uint64_t> revision = {}) const;

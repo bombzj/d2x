@@ -33,6 +33,8 @@ bool System::waypointArrival(const Object &object) const {
     });
 }
 void System::publishInitialization(const Object &object) {
+    if(object.rule.chest || object.rule.shrine)
+        publishedModes_.insert_or_assign(object.id,std::pair{object.revision,object.mode});
     ports_.maps.bind(object.pd2Binding,object.id,object.area,object.position,true);
     if(ports_.maps.opensBlockerOnBirth(object.definition)) openNativeBlocker(object.id,ports_.frameEvents.currentFrame());
     ports_.quests.registerCainObject(object.id,object.definition,object.rule.initialization,object.area,object.position);
@@ -183,6 +185,9 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if((rule.operation==77 || rule.operation==80) && object.nativePortalOwner)
         return ports_.travel.useNativeObjectPortal(actor,object.id,remoteRange);
     if(rule.operation==80 && object.definition==600) return ports_.maps.operateTome(actor,object.id);
+    if(rule.operation==79) return ports_.maps.operateEvent(actor,object.id);
+    if(rule.operation==78) return ports_.maps.operateAncients(actor,object.id);
+    if(rule.operation==76) return ports_.maps.operateSacrifice(actor,object.id);
     if(rule.operation==23) {
         if(object.mode!=0 && object.mode!=1 && object.mode!=2) return {DomainStatus::Conflict,{}};
         // Native operation23 first activates and animates; only an operating
@@ -301,7 +306,8 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);object.lootAt=actor.tick+uint64_t(std::max(0,rule.parameters[1]))+1;object.operatorId=actor.player;++object.revision;collision(actor.area);return {DomainStatus::Applied,std::monostate{}};
     }
     ItemHandle key;
-    if (rule.chest && rule.chest->locked && player->definition.code != "ass") {
+    const bool lucionChest=object.definition==623 && area->definition.pd2Map && area->definition.pd2Map->controller==45;
+    if (rule.chest && rule.chest->locked && player->definition.code != "ass" && !lucionChest) {
         for (const auto &[id, item] : player->persistent.inventory.items) {
             (void)id; const auto *at = std::get_if<ContainerLocation>(&item.location); const auto *definition = player->rules.items->find(item.definition);
             if (at && at->container == player->persistent.containers.backpack && item.quantity && definition && definition->equipment.isType("key")) { key = item.handle(); break; }
@@ -317,7 +323,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     if(rule.operation==5 && !ports_.events.hasCapacity(1)) return {DomainStatus::Capacity,{}};
     LootRequest source; source.source = object.id; source.region = object.area; source.difficulty = ports_.settings.difficulty;
-    const auto result = ports_.loot.queue({object.revision, source, actor.player, object.position, loot::ObjectSource{object.definition, rule.operation, rule.chest, key},{}});
+    const auto result = ports_.loot.queue({object.revision, source, actor.player, object.position, loot::ObjectSource{object.definition, rule.operation, lucionChest?std::nullopt:rule.chest, key},{}});
     if (result) {
         object.pending = true;object.operatorId=actor.player;
         if(rule.operation==5) {
@@ -335,6 +341,13 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
         if(region!=requestedRegion || requestedRoom>=area.definition.activation.rooms().size() ||
             area.definition.activation.room(source.position)!=&area.definition.activation.rooms()[requestedRoom]) continue;
         if(!ports_.areas.loaded(region,source.position)) continue;
+        if(source.rule.operation==23) {
+            const auto global=source.position+area.definition.origin;
+            const auto room=ports_.areas.roomAtPosition(region,source.position,int(global.x),int(global.y));
+            if(room && ports_.travel.read().pd2SceneEntryRooms.contains(*room)) {
+                admittedPresets_.insert(source.id);continue;
+            }
+        }
         if(int(region)==134) {
             auto decision=sandsPresetDecisions_.find(source.id);
             if(decision==sandsPresetDecisions_.end()) {
@@ -521,7 +534,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                     object.mode=object.rule.operation==26 || object.rule.operation==19 || object.rule.operation==20?2:object.rule.operation==48?(object.phase?3:5):1;object.until=object.mode==1?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;
                     if(object.mode==3) object.hazardAt=tick.tick+object.rule.closingTicks;
                     object.trap=object.rule.trap;
-                    if(object.rule.chest) {object.rule.chest->locked=false;object.trap=object.rule.chest->trap;}
+                    if(object.rule.chest) {object.rule.chest->locked=false;object.trap=object.definition==623 && ports_.areas.at(object.area).definition.pd2Map?0:object.rule.chest->trap;}
                     if(object.rule.operation==1 && limitedRandom(object.random,10000)>=8192) object.trap=8;
                     if(object.rule.operation==68 && limitedRandom(*state_.controlRandom,255)<=unsigned(object.rule.parameters[7])) object.urnPending=true;
                     if((object.trap==8 || object.trap==9) && ports_.areas.at(object.area).definition.act==0) {

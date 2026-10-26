@@ -159,6 +159,7 @@ void prepareSocketedItem(const ClassicData &content, ItemInstance &item, uint64_
     }
     item.runewordStats = saved(content, stats); item.runewordRow = record->row;
     item.nativeFlags |= 0x4000000u;
+    item.nativePropertyRandom=random;
 }
 std::vector<ResolvedItemStat> resolveSocketStats(const ClassicData &content, const ItemInstance &item, int level) {
     std::vector<ResolvedItemStat> result;

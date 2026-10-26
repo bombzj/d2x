@@ -118,9 +118,11 @@ void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candida
         (damage.burn>0 && damage.burnFrames && !unit.states.hasState(actor.rule.fireShrineState,tick)))) plan.resetRegeneration.insert(id);
     if(!actor.alive()) {
         if(rules.pd2 && ports_.areas.at(actor.area).definition.pd2Map)
-            if(const auto *previous=ports_.monsters.find(id);previous && previous->alive())
+            if(const auto *previous=ports_.monsters.find(id);previous && previous->alive()) {
                 plan.actors->actors.at(id).pd2DeathStats=std::make_shared<const StatSnapshot>(
                     resources.values(combatEffectStatSources(unit.states.entries(),tick,true)));
+                plan.actors->actors.at(id).pd2DeathEventState=unit.states.hasState(213,tick);
+            }
         const auto kind=actor.rule.boss?EffectUnitKind::Boss:EffectUnitKind::Monster;
         unit.states.onDeath(kind,observe);unit.states.clearNonDeathStates(kind,*actor.rule.states,tick,observe);
     }

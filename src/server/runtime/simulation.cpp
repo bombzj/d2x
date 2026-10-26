@@ -138,10 +138,15 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
         if(status!=StepStatus::Complete) {steps_[size_t(SystemId::Objects)]=status;return false;}
         phase_=Phase::Publication;
     }
+    if(phase_==Phase::Publication) {
     run(SystemId::Loot,[&]{return systems.loot.step(tick,facts_);});
     run(SystemId::Progression,[&]{return systems.progression.step(tick,facts_);});
     run(SystemId::Travel,[&]{return systems.travel.step(tick,facts_);});
     run(SystemId::Replication,[&]{return systems.replication.step(tick,facts_);});
+    phase_=Phase::ObjectPublication;
+    }
+    run(SystemId::Objects,[&]{return systems.objects.publishChanges(tick);});
+    if(steps_[size_t(SystemId::Objects)]!=StepStatus::Complete) return false;
     phase_=Phase::Environment;frame_.reset();return true;
 }
 }

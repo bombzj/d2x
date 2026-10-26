@@ -8,7 +8,8 @@ namespace d2x {
 SpecialItemRoll rollSpecialItem(std::span<const SpecialItemRecord> records, std::string_view code,
                                 int itemLevel, uint64_t seed, const std::set<size_t> &used,
                                 bool hellBovine,std::optional<size_t> preferred) {
-    if (itemLevel < 1 || itemLevel > 127)
+    // Selection compares native levels before the seven-bit save projection.
+    if (itemLevel < 1 || itemLevel > UINT16_MAX)
         throw std::invalid_argument("Invalid special item level");
     int64_t total = 0;
     std::vector<const SpecialItemRecord *> eligible;

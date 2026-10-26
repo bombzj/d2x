@@ -1,4 +1,5 @@
 #include "cube_data.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "item_properties.hpp"
 #include "core/random.hpp"
 #include <algorithm>
@@ -226,7 +227,7 @@ void freezeCubeItem(const ClassicData &data, ItemInstance &item, uint64_t *gener
                         return entry.id == stat.id && entry.parameter == stat.parameter;
                     });
                     if (existing == list.end()) list.push_back(stat);
-                    else existing->value += stat.value;
+                    else existing->value = nativeAdd(existing->value,stat.value);
                 }
             }
         }
@@ -255,7 +256,7 @@ void updateCubeRequiredLevel(const ClassicData &data, ItemInstance &item) {
 void applyCubeProperties(const ClassicData &data, const CubeOutput &output, ItemInstance &item, uint64_t &random) {
     freezeCubeItem(data, item);
     std::map<std::pair<int,int>,int> sums;
-    for (const auto &stat : item.savedStats) sums[{stat.id, stat.parameter}] += stat.value;
+    for (const auto &stat : item.savedStats) {auto &sum=sums[{stat.id, stat.parameter}];sum=nativeAdd(sum,stat.value);}
     for (const auto &entry : output.properties) {
         if (entry.chance > 0 && entry.chance < 100 && int(limitedRandom(random, 100)) > entry.chance) continue;
         const auto &p = entry.property;
@@ -276,11 +277,12 @@ void applyCubeProperties(const ClassicData &data, const CubeOutput &output, Item
                 const auto definition=std::find_if(data.itemStats.begin(),data.itemStats.end(),[&](const auto &entry){return entry.name==stat.name;});
                 if(definition!=data.itemStats.end() && definition->id) sums.erase({*definition->id,stat.layer});
             }
-            for (const auto &stat : encode(data,resolved)) sums[{stat.id, stat.parameter}] += stat.value;
+            for (const auto &stat : encode(data,resolved)) {auto &sum=sums[{stat.id, stat.parameter}];sum=nativeAdd(sum,stat.value);}
         }
     }
     item.savedStats.clear();
     for (const auto &[key, value] : sums) item.savedStats.push_back({key.first, key.second, value});
     updateCubeRequiredLevel(data, item);
+    item.nativePropertyRandom=random;
 }
 } // namespace d2x

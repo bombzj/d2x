@@ -266,6 +266,7 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
     if (inventoryEdit && inventoryEdit->world && inventoryEdit->world->expected != ports_.items.state_.revision) return {DomainStatus::Stale, {}};
     const auto *characterEdit = std::get_if<CharacterEdit>(&change);
     const auto environment=characterEdit && characterEdit->environmentRegion?characterEdit->environmentRegion:
+        inventoryEdit && inventoryEdit->environmentRegion?inventoryEdit->environmentRegion:
         characterEdit && characterEdit->revival?std::optional{characterEdit->revival->area}:std::nullopt;
     if(environment && !ports_.areas.find(*environment)) return {DomainStatus::Unavailable,{}};
     const auto &randomEdit=inventoryEdit?inventoryEdit->random:characterEdit->random;

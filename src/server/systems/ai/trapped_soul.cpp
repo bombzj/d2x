@@ -7,6 +7,7 @@
 
 namespace d2x::server::ai {
 StepStatus System::trappedSoulFamily(EntityId id,TickContext tick,Controller &controller) {
+    if(const auto result=pd2Mendeln(id,tick,controller)) return *result;
     if(const auto result=pd2DemonPillar(id,tick,controller)) return *result;
     const auto suppressed=ports_.monsters.suppressTreasure(id);
     if(!suppressed) return isDeferred(suppressed.status)?StepStatus::Blocked:StepStatus::NotImplemented;

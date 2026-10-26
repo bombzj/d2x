@@ -233,6 +233,7 @@ void RemoteScene::Impl::emitUnitBlood(const OnlineUnit &unit, int count, float d
 }
 
 void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, const RemoteCombat &combat, bool town,const Grid &collision,Vec worldOrigin) {
+    if(pd2) advancePd2Dashes(collision,worldOrigin,shared,combat);
     const auto observed=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
     std::erase_if(missileCastRevisions, [&](const auto &cast) {
         const auto source = v.world.units.find(cast.first);
@@ -751,6 +752,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 }
                 return;
             }
+            if(function==114) return; // Continuous Clt114 is advanced with its path/sequence clock.
             if (function == 83 || function == 94 || function == 97 || function == 98 ||
                 (function >= 104 && function <= 119 && function!=111)) {
                 effectLimitations.insert("PD2 skill client program unavailable: " + std::to_string(function));

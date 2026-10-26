@@ -5,6 +5,16 @@
 #include <algorithm>
 
 namespace d2x::server::world {
+DomainResult<> System::appendPd2MapGlobal(const std::shared_ptr<const pd2::MapInstance> &map,StatValue program) {
+    const auto &travel=ports_.travel.read();
+    if(!map || travel.pd2Map!=map || !travel.pd2MapPortal || (pd2ProgramMap_ && pd2ProgramMap_!=map)) return {DomainStatus::Stale,{}};
+    if(map->properties.global.size()+pd2RuntimeGlobal_.size()>=24) return {DomainStatus::Capacity,{}};
+    pd2ProgramMap_=map;pd2RuntimeGlobal_.push_back(program);
+    for(auto &[id,area]:ports_.areas.areas_) {
+        (void)id;if(area.definition.pd2Map==map) area.definition.pd2RuntimeGlobal=pd2RuntimeGlobal_;
+    }
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<uint64_t> System::requestMapArea(RegionId destination,const std::shared_ptr<const pd2::MapInstance> &map) {
     const auto &travel=ports_.travel.read();
     if(!map || travel.pd2Map!=map || !travel.pd2MapPortal) return {DomainStatus::Stale,{}};

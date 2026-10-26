@@ -17,6 +17,7 @@ struct NpcRule {
     std::string code, introduction;
     int nativeClass{}, size{};
     bool vendor{}, repair{}, identify{}, heal{}, gamble{};
+    bool pd2EventGheed{};
     std::map<std::string, uint16_t, std::less<>> introductions;
     std::set<uint16_t> questMessages;
     std::map<std::pair<QuestId,std::string>,uint16_t> questSpeeches;

@@ -3,6 +3,7 @@
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/modifiers.hpp"
 #include "gameplay/items/pd2/charges.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <span>
 #include <optional>
@@ -16,13 +17,13 @@ inline std::optional<ItemRestoration> itemRestoration(const ItemInstance &item,c
     std::span<const ResolvedItemStat> stats,unsigned maximumDurability) {
     int repair=0,quantity=0,extra=0,charges=0;
     for(const auto &stat:stats) {
-        if(stat.effect=="item_replenish_durability") repair+=stat.value;
-        if(stat.effect=="item_replenish_quantity") quantity+=stat.value;
-        if(stat.effect=="item_extra_stack") extra+=stat.value;
-        if(stat.name=="item_replenish_charges") charges+=stat.rawValue;
+        if(stat.effect=="item_replenish_durability") repair=nativeAdd(repair,stat.value);
+        if(stat.effect=="item_replenish_quantity") quantity=nativeAdd(quantity,stat.value);
+        if(stat.effect=="item_extra_stack") extra=nativeAdd(extra,stat.value);
+        if(stat.name=="item_replenish_charges") charges=nativeAdd(charges,stat.rawValue);
     }
     if(maximumDurability && !(item.nativeFlags&0x100u) && repair>0) return ItemRestoration{false,repair,maximumDurability};
-    if(base.maxStack>1 && quantity>0) return ItemRestoration{true,quantity,unsigned(std::clamp(int(base.maxStack)+extra,1,511))};
+    if(base.maxStack>1 && quantity>0) return ItemRestoration{true,quantity,unsigned(std::clamp(nativeAdd(int(base.maxStack),extra),1,511))};
     if(charges>0) if(const auto first=pd2FirstChargeLayer(item)) {
         const bool fullStatsHasCharges=std::any_of(stats.begin(),stats.end(),[](const auto &stat){return stat.name=="item_charged_skill";});
         if(fullStatsHasCharges && first->value>=0 && first->value<=65535)

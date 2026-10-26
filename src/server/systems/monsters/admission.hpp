@@ -58,5 +58,6 @@ struct Admission {
     bool uncounted{};
     // MONSTER_Reinitialize retains pUnit->pSeed instead of allocating a seed.
     std::optional<uint64_t> unitRandom{};
+    int pd2SceneLifePercent{};
 };
 }

@@ -2,6 +2,7 @@
 #include "gameplay/items/charges.hpp"
 #include "character_content.hpp"
 #include "item_content.hpp"
+#include "pd2/gheed.hpp"
 #include "content/npc/vendor_stock.hpp"
 #include "content/items/item_pricing.hpp"
 #include "content/items/item_properties.hpp"
@@ -57,6 +58,9 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
     }
     if (request.action==Action::Open || request.action==Action::Gamble) {
         if (result.source.stock.generated) return result;
+        if(data.pd2Host && result.source.npc.pd2EventGheed && request.action==Action::Gamble) {
+            hosting::pd2::prepareGheedStock(data,result);return result;
+        }
         auto projection=character; projection.inventory.items.clear();
         const auto &inventory=data.tables.at("inventory");
         int columns=0,rows=0;
@@ -191,6 +195,8 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
         }
     }
     if (request.item && !repair && !result.prices.contains(request.item->id)) result.deferred="Item is not eligible for this vendor service";
+    if(data.pd2Host && result.source.npc.pd2EventGheed && request.action==Action::Buy && request.gamble && result.deferred.empty())
+        hosting::pd2::prepareGheedPurchase(data,result);
     if(!result.repairs.empty()) {auto projection=character;projection.inventory.items=result.repairs;result.equipment=prepareEquipmentRules(data,projection);}
     return result;
 }

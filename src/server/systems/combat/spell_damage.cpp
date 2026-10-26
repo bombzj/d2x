@@ -220,7 +220,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     execution->adjustment.crushing=contact.playerExtras.crushing;
                     execution->adjustment.suppressEvents=contact.suppressEvents;
                     if(contact.pd2Wound) execution->adjustment.wound=contact.pd2Wound;
-                    else if(contact.playerExtras.woundRate>0) execution->adjustment.wound=OpenWoundsApplication{contact.playerExtras.woundRate,source.id(),impact.binding.credit,tick.tick+200,tick.tick+1};
+                    else if(contact.playerExtras.woundRate>0) execution->adjustment.wound=OpenWoundsApplication{contact.playerExtras.woundRate,source.id(),impact.binding.credit,tick.tick+200,tick.tick+1,0,{},{},{}};
                     execution->extras=contact.playerExtras;execution->itemEvents=std::move(contact.itemEvents);
                     execution->remainingLife=std::max<int64_t>(0,int64_t(player.persistent.player.hp.raw())-contact.playerExtras.crushing);
                     execution->nativeMissile=execution->hostile=true;execution->missile=!impact.melee;

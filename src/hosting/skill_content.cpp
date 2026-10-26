@@ -181,7 +181,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         const bool playerClass=skill.classCode=="sor" || skill.classCode=="ama" || skill.classCode=="pal" ||
             skill.classCode=="nec" || skill.classCode=="bar" || skill.classCode=="ass" || skill.classCode=="dru";
         const bool itemEffect=data.pd2Host && skill.classCode.empty() && skill.spell &&
-            data.nativeFormulas->skills.at(id).number("itemeffect")>0;
+            skillTable.number(findSkillTableRow(skillTable,"Id",std::to_string(id)),"ItemEffect").value_or(0)>0;
         if(!playerClass && !itemEffect) continue;
         if(skill.auraImplemented) prepared->auras.emplace(id,server::SkillRules::Aura{prepareAura(data,id),skill.auraImmediate});
         if (!skill.spell || skill.spell->effect==SkillBehavior::None) continue;

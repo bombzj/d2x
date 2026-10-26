@@ -1,6 +1,7 @@
 #include "remote_ui_clients_impl.hpp"
 #include "content/pd2_stash.hpp"
 #include "content/items/item_appearance.hpp"
+#include "content/pd2/cube.hpp"
 
 namespace d2x {
 ItemInstance RemoteUiClients::Impl::itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
@@ -618,6 +619,9 @@ void RemoteUiClients::Impl::projectInventory() {
             for(size_t slot=0;slot<def.slots.size();++slot) def.slots[slot]=definition->equipment.fits(EquipmentSlot(slot));
             v.definitions.emplace(native.code,std::move(def));
             auto projection=projectItem(native,di,location);
+            if(session.read().protocolProfile!="lod113c" && definition->equipment.isType("amul"))
+                if(const auto item=completeItem(native,di,location);item && pd2SacrificeEligible(data,*item))
+                    v.pd2SacrificeItems.push_back(item->id);
             if (ground) {
                 projection.groundPickupAllowed = !v.readOnly && native.mode == 3;
                 projection.groundAnimationRevision = native.groundAnimationRevision;
@@ -637,7 +641,11 @@ void RemoteUiClients::Impl::projectInventory() {
             const auto object=w.units.find({2,*w.staffSource});
             if(object!=w.units.end() && object->second.classId) {
                 const auto &table=data.tables.at("objects");
-                for(size_t row=0;row<table.rows().size();++row) if(table.number(row,"Id")==*object->second.classId && table.number(row,"OperateFn")==25) v.staffSource=EntityId{(uint64_t{2}<<32)+*w.staffSource+1};
+                for(size_t row=0;row<table.rows().size();++row) if(table.number(row,"Id")==*object->second.classId) {
+                    const auto operation=table.number(row,"OperateFn").value_or(0);
+                    if(operation==25 || (session.read().protocolProfile!="lod113c" && operation==76)) v.staffSource=EntityId{(uint64_t{2}<<32)+*w.staffSource+1};
+                    v.pd2Sacrifice=session.read().protocolProfile!="lod113c" && operation==76;
+                }
             }
         }
         v.targetingReady=!w.itemTargetingSource;

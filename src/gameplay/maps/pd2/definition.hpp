@@ -23,6 +23,10 @@ struct MapCatalog {
     std::map<std::string,MapItemDefinition,std::less<>> items;
     struct SceneUnique {bool eligible{},socketable{};};
     std::vector<SceneUnique> sceneUniques;
+    struct TimedTreasure {std::string treasure;int count{60};};
+    std::map<int,TimedTreasure> timedTreasures;
+    std::vector<std::string> relativeTreasures;
+    std::map<std::string,std::string,std::less<>> notices;
 };
 // Runtime map identity is the consumed item revision. This is deliberately
 // absent from character saves: a map belongs to its game, never to a D2S.
@@ -35,5 +39,6 @@ struct MapInstance {
     uint8_t quality{};
     int controller{};
     uint32_t initSeed{};
+    uint8_t participants{},bossDifficulty{};
 };
 }

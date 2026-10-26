@@ -24,6 +24,8 @@ struct MonsterAiProfile {
     std::array<std::array<int,3>,8> pd2Parameters{};
     int pd2FixedIdle{};
     std::array<uint8_t,3> pd2Delays{};
+    std::array<uint8_t,3> pd2Distances{};
+    std::array<uint8_t,8> pd2SkillRanks{};
     std::array<uint16_t,6> pd2RestingResistances{}; // Fi, Li, Co, Po, Ma, Dm; fixed H columns.
     std::optional<Pd2ArcherCycle> pd2ArcherCycle;
     int meleeRange = 0; // Resolved MonStats2.MeleeRng, including the 255 weapon-class sentinel.

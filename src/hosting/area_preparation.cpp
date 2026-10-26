@@ -15,8 +15,10 @@ struct AreaPreparation::Impl {
     bool stopping{};
     std::thread worker;
     Impl(const Archives &source, std::shared_ptr<const ClassicData> content)
-        : worker([this, paths = source.mountedPaths(), identity = source.mountIdentity(), content = std::move(content)] {
+        : worker([this, paths = source.mountedPaths(), identity = source.mountIdentity(),
+                  pd2Presets=source.pd2Presets,content = std::move(content)] {
             Archives archives;
+            archives.pd2Presets=pd2Presets;
             std::string mountError;
             try {
                 for (const auto &path : paths) archives.mount(path);

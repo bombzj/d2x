@@ -3,9 +3,14 @@
 namespace d2x {
 void SceneView::drawOrifice(Vec mouse) const {
     if(!view_.orificeObject || !view_.inventory.open) return;
-    const auto *image=assets_.orificePanel.frame(0,0);if(!image) return;
+    const auto *image=(inventoryView_.pd2Sacrifice?assets_.desecratePanel:assets_.orificePanel).frame(0,0);if(!image) return;
     const auto bounds=orificeBounds();
     DrawTexturePro(image->texture,{0,0,float(image->texture.width),float(image->texture.height)},bounds,{0,0},0,WHITE);
+    if(inventoryView_.pd2Sacrifice) {
+        const float scale=inventoryScale();
+        for(const auto &[text,y]:std::array<std::pair<const char *,int>,2>{{{"Place a corrupted amulet",48},{"into the blood altar",64}}})
+            drawColoredItemText(text,4,{0,float(y)*scale,320*scale,16*scale},int(16*scale));
+    }
     for(bool confirm:{true,false}) {
         const auto button=orificeButton(confirm);const bool pressed=CheckCollisionPointRec(rv(mouse),button) && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
         const auto *icons=assets_.orificeButtons.frame(0,pressed?1:0);

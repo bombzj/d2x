@@ -164,7 +164,8 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
     auto &cursor=object?object->cursor:quest?quest->cursor:preset?population.presets[{preset->order,preset->extraMapBoss}]:population.density[roomIndex];
     const auto &bounds=definition.activation.rooms().at(roomIndex);
     if(!preset && definition.pd2Map && pd2::suppressMapRoomPopulation(int(region),definition.pd2Map->controller,
-        int(bounds.x+definition.origin.x),int(bounds.y+definition.origin.y),bounds.width,bounds.height)) {
+        int(bounds.x+definition.origin.x),int(bounds.y+definition.origin.y),bounds.width,bounds.height,
+        definition.tileX*5,definition.tileY*5)) {
         cursor.initialized=true;cursor.phase=DensityRoom::Phase::Done;return StepStatus::Complete;
     }
     const auto &rules=definition.populationRules;
@@ -179,6 +180,16 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
         cursor.initialized=true;
         if(preset) {
             cursor.definition=preset->definition;cursor.position=preset->position;
+            if(preset->nativeFreePlacement) {
+                const auto point=ports_.world.nativeFreeSpace(region,preset->position,preset->position,1);
+                if(!point || point->area!=region) {cursor.phase=DensityRoom::Phase::Done;return StepStatus::Complete;}
+                cursor.position=point->position;
+            }
+            if(preset->pd2SceneMarker>=0) {
+                cursor.definition=ports_.maps.selectPreset(preset->pd2SceneMarker);
+                if(cursor.definition==-2) {cursor.phase=DensityRoom::Phase::Done;return StepStatus::Complete;}
+                if(cursor.definition<0) {cursor.deferred="Missing PD2 scene preset selection";return StepStatus::NotImplemented;}
+            }
             if(preset->questVariant>=0 &&
                 !(ports_.quests.read().initialFlags[questDefinition(QuestId::SiegeOnHarrogath).nativeSlot]&0x8000))
                 cursor.definition=preset->questVariant;
@@ -243,6 +254,8 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
         const auto &family=rules.classes.at(type);
         monsters::Admission admission{identity,prototype->second.implementation,region,point,family.hostile,prototype->second.rule,{},tick.tick};
         admission.uncounted=preset && preset->place==8 && cursor.phase==DensityRoom::Phase::Leader;
+        if(preset && definition.pd2Map && definition.pd2Map->controller==33)
+            admission.pd2SceneLifePercent=pd2::outerVoidLifePercent(preset->pd2SceneMarker);
         admission.ignoreSpawnCollision=preset && cursor.phase==DensityRoom::Phase::Leader && preset->ignoreSpawnCollision;
         if(object && object->birthTicks && cursor.phase==DensityRoom::Phase::Leader) admission.birthTicks=object->birthTicks;
         admission.resurrected=presetIndex.has_value() && cursor.phase==DensityRoom::Phase::Leader;
@@ -354,18 +367,8 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
                 const int row=top+int(limitedRandom(loan.value->next,uint32_t(bottom-top)));
                 const Vec point=Vec{float(column),float(row)}-definition.origin;
                 ports_.areas.publishRoomRandom(*loan.value);
-                bool protectedArrival=false;
-                if(!preset || preset->place==2 || preset->randomElite) for(const auto arrival:rules.warpArrivals) {
-                    const auto delta=point-arrival;
-                    if(delta.x*delta.x+delta.y*delta.y<rules.warpDistance) {protectedArrival=true;break;}
-                }
-                if(!protectedArrival && (!preset || preset->place==2 || preset->randomElite)) {
-                    const auto arrival=ports_.world.nativeActSpawnLocation(region,11);
-                    if(arrival && arrival->x+definition.origin.x>0 && arrival->y+definition.origin.y>0) {
-                        const auto delta=point-*arrival;
-                        protectedArrival=delta.x*delta.x+delta.y*delta.y<rules.warpDistance;
-                    }
-                }
+                const bool protectedArrival=(!preset || preset->place==2 || preset->randomElite) &&
+                    ports_.world.nativeProtectedSpawnPosition(region,point);
                 bool matchingLogical=true;
                 if(!preset) {
                     const int tileColumn=column/5-layout.x,tileRow=row/5-layout.y;
@@ -736,8 +739,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 const auto objects=ports_.objects.populateRoom(region,roomIndex,tick);
                 if(objects!=StepStatus::Complete) return objects;
             } else {
-                const auto density=populateDensity(region,roomIndex,tick);
-                if(density!=StepStatus::Complete) return density;
+                const auto event=ports_.maps.populateRoom(region,roomIndex,population.processedRooms,tick);
+                if(!event) return isDeferred(event.status) || event.status==DomainStatus::Stale?StepStatus::Blocked:StepStatus::NotImplemented;
+                if(!*event.value) {
+                    const auto density=populateDensity(region,roomIndex,tick);
+                    if(density!=StepStatus::Complete) return density;
+                }
             }
             ++stage;
         }

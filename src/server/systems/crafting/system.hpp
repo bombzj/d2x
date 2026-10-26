@@ -13,7 +13,8 @@
 
 namespace d2x::server::crafting {
 struct RewardItem { EntityId npc; ItemHandle item; };
-using Intent = std::variant<TransmuteCube, SocketItem, ImbueItem, SocketQuestItem, PersonalizeQuestItem, RewardItem>;
+struct Pd2SacrificeItem { EntityId altar;ItemHandle input; };
+using Intent = std::variant<TransmuteCube, SocketItem, ImbueItem, SocketQuestItem, PersonalizeQuestItem, RewardItem,Pd2SacrificeItem>;
 struct Request { Intent intent; };
 struct Pending { ActorContext actor; Request request; uint64_t token{}, seed{}, inventoryRevision{}, characterRevision{}, conversation{}; };
 // Immutable content-worker input. Authority revalidates revisions and access
@@ -23,6 +24,8 @@ struct Preparation {
     uint64_t inventoryRevision{}, characterRevision{}; int difficulty{}; bool storage{}, cube{};
     std::string npc;
     uint32_t pd2Random{};
+    uint8_t pd2BossDifficulty{};
+    bool retained{};
 };
 struct Output { ItemInstance item; std::optional<ItemHandle> replacement; EntityId container; };
 struct Prepared {
@@ -31,13 +34,15 @@ struct Prepared {
     std::optional<CharacterRecord> character;
     std::optional<travel::SpecialPortalKind> portal;
     std::optional<uint32_t> pd2Random;
+    std::optional<uint64_t> nativeGameRandom;
 };
-struct State { std::map<PlayerId, Pending> pending; uint64_t next = 1; std::string deferred; };
+struct State { std::map<PlayerId, Pending> pending; uint64_t next = 1; std::string deferred; std::map<PlayerId,Prepared> retained; };
 struct Ports {
     const PlayerStore &players; const AreaStore &areas; items::System &items; transactions::System &transactions;
     const ItemCatalog *definitions; const inventory::System &inventory;
     const GameSettings &settings; uint64_t &random; const npc::System &npc; travel::System &travel; EventOutbox &events; const quests::System &quests;
     uint32_t &pd2Random;
+    maps::System &maps;
 };
 class System {
     State state_;

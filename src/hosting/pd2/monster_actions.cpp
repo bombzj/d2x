@@ -34,6 +34,14 @@ bool projectile(const ClassicData &data,size_t row) {
     return true;
 }
 }
+bool sceneController(const MonsterRecord &record) {return record.index==1141;}
+bool hasAttackMode(const ClassicData &data,const MonsterRecord &record,int slot) {
+    const auto &extra=data.tables.at("monstats2");
+    const auto name=data.tables.at("monstats").value(record.sourceRow,"MonStatsEx");
+    for(size_t row=0;row<extra.rows().size();++row) if(nativeName(extra.value(row,"Id"))==nativeName(name))
+        return extra.number(row,"mA"+std::to_string(slot)).value_or(0)!=0;
+    return false;
+}
 void prepareMonsterSkillPrograms(const ClassicData &data,server::SkillRules &rules) {
     const auto &monsters=data.tables.at("monstats"),&skills=data.tables.at("skills");
     std::set<std::string> linked;
@@ -45,7 +53,10 @@ void prepareMonsterSkillPrograms(const ClassicData &data,server::SkillRules &rul
         const auto id=skills.number(row,"Id");
         const bool joust=!skills.number(row,"srvstfunc").value_or(0) && skills.number(row,"srvdofunc").value_or(0)==162;
         const bool blink=!skills.number(row,"srvstfunc").value_or(0) && skills.number(row,"srvdofunc").value_or(0)==155;
-        if(!id || !linked.contains(nativeName(skills.value(row,"skill"))) || (!joust && !blink && !projectile(data,row))) continue;
+        const bool summon=skills.number(row,"srvstfunc").value_or(0)==14 &&
+            (skills.number(row,"srvdofunc").value_or(0)==177 || skills.number(row,"srvdofunc").value_or(0)==179);
+        const bool dash=skills.number(row,"srvstfunc").value_or(0)==76 && skills.number(row,"srvdofunc")==185;
+        if(!id || !linked.contains(nativeName(skills.value(row,"skill"))) || (!joust && !blink && !summon && !dash && !projectile(data,row))) continue;
         auto spec=preparePd2SkillDefinition(data,row);
         if(spec.effect==SkillBehavior::None) spec.effect=SkillBehavior::Pd2;
         if(const auto found=rules.definitions.find(*id);found!=rules.definitions.end()) {
@@ -53,16 +64,19 @@ void prepareMonsterSkillPrograms(const ClassicData &data,server::SkillRules &rul
         } else rules.definitions.emplace(*id,server::SkillDefinition{spec.rules(),skills.number(row,"InTown").value_or(0)!=0,{}});
     }
 }
-bool prepareMonsterActions(Archives &archives,const ClassicData &data,const AnimDataTable &animations,
-    const MonsterRecord &record,server::MonsterRule &rule) {
-    const auto &stats=data.tables.at("monstats"),&skills=data.tables.at("skills");
+void prepareMonsterAi(const ClassicData &data,const MonsterRecord &record,server::MonsterRule &rule) {
+    const auto &stats=data.tables.at("monstats");
     for(size_t index=0;index<rule.ai.pd2Parameters.size();++index)
         for(size_t difficulty=0;difficulty<3;++difficulty)
             rule.ai.pd2Parameters[index][difficulty]=uint16_t(stats.number(record.sourceRow,
                 "aip"+std::to_string(index+1)+std::array{"","(N)","(H)"}[difficulty]).value_or(0));
     rule.ai.pd2FixedIdle=uint8_t(stats.number(record.sourceRow,"aidel(H)").value_or(0));
+    for(size_t index=0;index<rule.ai.pd2SkillRanks.size();++index)
+        rule.ai.pd2SkillRanks[index]=uint8_t(stats.number(record.sourceRow,"Sk"+std::to_string(index+1)+"lvl").value_or(0));
     for(size_t difficulty=0;difficulty<3;++difficulty)
         rule.ai.pd2Delays[difficulty]=uint8_t(stats.number(record.sourceRow,std::array{"aidel","aidel(N)","aidel(H)"}[difficulty]).value_or(0));
+    for(size_t difficulty=0;difficulty<3;++difficulty)
+        rule.ai.pd2Distances[difficulty]=uint8_t(stats.number(record.sourceRow,std::array{"aidist","aidist(N)","aidist(H)"}[difficulty]).value_or(0));
     constexpr std::array guardFields{"ResFi(H)","ResLi(H)","ResCo(H)","ResPo(H)","ResMa(H)","ResDm(H)"};
     for(size_t index=0;index<guardFields.size();++index)
         rule.ai.pd2RestingResistances[index]=uint16_t(stats.number(record.sourceRow,guardFields[index]).value_or(0));
@@ -79,6 +93,11 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
             cycle.restingResistances[index]=uint16_t(stats.number(record.sourceRow,fields[index]).value_or(0));
         rule.ai.pd2ArcherCycle=cycle;
     }
+}
+bool prepareMonsterActions(Archives &archives,const ClassicData &data,const AnimDataTable &animations,
+    const MonsterRecord &record,server::MonsterRule &rule) {
+    prepareMonsterAi(data,record,rule);
+    const auto &stats=data.tables.at("monstats"),&skills=data.tables.at("skills");
     const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
     const int bonus=data.tables.at("difficultylevels").number(size_t(rule.difficulty),"MonsterSkillBonus").value_or(0);
     for(size_t slot=0;slot<rule.skillIds.size();++slot) {
@@ -92,7 +111,14 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
         const int start=skills.number(row,"srvstfunc").value_or(0),function=skills.number(row,"srvdofunc").value_or(0);
         const auto state=skills.value(row,"auratargetstate");
         const bool curse=!start && function==30 && state!="dark_pact" && data.states.contains(state);
-        const bool inferno=start==53 && function==95;
+        const bool hydra=start==14 && function==144;
+        const bool inferno=start==53 && (function==95 || function==152);
+        const bool diabloRun=start==71 && function==103;
+        const bool bossSummon=start==14 && (function==177 || function==179);
+        const bool nativeSpell=!start && (function==104 || function==139);
+        const bool doubleThrow=!start && function==154;
+        const bool dash=start==76 && function==185;
+        const bool diabloCold=!start && function==100;
         const bool armor=!start && (function==18 || function==23) && data.states.contains(skills.value(row,"aurastate"));
         const bool periodic=!start && function==124 && data.states.contains(skills.value(row,"aurastate"));
         const bool concentrate=start==68 && function==2;
@@ -107,13 +133,25 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
         const bool charge=start==31 && function==67;
         const bool poisonEgg=start==43 && function==173;
         const bool blink=!start && function==155 && skills.value(row,"aurastate").empty();
-        if(!curse && !inferno && !armor && !periodic && !concentrate && !melee && !whirlwind && !rabies && !assassin && !nativePet && !joust && !smite && !charge && !poisonEgg && !blink && !projectile(data,row)) continue;
+        const bool animationMarker=!start && !function && skills.value(row,"srvmissile").empty() &&
+            skills.value(row,"srvmissilea").empty() && skills.value(row,"srvmissileb").empty() && skills.value(row,"srvmissilec").empty();
+        if(!hydra && !curse && !inferno && !armor && !periodic && !concentrate && !melee && !whirlwind && !rabies && !assassin && !nativePet && !joust && !smite && !charge && !poisonEgg && !blink && !animationMarker && !diabloRun && !bossSummon && !diabloCold && !nativeSpell && !dash && !projectile(data,row)) continue;
         const int baseRank=stats.number(record.sourceRow,"Sk"+field+"lvl").value_or(0);
         if(baseRank<=0) continue;
         const int rank=baseRank+bonus;
         const int id=skillTableNumber(skills,row,"Id");
         if(rank<1 || rank>255 || id<1 || id>UINT16_MAX) return false;
         server::MonsterAttackRule action;action.action=server::MonsterAttackRule::Action::Pd2Projectile;action.rank=uint8_t(rank);
+        if(doubleThrow) {
+            // Current 3B1570 -> 371E00 selects the monster's declared slot
+            // mode missile, without requiring player equipment or ammo.
+            const auto mode=stats.value(record.sourceRow,"Sk"+field+"mode");
+            const auto missileName=stats.value(record.sourceRow,mode.starts_with("seq_")?"MissSQ":"Miss"+std::string(mode));
+            const auto missile=data.nativeFormulas->missileIds.find(nativeName(missileName));
+            if(missile==data.nativeFormulas->missileIds.end()) return false;
+            action.missile=prepareMonsterMissile(data,missile->second,rank);
+            if(!action.missile) return false;
+        }
         if(nativePet) {
             // Current wild-monster Do49 consumers have no equipment,
             // additional summon stats, duration or inherited skill slots.
@@ -148,7 +186,12 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
             action.action=server::MonsterAttackRule::Action::NativePetSummon;
             action.nativePetSummon=server::MonsterSpawnParameters{child->index,nativeMode,birthTicks};
         }
-        if(charge || smite || concentrate || melee || whirlwind || rabies || assassinCharge) {
+        if(hydra) action.action=server::MonsterAttackRule::Action::Hydra;
+        else if(dash) action.action=server::MonsterAttackRule::Action::Pd2Dash;
+        else if(diabloRun) action.action=server::MonsterAttackRule::Action::DiabloRun;
+        else if(diabloCold || nativeSpell) action.action=server::MonsterAttackRule::Action::NativeSpell;
+        else if(animationMarker) action.action=server::MonsterAttackRule::Action::Animation;
+        else if(charge || smite || concentrate || melee || whirlwind || rabies || assassinCharge) {
             // Native Do67 uses A1; Do150 fills the monster's A2 profile even
             // when its declared animation is A1 (Leoric). The contact engine
             // owns formulas, stun, source damage and the release-time profile.
@@ -193,18 +236,37 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
         auto mode=stats.value(record.sourceRow,"Sk"+field+"mode");
         int event=record.ai=="Izual" || record.ai=="UberIzual" || record.ai=="BaalCrab" || record.ai=="BaalCrabClone"?1:2;
         if(charge || smite || concentrate || melee || whirlwind || rabies || assassin) event=1;
-        if(!hasAct2MonsterSkills(record.ai) && mode=="A1" && !record.attack1Projectile) event=1;
+        if(mode=="A1" && !record.attack1Projectile) event=1;
         // Guardian reuses CS A1 for Blink and summon. Its melee action flag
         // is 1; the Regurgitator family's default skill flag 2 is absent.
         if((rule.nativeClass==1064 || rule.nativeClass==1065) && mode=="A1") event=1;
         if(poisonEgg) event=4;
+        if(diabloRun || diabloCold) event=1;
+        if(animationMarker) event=0;
         if(inferno) {
             event=name=="horror arctic blast"?1:2;
             // Fn135 casts the stream in S1, not its declared sequence.
             if(name=="baal inferno") mode="S1";
         }
+        if(event && !mode.starts_with("seq_")) {
+            // MonMode accepts action markers 1/2/4. Current Madawc's SC
+            // contains marker 1, unlike the usual SC marker 2.
+            const auto lower=nativeName(mode);
+            const auto timing=loadMonsterMotionTiming(animations,record.token,lower,
+                monsterModeWeapon(archives,record.token,lower,record.baseWeapon));
+            if(timing && std::ranges::find(timing->flags,uint8_t(event))==timing->flags.end()) {
+                const auto marker=std::ranges::find_if(timing->flags,[](uint8_t value){return value==1 || value==2 || value==4;});
+                if(marker!=timing->flags.end()) event=*marker;
+            }
+        }
         action.sequenceSkillEvents=mode.starts_with("seq_");
         if(!prepareMonsterActionClock(archives,animations,sequences,record,mode,event,action)) return false;
+        if(!action.animationSequence && (action.action==server::MonsterAttackRule::Action::Pd2Projectile ||
+           action.action==server::MonsterAttackRule::Action::NativeMissile)) {
+            for(size_t frame=0;frame<action.animationFlags.size();++frame) if(action.animationFlags[frame]==event) {
+                action.animationEvents.push_back(int(frame));action.releaseFrames.push_back(std::max(1,int(frame)));
+            }
+        }
         if(inferno && action.infernoFrame>=action.animation->frames) return false;
         if(charge) {action.release=1;action.animationAction=0;action.releaseFrames.clear();action.animationEvents.clear();}
         const auto sourceMode=stats.value(record.sourceRow,"Sk"+field+"mode");

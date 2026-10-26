@@ -155,15 +155,18 @@ bool SceneController::handleInventory(const FrameInput &input) {
             inventoryClient_.submitStaff(panel.orificeObject,{});panel.orificeItem.reset();inventoryClick_=true;return true;
         }
         if(input.insideViewport && input.leftPressed && CheckCollisionPointRec(rv(input.mouse),orificeButton(true))) {
-            if(panel.orificeItem && !inventoryClient_.submitStaff(panel.orificeObject,panel.orificeItem)) view_.notice("The staff request could not be queued.",true);
+            if(panel.orificeItem && !inventoryClient_.submitStaff(panel.orificeObject,panel.orificeItem)) view_.notice(inventory.pd2Sacrifice?"The sacrifice request could not be queued.":"The staff request could not be queued.",true);
             inventoryClick_=true;return true;
         }
         if(input.insideViewport && CheckCollisionPointRec(rv(input.mouse),orificeSlot()) && (input.leftPressed || input.leftReleased)) {
             if(ui.drag) {
                 const auto *item=inventory.item(ui.drag->item.id);
                 const auto *at=item?std::get_if<ContainerLocation>(&item->location):nullptr;
-                if(item && at && at->container==inventory.containers.cursor && item->definition==inventory.staffRecipeOutput && item->revision==ui.drag->item.revision) {panel.orificeItem=item->handle();ui.drag.reset();}
-                else view_.notice("Only the complete Horadric Staff fits here.",true);
+                const bool eligible=item && (inventory.pd2Sacrifice?
+                    std::find(inventory.pd2SacrificeItems.begin(),inventory.pd2SacrificeItems.end(),item->id)!=inventory.pd2SacrificeItems.end():
+                    item->definition==inventory.staffRecipeOutput);
+                if(eligible && at && at->container==inventory.containers.cursor && item->revision==ui.drag->item.revision) {panel.orificeItem=item->handle();ui.drag.reset();}
+                else view_.notice(inventory.pd2Sacrifice?"Select an identified, corrupted amulet without desecration or a mirror.":"Only the complete Horadric Staff fits here.",true);
             } else if(input.leftPressed && panel.orificeItem) {
                 panel.orificeItem.reset();ui.syncCursor(inventory);
             }

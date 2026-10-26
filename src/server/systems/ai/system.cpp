@@ -82,7 +82,9 @@ StepStatus System::think(EntityId id,TickContext tick) {
             controller.pending.pop_front();
             if(!result) {controller.pending.clear();break;}
         }
-        ports_.monsters.scheduleAi(id,controller.nextDecision);return StepStatus::Complete;
+        if(controller.pd2CancelAi) {ports_.monsters.cancelAi(id);controller.pd2CancelAi=false;}
+        else ports_.monsters.scheduleAi(id,controller.nextDecision);
+        return StepStatus::Complete;
     }
     if(const auto found=state_.controllers.find(id);found!=state_.controllers.end() && found->second.pd2LootPending && pd2LootWaiting(id))
         return StepStatus::Blocked;
@@ -237,7 +239,8 @@ StepStatus System::think(EntityId id,TickContext tick) {
         // These families explicitly schedule AI while moving (AiThink /
         // AiBaal's trailing Idle); Madawc only does so for coordinate escape.
         const auto kind=monster.rule.ai.kind;
-        const bool timedMovement=kind==MonsterAiKind::Vulture || kind==MonsterAiKind::Baal || kind==MonsterAiKind::ScriptedNpc ||
+        const bool timedMovement=kind==MonsterAiKind::Vulture || kind==MonsterAiKind::Baal ||
+            (kind==MonsterAiKind::ScriptedNpc && (monster.rule.nativeClass==1168 || controller.pd2MovingTimer)) ||
             (monster.rule.stats && monster.rule.stats->pd2 && ((kind==MonsterAiKind::Brute && monster.rule.nativeClass==1103) ||
              (kind==MonsterAiKind::SiegeBeast && monster.rule.nativeClass==1000) ||
              (kind==MonsterAiKind::DoomKnight && monster.rule.nativeClass==1060) ||
@@ -320,9 +323,17 @@ StepStatus System::think(EntityId id,TickContext tick) {
             ports_.monsters.neutralMode(id);controller.pursuing=false;controller.nextDecision=tick.tick+200;continue;
         }
         if(monster.rule.ai.kind==MonsterAiKind::Diablo) {
+            if(monster.rule.stats && monster.rule.stats->pd2 && monster.rule.nativeClass==705)
+                if(const auto prefix=pd2UberMinions(id,acquireTarget(monster,tick,false,requireSight),tick,controller)) {
+                    blocked|=*prefix==StepStatus::Blocked;continue;
+                }
             blocked|=diabloFamily(id,tick,controller)==StepStatus::Blocked;continue;
         }
         if(monster.rule.ai.kind==MonsterAiKind::Baal || monster.rule.ai.kind==MonsterAiKind::BaalClone) {
+            if(monster.rule.stats && monster.rule.stats->pd2 && monster.rule.nativeClass==709)
+                if(const auto prefix=pd2UberMinions(id,acquireTarget(monster,tick,false,requireSight),tick,controller)) {
+                    blocked|=*prefix==StepStatus::Blocked;continue;
+                }
             blocked|=baalFamily(id,tick,controller)==StepStatus::Blocked;continue;
         }
         if(monster.rule.ai.kind==MonsterAiKind::AncientMadawc) {blocked|=madawcFamily(id,tick,controller)==StepStatus::Blocked;continue;}
@@ -530,6 +541,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             controller.randomPublished=true;
         }
         if(!controller.pending.empty()) return StepStatus::Blocked;
+        if(controller.pd2CancelAi) {ports_.monsters.cancelAi(id);controller.pd2CancelAi=false;return StepStatus::Complete;}
         ports_.monsters.scheduleAi(id,controller.nextDecision,
             std::max({live->busyUntil,live->frozenUntil,live->stunnedUntil,live->knockedUntil}));
     }

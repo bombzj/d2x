@@ -32,7 +32,7 @@ OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(Fr
 
 自研锁箱按公共ChestState判定：非刺客只查本人背包的MPQ钥匙类型，无钥匙保留锁／中立模式并可靠私发0x2C事件22；成功打开在库存／掉落事务中私发事件11，刺客免钥匙也走该成功通知。钥匙消耗与掉落安装共同提交，容量受阻不能提前消费或重复通知。依据D2MOO `ObjMode::OBJECTS_OperateFunction04_Chest`、`D2GAME_DoKeyCheck`；1.13c普通TCP/IP对照已覆盖女巫无钥匙／有钥匙及刺客无钥匙，未认证全部锁箱变体和概率。
 
-箱子／祭坛首次可见使用0x51，后续模式变化使用0x0E，不以重新分配覆盖初始InteractType。观察者缓存分别保留权威revision与模式：已观察OP后的ENDANIM→ON不补发消息；若发布合并跨过OP，仍同步当前模式。祭坛记录操作者真实Actor GUID，SubClass位1且非位4的OP发布另发0x4D，字段为物件GUID／操作者GUID／Shrines.Code，不能伪装成玩家技能施放。神坛ENDANIM只在Objects.CycleAnim1=0且Mode2存在时安排，重置清操作者。依据D2MOO `ObjMode::sub_6FC752A0`／`OBJECTS_OperateFunction02_Shrine`；其他物件族仍沿既有发布入口，不据此认证井水、门和任务物件全部增量。
+箱子／祭坛初次可见使用当前0x51快照；已经可见的物件由objects::publishChanges在每个权威固定帧末尾冻结ObjectFact，保存revision、位置、模式、可选性、操作者及Shrines.Code，进入既有可靠outbox。初始化先建立模式基线，包括出生同帧操作；只有事实入队后才推进基线，满队列停留Simulation::ObjectPublication重试，不重做开箱、库存或祭坛事务。hosting::receiveEvent按已知GUID和房间兴趣发送0x0E，祭坛SubClass位1且非位4的OP另发0x4D，操作者GUID／类型取冻结事实，不读后续ON快照补造操作。每个观察者缓存最后已发送版本，部分帧暴露的新状态不能覆盖它；新进入视野者只收到当前51，不重放历史0E／4D。ENDANIM的OP→ON只更新权威状态，不补通知；神坛仅在Objects.CycleAnim1=0且Mode2存在时安排ENDANIM，重置清操作者并发布中立模式。依据D2MOO ObjMode::sub_6FC752A0／OBJECTS_OperateFunction02_Shrine及1.13c原包；X3R已完成8帧合并、双客户端、迟到OP／ON及单机单步复验，见[对比计划](../../development/MESSAGE_COMPARISON_PLAN.md#x3r-多帧合并修复复验)。其他物件族仍沿既有发布入口，不据此认证井水、门和任务物件全部增量。
 
 | 类别 | OperateFn／定义数 | 表现与原服边界 |
 | --- | --- | --- |

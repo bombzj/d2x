@@ -34,6 +34,14 @@ DomainResult<> System::toggleAiState(EntityId id,int state,bool active,uint64_t 
     if(active) actor.aiStates.insert(state);else actor.aiStates.erase(state);
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
+DomainResult<> System::pd2PhasePresence(EntityId id,bool active) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;
+    // Current 3A4C60/80 bind retail Game 7BE10/89730: clear/restore the
+    // three target flags and NO_PATH, retaining the MONSTER footprint.
+    unit.targetFlagsDisabled=unit.pd2NoPathDisabled=!active;
+    refreshCollision(unit);++unit.revision;return {DomainStatus::Applied,std::monostate{}};
+}
 void System::curseControl(EntityId id,Actor::CurseControl control) {
     if(auto found=state_.actors.find(id);found!=state_.actors.end()) {
         auto &actor=found->second;
@@ -262,7 +270,7 @@ ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors
     }
     for(auto &[id,candidate]:result.actors) if(!find(id) && candidate.owner && candidate.nativeStats)
         if(const auto *area=ports_.areas.find(candidate.area);area && area->definition.pd2Map)
-            attributes::preparePd2MapMonster(candidate,*area->definition.pd2Map,ports_.frameEvents.currentFrame(),!candidate.alive());
+            attributes::preparePd2MapMonster(candidate,*area->definition.pd2Map,ports_.frameEvents.currentFrame(),!candidate.alive(),area->definition.pd2RuntimeGlobal);
     auto birthEffects=ports_.effects.prepareBirthEffects(result.actors);
     if(!birthEffects.units.empty()) result.birthEffects=std::make_shared<effects::BirthEffectsPublication>(std::move(birthEffects));
     if(!validateActors(result)) throw std::invalid_argument("Invalid staged actor publication");

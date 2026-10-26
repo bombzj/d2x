@@ -10,6 +10,7 @@
 #include "content/pd2/cube_inputs.hpp"
 #include "pd2/cube.hpp"
 #include "pd2/item_reroll.hpp"
+#include "pd2/sacrifice.hpp"
 #include "core/random.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
@@ -277,6 +278,7 @@ Prepared prepare(const ClassicData &data, Preparation source) {
         if(data.pd2Host) preparePd2Cube(data,result,[&](Prepared &stage,uint64_t &random,bool optional){return cube(data,stage,random,optional);});
         else {auto random=result.source.pending.seed;cube(data,result,random);}
     }
+    else if(std::holds_alternative<Pd2SacrificeItem>(result.source.pending.request.intent)) preparePd2Sacrifice(data,result);
     else questService(data,result);
     auto projection=result.source.character; projection.inventory.items.clear();
     for(const auto &out:result.outputs) projection.inventory.items.emplace(out.item.id,out.item);
@@ -285,6 +287,7 @@ Prepared prepare(const ClassicData &data, Preparation source) {
 }
 void prepareCrafting(GameHost &host, GameHandle game, const ClassicData &data) {
     for(auto &source:host.pendingCrafting(game)) {
+        if(source.retained) {Prepared retry;retry.source=std::move(source);host.installCrafting(game,std::move(retry));continue;}
         Prepared result;
         try { result=prepare(data,source); }
         catch(const std::exception &error) { result.source=std::move(source); result.deferred=error.what(); }

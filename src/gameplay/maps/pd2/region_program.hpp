@@ -1,6 +1,7 @@
 #pragma once
 #include "property_program.hpp"
 #include "gameplay/monsters/region_generation.hpp"
+#include <span>
 
 namespace d2x::pd2 {
 struct MapRegionProperties {
@@ -15,5 +16,9 @@ void appendMapGlobalUnitProperties(MapProperties &);
 int ordinaryMapPresetClass(int level,int nativeClass);
 int mapPresetClass(int level,int nativeClass,int controller);
 int fixedMapController(int level);
-bool suppressMapRoomPopulation(int level,int controller,int x,int y,int width,int height);
+std::span<const int> outerVoidBossPool(int marker);
+int outerVoidLifePercent(int marker);
+int outerVoidDeathStage(int nativeClass);
+int mapBossGroup(int nativeClass);
+bool suppressMapRoomPopulation(int level,int controller,int x,int y,int width,int height,int levelX=0,int levelY=0);
 }

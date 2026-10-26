@@ -48,6 +48,7 @@ struct Controller {
     bool randomPublished{};
     bool pd2LootPending{};
     bool pd2MovingTimer{};
+    bool pd2CancelAi{};
     std::deque<std::function<DomainResult<>()>> pending;
 };
 struct State { std::map<EntityId, Controller> controllers; };
@@ -114,8 +115,14 @@ class System {
     std::optional<StepStatus> pd2Willowisp(EntityId,std::optional<UnitTarget>,TickContext,Controller &);
     StepStatus pd2Warlord(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
     std::optional<StepStatus> pd2DemonPillar(EntityId,TickContext,Controller &);
+    std::optional<StepStatus> pd2Mendeln(EntityId,TickContext,Controller &);
     std::optional<StepStatus> pd2RathmaSpire(EntityId,TickContext,Controller &);
+    std::optional<StepStatus> pd2RathmaBoss(EntityId,TickContext,Controller &);
     StepStatus pd2ScriptedNpc(EntityId,TickContext,Controller &);
+    StepStatus pd2Ancients(EntityId,TickContext,Controller &);
+    std::optional<StepStatus> pd2Lucion(EntityId,TickContext,Controller &);
+    std::optional<StepStatus> pd2DiabloClone(EntityId,TickContext,Controller &);
+    std::optional<StepStatus> pd2UberMinions(EntityId,std::optional<NativeAiTarget>,TickContext,Controller &);
     DomainResult<> setPd2Guard(Controller &,TickContext,bool active);
     std::optional<StepStatus> pd2ArcherAction(EntityId,std::optional<UnitTarget>,TickContext,Controller &);
     StepStatus pd2TreasureFallen(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);

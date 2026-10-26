@@ -4,25 +4,29 @@
 #include "server/systems/items/system.hpp"
 #include "server/systems/inventory/planning.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/quests/system.hpp"
+#include "server/systems/npc/system.hpp"
+#include "server/systems/inventory/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "gameplay/maps/pd2/definition.hpp"
 #include "gameplay/maps/pd2/region_program.hpp"
+#include "gameplay/maps/pd2/event_program.hpp"
 #include "gameplay/items/native_sources.hpp"
 #include "gameplay/items/quality.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace d2x::server::travel {
 namespace {
 bool requiresMapController(int level) {
-    // Current pSpell12's dedicated controller branches, plus PvP admission.
+    // PvP admission remains a separate game mode.
     switch(level) {
-    case 137:case 157:case 159:case 161:case 168:case 180:
-    case 185:case 188:case 192:case 197:return true;
+    case 157:case 159:return true;
     default:return false;
     }
 }
 bool availableMapPrograms(const pd2::MapProperties &properties) {
-    if(properties.forceEvent) return false;
     // Current 17d5 stores 7/8/9/15, but neither 389510 nor its global-table
     // readers consume them. Preserve them without inventing name-based loot.
     for(const auto &program:properties.global) if(program.key.id>15) return false;
@@ -78,9 +82,15 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
     const auto *location=std::get_if<ContainerLocation>(&item->location);
     if(!location || !draft.owned(*location) || draft.at({draft.containers().cursor,{}})) return {DomainStatus::InvalidRequest,{}};
     if(requiresMapController(rule->second.level)) return {DomainStatus::NotImplemented,{}};
-    if(int(actor.area)!=109 || player->persistent.difficulty!=2 || player->persistent.player.level<80 ||
+    const bool scene=pd2::fixedMapController(rule->second.level)>=41 && pd2::fixedMapController(rule->second.level)<=45;
+    if(int(actor.area)!=109 || player->persistent.difficulty!=2 || (!scene && player->persistent.player.level<80) ||
        player->persistent.player.quests.at(2).at(questIndex(QuestId::RiteOfPassage)).stage<questCompletionStage(QuestId::RiteOfPassage))
         return {DomainStatus::InvalidRequest,{}};
+    if(scene) {
+        const auto global=player->position+origin->definition.origin;
+        const int x=int(global.x)-0x13d2,y=int(global.y)-0x13fa;
+        if(x*x+y*y>=150) return {DomainStatus::InvalidRequest,{}};
+    }
     if(state_.pd2Map && (state_.pd2Map->owner!=actor.actor || state_.pd2Map->item.id!=requested.id || state_.pd2Map->item.revision!=requested.revision))
         return {DomainStatus::Conflict,{}};
     auto map=state_.pd2Map;
@@ -94,16 +104,31 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
         std::vector<StatValue> raw;for(const auto &[key,value]:values.values) raw.emplace_back(key,value);
         auto candidate=std::make_shared<pd2::MapInstance>();candidate->owner=actor.actor;candidate->item=requested;
         candidate->catalog=catalog;candidate->destination=rule->second;
-        candidate->controller=pd2::fixedMapController(rule->second.level);
         candidate->initSeed=ports_.settings.mapSeed;
         candidate->properties=pd2::prepareMapProperties(catalog->properties,raw);
         if(!availableMapPrograms(candidate->properties)) return {DomainStatus::NotImplemented,{}};
-        appendMapGlobalUnitProperties(candidate->properties);
         candidate->quality=uint8_t(std::find(nativeItemQualities.begin()+1,nativeItemQualities.end(),item->quality)-nativeItemQualities.begin());
+        candidate->controller=pd2::selectMapController(rule->second.level,candidate->quality,candidate->properties.forceEvent,ports_.pd2Random);
+        if(scene) {
+            const auto difficulty=values.get({player->rules.character->stats->names.at("uber_difficulty"),0});
+            if(difficulty<0 || difficulty>2) return {DomainStatus::InvalidRequest,{}};
+            candidate->bossDifficulty=uint8_t(difficulty);
+            for(const auto &[id,other]:ports_.players.all()) {
+                (void)id;if(!other.entered || int(other.area)!=109 || other.persistent.player.hp<=0) continue;
+                const auto global=other.position+origin->definition.origin;
+                const int x=int(global.x)-0x13d2,y=int(global.y)-0x13fa;
+                if(x*x+y*y<150) ++candidate->participants;
+            }
+            candidate->properties.monsters.clear();candidate->properties.players.clear();candidate->properties.global.clear();
+            if(candidate->controller!=41) candidate->destination.portal=587;
+        } else appendMapGlobalUnitProperties(candidate->properties);
         map=std::move(candidate);
     }
     const auto portalRule=origin->definition.questPortalRules.find(map->destination.portal);
     if(portalRule==origin->definition.questPortalRules.end()) return {DomainStatus::Unavailable,{}};
+    // Preserve the selected controller across asynchronous content/capacity
+    // waits. A pending UseItem never consumes another selector CRT sequence.
+    state_.pd2Map=map;
     const auto prepared=ports_.world.request(RegionId(map->destination.level),map);
     if(!prepared) return {prepared.status,{}};
     state_.pd2Map=map;
@@ -131,10 +156,27 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
     transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(draft.edit.inventory),
         std::move(draft.edit.changes),player->persistent.player.weaponSet};
     const auto &portal=*pd2OpeningPortal_;
+    std::optional<Vec> sceneArrival;
+    std::optional<RoomView> sceneRoom;
+    if(scene) {
+        const auto &target=ports_.areas.at(portal.town);
+        ports_.world.activate(portal.town,portal.townPosition);
+        if(!ports_.areas.loaded(portal.town,portal.townPosition)) return {DomainStatus::PendingContent,{}};
+        if(!ports_.quests.allowsTravel(player->persistent.player,actor.area,portal.town)) return {DomainStatus::InvalidRequest,{}};
+        const auto global=portal.townPosition+target.definition.origin;
+        const auto room=ports_.areas.roomAtPosition(portal.town,portal.townPosition,int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)));
+        if(!room) return {DomainStatus::Unavailable,{}};
+        auto exclusion=ports_.areas.excludeCollision(player->actor);
+        const auto free=ports_.areas.nativeFreeCoordinates(*room,int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)),2,
+            playerMovement.mask,ports_.spatial.nativeCollisionSample(playerMovement.mask),{},0,false,50,1);
+        if(!free || free->room.area!=portal.town) return {DomainStatus::Unavailable,{}};
+        sceneArrival=free->position;sceneRoom=free->room;edit.environmentRegion=portal.town;
+        edit.facts.emplace_back(TravelFact{actor.player,actor.actor,actor.area,portal.town,target.generation,*sceneArrival,false});
+    }
     Pd2MapAttributesFact report{portal.fieldId,RegionId(map->destination.level),map->destination.itemIndex,map->quality,map->properties.original};
     auto reports=state_.mapReports;reports.insert_or_assign(actor.player,portal.fieldId);
-    edit.facts.emplace_back(report);
-    for(const auto &[id,other]:ports_.players.all()) if(id!=actor.player && other.entered && ports_.areas.at(other.area).definition.act==4) {
+    if(!scene) edit.facts.emplace_back(report);
+    for(const auto &[id,other]:ports_.players.all()) if(!scene && id!=actor.player && other.entered && ports_.areas.at(other.area).definition.act==4) {
         edit.directed.push_back({id,{report}});
         reports.insert_or_assign(id,portal.fieldId);
     }
@@ -148,11 +190,35 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
         commitSpecialPortal(std::move(portals));
         ports_.world.retainControllerRoom(field,from,true);ports_.world.retainControllerRoom(town,to,true);
         pd2OpeningPortal_.reset();
+        if(scene) {
+            state_.mapReports.clear();state_.pd2SceneEntrants.clear();state_.pd2SceneOpening=true;
+            // The owner enters in the same accepted transaction as the map
+            // cost. A failed landing cannot consume a scene with no entrants.
+            state_.pd2SceneEntrants.insert(actor.player);
+            state_.pd2SceneEntryRooms.insert(*sceneRoom);
+            auto &owner=ports_.players.players_.at(actor.player);
+            ports_.npc.close(actor.player);ports_.inventory.close(actor.player);state_.waypoints.erase(actor.player);
+            owner.area=town;owner.position=*sceneArrival;owner.route.clear();owner.moving=false;owner.pathStep.reset();
+            owner.movementTarget.reset();owner.movementArrival.reset();owner.routeDestination=owner.position;
+            owner.routeObstacles=ports_.areas.at(town).definition.collision.obstacleRevision;
+            ports_.areas.moveRoomUnit(owner.actor,town,owner.position);
+            for(const auto id:ports_.players.nativeActorOrder()) {
+                const auto *other=ports_.players.findActor(id);
+                if(!other || !other->entered || int(other->area)!=109 || other->persistent.player.hp<=0) continue;
+                const auto global=other->position+origin->definition.origin;
+                const int x=int(global.x)-0x13d2,y=int(global.y)-0x13fa;if(x*x+y*y>=150) continue;
+                Transition transition{other->area,town,0,origin->generation,other->locomotionSequence,state_.pd2MapPortal,other->position,to};
+                transition.kind=Kind::SpecialPortal;transition.arrivalGeneration=ports_.areas.at(town).generation;transition.pd2SceneEntry=true;
+                state_.transitions.insert_or_assign(other->player,transition);
+                auto &moving=ports_.players.players_.at(other->player);moving.route.clear();moving.moving=false;
+            }
+        }
     }
     return result;
 }
 StepStatus System::synchronizePd2MapReports(TickContext tick) {
     if(!state_.pd2Map || !state_.pd2MapPortal) return StepStatus::Complete;
+    if(state_.pd2Map->controller>=41 && state_.pd2Map->controller<=45) return StepStatus::Complete;
     std::erase_if(state_.mapReports,[&](const auto &entry) {
         const auto *player=ports_.players.find(entry.first);return !player || !player->entered;
     });

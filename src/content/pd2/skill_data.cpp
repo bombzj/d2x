@@ -1,6 +1,7 @@
 #include "skill_data.hpp"
 #include "content/classic_data.hpp"
 #include "content/skills/skill_animation.hpp"
+#include "content/skills/skill_eligibility.hpp"
 #include "content/skills/necro_summon_data.hpp"
 #include "content/skills/table_values.hpp"
 #include "gameplay/skills/behavior.hpp"
@@ -39,6 +40,14 @@ SkillSpec preparePd2SkillDefinition(const ClassicData &data,size_t row) {
     auto program=std::make_shared<Pd2SkillProgram>();
     program->startFunction=number("srvstfunc");program->doFunction=number("srvdofunc");
     program->mode=table.value(row,"anim");
+    if(program->startFunction==14 && (program->doFunction==177 || program->doFunction==179)) {
+        const auto name=table.value(row,"summon");
+        const auto &monsters=data.tables.at("monstats");
+        for(size_t index=0;index<monsters.rows().size();++index)
+            if(monsters.value(index,"Id")==name) {program->summonClass=int(index);break;}
+        if(program->doFunction==177 && program->summonClass<0)
+            throw std::runtime_error("Missing PD2 boss summon monster: "+std::string(name));
+    }
     for(size_t slot=0;slot<program->weaponTypes.size();++slot)
         program->weaponTypes[slot]=table.value(row,"itypea"+std::to_string(slot+1));
     if(program->mode=="SQ") program->sequence=number("seqnum");
@@ -66,14 +75,31 @@ SkillSpec preparePd2SkillDefinition(const ClassicData &data,size_t row) {
         spec.assassin=std::move(assassin);spec.missileId=program->missiles[0];
     }
     if(program->doFunction==68 && !program->startFunction) {
-        spec.effect=SkillBehavior::Shout;spec.linearDuration=std::pair{0,0};spec.warcry=true;
+        // BasicShout always emits its missile, but only applies an owner
+        // list when AuraState names a real state (Battle Cry has none).
+        spec.effect=program->state.id>=0?SkillBehavior::Shout:SkillBehavior::Pd2;
+        if(program->state.id>=0) spec.state=program->state;
+        spec.warcry=true;
     }
     spec.pd2=std::move(program);
     return spec;
 }
 void preparePd2SkillData(ClassicData &data,Archives &archives) {
-    loadPlayerSkillAnimations(data.skills,data.tables.at("weapons"),data.characters,archives);
     const auto &table=data.tables.at("skills");
+    // Host programs are independent of the common picker's icon/layout:
+    // hidden item skills may deliberately reuse a class-only description.
+    for(size_t row=0;row<table.rows().size();++row) {
+        const auto id=table.number(row,"Id");
+        if(!id || data.skills.skills.contains(*id) || !table.value(row,"charclass").empty() ||
+           table.number(row,"ItemEffect").value_or(0)<=0) continue;
+        SkillRecord record;
+        static_cast<SkillMetadata &>(record)=loadSkillEligibilityMetadata(table,row);
+        record.name=table.value(row,"skill");
+        record.animationMode=table.value(row,"anim");
+        for(auto &letter:record.animationMode) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+        data.skills.skills.emplace(*id,std::move(record));
+    }
+    loadPlayerSkillAnimations(data.skills,data.tables.at("weapons"),data.characters,archives);
     for(size_t row=0;row<table.rows().size();++row) {
         const auto id=table.number(row,"Id");
         if(!id || !data.skills.skills.contains(*id)) continue;

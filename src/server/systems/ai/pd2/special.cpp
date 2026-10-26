@@ -3,6 +3,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/skills/system.hpp"
+#include "server/systems/maps/system.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "gameplay/combat/life.hpp"
 #include "gameplay/combat/geometry.hpp"
@@ -94,6 +95,25 @@ DomainResult<> System::setPd2Guard(Controller &controller,TickContext tick,bool 
 std::optional<StepStatus> System::pd2SpecialAction(EntityId id,std::optional<UnitTarget> target,Vec point,int size,int distance,
                                                 TickContext tick,Controller &controller) {
     const auto &unit=*ports_.monsters.find(id);
+    if(const auto result=pd2Lucion(id,tick,controller)) return result;
+    if(const auto result=pd2RathmaBoss(id,tick,controller)) return result;
+    if(unit.rule.nativeClass==704)
+        if(const auto prefix=pd2UberMinions(id,target?std::optional{NativeAiTarget{*target,point,size,distance}}:std::nullopt,tick,controller)) return prefix;
+    if(unit.rule.nativeClass==1182 && ports_.maps.read().instance && ports_.maps.read().instance->controller==20) {
+        const auto status=[](const DomainResult<> &result) {
+            return isDeferred(result.status)?StepStatus::Blocked:result?StepStatus::Complete:StepStatus::NotImplemented;
+        };
+        const auto progress=ports_.maps.read().eventProgress;
+        if((progress&255)>3 || ((progress>>8)&255)>2 || ((progress>>16)&255)>4)
+            return status(perform(controller,[this,id,tick]{return ports_.maps.invaderWave(id,tick);}));
+        if(distance>unit.rule.ai.pd2Distances[size_t(unit.rule.difficulty)]) {controller.nextDecision=tick.tick+5;return StepStatus::Complete;}
+        const auto values=ports_.effects.unitStatValues(id,tick.tick);if(!values) return StepStatus::Blocked;
+        const int count=nativeStatValue(*values,*unit.rule.stats,"mon_cooldown2");
+        controller.nextDecision=tick.tick+uint64_t(unit.rule.ai.pd2Delays[size_t(unit.rule.difficulty)]);
+        if(count<unit.rule.ai.pd2Parameters[0][0])
+            return status(setPd2AiStats(controller,tick,{{"mon_cooldown2",nativeAdd(count,1)}}));
+        return status(perform(controller,[this,id,tick]{return ports_.maps.invaderWave(id,tick);}));
+    }
     if(!target) point=Vec{}-ports_.areas.at(unit.area).definition.origin;
     if(unit.rule.ai.pd2ArcherCycle) return pd2ArcherAction(id,target,tick,controller);
     if(unit.rule.ai.kind==MonsterAiKind::ArcaneTower)

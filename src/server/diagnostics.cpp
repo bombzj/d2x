@@ -52,6 +52,19 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     if (!player) return {};
     limit = std::clamp<size_t>(limit, 1, 256);
     DiagnosticSnapshot result;
+    const auto &map=systems_.maps.read();
+    if(map.instance) {
+        result.pd2Map.emplace();auto &view=*result.pd2Map;
+        view.controller=map.instance->controller;view.phase=map.phase;view.eventProgress=map.eventProgress;
+        for(const auto &[unit,death]:map.deaths) {
+            view.deaths.push_back({unit,int(death.phase),death.portalPhase,death.portalStatus,death.evaluated,death.portalPosition});
+        }
+        for(const auto &[region,area]:areas_.all()) if(area.definition.pd2Map==map.instance)
+            for(const auto &preset:area.definition.nativePresetMonsters)
+                if(preset.pd2SceneMarker>=0 || preset.pd2Binding>=0 || preset.rank==MonsterRank::Boss || preset.definition>=700)
+                    view.presets.push_back({region,preset.definition,preset.pd2SceneMarker,preset.pd2Binding,
+                        preset.position+area.definition.origin,preset.deferred});
+    }
     result.virtualPlayers=settings_.virtualPlayers;
     result.stageMetrics=simulation_.metrics();
     const auto &spatial=systems_.spatial.read();

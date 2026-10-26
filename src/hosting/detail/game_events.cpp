@@ -59,6 +59,24 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             // publishMotion's native 18/95/96 checks. Keep domain diagnostics
             // without a second 1D/E/F stream for the same resource writes.
         }
+        else if(const auto *object=std::get_if<server::ObjectFact>(&fact)) {
+            const auto known=peer.objects.find(object->object);
+            // No history for a newly visible unit or a recipient that left its
+            // room. Its first assignment describes the current authoritative mode.
+            if(known==peer.objects.end() || known->second.first>=object->revision ||
+                !host.visiblePoint(*binding,object->area,object->position)) continue;
+            delta.push_back(encodeServerPacket(ServerMessage::UnitMode,[&](auto &out) {
+                out.u8(2);out.u32(uint32_t(object->object.value));out.u8(3);
+                out.u8(object->shrine && object->mode==1?1:object->targetable?2:0);
+                out.u32(uint32_t(object->mode));
+            }));
+            if(object->mode==1 && object->shrine && object->actor)
+                delta.push_back(encodeServerPacket(ServerMessage::CastPoint,[&](auto &out) {
+                    out.u8(2);out.u32(uint32_t(object->object.value));out.u32(uint32_t(object->actor.value));
+                    out.u8(uint8_t(*object->shrine));out.u16(0);out.u16(0);out.u16(0);
+                }));
+            known->second={object->revision,object->mode};
+        }
         else if (const auto *position = std::get_if<server::RepositionFact>(&fact)) {
             if(!position->notifyOwner && position->actor==host.read(*binding)->actor.id) continue;
             if (position->actor != host.read(*binding)->actor.id &&
@@ -150,7 +168,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             }));
         }
         else if (const auto *missile = std::get_if<server::MissileFact>(&fact)) {
-            if(!visibleActor(missile->owner,missile->ownerType) || (missile->missile && peer.missiles.contains(missile->missile))) continue;
+            if((!missile->forcePublication && !visibleActor(missile->owner,missile->ownerType)) || (missile->missile && peer.missiles.contains(missile->missile))) continue;
             delta.push_back(nativeMissile(*missile,shared.terrain.at(binding->game).at(missile->area).origin));
             if(missile->missile) peer.missiles.insert(missile->missile);
         }
@@ -204,7 +222,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         else if (const auto *chat = std::get_if<server::ChatFact>(&fact)) {
             if (std::find(chat->recipients.begin(), chat->recipients.end(), binding->player) == chat->recipients.end()) continue;
             delta.push_back(encodeServerPacket(ServerMessage::Chat, [&](auto &out) {
-                out.u8(chat->type); out.u8(chat->language); out.u8(chat->unitType); out.u32(uint32_t(chat->actor.value)); out.u8(0); out.u8(chat->nameColor);
+                out.u8(chat->type); out.u8(chat->language); out.u8(chat->unitType); out.u32(uint32_t(chat->actor.value)); out.u8(chat->messageColor); out.u8(chat->nameColor);
                 out.string(chat->name); out.string(chat->text);
             }));
         } else if (const auto *relation=std::get_if<server::ChatRelationFact>(&fact)) {

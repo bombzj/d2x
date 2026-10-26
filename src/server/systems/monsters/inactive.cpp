@@ -5,6 +5,9 @@
 #include "server/systems/effects/system.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/effects/queries.hpp"
+#include "server/systems/attributes/pd2/map_values.hpp"
+#include "gameplay/maps/pd2/event_program.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <array>
@@ -101,6 +104,7 @@ DomainResult<> System::compressRoom(RegionId region,size_t index,uint64_t tick) 
             if(unit.identity.monster=="diablo" && unit.aiHomeCommand &&
                 (unit.aiHomeCommand->x!=0 || unit.aiHomeCommand->y!=0)) node.aiHomeCommand=unit.aiHomeCommand;
             node.impMountedAi=unit.impMountedAi;
+            node.pd2EventState=ports_.effects.unitStates(id,tick).contains(213);
             node.whippedAi=unit.whippedAi;
             saved.insert(saved.begin(),std::move(node));
         }
@@ -139,6 +143,15 @@ DomainResult<> System::finishRestoration(const InactiveMonster &source,uint64_t 
     candidate.nativeMinionOwner=source.minionOwner;candidate.nativeMinions=source.minions;
     candidate.ownsNativeMinions=source.ownsMinions;candidate.transferMinionsOnDeath=source.transferMinions;
     candidate.rule.noTreasure=source.noTreasure;candidate.rule.noExperience=source.noExperience;
+    if(source.pd2EventState) {
+        const auto &map=ports_.areas.at(candidate.area).definition.pd2Map;
+        if(map && (map->controller==14 || map->controller==33)) {
+            if(const auto *effects=ports_.effects.unitEffects(source.id)) candidate.initialEffects=std::make_shared<CombatEffectSet>(*effects);
+            const auto bosses=pd2::wandererPool(true);
+            const int velocity=map->controller==33?5:std::find(bosses.begin(),bosses.end(),candidate.rule.nativeClass)!=bosses.end()?50:100;
+            attributes::preparePd2EventMonster(candidate,velocity,tick);
+        }
+    }
     candidate.restoredFromInactive=true;candidate.restorationPending=false;
     const auto translation=ports_.areas.at(source.area).definition.origin-ports_.areas.at(candidate.area).definition.origin;
     candidate.home=source.home+translation;candidate.questNpc=source.questNpc;

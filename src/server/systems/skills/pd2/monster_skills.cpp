@@ -140,9 +140,10 @@ DomainResult<> System::releasePd2MonsterSkill(MonsterRelease &pending,TickContex
         !row.number("srvstfunc") && row.number("srvdofunc")==162;
     const bool teleport=pending.attack.action==MonsterAttackRule::Action::Teleport &&
         !row.number("srvstfunc") && row.number("srvdofunc")==155;
-    if(!joust && !teleport && !pd2MonsterProjectileProgram(row.number("srvstfunc"),row.number("srvdofunc"))) return {DomainStatus::NotImplemented,{}};
+    const bool bossSummon=row.number("srvstfunc")==14 && (row.number("srvdofunc")==177 || row.number("srvdofunc")==179);
+    if(!joust && !teleport && !bossSummon && !pd2MonsterProjectileProgram(row.number("srvstfunc"),row.number("srvdofunc"))) return {DomainStatus::NotImplemented,{}};
     const auto victim=std::get<UnitTarget>(pending.request.target);
-    const auto destination=row.number("srvdofunc")==143 || row.number("srvdofunc")==68?std::optional{caster->position()}:
+    const auto destination=bossSummon || row.number("srvdofunc")==143 || row.number("srvdofunc")==68?std::optional{caster->position()}:
         pending.request.position?pending.request.position:
         pending.launch?std::optional{pending.launch->second}:
         [&]()->std::optional<Vec> {

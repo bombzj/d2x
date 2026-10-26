@@ -465,7 +465,17 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats, Monst
 }
 const MonsterRecord *MonsterCatalog::find(std::string_view id) const {
     auto it = monsters_.find(id);
-    return it == monsters_.end() ? nullptr : &it->second;
+    if(it!=monsters_.end()) return &it->second;
+    // TXT name links are case-insensitive; Levels163 spells its Corridor
+    // Knight differently from MonStats. Preserve compiled order on a miss.
+    for(const auto &[index,record]:nativeClasses_) {
+        (void)index;
+        if(id.size()!=record.id.size() || !std::equal(id.begin(),id.end(),record.id.begin(),
+           [](unsigned char first,unsigned char second){return std::tolower(first)==std::tolower(second);})) continue;
+        const auto found=monsters_.find(record.id);
+        return found==monsters_.end()?&record:&found->second;
+    }
+    return nullptr;
 }
 const MonsterRecord *MonsterCatalog::find(int nativeClass) const {
     const auto found=nativeClasses_.find(nativeClass);if(found==nativeClasses_.end()) return nullptr;

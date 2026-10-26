@@ -90,6 +90,8 @@ struct InventoryView {
     EntityId staffSource;
     uint64_t staffRevision{};
     uint8_t staffResult{};
+    bool pd2Sacrifice{};
+    std::vector<EntityId> pd2SacrificeItems;
     uint64_t targetingRevision{};
     bool targetingReady{true};
     std::optional<ItemHandle> targetingSource;

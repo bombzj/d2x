@@ -98,8 +98,8 @@ void loadSpecialItemData(ClassicData &data) {
             auto level = table.number(row, "lvl");
             auto rarity = table.number(row, "rarity");
             if(data.pd2Host && table.value(row,"rarity").empty()) rarity=0;
-            if (level && *level > 99)
-                continue; // Original event-only rows cannot be reached by the current 1–99 item levels.
+            if (level && *level > (data.pd2Host?131:99))
+                continue; // PD2 scene CreateItemEx selects event-only rows at levels 130/131.
             if (!level || !rarity || *level < 0 || *rarity < 0 ||
                 !data.items.find(code))
                 throw std::runtime_error("Invalid original special item: " + std::string(name));

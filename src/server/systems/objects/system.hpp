@@ -39,6 +39,8 @@ class System {
     const Ports ports_;
     struct Approach { ActorContext actor; Request request; uint64_t locomotion; };
     std::map<PlayerId,Approach> approaches_;
+    // Read projection for reliable mode changes, not a second object authority.
+    std::map<EntityId,std::pair<uint64_t,int>> publishedModes_;
     std::vector<EntityId> towerChests_,towerBatch_;
     EntityId towerController_;
     std::optional<Vec> towerDeathPosition_;
@@ -132,6 +134,7 @@ class System {
     DomainResult<> openNativeBlocker(EntityId,uint64_t tick);
     DomainResult<> linkNativePortals(EntityId source,EntityId destination,bool mutual,uint64_t tick);
     DomainResult<> setNativeMode(EntityId,int mode,uint64_t tick,bool animate=false);
+    DomainResult<> removeNative(EntityId);
     void activateAncientStatues(const std::array<EntityId,3> &,uint64_t tick);
     DomainResult<> openTowerChest(EntityId,uint64_t tick);
     DomainResult<> towerGold(GroundLocation,uint64_t tick);
@@ -139,6 +142,7 @@ class System {
     StepStatus towerStep(TickContext);
     void onWaypointArrival(RegionId,Vec);
     StepStatus step(TickContext, FrameFacts &);
+    StepStatus publishChanges(TickContext);
     DomainResult<> frameEvent(const FrameEvent &,uint64_t tick);
     DomainResult<> trapEvent(EntityId,uint64_t tick);
 };

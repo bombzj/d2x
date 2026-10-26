@@ -425,7 +425,7 @@ DomainStatus System::prepareMeleeDrainProcedures(SpellImpact &impact,Participant
             execution.adjustment.crushing=contact.playerExtras.crushing;
             if(contact.pd2Wound) execution.adjustment.wound=contact.pd2Wound;
             else if(contact.playerExtras.woundRate>0) execution.adjustment.wound=OpenWoundsApplication{
-                contact.playerExtras.woundRate,source.id(),impact.binding.credit,tick.tick+200,tick.tick+1};
+                contact.playerExtras.woundRate,source.id(),impact.binding.credit,tick.tick+200,tick.tick+1,0,{},{},{}};
             execution.remainingLife=std::max<int64_t>(0,int64_t(target.player->persistent.player.hp.raw())-contact.playerExtras.crushing);
             execution.victim.tick=execution.attacker.tick=tick.tick;
         } else if(impact.monsterContact) {

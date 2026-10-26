@@ -13,5 +13,5 @@ ItemInstance prepareItem(const ClassicData &, const LootDrop &, uint64_t &random
 enum class NativeItemUse { Equipment, Vendor };
 DropQuality nativeDropQuality(ItemQuality);
 ItemInstance prepareNativeItem(const ClassicData &,std::string_view code,int level,int difficulty,
-    uint64_t &gameRandom,std::optional<DropQuality>,const std::set<size_t> &uniques,NativeItemUse);
+    uint64_t &gameRandom,std::optional<DropQuality>,const std::set<size_t> &uniques,NativeItemUse,uint64_t *propertyRandom=nullptr);
 }

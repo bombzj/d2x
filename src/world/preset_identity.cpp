@@ -1,4 +1,5 @@
 #include "preset_identity.hpp"
+#include <cstdint>
 namespace d2x {
 namespace {
 int actOneObjectClass(const MapObject &source, int version) {
@@ -19,12 +20,20 @@ int actOneObjectClass(const MapObject &source, int version) {
 } // namespace
 int originalObjectClass(const MapObject &source, int version, int act) {
     if (source.nativeIdentity) return source.id;
-    if (act == 0)
-        return actOneObjectClass(source, version);
     if (version <= 5)
-        return source.id;
+        return act==0?actOneObjectClass(source,version):source.id;
     if (source.id >= 150)
         return source.id - 150;
+    // GetObjectIndexFromObjPreset addresses one contiguous [5][150] table.
+    // Signed DS1 ordinals may point into an earlier act's section. Preserve
+    // that address calculation without C++ out-of-bounds array indexing.
+    const int64_t index=int64_t(act)*150+source.id;
+    if(act<0 || act>4 || index<0 || index>=750) return -1;
+    const int row=int(index/150),ordinal=int(index%150);
+    if(row==0) {
+        auto translated=source;translated.id=ordinal;
+        return actOneObjectClass(translated,version);
+    }
     constexpr int classes[4][150]{
         {74,  37,  192, 304, 305, 306, 101, 102, 78,  103, 156, 580, 132, 129, 357, 153, 121, 122, 229, 230,
          196, 267, 261, 149, 269, 4,   9,   52,  94,  95,  142, 143, 5,   6,   87,  88,  146, 146, 147, 148,
@@ -51,8 +60,6 @@ int originalObjectClass(const MapObject &source, int version, int act) {
          490, 514, 515, 493, 498, 513, 494, 496, 511, 500, 501, 502, 504, 505, 506, 507, 510, 160, 161,
          162, 269, 523, 434, 496, 496, 496, 527, 528, 538, 539, 542, 543, 546, 547, 548, 549, 550, 551,
          552, 555, 553, 554, 557, 541, 544, 559, 560, 564, 567, 568, 536, 537, 563, 570, 397}};
-    if (act < 1 || act > 4 || source.id < 0 || source.id >= 150)
-        return -1;
-    return classes[act - 1][source.id] ? classes[act - 1][source.id] : -1;
+    return classes[row-1][ordinal]?classes[row-1][ordinal]:-1;
 }
 } // namespace d2x

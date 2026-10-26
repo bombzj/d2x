@@ -55,6 +55,7 @@ struct InventoryEdit {
     std::optional<UnitRandomEdit> random{};
     std::optional<SkillManaPayment> skillPayment{};
     bool explicitResources{};
+    std::optional<RegionId> environmentRegion{};
 };
 struct ItemAuraTimerCompletion {
     EntityId source;

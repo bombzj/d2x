@@ -4,9 +4,16 @@
 #include "server/systems/skills/pd2/corpses.hpp"
 #include "server/systems/effects/pd2/sacrifice.hpp"
 #include "server/systems/reactions/pd2/item_events.hpp"
+#include "server/systems/maps/timed_treasure.hpp"
 
 namespace d2x::server {
 DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,TickContext tick) {
+    if(event.handler==maps::pd2TreasureTimerHandler && event.type==FrameEventType::MonsterModifier)
+        return systems.maps.treasureEvent(event,tick);
+    if(event.handler==maps::pd2WandererTimerHandler && event.type==FrameEventType::MonsterModifier)
+        return systems.maps.wandererEvent(event,tick);
+    if(event.handler==maps::pd2ObjectTreasureTimerHandler && event.type==FrameEventType::MonsterModifier)
+        return systems.maps.objectTreasureEvent(event,tick);
     if(!event.handler && event.type==FrameEventType::Pd2MissileHitDelay)
         return {DomainStatus::Applied,std::monostate{}};
     if(event.handler==reactions::pd2ItemEventTimerHandler && event.type==FrameEventType::MonsterModifier)

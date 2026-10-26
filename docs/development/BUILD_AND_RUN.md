@@ -111,7 +111,7 @@ PD2专项说明见[运行与部署：CN账号与大厅](../pd2/OPERATIONS.md#运
 
 客端配置使用`mode=clients`，相同地址／端口、另一个新`output`，并在`clients`内列出其余角色。每人可指定不同cycle；角色必须实际学会技能，示例59为当前原表暴风雪，仍须按使用的MPQ确认。`cast`以收到的当前位置加offset为目标；`move`以固定anchor加offset为目标，省略anchor则在开始动作时记录一次收到的位置；也可用`point:[全局x,y]`指定绝对目标。目标各轴距收到的位置不得超过50格。`area`只等待该level的原房间分配，原包不含房间尺寸，不能由此证明本人当前区域或路径可达；坐标须先从同种子真实地图核实。无地图客户端不生成路径或预测位置；障碍、施法间隔、法力、伤害和目标资格由原服务端决定。`wait`不发输入，移动和施法按cycle轮换；轮询卡顿不补发积压动作。
 
-默认等待`headless-start`，可先沿房主管道既有`travel`等管理命令准备区域，再向两进程发送`headless-start -Arguments @{delayMs=1000}`。需要同步时，先用`[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+3000`得到同一个未来时刻，向两进程传`@{atUnixMs=$startTime}`；不同时传delayMs。`manualStart=false`则本进程所有客户端入局两秒后开始。启动清零输入／位置／技能事件测量计数；duration从开始时刻计，不含选角／准备，网络字节与保存计数仍覆盖整次连接。`pollMs`为5–100ms，比较时须相同。房主pump推进内容、权威25Hz时钟和原包发布，轮询不是玩法tick；不同泵送频率不能直接比较。管理补资源等准备动作必须另记，不能当作正常战斗数据。
+默认等待`headless-start`，可先沿房主管道既有`travel`等管理命令准备区域，再向两进程发送`headless-start -Arguments @{delayMs=1000}`。需要同步时，先用`[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+3000`得到同一个未来时刻，向两进程传`@{atUnixMs=$startTime}`；不同时传delayMs。`manualStart=false`则本进程所有客户端入局两秒后开始。启动清零输入／位置／技能事件测量计数；duration从开始时刻计，不含选角／准备，网络字节与保存计数仍覆盖整次连接。`pollMs`为5–1000ms，比较时须相同；超过100ms用于积压帧／合并发布诊断，会影响墙钟推进，不作为性能建议。房主pump推进内容、权威25Hz时钟和原包发布，轮询不是玩法tick；不同泵送频率不能直接比较。管理补资源等准备动作必须另记，不能当作正常战斗数据。
 
 `headless-status`返回各角色就绪、法力／生命、已提交施法／移动、实际收到的位置变化、技能事件及错误；提交数不等于服务端执行数，原服通常不回显本人全部技能。`samples.jsonl`每秒记录状态及房主pump窗口mean／p50／p95／p99／max，`summary.json`记录退出结果。pump计时不含该轮客户端快照、JSON和磁盘输出，但包含宿主准备、权威步进及发布；进程CPU仍包含一个房主会话，不等于纯内核CPU。比较时另记实际Actor／飞弹／事件、tick推进和执行结果，区分空转、实际施法和法力耗尽。`quit`沿原保存退局，不提供绘图／UI命令。
 

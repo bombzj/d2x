@@ -181,7 +181,7 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
     // MonsterMode calculates attack values at the current unit level, after
     // unique/champion/minion level bonuses; HP and AC were initialized earlier.
     const auto current=loadMonsterCombatProfile(data.tables.at("monstats"),record.sourceRow,data.tables.at("monlvl"),difficulty,profile.level,profile.level,ladderStats,
-        record.hostile()?MonsterStatPurpose::Combatant:MonsterStatPurpose::NativeNpc);
+        record.hostile()?(data.pd2Host?MonsterStatPurpose::CompiledCombatant:MonsterStatPurpose::Combatant):MonsterStatPurpose::NativeNpc);
     if(!current) return result;
     for(int slot=1;slot<=2;++slot) {
         const auto &damage=slot==1?current->damage.attack1Damage:current->damage.attack2Damage;
@@ -192,13 +192,24 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
         const bool bowSkill=record.ai=="CorruptArcher" && slot==1 && data.tables.at("monstats").value(record.sourceRow,"Skill1")=="MonBow";
         const int event=(record.ai=="ClawViperEx" || record.ai=="Imp") && slot==1?1:projectile || bowSkill?2:1;
         const auto clock=loadMonsterAttackTiming(animations,record.token,slot,monsterModeWeapon(archives,record.token,mode,record.baseWeapon),event);
-        if(!clock) continue;
+        if(!clock && !data.pd2Host) continue;
+        const auto motion=!clock?loadMonsterMotionTiming(animations,record.token,mode,monsterModeWeapon(archives,record.token,mode,record.baseWeapon)):std::nullopt;
+        if(!clock && !motion) continue;
         server::MonsterAttackRule attack;
         if(damage) {attack.minimum=damage->first;attack.maximum=damage->second;}
-        attack.rating=rating.value_or(0);attack.duration=animationSecondsTicks(clock->duration);
-        attack.release=std::clamp(animationSecondsTicks(clock->impact),1,attack.duration);
-        attack.animation=AnimationTiming{clock->frames,clock->speed};attack.animationAction=clock->actionFrame;
-        attack.animationFlags=clock->flags;
+        attack.rating=rating.value_or(0);
+        if(!clock) {
+            // A native mode can run without any effective action marker.
+            // Keep the real flags; MODECHANGE then reaches ENDANIM without a hit.
+            attack.duration=animationSecondsTicks(motion->duration);attack.release=attack.duration;
+            attack.animation=AnimationTiming{motion->frames,motion->speed};attack.animationAction=motion->frames;
+            attack.animationFlags=motion->flags;attack.animationEvent=uint8_t(event);
+        } else {
+            attack.duration=animationSecondsTicks(clock->duration);
+            attack.release=std::clamp(animationSecondsTicks(clock->impact),1,attack.duration);
+            attack.animation=AnimationTiming{clock->frames,clock->speed};attack.animationAction=clock->actionFrame;
+            attack.animationFlags=clock->flags;
+        }
         for(const auto &element:current->damage.elements) if(element && element->mode==(slot==1?"A1":"A2")) attack.elements.push_back(*element);
         if(projectile) {
             attack.missile=prepareMonsterMissile(data,projectile->id,1+data.tables.at("difficultylevels").number(size_t(difficulty),"MonsterSkillBonus").value_or(0));
@@ -245,6 +256,7 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
             (record.ai=="Andariel" && slot<2) || (record.ai=="BloodRaven" && slot<2) || (record.ai=="GargoyleTrap" && slot==0) || (rule.ai.kind==MonsterAiKind::Countess && slot==0);
         if(!required) continue;
         const auto field=std::to_string(slot+1);const auto skillName=stats.value(record.sourceRow,"Skill"+field);
+        if(record.ai=="FallenShaman" && slot==0 && skillName.empty()) continue;
         size_t row=0;while(row<skills.rows().size() && !sameNativeSkillName(skills.value(row,"skill"),skillName)) ++row;
         if(row==skills.rows().size()) return false;
         const auto skillId=skills.number(row,"Id");
@@ -626,7 +638,17 @@ bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTa
     } else {
         std::string mode(source);std::transform(mode.begin(),mode.end(),mode.begin(),[](unsigned char c){return char(std::tolower(c));});
         const auto timing=loadMonsterActionTiming(animations,record.token,mode,monsterModeWeapon(archives,record.token,mode,record.baseWeapon),event);
-        if(!timing) return false;
+        if(!timing) {
+            // Current PD2 AnimData includes legal modes without action flags.
+            // Native mode events, rather than a synthesized impact, own execution.
+            if(!archives.pd2Presets) return false;
+            const auto motion=loadMonsterMotionTiming(animations,record.token,mode,monsterModeWeapon(archives,record.token,mode,record.baseWeapon));
+            if(!motion) return false;
+            action.duration=animationSecondsTicks(motion->duration);action.release=action.duration;
+            action.nativeMode=nativeMode(source);action.casting=source=="SC";
+            action.animation=AnimationTiming{motion->frames,motion->speed};action.animationAction=motion->frames;
+            action.animationFlags=motion->flags;return true;
+        }
         action.duration=animationSecondsTicks(timing->duration);
         action.release=std::clamp(animationSecondsTicks(timing->impact),1,action.duration);
         action.nativeMode=nativeMode(source);action.casting=source=="SC";
@@ -780,6 +802,9 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         if(row==skills.rows().size()) continue; // Unresolved native name-link compiles to -1.
         const auto name=skills.value(row,"skill");
         const int id=skillTableNumber(skills,row,"Id");
+        // MONSTERS_Initialize skips Sk#lvl==0 before adding difficulty bonus.
+        // Inert declarations (e.g. Rathma's BloodGolem) are not active casts.
+        if(stats.number(record.sourceRow,"Sk"+field+"lvl").value_or(0)<=0) continue;
         if(rule.skillActions.contains(uint16_t(id))) {rule.skillIds[slot]=uint16_t(id);continue;}
         int rank=stats.number(record.sourceRow,"Sk"+field+"lvl").value_or(0)+bonus;
         if(record.ai=="SiegeBeast" && name=="Charge") {rule.skillIds[slot]=uint16_t(id);continue;}
@@ -904,7 +929,12 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         // Baal's main handler passes S1 even though Sk2mode declares a sequence.
         const auto actionMode=name=="Baal Inferno"?std::string_view{"S1"}:
             record.ai=="Imp" && name=="Imp Inferno"?std::string_view{"SC"}:stats.value(record.sourceRow,"Sk"+field+"mode");
-        if(!clockAction(archives,animations,sequences,record,actionMode,event,action)) return false;
+        if(!clockAction(archives,animations,sequences,record,actionMode,event,action)) {
+            // A declared skill with an unavailable native mode fails at use;
+            // it does not replace the entire current PD2 monster with Fallen.
+            if(!data.pd2Host) return false;
+            rule.skillIds[slot]=uint16_t(id);continue;
+        }
         if(action.action==Action::Inferno && action.infernoFrame>=action.animation->frames) return false;
         const auto sourceMode=stats.value(record.sourceRow,"Sk"+field+"mode");
         action.useAttackRate=sourceMode=="A1" || sourceMode=="A2" || skills.number(row,"UseAttackRate").value_or(0)!=0;

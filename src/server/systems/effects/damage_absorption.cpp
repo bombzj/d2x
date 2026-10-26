@@ -140,6 +140,7 @@ DomainResult<UnitReceptionPlan> System::prepareUnitReception(EntityId id,EntityI
         }
     }
     plan.damage=receiveDamageChannels(channels,unitDefenses(id,tick),std::move(plan.damage),!unit->hireling,pierce,bypass,sanctuary);
+    if(unit->rule.stats && unit->rule.stats->pd2) pd2RathmaReception(plan);
     if(!plan.damage.directionalOverlays.empty()) {
         const auto attacker=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source);
         if(attacker.id()) {

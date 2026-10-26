@@ -351,6 +351,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         } else if (!ports_.events.publish(std::move(event))) { ++pending; continue; }
         ports_.npc.close(player.player); ports_.inventory.close(player.player); state_.waypoints.erase(player.player);
         if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) {writePortalCollision(portal->second,false);state_.portals.erase(portal);} }
+        if(transition.pd2SceneEntry) {state_.pd2SceneEntrants.insert(player.player);state_.pd2SceneEntryRooms.insert(free->room);}
         player.area = transition.to; player.position = arrival;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route = std::move(route);
         player.pathStep.reset();
         player.routeRunning = player.running; player.moving = !player.route.empty();
@@ -359,13 +360,28 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(transition.kind==Kind::Waypoint) ports_.objects.onWaypointArrival(transition.to,arrival);
         pending = state_.transitions.erase(pending);
     }
+    if(state_.pd2SceneOpening && std::none_of(state_.transitions.begin(),state_.transitions.end(),[](const auto &entry){return entry.second.pd2SceneEntry;})) {
+        if(const auto found=state_.specialPortals.find(state_.pd2MapPortal);found!=state_.specialPortals.end()) {
+            ports_.world.retainControllerRoom(found->second.field,found->second.fieldPosition,false);
+            ports_.world.retainControllerRoom(found->second.town,found->second.townPosition,false);
+            writePortalCollision(found->second,false);state_.specialPortals.erase(found);
+        }
+        state_.pd2SceneOpening=false;
+    }
     return state_.transitions.empty() && synchronizationStatus==StepStatus::Complete ? StepStatus::Complete : StepStatus::Blocked;
 }
 DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::optional<Vec> requested) {
     const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(target);
     if(!p || !p->entered || p->actor!=actor.actor || p->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
     if(!p->rules.character || !p->rules.character->areaIds.contains(target)) return {DomainStatus::InvalidRequest,{}};
-    if(!area) {const auto result=ports_.world.request(target);return {result?DomainStatus::Unavailable:result.status,{}};}
+    if(!area) {
+        const auto *origin=ports_.areas.find(p->area);
+        const bool mapNeighbour=origin && origin->definition.pd2Map &&
+            (std::any_of(origin->definition.boundaries.begin(),origin->definition.boundaries.end(),[&](const auto &edge){return edge.destination==target;}) ||
+             std::any_of(origin->definition.exits.begin(),origin->definition.exits.end(),[&](const auto &exit){return exit.destination==target;}));
+        const auto result=mapNeighbour?ports_.world.requestArea(actor,target):ports_.world.request(target);
+        return {result?DomainStatus::Unavailable:result.status,{}};
+    }
     if(!requested && int(target)>136) {
         const auto marker=ports_.world.nativeActSpawnLocationEx(target,11,2);
         if(!marker || marker->area!=target) return {DomainStatus::Unavailable,{}};

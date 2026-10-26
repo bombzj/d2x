@@ -30,9 +30,14 @@ struct NativeDrop {
     int preferredPrefix{},preferredSuffix{};
     bool operator==(const NativeDrop &) const = default;
 };
-struct Request { uint64_t occurrence{}; LootRequest source; PlayerId beneficiary; Vec position; std::optional<ObjectSource> object{}; std::optional<CharacterRecord> questClaimant{}; bool towerGold{},environment{}; int additionalMagicFind{},additionalGoldFind{}; bool reportCompletion{}; std::vector<NativeDrop> nativeDrops{}; };
+struct NativeTreasure {std::string name;int level{};bool operator==(const NativeTreasure &) const=default;};
+struct Completion {
+    bool accepted{};size_t created{};
+    Completion(bool result=false,size_t count=0):accepted(result),created(count) {}
+};
+struct Request { uint64_t occurrence{}; LootRequest source; PlayerId beneficiary; Vec position; std::optional<ObjectSource> object{}; std::optional<CharacterRecord> questClaimant{}; bool towerGold{},environment{}; int additionalMagicFind{},additionalGoldFind{}; bool reportCompletion{}; std::vector<NativeDrop> nativeDrops{}; std::optional<NativeTreasure> nativeTreasure{}; };
 struct Preparation { Request request; PersistentCharacter character; std::string classCode; uint64_t seed{}; int magicFind{}, goldFind{}; std::set<size_t> uniques; unsigned effectivePlayers=1; std::vector<ItemSeeds> itemSeeds{}; std::optional<items::PreparedBatch> prepared{}; std::optional<uint64_t> monsterSeed{},objectSeed{}; std::optional<RoomRandomLoan> roomSeed{}; uint64_t order{}; std::shared_ptr<const pd2::MapInstance> pd2Map{}; std::shared_ptr<const pd2::MapCatalog> pd2Loot{}; std::optional<pd2::MapMonsterLoot> pd2Monster{}; uint32_t pd2Random{}; };
-struct State { std::map<EntityId, Preparation> pending; std::set<size_t> uniques; std::string deferred; std::map<EntityId, bool> completed; uint64_t nextOrder{1}; };
+struct State { std::map<EntityId, Preparation> pending; std::set<size_t> uniques; std::string deferred; std::map<EntityId, Completion> completed; uint64_t nextOrder{1}; };
 struct Ports { const PlayerStore &players; const quests::System &quests; items::System &items; transactions::System &transactions; uint64_t &random; const TreasureRules *definitions; const GameSettings &settings; EventOutbox &events; const social::System &social; monsters::System &monsters; objects::System &objects; AreaStore &areas; const spatial::System &spatial; uint32_t &pd2Random; };
 class System {
     State state_;
@@ -46,6 +51,7 @@ class System {
     std::optional<ItemSeeds> reserveSeeds(EntityId, uint64_t occurrence, size_t index);
     std::optional<Preparation> beginPreparation(EntityId);
     std::optional<bool> takeCompletion(EntityId);
+    std::optional<Completion> takeCompletionDetail(EntityId);
     DomainResult<> install(EntityId source, TickContext, items::PreparedBatch, std::string deferred,
       std::optional<uint64_t> sourceRandom = {},std::optional<uint64_t> objectRandom = {},std::optional<uint32_t> pd2Random = {});
     StepStatus step(TickContext, FrameFacts &);

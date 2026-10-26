@@ -54,6 +54,7 @@ struct PortalRule {
 struct TerrainCell { size_t index{}; uint8_t blocked{},light{},terrain{}; uint16_t full{}; };
 struct AreaMetadata {
     std::shared_ptr<const pd2::MapInstance> pd2Map;
+    std::vector<StatValue> pd2RuntimeGlobal;
     int waypointIndex = -1;
     std::optional<Vec> waypointAnchor; // Native spawn marker, resolved against current collision at travel commit.
     std::optional<Vec> portalArrival;
@@ -110,6 +111,8 @@ struct AreaDefinition : AreaMetadata {
         bool extraMapBoss{}; // A second native preset invocation; order remains the authored DS1 identity.
         int pd2Binding{-1};
         bool ignoreSpawnCollision{};
+        int pd2SceneMarker{-1};
+        bool nativeFreePlacement{};
     };
     std::vector<NativePresetMonster> nativePresetMonsters;
     std::map<std::string,NativePresetMonster,std::less<>> nativeQuestMonsters;
@@ -133,6 +136,8 @@ struct AreaDefinition : AreaMetadata {
     std::vector<std::pair<int,bool>> genericSpawnRoster; // Actual MonReg selections and original genericSpawn flags.
     struct Pd2MissileSpawn {bool retry{};int skillOneTicks{};};
     std::map<int,Pd2MissileSpawn> pd2MissileSpawns;
+    std::array<std::vector<int>,2> pd2WandererPools;
+    std::map<int,std::string> pd2WandererPresets;
     int genericSpawnFallback{-1};
     std::map<int,ShrineRule> shrineRules;
     std::vector<ShrineGenerationEntry> shrineGeneration;
@@ -166,7 +171,7 @@ struct AreaState {
         uint64_t creationOrder{};
         std::array<EntityId,4> lastDead{};
         uint8_t deathIndex{};
-        std::set<EntityId> controllerRetainers;
+        std::set<std::pair<EntityId,uint32_t>> controllerRetainers;
     };
     std::vector<RoomState> rooms{};
     std::vector<EntityId> unitHeads{}; // Native pUnitFirst, separate from room residency.

@@ -48,7 +48,7 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     auto regen = stats.number(row, "DamageRegen");
     // Shipped MinionSpawner rows can have minHP > maxHP. Keep both native
     // values: the signed limited-random bound then yields minHP without a draw.
-    if (!lowHp || !highHp || *lowHp < (zeroDefaults?0:1) || *highHp < 0 ||
+    if (!lowHp || !highHp || *lowHp < (purpose==MonsterStatPurpose::Combatant || purpose==MonsterStatPurpose::CompiledCombatant?1:0) || *highHp < 0 ||
         *lowHp > (1 << 23) - 1 || *highHp > (1 << 23) - 1 || (critical && (*critical < 0 || *critical > 100)) ||
         (regen && (*regen < 0 || *regen > 4096)))
         return std::nullopt;
@@ -78,7 +78,8 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
         const std::string mode(stats.value(row, prefix + "Mode"));
         const std::string type(stats.value(row, prefix + "Type"));
         const int chance = stats.number(row, prefix + "Pct" + ending).value_or(0);
-        if (chance < 0 || chance > 100) return std::nullopt;
+        // MonStats compiles this as BYTE; values >=100 apply without a roll.
+        if (chance < 0 || chance > 255) return std::nullopt;
         if (mode.empty() || type.empty() || chance == 0) continue;
         auto minimum = scale(prefix + "MinD", "L-DM");
         auto maximum = scale(prefix + "MaxD", "L-DM");

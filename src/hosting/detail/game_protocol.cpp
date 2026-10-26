@@ -59,7 +59,10 @@ void NativeRealmService::uploadCharacter(net::protocol::Reader &in) {
     const bool first = !tcpIpUpload.incomplete();
     if (auto bytes = tcpIpUpload.append(total, part, first)) {
         PersistentCharacter saved;
-        try {saved=decodeSave(*bytes,*content);} catch(const std::exception &) {throw AdmissionFailure(14,"Invalid uploaded native character");}
+        try {saved=decodeSave(*bytes,*content);} catch(const std::exception &error) {
+            const auto reason="Invalid uploaded native character: "+std::string(error.what());
+            throw AdmissionFailure(14,reason.c_str());
+        }
         const auto header=readD2sHeader(*bytes);
         if (saved.player.name != selectedName || saved.player.characterClass != content->characters[tcpIpClass].name)
             throw ProtocolError("Uploaded character differs from native logon");

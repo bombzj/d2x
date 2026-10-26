@@ -25,6 +25,7 @@ struct Ports {
     const travel::System &travel; monsters::System &monsters; const missiles::System &missiles;
     const skills::System &skills; objects::System &objects; const loot::System &loot;
     const spatial::System &spatial; const population::System &population;
+    maps::System &maps;
 };
 class System {
     friend class travel::System;
@@ -40,6 +41,8 @@ class System {
     size_t environmentAct_{};
     std::optional<EnvironmentNotice> environmentNotice_;
     bool sunDark_{}; // Requested quest mode for an act that may not be loaded yet.
+    std::shared_ptr<const pd2::MapInstance> pd2ProgramMap_;
+    std::vector<StatValue> pd2RuntimeGlobal_;
     void prepareActTime(int);
     void updateRooms(TickContext);
     void invalidateRooms();
@@ -59,10 +62,12 @@ class System {
     DomainResult<uint64_t> requestTown(const ActorContext &);
     DomainResult<uint64_t> requestArea(const ActorContext &, RegionId);
     DomainResult<uint64_t> requestMapArea(RegionId,const std::shared_ptr<const pd2::MapInstance> &);
+    DomainResult<> appendPd2MapGlobal(const std::shared_ptr<const pd2::MapInstance> &,StatValue);
     DomainResult<> install(PreparedArea);
     void initialize();
     void activateAct(RegionId);
     void sunEclipse(bool);
+    void setActEclipse(int act,bool dark);
     StepStatus advanceEnvironment(TickContext);
     const std::optional<EnvironmentNotice> &environmentNotice() const {return environmentNotice_;}
     void acknowledgeEnvironment(int act,uint64_t revision);
@@ -72,13 +77,16 @@ class System {
     std::optional<QuestPosition> questFreePosition(RegionId,Vec roomPosition,Vec requested,int size,int radius,uint16_t mask=0x400) const;
     std::optional<QuestPosition> nativeFreeSpace(RegionId,Vec roomPosition,Vec requested,int size) const;
     std::optional<QuestPosition> nativeLinkPortalPosition(RegionId,bool durielOpening=false);
+    std::optional<QuestPosition> nativeLinkPortalPositionFrom(QuestPosition,bool durielOpening=false);
     std::optional<Vec> nativeActSpawnLocation(RegionId,int tile);
+    bool nativeProtectedSpawnPosition(RegionId,Vec);
     std::optional<QuestPosition> nativeActSpawnLocationEx(RegionId,int tile,int size,const AreaStore::CollisionSample &sample={});
+    std::optional<QuestPosition> nativeActSpawnLocationExAt(RegionId,Vec,int size,const AreaStore::CollisionSample &sample={});
     std::optional<QuestPosition> nativePlayerPosition(RegionId,Vec,EntityId self={}) const;
     std::optional<QuestPosition> nativeWaypointPosition(RegionId,bool changeAct);
     std::optional<QuestPosition> nativeDurielPortalPosition(RegionId);
     void retainControllerRoom(RegionId,Vec,bool retain);
-    void retainControllerUnitRoom(EntityId,RegionId,Vec,bool retain);
+    void retainControllerUnitRoom(EntityId,RegionId,Vec,bool retain,uint32_t reason=0);
     void rebindObject(RegionId,EntityId previous,EntityId current);
     DomainResult<> moveQuestNpc(RegionId,EntityId,Vec,Vec,bool escaped);
     void fail(uint64_t request);

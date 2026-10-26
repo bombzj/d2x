@@ -2,8 +2,11 @@
 #include "content/pd2/corpse_data.hpp"
 #include "gameplay/maps/pd2/definition.hpp"
 #include "gameplay/maps/pd2/region_program.hpp"
+#include "gameplay/maps/pd2/event_program.hpp"
+#include "gameplay/monsters/pd2/boss_program.hpp"
 #include "environment_content.hpp"
 #include "monster_actions_content.hpp"
+#include "pd2/monster_actions.hpp"
 #include "npc_content.hpp"
 #include "content/classic_data.hpp"
 #include "content/skills/table_values.hpp"
@@ -89,7 +92,9 @@ std::vector<StatValue> auraNativeStats(const ClassicData &data,const CharacterMo
 std::optional<server::PreparedMonster> combatMonster(Archives &archives, const ClassicData &data,
     AreaGenerationRequest request, MonsterIdentity identity, Vec position, const WorldCatalog &world,
     const MonsterCatalog &catalog, const AnimDataTable &animations, uint64_t &random, const MonsterEnchantment *owner = nullptr, bool preserveRank = true,
-    const MonsterEnchantment *selected = nullptr,std::optional<int> currentLevel={}) {
+    const MonsterEnchantment *selected = nullptr,std::optional<int> currentLevel={},std::string *deferredReason=nullptr) {
+    const auto stage=[&](const char *name) {if(deferredReason) *deferredReason=name;};
+    stage("identity/AI profile");
     const auto &level = world.level(request.level);
     const auto *record = identity.nativeClass>=0?catalog.find(identity.nativeClass):catalog.find(identity.monster);
     if(record && record->id!=identity.monster) record=catalog.find(identity.monster);
@@ -98,10 +103,11 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if (!record || (!record->hostile() && record->ai!="GoodNpcRanged") || !record->aiProfiles.at(size_t(request.difficulty))) return {};
     const auto implementation=monsterImplementation(record->id).kind;
     const bool staticCombatant=implementation==MonsterKind::PrisonDoor || implementation==MonsterKind::Window || implementation==MonsterKind::EvilHole;
+    stage("combat profile/basic motion");
     auto profile = loadMonsterCombatProfile(data.tables.at("monstats"), record->sourceRow, data.tables.at("monlvl"),
         request.difficulty,request.pd2Map?pd2::prepareMapRegionProperties(request.pd2Map->properties,
             {level.population.level.at(size_t(request.difficulty)),0,0,0,{}}).level:level.population.level.at(size_t(request.difficulty)),currentLevel,request.ladderMonsterStats,
-        staticCombatant?MonsterStatPurpose::StaticCombatant:record->hostile()?MonsterStatPurpose::Combatant:MonsterStatPurpose::NativeNpc);
+        staticCombatant?MonsterStatPurpose::StaticCombatant:record->hostile()?(data.pd2Host?MonsterStatPurpose::CompiledCombatant:MonsterStatPurpose::Combatant):MonsterStatPurpose::NativeNpc);
     std::optional<MonsterEnchantment> enchantment;
     const auto *fixed = identity.superUnique.empty() ? nullptr : catalog.superUnique(identity.superUnique);
     if (!identity.superUnique.empty() && (!fixed || (!selected && fixed->monster!=identity.monster))) return {};
@@ -120,7 +126,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     auto death = loadMonsterMotionTiming(animations, record->token, "dt", monsterModeWeapon(archives, record->token, "dt", record->baseWeapon));
     const auto delay = data.tables.at("monstats").number(record->sourceRow, request.difficulty == 0 ? "aidel" : request.difficulty == 1 ? "aidel(N)" : "aidel(H)");
     if (!profile || !profile->defense || !death || !record->aiProfiles.at(size_t(request.difficulty)) ||
-        !record->walkVelocity || *record->walkVelocity < 0 || (*record->walkVelocity==0 && record->ai!="Idle" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="Sarcophagus" && record->ai!="ArcaneTower" && record->ai!="GenericSpawner" && record->ai!="MinionSpawner" && record->ai!="BaalTentacle" && record->ai!="Tentacle" && record->ai!="TentacleHead" && record->ai!="EvilHole" && record->ai!="Catapult")) return {};
+        !record->walkVelocity || *record->walkVelocity < 0 || (*record->walkVelocity==0 && !(data.pd2Host && hosting::pd2::sceneController(*record)) && record->ai!="Idle" && record->ai!="Summoner" && record->ai!="TrappedSoul" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="Sarcophagus" && record->ai!="ArcaneTower" && record->ai!="GenericSpawner" && record->ai!="MinionSpawner" && record->ai!="BaalTentacle" && record->ai!="Tentacle" && record->ai!="TentacleHead" && record->ai!="EvilHole" && record->ai!="Catapult")) return {};
     if ((record->ai=="CorruptRogue" || record->ai=="CorruptLancer") &&
         !loadMonsterMotionTiming(animations, record->token, "rn", monsterModeWeapon(archives, record->token, "rn", record->baseWeapon))) {
         return {};
@@ -183,6 +189,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.skillMoveState=data.states.at("skill_move").definition.id;
     rule.boss=record->boss;rule.stunState=data.states.at("stunned").definition.id;
     rule.coldEffect = record->coldEffect.at(size_t(request.difficulty));
+    stage("lifecycle/components");
     if(!prepareMonsterLifecycle(archives,data,animations,*record,rule)) return {};
     prepareSelfResurrection(archives,data,animations,*record,request.difficulty,rule);
     rule.ai = *record->aiProfiles.at(size_t(request.difficulty));
@@ -194,20 +201,23 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         if (!shout) return {};
         rule.attacks.emplace(9, server::MonsterAttackRule{0, 0, 0, animationSecondsTicks(shout->duration), 1, {}});
     }
+    stage("basic attacks");
     auto attacks = prepareMonsterAttacks(archives, data, animations, *record, *profile,request.difficulty,request.ladderMonsterStats);
     rule.attacks.merge(attacks);
     if(const auto current=rule.attacks.find(4);current!=rule.attacks.end()) {
         rule.minimumDamage=current->second.minimum;rule.maximumDamage=current->second.maximum;rule.attackRating=current->second.rating;
     }
-    const bool requiresSecondAttack=record->hostile()?bool(profile->damage.attack2Damage):
+    const bool requiresSecondAttack=record->hostile()?bool(profile->damage.attack2Damage) && (!data.pd2Host || hosting::pd2::hasAttackMode(data,*record,2)):
         record->attack2Projectile.has_value() || data.tables.at("monstats").number(record->sourceRow,std::string("A2MinD")+suffix).has_value();
-    if (record->ai!="EvilHole" && record->ai!="Catapult" && record->ai!="Idle" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
+    if (!(data.pd2Host && hosting::pd2::sceneController(*record)) && record->ai!="EvilHole" && record->ai!="Catapult" && record->ai!="Idle" && record->ai!="TrappedSoul" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="OblivionKnight" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
     if(monsterImplementation(record->id).kind==MonsterKind::BonePrison) {
         const auto birth=loadMonsterMotionTiming(animations,record->token,"s1",monsterModeWeapon(archives,record->token,"s1",record->baseWeapon));
         if(!birth) return {};
         rule.spawnTicks=monsterAnimationTicks({birth->frames,birth->speed});
     }
+    stage("skill actions");
     if(!prepareMonsterSpecialActions(archives,data,animations,*record,rule)) return {};
+    stage("spawn dependencies");
     if(record->ai=="FetishShaman") {
         const auto &stats=data.tables.at("monstats");
         for(const auto field:{"minion1","minion2"}) {
@@ -271,6 +281,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         const auto range=data.nativeFormulas->missiles.at(definition).number("range");
         rule.deathSweep=server::MonsterRule::DeathSweep{35,40,std::max(range-100,100),false};
     }
+    stage("experience");
     rule.experience.resize(100);
     rule.experienceRatios.resize(100);
     rule.noTreasure=!record->hostile();rule.noExperience=!record->hostile();
@@ -450,6 +461,10 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             const auto replacement=pd2::mapPresetClass(request.level,record->index,request.pd2Map?request.pd2Map->controller:0);
             if(replacement<0) continue;
             if(replacement!=record->index) record=catalog.find(replacement);
+            if(request.pd2Map && request.pd2Map->controller==33) {
+                const auto pool=pd2::outerVoidBossPool(presetMonster.nativeClass);
+                if(!pool.empty()) record=catalog.find(pool.front());
+            }
         }
         // Interactive NPCs have their service admission below the object
         // pass. Other non-critter presets, including friendly combatants and
@@ -465,7 +480,16 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             collisionObject=record->id=="barricadedoor1"?571:record->id=="barricadedoor2"?572:0;
         if(request.level==110 && request.difficulty!=0 && (record->id=="minion1" || record->id=="deathmauler1")) continue;
         server::AreaDefinition::NativePresetMonster entry;
-        entry.order=order;entry.definition=record->index;entry.collisionObject=collisionObject;
+        entry.order=order;entry.definition=record->index;entry.collisionObject=collisionObject;entry.retry=retry;
+        if(request.pd2Map && request.pd2Map->controller==41 && request.level==185 &&
+            (presetMonster.nativeClass==738 || presetMonster.nativeClass==739)) entry.pd2SceneMarker=presetMonster.nativeClass;
+        if(request.pd2Map && request.pd2Map->controller==45 && request.level==188 && presetMonster.nativeClass==738)
+            entry.pd2SceneMarker=738;
+        if(request.pd2Map && request.pd2Map->controller==33 && !pd2::outerVoidBossPool(presetMonster.nativeClass).empty())
+            entry.pd2SceneMarker=presetMonster.nativeClass;
+        if(request.pd2Map && request.pd2Map->controller==34 && request.level==192 && presetMonster.nativeClass==738) {
+            entry.pd2Binding=0;entry.retry=false;entry.nativeFreePlacement=true;
+        }
         if(request.pd2Map && request.pd2Map->controller==9 && presetMonster.nativeClass==738 &&
            (request.level==164 || request.level==171 || request.level==186)) entry.pd2Binding=0;
         if(request.pd2Map && request.pd2Map->controller==34 && request.level==194) {
@@ -476,7 +500,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             else if(presetMonster.nativeClass==740) entry.pd2Binding=2;
             else if(presetMonster.nativeClass==786) entry.pd2Binding=3;
         }
-        entry.position={source.x+.5f,source.y+.5f};entry.retry=retry;
+        entry.position={source.x+.5f,source.y+.5f};
         entry.prisonDoor=record->id=="prisondoor";
         if(entry.prisonDoor) {entry.sourcePosition=entry.position;entry.position.x-=1;}
         if(request.level==110 && (record->id=="catapult2" || record->id=="catapultspotter2"))
@@ -526,6 +550,82 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         else deferred.insert("Native spawn profile pending: "+code);
     }
     std::vector<int> required=selection.classes;
+    if(request.pd2Map) switch(request.pd2Map->controller) {
+    case 11:
+        required.push_back(922);
+        for(const bool fallback:{false,true}) for(const int type:pd2::mendelnPool(fallback)) if(type>=0) required.push_back(type);
+        break;
+    case 12:required.push_back(919);break;
+    case 14: {
+        required.push_back(921);
+        const auto &uniques=data.tables.at("superuniques");
+        for(const bool bosses:{false,true}) for(const int source:pd2::wandererPool(bosses)) {
+            int definition=source;
+            if(!bosses && source!=267 && source!=256) {
+                if(size_t(source)>=uniques.rows().size()) throw std::runtime_error("Missing native Wanderer SuperUnique row");
+                const auto *unique=catalog.superUnique(uniques.value(size_t(source),"Superunique"));
+                if(!unique) throw std::runtime_error("Missing native Wanderer SuperUnique");
+                definition=classId(unique->monster);
+                const int encoded=int(catalog.nativeClasses().size())+source;
+                const auto name="pd2-wanderer."+std::to_string(source);
+                area.pd2WandererPools[0].push_back(encoded);area.pd2WandererPresets.emplace(encoded,name);
+                server::AreaDefinition::NativePresetMonster preset;
+                preset.definition=definition;preset.retry=true;preset.superUnique=unique->id;preset.uniqueIndex=unique->index;
+                preset.minimum=unique->minGroup;preset.maximum=unique->maxGroup;preset.modifiers=unique->modifiers;
+                preset.automatic=unique->autoPosition;preset.stacks=unique->stacks;
+                if(preset.minimum && preset.maximum) {preset.minimum+=request.difficulty;preset.maximum+=request.difficulty;}
+                area.nativeQuestMonsters.emplace(name,std::move(preset));
+            } else area.pd2WandererPools[bosses?1:0].push_back(source);
+            const auto *record=catalog.find(definition);
+            if(!record) throw std::runtime_error("Missing native Wanderer monster class");
+            area.pd2MissileSpawns[definition].retry=record->id!="radament" && record->base!="maggotqueen1" && record->id!="window1" && record->id!="window2";
+            required.push_back(definition);
+        }
+        break;
+    }
+    case 15:required.push_back(945);break;
+    case 16:for(const int type:{993,994,995}) required.push_back(type);break;
+    case 19:for(const int type:{1064,1065}) required.push_back(type);break;
+    case 20:
+        for(int type=1182;type<=1189;++type) {required.push_back(type);if(type!=1182) area.pd2MissileSpawns.try_emplace(type);}
+        break;
+    case 41:
+        for(const int boss:{704,705,709}) {
+            required.push_back(boss);
+            for(const int type:pd2::uberMinionPool(boss)) {
+                required.push_back(type);auto &spawn=area.pd2MissileSpawns[type];
+                if(boss==704) {
+                    const auto *record=catalog.find(type);if(!record) throw std::runtime_error("Missing native Uber minion class");
+                    const auto clock=loadMonsterMotionTiming(animations,record->token,"s1",monsterModeWeapon(archives,record->token,"s1",record->baseWeapon));
+                    if(!clock) throw std::runtime_error("Missing native Uber minion S1 animation");
+                    spawn.skillOneTicks=monsterAnimationTicks({clock->frames,clock->speed});
+                }
+            }
+        }
+        break;
+    case 42: {
+        required.push_back(789);
+        const auto &skills=data.tables.at("skills"),&monstats=data.tables.at("monstats");
+        const auto boss=catalog.find(789);if(!boss) throw std::runtime_error("Missing native Dclone class");
+        const auto summon=monstats.value(boss->sourceRow,"Skill6");
+        for(size_t row=0;row<skills.rows().size();++row) if(skills.value(row,"skill")==summon) {
+            const auto child=catalog.find(skills.value(row,"summon"));
+            if(!child) throw std::runtime_error("Missing native Dclone summon link");
+            for(int offset=0;offset<6;++offset) required.push_back(child->index+offset);
+            break;
+        }
+        break;
+    }
+    case 43:for(const int type:{933,934,935,936,937,938,939,966,968,969,1106,1107}) required.push_back(type);break;
+    case 44:for(const int type:{989,990,991}) required.push_back(type);break;
+    case 45:
+        for(const int type:{1112,1113,1114,1115,1140,1141}) {
+            required.push_back(type);if(type!=1112 && type!=1113) area.pd2MissileSpawns.try_emplace(type);
+        }
+        break;
+    }
+    if(request.pd2Map && request.pd2Map->controller==33)
+        for(const auto marker:{738,739,740}) for(const auto type:pd2::outerVoidBossPool(marker)) required.push_back(type);
     if(request.pd2Map && request.pd2Map->controller==9 && request.level==152) required.push_back(826);
     if(data.pd2Host) for(const auto &[missile,program]:data.nativeFormulas->missiles) {
         (void)missile;
@@ -657,6 +757,15 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         const auto registered=regionRules->classes.find(definition);
         if(registered==regionRules->classes.end()) throw std::runtime_error("Missing native population class");
         const auto &record=*catalog.find(definition);
+        if(request.pd2Map && request.pd2Map->controller==11) {
+            const auto first=pd2::mendelnPool(),second=pd2::mendelnPool(true);
+            if(std::find(first.begin(),first.end(),definition)!=first.end() || std::find(second.begin(),second.end(),definition)!=second.end()) {
+                const auto clock=loadMonsterMotionTiming(animations,record.token,"s1",
+                    monsterModeWeapon(archives,record.token,"s1",record.baseWeapon));
+                if(!clock) throw std::runtime_error("Missing native Mendeln S1 birth animation: "+record.id);
+                area.pd2MissileSpawns[definition].skillOneTicks=monsterAnimationTicks({clock->frames,clock->speed});
+            }
+        }
         auto &entry=populationRules.classes[definition];
         entry.hostile=record.hostile() || record.ai.starts_with("Trap-") || record.ai=="DesertTurret" || record.ai=="TrappedSoul";
         entry.figurineEligible=record.id!="fetish11" && !record.flying;
@@ -698,7 +807,8 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             continue;
         }
         MonsterIdentity identity;identity.monster=record.id;identity.nativeClass=definition;identity.origin=SpawnOrigin::Density;identity.spawnKey="native."+record.id;
-        auto prototype=combatMonster(archives,data,request,identity,{},world,catalog,animations,nativeRuleRandom);
+        std::string deferredReason;
+        auto prototype=combatMonster(archives,data,request,identity,{},world,catalog,animations,nativeRuleRandom,nullptr,true,nullptr,{},&deferredReason);
         if(!prototype && !record.hostile() && record.ai!="GoodNpcRanged")
             prototype=server::PreparedMonster{identity,record.ai=="NpcBarb"?std::optional{MonsterKind::NpcBarb}:std::nullopt, {},*prepareNeutralMonsterRule(archives,data,request,record)};
         if(!prototype && record.hostile()) {
@@ -707,7 +817,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             if(prototype) {
                 prototype->identity=identity;
                 if(record.id=="prisondoor") prototype->implementation=MonsterKind::PrisonDoor;
-                deferred.insert("Enemy substitute: "+identity.monster+" -> fallen1");
+                deferred.insert("Enemy substitute: "+identity.monster+" -> fallen1 ("+deferredReason+")");
             }
         }
         if(prototype) {

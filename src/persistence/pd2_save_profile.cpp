@@ -53,9 +53,15 @@ std::optional<std::array<uint16_t,17>> readPd2SavedCounters(std::span<const uint
     for(size_t i=0;i<result.size();++i) result[i]=uint16_t(bytes[counters+2*i]|uint16_t(bytes[counters+2*i+1])<<8);
     return result;
 }
-Bytes writePd2SavedCounters(std::span<const uint8_t> original,const std::optional<std::array<uint16_t,17>> &counters) {
+std::optional<uint32_t> readPd2BossKills(std::span<const uint8_t> bytes) {
+    validatePd2SaveExtension(bytes);if(bytes.empty()) return {};
+    const size_t offset=4+3+size_t(bytes[6])*2+2;
+    uint32_t value{};for(size_t index=0;index<4;++index) value|=uint32_t(bytes[offset+index])<<(index*8);
+    return value;
+}
+Bytes writePd2SavedCounters(std::span<const uint8_t> original,const std::optional<std::array<uint16_t,17>> &counters,std::optional<uint32_t> bossKills) {
     validatePd2SaveExtension(original);Bytes result(original.begin(),original.end());
-    if(!counters) return result;
+    if(!counters && !bossKills) return result;
     if(result.empty()) {
         // The native writer also emits these sections for an old body. No
         // private migration/version marker is introduced by a new statistic.
@@ -71,8 +77,12 @@ Bytes writePd2SavedCounters(std::span<const uint8_t> original,const std::optiona
         }
     }
     const size_t offset=4+3+size_t(result[6])*2+6+10;
-    for(size_t i=0;i<counters->size();++i) {
+    if(counters) for(size_t i=0;i<counters->size();++i) {
         result[offset+2*i]=uint8_t((*counters)[i]);result[offset+2*i+1]=uint8_t((*counters)[i]>>8);
+    }
+    if(bossKills) {
+        const size_t flags=4+3+size_t(result[6])*2+2;
+        for(size_t index=0;index<4;++index) result[flags+index]=uint8_t(*bossKills>>(index*8));
     }
     validatePd2SaveExtension(result);return result;
 }

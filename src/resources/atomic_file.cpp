@@ -60,6 +60,11 @@ void writeFileAtomically(const std::filesystem::path &path, std::span<const uint
         backup += ".bak";
         auto temporaryBackup = lock.directory / "backup.tmp";
         std::filesystem::copy_file(path, temporaryBackup);
+        // copy_file preserves the source's read-only bit on Windows. Our
+        // generated backup must remain replaceable after a failed write to
+        // a temporarily protected save; never change the source's permissions.
+        std::filesystem::permissions(temporaryBackup,std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::add);
         replaceFile(temporaryBackup, backup);
     }
     replaceFile(temporary, path);

@@ -49,6 +49,12 @@ struct System::Runtime {
             bool landed{},statesCleared{};
         };
         std::optional<LeapAttack> leapAttack;
+        struct Pd2Dash {
+            uint16_t flags{0x80};bool movingState{},landed{};
+            std::shared_ptr<missiles::NativeBirthPublication> birth;
+            Vec callbackPosition;int callbackSlot{-1};bool motionStarted{};
+        };
+        std::optional<Pd2Dash> pd2Dash;
     };
     std::map<EntityId,MonsterMode> monsterModes;
     std::map<EntityId,Release> &releases;

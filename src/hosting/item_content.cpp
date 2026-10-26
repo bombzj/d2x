@@ -17,7 +17,7 @@ DropQuality nativeDropQuality(ItemQuality quality) {
     return qualities.at(size_t(quality));
 }
 ItemInstance prepareNativeItem(const ClassicData &data,std::string_view code,int level,int difficulty,
-    uint64_t &gameRandom,std::optional<DropQuality> quality,const std::set<size_t> &uniques,NativeItemUse use) {
+    uint64_t &gameRandom,std::optional<DropQuality> quality,const std::set<size_t> &uniques,NativeItemUse use,uint64_t *propertyRandom) {
     const auto seeds=rollNativeItemSeeds(gameRandom);
     auto plan=quality?planSelectedItem(data,code,level,0,uniques,{},*quality,false,[&]{return seeds;}):
         planCreatedItem(data,code,level,uniques,seeds);
@@ -25,7 +25,7 @@ ItemInstance prepareNativeItem(const ClassicData &data,std::string_view code,int
         throw std::runtime_error(plan.deferred.empty()?"Native item construction failed":plan.deferred);
     auto &drop=plan.drops.front();drop.generation.rollNaturalEthereal=false;
     drop.generation.suppressNaturalSockets=use==NativeItemUse::Equipment;
-    uint64_t unused{};auto item=prepareItem(data,drop,unused,difficulty);
+    uint64_t unused{};auto item=prepareItem(data,drop,unused,difficulty,0,propertyRandom);
     if(use==NativeItemUse::Equipment) {
         item.nativeFlags|=0x1000;
         auto identified=item;identified.identified=true;
@@ -202,6 +202,7 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
         ? std::min(maximumDurability,baseDurability*generation.durabilityMultiplier):maximumDurability;
     updateCubeRequiredLevel(data,item);item.identified=visible;
     item.nativeQuestDifficulty = unsigned(difficulty);
+    item.nativePropertyRandom=local;
     if(itemRandom) *itemRandom=local;
     return item;
 }

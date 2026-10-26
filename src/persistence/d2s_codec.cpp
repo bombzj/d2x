@@ -3,6 +3,7 @@
 #include "d2s_header.hpp"
 #include "d2s_fixed_sections.hpp"
 #include "d2s_inventory.hpp"
+#include "initial_character.hpp"
 #include "gameplay/items/inventory_order.hpp"
 #include "content/world/world_catalog.hpp"
 #include "d2s_skills.hpp"
@@ -117,7 +118,7 @@ void exportMerc(D2sHeader &header, const CharacterRecord &player, const ClassicD
 }
 void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &content) {
     const auto &player = snapshot.player;
-    require(content.pd2Host || !player.pd2Counters,"PD2 statistics in an original character");
+    require(content.pd2Host || (!player.pd2Counters && !player.pd2BossKills),"PD2 statistics in an original character");
     require(!player.hardcoreDead || (player.hardcore && player.hp <= 0), "invalid permanent death state");
     const auto &definition = characterDefinition(content, player.characterClass);
     require(snapshot.corpses.size() <= 1, "single-player corpse count");
@@ -175,6 +176,22 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     // PlrSave rejects DEAD only in combination with HARDCORE. Softcore may
     // retain this flag after resurrection; its corpse is the JM section.
     require(!(header.flags & 0x40), "ladder character unsupported");
+    // PlrSave2's NEWBIE_SAVE is a complete header-only save, not a
+    // truncated regular save. Share CharStats initialization with creation.
+    if (header.flags & 1) {
+        require(bytes.size() == d2sHeaderSize, "initial character has trailing sections");
+        auto snapshot = createCharacter(content, header.name, header.characterClass, header.mapSeed, (header.flags & 4) != 0);
+        snapshot.player.hardcoreDead = snapshot.player.hardcore && (header.flags & 8) != 0;
+        if (snapshot.player.hardcoreDead) snapshot.player.hp = {};
+        // Retain native header metadata without retaining INIT on a character
+        // whose attributes/items now exist. No source file is rewritten here.
+        auto initialized = encodeSave(snapshot, content);
+        std::copy(bytes.begin(), bytes.end(), initialized.begin());
+        header.flags &= ~1u;
+        writeD2sHeader(initialized, header);
+        snapshot.player.nativeSaveSections.assign(reinterpret_cast<const char *>(initialized.data()), fixedEnd);
+        return snapshot;
+    }
     auto sections = readD2sFixedSections(bytes);
     CharacterSaveData snapshot;
     snapshot.player.characterClass = classes[header.characterClass];
@@ -292,6 +309,7 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     if(content.pd2Host) {
         validatePd2SaveExtension(bytes.subspan(cursor));
         player.pd2Counters=readPd2SavedCounters(bytes.subspan(cursor));
+        player.pd2BossKills=readPd2BossKills(bytes.subspan(cursor));
         player.nativeSaveSections.append(reinterpret_cast<const char *>(bytes.data()+cursor),bytes.size()-cursor);
     } else require(cursor == bytes.size(), "unexpected data after Iron Golem section");
     for (const auto &[id, item] : snapshot.inventory.items)
@@ -445,7 +463,7 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     if(content.pd2Host) {
         const auto original=player.nativeSaveSections.size()>fixedEnd?
             std::span(reinterpret_cast<const uint8_t *>(player.nativeSaveSections.data()+fixedEnd),player.nativeSaveSections.size()-fixedEnd):std::span<const uint8_t>{};
-        const auto tail=writePd2SavedCounters(original,player.pd2Counters);
+        const auto tail=writePd2SavedCounters(original,player.pd2Counters,player.pd2BossKills);
         bytes.insert(bytes.end(),tail.begin(),tail.end());
     }
     require(bytes.size() <= maxSaveBytes, "save too large");

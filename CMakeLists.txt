@@ -67,6 +67,7 @@ add_library(d2x_rules
   src/gameplay/stats/pd2/owner_values.cpp
   src/gameplay/maps/pd2/property_program.cpp
   src/gameplay/maps/pd2/region_program.cpp
+  src/gameplay/maps/pd2/event_program.cpp
   src/gameplay/maps/pd2/loot_program.cpp
   src/gameplay/combat/weapon_snapshot.cpp src/gameplay/combat/drain.cpp
 )
@@ -199,6 +200,7 @@ add_library(d2x_persistence
   src/persistence/d2s_fixed_sections.cpp src/persistence/d2s_stats.cpp
   src/persistence/d2s_items.cpp src/persistence/d2s_inventory.cpp src/persistence/d2s_skills.cpp
   src/persistence/d2s_quests.cpp src/persistence/pd2_save_profile.cpp
+  src/persistence/initial_character.cpp
 )
 target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items d2x_content)
 
@@ -393,6 +395,46 @@ add_library(d2x_server
   src/server/systems/maps/system.cpp
   src/server/systems/maps/placement.cpp
   src/server/systems/maps/rewards.cpp
+  src/server/systems/maps/outer_void.cpp
+  src/server/systems/maps/death_portal.cpp
+  src/server/systems/maps/tier_rewards.cpp
+  src/server/systems/maps/room_events.cpp
+  src/server/systems/maps/event_operations.cpp
+  src/server/systems/maps/event_deaths.cpp
+  src/server/systems/maps/invaders.cpp
+  src/server/systems/maps/mendeln.cpp
+  src/server/systems/maps/horazon.cpp
+  src/server/systems/maps/wanderer.cpp
+  src/server/systems/maps/endgame_deaths.cpp
+  src/server/systems/maps/scene_birth.cpp
+  src/server/systems/maps/ancients.cpp
+  src/server/systems/maps/ancients_death.cpp
+  src/server/systems/maps/object_treasure.cpp
+  src/server/systems/ai/pd2/ancients.cpp
+  src/server/systems/ai/pd2/lucion.cpp
+  src/server/systems/ai/pd2/diablo_clone.cpp
+  src/server/systems/ai/pd2/rathma_boss.cpp
+  src/server/systems/effects/pd2/lucion.cpp
+  src/server/systems/effects/pd2/rathma.cpp
+  src/server/systems/effects/pd2/scene_skill.cpp
+  src/server/systems/effects/pd2/achievement.cpp
+  src/server/systems/attributes/pd2/boss_scaling.cpp
+  src/server/systems/maps/boss_scene_deaths.cpp
+  src/server/systems/maps/scene_town.cpp
+  src/server/systems/maps/sacrifice.cpp
+  src/server/systems/monsters/pd2/rathma.cpp
+  src/server/systems/maps/scene_environment.cpp
+  src/server/systems/maps/rathma_retreat.cpp
+  src/server/systems/skills/pd2/boss_summons.cpp
+  src/server/systems/skills/pd2/dash.cpp
+  src/server/systems/monsters/pd2/dash.cpp
+  src/server/systems/ai/pd2/uber_minions.cpp
+  src/gameplay/monsters/pd2/boss_program.cpp
+  src/server/systems/population/pd2/preset.cpp
+  src/server/systems/monsters/pd2/scene_pack.cpp
+  src/server/systems/ai/pd2/mendeln.cpp
+  src/server/systems/monsters/pd2/scene_spawn.cpp
+  src/server/systems/maps/timed_treasure.cpp
   src/server/systems/objects/pd2/preset_birth.cpp
   src/gameplay/maps/pd2/placement.cpp
   src/server/systems/effects/monster_pregnancy.cpp
@@ -413,6 +455,9 @@ add_library(d2x_game_content
     src/hosting/game_content.cpp src/hosting/pd2/town_host.cpp
     src/hosting/pd2/equipped_skills.cpp
     src/hosting/pd2/monster_actions.cpp
+    src/hosting/pd2/gheed.cpp
+    src/hosting/pd2/sacrifice.cpp
+    src/hosting/pd2/lucion_chest.cpp
     src/hosting/pd2/hirelings.cpp
     src/hosting/pd2/map_wire.cpp
     src/hosting/pd2/map_loot.cpp
@@ -500,6 +545,7 @@ add_library(d2x_presentation
   src/presentation/remote/remote_scene.cpp src/presentation/remote/remote_scene_units.cpp
   src/presentation/remote/remote_scene_effects.cpp
   src/presentation/remote/remote_scene_pd2.cpp
+  src/presentation/remote/remote_scene_pd2_dash.cpp
   src/presentation/remote/remote_scene_movement.cpp
   src/presentation/remote/remote_scene_draw.cpp src/presentation/remote/monster_effects.cpp
 )

@@ -79,6 +79,7 @@ bool System::commitLife(LifeChange &&change) noexcept {
     if(change.changed) {
         const auto alignment=unit.alignment();
         unit.life=change.life.raw();unit.maximumLife=change.maximum.raw();unit.nativeStats=std::move(change.intrinsic);++unit.revision;
+        if(change.modeAlive) unit.modeAlive=*change.modeAlive;
         refreshCollision(unit);
         if(change.random) unit.combatRandom=change.random->second;
         if(unit.petRegistrationOrder && !unit.life && !unit.modeAlive) unit.inactivePet=true;
@@ -148,7 +149,7 @@ DomainResult<Actor> System::prepareDeathActor(const Actor &current,uint64_t tick
     if(current.revision>UINT64_MAX-4 || current.interruption==UINT64_MAX) return {DomainStatus::Capacity,{}};
     auto unit=current;unit.life=0;unit.modeAlive=false;unit.deathTick=tick;unit.deathOccurrence=0;
     if(unit.petRegistrationOrder) unit.inactivePet=true;
-    if(unit.questNpc || unit.rule.environmentController) unit.rewardComplete=true;
+    if(unit.questNpc || unit.rule.environmentController) unit.rewardComplete=!pd2ControllerDeath(unit);
     unit.itemAuraTimers.clear();unit.poison.reset();unit.wound.reset();
     unit.busyUntil=tick+uint64_t(unit.rule.deathTicks);unit.route.clear();unit.moving=unit.running=false;
     unit.movementTarget={};unit.aiPose=0;unit.holdPose=false;unit.poseUntil=unit.riseUntil=unit.reactionUntil=0;

@@ -1,4 +1,5 @@
 #include "gameplay/quest/catalog.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
 #include "npc_content.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/monsters/monster_ai_data.hpp"
@@ -8,6 +9,7 @@
 #include "resources/anim_data.hpp"
 #include "content/world/world_catalog.hpp"
 #include "monster_actions_content.hpp"
+#include "pd2/monster_actions.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 #include "content/string_table.hpp"
 #include <algorithm>
@@ -76,6 +78,13 @@ std::shared_ptr<const server::MonsterRule> prepareNeutralMonsterRule(Archives &a
     if(!profile || !profile->defense) throw std::runtime_error("Missing original NPC stat profile: "+record.id);
     auto rule=std::make_shared<server::MonsterRule>();
     rule->ai.kind=MonsterAiKind::Idle;
+    if(data.pd2Host && record.index==921) {rule->ai.kind=MonsterAiKind::ScriptedNpc;rule->environmentController=true;}
+    if(data.pd2Host && (record.index==1182 || record.index==1113) && record.ai=="Overseer") {
+        const auto ai=loadMonsterAiProfile(data.tables.at("monstats"),record.sourceRow,record.ai,request.difficulty);
+        if(!ai) throw std::runtime_error("Missing native scene controller AI");
+        rule->ai=*ai;rule->environmentController=true;
+        hosting::pd2::prepareMonsterAi(data,record,*rule);
+    }
     if(data.pd2Host && record.ai=="Npc" && record.index==1168) rule->ai.kind=MonsterAiKind::ScriptedNpc;
     if(record.ai=="BaalToStairs" || record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter" || record.ai=="NpcBarb") {
         const auto ai=loadMonsterAiProfile(data.tables.at("monstats"),record.sourceRow,record.ai,request.difficulty);
@@ -117,6 +126,9 @@ std::shared_ptr<const server::MonsterRule> prepareNeutralMonsterRule(Archives &a
         if(!death) throw std::runtime_error("Missing original NPC death animation: "+record.id);
         rule->deathTicks=monsterAnimationTicks({death->frames,death->speed});
     }
+    if(data.pd2Host && record.index==1113 &&
+       (!hosting::pd2::prepareMonsterActions(archives,data,*animations,record,*rule) ||
+        !prepareAct2MonsterSkills(archives,data,*animations,record,*rule))) throw std::runtime_error("Missing native Lucion controller skills");
     return rule;
 }
 void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea &prepared) {
@@ -158,6 +170,12 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         area.questNpcs.emplace(stairs->id,npcRule(*stairs));
     }
     std::vector<Vec> prisonerMarkers;
+    if(prepared.terrain.request.pd2Map && prepared.terrain.request.pd2Map->controller==18) {
+        const auto *record=catalog.find(147);
+        if(!record || record->hostile() || !record->interact) throw std::runtime_error("Missing native map Gheed NPC");
+        auto rule=npcRule(*record);rule.pd2EventGheed=true;
+        area.questNpcs.emplace(record->id,std::move(rule));
+    }
     for(const auto *code:{"izualghost","drehya","tyrael3"}) {
         const bool wanted=(area.act==3 && std::string_view(code)=="izualghost") || (area.act==4 && std::string_view(code)!="izualghost");
         const auto *record=catalog.find(code);

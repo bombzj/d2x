@@ -21,7 +21,8 @@ void preparePd2Curses(ClassicData &data) {
             curse.ai=CurseAi::Taunt;curse.ignoreDifficultyDivisor=true;
             spell.curse=std::move(curse);record.spell=std::make_shared<const SkillSpec>(std::move(spell));continue;
         }
-        if(record.classCode!="nec") continue;
+        const bool itemEffect=record.classCode.empty() && table.number(row,"ItemEffect").value_or(0)>0;
+        if(record.classCode!="nec" && !itemEffect) continue;
         if(action!=30 && action!=59 && action!=61) continue;
         const auto state=table.value(row,"auratargetstate");
         const auto number=[&](std::string_view field) {return skillTableNumber(table,row,field,SkillNumberPolicy::BlankIsZero);};

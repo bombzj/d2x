@@ -34,7 +34,7 @@ struct StateFact { EntityId actor; uint8_t type{}; RegionId area; int state{}; b
 struct SkillPulseFact { EntityId owner, target; uint8_t ownerType{}, targetType{1}; RegionId area; int skill{}, rank{}; Vec position; uint8_t parameter{};uint32_t argumentX{},argumentY{}; };
 struct SkillEndFact {EntityId actor;uint8_t type{};RegionId area;uint16_t skill{};};
 struct ItemSkillFact { EntityId owner,target; uint8_t targetType{1}; RegionId area; int skill{},rank{}; Vec position; uint16_t flags{}; uint8_t ownerType{}; };
-struct MissileFact { EntityId owner; uint8_t ownerType{}; RegionId area; int definition{}, rank{}, frame{}; Vec position, destination; uint8_t pierce{}; EntityId missile{}; };
+struct MissileFact { EntityId owner; uint8_t ownerType{}; RegionId area; int definition{}, rank{}, frame{}; Vec position, destination; uint8_t pierce{}; EntityId missile{}; bool forcePublication{}; };
 struct ItemTargetingFact { EntityId source; int cursor{-1}; int skill{-1}; };
 struct ItemFact { TransactionId transaction; ItemChange change; };
 // Sparse immutable projection captured at commit. Encoding never consults a
@@ -54,8 +54,13 @@ struct CharacterFact {
     bool explicitResources{}; // Native UpdateAttribute callbacks; ordinary changes use compact sampling.
 };
 struct TravelFact { PlayerId player; EntityId actor; RegionId from, to; uint64_t areaGeneration{}; Vec position; bool walking{}, revived{}; };
-struct ObjectFact { EntityId object, actor; RegionId area; uint64_t revision{}; };
-struct ChatFact { EntityId actor; std::string name, text; std::vector<PlayerId> recipients; uint8_t type{1}, language{}, unitType{2}, nameColor{}; };
+// Frozen at the authoritative frame boundary, before later ENDANIM callbacks.
+// Initial visibility uses a current object snapshot instead of replaying this.
+struct ObjectFact {
+    EntityId object, actor; RegionId area; uint64_t revision{};
+    Vec position; int mode{}; bool targetable{}; std::optional<int> shrine{};
+};
+struct ChatFact { EntityId actor; std::string name, text; std::vector<PlayerId> recipients; uint8_t type{1}, language{}, unitType{2}, nameColor{},messageColor{}; };
 struct CommandFact { PlayerId player; uint64_t sequence{}; CommandStatus result; };
 struct NpcMessage { uint8_t menu{}; uint16_t text{}; };
 struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; uint8_t type=1; bool activate=true; };

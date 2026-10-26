@@ -16,6 +16,20 @@ void System::objectRestored(EntityId previous,EntityId current) {
         if(birth.destination==previous) birth.destination=current;
         retained|=birth.destination==current;
     }
+    for(auto &[id,death]:state_.deaths) {
+        (void)id;
+        if(death.portalObject==previous) death.portalObject=current;
+        if(death.portalDestination==previous) death.portalDestination=current;
+        retained|=death.portalObject==current || death.portalDestination==current;
+    }
+    auto operation=state_.eventOperations.extract(previous);
+    if(!operation.empty()) {operation.key()=current;state_.eventOperations.insert(std::move(operation));retained=true;}
+    for(auto &[key,event]:state_.roomEvents) {
+        (void)key;
+        if(event.source==previous) event.source=current;
+        if(event.portal.portalObject==previous) event.portal.portalObject=current;
+        if(event.portal.portalDestination==previous) event.portal.portalDestination=current;
+    }
     for(size_t slot=0;slot<state_.bindings.size();++slot)
         if(state_.bindings[slot].object && state_.bindings[slot].id==previous)
             bind(int(slot),current,object.area,object.position,true);
@@ -46,7 +60,13 @@ DomainResult<> System::operateTome(const ActorContext &actor,EntityId id) {
         }
         if(portal) break;
     }
-    if(!portal) return {DomainStatus::Unavailable,{}};
+    if(!portal) {
+        // 17d5 3A8270 / 41d49 3AA650: the missing nearby gate calls
+        // PlaySound(player, 19, 0). The decompiler omits EDX=0x13.
+        const auto refused=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
+            {SoundFact{actor.actor,0,actor.area,19}}});
+        return {refused?DomainStatus::Unavailable:refused.status,{}};
+    }
     const auto &gate=objects.at(portal);
     if(gate.pd2Portal) {
         const auto birth=state_.portals.find(portal);
@@ -84,17 +104,10 @@ bool System::advancePortals(TickContext tick) {
         if(source==objects.end()) {birth.phase=5;continue;}
         const auto &program=birth.program;
         if(birth.phase==0) {
-            const auto requested=ports_.world.requestMapArea(RegionId(program.destination),state_.instance);
-            if(!requested || !ports_.areas.find(RegionId(program.destination))) {pending=true;continue;}
-            const auto point=ports_.world.nativeActSpawnLocationEx(RegionId(program.destination),program.tile,3);
+            const auto point=preparePortalLanding(program,birth.anchor,birth.landing);
+            if(isDeferred(point.status)) {pending=true;continue;}
             if(!point) {birth.phase=5;continue;}
-            const auto at=point->position+program.offset;
-            const auto &area=ports_.areas.at(point->area);
-            const auto global=at+area.definition.origin;
-            const auto room=ports_.areas.roomAtPosition(area.definition.id,at,int(global.x),int(global.y));
-            if(!room) {birth.phase=5;continue;}
-            birth.landing=PointTarget{area.definition.id,area.generation,at};birth.phase=1;
-            ports_.world.activate(area.definition.id,at);
+            birth.phase=1;
         }
         if(birth.phase==1) {
             const auto &point=*birth.landing;

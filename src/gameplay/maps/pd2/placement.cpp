@@ -6,7 +6,8 @@ std::optional<std::pair<int,int>> scenePlacement(int x,int y,int radius,const st
     const int bound=std::min(radius,10);
     std::array<bool,400> visited{};visited[210]=true;
     std::array<std::pair<int,int>,400> queue{};queue[0]={10,10};size_t count=1;
-    constexpr std::array<std::pair<int,int>,4> neighbors{{{0,-1},{1,0},{0,1},{-1,0}}};
+    // 41d49 389C20 loads X from 1044FC00 and Y from 10450910.
+    constexpr std::array<std::pair<int,int>,4> neighbors{{{-1,0},{0,1},{1,0},{0,-1}}};
     for(size_t at=0;at<count;++at) {
         const auto [column,row]=queue[at];const int px=x+column*4-40,py=y+row*4-40;
         if(clear(px,py)) return std::pair{px,py};

@@ -16,5 +16,5 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                       const std::set<size_t> &usedUniques = {}, std::string_view characterClass = {},
                       int magicFind = 0, int goldFind = 0,
                       std::optional<DropQuality> forcedQuality = std::nullopt, unsigned effectivePlayers = 1, bool ignoreNoDrop = false,
-                      bool hellBovine = false, const ItemSeedSource &seeds = {});
+                      bool hellBovine = false, const ItemSeedSource &seeds = {}, size_t maximumItems = 6);
 } // namespace d2x

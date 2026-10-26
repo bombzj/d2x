@@ -106,6 +106,11 @@ static std::string baseDisplayItemName(const ClassicData &content, const ItemCat
             if (record.row == item.runewordRow) return record.name;
     if (auto special = specialItem(content, item))
         return localized(special->name);
+    if(item.quality==ItemQuality::Unique && item.specialRow>=0) {
+        const auto table=content.tables.find("uniqueitems");
+        if(table!=content.tables.end() && size_t(item.specialRow)<table->second.rows().size())
+            if(const auto name=table->second.value(size_t(item.specialRow),"index");!name.empty()) return localized(std::string(name));
+    }
     const auto *definition = catalog.find(item.definition);
     std::string name = definition ? definition->name : item.definition;
     if (item.quality == ItemQuality::Superior)

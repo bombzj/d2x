@@ -305,6 +305,7 @@ struct RemoteScene::Impl {
     std::optional<std::pair<int,int>> findPd2LeapLanding(const OnlineUnit &,Vec start,Vec target,int range,const Map &,Vec origin) const;
     bool displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,const Map &map,Vec origin);
     bool displayPd2MonsterCharge(const OnlineUnit &,Motion &,const Map &,Vec origin);
+    void advancePd2Dashes(const Grid &,Vec origin,SceneView &,const RemoteCombat &);
     std::optional<int32_t> pd2ReplicaFormulaStat(OnlineUnitKey,std::string_view) const;
     Vec displayPosition(const OnlineUnit &u, const Map &map, OnlinePoint mapOrigin,const RemoteUiClients &clients);
     std::string monsterSkillMode(size_t monster, uint16_t skill) const;

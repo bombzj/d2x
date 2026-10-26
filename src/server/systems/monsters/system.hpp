@@ -49,6 +49,7 @@ namespace d2x::server::reactions {class ItemTriggers;}
 namespace d2x::server {struct HydraRules;struct SkillRules;struct RoomUnitRegistration;struct NpcRule;struct RoomView;struct RoomRandomLoan;}
 namespace d2x::server::monsters {
 class NativeBirthPublication;
+struct Pd2ScenePack;
 // Sole owner of monster/NPC/companion actor runtime; content identity is preserved.
 struct MoveRequest {
     EntityId actor; PointTarget destination; EntityId target;
@@ -63,6 +64,7 @@ struct Actor {
     // Native PD2 death drops run before state198 is withdrawn. Keep that input,
     // rather than retaining the live map modifiers on the corpse.
     std::shared_ptr<const StatSnapshot> pd2DeathStats;
+    bool pd2DeathEventState{};
     std::shared_ptr<RoomUnitRegistration> roomAdmission;
     std::shared_ptr<FrameEventQueue::PreparedInsertion> initialAiTimer;
     std::shared_ptr<FrameEventQueue::PreparedInsertion> initialModeTimer,initialWakeTimer;
@@ -194,6 +196,8 @@ struct Actor {
     uint64_t webUntil{};
     bool burrowed{},hatching{};
     bool airborne{}, holdPose{}, targetFlagsDisabled{}, submerged{};
+    bool pd2NoPathDisabled{};
+    bool pd2DashAbsent{};
     uint8_t aiPose{1}; uint64_t poseUntil{};
     int64_t aiRegenerationBonus{};
     std::set<int> aiStates;
@@ -223,7 +227,7 @@ struct Actor {
         return owner || conversion?UnitAlignment::Good:UnitAlignment(rule.alignment);
     }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
-    bool nativeAi() const { return !questNpc || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter || rule.ai.kind==MonsterAiKind::NpcBarb || rule.ai.kind==MonsterAiKind::ScriptedNpc; }
+    bool nativeAi() const { return !questNpc || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter || rule.ai.kind==MonsterAiKind::NpcBarb || rule.ai.kind==MonsterAiKind::ScriptedNpc || (rule.environmentController && rule.ai.kind==MonsterAiKind::Overseer); }
     bool damageable() const { return !restorationPending && !burrowed && !targetFlagsDisabled && !hatching && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
     bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || bool(druidPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
@@ -273,7 +277,7 @@ struct InactiveMonster {
     int nestSpawned{};
     int baalThroneWave{};
     std::optional<Vec> aiHomeCommand;
-    bool impMountedAi{},whippedAi{};
+    bool impMountedAi{},whippedAi{},pd2EventState{};
 };
 struct State {
     std::map<EntityId, Actor> actors;
@@ -300,6 +304,11 @@ class System {
     StepStatus advanceRestoration(uint64_t tick);
     DomainResult<> finishRestoration(const InactiveMonster &,uint64_t tick);
     void setStoredOwner(Actor &,EntityId) const;
+    bool pd2ControllerDeath(const Actor &) const;
+    void stagePd2RathmaStatuses(effects::AuraUnitPublication &,EntityId,EntityId,const std::optional<PoisonApplication> &,
+        const std::optional<OpenWoundsApplication> &,uint64_t) const;
+    DomainResult<std::shared_ptr<NativeBirthPublication>> preparePd2NativeSpawn(RegionId,Vec observer,Vec position,int definition,
+        int mode,uint32_t flags,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,bool preset);
     DomainResult<> assignBaalSkill(EntityId,std::string_view,std::optional<int>,uint64_t);
     void initializeImpMount(Actor &) const;
     std::optional<Vec> nestBirthPoint(EntityId,Vec,uint64_t &) const;
@@ -346,6 +355,15 @@ class System {
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     DomainResult<std::shared_ptr<NativeBirthPublication>> preparePd2MissileSpawn(RegionId,Vec observer,Vec position,int definition,
         int mode,uint32_t flags,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<std::shared_ptr<NativeBirthPublication>> preparePd2WandererSpawn(RegionId,Vec observer,Vec position,int definition,
+        bool actBoss,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<> applyPd2WandererState(EntityId,bool actBoss,uint64_t tick);
+    DomainResult<EntityId> admitPd2NativeChild(EntityId owner,RegionId,Vec,int definition,int mode,uint32_t flags,bool storedOwner,
+        uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<EntityId> admitPd2SceneMonster(RegionId,Vec,int definition,std::string key,uint64_t tick,int binding=-1);
+    EntityId pd2RathmaPartner(EntityId) const;
+    DomainResult<> advancePd2ScenePack(Pd2ScenePack &,RegionId,Vec,int definition,MonsterRank,std::string key,uint64_t tick,
+        const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareRoomSpawn(const Admission &,RoomRandomLoan,int attempts,
         std::optional<size_t> logicalRegion,bool probe,
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision,bool stagedAdmission=false);
@@ -382,6 +400,7 @@ class System {
     uint64_t resumeAi(EntityId, uint64_t tick, uint64_t scheduled);
     void finishAction(EntityId,uint64_t tick);
     void scheduleAi(EntityId,uint64_t due,uint64_t notBefore=0);
+    void cancelAi(EntityId);
     void roomClientsChanged(RoomView,bool present,uint64_t tick);
     void resumeMode(EntityId,uint64_t tick);
     DomainResult<> modeEvent(const FrameEvent &,uint64_t tick);
@@ -417,6 +436,7 @@ class System {
     DomainResult<> startSkillMotion(EntityId source,Vec target,uint64_t until,int skill,bool leap,uint64_t tick,EntityId victim={});
     DomainResult<> startSwarmMove(EntityId source,Vec target,uint64_t tick);
     DomainResult<> startDiabloRun(EntityId source,Vec target,int32_t velocity);
+    DomainResult<> startPd2DashMotion(EntityId source,Vec target);
     bool advanceScriptedMotion(EntityId source,uint64_t tick);
     void stopScriptedMotion(EntityId source);
     bool advanceSkillMotion(Actor &,uint64_t tick);
@@ -499,6 +519,7 @@ class System {
     DomainResult<> requestMove(const MoveRequest &);
     void stop(EntityId);
     DomainResult<> toggleAiState(EntityId,int state,bool active,uint64_t tick);
+    DomainResult<> pd2PhasePresence(EntityId,bool active);
     void hitDelay(EntityId id, uint64_t until);
     void knockback(EntityId, Vec source, uint64_t tick);
     DomainResult<> missileReaction(EntityId target,EntityId source,bool getHit,bool knockback,uint8_t hitClass,uint64_t tick);

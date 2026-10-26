@@ -672,7 +672,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             if (chooseDifficulty) page = FrontendPage::Difficulty;
             else {
                 enterLocalGame = false;
-                if (lanConnection && !lanJoinAddress.empty()) {
+                const auto preparationError=prepareGame();
+                if(!preparationError.empty()) {
+                    notice=preparationError;session.return_to_characters();
+                } else if (lanConnection && !lanJoinAddress.empty()) {
                     try {
                         session.connect_tcpip({lanJoinAddress, options.gamePort}, embedded->selectedTcpIpSave());
                         localConnection = false; lanJoiningGame = true;

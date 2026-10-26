@@ -10,6 +10,7 @@ struct Pd2SkillProgram {
     CombatStateDefinition state;
     std::array<int,3> missiles{-1,-1,-1};
     int missile{-1};
+    int summonClass{-1};
     std::string mode;
     int sequence{-1};
     std::string requiredWeaponType;

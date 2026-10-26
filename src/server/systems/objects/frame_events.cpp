@@ -10,6 +10,32 @@
 #include <algorithm>
 
 namespace d2x::server::objects {
+StepStatus System::publishChanges(TickContext tick) {
+    std::erase_if(publishedModes_,[&](const auto &entry){return !state_.objects.contains(entry.first);});
+    for(const auto &[id,object]:state_.objects) {
+        if(!object.rule.chest && !object.rule.shrine) continue;
+        auto [previous,inserted]=publishedModes_.try_emplace(id,object.revision,object.mode);
+        // Initialization seeds the baseline before any operation, including
+        // operations in the birth frame. Unknown initial state is a snapshot.
+        if(inserted) continue;
+        if(previous->second.first==object.revision) continue;
+        const int before=previous->second.second;
+        // Native ENDANIM writes ON silently. The preceding OP fact is already
+        // retained even when hosting advances several frames before delivery.
+        if(before!=object.mode && !(before==1 && object.mode==2)) {
+            const auto shrine=object.rule.shrine && (object.rule.subClass&1) && !(object.rule.subClass&4)
+                ?std::optional<int>{object.rule.shrine->code}:std::nullopt;
+            const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},object.area},
+                {ObjectFact{id,object.operatorActor,object.area,object.revision,object.position,object.mode,
+                    object.rule.selectable[size_t(object.mode)],shrine}}});
+            if(!sent) return StepStatus::Blocked;
+        }
+        // Advance only after acceptance. A full outbox retries this publication
+        // phase without replaying the operation, inventory or effect transaction.
+        previous->second={object.revision,object.mode};
+    }
+    return StepStatus::Complete;
+}
 namespace {
 FrameEventType hazardEvent(const Object &object) {
     switch(object.rule.initialization) {

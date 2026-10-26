@@ -64,6 +64,7 @@ class System {
     Coverage coverage(RegionId,std::optional<Neighborhood> neighborhood={}) const;
     bool roomReady(RegionId,size_t) const;
     DomainResult<> requestQuestBirth(RegionId,std::string_view,TickContext,std::optional<Vec> position={});
+    DomainResult<EntityId> advancePd2PresetBirth(QuestBirth &,RegionId,std::string_view,Vec,TickContext);
     DomainResult<> requestObjectBirth(RegionId,EntityId,Vec,TickContext,std::optional<int> definition={},unsigned occurrence=0,
       int retryAttempts=0,int finalRetryAttempts=0,int birthTicks=0);
     StepStatus advanceQuestBirths(TickContext);

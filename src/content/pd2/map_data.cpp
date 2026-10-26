@@ -13,6 +13,8 @@ namespace d2x::pd2 {
 std::shared_ptr<const MapCatalog> prepareMapCatalog(const ClassicData &data) {
     if(!data.pd2Host || !data.nativeStats) throw std::invalid_argument("Missing PD2 map content");
     auto result=std::make_shared<MapCatalog>();
+    for(const auto &[key,text]:data.itemStrings)
+        if(key.starts_with("MapEventNotify")) result->notices.emplace(key,text);
     const auto &uniqueTable=data.tables.at("uniqueitems");
     result->sceneUniques.resize(uniqueTable.rows().size());
     for(size_t row=0;row<uniqueTable.rows().size();++row) {
@@ -50,9 +52,22 @@ std::shared_ptr<const MapCatalog> prepareMapCatalog(const ClassicData &data) {
     // 0x37D610 anchors relative TC identities at MonStats class967's first
     // normal TC. The actual names, entries and weights stay MPQ-owned.
     const auto &monsters=data.tables.at("monstats");
+    for(const auto type:{1195,1196,1241}) {
+        const auto name=monsters.value(compiledMonsterRow(monsters,type),"TreasureClass1(H)");
+        if(name.empty() || std::none_of(data.treasures.begin(),data.treasures.end(),[&](const auto &entry){return entry.name==name;}))
+            throw std::runtime_error("Missing native timed monster treasure");
+        result->timedTreasures.emplace(type,MapCatalog::TimedTreasure{std::string(name),60});
+    }
     const auto anchor=monsters.value(compiledMonsterRow(monsters,967),"TreasureClass1");
     const auto base=std::find_if(data.treasures.begin(),data.treasures.end(),[&](const auto &entry){return entry.name==anchor;});
     if(base==data.treasures.end()) throw std::runtime_error("Missing PD2 map treasure anchor");
+    for(auto row=base;row!=data.treasures.end();++row) result->relativeTreasures.push_back(row->name);
+    for(const auto &[offset,count,first,second,third]:std::array<std::array<int,5>,2>{{
+        {1036,60,747,1000,1103},{1035,30,743,1104,1105}}}) {
+        if(size_t(offset)>=result->relativeTreasures.size()) throw std::runtime_error("Missing native timed boss treasure");
+        for(const int type:{first,second,third})
+            result->timedTreasures.emplace(type,MapCatalog::TimedTreasure{result->relativeTreasures[size_t(offset)],count});
+    }
     for(const auto &[id,offset]:std::array<std::pair<uint16_t,size_t>,13>{{
         {494,982},{495,983},{496,984},{497,985},{502,986},{506,988},
         {279,1114},{280,1129},{281,1108},{285,1139},{282,1100},{283,1091},{284,1095}}}) {

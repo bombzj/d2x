@@ -4,6 +4,7 @@
 #include "character_content.hpp"
 #include "combat_content.hpp"
 #include "pd2/map_loot.hpp"
+#include "pd2/lucion_chest.hpp"
 #include "gameplay/maps/pd2/definition.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/monsters/monster_loot.hpp"
@@ -83,6 +84,10 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
                 plan.drops.push_back(std::move(item));
             }
         }
+    } else if(request.request.nativeTreasure) {
+        const auto &treasure=*request.request.nativeTreasure;
+        plan=planItemLoot(data,data.tables.at("itemratio"),treasure.name,treasure.level,0,request.seed,
+            request.uniques,request.classCode,request.magicFind,request.goldFind,{},request.effectivePlayers,false,false,seeds);
     } else if(request.request.towerGold) {
         const auto level=world->levels().find(int(request.request.source.region));
         if(level==world->levels().end() || level->second.population.level.at(size_t(request.request.source.difficulty))<=0) plan.deferred="Missing original tower gold area level";
@@ -97,7 +102,9 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
     } else if (request.request.object) {
         const auto &object = *request.request.object;
         auto seed = request.seed;
-        if(!object.dropCode.empty()) {
+        if(data.pd2Host && object.definition==623) {
+            plan=planPd2LucionChest(data,request,seeds);seed=plan.randomState;
+        } else if(!object.dropCode.empty()) {
             for(int i=0;i<object.dropCount;++i) plan.drops.push_back({object.dropCode,1,{},unsigned(object.dropLevel),{}});
         } else if(object.operation==26) {
             const bool scroll=limitedRandom(seed,20)<=12,identify=limitedRandom(seed,2)!=0;

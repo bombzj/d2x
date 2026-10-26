@@ -39,7 +39,11 @@ void System::acknowledgeEnvironment(int act,uint64_t revision) {
 }
 void System::sunEclipse(bool dark) {
     sunDark_=dark;if(!ports_.areas.actTimes_[1]) return;
-    auto &time=*ports_.areas.actTimes_[1];
+    setActEclipse(1,dark);
+}
+void System::setActEclipse(int act,bool dark) {
+    prepareActTime(act);
+    auto &time=*ports_.areas.actTimes_.at(size_t(act));
     if(time.value.eclipse==dark) return;
     if(time.revision==UINT64_MAX) throw std::overflow_error("Native eclipse revision exhausted");
     setActSunEclipse(time.value,dark);++time.revision;
@@ -57,7 +61,9 @@ DomainResult<EntityId> System::admitQuestNpc(RegionId region,std::string_view co
         return ports_.monsters.find(npc.id)?DomainResult<EntityId>{DomainStatus::Applied,npc.id}:DomainResult<EntityId>{DomainStatus::Stale,{}};
     const auto prepared=area.questNpcs.find(code);
     if(prepared==area.questNpcs.end()) return {DomainStatus::Unavailable,{}};
-    const auto point=area.collision.nativeSpawn(position,searchRadius,prepared->second.movement);
+    const auto point=searchRadius==0?
+        (area.collision.walkable(position,prepared->second.movement)?std::optional<Vec>{position}:std::nullopt):
+        area.collision.nativeSpawn(position,searchRadius,prepared->second.movement);
     if(!point) return {DomainStatus::Conflict,{}};
     if(ports_.ids.cursor()>=UINT32_MAX || ports_.monsters.read().actors.size()>=65536) return {DomainStatus::Capacity,{}};
     const EntityId id{ports_.ids.cursor()};
@@ -137,6 +143,8 @@ DomainResult<> System::install(PreparedArea prepared) {
     if (pending == state_.preparation.end() || pending->destination != prepared.definition.id || pending->pd2Map!=prepared.definition.pd2Map || ports_.areas.find(prepared.definition.id))
         return {DomainStatus::Stale, {}};
     AreaStore::validate(prepared.definition);
+    if(prepared.definition.pd2Map && prepared.definition.pd2Map==pd2ProgramMap_)
+        prepared.definition.pd2RuntimeGlobal=pd2RuntimeGlobal_;
     assign(prepared.definition);
     const auto id = prepared.definition.id;
     ports_.areas.areas_.emplace(id, AreaState{std::move(prepared.definition), 1, {}});

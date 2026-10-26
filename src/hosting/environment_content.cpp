@@ -1,5 +1,6 @@
 #include "environment_content.hpp"
 #include "monster_actions_content.hpp"
+#include "pd2/monster_actions.hpp"
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "content/monsters/monster_experience.hpp"
@@ -20,6 +21,7 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     const auto ai=table.value(candidate,"AI");if(!ai.starts_with("Trap-") && ai!="TrappedSoul" && ai!="DesertTurret") return {};
     const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, table); });
     const auto &catalog = *catalogSource;const auto *record=catalog.find(identity.monster);if(!record) return {};
+    const bool pd2Clone=data.pd2Host && record->index==789;
     using Trap=server::MonsterRule::Trap;
     const std::map<std::string,Trap,std::less<>> types{{"Trap-Missile",Trap::Missile},{"Trap-Poison",Trap::Poison},{"Trap-Nova",Trap::Nova},{"Trap-RightArrow",Trap::RightArrow},{"Trap-LeftArrow",Trap::LeftArrow},{"Trap-Melee",Trap::Melee},{"DesertTurret",Trap::Turret},{"TrappedSoul",Trap::Soul}};
     const auto type=types.find(record->ai);if(type==types.end()) return {};
@@ -29,6 +31,7 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     rule.statGameType=request.ladderMonsterStats;
     for(size_t difficulty=0;difficulty<rule.modeTables.size();++difficulty) rule.modeTables[difficulty]=data.nativeMonsterModes.at({record->index,int(difficulty)});
     rule.trap=type->second;rule.environmentController=!record->killable;rule.nativeClass=record->index;
+    if(pd2Clone) {rule.trap=Trap::None;rule.ai.kind=MonsterAiKind::ScriptedNpc;rule.boss=record->boss;rule.auraPrograms=data.nativeAuraPrograms;}
     // MonsterSpawn gives blank-level trap rows the current monster-region level.
     rule.level=request.difficulty==0?stats.number(record->sourceRow,"Level").value_or(world.level(request.level).population.level[0]):world.level(request.level).population.level[size_t(request.difficulty)];
     rule.level=std::max(1,rule.level);rule.difficulty=request.difficulty;rule.nativeVelocity=record->walkVelocity.value_or(0);
@@ -45,9 +48,12 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     if(rule.minimumLife<=0 || rule.maximumLife<rule.minimumLife) return {};
     rule.defense=scale("AC","L-AC");rule.damageRegen=stats.number(record->sourceRow,"DamageRegen").value_or(0);rule.criticalChance=stats.number(record->sourceRow,"Crit").value_or(0);
     rule.coldEffect=record->coldEffect[size_t(request.difficulty)];prepareMonsterStateRules(data,record->sourceRow,rule);rule.stunState=data.states.at("stunned").definition.id;
-    if(rule.trap==Trap::Soul) {
+    if(rule.trap==Trap::Soul || pd2Clone) {
+        if(pd2Clone) hosting::pd2::prepareMonsterAi(data,*record,rule);
+        else {
         const auto ai=loadMonsterAiProfile(stats,record->sourceRow,record->ai,request.difficulty);if(!ai) return {};
         rule.ai=*ai;
+        }
     }
     rule.hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
     constexpr const char *resistance[]{"ResDm","ResMa","ResFi","ResLi","ResCo","ResPo"};for(size_t i=0;i<6;++i) rule.resistances[i]=stats.number(record->sourceRow,std::string(resistance[i])+suffix).value_or(0);
@@ -55,7 +61,7 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     if(!prepareMonsterComponents(data,*record,rule)) return {};
     const auto animationSource = archives.prepared<AnimDataTable>([&] { return AnimDataTable(archives.read("data/global/animdata.d2")); });
     const auto &animations = *animationSource;
-    if(rule.trap==Trap::Soul) {
+    if(rule.trap==Trap::Soul || pd2Clone) {
         if(!prepareMonsterLifecycle(archives,data,animations,*record,rule)) return {};
         rule.decisionTicks=rule.neutralDelayTicks;
     }
@@ -70,7 +76,7 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
         if(!timing && !motion) return {};
         server::MonsterAttackRule attack;attack.duration=animationSecondsTicks(timing?timing->duration:motion->duration);attack.release=timing?std::clamp(animationSecondsTicks(timing->impact),1,attack.duration):attack.duration;attack.rank=uint8_t(rank);
         attack.nativeMode=lower=="a2"?5:lower=="s1"?8:lower=="s2"?9:4;
-        if(rule.trap==Trap::Soul) {
+        if(rule.trap==Trap::Soul || pd2Clone) {
             attack.useAttackRate=lower=="a1" || lower=="a2";
             attack.animationEvent=uint8_t(event);
             attack.animation=AnimationTiming{timing?timing->frames:motion->frames,timing?timing->speed:motion->speed};
@@ -87,7 +93,7 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
         return attack;
     };
     const int rank=1+data.tables.at("difficultylevels").number(size_t(request.difficulty),"MonsterSkillBonus").value_or(0);
-    if(rule.trap==Trap::Missile || rule.trap==Trap::RightArrow || rule.trap==Trap::LeftArrow || rule.trap==Trap::Melee || rule.trap==Trap::Soul) {
+    if(rule.trap==Trap::Missile || rule.trap==Trap::RightArrow || rule.trap==Trap::LeftArrow || rule.trap==Trap::Melee || rule.trap==Trap::Soul || pd2Clone) {
         auto attack=make("a1",std::string(stats.value(record->sourceRow,"MissA1")),rank);if(!attack) return {};rule.attacks.emplace(4,*attack);
     }
     if(rule.trap==Trap::Poison || rule.trap==Trap::Nova || rule.trap==Trap::Turret || rule.trap==Trap::RightArrow || rule.trap==Trap::LeftArrow) {
@@ -109,6 +115,9 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     if(rule.trap==Trap::Soul) for(const auto *mode:{"a2","s1","s2"}) {
         if(auto action=make(mode,{},rank)) {if(std::string_view(mode)!="a2") {action->minimum=action->maximum=0;}rule.attacks.emplace(action->nativeMode,*action);}
     }
+    if(data.pd2Host && (rule.trap==Trap::Soul || pd2Clone) &&
+       (!hosting::pd2::prepareMonsterActions(archives,data,animations,*record,rule) ||
+        !prepareAct2MonsterSkills(archives,data,animations,*record,rule))) return {};
     const auto death=loadMonsterMotionTiming(animations,record->token,"dt",monsterModeWeapon(archives,record->token,"dt",record->baseWeapon));rule.deathTicks=death?animationSecondsTicks(death->duration):1;
     if(record->killable) {
         rule.experience.resize(100);rule.experienceRatios.resize(100);

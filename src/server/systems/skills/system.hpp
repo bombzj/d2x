@@ -24,7 +24,7 @@ struct Request { Action action; uint16_t skill{}; bool right{}, repeat{}, statio
 using CastRequest = actions::MonsterCastRequest;
 using Cast = actions::SkillAction;
 using State = actions::State;
-struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; loot::System &loot; const social::System &social; actions::State &actions; reactions::ItemTriggers &itemTriggers; const spatial::System &spatial; FrameEventQueue &frameEvents; ai::System &ai; uint32_t &pd2Random; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; loot::System &loot; const social::System &social; actions::State &actions; reactions::ItemTriggers &itemTriggers; const spatial::System &spatial; FrameEventQueue &frameEvents; ai::System &ai; uint32_t &pd2Random; maps::System &maps; };
 class System {
   State &state_;
     const Ports ports_;
@@ -52,6 +52,7 @@ class System {
     void postPd2MonsterCastItemEvent(MonsterRelease &,uint64_t tick);
     void rearmPd2MonsterCastItemEvent(MonsterRelease &,size_t previousRelease);
     DomainResult<> monsterRunEvent(const FrameEvent &,uint64_t tick);
+    DomainResult<> pd2DashEvent(const FrameEvent &,uint64_t tick);
     DomainResult<Vec> startMonsterLeap(const CastRequest &);
     DomainResult<bool> releaseMonsterLeap(MonsterRelease &,TickContext);
     DomainResult<bool> releaseDruidPet(MonsterRelease &,TickContext);
@@ -79,6 +80,7 @@ class System {
     DomainStatus activateEffect(Release &, const ActorContext &, Vec);
     DomainStatus activatePd2Enchant(Release &, const ActorContext &);
     DomainStatus activatePd2(Release &,const ActorContext &,Vec);
+    DomainStatus activatePd2BossSummon(Release &,const ActorContext &);
     DomainStatus preparePd2CastItemEvent(Release &,const ActorContext &,Vec);
     void commitPd2CastItemEvent(Release &) noexcept;
     DomainStatus activatePd2Splash(Release &,const ActorContext &);

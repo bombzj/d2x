@@ -199,7 +199,9 @@ int runHeadless(const AppOptions &options) {
     const auto mode=profile.at("mode").get<std::string>();
     const bool hosting=mode=="host";
     if(!hosting && mode!="clients") throw std::invalid_argument("mode must be host or clients");
-    const int pollMs=integer(profile,"pollMs",hosting?10:20,5,100);
+    // Slow outer pumping can diagnose catch-up publication without changing
+    // fixed-step duration, the catch-up bound or authoritative event ordering.
+    const int pollMs=integer(profile,"pollMs",hosting?10:20,5,1000);
     const int duration=integer(profile,"durationSeconds",60,1,3600);
     const int connectTimeout=integer(profile,"connectTimeoutSeconds",60,5,300);
     const int refillSeconds=integer(profile,"refillSeconds",0,0,3600);

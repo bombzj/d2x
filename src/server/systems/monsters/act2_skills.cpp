@@ -342,6 +342,7 @@ bool System::advanceScriptedMotion(EntityId source,uint64_t tick) {
 void System::stopScriptedMotion(EntityId source) {
     const auto found=state_.actors.find(source);if(found==state_.actors.end()) return;
     auto &actor=found->second;
+    if(actor.pd2DashAbsent) {actor.pd2DashAbsent=false;actor.pathType=2;refreshCollision(actor);++actor.revision;}
     if(actor.skillReservation) {
         ports_.areas.setNativePatternMask(actor.area,actor.skillReservation->position,actor.rule.collisionPattern,actor.skillReservation->clearMask,false);
         actor.skillReservation.reset();++actor.revision;

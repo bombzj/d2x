@@ -106,6 +106,14 @@ struct DiagnosticHirelingSlot {
     int seller{};uint64_t revision{};uint16_t name{};uint32_t seed{};bool available{},hired{};
 };
 struct DiagnosticSnapshot {
+    struct Pd2Map {
+        int controller{},phase{};uint32_t eventProgress{};
+        struct Death {EntityId unit;int phase{},portalPhase{},portalStatus{-1};bool evaluated{};std::optional<Vec> portalPosition;};
+        struct Preset {RegionId area;int definition{},marker{},binding{};Vec position;std::string deferred;};
+        std::vector<Death> deaths;
+        std::vector<Preset> presets;
+    };
+    std::optional<Pd2Map> pd2Map;
     uint64_t gameRandom{};
     std::map<RegionId,uint64_t> levelRandom;
     std::vector<DiagnosticRoomRandom> roomRandom;

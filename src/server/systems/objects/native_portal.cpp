@@ -3,6 +3,15 @@
 #include "server/systems/maps/system.hpp"
 
 namespace d2x::server::objects {
+DomainResult<> System::removeNative(EntityId id) {
+    const auto found=state_.objects.find(id);if(found==state_.objects.end()) return {DomainStatus::Applied,std::monostate{}};
+    const auto region=found->second.area;
+    const auto point=found->second.position;
+    ports_.world.retainControllerUnitRoom(id,region,point,false);
+    ports_.frameEvents.cancelOwner({FrameEventUnit::Object,id});ports_.areas.removeRoomUnit(id);
+    publishedModes_.erase(id);state_.objects.erase(found);collision(region);
+    return {DomainStatus::Applied,std::monostate{}};
+}
 void System::restoreNativePortalReferences(EntityId previous,EntityId current) {
     if(!previous || previous==current) return;
     for(auto &[id,object]:state_.objects) {

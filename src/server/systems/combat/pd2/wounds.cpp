@@ -10,6 +10,7 @@
 #include "gameplay/effects/queries.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/pd2_random.hpp"
+#include "gameplay/rules/pd2/arithmetic.hpp"
 #include <algorithm>
 #include <array>
 
@@ -59,15 +60,18 @@ std::optional<OpenWoundsApplication> pd2OpenWounds(const Ports &ports,const Spel
             const auto next=ports.monsters.minionOwner(owner);if(next==owner) break;owner=next;
         }
     } else if(ports.areas.at(target.player->area).definition.town) rate=0;
+    const bool pair=bool(ports.monsters.pd2RathmaPartner(target.id()));
+    if(pair) rate=pd2MultiplyDivide(rate,50.,100);
     const OpenWoundsApplication *previous=nullptr;
     if(target.monster && target.monster->wound) previous=&*target.monster->wound;
     else if(target.player) if(const auto recovery=ports.effects.read().players.find(target.id());
         recovery!=ports.effects.read().players.end() && recovery->second.wound) previous=&*recovery->second.wound;
-    OpenWoundsApplication result{rate,source.id(),impact.binding.credit,tick+125,tick+1};result.pd2Stacks=1;
+    OpenWoundsApplication result{rate,source.id(),impact.binding.credit,tick+125,tick+1,1,{},{},{}};
     if(previous && previous->until>tick && previous->pd2Stacks) {
         result=*previous;result.until=tick+125;
         if(result.pd2Stacks<3) {result.rate=nativeAdd(nativeChecked(result.rate),rate);++result.pd2Stacks;}
     }
+    if(pair) {result.pd2Increment=rate;result.pd2Attacker=source.id();result.pd2Credit=impact.binding.credit;}
     return result;
 }
 }

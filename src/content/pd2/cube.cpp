@@ -6,20 +6,35 @@
 #include "gameplay/items/cube_records.hpp"
 #include "gameplay/items/native_sources.hpp"
 #include "gameplay/stats/modifier_values.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 namespace d2x {
-bool applyPd2AutomaticCorruption(const ClassicData &data,ItemInstance &item,uint64_t &itemRandom,uint32_t &programRandom) {
+bool pd2SacrificeEligible(const ClassicData &data,const ItemInstance &item) {
+    const auto *base=data.items.find(item.definition);
+    if(!item.identified || !base || !base->equipment.isType("amul")) return false;
+    bool corrupted=false;
+    for(const auto &stat:resolveItemStats(data,item,int(item.level))) {
+        if((stat.name=="desecrated" || stat.name=="mirrored") && stat.rawValue) return false;
+        if(stat.name=="corrupted" && stat.rawValue) corrupted=true;
+    }
+    return corrupted;
+}
+bool applyPd2AutomaticCorruption(const ClassicData &data,ItemInstance &item,uint64_t &itemRandom,uint32_t &programRandom,bool desecrate) {
     auto visible=item;visible.identified=true;
-    for(const auto &stat:resolveItemStats(data,visible,int(item.level)))
-        if(stat.name=="corrupted" && stat.rawValue) return false;
+    int corruption=0;
+    for(const auto &stat:resolveItemStats(data,visible,int(item.level))) {
+        if(stat.name=="corrupted" && stat.rawValue) {if(!desecrate) return false;corruption=stat.rawValue;}
+        if(stat.name=="desecrated" && stat.rawValue) return false;
+    }
     const auto *base=data.items.find(item.definition);
     if(!base) return false;
     int threshold=0;uint32_t roll=0;bool drawn=false;
     // Core 0x3632D0 scans enabled corruption rows against the current item.
     // Automatic map corruption and a bricked rare both use this attribute
     // program; it never destroys/replaces the item as a manual WSS input can.
-    for(const auto &recipe:data.cubeRecipes) {
+    for(size_t index=0;index<data.cubeRecipes.size();++index) {
+        const auto &recipe=data.cubeRecipes[index];
         if((recipe.operation!=16 && recipe.operation!=18) || recipe.operationParameter!=361 ||
             !recipe.operationValue || recipe.inputs.empty() || recipe.outputs.empty()) continue;
         if(recipe.inputs.size()>1 && recipe.inputs[1].code!="wss" && data.items.find(recipe.inputs[1].code)) continue;
@@ -29,11 +44,26 @@ bool applyPd2AutomaticCorruption(const ClassicData &data,ItemInstance &item,uint
             threshold=recipe.operationValue;
             if(threshold<0 || threshold>=1000) throw std::runtime_error("Invalid PD2 corruption threshold");
             roll=uint32_t(threshold)+pd2CrtRandom(programRandom)%uint32_t(1000-threshold);drawn=true;
+            if(desecrate) {threshold=851;roll=851+pd2CrtRandom(programRandom)%149;}
         }
         if(threshold && roll && roll<uint32_t(recipe.operationValue)) {
             auto properties=output;
+            const auto first=properties.properties.empty()?data.properties.end():std::find_if(data.properties.begin(),data.properties.end(),
+                [&](const auto &property){return property.code==properties.properties.front().property.code;});
+            if(desecrate && first!=data.properties.end() && int(first->row)==corruption) {
+                roll=uint32_t(threshold)+pd2CrtRandom(programRandom)%uint32_t(1000-threshold);
+                index=0;while(index<data.cubeRecipes.size() && data.cubeRecipes[index].row<351) ++index;
+                if(index==data.cubeRecipes.size()) break;
+                --index;continue;
+            }
+            if(desecrate) for(auto &property:properties.properties) for(const auto &source:data.properties) {
+                if(source.code!=property.property.code || (source.row!=270 && source.row!=271)) continue;
+                const auto replacement=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &entry){return entry.row==source.row+155;});
+                if(replacement==data.properties.end()) throw std::runtime_error("Missing native desecration property link");
+                property.property.code=replacement->code;break;
+            }
             for(auto &property:properties.properties) property.chance=0;
-            applyCubeProperties(data,properties,item,itemRandom);break;
+            applyCubeProperties(data,properties,item,itemRandom);item.nativePropertyRandom=itemRandom;break;
         }
     }
     return drawn;

@@ -36,6 +36,8 @@ Json area(const server::AreaView &value) {
     result["townRegion"] = int(a.townRegion);
     result["portalArrival"] = a.portalArrival ? point(*a.portalArrival + a.origin) : Json(nullptr);
     result["portalSupported"] = a.portalRule.has_value();
+    result["questPortalDefinitions"]=Json::array();
+    for(const auto &[id,rule]:a.questPortalRules) {(void)rule;result["questPortalDefinitions"].push_back(id);}
     for (const auto &edge : a.boundaries) result["boundaries"].push_back({{"destination", int(edge.destination)}, {"side", edge.side},
         {"plane", edge.plane + (edge.side % 2 ? a.origin.x : a.origin.y)},
         {"start", edge.start + (edge.side % 2 ? a.origin.y : a.origin.x)},
@@ -72,6 +74,17 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"pendingReleases", s.pendingReleases}, {"spellImpacts", s.spellImpacts}, {"spellTargets", s.spellTargets},
         {"path", Json::array()}};
     result["effects"] = Json::array();
+    if(s.pd2Map) {
+        const auto &map=*s.pd2Map;
+        result["pd2Map"]={{"controller",map.controller},{"phase",map.phase},{"eventProgress",map.eventProgress},
+            {"deaths",Json::array()},{"presets",Json::array()}};
+        for(const auto &death:map.deaths) result["pd2Map"]["deaths"].push_back({{"unit",death.unit.value},
+            {"phase",death.phase},{"portalPhase",death.portalPhase},{"evaluated",death.evaluated},
+            {"portalStatus",death.portalStatus},{"portalLocalPosition",death.portalPosition?point(*death.portalPosition):Json(nullptr)}});
+        for(const auto &preset:map.presets) result["pd2Map"]["presets"].push_back({{"area",int(preset.area)},
+            {"definition",preset.definition},{"marker",preset.marker},{"binding",preset.binding},
+            {"position",point(preset.position)},{"deferred",preset.deferred}});
+    }
     const auto seed=[](uint64_t value) {return Json{{"low",uint32_t(value)},{"high",uint32_t(value>>32)}};};
     result["generationRandom"]={{"game",seed(s.gameRandom)},
         {"objectControl",s.objectControlRandom?seed(*s.objectControlRandom):Json(nullptr)},
@@ -192,7 +205,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         value["interruption"]=monster.interruption;value["corpseUnavailable"]=monster.corpseUnavailable;
         value["components"]=monster.components;value["rules"]["componentCounts"]=monster.componentCounts;
         value["rules"]["componentVariants"]=monster.componentVariants;
-        value["identity"]={{"rank",monsterRankName(monster.identity.rank)},{"superUnique",monster.identity.superUnique},{"spawnKey",monster.identity.spawnKey},{"ownerSpawnKey",monster.identity.ownerSpawnKey}};
+        value["identity"]={{"nativeClass",monster.identity.nativeClass},{"rank",monsterRankName(monster.identity.rank)},{"superUnique",monster.identity.superUnique},{"spawnKey",monster.identity.spawnKey},{"ownerSpawnKey",monster.identity.ownerSpawnKey}};
         value["home"]=point(monster.home+origin);value["skillPositions"]=Json::array();
         for(const auto p:monster.skillPositions) value["skillPositions"].push_back(point(p+origin));
         if(monster.enchantment) {
@@ -229,7 +242,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     result["corpses"]=Json::array();
     for(const auto &corpse:s.corpses) result["corpses"].push_back({{"id",corpse.id.value},{"owner",corpse.owner.value},{"area",int(corpse.region)},{"localPosition",point(corpse.position)},{"container",corpse.items.value},{"recoverableExperience",corpse.recoverableExperience}});
     result["objects"]=Json::array();
-    for(const auto &object:s.objects) result["objects"].push_back({{"id",object.id.value},{"definition",object.definition},{"position",point(object.position+origin)},{"mode",object.mode},{"operation",object.rule.operation},{"pending",object.pending},{"uses",object.uses},
+    for(const auto &object:s.objects) result["objects"].push_back({{"id",object.id.value},{"definition",object.definition},{"position",point(object.position+origin)},{"mode",object.mode},{"operation",object.rule.operation},{"pending",object.pending},{"uses",object.uses},{"portalOwner",object.nativePortalOwner.value},{"portalDestination",object.portalDestination},
         {"collision",{{"width",object.rule.width},{"height",object.rule.height},{"mask",object.rule.collisionMask},{"enabled",object.rule.collision.at(size_t(object.mode))}}}});
     result["npcs"]=Json::array();
     for(const auto &npc:s.area.definition.npcs) {

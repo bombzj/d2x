@@ -963,7 +963,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     case 0x58: {
         const auto source=r.u32();const auto result=r.u8();r.u8();r.finish();
         if(result==0) {w.staffSource=source;w.staffResult=result;++w.staffRevision;}
-        else if(w.staffSource==source && (result==1 || result==4 || result==5)) {w.staffResult=result;++w.staffRevision;if(result!=4)w.staffSource.reset();}
+        else if(w.staffSource==source && (result==1 || result==4 || result==5 || result==7)) {w.staffResult=result;++w.staffRevision;if(result!=4)w.staffSource.reset();}
         break;
     }
     case 0x7A: {

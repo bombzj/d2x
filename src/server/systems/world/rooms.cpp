@@ -8,6 +8,7 @@
 #include "server/systems/loot/system.hpp"
 #include "server/systems/population/system.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "server/systems/maps/system.hpp"
 #include "world/native_room_activation.hpp"
 #include "world/room_terrain.hpp"
 #include <algorithm>
@@ -246,7 +247,10 @@ struct System::RoomRuntime {
                 if (rooms.at(key).area == room.area && state.status <= 1) return true;
         if (room.index==SIZE_MAX) return false;
         const auto &runtime=owner.ports_.areas.at(room.area).rooms.at(room.index);
-        if(runtime.portalRetained || !runtime.controllerRetainers.empty()) return true;
+        if(!runtime.controllerRetainers.empty()) {
+            owner.ports_.maps.sceneRoomRelease(room.area,room.index);return true;
+        }
+        if(runtime.portalRetained) return true;
         const auto &source = owner.ports_.areas.at(room.area).definition;
         const auto contains = [&](RegionId region, Vec point) { return locate(region, point) == id; };
         const auto &ports = owner.ports_;

@@ -70,6 +70,7 @@ void EventOutbox::observe(const EventBatch &batch) noexcept {
             } else if constexpr (std::is_same_v<T, LifeFact>) { event.actor = value.actor; event.value = int64_t(value.life * 256.f); }
             else if constexpr (std::is_same_v<T, ManaFact>) { event.actor = value.actor; event.value = int64_t(value.mana.raw()); }
             else if constexpr (std::is_same_v<T, ResourcesFact>) {event.actor=value.actor;event.value=value.after.life.raw();event.secondary=value.after.mana.raw();}
+            else if constexpr (std::is_same_v<T, ObjectFact>) {event.actor=value.actor;event.target=value.object;event.area=value.area;event.value=value.mode;event.secondary=value.shrine.value_or(-1);event.position=value.position;}
             else if constexpr (std::is_same_v<T, SoundFact>) {event.actor=value.actor;event.value=value.sound;}
             else if constexpr (std::is_same_v<T, ItemTargetingFact>) {event.actor=value.source;event.value=value.cursor;event.secondary=value.skill;}
             else if constexpr (std::is_same_v<T, OverlayFact>) {event.actor=value.actor;event.value=value.overlay;}

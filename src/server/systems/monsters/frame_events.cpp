@@ -90,6 +90,7 @@ void System::scheduleAi(EntityId id,uint64_t due,uint64_t notBefore) {
     ports_.frameEvents.cancelHandler(owner,FrameEventType::AiThink,0);
     ports_.frameEvents.publish(std::move(timer));
 }
+void System::cancelAi(EntityId id) {ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,id},FrameEventType::AiThink,0);}
 DomainResult<> System::schedulePresetReanimation(EntityId id,uint64_t tick) {
     const auto *unit=find(id);if(!unit || !unit->rule.selfResurrection) return {DomainStatus::NotImplemented,{}};
     if(unit->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};

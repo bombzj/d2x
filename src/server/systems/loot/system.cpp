@@ -8,6 +8,8 @@
 #include "server/systems/objects/system.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "gameplay/maps/pd2/definition.hpp"
+#include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 namespace d2x::server::loot {
 std::optional<Preparation> System::beginPreparation(EntityId source) {
     const auto found=state_.pending.find(source);
@@ -64,6 +66,9 @@ std::set<size_t> System::prepareUniques(const std::set<size_t> &additions) const
     auto next=state_.uniques; next.insert(additions.begin(),additions.end()); return next;
 }
 DomainResult<> System::queue(const Request &request,std::optional<transactions::CharacterEdit> payment) {
+    if(request.nativeTreasure && (request.nativeTreasure->name.empty() || request.nativeTreasure->level<1 ||
+       request.nativeTreasure->level>131 || request.object || request.towerGold || !request.nativeDrops.empty()))
+        return {DomainStatus::InvalidRequest,{}};
     if(request.nativeDrops.size()>1 || (!request.nativeDrops.empty() &&
         (request.object || request.towerGold || request.source.sourceSeed))) return {DomainStatus::InvalidRequest,{}};
     for(const auto &drop:request.nativeDrops) if((drop.code.empty() && !drop.uniqueRow) || drop.level<1 ||
@@ -71,14 +76,15 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
     if(const auto pending=state_.pending.find(request.source.source);pending!=state_.pending.end()) {
         const auto &prior=pending->second.request;
         if(prior.occurrence==request.occurrence && prior.environment==request.environment &&
-           prior.reportCompletion==request.reportCompletion && prior.nativeDrops==request.nativeDrops) return {DomainStatus::Applied,std::monostate{}};
+           prior.reportCompletion==request.reportCompletion && prior.nativeDrops==request.nativeDrops &&
+           prior.nativeTreasure==request.nativeTreasure) return {DomainStatus::Applied,std::monostate{}};
         // Another native drop by the same unit is a distinct invocation.
         // In particular, death must wait for a living unit's pending drop.
         return {DomainStatus::Capacity,{}};
     }
     if (state_.pending.size() >= 256 || state_.nextOrder==UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto *player = ports_.players.find(request.beneficiary);
-    const bool ownerless=request.environment && !request.beneficiary.value && (request.object || request.towerGold || request.source.sourceSeed || !request.nativeDrops.empty());
+    const bool ownerless=request.environment && !request.beneficiary.value && (request.object || request.towerGold || request.source.sourceSeed || !request.nativeDrops.empty() || request.nativeTreasure);
     if (!player && !ownerless) return {DomainStatus::InvalidActor, {}};
     if(ownerless && (payment || request.questClaimant || (request.object && (request.object->key.id || request.object->ingredient.id))))
         return {DomainStatus::InvalidRequest,{}};
@@ -89,6 +95,26 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
     pending.magicFind=int(std::clamp(int64_t(pending.magicFind)+request.additionalMagicFind,int64_t(INT32_MIN),int64_t(INT32_MAX)));
     pending.goldFind=int(std::clamp(int64_t(pending.goldFind)+request.additionalGoldFind,int64_t(INT32_MIN),int64_t(INT32_MAX)));
     if(request.environment) pending.magicFind=pending.goldFind=0;
+    if(request.nativeTreasure && ownerless) {
+        // The native event passes the dead monster as the TC recipient.
+        // Its own item stats still qualify; player MF is not substituted.
+        const auto add=[&](const monsters::Actor *unit) {
+            if(!unit || !unit->nativeStats || !unit->rule.stats) return;
+            pending.magicFind=nativeAdd(pending.magicFind,nativeStatValue(unit->nativeStats->values,*unit->rule.stats,"item_magicbonus"));
+            pending.goldFind=nativeAdd(pending.goldFind,nativeStatValue(unit->nativeStats->values,*unit->rule.stats,"item_goldbonus"));
+        };
+        if(const auto *source=ports_.monsters.find(request.source.source)) {
+            add(source);
+            const auto *playerOwner=source->owner?ports_.players.find(*source->owner):nullptr;
+            const auto ownerId=source->nativeMinionOwner.value_or(playerOwner?playerOwner->actor:EntityId{});
+            if(ownerId) {
+                if(const auto *owner=ports_.players.findActor(ownerId)) {
+                    pending.magicFind=nativeAdd(pending.magicFind,owner->totals.character.combat.magicFind);
+                    pending.goldFind=nativeAdd(pending.goldFind,owner->totals.character.combat.goldFind);
+                } else add(ports_.monsters.find(ownerId));
+            }
+        }
+    }
     if(request.questClaimant) pending.character.player=*request.questClaimant;
     if(request.source.sourceSeed) {
         const auto *monster=ports_.monsters.find(request.source.source);
@@ -165,7 +191,7 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
     }
     batch=*found->second.prepared;
     const bool ownerless=request.environment && !request.beneficiary.value;
-    if(ownerless && (request.object || !request.nativeDrops.empty())) {
+    if(ownerless && (request.object || !request.nativeDrops.empty() || request.nativeTreasure)) {
         const auto *area=ports_.areas.find(request.source.region);
         if(!area || !batch.equipment) return {DomainStatus::InvalidRequest,{}};
         const auto global=request.position+area->definition.origin;
@@ -190,7 +216,8 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
             placed.emplace_back(std::move(single),GroundLocation{position->room.area,position->position});
         }
         auto completions=state_.completed;
-        if(request.reportCompletion || (request.object && request.object->reportCompletion)) completions.insert_or_assign(source,true);
+        if(request.reportCompletion || (request.object && request.object->reportCompletion))
+            completions.insert_or_assign(source,Completion{true,placed.size()});
         const auto installed=ports_.items.installNativeGroundBatch(placed,tick.tick);
         if(!installed) return installed;
         state_.completed.swap(completions);state_.pending.erase(found);state_.deferred.clear();
@@ -216,6 +243,7 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
     std::vector<DomainFact> drops;
     for(const auto &[id,item]:next.value->world.items)
         if(!ports_.items.read().world.items.contains(id)) drops.emplace_back(GroundDropFact{item});
+    if(request.reportCompletion || (request.object && request.object->reportCompletion)) completions.at(source).created=drops.size();
     if (request.object && !ownerless) {
         const auto *player = ports_.players.find(request.beneficiary);
         const auto fail = [&]() { if(request.object->reportCompletion) state_.completed.insert_or_assign(source, false); state_.pending.erase(found); return DomainResult<>{DomainStatus::Applied, std::monostate{}}; };
@@ -266,7 +294,11 @@ StepStatus System::step(TickContext, FrameFacts &) { return StepStatus::Complete
 
 namespace d2x::server::loot {
 std::optional<bool> System::takeCompletion(EntityId source) {
+    const auto result=takeCompletionDetail(source);
+    return result?std::optional{result->accepted}:std::nullopt;
+}
+std::optional<Completion> System::takeCompletionDetail(EntityId source) {
     const auto found = state_.completed.find(source); if (found == state_.completed.end()) return {};
-    const bool result = found->second; state_.completed.erase(found); return result;
+    const auto result = found->second; state_.completed.erase(found); return result;
 }
 }

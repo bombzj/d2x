@@ -1,15 +1,52 @@
 #include "region_program.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <cmath>
+#include <algorithm>
 
 namespace d2x::pd2 {
-bool suppressMapRoomPopulation(int level,int controller,int x,int y,int width,int height) {
+std::span<const int> outerVoidBossPool(int marker) {
+    // Ordered native sets, 41d49 constructors 1C3940 / 1C3A30 / 1C3B20.
+    static constexpr int first[]{746,750,861,870,879,893,915,996,1242};
+    static constexpr int second[]{800,882,884,894,963,997,1025,1026,1149,1240,1243};
+    static constexpr int third[]{755,809,826,883,964,998,1121,1122};
+    switch(marker) {case 738:return first;case 739:return second;case 740:return third;default:return {};}
+}
+int outerVoidLifePercent(int marker) {
+    switch(marker) {case 738:return 200;case 739:return 175;case 740:return 150;default:return 0;}
+}
+int outerVoidDeathStage(int nativeClass) {
+    // Independent death sets 199640 / 199730 / 199820 have the same members
+    // as the three birth sets in 41d49; this is not inferred from boss flags.
+    for(int stage=1;stage<=3;++stage) {
+        const auto pool=outerVoidBossPool(737+stage);
+        if(std::find(pool.begin(),pool.end(),nativeClass)!=pool.end()) return stage;
+    }
+    return 0;
+}
+int mapBossGroup(int nativeClass) {
+    if(const int tier=outerVoidDeathStage(nativeClass)) return tier;
+    // 41d49 1998E0 / 199940 initialize the independent fourth/fifth sets.
+    switch(nativeClass) {
+    case 747:case 1000:case 1103:return 4;
+    case 743:case 1104:case 1105:return 5;
+    default:return 0;
+    }
+}
+bool suppressMapRoomPopulation(int level,int controller,int x,int y,int width,int height,int levelX,int levelY) {
     // 36E740 -> 37BAE0: the fixed rectangle's upper endpoint is included
     // when it meets the room's lower edge; the room's upper edge is not.
     const auto overlaps=[&](int left,int right,int top,int bottom) {
         return left<nativeAdd(x,width) && right>=x && top<nativeAdd(y,height) && bottom>=y;
     };
     if(controller==31 && level==182) return overlaps(0x5a10,0x5a88,0x25c2,0x263a);
+    if(level==180) {
+        // 41d49 370060 passes all eight coordinates to 37D900. The first
+        // two are register arguments omitted by its inferred prototype.
+        for(const auto rectangle:{std::array{65,155,290,380},std::array{440,530,885,975},
+            std::array{275,365,620,710},std::array{800,890,545,635},std::array{785,875,165,255}})
+            if(overlaps(nativeAdd(levelX,rectangle[0]),nativeAdd(levelX,rectangle[1]),
+                nativeAdd(levelY,rectangle[2]),nativeAdd(levelY,rectangle[3]))) return true;
+    }
     if(level==166) return overlaps(0x512d,0x5191,0x32e7,0x334b);
     return false;
 }
@@ -21,10 +58,21 @@ int fixedMapController(int level) {
     case 181:case 182:return 31;
     case 195:case 196:return 35;
     case 192:case 194:return 34;
+    case 180:return 33;
+    case 197:case 198:case 199:return 36;
+    case 185:return 41;
+    case 137:return 42;
+    case 161:case 162:case 163:return 43;
+    case 168:return 44;
+    case 188:case 189:return 45;
     default:return 0;
     }
 }
 int mapPresetClass(int level,int nativeClass,int controller) {
+    if(controller==36 && nativeClass==738) {
+        if(level==197 || level==199) return 1195;
+        if(level==198) return 1196;
+    }
     if(controller==34) {
         if(level==192 && nativeClass==738) return 1148;
         if(level==194) switch(nativeClass) {

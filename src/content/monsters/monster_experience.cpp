@@ -31,6 +31,9 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
     const char *suffix[] = {"", "(N)", "(H)"};
     auto level = stats.number(row, std::string("Level") + suffix[request.difficulty]);
     auto percent = stats.number(row, std::string("Exp") + suffix[request.difficulty]);
+    // MonStats' compiled DWORD is zero for an empty Exp cell. Summons,
+    // clones and prisons may have a complete combat profile and no XP.
+    if(stats.value(row,std::string("Exp")+suffix[request.difficulty]).empty()) percent=0;
     if (!level || !percent || *level < 1 || *percent < 0)
         return defer("Invalid original monster level or experience");
     const bool noRatio = stats.number(row, "noRatio").value_or(0) != 0;

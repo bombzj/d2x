@@ -177,6 +177,8 @@ void RemoteScene::Impl::plan(Motion &m, Vec goal, const Map &map, Vec origin, Mo
 
 bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,const Map &map,Vec origin,MovementCollisionRule collision) {
     const auto skill=u.actionSkill?skillRows.find(*u.actionSkill):skillRows.end();
+    if(pd2 && u.key.type==1 && skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==114)
+        return m.scriptedSequence && m.scriptedSequence->revision==u.actionRevision && !onlineMonsterCorpse(u);
     if(pd2 && u.key.type==1 && skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==37)
         return displayPd2MonsterCharge(u,m,map,origin);
     const bool whirlwind=skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==45;

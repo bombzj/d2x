@@ -113,6 +113,15 @@ RequestResult StaffUpdate(GameplayContext &context,net::protocol::Reader &in) {
     const auto player=in.u32(),object=in.u32(),item=in.u32();const auto state=in.u16(),reserved=in.u16();in.finish();
     const auto view=context.host.read(context.player);
     if(!view || view->actor.id!=EntityId{player} || reserved || (state!=2 && state!=3)) return {RequestStatus::Rejected};
+    if(int(view->actor.region)==189) {
+            ItemHandle handle;
+            if(state==3) {
+                const auto input=context.host.inventoryInput(context.player);
+                if(!item || !input || !input->items.contains(EntityId{item})) return {RequestStatus::Rejected};
+                handle=input->items.at(EntityId{item}).handle;
+            } else if(item) return {RequestStatus::Rejected};
+            return submitGameplay(context,server::crafting::Request{server::crafting::Pd2SacrificeItem{EntityId{object},handle}});
+    }
     return submitGameplay(context,server::quests::Request{server::quests::Action::StaffUpdate,QuestId::HoradricStaff,EntityId{object},state,EntityId{item}});
 }
 RequestResult UiAction(GameplayContext &context, net::protocol::Reader &in) {

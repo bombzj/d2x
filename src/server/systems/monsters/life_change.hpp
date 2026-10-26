@@ -41,5 +41,6 @@ struct LifeChange {
     std::optional<uint64_t> chilledUntil{},frozenUntil{},stunnedUntil{};
     bool restoreNeutral{};
     std::optional<std::optional<OpenWoundsApplication>> wound{};
+    std::optional<bool> modeAlive{}; // A direct HP write need not perform a death mode.
 };
 }

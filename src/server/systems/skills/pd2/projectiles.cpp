@@ -12,6 +12,8 @@
 #include "server/systems/missiles/native_birth.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/effects/system.hpp"
+#include "server/systems/ai/system.hpp"
+#include "server/systems/maps/system.hpp"
 #include "server/systems/inventory/system.hpp"
 #include "gameplay/skills/pd2_program.hpp"
 #include "gameplay/skills/bow_spec.hpp"
@@ -19,6 +21,8 @@
 #include "gameplay/skills/native_damage.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2_random.hpp"
+#include <numbers>
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -27,6 +31,7 @@ namespace d2x::server::skills {
 DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec target) {
     if(!pending.skill.pd2) return DomainStatus::NotImplemented;
     const auto &program=*pending.skill.pd2;
+    if(program.doFunction==177 || program.doFunction==179) return activatePd2BossSummon(pending,actor);
     if(program.doFunction==43) return activateAssassin(pending,actor,target);
     if(program.doFunction==161) return pd2Desecrate(ports_,pending,actor,target);
     if(program.doFunction==176) return activatePd2HolyLight(pending,actor);
@@ -86,6 +91,54 @@ DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec 
         return births.back();
     };
     switch(program.doFunction) {
+    case 184:case 186: {
+        if(!caster->monster) return DomainStatus::Unavailable;
+        if(!pending.pd2Execution) pending.pd2Execution=std::make_shared<Pd2CastExecution>();
+        auto &prepared=pending.pd2Execution->bossProjectiles;
+        if(!prepared) {
+            Pd2CastExecution::BossProjectiles layout;layout.definition=program.missiles[0];
+            if(program.doFunction==184) {
+                const auto control=ports_.ai.read().controllers.find(actor.actor);
+                if(control==ports_.ai.read().controllers.end()) return DomainStatus::Unavailable;
+                if(control->second.phase==8) layout.definition=program.missiles[1];
+                auto random=uint32_t(control->second.loop);
+                int direction=int(pd2TaggedRandom(random)&63),remaining=64,gaps=5,wait=0,chance=15;
+                while(remaining>0) {
+                    if(gaps>0 && !wait && int32_t(pd2TaggedRandom(random))%100<chance) {
+                        direction=(direction+6)&63;remaining-=6;wait=8;--gaps;chance-=2;
+                    } else {
+                        if(wait>0) --wait;
+                        layout.points.emplace_back(position,position+missileRingDirection(direction));
+                        direction=(direction+1)&63;--remaining;
+                    }
+                }
+            } else {
+                int count=formula("calc1"),radius=formula("calc2");
+                if(caster->monster->identity.nativeClass==1112) {
+                    const auto phase=ports_.maps.read().sceneCooldown;
+                    if(phase==2) {count=nativeMultiply(count,2);radius=nativeAdd(radius,3);}
+                    if(phase==3) {count=nativeMultiply(count,3);radius=nativeAdd(radius,6);}
+                }
+                if(count>65536) return DomainStatus::Capacity;
+                for(int index=0;index<count;++index) {
+                    const double angle=double(index)*2.*std::numbers::pi/double(count);
+                    layout.points.emplace_back(Vec{float(int(std::cos(angle)*radius)+int(target.x)),
+                        float(int(std::sin(angle)*radius)+int(target.y))},Vec{});
+                }
+            }
+            prepared=std::move(layout);
+        }
+        if(prepared->definition<0) return DomainStatus::Unavailable;
+        for(const auto &[from,to]:prepared->points) append(from,to,prepared->definition);
+        if(!prepared->birth) {
+            auto ready=ports_.missiles.prepareNativeBirth(births);if(!ready) return ready.status;
+            prepared->birth=std::move(*ready.value);
+        }
+        pending.nativeCallbackStarted=true;
+        const auto result=ports_.missiles.commitNativeBirth(prepared->birth,program.doFunction==186);
+        if(result) pending.nativeCallbackStarted=false;
+        return result.status;
+    }
     case 143:
         // Core 3AE960 has a dedicated Do143 branch. Progressive143 is
         // still owned by the assassin executor, not this direct callback.
@@ -134,6 +187,14 @@ DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec 
         break;
     }
     case 154:case 189: {
+        if(program.doFunction==154 && caster->monster) {
+            const auto action=caster->monster->rule.skillActions.find(pending.skill.sourceId);
+            if(action==caster->monster->rule.skillActions.end() || !action->second.missile) return DomainStatus::Unavailable;
+            auto &spawn=append(position,target,action->second.missile->definition);
+            spawn.copyMonsterAttackBonus=true;
+            spawn.initialDamagePercent=formula("calc1");spawn.finalParameters=std::array<int32_t,2>{formula("calc2"),0};
+            break;
+        }
         if(!pending.weapon || !pending.weapon->projectile) return DomainStatus::Unavailable;
         const int original=pending.weapon->projectile->id;
         const size_t slot=original==36?1:(original==1 || original==37 || original==371)?2:0;

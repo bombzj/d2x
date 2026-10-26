@@ -107,7 +107,12 @@ bool RemoteUiClients::Impl::Inventory::markStorageIndex(unsigned kind) {
 
 bool RemoteUiClients::Impl::Inventory::submitStaff(EntityId source,std::optional<ItemHandle> item) {
             if(source!=o.inventoryView.staffSource) return false;
-            if(item) {const auto *value=o.inventoryView.item(item->id);if(!value || value->revision!=item->revision || value->definition!=o.data.staffRecipe.output) return false;}
+            if(item) {
+                const auto *value=o.inventoryView.item(item->id);
+                if(!value || value->revision!=item->revision || (o.inventoryView.pd2Sacrifice?
+                    std::find(o.inventoryView.pd2SacrificeItems.begin(),o.inventoryView.pd2SacrificeItems.end(),item->id)==o.inventoryView.pd2SacrificeItems.end():
+                    value->definition!=o.data.staffRecipe.output)) return false;
+            }
             return o.session.submit_staff(uint32_t(source.value-1),item?std::optional{guid(item->id)}:std::nullopt,o.context);
         }
 InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &intent) const {

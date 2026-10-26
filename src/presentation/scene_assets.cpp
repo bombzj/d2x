@@ -404,6 +404,10 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
             throw std::runtime_error("Original cube panel artwork is missing from the mounted MPQ");
     }
     orificePanel=graphics_.single("data/global/ui/menu/horadricback.dc6");
+    if(archives.contains("data/global/ui/menu/desecratepanel.dc6")) {
+        desecratePanel=graphics_.single("data/global/ui/menu/desecratepanel.dc6");
+        if(desecratePanel.frames.empty()) throw std::runtime_error("PD2 sacrifice artwork is missing");
+    }
     orificeButtons=graphics_.single("data/global/ui/menu/okcancelbtn.dc6");
     if(orificePanel.frames.empty() || orificeButtons.frames.size()<2) throw std::runtime_error("Original Horadric orifice artwork is missing");
     beltPanel = graphics_.single("data/global/ui/panel/ctrlpnl_popbelt.dc6");

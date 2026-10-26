@@ -189,6 +189,7 @@ struct Ports {
 };
 class System {
     CharacterAttributes unitDefenses(EntityId,uint64_t) const;
+    void pd2RathmaReception(UnitReceptionPlan &) const;
     State state_;
     std::list<NativeStateRemovalExecution> nativeStateRemovals_;
     std::optional<uint64_t> frame_;
@@ -364,6 +365,9 @@ class System {
     DomainResult<> removeUnitState(EntityId,int state,uint64_t tick,size_t limit=SIZE_MAX);
     DomainResult<> prepareUnitCurseRemoval(AuraUnitPublication &,EntityId,uint64_t tick) const;
     DomainResult<> setNativeSkillState(EntityId,int state,bool active,uint64_t tick);
+    DomainResult<> pd2AchievementState(EntityId,uint64_t tick);
+    DomainResult<> pd2LucionPhaseState(EntityId,bool active,uint64_t tick);
+    DomainResult<> pd2SceneSkillState(EntityId source,EntityId target,int skill,int rank,uint64_t tick);
     DomainResult<> postModeRate(EntityId,int skill,int rank,int32_t rate,uint64_t revision,uint64_t tick,std::pair<uint64_t,uint64_t> random);
     DomainResult<> endMode(EntityId,uint64_t tick,std::optional<uint64_t> activeRevision={});
     void scheduleModeEnd(EntityId,uint64_t tick);

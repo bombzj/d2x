@@ -98,6 +98,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     if(portalResources && redPortal.operateFn==15 && redPortal.reach>0) area.specialPortalRule=portalRule(redPortal,0);
     std::set<int> portalClasses{565,566};
     if(content.pd2Host) {
+        portalClasses.insert(587); // Native automatic scene entrance has invisible Objects587.
         const auto &misc=content.tables.at("misc");
         for(size_t row=0;row<misc.rows().size();++row) if(misc.number(row,"pSpell")==12)
             portalClasses.insert(misc.number(row,"missiletype").value_or(0)?misc.number(row,"missiletype").value():60);
@@ -106,7 +107,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     }
     for(const int code:portalClasses) {
         WorldObject questPortal;questPortal.appearance.category="objects";questPortal.objectClass=code;configureWorldObject(questPortal,rows);
-        if(portalResources && questPortal.reach>0) area.questPortalRules.emplace(code,portalRule(questPortal,
+        if(portalResources && (questPortal.reach>0 || (content.pd2Host && code==587))) area.questPortalRules.emplace(code,portalRule(questPortal,
             content.pd2Host && questPortal.operateFn==77?std::max(1,questPortal.animationRules[1].frames+1):0));
     }
     for(const auto &[code,source]:content.shrines) {
@@ -198,6 +199,27 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         presetOrders.emplace(object.id,sourceIndex);
         object.objectClass = preset(source.id, area.act, request.level);
         std::vector<std::pair<Vec,int>> boundObjects;
+        if(request.pd2Map && request.pd2Map->controller==45 && request.level==189) {
+            if(object.objectClass==601) object.objectClass=621;
+            else if(object.objectClass==602) object.objectClass=254;
+            else if(object.objectClass==603) object.objectClass=253;
+            else if(object.objectClass==604) {
+                object.objectClass=586;
+                pd2::MapPortalProgram program{109,0,587,2,1,{},false};program.destinationFreeSpace=true;
+                presetPortals.emplace(object.id,program);presetModes.emplace(object.id,2);
+            }
+        }
+        if(request.pd2Map && request.pd2Map->controller==36 &&
+            (request.level==197 || request.level==198 || request.level==199)) {
+            if(object.objectClass==601) object.objectClass=628;
+            else if(object.objectClass==602) object.objectClass=629;
+        }
+        if(request.pd2Map && request.pd2Map->controller==33 && request.level==180 && object.objectClass>=601 && object.objectClass<=603) {
+            constexpr std::array<Vec,3> offsets{Vec{120,335},Vec{325,670},Vec{830,220}};
+            const auto index=size_t(object.objectClass-601);
+            object.objectClass=584;presetModes.emplace(object.id,2);
+            presetPortals.emplace(object.id,pd2::MapPortalProgram{180,0,587,2,1,{},false,offsets[index]});
+        }
         if(request.pd2Map && request.pd2Map->controller==30) {
             if(request.level==176 && object.objectClass>=601 && object.objectClass<=603) {
                 const int destination=177+object.objectClass-601;

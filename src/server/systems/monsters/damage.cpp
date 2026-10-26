@@ -159,9 +159,9 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     else if(wound) {
         // Native same-state/same-skill refresh extends the existing stat list;
         // its original rate and source survive instead of stacking wounds.
-        if(wound->pd2Stacks) actor.wound=std::move(wound);
+        if(wound->pd2Stacks) actor.wound=wound;
         else if(actor.wound) actor.wound->until=wound->until;
-        else actor.wound=std::move(wound);
+        else actor.wound=wound;
     }
     if(recovery || frozen>tick || stunned>tick || dead) {
         ++actor.interruption;actor.route.clear();actor.moving=actor.running=false;
@@ -182,6 +182,8 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     updates.freezeThinkAt=freezeThinkAt;updates.deathDelay=delayDeath;
     updates.resetRegeneration=life && poison && poison->frames && poison->state>=0;updates.contact=amount>0 && !status.actionOnly;
     auto publication=ports_.effects.prepareDamageStates(std::move(actor),std::move(updates),tick);
+    if(it->second.rule.stats && it->second.rule.stats->pd2)
+        stagePd2RathmaStatuses(publication,id,source,poison,wound,tick);
     if(!ports_.effects.validateAuraUnits(publication)) return {DomainStatus::Conflict,{}};
     facts.insert(facts.begin(),std::make_move_iterator(publication.facts.begin()),std::make_move_iterator(publication.facts.end()));
     auto event=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},it->second.area},std::move(facts)});
