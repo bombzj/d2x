@@ -46,7 +46,12 @@ StatFormat format(const ClassicData &data, unsigned id, const D2sItem &item) {
     throw std::runtime_error("Missing native item stat format");
 }
 void value(BitWriter &bits, const ClassicData &data, unsigned id, int64_t number, const D2sItem &item) {
-    const auto rule = format(data, id, item); number += rule.add;
+    const auto rule = format(data, id, item);
+    if(data.pd2Host) {
+        bits.write(pd2ItemSavedValue(number,rule.add,rule.bits),rule.bits);
+        return;
+    }
+    number += rule.add;
     if (number < 0 || number > UINT32_MAX) throw std::runtime_error("Native item stat overflow");
     bits.write(uint32_t(number), rule.bits);
 }
@@ -69,7 +74,8 @@ void stats(BitWriter &bits, const ClassicData &data, const std::vector<D2sStat> 
         bits.write(id, width);
         for (unsigned part = 0; part <= followers(id); ++part) {
             const auto found = remaining.find({id + part, key.second});
-            bits.write(uint32_t(key.second), followers(id) ? 0 : format(data, id + part, item).params);
+            const unsigned parameters=followers(id)?0:format(data,id+part,item).params;
+            bits.write(data.pd2Host?pd2ItemSavedValue(key.second,0,parameters):uint32_t(key.second),parameters);
             value(bits, data, id + part, found == remaining.end() ? 0 : found->second, item);
             if (found != remaining.end()) remaining.erase(found);
         }

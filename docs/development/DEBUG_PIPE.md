@@ -4,7 +4,7 @@ PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版�
 
 直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算；功能范围及缺口见[基线](../../BASELINE.md)，构建／运行方法见[开发指南](BUILD_AND_RUN.md)。
 
-Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。
+Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。显式`server-pause`不会因退局自动解除；关闭商店等已受理命令仍需逻辑帧执行，验证正常退出前应`server-resume`或单步推进待办。等待选角阶段及角色租约释放后再停止进程，不能将暂停下的结算超时当作正常退出结果。
 ## 启动与调用
 
 `--headless`使用同一管道的`headless-status`、`headless-start`和`quit`；房主另支持既有`server-*`及宿主管理命令，客端没有该能力。`headless-start`只允许所有本进程会话入局后启动一次，可传`delayMs=0..60000`（默认1000），或未来60秒内的整数`atUnixMs`供多个进程共用同一启动时刻；两者互斥。此模式不接受普通表现／UI命令，配置和统计口径见[无窗口协议客户端](BUILD_AND_RUN.md#无窗口协议客户端)。
@@ -84,6 +84,9 @@ JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／Pla
 | `reset-attributes` | 无玩法参数；退还已分配的四项基础属性点，保留技能分配。经progression／人物事务重算装备资格和派生值，生命／法力／体力限制到新上限，不补满资源；只允许存活、已入局且没有活动技能的角色 |
 | `reset-skills` | 无玩法参数；退还已分配的基础技能点，清除两套武器的技能选择、来源GUID和16个技能快捷键，保留属性分配；固有／物品授予技能仍由规则派生。资格同reset-attributes，两项命令均不消耗Akara次数或Token、不改任务资格；重复调用不重复发点，正常保存或save写入原D2S |
 
+`server-snapshot.pd2Map`的`sceneOpening`表示专属入场续办未结束，`sceneParticipants`为受理名单冻结的出生缩放人数，`sceneEntrants`为实际已确认入场的PlayerId数组。前两阶段人数可能因落点失败而不同，沿原口径分别观察；它们不是虚拟players、客户端报告或可写的调试值。
+
+
 暂停状态下用`travel`准备截图时，`applied`只说明人物旅行已提交，不能据此认定目的房间的物件恢复已经执行。恢复可能等待正常逻辑帧；先推进必要帧数，并检查目标玩家的`server-snapshot.objects`及客户端实际物件分配，再固定画面。原版与D2X须使用同一批已恢复物件，避免把准备时序造成的火把缺失误判为生成或光照差异。
 
 查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。命令目录的implemented表示管理入口已接通，具体玩法资格、规则或事务容量仍可能拒绝。
@@ -116,7 +119,7 @@ item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、ro
 
 目标匹配当前MPQ的spawnable词缀、基底类型／职业、物品affix level、品质rare许可、互斥组、前后缀容量和原数值范围。每个目标对应一条词缀中的一个Properties槽，不把多个词缀数值拆分求和；min/max必须匹配原固定参数，不能拿它请求随机范围。Magic每侧最多一条；Rare每侧最多三条，至少三条，总计最多六条（珠宝最多四条），不足时补入不重复目标属性的合法词缀。补充词缀、选中词缀自带的其他属性以及StaffMods／AutoMagic会保留；因此目标值不等于最终面板或同stat总和。搜索有100000节点上限，超限明确拒绝，不假称无解。该模式不是自然掉落概率模拟，也不是任意自定义装备编辑器；暗金／套装沿原生成路径，不用目标属性改写。
 
-返回item包含code、quality、seed、itemSeed、level、requiredLevel、defense、durability、maximumDurability、sockets、ethereal、affixes及stats。affixes列原行号、名称、实际rolls；stats列原ItemStatCost名称／ID／参数层和保存值（不是角色面板换算值），用于检查附带属性。所有item-spawn产物在安装前通过现有D2S导出／编码／解码与装备规则准备；无法编码的位宽、重复属性层和不支持布局会拒绝。输入错误返回invalid-arguments，目标缺候选包含properties下标和代码；组／容量无解单独报告。编码通过不等于已完成真实保存／重入或所有属性消费者认证。
+返回item包含code、quality、seed、itemSeed、level、requiredLevel、defense、durability、maximumDurability、sockets、ethereal、affixes及stats。affixes列原行号、名称、实际rolls；stats列原ItemStatCost名称／ID／参数层和保存值（不是角色面板换算值），用于检查附带属性。所有item-spawn产物在安装前通过现有D2S导出／编码／解码与装备规则准备；PD2属性按原生位宽饱和写出；重复属性层、不支持布局及其他不能原生编码的字段会拒绝。输入错误返回invalid-arguments，目标缺候选包含properties下标和代码；组／容量无解单独报告。编码通过不等于已完成真实保存／重入或所有属性消费者认证。
 
 下面的短剑20%攻击速度示例依据当前MPQ的swing2词缀；完整执行须按各步返回值确认：
 

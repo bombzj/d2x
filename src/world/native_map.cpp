@@ -432,11 +432,15 @@ NativeMapSnapshot NativeMapGenerator::snapshot(int currentLevel, bool continuous
                 const auto link = std::find_if(room.warps.begin(), room.warps.end(),
                     [&](const auto &warp) { return warp.id == unit.id && warp.destination; });
                 if (link == room.warps.end()) continue;
-                const auto slot = std::find(room.warpSlots.begin(), room.warpSlots.end(), unit.id);
-                if (slot == room.warpSlots.end()) throw std::runtime_error("Native exit lacks its Vis slot");
-                terrain.exits.push_back({int(slot - room.warpSlots.begin()),
+                size_t slot=0;
+                while(slot<room.warpSlots.size() &&
+                    (room.warpSlots[slot]!=unit.id || !(room.room.flags&(1u<<(slot+4))))) ++slot;
+                if (slot == room.warpSlots.size()) throw std::runtime_error("Native exit lacks its Vis slot");
+                const auto &destinationRoom=tiles_.rooms().at(*link->destination).room;
+                terrain.exits.push_back({int(slot),
                     tiles_.rooms().at(*link->destination).level, *link->definition,
-                    {float(unit.x - x * 5), float(unit.y - y * 5)}});
+                    {float(unit.x - x * 5), float(unit.y - y * 5)}, {}, {},
+                    NativeWarpRooms{room.room.x,room.room.y,destinationRoom.x,destinationRoom.y}});
                 auto chain = [&](std::optional<size_t> head, std::vector<size_t> &output) {
                     std::set<size_t> seen;
                     for (auto tile = head; tile; tile = tiles_.tiles().at(*tile).next) {

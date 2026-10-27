@@ -23,7 +23,7 @@ struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name
 };
 struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, revision{}; };
 struct PositionSynchronization { uint64_t until{}; std::array<uint64_t,5> attempts{}; };
-struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; std::shared_ptr<const pd2::MapInstance> pd2Map; EntityId pd2MapPortal;std::map<PlayerId,EntityId> mapReports;std::optional<ActorContext> pendingPd2Map;std::set<PlayerId> pd2SceneEntrants;bool pd2SceneOpening{};std::set<RoomView> pd2SceneEntryRooms; };
+struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; std::shared_ptr<const pd2::MapInstance> pd2Map; EntityId pd2MapPortal;std::map<PlayerId,EntityId> mapReports;std::optional<ActorContext> pendingPd2Map;std::set<PlayerId> pd2SceneEntrants;bool pd2SceneOpening{};uint8_t pd2SceneParticipants{};std::set<RoomView> pd2SceneEntryRooms; };
 struct SpecialPortalPlan {std::map<EntityId,Portal> next;};
 struct Ports { PlayerStore &players; AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; uint64_t &random; const GameSettings &settings; const spatial::System &spatial; uint32_t &pd2Random; };
 class System {

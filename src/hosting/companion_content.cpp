@@ -97,6 +97,7 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
     rule.demon=record->demon;rule.undead=record->undead;rule.corpseSelectable=false;rule.noTreasure=true;
     const auto &table=data.tables.at("monstats");const auto suffix=source.difficulty==0?"":source.difficulty==1?"(N)":"(H)";
     if(data.pd2Host) {
+        prepareMonsterStateRules(data,record->sourceRow,rule);
         prepareMonsterSkillRanks(data,record->sourceRow,rule);
         prepareMonsterBirthProperties(data,record->sourceRow,rule);
     }

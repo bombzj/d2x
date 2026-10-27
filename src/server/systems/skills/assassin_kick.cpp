@@ -57,7 +57,10 @@ DomainResult<> System::startAssassinKick(Release &pending,const ActorContext &ac
     }
     if(!pending.assassinKick) {
         auto [entry,created]=runtime_->assassinStarts.try_emplace(actor.actor,pending);
-        if(created) entry->second.assassinKick=std::make_shared<AssassinKickExecution>();
+        // Monster starts already retain this release in assassinStarts.
+        // The map entry can predate its kick cursor; insertion success does
+        // not imply whether the cursor exists.
+        if(!entry->second.assassinKick) entry->second.assassinKick=std::make_shared<AssassinKickExecution>();
         pending.assassinKick=entry->second.assassinKick;
         if(!created) pending.skill=entry->second.skill;
     }

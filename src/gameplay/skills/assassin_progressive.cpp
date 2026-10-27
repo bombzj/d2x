@@ -34,7 +34,10 @@ std::vector<AssassinProgressiveStep> assassinProgressiveSteps(int32_t charges,bo
     return result;
 }
 std::pair<int32_t,int32_t> assassinKickRange(const AssassinKickInput &input) {
-    const auto base=std::max(nativeSubtract(nativeAdd(input.strength,input.dexterity),20),1);
+    // SKILLS_GetMin/MaxPhysDamage's KICK branch uses level * 3 for every
+    // non-player, including hirelings/shadows, before the /4 and /3 split.
+    const auto base=std::max(input.monsterLevel?nativeMultiply(*input.monsterLevel,3):
+        nativeSubtract(nativeAdd(input.strength,input.dexterity),20),1);
     auto minimum=nativeShiftLeft(base/4,8),maximum=nativeShiftLeft(base/3,8);
     minimum=nativeAdd(minimum,nativePercentage(minimum,input.skillPercent,100));
     maximum=nativeAdd(maximum,nativePercentage(maximum,input.skillPercent,100));

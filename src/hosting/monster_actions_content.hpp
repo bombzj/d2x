@@ -11,9 +11,9 @@ void prepareMonsterPlacementRules(const ClassicData &,size_t monsterRow,server::
 void prepareMonsterSkillRanks(const ClassicData &,size_t monsterRow,server::MonsterRule &);
 std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicData &, int definition, int rank);
 std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,const MonsterCombatProfile &,int difficulty,bool ladderStats=true);
-bool prepareMonsterSpecialActions(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,server::MonsterRule &);
+bool prepareMonsterSpecialActions(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,server::MonsterRule &,std::string *reason=nullptr);
 bool hasAct2MonsterSkills(std::string_view ai);
-bool prepareAct2MonsterSkills(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,server::MonsterRule &);
+bool prepareAct2MonsterSkills(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,server::MonsterRule &,std::string *reason=nullptr);
 bool prepareMonsterComponents(const ClassicData &,const MonsterRecord &,server::MonsterRule &);
 bool prepareMonsterLifecycle(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,server::MonsterRule &);
 }

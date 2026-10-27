@@ -19,6 +19,7 @@
 #include "gameplay/skills/amazon_sequence.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "evaluation.hpp"
+#include "native_caster.hpp"
 #include "server/player_store.hpp"
 #include "server/movement.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -595,11 +596,16 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
     if(const auto *monster=ports_.monsters.find(actor.actor)) {
         const bool continuing=continuation && *continuation && (*continuation)->nativeCallbackStarted;
         if(monster->area!=actor.area || (!monster->alive() && !dead && !continuing)) return {DomainStatus::Unavailable,{}};
-        if(!skill.pd2 || itemTargetDo) return {DomainStatus::NotImplemented,{}};
+        const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
+        const auto *programs=caster?caster->programs():nullptr;
+        if(!programs || !programs->pd2 || itemTargetDo || (!skill.pd2 && !skill.curse && !skill.appliedEffect))
+            return {DomainStatus::NotImplemented,{}};
         skill.manaCost=skill.startMana=skill.delayFrames=0;skill.charge.reset();
         std::shared_ptr<Release> local;auto &pending=continuation?*continuation:local;
         if(!pending) pending=std::make_shared<Release>(Release{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick,uint8_t(ports_.players.findActor(target)?0:1)});
-        const auto result=pending->skill.appliedEffect && !pending->skill.druid && !pending->skill.assassin?
+        const auto result=pending->skill.curse && programs->formulas->skills.at(skill.sourceId).number("srvdofunc")==30?
+            ports_.effects.monsterCurse(actor.actor,skill.sourceId,skill.rank,position,actor.tick,pending->monsterCurse).status:
+            pending->skill.appliedEffect && !pending->skill.druid && !pending->skill.assassin?
             ports_.effects.unitSkill(actor.actor,pending->skill,actor.tick).status:activate(*pending,actor,position);
         if(result!=DomainStatus::Capacity) pending.reset();
         return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};

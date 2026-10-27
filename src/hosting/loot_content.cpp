@@ -263,15 +263,17 @@ void preparePendingLoot(GameHost &host, GameHandle game, Archives &archives, con
                 auto identity=unit.identity;const auto &stats=data.tables.at("monstats");
                 identity.monster=std::string(stats.value(compiledMonsterRow(stats,unit.nativeClass),"Id"));return identity;
             };
-            const auto leader=prepareSelectedMonster(archives,data,generation,actualIdentity(request->leader),
-                request->leader.level,request->selection);
-            if(!leader || !leader->rule.enchantment) throw std::runtime_error("Native modifier leader rules unavailable");
+            std::string reason;
+            const auto leaderIdentity=actualIdentity(request->leader);
+            const auto leader=prepareSelectedMonster(archives,data,generation,leaderIdentity,
+                request->leader.level,request->selection,nullptr,&reason);
+            if(!leader || !leader->rule.enchantment) throw std::runtime_error("Native modifier leader "+leaderIdentity.monster+": "+reason);
             prepared.leader=leader->rule;
             for(const auto &unit:request->minions) {
                 auto identity=actualIdentity(unit);identity.rank=MonsterRank::Minion;
                 const auto minion=prepareSelectedMonster(archives,data,generation,std::move(identity),unit.level,
-                    request->selection,&*leader->rule.enchantment);
-                if(!minion) throw std::runtime_error("Native modifier minion rules unavailable");
+                    request->selection,&*leader->rule.enchantment,&reason);
+                if(!minion) throw std::runtime_error("Native modifier minion "+unit.identity.monster+": "+reason);
                 auto rule=minion->rule;
                 if(rule.enchantment) rule.enchantment->ids=unit.modifiers;
                 if(request->promoteMinions && rule.enchantment) {

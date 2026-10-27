@@ -403,7 +403,7 @@ DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick) {
     return spawnNestChild(id,tick,source->position+source->rule.spawnOffset);
 }
 DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick,Vec origin) {
-    auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || !it->second.rule.nestChild) return {DomainStatus::InvalidActor,{}};
+    auto it=state_.actors.find(id);if(it==state_.actors.end() || !it->second.alive() || !it->second.rule.nestChild) return {DomainStatus::InvalidActor,{}};
     auto &nest=it->second;const auto &child=*nest.rule.nestChild;
     if(nest.nestSpawned>=(nest.rule.ai.kind==MonsterAiKind::BloodRaven?8+2*nest.rule.difficulty:nest.rule.ai.params[2]+(nest.rule.ai.kind==MonsterAiKind::Sarcophagus?1:0))) return {DomainStatus::Unavailable,{}};
     auto random=nest.combatRandom;
@@ -421,7 +421,7 @@ DomainResult<> System::setMinionSpawnClass(EntityId id,int nativeClass) {
     return {DomainStatus::Applied,std::monostate{}};
 }
 bool System::canSpawnNestChild(EntityId id,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) const {
-    const auto *nest=find(id);if(!nest || nest->life<=0 || (!nest->rule.nestChild && nest->rule.ai.kind!=MonsterAiKind::GenericSpawner && nest->rule.ai.kind!=MonsterAiKind::Nihlathak)) return false;
+    const auto *nest=find(id);if(!nest || !nest->alive() || (!nest->rule.nestChild && nest->rule.ai.kind!=MonsterAiKind::GenericSpawner && nest->rule.ai.kind!=MonsterAiKind::Nihlathak)) return false;
     if(nest->rule.ai.kind==MonsterAiKind::GenericSpawner || nest->rule.ai.kind==MonsterAiKind::Nihlathak) {
         if(!collision) return false;
         const auto &area=ports_.areas.at(nest->area).definition;
@@ -468,7 +468,9 @@ DomainResult<EntityId> System::spawnNativeNestChild(EntityId id,Vec position,uin
     auto identity=child.identity;identity.ownerSpawnKey.clear();identity.origin=SpawnOrigin::Summoned;identity.pd2Binding=-1;
     identity.spawnKey=source->identity.spawnKey+".native-child."+std::to_string(ports_.ids.cursor());
     auto rule=child.rule;rule.noTreasure=rule.noExperience=true;
-    auto birth=prepareRoomSpawn({identity,child.implementation,room->area,global-ports_.areas.at(room->area).definition.origin,true,std::move(rule),{},tick},*loan.value,attempts,{},false,collision);
+    Admission request{identity,child.implementation,room->area,global-ports_.areas.at(room->area).definition.origin,true,std::move(rule),{},tick};
+    request.birthTicks=source->rule.spawnTicks;
+    auto birth=prepareRoomSpawn(request,*loan.value,attempts,{},false,collision);
     if(!birth) return {birth.status,{}};
     if(!(*birth.value)->validate()) return {DomainStatus::Stale,{}};
     const auto born=(*birth.value)->actor();(*birth.value)->publish();
@@ -658,7 +660,7 @@ DomainResult<EntityId> System::spawnMinionChild(EntityId id,Vec position,int ski
     return born?DomainResult<EntityId>{DomainStatus::Applied,born}:DomainResult<EntityId>{DomainStatus::Unavailable,{}};
 }
 std::optional<Vec> System::nestBirthPoint(EntityId id,Vec origin,uint64_t &random) const {
-    const auto *source=find(id);if(!source || source->life<=0 || !source->rule.nestChild) return {};
+    const auto *source=find(id);if(!source || !source->alive() || !source->rule.nestChild) return {};
     const auto &nest=*source;const auto &child=*nest.rule.nestChild;
     const auto &grid=ports_.areas.at(nest.area).definition.collision;
     const int radius=nest.rule.ai.kind==MonsterAiKind::BloodRaven?1:3;

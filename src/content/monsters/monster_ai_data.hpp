@@ -6,5 +6,5 @@
 
 namespace d2x {
 std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, size_t row,
-                                                     std::string_view ai, int difficulty);
+                                                     std::string_view ai, int difficulty,bool compiledParameters=false);
 } // namespace d2x

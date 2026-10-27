@@ -5,16 +5,22 @@
 #include "server/systems/objects/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "gameplay/monsters/pd2/boss_program.hpp"
+#include <algorithm>
 
 namespace d2x::server::maps {
 DomainResult<> System::removeSceneWaypoints() {
+    const auto &rooms=ports_.travel.read().pd2SceneEntryRooms;
+    if(!state_.instance || state_.instance->controller<41 || state_.instance->controller>45 || rooms.empty())
+        return {DomainStatus::Applied,std::monostate{}};
     std::vector<EntityId> remove;
-    for(const auto &[id,object]:ports_.objects.read().objects) if(object.rule.operation==23) {
-        const auto &area=ports_.areas.at(object.area).definition;
-        const auto global=object.position+area.origin;
-        const auto room=ports_.areas.roomAtPosition(object.area,object.position,int(global.x),int(global.y));
-        if(room && ports_.travel.read().pd2SceneEntryRooms.contains(*room)) remove.push_back(id);
-    }
+    // 38A680 walks the destination room's native unit chain. Re-read it on
+    // restoration instead of marking a room permanently scanned.
+    for(const auto &room:rooms) for(const auto id:ports_.areas.roomUnitOrder(room))
+        if(const auto object=ports_.objects.read().objects.find(id);
+           object!=ports_.objects.read().objects.end() && object->second.rule.operation==23)
+            remove.push_back(id);
+    std::sort(remove.begin(),remove.end());
+    remove.erase(std::unique(remove.begin(),remove.end()),remove.end());
     for(const auto id:remove) {const auto removed=ports_.objects.removeNative(id);if(!removed) return removed;}
     return {DomainStatus::Applied,std::monostate{}};
 }

@@ -72,9 +72,17 @@ DomainResult<> System::advanceBossSceneDeath(const monsters::Actor &unit,Death &
     if(death.phase==Phase::Portal) {
         if(controller==45 && death.eventStep==0) {
             if(!death.evaluated) {
-                const auto point=ports_.world.nativeActSpawnLocationEx(RegionId(109),1,3);
-                if(point) death.portalPosition=point->position;
-                death.evaluated=true;
+                if(!death.portalPosition) {
+                    death.portalPosition=ports_.world.nativeActSpawnLocation(RegionId(109),1);
+                    if(!death.portalPosition) death.evaluated=true;
+                }
+                if(death.portalPosition) {
+                    ports_.world.activate(RegionId(109),*death.portalPosition);
+                    if(!ports_.areas.loaded(RegionId(109),*death.portalPosition)) return {DomainStatus::PendingContent,{}};
+                    const auto point=ports_.world.nativeActSpawnLocationExAt(RegionId(109),*death.portalPosition,3);
+                    death.portalPosition=point?std::optional{point->position}:std::nullopt;
+                    death.evaluated=true;
+                }
             }
             if(death.portalPosition) {
                 const pd2::MapPortalProgram program{188,0,587,1,1,{-5,-5},false};

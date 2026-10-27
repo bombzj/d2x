@@ -67,6 +67,29 @@ RetailPresetScan::RetailPresetScan(Archives &archives):pd2_(archives.pd2Presets)
             resolved = monsterCount_ + uniqueCount_ + index;
         monsterPresets_[size_t(*act - 1)].push_back(resolved);
     }
+    if(pd2_) {
+        // Current MPQ MonPreset BIN contains the actual marker classes. Its
+        // TXT still names the retail hydras at these positions (738..740,
+        // 786 in BIN), so recompiling the name links changes authored maps.
+        const auto compiled=archives.read("data/global/excel/monpreset.bin");
+        if(compiled.size()<4) throw std::runtime_error("Truncated native MonPreset BIN");
+        const uint32_t count=uint32_t(compiled[0]) | uint32_t(compiled[1])<<8 |
+            uint32_t(compiled[2])<<16 | uint32_t(compiled[3])<<24;
+        if(count!=(compiled.size()-4)/4 || (compiled.size()-4)%4)
+            throw std::runtime_error("Invalid native MonPreset BIN size");
+        for(auto &section:monsterPresets_) section.clear();
+        int previousAct=1;
+        for(size_t row=0;row<count;++row) {
+            const auto offset=4+row*4;
+            const int act=compiled[offset],type=compiled[offset+1];
+            const int place=int(compiled[offset+2]) | int(compiled[offset+3])<<8;
+            if(act<previousAct || act>5 || type>2)
+                throw std::runtime_error("Invalid native MonPreset BIN record");
+            previousAct=act;
+            const int identity=place+(type==0?monsterCount_+uniqueCount_:type==2?monsterCount_:0);
+            monsterPresets_[size_t(act-1)].push_back(identity);
+        }
+    }
     const auto objects = read("objects");
     for (size_t row = 0; row < objects.rows().size(); ++row) {
         const auto id = objects.number(row, "Id");
@@ -140,11 +163,19 @@ std::optional<RetailPresetUnit> RetailPresetScan::resolveUnit(const MapObject &s
     if (unit.type == 1) {
         if (version <= 4) return {}; // The native file loader discards these.
         const auto &ids = monsterPresets_[size_t(act)];
-        if (unit.id < 0) return {};
+        if(unit.id<0) {
+            // LoadDrlgFile checks only index<count. Signed negative ordinals
+            // address the preceding act in the same compiled table. Bound
+            // that linear access to the actual table instead of using UB.
+            int64_t ordinal=unit.id;int section=act;
+            while(ordinal<0 && section>0) ordinal+=int64_t(monsterPresets_[size_t(--section)].size());
+            if(ordinal<0 || size_t(ordinal)>=monsterPresets_[size_t(section)].size()) return {};
+            unit.id=monsterPresets_[size_t(section)][size_t(ordinal)];
+        }
         // LoadDrlgFile only translates IDs inside the act's MonPreset
         // section. Its release branch retains an out-of-range ID as the
         // native class; PD2 map files contain these direct class markers.
-        if (size_t(unit.id) < ids.size()) unit.id = ids[size_t(unit.id)];
+        else if (size_t(unit.id) < ids.size()) unit.id = ids[size_t(unit.id)];
         result.mode = 1;
         // LoadDrlgFile converts these MonPreset markers to object identities.
         if (act == 2 && (unit.id == 297 || unit.id == 366)) {

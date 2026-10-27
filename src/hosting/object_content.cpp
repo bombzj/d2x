@@ -200,7 +200,10 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         object.objectClass = preset(source.id, area.act, request.level);
         std::vector<std::pair<Vec,int>> boundObjects;
         if(request.pd2Map && request.pd2Map->controller==45 && request.level==189) {
-            if(object.objectClass==601) object.objectClass=621;
+            // Current 38BFC0 rewrites every authored chest397 to623 before
+            // ordinary allocation; the Vault uses negative DS1 ordinals.
+            if(object.objectClass==397) object.objectClass=623;
+            else if(object.objectClass==601) object.objectClass=621;
             else if(object.objectClass==602) object.objectClass=254;
             else if(object.objectClass==603) object.objectClass=253;
             else if(object.objectClass==604) {

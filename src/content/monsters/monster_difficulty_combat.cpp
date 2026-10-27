@@ -22,9 +22,13 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     if (!nativeLevel || *nativeLevel < (npc?0:1)) return std::nullopt;
     const bool boss = stats.number(row, "boss").value_or(0) != 0;
     const int level = forcedLevel.value_or(difficulty == 0 || noRatio || boss ? *nativeLevel : areaLevel);
+    if(levels.rows().empty()) return std::nullopt;
+    // Common DATATBLS_CalculateMonsterStatsByLevel clamps only the ratio
+    // lookup to the final compiled MonLvl record; STAT_LEVEL stays unchanged.
+    const int ratioLevel=std::min(level,int(levels.rows().size())-1);
     size_t levelRow = 0;
     for (; levelRow < levels.rows().size(); ++levelRow)
-        if (levels.number(levelRow, "Level") == level) break;
+        if (levels.number(levelRow, "Level") == ratioLevel) break;
     if (levelRow == levels.rows().size()) return std::nullopt;
     auto scale = [&](std::string_view field, std::string_view ratioField) -> std::optional<int> {
         const auto source = zeroDefaults?std::optional{stats.number(row,std::string(field)+ending).value_or(0)}:stats.number(row,std::string(field)+ending);
@@ -48,7 +52,9 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     auto regen = stats.number(row, "DamageRegen");
     // Shipped MinionSpawner rows can have minHP > maxHP. Keep both native
     // values: the signed limited-random bound then yields minHP without a draw.
-    if (!lowHp || !highHp || *lowHp < (purpose==MonsterStatPurpose::Combatant || purpose==MonsterStatPurpose::CompiledCombatant?1:0) || *highHp < 0 ||
+    // PD2 compiled rows may deliberately have zero HP (the Hell Bitter
+    // Depths sarcophagus). Native admission remains alive by monster mode.
+    if (!lowHp || !highHp || *lowHp < (purpose==MonsterStatPurpose::Combatant?1:0) || *highHp < 0 ||
         *lowHp > (1 << 23) - 1 || *highHp > (1 << 23) - 1 || (critical && (*critical < 0 || *critical > 100)) ||
         (regen && (*regen < 0 || *regen > 4096)))
         return std::nullopt;

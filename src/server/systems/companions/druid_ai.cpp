@@ -27,14 +27,24 @@ struct DruidDecision {
 };
 StepStatus System::refreshDruid(Companion &pet,TickContext tick) {
     const auto *owner=ports_.players.find(pet.owner);const auto *body=ports_.monsters.find(pet.actor);
-    if(!owner || !body || !body->druidPet || pet.effectiveRanks==owner->totals.skillRanks) return StepStatus::Complete;
-    auto input=skills::formulaInput(*owner);SkillFormulaValues values(*owner->rules.skills->formulas,input);
-    int maximum=0;
-    for(const auto &[id,rank]:owner->totals.skillRanks) {
-        const auto definition=owner->rules.skills->definitions.find(id);
-        if(rank<=0 || definition==owner->rules.skills->definitions.end() || !definition->second.spec.summon ||
+    if(!owner || !body || !body->druidPet) return StepStatus::Complete;
+    // PlayerPets walks every registered skill instance, including each owned
+    // charged entry. Quantities do not change its level; removing an item or
+    // switching weapon sets does change the registered source snapshot.
+    std::vector<std::pair<NativeSkillSlot,int>> registered;
+    for(const auto slot:owner->totals.skillOrder) {
+        const auto definition=owner->rules.skills->definitions.find(slot.skill);
+        if(definition==owner->rules.skills->definitions.end() || !definition->second.spec.summon ||
            definition->second.spec.summon->petType!=body->rule.petType) continue;
-        const auto limit=values.calculation(FormulaDomain::Skill,id,rank,"petmax");
+        registered.emplace_back(slot,nativeSkillSlotLevel(slot,owner->totals.skillOrder,owner->totals.skillRanks,
+            owner->totals.chargedSkills,owner->rules.skills->formulas->maximumSkillRank));
+    }
+    if(pet.effectiveRanks==owner->totals.skillRanks && pet.ownerLevel==owner->persistent.player.level &&
+       pet.druidSkillRanks==registered) return StepStatus::Complete;
+    auto input=skills::formulaInput(*owner);SkillFormulaValues values(*owner->rules.skills->formulas,input);
+    int maximum=registered.empty()?body->druidPet->definition->baseMaximum:0;
+    for(const auto &[slot,rank]:registered) {
+        const auto limit=values.calculation(FormulaDomain::Skill,slot.skill,rank,"petmax");
         if(!limit) throw std::logic_error("Unavailable native druid pet capacity");
         maximum=std::max(maximum,std::max(*limit,1));
     }
@@ -54,7 +64,8 @@ StepStatus System::refreshDruid(Companion &pet,TickContext tick) {
         entry.release=0;
         --active;
     }
-    pet.effectiveRanks=owner->totals.skillRanks;return StepStatus::Complete;
+    pet.effectiveRanks=owner->totals.skillRanks;pet.ownerLevel=owner->persistent.player.level;
+    pet.druidSkillRanks=std::move(registered);return StepStatus::Complete;
 }
 StepStatus System::druidStep(Companion &pet,TickContext tick) {
     const auto *body=ports_.monsters.find(pet.actor);const auto *owner=ports_.players.find(pet.owner);
@@ -122,8 +133,11 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
         if(pet.druidAi[0]==-1) {
             pet.druidAi[0]=3;
             if(program.skills[0]>=0) {
-                const auto rank=owner->totals.skillRanks.find(program.skills[0]);const auto &row=body->rule.formulas->skills.at(program.skills[0]);
-                pet.druidAi[0]=rank==owner->totals.skillRanks.end()?0:nativeAdd(row.number("param5"),nativeMultiply(rank->second-1,row.number("param6")));
+                const auto ranks=prepareSkillFormulaRanks(owner->persistent.player.skillRanks,owner->totals.skillRanks,
+                    owner->rules.character->innateSkills,owner->totals.chargedSkills,owner->rules.skills->formulas->maximumSkillRank);
+                const auto rank=ranks.effective.find(program.skills[0]);const auto &row=body->rule.formulas->skills.at(program.skills[0]);
+                pet.druidAi[0]=rank==ranks.effective.end() || rank->second<=0?0:
+                    nativeAdd(row.number("param5"),nativeMultiply(rank->second-1,row.number("param6")));
             }
         } else if(!pet.druidAi[0]) {
             const auto retired=ports_.monsters.retire(body->id,tick.tick);if(isDeferred(retired.status)) return StepStatus::Blocked;

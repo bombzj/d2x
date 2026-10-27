@@ -105,11 +105,15 @@ Levels.MonLvl1及Objects数值空白按原编译类型为零，来源为D2MOO的
 
 ## DS1怪物标记与编译身份
 
-D2MOO `DRLGPRESET_LoadDrlgFile`的MonPreset翻译有范围条件：版本大于4且编号在文件内Act对应的MonPreset段内才翻译；段外编号保留原值，再执行各幕特殊单位转换。当前KurastOpenWide3.ds1含怪物标记168，而Act III的MonPreset段仅60项。这不是“缺少第168条MonPreset”。`src/world/retail/preset_scan.cpp::resolveUnit`现保留这个直接编号，不再拒绝整图；负编号不分配单位。
+D2MOO `DRLGPRESET_LoadDrlgFile`的MonPreset翻译只检查版本大于4及有符号编号小于本幕段长；正向段外编号保留原值，再执行各幕特殊单位转换。当前KurastOpenWide3.ds1含怪物标记168，而Act III的MonPreset段仅60项，这不是“缺少第168条MonPreset”。负序号则按连续表地址访问前一幕，不能一概丢弃。当前41d49配套pd2data的monpreset.bin有324条、每条4字节，各幕段起点为0／60／140／200／253；第二至第五幕的-11／-10／-9／-8均链接738／739／740／786，TXT仍写零售版hydra名称。`src/world/retail/preset_scan.cpp`在PD2模式使用实际BIN链接，负序号只在整张表范围内解析；ImperialPalaceBossRoom.ds1的四个负序号因此进入34号控制器的真实身份转换，不自造预置或坐标。
 
 MonStats类编号使用编译记录顺序，跳过Expansion分隔行，同名首次链接。`src/content/monsters/monster_identity.cpp`提供内容行／编译编号双向转换，目录、模式／生命／类型、人口、掉落、声音、召唤和出生参数保持相同身份，避免1198之后TXT hcIdx空号造成错怪。SuperUniques／MonPlace拼接仍用各自真实数量，见[怪物身份](MONSTERS.md#monstats与预设身份)。
 
 普通地图的DS1首领占位类还须经过当前核心`0x38A000→0x3899D0`，不能直接让占位类738／739进入人口。`gameplay/maps/pd2/region_program.cpp::ordinaryMapPresetClass`现恢复普通地图的固定编译身份路由，例如143的738→750、170→998、172→1000、187→1103、200→1194，以及144的739→753；`hosting/combat_content.cpp`在准备预设的碰撞、重试与额外首领调用前解析真实记录，原DS1顺序／位置保留。身份常量来自该版本原指令，数值、动作和资源仍取被选中的MPQ记录。特殊控制器的替换、阶段、额外出生和185的随机Uber选择不套此普通路由；完整场景仍待原版对照，不能据此认证这些首领的完整AI及地图奖励。
+
+## 同层多个楼梯的配对
+
+Djinn等预设可以有多个相同目标层的Warp，不能因返回出口不唯一就取消旅行。原Common `DRLGWARP_GetDestinationRoom`沿源RoomTile到目标房间，再找指回源房间的RoomTile。公共`NativeWarpRooms`保留真实源／目标房间的全局tile锚点，world出口、hosting及AreaStore逐层传递，Travel按反向房间对选返回落点；只有没有原房间链接的旧出口才用唯一目标后备。重复Warp ID的Vis槽按源房间实际连接位选择，不以第一个同ID槽代替；不改MPQ出口位置。
 
 ## 无目标出口标记
 
@@ -194,8 +198,8 @@ Outer Void的当前静态边界另需保留：38A000在180对738／739／740分�
 
 扩展布局、表驱动人口和原生出口复用已有消费者；开图／入口、实例寿命与恢复、地图词缀全链、特殊事件、首领和掉落仍未形成完整实现。已有布局或管理旅行不等于地图物品可用。后续逐项记录物品→区域→人口→战斗／掉落→离开／保存的真实调用链、参数来源和拒绝条件；不自造地图、词缀数值或概率。
 
-场景31另沿F49补齐1057的压力／显隐／冷却和36E740的竞技场普通人口排除；181／182的真实预置、原AI、Warlord、公共动作与F44奖励已接通，181仅源码准入，完整场景仍待原版对照。
+场景31另沿F49补齐1057的压力／显隐／冷却和36E740的竞技场普通人口排除；181／182的真实预置、原AI、Warlord、公共动作与F44奖励已接通，181／182已有自研主链运行观察，完整场景仍待原版对照。
 
-场景30的Zhar物件80、实际双端门户、读书阶段、原音效及前缀奖励已沿F50／F52接通；176仅源码准入，完整场景仍待原版对照，失败顺序、多人、资格与完整场景仍待统一复验。
+场景30的Zhar物件80、实际双端门户、读书阶段、原音效及前缀奖励已沿F50／F52接通；176已有自研机关／首领／奖励主链运行观察，完整原版对照及失败顺序、多人和资格交错仍待复验。
 
 ZharLibrary.ds1的负序号按原Common连续五幕表索引恢复：文件幕1、序号-10至-7对应幕0的140–143，PD2补丁后为601–604。规则基线资源SHA256为`9b2568a6205473ebb4067431f64d76ba0484d3b0263bd2047248edca746ad5bf`，更新后实际MPQ仍有同组来源；不按坐标新增门户。依据为配套Common 0406…的RVA A090及D2MOO DRLGPRESET_GetObjectIndexFromObjPreset，消费者为`world/preset_identity.cpp`及`world/pd2/preset_identity.cpp`；双端预置扫描共用该规则。此前直接丢弃负序号导致601–603不可达的源码差异已修正，缺邻近门户时的原玩家音效19已接同一操作；完整30场景仍待统一对照。

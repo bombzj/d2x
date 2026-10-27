@@ -16,6 +16,8 @@ struct RoomPopulationRegion {
     bool node{};
 };
 struct NativeTileInfo {int index{},x{},y{};};
+// Original global tile anchors of a reciprocal DRLG room-tile connection.
+struct NativeWarpRooms {int sourceX{},sourceY{},destinationX{},destinationY{};};
 struct RoomPopulationLayout {
     struct Floor {int x{},y{};uint16_t material{};};
     int x{},y{},width{},height{};

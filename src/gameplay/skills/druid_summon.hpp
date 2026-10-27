@@ -14,7 +14,7 @@ struct DruidPetDefinition {
     std::array<std::string,8> skillModes;
     std::array<std::pair<int,int>,3> lifeRanges;
     std::string summonMode;
-    int nativeClass{-1},group{},warpProbeClass{-1};
+    int nativeClass{-1},group{},warpProbeClass{-1},baseMaximum{};
     MovementCollisionRule warpProbeCollision;
     bool attackable{},vine{};
 };

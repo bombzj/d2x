@@ -207,7 +207,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if(const auto current=rule.attacks.find(4);current!=rule.attacks.end()) {
         rule.minimumDamage=current->second.minimum;rule.maximumDamage=current->second.maximum;rule.attackRating=current->second.rating;
     }
-    const bool requiresSecondAttack=record->hostile()?bool(profile->damage.attack2Damage) && (!data.pd2Host || hosting::pd2::hasAttackMode(data,*record,2)):
+    const bool requiresSecondAttack=record->hostile()?bool(profile->damage.attack2Damage) && (!data.pd2Host || (hosting::pd2::usesSecondaryAttack(*record) && hosting::pd2::hasAttackMode(data,*record,2) && (record->attack2Projectile || data.tables.at("monstats").number(record->sourceRow,std::string("A2MinD")+suffix)))):
         record->attack2Projectile.has_value() || data.tables.at("monstats").number(record->sourceRow,std::string("A2MinD")+suffix).has_value();
     if (!(data.pd2Host && hosting::pd2::sceneController(*record)) && record->ai!="EvilHole" && record->ai!="Catapult" && record->ai!="Idle" && record->ai!="TrappedSoul" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="OblivionKnight" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
     if(monsterImplementation(record->id).kind==MonsterKind::BonePrison) {
@@ -216,7 +216,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         rule.spawnTicks=monsterAnimationTicks({birth->frames,birth->speed});
     }
     stage("skill actions");
-    if(!prepareMonsterSpecialActions(archives,data,animations,*record,rule)) return {};
+    if(!prepareMonsterSpecialActions(archives,data,animations,*record,rule,deferredReason)) return {};
     stage("spawn dependencies");
     if(record->ai=="FetishShaman") {
         const auto &stats=data.tables.at("monstats");
@@ -235,7 +235,8 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         return entry.second.action==server::MonsterAttackRule::Action::Pd2PoisonEgg;
     });
     const bool spawnSkill=std::any_of(rule.skillActions.begin(),rule.skillActions.end(),[](const auto &entry) {
-        return entry.second.action==server::MonsterAttackRule::Action::SpawnMinion;
+        return entry.second.action==server::MonsterAttackRule::Action::SpawnMinion ||
+            entry.second.action==server::MonsterAttackRule::Action::Nest;
     });
     const bool pd2WispSpawn=data.pd2Host && record->ai=="WillOWisp" && rule.ai.pd2Parameters[6][2] && !data.tables.at("monstats").value(record->sourceRow,"spawn").empty();
     if(poisonEgg || spawnSkill || pd2WispSpawn || record->ai=="EvilHole" || record->ai=="MinionSpawner" || record->ai=="GenericSpawner" || record->ai=="Nihlathak" || record->ai=="FoulCrowNest" || record->ai=="VileMother" || record->ai=="BloodRaven" || record->ai=="SandMaggot" || record->ai=="SandMaggotQueen" || record->ai=="MaggotEgg" || record->ai=="Sarcophagus") {
@@ -244,8 +245,13 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         if(!catalog.find(code) && record->ai!="GenericSpawner" && record->ai!="Nihlathak") return {};
         if(catalog.find(code)) {
             auto childIdentity=identity;childIdentity.monster=code;childIdentity.origin=SpawnOrigin::Summoned;childIdentity.rank=MonsterRank::Normal;childIdentity.superUnique.clear();
-            auto child=combatMonster(archives,data,request,std::move(childIdentity),{},world,catalog,animations,random);
-            if(!child) return {};
+            std::string childReason;
+            auto child=combatMonster(archives,data,request,std::move(childIdentity),{},world,catalog,animations,random,
+                nullptr,true,nullptr,{},&childReason);
+            if(!child) {
+                if(deferredReason) *deferredReason="spawn "+code+": "+childReason;
+                return {};
+            }
             rule.nestChild=std::make_shared<const server::PreparedMonster>(std::move(*child));
         }
         rule.spawnOffset={float(data.tables.at("monstats").number(record->sourceRow,"spawnx").value_or(0)),float(data.tables.at("monstats").number(record->sourceRow,"spawny").value_or(0))};
@@ -265,8 +271,14 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         for(const auto *a:{enchantment->aura?&*enchantment->aura:nullptr,enchantment->curse?&*enchantment->curse:nullptr}) if(a)
             rule.auraStats.emplace(a->skill,server::MonsterRule::AuraStats{auraNativeStats(data,a->modifiers),auraNativeStats(data,auraOwnerModifiers(*a))});
         if(enchantment->has(26)) {
-            const auto attack=rule.attacks.find(4);if(attack==rule.attacks.end()) return {};
-            auto teleport=attack->second;teleport.action=server::MonsterAttackRule::Action::Teleport;teleport.missile.reset();teleport.rank=1;
+            stage("enchantment teleport");
+            server::MonsterAttackRule teleport;
+            if(const auto attack=rule.attacks.find(4);attack!=rule.attacks.end()) teleport=attack->second;
+            // UMod26 assigns MonTeleport in mode4 independently of an A1
+            // damage attack. PD2 caster families may have only skill markers
+            // in A1; use their real action clock rather than rejecting them.
+            else if(!data.pd2Host || !hosting::pd2::prepareNativeClock(archives,animations,*record,"A1",teleport,true)) return {};
+            teleport.action=server::MonsterAttackRule::Action::Teleport;teleport.missile.reset();teleport.rank=1;
             rule.skillActions.emplace(184,std::move(teleport));
             rule.preventHealState=data.states.at("preventheal").definition.id;
         }
@@ -306,7 +318,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
 }
 }
 std::optional<server::PreparedMonster> prepareCombatMonster(Archives &archives, const ClassicData &data,
-    AreaGenerationRequest request, MonsterIdentity identity, Vec position) {
+    AreaGenerationRequest request, MonsterIdentity identity, Vec position,std::string *deferredReason) {
     const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;
     const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats"),
         data.pd2Host?MonsterPreparation::TownActors:MonsterPreparation::FullRules); });
@@ -316,15 +328,15 @@ std::optional<server::PreparedMonster> prepareCombatMonster(Archives &archives, 
     uint64_t seed=request.seed;
     for(const unsigned char c:identity.spawnKey) seed=(seed^c)*0x100000001b3ULL;
     auto random=initialRandom(uint32_t(seed^(seed>>32)));
-    return combatMonster(archives, data, request, std::move(identity), position, world, catalog, animations,random);
+    return combatMonster(archives, data, request, std::move(identity), position, world, catalog, animations,random,nullptr,true,nullptr,{},deferredReason);
 }
 std::optional<server::PreparedMonster> prepareSelectedMonster(Archives &archives,const ClassicData &data,
-    AreaGenerationRequest request,MonsterIdentity identity,int level,const MonsterEnchantment &selection,const MonsterEnchantment *owner) {
+    AreaGenerationRequest request,MonsterIdentity identity,int level,const MonsterEnchantment &selection,const MonsterEnchantment *owner,std::string *deferredReason) {
     const auto world=sharedWorldCatalog(archives,request.difficulty);
     const auto catalog=archives.prepared<MonsterCatalog>([&]{return MonsterCatalog(archives,data.tables.at("monstats"));});
     const auto animations=archives.prepared<AnimDataTable>([&]{return AnimDataTable(archives.read("data/global/animdata.d2"));});
     uint64_t unused{};
-    return combatMonster(archives,data,request,std::move(identity),{},*world,*catalog,*animations,unused,owner,true,&selection,level);
+    return combatMonster(archives,data,request,std::move(identity),{},*world,*catalog,*animations,unused,owner,true,&selection,level,deferredReason);
 }
 void prepareCombatPopulation(Archives &archives, const ClassicData &data, PreparedWorldArea &prepared) {
     auto &area = prepared.authority;
@@ -558,7 +570,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
     case 12:required.push_back(919);break;
     case 14: {
         required.push_back(921);
-        const auto &uniques=data.tables.at("superuniques");
+        const DataTable uniques(archives.read("data/global/excel/superuniques.txt"));
         for(const bool bosses:{false,true}) for(const int source:pd2::wandererPool(bosses)) {
             int definition=source;
             if(!bosses && source!=267 && source!=256) {

@@ -5,7 +5,7 @@
 
 namespace d2x {
 std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, size_t row,
-                                                     std::string_view ai, int difficulty) {
+                                                     std::string_view ai, int difficulty,bool compiledParameters) {
     if (difficulty < 0 || difficulty > 2) return std::nullopt;
     MonsterAiProfile profile;
     if (ai == "Skeleton") profile.kind = MonsterAiKind::Skeleton;
@@ -128,6 +128,9 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
         if (value && (*value < 0 || *value > 65535)) return std::nullopt;
         profile.params[index] = value.value_or(0);
     }
+    // Native chance comparisons accept WORD values above100. PD2 reuses
+    // these same columns for wrapper-specific thresholds and counters.
+    if(compiledParameters) return profile;
     auto percentage = [&](int index) { return profile.params[index] <= 100; };
     if(profile.kind==MonsterAiKind::HighPriest && (!percentage(0) || !percentage(1) || !percentage(3) || !percentage(4) || !percentage(5) || !percentage(6))) return std::nullopt;
     if(profile.kind==MonsterAiKind::GargoyleTrap && !percentage(1)) return std::nullopt;

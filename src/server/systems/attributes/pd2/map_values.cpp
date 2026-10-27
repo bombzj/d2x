@@ -55,9 +55,9 @@ void preparePd2HiddenSceneMonster(monsters::Actor &actor,uint64_t tick) {
     auto life=resources.take();actor.nativeStats=std::move(life.intrinsic);actor.life=life.life.raw();actor.maximumLife=life.maximum.raw();
     actor.initialEffects=std::move(states);actor.targetFlagsDisabled=actor.pd2NoPathDisabled=true;
 }
-void preparePd2MapMonster(monsters::Actor &actor,const pd2::MapInstance &map,uint64_t tick,bool dead,std::span<const StatValue> runtimeGlobal) {
+void preparePd2MapMonster(monsters::Actor &actor,const pd2::MapInstance &map,uint64_t tick,bool dead,unsigned participants,std::span<const StatValue> runtimeGlobal) {
     if(!actor.nativeStats || !actor.rule.stats || !actor.rule.stats->pd2) return;
-    preparePd2BossScaling(actor,map,tick,dead);
+    preparePd2BossScaling(actor,map,tick,dead,participants);
     if(actor.initialEffects && actor.initialEffects->findState(map.catalog->state.id)) return;
     const auto &rules=*actor.rule.stats;
     MonsterResourceTrace resources(actor,tick);

@@ -27,13 +27,38 @@
 #include <vector>
 
 namespace d2x::server::skills {
+namespace {
+DomainStatus prepareTeleportDebuff(actions::SkillRelease &pending,const NativeCaster &caster,const effects::System &effects,uint64_t tick) {
+    if(pending.skill.appliedEffect || pending.skill.pd2->state.id<0) return DomainStatus::Applied;
+    const auto &program=*pending.skill.pd2;const auto &rules=*caster.programs();
+    auto input=caster.formulaInput(effects,tick);SkillFormulaValues values(*rules.formulas,input);
+    const auto reduction=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"calc1");
+    const auto duration=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"auralencalc");
+    if(!reduction || !duration) throw std::runtime_error("Missing PD2 Teleport debuff formula");
+    const auto sampled=caster.monster?effects.unitStatValues(caster.id(),tick):std::optional<StatSnapshot>{};
+    if(caster.monster && !sampled) return DomainStatus::Unavailable;
+    const auto &stats=*rules.stats;const auto &attributes=caster.player?caster.player->totals.nativeStats:*sampled;
+    const auto factor=nativeSubtract(rules.formulas->skills.at(pending.skill.sourceId).number("param2"),*reduction);
+    CombatEffectSpec effect;effect.state=program.state;effect.duration=EffectFrame(uint32_t(*duration));
+    effect.nativeState=true;effect.stacking=EffectStacking::SkillLevel;effect.nativeValues.emplace();
+    effect.source={CombatEffectSource::Skill,caster.id(),pending.skill.sourceId,pending.skill.rank};
+    for(const auto name:{"passive_fire_mastery","passive_cold_mastery","passive_ltng_mastery","passive_pois_mastery"}) {
+        const auto value=logicalStatValue(attributes,stats,name);
+        const int adjusted=nativeSubtract(0,nativeAdd(pd2MultiplyDivide(value,factor,100),factor));
+        const auto key=StatKey{stats.names.at(name),0};
+        effect.nativeValues->emplace(key,adjusted);pending.skill.nativeEffectWrites.emplace_back(key,adjusted);
+    }
+    effect.modifiers=nativeCharacterModifiers(StatSnapshot{*effect.nativeValues},stats,{});
+    pending.skill.appliedEffect=std::move(effect);return DomainStatus::Applied;
+}
+}
 DomainStatus System::activatePd2MonsterTeleport(Release &pending,const ActorContext &actor,Vec target) {
     const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
     if(!caster || !caster->monster || !caster->programs() || !pending.skill.pd2) return DomainStatus::InvalidActor;
     const auto &program=*pending.skill.pd2;
-    // Current monster callers 357/573 have no mastery debuff. Do155 owns
-    // the movement and optional landing ring, independently of player travel.
-    if(program.doFunction!=155 || program.state.id>=0) return DomainStatus::NotImplemented;
+    // 41d49 3B16B0 applies the same optional mastery state to monsters.
+    // Blink's empty state and the player's Teleport row share this callback.
+    if(program.doFunction!=155) return DomainStatus::NotImplemented;
     if(!pending.manaPaid) {
         const auto *states=ports_.effects.unitEffects(actor.actor);
         if(states && states->hasState(214,actor.tick)) return DomainStatus::Unavailable;
@@ -56,7 +81,11 @@ DomainStatus System::activatePd2MonsterTeleport(Release &pending,const ActorCont
     }
     pending.nativeCallbackStarted=true;
     pending.actor.tick=actor.tick;
-    const auto result=releasePd2TeleportMissiles(pending,pending.actor);
+    const auto ring=releasePd2TeleportMissiles(pending,pending.actor);
+    if(ring!=DomainStatus::Applied) return ring;
+    const auto prepared=prepareTeleportDebuff(pending,*caster,ports_.effects,actor.tick);
+    if(prepared!=DomainStatus::Applied) return prepared;
+    const auto result=pending.skill.appliedEffect?ports_.effects.unitSkill(caster->id(),pending.skill,actor.tick).status:DomainStatus::Applied;
     if(result==DomainStatus::Applied) pending.nativeCallbackStarted=false;
     return result;
 }
@@ -173,25 +202,10 @@ DomainStatus System::activatePd2Teleport(Release &pending,const ActorContext &ac
         const auto paid=ports_.transactions.commit(std::move(*plan.value));if(!paid) return paid.status;
         pending.skill.appliedEffect=std::move(effect);pending.skill.nativeEffectWrites.emplace_back(key,regeneration);
     }
-    if(!pending.skill.appliedEffect && program.state.id>=0) {
-        auto input=formulaInput(owner);SkillFormulaValues values(*owner.rules.skills->formulas,input);
-        const auto reduction=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"calc1");
-        const auto duration=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"auralencalc");
-        if(!reduction || !duration) throw std::runtime_error("Missing PD2 Teleport debuff formula");
-        const auto factor=nativeSubtract(owner.rules.skills->formulas->skills.at(pending.skill.sourceId).number("param2"),*reduction);
-        CombatEffectSpec effect;effect.state=program.state;effect.duration=EffectFrame(uint32_t(*duration));
-        effect.nativeState=true;effect.stacking=EffectStacking::SkillLevel;effect.nativeValues.emplace();
-        effect.source={CombatEffectSource::Skill,actor.actor,pending.skill.sourceId,pending.skill.rank};
-        const auto &stats=*owner.rules.skills->stats;
-        for(const auto name:{"passive_fire_mastery","passive_cold_mastery","passive_ltng_mastery","passive_pois_mastery"}) {
-            const auto value=logicalStatValue(owner.totals.nativeStats,stats,name);
-            const int adjusted=nativeSubtract(0,nativeAdd(pd2MultiplyDivide(value,factor,100),factor));
-            const auto key=StatKey{stats.names.at(name),0};
-            effect.nativeValues->emplace(key,adjusted);pending.skill.nativeEffectWrites.emplace_back(key,adjusted);
-        }
-        effect.modifiers=nativeCharacterModifiers(StatSnapshot{*effect.nativeValues},stats,{});
-        pending.skill.appliedEffect=std::move(effect);
-    }
+    const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    if(!caster) return DomainStatus::InvalidActor;
+    const auto prepared=prepareTeleportDebuff(pending,*caster,ports_.effects,actor.tick);
+    if(prepared!=DomainStatus::Applied) return prepared;
     if(!pending.skill.appliedEffect) {pending.nativeCallbackStarted=false;return DomainStatus::Applied;}
     auto debuff=pending.skill;debuff.manaCost=debuff.startMana=0;debuff.charge.reset();
     pending.nativeCallbackStarted=true;

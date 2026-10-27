@@ -2,6 +2,7 @@
 #include "server/area_store.hpp"
 #include "gameplay/maps/pd2/definition.hpp"
 #include "server/systems/attributes/pd2/map_values.hpp"
+#include "server/systems/maps/system.hpp"
 
 namespace d2x::server::monsters {
 DomainResult<EntityId> System::admitPd2SceneMonster(RegionId region,Vec position,int definition,std::string key,uint64_t tick,int binding) {
@@ -41,9 +42,15 @@ EntityId System::pd2RathmaPartner(EntityId id) const {
        (unit->identity.nativeClass!=935 && unit->identity.nativeClass!=936)) return {};
     const auto *area=ports_.areas.find(unit->area);
     if(!area || !area->definition.pd2Map || area->definition.pd2Map->controller!=43) return {};
-    for(const auto &[otherId,other]:state_.actors)
-        if(otherId!=id && other.area==unit->area && other.identity.pd2Binding==(unit->identity.pd2Binding^1) &&
-           other.identity.nativeClass==(unit->identity.nativeClass==935?936:935)) return otherId;
+    // Current 305920 uses the two Game2600/2604 bindings. Never cache an
+    // Actor pointer across death, room restoration or scene replacement.
+    const auto &scene=ports_.maps.read();
+    if(scene.instance!=area->definition.pd2Map || !scene.bindings[0].id || !scene.bindings[1].id) return {};
+    const auto &binding=scene.bindings[size_t(unit->identity.pd2Binding^1)];
+    const auto *other=find(binding.id);
+    if(other && binding.id!=id && !binding.object && binding.area==unit->area && other->area==unit->area &&
+       other->identity.pd2Binding==(unit->identity.pd2Binding^1) &&
+       other->identity.nativeClass==(unit->identity.nativeClass==935?936:935)) return binding.id;
     return {};
 }
 bool System::pd2ControllerDeath(const Actor &actor) const {

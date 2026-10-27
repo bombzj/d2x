@@ -2,6 +2,7 @@
 #include "content/pd2_stash.hpp"
 #include "content/items/item_appearance.hpp"
 #include "content/pd2/cube.hpp"
+#include "gameplay/items/pd2/pricing.hpp"
 
 namespace d2x {
 ItemInstance RemoteUiClients::Impl::itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
@@ -191,14 +192,13 @@ std::optional<unsigned> RemoteUiClients::Impl::itemQuote(uint32_t id, OnlineItem
         } else if (world.shopSource != world.npcRequested || native.ownerType != 1 ||
             native.owner != world.shopSource || native.action != 11 || native.mode != 0) return {};
         if (!repair && (native.flags & 0x20000u)) return 1;
-        // Core 0x383060: Gheed in levels 137..210 uses a fixed million
-        // with the same clamped reduced-price stat. Town gambling falls through.
-        if (detail.gamble && online.remoteLobbyOnly && npcIdentity() == "gheed" &&
+        // Current 385020 applies to map Gheed on both local and remote hosts.
+        if (detail.gamble && online.protocolProfile != "lod113c" && npcIdentity() == "gheed" &&
             scene && scene->area && *scene->area >= 137 && *scene->area <= 210) {
             const auto reduced = stat("item_reducedprices");
             const auto known = reduced ? std::optional<int>(int(*reduced)) : knownEquipmentStat("item_reducedprices", characterView.level);
             if (!known) return {};
-            return unsigned(1000000 - 1000000 * int64_t(std::clamp(*known, 0, 99)) / 100);
+            return pd2MapGamblePrice(*known);
         }
         if (detail.gamble && !detail.format) return itemGamblePrice(data, native.code, 0, detail.format, 0);
         std::optional<int64_t> bodyCost;

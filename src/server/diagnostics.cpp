@@ -56,6 +56,9 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     if(map.instance) {
         result.pd2Map.emplace();auto &view=*result.pd2Map;
         view.controller=map.instance->controller;view.phase=map.phase;view.eventProgress=map.eventProgress;
+        const auto &travel=systems_.travel.read();
+        view.sceneOpening=travel.pd2SceneOpening;view.sceneParticipants=travel.pd2SceneParticipants;
+        view.sceneEntrants.assign(travel.pd2SceneEntrants.begin(),travel.pd2SceneEntrants.end());
         for(const auto &[unit,death]:map.deaths) {
             view.deaths.push_back({unit,int(death.phase),death.portalPhase,death.portalStatus,death.evaluated,death.portalPosition});
         }
@@ -244,6 +247,9 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         value.components=monster.components;value.componentCounts=monster.rule.componentCounts;
         value.identity=monster.identity;value.enchantment=monster.rule.enchantment;value.home=monster.home;value.skillPositions=monster.skillPositions;
         value.chargedSkills=monster.nativeCharges;value.chargesTracked=monster.nativeChargesTracked;value.itemAuras=monster.itemAuraTimers;
+        value.itemStatEvents=monster.itemStatEvents;
+        if(const auto stats=systems_.effects.unitStatValues(monster.id,tick_))
+            for(const auto &event:monster.itemStatEvents) value.itemStatEventValues.push_back(stats->get(event.key));
         value.alignment=monster.alignment();value.allegianceRevision=monster.allegianceRevision;value.curseControl=monster.curseControl;
         value.attractionTarget=monster.attractionTarget;value.attractionUntil=monster.attractionUntil;
         value.aiResetTimers=monster.aiResetTimers;value.aiResetsTracked=monster.nativeAiResetTracked;

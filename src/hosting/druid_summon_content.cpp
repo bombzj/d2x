@@ -25,6 +25,7 @@ server::companions::Prepared prepareDruidSummon(const server::companions::Prepar
     auto definition=std::make_shared<DruidPetDefinition>(pet);definition->warpProbeClass=probe->index;definition->warpProbeCollision=probe->spawnRule();
     auto preparedPet=std::make_shared<DruidPetSpec>(*result.summon.druid);preparedPet->definition=std::move(definition);result.summon.druid=std::move(preparedPet);
     auto &rule=result.rule;rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;rule.auraPrograms=data.nativeAuraPrograms;
+    if(data.pd2Host) prepareMonsterStateRules(data,record->sourceRow,rule);
     rule.nativeClass=record->index;rule.difficulty=source.difficulty;rule.size=record->collisionSize;
     rule.collision=record->movementRule();rule.spawnCollision=record->spawnRule();rule.nativeVelocity=record->walkVelocity.value_or(0);
     rule.meleeRange=record->meleeRange;rule.alignment=2;rule.coldEffect=record->coldEffect.at(size_t(source.difficulty));

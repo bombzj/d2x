@@ -39,6 +39,6 @@ struct MapInstance {
     uint8_t quality{};
     int controller{};
     uint32_t initSeed{};
-    uint8_t participants{},bossDifficulty{};
+    uint8_t bossDifficulty{};
 };
 }

@@ -5,6 +5,7 @@
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <utility>
+#include <algorithm>
 
 namespace d2x {
 MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const MonsterCatalog &monsters,
@@ -49,9 +50,11 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
         return defer("Unsupported monster level");
     uint64_t base = unsigned(*percent);
     if (!noRatio) {
+        if(levels.rows().empty()) return defer("Missing original MonLvl rows");
+        const int ratioLevel=std::min(*level,int(levels.rows().size())-1);
         size_t levelRow = 0;
         for (; levelRow < levels.rows().size(); ++levelRow)
-            if (levels.number(levelRow, "Level") == level) break;
+            if (levels.number(levelRow, "Level") == ratioLevel) break;
         if (levelRow == levels.rows().size())
             return defer("Missing original MonLvl row");
         auto ratio = levels.number(levelRow, std::string(request.ladderStats?"L-XP":"XP") + suffix[request.difficulty]);

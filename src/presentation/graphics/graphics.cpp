@@ -121,10 +121,14 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                                  const std::string &weapon, const std::array<const char *, 16> *equipment,
                                  const std::array<uint8_t, 256> *colorMap) {
     auto base = "data/global/" + type + "/" + token + "/";
-    auto bytes = archives.read(base + "cof/" + token + mode + weapon + ".cof", false);
+    const auto cofPath=base + "cof/" + token + mode + weapon + ".cof";
+    auto bytes = archives.read(cofPath, false);
     if (bytes.empty())
         return {};
-    auto cof = decodeCof(bytes);
+    Cof cof;
+    try {cof=decodeCof(bytes);}
+    catch(const std::exception &error) {throw std::runtime_error(cofPath+": "+error.what());}
+    if(!cof.layers) return {};
     std::map<int, const Animation *> parts;
     std::array<bool, 16> castsShadow{};
     std::array<bool, 16> softAdditive{};

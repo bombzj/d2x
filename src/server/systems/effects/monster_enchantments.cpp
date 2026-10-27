@@ -117,9 +117,11 @@ DomainResult<> System::monsterCurse(EntityId source,int skill,int rank,Vec cente
         if(randomCurse) {
             // Retail 1.13c removed Iron Maiden from this five-entry table,
             // but retained the original index-based callback jump table.
-            constexpr std::array names{"amplify damage","weaken","life tap","decrepify","lower resist"};
-            index=int(limitedRandom(random,uint32_t(names.size())));
-            selectedSkill=unit->rule.formulas->skillIds.at(names[size_t(index)]);
+            // Do112 selects native skill IDs. PD2 renames 66 to AmpDmg
+            // and 91 to LowRes, so retail display names are not identities.
+            constexpr std::array skills{66,72,82,87,91};
+            index=int(limitedRandom(random,uint32_t(skills.size())));
+            selectedSkill=skills[size_t(index)];
         }
         const auto &row=unit->rule.formulas->skills.at(selectedSkill);const auto state=unit->rule.states->find(row.auraTargetState);
         if(state==unit->rule.states->end()) return {DomainStatus::Unavailable,{}};

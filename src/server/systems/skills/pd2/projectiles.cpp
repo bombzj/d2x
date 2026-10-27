@@ -146,36 +146,17 @@ DomainStatus System::activatePd2(Release &pending,const ActorContext &actor,Vec 
         append(position,position,program.missiles[0]);
         break;
     case 164: {
-        if(!pending.weapon || program.missiles[0]<0) return DomainStatus::Unavailable;
-        const auto stats=ports_.effects.unitStatValues(actor.actor,actor.tick);
-        if(!stats) return DomainStatus::Unavailable;
-        const auto expected=caster->random();auto random=expected;
-        const auto modifiers=caster->player?caster->player->totals.character.combat:ports_.effects.combatModifiers(actor.actor,actor.tick);
-        const auto *victim=ports_.monsters.find(pending.unit);
-        SkillCastSpec attack;attack.effect=SkillBehavior::WeaponProjectile;attack.sourceId=pending.skill.sourceId;
-        attack.rank=pending.skill.rank;attack.weapon.emplace();
-        // Do164 (current core RVA 0x3B0130) drains the St68 contact,
-        // fills fresh equipment damage, then adds its normalized poison to
-        // the skill's ring. Physical and elemental rolls precede the poison.
-        (void)rollNativeWeaponPhysical(*pending.weapon,modifiers,attack,caster->level(),
-            victim && victim->rule.demon,victim && victim->rule.undead,random,{row.number("srcdam"),0});
-        MissileHitDamage damage;fillNativeWeaponElements(damage,*stats,*rules.stats,row.number("srcdam"),random,caster->monster && !caster->monster->hireling);
-        const auto length=values.parameter(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"edln");
-        if(!length) throw std::logic_error("Missing PD2 Poison Strike normalization length");
-        int32_t poison=damage.channels[5];
-        if(*length) {
-            const float normalized=float(uint32_t(poison))*(float(uint32_t(damage.poisonLength))/float(*length));
-            poison=nativeNarrow(normalized<0?0:double(normalized)>=4294967296.0?UINT32_MAX:uint32_t(std::trunc(normalized)));
+        // 41d49d Do164 is 3B29B0 (installer 36BE3A), not the old
+        // 17d5 poison-ring callback. It emits Calc1 missiles from the owner
+        // toward the target, with the same 36F390 path callback as Firestorm.
+        if(program.missiles[0]<0) return DomainStatus::Unavailable;
+        const int count=formula("calc1");
+        if(count<=0) return DomainStatus::Applied;
+        if(count>512) return DomainStatus::Capacity;
+        for(int index=0;index<count;++index) {
+            auto &spawn=append(position,target,program.missiles[0]);
+            spawn.weapon.reset();spawn.initialization=missiles::NativeSpawn::Initialization::Pd2Firestorm;
         }
-        missiles::NativeSpawn::DamageAdds adds;adds.minimumPoison=adds.maximumPoison=poison;
-        int count=row.number("param3");if(count<0) return DomainStatus::Unavailable;
-        if(!count || count>64) count=64;
-        for(int direction=0;direction<64;direction+=64/count) {
-            auto &spawn=append(target,target+missileRingDirection(direction),program.missiles[0]);
-            // This is a fresh spell missile, not another weapon contact.
-            spawn.weapon.reset();spawn.damageAdds=adds;
-        }
-        if(random!=expected) births.front().ownerSeedEdit=std::pair{expected,random};
         break;
     }
     case 175: {

@@ -2,6 +2,7 @@
 #include "core/bytes.hpp"
 #include <span>
 #include <stdexcept>
+#include <string>
 
 namespace d2x {
 class D2sBitReader {
@@ -25,7 +26,7 @@ class D2sBitWriter {
   public:
     void write(uint32_t value, unsigned count) {
         if (count > 32 || (count < 32 && (value >> count)))
-            throw std::runtime_error("D2S item value exceeds native bit width");
+            throw std::runtime_error("D2S item value "+std::to_string(value)+" exceeds native bit width "+std::to_string(count));
         for (unsigned index = 0; index < count; ++index, ++bit_) {
             if (bit_ / 8 == bytes_.size()) bytes_.push_back(0);
             bytes_[bit_ / 8] |= uint8_t(((value >> index) & 1) << (bit_ % 8));

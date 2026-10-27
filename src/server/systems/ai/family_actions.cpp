@@ -115,7 +115,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
         {distance <= monster.rule.meleeRange && clear, controller.charged,
          monsterAiDistance(position, target.type==0?0:size, monster.position), monster.rule.difficulty, controller.random,
          monster.hitOccurrence != controller.observedHit, int(monster.area) == 17,
-         int(monster.life * 100 / monster.maximumLife), controller.commanded, controller.alerted,
+         monster.maximumLife?int(monster.life * 100 / monster.maximumLife):0, controller.commanded, controller.alerted,
          ports_.monsters.minionOwner(id) == id, controller.phase, controller.loop, targetLife, monster.rule.web && ports_.effects.unitStates(id,tick.tick).contains(monster.rule.web->aura.id), clear};
     input.trapAxisAligned=std::abs(int(std::floor(position.x))-int(std::floor(monster.position.x)))<6 || std::abs(int(std::floor(position.y))-int(std::floor(monster.position.y)))<6;
     for(size_t slot=0;slot<monster.rule.skillIds.size();++slot) if(monster.rule.skillIds[slot] && monster.rule.skillActions.contains(monster.rule.skillIds[slot])) input.skillMask|=uint8_t(1u<<slot);

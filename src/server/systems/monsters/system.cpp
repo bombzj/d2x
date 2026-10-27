@@ -1,5 +1,8 @@
 #include "system.hpp"
 #include "server/systems/attributes/pd2/map_values.hpp"
+#include "server/systems/travel/system.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
+#include "gameplay/monsters/pd2/boss_program.hpp"
 #include "server/systems/attributes/monster_sources.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "gameplay/rules/arithmetic.hpp"
@@ -97,9 +100,14 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     publishComponents(palettes);publishActors(publication);ports_.random=random;
     return finish(id);
 }
-DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,EntityId id,uint64_t &random,ComponentPaletteState &palettes,uint64_t itemCursor,const std::set<size_t> *stagedUniques) {
+DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,EntityId id,uint64_t &random,ComponentPaletteState &palettes,uint64_t itemCursor,const std::set<size_t> *stagedUniques,std::shared_ptr<RoomUnitRegistration> room) {
     if(!request.rule || !request.rule->stats || !request.rule->formulas || request.rule->minimumLife<0 ||
         request.rule->maximumLife<0) return {DomainStatus::InvalidRequest,{}};
+    if(const auto *area=ports_.areas.find(request.area);area && area->definition.pd2Map &&
+       area->definition.pd2Map->controller>=41 && area->definition.pd2Map->controller<=45 &&
+       pd2::scenePauseClass(request.identity.nativeClass) &&
+       (area->provisionalPd2Map || ports_.travel.read().pd2SceneOpening))
+        return {DomainStatus::PendingContent,{}};
     const auto &rule=*request.rule;
     Actor actor;
     actor.admissionTick=request.tick;
@@ -163,9 +171,13 @@ DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,Entit
         actor.life=change.life.raw();actor.maximumLife=change.maximum.raw();
     }
     if(const auto *area=ports_.areas.find(actor.area);area && area->definition.pd2Map)
-        attributes::preparePd2MapMonster(actor,*area->definition.pd2Map,request.tick,request.deadMode,area->definition.pd2RuntimeGlobal);
+        attributes::preparePd2MapMonster(actor,*area->definition.pd2Map,request.tick,request.deadMode,ports_.travel.read().pd2SceneParticipants,area->definition.pd2RuntimeGlobal);
     if(request.pd2SceneLifePercent) attributes::preparePd2SceneMonster(actor,request.pd2SceneLifePercent,request.tick);
-    actor.roomAdmission=ports_.areas.prepareRoomUnit(id,1,actor.area,actor.position);
+    // MONSTER_Reinitialize rebuilds the existing unit in its existing room.
+    // Its caller supplies that registration before preparation: creating a
+    // second one here throws before the caller can restore the original.
+    if(room && !ports_.areas.validateRoomUnit(*room,id)) return {DomainStatus::Stale,{}};
+    actor.roomAdmission=room?std::move(room):ports_.areas.prepareRoomUnit(id,1,actor.area,actor.position);
     return {DomainStatus::Applied,std::move(actor)};
 }
 std::optional<EquipmentPreparation> System::pendingEquipment() {

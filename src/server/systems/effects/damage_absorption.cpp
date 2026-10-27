@@ -159,8 +159,13 @@ DomainResult<> System::commitUnitReception(UnitReceptionPlan &plan) {
     auto &publication=*plan.publication;
     if(!validateAuraUnits(publication)) return {DomainStatus::Stale,{}};
     const auto *unit=ports_.monsters.find(plan.target);if(!unit) return {DomainStatus::Stale,{}};
-    const auto result=ports_.events.publish({0,plan.tick,{}, {AudienceKind::Area,{},unit->area},publication.facts});
-    if(result) {publishAuraUnits(publication);plan.publication.reset();}
-    return result?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{result.status,{}};
+    if(!publication.facts.empty()) {
+        const auto result=ports_.events.publish({0,plan.tick,{}, {AudienceKind::Area,{},unit->area},publication.facts});
+        if(!result) return {result.status,{}};
+    }
+    // A native direct resource write (including Rathma's mirror) has no
+    // mandatory wire fact. An empty event batch is invalid, not backpressure.
+    publishAuraUnits(publication);plan.publication.reset();
+    return {DomainStatus::Applied,std::monostate{}};
 }
 }

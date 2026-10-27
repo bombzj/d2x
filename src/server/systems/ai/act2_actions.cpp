@@ -45,7 +45,7 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
     if(kind==MonsterAiKind::Scarab) controller.commanded=!controller.commands.empty() && controller.commands.front().code==1;
     MonsterDecisionInput combat{target.id!=id && meleeDistance(monster.position,monster.rule.size,point,size)<=monster.rule.meleeRange && clear,
         controller.charged,distance,monster.rule.difficulty,controller.random,monster.hitOccurrence!=controller.observedHit,false,
-        int(monster.life*100/monster.maximumLife),controller.commanded,controller.alerted,
+        monster.maximumLife?int(monster.life*100/monster.maximumLife):0,controller.commanded,controller.alerted,
         ports_.monsters.minionOwner(id)==id,controller.phase,controller.loop,100,false,clear};
     combat.continuation=continuation;combat.hasCommand=!controller.commands.empty();
     combat.canShoot=bool(shootable);combat.shootDistance=shootable?shootable->distance:INT32_MAX;

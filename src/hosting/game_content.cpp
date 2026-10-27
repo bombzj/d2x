@@ -84,7 +84,7 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
         // Quest gates stay closed until that authority is implemented.
         const bool guarded = exit.destination == 73 || exit.destination == 100 || exit.destination == 113 ||
             exit.destination == 128 || exit.destination == 132;
-        area.exits.push_back({{}, RegionId(exit.destination), exit.selection.id, exit.slot, exit.position, arrival, guarded, {float(exit.selection.exitX), float(exit.selection.exitY)}});
+        area.exits.push_back({{}, RegionId(exit.destination), exit.selection.id, exit.slot, exit.position, arrival, guarded, {float(exit.selection.exitX), float(exit.selection.exitY)},exit.rooms});
     }
     for (const auto &edge : result.terrain.recipe.boundaries)
         area.boundaries.push_back({RegionId(edge.destination), edge.side,

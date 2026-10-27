@@ -89,7 +89,7 @@ ProjectDiablo核心的技能CltDo／渐进回调及喷流程序同时用于`pd2-
 
 `presentation/world/client_missile_view.cpp`已补该公共回调及每弹的上一帧换格记忆，复用当前SEED、飞弹创建、固定寿命和suppressLight输入；原先移动后只生第一种子弹的路径已移除。当前981有982／firesmall／firemedium三个候选，CltParam1=4；997仅998，仍抽光照门控，998寿命20后由CltHit53生999。`CelFile=null`早已有imageLessProjectiles消费者，997无需补图或替换原图；空文件和真正缺资源继续不可用。
 
-CltHit53为原Client B5A10，读取CltHitSubMissile1与父DynamicPath目标坐标（+0x10／+0x12；配套Common10983／10764），再把cHitPar1／2／3传入子图形的弹跳／初始轨迹；当前998三项均零。服务端原Do6及Hit48分别见D2MOO MissMode的对应回调，并以配套Game为后续核对入口。指令材料为`town-queries/gap-royal-fire/client-b92b0-instructions.json`及`client-b5a10-instructions.json`；InitSteps在B3535设置初始隐藏标志，B1862按原生经过帧数解除，并非预先移动；客户端已保存绝对路径目标而非用移动后的当前位置加旧方向，避免子体偏移；“首路径点”是原反编译命名误导，实际不是PathPoints[0]。InitSteps初始隐藏只约束绘制，只有激活且原生经过帧严格大于InitSteps才解除；B195C之后的原碰撞分支不读取隐藏位，因此隐藏不能额外屏蔽地形／单位接触。绘制不再以动画年龄重复裁剪，接触独立保留原激活门控。原视觉种子初态、完整同帧交错及逐像素表现仍需原生对照，本轮修改待最终统一构建实测。
+CltHit53为原Client B5A10，读取CltHitSubMissile1与父DynamicPath目标坐标（+0x10／+0x12；配套Common10983／10764），再把cHitPar1／2／3传入子图形的弹跳／初始轨迹；当前998三项均零。服务端原Do6及Hit48分别见D2MOO MissMode的对应回调，并以配套Game为后续核对入口。指令材料为`town-queries/gap-royal-fire/client-b92b0-instructions.json`及`client-b5a10-instructions.json`；InitSteps在B3535设置初始隐藏标志，B1862按原生经过帧数解除，并非预先移动；客户端已保存绝对路径目标而非用移动后的当前位置加旧方向，避免子体偏移；“首路径点”是原反编译命名误导，实际不是PathPoints[0]。InitSteps初始隐藏只约束绘制，只有激活且原生经过帧严格大于InitSteps才解除；B195C之后的原碰撞分支不读取隐藏位，因此隐藏不能额外屏蔽地形／单位接触。绘制不再以动画年龄重复裁剪，接触独立保留原激活门控。相关改动已纳入客户端／独立服务端构建；原视觉种子初态、完整同帧交错及逐像素表现仍待原生对照。
 
 ### PoisonEggSpawn的双端委托
 
@@ -98,6 +98,16 @@ CltHit53为原Client B5A10，读取CltHitSubMissile1与父DynamicPath目标坐�
 服务端安装`36A560`将SrvDo173设为`3B1090`：原技能／等级调用原Do22，再以技能159／相同等级调用原Do84，并忽略第一次返回值。SrvSt43仍是原版清目标标志／死亡碰撞。当前MPQ的453PoisonEggSpawn使用St43／Do173／Clt109，MonStats880 torajanBossPoisonEgg的AI为GargoyleTrap，Skill1模式为seq_maggotegg；子怪来自该行spawn（torajanBossMaggot）、spawnmode。不能因AI名相同而准备为普通陷阱射线。
 
 `hosting/pd2/monster_actions.cpp`独立准备该动作，`skills/pd2/monster_skills.cpp`只编排Do22→Do84，复用公共毒环和孵化能力；数量用当前Skills159.calc1及本次等级，实际子怪／动画／碰撞从MPQ准备。毒环完成标记与孵化发布状态跨容量重试保留，不重复发环或创建已发布子体；孵化终止本体，沿公共无经验子怪和死亡处理。代码已构建，完整场景入口、出生／死亡随机交错及非本人像素表现仍未认证，不据此解除Torajan场景控制器的拒绝。
+
+当前41d49的Do181为3B4CD0，沿原St49保存MonStats.spawn／spawnx／spawny／spawnmode，保留0x100出生占位，再在Do释放占位并作真实房间出生；成功次数以Skills.Param1为上限，只在出生成功后增加，子体设置NOXP／NOTC及真实SumOverlay。`hosting/pd2/monster_actions`为TorajanBossNest准备Nest动作，公共原生Nest出生消费者接同一子类与S1时钟，失败不增加次数。PoisonEggSpawn的Do173另由上节毒环与孵化链处理，不能用Do181直接跳过卵的生命周期。
+
+### 当前Do164与怪物动作输入
+
+41d49的安装器36BE3A把SrvDo164绑定3B29B0；不可套用17d5的3B0130旧毒环算法。实际函数复制Skills记录，读SrvMissileA及Calc1，从施法者坐标朝当前目标逐枚出生，设置0x21与36F390回调。36F390将寿命上限设为77、更新主人路径种子并交给ChargedBolt路径10；与当前Firestorm使用同一初始化。`skills/pd2/projectiles.cpp`复用`Pd2Firestorm`出生初始化，既不要求武器，也不额外掷物理／装备毒伤或使用Param3生成圆环。当前蜘蛛481的Calc1为min(ln12,20)；玩家73的Calc1为空，原求值为0，不补默认弹数。St68接触仍由独立武器执行器负责。
+
+41d49的Do6由36BC98挂3AE7A0，读取AuraTargetState、AuraLenCalc、AuraRangeCalc及六项AuraStat／Calc，经本人中心的原Aura回调施加；不是零售Do006只读取第一项属性的算法。怪物Slow Movement17保留这六项准备和本人圆心，不要求存在单位目标。
+
+MonJab的St5／Do7沿原SkillAma Do007在命中判定前刷新怪物S1（模式8）的数值，显示序列不决定伤害槽。当前Do178为3B4160，先传送再分配／排空踢击，使用Calc2伤害比例；非玩家的踢击基础取原Common的等级×3，再分别除4／3，不能使用玩家力量＋敏捷−20。`AssassinKickInput.monsterLevel`只表明实际施法者类型，装备踢伤与元素仍用该单位真实来源。怪物起手缓存可以先于踢击游标存在，`startAssassinKick`按游标是否实际存在初始化，不能以map插入结果代替游标有效性。
 
 ### 渐进事件与扇形
 
@@ -139,7 +149,7 @@ CltHit6旧3A1DC0／更新3A4140只在无接触单位、当前帧大于1且介于
 
 Teleport=2通过原0x804射线检查，按来源尺寸与固定目标尺寸2缩短两端；公共Grid::interactionSegment增加掩码和来源尺寸输入，原调用默认仍为0x804／2。Teleport=3先用来源尺寸／0x80D寻位，失败仍沿原坐标；37E170拼接当前与目标房间的NearRoom数组，按各自单位链为613／614／615选首个最近物件，距离为Common10522的去尺寸后`2*max+min`。613在距离小于25且任一轴没有严格同侧时触发检查；614要求X没有严格同侧且与来源Y差小于25；615交换两轴。触发后同时检查目标3×3／0x80D矩形与0x80D缩短射线。当前对应Levels152／164／171／194，物件名blocker_teleport_xy／x／y，读取实际MPQ位置；不自造墙或禁传区域。
 
-怪物当前直接调用者357Blink与573LucionBlink已由hosting准备为真实Teleport动作，`activatePd2MonsterTeleport`执行上述区域／状态门控，再走0x1C09落点与公共怪物位置发布；573按Calc2=32经36BAA0的64方向整数步进生成落地环。已补同幕邻房跨区域落点：复验目的区域代次、原邻房可达及碰撞，转移单位房间／占位，并同步内外两层技能续办区域及缓存坐标。已移动后不再次位移，落地环在新区域创建。当前两技能没有掌握减益，其他怪物减益组合仍拒绝。
+怪物当前直接调用者357Blink与573LucionBlink已由hosting准备为真实Teleport动作，`activatePd2MonsterTeleport`执行上述区域／状态门控，再走0x1C09落点与公共怪物位置发布；573按Calc2=32经36BAA0的64方向整数步进生成落地环。已补同幕邻房跨区域落点：复验目的区域代次、原邻房可达及碰撞，转移单位房间／占位，并同步内外两层技能续办区域及缓存坐标。已移动后不再次位移，落地环在新区域创建。当前41d49的36BB90将Do155绑定3B16B0；该回调对有效AuraState没有玩家类型门槛。怪物Teleport54因此也准备掌握减益，玩家／怪物共用`prepareTeleportDebuff`，按当前列表采样四种掌握，保留浮点计算、固定期限和原属性写入；357／573无该状态，不额外添加减益。
 
 Do155落地环已抽为同领域私有消费者，玩家／怪物共用SrvMissileA及Calc2输入；当前普通玩家Teleport没有SrvMissileA，不能据此编造附加弹。Gust的落地飞弹及范围脉冲分别保留准备／发布阶段。移动／费用一旦提交，续办立即绑定当前区域并保留nativeCallbackStarted，避免最后一次充能移除技能指针、换区或飞弹背压使后继效果被丢弃。该组修正已构建，跨区／末次充能／多人交错待最终验证。
 

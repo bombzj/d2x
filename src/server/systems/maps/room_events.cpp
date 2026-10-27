@@ -155,7 +155,9 @@ DomainResult<bool> System::populateRoom(RegionId region,size_t index,int process
         const auto &point=*cursor.position;
         if(program==21) {
             if(!cursor.portal.portalObject) {cursor.portal.portalObject=cursor.source;cursor.portal.portalPhase=1;}
-            const pd2::MapPortalProgram portal{173,0,586,1,1,{},true};
+            // Current 370060 passes level 0xCF to 38A1F0. Level 173 belongs
+            // to the separate legacy Butcher controller, not event 21.
+            const pd2::MapPortalProgram portal{207,0,586,1,1,{},true};
             const auto linked=advanceDeathPortal(point.area,cursor.portal,portal,586,point.position,0,tick);
             if(!linked) return {linked.status,{}};
             if(!cursor.portal.portalDestination) {cursor.done=true;return finish();}

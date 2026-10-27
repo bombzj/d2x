@@ -72,6 +72,9 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
             const auto *base = data.items.find(equipped.code);
             const bool active = (equipped.mode == 1 && equipped.body <= 10) || (equipped.mode == 0 && equipped.page == 1 && base && base->equipment.isType("char"));
             if (!active) continue;
+            // ITEMS_IsCharmUsable also passes ITEMS_CheckRequirements;
+            // unidentified charms contribute no equipped stats.
+            if (!(equipped.flags & 0x10u)) continue;
             const auto equipment = items.read().items.find(equippedId);
             if (equipment == items.read().items.end() || !equipment->second.decoded || equipment->second.revision != equipped.revision) return {};
             const auto instance = completeItem(equipped, equipment->second, SocketLocation{{}, 0});

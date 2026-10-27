@@ -1,6 +1,7 @@
 #pragma once
 #include "resources/formats.hpp"
 #include "content/world/world_catalog.hpp"
+#include "world/room_layout.hpp"
 #include <algorithm>
 #include <map>
 #include <memory>
@@ -58,6 +59,7 @@ struct MapTerrain {
     struct Exit {
         int slot{}, destination{}; WarpRecord selection; Vec position;
         std::vector<size_t> visible{}, lit{};
+        std::optional<NativeWarpRooms> rooms;
     };
     std::vector<Exit> exits;
     std::string name, path;

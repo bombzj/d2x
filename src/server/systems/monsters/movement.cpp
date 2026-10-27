@@ -187,7 +187,13 @@ uint64_t System::resumeAi(EntityId id,uint64_t tick,uint64_t scheduled) {
 }
 void System::finishAction(EntityId id,uint64_t tick) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end()) return;
-    auto &actor=found->second;recordNativeMode(actor,1);actor.nativeActionUntil=actor.busyUntil=tick;
+    auto &actor=found->second;
+    // SplEndGeneric's immediate AI branches retain the completed mode.
+    // beginAttack already distinguishes them by omitting neutralAt. In
+    // particular, resetting a Demon Pillar's Emerge to NU makes its native
+    // AI choose Emerge again forever instead of proceeding to its attack.
+    if(actor.neutralAt) recordNativeMode(actor,1);
+    actor.nativeActionUntil=actor.busyUntil=tick;
     if(actor.skillMotion && (actor.skillMotion->leaperRecovery || actor.skillMotion->eventDriven)) {actor.skillMotion.reset();actor.moving=false;}
     if(actor.neutralAt) actor.neutralAt=tick;
     ++actor.revision;

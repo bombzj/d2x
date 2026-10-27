@@ -274,7 +274,12 @@ std::optional<std::pair<RegionId,size_t>> AreaStore::unitRoom(RegionId region,Ve
     return std::pair{region,size_t(room-area->definition.activation.rooms().data())};
 }
 std::shared_ptr<RoomUnitRegistration> AreaStore::prepareRoomUnit(EntityId id,uint8_t kind,RegionId region,Vec point,std::optional<RoomView> nativeRoom) const {
-    if(!id || kind>5 || roomUnits_.contains(id)) throw std::invalid_argument("Invalid room unit registration");
+    if(!id || kind>5) throw std::invalid_argument("Invalid room unit registration: id="+std::to_string(id.value)+", kind="+std::to_string(kind));
+    if(const auto found=roomUnits_.find(id);found!=roomUnits_.end())
+        throw std::invalid_argument("Duplicate room unit registration: id="+std::to_string(id.value)+
+            ", kind="+std::to_string(kind)+", area="+std::to_string(int(region))+
+            ", existing kind="+std::to_string(found->second.kind)+
+            ", area="+std::to_string(found->second.room?int(found->second.room->first):0));
     auto room=unitRoom(region,point);
     if(nativeRoom) {
         if(nativeRoom->area!=region) throw std::invalid_argument("Native room belongs to another area");

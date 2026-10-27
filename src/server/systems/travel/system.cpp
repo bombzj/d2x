@@ -19,6 +19,24 @@
 #include <cmath>
 namespace d2x::server::travel {
 namespace {
+const AreaExit *reciprocalExit(const AreaDefinition &source,const AreaDefinition &destination,EntityId id) {
+    const auto leaving=std::find_if(source.exits.begin(),source.exits.end(),[&](const auto &exit){return exit.id==id;});
+    if(leaving==source.exits.end()) return nullptr;
+    const AreaExit *back=nullptr;
+    for(const auto &exit:destination.exits) if(exit.destination==source.id) {
+        // DRLGWARP_GetDestinationRoom follows the source room tile, then
+        // selects the destination tile pointing back to that same room.
+        if(leaving->rooms && exit.rooms) {
+            const auto &from=*leaving->rooms,&to=*exit.rooms;
+            if(from.destinationX==to.sourceX && from.destinationY==to.sourceY &&
+               from.sourceX==to.destinationX && from.sourceY==to.destinationY) return &exit;
+            continue;
+        }
+        if(back) return nullptr;
+        back=&exit;
+    }
+    return back;
+}
 std::deque<Vec> playerRoute(const Grid &grid,Vec from,Vec to) {
     constexpr Vec center{.5f,.5f};
     auto route=grid.nativePlayerPath(from+center,to+center,playerMovement);
@@ -301,10 +319,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
         }
         if (transition.kind==Kind::Exit) {
-            const AreaExit *back = nullptr;
-            for (const auto &exit : destination->definition.exits) if (exit.destination == transition.from) {
-                if (back) { back = nullptr; break; } back = &exit;
-            }
+            const auto *back=reciprocalExit(source->definition,destination->definition,transition.source);
             if (!back) { pending = state_.transitions.erase(pending); continue; }
             arrival = back->arrival; exitWalk = back->exitWalk;
         }
@@ -366,6 +381,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             ports_.world.retainControllerRoom(found->second.town,found->second.townPosition,false);
             writePortalCollision(found->second,false);state_.specialPortals.erase(found);
         }
+        // Keep confirmed arrivals separate from the cohort used at birth.
+        // 38A680's transfer pass only counts units at the destination.
         state_.pd2SceneOpening=false;
     }
     return state_.transitions.empty() && synchronizationStatus==StepStatus::Complete ? StepStatus::Complete : StepStatus::Blocked;

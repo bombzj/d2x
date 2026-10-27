@@ -10,6 +10,8 @@
 
 基础生命、等级、伤害、防御、抗性、速度、组件和人口参数继续读取当前MonStats／MonStats2／MonLvl及区域输入，不为每个地图变种复制原版参数。真实身份、原图、AI程序、技能程序、出生／死亡及掉落是不同的接入条件；只有数据记录不能作为完整怪物实现的证明。
 
+UMod26沿原D2MOO `MONSTERUNIQUE_UMod26_Teleport`独立登记MonTeleport及模式4，不要求存在普通A1伤害。PD2的FetishShaman等只有A1技能标记的家族，词缀准备沿`hosting/pd2/monster_actions::prepareNativeClock`读取真实动作时钟；不能因`rule.attacks`没有4拒绝暗金准备并阻塞人口续办。原有A1攻击家族仍沿其已准备时钟，缺真实动作资源继续拒绝。
+
 ## MonStats与预设身份
 
 已确认：目标`monstats.bin`有1283条、每条424字节，名称链接采用编译记录顺序；TXT的hcIdx不是该表的编译字段。row1198的BIN首WORD ID为1198，同名fallen1Nakrul的TXT hcIdx为1199；末row1282的BIN ID为1282，TXT hcIdx为1284。
@@ -39,6 +41,8 @@ MonStats2.MeleeRng按原BYTE编译。当前spiritofbarbs的TXT值999对应BIN值
 MonStats技能名称按原NAMETOWORD忽略大小写链接，失败编译为-1；D2MOO `MONSTERS_Initialize`不授予该槽。当前putriddefiler1dungeon（编译类1051）的Skill4=MonLowRes在Skills已无定义；配套monstats.bin的+0x170八槽为`335,92,588,-1,-1,-1,-1,-1`。准备已跳过这个原生无效槽，AI动作按链接后的Skills名称选择；表中存在但公式未准备的技能仍报出具体名称，不默默省略。
 
 ## 怪物技能程序准备
+
+初始战斗数值、经验和技能S1属性沿Common `DATATBLS_CalculateMonsterStatsByLevel`只钳MonLvl查表行，保留真实单位等级。当前Uber三首领Level(H)=120而MonLvl终行110，不能据此拒绝出生或把单位等级降为110。当前monstats.bin的三首领地狱TC1–3为65535，TXT中的Uber Soul在TreasureClassEx无链接；原Common的TC查询返回空，普通TC不发奖，场景41独立负责火炬及徽章。
 
 `src/hosting/pd2/monster_actions.cpp`按Skills的srvstfunc／srvdofunc、MonStats八个技能槽及真实动画准备PD2动作，不再要求新增技能沿用原版技能名称。服务端较大差异归`src/server/systems/skills/pd2/monster_skills.cpp`；原版动作准备和调度保持公共入口。普通ENDANIM后的NU等待复用[公共动作与AI时钟](../gameplay/monsters/COMMON.md#动作死亡与奖励)，使用当前PD2表的aidel；动作锁导致的唤醒推迟不视作独立AI等待，专用程序显式登记的未来等待仍保留，完整组合待实机核对。
 
@@ -119,9 +123,9 @@ Leoric的当前指令链`0x35D820→0x36DB70`每次专用思考只抽一次PD2�
 
 弓箭手首领894沿`pd2/archer.cpp`消费当前`357330`：446／447为真实阶段及交替计数，阶段切换写六抗并增删状态8。该函数的固定aip1／aip1(N)／aip2／aip2(N)及H列抗性分别准备，不能套当前难度选择器；游走39F550实际委托GameF1B10，百分比39F570委托Game1180，二者都沿普通D2 SEED，不使用PD2事件随机或CRT。状态事实和未完成写入沿现有可续办队列；完整场景仍待原版对照，证据及边界见F27。
 
-宝藏沉沦魔沿`pd2/treasure_fallen.cpp`消费当前`35A180`的固定aip8(H)=1分支。受伤每跨过一个生命十分位可追加一次普通无主TC调用，每轮至多一次；同一AI的三个原参数还管理停滞传送，不能误作复活。存活掉落与死亡掉落按独立发生顺序排队，内容异步准备期间该AI暂停，返回后继续借用真实单位随机。原生DropItems绑定、当前调用者及目标／死亡交错未验边界见F31；没有恢复M03事件出生控制器，不以该怪物可单独执行证明整个事件完成。
+宝藏沉沦魔沿`pd2/treasure_fallen.cpp`消费当前`35A180`的固定aip8(H)=1分支。受伤每跨过一个生命十分位可追加一次普通无主TC调用，每轮至多一次；同一AI的三个原参数还管理停滞传送，不能误作复活。存活掉落与死亡掉落按独立发生顺序排队，内容异步准备期间该AI暂停，返回后继续借用真实单位随机。原生DropItems绑定、当前调用者及目标／死亡交错未验边界见F31；M03事件出生控制器沿F60接入，不以该怪物可单独执行证明整个事件完成。
 
-SharpTooth1105的35DA60前置、Summoner747／1093的358350前置及Westmarch996的357EE0分支已接`pd2SpecialAction`，分别见F32–F34；都完整场景仍待原版对照。Summoner其余普通首领未命中特判时仍委托原Fn053，不能把Rathma分支长度当作每个首领都缺一套独立算法。755已按固定aip5(H)门槛补真实69／446、两种近战选择及第四槽；St68→原St32与怪物Rabies分别复用公共接触与感染程序，见F35–F37。共用PD2施法失败后继保留中立等待10及后续写入，移动中计时按实际登记区分；均完整场景仍待原版对照。35DA60的Invader／Lucion及357EE0的Rathma治疗仍保留独立缺口。
+SharpTooth1105的35DA60前置、Summoner747／1093的358350前置及Westmarch996的357EE0分支已接`pd2SpecialAction`，分别见F32–F34；都完整场景仍待原版对照。Summoner其余普通首领未命中特判时仍委托原Fn053，不能把Rathma分支长度当作每个首领都缺一套独立算法。755已按固定aip5(H)门槛补真实69／446、两种近战选择及第四槽；St68→原St32与怪物Rabies分别复用公共接触与感染程序，见F35–F37。共用PD2施法失败后继保留中立等待10及后续写入，移动中计时按实际登记区分；均完整场景仍待原版对照。Invader／Lucion已有F60／F61的独立消费者，不再笼统记为缺少控制器；Lucion及子体的当前资源准备已有自研运行观察，剩余多人／失败／恢复与原生整场对照沿GAP_PLAN的M04核实。357EE0的Rathma治疗及其余未闭合分支继续按实际入口单独核对。
 
 GuardianOfFate的`0x35A470`使用CRT流，三项AI记忆为延后Blink标记、召唤概率累加及已召唤计数；本体最多六次，克隆不走召唤分支。延后Blink先清标记并各抽X／Y偏移[-8,7]，寻位成功即施放并返回；失败后才继续本轮百分比。召唤未命中时本体累加`6-计数`，普通分支小于80施放VoidBolt、80–94再次尝试Blink，其余按难度aidel等待。当前MPQ确认1064／1065分别为本体／克隆，AI字段均为Regurgitator；前三槽是Blink357、VoidBolt493、GuardianOfFateSummon550，克隆没有第三槽。`server/systems/ai/pd2/guardian.cpp`已在真实身份／有目标时接此分支，无目标仍走原家族；CRT借用现有宿主pd2ProgramRandom，三项记忆沿公共AI切换清零，待执行动作保留坐标和决定，不因容量重试重掷。
 
@@ -133,9 +137,15 @@ GuardianOfFate的`0x35A470`使用CRT流，三项AI记忆为延后Blink标记、�
 
 当前SrvHit6接普通、无附属碰撞物件的NU／S1出生；859→999 Leoric守卫及864→1001攻城兽火山的sHitPar2均为8，按实际S1资源准备birthTicks并沿公共出生等待／模式事实，缺动画明确暂缓。979额外的完整目标位及INITSEEDSET已接，其他未核实模式、特殊预设／暗金ID或部分目标位仍拒绝；当前五个直接调用者见[技能](SKILLS.md#刀刃反射)。出生基础调用对照D2MOO MonsterRegion／MonsterSpawn。Guardian决策、Orb和克隆出生的先前构建及管理准入已观察本体357／493／550及克隆357／493技能，完整战斗场景未验；新补的跨区Blink及出生标志已构建，完整跨区／出生场景尚待验证。Hell集合的空初始化证据及外部配置边界见[传送门控](SKILLS.md#pd2传送落点与怪物blink)；完整休眠重建、全局随机交错及场景死亡／奖励／释放仍未闭合，不据此宣布P3场景完成。
 
+原版MonsterMode的`sub_6FC641D0`在SplEndDeath=1时，将原单位交给`MONSTER_Reinitialize`并继续AI，Fetish Shaman的死亡子体保留GUID及房间登记。重初始化的Baal换类、Overseer变形和死亡换类入口在准备新属性之前传入现有RoomUnitRegistration，经身份校验后复用；不能先准备第二份登记、再在返回后覆盖，否则在真正换类前就因重复GUID中断。普通新生及休眠恢复仍须各自建立新登记。
+
 ## 召唤实体与伙伴
 
 当前死灵内容准备为`src/content/pd2/summon_data.cpp`，德鲁伊／刺客继续使用各自领域准备；PetType使用原生idx，不能跨Expansion分隔行直接取TXT物理行号或Id。骷髅、法师、弓手、石魔的MonStats、MonProp、隐藏攻击及数量／生命公式使用当前表。
+
+德鲁伊伙伴容量沿原PlayerPets::sub_6FC7DF40扫描全部实际技能实例，包括按物品GUID登记的充能技能；每条分别计算petmax并至少取1，同PetType取最大值，没有实例时才取当前PetType.basemax。切组／撤下装备使登记来源改变时重新计算，数量变化不把尚存的技能记录误删；容量刷新不重掷既有召唤属性。乌鸦原Fn107的首次攻击次数按SKILLS_GetHighestLevelSkillFromUnitAndId取得主人技能等级：优先无归属实例，否则取最高充能等级，不能只读取职业技能表。准备入口为druid_data，消费者为companions/druid_ai。
+
+当前sarcophagusBitterDepths的地狱MinHP／MaxHP空字段沿编译表为零。原DATATBLS_CalculateMonsterStatsByLevel及Monster.cpp出生不补成正数，存活由怪物模式保持；内容准备与Nest出生检查因此允许真实零生命实体，不以沉沦魔参数替代。AI生命比例在最大生命为零时沿UNITS_GetCurrentLifePercentage返回零；子体身份、出生间隔、数量及动画仍取当前MonStats／Skills，不给石棺补造生命或攻击。
 
 弓手复用受控远程角色的实现载体，但保留自身原生class、组件、飞弹、技能及属性，不把实际身份替换为法师。Desecrate死态实体无经验／掉落、部分出生失败保留已创建尸体及到期取消选择的规则归[技能负责条目](SKILLS.md#desecrate召唤和诅咒的数据边界)，不与自然人口生成混为一条路径。
 
@@ -147,7 +157,7 @@ GuardianOfFate的`0x35A470`使用CRT流，三项AI记忆为延后Blink标记、�
 
 罗格Strafe使用实际佣兵武器、原范围／射数公式及GUID后继选择；每次Do12后按Param6回卷公共原生动作时间线。第三幕Static Field以佣兵为实际施法者执行Do160与难度生命下限，随后施加原目标状态；第五幕战吼对实际佣兵及合资格目标生效。程序位于`skills/pd2/monster_skills.cpp`，复杂装备、极端速度及全部佣兵类型组合仍需分别核对。
 
-伙伴换区后，旧房间可能已经停止AI事件。`companions::System::step`对离开主人活动房间／区域或主人传送版本变化的伙伴调用既有think／跟随程序并重新安排AI，保持原跟随距离、碰撞、失效和繁忙门槛。Iron Golem沿既有金属材料消费、装备来源及原生ironGolem保存／恢复；Revive保留原实体、家族动作、限时及所属关系，家庭AI与伙伴跟随分别调度，不能将复活等同于替换怪物类型。单个家族可运行不代表全部复活家族已认证。 铁魔材料的持续耐久／数量／充能已接原物品时钟及实体／主人材料原子提交，具体规则见[材料再生](ITEMS.md#物品充能恢复)。刷新装备来源时递归比较Item子列表，避免只比较根base而漏掉参数层变化；原版消费者共用该来源更新修正。新代码已通过双端构建，召唤、换区、死亡、离局／读档实测仍未完成。
+伙伴换区后，旧房间可能已经停止AI事件。`companions::System::step`对离开主人活动房间／区域或主人传送版本变化的伙伴调用既有think／跟随程序并重新安排AI，保持原跟随距离、碰撞、失效和繁忙门槛。Iron Golem沿既有金属材料消费、装备来源及原生ironGolem保存／恢复；Revive保留原实体、家族动作、限时及所属关系，家庭AI与伙伴跟随分别调度，不能将复活等同于替换怪物类型。单个家族可运行不代表全部复活家族已认证。 铁魔材料的持续耐久／数量／充能已接原物品时钟及实体／主人材料原子提交，具体规则见[材料再生](ITEMS.md#物品充能恢复)。刷新装备来源时递归比较Item子列表，避免只比较根base而漏掉参数层变化；原版消费者共用该来源更新修正。材料再生、连续触发、主人死亡撤销及kf保存恢复的实际边界见物品分册；全部伙伴和复活家族的组合仍未认证。
 
 地图状态198的出生与玩家换区回调已分别核定，现有伙伴不直接套用仅限UnitType0的389040；规则和未闭合重建范围见[地图来源](MAP_PROPERTIES.md#路由和单位属性)。连续影子／陷阱的施法事件重新登记及Raven空起手的ItemCheckStart已补源码，资格、延迟和未准备的召唤变体仍沿[物品触发](ITEMS.md#装备触发与装备自带技能)。铁魔材料已接真实耐久上限／破损装备资格及持续恢复时钟，仍需统一运行覆盖跨区、死亡和原生kf保存／恢复；全部Revive家族的等价认证独立保留。隐藏佣兵Bone Spear的extra_bonespears使用怪物自己的零初始化扩展属性加AC的MonProp与状态，损坏／缺失列表保留未知，不借用主人值。
 
@@ -159,7 +169,7 @@ GuardianOfFate的`0x35A470`使用CRT流，三项AI记忆为延后Blink标记、�
 
 PD2自有宿主使用当前MonStats／Skills等定义并复用公共人口、AI、战斗及掉落系统。`src/content/pd2/town_data.cpp`调用公共掉落准备；没有独立的“全部PD2新增怪物已实现”保证。地图新增怪物及首领的出生、特殊AI、免疫／伤害、死亡程序和专属掉落需逐条定位。
 
-当前880 torajanBossPoisonEgg的Skill1已从普通Trap射线分派修正为PD2毒环后孵化；子怪仍按MonStats.spawn准备，客户端同时消费毒环与序列暂停。当前DLL／原版回调、消费者和未验证边界见[PoisonEggSpawn双端委托](SKILLS.md#poisoneggspawn的双端委托)。此处只是技能链补缺，不代表Torajan场景控制器完成。
+当前879 torajanBoss的St49／Do181准备真实卵的出生位置、模式、占位与成功次数上限，880的inert位不等于中立：其killable、Align及GargoyleTrap AI仍参与敌对单位准入，npc／critter及实际阵营门槛保留。当前880 torajanBossPoisonEgg的Skill1已从普通Trap射线分派修正为PD2毒环后孵化；子怪仍按MonStats.spawn准备，客户端同时消费毒环与序列暂停。当前DLL／原版回调、消费者和未验证边界见[PoisonEggSpawn双端委托](SKILLS.md#poisoneggspawn的双端委托)。此处只是技能链补缺，不代表Torajan场景控制器完成。
 
 Open Wounds对扩展首领935／936的镜像已沿F61接入，保持原来源、独立列表和直接HP语义；该编号限定当前版本，规则归[物品](ITEMS.md#open-wounds与crushing-blow)。Do163对攻击者1112的特殊防御修正限定该接触程序，不能推广成所有怪物攻击的统一减免。
 
@@ -179,7 +189,11 @@ Warlord1060的35A6F0场地阶段、五槽选择与共用守卫属性已沿F45补
 
 ### 专属场景AI
 
-当前41d49的789、933–936、989–991、1112／1113／1141及704／705／709附加仆从分别由ai/pd2/{diablo_clone,rathma_boss,ancients,lucion,uber_minions}消费，原MonStats／aip输入、阶段、出生及结尾链见[F61](FUNCTION_PARITY.md#f61-专属4145控制器的出生与事件依赖)。935／936直接HP、毒与伤口镜像各自保留原资格，不再走第二次伤害抵抗；房间释放暂停与状态241缩放独立于战斗受伤事件。
+当前41d49的789、933–936、989–991、1112／1113／1141及704／705／709附加仆从分别由ai/pd2/{diablo_clone,rathma_boss,ancients,lucion,uber_minions}消费，原MonStats／aip输入、阶段、出生及结尾链见[F61](FUNCTION_PARITY.md#f61-专属4145控制器的出生与事件依赖)。935／936直接HP、毒与伤口镜像各自保留原资格，不再走第二次伤害抵抗；房间释放暂停与状态241缩放独立于战斗受伤事件。接收计划只有直接生命写入、没有网络事实时，`effects::commitUnitReception`仍须提交已复验的属性／生命周期计划，不能向EventOutbox提交空批次而拒绝整次接触；有事实时保留发布成功后提交及背压重试边界。
+
+[pd2RathmaPartner](../../src/server/systems/monsters/pd2/scene_spawn.cpp)沿Maps唯一持有的两个场景绑定按GUID查询，并复验同一MapInstance、区域、绑定槽及935／936互补身份，不再在每次伤害／伤口／状态接触中遍历全局Actor。41d49的305920读取Game2600／2604两个指针，按来源与绑定类选择另一方；原生模式0／12及状态8的资格仍由各镜像消费者保留。恢复或重建后重新查GUID，不缓存裸指针，不更改属性、随机或接触提交次序；实际耗时未量测。
+
+现有自研单机观察已覆盖真实施法的双方直接生命分摊、武器毒状态、连续伤口及一具本体死亡后停止分摊，最终奖励可经金色门户带回城镇并正常保存、新进程恢复。阶段准备使用管理伤害和旅行隔离周边敌人，不能据此宣称整场自然战斗、完整多人／休眠或原生随机轨迹已认证。
 
 Ancients按实际AnimData／MonSeq准备动作标记；Madawc的SC为标记1、A1含两次标记2，分别保留真实施放时序。当前3B1570→371E00的怪物双投从MonStats技能槽模式取MissA1等原字段，不要求玩家武器；原St04对非玩家直接成功，诅咒斧继续普通原飞弹链。Do68仅在AuraState有效时应用本人战吼列表，Battle Cry由原飞弹命中施加目标状态。
 

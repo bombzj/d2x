@@ -85,7 +85,10 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
     if (questClass && request.questFirstKill)
         slot = 3;
     auto entry = source->treasureClasses[request.difficulty][slot];
-    if(!superUnique && !entry && !table.value(row,"TreasureClass"+std::to_string(slot+1)+suffix[request.difficulty]).empty())
+    // The PD2 linker leaves unresolved names as WORD(-1). Native TC lookup
+    // returns null for that ID: e.g. current Uber Soul is deliberately absent
+    // from TreasureClassEx, while its scene controller owns the real reward.
+    if(!data.pd2Host && !superUnique && !entry && !table.value(row,"TreasureClass"+std::to_string(slot+1)+suffix[request.difficulty]).empty())
         return defer("Unknown monster treasure class in source table");
     if (superUnique)
         result.treasureClass = superUnique->treasureClasses[request.difficulty];

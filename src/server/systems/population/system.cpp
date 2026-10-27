@@ -6,6 +6,8 @@
 #include "server/systems/spatial/system.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/systems/maps/system.hpp"
+#include "server/systems/travel/system.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "core/random.hpp"
@@ -656,6 +658,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     for (const auto &[region,roomIndex] : loaded) {
         const auto &area=ports_.areas.at(region);
+        if(const auto &map=area.definition.pd2Map;map && map->controller>=41 && map->controller<=45 &&
+           (area.provisionalPd2Map || ports_.travel.read().pd2SceneOpening))
+            continue; // Entry continuations must settle before native scene birth/scaling.
         const auto monsters=ports_.monsters.restoreRoom(region,roomIndex,tick.tick,ports_.quests.read().actFour.sanctumCleared);
         if(monsters!=StepStatus::Complete) return monsters;
         const auto restored=ports_.objects.restoreRoom(region,roomIndex,tick.tick);

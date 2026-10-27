@@ -288,7 +288,7 @@ struct State {
     // Scoped to the actual instance/area/class, including dynamically born units.
     ComponentPaletteState componentPalettes;
 };
-struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; std::shared_ptr<const SkillRules> skillPrograms; loot::System &loot; const spatial::System &spatial; reactions::ItemTriggers &itemTriggers; };
+struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; std::shared_ptr<const SkillRules> skillPrograms; loot::System &loot; const spatial::System &spatial; reactions::ItemTriggers &itemTriggers; const travel::System &travel; const maps::System &maps; };
 class System {
     friend class NativeBirthPublication;
     State state_;
@@ -315,7 +315,7 @@ class System {
     bool recacheHirelingRoom(Actor &);
     ComponentPaletteState prepareComponents(Actor &,const ComponentPaletteState *staged=nullptr) const;
     void publishComponents(ComponentPaletteState &) noexcept;
-    DomainResult<Actor> prepareAdmissionActor(const Admission &,EntityId,uint64_t &random,ComponentPaletteState &,uint64_t itemCursor=0,const std::set<size_t> *stagedUniques=nullptr);
+    DomainResult<Actor> prepareAdmissionActor(const Admission &,EntityId,uint64_t &random,ComponentPaletteState &,uint64_t itemCursor=0,const std::set<size_t> *stagedUniques=nullptr,std::shared_ptr<RoomUnitRegistration> room={});
     DomainResult<bool> diabloPrison(RegionId,Vec,int,uint64_t,bool probe,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> prepareAdmissionEquipment(Actor &,uint64_t &random,uint64_t itemCursor,const std::set<size_t> *stagedUniques);
     void registerPet(Actor &) noexcept;

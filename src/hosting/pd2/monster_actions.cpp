@@ -35,12 +35,44 @@ bool projectile(const ClassicData &data,size_t row) {
 }
 }
 bool sceneController(const MonsterRecord &record) {return record.index==1141;}
+bool usesSecondaryAttack(const MonsterRecord &record) {
+    // Fn356FC0 selects the traitor's four skills; Fn35D820 selects Leoric's
+    // five skills or A1. Neither requests an unassigned ordinary A2. Their
+    // A2 damage remains available to Do150 independently of the animation.
+    return record.index!=893 && record.index!=998;
+}
 bool hasAttackMode(const ClassicData &data,const MonsterRecord &record,int slot) {
+    return hasMode(data,record,"A"+std::to_string(slot));
+}
+bool hasMode(const ClassicData &data,const MonsterRecord &record,std::string_view mode) {
+    if(mode.starts_with("seq_")) return true;
     const auto &extra=data.tables.at("monstats2");
     const auto name=data.tables.at("monstats").value(record.sourceRow,"MonStatsEx");
     for(size_t row=0;row<extra.rows().size();++row) if(nativeName(extra.value(row,"Id"))==nativeName(name))
-        return extra.number(row,"mA"+std::to_string(slot)).value_or(0)!=0;
+        return extra.number(row,"m"+std::string(mode)).value_or(0)!=0;
     return false;
+}
+bool prepareNativeClock(Archives &archives,const AnimDataTable &animations,const MonsterRecord &record,
+    std::string_view source,server::MonsterAttackRule &action,bool skillAction) {
+    const auto mode=nativeName(source);
+    const auto motion=loadMonsterMotionTiming(animations,record.token,mode,
+        monsterModeWeapon(archives,record.token,mode,record.baseWeapon));
+    if(!motion) return false;
+    const auto marker=std::ranges::find_if(motion->flags,[](uint8_t flag){return flag==1 || flag==2 || flag==4;});
+    if(marker!=motion->flags.end()) {
+        if(!skillAction) return false;
+        const auto clock=loadMonsterActionTiming(animations,record.token,mode,
+            monsterModeWeapon(archives,record.token,mode,record.baseWeapon),*marker);
+        if(!clock) return false;
+        action.duration=animationSecondsTicks(clock->duration);
+        action.release=std::clamp(animationSecondsTicks(clock->impact),1,action.duration);
+        action.animation=AnimationTiming{clock->frames,clock->speed};action.animationAction=clock->actionFrame;
+        action.animationFlags=clock->flags;action.animationEvent=*marker;return true;
+    }
+    // MonMode still runs ENDANIM. An out-of-range marker is not an impact.
+    action.duration=animationSecondsTicks(motion->duration);action.release=action.duration;
+    action.animation=AnimationTiming{motion->frames,motion->speed};action.animationAction=motion->frames;
+    action.animationFlags=motion->flags;return true;
 }
 void prepareMonsterSkillPrograms(const ClassicData &data,server::SkillRules &rules) {
     const auto &monsters=data.tables.at("monstats"),&skills=data.tables.at("skills");
@@ -95,7 +127,7 @@ void prepareMonsterAi(const ClassicData &data,const MonsterRecord &record,server
     }
 }
 bool prepareMonsterActions(Archives &archives,const ClassicData &data,const AnimDataTable &animations,
-    const MonsterRecord &record,server::MonsterRule &rule) {
+    const MonsterRecord &record,server::MonsterRule &rule,std::string *reason) {
     prepareMonsterAi(data,record,rule);
     const auto &stats=data.tables.at("monstats"),&skills=data.tables.at("skills");
     const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
@@ -110,8 +142,10 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
         if((record.ai=="ArcaneTower" && name=="lightning") || name=="healing vortex") continue;
         const int start=skills.number(row,"srvstfunc").value_or(0),function=skills.number(row,"srvdofunc").value_or(0);
         const auto state=skills.value(row,"auratargetstate");
-        const bool curse=!start && function==30 && state!="dark_pact" && data.states.contains(state);
+        const bool curse=!start && (function==6 || function==30) && state!="dark_pact" && data.states.contains(state);
         const bool hydra=start==14 && function==144;
+        const bool submerge=start==51 && function==94;
+        const bool emerge=start==52 && !function;
         const bool inferno=start==53 && (function==95 || function==152);
         const bool diabloRun=start==71 && function==103;
         const bool bossSummon=start==14 && (function==177 || function==179);
@@ -123,19 +157,22 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
         const bool periodic=!start && function==124 && data.states.contains(skills.value(row,"aurastate"));
         const bool concentrate=start==68 && function==2;
         const bool melee=start==32 && (function==2 || function==158);
+        const bool jab=start==5 && function==7;
+        const bool nest=start==49 && function==181;
         const bool whirlwind=start==38 && function==76;
         const bool rabies=start==57 && function==121;
         const bool assassinCharge=start==23 && function==170;
-        const bool assassin=assassinCharge || (!start && (function==47 || function==51));
+        const bool assassin=assassinCharge || (start==12 && function==178) || (!start && (function==47 || function==51));
         const bool nativePet=!start && function==49;
         const bool joust=!start && function==162;
         const bool smite=!start && function==150;
         const bool charge=start==31 && function==67;
         const bool poisonEgg=start==43 && function==173;
-        const bool blink=!start && function==155 && skills.value(row,"aurastate").empty();
+        const bool blink=!start && function==155;
         const bool animationMarker=!start && !function && skills.value(row,"srvmissile").empty() &&
             skills.value(row,"srvmissilea").empty() && skills.value(row,"srvmissileb").empty() && skills.value(row,"srvmissilec").empty();
-        if(!hydra && !curse && !inferno && !armor && !periodic && !concentrate && !melee && !whirlwind && !rabies && !assassin && !nativePet && !joust && !smite && !charge && !poisonEgg && !blink && !animationMarker && !diabloRun && !bossSummon && !diabloCold && !nativeSpell && !dash && !projectile(data,row)) continue;
+        if(!submerge && !emerge && !hydra && !curse && !inferno && !armor && !periodic && !concentrate && !melee && !jab && !nest && !whirlwind && !rabies && !assassin && !nativePet && !joust && !smite && !charge && !poisonEgg && !blink && !animationMarker && !diabloRun && !bossSummon && !diabloCold && !nativeSpell && !dash && !projectile(data,row)) continue;
+        if(reason) *reason="skill actions: "+name+" / "+std::string(stats.value(record.sourceRow,"Sk"+field+"mode"));
         const int baseRank=stats.number(record.sourceRow,"Sk"+field+"lvl").value_or(0);
         if(baseRank<=0) continue;
         const int rank=baseRank+bonus;
@@ -180,22 +217,34 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
             int birthTicks{};
             if(nativeMode!=1) {
                 const auto clock=loadMonsterMotionTiming(animations,child->token,mode,monsterModeWeapon(archives,child->token,mode,child->baseWeapon));
-                if(!clock) return false;
-                birthTicks=monsterAnimationTicks({clock->frames,clock->speed});
+                if(!clock) {
+                    std::string upper=mode;for(auto &letter:upper) letter=char(std::toupper(static_cast<unsigned char>(letter)));
+                    if(hasMode(data,*child,upper)) return false;
+                    // Common AnimTbls' missing-record clock is 2048/256.
+                    // Viper's declared S2 is disabled and has no art/record;
+                    // retain that native mode until Do49's independent AI20.
+                    birthTicks=2048;
+                } else birthTicks=monsterAnimationTicks({clock->frames,clock->speed});
             }
             action.action=server::MonsterAttackRule::Action::NativePetSummon;
             action.nativePetSummon=server::MonsterSpawnParameters{child->index,nativeMode,birthTicks};
         }
-        if(hydra) action.action=server::MonsterAttackRule::Action::Hydra;
+        if(submerge) action.action=server::MonsterAttackRule::Action::Submerge;
+        else if(nest) action.action=server::MonsterAttackRule::Action::Nest;
+        else if(emerge) action.action=server::MonsterAttackRule::Action::Animation;
+        else if(hydra) action.action=server::MonsterAttackRule::Action::Hydra;
         else if(dash) action.action=server::MonsterAttackRule::Action::Pd2Dash;
         else if(diabloRun) action.action=server::MonsterAttackRule::Action::DiabloRun;
         else if(diabloCold || nativeSpell) action.action=server::MonsterAttackRule::Action::NativeSpell;
         else if(animationMarker) action.action=server::MonsterAttackRule::Action::Animation;
-        else if(charge || smite || concentrate || melee || whirlwind || rabies || assassinCharge) {
+        else if(charge || smite || concentrate || melee || jab || whirlwind || rabies || assassinCharge) {
             // Native Do67 uses A1; Do150 fills the monster's A2 profile even
             // when its declared animation is A1 (Leoric). The contact engine
             // owns formulas, stun, source damage and the release-time profile.
-            const auto base=rule.attacks.find(concentrate || melee || rabies || assassinCharge?(stats.value(record.sourceRow,"Sk"+field+"mode")=="A2"?5:4):charge || whirlwind?4:5);
+            auto base=rule.attacks.find(concentrate || melee || jab || rabies || assassinCharge?(stats.value(record.sourceRow,"Sk"+field+"mode")=="A2"?5:4):charge || whirlwind?4:5);
+            // Do150 reads A2 values at release, independently of whether
+            // MonStats2 provides a displayable A2 (e.g. LucionSpawnTank).
+            if(smite && base==rule.attacks.end()) base=rule.attacks.find(4);
             if(base==rule.attacks.end()) return false;
             action=base->second;action.missile.reset();action.rank=uint8_t(rank);
             action.action=charge?server::MonsterAttackRule::Action::Charge:server::MonsterAttackRule::Action::Damage;
@@ -203,6 +252,15 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
             if(assassin) action.action=server::MonsterAttackRule::Action::Assassin;
             if(whirlwind) action.action=server::MonsterAttackRule::Action::Whirlwind;
             if(charge) {action.knockback=true;action.alwaysHit=true;action.hitClass=0x70;}
+            if(charge || smite || concentrate || melee || jab) {
+                SkillCastSpec skill;skill.sourceId=id;skill.rank=rank;
+                auto &weapon=skill.weapon.emplace();weapon.startFunction=start;weapon.doFunction=function;
+                weapon.smite=smite;weapon.interruptible=skills.number(row,"interrupt").value_or(0)!=0;
+                weapon.manaOnRelease=skills.number(row,"usemanaondo").value_or(0)!=0;
+                if(const auto found=data.states.find(skills.value(row,"aurastate"));found!=data.states.end())
+                    weapon.attackState=found->second.definition;
+                action.weaponSkill=std::move(skill);
+            }
         } else if(poisonEgg) {
             // Current core 3B1090 delegates Do22, then Do84 with skill 159.
             const auto missile=data.nativeFormulas->missileIds.find(nativeName(skills.value(row,"srvmissilea")));
@@ -235,14 +293,15 @@ bool prepareMonsterActions(Archives &archives,const ClassicData &data,const Anim
         }
         auto mode=stats.value(record.sourceRow,"Sk"+field+"mode");
         int event=record.ai=="Izual" || record.ai=="UberIzual" || record.ai=="BaalCrab" || record.ai=="BaalCrabClone"?1:2;
-        if(charge || smite || concentrate || melee || whirlwind || rabies || assassin) event=1;
+        if(charge || smite || concentrate || melee || jab || whirlwind || rabies || assassin) event=1;
         if(mode=="A1" && !record.attack1Projectile) event=1;
         // Guardian reuses CS A1 for Blink and summon. Its melee action flag
         // is 1; the Regurgitator family's default skill flag 2 is absent.
         if((rule.nativeClass==1064 || rule.nativeClass==1065) && mode=="A1") event=1;
         if(poisonEgg) event=4;
+        if(nest) event=1;
         if(diabloRun || diabloCold) event=1;
-        if(animationMarker) event=0;
+        if(animationMarker || emerge) event=0;
         if(inferno) {
             event=name=="horror arctic blast"?1:2;
             // Fn135 casts the stream in S1, not its declared sequence.

@@ -305,6 +305,11 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
     if(smite) {
         const auto prepared=prepareNativeSmite(impact,*source.player,tick);if(prepared!=DomainStatus::Applied) return prepared;
     }
+    if(execution.melee && source.monster && impact.weapon->wearSkill.weapon->doFunction==7) {
+        // Retail Do007 refreshes monster S1 damage/rating before GetResultFlags,
+        // independently of the display mode used by MonJab's sequence.
+        const auto profile=monsterProfile(8);if(profile!=DomainStatus::Applied) return profile;
+    }
     if(execution.directFunction==163) {
         const auto prepared=preparePd2SplashDamage(impact,source,tick);if(prepared!=DomainStatus::Applied) return prepared;
     }
@@ -590,6 +595,7 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
                 const auto boots=gear?gear->kickBoots:EquipmentStats::KickBoots{};
                 AssassinKickInput input{stat("strength"),stat("dexterity"),skill.weapon->damagePercent,stat("item_kickdamage"),
                     boots.minimum,boots.maximum,boots.strengthBonus,boots.dexterityBonus,stat("damagepercent"),stat("item_maxdamage_percent"),boots.equipped};
+                if(source.monster) input.monsterLevel=stat("level");
                 const auto [low,high]=assassinKickRange(input);
                 equipment.channels[0]=nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeSubtract(high,low)))));
                 rollNativeSkillElement(equipment,values,execution.skill,execution.rank,random);

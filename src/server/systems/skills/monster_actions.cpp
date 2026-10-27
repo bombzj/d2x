@@ -115,7 +115,8 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const bool coordinateNativeMissile=slot.action==MonsterAttackRule::Action::NativeMissile && request.position.has_value();
     const bool coordinateCharge=slot.action==MonsterAttackRule::Action::Charge && !target->id && request.position;
     const bool pd2Dash=slot.action==MonsterAttackRule::Action::Pd2Dash;
-    const bool nativeNest=slot.action==MonsterAttackRule::Action::Nest && (rule.ai.kind==MonsterAiKind::FoulCrowNest || rule.ai.kind==MonsterAiKind::VileMother || rule.ai.kind==MonsterAiKind::GenericSpawner);
+    const bool pd2Nest=rule.stats->pd2 && request.skill && rule.formulas->skills.at(request.skill).number("srvdofunc")==181;
+    const bool nativeNest=slot.action==MonsterAttackRule::Action::Nest && (pd2Nest || rule.ai.kind==MonsterAiKind::FoulCrowNest || rule.ai.kind==MonsterAiKind::VileMother || rule.ai.kind==MonsterAiKind::GenericSpawner);
     if(nativeNest && !rule.nestChild && (monster->minionSpawnClass<=0 || !area.definition.nativeMonsterClasses.contains(monster->minionSpawnClass))) return {DomainStatus::Unavailable,{}};
     const bool pregnancy=slot.action==MonsterAttackRule::Action::Impregnate;
     const bool overseerSupport=slot.action==MonsterAttackRule::Action::Rally || slot.action==MonsterAttackRule::Action::Whip || slot.action==MonsterAttackRule::Action::SupportMissile;
@@ -140,7 +141,8 @@ DomainResult<> System::requestCast(const CastRequest &request) {
          rule.formulas->skills.at(request.skill).number("srvdofunc")==179);
     const bool pd2HirelingSelf=monster->hireling && slot.action==MonsterAttackRule::Action::Skill && rule.formulas->skills.at(request.skill).number("srvdofunc")==68;
     const bool poisonEgg=slot.action==MonsterAttackRule::Action::Pd2PoisonEgg;
-    const bool selfAction=poisonEgg || slot.action==MonsterAttackRule::Action::NativePetSummon || assassinSelf || pd2HirelingSelf || pd2SelfProjectile || coordinateSpell || coordinateNativeMissile || corpseArea || nova || tentacles || periodic || slot.action==MonsterAttackRule::Action::Whirlwind || (slot.action==MonsterAttackRule::Action::NativeSpell && rule.formulas->skills.at(request.skill).number("srvdofunc")==68) || slot.action==MonsterAttackRule::Action::SpawnMinion || slot.action==MonsterAttackRule::Action::DefensiveBuff || nativeNest || shadowSelf || druidTeleport || slot.action==MonsterAttackRule::Action::Teleport || slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay || slot.action==MonsterAttackRule::Action::Submerge;
+    const bool ownerCurse=slot.action==MonsterAttackRule::Action::Curse && rule.formulas->skills.at(request.skill).number("srvdofunc")==6;
+    const bool selfAction=ownerCurse || poisonEgg || slot.action==MonsterAttackRule::Action::NativePetSummon || assassinSelf || pd2HirelingSelf || pd2SelfProjectile || coordinateSpell || coordinateNativeMissile || corpseArea || nova || tentacles || periodic || slot.action==MonsterAttackRule::Action::Whirlwind || (slot.action==MonsterAttackRule::Action::NativeSpell && rule.formulas->skills.at(request.skill).number("srvdofunc")==68) || slot.action==MonsterAttackRule::Action::SpawnMinion || slot.action==MonsterAttackRule::Action::DefensiveBuff || nativeNest || shadowSelf || druidTeleport || slot.action==MonsterAttackRule::Action::Teleport || slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay || slot.action==MonsterAttackRule::Action::Submerge;
     const bool special=slot.action!=MonsterAttackRule::Action::Damage;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(overseerSupport && (target->id==monster->id || !(victim?victim->alive():participants.find(target->id).player && participants.find(target->id).player->persistent.player.hp>0))) return {DomainStatus::InvalidActor,{}};
@@ -756,14 +758,22 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
         }
         case MonsterAttackRule::Action::Curse: {
             const auto target=ports_.monsters.targetPosition(unit.id,source->area);
-            if(!target && !pending.curse) {specialResult={DomainStatus::InvalidActor,{}};break;}
-            specialResult=ports_.effects.monsterCurse(source->id,pending.request.skill,pending.attack.rank,target?target->first:source->position,tick.tick,pending.curse);
+            const bool centered=source->rule.formulas->skills.at(pending.request.skill).number("srvdofunc")==6;
+            if(!centered && !target && !pending.curse) {specialResult={DomainStatus::InvalidActor,{}};break;}
+            specialResult=ports_.effects.monsterCurse(source->id,pending.request.skill,pending.attack.rank,
+                centered?source->position:target?target->first:source->position,tick.tick,pending.curse);
             pending.nativeCallbackStarted=pending.curse && pending.curse->prepared && !pending.curse->complete;
             break;
         }
         case MonsterAttackRule::Action::Nest: {
             DomainResult<EntityId> spawned;
-            if(source->rule.ai.kind==MonsterAiKind::FoulCrowNest || source->rule.ai.kind==MonsterAiKind::VileMother || source->rule.ai.kind==MonsterAiKind::GenericSpawner) {
+            const bool pd2Nest=source->rule.stats->pd2 && source->rule.formulas->skills.at(pending.request.skill).number("srvdofunc")==181;
+            // 41d49d 3B4CD0 caps successful nest births at Skills.Param1.
+            // Failure/capacity must not advance the counter.
+            if(pd2Nest && uint32_t(source->nestSpawned)>=uint32_t(source->rule.formulas->skills.at(pending.request.skill).number("param1"))) {
+                specialResult={DomainStatus::Unavailable,{}};break;
+            }
+            if(pd2Nest || source->rule.ai.kind==MonsterAiKind::FoulCrowNest || source->rule.ai.kind==MonsterAiKind::VileMother || source->rule.ai.kind==MonsterAiKind::GenericSpawner) {
                 pending.nativeCallbackStarted=true;
                 specialResult=ports_.monsters.reserveNestSpawn(source->id,pending.launch->second,false,tick.tick);if(!specialResult) break;
                 spawned=ports_.monsters.spawnNativeNestChild(source->id,pending.launch->second,tick.tick,ports_.spatial.nativeCollisionSample(),pending.nestClass);

@@ -42,8 +42,13 @@ Json area(const server::AreaView &value) {
         {"plane", edge.plane + (edge.side % 2 ? a.origin.x : a.origin.y)},
         {"start", edge.start + (edge.side % 2 ? a.origin.y : a.origin.x)},
         {"end", edge.end + (edge.side % 2 ? a.origin.y : a.origin.x)}});
-    for (const auto &exit : a.exits) result["exits"].push_back({{"id", exit.id.value}, {"destination", int(exit.destination)},
-        {"position", point(exit.position + a.origin)}, {"arrival", point(exit.arrival + a.origin)}, {"requiresQuest", exit.requiresQuest}});
+    for (const auto &exit : a.exits) {
+        result["exits"].push_back({{"id", exit.id.value}, {"destination", int(exit.destination)},
+            {"warp",exit.warp},{"slot",exit.slot},{"position", point(exit.position + a.origin)},
+            {"arrival", point(exit.arrival + a.origin)}, {"requiresQuest", exit.requiresQuest}});
+        if(exit.rooms) result["exits"].back()["rooms"]={{"source",{exit.rooms->sourceX,exit.rooms->sourceY}},
+            {"destination",{exit.rooms->destinationX,exit.rooms->destinationY}}};
+    }
     return result;
 }
 }
@@ -77,7 +82,9 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     if(s.pd2Map) {
         const auto &map=*s.pd2Map;
         result["pd2Map"]={{"controller",map.controller},{"phase",map.phase},{"eventProgress",map.eventProgress},
-            {"deaths",Json::array()},{"presets",Json::array()}};
+            {"sceneOpening",map.sceneOpening},{"sceneParticipants",map.sceneParticipants},
+            {"sceneEntrants",Json::array()},{"deaths",Json::array()},{"presets",Json::array()}};
+        for(const auto player:map.sceneEntrants) result["pd2Map"]["sceneEntrants"].push_back(player.value);
         for(const auto &death:map.deaths) result["pd2Map"]["deaths"].push_back({{"unit",death.unit.value},
             {"phase",death.phase},{"portalPhase",death.portalPhase},{"evaluated",death.evaluated},
             {"portalStatus",death.portalStatus},{"portalLocalPosition",death.portalPosition?point(*death.portalPosition):Json(nullptr)}});
@@ -187,6 +194,13 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         value["burrowed"]=monster.burrowed;value["airborne"]=monster.airborne;value["holdPose"]=monster.holdPose;
         value["chargedSkills"]=skillCharges(monster.chargedSkills);value["chargesTracked"]=monster.chargesTracked;
         value["itemAuras"]=auraTimers(monster.itemAuras);
+        value["itemStatEvents"]=Json::array();
+        for(size_t index=0;index<monster.itemStatEvents.size();++index) {
+            const auto &event=monster.itemStatEvents[index];
+            value["itemStatEvents"].push_back({{"stat",event.key.id},{"layer",event.key.layer},
+                {"event",event.binding.event},{"function",event.binding.function},
+                {"value",index<monster.itemStatEventValues.size()?Json(monster.itemStatEventValues[index]):Json{}}});
+        }
         value["alignment"]=int(monster.alignment);value["allegianceRevision"]=monster.allegianceRevision;
         value["curseControl"]={{"kind",int(monster.curseControl.ai)},{"caster",monster.curseControl.caster.value},
             {"target",monster.curseControl.target.value},{"until",monster.curseControl.until}};

@@ -44,7 +44,7 @@ struct NativeFootprint {
 };
 struct RoomRandomLoan {RoomView room;uint64_t areaGeneration{},revision{},expected{},next{};};
 // Prepared collision values only. No Map, DT1, Archives or renderer handles.
-struct AreaExit { EntityId id; RegionId destination; int warp{}, slot{}; Vec position, arrival; bool requiresQuest{}; Vec exitWalk; };
+struct AreaExit { EntityId id; RegionId destination; int warp{}, slot{}; Vec position, arrival; bool requiresQuest{}; Vec exitWalk; std::optional<NativeWarpRooms> rooms; };
 struct AreaBoundary { RegionId destination; int side{}, plane{}, start{}, end{}; };
 struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; bool questSpawn{}; int preset{}; std::optional<size_t> presetOrder{}; int initialMode{}; int pd2Binding{-1}; int pd2BirthClass{-1}; std::optional<pd2::MapPortalProgram> pd2Portal{}; };
 struct PortalRule {

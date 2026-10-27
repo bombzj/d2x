@@ -3,6 +3,7 @@
 #include "character_content.hpp"
 #include "item_content.hpp"
 #include "pd2/gheed.hpp"
+#include "gameplay/items/pd2/pricing.hpp"
 #include "content/npc/vendor_stock.hpp"
 #include "content/items/item_pricing.hpp"
 #include "content/items/item_properties.hpp"
@@ -141,8 +142,12 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
     const auto discounts=factors(vendor,character.player.quests.at(size_t(result.source.difficulty)),repair,sale);
     const auto quote=[&](const ItemInstance &item) {
         const auto hiddenBase=result.source.stock.offers.contains(item.id)?result.source.stock.offers.at(item.id).displayCode:std::string{};
-        auto price=request.gamble?itemGamblePrice(data,hiddenBase.empty()?item.definition:hiddenBase,character.player.level,item.nativeFormat,result.source.reducedPrices)
-            :itemTradePrice(data,item,vendor,repair,discounts,sale?0:result.source.reducedPrices,sale,result.source.difficulty);
+        std::optional<unsigned> price;
+        if(data.pd2Host && request.gamble && result.source.npc.pd2EventGheed)
+            price=pd2MapGamblePrice(result.source.reducedPrices);
+        else if(request.gamble)
+            price=itemGamblePrice(data,hiddenBase.empty()?item.definition:hiddenBase,character.player.level,item.nativeFormat,result.source.reducedPrices);
+        else price=itemTradePrice(data,item,vendor,repair,discounts,sale?0:result.source.reducedPrices,sale,result.source.difficulty);
         // ProjectDiablo 2E8140 caps each repair after all discounts.
         if(data.pd2Host && repair && price) price=std::min(*price,250000u);
         if (price && (!repair || *price)) result.prices.emplace(item.id,*price);

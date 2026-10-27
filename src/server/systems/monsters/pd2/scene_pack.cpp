@@ -22,6 +22,10 @@ DomainResult<> System::advancePd2ScenePack(Pd2ScenePack &pack,RegionId region,Ve
         const auto loan=ports_.areas.roomRandom(*room);if(!loan) return {loan.status,{}};
         auto identity=prototype->second.identity;identity.spawnKey=key+suffix;identity.origin=SpawnOrigin::Summoned;
         identity.rank=MonsterRank::Normal;identity.ownerSpawnKey.clear();
+        if(owner) {
+            const auto *leader=find(owner);if(!leader) return {DomainStatus::Stale,{}};
+            identity.ownerSpawnKey=leader->identity.spawnKey;
+        }
         Admission request{identity,prototype->second.implementation,room->area,point,true,prototype->second.rule,{},tick};
         request.minionOwner=owner;request.ownsMinions=!owner && rank!=MonsterRank::Normal;
         if(mode==8) {

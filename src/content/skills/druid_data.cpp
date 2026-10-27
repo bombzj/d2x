@@ -50,6 +50,7 @@ SummonSkillSpec summonDefinition(const ClassicData &data,size_t skillRow) {
     if(number(monsters,row,"noRatio")!=1) throw std::runtime_error("Unsupported native druid pet ratios");
     auto pet=std::make_shared<DruidPetDefinition>();pet->nativeClass=compiledMonsterIndex(monsters,row);
     pet->group=number(data.tables.at("pettype"),findSkillTableRow(data.tables.at("pettype"),"pet type",skills.value(skillRow,"pettype")),"group");
+    pet->baseMaximum=number(data.tables.at("pettype"),findSkillTableRow(data.tables.at("pettype"),"pet type",skills.value(skillRow,"pettype")),"basemax");
     pet->summonMode=skills.value(skillRow,"summode");pet->attackable=number(extras,extra,"isAtt")!=0;
     const auto ai=monsters.value(row,"AI");
     if(ai=="Raven") pet->ai=DruidPetDefinition::Ai::Raven;

@@ -4,6 +4,7 @@
 #include <vector>
 #include <utility>
 #include <memory>
+#include <optional>
 #include "core/math.hpp"
 
 namespace d2x {
@@ -19,6 +20,7 @@ struct AssassinKickInput {
     int32_t bootMinimum{},bootMaximum{},bootStrengthBonus{},bootDexterityBonus{};
     int32_t offWeaponDamagePercent{},offWeaponMaximumPercent{};
     bool boots{};
+    std::optional<int32_t> monsterLevel{};
 };
 // SkillAss::sub_6FCF7CE0 + D2Common::SKILLS_CalculateKickDamage. The
 // caller supplies stats sampled with weapon damage lists unmerged.

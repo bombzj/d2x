@@ -113,12 +113,6 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
             const auto difficulty=values.get({player->rules.character->stats->names.at("uber_difficulty"),0});
             if(difficulty<0 || difficulty>2) return {DomainStatus::InvalidRequest,{}};
             candidate->bossDifficulty=uint8_t(difficulty);
-            for(const auto &[id,other]:ports_.players.all()) {
-                (void)id;if(!other.entered || int(other.area)!=109 || other.persistent.player.hp<=0) continue;
-                const auto global=other.position+origin->definition.origin;
-                const int x=int(global.x)-0x13d2,y=int(global.y)-0x13fa;
-                if(x*x+y*y<150) ++candidate->participants;
-            }
             candidate->properties.monsters.clear();candidate->properties.players.clear();candidate->properties.global.clear();
             if(candidate->controller!=41) candidate->destination.portal=587;
         } else appendMapGlobalUnitProperties(candidate->properties);
@@ -192,6 +186,10 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
         pd2OpeningPortal_.reset();
         if(scene) {
             state_.mapReports.clear();state_.pd2SceneEntrants.clear();state_.pd2SceneOpening=true;
+            // 383060 counts the eligible cohort before creating/transferring
+            // the scene. Async preparation must not freeze an earlier cohort.
+            // Successful arrivals remain separate, as in 38A680's second pass.
+            state_.pd2SceneParticipants=1;
             // The owner enters in the same accepted transaction as the map
             // cost. A failed landing cannot consume a scene with no entrants.
             state_.pd2SceneEntrants.insert(actor.player);
@@ -210,6 +208,7 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
                 Transition transition{other->area,town,0,origin->generation,other->locomotionSequence,state_.pd2MapPortal,other->position,to};
                 transition.kind=Kind::SpecialPortal;transition.arrivalGeneration=ports_.areas.at(town).generation;transition.pd2SceneEntry=true;
                 state_.transitions.insert_or_assign(other->player,transition);
+                ++state_.pd2SceneParticipants;
                 auto &moving=ports_.players.players_.at(other->player);moving.route.clear();moving.moving=false;
             }
         }

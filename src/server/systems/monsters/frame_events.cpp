@@ -43,8 +43,9 @@ void System::roomClientsChanged(RoomView room,bool present,uint64_t tick) {
         if(unit->revision==UINT64_MAX || unit->aiThinkRevision==UINT64_MAX)
             throw std::overflow_error("Monster room client revision exhausted");
         auto candidate=*unit;candidate.initialAiTimer.reset();
-        const bool neutral=!candidate.moving && candidate.route.empty() && candidate.busyUntil<=tick &&
-            candidate.riseUntil<=tick && candidate.reactionUntil<=tick && candidate.aiPose==1;
+        // MONSTER_UpdateAiCallbackEvent tests dwAnimMode, independently of
+        // an old action deadline. A completed pose must wake on room reentry.
+        const bool neutral=candidate.nativeMode==1;
         if(present && candidate.alive() && (neutral || candidate.rule.wakeAiOutsideNeutral)) {
             candidate.aiThinkAt=tick+2;++candidate.aiThinkRevision;
             candidate.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
@@ -110,8 +111,7 @@ DomainResult<> System::modifierEvent(const FrameEvent &event,uint64_t tick,
         if(!unit || !unit->alive()) return {DomainStatus::Applied,std::monostate{}};
         if(unit->revision==UINT64_MAX || unit->aiThinkRevision==UINT64_MAX) return {DomainStatus::Capacity,{}};
         auto candidate=*unit;
-        const bool neutral=!candidate.moving && candidate.route.empty() && candidate.busyUntil<=tick &&
-            candidate.riseUntil<=tick && candidate.reactionUntil<=tick && candidate.aiPose==1;
+        const bool neutral=candidate.nativeMode==1;
         if(neutral || candidate.rule.wakeAiOutsideNeutral) {
             candidate.aiThinkAt=tick+2;++candidate.aiThinkRevision;
             candidate.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(

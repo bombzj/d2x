@@ -77,7 +77,7 @@ struct MonsterRecord {
     }
     bool hostile() const {
         return enabled && killable && !npc && !critter &&
-               (!inert || ai == "FoulCrowNest" || ai == "MaggotEgg" || ai == "Sarcophagus" || ai == "GenericSpawner" || ai == "Catapult" || id == "prisondoor") && alignment == 0;
+               (!inert || ai == "FoulCrowNest" || ai == "GargoyleTrap" || ai == "MaggotEgg" || ai == "Sarcophagus" || ai == "GenericSpawner" || ai == "Catapult" || id == "prisondoor") && alignment == 0;
     }
 };
 int monsterMovementPercent(const MonsterRecord &record, int difficulty, int percentage, bool chilled);

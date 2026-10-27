@@ -49,7 +49,7 @@ DomainResult<> System::reinitializeBaalToStairs(EntityId id,uint64_t tick) {
     request.area=previous->area;request.position=previous->position;request.rule=*stairs->second.combat;
     request.tick=tick;request.unitRandom=previous->combatRandom;request.uncounted=previous->uncounted;
     auto random=ports_.random;ComponentPaletteState palettes;
-    auto prepared=prepareAdmissionActor(request,id,random,palettes,ports_.ids.cursor());
+    auto prepared=prepareAdmissionActor(request,id,random,palettes,ports_.ids.cursor(),nullptr,previous->roomAdmission);
     if(!prepared) return {prepared.status,{}};
     auto candidate=std::move(*prepared.value);const auto allocated=candidate.birthEquipmentItems;
     // MONSTER_Free leaves MonsterData and the GUID in place. Reinitialize
@@ -90,7 +90,7 @@ DomainResult<> System::reinitializeWhipped(EntityId source,EntityId target,int n
         const auto &child=found->second;
         Admission request{child.identity,child.implementation,previous->area,previous->position,previous->hostile,child.rule,{},tick};
         request.unitRandom=previous->combatRandom;request.uncounted=previous->uncounted;
-        auto prepared=prepareAdmissionActor(request,target,random,palettes,ports_.ids.cursor());
+        auto prepared=prepareAdmissionActor(request,target,random,palettes,ports_.ids.cursor(),nullptr,previous->roomAdmission);
         if(!prepared) return {prepared.status,{}};
         candidate=std::move(*prepared.value);allocated=candidate.birthEquipmentItems;
         candidate.identity=previous->identity;candidate.identity.monster=child.identity.monster;candidate.identity.nativeClass=child.rule.nativeClass;
@@ -132,7 +132,7 @@ DomainResult<> System::reinitializeAfterDeath(EntityId id,uint64_t tick) {
     Admission request{child.identity,child.implementation,previous->area,previous->position,previous->hostile,child.rule,{},tick};
     request.unitRandom=previous->combatRandom;request.uncounted=previous->uncounted;
     auto random=ports_.random;ComponentPaletteState palettes;
-    auto prepared=prepareAdmissionActor(request,id,random,palettes,ports_.ids.cursor());
+    auto prepared=prepareAdmissionActor(request,id,random,palettes,ports_.ids.cursor(),nullptr,previous->roomAdmission);
     if(!prepared) return {prepared.status,{}};
     auto candidate=std::move(*prepared.value);const auto allocated=candidate.birthEquipmentItems;
     // MonsterData (unique flags, name and UMods) and the unit's owner survive

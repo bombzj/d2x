@@ -43,7 +43,7 @@ StepStatus System::zakarumZealotFamily(EntityId id,std::optional<UnitTarget> tar
         return StepStatus::Complete;
     }
     if(retaliating) {
-        if(!controller.loop && unit.life*100/unit.maximumLife<params[2]) {
+        if(!controller.loop && (unit.maximumLife?unit.life*100/unit.maximumLife:0)<params[2]) {
             controller.phase=0;if(escape()) return StepStatus::Complete;controller.loop=5;
         }
         const auto global=unit.position+area.definition.origin;

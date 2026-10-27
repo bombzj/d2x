@@ -23,7 +23,8 @@ DomainResult<EntityId> System::spawnNativePet(EntityId id,Vec position,MonsterSp
     identity.spawnKey=owner->identity.spawnKey+".native-pet."+std::to_string(ports_.ids.cursor());
     Admission request{identity,prototype->second.implementation,room->area,global-ports_.areas.at(room->area).definition.origin,
         true,prototype->second.rule,{},tick};
-    request.birthTicks=parameters.birthTicks;
+    // Do49 installs AI20 independently of the birth animation. Keeping that
+    // pose in busyUntil would prevent the native AI from interrupting it.
     auto birth=prepareRoomSpawn(request,*loan.value,-1,{},false,collision);if(!birth) return {birth.status,{}};
     if(!(*birth.value)->actor()) {
         *loan.value=*(*birth.value)->data_->room;
@@ -41,7 +42,8 @@ DomainResult<EntityId> System::spawnNativePet(EntityId id,Vec position,MonsterSp
         auto values=resources.take();pet.nativeStats=std::move(values.intrinsic);
         pet.life=values.life.raw();pet.maximumLife=values.maximum.raw();
         pet.admissionRule=std::make_shared<const MonsterRule>(pet.rule);
-        recordNativeMode(pet,parameters.nativeMode);pet.riseMode=parameters.nativeMode;
+        recordNativeMode(pet,parameters.nativeMode);pet.aiPose=parameters.nativeMode;
+        pet.poseUntil=tick+uint64_t(parameters.birthTicks);
         pet.aiThinkAt=tick+20;++pet.aiThinkRevision;
         pet.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
             {{},{FrameEventUnit::Monster,born},FrameEventType::AiThink,pet.aiThinkAt}));

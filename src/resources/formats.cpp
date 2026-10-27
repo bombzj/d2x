@@ -68,7 +68,9 @@ Cof decodeCof(const Bytes &b) {
     c.frames = r.u8();
     c.directions = r.u8();
     r.skip(25);
-    if (c.layers < 1 || c.layers > 16 || c.frames < 1 || c.directions < 1 || c.directions > 32)
+    // Empty native composites are valid: PD2's ZZ event marker has zero
+    // layers, one frame and one direction, with no component order entries.
+    if (c.layers > 16 || c.frames < 1 || c.directions < 1 || c.directions > 32)
         throw std::runtime_error("Invalid COF");
     for (int i = 0; i < c.layers; i++) {
         c.components.push_back(r.u8());

@@ -102,7 +102,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats, Monst
         }
         m.normalCombat = loadMonsterNormalCombat(stats, row, levels ? &*levels : nullptr);
         for (int difficulty = 0; difficulty < 3; ++difficulty)
-            m.aiProfiles[difficulty] = loadMonsterAiProfile(stats, row, m.ai, difficulty);
+            m.aiProfiles[difficulty] = loadMonsterAiProfile(stats, row, m.ai, difficulty,archives.pd2Presets);
         m.walkVelocity = stats.number(row, "Velocity");
         m.runVelocity = stats.number(row, "Run");
         auto loadProjectile = [&](std::string_view missileName, std::string &artPath)

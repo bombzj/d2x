@@ -29,7 +29,7 @@ StepStatus System::zakarumPriestFamily(EntityId id,std::optional<UnitTarget> tar
     };
     const auto primary=target.value_or(UnitTarget{});
     if(contact || retaliating) {
-        if(hasSkill(2) && unit.life*100/unit.maximumLife<33 && now>controller.phase) {
+        if(hasSkill(2) && (unit.maximumLife?unit.life*100/unit.maximumLife:0)<33 && now>controller.phase) {
             controller.phase=nativeAdd(now,nativeMultiply(4,params[4]));
             const int scale=contact?4:1;
             const Vec destination{std::floor(point.x)+(std::floor(point.x)-std::floor(unit.position.x))*scale+.5f,
@@ -47,7 +47,7 @@ StepStatus System::zakarumPriestFamily(EntityId id,std::optional<UnitTarget> tar
                    (other->rule.baseClass!=unit.rule.baseClass && other->rule.ai.kind!=MonsterAiKind::ZakarumZealot)) continue;
                 const auto at=other->position+ports_.areas.at(other->area).definition.origin-area.definition.origin;
                 const int x=int(std::floor(unit.position.x))-int(std::floor(at.x)),y=int(std::floor(unit.position.y))-int(std::floor(at.y));
-                if(x*x+y*y>params[5]*params[5] || other->life*100/other->maximumLife>60) continue;
+                if(x*x+y*y>params[5]*params[5] || (other->maximumLife?other->life*100/other->maximumLife:0)>60) continue;
                 // Retail 7BCF4 stores the target but never updates the
                 // supposed minimum-life field: the last qualifying unit wins.
                 heal=UnitTarget{candidate,0,1};

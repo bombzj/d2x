@@ -39,6 +39,10 @@ int64_t readValue(D2sBitReader &bits, const ClassicData &content, unsigned id, c
 }
 void writeValue(D2sBitWriter &bits, const ClassicData &content, unsigned id, int64_t value, const D2sItem &item) {
     const auto rule = format(content, id, item);
+    if(content.pd2Host) {
+        bits.write(pd2ItemSavedValue(value,rule.add,rule.bits),rule.bits);
+        return;
+    }
     value += rule.add;
     require(value >= 0 && value <= UINT32_MAX, "stat range");
     bits.write(uint32_t(value), rule.bits);
@@ -144,8 +148,12 @@ void writeStats(D2sBitWriter &bits, const ClassicData &content, const D2sItem &i
         for (unsigned next = 0; next <= followers(id); ++next) {
             const auto rule = format(content, id + next, item);
             auto found = values.find({id + next, key.second});
-            bits.write(uint32_t(key.second), rule.params);
-            writeValue(bits, content, id + next, found == values.end() ? 0 : found->second, item);
+            try {
+                bits.write(content.pd2Host?pd2ItemSavedValue(key.second,0,rule.params):uint32_t(key.second), rule.params);
+                writeValue(bits, content, id + next, found == values.end() ? 0 : found->second, item);
+            } catch(const std::exception &error) {
+                throw std::runtime_error("D2S item stat "+std::to_string(id+next)+" layer "+std::to_string(key.second)+": "+error.what());
+            }
             if (found != values.end()) values.erase(found);
         }
     }

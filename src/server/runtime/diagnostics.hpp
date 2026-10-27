@@ -63,6 +63,8 @@ struct DiagnosticMonster {
     EntityId woundSource{}, woundCredit{};
     std::vector<ChargedSkill> chargedSkills{};
     std::vector<ItemAuraTimer> itemAuras{};
+    std::vector<ItemStatEvent> itemStatEvents{};
+    std::vector<int32_t> itemStatEventValues{};
     bool chargesTracked{};
     UnitAlignment alignment{};
     uint64_t allegianceRevision{};
@@ -108,6 +110,7 @@ struct DiagnosticHirelingSlot {
 struct DiagnosticSnapshot {
     struct Pd2Map {
         int controller{},phase{};uint32_t eventProgress{};
+        bool sceneOpening{};unsigned sceneParticipants{};std::vector<PlayerId> sceneEntrants;
         struct Death {EntityId unit;int phase{},portalPhase{},portalStatus{-1};bool evaluated{};std::optional<Vec> portalPosition;};
         struct Preset {RegionId area;int definition{},marker{},binding{};Vec position;std::string deferred;};
         std::vector<Death> deaths;

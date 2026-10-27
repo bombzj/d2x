@@ -3,6 +3,7 @@
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
 #include "gameplay/skills/cast_spec.hpp"
+#include "gameplay/skills/rank_sources.hpp"
 #include "preparation.hpp"
 #include "server/systems/actions/requests.hpp"
 
@@ -35,6 +36,7 @@ struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint
     std::optional<actions::MonsterCastRequest> pendingAction{};
     std::optional<AuraDefinition> pendingAura{};
     uint64_t observedAiThinkRevision{};
+    std::vector<std::pair<NativeSkillSlot,int>> druidSkillRanks{};
 };
 struct State { std::map<EntityId, Companion> companions; };
 struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; const spatial::System &spatial; ai::System &ai; items::System &items; };

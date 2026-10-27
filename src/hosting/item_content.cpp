@@ -8,6 +8,7 @@
 #include "gameplay/loot/special.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <cctype>
 #include <stdexcept>
 namespace d2x {
 DropQuality nativeDropQuality(ItemQuality quality) {
@@ -131,8 +132,18 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
         if (item.quality == ItemQuality::Inferior) item.defense = inferiorBaseValue(item.defense, 1);
         const auto applyBase=[&](const auto &properties) {
             for(const auto &entry:properties) {
-                const auto program=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &record){return record.code==entry.code;});
-                if(program==data.properties.end()) throw std::runtime_error("Unknown armor property program");
+                const auto program=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &record) {
+                    return record.code==entry.code || (data.pd2Host && record.code.size()==entry.code.size() &&
+                        std::equal(record.code.begin(),record.code.end(),entry.code.begin(),[](unsigned char left,unsigned char right) {
+                            return std::tolower(left)==std::tolower(right);
+                        }));
+                });
+                // Match the Properties name linker used by resolveItemStats.
+                // Deep-Wounds is mixed case; *vit/*enr compile as no property.
+                if(program==data.properties.end()) {
+                    if(data.pd2Host) continue;
+                    throw std::runtime_error("Unknown armor property program: "+entry.code);
+                }
                 for(const auto &operation:program->operations)
                     if((operation.stat=="armorclass" || operation.stat=="item_armor_percent") &&
                         (operation.function==2 || operation.function==4 || (item.quality==ItemQuality::Superior && (operation.function==1 || operation.function==3))))
@@ -164,8 +175,16 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
         for(const auto &record:records) if(int(record.row)==item.specialRow) {
             bool indestructible=false;
             for(const auto &property:record.properties) {
-                const auto program=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &entry){return entry.code==property.code;});
-                if(program==data.properties.end()) throw std::runtime_error("Unknown special property program");
+                const auto program=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &entry){
+                    return entry.code==property.code || (data.pd2Host && entry.code.size()==property.code.size() &&
+                        std::equal(entry.code.begin(),entry.code.end(),property.code.begin(),[](unsigned char left,unsigned char right) {
+                            return std::tolower(left)==std::tolower(right);
+                        }));
+                });
+                if(program==data.properties.end()) {
+                    if(data.pd2Host) continue;
+                    throw std::runtime_error("Unknown special property program: "+property.code);
+                }
                 for(const auto &operation:program->operations) {
                     if(operation.function==23 && baseDurable && !indestructible) forcedEthereal=true;
                     if(operation.function==20) indestructible=true;

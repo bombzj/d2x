@@ -11,12 +11,12 @@
 #include <algorithm>
 
 namespace d2x::server::attributes {
-void preparePd2BossScaling(monsters::Actor &actor,const pd2::MapInstance &map,uint64_t tick,bool dead) {
+void preparePd2BossScaling(monsters::Actor &actor,const pd2::MapInstance &map,uint64_t tick,bool dead,unsigned participants) {
     // 371BF0 -> 381160 runs on native map birth, guarded by STATE241.
     if(!pd2::scenePauseClass(actor.identity.nativeClass) || (actor.initialEffects && actor.initialEffects->hasState(241,tick))) return;
     if(!actor.rule.states || !actor.rule.states->contains(241)) throw std::runtime_error("Missing native scene scaling state");
     const auto &rules=*actor.rule.stats;const int difficulty=map.bossDifficulty;
-    const int additional=std::max(0,int(map.participants)-1);const bool boss=pd2::sceneBossAbsorption(actor.identity.nativeClass);
+    const int additional=std::max(0,int(participants)-1);const bool boss=pd2::sceneBossAbsorption(actor.identity.nativeClass);
     auto states=actor.initialEffects?std::make_shared<CombatEffectSet>(*actor.initialEffects):std::make_shared<CombatEffectSet>();
     MonsterResourceTrace resources(actor,tick,states.get());
     const uint32_t maximum=uint32_t(resources.read().maximum.raw());
