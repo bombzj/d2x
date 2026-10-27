@@ -8,7 +8,8 @@
 #include <cmath>
 #include <algorithm>
 namespace d2x::hosting {
-void NativeRealmService::publishPlayers() {
+void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const EntityId> inventoryResets,
+    std::span<const std::pair<EntityId,EntityId>> relationUpdates) {
     const auto participants = host.participants(binding->game);
     std::set<EntityId> present;
     std::vector<Bytes> packets;
@@ -16,9 +17,21 @@ void NativeRealmService::publishPlayers() {
     if(!local) return;
     std::map<PlayerId,EntityId> actors;
     std::set<EntityId> allies;
-    for (const auto id : participants) {
-        const auto view = host.read({binding->game, id});
-        if (!view || !view->entered) continue;
+    std::map<PlayerId,PlayerSnapshot> views;
+    bool joiningParty=false,leavingParty=false,localMembershipChanged=false;
+    for(const auto id:participants) {
+        auto view=host.read({binding->game,id});
+        if(!view || !view->entered) continue;
+        const auto previous=peer.social.find(view->actor.id);
+        if(previous!=peer.social.end() && previous->second.party!=view->partyId) {
+            joiningParty|=view->partyId!=UINT16_MAX;
+            leavingParty|=previous->second.party!=UINT16_MAX;
+            localMembershipChanged|=id==binding->player;
+        }
+        views.emplace(id,std::move(*view));
+    }
+    for (const auto &[id,playerView] : views) {
+        const auto *view=&playerView;
         present.insert(view->actor.id);
         actors.emplace(id,view->actor.id);
         const auto identity = std::pair<uint64_t, std::string>{uint64_t(view->level), view->name};
@@ -28,21 +41,34 @@ void NativeRealmService::publishPlayers() {
             record.characterClass = view->characterClass; record.level = view->level;
             packets.push_back(nativePlayerRoster(*content, record));
             peer.roster[view->actor.id] = identity;
-            peer.social.erase(view->actor.id);
         }
         const auto relation=local->socialRelations.find(id);
         const uint8_t status=id==binding->player?1:relation==local->socialRelations.end()?0:relation->second.partyStatus;
         const uint16_t flags=relation==local->socialRelations.end()?0:relation->second.flags;
-        auto roster=encodeServerPacket(ServerMessage::PartyMember,[&](auto &out){
-            out.u32(uint32_t(view->actor.id.value));out.u16(view->partyId);out.u16(uint16_t(view->level));out.u16(flags);out.u16(status);
-        });
-        if(!peer.social.contains(view->actor.id) || peer.social.at(view->actor.id)!=roster) {
-            packets.push_back(roster);peer.social[view->actor.id]=std::move(roster);
+        const auto previous=peer.social.find(view->actor.id);
+        const bool initial=previous==peer.social.end();
+        const bool membershipChanged=!initial && previous->second.party!=view->partyId;
+        // ToggleHostile broadcasts 8C without 75. The other relationship
+        // callbacks (Ignore/Squelch/Loot) still update the roster.
+        const bool rosterRelationsChanged=!initial && ((previous->second.flags^flags)&~8u)!=0;
+        const bool rosterChanged=(id!=binding->player && (initial || previous->second.level!=view->level || rosterRelationsChanged)) ||
+            (leavingParty && (localMembershipChanged || membershipChanged));
+        // PlayerList's invitation state is 8B. Membership (8D) and the
+        // assignment roster (75) have independent publication lifetimes.
+        if(rosterChanged)
+            packets.push_back(encodeServerPacket(ServerMessage::PartyMember,[&](auto &out){
+                out.u32(uint32_t(view->actor.id.value));out.u16(view->partyId);out.u16(uint16_t(view->level));out.u16(flags);out.u16(status);
+            }));
+        // PartyScreen rebuilds 8D for living players when joining. Leave uses
+        // roster updates, plus a self 8D for each removed/disbanded member.
+        if(initial || joiningParty || (membershipChanged && id==binding->player))
             packets.push_back(encodeServerPacket(ServerMessage::PlayerPartyFlags,[&](auto &out){out.u32(uint32_t(view->actor.id.value));out.u16(view->partyId);}));
-            if(id!=binding->player) packets.push_back(encodeServerPacket(ServerMessage::PlayerRelationship,[&](auto &out){out.u32(uint32_t(view->actor.id.value));out.u8(status);}));
-        }
+        if(id!=binding->player && (!leavingParty || !rosterChanged) && (initial || previous->second.status!=status))
+            packets.push_back(encodeServerPacket(ServerMessage::PlayerRelationship,[&](auto &out){out.u32(uint32_t(view->actor.id.value));out.u8(status);}));
+        peer.social[view->actor.id]={view->partyId,uint16_t(view->level),flags,status};
         if(id!=binding->player && local->partyId!=UINT16_MAX && local->partyId==view->partyId) {
             allies.insert(view->actor.id);
+            if(!publishPartyVitals) continue;
             auto vitals=encodeServerPacket(ServerMessage::AllyPosition,[&](auto &out){
                 out.u8(1);out.u16(playerLifePercentage(int64_t(view->life*256),int64_t(view->attributes.maxLife)*256));
                 out.u32(uint32_t(view->actor.id.value));out.u16(uint16_t(view->actor.region));
@@ -65,12 +91,13 @@ void NativeRealmService::publishPlayers() {
     // PlayerList broadcasts directed flags, including relations between two
     // other players. Rebuild these after all roster identities on late join.
     for(const auto &[id,actor]:actors) {
-        const auto view=host.read({binding->game,id});
-        if(!view) continue;
-        for(const auto &[other,relation]:view->socialRelations) {
+        for(const auto &[other,relation]:views.at(id).socialRelations) {
             const auto target=actors.find(other);
             if(target==actors.end() || target->second==actor) continue;
             const auto key=std::pair{actor,target->second};
+            // Reliable PlayerList updates retain their own order and repeated
+            // refreshes. Do not synthesize the same change before its fact.
+            if(std::find(relationUpdates.begin(),relationUpdates.end(),key)!=relationUpdates.end()) continue;
             const auto sent=peer.relations.find(key);
             if(sent!=peer.relations.end() && sent->second==relation.flags) continue;
             packets.push_back(encodeServerPacket(ServerMessage::PlayerRelationFlags,[&](auto &out){
@@ -123,7 +150,7 @@ void NativeRealmService::publishPlayers() {
                 }
                 sent.characterRevision = view->characterRevision;
             }
-            if (inventoryChanged) {
+            if (inventoryChanged && std::find(inventoryResets.begin(),inventoryResets.end(),view->actor.id)==inventoryResets.end()) {
                 if (!fresh) for (const auto &[item, removal] : sent.equipment)
                     if (!equipment.inventory.items.contains(item) && !peer.groundItems.contains(item))
                         for (const auto &packet : removal) packets.push_back(packet);

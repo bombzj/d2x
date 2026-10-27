@@ -6,6 +6,8 @@
 
 客户端只有既有RealmSession／Remote*链。TCP和内存连接均传原1.13c MCP／D2GS字节；GameHost、PersistentCharacter和内部投影不交给客户端。此处不实现BNCS账号服务；原服账号路径保留，独立账号宿主见总计划P10。
 
+物品9C／9D的component字节取当前MPQ的物品component，只有武器按实际左右手改为RH／LH；盾牌、死灵专用头颅及箭袋保留原部件，不将所有副手盾强制写SH。例如Armor.ne2指定component10（S3），资源为ne/s3/nes3ne2tnhth.dcc；写成7会使客户端请求不存在的SH路径。该修正不改变JM磁盘编码或物品属性。
+
 | 源码入口（相对src/hosting） | 职责 |
 | --- | --- |
 | embedded_realm | 组装多个内存端点与TCP/IP游戏监听，集中泵送共享宿主；持有Join本机角色租约，校验并原子写入完整回传；TCP/IP主宿主退局先保存并结束客人 |

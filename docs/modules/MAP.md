@@ -120,4 +120,4 @@ generateArea的离线碰撞仅留在hosting内容描述中；实际RoomTerrainSe
 
 ## 限制与后续
 
-原地形／碰撞对照样本及生成边界见[五幕地图](../gameplay/world/MAPS.md)与[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。长距离绕障、动态阻挡、完整房间时序、特殊旅行资格、全种子、精确客户端照明及Linux仍缺完整对照；传送点资格及动画边界见[物件](../gameplay/world/OBJECTS.md#自研传送点)。
+原地形／碰撞对照样本及生成边界见[五幕地图](../gameplay/world/MAPS.md)与[原版对照](../development/MAP_PARITY.md#原版-dll-对照方法)。长距离绕障、动态阻挡、完整房间时序、特殊旅行资格、全种子、精确客户端照明及Linux仍缺完整对照；传送点资格及动画边界见[物件](../gameplay/world/OBJECTS.md#自研传送点)。

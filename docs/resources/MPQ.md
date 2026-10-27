@@ -50,7 +50,7 @@ D2MOO 的 `D2Hell/src/Archive.cpp::ARCHIVE_AllocateBufferAndReadFile` 分配文�
 
 本机1.13c `D2Common.dll`静态读取确认：RVA `0x9900` 的加载函数在 `0x994d` 按文件长度加800字节分配；`0xb560` 的 DS1 解析调用该加载函数，`0xba38` 读取声明数量，`0xba71..0xbabc` 直接读取组字段。Fog ordinal10042／内存池返回已有块不清零，另一路 HeapAlloc flags=0；D2Common `0x9610` 只读取并检查文件长度，未初始化额外尾部。零尺寸是本项目确定性兼容策略，不是 D2MOO／原 DLL 保证的尾部值，不复现未初始化内存读取。既有原DLL新进程导出与共同C++核心的第一幕主题、最终DT1和完整碰撞一致；该证据不证明任意未初始化尾部必为零。
 
-当前解码保留14组兼容。122组原版结果对照的条件与边界见[地图参考](../gameplay/world/MAPS.md#对照与验证边界)及[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)；不据自研加载结果扩展原版一致性范围。原MPQ未改动。
+当前解码保留14组兼容。122组原版结果对照的条件与边界见[地图参考](../gameplay/world/MAPS.md#对照与验证边界)及[原版对照](../development/MAP_PARITY.md#原版-dll-对照方法)；不据自研加载结果扩展原版一致性范围。原MPQ未改动。
 
 ## 查询与提取
 

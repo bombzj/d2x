@@ -5,7 +5,6 @@
 #include "content/classic_data.hpp"
 #include "network/protocol/bits.hpp"
 #include <cmath>
-#include <numbers>
 #include <stdexcept>
 #include <bit>
 #include <algorithm>
@@ -92,10 +91,6 @@ void key(Writer &out, uint8_t type, EntityId id) {
     if (!id || id.value > UINT32_MAX) throw std::runtime_error("Combat identity exceeds native capacity");
     out.u8(type); out.u32(uint32_t(id.value));
 }
-uint8_t direction(Vec from, Vec to) {
-    const auto delta = to - from;
-    return uint8_t(int(std::lround(7.5 + std::atan2(-delta.x, delta.y) * 32. / std::numbers::pi)) & 63);
-}
 Bytes monsterBlock(EntityId actor, const std::optional<MotionTarget> &target) {
     // Retail 1.13c action 18 (RVA 4E253) consumes a unit type/GUID, never
     // XY coordinates. A missing/invisible target uses a valid lookup type and
@@ -169,7 +164,9 @@ Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
             out.u32(uint32_t(monster.id.value));
             out.u8(monster.mode==8?(monster.movementTarget?13:12):monster.mode==9?(monster.movementTarget?15:14):monster.mode==10?(monster.movementTarget?27:26):(monster.movementTarget?29:28));
             if(monster.movementTarget) key(out,monster.movementTarget->type,monster.movementTarget->id);
-            else point(out,monster.destination+origin);
+            // SrvDo097 uses a zero-initialized mode change for resurrection;
+            // its path first/last point is (0,0), not the corpse's position.
+            else point(out,monster.rising?Vec{}:monster.destination+origin);
             out.u8(monster.poseDirection.value_or(0));if(!monster.movementTarget) out.u8(0);point(out,monster.position+origin);
         });
     if (monster.mode == 0 || monster.mode == 12)
@@ -212,12 +209,14 @@ std::vector<Bytes> nativeAttack(const server::AttackFact &fact, Vec origin) {
     if(fact.actorType==1 && !fact.skill && !fact.target)
         return {encodeServerPacket(ServerMessage::NpcActionPoint,[&](auto &out) {
             out.u32(uint32_t(fact.actor.value));out.u8(fact.monsterMode==9?14:fact.monsterMode==8?12:fact.monsterMode==5?17:11);
-            point(out,fact.destination+origin);out.u8(direction(fact.position,fact.destination));out.u8(0);point(out,fact.position+origin);
+            point(out,fact.destination+origin);out.u8(0);out.u8(0);point(out,fact.position+origin);
         })};
     if (fact.actorType == 1 && !fact.skill)
         return {encodeServerPacket(ServerMessage::NpcAction, [&](auto &out) {
             out.u32(uint32_t(fact.actor.value)); out.u8(fact.monsterMode == 9 ? 15 : fact.monsterMode == 8 ? 13 : fact.monsterMode == 5 ? 16 : 10); key(out, fact.targetType, fact.target);
-            out.u8(direction(fact.position, fact.destination)); point(out, fact.position + origin);
+            // MonsterMsg leaves this byte zero for ordinary attack modes;
+            // the client obtains facing from the target/path itself.
+            out.u8(0); point(out, fact.position + origin);
         })};
     if (fact.target)
         return {encodeServerPacket(ServerMessage::CastUnit, [&](auto &out) {

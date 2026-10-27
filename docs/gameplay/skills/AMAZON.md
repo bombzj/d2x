@@ -45,6 +45,8 @@ SrvSt／Do为当前MPQ分派，—表示没有该回调，不能据此判断未�
 
 ## 专项计算与领域入口
 
+武器费用由inventory/weapon_cost与transactions原子提交弹药、数量／耐久、法力及公开事实。接触命中结果只掷一次交给combat；范围回调与箭本体保留不同发生标识，背压不重复扣费或掷伤。
+
 | 范围 | 当前入口与边界 |
 | --- | --- |
 | 序列／回滚 | `amazon_sequence`准备Jab／Impale原序列，服务端timeline驱动标记与回绕；weaponVolley仅供客户端表现。Impale的专用耐久／数量机会与普通Drain磨损分别执行 |
@@ -81,6 +83,8 @@ attributes/prepareSummonStatSources从基础列表依序安装初始技能、召
 | 弓弩／箭袋 | ItemMode::sub_6FC43280允许bow／bowq、xbow／xboq双手组合；RemoteInventory直接发0x1A，不先移除匹配箭袋，已获原服真实回应 |
 
 原服普通本人动作及动作派生弹体的发包原则见[COMMON](COMMON.md#定义来源与客户端状态)，不为自研另写客户端协议或画面分支。
+
+A7／A8／A9承载伪装与单位状态属性；7F向主人同步宠物生命／区域，独立于可见单位。头像投影与未专项复验边界见[召唤物与佣兵头像](../characters/HIRELINGS.md#召唤物与佣兵头像)。运行态伙伴、独立装备及内容准备不写角色D2S；全部PvP伙伴组合与完整受击动作仍待对齐。
 
 ## 边界
 

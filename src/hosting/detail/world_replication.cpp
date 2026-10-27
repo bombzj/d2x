@@ -131,12 +131,13 @@ void NativeRealmService::changeArea(const server::TravelFact &fact) {
 }
 
 namespace d2x::hosting {
-void NativeRealmService::publishGroundItems() {
+void NativeRealmService::publishGroundItems(std::span<const EntityId> pendingDrops) {
     std::map<EntityId, uint64_t> next;
     std::vector<Bytes> packets;
     for (const auto &item : host.groundItems(*binding)) {
         next.emplace(item.id, item.revision);
-        if (const auto old = peer.groundItems.find(item.id); old == peer.groundItems.end() || old->second != item.revision) {
+        if (const auto old = peer.groundItems.find(item.id); (old == peer.groundItems.end() || old->second != item.revision) &&
+            std::find(pendingDrops.begin(),pendingDrops.end(),item.id)==pendingDrops.end()) {
             const auto area = std::get<GroundLocation>(item.location).region;
             packets.push_back(nativeGroundItem(*content, item, shared.terrain.at(binding->game).at(area).origin));
         }

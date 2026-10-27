@@ -42,7 +42,7 @@ cmake --build build --parallel
 
 首次配置时，CMake 会从 GitHub 下载固定版本的 raylib、StormLib、Asio 和 BNCSutil，所以需要网络与 Git。不要复制 Windows 的 `build` 目录给 Linux 继续编译。Linux 图形应用不需要 Wine；联网认证会只读配置中的原版客户端文件。`--hidden` 仍会创建图形上下文，不能据此在无显示服务的服务器上运行。功能范围见基线，Linux验证限制见本页支持状态。
 
-游戏内由原服提供角色、单位和区域状态，客户端重建 MPQ 地形。技能菜单悬停后用 `F1–F8` 绑定，`1–4` 饮药，`B` 展开腰带，`I` 整理库存；菜单不暂停联机会话。本地读写档与直进区域参数已退出产品入口。
+游戏内由原服提供角色、单位和区域状态，客户端重建 MPQ 地形。默认技能菜单悬停后用 `F1–F8` 绑定，`1–4` 饮药，波浪号展开腰带，`I`／`B` 整理库存；ESC→Options→Configure Controls可编辑主／副键和16个技能快捷槽，Accept后全角色共享保存。菜单不暂停联机会话，详细范围见[经典UI](../gameplay/ui/CLASSIC_HUD.md#esc-菜单)。本地读写档与直进区域参数已退出产品入口。
 
 ## Windows 运行
 

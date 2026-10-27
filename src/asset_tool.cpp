@@ -6,6 +6,7 @@
 #include "resources/formats.hpp"
 #include "resources/text.hpp"
 #include "persistence/save_file.hpp"
+#include "asset_save_recipe.hpp"
 #include "gameplay/items/equipment_rules.hpp"
 #include "world/cow_level.hpp"
 #include "world/maze.hpp"
@@ -170,6 +171,8 @@ int main(int argc, char **argv) {
                    "  ... native-map <level> <map-seed> <difficulty:0-2> [original-export.json|complete|prepared]\n"
                    "  ... substitutions <LvlSub-type>\n"
                    "  ... save-info <file.d2s>\n"
+                   "  ... save-recipes <recipe.json> <new-output-directory>\n"
+                   "  ... save-json <file.d2s> <new-manifest.json>\n"
                    "  ... treasure <TC-name> [seed] [monster-level]\n"
                    "  ... quality <item-code> <item-level> <MF> [seed] [unique set rare magic modifiers]\n"
                    "  ... loot-plan <TC-name> <item-level> <seed> [upgrade-level]\n"
@@ -181,6 +184,16 @@ int main(int argc, char **argv) {
         d2x::Archives a;
         a.mountDirectory(argv[1]);
         std::string command = argv[2];
+        if (command == "save-recipes" && argc == 5) {
+            const auto data = d2x::loadClassicData(a);
+            d2x::generateSaveRecipes(data, argv[3], argv[4]);
+            return 0;
+        }
+        if (command == "save-json" && argc == 5) {
+            const auto data = d2x::loadClassicData(a);
+            d2x::exportSaveManifest(data, argv[3], argv[4]);
+            return 0;
+        }
         if (command == "loot-plan" && (argc == 6 || argc == 7)) {
             auto data = d2x::loadClassicData(a);
             auto ratios = data.tables.find("itemratio");

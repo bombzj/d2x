@@ -74,6 +74,50 @@ void SceneView::scrollGameMenu(const FrameInput &input) {
     } else view_.gameMenuControlScroll = std::clamp(view_.gameMenuControlScroll + delta, 0, limit);
     if (!input.leftHeld || input.leftReleased) view_.gameMenuScrollDragging = false;
 }
+bool SceneView::editGameMenuControls(const FrameInput &input) {
+    if (view_.gameMenuPage != EscapeMenuPage::Controls) return false;
+    if (view_.controlCapturing) {
+        if (input.escape) view_.controlCapturing = false;
+        else if (input.controlKeyPressed) {
+            if (!validControlBinding(ControlAction(view_.controlSelected), input.controlKeyPressed)) return true;
+            assignControlKey(view_.controlDraft, ControlAction(view_.controlSelected),
+                size_t(view_.controlColumn), input.controlKeyPressed);
+            view_.controlCapturing = false;
+        } else if (input.leftPressed || input.rightPressed) view_.controlCapturing = false;
+        return true;
+    }
+    if (input.leftPressed && input.insideViewport) {
+        const auto [action, column] = assets_.escapeMenu.controlAt(input.mouse, view_.gameMenuControlScroll);
+        if (action >= 0) {
+            view_.controlSelected = action;
+            view_.controlColumn = column;
+            view_.controlCapturing = true;
+            view_.gameMenuPressed = -1;
+            view_.gameMenuSelected = -1;
+            return true;
+        }
+    }
+    if (view_.controlSelected >= 0 && input.enter) {
+        view_.controlCapturing = true;
+        return true;
+    }
+    if (input.menuLeft || input.menuRight || input.menuDelta) {
+        const bool hadSelection = view_.controlSelected >= 0;
+        if (!hadSelection) view_.controlSelected = 0;
+        view_.controlColumn = std::clamp(view_.controlColumn + input.menuRight - input.menuLeft, 0, 1);
+        const int direction = input.menuDelta > 0 ? 1 : -1;
+        if (input.menuDelta && hadSelection) {
+            for (int action = view_.controlSelected + direction; action >= 0 && action < int(ControlAction::Count); action += direction)
+                if (controlActionAvailable(ControlAction(action))) { view_.controlSelected = action; break; }
+        }
+        const int row = assets_.escapeMenu.controlRow(ControlAction(view_.controlSelected));
+        if (row < view_.gameMenuControlScroll) view_.gameMenuControlScroll = row;
+        if (row >= view_.gameMenuControlScroll + 15) view_.gameMenuControlScroll = row - 14;
+        view_.gameMenuSelected = -1;
+        return true;
+    }
+    return false;
+}
 void SceneView::drawGameMenu() const {
     if (!view_.gameMenuOpen) return;
     const int palette = std::clamp(mapView().palette, 0, 4);
@@ -85,7 +129,8 @@ void SceneView::drawGameMenu() const {
         view_.automapFade == AutomapFade::Everything ? 2 : 3,
         int(view_.automapCenterWhenCleared), int(view_.automapParty), int(view_.automapNames)};
     assets_.escapeMenu.draw(view_.gameMenuPage, view_.gameMenuSelected, view_.gameMenuTime,
-                            values, view_.audio, view_.lighting, view_.gameMenuControlScroll, view_.gameMenuScrollPressed, *blend);
+                            values, view_.audio, view_.lighting, view_.gameMenuControlScroll, view_.gameMenuScrollPressed,
+                            view_.controlDraft, view_.controlSelected, view_.controlColumn, view_.controlCapturing, *blend);
 }
 void SceneView::drawHelp() const {
 
@@ -93,21 +138,20 @@ void SceneView::drawHelp() const {
     frame({W / 2.f - 260, 90, 520, 510});
     painter_.centered("FIELD MANUAL", 140, 25, gold);
     painter_.centered("Diablo II online controls", 178, 12);
-    const char *lines[] = {"Left click / hold          Move / Attack / Talk / Pick up",
-                           "Hold Alt                   Show ground item names",
-                           "I / A / T                  Inventory / Character / Skills",
-                           "Arrow keys                 Pan automap",
-                           "Right click / S            Cast / Open skill selection",
-                           "1 through 4 / ~            Drink belt potion / Expand belt",
-                           "Hover skill, F1-F8         Bind selected mouse skill",
-                           "F1 through F8              Select bound mouse skill",
-                           "R                          Toggle walk / run",
-                           "Tab / V                    Automap / Switch map side",
-                           "W / O / P                  Weapon swap / Hireling / Party",
-                           "Enter / M                  Chat / Message log",
-                           "Q / Home                   Quest log / Center map",
-                           "F12 / Ctrl+F12             Map names / Screenshot",
-                           "Ctrl+F1                   Close this panel"};
+    const auto binding = [&](ControlAction action, const char *description) {
+        auto keys = assets_.escapeMenu.bindingName(view_.controls, action);
+        if (keys.empty()) keys = assets_.escapeMenu.keyName(0);
+        return keys + "    " + description;
+    };
+    const std::string lines[] = {"Left click / hold    Move / Attack / Talk / Pick up",
+        binding(ControlAction::ShowItems, "Show ground item names"),
+        binding(ControlAction::Inventory, "Inventory"), binding(ControlAction::Character, "Character"),
+        binding(ControlAction::SkillTree, "Skill tree"), binding(ControlAction::SkillPicker, "Skill selection"),
+        binding(ControlAction::Belt, "Expand belt"), binding(ControlAction::RunLock, "Walk / run"),
+        binding(ControlAction::Automap, "Automap"), binding(ControlAction::SwapWeapons, "Swap weapons"),
+        binding(ControlAction::Hireling, "Hireling"), binding(ControlAction::Party, "Party"),
+        binding(ControlAction::Chat, "Chat"), binding(ControlAction::MessageLog, "Message log"),
+        binding(ControlAction::Help, "Close this panel")};
     for (int i = 0; i < int(std::size(lines)); i++)
         painter_.label(lines[i], W / 2 - 194, 216 + i * 23, 12,
                        i < 4 ? parchment : Color{150, 148, 132, 255});

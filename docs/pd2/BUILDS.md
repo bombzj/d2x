@@ -19,7 +19,7 @@
 | 配套D2Common.dll | `0406922db7b9959484a08f83bcc6a0fe9d11a157cb2322a061033e8d37480217` | 当前包装器负序号的实际解析模块，不直接套D2MOO序号 |
 | 配套D2Game.dll | `24b293b86f95bea0228826c502ea04737ba21b91ca9832e52aac4b11fef14f53` | 当前服务端RVA的实际解析模块 |
 | 旧核心／ProjectDiablo.dll | `9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f` | 5,230,080字节；[完整函数目录](../resources/pd2-core/README.md)、旧补丁／程序表及未另标版的历史取证 |
-| 旧pd2data.mpq | `6ce1d885dfcb16ac0ff7a183d56c56baeaad591d8779ce9e843e16dfc2756002` | [首批样本摘要](../architecture/PD2_COMPATIBILITY.md#已取得的-cn-目标样本)对应的资源，不能与当前资源混称同一输入 |
+| 旧pd2data.mpq | `6ce1d885dfcb16ac0ff7a183d56c56baeaad591d8779ce9e843e16dfc2756002` | [首批样本摘要](BUILDS.md#已取得的-cn-目标样本)对应的资源，不能与当前资源混称同一输入 |
 
 分析样本原取自隔离目录`D:/Downloads/Diablo II V1.13C-PD2-Analysis/pd2/`；该目录可被启动器更新，复核时必须另核对同名文件的实际摘要，路径不能作为版本身份。核心和MPQ可以分别更新，因此同一核心摘要不自动证明资源相同。其他资源、BH、mdll1、PD2_EXT、Bnclient和原客户端等模块按[样本取证](../resources/PD2_CN_DLL_ANALYSIS.md)各负责段落的摘要解释，不套用核心的版本标识。
 
@@ -86,3 +86,27 @@ ProjectDiablo.dll静态ImageBase为0x10000000。文档使用所属模块内RVA�
 D2MOO `D2Game/src/UNIT/SUnitDmg.cpp`的`SUNITDMG_ExecuteEvents`在将物理伤害限至目标当前生命之前执行DOMELEEDMG／DAMAGEDINMELEE。Drain内部使用HitFlags加`0x20`的局部伤害副本，原pCombat仍保留原分配数据。原`SKILLITEM_EventFunc20_SkillOnAttackHitKill`在概率非正或有pDamage但缺少`0x20`时拒绝，除此按单位原随机数取百分比；它不要求伤害总量大于零。因此Vengeance零物理接触仍可能触发近战溅射。
 
 另有两处应按指令纠正：`0x37AA30→0x37A9C0`判断区域157／159／166，`0x37AA60→0x37A9F0`只判断166，均不是城镇或移动判断；Bash的memset之后仍显式写伤害头，不能因反编译省略写入而认定标志全零。
+
+## 已取得的 CN 目标样本
+
+用户授权在原版的独立副本中运行启动器。目标文件位于副本的 `pd2` 子目录；启动器创建 `Game.exe` 子进程，游戏日志中的 Application Path 也指向该副本。本轮仅据此确认程序启动，不认证选角、入局或完整游玩。后续D2X已使用用户提供的联调账号核对账号大厅及MCP票据；未保存原始认证载荷，未完成游戏场景。
+
+配置快照为 `seasonMode=Normal`、`gamemode=bnet`、`udpMode=0`、`noUpdate=0`。界面另有单机、TCP／UDP(KCP)／UDP(QUIC)、直连／中转等选项；这些只能说明启动器提供相应入口，尚不能推出隧道内部报文格式或所有模式使用相同资源。主 `pd2data.mpq`／`ProjectDiablo.dll` 与各自 `.sn` 文件的大小、SHA-256 一致；`.ss` 文件不同。切换模式后必须重新核对配套文件，不能混用。
+
+| 文件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| ProjectDiablo.dll | 5,230,080 | `9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f` |
+| PD2_EXT.dll | 83,456 | `c253dec5a9fab068f2cc64c816392ddc3ed97dfa9822aa5725ace3e64a02d6ab` |
+| pd2data.mpq | 2,259,046 | `6ce1d885dfcb16ac0ff7a183d56c56baeaad591d8779ce9e843e16dfc2756002` |
+| pd2assets.mpq | 143,872,381 | `70baa8e5334b38dd2c4e3cb8f6517eab0a1cc46e49f667e111af687f764b7ac7` |
+| pd2maps.mpq | 5,240,058 | `ad704b94aab4fa4142fb4fe37b38bd3fe7ae43a94c14518baf0d6cb0ca00d33a` |
+| pd2monchars.mpq | 373,591,568 | `ae2abade85c5f393db5d8089cb4b6566b2cfed2adea0f573bc0f4220ef733217` |
+| patch_d2.mpq | 2,108,703 | `b976e7847dda696f54198a9477819f96579c4894f54381c72afb4937e919e0a9` |
+| Game.exe | 61,440 | `065aedaa998adcd337b93ccf33457e3bac589bab3bfd894351b6fa834399985d` |
+| D2Common.dll | 679,936 | `0406922db7b9959484a08f83bcc6a0fe9d11a157cb2322a061033e8d37480217` |
+| D2Win.dll | 147,456 | `6015e0b67834a8f3c657b32ea440cb04dad42e01e8bcf5782f90b14323769e0c` |
+| Storm.dll | 372,736 | `cc848eb2fc29068fb61cb258c1c8b9e8a191c5543805939762ed835b50fb194d` |
+
+另外包含 D2MultiRes、SGD2FreeRes、CheckRevision 相关包及 loose `Data` 目录，不能将目录内所有 MPQ 都当作游戏数据扩展。更新时出现的 `zylpd2update.tmp` 是文件名和十进制校验值的临时清单，更新完成后已移除；本页仅采用此前读到的字段，不依赖该缓存仍存在。这些数值的算法未在本轮确认，不能当成 SHA-256 或发布者签名。
+
+分析产物在忽略的 `reference/pd2-cn-analysis/`：`TARGET_REFERENCE.json` 记录 60 个输入文件、28 个提取表文件的大小与摘要，另有 PE 元数据、静态反汇编；提表使用已有资源工具的只读 list／extract 路径。提取资源、目标 DLL 和分析缓存不纳入源码提交。

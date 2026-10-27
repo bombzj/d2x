@@ -189,7 +189,7 @@ Warlord1060的35A6F0场地阶段、五槽选择与共用守卫属性已沿F45补
 
 ### 专属场景AI
 
-当前41d49的789、933–936、989–991、1112／1113／1141及704／705／709附加仆从分别由ai/pd2/{diablo_clone,rathma_boss,ancients,lucion,uber_minions}消费，原MonStats／aip输入、阶段、出生及结尾链见[F61](FUNCTION_PARITY.md#f61-专属4145控制器的出生与事件依赖)。935／936直接HP、毒与伤口镜像各自保留原资格，不再走第二次伤害抵抗；房间释放暂停与状态241缩放独立于战斗受伤事件。接收计划只有直接生命写入、没有网络事实时，`effects::commitUnitReception`仍须提交已复验的属性／生命周期计划，不能向EventOutbox提交空批次而拒绝整次接触；有事实时保留发布成功后提交及背压重试边界。
+当前41d49的789、933–936、989–991、1112／1113／1141及704／705／709附加仆从分别由ai/pd2/{diablo_clone,rathma_boss,ancients,lucion,uber_minions}消费，原MonStats／aip输入、阶段、出生及结尾链见[F61](parity/MAPS.md#f61-专属4145控制器的出生与事件依赖)。935／936直接HP、毒与伤口镜像各自保留原资格，不再走第二次伤害抵抗；房间释放暂停与状态241缩放独立于战斗受伤事件。接收计划只有直接生命写入、没有网络事实时，`effects::commitUnitReception`仍须提交已复验的属性／生命周期计划，不能向EventOutbox提交空批次而拒绝整次接触；有事实时保留发布成功后提交及背压重试边界。
 
 [pd2RathmaPartner](../../src/server/systems/monsters/pd2/scene_spawn.cpp)沿Maps唯一持有的两个场景绑定按GUID查询，并复验同一MapInstance、区域、绑定槽及935／936互补身份，不再在每次伤害／伤口／状态接触中遍历全局Actor。41d49的305920读取Game2600／2604两个指针，按来源与绑定类选择另一方；原生模式0／12及状态8的资格仍由各镜像消费者保留。恢复或重建后重新查GUID，不缓存裸指针，不更改属性、随机或接触提交次序；实际耗时未量测。
 

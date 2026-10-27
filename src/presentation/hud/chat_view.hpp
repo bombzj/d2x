@@ -24,6 +24,7 @@ class ChatView {
     bool ready_{}, inputOpen_{}, logOpen_{}, dragging_{};
     size_t caret_{}, scroll_{}, unavailable_{};
     uint64_t sequence_{}, accountSequence_{};
+    uint64_t clearedAt_{};
     std::array<std::string,12> partyNotices_;
     std::string hostileTimeout_,notListening_,slainBy_;
     std::array<std::array<std::string,2>,2> presenceNotices_;

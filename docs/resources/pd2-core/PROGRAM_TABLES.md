@@ -2,14 +2,41 @@
 
 [返回总览](README.md)。核心初始化明确调用的18个程序表初始化器共恢复354条直接立即数写入，其中282条为代码指针。表中保留指针全局、解析器对应的原模块／表RVA及相对偏移；未核实类型的表不按技能、飞弹或物件名称猜槽位。控制流根和写入指令经REA反编译及LLVM核对。这个范围不是任意函数内所有动态内存写入的全集。
 
+## 初始化器与目标表索引
+
+索引按正文首次出现顺序排列，目标表身份来自原字段，不推断业务类型；同一初始化器可写多个目标表，重复写入仍逐条保留。固定旧核心摘要见[总览](README.md)。
+
+| 初始化器 | 写入数 | 原模块／目标表 |
+| --- | ---: | --- |
+| [0x368170](#init-368170) | 5 | D2GAME.dll / 0x107238 |
+| [0x3681A0](#init-3681a0) | 112 | D2CLIENT.dll / 0xdea48；D2GAME.dll / 0x1074a8；D2GAME.dll / 0x107338 |
+| [0x3A8940](#init-3a8940) | 6 | D2CLIENT.dll / 0xde928 |
+| [0x3A9C80](#init-3a9c80) | 8 | D2CLIENT.dll / 0xf5210 |
+| [0x368A30](#init-368a30) | 12 | D2GAME.dll / 0x1077a8 |
+| [0x368AA0](#init-368aa0) | 19 | D2GAME.dll / 0x10e050；D2GAME.dll / 0x107bb8 |
+| [0x35D970](#init-35d970) | 30 | D2GAME.dll / 0x10e788 |
+| [0x3A4A00](#init-3a4a00) | 13 | D2GAME.dll / 0x10da48 |
+| [0x3A2AB0](#init-3a2ab0) | 5 | D2GAME.dll / 0x10db68 |
+| [0x3A2CF0](#init-3a2cf0) | 3 | D2GAME.dll / 0x10d970 |
+| [0x3A24E0](#init-3a24e0) | 5 | D2CLIENT.dll / 0xdda10 |
+| [0x3A1BC0](#init-3a1bc0) | 5 | D2CLIENT.dll / 0xdd8a0 |
+| [0x39CB90](#init-39cb90) | 11 | D2GAME.dll / 0xfa5f8 |
+| [0x39CD20](#init-39cd20) | 1 | D2COMMON.dll / 0x9b0c8 |
+| [0x345830](#init-345830) | 20 | D2GAME.dll / 0xfa3f8 |
+| [0x3689C0](#init-3689c0) | 4 | D2GAME.dll / 0x102ab0；D2GAME.dll / 0x10f448 |
+| [0x368600](#init-368600) | 94 | D2CLIENT.dll / 0xdde60；D2NET.dll / 0xa900；D2NET.dll / 0xabd8 |
+| [0x368B70](#init-368b70) | 1 | D2GAME.dll / 0xfa3f8 |
+
+## 原序写入记录
+
 | 初始化器RVA | 写指令RVA | 指针全局RVA | 原模块／表RVA | 槽内字节偏移 | 写入值／回调 |
 | --- | --- | --- | --- | --- | --- |
-| [0x368170](functions/1b.md#rva-368170) | 0x368175 | 0x5D8954 | D2GAME.dll / 0x107238 | 0x14 | [0x37EBE0](functions/1b.md#rva-37ebe0) |
+| <a id="init-368170"></a>[0x368170](functions/1b.md#rva-368170) | 0x368175 | 0x5D8954 | D2GAME.dll / 0x107238 | 0x14 | [0x37EBE0](functions/1b.md#rva-37ebe0) |
 | [0x368170](functions/1b.md#rva-368170) | 0x36817c | 0x5D8954 | D2GAME.dll / 0x107238 | 0x1c | [0x37EC70](functions/1b.md#rva-37ec70) |
 | [0x368170](functions/1b.md#rva-368170) | 0x368183 | 0x5D8954 | D2GAME.dll / 0x107238 | 0x2c | [0x37ECF0](functions/1b.md#rva-37ecf0) |
 | [0x368170](functions/1b.md#rva-368170) | 0x36818a | 0x5D8954 | D2GAME.dll / 0x107238 | 0x64 | [0x37ED40](functions/1b.md#rva-37ed40) |
 | [0x368170](functions/1b.md#rva-368170) | 0x368191 | 0x5D8954 | D2GAME.dll / 0x107238 | 0x6c | [0x37FB80](functions/1b.md#rva-37fb80) |
-| [0x3681A0](functions/1b.md#rva-3681a0) | 0x3681a5 | 0x5D866C | D2CLIENT.dll / 0xdea48 | 0x20 | [0x3A65C0](functions/1d.md#rva-3a65c0) |
+| <a id="init-3681a0"></a>[0x3681A0](functions/1b.md#rva-3681a0) | 0x3681a5 | 0x5D866C | D2CLIENT.dll / 0xdea48 | 0x20 | [0x3A65C0](functions/1d.md#rva-3a65c0) |
 | [0x3681A0](functions/1b.md#rva-3681a0) | 0x3681ac | 0x5D866C | D2CLIENT.dll / 0xdea48 | 0x14c | [0x3A6720](functions/1d.md#rva-3a6720) |
 | [0x3681A0](functions/1b.md#rva-3681a0) | 0x3681b6 | 0x5D866C | D2CLIENT.dll / 0xdea48 | 0x178 | [0x3A6830](functions/1d.md#rva-3a6830) |
 | [0x3681A0](functions/1b.md#rva-3681a0) | 0x3681c0 | 0x5D866C | D2CLIENT.dll / 0xdea48 | 0x184 | [0x3A6930](functions/1d.md#rva-3a6930) |
@@ -121,13 +148,13 @@
 | [0x3681A0](functions/1b.md#rva-3681a0) | 0x3685d3 | 0x5D883C | D2GAME.dll / 0x107338 | 0x134 | [0x3B2330](functions/1d.md#rva-3b2330) |
 | [0x3681A0](functions/1b.md#rva-3681a0) | 0x3685dd | 0x5D883C | D2GAME.dll / 0x107338 | 0x138 | [0x3B23A0](functions/1d.md#rva-3b23a0) |
 | [0x3681A0](functions/1b.md#rva-3681a0) | 0x3685e7 | 0x5D883C | D2GAME.dll / 0x107338 | 0x13c | [0x3B2560](functions/1d.md#rva-3b2560) |
-| [0x3A8940](functions/1d.md#rva-3a8940) | 0x3a8945 | 0x5DC054 | D2CLIENT.dll / 0xde928 | 0x24 | [0x3A8370](functions/1d.md#rva-3a8370) |
+| <a id="init-3a8940"></a>[0x3A8940](functions/1d.md#rva-3a8940) | 0x3a8945 | 0x5DC054 | D2CLIENT.dll / 0xde928 | 0x24 | [0x3A8370](functions/1d.md#rva-3a8370) |
 | [0x3A8940](functions/1d.md#rva-3a8940) | 0x3a894c | 0x5DC054 | D2CLIENT.dll / 0xde928 | 0xd8 | [0x3A83B0](functions/1d.md#rva-3a83b0) |
 | [0x3A8940](functions/1d.md#rva-3a8940) | 0x3a8956 | 0x5DC054 | D2CLIENT.dll / 0xde928 | 0xdc | [0x3A83E0](functions/1d.md#rva-3a83e0) |
 | [0x3A8940](functions/1d.md#rva-3a8940) | 0x3a8960 | 0x5DC054 | D2CLIENT.dll / 0xde928 | 0xe0 | [0x3A8450](functions/1d.md#rva-3a8450) |
 | [0x3A8940](functions/1d.md#rva-3a8940) | 0x3a896a | 0x5DC054 | D2CLIENT.dll / 0xde928 | 0xe4 | [0x3A8500](functions/1d.md#rva-3a8500) |
 | [0x3A8940](functions/1d.md#rva-3a8940) | 0x3a8974 | 0x5DC054 | D2CLIENT.dll / 0xde928 | 0xe8 | [0x3A86F0](functions/1d.md#rva-3a86f0) |
-| [0x3A9C80](functions/1d.md#rva-3a9c80) | 0x3a9c85 | 0x5DC3F4 | D2CLIENT.dll / 0xf5210 | 0x2c | [0x3A8990](functions/1d.md#rva-3a8990) |
+| <a id="init-3a9c80"></a>[0x3A9C80](functions/1d.md#rva-3a9c80) | 0x3a9c85 | 0x5DC3F4 | D2CLIENT.dll / 0xf5210 | 0x2c | [0x3A8990](functions/1d.md#rva-3a8990) |
 | [0x3A9C80](functions/1d.md#rva-3a9c80) | 0x3a9c8c | 0x5DC3F4 | D2CLIENT.dll / 0xf5210 | 0x34 | [0x3A8D60](functions/1d.md#rva-3a8d60) |
 | [0x3A9C80](functions/1d.md#rva-3a9c80) | 0x3a9c93 | 0x5DC3F4 | D2CLIENT.dll / 0xf5210 | 0x3c | [0x3A8E60](functions/1d.md#rva-3a8e60) |
 | [0x3A9C80](functions/1d.md#rva-3a9c80) | 0x3a9c9a | 0x5DC3F4 | D2CLIENT.dll / 0xf5210 | 0x40 | [0x3A9080](functions/1d.md#rva-3a9080) |
@@ -135,7 +162,7 @@
 | [0x3A9C80](functions/1d.md#rva-3a9c80) | 0x3a9ca8 | 0x5DC3F4 | D2CLIENT.dll / 0xf5210 | 0x68 | [0x3A96B0](functions/1d.md#rva-3a96b0) |
 | [0x3A9C80](functions/1d.md#rva-3a9c80) | 0x3a9caf | 0x5DC3F4 | D2CLIENT.dll / 0xf5210 | 0x6c | [0x3A97F0](functions/1d.md#rva-3a97f0) |
 | [0x3A9C80](functions/1d.md#rva-3a9c80) | 0x3a9cb6 | 0x5DC3F4 | D2CLIENT.dll / 0xf5210 | 0x70 | [0x3A9AD0](functions/1d.md#rva-3a9ad0) |
-| [0x368A30](functions/1b.md#rva-368a30) | 0x368a35 | 0x5D8848 | D2GAME.dll / 0x1077a8 | 0x18 | [0x344070](functions/1a.md#rva-344070) |
+| <a id="init-368a30"></a>[0x368A30](functions/1b.md#rva-368a30) | 0x368a35 | 0x5D8848 | D2GAME.dll / 0x1077a8 | 0x18 | [0x344070](functions/1a.md#rva-344070) |
 | [0x368A30](functions/1b.md#rva-368a30) | 0x368a3c | 0x5D8848 | D2GAME.dll / 0x1077a8 | 0x1c | [0x3442A0](functions/1a.md#rva-3442a0) |
 | [0x368A30](functions/1b.md#rva-368a30) | 0x368a43 | 0x5D8848 | D2GAME.dll / 0x1077a8 | 0x3c | [0x344320](functions/1a.md#rva-344320) |
 | [0x368A30](functions/1b.md#rva-368a30) | 0x368a4a | 0x5D8848 | D2GAME.dll / 0x1077a8 | 0x40 | [0x3448D0](functions/1a.md#rva-3448d0) |
@@ -147,7 +174,7 @@
 | [0x368A30](functions/1b.md#rva-368a30) | 0x368a74 | 0x5D8848 | D2GAME.dll / 0x1077a8 | 0x6c | [0x345210](functions/1a.md#rva-345210) |
 | [0x368A30](functions/1b.md#rva-368a30) | 0x368a7b | 0x5D8848 | D2GAME.dll / 0x1077a8 | 0x80 | [0x345280](functions/1a.md#rva-345280) |
 | [0x368A30](functions/1b.md#rva-368a30) | 0x368a85 | 0x5D8848 | D2GAME.dll / 0x1077a8 | 0x84 | [0x3452B0](functions/1a.md#rva-3452b0) |
-| [0x368AA0](functions/1b.md#rva-368aa0) | 0x368aa5 | 0x5D8758 | D2GAME.dll / 0x10e050 | 0x78 | [0x389570](functions/1c.md#rva-389570) |
+| <a id="init-368aa0"></a>[0x368AA0](functions/1b.md#rva-368aa0) | 0x368aa5 | 0x5D8758 | D2GAME.dll / 0x10e050 | 0x78 | [0x389570](functions/1c.md#rva-389570) |
 | [0x368AA0](functions/1b.md#rva-368aa0) | 0x368aac | 0x5D8758 | D2GAME.dll / 0x10e050 | 0x8c | [0x349AA0](functions/1a.md#rva-349aa0) |
 | [0x368AA0](functions/1b.md#rva-368aa0) | 0x368ab6 | 0x5D8758 | D2GAME.dll / 0x10e050 | 0x90 | [0x349B50](functions/1a.md#rva-349b50) |
 | [0x368AA0](functions/1b.md#rva-368aa0) | 0x368ac0 | 0x5D8758 | D2GAME.dll / 0x10e050 | 0xa0 | [0x349BA0](functions/1a.md#rva-349ba0) |
@@ -166,7 +193,7 @@
 | [0x368AA0](functions/1b.md#rva-368aa0) | 0x368b41 | 0x5D8764 | D2GAME.dll / 0x107bb8 | 0x138 | [0x3A59B0](functions/1d.md#rva-3a59b0) |
 | [0x368AA0](functions/1b.md#rva-368aa0) | 0x368b4b | 0x5D8764 | D2GAME.dll / 0x107bb8 | 0x13c | [0x3A5BA0](functions/1d.md#rva-3a5ba0) |
 | [0x368AA0](functions/1b.md#rva-368aa0) | 0x368b55 | 0x5D8764 | D2GAME.dll / 0x107bb8 | 0x140 | [0x3A5DB0](functions/1d.md#rva-3a5db0) |
-| [0x35D970](functions/1a.md#rva-35d970) | 0x35d975 | 0x5D7E00 | D2GAME.dll / 0x10e788 | 0x68 | [0x3580A0](functions/1a.md#rva-3580a0) |
+| <a id="init-35d970"></a>[0x35D970](functions/1a.md#rva-35d970) | 0x35d975 | 0x5D7E00 | D2GAME.dll / 0x10e788 | 0x68 | [0x3580A0](functions/1a.md#rva-3580a0) |
 | [0x35D970](functions/1a.md#rva-35d970) | 0x35d97c | 0x5D7E00 | D2GAME.dll / 0x10e788 | 0x78 | [0x355650](functions/1a.md#rva-355650) |
 | [0x35D970](functions/1a.md#rva-35d970) | 0x35d983 | 0x5D7E00 | D2GAME.dll / 0x10e788 | 0x168 | [0x35BF00](functions/1a.md#rva-35bf00) |
 | [0x35D970](functions/1a.md#rva-35d970) | 0x35d98d | 0x5D7E00 | D2GAME.dll / 0x10e788 | 0x198 | [0x354C90](functions/1a.md#rva-354c90) |
@@ -196,7 +223,7 @@
 | [0x35D970](functions/1a.md#rva-35d970) | 0x35da7d | 0x5D7E00 | D2GAME.dll / 0x10e788 | 0x858 | [0x35A8A0](functions/1a.md#rva-35a8a0) |
 | [0x35D970](functions/1a.md#rva-35d970) | 0x35da87 | 0x5D7E00 | D2GAME.dll / 0x10e788 | 0x878 | [0x355C60](functions/1a.md#rva-355c60) |
 | [0x35D970](functions/1a.md#rva-35d970) | 0x35da91 | 0x5D7E00 | D2GAME.dll / 0x10e788 | 0x8d8 | [0x355E00](functions/1a.md#rva-355e00) |
-| [0x3A4A00](functions/1d.md#rva-3a4a00) | 0x3a4a05 | 0x5DB7C0 | D2GAME.dll / 0x10da48 | 0x4 | [0x3A2E50](functions/1d.md#rva-3a2e50) |
+| <a id="init-3a4a00"></a>[0x3A4A00](functions/1d.md#rva-3a4a00) | 0x3a4a05 | 0x5DB7C0 | D2GAME.dll / 0x10da48 | 0x4 | [0x3A2E50](functions/1d.md#rva-3a2e50) |
 | [0x3A4A00](functions/1d.md#rva-3a4a00) | 0x3a4a0c | 0x5DB7C0 | D2GAME.dll / 0x10da48 | 0x18 | [0x3A2FE0](functions/1d.md#rva-3a2fe0) |
 | [0x3A4A00](functions/1d.md#rva-3a4a00) | 0x3a4a13 | 0x5DB7C0 | D2GAME.dll / 0x10da48 | 0x1c | [0x3A30D0](functions/1d.md#rva-3a30d0) |
 | [0x3A4A00](functions/1d.md#rva-3a4a00) | 0x3a4a1a | 0x5DB7C0 | D2GAME.dll / 0x10da48 | 0x78 | [0x3A32E0](functions/1d.md#rva-3a32e0) |
@@ -209,25 +236,25 @@
 | [0x3A4A00](functions/1d.md#rva-3a4a00) | 0x3a4a5d | 0x5DB7C0 | D2GAME.dll / 0x10da48 | 0xfc | [0x3A4090](functions/1d.md#rva-3a4090) |
 | [0x3A4A00](functions/1d.md#rva-3a4a00) | 0x3a4a67 | 0x5DB7C0 | D2GAME.dll / 0x10da48 | 0x100 | [0x3A4530](functions/1d.md#rva-3a4530) |
 | [0x3A4A00](functions/1d.md#rva-3a4a00) | 0x3a4a71 | 0x5DB7C0 | D2GAME.dll / 0x10da48 | 0x104 | [0x3A48B0](functions/1d.md#rva-3a48b0) |
-| [0x3A2AB0](functions/1d.md#rva-3a2ab0) | 0x3a2ab5 | 0x5DB58C | D2GAME.dll / 0x10db68 | 0x3c | [0x3A2520](functions/1d.md#rva-3a2520) |
+| <a id="init-3a2ab0"></a>[0x3A2AB0](functions/1d.md#rva-3a2ab0) | 0x3a2ab5 | 0x5DB58C | D2GAME.dll / 0x10db68 | 0x3c | [0x3A2520](functions/1d.md#rva-3a2520) |
 | [0x3A2AB0](functions/1d.md#rva-3a2ab0) | 0x3a2abc | 0x5DB58C | D2GAME.dll / 0x10db68 | 0x40 | [0x3A2630](functions/1d.md#rva-3a2630) |
 | [0x3A2AB0](functions/1d.md#rva-3a2ab0) | 0x3a2ac3 | 0x5DB58C | D2GAME.dll / 0x10db68 | 0x44 | [0x3A2730](functions/1d.md#rva-3a2730) |
 | [0x3A2AB0](functions/1d.md#rva-3a2ab0) | 0x3a2aca | 0x5DB58C | D2GAME.dll / 0x10db68 | 0x48 | [0x3A2860](functions/1d.md#rva-3a2860) |
 | [0x3A2AB0](functions/1d.md#rva-3a2ab0) | 0x3a2ad1 | 0x5DB58C | D2GAME.dll / 0x10db68 | 0x4c | [0x3A29C0](functions/1d.md#rva-3a29c0) |
-| [0x3A2CF0](functions/1d.md#rva-3a2cf0) | 0x3a2cf5 | 0x5DB5D0 | D2GAME.dll / 0x10d970 | 0x98 | [0x3A2AE0](functions/1d.md#rva-3a2ae0) |
+| <a id="init-3a2cf0"></a>[0x3A2CF0](functions/1d.md#rva-3a2cf0) | 0x3a2cf5 | 0x5DB5D0 | D2GAME.dll / 0x10d970 | 0x98 | [0x3A2AE0](functions/1d.md#rva-3a2ae0) |
 | [0x3A2CF0](functions/1d.md#rva-3a2cf0) | 0x3a2cff | 0x5DB5D0 | D2GAME.dll / 0x10d970 | 0x9c | [0x3A2B60](functions/1d.md#rva-3a2b60) |
 | [0x3A2CF0](functions/1d.md#rva-3a2cf0) | 0x3a2d09 | 0x5DB5D0 | D2GAME.dll / 0x10d970 | 0xa0 | [0x3A2CA0](functions/1d.md#rva-3a2ca0) |
-| [0x3A24E0](functions/1d.md#rva-3a24e0) | 0x3a24e5 | 0x5DB2A8 | D2CLIENT.dll / 0xdda10 | 0x14 | [0x3A1C50](functions/1d.md#rva-3a1c50) |
+| <a id="init-3a24e0"></a>[0x3A24E0](functions/1d.md#rva-3a24e0) | 0x3a24e5 | 0x5DB2A8 | D2CLIENT.dll / 0xdda10 | 0x14 | [0x3A1C50](functions/1d.md#rva-3a1c50) |
 | [0x3A24E0](functions/1d.md#rva-3a24e0) | 0x3a24ec | 0x5DB2A8 | D2CLIENT.dll / 0xdda10 | 0x18 | [0x3A1DC0](functions/1d.md#rva-3a1dc0) |
 | [0x3A24E0](functions/1d.md#rva-3a24e0) | 0x3a24f3 | 0x5DB2A8 | D2CLIENT.dll / 0xdda10 | 0x104 | [0x3A2120](functions/1d.md#rva-3a2120) |
 | [0x3A24E0](functions/1d.md#rva-3a24e0) | 0x3a24fd | 0x5DB2A8 | D2CLIENT.dll / 0xdda10 | 0x108 | [0x3A2250](functions/1d.md#rva-3a2250) |
 | [0x3A24E0](functions/1d.md#rva-3a24e0) | 0x3a2507 | 0x5DB2A8 | D2CLIENT.dll / 0xdda10 | 0x10c | [0x3A2330](functions/1d.md#rva-3a2330) |
-| [0x3A1BC0](functions/1d.md#rva-3a1bc0) | 0x3a1bc5 | 0x5DB184 | D2CLIENT.dll / 0xdd8a0 | 0x20 | [0x3A18C0](functions/1d.md#rva-3a18c0) |
+| <a id="init-3a1bc0"></a>[0x3A1BC0](functions/1d.md#rva-3a1bc0) | 0x3a1bc5 | 0x5DB184 | D2CLIENT.dll / 0xdd8a0 | 0x20 | [0x3A18C0](functions/1d.md#rva-3a18c0) |
 | [0x3A1BC0](functions/1d.md#rva-3a1bc0) | 0x3a1bcc | 0x5DB184 | D2CLIENT.dll / 0xdd8a0 | 0x114 | [0x3A1960](functions/1d.md#rva-3a1960) |
 | [0x3A1BC0](functions/1d.md#rva-3a1bc0) | 0x3a1bd6 | 0x5DB184 | D2CLIENT.dll / 0xdd8a0 | 0x118 | [0x3A1A50](functions/1d.md#rva-3a1a50) |
 | [0x3A1BC0](functions/1d.md#rva-3a1bc0) | 0x3a1be0 | 0x5DB184 | D2CLIENT.dll / 0xdd8a0 | 0x11c | [0x3A1AB0](functions/1d.md#rva-3a1ab0) |
 | [0x3A1BC0](functions/1d.md#rva-3a1bc0) | 0x3a1bea | 0x5DB184 | D2CLIENT.dll / 0xdd8a0 | 0x120 | [0x3A1B90](functions/1d.md#rva-3a1b90) |
-| [0x39CB90](functions/1c.md#rva-39cb90) | 0x39cb95 | 0x5DA1BC | D2GAME.dll / 0xfa5f8 | 0x48 | [0x39C740](functions/1c.md#rva-39c740) |
+| <a id="init-39cb90"></a>[0x39CB90](functions/1c.md#rva-39cb90) | 0x39cb95 | 0x5DA1BC | D2GAME.dll / 0xfa5f8 | 0x48 | [0x39C740](functions/1c.md#rva-39c740) |
 | [0x39CB90](functions/1c.md#rva-39cb90) | 0x39cb9c | 0x5DA1BC | D2GAME.dll / 0xfa5f8 | 0x54 | [0x39C7E0](functions/1c.md#rva-39c7e0) |
 | [0x39CB90](functions/1c.md#rva-39cb90) | 0x39cba3 | 0x5DA1BC | D2GAME.dll / 0xfa5f8 | 0x60 | [0x39C740](functions/1c.md#rva-39c740) |
 | [0x39CB90](functions/1c.md#rva-39cb90) | 0x39cbaa | 0x5DA1BC | D2GAME.dll / 0xfa5f8 | 0x6c | [0x39C740](functions/1c.md#rva-39c740) |
@@ -238,8 +265,8 @@
 | [0x39CB90](functions/1c.md#rva-39cb90) | 0x39cbd6 | 0x5DA1BC | D2GAME.dll / 0xfa5f8 | 0xa8 | [0x39C880](functions/1c.md#rva-39c880) |
 | [0x39CB90](functions/1c.md#rva-39cb90) | 0x39cbe0 | 0x5DA1BC | D2GAME.dll / 0xfa5f8 | 0xb4 | [0x39C740](functions/1c.md#rva-39c740) |
 | [0x39CB90](functions/1c.md#rva-39cb90) | 0x39cbea | 0x5DA1BC | D2GAME.dll / 0xfa5f8 | 0xd8 | [0x39C920](functions/1c.md#rva-39c920) |
-| [0x39CD20](functions/1c.md#rva-39cd20) | 0x39cd25 | 0x5DA2EC | D2COMMON.dll / 0x9b0c8 | 0x64 | [0x39CC00](functions/1c.md#rva-39cc00) |
-| [0x345830](functions/1a.md#rva-345830) | 0x345835 | 0x5D7580 | D2GAME.dll / 0xfa3f8 | 0x38 | [0x345760](functions/1a.md#rva-345760) |
+| <a id="init-39cd20"></a>[0x39CD20](functions/1c.md#rva-39cd20) | 0x39cd25 | 0x5DA2EC | D2COMMON.dll / 0x9b0c8 | 0x64 | [0x39CC00](functions/1c.md#rva-39cc00) |
+| <a id="init-345830"></a>[0x345830](functions/1a.md#rva-345830) | 0x345835 | 0x5D7580 | D2GAME.dll / 0xfa3f8 | 0x38 | [0x345760](functions/1a.md#rva-345760) |
 | [0x345830](functions/1a.md#rva-345830) | 0x34583c | 0x5D7580 | D2GAME.dll / 0xfa3f8 | 0x3c | [0x3457D0](functions/1a.md#rva-3457d0) |
 | [0x345830](functions/1a.md#rva-345830) | 0x345843 | 0x5D7580 | D2GAME.dll / 0xfa3f8 | 0x40 | [0x345760](functions/1a.md#rva-345760) |
 | [0x345830](functions/1a.md#rva-345830) | 0x34584a | 0x5D7580 | D2GAME.dll / 0xfa3f8 | 0x44 | [0x3457D0](functions/1a.md#rva-3457d0) |
@@ -259,11 +286,11 @@
 | [0x345830](functions/1a.md#rva-345830) | 0x3458af | 0x5D7580 | D2GAME.dll / 0xfa3f8 | 0x84 | [0x3457D0](functions/1a.md#rva-3457d0) |
 | [0x345830](functions/1a.md#rva-345830) | 0x3458b9 | 0x5D7580 | D2GAME.dll / 0xfa3f8 | 0x90 | [0x345760](functions/1a.md#rva-345760) |
 | [0x345830](functions/1a.md#rva-345830) | 0x3458c3 | 0x5D7580 | D2GAME.dll / 0xfa3f8 | 0x94 | [0x3457D0](functions/1a.md#rva-3457d0) |
-| [0x3689C0](functions/1b.md#rva-3689c0) | 0x3689d7 | 0x5D8934 | D2GAME.dll / 0x102ab0 | 0xc | 0x1a9 |
+| <a id="init-3689c0"></a>[0x3689C0](functions/1b.md#rva-3689c0) | 0x3689d7 | 0x5D8934 | D2GAME.dll / 0x102ab0 | 0xc | 0x1a9 |
 | [0x3689C0](functions/1b.md#rva-3689c0) | 0x3689de | 0x5D8934 | D2GAME.dll / 0x102ab0 | 0xbc | 0x166 |
 | [0x3689C0](functions/1b.md#rva-3689c0) | 0x3689f7 | 0x5D87C8 | D2GAME.dll / 0x10f448 | 0x19c | 0x0 |
 | [0x3689C0](functions/1b.md#rva-3689c0) | 0x368a01 | 0x5D87C8 | D2GAME.dll / 0x10f448 | 0x1a0 | 0x0 |
-| [0x368600](functions/1b.md#rva-368600) | 0x36860b | 0x5D88C0 | D2CLIENT.dll / 0xdde60 | 0x78 | [0x38F5A0](functions/1c.md#rva-38f5a0) |
+| <a id="init-368600"></a>[0x368600](functions/1b.md#rva-368600) | 0x36860b | 0x5D88C0 | D2CLIENT.dll / 0xdde60 | 0x78 | [0x38F5A0](functions/1c.md#rva-38f5a0) |
 | [0x368600](functions/1b.md#rva-368600) | 0x368612 | 0x5D88C0 | D2CLIENT.dll / 0xdde60 | 0x7c | 0x6 |
 | [0x368600](functions/1b.md#rva-368600) | 0x368619 | 0x5D87EC | D2NET.dll / 0xa900 | 0x28 | 0x6 |
 | [0x368600](functions/1b.md#rva-368600) | 0x368620 | 0x5D88C0 | D2CLIENT.dll / 0xdde60 | 0x198 | [0x38F5B0](functions/1c.md#rva-38f5b0) |
@@ -357,4 +384,4 @@
 | [0x368600](functions/1b.md#rva-368600) | 0x368995 | 0x5D8980 | D2NET.dll / 0xabd8 | 0x168 | 0x1 |
 | [0x368600](functions/1b.md#rva-368600) | 0x36899f | 0x5D8980 | D2NET.dll / 0xabd8 | 0x16c | 0x5 |
 | [0x368600](functions/1b.md#rva-368600) | 0x3689a9 | 0x5D8980 | D2NET.dll / 0xabd8 | 0x170 | 0xd |
-| [0x368B70](functions/1b.md#rva-368b70) | 0x368b75 | 0x5D87E0 | D2GAME.dll / 0xfa3f8 | 0x10 | [0x389540](functions/1c.md#rva-389540) |
+| <a id="init-368b70"></a>[0x368B70](functions/1b.md#rva-368b70) | 0x368b75 | 0x5D87E0 | D2GAME.dll / 0xfa3f8 | 0x10 | [0x389540](functions/1c.md#rva-389540) |

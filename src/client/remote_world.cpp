@@ -352,6 +352,9 @@ void itemPacket(OnlineView &v, const Packet &p, bool pd2) {
     if (pd2) invalidateCubeHostPd2(v);
 }
 void removeItem(OnlineWorldView &world, uint32_t id) {
+    std::vector<uint32_t> children;
+    for (const auto &[child, item] : world.items)
+        if (item.ownerType == 4 && item.owner == id) children.push_back(child);
     if (world.itemTargetingSource == id) {world.itemTargetingSource.reset();++world.itemTargetingRevision;}
     if ((world.storage.kind == OnlineStorageKind::Cube && world.storage.source == id) ||
         (world.storage.requested == OnlineStorageKind::Cube && world.storage.requestedSource == id)) {
@@ -361,16 +364,17 @@ void removeItem(OnlineWorldView &world, uint32_t id) {
     if (const auto found = world.equipment.find(id); found != world.equipment.end())
         if (const auto owner = world.units.find({found->second.ownerType, found->second.owner}); owner != world.units.end())
             ++owner->second.appearanceRevision;
-    world.items.erase(id); world.equipment.erase(id);
-    std::erase_if(world.items, [&](const auto &entry) {
-        return entry.second.ownerType == 4 && entry.second.owner == id;
-    });
+    world.items.erase(id); world.equipment.erase(id); world.units.erase({4,id});
+    for (const auto child : children) if (child != id) removeItem(world, child);
     ++world.itemRevision;
 }
 void removeRemotePlayerItems(OnlineWorldView &world, uint32_t owner,uint8_t ownerType=0) {
     std::vector<uint32_t> items;
     for (const auto &[id, item] : world.items)
         if (item.ownerType == ownerType && item.owner == owner) items.push_back(id);
+    for (const auto &[id, item] : world.equipment)
+        if (item.ownerType == ownerType && item.owner == owner &&
+            std::find(items.begin(),items.end(),id)==items.end()) items.push_back(id);
     for (const auto id : items) removeItem(world, id);
     std::erase_if(world.equipment, [&](const auto &entry) { return entry.second.ownerType==ownerType && entry.second.owner == owner; });
 }
@@ -907,6 +911,20 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         std::array<uint8_t,37> availability;
         for(auto &value:availability) value=r.u8();
         r.finish(); w.quests.availability=availability; w.quests.revision=w.revision;
+        break;
+    }
+    case 0x92: {
+        // PlrTrade restores a saved inventory under new item identities. The
+        // reset also reaches observers, whose public equipment must be cleared.
+        const auto owner = key(r); r.finish();
+        removeRemotePlayerItems(w,owner.id,owner.type);
+        if (owner.type == 0 && owner.id == v.load.playerUnitId) {
+            ++w.interactionGeneration;
+            w.storage = {};
+            if (w.itemRequest && w.itemRequest->state == OnlineItemRequest::State::Pending)
+                w.itemRequest->state = OnlineItemRequest::State::Interrupted;
+            w.itemTargetingSource.reset(); ++w.itemTargetingRevision;
+        }
         break;
     }
     case 0x91: {

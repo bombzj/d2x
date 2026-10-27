@@ -6,6 +6,7 @@
 #include "hosting/quest_content.hpp"
 #include "hosting/companion_content.hpp"
 #include "content/world/world_catalog.hpp"
+#include "server/runtime/events.hpp"
 #include <algorithm>
 namespace d2x::hosting {
 void NativeRealmHost::initialize() {
@@ -148,12 +149,22 @@ void NativeRealmHost::advance(double seconds) {
 }
 void NativeRealmHost::publishEvents(GameHandle game) {
     const auto pending = host.pendingEvents(game); if (!pending) return;
+    std::vector<EntityId> inventoryResets;
+    std::vector<EntityId> groundDrops;
+    std::vector<EntityId> monsterDeaths;
+    std::vector<std::pair<EntityId,EntityId>> relationUpdates;
+    for(const auto &batch:*pending) for(const auto &fact:batch.facts) {
+        if(const auto *reset=std::get_if<server::InventoryResetFact>(&fact)) inventoryResets.push_back(reset->projection.player.id);
+        else if(const auto *relation=std::get_if<server::ChatRelationFact>(&fact)) relationUpdates.emplace_back(relation->from,relation->to);
+        else if(const auto *drop=std::get_if<server::GroundDropFact>(&fact)) groundDrops.push_back(drop->item.id);
+        else if(const auto *hit=std::get_if<server::HitFact>(&fact);hit && hit->type==1 && hit->killed) monsterDeaths.push_back(hit->target);
+    }
     // Prepare recipient baselines once before draining this immutable event set.
     if (!pending->empty()) for (auto *peer : peers) {
         if (!peer->binding || peer->binding->game != game || peer->peer.phase != GamePhase::Entered) continue;
         try {
             const auto view = host.read(*peer->binding);
-            peer->publishAreas(view->actor.region); peer->publishGroundItems(); peer->publishPlayers(); peer->publishMonsters();
+            peer->publishAreas(view->actor.region); peer->publishGroundItems(groundDrops); peer->publishPlayers(false,inventoryResets,relationUpdates); peer->publishMonsters(monsterDeaths);
         } catch (const std::exception &error) {
             peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();
         }

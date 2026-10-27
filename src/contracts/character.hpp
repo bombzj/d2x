@@ -52,7 +52,7 @@ struct CharacterView {
     bool dead = false, running = false, blueStamina = false, attackUsable = false, hasSkillTree = false;
     unsigned weaponSet = 0;
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
-    std::array<SkillHotkey, 8> skillHotkeys{};
+    std::array<SkillHotkey, 16> skillHotkeys{};
     std::array<std::string, 3> pageNames;
     std::array<std::vector<std::optional<int>>, 2> choices;
     CharacterActionDisplay attack;

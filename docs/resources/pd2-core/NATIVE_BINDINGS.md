@@ -1,5 +1,7 @@
 # 原生地址解析与跳板归并
 
+固定旧核心身份见[总览](README.md)。正文按目标模块组织地址查询，组内保留原解析器顺序；展示分组不代表初始化或调用顺序。解析器RVA、多版本槽、负ordinal、名称线索和CRT跳板计数共同保留，别名逐项关系仍由原CSV负责。
+
 这些入口解析原版模块的函数或全局地址，并缓存解析结果；它们不是1,115份新增玩法。版本选择器比较`1.0.13.60`与`1.0.13.64`，分别选择表槽0／1。正值表示模块RVA，负值表示导出ordinal，零表示该槽没有登记地址。此处保留两个槽位不代表全部PD2补丁支持另一原版版本。
 
 “零未登记”是版本表的解释，不是3A17B0本体的拒绝行为：它对EDX非负直接返回模块基址加EDX，零会得到模块基址。每个目标的缓存也位于包装器／初始化链，而非公共解析器本体。调用者是否阻止零槽、实际目标是函数还是数据须逐项追查；完整输入和失败边界见[桥接函数契约](BOOTSTRAP_FUNCTION_REVIEW.md#3a17b0原生地址解析)。
@@ -26,12 +28,29 @@
 
 来源：[官方BH固定提交](https://github.com/Project-Diablo-2/BH/blob/92e9d319f20113b5fbd382ad0fd3df9480116d04/BH/D2Ptrs.h)、[历史CN BH固定提交](https://github.com/weili0677/BH-CN/blob/68f7343342eed668190d464b7111849a6cc0ce89/BH/D2Ptrs.h)。历史CN头不证明当前汉服版本。
 
+## 按目标模块查询
+
+| 模块 | 解析器数 |
+| --- | ---: |
+| [D2COMMON.dll](#module-0) | 64 |
+| [D2WIN.dll](#module-1) | 10 |
+| [D2GAME.dll](#module-2) | 448 |
+| [D2CLIENT.dll](#module-3) | 539 |
+| [D2NET.dll](#module-4) | 3 |
+| [D2MULTI.dll](#module-5) | 23 |
+| [D2LANG.dll](#module-6) | 3 |
+| [D2LAUNCH.dll](#module-7) | 11 |
+| [D2MCPCLIENT.dll](#module-8) | 5 |
+| [BNCLIENT.dll](#module-9) | 8 |
+| [D2SOUND.dll](#module-10) | 1 |
+
+<a id="module-0"></a>
+
+## D2COMMON.dll
+
 | 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
 | --- | --- | --- | --- | --- | --- |
 | [0x305250](functions/18.md#rva-305250) | D2COMMON.dll | 0x6C300 | 未登记 | 未匹配 | 75 |
-| [0x305360](functions/18.md#rva-305360) | D2WIN.dll | 0xEF20 | 未登记 | 未匹配 | 74 |
-| [0x305410](functions/18.md#rva-305410) | D2WIN.dll | 0x7C60 | 未登记 | 未匹配 | 74 |
-| [0x305760](functions/18.md#rva-305760) | D2GAME.dll | 0x2CB80 | 未登记 | 未匹配 | 74 |
 | [0x305810](functions/18.md#rva-305810) | D2COMMON.dll | 0x3C7E0 | 未登记 | 未匹配 | 75 |
 | [0x3058C0](functions/18.md#rva-3058c0) | D2COMMON.dll | 0x42CE0 | 未登记 | 未匹配 | 74 |
 | [0x305970](functions/18.md#rva-305970) | D2COMMON.dll | 0x11BF0 | 未登记 | 未匹配 | 74 |
@@ -43,42 +62,15 @@
 | [0x305D90](functions/18.md#rva-305d90) | D2COMMON.dll | 0xEEC0 | 未登记 | 未匹配 | 74 |
 | [0x305E40](functions/18.md#rva-305e40) | D2COMMON.dll | 0x10010 | 未登记 | 未匹配 | 74 |
 | [0x306070](functions/18.md#rva-306070) | D2COMMON.dll | 0x381A0 | 未登记 | 未匹配 | 74 |
-| [0x3064E0](functions/18.md#rva-3064e0) | D2GAME.dll | 0xD1BC0 | 未登记 | 未匹配 | 74 |
 | [0x306770](functions/18.md#rva-306770) | D2COMMON.dll | 0x69C60 | 未登记 | 未匹配 | 74 |
-| [0x3068B0](functions/18.md#rva-3068b0) | D2GAME.dll | 0xDDE90 | 未登记 | 未匹配 | 74 |
-| [0x3069C0](functions/18.md#rva-3069c0) | D2GAME.dll | 0xDB790 | 未登记 | 未匹配 | 74 |
-| [0x306AA0](functions/18.md#rva-306aa0) | D2GAME.dll | 0x3AE10 | 未登记 | 未匹配 | 74 |
-| [0x306B80](functions/18.md#rva-306b80) | D2GAME.dll | 0x770E0 | 未登记 | 未匹配 | 74 |
-| [0x306CF0](functions/18.md#rva-306cf0) | D2GAME.dll | 0xD4E80 | 未登记 | 未匹配 | 74 |
-| [0x306DA0](functions/18.md#rva-306da0) | D2GAME.dll | 0x38FB0 | 未登记 | 未匹配 | 74 |
-| [0x306E50](functions/18.md#rva-306e50) | D2GAME.dll | 0xDFFD0 | 未登记 | 未匹配 | 74 |
-| [0x306F00](functions/18.md#rva-306f00) | D2GAME.dll | 0xE660 | 未登记 | 未匹配 | 74 |
-| [0x306FB0](functions/18.md#rva-306fb0) | D2GAME.dll | 0x365E0 | 未登记 | 未匹配 | 74 |
-| [0x307060](functions/18.md#rva-307060) | D2GAME.dll | 0xF21E0 | 未登记 | 未匹配 | 74 |
-| [0x307110](functions/18.md#rva-307110) | D2GAME.dll | 0xEAB60 | 未登记 | 未匹配 | 74 |
-| [0x3071C0](functions/18.md#rva-3071c0) | D2GAME.dll | 0x35E90 | 未登记 | 未匹配 | 74 |
-| [0x307270](functions/18.md#rva-307270) | D2GAME.dll | 0x9C160 | 未登记 | 未匹配 | 74 |
 | [0x307B60](functions/18.md#rva-307b60) | D2COMMON.dll | 0x31850 | 未登记 | 未匹配 | 75 |
-| [0x307CA0](functions/18.md#rva-307ca0) | D2GAME.dll | 0x34AA0 | 未登记 | 未匹配 | 74 |
 | [0x308320](functions/18.md#rva-308320) | D2COMMON.dll | 0x21640 | 未登记 | 未匹配 | 74 |
-| [0x3085E0](functions/18.md#rva-3085e0) | D2GAME.dll | 0xD5590 | 未登记 | 未匹配 | 74 |
 | [0x308870](functions/18.md#rva-308870) | D2COMMON.dll | 0x3BDD0 | 未登记 | 未匹配 | 74 |
 | [0x308A40](functions/18.md#rva-308a40) | D2COMMON.dll | 0x2D320 | 未登记 | 未匹配 | 74 |
-| [0x308C10](functions/18.md#rva-308c10) | D2GAME.dll | 0xF2220 | 未登记 | 未匹配 | 74 |
-| [0x308ED0](functions/18.md#rva-308ed0) | D2GAME.dll | 0x28170 | 未登记 | 未匹配 | 74 |
 | [0x3093D0](functions/18.md#rva-3093d0) | D2COMMON.dll | 0x4F870 | 未登记 | 未匹配 | 74 |
 | [0x309480](functions/18.md#rva-309480) | D2COMMON.dll | 0x6AB20 | 未登记 | 未匹配 | 74 |
 | [0x309530](functions/18.md#rva-309530) | D2COMMON.dll | 0x11E0 | 未登记 | 未匹配 | 74 |
 | [0x309880](functions/18.md#rva-309880) | D2COMMON.dll | 0x28850 | 未登记 | 未匹配 | 75 |
-| [0x30AE90](functions/18.md#rva-30ae90) | D2GAME.dll | 0xEBB0 | 未登记 | 未匹配 | 74 |
-| [0x30B810](functions/18.md#rva-30b810) | D2GAME.dll | 0xD6BC0 | 未登记 | 未匹配 | 74 |
-| [0x30B8C0](functions/18.md#rva-30b8c0) | D2GAME.dll | 0xD4140 | 未登记 | 未匹配 | 74 |
-| [0x30B9A0](functions/18.md#rva-30b9a0) | D2GAME.dll | 0xD46B0 | 未登记 | 未匹配 | 74 |
-| [0x30BA50](functions/18.md#rva-30ba50) | D2GAME.dll | 0x9B3B0 | 未登记 | 未匹配 | 74 |
-| [0x30BB00](functions/18.md#rva-30bb00) | D2GAME.dll | 0xD62E0 | 未登记 | 未匹配 | 74 |
-| [0x30BC10](functions/18.md#rva-30bc10) | D2GAME.dll | 0x131E0 | 未登记 | 未匹配 | 74 |
-| [0x30BD50](functions/18.md#rva-30bd50) | D2GAME.dll | 0xD4670 | 未登记 | 未匹配 | 74 |
-| [0x30BF20](functions/18.md#rva-30bf20) | D2GAME.dll | 0xE0570 | 未登记 | 未匹配 | 74 |
 | [0x30C1B0](functions/18.md#rva-30c1b0) | D2COMMON.dll | 0x38940 | 未登记 | 未匹配 | 74 |
 | [0x30C260](functions/18.md#rva-30c260) | D2COMMON.dll | 0x39F70 | 未登记 | 未匹配 | 74 |
 | [0x30C310](functions/18.md#rva-30c310) | D2COMMON.dll | 0x38550 | 未登记 | 未匹配 | 74 |
@@ -97,6 +89,83 @@
 | [0x30CC60](functions/18.md#rva-30cc60) | D2COMMON.dll | ordinal 10422 | ordinal 10298 | DisplayOverheadMsg_I | 75 |
 | [0x30CD10](functions/18.md#rva-30cd10) | D2COMMON.dll | 0x3C000 | 0x23B80 | GetLevelIdFromRoom_I | 75 |
 | [0x30CDC0](functions/18.md#rva-30cdc0) | D2COMMON.dll | 0x475E0 | 未登记 | 未匹配 | 74 |
+| [0x30E040](functions/18.md#rva-30e040) | D2COMMON.dll | 0x382F0 | 未登记 | 未匹配 | 75 |
+| [0x30E390](functions/18.md#rva-30e390) | D2COMMON.dll | 0x2C630 | 未登记 | 未匹配 | 74 |
+| [0x31C700](functions/18.md#rva-31c700) | D2COMMON.dll | 0x9B0C8 | 未登记 | 未匹配 | 74 |
+| [0x330B80](functions/19.md#rva-330b80) | D2COMMON.dll | 0xA1420 | 未登记 | 未匹配 | 74 |
+| [0x330C30](functions/19.md#rva-330c30) | D2COMMON.dll | 0xA1424 | 未登记 | 未匹配 | 74 |
+| [0x330D10](functions/19.md#rva-330d10) | D2COMMON.dll | 0x2E840 | 未登记 | 未匹配 | 74 |
+| [0x330E20](functions/19.md#rva-330e20) | D2COMMON.dll | 0x2E790 | 未登记 | 未匹配 | 74 |
+| [0x330F30](functions/19.md#rva-330f30) | D2COMMON.dll | 0x2F100 | 未登记 | 未匹配 | 74 |
+| [0x337C20](functions/19.md#rva-337c20) | D2COMMON.dll | 0x7C270 | 未登记 | 未匹配 | 74 |
+| [0x337CD0](functions/19.md#rva-337cd0) | D2COMMON.dll | 0x1A130 | 未登记 | 未匹配 | 75 |
+| [0x3381D0](functions/19.md#rva-3381d0) | D2COMMON.dll | 0x376F0 | 未登记 | 未匹配 | 74 |
+| [0x338A40](functions/19.md#rva-338a40) | D2COMMON.dll | 0x38A80 | 未登记 | 未匹配 | 74 |
+| [0x338AF0](functions/19.md#rva-338af0) | D2COMMON.dll | 0x94608 | 未登记 | 未匹配 | 74 |
+| [0x338BA0](functions/19.md#rva-338ba0) | D2COMMON.dll | 0x323E0 | 未登记 | 未匹配 | 74 |
+| [0x338EC0](functions/19.md#rva-338ec0) | D2COMMON.dll | 0x218A0 | 未登记 | 未匹配 | 74 |
+| [0x3391B0](functions/19.md#rva-3391b0) | D2COMMON.dll | 0x9FA58 | 未登记 | 未匹配 | 74 |
+| [0x339260](functions/19.md#rva-339260) | D2COMMON.dll | 0x9FA5C | 未登记 | 未匹配 | 73 |
+| [0x339310](functions/19.md#rva-339310) | D2COMMON.dll | 0x1E1B0 | 未登记 | 未匹配 | 74 |
+| [0x3393C0](functions/19.md#rva-3393c0) | D2COMMON.dll | 0x9EFE4 | 未登记 | 未匹配 | 74 |
+| [0x339470](functions/19.md#rva-339470) | D2COMMON.dll | 0x9EFE8 | 未登记 | 未匹配 | 74 |
+| [0x33B020](functions/19.md#rva-33b020) | D2COMMON.dll | 0x52345 | 未登记 | 未匹配 | 75 |
+| [0x33BBF0](functions/19.md#rva-33bbf0) | D2COMMON.dll | 0x9D378 | 未登记 | 未匹配 | 74 |
+| [0x33BCA0](functions/19.md#rva-33bca0) | D2COMMON.dll | 0x9D390 | 未登记 | 未匹配 | 73 |
+| [0x33CC50](functions/19.md#rva-33cc50) | D2COMMON.dll | 0x1FB50 | 未登记 | 未匹配 | 74 |
+| [0x33CD30](functions/19.md#rva-33cd30) | D2COMMON.dll | 0x20E80 | 未登记 | 未匹配 | 74 |
+
+<a id="module-1"></a>
+
+## D2WIN.dll
+
+| 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
+| --- | --- | --- | --- | --- | --- |
+| [0x305360](functions/18.md#rva-305360) | D2WIN.dll | 0xEF20 | 未登记 | 未匹配 | 74 |
+| [0x305410](functions/18.md#rva-305410) | D2WIN.dll | 0x7C60 | 未登记 | 未匹配 | 74 |
+| [0x322DC0](functions/19.md#rva-322dc0) | D2WIN.dll | 0x7E60 | 未登记 | InitMPQ | 74 |
+| [0x322E70](functions/19.md#rva-322e70) | D2WIN.dll | 0x214A0 | 0x8DB34 | FirstControl | 74 |
+| [0x322F20](functions/19.md#rva-322f20) | D2WIN.dll | 0x214B0 | 0x8DB44 | 未匹配 | 75 |
+| [0x32EF10](functions/19.md#rva-32ef10) | D2WIN.dll | 0x12940 | 0x134D0 | DrawTextBuffer | 75 |
+| [0x336090](functions/19.md#rva-336090) | D2WIN.dll | 0x21488 | 未登记 | 未匹配 | 74 |
+| [0x336140](functions/19.md#rva-336140) | D2WIN.dll | 0x2148C | 未登记 | 未匹配 | 74 |
+| [0x340570](functions/1a.md#rva-340570) | D2WIN.dll | 0xCA658 | 未登记 | 未匹配 | 75 |
+| [0x340620](functions/1a.md#rva-340620) | D2WIN.dll | 0xCA65C | 未登记 | 未匹配 | 75 |
+
+<a id="module-2"></a>
+
+## D2GAME.dll
+
+| 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
+| --- | --- | --- | --- | --- | --- |
+| [0x305760](functions/18.md#rva-305760) | D2GAME.dll | 0x2CB80 | 未登记 | 未匹配 | 74 |
+| [0x3064E0](functions/18.md#rva-3064e0) | D2GAME.dll | 0xD1BC0 | 未登记 | 未匹配 | 74 |
+| [0x3068B0](functions/18.md#rva-3068b0) | D2GAME.dll | 0xDDE90 | 未登记 | 未匹配 | 74 |
+| [0x3069C0](functions/18.md#rva-3069c0) | D2GAME.dll | 0xDB790 | 未登记 | 未匹配 | 74 |
+| [0x306AA0](functions/18.md#rva-306aa0) | D2GAME.dll | 0x3AE10 | 未登记 | 未匹配 | 74 |
+| [0x306B80](functions/18.md#rva-306b80) | D2GAME.dll | 0x770E0 | 未登记 | 未匹配 | 74 |
+| [0x306CF0](functions/18.md#rva-306cf0) | D2GAME.dll | 0xD4E80 | 未登记 | 未匹配 | 74 |
+| [0x306DA0](functions/18.md#rva-306da0) | D2GAME.dll | 0x38FB0 | 未登记 | 未匹配 | 74 |
+| [0x306E50](functions/18.md#rva-306e50) | D2GAME.dll | 0xDFFD0 | 未登记 | 未匹配 | 74 |
+| [0x306F00](functions/18.md#rva-306f00) | D2GAME.dll | 0xE660 | 未登记 | 未匹配 | 74 |
+| [0x306FB0](functions/18.md#rva-306fb0) | D2GAME.dll | 0x365E0 | 未登记 | 未匹配 | 74 |
+| [0x307060](functions/18.md#rva-307060) | D2GAME.dll | 0xF21E0 | 未登记 | 未匹配 | 74 |
+| [0x307110](functions/18.md#rva-307110) | D2GAME.dll | 0xEAB60 | 未登记 | 未匹配 | 74 |
+| [0x3071C0](functions/18.md#rva-3071c0) | D2GAME.dll | 0x35E90 | 未登记 | 未匹配 | 74 |
+| [0x307270](functions/18.md#rva-307270) | D2GAME.dll | 0x9C160 | 未登记 | 未匹配 | 74 |
+| [0x307CA0](functions/18.md#rva-307ca0) | D2GAME.dll | 0x34AA0 | 未登记 | 未匹配 | 74 |
+| [0x3085E0](functions/18.md#rva-3085e0) | D2GAME.dll | 0xD5590 | 未登记 | 未匹配 | 74 |
+| [0x308C10](functions/18.md#rva-308c10) | D2GAME.dll | 0xF2220 | 未登记 | 未匹配 | 74 |
+| [0x308ED0](functions/18.md#rva-308ed0) | D2GAME.dll | 0x28170 | 未登记 | 未匹配 | 74 |
+| [0x30AE90](functions/18.md#rva-30ae90) | D2GAME.dll | 0xEBB0 | 未登记 | 未匹配 | 74 |
+| [0x30B810](functions/18.md#rva-30b810) | D2GAME.dll | 0xD6BC0 | 未登记 | 未匹配 | 74 |
+| [0x30B8C0](functions/18.md#rva-30b8c0) | D2GAME.dll | 0xD4140 | 未登记 | 未匹配 | 74 |
+| [0x30B9A0](functions/18.md#rva-30b9a0) | D2GAME.dll | 0xD46B0 | 未登记 | 未匹配 | 74 |
+| [0x30BA50](functions/18.md#rva-30ba50) | D2GAME.dll | 0x9B3B0 | 未登记 | 未匹配 | 74 |
+| [0x30BB00](functions/18.md#rva-30bb00) | D2GAME.dll | 0xD62E0 | 未登记 | 未匹配 | 74 |
+| [0x30BC10](functions/18.md#rva-30bc10) | D2GAME.dll | 0x131E0 | 未登记 | 未匹配 | 74 |
+| [0x30BD50](functions/18.md#rva-30bd50) | D2GAME.dll | 0xD4670 | 未登记 | 未匹配 | 74 |
+| [0x30BF20](functions/18.md#rva-30bf20) | D2GAME.dll | 0xE0570 | 未登记 | 未匹配 | 74 |
 | [0x30CEA0](functions/18.md#rva-30cea0) | D2GAME.dll | 0x107330 | 未登记 | 未匹配 | 75 |
 | [0x30CF50](functions/18.md#rva-30cf50) | D2GAME.dll | 0xE930 | 未登记 | 未匹配 | 74 |
 | [0x30D000](functions/18.md#rva-30d000) | D2GAME.dll | 0x34860 | 未登记 | 未匹配 | 75 |
@@ -117,12 +186,9 @@
 | [0x30DD80](functions/18.md#rva-30dd80) | D2GAME.dll | 0x3A280 | 未登记 | 未匹配 | 74 |
 | [0x30DE30](functions/18.md#rva-30de30) | D2GAME.dll | 0x3A4E0 | 未登记 | 未匹配 | 74 |
 | [0x30DEE0](functions/18.md#rva-30dee0) | D2GAME.dll | 0x3EDE0 | 未登记 | 未匹配 | 74 |
-| [0x30DF90](functions/18.md#rva-30df90) | D2CLIENT.dll | 0xB1420 | 未登记 | 未匹配 | 74 |
-| [0x30E040](functions/18.md#rva-30e040) | D2COMMON.dll | 0x382F0 | 未登记 | 未匹配 | 75 |
 | [0x30E120](functions/18.md#rva-30e120) | D2GAME.dll | 0xA1880 | 未登记 | 未匹配 | 74 |
 | [0x30E1D0](functions/18.md#rva-30e1d0) | D2GAME.dll | 0x6F620 | 未登记 | 未匹配 | 75 |
 | [0x30E280](functions/18.md#rva-30e280) | D2GAME.dll | 0xA0000 | 未登记 | 未匹配 | 74 |
-| [0x30E390](functions/18.md#rva-30e390) | D2COMMON.dll | 0x2C630 | 未登记 | 未匹配 | 74 |
 | [0x30E440](functions/18.md#rva-30e440) | D2GAME.dll | 0xF1730 | 未登记 | 未匹配 | 74 |
 | [0x30E4F0](functions/18.md#rva-30e4f0) | D2GAME.dll | 0xF17E0 | 未登记 | 未匹配 | 74 |
 | [0x30E5A0](functions/18.md#rva-30e5a0) | D2GAME.dll | 0xF14F0 | 未登记 | 未匹配 | 74 |
@@ -131,7 +197,6 @@
 | [0x30E7E0](functions/18.md#rva-30e7e0) | D2GAME.dll | 0x77FA0 | 未登记 | 未匹配 | 74 |
 | [0x30E890](functions/18.md#rva-30e890) | D2GAME.dll | 0x7A0F0 | 未登记 | 未匹配 | 74 |
 | [0x30E940](functions/18.md#rva-30e940) | D2GAME.dll | 0x9FA30 | 未登记 | 未匹配 | 74 |
-| [0x30E9F0](functions/18.md#rva-30e9f0) | D2CLIENT.dll | 0xA1340 | 未登记 | 未匹配 | 74 |
 | [0x30EAA0](functions/18.md#rva-30eaa0) | D2GAME.dll | 0xE19C0 | 未登记 | 未匹配 | 74 |
 | [0x30EB50](functions/18.md#rva-30eb50) | D2GAME.dll | 0x98A70 | 未登记 | 未匹配 | 74 |
 | [0x30EC00](functions/18.md#rva-30ec00) | D2GAME.dll | 0xDE0C0 | 未登记 | 未匹配 | 75 |
@@ -224,12 +289,6 @@
 | [0x312C20](functions/18.md#rva-312c20) | D2GAME.dll | 0xCCFE0 | 未登记 | 未匹配 | 74 |
 | [0x312CD0](functions/18.md#rva-312cd0) | D2GAME.dll | 0xB17B0 | 未登记 | 未匹配 | 74 |
 | [0x312D80](functions/18.md#rva-312d80) | D2GAME.dll | 0xDAA40 | 未登记 | 未匹配 | 75 |
-| [0x312E30](functions/18.md#rva-312e30) | D2CLIENT.dll | 0x84080 | 未登记 | 未匹配 | 74 |
-| [0x312EE0](functions/18.md#rva-312ee0) | D2CLIENT.dll | 0x82660 | 未登记 | 未匹配 | 74 |
-| [0x312F90](functions/18.md#rva-312f90) | D2CLIENT.dll | 0x835C0 | 未登记 | 未匹配 | 74 |
-| [0x313040](functions/18.md#rva-313040) | D2CLIENT.dll | 0x82820 | 未登记 | 未匹配 | 74 |
-| [0x3130F0](functions/18.md#rva-3130f0) | D2CLIENT.dll | 0x66950 | 未登记 | 未匹配 | 74 |
-| [0x3131A0](functions/18.md#rva-3131a0) | D2CLIENT.dll | 0xA6D60 | 未登记 | 未匹配 | 74 |
 | [0x313250](functions/18.md#rva-313250) | D2GAME.dll | 0xEC470 | 未登记 | 未匹配 | 74 |
 | [0x313300](functions/18.md#rva-313300) | D2GAME.dll | 0xEB7B0 | 未登记 | 未匹配 | 74 |
 | [0x3133B0](functions/18.md#rva-3133b0) | D2GAME.dll | 0xEB700 | 未登记 | 未匹配 | 74 |
@@ -328,7 +387,6 @@
 | [0x317E50](functions/18.md#rva-317e50) | D2GAME.dll | 0x96600 | 未登记 | 未匹配 | 74 |
 | [0x317F00](functions/18.md#rva-317f00) | D2GAME.dll | 0x15D0 | 未登记 | 未匹配 | 74 |
 | [0x318040](functions/18.md#rva-318040) | D2GAME.dll | 0x93D60 | 未登记 | 未匹配 | 74 |
-| [0x3180F0](functions/18.md#rva-3180f0) | D2CLIENT.dll | 0x40F00 | 未登记 | 未匹配 | 74 |
 | [0x3181A0](functions/18.md#rva-3181a0) | D2GAME.dll | 0xE0A60 | 未登记 | 未匹配 | 74 |
 | [0x318250](functions/18.md#rva-318250) | D2GAME.dll | 0xE03A0 | 未登记 | GetObject | 74 |
 | [0x318300](functions/18.md#rva-318300) | D2GAME.dll | 0xA19A0 | 未登记 | 未匹配 | 74 |
@@ -337,10 +395,8 @@
 | [0x318510](functions/18.md#rva-318510) | D2GAME.dll | 0xA1280 | 未登记 | 未匹配 | 74 |
 | [0x3185C0](functions/18.md#rva-3185c0) | D2GAME.dll | 0x9F9A0 | 未登记 | 未匹配 | 74 |
 | [0x318670](functions/18.md#rva-318670) | D2GAME.dll | 0x91340 | 未登记 | 未匹配 | 74 |
-| [0x318720](functions/18.md#rva-318720) | D2CLIENT.dll | 0x40550 | 未登记 | 未匹配 | 74 |
 | [0x3187D0](functions/18.md#rva-3187d0) | D2GAME.dll | 0x91240 | 未登记 | 未匹配 | 74 |
 | [0x318880](functions/18.md#rva-318880) | D2GAME.dll | 0xE2480 | 未登记 | 未匹配 | 74 |
-| [0x318930](functions/18.md#rva-318930) | D2CLIENT.dll | 0x73BC0 | 未登记 | 未匹配 | 74 |
 | [0x3189E0](functions/18.md#rva-3189e0) | D2GAME.dll | 0x454E0 | 未登记 | 未匹配 | 74 |
 | [0x318AC0](functions/18.md#rva-318ac0) | D2GAME.dll | 0x11070 | 未登记 | 未匹配 | 74 |
 | [0x318B70](functions/18.md#rva-318b70) | D2GAME.dll | 0xD4230 | 未登记 | 未匹配 | 74 |
@@ -357,7 +413,6 @@
 | [0x319330](functions/18.md#rva-319330) | D2GAME.dll | 0xDFCC0 | 未登记 | 未匹配 | 74 |
 | [0x3195C0](functions/18.md#rva-3195c0) | D2GAME.dll | 0x441C0 | 未登记 | 未匹配 | 74 |
 | [0x319670](functions/18.md#rva-319670) | D2GAME.dll | 0x439A0 | 未登记 | 未匹配 | 74 |
-| [0x319720](functions/18.md#rva-319720) | D2CLIENT.dll | 0x74480 | 未登记 | 未匹配 | 74 |
 | [0x319830](functions/18.md#rva-319830) | D2GAME.dll | 0xDC530 | 未登记 | 未匹配 | 74 |
 | [0x3198E0](functions/18.md#rva-3198e0) | D2GAME.dll | 0x91B70 | 未登记 | 未匹配 | 74 |
 | [0x319990](functions/18.md#rva-319990) | D2GAME.dll | 0x95370 | 未登记 | 未匹配 | 75 |
@@ -399,23 +454,12 @@
 | [0x31B310](functions/18.md#rva-31b310) | D2GAME.dll | 0x1074A8 | 未登记 | 未匹配 | 72 |
 | [0x31B3C0](functions/18.md#rva-31b3c0) | D2GAME.dll | 0x1077A8 | 未登记 | 未匹配 | 72 |
 | [0x31B470](functions/18.md#rva-31b470) | D2GAME.dll | 0x10E550 | 未登记 | 未匹配 | 75 |
-| [0x31B520](functions/18.md#rva-31b520) | D2CLIENT.dll | 0xDEA48 | 未登记 | 未匹配 | 73 |
 | [0x31B5D0](functions/18.md#rva-31b5d0) | D2GAME.dll | 0x107338 | 未登记 | 未匹配 | 71 |
-| [0x31B680](functions/18.md#rva-31b680) | D2CLIENT.dll | 0xDE928 | 未登记 | 未匹配 | 74 |
-| [0x31B730](functions/18.md#rva-31b730) | D2CLIENT.dll | 0xF5210 | 未登记 | 未匹配 | 74 |
-| [0x31B7E0](functions/18.md#rva-31b7e0) | D2CLIENT.dll | 0xDDE60 | 未登记 | 未匹配 | 74 |
-| [0x31B890](functions/18.md#rva-31b890) | D2NET.dll | 0xA900 | 未登记 | 未匹配 | 74 |
-| [0x31B940](functions/18.md#rva-31b940) | D2NET.dll | 0xABD8 | 未登记 | 未匹配 | 74 |
 | [0x31B9F0](functions/18.md#rva-31b9f0) | D2GAME.dll | 0xFA078 | 未登记 | 未匹配 | 75 |
-| [0x31BAA0](functions/18.md#rva-31baa0) | D2CLIENT.dll | 0x10A608 | 未登记 | pUnitTable | 67 |
-| [0x31BB50](functions/18.md#rva-31bb50) | D2CLIENT.dll | 0x109A08 | 未登记 | 未匹配 | 75 |
 | [0x31BC00](functions/18.md#rva-31bc00) | D2GAME.dll | 0x10E788 | 未登记 | 未匹配 | 74 |
 | [0x31BCB0](functions/18.md#rva-31bcb0) | D2GAME.dll | 0x10DA48 | 未登记 | 未匹配 | 73 |
 | [0x31BD60](functions/18.md#rva-31bd60) | D2GAME.dll | 0x10DB68 | 未登记 | 未匹配 | 73 |
 | [0x31BE10](functions/18.md#rva-31be10) | D2GAME.dll | 0x10D970 | 未登记 | 未匹配 | 74 |
-| [0x31BEC0](functions/18.md#rva-31bec0) | D2CLIENT.dll | 0xDDA10 | 未登记 | 未匹配 | 74 |
-| [0x31BF70](functions/18.md#rva-31bf70) | D2CLIENT.dll | 0xDD8A0 | 未登记 | 未匹配 | 74 |
-| [0x31C020](functions/18.md#rva-31c020) | D2CLIENT.dll | 0xDD810 | 未登记 | 未匹配 | 74 |
 | [0x31C0D0](functions/18.md#rva-31c0d0) | D2GAME.dll | 0x10D8BC | 未登记 | 未匹配 | 74 |
 | [0x31C180](functions/18.md#rva-31c180) | D2GAME.dll | 0x111C30 | 未登记 | 未匹配 | 74 |
 | [0x31C230](functions/18.md#rva-31c230) | D2GAME.dll | 0x111C3C | 未登记 | 未匹配 | 70 |
@@ -425,20 +469,13 @@
 | [0x31C4F0](functions/18.md#rva-31c4f0) | D2GAME.dll | 0xFA5F8 | 未登记 | 未匹配 | 74 |
 | [0x31C5A0](functions/18.md#rva-31c5a0) | D2GAME.dll | 0x10F850 | 未登记 | 未匹配 | 74 |
 | [0x31C650](functions/18.md#rva-31c650) | D2GAME.dll | 0x106F0C | 未登记 | 未匹配 | 74 |
-| [0x31C700](functions/18.md#rva-31c700) | D2COMMON.dll | 0x9B0C8 | 未登记 | 未匹配 | 74 |
 | [0x31C7B0](functions/18.md#rva-31c7b0) | D2GAME.dll | 0x10F448 | 未登记 | 未匹配 | 73 |
 | [0x31C860](functions/18.md#rva-31c860) | D2GAME.dll | 0xFA3F8 | 未登记 | 未匹配 | 74 |
 | [0x31C910](functions/18.md#rva-31c910) | D2GAME.dll | 0xDA7B0 | 未登记 | 未匹配 | 74 |
 | [0x31C9C0](functions/18.md#rva-31c9c0) | D2GAME.dll | 0xF9F68 | 未登记 | 未匹配 | 74 |
 | [0x31CA70](functions/18.md#rva-31ca70) | D2GAME.dll | 0x3F320 | 未登记 | 未匹配 | 74 |
-| [0x31CF70](functions/18.md#rva-31cf70) | D2CLIENT.dll | 0xF20C8 | 未登记 | 未匹配 | 74 |
-| [0x31D020](functions/18.md#rva-31d020) | D2CLIENT.dll | 0x72610 | 未登记 | 未匹配 | 74 |
-| [0x31D0D0](functions/18.md#rva-31d0d0) | D2CLIENT.dll | 0x72530 | 未登记 | 未匹配 | 74 |
-| [0x31D180](functions/18.md#rva-31d180) | D2CLIENT.dll | 0x6CB30 | 未登记 | 未匹配 | 74 |
-| [0x31D2F0](functions/18.md#rva-31d2f0) | D2CLIENT.dll | 0x54280 | 未登记 | 未匹配 | 74 |
 | [0x31D3A0](functions/18.md#rva-31d3a0) | D2GAME.dll | 0x102AB0 | 未登记 | 未匹配 | 72 |
 | [0x31D450](functions/18.md#rva-31d450) | D2GAME.dll | 0xFC3E8 | 未登记 | 未匹配 | 74 |
-| [0x31D500](functions/18.md#rva-31d500) | D2CLIENT.dll | 0xD69C4 | 未登记 | 未匹配 | 75 |
 | [0x31D5B0](functions/18.md#rva-31d5b0) | D2GAME.dll | 0xFA3DC | 未登记 | 未匹配 | 73 |
 | [0x31D660](functions/18.md#rva-31d660) | D2GAME.dll | 0xFA01C | 未登记 | 未匹配 | 74 |
 | [0x31D710](functions/18.md#rva-31d710) | D2GAME.dll | 0xFA048 | 未登记 | 未匹配 | 74 |
@@ -467,7 +504,6 @@
 | [0x31E8C0](functions/18.md#rva-31e8c0) | D2GAME.dll | 0xCACC0 | 未登记 | 未匹配 | 74 |
 | [0x31EA30](functions/18.md#rva-31ea30) | D2GAME.dll | 0x2AC60 | 未登记 | 未匹配 | 74 |
 | [0x31EAE0](functions/18.md#rva-31eae0) | D2GAME.dll | 0xAF610 | 未登记 | 未匹配 | 74 |
-| [0x31EB90](functions/18.md#rva-31eb90) | D2CLIENT.dll | 0x1260 | 未登记 | 未匹配 | 74 |
 | [0x31EC40](functions/18.md#rva-31ec40) | D2GAME.dll | 0xD4570 | 未登记 | 未匹配 | 74 |
 | [0x31ECF0](functions/18.md#rva-31ecf0) | D2GAME.dll | 0x12DF0 | 未登记 | 未匹配 | 74 |
 | [0x31EDA0](functions/18.md#rva-31eda0) | D2GAME.dll | 0x1670 | 未登记 | 未匹配 | 74 |
@@ -494,7 +530,97 @@
 | [0x31FC40](functions/18.md#rva-31fc40) | D2GAME.dll | 0x111F84 | 未登记 | 未匹配 | 75 |
 | [0x31FCF0](functions/18.md#rva-31fcf0) | D2GAME.dll | 0x10E35C | 未登记 | 未匹配 | 75 |
 | [0x31FDA0](functions/18.md#rva-31fda0) | D2GAME.dll | 0x111C48 | 未登记 | 未匹配 | 75 |
-| [0x31FF10](functions/18.md#rva-31ff10) | D2NET.dll | 0xB400 | 0xB400 | 未匹配 | 75 |
+| [0x32E970](functions/19.md#rva-32e970) | D2GAME.dll | 0x37540 | 未登记 | 未匹配 | 75 |
+| [0x32EA20](functions/19.md#rva-32ea20) | D2GAME.dll | 0x37260 | 未登记 | 未匹配 | 75 |
+| [0x32F570](functions/19.md#rva-32f570) | D2GAME.dll | 0xCC550 | 未登记 | 未匹配 | 75 |
+| [0x32F620](functions/19.md#rva-32f620) | D2GAME.dll | 0x8F070 | 未登记 | 未匹配 | 75 |
+| [0x330AD0](functions/19.md#rva-330ad0) | D2GAME.dll | 0x111C24 | 未登记 | 未匹配 | 74 |
+| [0x330FE0](functions/19.md#rva-330fe0) | D2GAME.dll | 0x9EB80 | 未登记 | 未匹配 | 74 |
+| [0x331090](functions/19.md#rva-331090) | D2GAME.dll | 0x79100 | 未登记 | 未匹配 | 74 |
+| [0x331140](functions/19.md#rva-331140) | D2GAME.dll | 0x78A90 | 未登记 | 未匹配 | 74 |
+| [0x3311F0](functions/19.md#rva-3311f0) | D2GAME.dll | 0xA0830 | 未登记 | 未匹配 | 74 |
+| [0x331360](functions/19.md#rva-331360) | D2GAME.dll | 0x78610 | 未登记 | 未匹配 | 74 |
+| [0x331410](functions/19.md#rva-331410) | D2GAME.dll | 0x38620 | 未登记 | 未匹配 | 74 |
+| [0x3314C0](functions/19.md#rva-3314c0) | D2GAME.dll | 0xEFED0 | 未登记 | 未匹配 | 74 |
+| [0x331570](functions/19.md#rva-331570) | D2GAME.dll | 0x53720 | 未登记 | 未匹配 | 74 |
+| [0x331620](functions/19.md#rva-331620) | D2GAME.dll | 0xEB2C0 | 未登记 | 未匹配 | 74 |
+| [0x331730](functions/19.md#rva-331730) | D2GAME.dll | 0x1560 | 未登记 | 未匹配 | 74 |
+| [0x3317E0](functions/19.md#rva-3317e0) | D2GAME.dll | 0xB0A20 | 未登记 | 未匹配 | 75 |
+| [0x331890](functions/19.md#rva-331890) | D2GAME.dll | 0xF2870 | 未登记 | 未匹配 | 75 |
+| [0x331940](functions/19.md#rva-331940) | D2GAME.dll | 0xF2D80 | 未登记 | 未匹配 | 74 |
+| [0x331AA0](functions/19.md#rva-331aa0) | D2GAME.dll | 0x9E170 | 未登记 | 未匹配 | 74 |
+| [0x337A30](functions/19.md#rva-337a30) | D2GAME.dll | 0xD6C80 | 未登记 | 未匹配 | 74 |
+| [0x337B40](functions/19.md#rva-337b40) | D2GAME.dll | 0xDFDC0 | 未登记 | 未匹配 | 74 |
+| [0x3384C0](functions/19.md#rva-3384c0) | D2GAME.dll | 0x1420 | 未登记 | 未匹配 | 74 |
+| [0x338570](functions/19.md#rva-338570) | D2GAME.dll | 0xDF780 | 未登记 | 未匹配 | 74 |
+| [0x338620](functions/19.md#rva-338620) | D2GAME.dll | 0xA1D10 | 未登记 | 未匹配 | 74 |
+| [0x3386D0](functions/19.md#rva-3386d0) | D2GAME.dll | 0x9F3B0 | 未登记 | 未匹配 | 74 |
+| [0x338780](functions/19.md#rva-338780) | D2GAME.dll | 0x8E900 | 未登记 | 未匹配 | 74 |
+| [0x338830](functions/19.md#rva-338830) | D2GAME.dll | 0x4AD10 | 未登记 | 未匹配 | 74 |
+| [0x3388E0](functions/19.md#rva-3388e0) | D2GAME.dll | 0x9EA30 | 未登记 | 未匹配 | 74 |
+| [0x338990](functions/19.md#rva-338990) | D2GAME.dll | 0xEFB80 | 未登记 | 未匹配 | 74 |
+| [0x338C80](functions/19.md#rva-338c80) | D2GAME.dll | 0x9E490 | 未登记 | 未匹配 | 74 |
+| [0x338D30](functions/19.md#rva-338d30) | D2GAME.dll | 0x9E450 | 未登记 | 未匹配 | 74 |
+| [0x338E10](functions/19.md#rva-338e10) | D2GAME.dll | 0xD16B0 | 未登记 | 未匹配 | 74 |
+| [0x338F70](functions/19.md#rva-338f70) | D2GAME.dll | 0xE990 | 未登记 | 未匹配 | 74 |
+| [0x339020](functions/19.md#rva-339020) | D2GAME.dll | 0xD1650 | 未登记 | 未匹配 | 74 |
+| [0x3390D0](functions/19.md#rva-3390d0) | D2GAME.dll | 0xCECE0 | 未登记 | 未匹配 | 74 |
+| [0x33B0D0](functions/19.md#rva-33b0d0) | D2GAME.dll | 0xEFE40 | 未登记 | 未匹配 | 74 |
+| [0x33D030](functions/19.md#rva-33d030) | D2GAME.dll | 0x4EB50 | 未登记 | 未匹配 | 74 |
+| [0x33D0E0](functions/19.md#rva-33d0e0) | D2GAME.dll | 0x4E180 | 未登记 | 未匹配 | 74 |
+| [0x33D190](functions/19.md#rva-33d190) | D2GAME.dll | 0x9C840 | 未登记 | 未匹配 | 74 |
+| [0x33D240](functions/19.md#rva-33d240) | D2GAME.dll | 0x8E2A0 | 未登记 | 未匹配 | 74 |
+| [0x33D2F0](functions/19.md#rva-33d2f0) | D2GAME.dll | 0x96EA0 | 未登记 | 未匹配 | 74 |
+| [0x33D3A0](functions/19.md#rva-33d3a0) | D2GAME.dll | 0x967B0 | 未登记 | 未匹配 | 74 |
+| [0x33D450](functions/19.md#rva-33d450) | D2GAME.dll | 0x96A40 | 未登记 | GetPlayerPet | 74 |
+| [0x33D500](functions/19.md#rva-33d500) | D2GAME.dll | 0xA3AE0 | 未登记 | 未匹配 | 74 |
+| [0x33D5B0](functions/19.md#rva-33d5b0) | D2GAME.dll | 0xA4890 | 未登记 | 未匹配 | 74 |
+| [0x33D660](functions/19.md#rva-33d660) | D2GAME.dll | 0xA44C0 | 未登记 | 未匹配 | 74 |
+| [0x33D710](functions/19.md#rva-33d710) | D2GAME.dll | 0x9E290 | 未登记 | 未匹配 | 74 |
+| [0x33D7C0](functions/19.md#rva-33d7c0) | D2GAME.dll | 0x37190 | 未登记 | 未匹配 | 74 |
+| [0x33D870](functions/19.md#rva-33d870) | D2GAME.dll | 0x37110 | 未登记 | 未匹配 | 74 |
+| [0x33D920](functions/19.md#rva-33d920) | D2GAME.dll | 0x92ED0 | 未登记 | 未匹配 | 74 |
+| [0x33D9D0](functions/19.md#rva-33d9d0) | D2GAME.dll | 0xDA750 | 未登记 | 未匹配 | 74 |
+| [0x33DA80](functions/19.md#rva-33da80) | D2GAME.dll | 0xDFF10 | 未登记 | 未匹配 | 74 |
+| [0x33DB30](functions/19.md#rva-33db30) | D2GAME.dll | 0x78230 | 未登记 | 未匹配 | 74 |
+| [0x33DF90](functions/19.md#rva-33df90) | D2GAME.dll | 0x10DA44 | 未登记 | 未匹配 | 74 |
+| [0x33E040](functions/19.md#rva-33e040) | D2GAME.dll | 0xE0A20 | 未登记 | 未匹配 | 74 |
+| [0x33E0F0](functions/19.md#rva-33e0f0) | D2GAME.dll | 0x10D970 | 未登记 | 未匹配 | 74 |
+
+<a id="module-3"></a>
+
+## D2CLIENT.dll
+
+| 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
+| --- | --- | --- | --- | --- | --- |
+| [0x30DF90](functions/18.md#rva-30df90) | D2CLIENT.dll | 0xB1420 | 未登记 | 未匹配 | 74 |
+| [0x30E9F0](functions/18.md#rva-30e9f0) | D2CLIENT.dll | 0xA1340 | 未登记 | 未匹配 | 74 |
+| [0x312E30](functions/18.md#rva-312e30) | D2CLIENT.dll | 0x84080 | 未登记 | 未匹配 | 74 |
+| [0x312EE0](functions/18.md#rva-312ee0) | D2CLIENT.dll | 0x82660 | 未登记 | 未匹配 | 74 |
+| [0x312F90](functions/18.md#rva-312f90) | D2CLIENT.dll | 0x835C0 | 未登记 | 未匹配 | 74 |
+| [0x313040](functions/18.md#rva-313040) | D2CLIENT.dll | 0x82820 | 未登记 | 未匹配 | 74 |
+| [0x3130F0](functions/18.md#rva-3130f0) | D2CLIENT.dll | 0x66950 | 未登记 | 未匹配 | 74 |
+| [0x3131A0](functions/18.md#rva-3131a0) | D2CLIENT.dll | 0xA6D60 | 未登记 | 未匹配 | 74 |
+| [0x3180F0](functions/18.md#rva-3180f0) | D2CLIENT.dll | 0x40F00 | 未登记 | 未匹配 | 74 |
+| [0x318720](functions/18.md#rva-318720) | D2CLIENT.dll | 0x40550 | 未登记 | 未匹配 | 74 |
+| [0x318930](functions/18.md#rva-318930) | D2CLIENT.dll | 0x73BC0 | 未登记 | 未匹配 | 74 |
+| [0x319720](functions/18.md#rva-319720) | D2CLIENT.dll | 0x74480 | 未登记 | 未匹配 | 74 |
+| [0x31B520](functions/18.md#rva-31b520) | D2CLIENT.dll | 0xDEA48 | 未登记 | 未匹配 | 73 |
+| [0x31B680](functions/18.md#rva-31b680) | D2CLIENT.dll | 0xDE928 | 未登记 | 未匹配 | 74 |
+| [0x31B730](functions/18.md#rva-31b730) | D2CLIENT.dll | 0xF5210 | 未登记 | 未匹配 | 74 |
+| [0x31B7E0](functions/18.md#rva-31b7e0) | D2CLIENT.dll | 0xDDE60 | 未登记 | 未匹配 | 74 |
+| [0x31BAA0](functions/18.md#rva-31baa0) | D2CLIENT.dll | 0x10A608 | 未登记 | pUnitTable | 67 |
+| [0x31BB50](functions/18.md#rva-31bb50) | D2CLIENT.dll | 0x109A08 | 未登记 | 未匹配 | 75 |
+| [0x31BEC0](functions/18.md#rva-31bec0) | D2CLIENT.dll | 0xDDA10 | 未登记 | 未匹配 | 74 |
+| [0x31BF70](functions/18.md#rva-31bf70) | D2CLIENT.dll | 0xDD8A0 | 未登记 | 未匹配 | 74 |
+| [0x31C020](functions/18.md#rva-31c020) | D2CLIENT.dll | 0xDD810 | 未登记 | 未匹配 | 74 |
+| [0x31CF70](functions/18.md#rva-31cf70) | D2CLIENT.dll | 0xF20C8 | 未登记 | 未匹配 | 74 |
+| [0x31D020](functions/18.md#rva-31d020) | D2CLIENT.dll | 0x72610 | 未登记 | 未匹配 | 74 |
+| [0x31D0D0](functions/18.md#rva-31d0d0) | D2CLIENT.dll | 0x72530 | 未登记 | 未匹配 | 74 |
+| [0x31D180](functions/18.md#rva-31d180) | D2CLIENT.dll | 0x6CB30 | 未登记 | 未匹配 | 74 |
+| [0x31D2F0](functions/18.md#rva-31d2f0) | D2CLIENT.dll | 0x54280 | 未登记 | 未匹配 | 74 |
+| [0x31D500](functions/18.md#rva-31d500) | D2CLIENT.dll | 0xD69C4 | 未登记 | 未匹配 | 75 |
+| [0x31EB90](functions/18.md#rva-31eb90) | D2CLIENT.dll | 0x1260 | 未登记 | 未匹配 | 74 |
 | [0x320200](functions/19.md#rva-320200) | D2CLIENT.dll | 0x11C304 | 未登记 | 未匹配 | 75 |
 | [0x3202B0](functions/19.md#rva-3202b0) | D2CLIENT.dll | 0x11B9C4 | 未登记 | 未匹配 | 74 |
 | [0x320360](functions/19.md#rva-320360) | D2CLIENT.dll | 0x11BFEC | 未登记 | 未匹配 | 74 |
@@ -502,46 +628,6 @@
 | [0x3204C0](functions/19.md#rva-3204c0) | D2CLIENT.dll | 0x11BFE4 | 未登记 | 未匹配 | 75 |
 | [0x320570](functions/19.md#rva-320570) | D2CLIENT.dll | 0x11BFD8 | 未登记 | 未匹配 | 74 |
 | [0x320620](functions/19.md#rva-320620) | D2CLIENT.dll | 0x77170 | 未登记 | 未匹配 | 74 |
-| [0x3207F0](functions/19.md#rva-3207f0) | D2MULTI.dll | 0x38F18 | 0x1C150 | ChatBoxMsg | 74 |
-| [0x3208A0](functions/19.md#rva-3208a0) | D2MULTI.dll | 0x39CC0 | 0x39FF0 | 未匹配 | 75 |
-| [0x320950](functions/19.md#rva-320950) | D2MULTI.dll | 0x19C34 | 未登记 | 未匹配 | 75 |
-| [0x320A00](functions/19.md#rva-320a00) | D2MULTI.dll | 0x19C60 | 0x19C60 | EditboxPreferences | 74 |
-| [0x320AB0](functions/19.md#rva-320ab0) | D2MULTI.dll | 0x39CD8 | 0x3A060 | PassBox | 75 |
-| [0x320B60](functions/19.md#rva-320b60) | D2MULTI.dll | 0x3A0C8 | 未登记 | 未匹配 | 74 |
-| [0x320C10](functions/19.md#rva-320c10) | D2MULTI.dll | 0x3A0D0 | 0x39FC0 | ChatInputBox | 74 |
-| [0x320CC0](functions/19.md#rva-320cc0) | D2MULTI.dll | 0x38E80 | 未登记 | 未匹配 | 74 |
-| [0x320D70](functions/19.md#rva-320d70) | D2MULTI.dll | 0x39F24 | 未登记 | 未匹配 | 74 |
-| [0x320E20](functions/19.md#rva-320e20) | D2MULTI.dll | 0x39150 | 未登记 | 未匹配 | 74 |
-| [0x320ED0](functions/19.md#rva-320ed0) | D2MULTI.dll | 0x39154 | 未登记 | 未匹配 | 74 |
-| [0x320F80](functions/19.md#rva-320f80) | D2MULTI.dll | 0x39158 | 未登记 | 未匹配 | 74 |
-| [0x321030](functions/19.md#rva-321030) | D2MULTI.dll | 0x3915C | 未登记 | 未匹配 | 74 |
-| [0x3210E0](functions/19.md#rva-3210e0) | D2MULTI.dll | 0x39F64 | 未登记 | 未匹配 | 74 |
-| [0x321190](functions/19.md#rva-321190) | D2MULTI.dll | 0x3A068 | 未登记 | 未匹配 | 74 |
-| [0x321240](functions/19.md#rva-321240) | D2MULTI.dll | 0x39F5C | 未登记 | 未匹配 | 74 |
-| [0x3212F0](functions/19.md#rva-3212f0) | D2MULTI.dll | 0xC470 | 未登记 | 未匹配 | 74 |
-| [0x3213A0](functions/19.md#rva-3213a0) | D2MULTI.dll | 0xD000 | 未登记 | 未匹配 | 75 |
-| [0x321450](functions/19.md#rva-321450) | D2MULTI.dll | 0x108A6 | 0x14BE6 | ChannelChat_I | 75 |
-| [0x321500](functions/19.md#rva-321500) | D2MULTI.dll | 0x107A6 | 0x14850 | ChannelEmote_I | 75 |
-| [0x3215B0](functions/19.md#rva-3215b0) | D2MULTI.dll | 0x10000 | 0x142F0 | ChannelWhisper_I | 75 |
-| [0x321660](functions/19.md#rva-321660) | D2MULTI.dll | 0xD5B0 | 0x11B80 | ChannelInput_I | 75 |
-| [0x321710](functions/19.md#rva-321710) | D2MULTI.dll | 0xCD10 | 未登记 | 未匹配 | 74 |
-| [0x321B20](functions/19.md#rva-321b20) | D2LANG.dll | 0x10A80 | 未登记 | 未匹配 | 75 |
-| [0x321BD0](functions/19.md#rva-321bd0) | D2LANG.dll | 0x10A6C | 未登记 | 未匹配 | 75 |
-| [0x321C80](functions/19.md#rva-321c80) | D2LANG.dll | 0xB0B0 | 0x8C60 | Say_II | 75 |
-| [0x321D30](functions/19.md#rva-321d30) | D2LAUNCH.dll | 0x25ABC | 0x25B30 | BnData | 74 |
-| [0x321DE0](functions/19.md#rva-321de0) | D2LAUNCH.dll | 0x252B8 | 未登记 | 未匹配 | 74 |
-| [0x321E90](functions/19.md#rva-321e90) | D2LAUNCH.dll | 0x25E30 | 未登记 | 未匹配 | 74 |
-| [0x321F40](functions/19.md#rva-321f40) | D2LAUNCH.dll | 0x253C0 | 未登记 | 未匹配 | 74 |
-| [0x321FF0](functions/19.md#rva-321ff0) | D2LAUNCH.dll | 0x25E34 | 未登记 | 未匹配 | 74 |
-| [0x3220A0](functions/19.md#rva-3220a0) | D2LAUNCH.dll | 0x20F20 | 未登记 | 未匹配 | 74 |
-| [0x322150](functions/19.md#rva-322150) | D2LAUNCH.dll | 0x25EC8 | 未登记 | 未匹配 | 74 |
-| [0x322200](functions/19.md#rva-322200) | D2LAUNCH.dll | 0x24DB0 | 未登记 | 未匹配 | 74 |
-| [0x3222B0](functions/19.md#rva-3222b0) | D2LAUNCH.dll | 0x25AD4 | 未登记 | 未匹配 | 74 |
-| [0x322360](functions/19.md#rva-322360) | D2LAUNCH.dll | 0x25570 | 未登记 | 未匹配 | 74 |
-| [0x322410](functions/19.md#rva-322410) | D2LAUNCH.dll | 0x25C28 | 未登记 | 未匹配 | 75 |
-| [0x322DC0](functions/19.md#rva-322dc0) | D2WIN.dll | 0x7E60 | 未登记 | InitMPQ | 74 |
-| [0x322E70](functions/19.md#rva-322e70) | D2WIN.dll | 0x214A0 | 0x8DB34 | FirstControl | 74 |
-| [0x322F20](functions/19.md#rva-322f20) | D2WIN.dll | 0x214B0 | 0x8DB44 | 未匹配 | 75 |
 | [0x323060](functions/19.md#rva-323060) | D2CLIENT.dll | 0xA6070 | 未登记 | 未匹配 | 75 |
 | [0x3231A0](functions/19.md#rva-3231a0) | D2CLIENT.dll | 0x54E10 | 未登记 | ParseStats_J | 74 |
 | [0x323250](functions/19.md#rva-323250) | D2CLIENT.dll | 0x546E0 | 未登记 | 未匹配 | 74 |
@@ -796,13 +882,10 @@
 | [0x32E6D0](functions/19.md#rva-32e6d0) | D2CLIENT.dll | 0x2C230 | 未登记 | 未匹配 | 75 |
 | [0x32E7E0](functions/19.md#rva-32e7e0) | D2CLIENT.dll | 0x73760 | 未登记 | 未匹配 | 74 |
 | [0x32E8C0](functions/19.md#rva-32e8c0) | D2CLIENT.dll | 0x460A0 | 未登记 | 未匹配 | 74 |
-| [0x32E970](functions/19.md#rva-32e970) | D2GAME.dll | 0x37540 | 未登记 | 未匹配 | 75 |
-| [0x32EA20](functions/19.md#rva-32ea20) | D2GAME.dll | 0x37260 | 未登记 | 未匹配 | 75 |
 | [0x32EB30](functions/19.md#rva-32eb30) | D2CLIENT.dll | 0xC7E30 | 未登记 | 未匹配 | 74 |
 | [0x32EBE0](functions/19.md#rva-32ebe0) | D2CLIENT.dll | 0xA0880 | 未登记 | 未匹配 | 74 |
 | [0x32EC90](functions/19.md#rva-32ec90) | D2CLIENT.dll | 0xA0750 | 未登记 | 未匹配 | 74 |
 | [0x32EE60](functions/19.md#rva-32ee60) | D2CLIENT.dll | 0x1D740 | 未登记 | 未匹配 | 74 |
-| [0x32EF10](functions/19.md#rva-32ef10) | D2WIN.dll | 0x12940 | 0x134D0 | DrawTextBuffer | 75 |
 | [0x32EFC0](functions/19.md#rva-32efc0) | D2CLIENT.dll | 0x54E10 | 0x2CE40 | ParseStats_J | 75 |
 | [0x32F070](functions/19.md#rva-32f070) | D2CLIENT.dll | 0x2B4C0 | 未登记 | 未匹配 | 74 |
 | [0x32F120](functions/19.md#rva-32f120) | D2CLIENT.dll | 0xC6450 | 未登记 | 未匹配 | 74 |
@@ -811,42 +894,7 @@
 | [0x32F330](functions/19.md#rva-32f330) | D2CLIENT.dll | 0xBE240 | 未登记 | GetLevelName_I | 74 |
 | [0x32F3E0](functions/19.md#rva-32f3e0) | D2CLIENT.dll | 0xA4E20 | 未登记 | GetUnitFromId_I | 74 |
 | [0x32F490](functions/19.md#rva-32f490) | D2CLIENT.dll | 0xD810 | 未登记 | 未匹配 | 74 |
-| [0x32F570](functions/19.md#rva-32f570) | D2GAME.dll | 0xCC550 | 未登记 | 未匹配 | 75 |
-| [0x32F620](functions/19.md#rva-32f620) | D2GAME.dll | 0x8F070 | 未登记 | 未匹配 | 75 |
-| [0x32FE50](functions/19.md#rva-32fe50) | D2MCPCLIENT.dll | 0xAEB4 | 未登记 | 未匹配 | 74 |
-| [0x32FF00](functions/19.md#rva-32ff00) | D2MCPCLIENT.dll | 0xB028 | 未登记 | 未匹配 | 73 |
-| [0x32FFB0](functions/19.md#rva-32ffb0) | D2MCPCLIENT.dll | 0xAED8 | 未登记 | 未匹配 | 74 |
-| [0x330060](functions/19.md#rva-330060) | D2MCPCLIENT.dll | 0xB1C8 | 未登记 | 未匹配 | 74 |
-| [0x330110](functions/19.md#rva-330110) | D2MCPCLIENT.dll | 0x7330 | 未登记 | 未匹配 | 75 |
-| [0x330250](functions/19.md#rva-330250) | BNCLIENT.dll | 0x1E8D8 | 0x1E928 | 未匹配 | 74 |
-| [0x330300](functions/19.md#rva-330300) | BNCLIENT.dll | 0x1E8E0 | 0x1E930 | 未匹配 | 74 |
-| [0x3303B0](functions/19.md#rva-3303b0) | BNCLIENT.dll | 0x1E8E4 | 0x1E934 | 未匹配 | 74 |
-| [0x330460](functions/19.md#rva-330460) | BNCLIENT.dll | 0x1F1DC | 未登记 | 未匹配 | 74 |
-| [0x330510](functions/19.md#rva-330510) | BNCLIENT.dll | 0x1F1F4 | 未登记 | 未匹配 | 74 |
-| [0x3305C0](functions/19.md#rva-3305c0) | BNCLIENT.dll | 0x1F930 | 未登记 | 未匹配 | 74 |
-| [0x330670](functions/19.md#rva-330670) | BNCLIENT.dll | 0x1F654 | 未登记 | 未匹配 | 73 |
-| [0x330720](functions/19.md#rva-330720) | BNCLIENT.dll | 0x16070 | 未登记 | 未匹配 | 74 |
-| [0x330AD0](functions/19.md#rva-330ad0) | D2GAME.dll | 0x111C24 | 未登记 | 未匹配 | 74 |
-| [0x330B80](functions/19.md#rva-330b80) | D2COMMON.dll | 0xA1420 | 未登记 | 未匹配 | 74 |
-| [0x330C30](functions/19.md#rva-330c30) | D2COMMON.dll | 0xA1424 | 未登记 | 未匹配 | 74 |
-| [0x330D10](functions/19.md#rva-330d10) | D2COMMON.dll | 0x2E840 | 未登记 | 未匹配 | 74 |
-| [0x330E20](functions/19.md#rva-330e20) | D2COMMON.dll | 0x2E790 | 未登记 | 未匹配 | 74 |
-| [0x330F30](functions/19.md#rva-330f30) | D2COMMON.dll | 0x2F100 | 未登记 | 未匹配 | 74 |
-| [0x330FE0](functions/19.md#rva-330fe0) | D2GAME.dll | 0x9EB80 | 未登记 | 未匹配 | 74 |
-| [0x331090](functions/19.md#rva-331090) | D2GAME.dll | 0x79100 | 未登记 | 未匹配 | 74 |
-| [0x331140](functions/19.md#rva-331140) | D2GAME.dll | 0x78A90 | 未登记 | 未匹配 | 74 |
-| [0x3311F0](functions/19.md#rva-3311f0) | D2GAME.dll | 0xA0830 | 未登记 | 未匹配 | 74 |
-| [0x331360](functions/19.md#rva-331360) | D2GAME.dll | 0x78610 | 未登记 | 未匹配 | 74 |
-| [0x331410](functions/19.md#rva-331410) | D2GAME.dll | 0x38620 | 未登记 | 未匹配 | 74 |
-| [0x3314C0](functions/19.md#rva-3314c0) | D2GAME.dll | 0xEFED0 | 未登记 | 未匹配 | 74 |
-| [0x331570](functions/19.md#rva-331570) | D2GAME.dll | 0x53720 | 未登记 | 未匹配 | 74 |
-| [0x331620](functions/19.md#rva-331620) | D2GAME.dll | 0xEB2C0 | 未登记 | 未匹配 | 74 |
-| [0x331730](functions/19.md#rva-331730) | D2GAME.dll | 0x1560 | 未登记 | 未匹配 | 74 |
-| [0x3317E0](functions/19.md#rva-3317e0) | D2GAME.dll | 0xB0A20 | 未登记 | 未匹配 | 75 |
-| [0x331890](functions/19.md#rva-331890) | D2GAME.dll | 0xF2870 | 未登记 | 未匹配 | 75 |
-| [0x331940](functions/19.md#rva-331940) | D2GAME.dll | 0xF2D80 | 未登记 | 未匹配 | 74 |
 | [0x3319F0](functions/19.md#rva-3319f0) | D2CLIENT.dll | 0xA60D0 | 未登记 | 未匹配 | 74 |
-| [0x331AA0](functions/19.md#rva-331aa0) | D2GAME.dll | 0x9E170 | 未登记 | 未匹配 | 74 |
 | [0x331B50](functions/19.md#rva-331b50) | D2CLIENT.dll | 0x11C24C | 未登记 | SoundsTxt | 69 |
 | [0x331C00](functions/19.md#rva-331c00) | D2CLIENT.dll | 0x11C250 | 未登记 | SoundRecords | 69 |
 | [0x331CB0](functions/19.md#rva-331cb0) | D2CLIENT.dll | 0x11C254 | 未登记 | 未匹配 | 72 |
@@ -855,7 +903,6 @@
 | [0x331EC0](functions/19.md#rva-331ec0) | D2CLIENT.dll | 0x11C260 | 未登记 | 未匹配 | 73 |
 | [0x331F70](functions/19.md#rva-331f70) | D2CLIENT.dll | 0x1175B8 | 未登记 | 未匹配 | 73 |
 | [0x332020](functions/19.md#rva-332020) | D2CLIENT.dll | 0x11C280 | 未登记 | 未匹配 | 71 |
-| [0x332700](functions/19.md#rva-332700) | D2SOUND.dll | 0x68D0 | 未登记 | 未匹配 | 74 |
 | [0x3328A0](functions/19.md#rva-3328a0) | D2CLIENT.dll | 0x64080 | 未登记 | 未匹配 | 74 |
 | [0x332950](functions/19.md#rva-332950) | D2CLIENT.dll | 0x64FD0 | 未登记 | 未匹配 | 74 |
 | [0x332A00](functions/19.md#rva-332a00) | D2CLIENT.dll | 0x65180 | 未登记 | 未匹配 | 74 |
@@ -900,8 +947,6 @@
 | [0x334B00](functions/19.md#rva-334b00) | D2CLIENT.dll | 0xE28F8 | 未登记 | 未匹配 | 74 |
 | [0x334BB0](functions/19.md#rva-334bb0) | D2CLIENT.dll | 0xE264C | 未登记 | ArenaFlags | 75 |
 | [0x335740](functions/19.md#rva-335740) | D2CLIENT.dll | 0x38CD0 | 未登记 | 未匹配 | 74 |
-| [0x336090](functions/19.md#rva-336090) | D2WIN.dll | 0x21488 | 未登记 | 未匹配 | 74 |
-| [0x336140](functions/19.md#rva-336140) | D2WIN.dll | 0x2148C | 未登记 | 未匹配 | 74 |
 | [0x336250](functions/19.md#rva-336250) | D2CLIENT.dll | 0x8C4C0 | 未登记 | 未匹配 | 74 |
 | [0x336300](functions/19.md#rva-336300) | D2CLIENT.dll | 0x26320 | 未登记 | 未匹配 | 74 |
 | [0x3363E0](functions/19.md#rva-3363e0) | D2CLIENT.dll | 0x8B6B0 | 未登记 | 未匹配 | 74 |
@@ -934,38 +979,10 @@
 | [0x3377C0](functions/19.md#rva-3377c0) | D2CLIENT.dll | 0x119858 | 未登记 | 未匹配 | 73 |
 | [0x337870](functions/19.md#rva-337870) | D2CLIENT.dll | 0x11C394 | 未登记 | 未匹配 | 70 |
 | [0x337920](functions/19.md#rva-337920) | D2CLIENT.dll | 0x69F20 | 未登记 | 未匹配 | 75 |
-| [0x337A30](functions/19.md#rva-337a30) | D2GAME.dll | 0xD6C80 | 未登记 | 未匹配 | 74 |
-| [0x337B40](functions/19.md#rva-337b40) | D2GAME.dll | 0xDFDC0 | 未登记 | 未匹配 | 74 |
-| [0x337C20](functions/19.md#rva-337c20) | D2COMMON.dll | 0x7C270 | 未登记 | 未匹配 | 74 |
-| [0x337CD0](functions/19.md#rva-337cd0) | D2COMMON.dll | 0x1A130 | 未登记 | 未匹配 | 75 |
 | [0x337F10](functions/19.md#rva-337f10) | D2CLIENT.dll | 0xC19A4 | 未登记 | 未匹配 | 75 |
 | [0x337FC0](functions/19.md#rva-337fc0) | D2CLIENT.dll | 0x6264E | 未登记 | 未匹配 | 75 |
 | [0x338070](functions/19.md#rva-338070) | D2CLIENT.dll | 0x11C3B8 | 未登记 | 未匹配 | 74 |
 | [0x338120](functions/19.md#rva-338120) | D2CLIENT.dll | 0xA9A20 | 未登记 | 未匹配 | 74 |
-| [0x3381D0](functions/19.md#rva-3381d0) | D2COMMON.dll | 0x376F0 | 未登记 | 未匹配 | 74 |
-| [0x3384C0](functions/19.md#rva-3384c0) | D2GAME.dll | 0x1420 | 未登记 | 未匹配 | 74 |
-| [0x338570](functions/19.md#rva-338570) | D2GAME.dll | 0xDF780 | 未登记 | 未匹配 | 74 |
-| [0x338620](functions/19.md#rva-338620) | D2GAME.dll | 0xA1D10 | 未登记 | 未匹配 | 74 |
-| [0x3386D0](functions/19.md#rva-3386d0) | D2GAME.dll | 0x9F3B0 | 未登记 | 未匹配 | 74 |
-| [0x338780](functions/19.md#rva-338780) | D2GAME.dll | 0x8E900 | 未登记 | 未匹配 | 74 |
-| [0x338830](functions/19.md#rva-338830) | D2GAME.dll | 0x4AD10 | 未登记 | 未匹配 | 74 |
-| [0x3388E0](functions/19.md#rva-3388e0) | D2GAME.dll | 0x9EA30 | 未登记 | 未匹配 | 74 |
-| [0x338990](functions/19.md#rva-338990) | D2GAME.dll | 0xEFB80 | 未登记 | 未匹配 | 74 |
-| [0x338A40](functions/19.md#rva-338a40) | D2COMMON.dll | 0x38A80 | 未登记 | 未匹配 | 74 |
-| [0x338AF0](functions/19.md#rva-338af0) | D2COMMON.dll | 0x94608 | 未登记 | 未匹配 | 74 |
-| [0x338BA0](functions/19.md#rva-338ba0) | D2COMMON.dll | 0x323E0 | 未登记 | 未匹配 | 74 |
-| [0x338C80](functions/19.md#rva-338c80) | D2GAME.dll | 0x9E490 | 未登记 | 未匹配 | 74 |
-| [0x338D30](functions/19.md#rva-338d30) | D2GAME.dll | 0x9E450 | 未登记 | 未匹配 | 74 |
-| [0x338E10](functions/19.md#rva-338e10) | D2GAME.dll | 0xD16B0 | 未登记 | 未匹配 | 74 |
-| [0x338EC0](functions/19.md#rva-338ec0) | D2COMMON.dll | 0x218A0 | 未登记 | 未匹配 | 74 |
-| [0x338F70](functions/19.md#rva-338f70) | D2GAME.dll | 0xE990 | 未登记 | 未匹配 | 74 |
-| [0x339020](functions/19.md#rva-339020) | D2GAME.dll | 0xD1650 | 未登记 | 未匹配 | 74 |
-| [0x3390D0](functions/19.md#rva-3390d0) | D2GAME.dll | 0xCECE0 | 未登记 | 未匹配 | 74 |
-| [0x3391B0](functions/19.md#rva-3391b0) | D2COMMON.dll | 0x9FA58 | 未登记 | 未匹配 | 74 |
-| [0x339260](functions/19.md#rva-339260) | D2COMMON.dll | 0x9FA5C | 未登记 | 未匹配 | 73 |
-| [0x339310](functions/19.md#rva-339310) | D2COMMON.dll | 0x1E1B0 | 未登记 | 未匹配 | 74 |
-| [0x3393C0](functions/19.md#rva-3393c0) | D2COMMON.dll | 0x9EFE4 | 未登记 | 未匹配 | 74 |
-| [0x339470](functions/19.md#rva-339470) | D2COMMON.dll | 0x9EFE8 | 未登记 | 未匹配 | 74 |
 | [0x339520](functions/19.md#rva-339520) | D2CLIENT.dll | 0xF46C4 | 未登记 | 未匹配 | 73 |
 | [0x3395D0](functions/19.md#rva-3395d0) | D2CLIENT.dll | 0xF46C8 | 未登记 | 未匹配 | 73 |
 | [0x339680](functions/19.md#rva-339680) | D2CLIENT.dll | 0xF8C9C | 未登记 | ExitAppFlag | 74 |
@@ -1005,8 +1022,6 @@
 | [0x33ADE0](functions/19.md#rva-33ade0) | D2CLIENT.dll | 0xFADCC | 未登记 | 未匹配 | 74 |
 | [0x33AE90](functions/19.md#rva-33ae90) | D2CLIENT.dll | 0x1197F8 | 未登记 | 未匹配 | 72 |
 | [0x33AF40](functions/19.md#rva-33af40) | D2CLIENT.dll | 0x11985C | 未登记 | 未匹配 | 74 |
-| [0x33B020](functions/19.md#rva-33b020) | D2COMMON.dll | 0x52345 | 未登记 | 未匹配 | 75 |
-| [0x33B0D0](functions/19.md#rva-33b0d0) | D2GAME.dll | 0xEFE40 | 未登记 | 未匹配 | 74 |
 | [0x33B180](functions/19.md#rva-33b180) | D2CLIENT.dll | 0x3D110 | 未登记 | 未匹配 | 74 |
 | [0x33B230](functions/19.md#rva-33b230) | D2CLIENT.dll | 0x119DD0 | 未登记 | 未匹配 | 74 |
 | [0x33B2E0](functions/19.md#rva-33b2e0) | D2CLIENT.dll | 0x119D30 | 未登记 | 未匹配 | 74 |
@@ -1020,8 +1035,6 @@
 | [0x33B8C0](functions/19.md#rva-33b8c0) | D2CLIENT.dll | 0x11C1E8 | 未登记 | 未匹配 | 74 |
 | [0x33B970](functions/19.md#rva-33b970) | D2CLIENT.dll | 0x11C1EC | 未登记 | 未匹配 | 74 |
 | [0x33BA20](functions/19.md#rva-33ba20) | D2CLIENT.dll | 0x11C414 | 未登记 | 未匹配 | 67 |
-| [0x33BBF0](functions/19.md#rva-33bbf0) | D2COMMON.dll | 0x9D378 | 未登记 | 未匹配 | 74 |
-| [0x33BCA0](functions/19.md#rva-33bca0) | D2COMMON.dll | 0x9D390 | 未登记 | 未匹配 | 73 |
 | [0x33BD50](functions/19.md#rva-33bd50) | D2CLIENT.dll | 0x11A774 | 未登记 | 未匹配 | 74 |
 | [0x33BE00](functions/19.md#rva-33be00) | D2CLIENT.dll | 0x11A778 | 未登记 | 未匹配 | 74 |
 | [0x33BEB0](functions/19.md#rva-33beb0) | D2CLIENT.dll | 0x11C468 | 未登记 | 未匹配 | 73 |
@@ -1043,34 +1056,12 @@
 | [0x33CA10](functions/19.md#rva-33ca10) | D2CLIENT.dll | 0x6DB40 | 未登记 | 未匹配 | 74 |
 | [0x33CAC0](functions/19.md#rva-33cac0) | D2CLIENT.dll | 0x69B40 | 未登记 | 未匹配 | 74 |
 | [0x33CB70](functions/19.md#rva-33cb70) | D2CLIENT.dll | 0x68F40 | 未登记 | 未匹配 | 74 |
-| [0x33CC50](functions/19.md#rva-33cc50) | D2COMMON.dll | 0x1FB50 | 未登记 | 未匹配 | 74 |
-| [0x33CD30](functions/19.md#rva-33cd30) | D2COMMON.dll | 0x20E80 | 未登记 | 未匹配 | 74 |
 | [0x33CE40](functions/19.md#rva-33ce40) | D2CLIENT.dll | 0x13CE0 | 未登记 | 未匹配 | 74 |
 | [0x33CF80](functions/19.md#rva-33cf80) | D2CLIENT.dll | 0x11BC10 | 未登记 | 未匹配 | 74 |
-| [0x33D030](functions/19.md#rva-33d030) | D2GAME.dll | 0x4EB50 | 未登记 | 未匹配 | 74 |
-| [0x33D0E0](functions/19.md#rva-33d0e0) | D2GAME.dll | 0x4E180 | 未登记 | 未匹配 | 74 |
-| [0x33D190](functions/19.md#rva-33d190) | D2GAME.dll | 0x9C840 | 未登记 | 未匹配 | 74 |
-| [0x33D240](functions/19.md#rva-33d240) | D2GAME.dll | 0x8E2A0 | 未登记 | 未匹配 | 74 |
-| [0x33D2F0](functions/19.md#rva-33d2f0) | D2GAME.dll | 0x96EA0 | 未登记 | 未匹配 | 74 |
-| [0x33D3A0](functions/19.md#rva-33d3a0) | D2GAME.dll | 0x967B0 | 未登记 | 未匹配 | 74 |
-| [0x33D450](functions/19.md#rva-33d450) | D2GAME.dll | 0x96A40 | 未登记 | GetPlayerPet | 74 |
-| [0x33D500](functions/19.md#rva-33d500) | D2GAME.dll | 0xA3AE0 | 未登记 | 未匹配 | 74 |
-| [0x33D5B0](functions/19.md#rva-33d5b0) | D2GAME.dll | 0xA4890 | 未登记 | 未匹配 | 74 |
-| [0x33D660](functions/19.md#rva-33d660) | D2GAME.dll | 0xA44C0 | 未登记 | 未匹配 | 74 |
-| [0x33D710](functions/19.md#rva-33d710) | D2GAME.dll | 0x9E290 | 未登记 | 未匹配 | 74 |
-| [0x33D7C0](functions/19.md#rva-33d7c0) | D2GAME.dll | 0x37190 | 未登记 | 未匹配 | 74 |
-| [0x33D870](functions/19.md#rva-33d870) | D2GAME.dll | 0x37110 | 未登记 | 未匹配 | 74 |
-| [0x33D920](functions/19.md#rva-33d920) | D2GAME.dll | 0x92ED0 | 未登记 | 未匹配 | 74 |
-| [0x33D9D0](functions/19.md#rva-33d9d0) | D2GAME.dll | 0xDA750 | 未登记 | 未匹配 | 74 |
-| [0x33DA80](functions/19.md#rva-33da80) | D2GAME.dll | 0xDFF10 | 未登记 | 未匹配 | 74 |
-| [0x33DB30](functions/19.md#rva-33db30) | D2GAME.dll | 0x78230 | 未登记 | 未匹配 | 74 |
 | [0x33DBE0](functions/19.md#rva-33dbe0) | D2CLIENT.dll | 0xA5F70 | 未登记 | 未匹配 | 74 |
 | [0x33DC90](functions/19.md#rva-33dc90) | D2CLIENT.dll | 0xA3040 | 未登记 | 未匹配 | 74 |
 | [0x33DD40](functions/19.md#rva-33dd40) | D2CLIENT.dll | 0xC79C0 | 未登记 | 未匹配 | 74 |
 | [0x33DE50](functions/19.md#rva-33de50) | D2CLIENT.dll | 0x242B0 | 未登记 | 未匹配 | 74 |
-| [0x33DF90](functions/19.md#rva-33df90) | D2GAME.dll | 0x10DA44 | 未登记 | 未匹配 | 74 |
-| [0x33E040](functions/19.md#rva-33e040) | D2GAME.dll | 0xE0A20 | 未登记 | 未匹配 | 74 |
-| [0x33E0F0](functions/19.md#rva-33e0f0) | D2GAME.dll | 0x10D970 | 未登记 | 未匹配 | 74 |
 | [0x33E1A0](functions/19.md#rva-33e1a0) | D2CLIENT.dll | 0x11C3E8 | 未登记 | 未匹配 | 74 |
 | [0x33E250](functions/19.md#rva-33e250) | D2CLIENT.dll | 0x2A6C0 | 未登记 | 未匹配 | 74 |
 | [0x33E300](functions/19.md#rva-33e300) | D2CLIENT.dll | 0x6C490 | 未登记 | 未匹配 | 74 |
@@ -1119,8 +1110,6 @@
 | [0x340330](functions/1a.md#rva-340330) | D2CLIENT.dll | 0x11BC98 | 未登记 | 未匹配 | 73 |
 | [0x3403E0](functions/1a.md#rva-3403e0) | D2CLIENT.dll | 0xDBC54 | 未登记 | 未匹配 | 73 |
 | [0x340490](functions/1a.md#rva-340490) | D2CLIENT.dll | 0xDBC58 | 未登记 | 未匹配 | 73 |
-| [0x340570](functions/1a.md#rva-340570) | D2WIN.dll | 0xCA658 | 未登记 | 未匹配 | 75 |
-| [0x340620](functions/1a.md#rva-340620) | D2WIN.dll | 0xCA65C | 未登记 | 未匹配 | 75 |
 | [0x340760](functions/1a.md#rva-340760) | D2CLIENT.dll | 0xFCDD6 | 未登记 | 未匹配 | 74 |
 | [0x340810](functions/1a.md#rva-340810) | D2CLIENT.dll | 0xFCDD5 | 未登记 | 未匹配 | 74 |
 | [0x3408C0](functions/1a.md#rva-3408c0) | D2CLIENT.dll | 0xAA090 | 未登记 | 未匹配 | 74 |
@@ -1143,3 +1132,106 @@
 | [0x337DB0](functions/19.md#rva-337db0) | D2CLIENT.dll | 0x161B0 | 未登记 | 未匹配 | 73 |
 | [0x337E60](functions/19.md#rva-337e60) | D2CLIENT.dll | 0xC14F7 | 未登记 | 未匹配 | 74 |
 | [0x32C6F0](functions/19.md#rva-32c6f0) | D2CLIENT.dll | 0x11BBFC | 0x11D050 | PlayerUnit | 52 |
+
+<a id="module-4"></a>
+
+## D2NET.dll
+
+| 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
+| --- | --- | --- | --- | --- | --- |
+| [0x31B890](functions/18.md#rva-31b890) | D2NET.dll | 0xA900 | 未登记 | 未匹配 | 74 |
+| [0x31B940](functions/18.md#rva-31b940) | D2NET.dll | 0xABD8 | 未登记 | 未匹配 | 74 |
+| [0x31FF10](functions/18.md#rva-31ff10) | D2NET.dll | 0xB400 | 0xB400 | 未匹配 | 75 |
+
+<a id="module-5"></a>
+
+## D2MULTI.dll
+
+| 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
+| --- | --- | --- | --- | --- | --- |
+| [0x3207F0](functions/19.md#rva-3207f0) | D2MULTI.dll | 0x38F18 | 0x1C150 | ChatBoxMsg | 74 |
+| [0x3208A0](functions/19.md#rva-3208a0) | D2MULTI.dll | 0x39CC0 | 0x39FF0 | 未匹配 | 75 |
+| [0x320950](functions/19.md#rva-320950) | D2MULTI.dll | 0x19C34 | 未登记 | 未匹配 | 75 |
+| [0x320A00](functions/19.md#rva-320a00) | D2MULTI.dll | 0x19C60 | 0x19C60 | EditboxPreferences | 74 |
+| [0x320AB0](functions/19.md#rva-320ab0) | D2MULTI.dll | 0x39CD8 | 0x3A060 | PassBox | 75 |
+| [0x320B60](functions/19.md#rva-320b60) | D2MULTI.dll | 0x3A0C8 | 未登记 | 未匹配 | 74 |
+| [0x320C10](functions/19.md#rva-320c10) | D2MULTI.dll | 0x3A0D0 | 0x39FC0 | ChatInputBox | 74 |
+| [0x320CC0](functions/19.md#rva-320cc0) | D2MULTI.dll | 0x38E80 | 未登记 | 未匹配 | 74 |
+| [0x320D70](functions/19.md#rva-320d70) | D2MULTI.dll | 0x39F24 | 未登记 | 未匹配 | 74 |
+| [0x320E20](functions/19.md#rva-320e20) | D2MULTI.dll | 0x39150 | 未登记 | 未匹配 | 74 |
+| [0x320ED0](functions/19.md#rva-320ed0) | D2MULTI.dll | 0x39154 | 未登记 | 未匹配 | 74 |
+| [0x320F80](functions/19.md#rva-320f80) | D2MULTI.dll | 0x39158 | 未登记 | 未匹配 | 74 |
+| [0x321030](functions/19.md#rva-321030) | D2MULTI.dll | 0x3915C | 未登记 | 未匹配 | 74 |
+| [0x3210E0](functions/19.md#rva-3210e0) | D2MULTI.dll | 0x39F64 | 未登记 | 未匹配 | 74 |
+| [0x321190](functions/19.md#rva-321190) | D2MULTI.dll | 0x3A068 | 未登记 | 未匹配 | 74 |
+| [0x321240](functions/19.md#rva-321240) | D2MULTI.dll | 0x39F5C | 未登记 | 未匹配 | 74 |
+| [0x3212F0](functions/19.md#rva-3212f0) | D2MULTI.dll | 0xC470 | 未登记 | 未匹配 | 74 |
+| [0x3213A0](functions/19.md#rva-3213a0) | D2MULTI.dll | 0xD000 | 未登记 | 未匹配 | 75 |
+| [0x321450](functions/19.md#rva-321450) | D2MULTI.dll | 0x108A6 | 0x14BE6 | ChannelChat_I | 75 |
+| [0x321500](functions/19.md#rva-321500) | D2MULTI.dll | 0x107A6 | 0x14850 | ChannelEmote_I | 75 |
+| [0x3215B0](functions/19.md#rva-3215b0) | D2MULTI.dll | 0x10000 | 0x142F0 | ChannelWhisper_I | 75 |
+| [0x321660](functions/19.md#rva-321660) | D2MULTI.dll | 0xD5B0 | 0x11B80 | ChannelInput_I | 75 |
+| [0x321710](functions/19.md#rva-321710) | D2MULTI.dll | 0xCD10 | 未登记 | 未匹配 | 74 |
+
+<a id="module-6"></a>
+
+## D2LANG.dll
+
+| 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
+| --- | --- | --- | --- | --- | --- |
+| [0x321B20](functions/19.md#rva-321b20) | D2LANG.dll | 0x10A80 | 未登记 | 未匹配 | 75 |
+| [0x321BD0](functions/19.md#rva-321bd0) | D2LANG.dll | 0x10A6C | 未登记 | 未匹配 | 75 |
+| [0x321C80](functions/19.md#rva-321c80) | D2LANG.dll | 0xB0B0 | 0x8C60 | Say_II | 75 |
+
+<a id="module-7"></a>
+
+## D2LAUNCH.dll
+
+| 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
+| --- | --- | --- | --- | --- | --- |
+| [0x321D30](functions/19.md#rva-321d30) | D2LAUNCH.dll | 0x25ABC | 0x25B30 | BnData | 74 |
+| [0x321DE0](functions/19.md#rva-321de0) | D2LAUNCH.dll | 0x252B8 | 未登记 | 未匹配 | 74 |
+| [0x321E90](functions/19.md#rva-321e90) | D2LAUNCH.dll | 0x25E30 | 未登记 | 未匹配 | 74 |
+| [0x321F40](functions/19.md#rva-321f40) | D2LAUNCH.dll | 0x253C0 | 未登记 | 未匹配 | 74 |
+| [0x321FF0](functions/19.md#rva-321ff0) | D2LAUNCH.dll | 0x25E34 | 未登记 | 未匹配 | 74 |
+| [0x3220A0](functions/19.md#rva-3220a0) | D2LAUNCH.dll | 0x20F20 | 未登记 | 未匹配 | 74 |
+| [0x322150](functions/19.md#rva-322150) | D2LAUNCH.dll | 0x25EC8 | 未登记 | 未匹配 | 74 |
+| [0x322200](functions/19.md#rva-322200) | D2LAUNCH.dll | 0x24DB0 | 未登记 | 未匹配 | 74 |
+| [0x3222B0](functions/19.md#rva-3222b0) | D2LAUNCH.dll | 0x25AD4 | 未登记 | 未匹配 | 74 |
+| [0x322360](functions/19.md#rva-322360) | D2LAUNCH.dll | 0x25570 | 未登记 | 未匹配 | 74 |
+| [0x322410](functions/19.md#rva-322410) | D2LAUNCH.dll | 0x25C28 | 未登记 | 未匹配 | 75 |
+
+<a id="module-8"></a>
+
+## D2MCPCLIENT.dll
+
+| 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
+| --- | --- | --- | --- | --- | --- |
+| [0x32FE50](functions/19.md#rva-32fe50) | D2MCPCLIENT.dll | 0xAEB4 | 未登记 | 未匹配 | 74 |
+| [0x32FF00](functions/19.md#rva-32ff00) | D2MCPCLIENT.dll | 0xB028 | 未登记 | 未匹配 | 73 |
+| [0x32FFB0](functions/19.md#rva-32ffb0) | D2MCPCLIENT.dll | 0xAED8 | 未登记 | 未匹配 | 74 |
+| [0x330060](functions/19.md#rva-330060) | D2MCPCLIENT.dll | 0xB1C8 | 未登记 | 未匹配 | 74 |
+| [0x330110](functions/19.md#rva-330110) | D2MCPCLIENT.dll | 0x7330 | 未登记 | 未匹配 | 75 |
+
+<a id="module-9"></a>
+
+## BNCLIENT.dll
+
+| 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
+| --- | --- | --- | --- | --- | --- |
+| [0x330250](functions/19.md#rva-330250) | BNCLIENT.dll | 0x1E8D8 | 0x1E928 | 未匹配 | 74 |
+| [0x330300](functions/19.md#rva-330300) | BNCLIENT.dll | 0x1E8E0 | 0x1E930 | 未匹配 | 74 |
+| [0x3303B0](functions/19.md#rva-3303b0) | BNCLIENT.dll | 0x1E8E4 | 0x1E934 | 未匹配 | 74 |
+| [0x330460](functions/19.md#rva-330460) | BNCLIENT.dll | 0x1F1DC | 未登记 | 未匹配 | 74 |
+| [0x330510](functions/19.md#rva-330510) | BNCLIENT.dll | 0x1F1F4 | 未登记 | 未匹配 | 74 |
+| [0x3305C0](functions/19.md#rva-3305c0) | BNCLIENT.dll | 0x1F930 | 未登记 | 未匹配 | 74 |
+| [0x330670](functions/19.md#rva-330670) | BNCLIENT.dll | 0x1F654 | 未登记 | 未匹配 | 73 |
+| [0x330720](functions/19.md#rva-330720) | BNCLIENT.dll | 0x16070 | 未登记 | 未匹配 | 74 |
+
+<a id="module-10"></a>
+
+## D2SOUND.dll
+
+| 核心解析器RVA | 原模块 | 1.13c | 1.13d | BH名称线索 | CRT跳板数 |
+| --- | --- | --- | --- | --- | --- |
+| [0x332700](functions/19.md#rva-332700) | D2SOUND.dll | 0x68D0 | 未登记 | 未匹配 | 74 |

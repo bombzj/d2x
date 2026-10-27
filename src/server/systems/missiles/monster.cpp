@@ -179,7 +179,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
                 if(concentration!=catalog.skillIds.end() && missile.nativeDamage) {
                     const auto state=catalog.skills.at(concentration->second).auraState;
                     const auto bonus=nativeMultiplyDivide(ports_.effects.stateModifiers(request.owner,state,request.tick).combat.damagePercent,
-                        catalog.skills.at(request.skill).number("param1"),100);
+                        catalog.skills.at(request.skill).number("param1"),ports_.nativeRules->pd2?100:8);
                     missile.nativeDamage->data.magic=scaleMissileDamage(missile.nativeDamage->data.magic,nativeAdd(100,bonus));
                 }
             } else if(request.initialization==NativeSpawn::Initialization::ChargedSkill || request.initialization==NativeSpawn::Initialization::DiabWall) {

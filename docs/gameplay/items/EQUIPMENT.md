@@ -42,7 +42,7 @@ item_aura回调单独保留Totals.itemAuraChanges：每项记录物品GUID、当
 
 ItemAuraTimer候选已沿物品GUID保存激活／撤销顺序：激活先取消同GUID全部事件、采样当时PerDelay并排期，再执行已支持的immediate；撤销先撤出AuraState来源、传播资源／被动回调，再取消事件。SkillFormulaSnapshot保存当次回调的来源、属性、资源和等级，资源单独提交不重放账本。玩家及单位的状态来源、接收者、计时器在共同候选中复验修订并随输出接受发布，成组及嵌套回调累积同一候选，入场使用真实逻辑帧。普通光环、装备光环、佣兵与怪物使用公共原公式、列表／资源轨迹和逐目标作用／伤害游标，不能由此推定完整物品事件与生命周期已复刻。
 
-飞弹／周期模块把这些计时器接入GameSystems.frameEvents的PeriodicStats 9；effects/item_auras逐GUID事件读取当前聚合等级，保留跨背压阶段并在程序结束后采样当前PerDelay重排。旧全单位光环扫描已撤出；玩家右手及单位技能周期分别使用PeriodicSkills 8，完整原事件优先级、物品队列2交错及同步重入仍待闭合。共享来源与算法入口见[COMMON](../skills/COMMON.md#当前持续效果入口)。
+飞弹／周期模块把这些计时器接入GameSystems.frameEvents的PeriodicStats 9；effects/item_auras逐GUID事件读取当前聚合等级，保留跨背压阶段并在程序结束后采样当前PerDelay重排。旧全单位光环扫描已撤出；玩家右手及单位技能周期分别使用PeriodicSkills 8，完整原事件优先级、物品队列2交错及同步重入仍待闭合。共享来源与算法入口见[COMMON](../skills/EFFECTS.md#当前持续效果入口)。
 
 TCP/IP已经分配人物单位但客户端尚未完成EnterGame时，单位与装备来源仍存在；不得按断线销毁整个单位事件队列。`effects/item_auras`在这段传输等待期间保留持续事件，一次性事件通过人物事务延至下一逻辑帧，保持原物品GUID并在容量重试时沿用同一替换候选；入场后按实际PerDelay继续。真正移除单位才取消其事件。此等待适配不修改物品属性或D2S，也不把过期时间重新发布到当前帧之前。
 

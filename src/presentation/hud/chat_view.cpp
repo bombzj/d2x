@@ -267,7 +267,7 @@ void ChatView::setLogOpen(bool open) {
     if (!logOpen_) dragging_ = false;
 }
 ChatIntent ChatView::handle(const FrameInput &input, bool canOpen) {
-    if (!ready_) return canOpen && (input.enter || input.messageLog) ? ChatIntent{true, {}, reason_} : ChatIntent{};
+    if (!ready_) return canOpen && (input.chat || input.messageLog) ? ChatIntent{true, {}, reason_} : ChatIntent{};
     const bool owned = inputOpen_ || logOpen_;
     if (!input.focused) { dragging_ = false; return {owned, {}}; }
     if (inputOpen_) {
@@ -288,7 +288,7 @@ ChatIntent ChatView::handle(const FrameInput &input, bool canOpen) {
         return {true, {}};
     }
     if (logOpen_) {
-        if (input.escape || input.messageLog ||
+        if (input.escape || input.clearScreen || input.messageLog ||
             (input.insideViewport && input.leftPressed && CheckCollisionPointRec(rv(input.mouse), closeBounds()))) {
             setLogOpen(false); return {true, {}};
         }
@@ -307,7 +307,10 @@ ChatIntent ChatView::handle(const FrameInput &input, bool canOpen) {
         return {true, {}};
     }
     if (canOpen && input.messageLog) { setLogOpen(true); return {true, {}}; }
-    if (canOpen && input.enter) { inputOpen_ = true; draft_.clear(); caret_ = 0; return {true, {}}; }
+    if (canOpen && input.chat) { inputOpen_ = true; draft_.clear(); caret_ = 0; return {true, {}}; }
+    if (canOpen && input.clearMessages)
+        clearedAt_ = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
     return {};
 }
 void ChatView::sent(bool accepted) {
@@ -361,6 +364,7 @@ void ChatView::draw(Rectangle worldViewport) const {
             // messages below older ones and expires each by its receive time.
             for (size_t index = std::min(messages_.size(), maximumVisibleMessages); index > 0; --index) {
                 const auto &message = messages_[index - 1];
+                if (message.receivedMilliseconds <= clearedAt_) continue;
                 if (now >= message.receivedMilliseconds && now - message.receivedMilliseconds >= messageLifetimeMilliseconds)
                     continue;
                 for (const auto &line : wrap(message.glyphs, content.width)) {

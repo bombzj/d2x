@@ -21,7 +21,7 @@ struct CharacterProjectionInput {
     bool dead = false, running = false, town = false, aliveAfterDeathSave = false;
     unsigned weaponSet{};
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
-    std::array<SkillHotkey, 8> hotkeys{};
+    std::array<SkillHotkey, 16> hotkeys{};
     std::map<int, int> baseRanks, effectiveRanks;
     std::map<int, int> itemSkillQuantities;
     std::vector<ChargedSkill> chargedSkills;

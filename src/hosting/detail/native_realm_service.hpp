@@ -13,6 +13,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace d2x::hosting {
@@ -68,11 +69,13 @@ struct NativeRealmService {
         std::set<server::RoomView> rooms;
         std::set<EntityId> warps;
         std::map<EntityId, std::pair<uint64_t, std::string>> roster;
-        std::map<EntityId,Bytes> social,partyVitals,partyPositions;
+        struct SocialPlayer { uint16_t party{},level{},flags{}; uint8_t status{}; };
+        std::map<EntityId,SocialPlayer> social;
+        std::map<EntityId,Bytes> partyVitals,partyPositions;
         std::map<std::pair<EntityId,EntityId>,uint16_t> relations;
         struct VisiblePlayer { EntityId actor; uint64_t inventoryRevision{}, characterRevision{}; Bytes motion; std::vector<Bytes> attributes; std::map<EntityId, std::vector<Bytes>> equipment; };
         std::map<PlayerId, VisiblePlayer> visible;
-        struct VisibleMonster { int nativeClass{-1}; Bytes motion; std::set<int> states; std::map<int,std::vector<StatValue>> stateStats; Bytes hirelingIdentity; std::map<uint8_t,uint32_t> hirelingStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; std::optional<uint8_t> life; };
+        struct VisibleMonster { int nativeClass{-1}; Bytes motion; uint64_t movementRevision{}; std::set<int> states; std::map<int,std::vector<StatValue>> stateStats; Bytes hirelingIdentity; std::map<uint8_t,uint32_t> hirelingStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; std::optional<uint8_t> life; };
         std::map<EntityId, VisibleMonster> monsters;
         std::set<EntityId> missiles;
         std::map<EntityId, Bytes> pets;
@@ -116,10 +119,11 @@ struct NativeRealmService {
     NativeRealmService(NativeRealmHost &, RealmOutput, GameOutput);
     ~NativeRealmService();
     void receiveEvent(const server::EventBatch &);
-    void publishPlayers();
-    void publishMonsters();
+    void publishPlayers(bool publishPartyVitals=true,std::span<const EntityId> inventoryResets={},
+        std::span<const std::pair<EntityId,EntityId>> relationUpdates={});
+    void publishMonsters(const std::vector<EntityId> &pendingDeaths={});
     void publishMissiles();
-    void publishGroundItems();
+    void publishGroundItems(std::span<const EntityId> pendingDrops={});
     void publishCorpses();
     void publishObjects();
     void publishNpcs();

@@ -111,7 +111,12 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             delta = nativeHit(projected, shared.terrain.at(binding->game).at(hit->area).origin);
             if(auto found=peer.monsters.find(hit->target);hit->type==1 && found!=peer.monsters.end() &&
                 (!hit->monsterMode || hit->killed)) found->second.life=hit->life;
-            if (auto found = peer.monsters.find(hit->target); found != peer.monsters.end() && hit->killed) found->second.motion.clear();
+            if (auto found = peer.monsters.find(hit->target);hit->type==1 && found != peer.monsters.end() && hit->killed) {
+                // The reliable fact already started DT. Retain its canonical
+                // snapshot baseline so publication cannot restart DT again.
+                MonsterSnapshot dying;dying.id=hit->target;dying.position=hit->position;dying.mode=0;
+                found->second.motion=nativeMonsterMotion(dying,shared.terrain.at(binding->game).at(hit->area).origin);
+            }
         } else if (const auto *inventory = std::get_if<server::InventoryFact>(&fact)) {
             delta = nativeInventoryDelta(*content, *inventory);
             for (const auto &change : inventory->changes) if (change.kind == ItemChangeKind::Created) peer.groundItems.erase(change.item);
@@ -122,7 +127,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             // room interest before 9C asks the retail client to attach an item.
             if(!host.visiblePoint(*binding,at.region,at.position)) continue;
             delta.push_back(nativeGroundItem(*content, drop->item,
-                shared.terrain.at(binding->game).at(at.region).origin, GroundItemAction::Drop));
+                shared.terrain.at(binding->game).at(at.region).origin, drop->flip?GroundItemAction::Drop:GroundItemAction::Add));
             peer.groundItems.insert_or_assign(drop->item.id, drop->item.revision);
         }
         else if(const auto *hint=std::get_if<server::MonsterClassHintFact>(&fact)) {
@@ -245,6 +250,16 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             for(const auto side : {uint8_t(1),uint8_t(0)}) {
                 const auto amount=side?trade->ownGold:trade->peerGold;
                 if(amount) delta.push_back(encodeServerPacket(ServerMessage::TradeGold,[&](auto &out){out.u8(side);out.u32(*amount);}));
+            }
+        } else if(const auto *reset=std::get_if<server::InventoryResetFact>(&fact)) {
+            const auto owner=reset->projection.player.id;
+            delta.push_back(encodeServerPacket(ServerMessage::Reserved92,[&](auto &out){out.u8(0);out.u32(uint32_t(owner.value));}));
+            for(auto &[id,sent]:peer.visible) if(sent.actor==owner) {
+                (void)id;
+                // 92 already removed the old equipment. Rebuild the observer's
+                // public baseline after the private restore/close facts drain.
+                sent.equipment.clear(); sent.inventoryRevision=0;
+                break;
             }
         } else if(const auto *items=std::get_if<server::TradeItemsFact>(&fact)) {
             delta=nativeTradeItems(*content,*items,host.read(*binding)->actor.id);

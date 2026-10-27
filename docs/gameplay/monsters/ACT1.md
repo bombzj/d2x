@@ -1,6 +1,6 @@
 # 第一幕怪物实现与依据
 
-更新：2026-10-17。本页负责第一幕实际类型与普通AI家族；精英规则见[ELITES](ELITES.md)，专用首领策略见[BOSSES](BOSSES.md)，客户端支持见[PRESENTATION](PRESENTATION.md)。
+更新：2026-10-27。本页负责第一幕实际类型与普通AI家族；精英规则见[ELITES](ELITES.md)，专用首领策略见[BOSSES](BOSSES.md)，客户端支持见[PRESENTATION](PRESENTATION.md)。
 
 当前MPQ第一幕Levels的mon／nmon／umon池共57个身份；连同固定预设／任务怪的andariel、bloodraven、griswold、smith、skmage_pois3及gargoyletrap，共63个可击杀敌对战斗类型。19类普通AI之外接Smith、Griswold、BloodRaven、Countess、Andariel、GargoyleTrap，共25类程序。普通、冠军、暗金、超级暗金、仆从和幕首领保留各自身份与规则。迁入规范见[COMMON](COMMON.md)。本页登记实际身份、程序、原版依据与缺口；源码接线不代表所有随机／难度组合已对齐。
 
@@ -27,6 +27,8 @@
 | Vampire | vampire5 | 火球范围命中、FireHead命中恢复、生命阶段与撤退 |
 
 vampire5三难度aip5仅开启位1；表中Firewall／Meteor槽的位2／4未开启，普通AI不执行。骷髅／法师的SkeletonRaise是复活动画，非普通AI主动技能；Countess相关槽不作为普通罗格程序调用。其他原行／精英须另准备条件，不能根据已有槽位宣称支持。
+
+僵尸、硬毛老鼠、沉沦魔、萨满及巨兽的原版Host消息样本覆盖游荡／追击、普通近战／尖刺、火弹、环绕和一次族群复活。当前源码已修正追击通知随坐标重发、普通攻击方向占位、死亡重复／复活伪命中及环绕最大距离；协议依据、复验状态和有限覆盖见[普通移动、攻击与复活通知](PRESENTATION.md#普通移动攻击与复活通知)。这些包型样本不证明自然人口、随机决策或全部难度已对齐。
 
 ## 三难度重新核对
 

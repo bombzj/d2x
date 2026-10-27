@@ -217,7 +217,9 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     // writer saturates its seven-bit level at127; it does not wrap to3.
     output.level = std::min(item.level,127u);
     output.seed = item.nativeSeed;
-    output.flags = item.nativeProperties ? item.nativeFlags : (0x00800000u | (item.nativeFlags & 0x4400400u));
+    // ITEMS_Duplicate marks the source with IFLAG_ITEM; Common's writer keeps
+    // that bit for generated items as well as items imported from a save.
+    output.flags = item.nativeProperties ? item.nativeFlags : (0x00800000u | (item.nativeFlags & 0x0C400400u));
     output.flags = (output.flags & ~0x00080110u) | 0x00800000u | (item.identified ? 0x10u : 0u);
     if (definition->maxDurability && !item.durability) output.flags |= 0x100;
     output.format = item.nativeFormat;
@@ -226,6 +228,9 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     output.autoAffix = item.nativeAutoAffix;
     output.questDifficulty = item.nativeQuestDifficulty;
     output.ear = item.ear;
+    // Common's ITEMS_WriteBitsToBitstream saturates the seven-bit ear level,
+    // just as it does the ordinary item level (including high-level PD2 ears).
+    if(output.ear) output.ear->level=std::min(output.ear->level,127u);
     output.realmIdentity = item.realmIdentity;
     if (item.ear) output.flags |= 0x10000u;
     output.sockets = item.sockets;

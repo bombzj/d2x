@@ -2,9 +2,31 @@
 
 [返回总览](README.md)。这张表描述静态登记及已恢复的构造器补写值，不等于当前进程成功应用了每一项。固定主表2,492项；非PlugY次表65项（D2Client 49、D2Game 8、D2Net 2、D2Win 6）；另有61个可变字节块，其中7项针对D2Game。主表之外还有[程序表写入](PROGRAM_TABLES.md)和其他模块的运行时钩子。relative=1的RVA是4字节位移写入位置，通常比CALL指令地址大1；fill>0表示重复填充低字节。
 
+## 查询导航
+
+[主补丁表](#主补丁表) · [非PlugY次补丁表](#非plugy次补丁表) · [可变字节块](#可变字节块)
+
+| 主表原序号（从1计） | 记录RVA范围 | 模块与记录数 |
+| --- | --- | --- |
+| [1-300](#patch-1) | 0x496390-0x497AEC | D2Game.dll: 250；D2Common.dll: 18；D2Client.dll: 28；Bnclient.dll: 4 |
+| [301-600](#patch-301) | 0x497B00-0x49925C | D2Game.dll: 221；D2Common.dll: 16；D2Client.dll: 62；D2Win.dll: 1 |
+| [601-900](#patch-601) | 0x499270-0x49A9CC | D2Client.dll: 60；D2Common.dll: 35；D2Game.dll: 205 |
+| [901-1200](#patch-901) | 0x49A9E0-0x49C13C | D2Client.dll: 265；D2Game.dll: 32；D2Lang.dll: 3 |
+| [1201-1500](#patch-1201) | 0x49C150-0x49D8AC | D2Game.dll: 152；D2Client.dll: 79；D2Common.dll: 69 |
+| [1501-1800](#patch-1501) | 0x49D8C0-0x49F01C | D2Client.dll: 66；D2Game.dll: 185；D2Common.dll: 38；D2Launch.dll: 8；D2Multi.dll: 1；Fog.dll: 2 |
+| [1801-2100](#patch-1801) | 0x49F030-0x4A078C | D2Client.dll: 65；D2Gfx.dll: 2；D2Launch.dll: 54；D2Multi.dll: 74；D2Sound.dll: 14；Fog.dll: 2；D2Game.dll: 72；Bnclient.dll: 4；D2Win.dll: 1；D2MCPClient.dll: 1；D2Common.dll: 11 |
+| [2101-2400](#patch-2101) | 0x4A07A0-0x4A1EFC | D2Game.dll: 37；D2Common.dll: 95；D2Client.dll: 164；D2Win.dll: 1；Bnclient.dll: 1；D2Launch.dll: 2 |
+| [2401-2492](#patch-2401) | 0x4A1F10-0x4A262C | D2Client.dll: 9；D2Game.dll: 73；D2Common.dll: 10 |
+
 ## 主补丁表
 
+本页正文保持原表顺序，重复目标不能去重或按模块重排。导航中的模块计数仅用于选择记录区间，不是安装分组；主表、非PlugY次表与字节块保持各自独立身份。固定旧核心版本见[总览](README.md)，不得套用其他核心地址。
+
 解释器的写入公式、跳过及失败行为见[定长执行器](BOOTSTRAP_FUNCTION_REVIEW.md#3420b0定长补丁解释器)与[字节块执行器](BOOTSTRAP_FUNCTION_REVIEW.md#342280字节块解释器)。读回校验发生在写入之后，不是原指令签名检查；空模块句柄会跳过，初始化调用者未检查执行器返回值，已写入前缀没有事务回滚。字节块长度0表示清零0x400字节，不是跳过。静态登记不能作为全部写入成功或原版模块兼容性的证明。
+
+<a id="patch-1"></a>
+
+### 主表记录 1-300
 
 | 记录RVA | 目标模块 | 写入RVA | 目标／值 | relative | fill |
 | --- | --- | --- | --- | --- | --- |
@@ -308,6 +330,13 @@
 | 0x497AC4 | D2Game.dll | 0xfa480 | [0x36C450](functions/1b.md#rva-36c450) | 0 | 0 |
 | 0x497AD8 | D2Game.dll | 0x383a9 | [0x39F320](functions/1c.md#rva-39f320) | 1 | 0 |
 | 0x497AEC | D2Game.dll | 0xbf8a0 | [0x380120](functions/1c.md#rva-380120) | 1 | 0 |
+
+<a id="patch-301"></a>
+
+### 主表记录 301-600
+
+| 记录RVA | 目标模块 | 写入RVA | 目标／值 | relative | fill |
+| --- | --- | --- | --- | --- | --- |
 | 0x497B00 | D2Game.dll | 0xbf7bf | [0x380120](functions/1c.md#rva-380120) | 1 | 0 |
 | 0x497B14 | D2Game.dll | 0xbf88c | 0x90 | 0 | 4 |
 | 0x497B28 | D2Game.dll | 0xbf1ec | 0x90 | 0 | 1 |
@@ -608,6 +637,13 @@
 | 0x499234 | D2Game.dll | 0x106b0 | [0x3A0C60](functions/1d.md#rva-3a0c60) | 1 | 0 |
 | 0x499248 | D2Game.dll | 0x10ca9 | [0x3A0C60](functions/1d.md#rva-3a0c60) | 1 | 0 |
 | 0x49925C | D2Game.dll | 0xecb5 | 0x90 | 0 | 6 |
+
+<a id="patch-601"></a>
+
+### 主表记录 601-900
+
+| 记录RVA | 目标模块 | 写入RVA | 目标／值 | relative | fill |
+| --- | --- | --- | --- | --- | --- |
 | 0x499270 | D2Client.dll | 0x55bec | [0x2F8DF0](functions/17.md#rva-2f8df0) | 1 | 0 |
 | 0x499284 | D2Client.dll | 0x55c07 | [0x2F8DF0](functions/17.md#rva-2f8df0) | 1 | 0 |
 | 0x499298 | D2Client.dll | 0x55c5d | [0x2F8DF0](functions/17.md#rva-2f8df0) | 1 | 0 |
@@ -908,6 +944,13 @@
 | 0x49A9A4 | D2Client.dll | 0x4515e | [0x2C6B20](functions/16.md#rva-2c6b20) | 1 | 0 |
 | 0x49A9B8 | D2Client.dll | 0x453b6 | [0x2C6B20](functions/16.md#rva-2c6b20) | 1 | 0 |
 | 0x49A9CC | D2Client.dll | 0x89a9c | [0x2C6B20](functions/16.md#rva-2c6b20) | 1 | 0 |
+
+<a id="patch-901"></a>
+
+### 主表记录 901-1200
+
+| 记录RVA | 目标模块 | 写入RVA | 目标／值 | relative | fill |
+| --- | --- | --- | --- | --- | --- |
 | 0x49A9E0 | D2Client.dll | 0x45163 | [0x2C7B30](functions/16.md#rva-2c7b30) | 1 | 0 |
 | 0x49A9F4 | D2Client.dll | 0x453bb | [0x2C7B30](functions/16.md#rva-2c7b30) | 1 | 0 |
 | 0x49AA08 | D2Client.dll | 0x89aa1 | [0x2C7B30](functions/16.md#rva-2c7b30) | 1 | 0 |
@@ -1208,6 +1251,13 @@
 | 0x49C114 | D2Game.dll | 0x2d92c | [0x39DAD0](functions/1c.md#rva-39dad0) | 1 | 0 |
 | 0x49C128 | D2Game.dll | 0x2dfdb | [0x39DAD0](functions/1c.md#rva-39dad0) | 1 | 0 |
 | 0x49C13C | D2Game.dll | 0x52816 | [0x39DAD0](functions/1c.md#rva-39dad0) | 1 | 0 |
+
+<a id="patch-1201"></a>
+
+### 主表记录 1201-1500
+
+| 记录RVA | 目标模块 | 写入RVA | 目标／值 | relative | fill |
+| --- | --- | --- | --- | --- | --- |
 | 0x49C150 | D2Game.dll | 0x2e2dc | [0x39FDB0](functions/1c.md#rva-39fdb0) | 1 | 0 |
 | 0x49C164 | D2Game.dll | 0x52713 | [0x39FDB0](functions/1c.md#rva-39fdb0) | 1 | 0 |
 | 0x49C178 | D2Game.dll | 0x759bf | [0x376BF0](functions/1b.md#rva-376bf0) | 1 | 0 |
@@ -1508,6 +1558,13 @@
 | 0x49D884 | D2Client.dll | 0x3ac20 | [0x39EB20](functions/1c.md#rva-39eb20) | 1 | 0 |
 | 0x49D898 | D2Client.dll | 0x3ac60 | [0x39EB20](functions/1c.md#rva-39eb20) | 1 | 0 |
 | 0x49D8AC | D2Client.dll | 0x3aca0 | [0x39EB20](functions/1c.md#rva-39eb20) | 1 | 0 |
+
+<a id="patch-1501"></a>
+
+### 主表记录 1501-1800
+
+| 记录RVA | 目标模块 | 写入RVA | 目标／值 | relative | fill |
+| --- | --- | --- | --- | --- | --- |
 | 0x49D8C0 | D2Client.dll | 0x3ace0 | [0x39EB20](functions/1c.md#rva-39eb20) | 1 | 0 |
 | 0x49D8D4 | D2Client.dll | 0x3ad20 | [0x39EB20](functions/1c.md#rva-39eb20) | 1 | 0 |
 | 0x49D8E8 | D2Client.dll | 0x3ad60 | [0x39EB20](functions/1c.md#rva-39eb20) | 1 | 0 |
@@ -1808,6 +1865,13 @@
 | 0x49EFF4 | D2Client.dll | 0x60a79 | [0x2CC340](functions/16.md#rva-2cc340) | 1 | 0 |
 | 0x49F008 | D2Client.dll | 0x6325a | [0x2CC340](functions/16.md#rva-2cc340) | 1 | 0 |
 | 0x49F01C | D2Client.dll | 0x634b6 | [0x2CC340](functions/16.md#rva-2cc340) | 1 | 0 |
+
+<a id="patch-1801"></a>
+
+### 主表记录 1801-2100
+
+| 记录RVA | 目标模块 | 写入RVA | 目标／值 | relative | fill |
+| --- | --- | --- | --- | --- | --- |
 | 0x49F030 | D2Client.dll | 0x63595 | [0x2CC340](functions/16.md#rva-2cc340) | 1 | 0 |
 | 0x49F044 | D2Client.dll | 0x64839 | [0x2CC340](functions/16.md#rva-2cc340) | 1 | 0 |
 | 0x49F058 | D2Client.dll | 0x648ae | [0x2CC340](functions/16.md#rva-2cc340) | 1 | 0 |
@@ -2108,6 +2172,13 @@
 | 0x4A0764 | D2Game.dll | 0xfb620 | 0x8c | 0 | 1 |
 | 0x4A0778 | D2Game.dll | 0xfb624 | 0xd2 | 0 | 1 |
 | 0x4A078C | D2Game.dll | 0xfb628 | 0x18 | 0 | 1 |
+
+<a id="patch-2101"></a>
+
+### 主表记录 2101-2400
+
+| 记录RVA | 目标模块 | 写入RVA | 目标／值 | relative | fill |
+| --- | --- | --- | --- | --- | --- |
 | 0x4A07A0 | D2Game.dll | 0xfb629 | 0x1 | 0 | 1 |
 | 0x4A07B4 | D2Game.dll | 0xfb62c | 0x5e | 0 | 1 |
 | 0x4A07C8 | D2Game.dll | 0xfb62d | 0x1 | 0 | 1 |
@@ -2408,6 +2479,13 @@
 | 0x4A1ED4 | D2Client.dll | 0x4495e | [0x2F07D0](functions/17.md#rva-2f07d0) | 1 | 0 |
 | 0x4A1EE8 | D2Client.dll | 0xc3a58 | [0x2F0880](functions/17.md#rva-2f0880) | 1 | 0 |
 | 0x4A1EFC | D2Client.dll | 0x29d99 | [0x2F08A0](functions/17.md#rva-2f08a0) | 1 | 0 |
+
+<a id="patch-2401"></a>
+
+### 主表记录 2401-2492
+
+| 记录RVA | 目标模块 | 写入RVA | 目标／值 | relative | fill |
+| --- | --- | --- | --- | --- | --- |
 | 0x4A1F10 | D2Client.dll | 0x43f0e | [0x2F08A0](functions/17.md#rva-2f08a0) | 1 | 0 |
 | 0x4A1F24 | D2Client.dll | 0x4438e | [0x2F08A0](functions/17.md#rva-2f08a0) | 1 | 0 |
 | 0x4A1F38 | D2Client.dll | 0x71ab7 | [0x2F08A0](functions/17.md#rva-2f08a0) | 1 | 0 |

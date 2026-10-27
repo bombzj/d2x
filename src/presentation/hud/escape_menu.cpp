@@ -4,6 +4,7 @@
 #include "presentation/world/palette_blend_view.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include <algorithm>
+#include <initializer_list>
 #include <stdexcept>
 #include <utility>
 
@@ -107,7 +108,7 @@ EscapeMenu::EscapeMenu(Archives &archives)
     const auto *source = graphics_.animation(path + ".dc6");
     const auto table = archives.read(path + ".tbl");
     if (!source) throw std::runtime_error("Original English control configuration font is missing");
-    constexpr std::array colors{0, 4, 5, 3};
+    constexpr std::array colors{0, 4, 5, 3, 1, 2};
     for (size_t index = 0; index < fonts_.size(); ++index) {
         auto &font = fonts_[index];
         font.graphics = &graphics_; font.source = source;
@@ -129,33 +130,50 @@ EscapeMenu::EscapeMenu(Archives &archives)
     };
     headers_ = {label("CfgFunction"), label("CfgPrimaryKey"), label("CfgSecondaryKey")};
     buttons_ = {label("CfgCancel"), label("CfgDefault"), label("CfgAccept")};
-    const auto none = label("KeyNone");
-    auto binding = [&](std::string_view key, std::string primary = {}, std::string secondary = {}) {
-        bindings_.push_back({label(key), primary.empty() ? none : std::move(primary),
-                            secondary.empty() ? none : std::move(secondary)});
+    keyNames_[0] = label("KeyNone");
+    for (const auto &[key, name] : std::initializer_list<std::pair<uint16_t, const char *>>{
+            {4, "KeyMButton"}, {5, "Key4Button"}, {6, "Key5Button"}, {8, "KeyBack"},
+            {9, "KeyTab"}, {13, "KeyReturn"}, {0x10, "KeyShift"}, {0x11, "KeyControl"},
+            {0x12, "KeyMenu"}, {0x13, "KeyPause"}, {0x14, "KeyCapital"}, {0x20, "KeySpace"},
+            {0x21, "KeyPrior"}, {0x22, "KeyNext"}, {0x23, "KeyEnd"}, {0x24, "KeyHome"},
+            {0x25, "KeyLeft"}, {0x26, "KeyUp"}, {0x27, "KeyRight"}, {0x28, "KeyDown"},
+            {0x2C, "KeySnapshot"}, {0x2D, "KeyInsert"}, {0x2E, "KeyDelete"},
+            {0x90, "KeyNumLock"}, {0x91, "KeyScroll"}, {0xC0, "KeyTilde"},
+            {0xDB, "KeyLBracket"}, {0xDD, "KeyRBracket"},
+            {controlWheelUp, "KeyWheelUp"}, {controlWheelDown, "KeyWheelDown"}}) {
+        const auto value = strings.find(name);
+        if (!value.empty()) keyNames_[key] = std::string(value);
+    }
+    for (int digit = 0; digit < 10; ++digit) keyNames_[uint16_t(0x60 + digit)] = label("KeyNumPad" + std::to_string(digit));
+    for (const auto &[key, name] : std::initializer_list<std::pair<uint16_t, const char *>>{
+            {0x6A, "*"}, {0x6B, "+"}, {0x6D, "-"}, {0x6E, "."}, {0x6F, "/"},
+            {0xBA, ";"}, {0xBB, "="}, {0xBC, ","}, {0xBD, "-"}, {0xBE, "."},
+            {0xBF, "/"}, {0xDC, "\\"}, {0xDE, "'"}}) keyNames_[key] = name;
+    size_t action = 0;
+    auto binding = [&](std::string_view key) {
+        bindings_.push_back({label(key), ControlAction(action++)});
     };
     auto separator = [&] { bindings_.push_back({}); };
-    // The 62 native records at F8928 contain 56 actions and six separators.
-    // Columns report actual fixed d2x bindings. Editing is not implemented.
-    binding("CfgCharacter", "A"); binding("CfgInventory", "I", "B"); binding("CfgParty", "P");
-    binding("Cfghireling", "O"); binding("CfgMessageLog", "M"); binding("CfgQuestLog", "Q");
-    binding("CfgHelp", label("KeyControl") + "+F1"); separator();
-    binding("CfgSkillTree", "T"); binding("CfgSkillPick", "S");
+    binding("CfgCharacter"); binding("CfgInventory"); binding("CfgParty");
+    binding("Cfghireling"); binding("CfgMessageLog"); binding("CfgQuestLog");
+    binding("CfgHelp"); separator();
+    binding("CfgSkillTree"); binding("CfgSkillPick");
     for (int slot = 1; slot <= 16; ++slot)
-        binding("CfgSkill" + std::to_string(slot), slot <= 8 ? "F" + std::to_string(slot) : "");
+        binding("CfgSkill" + std::to_string(slot));
     binding("Cfgskillup"); binding("Cfgskilldown"); separator();
-    binding("CfgBeltShow", label("KeyTilde"));
-    for (int slot = 1; slot <= 4; ++slot) binding("CfgBelt" + std::to_string(slot), std::to_string(slot));
-    binding("Cfgswapweapons", "W"); separator();
-    binding("CfgChat", label("KeyReturn")); binding("CfgRun", label("KeyControl"));
-    binding("CfgRunLock", "R"); binding("CfgStandStill", label("KeyShift"));
-    binding("CfgShowItems", label("KeyMenu")); binding("CfgTogglePortraits"); separator();
-    binding("CfgAutoMap", label("KeyTab")); binding("CfgAutoMapCenter", label("KeyHome"));
-    binding("CfgAutoMapFade"); binding("CfgAutoMapParty"); binding("CfgAutoMapNames", "F12");
-    binding("CfgToggleminimap", "V"); separator();
+    binding("CfgBeltShow");
+    for (int slot = 1; slot <= 4; ++slot) binding("CfgBelt" + std::to_string(slot));
+    binding("Cfgswapweapons"); separator();
+    binding("CfgChat"); binding("CfgRun");
+    binding("CfgRunLock"); binding("CfgStandStill");
+    binding("CfgShowItems"); binding("CfgTogglePortraits"); separator();
+    binding("CfgAutoMap"); binding("CfgAutoMapCenter");
+    binding("CfgAutoMapFade"); binding("CfgAutoMapParty"); binding("CfgAutoMapNames");
+    binding("CfgToggleminimap"); separator();
     for (int say = 0; say < 7; ++say) binding("CfgSay" + std::to_string(say));
     binding("CfgSay7X"); separator();
-    binding("CfgSnapshot", label("KeyControl") + "+F12"); binding("CfgClearScreen"); binding("Cfgcleartextmsg");
+    binding("CfgSnapshot"); binding("CfgClearScreen"); binding("Cfgcleartextmsg");
+    if (action != size_t(ControlAction::Count)) throw std::runtime_error("Control action table mismatch");
 }
 
 const EscapeMenu::Art &EscapeMenu::art(std::string_view name) const { return art_.find(name)->second; }
@@ -164,7 +182,7 @@ int EscapeMenu::count(EscapeMenuPage page) const {
 }
 bool EscapeMenu::enabled(EscapeMenuPage page, int row) const {
     if (row < 0 || row >= count(page)) return false;
-    return page == EscapeMenuPage::Controls ? row != 1 : pages_[size_t(page)][size_t(row)].enabled;
+    return page == EscapeMenuPage::Controls ? true : pages_[size_t(page)][size_t(row)].enabled;
 }
 Rectangle EscapeMenu::bounds(EscapeMenuPage page, int row) const {
     if (row < 0 || row >= count(page)) return {};
@@ -220,7 +238,36 @@ int EscapeMenu::textWidth(std::string_view value) const {
 int EscapeMenu::controlScrollLimit() const { return std::max(0, int(bindings_.size()) - controlRows); }
 int EscapeMenu::controlThumbHeight() const { return 12 * (21 * controlRows / int(bindings_.size())); }
 Rectangle EscapeMenu::controlTrack() const { return {controlLeft() + 589, controlTop() + 47, 12, 246}; }
-void EscapeMenu::drawControls(int selected, int first, int scrollPressed, const PaletteBlendView &blend) const {
+std::pair<int, int> EscapeMenu::controlAt(Vec mouse, int first) const {
+    const float left = controlLeft(), top = controlTop();
+    if (mouse.x < left + 18 || mouse.x >= left + 580 || mouse.y < top + 35 || mouse.y >= top + 305)
+        return {-1, 0};
+    const int row = std::clamp(first, 0, controlScrollLimit()) + int((mouse.y - top - 35) / controlRowHeight);
+    if (row >= int(bindings_.size()) || !controlActionAvailable(bindings_[size_t(row)].action)) return {-1, 0};
+    return {int(bindings_[size_t(row)].action), mouse.x >= left + 400 ? 1 : 0};
+}
+int EscapeMenu::controlRow(ControlAction action) const {
+    for (size_t row = 0; row < bindings_.size(); ++row)
+        if (bindings_[row].action == action) return int(row);
+    return -1;
+}
+std::string EscapeMenu::keyName(uint16_t key) const {
+    if (const auto found = keyNames_.find(key); found != keyNames_.end()) return found->second;
+    if ((key >= '0' && key <= '9') || (key >= 'A' && key <= 'Z')) return std::string(1, char(key));
+    if (key >= 0x70 && key <= 0x7B) return "F" + std::to_string(key - 0x70 + 1);
+    return "[" + std::to_string(key) + "]";
+}
+std::string EscapeMenu::bindingName(const ControlBindings &bindings, ControlAction action) const {
+    if (action >= ControlAction::Count) return {};
+    std::string result;
+    for (const auto key : bindings[action]) if (key) {
+        if (!result.empty()) result += " / ";
+        result += keyName(key);
+    }
+    return result;
+}
+void EscapeMenu::drawControls(int selected, int first, int scrollPressed, const ControlBindings &controls,
+                              int action, int column, bool capturing, float elapsed, const PaletteBlendView &blend) const {
     const float left = controlLeft(), top = controlTop();
     // D2Client RVA 12602/12680/126CE/12723/12776: 620x369 box,
     // native font 13, header baseline 30 and 18-pixel rows at baseline 52.
@@ -233,9 +280,17 @@ void EscapeMenu::drawControls(int selected, int first, int scrollPressed, const 
     for (int row = 0; row < controlRows && first + row < int(bindings_.size()); ++row) {
         const auto &binding = bindings_[size_t(first + row)];
         const float baseline = top + 52 + row * controlRowHeight;
-        text(binding.label, left + 30, baseline, 2);
-        text(binding.primary, left + 220, baseline, 2);
-        text(binding.secondary, left + 410, baseline, 2);
+        if (binding.action == ControlAction::Count) continue;
+        const bool available = controlActionAvailable(binding.action);
+        const bool active = int(binding.action) == action && available;
+        text(binding.label, left + 30, baseline, !available ? 2 : active ? 3 : 0);
+        for (int slot = 0; slot < 2; ++slot) {
+            if (active && slot == column && capturing && int(elapsed * 4) % 2) continue;
+              const auto &keys = controls[binding.action];
+              const int ordinary = !keys[0] && !keys[1] ? 4 : keys[size_t(slot)] ? 1 : 2;
+            text(keyName(controls[binding.action][size_t(slot)]), left + 220 + slot * 190, baseline,
+                  !available ? 2 : active && slot == column ? 3 : ordinary);
+        }
     }
     // RVA 12AC4-12CD0: track 13, up 11/9, down 10/8, thumb 14.
     for (int tile = 0; tile < 21; ++tile) nativeSprite(scroll_.frame(0, 13), left + 589, top + 59 + tile * 12);
@@ -247,12 +302,17 @@ void EscapeMenu::drawControls(int selected, int first, int scrollPressed, const 
         nativeSprite(scroll_.frame(0, 14), left + 588, top + 59 + thumb + tile * 12);
     for (int button = 0; button < 3; ++button) {
         const auto rect = bounds(EscapeMenuPage::Controls, button);
-        text(buttons_[size_t(button)], rect.x, top + 351, button == 1 ? 2 : selected == button ? 3 : 1);
+        constexpr std::array hoverFonts{4, 3, 5};
+        text(buttons_[size_t(button)], rect.x, top + 351, selected == button ? hoverFonts[size_t(button)] : 1);
     }
 }
 void EscapeMenu::draw(EscapeMenuPage page, int selected, float elapsed, const std::array<int, 5> &automap, const AudioSettings &audio,
-                      bool lighting, int controlScroll, int scrollPressed, const PaletteBlendView &blend) const {
-    if (page == EscapeMenuPage::Controls) { drawControls(selected, controlScroll, scrollPressed, blend); return; }
+                      bool lighting, int controlScroll, int scrollPressed, const ControlBindings &controls,
+                      int action, int column, bool capturing, const PaletteBlendView &blend) const {
+    if (page == EscapeMenuPage::Controls) {
+        drawControls(selected, controlScroll, scrollPressed, controls, action, column, capturing, elapsed, blend);
+        return;
+    }
     const bool large = page == EscapeMenuPage::Main || page == EscapeMenuPage::Options;
     const int rows = count(page), step = large ? 50 : 45;
     const float top = menuTop(page, rows), center = float(W / 2);

@@ -208,7 +208,10 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random,uint64_t *o
     case SkillBehavior::BlessedHammer: {
         auto &m=add(cell(origin),direction,s.missileId,frames,s.missileVelocity,Program::Hammer);
         const auto path=blessedHammerPath(m.position);m.path.assign(path.begin(),path.end());
-        const int bonus=nativeMultiplyDivide(ports_.effects.stateModifiers(p.actor,s.concentrationState,r.actor.tick).combat.damagePercent,s.concentrationFactor,100);
+        // SKILLS_GetConcentrationDamageBonus uses Param1 in eighths.
+        // Retain the existing PD2 path until its replacement is verified.
+        const int divisor=m.rules->pd2?100:8;
+        const int bonus=nativeMultiplyDivide(ports_.effects.stateModifiers(p.actor,s.concentrationState,r.actor.tick).combat.damagePercent,s.concentrationFactor,divisor);
         if(m.nativeDamage) m.nativeDamage->data.magic=scaleMissileDamage(m.nativeDamage->data.magic,nativeAdd(100,bonus));
         else m.damageRange=scaleMissileDamage(*m.damageRange,100+bonus);
         break;

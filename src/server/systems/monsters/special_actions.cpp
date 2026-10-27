@@ -387,7 +387,8 @@ bool System::resurrectionPlacement(EntityId corpse) const {
 DomainResult<> System::resurrect(EntityId source,EntityId corpse,uint64_t tick) {
     if(!resurrectionTarget(source,corpse,tick) || !resurrectionPlacement(corpse)) return {DomainStatus::Unavailable,{}};
     auto &actor=state_.actors.at(corpse);
-    if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{HitFact{corpse,1,actor.area,128,false,actor.position}}})) return {DomainStatus::Capacity,{}};
+    // SrvDo097 restores HP and enters the resurrection mode. It does not
+    // generate MonsterMsg's UPGRLIFENHITCLASS soft-hit notification.
     actor.life=actor.maximumLife;actor.chilledUntil=actor.frozenUntil=0;actor.shatterActive=false;actor.corpse={};actor.poison.reset();
     refreshCollision(actor);
     actor.riseUntil=actor.busyUntil=tick+uint64_t(actor.rule.resurrectionTicks);actor.riseMode=actor.rule.resurrectionMode;

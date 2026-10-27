@@ -41,22 +41,22 @@ void RemoteUiClients::Impl::Character::submit(CharacterIntent c) {
         }
 // Original private item packets carry the local equipment stat lists. Native NOEQUIP/BROKEN
 // flags and active body slots decide contributions; no server flavor or hidden remote stats.
-std::optional<int> RemoteUiClients::Impl::knownEquipmentStat(std::string_view name, int level, std::optional<OnlineUnitKey> owner) const {
+std::optional<int> RemoteUiClients::Impl::knownEquipmentStat(std::string_view name, int level, std::optional<OnlineUnitKey> owner, EquipmentStatUnits units) const {
         const auto &online=session.read(); const auto &world=online.world;
         if (!owner && online.load.playerUnitId) owner=OnlineUnitKey{0,*online.load.playerUnitId};
         if (!owner) return {};
         const auto actor=world.units.find(*owner);
         if (actor==world.units.end()) return {};
         const EquipmentStatKey key{online.gameGeneration,world.itemRevision,items.read().revision,
-            actor->second.appearanceRevision,level,world.weaponSet,actor->second.equipmentObserved};
+            actor->second.appearanceRevision,level,world.weaponSet,actor->second.equipmentObserved,units};
         const auto identity=std::pair{*owner,std::string(name)};
         if (const auto cached=equipmentStats.find(identity);cached!=equipmentStats.end() && cached->second.key==key)
             return cached->second.value;
-        const auto value=calculateKnownEquipmentStat(name,level,*owner);
+        const auto value=calculateKnownEquipmentStat(name,level,*owner,units);
         equipmentStats.insert_or_assign(identity,CachedEquipmentStat{key,value});
         return value;
     }
-std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::string_view name, int level, OnlineUnitKey owner) const {
+std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::string_view name, int level, OnlineUnitKey owner, EquipmentStatUnits units) const {
         const auto &online=session.read(); const auto &world=online.world;
         int64_t total=0;
         const auto actor = world.units.find(owner);
@@ -64,6 +64,11 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
         const auto statRow = std::find_if(data.itemStats.begin(), data.itemStats.end(),
             [&](const auto &entry) { return entry.name == name; });
         if (statRow == data.itemStats.end() || !statRow->id) return {};
+        const int64_t scale=int64_t{1}<<statRow->valueShift;
+        const auto amount=[&](const ResolvedItemStat &value)->int64_t {
+            if(units==EquipmentStatUnits::Display) return value.value;
+            return value.nativeValue?int64_t(*value.nativeValue):int64_t(value.value)*scale;
+        };
         std::map<std::string, std::set<int32_t>, std::less<>> equippedSets;
         std::vector<ItemInstance> setPieces;
         for (const auto &[equippedId, equipped] : world.items) {
@@ -80,7 +85,7 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
             const auto instance = completeItem(equipped, equipment->second, SocketLocation{{}, 0});
             if (!instance) return {};
             for (const auto &bonus : resolveItemStats(data, *instance, level))
-                if (bonus.effect == name && !bonus.layer) total += bonus.value;
+                if (bonus.effect == name && !bonus.layer) total += amount(bonus);
             if (equipped.mode == 1 && instance->identified && instance->quality == ItemQuality::Set) {
                 const auto record = std::find_if(data.setItems.begin(), data.setItems.end(),
                     [&](const auto &entry) { return int32_t(entry.row) == instance->specialRow; });
@@ -111,7 +116,7 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
                 bool assigned = false;
                 for (const auto &bonus : piece.savedSetStats[layer]) {
                     if (bonus.id != *statRow->id || bonus.parameter) continue;
-                    total += bonus.value;
+                    total += units==EquipmentStatUnits::Native?int64_t(bonus.value)*scale:bonus.value;
                     assigned = true;
                 }
                 if (!assigned && std::any_of(record->setBonuses.begin(), record->setBonuses.end(), [&](const auto &bonus) {
@@ -126,7 +131,7 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
                 const auto &property = bonus.property;
                 if (property.directRoll && property.minimum != property.maximum) return {};
                 for (const auto &value : resolvePropertyStats(data, property, property.minimum.value_or(0), level, int(piece.level)))
-                    if (value.effect == name && !value.layer) total += value.value;
+                    if (value.effect == name && !value.layer) total += amount(value);
             }
         }
         if (total<INT32_MIN || total>INT32_MAX) return {};
@@ -197,9 +202,9 @@ std::optional<MovementTiming> RemoteUiClients::Impl::movement(OnlineUnitKey key,
         return playerMovementTiming(definition.walkVelocity,definition.runVelocity,
             equipment->modifiers.fasterMoveVelocity,equipment->modifiers.velocityPercent,running);
     }
-std::optional<int> RemoteUiClients::Impl::knownSelfEquipmentStat(std::string_view name,int level) const {
+std::optional<int> RemoteUiClients::Impl::knownSelfEquipmentStat(std::string_view name,int level,EquipmentStatUnits units) const {
         if(name=="item_fastercastrate") if (const auto native=stat(name)) return int(*native);
-        auto total=knownEquipmentStat(name,level);
+        auto total=knownEquipmentStat(name,level,{},units);
         const auto &online=session.read();
         if (!total || !online.load.playerUnitId) return {};
         const OnlineUnitKey key{0,*online.load.playerUnitId};
@@ -211,10 +216,13 @@ std::optional<int> RemoteUiClients::Impl::knownSelfEquipmentStat(std::string_vie
         for (size_t row=0;row<costs.rows().size();++row) {
             if (costs.value(row,"Stat")!=name) continue;
             const auto id=costs.number(row,"ID"); if (!id) return {};
+            const int shift=costs.number(row,"ValShift").value_or(0);
+            if(shift<0 || shift>31) return {};
             int64_t value=*total;
             for (const auto &[state,list]:states->second.states) {
                 (void)state;
-                for (const auto &entry:list.stats) if (entry.id==*id && !entry.parameter) value+=entry.value;
+                for (const auto &entry:list.stats) if (entry.id==*id && !entry.parameter)
+                    value+=units==EquipmentStatUnits::Native?entry.value:entry.value/(int64_t{1}<<shift);
             }
             if (value<INT32_MIN || value>INT32_MAX) return {};
             return int(value);
@@ -306,7 +314,8 @@ void RemoteUiClients::Impl::projectSkillUseFacts(CharacterProjectionInput &input
                 observed->second.states.contains(inferno->second.definition.id)};
     }
 void RemoteUiClients::Impl::projectObservedAttributes(CharacterProjectionInput &input,const CharacterDefinition &definition) const {
-        if(!data.nativeStats || !input.combatEquipment) return;
+        if(data.profile!="lod-named-txt-v1" || !data.nativeStats || !input.stats.contains("level")) return;
+        const int level=int(input.stats.at("level"));
         const auto &rules=*data.nativeStats;
         constexpr std::array names{"strength","dexterity","vitality","energy","maxhp","maxmana","maxstamina"};
         std::set<uint16_t> dependencies;
@@ -328,7 +337,7 @@ void RemoteUiClients::Impl::projectObservedAttributes(CharacterProjectionInput &
         auto observed=std::make_shared<StatList>();observed->extended=false;
         for(const auto id:dependencies) {
             const auto &rule=rules.definitions.at(id);
-            const auto value=knownSelfEquipmentStat(rule.name,input.combatEquipment->actor.level);
+            const auto value=knownSelfEquipmentStat(rule.name,level,EquipmentStatUnits::Native);
             if(!value) return;
             if(*value) observed->base.emplace(StatKey{id,0},*value);
         }
@@ -435,11 +444,15 @@ void RemoteUiClients::Impl::projectCharacter() {
                 if (found || leftHand) break;
             }
         }
+        // Native self packets contain the base stat list. Resolve the observed
+        // item/state contributions before strength/dexterity feed combat display.
+        if(input.characterClass && *input.characterClass<data.characters.size())
+            projectObservedAttributes(input,data.characters[*input.characterClass]);
         if(input.characterClass && *input.characterClass<data.characters.size() && online.load.playerUnitId &&
             stat("strength") && stat("dexterity") && stat("level") && input.baseRanksAssigned) {
             const auto &definition=data.characters[*input.characterClass];
             input.combatEquipment=observedCombatEquipment({0,*online.load.playerUnitId},
-                {definition.code,int(*stat("strength")),int(*stat("dexterity")),int(*stat("level")),definition.blockFactor,weaponSet},
+                {definition.code,int(input.stats.at("strength")),int(input.stats.at("dexterity")),int(*stat("level")),definition.blockFactor,weaponSet},
                 input.effectiveRanks,0,definition.toHitFactor-35);
             if(input.combatEquipment) {
                 const auto &equipment=*input.combatEquipment;
@@ -447,8 +460,6 @@ void RemoteUiClients::Impl::projectCharacter() {
                 input.attackTiming=KnownAttackTiming{weapon.fasterAttack,weapon.baseSpeed,equipment.modifiers.combat.attackRate,weapon.itemBaseSpeed,weapon.itemAttackSpeed,bool(weapon.item)};
             }
         }
-        if(input.characterClass && *input.characterClass<data.characters.size())
-            projectObservedAttributes(input,data.characters[*input.characterClass]);
         if(input.combatEquipment && stat("vitality") && stat("energy") && stat("maxhp") && stat("maxmana") && stat("maxstamina"))
             for(const auto *name:{"statpts","newskills","experience"}) input.stats.try_emplace(name,0);
         characterView = projectCharacterDisplay(data, input);

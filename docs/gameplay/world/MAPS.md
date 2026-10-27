@@ -100,7 +100,7 @@ KillEdge删预制图最后额外行／列的图层，防止覆盖相邻房；未
 
 ## 对照与验证边界
 
-历史486个区域／种子／难度组合的覆盖及比较字段见[原版对照](../../architecture/MULTIPLAYER.md#原版-dll-对照方法)。旧原始报告和EXE未找到；2026-10-17依据旧会话记录重建既有reference/d2mapapi_mod导出器，重新导出并由当前d2x_assets独立重放。原DLL仅用于开发导出。
+历史486个区域／种子／难度组合的覆盖及比较字段见[原版对照](../../development/MAP_PARITY.md#原版-dll-对照方法)。旧原始报告和EXE未找到；2026-10-17依据旧会话记录重建既有reference/d2mapapi_mod导出器，重新导出并由当前d2x_assets独立重放。原DLL仅用于开发导出。
 
 ### 当前源码逐事件复核
 

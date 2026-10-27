@@ -799,9 +799,12 @@ DomainResult<> System::commit(Plan plan) {
     size_t targetingPrefix=0;
     for(const auto &fact:extra) {
         const auto *targeting=std::get_if<ItemTargetingFact>(&fact);
+        const auto *trade=std::get_if<TradeFact>(&fact);
         // Native ItemMode cancels targeting while the source still exists on
         // the client, before the inventory removal receipt in this same batch.
-        if(targeting && targeting->cursor<0) batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
+        // Trade's agreement reset and lock likewise precede its item receipts.
+        if((targeting && targeting->cursor<0) || (trade && (trade->action==6 || trade->action==14)))
+            batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
         else batch.facts.push_back(fact);
     }
     std::vector<EventBatch> batches; batches.push_back(std::move(batch));

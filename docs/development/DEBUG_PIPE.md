@@ -5,6 +5,19 @@ PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版�
 直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算；功能范围及缺口见[基线](../../BASELINE.md)，构建／运行方法见[开发指南](BUILD_AND_RUN.md)。
 
 Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。显式`server-pause`不会因退局自动解除；关闭商店等已受理命令仍需逻辑帧执行，验证正常退出前应`server-resume`或单步推进待办。等待选角阶段及角色租约释放后再停止进程，不能将暂停下的结算超时当作正常退出结果。
+## 按任务与权限查找
+
+`online-status.characterUi`只读实际 CharacterView，提供经验／下级门槛、四属性、抗性、防御／格挡、三项当前资源及上限、武器组、余点、左右动作和 skills 的基础／有效等级、树／选择器提示。`server-snapshot.player`另提供权威抗性、格挡、逐手 weapons 的原始8.8伤害、命中、支配及 nativeCombat；missiles 的 minimumDamageRaw／maximumDamageRaw 是技能范围，nativeDamageRaw 才是创建后最终通道范围（如锤的专注加成）。这些出口只序列化既有值，不在调试层重算公式，也不将服务端快照喂给客户端显示。
+
+| 任务 | 入口与权限 |
+| --- | --- |
+| 连接管道、请求格式与限额 | [启动与调用](#启动与调用)、[协议和安全](#协议和安全) |
+| 观察实际原包与耗时 | [原服收包记录](#原服收包记录)、[诊断与异步含义](#诊断与异步含义)；入队不代表执行成功 |
+| 权威快照、暂停、单步和管理操作 | [嵌入宿主管理](#嵌入宿主管理命令)；仅具有自研宿主能力的连接，不能用于远端原服 |
+| 客户端请求、会话与物品确认 | [联网命令](#联网命令)、[联网物品操作](#联网物品操作)；只读副本不授予权威修改 |
+| 离线资源查询 | [资源工具](#资源工具)；不将工具输出作为玩法已完成证明 |
+| 允许执行哪些检查 | [验证边界](#验证边界)与项目验证指南；本页列出命令不等于授权执行 |
+
 ## 启动与调用
 
 `--headless`使用同一管道的`headless-status`、`headless-start`和`quit`；房主另支持既有`server-*`及宿主管理命令，客端没有该能力。`headless-start`只允许所有本进程会话入局后启动一次，可传`delayMs=0..60000`（默认1000），或未来60秒内的整数`atUnixMs`供多个进程共用同一启动时刻；两者互斥。此模式不接受普通表现／UI命令，配置和统计口径见[无窗口协议客户端](BUILD_AND_RUN.md#无窗口协议客户端)。
@@ -22,7 +35,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 .\scripts\Send-D2XCommand.ps1 -Command online-leave-game
 ```
 
-自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。管道由独立重叠I/O线程收发有界文本，主线程每轮最多领取一个命令；线程不读取玩法、MPQ或GPU。响应不再按渲染帧限制每帧4 KiB，调用脚本按字节块写入MemoryStream而非逐字节PowerShell循环，仍保留16 KiB请求／4 MiB响应上限、当前用户ACL及断开后的代次复验；quit等待本次响应交付或连接截止。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](../architecture/MULTIPLAYER.md#本机部署与验证入口)。
+自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。管道由独立重叠I/O线程收发有界文本，主线程每轮最多领取一个命令；线程不读取玩法、MPQ或GPU。响应不再按渲染帧限制每帧4 KiB，调用脚本按字节块写入MemoryStream而非逐字节PowerShell循环，仍保留16 KiB请求／4 MiB响应上限、当前用户ACL及断开后的代次复验；quit等待本次响应交付或连接截止。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](PVPGN_SERVER.md#本机部署与验证入口)。
 
 ## 原服收包记录
 
@@ -332,6 +345,6 @@ server-snapshot的怪物identity包含rank／superUnique／spawnKey／ownerSpawn
 
 ### 女巫战斗诊断
 
-源码中的`server-snapshot.frameEvents`观察实例玩法定时器，和可靠输出历史`eventHistory`分开；包含总数、当前帧／阶段、执行／下一游标及受limit限制的记录，记录按事件身份排列，不代表派发顺序。事件记录暴露单位类别、事件号、期限、持续标记、原custom参数、本地状态事件payload及延迟删除标记；怪物AIRESET列表同时暴露独立identity。诊断不写入存档或原客户端消息，原始调度入口及缺口见[技能公共规范](../gameplay/skills/COMMON.md#帧事件底座与持续效果期限)。
+源码中的`server-snapshot.frameEvents`观察实例玩法定时器，和可靠输出历史`eventHistory`分开；包含总数、当前帧／阶段、执行／下一游标及受limit限制的记录，记录按事件身份排列，不代表派发顺序。事件记录暴露单位类别、事件号、期限、持续标记、原custom参数、本地状态事件payload及延迟删除标记；怪物AIRESET列表同时暴露独立identity。诊断不写入存档或原客户端消息，原始调度入口及缺口见[技能公共规范](../gameplay/skills/EFFECTS.md#帧事件底座与持续效果期限)。
 
 管理命令`missile-hit`接收`source`（当前区域真实活敌怪GUID）、`amount`（正伤害生命单位）、`missile`（当前MPQ原弹体ID）。它投递公共combat命中候选，单步推进后执行伤害／护盾及ReturnFire反击，用于隔离观察ChillingArmor反击链；不生成怪物AI、不增加客户端私有消息。`player-damage`也走物理伤害／护盾入口。server-snapshot怪物增加chilledUntil／frozenUntil／knockedUntil／nextHitTick／owner，弹体增加skill／rank／program／age／lifetime／remainingHits。诊断操作不能替代通过原技能包进行冒烟。

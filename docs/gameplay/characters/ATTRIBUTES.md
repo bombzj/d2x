@@ -7,10 +7,11 @@
 - CharStats／PlayerClass提供职业显示、基础动作和参数，Experience提供原等级门槛；Expansion分隔行不占职业编号。
 - ItemStatCost.ValShift用于原服资源／属性单位转换。原绝对stat覆盖较旧紧凑资源采样；经验0x1A／1B为正增量，0x1C为绝对值。
 - 人物／技能／HUD消费同一projectCharacterDisplay；伤害、命中、防御、格挡和抗性共用只读装备投影，不再给人物面板传空 EquipmentStats。活动装备、孔内物品、背包护符、套装属性及状态必须解码完整且 revision 一致；破损／NOEQUIP 与副武器组沿原标志及公共装备规则处理。
-- 四基础属性和资源取原包总值；装备计算不重复叠加已收到的力量／敏捷。防御与格挡复用公共 deriveEquipmentStats，技能护甲及覆盖百分比来自原状态表，圣盾按状态携带的 modifierlist_skill／level 求 Skills.calc1（求值参数名 clc1）。格挡显示遵循 UNITS_GetBlockRate，不按走跑按钮偏好除以三；实际跑步中的战斗格挡惩罚仍由权威玩法处理。圣骑士被动取基础等级，其他已实现被动取有效等级；已携带数值的原被动状态不重复叠加。
+- 原版四基础属性与资源从原包基础列表、完整装备和状态通过公共 StatList 求总值；物品贡献传入 ItemStatCost.ValShift 对应的原生单位，保留按级资源的小数。总力量／敏捷先投影，再供防御、格挡与武器伤害使用。普通原版玩家的逐手武器投影复用 prepareNativeEquipmentSources／deriveNativeEquipmentStats，保留单手／双手／投掷伤害通道及参数化支配状态，不能将 mindamage 同时加进 secondary_mindamage。防御与格挡的技能护甲及覆盖百分比来自原状态表，圣盾按状态携带的 modifierlist_skill／level 求 Skills.calc1（求值参数名 clc1）。格挡显示遵循 UNITS_GetBlockRate，不按走跑按钮偏好除以三；实际跑步中的战斗格挡惩罚仍由权威玩法处理。圣骑士被动取基础等级，其他已实现被动取有效等级；已携带数值的原被动状态不重复叠加。
 - 原1D／1E／1F抗性条目是永久奖励列表，安亚由 ACT5Q3_UpdateResistances 单独发送；显示另加装备／状态／被动、DifficultyLevels 惩罚，并应用各自上限。原单位入场列表为空时的零值只在身份、核心属性、完整装备和原0xAA状态快照齐备后确认；解码失败／丢失快照不能用零替代。
 - 面板动作读取 SkillDesc.DescDam／DescAtt。普通武器路径复用已有装备／施法纯计算；通用法术、持续火焰及毒总量使用与提示相同的 MPQ 固定点求值，祝福之锤使用专注状态的 damagepercent 和 Skills.Param1／8。原程序无伤害／命中行时保留空行，不伪造数值。有DescDam但缺少执行定义且没有支持的显示程序时保留`?`，不将未支持的武器技能误显为空白；光环及已有执行定义的特殊显示不受该回退影响。PD2专项说明见[技能显示：人物伤害剩余输入](../../pd2/SKILL_DISPLAY.md#技能显示人物伤害剩余输入)。
 - 提示复用当前MPQ与纯属性／等级公式；预览不改变副本，不据本地计算补升级或奖励。
+- 武器附带火／电／冰／魔法伤害应用对应支配；技能 physicalFlat 在百分比武器伤害之后计入。双持职业的 DescDam 1／19 和 DescAtt 2 保留逐手行与顺序，不能只返回首手；普通攻击同样保留两手。人物格的长数值与双行数值使用原 MPQ 紧凑字体，避免截掉伤害上限。
 
 核对入口：本地 D2MOO `D2Common/src/Units/Units.cpp::UNITS_GetDefense`、`D2Skills.cpp::SKILLS_GetConcentrationDamageBonus`、`D2Game/src/QUESTS/ACT5/A5Q3.cpp::ACT5Q3_UpdateResistances` 和 `UNIT/SUnitMsg.cpp::D2GAME_STATES_SendUnitStates_6FCC58E0`；原1.13c D2Client 的 DescDam／DescAtt 调度表 RVA F5210／F52A0。表值以当前MPQ为准，原DLL及参考仓库不成为运行依赖。
 

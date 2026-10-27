@@ -7,5 +7,5 @@ struct Viewport {
     Vec offset;
 };
 Viewport currentViewport();
-FrameInput pollInput(const Viewport &viewport);
+FrameInput pollInput(const Viewport &viewport, const ControlBindings &);
 } // namespace d2x

@@ -20,11 +20,19 @@ std::string damageText(int64_t minimum, int64_t maximum) {
     return std::to_string(minimum) + "-" + std::to_string(maximum);
 }
 CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool thrown, bool leftHand,
-                                 const SkillCastSpec *skill = nullptr) {
+                                 const SkillCastSpec *skill = nullptr, int selectedWeapon = -1) {
     if (!context.weaponValuesKnown) return {"?", "?"};
     const auto &equipment = context.equipment;
+    if(context.dualWield && !leftHand && selectedWeapon<0 && equipment.weaponCount==2) {
+        auto first=weaponStats(context,thrown,false,skill,0);
+        const auto second=weaponStats(context,thrown,false,skill,1);
+        if(!second.damage.empty()) first.damage+='\n'+second.damage;
+        if(!second.attackRating.empty()) first.attackRating+='\n'+second.attackRating;
+        return first;
+    }
     const auto &combat = context.attributes.combat;
     for (int index = 0; index < equipment.weaponCount; ++index) {
+        if(selectedWeapon>=0 && index!=selectedWeapon) continue;
         const auto &weapon = equipment.weapons[index];
         if (leftHand && (!weapon.item || !weapon.leftHand)) continue;
         if ((thrown && !weapon.throwable) || (!thrown && weapon.potion)) return {};
@@ -49,10 +57,13 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
             return {damageText(minimum / 256, maximum / 256), ""};
         }
         const auto elements = attackElementRanges(combat, weapon.item);
-        int64_t elementalMinimum = int64_t(elements.fire.minimum) + elements.lightning.minimum +
-                                         elements.cold.minimum + elements.magic.minimum;
-        int64_t elementalMaximum = int64_t(elements.fire.maximum) + elements.lightning.maximum +
-                                         elements.cold.maximum + elements.magic.maximum;
+        const auto mastered=[](int value,int percent){return int64_t(value)*(100+percent)/100;};
+        int64_t elementalMinimum = mastered(elements.fire.minimum,context.fireMastery) +
+            mastered(elements.lightning.minimum,context.lightningMastery) +
+            mastered(elements.cold.minimum,combat.coldSkillDamagePercent) + mastered(elements.magic.minimum,combat.magicSkillDamagePercent);
+        int64_t elementalMaximum = mastered(elements.fire.maximum,context.fireMastery) +
+            mastered(elements.lightning.maximum,context.lightningMastery) +
+            mastered(elements.cold.maximum,combat.coldSkillDamagePercent) + mastered(elements.magic.maximum,combat.magicSkillDamagePercent);
         if (skill && skill->effect == SkillBehavior::Vengeance)
             for (int percent : skill->weapon->elementPercent) {
                 elementalMinimum += int64_t(weapon.meleeBaseMinimum) * percent / 100 / 256;
@@ -83,8 +94,9 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
         const int rating = int(std::clamp<int64_t>(int64_t(weapon.baseAttackRating) *
             std::max(0, 100 + weapon.attackRatingPercent + (skill ? skill->weapon->attackRating : 0)) / 100,
             0, std::numeric_limits<int>::max()));
-        int64_t skillMinimum = skill && skill->poisonDuration == 0 ? int64_t(skill->minimumDamage) : 0;
-        int64_t skillMaximum = skill && skill->poisonDuration == 0 ? int64_t(skill->maximumDamage) : 0;
+        const int flat=skill?skill->weapon->physicalFlat:0;
+        int64_t skillMinimum = flat+(skill && skill->poisonDuration == 0 ? int64_t(skill->minimumDamage) : 0);
+        int64_t skillMaximum = flat+(skill && skill->poisonDuration == 0 ? int64_t(skill->maximumDamage) : 0);
         if (skill && skill->weapon->bow) {
             const auto &bow = *skill->weapon->bow;
             const int percent = std::max(0, 100 + weapon.projectileDamagePercent + skillDamage);
@@ -184,7 +196,11 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
         if(physical.minimum && physical.maximum && elemental.minimum && elemental.maximum)
             result.damage=damageText(int64_t(*physical.minimum)+*elemental.minimum,int64_t(*physical.maximum)+*elemental.maximum);
         else result.damage="?";
-    } else result=describeAction(context,&entry,input.rank.value_or(0),available,&values);
+    } else {
+        auto weaponContext=context;
+        weaponContext.dualWield=context.dualWield && (description.damageProgram==1 || description.damageProgram==19);
+        result=describeAction(weaponContext,&entry,input.rank.value_or(0),available,&values);
+    }
     if(!description.damageProgram) result.damage.clear();
     else if(result.damage.empty() && !entry.aura && !entry.spell && entry.basicAction==BasicSkillAction::None)
         result.damage="?";
@@ -192,9 +208,13 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
     else if(result.attackRating.empty()) {
         if(!context.weaponValuesKnown) result.attackRating="?";
         else {
-            const auto &weapon=context.equipment.weapons[0];
             const auto bonus=values.parameter("toht");
-            result.attackRating=bonus?std::to_string(int64_t(weapon.baseAttackRating)*std::max(0,100+weapon.attackRatingPercent+*bonus)/100):"?";
+            const int count=context.dualWield && description.attackProgram==2?context.equipment.weaponCount:1;
+            for(int index=0;index<count;++index) {
+                const auto &weapon=context.equipment.weapons[index];
+                if(index) result.attackRating+='\n';
+                result.attackRating+=bonus?std::to_string(int64_t(weapon.baseAttackRating)*std::max(0,100+weapon.attackRatingPercent+*bonus)/100):"?";
+            }
         }
     }
     return result;

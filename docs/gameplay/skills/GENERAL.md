@@ -52,7 +52,7 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 
 ## 当前边界
 
-- 人形／狼熊普通武器动作和普通Kick使用当前MPQ完整AnimData标记，经实例帧队列释放／结束；玩家普通近战使用原生联系与单位种子。ExecuteEvents负责吸取、扣血及状态，随后是耐久、近战事件、反伤和末尾模式；普通攻击未命中仍填写伤害。可达专用武器、连击、怪物／佣兵／伙伴近战均已迁入，旧武器伤害队列和随机副本已删除，详见[内核对照](../../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移)；完整组合仍待对齐。
+- 人形／狼熊普通武器动作和普通Kick使用当前MPQ完整AnimData标记，经实例帧队列释放／结束；玩家普通近战使用原生联系与单位种子。ExecuteEvents负责吸取、扣血及状态，随后是耐久、近战事件、反伤和末尾模式；普通攻击未命中仍填写伤害。可达专用武器、连击、怪物／佣兵／伙伴近战均已迁入，旧武器伤害队列和随机副本已删除，详见[内核对照](GENERAL.md#旧近战链与随机迁移)；完整组合仍待对齐。
 - 普通武器管线已接lifeLeech／manaLeech／crushingBlow／openWounds；来源、难度／目标系数、特殊技能资格及提交顺序见[武器命中效果](../combat/WEAPON_EFFECTS.md)。完整双持组合、PvP、未实现职业及专用触发仍有缺口。
 - 普通近战武器／防具耐久、Impale磨损、投掷补充／自修复及充能扣费／维修已经接入；具体规则和装备六类事件框架由[库存](../../modules/INVENTORY.md)维护，不能笼统写成未实现。专用触发程序及ItemCltEffect仍有明确暂缓项。
 - Unsummon只对当前已实现且PetType允许的本人召唤物有效，不补齐其他职业召唤或完整佣兵；同行者与雇佣范围见[佣兵](../characters/HIRELINGS.md)。普通门户资格由travel负责，任务／队友门户范围由[物件](../world/OBJECTS.md)和[任务系统](../quests/SYSTEM.md)维护。
@@ -61,3 +61,28 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 普通桶KK（包括城镇自动动作）、左手两项、弩及其他投掷武器、全部药瓶等级、空书／取消／背压／多人、原服和Linux的完整边界仍待核对，不以代表路径宣称全部十项已对齐原版。
 
 技能选择、热键、弹药和书页沿已有D2S字段；固有资格和可用物品技能数量重新推导，动作／弹体／宠物／门户／目标光标不保存。编码及校验边界仅维护在[存档](../../modules/SAVES.md)。
+
+## 旧近战链与随机迁移
+
+以下维护普通攻击与职业武器程序共用的接触顺序及差异，不增加本页十项通用技能的统计范围；职业完整规则仍归各职业专题。
+
+唯一近战入口为native_weapon_contact／combat::monsterMelee → native_skill_contact。顺序为GetResultFlags／程序预填 → AllocCombat接收并持有 → ExecuteEvents（伤害回调、物理分量封顶、吸取、吸收、扣血、状态）→ Drain耐久、MeleeAttack／AttackedInMelee和反伤 → 末尾受击／死亡模式。ExecuteMissileDamage不是扣血入口。命中及源程序用攻击者种子，格挡／闪避与接收用防守者种子；弹体投掷及出生游戏种子按原程序区分。
+
+| 程序 | 保留的程序差别 |
+| --- | --- |
+| 普攻／左手Swing | 未命中仍Fill，SrcDamage128；蓄气、CB／OW、吸取、耐久及反伤分阶段。弓／投掷走真实弹体 |
+| St32／39＋Do2（含佣兵Bash／Stun） | 起手Alloc，动作兑现；St32独立calc3速率列表随模式撤出，calc2在接收后只改物理分量，不重算缓存总伤害／暴击 |
+| Vengeance St35＋Do2 | 独立物理预填、三元素共同基数分别精通／轮转／冷长度，随后才Fill目标AC与装备元素，不再掷普通Fill暴击 |
+| Sacrifice St29＋Do64 | 用已分配物理与目标当前HP算反噬，在目标Drain之前提交，已删除伤害后FollowUp反噬 |
+| Conversion St32＋Do79 | 成功位、身份／AI资格及源种子机会判定先于Drain；转换成功撤出联系，失败才Drain |
+| Jab／Impale／PowerStrike／ChargedStrike／LightningStrike | 起手分配／Do兑现；Impale专用耐久／数量机会在Alloc前，普通Drain磨损另算；专用子弹体按原回调出生 |
+| Zeal／Fend／Fury、DoubleSwing／Frenzy | 分别读取公式、候选和手位；Do70执行期投递速率，不提前给起手加50；Frenzy读取前击成功参数，回绕保留联系游标 |
+| Charge／Whirlwind／LeapAttack | Charge按原怪物class切模式属性，hitclass70／overlay147；WW每次尝试切手并读取所选武器的原间隔；LeapAttack保留落地查找、成功门控、overlay和清晕 |
+| Smite Do150／FireHit St42＋Do83 | 玩家Smite盾牌／HolyShield预填，HitFlags2跳过普通Fill和吸取，只强制成功位；怪物Smite先切A2，不沿用玩家强制成功；FireHit先GetFlags，成功才切S1／Alloc，Do83兑现 |
+| 怪物／佣兵／伙伴 | 同一联系、实际模式属性和单位种子；规则来自明确实例SkillRules，不借无关玩家；怪物弹体出生不再接收动作随机副本，精英爆炸消费真实源种子 |
+
+已删除无人消费的MeleeRules／prepareMeleeRules及旧近战规则准备入口、combat::Damage、rollMonsterHit、rollWeaponSkillDamage、advanceMeleeAttempts、旧武器直接伤害／后置转换及旧Smite投掷分支。prepareSpells拒绝无原生伤害上下文的武器联系；weaponVolley只剩客户端表现。SpellImpact的法术／环境路径仍有用途，不是旧武器回退；环境防御也使用接收者种子。
+
+依据为固定[D2MOO](../../resources/THIRD_PARTY.md)的Event、SUnit／SUnitDmg、PlrModes、MonsterMode、AiUtil、ObjMode、ItemMode及职业Skill文件，规则由当前MPQ准备。原1.13c St32=6FC473C0、St35=6FCB8BA0、Do150=6FCB9000、Do13=6FC6DAC0及相关Drain片段共2788字节与本地DLL一致；本次另核对Do7至Do14所在区间（6FC6CB00–6FC6D040）1344个字节。Fend查找回绕分支仍写候选数量，固定D2MOO提前返回漏写；LightningStrike Do14原版6FC6CFE4／6FC6CFF1读取X／Y，固定D2MOO写Y／Y，采用原版X／Y。DLL SHA256为24b293b86f95bea0228826c502ea04737ba21b91ca9832e52aac4b11fef14f53；以上仅认证列出分支，不外推整函数。
+
+当前可达动作与旧近战消费者已迁入；完整队列2登记、全部属性／费用／死亡回调、世界休眠重建、专用飞弹与内容缺口仍按总计划4–8项闭合。全条件逐帧／随机轨迹及全部装备／难度／PvP组合仍缺原版对照。

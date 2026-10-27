@@ -104,6 +104,7 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
     CharacterDisplayContext display{attributes, equipment, input.baseRanks,
         input.fireMastery.value_or(0), input.lightningMastery.value_or(0)};
     display.weaponValuesKnown=input.combatEquipment.has_value();
+    display.dualWield=view.classCode=="bar" || view.classCode=="ass";
     if(input.combatEquipment) display.concentrationDamagePercent=input.combatEquipment->concentrationDamagePercent;
     attributes.combat.coldSkillDamagePercent = input.coldDamagePercent.value_or(0);
     view.attack = describeCharacterAction(display, nullptr);

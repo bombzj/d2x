@@ -4,6 +4,9 @@
 #include "gameplay/items/equipment_contributions.hpp"
 #include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/items/equipment_combat.hpp"
+#include "gameplay/items/native_sources.hpp"
+#include "gameplay/items/native_equipment_stats.hpp"
+#include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/skills/passive.hpp"
 #include "gameplay/skills/barbarian_passive_spec.hpp"
 #include "gameplay/skills/amazon_passive_spec.hpp"
@@ -40,6 +43,8 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
             copy.runewordStats.clear();copy.socketedItems.clear();
             return resolveOwnItemStats(data,copy,level);
         }};
+    std::vector<EquipmentContribution> contributions;
+    source.contribution=[&](EquipmentContribution value){contributions.push_back(std::move(value));};
     auto mods=deriveEquipmentModifiers(loadout,actor,source);
     for(const auto &stat:states) {
         if(stat.layer) continue;
@@ -75,6 +80,47 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
     combat.minimumDamage+=baseMinimum;combat.maximumDamage+=baseMaximum;
     const int rating=baseRating+5*actor.dexterity+mods.attackRating;
     auto equipment=deriveEquipmentStats(loadout,actor,baseDefense+mods.defense,combat,rating);
+    if(data.profile=="lod-named-txt-v1" && !actor.hireling && data.nativeStats && data.nativeFormulas) {
+        const auto &rules=*data.nativeStats;
+        auto sources=prepareNativeEquipmentSources(data.items,rules,contributions,{},
+            [&](EntityId id)->const ItemInstance &{
+                for(const auto &item:charms) if(item.id==id) return item;
+                const auto entry=loadout.find(id);
+                if(!entry) throw std::runtime_error("Missing observed native equipment source");
+                return *entry.instance;
+            });
+        StatList root;root.ownerKind=StatOwnerKind::Player;root.unitRoot=root.hasOwner=root.hasUnit=true;
+        root.contributions=std::move(sources.contributions);
+        addNativeStat(root,rules,"level",actor.level);
+        addNativeStat(root,rules,"strength",actor.strength-mods.strength);
+        addNativeStat(root,rules,"dexterity",actor.dexterity-mods.dexterity);
+        addNativeStat(root,rules,"tohit",baseRating);
+        addNativeStat(root,rules,"mindamage",baseMinimum);
+        addNativeStat(root,rules,"maxdamage",baseMaximum);
+        auto observed=std::make_shared<StatList>();observed->extended=false;
+        for(const auto &stat:states)
+            addNativeStat(*observed,rules,stat.name,stat.rawValue,uint16_t(stat.layer),true);
+        root.contributions.push_back(std::move(observed));
+        std::map<EntityId,StatSnapshot> hands,itemStats;
+        StatQueryContext context;context.unit=&root;
+        const auto character=std::find_if(data.characters.begin(),data.characters.end(),
+            [&](const auto &definition){return definition.code==actor.characterClass;});
+        if(character==data.characters.end()) throw std::runtime_error("Missing observed native character definition");
+        context.character=StatCharacterContext{character->lifePerVitality,character->manaPerEnergy,
+            character->staminaPerVitality,rules.names.at("maxstamina")};
+        for(const auto &[id,list]:sources.items) itemStats.emplace(id,evaluateStatList(rules,*list,context));
+        const auto sample=[&](EntityId id) {
+            const auto selected=statListWithWeapon(root,id,rules,context);
+            auto handContext=context;handContext.unit=selected.get();
+            hands.emplace(id,evaluateStatList(rules,*selected,handContext));
+        };
+        sample({});
+        for(int index=0;index<equipment.weaponCount;++index)
+            if(equipment.weapons[index].item) sample(equipment.weapons[index].item);
+        const auto native=deriveNativeEquipmentStats(loadout,actor,
+            {rules,hands,itemStats,*data.nativeFormulas,combat,35});
+        equipment.weapons=native.weapons;
+    }
     if(actor.hireling && !equipment.weapons[0].item) {
         auto &weapon=equipment.weapons[0];
         weapon.meleeBaseMinimum=std::max(0,combat.minimumDamage)*256;

@@ -82,6 +82,8 @@ struct MonsterSnapshot {
     std::optional<uint8_t> poseDirection{};
     uint8_t pathSteps{};
     uint8_t pathType{13}, pathDistance{5}; // MonsterMode's ordinary TowardFinish/default distance.
+    uint64_t movementRevision{};
+    bool rising{};
     bool hostile{};
     std::vector<uint8_t> modifiers{};
     std::array<uint8_t,16> components{}, componentCounts{};

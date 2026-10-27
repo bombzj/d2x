@@ -6,10 +6,12 @@
 #include "server/systems/inventory/planning.hpp"
 #include "server/systems/inventory/eligibility.hpp"
 #include "server/systems/npc/system.hpp"
+#include "gameplay/items/inventory_order.hpp"
 #include <algorithm>
 
 namespace d2x::server::trade {
 namespace {
+constexpr uint32_t duplicatedSourceFlag=0x08000000; // ITEMS_Duplicate marks its source, not its copy.
 DomainResult<> applied() { return {DomainStatus::Applied,std::monostate{}}; }
 const Offer &offer(const Exchange &e,PlayerId id) { return e.first.player==id?e.first:e.second; }
 const Offer &other(const Exchange &e,PlayerId id) { return e.first.player==id?e.second:e.first; }
@@ -19,16 +21,58 @@ bool cursorEmpty(const PlayerState &p) {
         return at && at->container==p.persistent.containers.cursor;
     });
 }
+bool personalItem(const InventoryState &inventory,const ItemInstance &item,EntityId owner,EntityId hirelingEquipment) {
+    const auto *at=std::get_if<ContainerLocation>(&item.location);
+    if(!at || at->container==hirelingEquipment) return false;
+    const auto &container=inventory.containers.at(at->container);
+    return container.spec.owner==owner && container.spec.kind!=ContainerKind::Corpse;
+}
 ActorContext context(const PlayerState &p,const AreaStore &areas,uint64_t tick) {
     return {p.player,p.actor,p.area,areas.at(p.area).generation,0,tick};
 }
 std::vector<EntityId> offered(const InventoryState &inventory,EntityId container) {
     std::vector<EntityId> result;
-    for (const auto &[id,item] : inventory.items) {
+    for (const auto id : inventoryItemOrder(inventory)) {
+        const auto &item=inventory.items.at(id);
         const auto *at=std::get_if<ContainerLocation>(&item.location);
         if (at && at->container==container) result.push_back(id);
     }
     return result;
+}
+size_t identityCount(const ItemInstance &item) {
+    size_t count=1;
+    for(const auto &child:item.socketedItems) count+=identityCount(child);
+    return count;
+}
+ItemInstance copyItem(ItemInstance item,const std::map<EntityId,EntityId> &identities) {
+    item.id=identities.at(item.id);
+    item.revision=1;
+    for(auto &child:item.socketedItems) {
+        child=copyItem(std::move(child),identities);
+        std::get<SocketLocation>(child.location).host=item.id;
+    }
+    return item;
+}
+void reserveCopy(const ItemInstance &item,items::System &items,std::map<EntityId,EntityId> &identities) {
+    identities.emplace(item.id,items.reserveIdentity());
+    for(const auto &child:item.socketedItems) reserveCopy(child,items,identities);
+}
+void reserveMirror(const ItemInstance &item,items::System &items,Mirrors &identities) {
+    identities.emplace(item.id,Mirror{items.reserveIdentity(),item.nativeFlags});
+    for(const auto &child:item.socketedItems) reserveMirror(child,items,identities);
+}
+void markCopied(ItemInstance &item) {
+    item.nativeFlags |= duplicatedSourceFlag;
+    for(auto &child:item.socketedItems) markCopied(child);
+}
+ItemInstance mirrorItem(ItemInstance item,const Mirrors &identities) {
+    const auto &mirror=identities.at(item.id);
+    item.id=mirror.id; item.nativeFlags=mirror.flags;
+    for(auto &child:item.socketedItems) {
+        child=mirrorItem(std::move(child),identities);
+        std::get<SocketLocation>(child.location).host=item.id;
+    }
+    return item;
 }
 TradeItemsFact mirrors(const PlayerState &p,const Offer &own,const transactions::InventoryEdit &change) {
     const auto &next=change.inventory;
@@ -39,25 +83,20 @@ TradeItemsFact mirrors(const PlayerState &p,const Offer &own,const transactions:
     fact.projection.containers=p.persistent.containers;
     fact.projection.inventory.containers=next.containers;
     for (auto id : offered(p.persistent.inventory,own.container))
-        if(changed(id)) fact.removed.push_back(own.mirrors.at(id));
-    const auto copy=[&](auto &&self,ItemInstance item)->ItemInstance {
-        item.id=own.mirrors.at(item.id);
-        for (auto &child : item.socketedItems) {
-            child=self(self,std::move(child));
-            std::get<SocketLocation>(child.location).host=item.id;
-        }
-        return item;
-    };
+        if(changed(id)) fact.removed.push_back(mirrorItem(p.persistent.inventory.items.at(id),own.mirrors));
     for (auto id : offered(next,own.container)) {
         if(!changed(id)) continue;
-        auto item=copy(copy,next.items.at(id));
+        auto item=mirrorItem(next.items.at(id),own.mirrors);
         fact.projection.inventory.items.emplace(item.id,std::move(item));
     }
     return fact;
 }
 TradeItemsFact clearMirrors(const PlayerState &p,const Offer &own) {
     TradeItemsFact fact; fact.projection.player=p.persistent.player;
-    for(auto id:offered(p.persistent.inventory,own.container)) fact.removed.push_back(own.mirrors.at(id));
+    fact.completed=true;
+    fact.projection.containers=p.persistent.containers;
+    fact.projection.inventory.containers=p.persistent.inventory.containers;
+    for(auto id:offered(p.persistent.inventory,own.container)) fact.removed.push_back(mirrorItem(p.persistent.inventory.items.at(id),own.mirrors));
     return fact;
 }
 transactions::InventoryEdit edit(const PlayerState &p,const AreaStore &areas,uint64_t tick,InventoryState inventory) {
@@ -88,28 +127,58 @@ bool System::canEdit(PlayerId id) const {
     const auto *e=find(id); return e && e->open && !offer(*e,id).agreed;
 }
 void System::normalize(PlayerId id,PersistentCharacter &save) const {
-    if (const auto *e=find(id); e && e->open) save.inventory=offer(*e,id).original;
+    if (const auto *e=find(id); e && e->open) {
+        const auto &own=offer(*e,id);
+        std::erase_if(save.inventory.items,[&](const auto &entry){return personalItem(save.inventory,entry.second,save.player.id,save.containers.hirelingEquipment);});
+        save.inventory.itemOrder=inventoryItemOrder(save.inventory);
+        for(const auto key:inventoryItemOrder(own.original)) {
+            const auto &item=own.original.items.at(key);
+            if(!personalItem(own.original,item,save.player.id,save.containers.hirelingEquipment)) continue;
+            save.inventory.items.emplace(key,item);save.inventory.itemOrder.push_back(key);
+        }
+        save.inventory.containers.erase(own.container);
+        save.inventory.itemOrder=inventoryItemOrder(save.inventory);
+    }
 }
-DomainResult<> System::decorate(PlayerId id,transactions::InventoryEdit &change,bool removedOffer) {
+DomainResult<> System::decorate(PlayerId id,transactions::InventoryEdit &change,bool removedOffer,Mirrors &identities) {
     const auto *e=find(id); if (!e) return applied();
     if (!canEdit(id) || e->revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
-    const auto &own=offer(*e,id), &peer=other(*e,id);
+    auto own=offer(*e,id); const auto &peer=other(*e,id);
     const auto &p=*ports_.players.find(id);
-    change.directed.push_back({peer.player,{mirrors(p,own,change)}});
-    // PlrTrade::sub_6FC931D0 locks removal; sub_6FC92F10 does not lock additions.
-    if(removedOffer) {
-        change.facts.emplace_back(TradeFact{14});
-        change.directed.push_back({peer.player,{TradeFact{14}}});
+    size_t count=0;
+    for(auto item:offered(change.inventory,own.container))
+        if(!own.mirrors.contains(item)) count+=identityCount(change.inventory.items.at(item));
+    if(!ports_.items.identityCapacity(count)) return {DomainStatus::Capacity,{}};
+    for(auto item:offered(change.inventory,own.container))
+        if(!own.mirrors.contains(item)) reserveMirror(change.inventory.items.at(item),ports_.items,own.mirrors);
+    for(auto item:offered(change.inventory,own.container))
+        markCopied(change.inventory.items.at(item));
+    auto projection=mirrors(p,own,change);
+    identities=own.mirrors;
+    const auto erase=[&](auto &&self,const ItemInstance &item)->void {
+        identities.erase(item.id);for(const auto &child:item.socketedItems) self(self,child);
+    };
+    const auto next=offered(change.inventory,own.container);
+    for(auto item:offered(p.persistent.inventory,own.container)) {
+        if(std::find(next.begin(),next.end(),item)==next.end()) erase(erase,p.persistent.inventory.items.at(item));
     }
+    // PlrTrade::sub_6FC931D0 locks removal; sub_6FC92F10 does not lock additions.
+    // Fixed 1.13c sends the agreement reset before the lock and retains gold.
     if(own.agreed || peer.agreed) {
         change.facts.emplace_back(TradeFact{6});
         change.directed.push_back({peer.player,{TradeFact{6}}});
     }
+    if(removedOffer) {
+        change.facts.emplace_back(TradeFact{14});
+        change.directed.push_back({peer.player,{TradeFact{14}}});
+    }
+    change.directed.push_back({peer.player,{std::move(projection)}});
     return applied();
 }
-void System::edited(PlayerId id,uint64_t tick,bool removedOffer) noexcept {
+void System::edited(PlayerId id,uint64_t tick,bool removedOffer,Mirrors identities) noexcept {
     for (auto &[key,e] : state_.exchanges) if (e.first.player==id || e.second.player==id) {
         (void)key; e.first.agreed=e.second.agreed=false; ++e.revision;
+        (e.first.player==id?e.first:e.second).mirrors.swap(identities);
         if(removedOffer) e.unlock=tick+250;
         return;
     }
@@ -157,19 +226,12 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         return cancelFor(actor.player,actor.tick);
     if (request.action==Action::Accept) {
         if (next.open || p->player!=next.second.player || !cursorEmpty(*p) || !cursorEmpty(*peer)) return {DomainStatus::Conflict,{}};
-        size_t identities=2;
-        const auto count=[&](auto &&self,const ItemInstance &item)->void { ++identities; for(const auto &child:item.socketedItems) self(self,child); };
-        for (const auto *player : {p,peer}) for (const auto &[id,item] : player->persistent.inventory.items) { (void)id; count(count,item); }
-        if (!ports_.items.identityCapacity(identities)) return {DomainStatus::Capacity,{}};
+        if (!ports_.items.identityCapacity(2)) return {DomainStatus::Capacity,{}};
         std::vector<transactions::Change> changesToPrepare;
         for (auto *o : {&next.first,&next.second}) {
             const auto &player=*ports_.players.find(o->player);
             if (!player.rules.character || !player.rules.equipment) return {DomainStatus::Unavailable,{}};
             o->container=ports_.items.reserveIdentity(); o->original=player.persistent.inventory; o->equipment=player.rules.equipment;
-            const auto reserve=[&](auto &&self,const ItemInstance &item)->void {
-                o->mirrors.emplace(item.id,ports_.items.reserveIdentity()); for (const auto &child:item.socketedItems) self(self,child);
-            };
-            for (const auto &[id,item] : o->original.items) { (void)id; reserve(reserve,item); }
             auto inventory=o->original;
             inventory.containers.emplace(o->container,ContainerState{o->container,{player.actor,ContainerKind::Trade,
                 player.rules.character->tradeColumns,player.rules.character->tradeRows}});
@@ -220,13 +282,20 @@ DomainResult<> System::complete(Exchange &e,uint64_t tick) {
     const std::array<const PlayerState *,2> players{&first,&second};
     const std::array<const Offer *,2> offers{&e.first,&e.second};
     std::array<std::vector<ItemInstance>,2> incoming;
+    size_t identities=0;
+    for(size_t side=0;side<2;++side) for(auto id:offered(inventories[side],offers[side]->container))
+        identities+=identityCount(inventories[side].items.at(id));
+    if(!ports_.items.identityCapacity(identities)) return {DomainStatus::Capacity,{}};
     for(size_t side=0;side<2;++side) for(auto id:offered(inventories[side],offers[side]->container)) {
         const auto &item=inventories[side].items.at(id);
         if(item.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
-        incoming[1-side].push_back(item);
+        std::map<EntityId,EntityId> copies;
+        reserveCopy(item,ports_.items,copies);
+        auto received=copyItem(item,copies);
+        incoming[1-side].push_back(std::move(received));
         changes[side].push_back({id,item.revision+1,ItemChangeKind::Removed,item.location,{},0});
         inventories[side].items.erase(id);
-        rules[1-side]->items.emplace(id,rules[side]->items.at(id)); rules[1-side]->includeSets(*rules[side]);
+        rules[1-side]->items.emplace(copies.at(id),rules[side]->items.at(id)); rules[1-side]->includeSets(*rules[side]);
     }
     DomainStatus failure=DomainStatus::Applied; size_t failedSide=0;
     for (size_t side=0;side<2 && failure==DomainStatus::Applied;++side) {
@@ -243,7 +312,7 @@ DomainResult<> System::complete(Exchange &e,uint64_t tick) {
                 return at && draft.edit.inventory.containers.at(at->container).spec.kind!=ContainerKind::Stash &&
                     entry.second.specialRow==item.specialRow && entry.second.quality==ItemQuality::Unique;
             })) {failure=DomainStatus::Conflict;break;}
-            const auto id=item.id; ++item.revision;
+            const auto id=item.id;
             draft.edit.inventory.items.emplace(id,std::move(item));
             const auto target=draft.space(id,receiver.persistent.containers.backpack);
             if(!target) {failure=DomainStatus::Conflict;break;}
@@ -289,37 +358,61 @@ DomainResult<> System::cancelFor(PlayerId id,uint64_t tick) {
         const auto result=ports_.events.publishGroup(notifications(ports_.players,e,tick,12));
         if (!result) return {result.status,{}};
     } else {
+        size_t count=0;
+        for(const auto *own:{&e.first,&e.second})
+            for(const auto &[key,item]:own->original.items) {
+                (void)key;const auto &p=*ports_.players.find(own->player);
+                if(personalItem(own->original,item,p.actor,p.persistent.containers.hirelingEquipment)) count+=identityCount(item);
+            }
+        if(!ports_.items.identityCapacity(count)) return {DomainStatus::Capacity,{}};
         std::vector<transactions::Change> changesToPrepare;
         for (const auto *own : {&e.first,&e.second}) {
             const auto &p=*ports_.players.find(own->player);
-            auto change=edit(p,ports_.areas,tick,own->original); change.equipment=own->equipment;
-            for (auto &[key,item] : change.inventory.items) {
-                const auto current=p.persistent.inventory.items.find(key);
-                if(current==p.persistent.inventory.items.end() || current->second.revision==UINT64_MAX) return {DomainStatus::Stale,{}};
-                if(current->second.location==item.location) {
-                    if(current->second.revision==item.revision) continue;
-                    item.revision=current->second.revision+1;
-                    change.changes.push_back({key,item.revision,ItemChangeKind::PropertiesChanged,current->second.location,item.location,item.quantity});
-                    continue;
-                }
-                item.revision=current->second.revision+1;
-                change.changes.push_back({key,item.revision,ItemChangeKind::Moved,current->second.location,item.location,item.quantity});
+            auto inventory=p.persistent.inventory;
+            auto rules=std::make_shared<EquipmentRules>(*p.rules.equipment);
+            std::map<EntityId,EntityId> copies;
+            // PlrSave::WriteItems stores this player's inventory chain. Corpses
+            // and hirelings have separate chains and retain their live units.
+            for(const auto key:inventoryItemOrder(own->original))
+                if(personalItem(own->original,own->original.items.at(key),p.actor,p.persistent.containers.hirelingEquipment))
+                    reserveCopy(own->original.items.at(key),ports_.items,copies);
+            std::erase_if(inventory.items,[&](const auto &entry){return personalItem(inventory,entry.second,p.actor,p.persistent.containers.hirelingEquipment);});
+            inventory.containers.erase(own->container);
+            inventory.itemOrder=inventoryItemOrder(inventory);
+            for(const auto key:inventoryItemOrder(own->original)) {
+                if(!copies.contains(key)) continue;
+                auto item=copyItem(own->original.items.at(key),copies);
+                rules->items.emplace(item.id,own->equipment->items.at(key));
+                inventory.itemOrder.push_back(item.id);
+                inventory.items.emplace(item.id,std::move(item));
             }
-            const auto &peer=other(e,p.player);
-            change.facts.emplace_back(clearMirrors(*ports_.players.find(peer.player),peer));
+            for(auto &[key,container]:inventory.containers) {
+                (void)key;
+                if(copies.contains(container.registeredWeapon)) container.registeredWeapon=copies.at(container.registeredWeapon);
+            }
+            auto change=edit(p,ports_.areas,tick,std::move(inventory)); change.equipment=std::move(rules);
+            for(auto &owner:change.character->selectedSkillOwners)
+                if(copies.contains(EntityId{owner})) owner=uint32_t(copies.at(EntityId{owner}).value);
+            for(auto &hotkey:change.character->skillHotkeys)
+                if(copies.contains(EntityId{hotkey.owner})) hotkey.owner=uint32_t(copies.at(EntityId{hotkey.owner}).value);
+            for(const auto key:change.inventory.itemOrder) {
+                if(p.persistent.inventory.items.contains(key)) continue;
+                const auto &item=change.inventory.items.at(key);
+                change.changes.push_back({key,item.revision,ItemChangeKind::Created,{},item.location,item.quantity});
+            }
+            auto restored=p.persistent; restored.inventory=change.inventory; restored.player=*change.character;
+            change.facts.emplace_back(InventoryResetFact{restored});
             change.facts.emplace_back(TradeFact{12});
             changesToPrepare.emplace_back(std::move(change));
         }
         auto prepared=ports_.transactions.prepareGroup(std::move(changesToPrepare));if(!prepared) return {prepared.status,{}};
         const auto result=ports_.transactions.commitInventories(std::move(*prepared.value)); if(!result) return result;
-        // Native sub_6FC90AE0 removes the live inventory before loading its
-        // saved copy. Its item events disappear with those units. Our GUIDs
-        // survive rollback, so explicitly discard their old runtime clocks.
-        for(const auto *own:{&e.first,&e.second}) {
-            const auto *player=ports_.players.find(own->player);
-            if(player && player->rules.character->stats->pd2)
-                for(const auto &[id,item]:own->original.items) {(void)item;ports_.items.clearRestoration(id);}
-        }
+        // Restored units have new identities; discard the removed units' clocks.
+        for(const auto *own:{&e.first,&e.second})
+            for(const auto &[key,item]:own->original.items) {
+                const auto &p=*ports_.players.find(own->player);
+                if(personalItem(own->original,item,p.actor,p.persistent.containers.hirelingEquipment)) ports_.items.clearRestoration(key);
+            }
     }
     state_.cooldown.swap(cooldown); state_.exchanges.erase(e.transaction); return applied();
 }

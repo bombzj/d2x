@@ -5,6 +5,7 @@
 #include "server/area_store.hpp"
 #include "server/systems/actions/state.hpp"
 #include <algorithm>
+#include <iterator>
 #include <type_traits>
 namespace d2x::server::transactions {
 DomainResult<> System::commitCharacters(std::vector<Plan> plans,std::optional<WorldEdit> world) {
@@ -13,7 +14,7 @@ DomainResult<> System::commitCharacters(std::vector<Plan> plans,std::optional<Wo
 DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEdit> world,bool inventories,std::shared_ptr<effects::AuraUnitPublication> units,std::optional<ActorContext> unitContext) {
     if((plans.empty() && !unitContext) || plans.size()>8) return {DomainStatus::InvalidRequest,{}};
     if(world && (inventories || world->expected!=ports_.items.read().revision || world->expected==UINT64_MAX || world->next.revision!=world->expected)) return {DomainStatus::Stale,{}};
-    std::set<PlayerId> actors;std::vector<EventBatch> batches;
+    std::set<PlayerId> actors;std::vector<EventBatch> batches,resets;
     uint64_t last=state_.lastCommitted;size_t inventoryOwners=0;
     auto auraUnits=std::move(units);
     if(unitContext) {
@@ -97,6 +98,11 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
             if(!ports_.effects.validateAuraUnits(*auraUnits)) return {DomainStatus::Stale,{}};
         }
         const auto &publicFacts=inventory?inventory->publicFacts:character->publicFacts;
+        const auto &facts=inventory?inventory->facts:character->facts;
+        const bool settlesTrade=std::any_of(facts.begin(),facts.end(),[](const auto &fact){
+            const auto *trade=std::get_if<TradeFact>(&fact);return trade && trade->action==13;
+        });
+        std::optional<InventoryFact> receivedTradeItems;
         if(!publicFacts.empty()) batches.push_back({0,tick,plan.id,{AudienceKind::Area,{},player->area},publicFacts});
         EventBatch batch{0,tick,plan.id,{AudienceKind::Player,player->player,player->area},
             {CharacterFact{player->persistent.player,plan.player->persistent.player,player->totals,plan.player->totals,character?character->selectedHand:std::nullopt,
@@ -115,20 +121,37 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
                 }
             };
             for(const auto &[id,item]:plan.player->persistent.inventory.items) children(children,item);
+            if(settlesTrade) {
+                receivedTradeItems=projection;
+                std::erase_if(receivedTradeItems->changes,[](const auto &change){return change.kind!=ItemChangeKind::Created;});
+                std::erase_if(projection.changes,[](const auto &change){return change.kind==ItemChangeKind::Created;});
+            }
             batch.facts.insert(batch.facts.begin(),std::move(projection));
         }
-        const auto &facts=inventory?inventory->facts:character->facts;
         size_t targetingPrefix=0;
+        const bool resetInventory=std::any_of(facts.begin(),facts.end(),[](const auto &fact){return std::holds_alternative<InventoryResetFact>(fact);});
         for(const auto &fact:facts) {
+            if(std::holds_alternative<InventoryResetFact>(fact)) {
+                resets.push_back({0,tick,plan.id,{AudienceKind::Game,{},player->area},{fact}});
+                continue;
+            }
             const auto *targeting=std::get_if<ItemTargetingFact>(&fact);
-            if(targeting && targeting->cursor<0) batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
+            const auto *trade=std::get_if<TradeFact>(&fact);
+            if((targeting && targeting->cursor<0) ||
+                (trade && (trade->action==6 || trade->action==14)) ||
+                (resetInventory && std::holds_alternative<TradeFact>(fact))) batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
             else batch.facts.push_back(fact);
         }
+        // Native trade disposal and close precede the recipients' item rebuild.
+        if(receivedTradeItems && !receivedTradeItems->changes.empty()) batch.facts.emplace_back(std::move(*receivedTradeItems));
         batches.push_back(std::move(batch));
         if(inventory) for(const auto &directed:inventory->directed)
             batches.push_back({0,tick,plan.id,{AudienceKind::Player,directed.player,region},directed.facts});
     }
     if(inventories && inventoryOwners!=2) return {DomainStatus::InvalidRequest,{}};
+    // Both owner resets reach every living observer before either inventory is
+    // rebuilt. This also keeps a peer's public equipment out of private deltas.
+    batches.insert(batches.begin(),std::make_move_iterator(resets.begin()),std::make_move_iterator(resets.end()));
     TransactionId publication;
     if(unitContext) {
         if(state_.next==UINT64_MAX) return {DomainStatus::Capacity,{}};

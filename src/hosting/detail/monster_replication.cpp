@@ -1,6 +1,7 @@
 #include "native_realm_service.hpp"
 #include "hosting/native_combat_wire.hpp"
 #include "hosting/native_item_wire.hpp"
+#include <algorithm>
 #include <cstdlib>
 namespace d2x::hosting {
 void NativeRealmService::publishMissiles() {
@@ -19,7 +20,7 @@ void NativeRealmService::publishMissiles() {
     // Removing an interest entry must never invent a RemoveUnit(3) packet.
     peer.missiles.swap(visible);
 }
-void NativeRealmService::publishMonsters() {
+void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDeaths) {
     if (!binding || peer.phase != GamePhase::Entered) return;
     std::set<EntityId> visible;
     std::vector<Bytes> packets;
@@ -67,7 +68,10 @@ void NativeRealmService::publishMonsters() {
             entry->second={};fresh=true;
         }
         if (fresh) packets.push_back(nativeMonsterAssignment(*content,monster, origin));
-        if(fresh || !entry->second.life) entry->second.life=monster.life;
+        const bool pendingDeath=std::find(pendingDeaths.begin(),pendingDeaths.end(),monster.id)!=pendingDeaths.end();
+        // Death and resurrection synchronize life through their native modes,
+        // not through a regeneration AB in front of that mode notification.
+        if(fresh || !entry->second.life || pendingDeath || monster.rising || monster.mode==0 || monster.mode==12) entry->second.life=monster.life;
         else if(monster.hostile && (std::abs(int(monster.life)-int(*entry->second.life))>4 || (!monster.life && *entry->second.life))) {
             // MonsterMode stat regeneration uses >4 on the native 0..128
             // scale. SUnitMsg publishes AB only to hostile observers.
@@ -140,7 +144,7 @@ void NativeRealmService::publishMonsters() {
         // Reliable hit facts already begin GH/BL. A snapshot must not restart
         // their animations, including when only the UMod life flag changes.
         // A newly interested observer still needs the current reaction mode.
-        if(!fresh && (monster.mode==3 || monster.mode==6)) continue;
+        if(pendingDeath || (!fresh && (monster.mode==3 || monster.mode==6))) continue;
         auto motion = [&] {
             if(monster.movementTarget) {
                 const auto target=*monster.movementTarget;
@@ -152,8 +156,19 @@ void NativeRealmService::publishMonsters() {
             }
             return nativeMonsterMotion(monster, origin);
         }();
+        auto baseline=motion;
+        // MonsterMsg sends a path start on DOUPDATE, not on every movement
+        // step. 68 carries the current XY only to initialize that path.
+        // Keep the actual position on the wire (also for new observers), but
+        // exclude it from change detection. A newly accepted path still sends
+        // even when its target, parameters and destination have not changed.
+        if(!baseline.empty() && baseline.front()==uint8_t(ServerMessage::NpcMoveUnit))
+            std::fill(baseline.begin()+6,baseline.begin()+10,uint8_t{});
         if (motion.empty()) entry->second.motion.clear();
-        else if (fresh || motion != entry->second.motion) { packets.push_back(motion); entry->second.motion = std::move(motion); }
+        else if (fresh || baseline != entry->second.motion || (monster.moving && monster.movementRevision!=entry->second.movementRevision)) {
+            packets.push_back(std::move(motion));entry->second.motion=std::move(baseline);
+            entry->second.movementRevision=monster.movementRevision;
+        }
     }
     for (auto it = peer.monsters.begin(); it != peer.monsters.end();) {
         if (!visible.contains(it->first)) {

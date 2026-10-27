@@ -6,7 +6,7 @@ PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版
 
 ## 逐项执行入口
 
-Zeal、Vengeance、Smite、Sacrifice、Charge及Conversion均接原生联系。Sacrifice反噬在目标Drain之前；Conversion成功直接转换／撤出联系，失败才Drain；Charge移除固定超时及手写命中延迟。Smite保留盾伤预填、HitFlags2及仅补成功位。逐程序依据、版本差异和限制见[内核对照](../../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移)。
+Zeal、Vengeance、Smite、Sacrifice、Charge及Conversion均接原生联系。Sacrifice反噬在目标Drain之前；Conversion成功直接转换／撤出联系，失败才Drain；Charge移除固定超时及手写命中延迟。Smite保留盾伤预填、HitFlags2及仅补成功位。逐程序依据、版本差异和限制见[内核对照](GENERAL.md#旧近战链与随机迁移)。
 
 表中数字为当前MPQ的SrvSt／SrvDo编号。定义、等级曲线、协同、状态、范围、筛选和费用由content/skills准备；D2MOO的D2Game/src/SKILLS/SkillPal.cpp、Skills.cpp、SUnitDmg.cpp及D2Common的PathMisc／SequenceTbls／Units提供执行依据，旧master单机实现用作对应接口证据。参考代码不纳入源码，许可见docs/licenses/D2MOO.txt。
 
@@ -65,7 +65,7 @@ D2S仍为v96，见[存档](../../modules/SAVES.md)。通用职责、原版依据
 
 非玩家单技能／全部被动回调读取当前逐写快照，物品充能在 `item_charged_skill` 回调处按真实物品／参数层登记和撤销，光环公式及后续技能查询消费该缓存，避免提前读取最终装备。诊断公开玩家与当前区域单位的物品光环计时器，以及非玩家已登记的充能；运行态来源、计时器和技能缓存不写 D2S。伤害前技能反应已接公共事件路径，完整全局事件优先级、队列2物品事件交错及死亡动作顺序仍随后续动作／结算阶段推进；未运行边界不认证精确原版一致。
 
-技能等级查询保留真实单位归属标志，读取当前逐写FullStats；仅需组装来源树的读者使用SourcesOnly，完整求值和物品快照由需要它们的入口执行。完整单位事件优先级、伤害前反应及非玩家同步重入的边界见[公共入口](COMMON.md#当前持续效果入口)与[实施范围](../../architecture/SERVER_COMBAT_RECONSTRUCTION.md#621-持续效果的实施范围与顺序)。
+技能等级查询保留真实单位归属标志，读取当前逐写FullStats；仅需组装来源树的读者使用SourcesOnly，完整求值和物品快照由需要它们的入口执行。完整单位事件优先级、伤害前反应及非玩家同步重入的边界见[公共入口](EFFECTS.md#当前持续效果入口)与[实施范围](../../architecture/SERVER_COMBAT_RECONSTRUCTION.md#621-持续效果的实施范围与顺序)。
 
 ## 原服参考与缺口
 

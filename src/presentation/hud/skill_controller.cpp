@@ -29,8 +29,6 @@ bool SceneController::handleSkills(const FrameInput &input) {
         releaseAfterLoad_ = input.leftHeld || input.rightHeld;
         return true;
     }
-    // In the open picker, F1-F8 bind the hovered icon. Otherwise they select
-    // the saved skill for its original mouse button without casting it.
     const auto &hotkeys = view_.characterView().skillHotkeys;
     for (size_t i = 0; i < input.skills.size(); ++i) {
         if (!input.skills[i])

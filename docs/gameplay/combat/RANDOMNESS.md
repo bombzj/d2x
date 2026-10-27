@@ -6,7 +6,7 @@
 
 core/random.hpp按本地D2MOO D2Seed：low为输入种子，high初始化666；下一状态为 `uint64(low) * 0x6ac690c5 + high`，返回低32位。限界取模，界限0返回0且不推进；childRandom推进父流后初始化子流。常量属于算法，不是固定新局种子。
 
-NativeMapGenerator保留房间／选砖／布局所需的原随机消耗和独立流；同种子不意味着全部32位种子或所有激活时序已认证，样本见[地图对照](../../architecture/MULTIPLAYER.md#原版-dll-对照方法)。d2x_assets的掉落／人口报告使用纯算法，不向联机世界写物品或单位。
+NativeMapGenerator保留房间／选砖／布局所需的原随机消耗和独立流；同种子不意味着全部32位种子或所有激活时序已认证，样本见[地图对照](../../development/MAP_PARITY.md#原版-dll-对照方法)。d2x_assets的掉落／人口报告使用纯算法，不向联机世界写物品或单位。
 
 声音选择、图形变体和部分客户端弹体显示使用表现随机流，不参与战斗／掉落。本人已知Pierce／原pierce字节按原程序参与显示，缺输入不推算隐藏穿透概率；原客户端未核实的碎片／散布／RandStart不能用自造概率补齐。
 

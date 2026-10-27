@@ -102,7 +102,11 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     // MonsterMode's default obstacle-search distance is 5; pet tactics supply
     // their own 40/100 bounds. Circling is
     // published as AStar to its computed last point by SCmd, not as pursuit.
-    const uint8_t pathDistance=request.pathDistance;
+    if(request.circleTurn && (request.circleDistance<1 || request.circleDistance>UINT8_MAX))
+        return {DomainStatus::InvalidRequest,{}};
+    // AiTactics::sub_6FCD0E80 passes its circle radius through velocity
+    // parameters into PATH_SetMaxDistance; SCmd publishes that same value.
+    const uint8_t pathDistance=request.circleTurn?uint8_t(request.circleDistance):request.pathDistance;
     if((pathType!=1 && pathType!=2 && pathType!=7 && pathType!=13 && pathType!=15) || !pathDistance)
         return {DomainStatus::InvalidRequest,{}};
     const Vec center{.5f,.5f};
@@ -134,6 +138,7 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     actor.velocityPercent = request.velocityPercent; actor.running = request.running;
     if(!actor.airborne) {actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;}
     ++actor.revision;
+    actor.movementRevision=actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
 void System::stop(EntityId id) {

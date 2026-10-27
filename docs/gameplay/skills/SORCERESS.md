@@ -62,6 +62,10 @@ PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版
 
 ### 领域和原包行为
 
+起手与释放分别复验活人、区域代次、技能选择、目标、城镇许可和资源。Inferno转向只广播目标，不重扣启动法力或重启节拍；Hydra不跟随主人跨区。Enchant跨玩家使用最多两份CharacterEdit成组提交，友方单位状态由effects维护，晚入局可以查询当前状态。这些是现有执行边界，不表示完整原版组合已认证。
+
+原包表现分工为4C／4D派生普通投射、连锁、Inferno及Hydra动作，A3呈现Thunder Storm，A7／A9呈现单位状态，67/action20呈现原击退，11／2C呈现叠层／附加音效；私有资源用1F，位置校正用15，命中用0C。ClientSend与地面程序重建遵循本节后述限制，不因这些映射补发重复弹体。
+
 `actions`持有玩家／怪物待释放动作，`skills`解释施放、冷却、释放及射流；`missiles`持有权威飞行／子弹，`combat/spell_damage`处理逐目标伤害／NextDelay，`effects`持有装甲反击、吸收及周期，`companions`持有Hydra归属／期限／AI，单位属性／生命／模式仍归monsters。Hydra不再由伙伴另发AttackFact及玩家发射请求，改为请求337怪物技能，沿相同动作／释放入口发射。心灵传动复用inventory／objects／travel各自资格和事务；客户端开仓库／传送点等待原77／63，地面目标来自原物品副本，失败拾取音效为原2C的0x13。
 
 Teleport普通施放、聚气与物品触发共用`travel::castTeleport`。请求保留原50子格轴向范围，不以点击处已可步行或当前区域矩形作为起手资格。释放时按来源Levels.Teleport裁决：0拒绝，2使用UNITS_TestCollisionByCoordinates的两端尺寸2缩短射线及0x0804掩码，其他非零值不检查穿越路径。目的地只从原本房间／邻接房间解析，先取得真实地形，再以玩家尺寸2、掩码0x1c09调用公共nativeFreeCoordinates；先原点，失败后按原周界顺序、曼哈顿距离及首个同距候选搜索，外半径50不包含边界，失败不使用原点后备。不要求从源点步行到达，也不另加怪物／玩家避让半径。
@@ -76,7 +80,7 @@ hosting独立prepareHydraRules从当前MPQ准备三头／三难度基础、初�
 
 当前源码将Hydra三头按原偏移依次执行公共怪物出生−1／4搜索，房间随机贷款与游戏种子随人物事务复验、接受后共同发布；全失败只保留实际房间搜索消费，不提交单位种子。三头从当前MPQ准备SizeX=0、TotalPieces=2及躯干组件，单位流先消费组件单选，再投掷生命；首个Actor AI事件直接登记出生后25帧，不先触发下一帧空回调。完整出生初始化AI、逐头容量回调、非玩家施法者及全局交错仍未闭合。
 
-三种装甲互斥；Frozen Armor响应近战伤害，Shiver Armor响应近战尝试；Chilling Armor在HitByMissile阶段按实际飞弹的ReturnFire资格反击，准确率／格挡／回避及基础扣血之前即可触发，落空仍可反击。反击弹体的创建随机流及公共事件边界见[公共持续效果入口](COMMON.md#当前持续效果入口)。Energy Shield先吸收再减免，以基础Telekinesis协同求耗蓝；生命／蓝／清盾成组提交。Enchant接受同区友方玩家、已接伙伴及真实NPC，赋予状态不表示NPC攻击AI已实现。
+三种装甲互斥；Frozen Armor响应近战伤害，Shiver Armor响应近战尝试；Chilling Armor在HitByMissile阶段按实际飞弹的ReturnFire资格反击，准确率／格挡／回避及基础扣血之前即可触发，落空仍可反击。反击弹体的创建随机流及公共事件边界见[公共持续效果入口](EFFECTS.md#当前持续效果入口)。Energy Shield先吸收再减免，以基础Telekinesis协同求耗蓝；生命／蓝／清盾成组提交。Enchant接受同区友方玩家、已接伙伴及真实NPC，赋予状态不表示NPC攻击AI已实现。
 
 原服省略普通本人4C／4D；上述可重建地面程序及其火段也不按每次施法广播73。自研同步遵守该行为，其他可见玩家仍收到动作；客户端保留0x73视野同步及有界不同来源配对，不合并两次独立施法。原表CelFile=null且有Light的弹体仅产生光源，不制造替代贴图。
 

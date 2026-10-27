@@ -184,7 +184,7 @@ Outer Void的当前静态边界另需保留：38A000在180对738／739／740分�
 
 普通多层地图的固定程序9已沿F42补入真实单位绑定、164／171／186预置展开、挡路碰撞释放及阶段2重生开门；Willowisp包装见F43。F47已补PD2物件序号和152的617／826成对出生，826不置阶段1，其后继仍按实际回调保留；此切片完整场景仍待原版对照，不能视为全部普通地图事件完成。
 
-41–45的入场、缩放、房间暂停、AI、结束及奖励区由[F61](FUNCTION_PARITY.md#f61-专属4145控制器的出生与事件依赖)统一记录。服务端入口为travel/pd2/maps、maps/{scene_birth,scene_town,boss_scene_deaths,sacrifice}，AI及属性位于各系统pd2目录；客户端Dash为remote_scene_pd2_dash，献祭复用原44／58消息和MPQ专用原图。地图实例、阶段、参与者、临时门户和重试游标不写D2S；原bk与统计段按SAVE_FORMAT保存。
+41–45的入场、缩放、房间暂停、AI、结束及奖励区由[F61](parity/MAPS.md#f61-专属4145控制器的出生与事件依赖)统一记录。服务端入口为travel/pd2/maps、maps/{scene_birth,scene_town,boss_scene_deaths,sacrifice}，AI及属性位于各系统pd2目录；客户端Dash为remote_scene_pd2_dash，献祭复用原44／58消息和MPQ专用原图。地图实例、阶段、参与者、临时门户和重试游标不写D2S；原bk与统计段按SAVE_FORMAT保存。
 
 场景门户共用maps::preparePortalLanding：原出生Tile的选择只消费一次区域随机，房间未驻留时保留锚点并等待内容，再执行原Ex空位查找和目标物件连接。Rathma阶段已推进而门户尚待准备时，死亡游标继续已有sceneRetreats，不跳过未完成连接；机关门户和死亡门户保持相同边界。163的Levels怪物名和Desecrate排除池按原名称链接忽略大小写，不因Corridor Knight的大小写差异中止区域准备。
 

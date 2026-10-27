@@ -119,3 +119,33 @@ charinfo沿本地PvPGN192字节布局，头部112字节、portrait34、pad30、s
 ## 参考依据
 
 本地固定PvPGN参考：common/d2cs_d2gs_protocol.h、common/d2cs_d2gs_character.h、common/field_sizes.h、d2cs/handle_d2gs.cpp／handle_d2cs.cpp／d2charfile.cpp、d2dbs/dbspacket.h／dbspacket.cpp。D2CS校验、票据与DBS锁／实际字符串顺序均按这些入口核对；独立编解码，不将参考仓库或原引擎二进制打包。来源／许可见[THIRD_PARTY](../resources/THIRD_PARTY.md)。
+
+## 本机部署与验证入口
+
+本节是历史原版参考栈的证据附录，不是上文D2X独立宿主的当前部署步骤，也不是PD2原生实验的配置。旧脚本名称只用于解释当时观察，重新使用须先核对实际环境。
+
+以下记录既有参考服的组件版本及接入约定；临时部署目录及历史材料已清理，不能据此认为服务或启动脚本仍在本机可用。重新使用前须按对应来源和配置重建环境，下载包、上游源码、二进制、配置、凭据及日志不纳入源码提交。客户端当前实现见[联网模块](../modules/NETWORK.md)。
+
+| 组件 | 既有参考环境采用的版本与约定 |
+| --- | --- |
+| 账号／Realm／保存 | [PvPGN 1.99.7.2.1 PRO plain 发行包](https://github.com/pvpgn/pvpgn-server/releases/tag/1.99.7.2.1)，文件存储，无外部数据库 |
+| D2GS 宿主／引擎 | RElesgoe `3f09bd9`，VS2022 Win32 Debug 编译＋Windows 8 兼容层；引擎使用该仓库的 `lib/d2gelib/d2server.dll` |
+| 原版依赖 | 从用户提供的 `D:\Downloads\Diablo II V1.13C` 复制 DLL 与服务所需 MPQ，原安装文件保留；所有 DLL 与 Magic Builder 1.13c 依赖 MD5 匹配。Patch_D2 摘要与其下载清单不同，但与本项目当前 MPQ 相同，引擎已成功加载 |
+| 本地适配 | 宿主配置改读 `HKCU\Software\D2X\D2GSReference`；修正上游 Realm 名称读取指针；使用 32 位 `time_t`；管理端口仅绑定回环，原本地补丁不作为现存文件引用 |
+| 入口 | 账号 `127.0.0.1:6112`，Realm `D2X-Local`／`127.0.0.1:6113`，保存 `127.0.0.1:6114`；D2GS 游戏端口 `4000` 默认监听全部 IPv4，管理端口 `127.0.0.1:8888` |
+
+既有参考栈的接入观察：D2CS认证D2GS并接受8个游戏槽位，D2DBS接受游戏服连接；原版客户端可注册、建角和入局。参考引擎曾在重启初始化阶段异常退出，原因和启动稳定性仍未确定。
+
+原版客户端连接使用 `Play-D2GS.bat`，实际调用 `Play-client.ps1`：客户端从用户原有 `D:\Downloads\Diablo II V1.13C.rar` 独立解压到 `client-1.13c/`，启动前检查 `Game.exe` 为 1.0.13.60。入口启动／复用本机组件，备份当前用户的 Diablo II 网关列表与 `BNETIP`，临时将列表设为仅含 `D2X-Local`／`127.0.0.1`，打开窗口模式主菜单；用户手动点击 Battle.net。正常退出后恢复原网关，启动窗口须保持打开；窗口异常关闭时，先退出全部客户端，再运行 `Restore-client-gateway.cmd` 恢复。此原版启动入口要求先关闭其他原版客户端；当前启动脚本不据此宣称支持原版双客户端。设置方式依据 [PvPGN 网关安装器](https://github.com/pvpgn/battle.net-gateway-installer/blob/master/install%20gateway.bat)。
+
+2026-10-07原版双开尝试：首次运行Play-D2GS.bat成功打开原版窗口，第二次被Play-client.ps1的已有Game／Diablo II进程检查拒绝；直接以同目录Game.exe -w再启动，也仅打开Diablo II Critical Error窗口。`reference/d2moo/source/D2Gfx/src/Window.cpp::WINDOW_Create`以FindWindowA("Diablo II",0)拒绝同桌面已有窗口，与观察一致。第二实例错误窗口已正常关闭，未修改原版EXE／DLL／MPQ或删除启动器网关保护。聊天布局截图可由单个原版客户端发送普通消息并观察原服自身回显取得，不必先解决原版双开。
+
+原客户端须使用真实网关注册，不能只依赖 `-bn` 参数；旧入口曾连向官方服并自动更新，已修正并由用户确认。当前配置含 D2XP_113C／IX86ver1.mpq，未启用 Diablo II 自动更新；仍允许未知／不匹配版本，不能据认证成功声称严格校验已通过。首轮只验证回环；跨机器需配置客户端可达的 Realm／游戏服地址。
+
+原部署的`Start.cmd`用于启动／复用组件，`Stop.cmd`先通知D2GS保存关闭再结束配套进程，关闭前先让客户端退局并注销。重建环境时须核对这些入口及保存顺序，不将已删除的脚本或运行包作为现存依赖；管理凭据只保存在本机忽略目录。
+
+原版客户端在该参考栈的资料片／普通难度／softcore／non-ladder模式可入局、正常离开并触发D2DBS保存回执。选择Ladder曾显示server down，原因尚未确认；参考环境的Ladder能力不作完成宣称，当前D2X只开放非Ladder。原服M11配置缺口仍保留，不作为自研服务端的运行依赖或阶段完成证明。
+
+此宿主含上游build03规则修正与World Event配置，仅用于互通环境，不宣称纯原版规则完全一致。原客户端与D2X完整多人互通、Ladder、严格版本校验、跨机器及长期稳定性未认证。
+
+本机测试账号 `bomb`、`bomb2` 经用户授权仅供此测试服；当前正常创建／选择非Ladder资料片角色，初始数据与保存均由原服产生。

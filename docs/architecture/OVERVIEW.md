@@ -2,7 +2,7 @@
 
 PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留原版／公共规则及必要的版本边界。
 
-更新：2026-10-24。源码入口以CMake为准；客户端和独立服务端分别构建／打包，实现范围见[基线](../../BASELINE.md)，原版依据和缺口见对应专题，功能顺序见[总计划](MULTIPLAYER.md)。各页按当前实现维护，不以自研冒烟划分完成等级。
+本页维护当前模块分工、状态所有权、依赖方向和跨层生命周期；源码入口以CMake为准。客户端和独立服务端分别构建／打包，实现范围见[基线](../../BASELINE.md)，原版依据和缺口见对应专题，功能顺序见[总计划](MULTIPLAYER.md)。目标设计不等于已实现架构。
 
 ## Agent速览
 
@@ -21,7 +21,22 @@ PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留
 
 **服务端三层边界：** hosting把原包转为绑定玩家的类型化命令，并从MPQ准备规则；server校验资格、执行领域操作、提交事实；hosting把事实编码成原回包，并持有保存／传输边界。`GameInstance`和`GameSystems`只组装，`runtime/simulation`只安排执行顺序，不成为万能游戏会话。
 
-**状态各有唯一主人：** PlayerStore持角色持久值与玩家状态，AreaStore持区域／碰撞和房间活动投影，world持各幕房间引用与纯值物化状态，monsters持活动及休眠非玩家实体，companions持伙伴控制关系，social持队伍关系。GameSystems中的frameEvents持原生实例定时器，与可靠输出EventOutbox分开；状态期限／AIRESET、飞弹／周期／再生及跨单位属性／接触已有切片；当前可达AI／动作／移动／物件及物品再生已迁入，完整世界休眠重建与原全局顺序仍有缺口。实际阶段见[总计划2.3节](MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)。actions状态持施放记录、玩家恢复动作及玩家／怪物待释放队列，skills解释技能程序并推进释放；missiles／effects分别持弹体／效果，reactions持物品触发队列。combat结算伤害，maps持PD2场景阶段及特殊死亡游标，death处理死亡与普通奖励协作，transactions提交跨领域人物／物品变更。索引、客户端副本和诊断都不是第二份权威。
+**状态各有唯一主人：**
+
+| 所有者 | 状态或协作职责 |
+| --- | --- |
+| PlayerStore | 角色持久值与玩家状态 |
+| AreaStore／world | 分别持区域／碰撞／房间活动投影，以及各幕房间引用／纯值物化状态 |
+| monsters／companions | 分别持活动及休眠非玩家实体，以及伙伴控制关系 |
+| social | 队伍关系 |
+| GameSystems.frameEvents／EventOutbox | 分别持玩法定时器与可靠输出；输出队列不是玩法时钟 |
+| actions／skills | actions持施放记录、玩家恢复动作及玩家／怪物待释放队列；skills解释技能程序并推进释放 |
+| missiles／effects／reactions | 分别持弹体、持续效果、物品触发队列 |
+| combat／death | 分别负责伤害结算，以及死亡与普通奖励协作 |
+| maps | PD2场景阶段及特殊死亡游标，不替代世界、人口或掉落领域 |
+| transactions | 跨领域人物／物品变更的提交边界，不另持一套人物真值 |
+
+索引、客户端副本和诊断都不是第二份权威。领域接口及原生帧事件入口见[内核子系统](../modules/SERVER_SYSTEMS.md)，迁移阶段与尚未闭合的休眠／全局顺序见[总计划2.3节](MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)，本页不维护逐程序迁移清单。
 
 修改时先找状态所属领域，通过窄Ports协作；不把GameSystems、网络会话或内容加载器传给玩法。共享算法不共享运行态，协议值不等于磁盘值。混合出生通过EntityIds::Publication共享一次ID范围发布，AreaStore复验同一房间登记令牌；ActorPublication可携带带版本的退役集合，与新实体／人物事务共同验证。异步内容等待使用PendingContent，由isDeferred统一交给调度暂缓；准备队列的写入接口必须显式可变。新内容沿“MPQ准备 → 领域资格／执行 → 事务／事实 → 原包投影”接入，未实现路径明确拒绝。
 
@@ -103,6 +118,6 @@ flowchart TD
 
 独立进程由控制台循环泵送后端及游戏字节，调用同一NativeRealmHost.advance。NativeRealmService的admitExternal接受已校验D2CS票据与DBS角色值，externalSave连接DBS保存确认；不创建本地CharacterStore租约。后端等待串行、故障恢复和关闭约束由部署页维护，不与嵌入宿主文件保存保证混为一谈。
 
-角色在原MCP选中时取得整局租约，创建游戏前完成内容和网络入局数据准备；失败不覆盖原档。退局收到原0x69后停止接受玩法请求，先归一化交易并等待人物死亡与已冻结任务奖励；TCP/IP房主同时等待客人。结算并保存成功后发送05／06／0xB0并回收绑定，最后离开者结束实例。保存失败保留实例和锁，终止失败的连接并显示原因，应用关闭或重新连接时可重试保存。F11是宿主检查点；Ctrl+F11先完整准备存档，再让同一原协议客户端重新入局。细节与范围见[存档](../modules/SAVES.md)。
+嵌入宿主在原MCP选角时取得整局角色租约，创建游戏前完成内容和网络入局数据准备；失败不覆盖原档。正常离局先停止接收玩法请求，等待已接受操作结算并完成保存，再确认退出和回收绑定；保存失败不能伪造成功回执，须保留可恢复状态。具体等待条件、TCP/IP房主／客人差异、包序列及检查点／重载操作统一见[存档](../modules/SAVES.md#已迁移的角色与存档入口)，不能将本地租约保证套用于独立DBS后端。
 
 地图、规则、存储和原包适配不得继续聚集到GameInstance。后续在既有server/systems骨架内逐领域实现，runtime/simulation只维护顺序，不承载玩法；旧GameSession及其全能执行器不恢复。参考仓库、MPQ、mvp、旧包和用户存档保留。

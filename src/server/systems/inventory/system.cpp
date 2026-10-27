@@ -76,6 +76,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         change.world = std::move(*world.value); change.equipment = std::move(rules);
     }
     bool offerChanged=false, removedOffer=false;
+    server::trade::Mirrors mirrors;
     if(trade) {
         change.playerTrade=true;
         for(const auto &delta:change.changes) {
@@ -84,12 +85,12 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             removedOffer=removedOffer || (before && before->container==trade);
             offerChanged=offerChanged || removedOffer || (after && after->container==trade);
         }
-        if(offerChanged) {const auto decorated=ports_.trade.decorate(actor.player,change,removedOffer);if(!decorated) return decorated;}
+        if(offerChanged) {const auto decorated=ports_.trade.decorate(actor.player,change,removedOffer,mirrors);if(!decorated) return decorated;}
     }
     auto transaction = ports_.transactions.prepare(std::move(change));
     if (!transaction) return {transaction.status, {}};
     const auto result=ports_.transactions.commit(std::move(*transaction.value));
-    if(result && offerChanged) ports_.trade.edited(actor.player,actor.tick,removedOffer);
+    if(result && offerChanged) ports_.trade.edited(actor.player,actor.tick,removedOffer,std::move(mirrors));
     return result;
 }
 DomainResult<> System::close(PlayerId player) {

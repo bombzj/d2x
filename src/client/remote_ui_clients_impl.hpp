@@ -89,12 +89,13 @@ struct RemoteUiClients::Impl {
     HirelingListView hirelingList;
     MapSceneView mapView;
     mutable TravelMenuView travelView;
-    std::array<std::optional<SkillHotkey>, 8> hotkeys{}; // Local preferences sent without a native ACK.
+    std::array<std::optional<SkillHotkey>, 16> hotkeys{}; // Local preferences sent without a native ACK.
     std::deque<OnlineItemCommand> transactions;
     std::optional<uint64_t> waiting;
     std::optional<OnlineIntentContext> waitingContext;
     std::chrono::steady_clock::time_point waitingUntil;
-    using EquipmentStatKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,int,unsigned,bool>;
+    enum class EquipmentStatUnits { Display, Native };
+    using EquipmentStatKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,int,unsigned,bool,EquipmentStatUnits>;
     struct CachedEquipmentStat { EquipmentStatKey key; std::optional<int> value; };
     mutable std::map<std::pair<OnlineUnitKey,std::string>,CachedEquipmentStat> equipmentStats;
     using CombatEquipmentKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,std::string,int,int,int,int,unsigned,bool,int,int,int,int,std::map<int,int>>;
@@ -178,11 +179,11 @@ struct RemoteUiClients::Impl {
     void moveItem(ItemHandle handle, ItemDestination destination);
     void compositeTake(OnlineItemCommand next);
     void inventoryCommand(InventoryIntent intent);
-    std::optional<int> knownEquipmentStat(std::string_view name, int level, std::optional<OnlineUnitKey> owner = {}) const;
-    std::optional<int> calculateKnownEquipmentStat(std::string_view name, int level, OnlineUnitKey owner) const;
+    std::optional<int> knownEquipmentStat(std::string_view name, int level, std::optional<OnlineUnitKey> owner = {}, EquipmentStatUnits units = EquipmentStatUnits::Display) const;
+    std::optional<int> calculateKnownEquipmentStat(std::string_view name, int level, OnlineUnitKey owner, EquipmentStatUnits units) const;
     std::optional<UnitLightAttributes> light(OnlineUnitKey key) const;
     std::optional<MovementTiming> movement(OnlineUnitKey key,bool running) const;
-    std::optional<int> knownSelfEquipmentStat(std::string_view name,int level) const;
+    std::optional<int> knownSelfEquipmentStat(std::string_view name,int level,EquipmentStatUnits units = EquipmentStatUnits::Display) const;
     std::optional<int> knownSelfStat(std::string_view name,int level) const;
     void projectSkillUseFacts(CharacterProjectionInput &input) const;
     void projectObservedAttributes(CharacterProjectionInput &input,const CharacterDefinition &) const;

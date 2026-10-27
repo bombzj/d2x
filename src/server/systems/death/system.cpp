@@ -108,7 +108,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         const ActorContext actor{id, player.actor, player.area, ports_.areas.at(player.area).generation, 0, tick.tick};
         auto &transition = state_.transitions.at(player.actor);
-        if (!transition.finalized) {
+        if (!transition.penaltySettled) {
+            const auto result=begin(actor);transition.penaltySettled=bool(result);blocked|=!result;
+        }
+        if (transition.penaltySettled && tick.tick>=transition.ready && !transition.finalized) {
             const auto result = settle(actor); transition.finalized = bool(result); blocked |= !result;
         }
         if (transition.finalized && tick.tick >= transition.ready && !transition.companionsSettled) {

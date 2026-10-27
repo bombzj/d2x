@@ -25,6 +25,7 @@ bool SceneController::handleMenu(const FrameInput &input) {
             ui.gameMenuPressed = -1;
             ui.gameMenuScrollDragging = false;
             ui.gameMenuSliderDragging = -1;
+            ui.controlCapturing = false;
             releaseAfterLoad_ = true;
         };
         auto page = [&](EscapeMenuPage target, int selected = -1) {
@@ -37,6 +38,7 @@ bool SceneController::handleMenu(const FrameInput &input) {
             // initially selects Previous Menu rather than the row underneath.
             ui.gameMenuMouse = input.mouse;
         };
+        if (view_.editGameMenuControls(input)) return true;
         if (input.escape) {
             if (ui.gameMenuPage == EscapeMenuPage::Controls) page(EscapeMenuPage::Options, 3);
             else resume();
@@ -45,7 +47,7 @@ bool SceneController::handleMenu(const FrameInput &input) {
         view_.scrollGameMenu(input);
         const int hovered = input.insideViewport ? view_.gameMenuAt(input.mouse) : -1;
         if ((input.mouse - ui.gameMenuMouse).length() > 0 || input.leftPressed) {
-            if (hovered >= 0) ui.gameMenuSelected = hovered;
+            if (hovered >= 0 || ui.gameMenuPage == EscapeMenuPage::Controls) ui.gameMenuSelected = hovered;
             ui.gameMenuMouse = input.mouse;
         }
         const int navigation = ui.gameMenuPage == EscapeMenuPage::Controls ? input.menuRight - input.menuLeft : input.menuDelta;
@@ -85,7 +87,12 @@ bool SceneController::handleMenu(const FrameInput &input) {
                 case 2: page(EscapeMenuPage::Automap); break;
                 case 3:
                     ui.gameMenuControlScroll = 0;
-                    page(EscapeMenuPage::Controls, 0);
+                    ui.controlDraft = ui.controls;
+                    ui.controlSelected = 0;
+                    ui.controlColumn = 0;
+                    ui.controlCapturing = false;
+                    page(EscapeMenuPage::Controls, -1);
+                    ui.gameMenuSelected = -1;
                     break;
                 case 4: page(EscapeMenuPage::Main, 0); break;
                 }
@@ -131,7 +138,15 @@ bool SceneController::handleMenu(const FrameInput &input) {
                 if (activated == 1) ui.lighting = !ui.lighting;
                 else if (activated == 6) page(EscapeMenuPage::Options, 1);
             }
-            else if (ui.gameMenuPage == EscapeMenuPage::Controls) page(EscapeMenuPage::Options, 3);
+            else if (ui.gameMenuPage == EscapeMenuPage::Controls) {
+                if (activated == 1) ui.controlDraft = defaultControlBindings();
+                else {
+                    if (activated == 2) ui.controls = ui.controlDraft;
+                    page(EscapeMenuPage::Options, 3);
+                }
+                ui.controlSelected = -1;
+                ui.controlCapturing = false;
+            }
             ui.gameMenuPressed = -1;
         }
         return true;
@@ -174,6 +189,18 @@ bool SceneController::handleBhSettings(const FrameInput &input) {
 }
 bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
+    if (input.clearScreen && !ui.inventory.drag && !ui.playerTradeBlocking) {
+        if (ui.travelMenu) closeTravel();
+        if (ui.inventory.open) toggleInventory();
+        ui.inventory.cancelGesture();
+        ui.skillPicker.reset();
+        ui.partyOpen = ui.characterOpen = ui.hirelingOpen = ui.skillTreeOpen = ui.questOpen = false;
+        ui.help = ui.miniPanelOpen = false;
+        ui.characterPressed.reset(); ui.skillTreePressed.reset();
+        ui.pointButtonPressed.reset();
+        cancelWorldGesture();
+        return true;
+    }
     if (!ui.characterOpen || ui.blocksInput() || ui.inventory.goldDialog) ui.characterPressed.reset();
     if (!ui.skillTreeOpen || ui.blocksInput() || ui.inventory.goldDialog) ui.skillTreePressed.reset();
     if (ui.inventory.goldDialog) return handleInventory(input);
@@ -222,6 +249,15 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         ui.automapOffset = {};
     if (input.automapNames)
         ui.automapNames = !ui.automapNames;
+    if (input.automapParty) ui.automapParty = !ui.automapParty;
+    if (input.automapFade) {
+        switch (ui.automapFade) {
+        case AutomapFade::No: ui.automapFade = ui.automapLarge ? AutomapFade::Center : AutomapFade::Everything; break;
+        case AutomapFade::Center: ui.automapFade = AutomapFade::Everything; break;
+        case AutomapFade::Everything: ui.automapFade = AutomapFade::Auto; break;
+        case AutomapFade::Auto: ui.automapFade = AutomapFade::No; break;
+        }
+    }
     if (input.inventory) {
         toggleInventory();
     }
@@ -460,6 +496,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         ui.gameMenuScrollDragging = false;
         ui.gameMenuScrollPressed = -1;
         ui.gameMenuSliderDragging = -1;
+        ui.controlCapturing = false;
         resetInput();
         return true;
     }
@@ -481,7 +518,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         inventoryClick_ |= input.leftPressed;
         inventoryRight_ |= input.rightPressed;
     }
-    temporaryRun_ = input.control && !input.showLoot;
+    temporaryRun_ = input.holdRun && !input.showLoot;
     if (ui.inventory.playerTradeOpen) {
         if (ui.playerTradeEditable) handleInventory(input);
         else ui.inventory.cancelGesture();
@@ -607,7 +644,7 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
     if (!enabled) return;
     if ((input.rightPressed || input.leftPressed) && world.available && input.insideViewport) {
         cancelWorldGesture();
-        if (input.rightPressed || (!world.pickup && world.combat) || input.shift) {
+        if (input.rightPressed || (!world.pickup && world.combat) || input.standStill) {
             gesture_ = input.rightPressed ? Gesture::RightCast : Gesture::LeftCast;
             lockedTarget_ = world.combat;
             gestureSkill_ = world.skills[input.rightPressed ? 1 : 0];
@@ -635,7 +672,7 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
         ActorControlIntent intent; intent.action = ActorControlIntent::Action::Cast;
         intent.right = gesture_ == Gesture::RightCast;
         intent.target = lockedTarget_; intent.point = world.point;
-        intent.stationary = input.shift; intent.repeat = repeated_;
+        intent.stationary = input.standStill; intent.repeat = repeated_;
         if (actorClient_.control(intent)) repeated_ = true;
     } else if (gesture_ == Gesture::Move && world.movementAvailable && inputTime_ >= nextMove_ &&
         (pendingMove_ || input.leftPressed || (input.mouse - gestureMouse_).length() >= 1.f ||

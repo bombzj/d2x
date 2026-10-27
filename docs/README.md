@@ -33,7 +33,9 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | BH源码模块、过滤与客户端增强的独立接入 | [BH模块分析与代码隔离方案](architecture/BH_CODE_ISOLATION.md)，含官方／历史CN边界、许可路线、D2X适配及实施顺序 |
 | 原版与PD2／CN版本选择、发行方式、初始化及资源／协议差异 | [版本选择与兼容设计](architecture/PD2_COMPATIBILITY.md#版本选择与发布方式)、[CN样本DLL／位流取证](resources/PD2_CN_DLL_ANALYSIS.md)、[ProjectDiablo完整函数目录与概览](resources/pd2-core/README.md) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[崩溃记录](development/CRASH_REPORTS.md) |
-| 原版人物数值对照的存档装配、覆盖矩阵与截图数据契约 | [对照存档计划](development/CHARACTER_REFERENCE_FIXTURES.md) |
+| 代码结构优化候选、取样依据与重新评估条件 | [代码待优化](development/CODE_OPTIMIZATION_TODO.md)，不替代功能优先级，也不表示已实施 |
+| 原版人物数值对照的存档装配、已采范围、覆盖矩阵与截图数据契约 | [对照存档](development/CHARACTER_REFERENCE_FIXTURES.md) |
+| 主／副键设置、16个技能快捷槽与全角色共享偏好 | [ESC按键设置](gameplay/ui/CLASSIC_HUD.md#esc-菜单)、[偏好格式与保存](modules/SAVES.md#客户端偏好凭据与探索) |
 | 原版DLL地图对照与实机房间恢复排查 | [地图对照排查](development/MAP_PARITY.md) |
 | 本轮原版Host／自研单机消息对照范围及未解决项 | [消息对比计划](development/MESSAGE_COMPARISON_PLAN.md)、[临时缺陷清单](development/MESSAGE_COMPARISON_DEFECTS.md) |
 | 原版Glide／3dfx渲染证据、D2X差异与后续改造 | [Glide渲染分析与方案](architecture/DIABLO2_GLIDE_RENDERING.md) |
@@ -47,6 +49,9 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 模块 | 内容 |
 | --- | --- |
 | [客户端](modules/CLIENT.md) | I*Client值契约、消息连接、公共消费者与两类后端适配 |
+| [联网](modules/NETWORK.md) | 连接、会话、原协议客户端与请求／回包边界 |
+| [服务端协议](modules/SERVER_PROTOCOL.md) | 宿主原包入口、分派、编码及扩展约定 |
+| [内核子系统](modules/SERVER_SYSTEMS.md) | 权威领域、状态所有权、窄接口及执行入口 |
 | [人物](modules/CHARACTER.md) | 原属性／技能、纯提示投影、请求／保存值边界 |
 | [库存](modules/INVENTORY.md) | 人物／世界物品、内容准备、事务、生成／商店／加工与原包消费者的代码入口 |
 | [地图](modules/MAP.md) | 原房间／地形、碰撞、地图UI与本局探索 |
@@ -59,8 +64,8 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 领域 | 入口 |
 | --- | --- |
 | 角色 | [属性／成长](gameplay/characters/ATTRIBUTES.md)、[佣兵](gameplay/characters/HIRELINGS.md)、[死亡／尸体](gameplay/characters/PLAYER_DEATH.md) |
-| 战斗 | [阵营](gameplay/combat/FACTIONS.md)、[数值显示](gameplay/combat/NUMBERS.md)、[攻击／弹体](gameplay/combat/ATTACKS.md)、[武器命中效果](gameplay/combat/WEAPON_EFFECTS.md)、[随机机制](gameplay/combat/RANDOMNESS.md) |
-| 技能 | [全分类目录](gameplay/skills/README.md)、[公共规范／所有权／状态](gameplay/skills/COMMON.md)、[MPQ 选择器／树描述](gameplay/skills/DESCRIPTIONS.md)；目录包含七职业、通用、怪物／精英、佣兵／召唤物、物品技能与特殊／未归档条目 |
+| 战斗 | [阵营](gameplay/combat/FACTIONS.md)、[数值显示](gameplay/combat/NUMBERS.md)、[攻击／弹体表现](gameplay/combat/ATTACKS.md)、[权威飞弹](gameplay/combat/MISSILES.md)、[武器命中效果](gameplay/combat/WEAPON_EFFECTS.md)、[随机机制](gameplay/combat/RANDOMNESS.md) |
+| 技能 | [全分类目录](gameplay/skills/README.md)、[公共规范／所有权](gameplay/skills/COMMON.md)、[持续效果机制](gameplay/skills/EFFECTS.md)、[MPQ 选择器／树描述](gameplay/skills/DESCRIPTIONS.md)；目录包含七职业、通用、怪物／精英、佣兵／召唤物、物品技能与特殊／未归档条目 |
 | 物品 | [全分类目录](gameplay/items/README.md)、[公共规范](gameplay/items/COMMON.md)；定义／生成／属性、装备／库存／容器／消耗、镶嵌／耐久、掉落／地面／金币、方块／任务／经济、原包表现／特殊身份及原版依据 |
 | NPC | [交互／对白](gameplay/npc/INTERACTIONS.md)、[交易／服务](gameplay/npc/TRADE.md) |
 | 任务 | [系统与协议／所有权](gameplay/quests/SYSTEM.md)、[第一幕执行与证据](gameplay/quests/ACT1.md)、[第二幕执行与证据](gameplay/quests/ACT2.md)、[第三至第五幕执行与缺口](gameplay/quests/ACT3_5.md) |
@@ -70,16 +75,17 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 
 ## 维护约定
 
-PD2规则及发现统一更新[pd2分册](pd2/README.md)，按功能归属修订规则、证据、消费者和未知项；原版专题仅保留入口及必要公共关系。架构页维护隔离与组合，不重复逐技能／属性算法；resources保留底层协议、地址索引和取证材料。迁移正文保留旧锚点或修正引用，不同时维护两份规则基线。
+先按上方“负责页面”选择文档层，再按下表确定专题。分类目录负责细分入口，本文不复制其全部文件清单。
 
-技能分类与归属更新skills/README，公共规范／跨职业计算／状态更新COMMON；逐技能分派／专属Clt与Srv差异更新负责专题，复用同一技能只链接原页。MONSTERS登记怪物专用技能，COMPANIONS登记单位使用入口，ITEM_SKILLS登记物品来源与专用程序，SPECIAL保留未归档条目；原版依据和参考结果归所属职业、怪物、佣兵或物品专题，不复制运行流水。原模块调用证据更新REFERENCE_DESIGN；保存、人物投影、协议分别链接SAVES、CHARACTER、NETWORK；描述程序／公式／原版截图约束统一维护skills/DESCRIPTIONS。
+| 修改内容 | 唯一负责位置与交叉边界 |
+| --- | --- |
+| 技能 | [技能目录](gameplay/skills/README.md)维护分类；[公共规范](gameplay/skills/COMMON.md)维护跨职业计算与状态；逐技能Clt／Srv程序、原版依据与缺口归对应专题。怪物技能、伙伴使用入口及物品来源分别归该目录下的MONSTERS、COMPANIONS、ITEM_SKILLS，复用技能只链接原页；描述程序／公式与原版截图约束归[技能描述](gameplay/skills/DESCRIPTIONS.md) |
+| 怪物 | [怪物目录](gameplay/monsters/README.md)维护分类；COMMON维护准备／生命周期，ACT页维护类型覆盖，BOSSES／ELITES维护专用策略／词缀，POPULATION维护出生／房间，PRESENTATION维护原包／原图，SPECIAL维护特殊身份；技能、任务、伙伴和掉落链接各自专题 |
+| 物品 | [物品目录](gameplay/items/README.md)维护分类；COMMON维护公共规范，DATA／MODEL维护原表／身份，GENERATION／AFFIXES／EQUIPMENT维护生成／属性／贡献；操作与加工归对应专题，INVENTORY_UI／PRESENTATION分别维护UI／原包。充能／触发、任务、佣兵与D2S链接原负责页 |
+| 任务 | [任务系统](gameplay/quests/SYSTEM.md)维护通用规则，各幕专题维护规则／缺口／原版依据；原编码与奖励位归[存档](modules/SAVES.md)，客户端端口归[NPC／任务](modules/NPC_QUEST.md) |
+| PD2差异 | [PD2分册](pd2/README.md)按领域维护版本、规则、证据、消费者与未知项；原版专题只保留必要公共关系和入口，架构页只维护隔离与组合，resources保留底层协议／地址与取证材料 |
+| 原版模块调用关系 | [参考设计](architecture/REFERENCE_DESIGN.md)维护调用证据；不替代当前模块接口或逐项规则说明 |
 
-怪物分类与归属更新monsters/README，公共规范／规则准备／生命周期更新COMMON；实际类型覆盖更新ACT页，专用策略更新BOSSES，rank／词缀更新ELITES，出生／房间更新POPULATION，原包／原图更新PRESENTATION，特殊身份更新SPECIAL。模块页只维护代码分工；具体技能、任务、佣兵与掉落链接原专题，各幕页维护所属身份的原版依据与缺口，不复制第二份完成清单。
+整理前重新判断是否存在重复事实、归属冲突或定位困难；篇幅大不等于需要拆页。能够在原负责段落内解决的，不增加新文档。移动内容保留证据、限制及外部引用，按上方约定同步链接与锚点；不通过删掉未知项或历史运行记录宣称实现已完成。
 
-物品分类更新items/README，COMMON维护公共规范，DATA／MODEL维护原表与身份，GENERATION／AFFIXES／EQUIPMENT分别维护生成／属性／贡献；操作、容器／消耗、镶嵌／耐久、掉落／地面／金币、方块／任务／经济更新对应专题。UI／原包分别归INVENTORY_UI／PRESENTATION，特殊条目归SPECIAL，原版依据归各负责页；充能／触发、任务阶段、佣兵与D2S仍链接原负责页，模块只维护代码入口。
-
-任务通用边界更新SYSTEM，各幕规则／缺口／原版依据更新ACT专题，原编码与奖励位更新SAVES，客户端端口更新NPC_QUEST；不跨页面重复维护同一规则。全局能力概况与主要缺口更新BASELINE，实施顺序更新MULTIPLAYER，接口／所有权更新modules，原规则／表现限制更新对应专题；其他页面链接负责页面，不复制批次流水。根README维护项目展示、能力概况与启动入口，详细操作和部署链接开发指南。
-
-保留可定位的原版依据与明确未知项，删掉被替代的入口和历史完成宣称；已导入定义／已显示面板不等于联机服务完成。资源、日志、截图、存档和运行包不纳入源码提交；临时产物允许清理，删除运行记录不改变已有实现或消除已知缺口。整理文档不删除代码兼容分支，代码变更仍按负责模块处理。
-
-移动／删除文档须同步相对链接及源码引用；保存语义变化同步SAVES／格式／校验边界，旧档不静默迁移。默认不构建、运行或打包，不编写测试脚本、用例或专用程序；以当轮用户授权为准。
+整理文档不删除代码兼容分支，也不改变功能、保存或验证授权。涉及代码语义的调整须回到负责模块单独处理。

@@ -15,6 +15,7 @@ struct CharacterDisplayContext {
     int fireMastery = 0, lightningMastery = 0;
     bool weaponValuesKnown = false, spellDamageKnown = false;
     int concentrationDamagePercent = 0;
+    bool dualWield = false;
 };
 CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &context,
     const SkillRecord *skill, int rank = 0, bool available = true);

@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <set>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 namespace d2x {
 constexpr auto preferencesPath = "client-settings.json";
@@ -46,13 +48,41 @@ ClientPreferences loadClientPreferences() {
         };
         const AudioSettings audio{integer("soundVolume", 100, 100, 5), integer("musicVolume", 50, 100, 5),
             NpcSpeechMode(integer("npcSpeech", 2, 2))};
-        return {setting("running"), setting("miniPanelOpen"), large,
+        ClientPreferences result{setting("running"), setting("miniPanelOpen"), large,
             setting("automapCenterWhenCleared", true),
             setting("automapParty", true), setting("automapNames", true), fade, audio, setting("lighting", true),
             setting("bhRevealMap"), setting("bhAlwaysShowLoot"), setting("bhShowAreaName"),
             setting("bhShowXpText"), setting("bhShowBeltStatus"), setting("bhForceLightRadius"),
             setting("bhShowPathLine"), setting("bhShowResistances"), setting("bhShowMonsters"),
             setting("bhShowEnchantments"), setting("bhShowChests"), setting("bhAutomapOnJoin"), setting("bhShowLkChestLines")};
+        if (const auto found = settings.find("controls"); found != settings.end()) {
+            try {
+                if (!found->is_object() || !found->at("version").is_number_integer() || found->at("version") != 1 ||
+                    found->at("encoding") != "d2x-vk" || !found->at("bindings").is_array() ||
+                    found->at("bindings").size() != result.controls.keys.size())
+                    throw std::runtime_error("unsupported controls version, encoding or action count");
+                ControlBindings loaded;
+                std::set<uint16_t> used;
+                for (size_t action = 0; action < loaded.keys.size(); ++action) {
+                    const auto &pair = found->at("bindings").at(action);
+                    if (!pair.is_array() || pair.size() != 2)
+                        throw std::runtime_error("each action requires exactly two keys");
+                    for (size_t column = 0; column < 2; ++column) {
+                        if (!pair.at(column).is_number_integer()) throw std::runtime_error("key must be integer");
+                        const auto value = pair.at(column).get<int64_t>();
+                        if (value < 0 || value > controlWheelDown || !validControlBinding(ControlAction(action), uint16_t(value)))
+                            throw std::runtime_error("unsupported control key");
+                        const auto key = uint16_t(value);
+                        if (key && !used.insert(key).second) throw std::runtime_error("duplicate control key");
+                        loaded.keys[action][column] = key;
+                    }
+                }
+                result.controls = loaded;
+            } catch (const std::exception &error) {
+                std::cerr << "Invalid client controls; using defaults: " << error.what() << '\n';
+            }
+        }
+        return result;
     } catch (const nlohmann::json::exception &error) {
         std::cerr << "Invalid client settings: " << error.what() << '\n';
         return {};
@@ -77,7 +107,8 @@ bool saveClientPreferences(const ClientPreferences &preferences) {
             {"bhShowEnchantments", preferences.bhShowEnchantments},
             {"bhShowChests", preferences.bhShowChests},
             {"bhAutomapOnJoin", preferences.bhAutomapOnJoin},
-            {"bhShowLkChestLines", preferences.bhShowLkChestLines}}.dump(2);
+            {"bhShowLkChestLines", preferences.bhShowLkChestLines},
+            {"controls", {{"version", 1}, {"encoding", "d2x-vk"}, {"bindings", preferences.controls.keys}}}}.dump(2);
         writeFileAtomically(preferencesPath,
             std::span<const uint8_t>{reinterpret_cast<const uint8_t *>(text.data()), text.size()});
         return true;

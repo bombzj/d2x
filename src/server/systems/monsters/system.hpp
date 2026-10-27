@@ -185,6 +185,7 @@ struct Actor {
     int stopDistance{}, velocityPercent{75};
     uint8_t pathSteps{};
     uint8_t pathType{13}, pathDistance{5};
+    uint64_t movementRevision{}; // Accepted path starts, not per-frame position changes.
     int effectVelocity{};
     bool running{};
     bool rewardComplete{}, moving{};

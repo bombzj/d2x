@@ -13,12 +13,14 @@ namespace d2x::server::trade {
 // Two-player offers reference items; final exchange uses one atomic transaction.
 enum class Action { Invite, Accept, Cancel, Agree, Revoke, OfferGold };
 struct Request { Action action; std::optional<PlayerId> peer; uint64_t revision{}; unsigned gold{}; };
+struct Mirror { EntityId id; uint32_t flags{}; };
+using Mirrors=std::map<EntityId,Mirror>;
 struct Offer {
     PlayerId player; unsigned gold{}; bool agreed{};
     EntityId container{};
     InventoryState original;
     std::shared_ptr<const EquipmentRules> equipment;
-    std::map<EntityId,EntityId> mirrors;
+    Mirrors mirrors;
 };
 struct Exchange { TransactionId transaction; Offer first, second; uint64_t revision{1}; bool open{}; uint64_t unlock{}; };
 struct State { std::map<TransactionId, Exchange> exchanges; uint64_t next{1}; std::map<PlayerId,uint64_t> cooldown; };
@@ -37,9 +39,9 @@ class System {
     bool canEdit(PlayerId) const;
     // Attach immutable peer mirrors/reset facts before the inventory commit.
     // Only withdrawing an existing offer starts/extends the confirmation lock.
-    DomainResult<> decorate(PlayerId, transactions::InventoryEdit &, bool removedOffer);
+    DomainResult<> decorate(PlayerId, transactions::InventoryEdit &, bool removedOffer, Mirrors &mirrors);
     void refreshItem(PlayerId,transactions::InventoryEdit &) const;
-    void edited(PlayerId, uint64_t tick, bool removedOffer) noexcept;
+    void edited(PlayerId, uint64_t tick, bool removedOffer, Mirrors) noexcept;
     void normalize(PlayerId, PersistentCharacter &) const;
     StepStatus step(TickContext);
     DomainResult<> execute(const ActorContext &, const Request &);

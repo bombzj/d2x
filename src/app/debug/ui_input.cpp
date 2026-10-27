@@ -27,6 +27,8 @@ std::vector<FrameInput> parseDebugInput(const nlohmann::json &request) {
         frame.rightHeld = request.value("rightHeld", frame.rightHeld);
         frame.shift = request.value("shift", false);
         frame.control = request.value("control", false);
+        frame.standStill = request.value("standStill", frame.shift);
+        frame.holdRun = request.value("holdRun", frame.control);
         frame.backspace = request.value("backspace", false);
         frame.text = request.value("text", std::string{});
         frame.entryText = request.value("entryText", std::string{});
@@ -41,7 +43,7 @@ std::vector<FrameInput> parseDebugInput(const nlohmann::json &request) {
             throw std::invalid_argument("UI text must contain at most 10 decimal digits");
         const auto key = request.value("key", std::string{});
         if (key == "escape") frame.escape = true;
-        else if (key == "enter") frame.enter = true;
+        else if (key == "enter") frame.enter = frame.chat = true;
         else if (key == "message-log" || key == "m") frame.messageLog = true;
         else if (key == "home") frame.entryHome = frame.automapCenter = true;
         else if (key == "end") frame.entryEnd = true;

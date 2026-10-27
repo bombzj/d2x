@@ -245,11 +245,14 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 panels.bhRevealMap, panels.bhAlwaysShowLoot, panels.bhShowAreaName,
                 panels.bhShowXpText, panels.bhShowBeltStatus, panels.bhForceLightRadius,
                 panels.bhShowPathLine, panels.bhShowResistances, panels.bhShowMonsters,
-                panels.bhShowEnchantments, panels.bhShowChests, panels.bhAutomapOnJoin, panels.bhShowLkChestLines};
+                panels.bhShowEnchantments, panels.bhShowChests, panels.bhAutomapOnJoin, panels.bhShowLkChestLines,
+                panels.controls};
             if (current != preferences) { preferences = current; preferencesDirty = true; }
         }
         if (!preferencesDirty || (!force && GetTime() < preferencesRetryAt)) return;
         preferencesDirty = !saveClientPreferences(preferences);
+        if (preferencesDirty && sharedUi)
+            sharedUi->notice("Client settings could not be saved. Changes are active; saving will be retried.", true);
         preferencesRetryAt = GetTime() + 2;
     };
     std::optional<uint32_t> displayedNpc;
@@ -319,6 +322,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         sharedUi->updateChat(session.read().world.social,session.read().accountChat);
         sharedUi->updateParty(session.read().world.social, session.read().load.playerUnitId.value_or(UINT32_MAX), session.read().gameGeneration,town.read().town);
         sharedUi->updatePlayerTrade(session.read().world.playerTrade);
+        if (sharedUi->ui().gameMenuOpen) return;
         auto trade = sharedUi->handlePlayerTrade(input);
         bool consumed = trade.consumed;
         if (!trade.error.empty()) sharedUi->notice(std::move(trade.error), true);
@@ -618,12 +622,23 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 const auto left = player.actionDisplay(player.selectedSkills[player.weaponSet * 2],player.selectedSkillOwners[player.weaponSet * 2]);
                 const auto right = player.actionDisplay(player.selectedSkills[player.weaponSet * 2 + 1],player.selectedSkillOwners[player.weaponSet * 2 + 1]);
                 reply["characterUi"] = {{"name", player.name}, {"level", player.level},
+                    {"experience",player.experience},{"nextLevelKnown",player.nextLevelKnown},
+                    {"nextLevelExperience",player.nextLevelExperience?nlohmann::json(*player.nextLevelExperience):nlohmann::json(nullptr)},
                     {"attributes", player.attributes}, {"resistances", player.resistances},
                     {"defense", player.defense}, {"block", player.blockChance},
                     {"life", player.hp}, {"maxLife", player.maxLife}, {"mana", player.mana}, {"maxMana", player.maxMana},
+                    {"stamina",player.stamina},{"maxStamina",player.maxStamina},{"weaponSet",player.weaponSet},
+                    {"unspentAttributes",player.unspentAttributes},{"unspentSkills",player.unspentSkills},
                     {"unknownStats", player.unknownStats},
                     {"left", {{"damage", left.damage}, {"rating", left.attackRating}}},
                     {"right", {{"damage", right.damage}, {"rating", right.attackRating}}}};
+                auto &skills=reply["characterUi"]["skills"]=nlohmann::json::array();
+                for(const auto &[id,skill]:player.skills)
+                    skills.push_back({{"id",id},{"name",skill.name},{"baseRank",skill.baseRank},{"effectiveRank",skill.effectiveRank},
+                        {"baseRankKnown",skill.baseRankKnown},{"effectiveRankKnown",skill.effectiveRankKnown},
+                        {"treeTooltip",skill.treeTooltip},{"pickerTooltip",skill.pickerTooltip},
+                        {"treeBonusHeading",skill.treeBonusHeading},{"treeBonusTooltip",skill.treeBonusTooltip},
+                        {"action",{{"damage",skill.action.damage},{"rating",skill.action.attackRating}}}});
                 reply["hirelingUi"] = {{"known", merc.known}, {"active", merc.active}, {"name", merc.name},
                     {"level", merc.level}, {"strength", merc.strength}, {"dexterity", merc.dexterity},
                     {"defense", merc.defense}, {"life", merc.life}, {"maxLife", merc.maximumLife},
@@ -891,6 +906,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         initial.automapNames = preferences.automapNames;
                         initial.automapFade = preferences.automapFade;
                         initial.lighting = preferences.lighting;
+                        initial.controls = preferences.controls;
                         initial.bhRevealMap = preferences.bhRevealMap;
                         initial.bhAlwaysShowLoot = preferences.bhAlwaysShowLoot;
                         initial.bhShowAreaName = preferences.bhShowAreaName;
@@ -950,7 +966,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         displayedNpc.reset(); sharedUi->cancelNpcDialogue();
                         panels.shopOpen = panels.hireListOpen = false;
                     }
-                    auto input = pollInput(viewport);
+                    auto input = pollInput(viewport, panels.controls);
                     const auto inputNow = std::chrono::steady_clock::now();
                     const bool inputWait = inputNow - lastInputTime > std::chrono::milliseconds(250);
                     lastInputTime = inputNow;
@@ -968,7 +984,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         input = std::move(debugInputs.front());
                         debugInputs.pop_front();
                     }
-                    captureRequested = input.screenshot;
+                    captureRequested = input.screenshot && !panels.capturesWorldInput();
                     if (localConnection && input.focused && !panels.gameMenuOpen && (input.save || input.load)) {
                         try {
                             const auto state = embedded->diagnostics();
@@ -1013,9 +1029,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 }
             }
             if (!showScene) {
-                auto input = pollInput(viewport);
+                auto input = pollInput(viewport, sharedUi ? sharedUi->ui().controls : preferences.controls);
                 if (!debugInputs.empty()) { input = std::move(debugInputs.front()); debugInputs.pop_front(); }
-                captureRequested = input.screenshot;
+                captureRequested = input.screenshot && (!sharedUi || !sharedUi->ui().capturesWorldInput());
                 ClearBackground(BLACK);
                 if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);

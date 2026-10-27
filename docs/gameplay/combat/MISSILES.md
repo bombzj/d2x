@@ -1,0 +1,52 @@
+# 权威飞弹：数值、接触与出生
+
+本页维护权威飞弹的数值来源、接触／出生程序、原版依据与未闭合边界。模块所有权、调度与提交接口见[内核子系统](../../modules/SERVER_SYSTEMS.md)；客户端独立表现见[攻击与弹体](ATTACKS.md)，逐技能规则归[技能目录](../skills/README.md)。共享程序不表示全部来源和组合已完成。
+
+## 飞弹数值与接触收尾源码
+原版祝福之锤创建后，用专注状态自身的 damagepercent × Skills.Param1／8 增强最终魔法伤害范围；玩家 launch 和原生施法 birth 两个入口均保留该分母，不能把 Param1 当百分数除以100。依据为 D2MOO SKILLS_SrvDo073_BlessedHammer／SKILLS_GetConcentrationDamageBonus；本机1.13c D2Common ordinal10037、RVA4FE80 的末段也为带符号除8。实际弹体保留8.8小数后增强，面板先截断技能范围再增强，不能用面板整数覆盖弹体。例如首批15级锤／225专注／Param1=4，弹体原始范围129300–133048增强为274116–282061（1070–1101），面板为1070–1100；无专注保留原始范围。PD2现有分支的分母100本轮未改，不能据此认为已与PD2原生替换实现核对。
+
+玩家法术／武器弹体与怪物／佣兵弹体的数值来源现统一到`Missile::nativeDamage`，`EnemyProjectile`只保留行为和程序参数，不再另持伤害范围。`missiles/damage_sources`负责当前实际拥有者的属性／手位与技能／飞弹公式采样；`gameplay/missiles/damage_data`保持原范围构造、SetDamageStats、FullDamageParams和单元素投掷。原始SrcDamage、SrcMissDmg、MissileSkill、Holy、Half2HSrc、ApplyMastery、SrvDmg、HitClass及NextHit从MPQ准备目录读取。原弓箭技能的ToHitFactor不自动变成弹体TOHIT，Throw／LeftHandThrow／DoubleThrow和技能伤害初始化按其原程序单独写入；不能用统一技能命中加成覆盖这些差异。
+
+武器弹体的创建期固定HP通道已撤出；所留WeaponSkillDamage为CB／OW等程序参数，逐目标准确率、范围投掷、格挡／闪避与HP走公共联系。普通移动弹体和怪物弹体的`CollisionFlight`保留接触阶段：穿刺计数→准确率→JUSTHIT／HitByMissile→SrvHit子体／范围／来源治疗→FullDamageParams／SrvDmg→目标防御／HP。按原HandleMissileCollision每帧只处理首个被选中的单位，穿刺保留弹体并在下一帧继续；同一接触的子体／范围与伤害仍同步完成。HitByMissile不再受ReturnFire整体门控，寒冰甲的反击回调单独读取该标志。子体和来源／父体／弹体／受击者的种子分别保留，容量重试不重做已完成阶段。父体来源按显式owner传递，规则共享寿命不依赖操作者仍在PlayerStore；换区、死亡和归属变化不直接撤销已发射弹体，专属程序的死亡分支仍保留，实体真正撤出后不再创建伤害／子体。
+
+飞弹时钟区分原生有符号16位TotalFrames／CurrentFrame、激活门槛、路径年龄与实际回调帧executionTick。状态采样、JUSTHIT、尸体模式及公式上下文使用实际事件帧；不会以created+age推算或让倒计时续命改变世界时间。原GetRemainingFrames返回TotalFrames减CurrentFrame；周期和发射窗口读取该差值，追踪和跟随续命只重设CurrentFrame，不改TotalFrames或激活门槛。该差值已对1.13c D2Common ordinal 10985的字节确认。
+
+路径推进开始统一到`gameplay/missiles/motion`的FP16候选、原128项方向表和最多10个SavedSteps；`missiles/motion`按保存格子与原房间单位链选首个目标，命中程序读取移动后的实际端点。跨房间平移保留小数位，地形／物件碰撞按实际房间查询。`LastCollide`、`Explosion`及`CollideFriend`独立从MPQ准备，持续火场不再无条件排除上次目标。`native_programs`和`native_hit`分别承接专属Do／Hit；子体保留SubMissile／HitSubMissile、循环寿命、路径初始化与原参数，并支持创建后立即同步命中及其背压阶段。暴风雪、充能路径、冰封球／新星、追踪二阶段、轨迹发射、藤蔓回收资源和熔浆巨岩分支进入后续源码；狂犬病的传播载体归感染者，传播弹归最初施法者，沿用感染列表的绝对到期帧，不刷新已有感染。此段不表示所有专属程序或完整技能施放已实现。
+
+SrvHit01／13及献祭箭／药瓶范围程序共用一次GetDamageValue，Meteor范围使用一次FullDamageParams；共享抽样对象也保留无目标时的抽样。范围查询开始复用原整数半径、filter与相邻房间单位链；跨区域按原遍历中连续的区域段提交，共享一次抽样，不按区域重排接收者。祝福之锤的专注加成改写实际magic上下限，GlacialSpike独立长度继续覆写对应元素字段。FireHead的单元素来源治疗在普通伤害投掷前经原生资源候选执行。多重箭外围箭抑制来源DealtMissileDamage和物品Hit登记，保留受击者事件及百分比吸取。目标item_damagetargetac在成功准确率的直接联系结束后处理，格挡／闪避也执行，佣兵与范围复制除外；HP与后置属性写入分阶段，重试不重复扣血。物品触发准备的任意4096工作数门槛已撤出，避免同步联系等待尚未进入的后续领域阶段。
+
+原版1.13c的SrvHit表、指法师SrvHit19和SpiderGoo的SrvHit16已从本地D2Game.dll提取（表VA `6FD2DA48`，指法师函数RVA `3E8A0`）。两者首次分配后仍将空指针传入六槽写入及续期函数，已有列表才写属性；实现保留该分支。SrvHit52也保留原版检查HitSubMissile1却向创建器传入零飞弹ID的行为，不自行修正D2MOO中的疑似遗漏。这些字节核对只覆盖列出的分支。
+
+公共公式计算器的飞弹Rand按原D2Common ordinal 10231、回调`6FDBB140`和范围助手`6FD51180`处理：回调的上下文偏移别名到本次调用按值传入的ID／等级参数，构成每次求值独立的64位种子；不会消费拥有者或飞弹的运行种子。SrvDmg转换读取已导入的DmgCalc1，并保留原调用的`(-1,-1)`参数。嵌套技能公式仍使用实际单位随机贷款。祝福之锤使用原Fog.dll浮点表的32个步进值、FP16和截断规则，客户端／服务端共用路径。
+
+普通弹体逐步改由原Do／Hit选择执行，圣光弹接收矩阵取TargetPet／TargetAlly及命中参数；火球、献祭箭、冰尖柱、陨石、药瓶、连锁、闪电之怒和天堂之拳进入公共接触／子体流程。范围复制保留HitFlags／ResultFlags，零结果字不执行接收；无成功位的受击表现不扣血。范围和天堂之拳直接SetDamageFlags阶段不重跑碰撞的HitByMissile／SrvDmg。目标爆发在其实际阶段枚举，天堂之拳先完成主目标，再创建周围子体。Howl、战吼、BattleCry与Grim Ward的原程序分别保留期限、列表拥有者、随机来源及AI入口；Grim Ward周期在飞弹自身属性／种子上计算，并保留难度AI诅咒除数。BaalFx、CairnStones、RadamentDeath与OrbMist已接原Do／Hit及真实所有者／对象GUID。NativeSpawn使用已准备公式／属性目录，区分直接创建与怪物技能包装，保留0x400距离倒计时与0x200构造起始帧，不套多重射击、佣兵武器程序或怪物技能TOHIT附加值。0x200先减Range再分别安装Total／Current／Activate，并独立写动画序列；其后的Current重设仍不修改Total。塔楼及剩余特殊程序、完整碰撞字段与全局事件交错仍在实施。
+
+`NativeBirthPublication`在私有候选中保留飞弹节点、ID连续区间、世界／实际主人种子、房间节点、定时事件和原包事实；消息容量不足不先提交种子。`transactions::Plan::missileBirth`允许骨墙根段占用同一ID区间前缀，人物／实际Actor与飞弹候选经完整容量接受后共同发布；分组事务和次级接收者不能静默夹带该出生候选。怪物发射及NativeSpawn复用同一构造／发布流程。
+
+population在完成房间休眠恢复及三阶段人口后记录该活动房间的creationOrder；同一人口阶段保留到回访，不代表新建的活动房间已恢复。world的clientRoomsReady只读核对当前客户端归属、完整原近邻物化及每个近邻的人口就绪，经GameInstance／GameHost转交hosting延后发布初次／换幕04。检查不主动物化、生成、重掷或等待整区；03携带的物件种子只保存既有ObjectControl初始化low值，不修改任何随机流。原版门控和协议时点见[传送点](../world/OBJECTS.md#自研传送点)。
+
+骨墙玩家路径由SrvDo60准备根段及两条原控制飞弹，Do13在前次PATH跨格时尝试原位置出生，成功才递减TargetY；根段已经死亡但GUID仍在时仍可生成。旧BoneGrowth队列已删除。墙段从各自出生帧安装MonStats.Skill1所指技能Param2期限及原S2出生动作，AI初次25帧、随后15帧检查；骨牢按原12个偏移保留首段和子列表关系。AIGENERAL所有者／子列表与玩家宠物归属分开持有，UMod15死亡候选按原顺序清除子所有者、处理子列表并切换实际怪物主人死亡模式，不以持续根死亡扫描代替。死亡状态／计时撤出共用effects，墙段DD保留真实Actor供仍活跃的Do13查找；未将死亡动画结束当成GUID立即消失。非玩家施放骨墙的公共召唤生产与完整尸体／房间退休顺序仍待后续闭合，新增源码尚未运行。
+
+原0x40 COLLIDE_MISSILE字段独立于DT1和物件栅格，AreaStore预分配后按原点／十字／方形Set／Reset位操作；普通Collision脚印随出生／移动／撤出更新，Do3／34静止点及Do5范围按实际程序写入。寻位与跨房间地形查询读取同一Grid入口，不用重叠计数替换原位语义。公共`native_spawn`保留边缘／内部扫描顺序、Manhattan优先级、首个同分及PosIncrement；`native_field`从当前MPQ的data/global/expfield.d2逐格追踪，保留11099不检查最终中心格的分支。ClassicData准备原256列方向表，AreaStore提供带房间游标的GetFreeCoordinates／GetFreeSpaceEx候选；size0的CheckMask仍检查中心格，与size0的SetMask无占位分开。world的GetFreeSpaceEx从实际调用者房间开始，保留(+2,+3)及原退路；永久门目的端接size3／0xBE11／PosIncrement5的原生寻位。
+
+spatial提供不依赖旧indexedTick的同步动态碰撞投影，读取真实玩家／怪物／NPC／伙伴、地面物品和门户。单位按原Unit／Pet／Wraith模式写入，服务端死亡后无deadCol的尸体使用3×3的0x8000位；客户端尸体使用SmallNoPresence十字，Revive有显式运行时模式；环境陷阱也从公共MPQ准备入口取得模式。原生飞弹接触只投影相邻房间单位链及所需掩码，避免逐弹复制全局单位。候选按原DRLG房间顺序、房间pUnitFirst顺序和独立尺寸配对表选择，先过模式掩码门控；屏障无单位目标时仍执行终止联系。已迁移Do的HandleMissileCollision阶段在其子体／状态／世界操作发布后才选择接触或执行到期Hit，并在后续背压时保留阶段。尺寸表及门控／屏障分支核对本地1.13c D2Game RVA3F320和D2Common ordinal10389（固定1.10f参考中的#10407）；没有把不同版本同号ordinal当成相同函数。
+
+items::createNativeGold提供原生落地金币入口，已由Do18的TowerGold操作经objects调用：调用方提供已寻位的精确坐标，当前MPQ区域等级由AreaMetadata保留；SUNIT两条出生种子分别用于单位基础属性与物品起始种子，数量使用单位随机流。候选、事实、ID和全局随机一起发布，重试不提前消费。objects/tower已准备控制Actor及towerchestspawner，TowerOpen仍经loot的ObjectSource准备；专用开箱语义、出生和跨阶段等待顺序尚须核对，不能据接通调用认定完整原程序。
+
+Hit39已接实际房间随机、Levels.mon／isSpawn选择、1.13c普通周界寻位及真实Actor候选，房间随机／全局随机／ID／组件一起发布；出生组件与HP改由实际单位种子按序投掷。详细入口、1.13c依据及水面／完整出生限制见[权威出生](../monsters/POPULATION.md)。不再用普通地形nearest或巢穴子怪代替该生成程序，但它仍未完成全路径复刻。
+
+剩余飞弹范围包括Do18专用开箱及出生交错核对、Hit6／23／54、Hit39水面及完整怪物出生程序、模式7的飞弹目标、其余动态模式切换及原生对象／房间生命周期交错、非玩家骨墙出生、客户端未迁程序和跨领域事件交错。狂犬病近战感染及根载体已在skills/druid_melee接入，剩余按德鲁伊专题核对完整组合，不再列为缺生产入口。当前MPQ仍实际引用Hit39／54；Hit6／23为空用法不能替代其公共程序实现。门户还需QUESTS_PortalCheck及源对象出生先于目的端寻位的顺序；常驻碰撞格已接入，完整特殊载体及历史位交错组合仍未全部认证。
+
+任务控制飞弹的房间保留使用原HASPORTAL语义（原ToggleHasPortalFlag参数0置位，1清除），并进入world房间退休判定。巴尔死亡只创建当前MPQ的控制飞弹，剩余100帧时才调用泰瑞尔出生；删除原立即出生分支。任务空位助手按原1.13c RVA34130的传入半径、行列顺序和跨房间查找移植，保留RVA3420f实际以Y比较X上界的分支；泰瑞尔调用半径为100，与固定1.10f参考的19不同。凯恩最后激活从STONE LAMBDA位置+(6,-3)创建控制飞弹；已完成角色重建世界的原直接开门入口仍保留。永久门源坐标直接使用控制飞弹位置，目的端按上述公共寻位进入实际目标房间，仍未认证完整门户／房间构造顺序。
+
+强制之球InitFunction60准备真实compellingorb非玩家载体，操作对象与该载体保持不同GUID。脚本死亡、OrbMist的距离倒计时、目标楼梯动画及房间保留／释放接入公共领域；objects静态／动态出生都注册原UNIT_OBJECT房间链，不再只能从旁路坐标表找目标。客户端每次推进的工作预算保留未遍历父／子体及其年龄，撤出2048个弹体的静默丢弃；客户端0x73接收已按本地1.13c D2Client RVA AEEE0拆开构造Total、包内Current和随机动画帧：包只调用D2Common ordinal10970修改Current，动画另取飞弹私有种子。当前新增源码分别保留本地回调数、Total／Current和FP8动画序列；引导箭续期不再清零本地年龄／回调数。Do5及通用动画步进共用sequence助手，绘制直接读取该序列，静态图形仍走原表现生命周期。其余客户端程序、初始化门槛与完整逐帧顺序仍待闭合。
+
+救赎与拉达门特共用原尸体选择入口：实际死亡动作完成、MonStats2 CorpseSel及States Udead掩码，奖励／掉落是否结算不再充当MONMODE_DEAD。玩家及非玩家救赎按原随机顺序求Calc1，再写HP、求Calc3并写MANA；资源／随机流、REDEEMED状态、不可选标记共同发布。拉达门特控制飞弹剩余24至2帧做机会回收，剩余1帧跳过机会；公式及HP／MANA写入留在真实飞弹上，不转给已死所有者。拉达门特死亡前置FX同血鸦／安达利尔共用原UNITFIND顺序、恶方过滤与来源私有随机流，延迟击杀进入实例MonsterModifier事件21；原deathCascades批量扫描已撤出，来源撤出不删除接收者已登记的事件。UNINTERRUPTABLE时按原TempSummon回调延后3帧，不预先扣至0HP。脚本死亡也经公共死亡状态候选撤出列表、保留死亡掩码并提交资源／表现，不把ModeChange伪装成普通受击。其他UMod回调、玩家所有宠物的即时原登记撤出及完整世界／事件交错仍需收尾。
+
+原版依据入口为固定D2MOO的`D2Common/src/Units/Missile.cpp`、`D2Game/src/MISSILES/Missiles.cpp`／`MissMode.cpp`、`SKILLS/SkillAma.cpp`／`SkillPal.cpp`及`UNIT/SUnitDmg.cpp`，参数取当前MPQ。各程序、随机消费和全局顺序分别核对；已迁入的单个程序不能代表完整飞弹执行链。
+
+`missiles/rooms`现沿当前房间及原相邻房间数组查询单位，碰撞排序保留等距单位的房间链顺序。单帧几何使用原区域坐标，发布后统一转换弹体及保留路径到目标区域；创建按实际拥有者的当前房间查找，未找到时不消费创建种子。弹体准入／移动／退出接房间单位链，Town／SrcTown分别按当前MPQ判断。原73的ClientSend、真实拥有者、剩余帧和穿刺值进入统一编码与视野准入，后来进入视野的玩家也能同步当前弹体；协议没有飞弹GUID，不虚构RemoveUnit(3)。Holy Bolt治疗在HitByMissile后重新计算，使用弹体种子；HP和Overlay保留各自提交阶段，背压不重复治疗。BaalInferno的玩家法力撤出在普通伤害前作为有序操作执行。
+
+`missiles/motion::collisionContacts`沿D2MOO `MissMode::MISSMODE_HandleMissileCollision`先检查碰撞模式／激活门槛及PATH保存步；无接触步或未到激活期不准备单位候选。原碰撞掩码命中首个路径格后才执行只读单位资格／位置过滤，同一次调用内复用候选，仍按原相邻房间链顺序选首个重叠目标。玩家／Actor领域位置不含PATH的半格中心，尺寸配对前按`floor(position+0.5)`转换为单位原生子格，与`AreaStore::patternFootprint`／移动占位及原位置包一致；飞弹保存步已经是PATH格中心，继续按`floor(cell)`取格。不能对单位直接向下取整，否则掩码登记与尺寸筛选可能相差一格并漏掉擦边接触。原尺寸矩阵依据`D2Common_10407_Impl`／1.13c ordinal10389，未扩大命中范围。不跨回调缓存候选或动态占位，不改变碰撞掩码、NextHit、接触／伤害顺序与种子消费。完整画面与实际伤害对齐仍待实机复核。
+
+仍未完成的完整战斗边界包括：技能／物品事件的原全局顺序与队列2、直接攻击的全部种子及来源采样、其余职业／怪物专属飞弹程序及全部来源组合。TargetX／TargetY已成为创建参数及弹体拥有值，伤害程序读取真实参数；未初始化的原生零值只会取消Rabies毒，不再抛出缺参异常，德鲁伊的真实感染／传播生产端现已接入，具体边界见职业专题。跨区域及原生伤害状态已有实现；全部创建初始化、来源与组合仍缺同版本对照。

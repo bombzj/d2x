@@ -12,9 +12,9 @@
 
 七职业创建读取当前MPQ CharStats、物品、初始技能来源和真实种子，创建即写入完整D2S。名称按现有编码支持1–15个ASCII字母／数字／连字符；文件系统保留名与quick不能由建角创建。原服名称规则仍由原服裁定。删角只删除选中D2S，保留.bak和探索侧文件，不递归删除目录。
 
-创建及INIT初始化在原起始装备完成后，只有当前活动装备实际提供`CharStats.StartSkill`时才将其选为当前组右手技能；左手和备用组保留普通攻击。该入口供所有职业共用，技能ID取当前MPQ各职业的CharStats与技能目录，不按女巫硬编码；起始物品的技能来自item_singleskill，不能给人物补已学等级，也不能将普通物品技能的选择来源写为物品GUID。初始备用组没有武器，切换过去后左右手均为普通攻击；不把主组的起始技能复制到备用组。依据D2MOO `Player.cpp::PLAYER_CreateStartItem`与`PlrSave2.cpp::PLRSAVE2ERROR_NEWBIE_SAVE`分支的`SKILLS_GetHighestLevelSkillFromUnitAndId`／`D2GAME_AssignSkill(..., 0, StartSkill, -1)`。此前只构造起始物品而漏选右手，原版新建女巫首次Join D2X Host因此收到普通攻击选择。修正仅作用于新建／合法INIT，完整旧档仍恢复其保存的两套武器四个手部选择，不静默更改玩家已有选择；格式和来源序号编码不变。自研新建女巫及完整档重入已确认右手火弹、基础等级0／短杖加成1，完整档也已由原版Host接收并恢复相同选择；原版335字节INIT首次Join仍待实包复验。
+创建及INIT初始化在原起始装备完成后，只有当前活动装备实际提供`CharStats.StartSkill`时才将其选为当前组右手技能；左手和备用组保留普通攻击。该入口供所有职业共用，技能ID取当前MPQ各职业的CharStats与技能目录，不按女巫硬编码；起始物品的技能来自item_singleskill，不能给人物补已学等级，也不能将普通物品技能的选择来源写为物品GUID。初始备用组没有武器，切换过去后左右手均为普通攻击；不把主组的起始技能复制到备用组。依据D2MOO `Player.cpp::PLAYER_CreateStartItem`与`PlrSave2.cpp::PLRSAVE2ERROR_NEWBIE_SAVE`分支的`SKILLS_GetHighestLevelSkillFromUnitAndId`／`D2GAME_AssignSkill(..., 0, StartSkill, -1)`。此前只构造起始物品而漏选右手，原版新建女巫首次Join D2X Host因此收到普通攻击选择。修正仅作用于新建／合法INIT，完整旧档仍恢复其保存的两套武器四个手部选择，不静默更改玩家已有选择；格式和来源序号编码不变。自研新建女巫及完整档重入已确认右手火弹、基础等级0／短杖加成1，完整档也已由原版Host接收并恢复相同选择；原版335字节INIT首次Join已实包确认右手火弹，取消后的空备用组与主组W切换也正常；此实机例不等于七职业逐项联机认证。
 
-原版v96新建但尚未首次入局的角色可以只有`0x14F`（335）字节头部，`flags & 1`为INIT；不能按截断完整档拒绝。`decodeSave`先验证原头、大小、校验和及既有支持边界，再要求INIT档恰好只有头部，通过`persistence/initial_character`与本地建角共用MPQ初始化，读取时不改写源文件。初始化后的内存元数据清除INIT，保留原创建时间等头部值；正常保存才输出已有完整v96布局。未带INIT的短档与INIT后带额外段继续拒绝，不把损坏档当新角色。依据本地D2MOO `D2Game/src/PLAYER/PlrSave2.cpp::PLRSAVE2_ReadSaveHeader`及`PLRSAVE2ERROR_NEWBIE_SAVE`分支。当前已构建，共用创角入口及完整档重入已验证；原版335字节INIT首次Join尚待实包复验，见[消息对比缺陷J1](../development/MESSAGE_COMPARISON_DEFECTS.md)。
+原版v96新建但尚未首次入局的角色可以只有`0x14F`（335）字节头部，`flags & 1`为INIT；不能按截断完整档拒绝。`decodeSave`先验证原头、大小、校验和及既有支持边界，再要求INIT档恰好只有头部，通过`persistence/initial_character`与本地建角共用MPQ初始化，读取时不改写源文件。初始化后的内存元数据清除INIT，保留原创建时间等头部值；正常保存才输出已有完整v96布局。未带INIT的短档与INIT后带额外段继续拒绝，不把损坏档当新角色。依据本地D2MOO `D2Game/src/PLAYER/PlrSave2.cpp::PLRSAVE2_ReadSaveHeader`及`PLRSAVE2ERROR_NEWBIE_SAVE`分支。原版客户端335字节INIT以255＋80字节上传后成功进入D2X Host，正常返回976字节完整档可由D2X解码和原版Host载入；原版写出的962字节完整档再次加入D2X Host也成功，且收到正常保存退出确认。见[消息对比缺陷J1](../development/MESSAGE_COMPARISON_DEFECTS.md)。
 
 腰带实际补位设置原物品UNK1（0x400）并清除NOEQUIP；UNK1随已有32位原flags字段保存，包含自研新生成但尚未重读的物品。依据D2MOO `ItemMode::sub_6FC49140`、`InvMode::D2GAME_ResetSomeItemFlags_6FC415F0`的清理集合（不含UNK1）及`Items::ITEMS_SerializeItem`的原flags写入；原版1.13c Host的补位后腰带交换包仍带0x400。NEWITEM与切入／切出仍只作原包瞬时标志；本次不改布局、不迁移旧档，未发生补位的物品不会凭读取获得UNK1。
 
@@ -62,7 +62,7 @@ D2S磁盘格式为v96。角色加载按当前MPQ内容及存档支持范围校�
 
 虚拟人数是本局状态，默认1，不写D2S；怪物出生人数加成、AI、动画、技能动作、临时效果和地面掉落不保存。基础技能与选择沿原字段保存，铁魔材料沿原kf段保存；存活退出后新局重建，主人／铁魔死亡、取消或被其他石魔替换时清除。具体执行与恢复边界见[联网](NETWORK.md#游戏内命令分流)、[怪物](../gameplay/monsters/README.md)、[职业技能](../gameplay/skills/README.md)及[物件](../gameplay/world/OBJECTS.md)。
 
-PvPGN适配入口仅额外接受130字节、v89、INIT／资料片标记的新角色登记，复验姓名／职业及charinfo的一级、零经验和模式后，复用当前MPQ创角逻辑；原始登记先保留在recovery，首次保存才经DBS写入完整v96。已有旧版角色不迁移，正常v96 codec不放宽。玩家交易运行态不写盘：导出接受时的原库存，保留当前人物记录，未归一化Trade容器由编码器拒绝。取消／成交后的投影仅含真实所属物品；交易确认、镜像、冷却和头顶聊天均不保存。见[玩家交易](../gameplay/items/PLAYER_TRADE.md)。
+PvPGN适配入口仅额外接受130字节、v89、INIT／资料片标记的新角色登记，复验姓名／职业及charinfo的一级、零经验和模式后，复用当前MPQ创角逻辑；原始登记先保留在recovery，首次保存才经DBS写入完整v96。已有旧版角色不迁移，正常v96 codec不放宽。玩家交易运行态不写盘：只对本人的个人库存链导出接受时快照，保留当前人物记录及尸体／佣兵的独立库存；未归一化Trade容器由编码器拒绝。成交和取消重建物品GUID，来源索引仍按实际JM写出顺序生成；IFLAG_ITEM复制标志同时保留于生成物品与读档物品，不更改v96布局或迁移旧完整档。生成药水的成交、正常保存及新进程恢复已确认该位和完整库存一致。取消／成交后的投影仅含真实所属物品；交易确认、镜像、冷却和头顶聊天均不保存。见[玩家交易](../gameplay/items/PLAYER_TRADE.md)。
 
 四类佣兵雇佣替换／装备／经验和死亡位沿原字段，临时药水、AI、候选与当前生命不保存。人物死亡导出除尸体结算外还等待权威DT结束及伙伴死亡事务完成，不能在佣兵仍存活时退出绕过主人死亡；原租约／失败保留策略不变。佣兵执行边界见[佣兵](../gameplay/characters/HIRELINGS.md)。
 
@@ -78,7 +78,7 @@ PvPGN适配入口仅额外接受130字节、v89、INIT／资料片标记的新�
 | [d2s_header.cpp](../../src/persistence/d2s_header.cpp)、[d2s_fixed_sections.cpp](../../src/persistence/d2s_fixed_sections.cpp) | 原头、长度／校验和、任务／传送点／初见等固定段 |
 | [d2s_stats.cpp](../../src/persistence/d2s_stats.cpp)、[d2s_skills.cpp](../../src/persistence/d2s_skills.cpp)、[d2s_items.cpp](../../src/persistence/d2s_items.cpp)、[d2s_inventory.cpp](../../src/persistence/d2s_inventory.cpp)、[d2s_quests.cpp](../../src/persistence/d2s_quests.cpp) | 原属性、技能、JM位流、容器与任务槽 |
 | [save_file.cpp](../../src/persistence/save_file.cpp) | 编码／解码验证、文件锁、备份及原子替换；不是联机保存入口 |
-| [asset_tool.cpp](../../src/asset_tool.cpp) | save-info只读角色摘要及耳朵／Realm／Tempered／身体部件计数；其他工具能力以usage为准 |
+| [asset_tool.cpp](../../src/asset_tool.cpp)、[asset_save_recipe.cpp](../../src/asset_save_recipe.cpp) | save-info摘要、save-json只读完整清单、save-recipes按当前MPQ离线装配并复用原v96编码；不改存档语义，格式与边界见[人物对照存档](../development/CHARACTER_REFERENCE_FIXTURES.md#生成途径与当前缺口) |
 
 ## 普通攻击与装备握持重建
 
@@ -106,7 +106,7 @@ P1仍按PlrSave2导出第一具非空尸体，后续尸体只从保存投影排�
 
 物品批次增加原身份支持，磁盘仍为v96：ISEAR紧凑布局不写32位基底code，直接保存3位职业、7位耳朵等级和最多15个7位名字字符；内容必须匹配当前MPQ的ear／play基底。普通非play身体部件保留10位MonStats身份；两端报价共用原基础价格／耳朵等级／对应难度怪物等级公式。Tempered品质9只有两个8位稀有名字段，没有Rare／Crafted的六个词缀存在位；真实属性列表照常保存，未声明的词缀身份拒绝。Realm段按原presence位和三个32位原值保留，第三字为原保留字；只属服务端磁盘来源，不用作账号资格、不进入原GS网络位流。
 
-布局依据本地D2MOO D2Common Items::ITEMS_DecodeItemBitstreamCompact／Complete、ITEMS_SerializeItemCompact／ITEMS_SerializeItem；master未实现这些特殊布局。耳朵和身体部件的普通生成入口明确拒绝缺真实玩家／怪物身份的请求；不制造受害者名字、等级或部件来源。仍缺符合当前准入条件的真实特殊身份样本，不能仅由布局支持推断全部往返兼容。
+布局依据本地D2MOO D2Common Items::ITEMS_DecodeItemBitstreamCompact／Complete、ITEMS_SerializeItemCompact／ITEMS_SerializeItem。PvP死亡从真实受害者生成play耳朵；普通生成入口仍明确拒绝缺真实玩家／怪物身份的身体部件，不制造名字、等级或部件来源。原版1.13c宿主实际掉落的Hero耳朵（职业1、等级12）已由D2X拾取、正常退出并在新进程加入原版宿主后保留；D2X自己生成的女巫Hero与亚马逊Observer耳朵也完成正常退出／新进程恢复，三人17／8／8件根物品及孔内项的位置、属性和耳朵身份一致；比较只排除运行GUID与装备回执的瞬态NEWITEM位。普通留尸退出后重入为1生命，取回尸体后恢复8件库存；HC死亡位0x08及不可复活名册也已复验。其他身体部件、Realm段和Tempered不能借此视为全部往返认证。耳朵的7位等级与普通物品等级一样，写出按Common::ITEMS_WriteBitsToBitstream饱和至127，运行身份不提前截断；D2S v96布局不变。
 
 ## 任务槽与奖励语义
 
@@ -153,7 +153,11 @@ save-info只读输入，按相同codec和内容准入边界报告角色摘要；
 
 ## 客户端偏好、凭据与探索
 
-client-settings.json保存客户端走跑、底栏、地图、声音和光照选项，原子替换由resources/atomic_file承担；不引入D2S编码。soundVolume／musicVolume为0–100且为5的整数倍，缺省100／50；npcSpeech为0=Audio Only、1=Text Only、2=Audio + Text，缺省2；lighting为布尔值，缺省true，false表示世界全亮。旧偏好文件缺字段使用缺省，非法字段报告并回退；写失败保留待保存状态／旧文件并限频重试。
+client-settings.json保存客户端走跑、底栏、地图、声音、光照和键位选项，原子替换由resources/atomic_file承担；不引入D2S编码。soundVolume／musicVolume为0–100且为5的整数倍，缺省100／50；npcSpeech为0=Audio Only、1=Text Only、2=Audio + Text，缺省2；lighting为布尔值，缺省true，false表示世界全亮。旧偏好文件缺字段使用缺省，非法字段报告并回退；写失败保留待保存状态／旧文件并限频重试。
+
+键位按用户选择全角色共享，保存在同文件的`controls`对象：`version: 1`、`encoding: "d2x-vk"`、`bindings`为56个固定顺序的`[primary, secondary]`整数对。顺序唯一由`presentation/control_bindings.hpp::ControlAction`定义，与配置页功能顺序一致、忽略分隔行；后续改顺序或编码必须升版本。0为None，键盘使用明确支持的原VK数值，左右Shift／Ctrl／Alt合并，数字小键盘独立，4／5／6为中键／侧键，256／257为滚轮上／下；滚轮值是d2x格式，不声称原版编码兼容。Esc、左右鼠标键及未知键不可绑定，不支持组合键；保持跑步／原地攻击／显示物品不接受滚轮。读取严格校验版本、编码、56行双槽、整数范围、可用键与全表非零键唯一性；缺字段采用默认，非法controls整体报告后回退默认，不部分载入，不修改D2S。
+
+配置页持有草稿，Default只改草稿，Cancel／非捕获时Esc丢弃，Accept才替换活动绑定；随后沿既有原子保存及两秒重试路径写盘。写失败保留内存设置并提示重试，不能把界面生效视为磁盘成功。旧文件没有controls时按原版默认表初始化；不会读取、覆盖或迁移原版`.key`文件。本机1.13c的default.key只读取证：1146字节，起始字节`57 53 25 00 7A 04`，后续114条10字节记录为`u32功能ID / u16键值 / u32槽标志`，包含固定Esc功能，未绑定为0xFFFF；此布局与d2x JSON刻意分离。技能槽到技能／手别／来源的关联仍由原0x51请求、0x7B副本及既有16槽D2S字段负责，不与物理键位混存。当前未执行跨进程保存／恢复实机验证。
 
 OnlineLoginMemory按配置路径隔离：Windows当前用户凭据管理器；Linux配置旁权限0600的.credentials.local，Linux实际运行未认证。密码不写连接JSON、只读会话、日志或角色D2S。
 

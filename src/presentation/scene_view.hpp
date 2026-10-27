@@ -51,6 +51,9 @@ struct ViewState {
     float gameMenuTime = 0;
     Vec gameMenuMouse;
     int gameMenuControlScroll = 0;
+    ControlBindings controls = defaultControlBindings(), controlDraft = controls;
+    int controlSelected = -1, controlColumn = 0;
+    bool controlCapturing = false;
     int gameMenuScrollPressed = -1;
     bool gameMenuScrollDragging = false;
     int gameMenuSliderDragging = -1;
@@ -279,6 +282,7 @@ class SceneView {
     bool adjustGameMenuSound(const FrameInput &);
     void applyAudioSettings(const AudioSettings &);
     void scrollGameMenu(const FrameInput &);
+    bool editGameMenuControls(const FrameInput &);
     Rectangle hirelingSlotBounds(size_t index) const;
     bool hirelingPortraitVisible() const;
     std::optional<int> miniPanelAt(Vec mouse) const;

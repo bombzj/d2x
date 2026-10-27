@@ -1,16 +1,30 @@
 # 自研游戏内核与子系统
 
-更新：2026-10-16。本文维护内核入口、所有权和扩展约定；功能顺序见[总计划](../architecture/MULTIPLAYER.md)，原包入口见[服务端协议](SERVER_PROTOCOL.md)。实现范围见[基线](../../BASELINE.md)；各专题维护当前实现、原版依据和明确缺口，不保留自研冒烟台账。
+本文维护内核入口、所有权和扩展约定；功能顺序见[总计划](../architecture/MULTIPLAYER.md)，原包入口见[服务端协议](SERVER_PROTOCOL.md)。实现范围见[基线](../../BASELINE.md)；各专题维护当前实现、原版依据和明确缺口，不保留自研冒烟台账。
+
+## 按任务查找
+
+| 需要修改或理解什么 | 负责入口 |
+| --- | --- |
+| 状态归谁、领域如何组合 | [组合与所有权](#组合与所有权)、[领域目录](#领域目录) |
+| 命令准入、固定步、暂停与背压 | [命令与固定步](#命令与固定步)、[原生帧事件](#原生帧事件迁移) |
+| 内容交接、事务原子性与可靠输出 | [内容、事务与输出](#内容事务与输出) |
+| 来源复验、接触继续点与共享属性 | [战斗关系与提交](#战斗关系与提交)；关系规则归[阵营](../gameplay/combat/FACTIONS.md#权威关系与技能资格) |
+| 飞弹数值、碰撞／接触、出生与专用程序 | [权威飞弹](../gameplay/combat/MISSILES.md)；客户端表现另见[攻击与弹体](../gameplay/combat/ATTACKS.md) |
+| 动态格在出生、移动、提交与回滚时如何维护 | [动态碰撞格](#动态碰撞格的原版语义与迁移边界)；寻路与入场规则归[地图](MAP.md#单位占位与入场) |
+| 职业、物品、死亡、物件与任务规则 | [技能目录](../gameplay/skills/README.md)、[物品目录](../gameplay/items/README.md)、[死亡](../gameplay/characters/PLAYER_DEATH.md)、[物件](../gameplay/world/OBJECTS.md)、[任务](../gameplay/quests/SYSTEM.md) |
+
+修改先落在状态所有者和对应接口；具体规则只在负责专题维护。本文保留跨领域执行顺序和失败边界，不以新增入口或历史迁移数量声明完整实现。
 
 ## 当前范围
 
-跨单位持续效果的新增源码统一接收标志准备、只读列表查询与复制状态来源；NPC与其他非玩家共用唯一MonsterActor、原生属性和资源，AreaNpc只保留出生／任务／服务元数据。是否接收仍由原技能filter及公共投递／直接分配策略分别决定。三种护盾、非玩家自施法、普通攻击的状态属性消费和召唤物死亡撤出共用实际单位候选；所有者边界、源码入口及未完成事件交错见[公共效果边界](../gameplay/skills/COMMON.md#跨单位接收与载体边界)。跨单位／生命周期的完整组合仍待核对。阶段和下一步统一见[总计划2.3节](../architecture/MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)。
+跨单位持续效果的新增源码统一接收标志准备、只读列表查询与复制状态来源；NPC与其他非玩家共用唯一MonsterActor、原生属性和资源，AreaNpc只保留出生／任务／服务元数据。是否接收仍由原技能filter及公共投递／直接分配策略分别决定。三种护盾、非玩家自施法、普通攻击的状态属性消费和召唤物死亡撤出共用实际单位候选；所有者边界、源码入口及未完成事件交错见[公共效果边界](../gameplay/skills/EFFECTS.md#跨单位接收与载体边界)。跨单位／生命周期的完整组合仍待核对。阶段和下一步统一见[总计划2.3节](../architecture/MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)。
 
 玩家入场、行走、库存／装备、人物成长、世界换区、多人投影、普通近战、女巫及亚马逊技能、掉落／消耗、玩家死亡、普通物件／NPC和五幕27项个人任务／奖励／旅行由权威内核执行。27个领域加玩家／移动形成29项目录；各自具有独立State、read、类型化请求及显式Ports，由GameSystems持有。inventory规划物品，attributes计算总值，progression规划成长，transactions提交人物事务；World管理区域准备／驻留，Travel提交位置／区域过渡，replication派生可见参与者，social实现广播／私聊、屏蔽关系、队伍邀请／成员权威及可见头顶消息，trade实现双人原子物品／金币交换。其他规则保持NotImplemented；总体未完成，当前范围以本页、[库存](INVENTORY.md)、[人物](CHARACTER.md)和[ACT1](../gameplay/quests/ACT1.md)为准。
 
 命令目录中的Scaffold在入队前被拒绝，不因有函数入口就宣称Queued。3A／3B成长、13的UNIT_TILE及15同局聊天已执行领域入口；传送点、门户、普通物件／NPC、城镇服务及跨幕旅行已接；队伍及有向敌意由social执行；玩家交易见[PLAYER_TRADE](../gameplay/items/PLAYER_TRADE.md)。普通攻击／选技／热键／停止已接skills；人口准入已准备的第一幕普通／精英／首领怪物。世界物品生成与普通掉落已接items／loot，不能据此宣称全部来源规则完成。
 
-属性候选已接当前MPQ的物品单位事件注册链、物品光环逐写回调和运行态计时器；reactions::ItemTriggers消费已发布注册链及原始参数层几率。光环激活／撤销、零值状态撤出、逐来源资源上限、独立状态位及被动刷新在同一候选中按序执行；非零immediate的BasicAura已同步准备拥有者与周围接收者。玩家、佣兵、铁魔及女武神来源，嵌套回调与单人／双库存／人物成组事务已接共享候选图，输出接受和修订复验后一起发布。完整非玩家属性回调、队列2物品事件交错、生命周期及全局排序仍待闭合。具体算法与限制见[COMMON](../gameplay/skills/COMMON.md#当前持续效果入口)，当前飞弹／周期事件的迁移及边界见下节。
+属性候选已接当前MPQ的物品单位事件注册链、物品光环逐写回调和运行态计时器；reactions::ItemTriggers消费已发布注册链及原始参数层几率。光环激活／撤销、零值状态撤出、逐来源资源上限、独立状态位及被动刷新在同一候选中按序执行；非零immediate的BasicAura已同步准备拥有者与周围接收者。玩家、佣兵、铁魔及女武神来源，嵌套回调与单人／双库存／人物成组事务已接共享候选图，输出接受和修订复验后一起发布。完整非玩家属性回调、队列2物品事件交错、生命周期及全局排序仍待闭合。具体算法与限制见[COMMON](../gameplay/skills/EFFECTS.md#当前持续效果入口)，当前飞弹／周期事件的迁移及边界见下节。
 
 ## 原生帧事件迁移
 
@@ -48,74 +62,11 @@ skills::step不再批量释放玩家／怪物动作，ai::step仅回收控制器
 
 ### 旧近战链与随机迁移
 
-唯一近战入口为native_weapon_contact／combat::monsterMelee → native_skill_contact。顺序为GetResultFlags／程序预填 → AllocCombat接收并持有 → ExecuteEvents（伤害回调、物理分量封顶、吸取、吸收、扣血、状态）→ Drain耐久、MeleeAttack／AttackedInMelee和反伤 → 末尾受击／死亡模式。ExecuteMissileDamage不是扣血入口。命中及源程序用攻击者种子，格挡／闪避与接收用防守者种子；弹体投掷及出生游戏种子按原程序区分。
-
-| 程序 | 保留的程序差别 |
-| --- | --- |
-| 普攻／左手Swing | 未命中仍Fill，SrcDamage128；蓄气、CB／OW、吸取、耐久及反伤分阶段。弓／投掷走真实弹体 |
-| St32／39＋Do2（含佣兵Bash／Stun） | 起手Alloc，动作兑现；St32独立calc3速率列表随模式撤出，calc2在接收后只改物理分量，不重算缓存总伤害／暴击 |
-| Vengeance St35＋Do2 | 独立物理预填、三元素共同基数分别精通／轮转／冷长度，随后才Fill目标AC与装备元素，不再掷普通Fill暴击 |
-| Sacrifice St29＋Do64 | 用已分配物理与目标当前HP算反噬，在目标Drain之前提交，已删除伤害后FollowUp反噬 |
-| Conversion St32＋Do79 | 成功位、身份／AI资格及源种子机会判定先于Drain；转换成功撤出联系，失败才Drain |
-| Jab／Impale／PowerStrike／ChargedStrike／LightningStrike | 起手分配／Do兑现；Impale专用耐久／数量机会在Alloc前，普通Drain磨损另算；专用子弹体按原回调出生 |
-| Zeal／Fend／Fury、DoubleSwing／Frenzy | 分别读取公式、候选和手位；Do70执行期投递速率，不提前给起手加50；Frenzy读取前击成功参数，回绕保留联系游标 |
-| Charge／Whirlwind／LeapAttack | Charge按原怪物class切模式属性，hitclass70／overlay147；WW每次尝试切手并读取所选武器的原间隔；LeapAttack保留落地查找、成功门控、overlay和清晕 |
-| Smite Do150／FireHit St42＋Do83 | 玩家Smite盾牌／HolyShield预填，HitFlags2跳过普通Fill和吸取，只强制成功位；怪物Smite先切A2，不沿用玩家强制成功；FireHit先GetFlags，成功才切S1／Alloc，Do83兑现 |
-| 怪物／佣兵／伙伴 | 同一联系、实际模式属性和单位种子；规则来自明确实例SkillRules，不借无关玩家；怪物弹体出生不再接收动作随机副本，精英爆炸消费真实源种子 |
-
-已删除无人消费的MeleeRules／prepareMeleeRules及旧近战规则准备入口、combat::Damage、rollMonsterHit、rollWeaponSkillDamage、advanceMeleeAttempts、旧武器直接伤害／后置转换及旧Smite投掷分支。prepareSpells拒绝无原生伤害上下文的武器联系；weaponVolley只剩客户端表现。SpellImpact的法术／环境路径仍有用途，不是旧武器回退；环境防御也使用接收者种子。
-
-依据为固定[D2MOO](../resources/THIRD_PARTY.md)的Event、SUnit／SUnitDmg、PlrModes、MonsterMode、AiUtil、ObjMode、ItemMode及职业Skill文件，规则由当前MPQ准备。原1.13c St32=6FC473C0、St35=6FCB8BA0、Do150=6FCB9000、Do13=6FC6DAC0及相关Drain片段共2788字节与本地DLL一致；本次另核对Do7至Do14所在区间（6FC6CB00–6FC6D040）1344个字节。Fend查找回绕分支仍写候选数量，固定D2MOO提前返回漏写；LightningStrike Do14原版6FC6CFE4／6FC6CFF1读取X／Y，固定D2MOO写Y／Y，采用原版X／Y。DLL SHA256为24b293b86f95bea0228826c502ea04737ba21b91ca9832e52aac4b11fef14f53；以上仅认证列出分支，不外推整函数。
-
-当前可达动作与旧近战消费者已迁入；完整队列2登记、全部属性／费用／死亡回调、世界休眠重建、专用飞弹与内容缺口仍按总计划4–8项闭合。全条件逐帧／随机轨迹及全部装备／难度／PvP组合仍缺原版对照。
+唯一近战入口为native_weapon_contact／combat::monsterMelee → native_skill_contact，接触保留预分配、事件、资源、耐久及末尾动作的继续点。逐程序差异、随机来源、旧入口撤出及同版本证据统一见[共享近战程序](../gameplay/skills/GENERAL.md#旧近战链与随机迁移)；本标题保留旧引用，不另维护职业规则。
 
 ### 飞弹数值与接触收尾源码
 
-玩家法术／武器弹体与怪物／佣兵弹体的数值来源现统一到`Missile::nativeDamage`，`EnemyProjectile`只保留行为和程序参数，不再另持伤害范围。`missiles/damage_sources`负责当前实际拥有者的属性／手位与技能／飞弹公式采样；`gameplay/missiles/damage_data`保持原范围构造、SetDamageStats、FullDamageParams和单元素投掷。原始SrcDamage、SrcMissDmg、MissileSkill、Holy、Half2HSrc、ApplyMastery、SrvDmg、HitClass及NextHit从MPQ准备目录读取。原弓箭技能的ToHitFactor不自动变成弹体TOHIT，Throw／LeftHandThrow／DoubleThrow和技能伤害初始化按其原程序单独写入；不能用统一技能命中加成覆盖这些差异。
-
-武器弹体的创建期固定HP通道已撤出；所留WeaponSkillDamage为CB／OW等程序参数，逐目标准确率、范围投掷、格挡／闪避与HP走公共联系。普通移动弹体和怪物弹体的`CollisionFlight`保留接触阶段：穿刺计数→准确率→JUSTHIT／HitByMissile→SrvHit子体／范围／来源治疗→FullDamageParams／SrvDmg→目标防御／HP。按原HandleMissileCollision每帧只处理首个被选中的单位，穿刺保留弹体并在下一帧继续；同一接触的子体／范围与伤害仍同步完成。HitByMissile不再受ReturnFire整体门控，寒冰甲的反击回调单独读取该标志。子体和来源／父体／弹体／受击者的种子分别保留，容量重试不重做已完成阶段。父体来源按显式owner传递，规则共享寿命不依赖操作者仍在PlayerStore；换区、死亡和归属变化不直接撤销已发射弹体，专属程序的死亡分支仍保留，实体真正撤出后不再创建伤害／子体。
-
-飞弹时钟区分原生有符号16位TotalFrames／CurrentFrame、激活门槛、路径年龄与实际回调帧executionTick。状态采样、JUSTHIT、尸体模式及公式上下文使用实际事件帧；不会以created+age推算或让倒计时续命改变世界时间。原GetRemainingFrames返回TotalFrames减CurrentFrame；周期和发射窗口读取该差值，追踪和跟随续命只重设CurrentFrame，不改TotalFrames或激活门槛。该差值已对1.13c D2Common ordinal 10985的字节确认。
-
-路径推进开始统一到`gameplay/missiles/motion`的FP16候选、原128项方向表和最多10个SavedSteps；`missiles/motion`按保存格子与原房间单位链选首个目标，命中程序读取移动后的实际端点。跨房间平移保留小数位，地形／物件碰撞按实际房间查询。`LastCollide`、`Explosion`及`CollideFriend`独立从MPQ准备，持续火场不再无条件排除上次目标。`native_programs`和`native_hit`分别承接专属Do／Hit；子体保留SubMissile／HitSubMissile、循环寿命、路径初始化与原参数，并支持创建后立即同步命中及其背压阶段。暴风雪、充能路径、冰封球／新星、追踪二阶段、轨迹发射、藤蔓回收资源和熔浆巨岩分支进入后续源码；狂犬病的传播载体归感染者，传播弹归最初施法者，沿用感染列表的绝对到期帧，不刷新已有感染。此段不表示所有专属程序或完整技能施放已实现。
-
-SrvHit01／13及献祭箭／药瓶范围程序共用一次GetDamageValue，Meteor范围使用一次FullDamageParams；共享抽样对象也保留无目标时的抽样。范围查询开始复用原整数半径、filter与相邻房间单位链；跨区域按原遍历中连续的区域段提交，共享一次抽样，不按区域重排接收者。祝福之锤的专注加成改写实际magic上下限，GlacialSpike独立长度继续覆写对应元素字段。FireHead的单元素来源治疗在普通伤害投掷前经原生资源候选执行。多重箭外围箭抑制来源DealtMissileDamage和物品Hit登记，保留受击者事件及百分比吸取。目标item_damagetargetac在成功准确率的直接联系结束后处理，格挡／闪避也执行，佣兵与范围复制除外；HP与后置属性写入分阶段，重试不重复扣血。物品触发准备的任意4096工作数门槛已撤出，避免同步联系等待尚未进入的后续领域阶段。
-
-原版1.13c的SrvHit表、指法师SrvHit19和SpiderGoo的SrvHit16已从本地D2Game.dll提取（表VA `6FD2DA48`，指法师函数RVA `3E8A0`）。两者首次分配后仍将空指针传入六槽写入及续期函数，已有列表才写属性；实现保留该分支。SrvHit52也保留原版检查HitSubMissile1却向创建器传入零飞弹ID的行为，不自行修正D2MOO中的疑似遗漏。这些字节核对只覆盖列出的分支。
-
-公共公式计算器的飞弹Rand按原D2Common ordinal 10231、回调`6FDBB140`和范围助手`6FD51180`处理：回调的上下文偏移别名到本次调用按值传入的ID／等级参数，构成每次求值独立的64位种子；不会消费拥有者或飞弹的运行种子。SrvDmg转换读取已导入的DmgCalc1，并保留原调用的`(-1,-1)`参数。嵌套技能公式仍使用实际单位随机贷款。祝福之锤使用原Fog.dll浮点表的32个步进值、FP16和截断规则，客户端／服务端共用路径。
-
-普通弹体逐步改由原Do／Hit选择执行，圣光弹接收矩阵取TargetPet／TargetAlly及命中参数；火球、献祭箭、冰尖柱、陨石、药瓶、连锁、闪电之怒和天堂之拳进入公共接触／子体流程。范围复制保留HitFlags／ResultFlags，零结果字不执行接收；无成功位的受击表现不扣血。范围和天堂之拳直接SetDamageFlags阶段不重跑碰撞的HitByMissile／SrvDmg。目标爆发在其实际阶段枚举，天堂之拳先完成主目标，再创建周围子体。Howl、战吼、BattleCry与Grim Ward的原程序分别保留期限、列表拥有者、随机来源及AI入口；Grim Ward周期在飞弹自身属性／种子上计算，并保留难度AI诅咒除数。BaalFx、CairnStones、RadamentDeath与OrbMist已接原Do／Hit及真实所有者／对象GUID。NativeSpawn使用已准备公式／属性目录，区分直接创建与怪物技能包装，保留0x400距离倒计时与0x200构造起始帧，不套多重射击、佣兵武器程序或怪物技能TOHIT附加值。0x200先减Range再分别安装Total／Current／Activate，并独立写动画序列；其后的Current重设仍不修改Total。塔楼及剩余特殊程序、完整碰撞字段与全局事件交错仍在实施。
-
-`NativeBirthPublication`在私有候选中保留飞弹节点、ID连续区间、世界／实际主人种子、房间节点、定时事件和原包事实；消息容量不足不先提交种子。`transactions::Plan::missileBirth`允许骨墙根段占用同一ID区间前缀，人物／实际Actor与飞弹候选经完整容量接受后共同发布；分组事务和次级接收者不能静默夹带该出生候选。怪物发射及NativeSpawn复用同一构造／发布流程。
-
-population在完成房间休眠恢复及三阶段人口后记录该活动房间的creationOrder；同一人口阶段保留到回访，不代表新建的活动房间已恢复。world的clientRoomsReady只读核对当前客户端归属、完整原近邻物化及每个近邻的人口就绪，经GameInstance／GameHost转交hosting延后发布初次／换幕04。检查不主动物化、生成、重掷或等待整区；03携带的物件种子只保存既有ObjectControl初始化low值，不修改任何随机流。原版门控和协议时点见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。
-
-骨墙玩家路径由SrvDo60准备根段及两条原控制飞弹，Do13在前次PATH跨格时尝试原位置出生，成功才递减TargetY；根段已经死亡但GUID仍在时仍可生成。旧BoneGrowth队列已删除。墙段从各自出生帧安装MonStats.Skill1所指技能Param2期限及原S2出生动作，AI初次25帧、随后15帧检查；骨牢按原12个偏移保留首段和子列表关系。AIGENERAL所有者／子列表与玩家宠物归属分开持有，UMod15死亡候选按原顺序清除子所有者、处理子列表并切换实际怪物主人死亡模式，不以持续根死亡扫描代替。死亡状态／计时撤出共用effects，墙段DD保留真实Actor供仍活跃的Do13查找；未将死亡动画结束当成GUID立即消失。非玩家施放骨墙的公共召唤生产与完整尸体／房间退休顺序仍待后续闭合，新增源码尚未运行。
-
-原0x40 COLLIDE_MISSILE字段独立于DT1和物件栅格，AreaStore预分配后按原点／十字／方形Set／Reset位操作；普通Collision脚印随出生／移动／撤出更新，Do3／34静止点及Do5范围按实际程序写入。寻位与跨房间地形查询读取同一Grid入口，不用重叠计数替换原位语义。公共`native_spawn`保留边缘／内部扫描顺序、Manhattan优先级、首个同分及PosIncrement；`native_field`从当前MPQ的data/global/expfield.d2逐格追踪，保留11099不检查最终中心格的分支。ClassicData准备原256列方向表，AreaStore提供带房间游标的GetFreeCoordinates／GetFreeSpaceEx候选；size0的CheckMask仍检查中心格，与size0的SetMask无占位分开。world的GetFreeSpaceEx从实际调用者房间开始，保留(+2,+3)及原退路；永久门目的端接size3／0xBE11／PosIncrement5的原生寻位。
-
-spatial提供不依赖旧indexedTick的同步动态碰撞投影，读取真实玩家／怪物／NPC／伙伴、地面物品和门户。单位按原Unit／Pet／Wraith模式写入，服务端死亡后无deadCol的尸体使用3×3的0x8000位；客户端尸体使用SmallNoPresence十字，Revive有显式运行时模式；环境陷阱也从公共MPQ准备入口取得模式。原生飞弹接触只投影相邻房间单位链及所需掩码，避免逐弹复制全局单位。候选按原DRLG房间顺序、房间pUnitFirst顺序和独立尺寸配对表选择，先过模式掩码门控；屏障无单位目标时仍执行终止联系。已迁移Do的HandleMissileCollision阶段在其子体／状态／世界操作发布后才选择接触或执行到期Hit，并在后续背压时保留阶段。尺寸表及门控／屏障分支核对本地1.13c D2Game RVA3F320和D2Common ordinal10389（固定1.10f参考中的#10407）；没有把不同版本同号ordinal当成相同函数。
-
-items::createNativeGold提供原生落地金币入口，已由Do18的TowerGold操作经objects调用：调用方提供已寻位的精确坐标，当前MPQ区域等级由AreaMetadata保留；SUNIT两条出生种子分别用于单位基础属性与物品起始种子，数量使用单位随机流。候选、事实、ID和全局随机一起发布，重试不提前消费。objects/tower已准备控制Actor及towerchestspawner，TowerOpen仍经loot的ObjectSource准备；专用开箱语义、出生和跨阶段等待顺序尚须核对，不能据接通调用认定完整原程序。
-
-Hit39已接实际房间随机、Levels.mon／isSpawn选择、1.13c普通周界寻位及真实Actor候选，房间随机／全局随机／ID／组件一起发布；出生组件与HP改由实际单位种子按序投掷。详细入口、1.13c依据及水面／完整出生限制见[权威出生](../gameplay/monsters/POPULATION.md)。不再用普通地形nearest或巢穴子怪代替该生成程序，但它仍未完成全路径复刻。
-
-剩余飞弹范围包括Do18专用开箱及出生交错核对、Hit6／23／54、Hit39水面及完整怪物出生程序、模式7的飞弹目标、其余动态模式切换及原生对象／房间生命周期交错、非玩家骨墙出生、客户端未迁程序和跨领域事件交错。狂犬病近战感染及根载体已在skills/druid_melee接入，剩余按德鲁伊专题核对完整组合，不再列为缺生产入口。当前MPQ仍实际引用Hit39／54；Hit6／23为空用法不能替代其公共程序实现。门户还需QUESTS_PortalCheck及源对象出生先于目的端寻位的顺序；常驻碰撞格已接入，完整特殊载体及历史位交错组合仍未全部认证。
-
-任务控制飞弹的房间保留使用原HASPORTAL语义（原ToggleHasPortalFlag参数0置位，1清除），并进入world房间退休判定。巴尔死亡只创建当前MPQ的控制飞弹，剩余100帧时才调用泰瑞尔出生；删除原立即出生分支。任务空位助手按原1.13c RVA34130的传入半径、行列顺序和跨房间查找移植，保留RVA3420f实际以Y比较X上界的分支；泰瑞尔调用半径为100，与固定1.10f参考的19不同。凯恩最后激活从STONE LAMBDA位置+(6,-3)创建控制飞弹；已完成角色重建世界的原直接开门入口仍保留。永久门源坐标直接使用控制飞弹位置，目的端按上述公共寻位进入实际目标房间，仍未认证完整门户／房间构造顺序。
-
-强制之球InitFunction60准备真实compellingorb非玩家载体，操作对象与该载体保持不同GUID。脚本死亡、OrbMist的距离倒计时、目标楼梯动画及房间保留／释放接入公共领域；objects静态／动态出生都注册原UNIT_OBJECT房间链，不再只能从旁路坐标表找目标。客户端每次推进的工作预算保留未遍历父／子体及其年龄，撤出2048个弹体的静默丢弃；客户端0x73接收已按本地1.13c D2Client RVA AEEE0拆开构造Total、包内Current和随机动画帧：包只调用D2Common ordinal10970修改Current，动画另取飞弹私有种子。当前新增源码分别保留本地回调数、Total／Current和FP8动画序列；引导箭续期不再清零本地年龄／回调数。Do5及通用动画步进共用sequence助手，绘制直接读取该序列，静态图形仍走原表现生命周期。其余客户端程序、初始化门槛与完整逐帧顺序仍待闭合。
-
-救赎与拉达门特共用原尸体选择入口：实际死亡动作完成、MonStats2 CorpseSel及States Udead掩码，奖励／掉落是否结算不再充当MONMODE_DEAD。玩家及非玩家救赎按原随机顺序求Calc1，再写HP、求Calc3并写MANA；资源／随机流、REDEEMED状态、不可选标记共同发布。拉达门特控制飞弹剩余24至2帧做机会回收，剩余1帧跳过机会；公式及HP／MANA写入留在真实飞弹上，不转给已死所有者。拉达门特死亡前置FX同血鸦／安达利尔共用原UNITFIND顺序、恶方过滤与来源私有随机流，延迟击杀进入实例MonsterModifier事件21；原deathCascades批量扫描已撤出，来源撤出不删除接收者已登记的事件。UNINTERRUPTABLE时按原TempSummon回调延后3帧，不预先扣至0HP。脚本死亡也经公共死亡状态候选撤出列表、保留死亡掩码并提交资源／表现，不把ModeChange伪装成普通受击。其他UMod回调、玩家所有宠物的即时原登记撤出及完整世界／事件交错仍需收尾。
-
-原版依据入口为固定D2MOO的`D2Common/src/Units/Missile.cpp`、`D2Game/src/MISSILES/Missiles.cpp`／`MissMode.cpp`、`SKILLS/SkillAma.cpp`／`SkillPal.cpp`及`UNIT/SUnitDmg.cpp`，参数取当前MPQ。各程序、随机消费和全局顺序分别核对；已迁入的单个程序不能代表完整飞弹执行链。
-
-`missiles/rooms`现沿当前房间及原相邻房间数组查询单位，碰撞排序保留等距单位的房间链顺序。单帧几何使用原区域坐标，发布后统一转换弹体及保留路径到目标区域；创建按实际拥有者的当前房间查找，未找到时不消费创建种子。弹体准入／移动／退出接房间单位链，Town／SrcTown分别按当前MPQ判断。原73的ClientSend、真实拥有者、剩余帧和穿刺值进入统一编码与视野准入，后来进入视野的玩家也能同步当前弹体；协议没有飞弹GUID，不虚构RemoveUnit(3)。Holy Bolt治疗在HitByMissile后重新计算，使用弹体种子；HP和Overlay保留各自提交阶段，背压不重复治疗。BaalInferno的玩家法力撤出在普通伤害前作为有序操作执行。
-
-`missiles/motion::collisionContacts`沿D2MOO `MissMode::MISSMODE_HandleMissileCollision`先检查碰撞模式／激活门槛及PATH保存步；无接触步或未到激活期不准备单位候选。原碰撞掩码命中首个路径格后才执行只读单位资格／位置过滤，同一次调用内复用候选，仍按原相邻房间链顺序选首个重叠目标。玩家／Actor领域位置不含PATH的半格中心，尺寸配对前按`floor(position+0.5)`转换为单位原生子格，与`AreaStore::patternFootprint`／移动占位及原位置包一致；飞弹保存步已经是PATH格中心，继续按`floor(cell)`取格。不能对单位直接向下取整，否则掩码登记与尺寸筛选可能相差一格并漏掉擦边接触。原尺寸矩阵依据`D2Common_10407_Impl`／1.13c ordinal10389，未扩大命中范围。不跨回调缓存候选或动态占位，不改变碰撞掩码、NextHit、接触／伤害顺序与种子消费。完整画面与实际伤害对齐仍待实机复核。
-
-仍未完成的完整战斗边界包括：技能／物品事件的原全局顺序与队列2、直接攻击的全部种子及来源采样、其余职业／怪物专属飞弹程序及全部来源组合。TargetX／TargetY已成为创建参数及弹体拥有值，伤害程序读取真实参数；未初始化的原生零值只会取消Rabies毒，不再抛出缺参异常，德鲁伊的真实感染／传播生产端现已接入，具体边界见职业专题。跨区域及原生伤害状态已有实现；全部创建初始化、来源与组合仍缺同版本对照。
+`missiles`持有弹体、路径与出生候选，`combat/missile_contact`持有接触和伤害阶段；`NativeBirthPublication`协调ID、随机、房间、定时器及可靠事实的共同发布。数值来源、原Do／Hit／Damage程序、碰撞顺序、专用世界载体和未闭合边界统一见[权威飞弹](../gameplay/combat/MISSILES.md#飞弹数值与接触收尾源码)。本标题保留供旧链接使用，不另维护程序清单。
 
 ## 组合与所有权
 
@@ -202,7 +153,7 @@ FrameFacts是有界的本步临时事实，只允许后续阶段消费；每步�
 
 SkillRules只持有公共SkillRuleSpec数值和程序参数，不持有动画／声音资源路径。hosting从当前MPQ的SkillSpec准备rules()纯值；resolveSkill、伤害／耗蓝／持续时间、序列时序和有依据的弹体纯计算供两端调用。服务端skills／missiles／effects负责世界状态与调度，combat负责权威命中／伤害，客户端仅从原包及本人已知属性生成表现。原版公共职责和每项技能分派见[女巫技能](../gameplay/skills/SORCERESS.md#30项公共职责核对)及[亚马逊技能](../gameplay/skills/AMAZON.md#30项职责核对)，不能把D2Game整套执行器解释为客户端共享接口。
 
-PreparedRules持有不可变纯值；全局ItemCatalog共享同一宿主只读内容，每位PlayerState持有自己的EquipmentRules／CharacterRules／MeleeRules／SkillRules。hosting/game_content与character_content从MPQ准备碰撞、职业、各等级物品属性、经验、学习、基础被动及难度抗性；内核不持有ClassicData／Archives或MPQ回调。普通攻击动画和区域人口由hosting/combat_content准备；hosting/skill_content准备女巫全部主动技能、SC／序列动画、三类支配及Hydra，以及亚马逊武器／状态／序列／宠物规则；hosting/companion_content准备女武神原MonEquip装备；其他职业与宝物类契约仍未准备；空规则明确Unavailable，新增或跨人转移物品须显式准备新身份对应属性，不能套用旧缓存。
+PreparedRules持有不可变纯值；全局ItemCatalog共享同一宿主只读内容，玩家规则绑定各自人物及装备身份，不借用房主规则。hosting/game_content与character_content准备碰撞、职业、物品属性、经验、学习、被动及难度抗性；skill_content和各职业／伙伴准备器提供技能、动作、序列及召唤纯值。具体职业范围由[技能目录](../gameplay/skills/README.md)维护，不能沿用早期仅女巫／亚马逊准备的清单。内核不持有ClassicData／Archives或MPQ回调；空规则明确Unavailable，新增或跨人转移物品须准备新身份对应属性，不能套用旧缓存。旧MeleeRules已撤出，近战入口见[共享近战程序](../gameplay/skills/GENERAL.md#旧近战链与随机迁移)。
 
 区域交接由GameHost.pendingAreas／installArea／failArea提供，结果带GameHandle及PrepareArea身份。World合并同目的请求，最多16项在途；来源须为原生邻接，失败地区明确Unavailable，不重复生成或替换地图。宿主prepareWorldArea调用同一NativeMapGenerator准备原房间／碰撞／出口／边界及objects.txt中立碰撞，按调度线程交纯值。按玩家及直接自然邻区派生Active／Sleeping；当前不驱逐已准备区域，地图随实例释放，导航借用保持有效。客户端按原03／07／08及位置包调用同一生成器，不接收地图对象。
 
@@ -228,27 +179,7 @@ hosting交付人口纯值、RoomLayout、组件与populationDeferred；populatio
 
 ## 战斗关系与提交
 
-普通怪物准入保留显式`hostile`事实；`Actor::alignment`统一原表阵营、主人与转化覆盖，`enemyTarget`还要求原敌对身份、与玩家善方不同阵营且非环境控制器。网络投影与权威关系使用同一有效值，不再将任意无主人实体视为敌人。`gameplay/combat/alignment.hpp`提供两端共用的原单位枚举：恶方0、中立1、善方2；MonStats.Align的善方1／中立2只在内容准备时转换。两个不同单位只有恶方／恶方、善方／善方算同阵营，中立／中立不算。
-
-`Participants`按当前玩家、实际宠物主人和social关系返回Self／Allied／Neutral／Hostile／Unknown；普通攻击要求Hostile与目标受伤能力，帮助资格独立。玩家及宠物之间按攻击者→目标主人的位8决定PvP资格，优先于队伍；非队友不等于敌对，Unknown拒绝攻击。依据为本地D2MOO `STATLIST_AreUnitsAligned`、`SUnit::SUNIT_AreUnitsAligned`、`SUNIT_CanPetBeTargetedBySkill`、`SUNIT_CanAllyBeTargetedBySkill`；当前技能参数和过滤标志仍来自MPQ准备。原1.13c客户端静态依据与未复验边界见[阵营专题](../gameplay/monsters/PRESENTATION.md#客户端与服务端阵营规则)。
-
-| 双方／用途 | 当前策略 |
-| --- | --- |
-| 本人、同主人伙伴 | Self／Allied；禁止普通伤害，技能专用资格独立 |
-| 同队玩家及伙伴 | 友方光环按social当前同队关系，候选和提交均复验 |
-| 不同主人玩家及伙伴 | 有攻击者方向敌意为Hostile，否则按队伍或Neutral；不自动授予光环 |
-| 玩家／伙伴与明确敌怪 | Hostile；目标还须具备受伤能力，活人／区域／城镇／碰撞另验 |
-| 敌怪与敌怪 | Allied；特殊复活／死亡级联仍由专用规则执行 |
-| 诱饵、女武神、佣兵 | 关系随控制者；攻击能力独立，诱饵不因友方身份获得攻击 |
-| Hydra | 保留不可受普通伤害、独立发射者表现和主人施法归功 |
-| 转换单位 | 临时善方；施法者记录用于AI／归功，不当作原AIGENERAL宠物主人；不因此获得宠物治疗资格。转换开始／结束递增控制代次，旧来源请求失效 |
-| NPC、未知实体 | NPC按真实阵营及isAtt能力进入公共参与者视图；服务／任务身份本身不授权伤害或帮助，未知实体拒绝 |
-
-AI、怪物施法、普通武器／范围目标、伙伴选敌、弹体、周期效果与最终combat已接共享关系或敌怪能力查询。Holy Bolt、Enchant、Unsummon、Redemption及尸体仍保留各自资格，不把同队当作所有技能的通用授权。非玩家光环在提交时复验当前关系，避免候选捕获后离队／转换仍授予效果。
-
-Enchant按原SrvDo025对齐主人／队伍后的盟友关系，已知活目标不合资格时退回施法者；无主善方怪物／NPC也可获得附魔，NPC阵营由hosting准备并用于同一AA投影。Holy Bolt的治疗候选包含玩家及怪物，只接受自己的宠物或队友／队友宠物，碰撞与生命提交均复验；不能以“非敌对”代替治疗资格。Conversion只接受当前恶方，结束回到恶方；原A7不清旧属性，因此hosting在阵营非零变零时用A8显式发送零值。
-
-GreaterMummy辅助候选按原Fn022要求与施法者同阵营且目标非善方，避免转化后继续治疗／复活恶方；独特FallenShaman回调按原Fn013要求尸体为恶方，不能仅凭非善方通过。
+`Participants`读取真实玩家、非玩家及social关系，不持第二份阵营或位置；`Actor::alignment`是非玩家有效阵营，单位能力与敌意分别判定。关系矩阵、技能专用资格及原版依据统一见[权威关系与技能资格](../gameplay/combat/FACTIONS.md#权威关系与技能资格)，候选和提交均须复验。
 
 `SourceBinding`保存攻击来源、控制者、击杀归功、有效阵营、敌对／转换状态和控制代次。近战入队、弹体创建与法术准备建立绑定，提交重新读取当前身份；死亡本身不改变绑定，换区／断线仍由原来源资格取消，转换往返不会让旧请求重新有效。绑定不保存裸指针，也不写D2S；Hydra等现有主人代理技能的独立emitter仍保留于弹体。
 
@@ -326,31 +257,30 @@ GreaterMummy辅助候选按原Fn022要求与施法者同阵营且目标非善方
 
 ## 女巫全技能执行
 
-当前内核已接女巫26项主动及4项被动，逐项范围、原版证据和未认证边界见[女巫技能](../gameplay/skills/SORCERESS.md)。技能、法力、伤害、碰撞、动画、冷时长／难度下限、召唤身份及期限由hosting准备当前MPQ纯值，协同取基础等级，支配取有效等级；不把旧GameSession带回内核。
+女巫逐项执行范围、Clt／Srv差异、原版依据及未覆盖组合由[女巫技能](../gameplay/skills/SORCERESS.md)维护；本节只定位模块协作，不另维护30项完成表。
 
-- `skills/casting`准备SC／seq12／seq6时序、延迟及Inferno通道，待释放值存放于actions。开始和释放复验活人、区域代次、选择、目标、城镇许可与资源；Inferno转向仅广播目标，不重扣启动蓝或重启节拍。
-- `missiles/launch`／`programs`按行为族管理直线、带电、环射、冰封球、连锁、地面火、陨石与暴风雪；子弹节点、视觉事实和伤害请求一起准备。`combat/spell_damage`逐目标执行抗性、ColdMastery、冷时长、Static下限、NextDelay与击退，保留结果和游标，不在背压时重掷。
-- `effects`持有状态／恢复、周期和有界反击队列；护盾在伤害减免前计算，装甲事件按命中／尝试／ReturnFire分离。Enchant跨玩家采用最多两份CharacterEdit成组提交；友方单位状态单独由effects持有，晚入局状态可查询。
-- `companions`管理原三头Hydra生命周期和AI；monsters仍拥有单位／生命／路线，controlled入口准备受控单位，死亡不发敌怪经验或掉落。Hydra不跟随跨区。
-- 远程心灵传动依旧走inventory／objects／travel的真实资格、距离和事务；Teleport同区位置与扣蓝一起提交。已释放弹体在施法者死亡后可继续，换区／断线清理；未释放动作取消。
+| 入口 | 所有权与协作 |
+| --- | --- |
+| hosting／skills/casting／actions | hosting准备当前MPQ纯值；casting复验起手与释放资格，actions持待释放值 |
+| missiles/launch、programs／combat/spell_damage | 分别负责弹体与子体、逐目标接触；准备节点／事实并保留背压游标，不重掷 |
+| effects／transactions | 持状态、周期、反击与恢复；Enchant跨玩家使用成组CharacterEdit提交，具体接收资格与护盾顺序归职业专题 |
+| companions／monsters | 分别持Hydra控制关系与AI阶段、真实单位／生命／路线；召唤规则与337动作链见职业专题 |
+| inventory／objects／travel | 心灵传动复用真实领域资格和事务；Teleport通过travel提交位置与费用，不在技能模块维护第二套移动 |
+| death／reactions | 分别处理击杀恢复去重与装备触发队列；充能源和物品事务见[库存](INVENTORY.md) |
 
-hosting仅对原ClientSend弹体编码73；该标志不等同常规创建广播，Blaze／FireWall／Meteor／Blizzard的创建及子火段由原动作／状态重建，不重复发送73。普通本人4C／4D按原PlrMsg省略，其他可见客户端仍接收；当前未接晚入视野弹体重同步。4C／4D派生普通投射、连锁、Inferno及Hydra，A3呈现ThunderStorm，A7／A9呈现单位状态，67/action20呈现原击退，11／2C呈现叠层／附加音效。私有资源仍用1F，同区传送15，命中0C。原服与自研客户端只有传输来源差异，所有新增表现写入同一RemoteScene／ClientMissile程序。
-
-运行态施法、弹体、状态、反击和召唤不写D2S。击杀回生命／法力由death捕获并在奖励重试中只提交一次。充能及装备触发接独立来源、事务与reactions队列，准确范围和专用程序暂缓只见[库存](INVENTORY.md)。晚入局恢复单位和状态，不重播历史施法／弹体。完整PvP专用组合、跨区弹体、其他幕怪物及未支持职业尚有缺口，不能据此宣称完整战斗系统。
+动作、状态与ClientSend／0x73的重建及视野同步见[领域和原包行为](../gameplay/skills/SORCERESS.md#领域和原包行为)，表现共用RemoteScene／ClientMissile。运行态动作、弹体、反击和召唤不写D2S，保存边界见[存档](SAVES.md)。
 
 ## 死灵技能与召唤
 
-66–95共30项已接，当前MPQ准备纯规则、动作与资源事实；执行范围、原版依据和缺口维护在[死灵技能](../gameplay/skills/NECROMANCER.md)。actions持待释放值，skills执行释放与尸体消费编排，effects/necro持有诅咒及接触反应，companions/necro持有召唤上限／同行／墙段增长／重生寿命及准备队列，monsters唯一持有实体和生命；反伤、吸取与血魔分配分阶段重试。精通变化沿hosting重新准备既有伙伴，不重新消费材料。
+执行范围、原版依据和缺口维护在[死灵技能](../gameplay/skills/NECROMANCER.md)。actions持待释放值，skills执行释放与尸体消费编排，effects/necro持有诅咒及接触反应，companions/necro持有召唤上限／同行／重生寿命及准备队列，monsters唯一持有实体和生命；反伤、吸取与血魔分配分阶段重试。精通变化沿hosting重新准备既有伙伴，不重新消费材料。骨墙生长由原控制飞弹负责，不恢复旧BoneGrowth队列；出生、所有者链及死亡顺序见[召唤依据与入口](../gameplay/skills/NECROMANCER.md#依据与入口)。
 
 铁魔地面材料移除、法力／充能和原kf保存值同笔事务提交；存活退出恢复，主人／铁魔死亡、取消或被其他石魔替换清除。尸体可用性、原重生资格与身份由monsters复验；原PetType／7A、状态属性及弹体表现沿公共客户端投影，客户端不判消耗／伤害／材料保存。磁盘仍为v96，见[SAVES](SAVES.md)。
 
 ## 亚马逊武器、被动与伙伴
 
-24项主动／6项被动均已接；逐项原回调、共享算法、原服参考和缺口见[亚马逊技能](../gameplay/skills/AMAZON.md)。`skills/weapon`持有武器资格、接近、原Jab／Impale序列和Strafe／Fend回滚释放；`inventory/weapon_cost`及transactions原子提交弹药、数量／耐久、法力和公开事实；`missiles/weapon`管理武器弹体、引导／穿透／毒云／地面火，`combat`使用原六通道快照、命中和目标修正，`effects/amazon`管理内视与慢速箭。接触命中结果只掷一次传给combat；范围回调与箭本体使用不同发生标识，背压不重复扣费／掷伤。
+`skills/weapon`负责武器资格、接近和序列编排；`inventory/weapon_cost`与transactions提交弹药、数量／耐久、法力和事实；`missiles/weapon`管理武器弹体，combat负责实际接触，`effects/amazon`负责内视／慢速箭。具体回调、随机与范围身份见[专项计算与领域入口](../gameplay/skills/AMAZON.md#专项计算与领域入口)。
 
-女武神使用类型化 `companions::Preparation／Prepared` 内容队列；hosting读取当前MPQ并沿现有物品生成准备纯值，结果绑定请求及预留种子。装备revision、等级、基础技能及来源区域变化拒绝迟到结果，自然资源恢复不会取消准备。companions控制诱饵期限／替换、女武神AI／同行／换区／主人退出，monsters唯一拥有实体／生命／路线／装备；统一分配实例ID，不使用玩家物品原ID，不发敌怪经验／掉落。
-
-replication的宠物归属投影独立于房间兴趣；hosting按原13字节7A同步名册，死亡／退役删除归属，晚入局重建。原9D传怪物装备，A7／A8／A9传伪装及单位状态属性；客户端仍从原表和同一原包消费者绘制。原7F向主人同步宠物生命／区域，独立于可见单位；客户端头像投影及未专项复验边界见[头像](../gameplay/characters/HIRELINGS.md#召唤物与佣兵头像)。完整装备附加触发、全部PvP伙伴组合与完整伙伴受击动作尚未完成；运行态伙伴／装备及内容准备不写角色D2S。
+`companions::Preparation／Prepared`连接hosting的MPQ准备与伙伴准入，companions持控制关系，monsters唯一持实体／生命／路线／装备；异步结果的身份复验见同一专题。replication持宠物归属投影，hosting编码原名册、装备与状态；[原包差异](../gameplay/skills/AMAZON.md#原版依据与客户端差异)和[头像](../gameplay/characters/HIRELINGS.md#召唤物与佣兵头像)分别维护协议表现及限制，不以可见单位代替归属。
 
 ## 刺客武学、陷阱与影子
 
@@ -406,9 +336,9 @@ inventory/consumption准备数量、腰带位置和效果计划；effects预先�
 
 ## 死亡与尸体
 
-服务端 death 分为死亡结算、复活和拾回规划；transactions 原子提交人物、库存、尸体元数据及地面物品。沿用 master 的装备／Cursor 转尸体、腰带收缩、金币惩罚和掉落、难度经验损失及同局 75% 经验返还规则。生命归零后等待当前 MPQ 死亡动画，原 41 请求回本幕城镇并恢复资源；原 13 只授权本人尸体，依需求反复装备，再尝试空装备位／腰带／背包，余物保留原尸体。carry1与重复方块不能绕过；尸体回收不套地面合书／合堆。经验在尝试物品前只结算一次，与原sub_6FC80440一致。复活／接近拾尸／拾取在背压时保留意图，复验人物、区域代次与走跑意图；死亡落地发布GroundDropFact，身份和世界版本容量有前置检查。对象身份不复用。
+death负责死亡结算、复活和拾回规划；begin在DT起始提交罚金／经验、击杀归功及耳朵，settle在原死亡动画到期后提交尸体／装备、腰带和剩余金币；各阶段有独立完成标志。transactions原子提交该阶段的人物、库存、尸体元数据及地面物品。复活／接近拾尸／拾取在背压时保留意图，复验人物、区域代次与走跑意图；死亡落地发布GroundDropFact，身份和世界版本容量有前置检查，对象身份不复用。
 
-原59／8E／0D与9D公开尸体和外观；普通库存命令不能访问尸体容器。局内尸体与持久投影不是同一范围，编码、首具非空尸体及可返还经验规则见[存档](SAVES.md#原格式与保存内容)，玩法限制见[死亡／尸体](../gameplay/characters/PLAYER_DEATH.md)。PvP死亡不扣经验、只掉落金币惩罚额，击杀者信息在致命提交时捕获，并广播原5A/type6；硬核权限及耳朵战利品仍未扩展。
+hosting用原59／8E／0D与9D投影尸体和外观；普通库存命令不能访问尸体容器。普通回收顺序、损失、PvP及HC授权统一见[死亡／尸体](../gameplay/characters/PLAYER_DEATH.md)，局内尸体与持久投影差别见[存档](SAVES.md#原格式与保存内容)。HC权限与有真实死者身份的耳朵掉落已接，但完整组合未认证，不以模块入口推断规则已完整。
 
 ## 世界物件基础
 
@@ -430,7 +360,7 @@ quests按幕持有实例事件／机关时钟、个人观察、目标资格和�
 
 travel另持有带菜单代次的传送点授权与回城门对；objects独立管理物件模式／碰撞／动画时钟，world独立准备目的地。operation23首次中性启动只解锁并发送原0x0E，mode1／2再次点击才发送0x63。原49复验授权GUID、原每轴10／女巫22距离及MPQ目录中的已激活目的地；准备内容后再次复验授权代次、区域、人物意图与碰撞落点。level0／同区域关闭取消旧过渡，换区、死亡及离线撤销授权。hosting准备真实DS1传送点落点，公共Grid.nativeSpawn执行有界原扫描，不退回一般出生点。当前规则、原版依据与未完成依赖只维护在[物件／传送点](../gameplay/world/OBJECTS.md#自研传送点)。
 
-回城物品代码和技能号从当前 MPQ 解析，原20使用物品或原右键物品技能都走同一创建入口。卷轴数量／书本charges和门对替换原子提交；城镇落点取原地图标记，图形、范围和开启时间读Objects原59，缺落点或资源拒绝且不消耗。每人一对门，原51／60／82投影，两个GUID的客户端生命周期一并管理；原22更新物品技能数量。本人野外进城保留门，城镇返回野外移除，离线移除；门不进存档。当前没有队伍资格权威，因此只允许主人使用，不猜测共享权限。
+回城物品与技能共用travel创建入口，卷轴／书本费用及门对替换由transactions共同提交。门对生命周期、队友资格、原包及任务例外统一见[自研回城门](../gameplay/world/OBJECTS.md#自研回城门)，不由客户端页面推断授权。
 
 NPC旅行接受时捕获交谈身份，允许原客户端随后0x30关闭；目的地准备完成后再次复验真实NPC距离／视线、资格与新交谈身份，完成幕记录与TravelFact一起提交。已接五幕任务门禁与跨幕资格；古代人活动期间成功创建回城门会通知quests重置战斗。队友回城门已复验同队资格，队友穿越不关门；分任务奖励传播已接，完整房间邻接／特殊多人事件和旅行仍有缺口，具体任务例外见各幕专题。
 

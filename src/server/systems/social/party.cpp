@@ -92,7 +92,7 @@ DomainResult<> System::party(const ActorContext &actor,const Request &request) {
     case Action::LeaveParty: {
         const auto group=partyId(actor.player);
         if(group==UINT16_MAX) return {DomainStatus::Conflict,{}};
-        for(const auto &[id,party]:next.parties) if(party==group && id!=actor.player)
+        for(const auto &[id,party]:next.parties) if(party==group)
             notices.emplace_back(PartyNoticeFact{id,actor.actor,9});
         removeMember(next,actor.player);
         break;
@@ -144,7 +144,9 @@ DomainResult<> System::hostility(const ActorContext &actor,const Request &reques
             uint16_t(a->persistent.player.level),uint16_t(b->persistent.player.level)});
     };
     const bool current=(flags(actor.player,target->player)&8)!=0;
-    if(current==request.enabled) {
+    // PlayerList compares its raw flag (0 or 8) with the 5D parameter
+    // (0 or 1). Repeating "enable" must still take the cooldown branch.
+    if(!current && !request.enabled) {
         publishRelation(actor.player,target->player,current);
         publishRelation(target->player,actor.player,(flags(target->player,actor.player)&8)!=0);
     } else if(!request.enabled) {
@@ -152,9 +154,18 @@ DomainResult<> System::hostility(const ActorContext &actor,const Request &reques
         facts.emplace_back(PartyNoticeFact{target->player,actor.actor,4});
     } else {
         if(next.relations[{actor.player,target->player}].hostileAfter>now) {
-            const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
-                {SoundFact{actor.actor,0,actor.area,0x13},PlayerMessageFact{16,{}}}});
-            return sent?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{sent.status,{}};
+            publishRelation(actor.player,target->player,current);
+            publishRelation(target->player,actor.player,(flags(target->player,actor.player)&8)!=0);
+            // PartyScreen refreshes both directed records even on rejection.
+            // The private notice precedes these direct packets; AttachSound's
+            // unit update follows them in the original client stream.
+            const auto sent=ports_.events.publishGroup({
+                {0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{PlayerMessageFact{16,{}}}},
+                {0,actor.tick,{}, {AudienceKind::Game,{},actor.area},std::move(facts)},
+                {0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{SoundFact{actor.actor,0,actor.area,0x13}}}});
+            if(!sent) return {sent.status,{}};
+            std::swap(state_,next);
+            return {DomainStatus::Applied,std::monostate{}};
         }
         next.relations[{actor.player,target->player}].hostileAfter=now+60000;
         next.lastHostility[actor.player]=now;
@@ -174,7 +185,7 @@ DomainResult<> System::hostility(const ActorContext &actor,const Request &reques
     const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Game,{},actor.area},std::move(facts)});
     if(!sent) return {sent.status,{}};
     std::swap(state_,next);
-    if(request.enabled && !current) ports_.travel.closePlayerPortal(actor.player);
+    if(request.enabled) ports_.travel.closePlayerPortal(actor.player);
     return {DomainStatus::Applied,std::monostate{}};
 }
 }

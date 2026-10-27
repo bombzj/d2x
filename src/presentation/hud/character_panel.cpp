@@ -65,7 +65,20 @@ void SceneView::drawCharacter(Vec mouse) const {
     const auto label = [&](const char *key) -> const std::string & { return assets_.characterLabels.at(key); };
     const auto cell = [&](const std::string &value, float left, float baseline, float right,
                           bool small = false) {
-        characterText(small ? assets_.characterLabelFont : assets_.font, value, left, baseline, right);
+        const ClassicFont *font=small?&assets_.characterLabelFont:
+            value.find('\n')!=std::string::npos?&assets_.characterCompactFont:&assets_.font;
+        const auto fits=[&](const ClassicFont &candidate) {
+            float width=0;
+            for(const auto character:utf8Decode(value)) {
+                if(character=='\n') width=0;
+                else width+=candidate.widthOf(character);
+                if(width>right-left+1) return false;
+            }
+            return true;
+        };
+        if(!small && !fits(*font)) font=&assets_.characterCompactFont;
+        if(!small && !fits(*font)) font=&assets_.characterLabelFont;
+        characterText(*font, value, left, baseline, right);
     };
     const auto &player = characterView_;
     // Original 1.13c D2Client RVA BD613: long names use font8/font6.

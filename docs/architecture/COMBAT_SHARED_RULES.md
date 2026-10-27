@@ -73,7 +73,7 @@
 - 非玩家普通接触同样复用不足一点资源归零规则，持续毒伤／撕裂伤口的逐帧扣血及城镇佣兵下限保持独立分支。来源绑定变化后的后续吸取、转换和反冲仍沿既有取消策略，尚未认证全部跨帧背压组合。
 - [表达式核心](../../src/gameplay/rules/formula.hpp)按Fog的原运算优先级、左结合幂、两支条件求值、除零和32位回绕处理，显式随机入口按原闭区间规则消费调用者种子，求值使用64槽操作数栈。描述接口使用相同核心、缺随机输入则返回未知。它不是原字节码ABI；完整战斗参数目录、属性查询上下文及准备器迁移仍属后续任务，未经运行认证。
 - [单位整数距离](../../src/gameplay/units/distance.hpp)依据AiUtil的带尺寸与不带尺寸两种计算；调用者保留各自坐标转换，不能据此统一floor与截断。
-- [属性程序](../../src/gameplay/items/property_program.hpp)、[技能来源](../../src/gameplay/skills/use_source.hpp)、效果查询及装备贡献说明已从内容／执行器拆出；没有新增原本不支持的属性函数或触发程序，也没有宣称完整StatList语义。 [StatList](../../src/gameplay/stats/stat_list.hpp)已补入writeNativeBaseStat及propagateNativeStatDelta：基础零值删除，派生FullStats按KeepZero保留；父级按原reverse-op／op-base依赖顺序逐项写入并通知，存储raw值与MinAccr查询值分别表达。装备的完整列表投递／撤出、套装全局重写和玩家被动已开始使用该入口，状态和怪物模式也修正基础零值语义；人物与佣兵已开始保存本件及单位不可变FullStats；普通查询读取缓存，itemStatsAfterUnitChange在挂接／解除时显式刷新item-applying op，hasUnit与hasOwner分开表达原pUnit／pOwner。人物原地属性／充能变化开始逐层传播原delta，主手切换仅更新DamageRelated项。[技能属性回调](../../src/gameplay/skills/stat_callbacks.hpp)区分本技能、全部被动、充能和光环；玩家候选已开始接前三区分，单技能新条目保留基础1→0两次刷新，反向op传播支持读取回调更新后的来源树，技能链顺序来自CharStats及原追加行为。光环激活／撤销已接属性逐写回调、状态来源及计时器候选；装备光环的原PeriodicStats事件驱动已接入，完整原交错与来源组合仍未验收，见[当前持续效果入口](../gameplay/skills/COMMON.md#当前持续效果入口)。[技能装备／恢复](../../src/gameplay/skills/equipment.hpp)承载纯配对手位和选择恢复门，原MPQ flags及类型组由宿主准备；选择清理事实随属性候选提交，库存边界按原同ID／GUID及NoLevel／NoQuantity条件恢复，法力／冷却不代替该门。特殊基础动作仍需真实主武器GUID，缺少时明确Unknown。全部缓存延续、未投递物品、使用中技能、单位事件和特殊来源仍未迁移完整。具体来源边界与DLL入口见[装备](../gameplay/items/EQUIPMENT.md#当前执行)。
+- [属性程序](../../src/gameplay/items/property_program.hpp)、[技能来源](../../src/gameplay/skills/use_source.hpp)、效果查询及装备贡献说明已从内容／执行器拆出；没有新增原本不支持的属性函数或触发程序，也没有宣称完整StatList语义。 [StatList](../../src/gameplay/stats/stat_list.hpp)已补入writeNativeBaseStat及propagateNativeStatDelta：基础零值删除，派生FullStats按KeepZero保留；父级按原reverse-op／op-base依赖顺序逐项写入并通知，存储raw值与MinAccr查询值分别表达。装备的完整列表投递／撤出、套装全局重写和玩家被动已开始使用该入口，状态和怪物模式也修正基础零值语义；人物与佣兵已开始保存本件及单位不可变FullStats；普通查询读取缓存，itemStatsAfterUnitChange在挂接／解除时显式刷新item-applying op，hasUnit与hasOwner分开表达原pUnit／pOwner。人物原地属性／充能变化开始逐层传播原delta，主手切换仅更新DamageRelated项。[技能属性回调](../../src/gameplay/skills/stat_callbacks.hpp)区分本技能、全部被动、充能和光环；玩家候选已开始接前三区分，单技能新条目保留基础1→0两次刷新，反向op传播支持读取回调更新后的来源树，技能链顺序来自CharStats及原追加行为。光环激活／撤销已接属性逐写回调、状态来源及计时器候选；装备光环的原PeriodicStats事件驱动已接入，完整原交错与来源组合仍未验收，见[当前持续效果入口](../gameplay/skills/EFFECTS.md#当前持续效果入口)。[技能装备／恢复](../../src/gameplay/skills/equipment.hpp)承载纯配对手位和选择恢复门，原MPQ flags及类型组由宿主准备；选择清理事实随属性候选提交，库存边界按原同ID／GUID及NoLevel／NoQuantity条件恢复，法力／冷却不代替该门。特殊基础动作仍需真实主武器GUID，缺少时明确Unknown。全部缓存延续、未投递物品、使用中技能、单位事件和特殊来源仍未迁移完整。具体来源边界与DLL入口见[装备](../gameplay/items/EQUIPMENT.md#当前执行)。
 
 以上为源码状态和证据边界，不是构建、运行或全内容验收记录。
 
@@ -190,3 +190,26 @@ Srv／Clt 本来不同的参数和程序分别保留。可以共享环射方向�
 旧内容也要成为这些契约的消费者。只给德鲁伊／刺客和新怪物使用新公共函数，而保留旧职业复制公式，会重新产生两套规则；但迁移任务应在目标契约明确后编写，不反过来用现有函数签名限制设计。
 
 公共层完成的标志：每个开放函数输入完整、单位明确、原出处可查、输出与副作用界限清楚、消费者不复制规则、不需拿整局对象才能调用。准确性最终仍需相应证据，不以“参考了 D2MOO”一句话替代。
+
+## 精确数值与随机契约
+
+### 数值类型
+
+目标权威热路径避免 `float → 定点 → float` 往返。采用业务命名类型，例如 `Life256`、`Mana256`、`Damage256`、`PoisonRate`、`Frame`、`AnimPhase256`、`PathPosition`、`StatValue`；这些名称是设计示意，实际类型落点按现有代码决定。**不是所有字段都用 8 位小数**：毒速率、HitShift、路径坐标、速度、序列以及表自身单位必须分别核实。
+
+每个原算法说明输入单位、位宽、有符号性、中间扩宽、截断、右移、钳位时点和除零策略。数学上等价不代表兼容，例如先协同后 shift 与先 shift 后协同、先除后乘与乘后除、先减少时长再应用抗性。不能借 C++ 有符号溢出实现原 x86 行为；需要兼容的环绕／移位用明确无符号操作描述，其余无效范围明确拒绝。
+
+当前[CharacterRecord](../../src/gameplay/character/record.hpp)、[资源事务](../../src/server/systems/transactions/resources.cpp)已使用Fixed8；[伤害请求](../../src/server/systems/combat/requests.hpp)、[减免](../../src/gameplay/combat/mitigation.hpp)和主要飞弹数据采用整数／定点。[damage_resolution](../../src/gameplay/combat/damage_resolution.hpp)也已提供原整数入口，不再以“人物资源仍为浮点”描述当前差距。剩余工作是逐消费者核对位宽、取整、负中间量及转换边界；例如[missiles/damage.hpp](../../src/gameplay/missiles/damage.hpp)仍有float区间适配，不能由主链定点推断全来源精确。展示允许转浮点，原版明确的double回调保留其语义，D2S／原包各按原契约编码；运行态类型变化不自动授权改磁盘格式。
+
+### 随机契约
+
+[core/random.hpp](../../src/core/random.hpp)已实现原递推、初始高字和父流派生。继续复用，重点审计调用者：
+
+1. 每次掷数记录语义所有者：游戏／房间／单位／物品／弹体及必要子流；不能默认全部读取实例全局流。
+2. 区分闭区间属性 roll 与伤害路径实际采用的端点；相等／反序／无效范围的消费次数也保留。
+3. 候选排序不任意改成 EntityId、距离排序或哈希遍历。确定性顺序和原版顺序是两种要求。
+4. 在原语义点消费随机；费用不足、失败分支也可能有原消费，不能统称“失败绝不推进”。容量不足重试则不能产生第二次逻辑掷数。
+5. 已完成逻辑掷数保留结果与阶段，不能回写过期全局种子。若多个后续事件共享同一流，必须保持原相对顺序，不能用随意分流解决背压。
+6. 客户端仅用公开可知的种子／表现随机；共享算法不意味着共享服务器私有流。
+
+服务端可记录受限的随机消费诊断，包含 owner、发生标识、调用点、前后种子与结果；只在管理端、授权诊断中可见，不广播给客户端。

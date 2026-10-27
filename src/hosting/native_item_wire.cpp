@@ -15,6 +15,7 @@ namespace {
 using net::protocol::BitWriter;
 constexpr uint32_t itemNewFlag = 0x1;
 constexpr uint32_t itemQuantityFlag = 0x20;
+constexpr uint32_t duplicatedSourceFlag = 0x08000000;
 constexpr uint32_t beltRepositionFlags = itemNewFlag | 0x400; // IFLAG_UNK1.
 // D2MOO D2Constants / SCmd original item action identities, not C2S opcodes.
 enum class ItemAction : uint8_t {
@@ -154,7 +155,7 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
 }
 void emitItem(std::vector<Bytes> &result, const ClassicData &data, const PersistentCharacter &state,
               const ItemInstance &item, ItemAction action, unsigned ownerType, uint32_t owner, std::optional<unsigned> page = {},
-              std::optional<ItemLocation> previous = {}, uint32_t transientFlags = 0) {
+              std::optional<ItemLocation> previous = {}, uint32_t transientFlags = 0, bool includeSockets = true) {
     if (item.id.value > UINT32_MAX) throw std::runtime_error("Item ID exceeds native protocol capacity");
     auto wireItem=item;
     if(action==ItemAction::Shop) {
@@ -205,20 +206,23 @@ void emitItem(std::vector<Bytes> &result, const ClassicData &data, const Persist
         saved.flags |= itemNewFlag | ((saved.body == 4 || saved.body == 5) ? 0x40 : 0x80);
     }
     saved.flags |= transientFlags;
+    saved.flags |= item.nativeFlags & duplicatedSourceFlag;
     const auto body = packed(data, saved);
     const bool ownedPacket = ownedAction(action);
     const size_t prefix = ownedPacket ? 13 : 8;
     if (body.size() + prefix > 255) throw std::runtime_error("Item exceeds native packet capacity");
     const auto *def = data.items.find(item.definition);
     unsigned component = unsigned(def->appearance.component);
-    if (bodyPosition && (saved.body == 4 || saved.body == 11)) component = 5;
-    if (bodyPosition && (saved.body == 5 || saved.body == 12)) component = def->equipment.isType("shld") ? 7 : 6;
+    if (bodyPosition && def->equipment.isType("weap")) {
+        if (saved.body == 4 || saved.body == 11) component = 5;
+        if (saved.body == 5 || saved.body == 12) component = 6;
+    }
     net::protocol::Writer out;
     out.u8(ownedPacket ? 0x9D : 0x9C); out.u8(uint8_t(action));
     out.u8(uint8_t(body.size() + prefix)); out.u8(uint8_t(component)); out.u32(uint32_t(item.id.value));
     if (ownedPacket) { out.u8(uint8_t(ownerType)); out.u32(owner); }
     out.append(body); result.push_back(out.release());
-    for (const auto &child : item.socketedItems)
+    if(includeSockets) for (const auto &child : item.socketedItems)
         emitItem(result, data, state, child, ItemAction::Socket, 4, uint32_t(item.id.value));
 }
 bool equipment(ContainerKind kind) { return kind == ContainerKind::Equipment || kind == ContainerKind::BeltEquipment; }
@@ -241,8 +245,14 @@ std::vector<Bytes> nativeCorpseEquipment(const ClassicData &data, PersistentChar
 }
 std::vector<Bytes> nativeTradeItems(const ClassicData &data,const server::TradeItemsFact &fact,EntityId receiver) {
     std::vector<Bytes> result;
-    for (const auto id : fact.removed)
-        result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(id.value));}));
+    for (auto item : fact.removed) {
+        const auto previous=item.location;
+        if(!fact.completed) item.location=ContainerLocation{fact.projection.containers.cursor,{}};
+        // The mirror belongs to the receiver, but its removal never gives that
+        // player a cursor item. Preserve the old grid address on page2.
+        emitItem(result,data,fact.projection,item,ItemAction::Take,0,uint32_t(receiver.value),2,
+            fact.completed?std::nullopt:std::optional<ItemLocation>{previous},itemQuantityFlag,false);
+    }
     for (const auto &[id,item] : fact.projection.inventory.items) {
         (void)id; emitItem(result,data,fact.projection,item,ItemAction::Put,0,uint32_t(receiver.value),2);
     }
@@ -377,6 +387,13 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         }
         if (change.kind == ItemChangeKind::Removed) {
             const auto *before = change.before ? std::get_if<ContainerLocation>(&*change.before) : nullptr;
+            if(before && kind(state,change.before)==ContainerKind::Trade) {
+                const auto old=std::find_if(fact.removedItems.begin(),fact.removedItems.end(),[&](const auto &item){return item.id==change.item;});
+                if(old==fact.removedItems.end()) throw std::logic_error("Missing settled trade item projection");
+                // Settlement removes a stored offer; it never puts it on cursor.
+                emitItem(result,data,state,*old,ItemAction::Take,0,uint32_t(state.player.id.value),3,{},itemQuantityFlag,false);
+                continue;
+            }
             if (before && kind(state, change.before) == ContainerKind::Belt) {
                 // ItemMode::sub_6FC49220 removes the INBELT item with 9C/0F
                 // and IFLAG_QUANTITY before publishing the column's new positions.

@@ -1,6 +1,6 @@
 # 怪物原协议与客户端表现
 
-更新：2026-10-18。客户端专题负责原包、动作、原图、声音与视觉限制；权威程序及覆盖范围见[怪物目录](README.md)。
+更新：2026-10-27。客户端专题负责原包、动作、原图、声音与视觉限制；权威程序及覆盖范围见[怪物目录](README.md)。
 
 所连接的服务端负责出生、AI、攻击／技能、命中、复活、召唤、经验／掉落和任务。当前客户端只消费真实单位与原动作／技能／状态。
 
@@ -25,6 +25,22 @@ hosting沿SCmd／MonsterMsg编码原AC阶级、superunique hcIdx、词缀／name
 人物命中／生命修正为PlrMsg的0D/action19及整数生命0..100比例；怪物软命中0C为旗标19、整数生命0..128比例且大于1时减一及原命中类型，进入GH／BL／死亡不再附加0C。独立AB只携带原0..128生命值，不能按命中触发位解码，也不重启动作。人物与怪物包不能互换，0D／19也不是GH动作。原编码依据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)，协议目录见[服务端协议](../../modules/SERVER_PROTOCOL.md)。
 
 晚入视野恢复当前模式、生命、阶级与已公开状态，不重播历史攻击／弹体；换区或移除清对应显示缓存。原服／自研共用消费者，不为自研宿主多发私有或强制本人消息。
+
+### 普通移动、攻击与复活通知
+
+普通移动以受理的新路径为发布边界。`requestMove`记录独立的`movementRevision`，复制到只读怪物投影；观察者缓存忽略68中的当前XY变化，但保留目标、走跑、速度、路径类型／步数／距离及新路径修订的变化。新进入视野仍发送实际当前位置；同目标、同参数再次受理的路径也必须通知。不能只比较每帧序列化字节而反复重启动画，也不能用固定时间节流吞掉真实重规划。67点目标路径同样保留新路径修订。
+
+普通A1／A2的6B／6C方向占位字节为0，客户端从目标／路径确定面向；GH的生命触发位和DEATH／DEAD的方向字段不套此规则。可靠死亡事实发布前，基线跳过该怪物的死亡动作；事实发送后保留DT缓存，后续只在进入DEAD时更新。死亡和复活动画自身同步生命，不在其前另补再生AB。萨满复活沿`SrvDo097`恢复生命并进入原复活模式，不生成软命中0C；复活模式的点目标为零初始化的(0,0)，包尾仍是尸体当前坐标，恢复原GUID且不重新AC赋值。
+
+环绕路径的最大距离取实际环绕半径，不能沿用普通追击默认5。D2MOO `AiTactics::sub_6FCD0E80`把该半径经`SetVelocityParams`传给路径；`Fn013_FallenShaman`传3，零售实包相应为67/type1/distance3。通用移动入口据此保留原半径，不按怪物身份在编码器硬设3。
+
+依据为本地D2MOO `MonsterMsg::sub_6FC659E0`的`UNITFLAG_DOUPDATE`门控、`sub_6FC65C70`动作表及`SkillMonst::SKILLS_ResurrectUnit／SKILLS_SrvDo097_Resurrect`。D2MOO文本的`IsPathCircling`选择分支与零售实机相反；零售1.13c `D2Game.dll`（MD5 `978f6f74cd031bce6ecee602cd5988cc`，首选基址6FC20000）RVA F36C4–F3756明确为：有目标默认68，仅WALK／RUN且路径类型5／6改为67。动作表位于RVA FA718；不能按旧版绝对地址或该处文本分支直接改成普通追击67。
+
+原版TCP/IP Host、D2X Join的普通难度样本包括鲜血荒地僵尸／硬毛老鼠、冰冷之原沉沦魔／萨满／巨兽：沉沦魔与巨兽追击68/action0、速度75；僵尸追击68/action24、速度175；近战A1／A2及硬毛老鼠尖刺为6C/action10或16、方向0；萨满火弹为4C/skill160，环绕为67/type1/distance3，复活为4C/skill181后同GUID的6B/action12、6D及后续攻击。原沉沦魔GUID21约2.6秒追击只有一条68；旧D2X同GUID89约0.4秒出现8条仅XY变化的68。缺陷与复验边界见[M1–M4](../../development/MESSAGE_COMPARISON_DEFECTS.md)。
+
+D2X Host复验覆盖12个连续移动帧的一次路径启动、同目标后续新路径，以及自然族群同一只沉沦魔连续两次死亡／复活；首轮真实火弹击杀，第二轮管理扣血准备，复活均由萨满AI执行。两轮均无重复DT、0C／AB或重新AC，结束后继续攻击。四类普通攻击、萨满环绕及复活S1在归一GUID／相应坐标字段后与原版关键包逐字节一致。原版Join另实测追击中途进入视野和普通战斗，收到实际当前位置且无报错；这不扩展为完整画面认证。
+
+上述样本不认证同种子人口、AI随机序列、逐帧坐标／死亡面向、全部技能／词缀／难度或全怪物包序；原版Host比较也不等同于原版Join的完整画面认证。
 
 原AC重新赋值递增客户端`assignmentRevision`，动作／改类缓存据此失效；changeclass列表移除本身不恢复旧类型。怪物没有可选`cof/palshift.dat`时保留原组件像素，不把缺调色表当成缺动画；零售1.13c D2Client RVA53A44–53A5A在对应表指针为空时返回空色图。此规则同样用于当前MPQ无该表的吹箭Fetish和第五幕佣兵，不另加类型特判。外观不可用时`scene.effectLimitations`列出单位类型、class、mode和skill。
 
@@ -95,7 +111,7 @@ MonStats→MonStats2组件／尺寸／Light、Skills／Missiles／MonSeq、AnimD
 
 怪物原模式KB=13按D2Common COMPOSIT使用本身份GH组件；动画速度取BaseId的WL AnimData，变体按Velocity比例缩放。第一幕WL／RN按原BaseId准备基础速度，旧类型RN为基础WL的一半再按Run缩放，走跑时再乘原协议移动百分比。模式仍由原包决定，不把KB改写成权威GH，也不寻找MPQ不存在的KB图片。普通SC技能动作不使用攻击速度／冰冷调速，SQ沿原序列调速；权威时钟准备见hosting/monster_actions_content。
 
-0x0C与69 GH先剥离电强化触发位再读生命刻度；原动作12／13映射SKILL1，真正序列消费技能通知。原freeze可停止表现路径／动作；hide、udead与corpseSel分别控制尸体显示／选择。死亡时原freeze／shatter状态驱动icebreak碎冰，自研服务端保留States死亡掩码，资格及期限规则见[冰冷与毒伤](../skills/COMMON.md#冰冷冻结与毒伤)。弹体出生与ClientSend按原程序决定，动作派生与原0x73同步去重。电强化由GH帧2／公开触发位发八条充能路径，冰强化由死亡帧4发64方向新星；RemoteMonsterEffects只持显示时钟，两端充能方向共用monsterLightningRays。
+0x0C与69 GH先剥离电强化触发位再读生命刻度；原动作12／13映射SKILL1，真正序列消费技能通知。原freeze可停止表现路径／动作；hide、udead与corpseSel分别控制尸体显示／选择。死亡时原freeze／shatter状态驱动icebreak碎冰，自研服务端保留States死亡掩码，资格及期限规则见[冰冷与毒伤](../skills/EFFECTS.md#冰冷冻结与毒伤)。弹体出生与ClientSend按原程序决定，动作派生与原0x73同步去重。电强化由GH帧2／公开触发位发八条充能路径，冰强化由死亡帧4发64方向新星；RemoteMonsterEffects只持显示时钟，两端充能方向共用monsterLightningRays。
 
 0x69动作9按尸体当前位置校正，GH动作6的方向槽按生命字节解释并清除旧路径；0C／69生命高位是电强化公开发射资格，不能当阶级。server/effects持MONUMOD延时／十帧冷却，RemoteMonsterEffects只持显示时钟。当前194／195速度／寿命无等级增量，不猜隐藏等级；不同MPQ启用增量时明确不可用，ClientSend为空不强发73。
 

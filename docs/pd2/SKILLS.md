@@ -2,9 +2,23 @@
 
 本页维护当前目标的职业技能、客户端程序及服务端接触／状态规则。版本、地址口径和证据要求见[版本与证据](BUILDS.md)；装备属性、触发与命中效果归[物品](ITEMS.md)，实体身份和伙伴生命周期归[怪物](MONSTERS.md)。以下“已接入”只说明代码执行路径，不代表所有数值或多人组合一致。
 
+祝福之锤的原版专注加成由公共飞弹入口按 Param1／8 修正；PD2在 launch／native birth 仍保留既有 Param1／100，当前替换核心是否沿用原版分母尚未定点核对。现有表中 Param1=4 不足以认证执行规则，不能把原版复测结果算作PD2通过。规则与原版证据见[权威飞弹](../gameplay/combat/MISSILES.md)。
+
+## 按机制查找
+
+| 关注点 | 负责章节 |
+| --- | --- |
+| 共享入口、原版／PD2隔离及事件 | [当前实现入口](#当前实现入口)、[飞弹命中间隔](#飞弹命中间隔的运行态事件) |
+| 技能树、Clt与原资源 | [角色技能树与客户端程序](#角色技能树与客户端程序)、[客户端飞弹](#客户端飞弹程序)、[覆盖图](#资源覆盖图) |
+| 皇家火与毒卵双端程序 | [皇家火客户端](#皇家火cltdo83)、[皇家火服务端](#皇家火srvdo143)、[PoisonEggSpawn](#poisoneggspawn的双端委托) |
+| 近战、延迟与来源 | [Do163](#do163实际手位分配伤害与独立防御)、[Bash／Charge](#bash与charge额外接触和短期状态)、[Vengeance／Sacrifice](#vengeance与sacrifice延迟回调的来源) |
+| 仍不能宣称完成的范围 | [待核实与未完成](#待核实与未完成)、[特殊场景技能](#特殊场景技能) |
+
+版本与原程序号按各条证据解释；表中入口不是新的完成清单，跨领域审查与实施顺序仍由审查目录及缺口计划维护。
+
 ## 当前实现入口
 
-较大差异位于`src/content/pd2/{skill_data,aura_data,curse_data,summon_data,corpse_data}.cpp`、`src/server/systems/{skills,combat,missiles,effects}/pd2`及`src/gameplay/effects/pd2`；德鲁伊／刺客复用各自领域执行器并按固定规则选择分支。参数来自当前MPQ，内核不读取MPQ。PD2普通飞弹接触同样经过公共`missiles/motion::collisionContacts`，单位位置到原生子格的转换与动态占位保持一致，规则及未验证边界见[公共飞弹接触](../modules/SERVER_SYSTEMS.md#飞弹数值与接触收尾源码)；这不是PD2专属尺寸或命中范围改动。
+较大差异位于`src/content/pd2/{skill_data,aura_data,curse_data,summon_data,corpse_data}.cpp`、`src/server/systems/{skills,combat,missiles,effects}/pd2`及`src/gameplay/effects/pd2`；德鲁伊／刺客复用各自领域执行器并按固定规则选择分支。参数来自当前MPQ，内核不读取MPQ。PD2普通飞弹接触同样经过公共`missiles/motion::collisionContacts`，单位位置到原生子格的转换与动态占位保持一致，规则及未验证边界见[公共飞弹接触](../gameplay/combat/MISSILES.md#飞弹数值与接触收尾源码)；这不是PD2专属尺寸或命中范围改动。
 
 | 职业／机制 | 当前执行范围及入口 |
 | --- | --- |
@@ -25,7 +39,7 @@
 
 ProjectDiablo核心的技能CltDo／渐进回调及喷流程序同时用于`pd2-local`与CN连接；`src/presentation/remote/remote_scene_effects.cpp`按当前PD2规则分派，不能只匹配CN协议标识。CN专属网络扩展仍由协议层选择，不作为核心技能表现的开关。
 
-普通`anim=SC`施法在完整动作结束前的移动输入门槛与原版共用，原DLL依据、消费者及序列边界见[客户端普通施法与移动输入](../gameplay/skills/COMMON.md#客户端普通施法与移动输入)。不另加PD2职业／技能ID白名单，也不把允许受击打断等同于允许移动取消待释放的Clt飞弹。
+普通`anim=SC`施法在完整动作结束前的移动输入门槛与原版共用，原DLL依据、消费者及序列边界见[客户端普通施法与移动输入](../gameplay/ui/CLASSIC_HUD.md#客户端普通施法与移动输入)。不另加PD2职业／技能ID白名单，也不把允许受击打断等同于允许移动取消待释放的Clt飞弹。
 
 骨甲setfunc6的分阶段浮现、按吸收池减少骨片、Overlay定点帧速率及骨墙出生朝向由公共客户端路径消费当前MPQ；当前PD2骨甲沿用相同状态回调与资源名称。原1.13c DLL证据、代码入口及随机流／逐帧核对边界见[死灵依据与入口](../gameplay/skills/NECROMANCER.md#依据与入口)，不作为PD2独有技能重写。
 
@@ -295,4 +309,4 @@ Hit63为RVA `0x3A6410`，延迟回调`0x304680`，扇形helper `0x37F3E0`；对�
 
 ### 特殊场景技能
 
-当前41d49的St76／Do185／Clt114已分别接入monsters/pd2/dash、skills/pd2/dash及remote_scene_pd2_dash，沿当前MonSeq事件、路径9与起步／沿途／到达三槽执行。Srv184局部序列、Srv186 Act5强制73、召唤177／179及485状态写入的实际消费者和限制见[F61](FUNCTION_PARITY.md#f61-专属4145控制器的出生与事件依赖)；Skills.summon按当前MonStats编译身份链接，不按文本转数值。
+当前41d49的St76／Do185／Clt114已分别接入monsters/pd2/dash、skills/pd2/dash及remote_scene_pd2_dash，沿当前MonSeq事件、路径9与起步／沿途／到达三槽执行。Srv184局部序列、Srv186 Act5强制73、召唤177／179及485状态写入的实际消费者和限制见[F61](parity/MAPS.md#f61-专属4145控制器的出生与事件依赖)；Skills.summon按当前MonStats编译身份链接，不按文本转数值。

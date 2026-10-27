@@ -193,7 +193,13 @@ void SceneView::drawSkillControls(Vec mouse) const {
             const auto &hotkeys = characterView_.skillHotkeys;
             for (size_t key = 0; key < hotkeys.size(); ++key)
                 if (hotkeys[key].right == right && hotkeys[key].skill == slot.skill.value_or(-1) && hotkeys[key].owner==slot.owner) {
-                    auto label = "F" + std::to_string(key + 1);
+                    auto label = assets_.escapeMenu.bindingName(view_.controls,
+                        ControlAction(size_t(ControlAction::Skill1) + key));
+                    if (label.empty()) continue;
+                    if (painter_.measure(label, 10) > bounds.width - 6) {
+                        while (!label.empty() && painter_.measure(label + "...", 10) > bounds.width - 6) label.pop_back();
+                        label += "...";
+                    }
                     painter_.label(label, int(bounds.x + 3), int(bounds.y + bounds.height - 12), 10, gold);
                 }
             if (CheckCollisionPointRec(rv(mouse), bounds)) {
@@ -250,26 +256,31 @@ void SceneView::drawSkillControls(Vec mouse) const {
         }
     }
     std::string hint;
+    const auto shortcut = [&](ControlAction action) {
+        const auto keys = assets_.escapeMenu.bindingName(view_.controls, action);
+        return keys.empty() ? std::string{} : " [" + keys + "]";
+    };
     if (CheckCollisionPointRec(rv(mouse), hudRunButton()))
-        hint = "Walk / Run [R]";
+        hint = "Walk / Run" + shortcut(ControlAction::RunLock);
     if (CheckCollisionPointRec(rv(mouse), hudMenuButton()))
         hint = view_.miniPanelOpen ? "Close mini panel" : "Open mini panel";
     if (auto button = miniPanelAt(mouse); button && *button >= 0) {
         constexpr const char *keys[]{"minipanelchar", "minipanelinv", "minipaneltree", "minipanelautomap",
             "minipanelparty", "minipanelquest", "minipanelmenubtn", "minipanelmessage"};
-        constexpr const char *bindings[]{" [A]", " [I]", " [S]", " [Tab]", " [P]", " [Q]", "", " [M]"};
-        hint = assets_.characterLabels.at(keys[*button]) + bindings[*button];
+        constexpr ControlAction actions[]{ControlAction::Character, ControlAction::Inventory, ControlAction::SkillTree,
+            ControlAction::Automap, ControlAction::Party, ControlAction::QuestLog, ControlAction::Count, ControlAction::MessageLog};
+        hint = assets_.characterLabels.at(keys[*button]) + shortcut(actions[*button]);
     }
     if (CheckCollisionPointRec(rv(mouse), hudStamina()))
         hint = "Stamina: " + characterView_.number("stamina", int(characterView_.stamina)) + " / " +
                characterView_.number("maxstamina", characterView_.maxStamina);
     if (characterView_.unspentAttributes > 0 &&
         CheckCollisionPointRec(rv(mouse), hudCharacterButton())) {
-        hint = "New attribute points [A]";
+        hint = "New attribute points" + shortcut(ControlAction::Character);
     }
     if (characterView_.unspentSkills > 0 &&
         CheckCollisionPointRec(rv(mouse), hudSkillTreeButton())) {
-        hint = "New skill points [S]";
+        hint = "New skill points" + shortcut(ControlAction::SkillTree);
     }
     if (CheckCollisionPointRec(rv(mouse), hudExperience())) {
         hint = "Experience: " + characterView_.number("experience", characterView_.experience) + " / " +

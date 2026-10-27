@@ -24,6 +24,7 @@ struct ClientPreferences {
     bool bhShowChests = false;
     bool bhAutomapOnJoin = false;
     bool bhShowLkChestLines = false;
+    ControlBindings controls = defaultControlBindings();
     bool operator==(const ClientPreferences &) const = default;
 };
 ClientPreferences loadClientPreferences();

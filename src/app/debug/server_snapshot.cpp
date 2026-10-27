@@ -166,6 +166,26 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"defense", a.defense}, {"attackRating", a.attackRating}, {"weaponSet", r.weaponSet},
         {"selectedSkills", r.selectedSkills},{"selectedSkillOwners",r.selectedSkillOwners}, {"baseSkills", r.skillRanks}, {"effectiveSkills", p.skillRanks},
         {"inventoryRevision", p.inventoryRevision}, {"characterRevision", p.characterRevision}};
+    result["player"]["resistances"]={a.fireResist,a.coldResist,a.lightningResist,a.poisonResist};
+    result["player"]["block"]=p.equipment.blockChance;
+    result["player"]["weapons"]=Json::array();
+    for(int index=0;index<p.equipment.weaponCount;++index) {
+        const auto &weapon=p.equipment.weapons[index];
+        Json value{{"item",weapon.item.value},{"leftHand",weapon.leftHand},{"twoHanded",weapon.twoHanded},
+            {"minimumRaw",weapon.minimum},{"maximumRaw",weapon.maximum},
+            {"baseMinimumRaw",weapon.meleeBaseMinimum},{"baseMaximumRaw",weapon.meleeBaseMaximum},
+            {"projectileMinimumRaw",weapon.projectileMinimum},{"projectileMaximumRaw",weapon.projectileMaximum},
+            {"damagePercent",weapon.damagePercent},{"attackRating",weapon.attackRating},
+            {"baseAttackRating",weapon.baseAttackRating},{"attackRatingPercent",weapon.attackRatingPercent},
+            {"meleeMastery",weapon.meleeMastery},{"throwMastery",weapon.throwMastery}};
+        if(const auto &combat=weapon.nativeModifiers) value["nativeCombat"]={
+            {"fire",{combat->fireMinimum,combat->fireMaximum}},{"lightning",{combat->lightningMinimum,combat->lightningMaximum}},
+            {"cold",{combat->coldMinimum,combat->coldMaximum}},{"magic",{combat->magicMinimum,combat->magicMaximum}},
+            {"poisonRateRaw",{combat->poisonMinimum,combat->poisonMaximum}},{"poisonFrames",combat->poisonFrames},
+            {"poisonSources",combat->poisonSources},{"fireMastery",combat->fireSkillDamagePercent},
+            {"lightningMastery",combat->lightningSkillDamagePercent},{"coldMastery",combat->coldSkillDamagePercent}};
+        result["player"]["weapons"].push_back(std::move(value));
+    }
     result["containers"] = {{"backpack", s.containers.backpack.value}, {"equipment", s.containers.equipment.value},
         {"belt", s.containers.belt.value}, {"beltEquipment", s.containers.beltEquipment.value}, {"cursor", s.containers.cursor.value},
         {"cube",s.containers.cube.value},{"stash",s.containers.stash.value}};
@@ -231,9 +251,21 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     }
     for (const auto &cast : s.casts) result["casts"].push_back({{"actor", cast.actor.value}, {"skill", cast.skill},
         {"started", cast.started}, {"until", cast.until}, {"cooldownUntil", cast.cooldownUntil}, {"interrupted", cast.interrupted}});
-    for (const auto &missile : s.missiles) result["missiles"].push_back({{"id", missile.id.value}, {"owner", missile.owner.value},
+    for (const auto &missile : s.missiles) {
+        Json value{{"id", missile.id.value}, {"owner", missile.owner.value},
         {"definition", missile.definition}, {"position", point(missile.position + origin)}, {"created", missile.created},
-        {"expires", missile.expires}, {"impactPending", missile.impact.has_value()}, {"skill",missile.skill.sourceId},{"rank",missile.skill.rank},{"program",int(missile.program)},{"ageFrames",missile.ageFrames},{"lifetimeFrames",missile.lifetimeFrames},{"remainingHits",missile.remainingHits}});
+        {"expires", missile.expires}, {"impactPending", missile.impact.has_value()}, {"skill",missile.skill.sourceId},{"rank",missile.skill.rank},
+        {"minimumDamageRaw",missile.skill.minimumDamage.raw()},{"maximumDamageRaw",missile.skill.maximumDamage.raw()},
+        {"program",int(missile.program)},{"ageFrames",missile.ageFrames},{"lifetimeFrames",missile.lifetimeFrames},{"remainingHits",missile.remainingHits}};
+        if(missile.nativeDamage) {
+            const auto &data=missile.nativeDamage->data;
+            value["nativeDamageRaw"]={{"physical",{data.physical.minimum,data.physical.maximum}},
+                {"fire",{data.fire.minimum,data.fire.maximum}},{"lightning",{data.lightning.minimum,data.lightning.maximum}},
+                {"magic",{data.magic.minimum,data.magic.maximum}},{"cold",{data.cold.minimum,data.cold.maximum}},
+                {"poison",{data.poison.minimum,data.poison.maximum}},{"poisonLength",data.poisonLength}};
+        }
+        result["missiles"].push_back(std::move(value));
+    }
     for (const auto &damage : s.damage) result["damage"].push_back({{"source", damage.source.value}, {"target", damage.target.value}, {"impact", damage.impact}});
     if (s.travel) result["travel"] = {{"from", int(s.travel->from)}, {"to", int(s.travel->to)}, {"kind", int(s.travel->kind)}};
     for (const auto value : s.path) result["path"].push_back(point(value));
@@ -251,7 +283,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     }
     // Variant names are maintained beside the domain fact catalog.
     constexpr std::array names{"mana", "reposition", "life", "attack", "hit", "death", "item", "inventory", "character",
-        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop", "npc-service", "ground-remove", "item-skill", "ground-restored", "hireling-list", "trade", "trade-items", "player-message", "chat-relation", "party-notice", "environment", "resources", "skill-end", "quest-status", "quest-effect", "monster-class-hint", "pd2-map-attributes"};
+        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop", "npc-service", "ground-remove", "item-skill", "ground-restored", "hireling-list", "trade", "trade-items", "player-message", "chat-relation", "party-notice", "environment", "resources", "skill-end", "quest-status", "quest-effect", "monster-class-hint", "pd2-map-attributes", "inventory-reset"};
     static_assert(names.size() == std::variant_size_v<server::DomainFact>);
     result["corpses"]=Json::array();
     for(const auto &corpse:s.corpses) result["corpses"].push_back({{"id",corpse.id.value},{"owner",corpse.owner.value},{"area",int(corpse.region)},{"localPosition",point(corpse.position)},{"container",corpse.items.value},{"recoverableExperience",corpse.recoverableExperience}});

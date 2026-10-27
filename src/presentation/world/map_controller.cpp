@@ -19,6 +19,7 @@ void SceneController::prepareTravelInput(const FrameInput &input) {
     const bool keyboard = input.inventory || input.character || input.skillTree || input.skillPicker || input.quests ||
         input.hireling || input.party || input.togglePortraits || input.messageLog || input.chat || input.enter ||
         input.help || input.run || input.weaponSwap || input.expandBelt || input.backspace ||
+        input.previousSkill || input.nextSkill || input.clearScreen ||
         !input.entryText.empty() || !input.text.empty() || input.entryUnsupported ||
         std::ranges::any_of(input.skills, [](bool pressed) { return pressed; }) ||
         std::ranges::any_of(input.belt, [](bool pressed) { return pressed; });

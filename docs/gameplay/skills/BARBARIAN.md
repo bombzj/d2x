@@ -8,9 +8,9 @@ PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版
 
 公共武器技能资格按D2Common::sub_6FDB1130允许空手满足weap／mele／h2h要求，要求第二只武器的程序仍拒绝空手；不能只给德鲁伊／刺客放行而拒绝同样资格的Bash。实际选手、起手和后续联系复用同一筛选，不给空手伪造物品或武器支配类型。原版有限对照已确认徒手Bash能够命中及击杀，全部双持／专属武器组合仍待对齐。
 
-十项被动的提示和实际贡献共用`evaluateBarbarianPassive`；Frenzy、跳跃、尸体搜索及Berserk共用显式递减曲线，呐喊／武器协同及序列命中时钟使用[公共函数](COMMON.md#公共函数抽取)。当前Bash／Stun／Concentrate／Berserk起手Alloc、动作Do2兑现；Bash的calc2只改已分配物理分量。DoubleSwing、Frenzy、Whirlwind及LeapAttack已接原生联系；动作、回绕和单位种子边界见[内核对照](../../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移)。
+十项被动的提示和实际贡献共用`evaluateBarbarianPassive`；Frenzy、跳跃、尸体搜索及Berserk共用显式递减曲线，呐喊／武器协同及序列命中时钟使用[公共函数](COMMON.md#公共函数抽取)。当前Bash／Stun／Concentrate／Berserk起手Alloc、动作Do2兑现；Bash的calc2只改已分配物理分量。DoubleSwing、Frenzy、Whirlwind及LeapAttack已接原生联系；动作、回绕和单位种子边界见[内核对照](GENERAL.md#旧近战链与随机迁移)。
 
-专心的flag-4增益现跟随动作revision，在结束／中断／替换时撤销；狂战士按原calc2准备期限，非正结果采用原10帧分支；旋风的Aura／Passive及modifierlist元数据走逐写入资源观察，移动状态跟随同一动作。Frenzy保留原skill_frenzy堆叠与逐项速度写入。完整模式切换／事件顺序仍见[公共边界](COMMON.md#当前持续效果入口)。
+专心的flag-4增益现跟随动作revision，在结束／中断／替换时撤销；狂战士按原calc2准备期限，非正结果采用原10帧分支；旋风的Aura／Passive及modifierlist元数据走逐写入资源观察，移动状态跟随同一动作。Frenzy保留原skill_frenzy堆叠与逐项速度写入。完整模式切换／事件顺序仍见[公共边界](EFFECTS.md#当前持续效果入口)。
 
 ## 逐技能入口
 
