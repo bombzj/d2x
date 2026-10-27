@@ -104,6 +104,10 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
         if(plan.player->inventoryChanged) {
             InventoryFact projection{plan.player->persistent,plan.player->changes,plan.player->switchedWeapons};
             projection.projection.inventory.containers.insert(player->persistent.inventory.containers.begin(),player->persistent.inventory.containers.end());
+            for(const auto &change:projection.changes) if(change.kind==ItemChangeKind::Removed) {
+                if(const auto old=player->persistent.inventory.items.find(change.item);old!=player->persistent.inventory.items.end())
+                    projection.removedItems.push_back(old->second);
+            }
             const auto children=[&](auto &&self,const ItemInstance &item)->void {
                 for(const auto &child:item.socketedItems) {
                     const auto [entry,inserted]=projection.projection.inventory.items.emplace(child.id,child);
@@ -114,7 +118,13 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
             batch.facts.insert(batch.facts.begin(),std::move(projection));
         }
         const auto &facts=inventory?inventory->facts:character->facts;
-        batch.facts.insert(batch.facts.end(),facts.begin(),facts.end());batches.push_back(std::move(batch));
+        size_t targetingPrefix=0;
+        for(const auto &fact:facts) {
+            const auto *targeting=std::get_if<ItemTargetingFact>(&fact);
+            if(targeting && targeting->cursor<0) batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
+            else batch.facts.push_back(fact);
+        }
+        batches.push_back(std::move(batch));
         if(inventory) for(const auto &directed:inventory->directed)
             batches.push_back({0,tick,plan.id,{AudienceKind::Player,directed.player,region},directed.facts});
     }

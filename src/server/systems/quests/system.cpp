@@ -27,6 +27,11 @@ void System::initializeControl() {
 }
 void System::rebindObject(EntityId previous,EntityId current) {
     if(previous==current) return;
+    if(state_.npcStory.markers.erase(previous)) state_.npcStory.markers.insert(current);
+    if(state_.npcStory.blockerId==previous) state_.npcStory.blockerId=current;
+    if(state_.npcStory.ormusAltar==previous) state_.npcStory.ormusAltar=current;
+    if(state_.npcStory.anyaFrozenObject==previous) state_.npcStory.anyaFrozenObject=current;
+    if(state_.npcStory.cainCage==previous) state_.npcStory.cainCage=current;
     if(auto mode=state_.objectModes.extract(previous);!mode.empty()) {mode.key()=current;state_.objectModes.insert(std::move(mode));}
     if(state_.actThree.gidbinnAltar==previous) state_.actThree.gidbinnAltar=current;
     if(state_.actFive.ancientAltar==previous) state_.actFive.ancientAltar=current;
@@ -215,7 +220,7 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
 StepStatus System::step(TickContext tick,FrameFacts &) {
     std::erase_if(state_.credited,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || state_.creditedActors.at(entry.first)!=p->actor;});
     std::erase_if(state_.creditedActors,[&](const auto &entry){return !state_.credited.contains(entry.first);});
-    const auto den=denStep(tick),act=actOneStep(tick),two=actTwoStep(tick),three=actThreeStep(tick),four=actFourStep(tick),five=actFiveStep(tick),ancients=ancientsStep(tick),baal=baalStep(tick),goals=flushGoals(tick),statuses=flushStatuses(tick);
+    const auto story=npcStoryStep(tick),den=denStep(tick),act=actOneStep(tick),two=actTwoStep(tick),three=actThreeStep(tick),four=actFourStep(tick),five=actFiveStep(tick),ancients=ancientsStep(tick),baal=baalStep(tick),goals=flushGoals(tick),statuses=flushStatuses(tick);
     bool publicationBlocked=false;
     const auto flags=gameFlags();
     if(flags!=state_.publishedFlags) {
@@ -231,7 +236,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         if(stale && !s.conversation && !s.dropPosition) state_.completed.insert_or_assign(s.source,false);
         return stale;
     });
-    return publicationBlocked || den==StepStatus::Blocked || act==StepStatus::Blocked || two==StepStatus::Blocked || three==StepStatus::Blocked || four==StepStatus::Blocked || five==StepStatus::Blocked || ancients==StepStatus::Blocked || baal==StepStatus::Blocked || goals==StepStatus::Blocked || statuses==StepStatus::Blocked?StepStatus::Blocked:StepStatus::Complete;
+    return publicationBlocked || story==StepStatus::Blocked || den==StepStatus::Blocked || act==StepStatus::Blocked || two==StepStatus::Blocked || three==StepStatus::Blocked || four==StepStatus::Blocked || five==StepStatus::Blocked || ancients==StepStatus::Blocked || baal==StepStatus::Blocked || goals==StepStatus::Blocked || statuses==StepStatus::Blocked?StepStatus::Blocked:StepStatus::Complete;
 }
 StepStatus System::denStep(TickContext tick) {
     for(const auto &[id,player]:ports_.players.all()) {

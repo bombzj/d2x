@@ -56,6 +56,7 @@ PersistentCharacter createCharacter(const ClassicData &content, std::string name
         throw std::runtime_error("Original starter inventory does not fit");
     };
     const auto &characters = content.tables.at("charstats");
+    const auto *tree = content.skills.tree(definition.code);
     int beltColumn = 0;
     // Ported from master's createStarterEquipment / InventoryService::createItem:
     // normal items, original base durability, seeded graphic/defense, StartSkill.
@@ -104,15 +105,26 @@ PersistentCharacter createCharacter(const ClassicData &content, std::string name
                     if (base->beltRows <= 0) throw std::runtime_error("Invalid starter belt");
                     inventory.containers.at(result.containers.belt).spec.rows = base->beltRows;
                 }
-                if (slot == 1)
-                    if (const auto *tree = content.skills.tree(definition.code); tree && tree->starterSkill)
-                        item.grantedSkill = *tree->starterSkill;
+                if (slot == 1 && tree && tree->starterSkill)
+                    item.grantedSkill = *tree->starterSkill;
             } else if (base->beltAllowed && beltColumn < inventory.containers.at(result.containers.belt).spec.columns)
                 item.location = ContainerLocation{result.containers.belt, {beltColumn++, 0}};
             else item.location = ContainerLocation{result.containers.backpack, backpackCell(*base)};
             inventory.itemOrder.push_back(item.id);
             inventory.items.emplace(item.id, std::move(item));
         }
+    }
+    // PlrSave2's NEWBIE_SAVE branch selects CharStats.StartSkill on the right
+    // after starter items have made it available. It is an equipment bonus,
+    // not a learned rank or a charged skill owned by the starter item GUID.
+    if (tree && tree->starterSkill && *tree->starterSkill > 0) {
+        const bool available = std::any_of(inventory.items.begin(), inventory.items.end(), [&](const auto &entry) {
+            const auto &item = entry.second;
+            const auto *at = std::get_if<ContainerLocation>(&item.location);
+            return item.grantedSkill == *tree->starterSkill && at && at->container == result.containers.equipment &&
+                weaponSlotActive(EquipmentSlot(at->cell.x), result.player.weaponSet);
+        });
+        if (available) result.player.selectedSkills[result.player.weaponSet * 2 + 1] = *tree->starterSkill;
     }
     return result;
 }

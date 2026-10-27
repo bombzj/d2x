@@ -48,6 +48,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         result.back().pathSteps=std::max(uint8_t{1},monster.pathSteps);
         result.back().pathType=monster.pathType;result.back().pathDistance=monster.pathDistance;
         result.back().hostile=monster.enemyTarget();
+        if(monster.poseUntil>tick || monster.holdPose) result.back().poseDirection=monster.poseDirection;
         if(monster.movementTarget) {
             if(const auto *target=ports_.players.findActor(monster.movementTarget);target && target->entered && target->area==monster.area)
                 result.back().movementTarget=MotionTarget{target->actor,0};

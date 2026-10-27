@@ -199,6 +199,7 @@ struct Actor {
     bool pd2NoPathDisabled{};
     bool pd2DashAbsent{};
     uint8_t aiPose{1}; uint64_t poseUntil{};
+    std::optional<uint8_t> poseDirection;
     int64_t aiRegenerationBonus{};
     std::set<int> aiStates;
     struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{},leaperRecovery{},eventDriven{};std::optional<MovementCollisionRule> collision{};};
@@ -227,7 +228,7 @@ struct Actor {
         return owner || conversion?UnitAlignment::Good:UnitAlignment(rule.alignment);
     }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
-    bool nativeAi() const { return !questNpc || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter || rule.ai.kind==MonsterAiKind::NpcBarb || rule.ai.kind==MonsterAiKind::ScriptedNpc || (rule.environmentController && rule.ai.kind==MonsterAiKind::Overseer); }
+    bool nativeAi() const { return !questNpc || townNpcAi(rule.ai.kind) || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter || rule.ai.kind==MonsterAiKind::NpcBarb || rule.ai.kind==MonsterAiKind::ScriptedNpc || (rule.environmentController && rule.ai.kind==MonsterAiKind::Overseer); }
     bool damageable() const { return !restorationPending && !burrowed && !targetFlagsDisabled && !hatching && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
     bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || bool(druidPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
@@ -391,6 +392,9 @@ class System {
     std::vector<EntityId> specialTargets() const;
     DomainResult<> registerWanderTarget(EntityId);
     DomainResult<Vec> ensureAiHomeCommand(EntityId);
+    DomainResult<> setNpcHomeCommand(EntityId,Vec global);
+    DomainResult<> rebindNpcMapAi(EntityId,const std::vector<MonsterRule::MapAiNode> &);
+    DomainResult<> retireQuestNpc(EntityId);
     void resetAiFunctionMemory(EntityId);
     std::vector<EntityId> pets(PlayerId) const;
     bool canRegisterSpecialTargets(size_t count) const noexcept {return count<=UINT64_MAX-state_.nextSpecialTargetOrder;}
@@ -443,7 +447,7 @@ class System {
     bool canLand(EntityId) const;
     DomainResult<> consumeRandom(EntityId,uint64_t expected,uint64_t next);
     DomainResult<> finishSuperUniqueBirth(EntityId,bool corpseUnavailable);
-    DomainResult<> aiPose(EntityId,uint8_t mode,bool hold,bool airborne,uint64_t tick,int aiWait=0,bool preserveMovement=false);
+    DomainResult<> aiPose(EntityId,uint8_t mode,bool hold,bool airborne,uint64_t tick,int aiWait=0,bool preserveMovement=false,std::optional<uint8_t> direction={});
     DomainResult<bool> restoreGroundPresence(EntityId,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     void monsterTargetable(EntityId,bool);
     void submerge(EntityId);

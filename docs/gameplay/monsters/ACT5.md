@@ -11,6 +11,6 @@
 | 投石机／环境 | Catapult本体AI及真实四类身份见103项，弹药控制Spotter服务端见104项，客户端CltSt47见105项，inert战斗家族准入见106项；CltHit46／47／48／50专用落点见114至117项，CltDo43发射端附着表现见122项；EvilHole／demonhole生成控制见111项；完整画面／随机及其他环境控制仍有缺口 |
 | 高级钥匙／红门事件（暂缓） | Lilith／UberDuriel／UberIzual及Uber三首领、专属召唤与事件流程不列入本轮常规战役完成条件；已有代码保留，范围与依据见[SPECIAL](SPECIAL.md) |
 | 客户端／恢复 | FrozenHorror及跨幕喷火家族的Clt54连续发射已接，随机／动画轨迹待核对；王座Baal波次压缩／恢复见119项；完整休眠重建、原全局交错／随机及全部多人组合仍缺对照 |
-| 牢门／囚犯 | 牢门及window1／2已接自身属性／外观与空Idle，不追击／攻击，见107项；当前MPQ启用的act5barb1／act5barb2共用NpcBarb战场友军AI、原A1及第8组目标注册，见118项；救援囚犯act5pow沿既有任务逃跑流程；act5barb3为城镇守卫（Npc），完整通用NPC／MapAI仍未接 |
+| 牢门／囚犯 | 牢门及window1／2已接自身属性／外观与空Idle，不追击／攻击，见107项；当前MPQ启用的act5barb1／act5barb2共用NpcBarb战场友军AI、原A1及第8组目标注册，见118项；救援囚犯act5pow沿既有任务逃跑流程；act5barb3为城镇守卫（Npc），通用MapAI与明确剩余剧情边界见[NPC交互](../npc/INTERACTIONS.md#宿主npc移动与地图动作) |
 
 原版依据、当前实现与逐项缺口由接入表维护；管理生成、补资源及击杀不能代表正常战役流程。任务／囚犯／古代人及五波限制见[第三至第五幕任务](../quests/ACT3_5.md)。野蛮人佣兵独立见[佣兵](../characters/HIRELINGS.md)，不混入敌对怪物完成数。其他首领与精英边界见[BOSSES](BOSSES.md)、[ELITES](ELITES.md)。

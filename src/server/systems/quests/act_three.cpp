@@ -5,6 +5,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/population/system.hpp"
 #include "server/systems/travel/system.hpp"
+#include "server/systems/objects/system.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include <algorithm>
@@ -26,7 +27,7 @@ std::optional<Dialogue> System::actThreeDialogue(const ActorContext &actor,const
     const auto available=[&](QuestId id){return !unavailable(actor.player,p->persistent.player,id);};
     const auto &q=p->persistent.player.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::GoldenBird));
     const auto &items=p->rules.character->laterQuests;
-    if(q.stage==5 && npc.code=="alkor") return speech(npc,QuestId::GoldenBird,"Successful");
+    if(q.stage==5 && npc.code=="alkor" && !state_.npcStory.alkorDelivery && !state_.npcStory.alkorAnimate) return speech(npc,QuestId::GoldenBird,"Successful");
     if(q.stage<5 && detail::actTwoCarried(*p,items.bird,ports_.settings.difficulty)) {
         if(npc.code=="alkor") return speech(npc,QuestId::GoldenBird,"AfterInit");
         if(npc.code.starts_with("cain") && q.stage<4) return speech(npc,QuestId::GoldenBird,"Init3");
@@ -209,6 +210,12 @@ DomainResult<> System::operateActThree(const ActorContext &actor,EntityId source
 }
 std::optional<int> System::objectMode(RegionId region,EntityId id,int definition,int operation,uint64_t tick) const {
     const auto *area=ports_.areas.find(region);if(!area) return {};
+    if(int(region)==40 && definition==318) return state_.npcStory.palaceOpen?2:0;
+    if(id==state_.npcStory.ormusAltar && state_.npcStory.ormusActivated) {
+        const auto object=ports_.objects.read().objects.find(id);
+        if(object!=ports_.objects.read().objects.end() && object->second.until>tick) return {};
+        return 2;
+    }
     if(id==state_.actOne.cainInvisibleObject && definition==61 && state_.actOne.activatedStones)
         return int(std::min(state_.actOne.activatedStones,5u))+1;
     if(area->definition.act==2) {
@@ -223,7 +230,7 @@ std::optional<int> System::objectMode(RegionId region,EntityId id,int definition
         if(definition==341 || definition==342 || operation==46) return state_.actThree.mephistoSlain?2:0;
     }
     if(area->definition.act==4) {
-        if(operation==67) return state_.actFive.anyaThawed?2:0;
+        if(operation==67) return state_.npcStory.anyaIceOpened || state_.npcStory.anyaDeparted?2:0;
         if(operation>=62 && operation<=64) {
             if(const auto mode=state_.objectModes.find(id);mode!=state_.objectModes.end()) return mode->second;
             return state_.actFive.ancientsDefeated?2:0;

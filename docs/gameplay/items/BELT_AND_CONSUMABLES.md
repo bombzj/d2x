@@ -22,6 +22,10 @@ Shift+1–4将药水交给佣兵，仅接受生命、回复、解毒、解冻药
 
 自动装入参考D2MOO D2Inventory::INVENTORY_GetFreeBeltSlot与Items::ITEMS_ComparePotionTypes。当前MPQ Misc的belt／AutoBelt／useable决定物品资格与开新列，Belts.boxes决定容量，ItemTypes提供继承关系；原hp／mp／回复代码分组属于原算法条件。客户端beltSpace与服务端Draft::space共用belt_rules.hpp的分组，Draft::compactBeltColumn负责取出／自用／佣兵使用后的补位。
 
+腰带消耗的原包依据为D2MOO `SkillItem::SKILLITEM_pSpell_Handler` → `ItemMode.cpp::sub_6FC49220` → `SCmd.cpp::D2GAME_SendP0x9C_ItemAction_RemoveFromBelt_6FC3EBE0`：成功执行pSpell后先用3F取消本来源选靶，再发送9C/action15，保留INBELT模式和原格位，并临时附加IFLAG_QUANTITY（0x20），再移除服务端原件。自研成功药剂事务提交对应ItemTargetingFact，事务出口将取消事实置于物品移除回执之前。补位由`sub_6FC49140`标记NEWITEM／UNK1并清除NOEQUIP，沿`InvMode.cpp::sub_6FC410E0`的NEWITEM分支发送9D/action21（UpdateStats）；UNK1保留在原物品flags，保存边界见[存档](../../modules/SAVES.md)。该处D2MOO格位循环有前述版本边界，不能照搬索引，但回包分支可独立定位。PutInBelt对应入带命令标志，SwapInBelt会让被替换物进入Cursor，不能用于同列补位。
+
+自研`nativeInventoryDelta`按上述路径区分腰带移除、同带位置更新和Cursor交换；事务事实另存已删除原件的不可变值，编码不查询后续实时库存，也不把已删除物品放回权威状态。原版客户端Join D2X Host使用第四列蓝瓶时曾观察到服务端已消费、补位却误发9C/action16，随后原客户端持续请求丢弃补位GUID而宿主无对应Cursor；该兼容缺陷已按上述源码路径修正，修正后的原版联机表现仍待复验。
+
 ## 原规则与限制
 
 原恢复量、长度、pSpell、cstate与stat／calc读取MPQ；职业倍率规则核对本地D2MOO Items::ITEMS_GetBonusLifeBasedOnClass／ManaBasedOnClass。SkillItem::pSpell03／09提供恢复合并与耐力／解毒／解冻原服规则证据，客户端不重新执行这些函数。

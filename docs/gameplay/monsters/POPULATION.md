@@ -95,7 +95,7 @@ inactive.cpp按SaveMonsters／ISRESURRECT／Restore决定节点保留，尸体�
 
 特殊恢复停在显式继续点：基础实体发布后复用异步修饰器准备，unique消费实际单位流后覆盖保存nameSeed，minion不掷姓名；最后恢复主从关系、经验、7500帧生命边界和尸体资格，再解除restorationPending。等待中的实体不对客户端可见且不可受击；继续点只保存源房间及ID，不复制另一份节点。沿D2MOO `SUnitInactive::SUNITINACTIVE_RestoreInactiveUnits`的节点循环，每只完成后立即重新采样已发布碰撞，在同一逻辑帧继续下一只；不为刷新采样额外等待宿主轮询，真实修饰器／内容／容量背压仍保留继续点。无休眠节点的房间不构造恢复碰撞视图。AI按新admissionRevision丢弃旧控制器。混沌避难所清场后丢弃休眠活非Diablo单位。
 
-当前保存字段覆盖home／技能节点、SandMaggot计数、共享组件、王座Baal参数0的波次及普通Diablo非零command10坐标（[119至120项](ACT3.md#逐项接入)，后两项的完整卸载／恢复仍待核对）。原版不把整个Controller或卸载前单位种子写入休眠记录；重建沿SUNIT_InitSeed从game seed派生新私有种子，再执行组件／HP等初始化，不要求恢复后的单位流等于从未卸载。完整NPC命令／MapAI、全部光环二次初始化及逐修饰器链、原按类型GUID、跨类型顺序、地面物品位流仍未完成。死亡模式与HP的完整独立模型也未完成。源码接入不等于原版恢复或逐随机对齐，房间机制见[地图模块](../../modules/MAP.md)。
+当前保存字段覆盖home／技能节点、SandMaggot计数、共享组件、王座Baal参数0的波次及普通Diablo非零command10坐标（[119至120项](ACT3.md#逐项接入)，后两项的完整卸载／恢复仍待核对）。原版不把整个Controller或卸载前单位种子写入休眠记录；重建沿SUNIT_InitSeed从game seed派生新私有种子，再执行组件／HP等初始化，不要求恢复后的单位流等于从未卸载。NPC的command10原点及已转交的MapAI已随Actor恢复规则保留，459／461／543任务缓冲与撤出边界见[NPC剧情](../npc/INTERACTIONS.md#宿主npc移动与地图动作)；完整NPC临时命令、全部光环二次初始化及逐修饰器链、原按类型GUID、跨类型顺序、地面物品位流仍未完成。死亡模式与HP的完整独立模型也未完成。源码接入不等于原版恢复或逐随机对齐，房间机制见[地图模块](../../modules/MAP.md)。
 
 随机源码核对：FrameEventQueue已有原五类队列、持续链头插／定时链尾插及遍历游标；Population恢复背压停在同一逻辑帧，等待完成前不重入该帧事件阶段。新增的迷乱选择器／家族决策随机借用修正见[121项](ACT3.md#逐项接入)。这些调用点核对不能认证完整活动房间循环、双队列更新或原版逐随机轨迹。
 

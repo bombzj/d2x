@@ -25,7 +25,7 @@ void System::registerCainObject(EntityId id,int definition,int initialization,Re
 }
 bool System::cainTownRequested() const {
     if(state_.actOne.cainTownActor) return false;
-    if(state_.actOne.cainRescued) return true;
+    if(state_.actOne.cainRescued) return state_.npcStory.cainDeparted;
     for(const auto &[id,player]:ports_.players.all()) {
         (void)id;
         if(player.entered && player.persistent.player.quests.at(size_t(ports_.settings.difficulty))
@@ -42,6 +42,8 @@ void System::registerTownCain(EntityId id) {
     state_.actOne.cainTownActor=id;
 }
 std::optional<int> System::initialObjectMode(RegionId region,EntityId id,int definition,int operation,int initialization,uint64_t tick) const {
+    if(int(region)==40 && initialization==30) return state_.npcStory.palaceOpen?2:0;
+    if(int(region)==75 && initialization==39) return state_.npcStory.ormusActivated?2:0;
     const auto completed=[&](QuestId quest) {return (state_.initialFlags[questDefinition(quest).nativeSlot]&0x8000)!=0;};
     switch(initialization) {
     case 4:if(completed(QuestId::ForgottenTower)) return 5;break;
@@ -77,25 +79,23 @@ void System::orderStones() {
 }
 bool System::npcVisible(const CharacterRecord &record,std::string_view code,RegionId area,int initFunction) const {
     if(code=="hratli" && int(area)==75 && (initFunction==49 || initFunction==50)) {
-        bool welcomed=false;
-        for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.persistent.player.questPreludes.at(size_t(ports_.settings.difficulty)).at(size_t(QuestPreludeId::KurastArrival))) welcomed=true;}
-        return initFunction==(welcomed?50:49);
+        if(initFunction==50) return state_.npcStory.hratliDeparted;
+        for(const auto &[id,unit]:ports_.monsters.read().actors)
+            if(unit.area==area && unit.identity.monster==code && !state_.npcStory.retired.contains(id))
+                for(const auto &npc:ports_.areas.at(area).definition.npcs)
+                    if(npc.id==id && npc.rule.questInitFunction==49) return true;
+        return !state_.npcStory.hratliDeparted;
     }
     if(code=="nihlathak" && int(area)==109) return !state_.actFive.anyaThawed;
-    if(code=="drehya" && int(area)==109) return state_.actFive.anyaThawed;
+    if(code=="drehya" && int(area)==109) return state_.npcStory.anyaDeparted;
+    if(code=="natalya" && int(area)==75) return !state_.actThree.mephistoSlain;
     if(code=="baalthrone" && int(area)==131) return !state_.actFive.throneDeparted;
     if(code=="jerhyn" && int(area)==40 && (initFunction==18 || initFunction==19)) {
-        bool palace=false;
-        for(const auto &[id,p]:ports_.players.all()) {
-            (void)id;const auto difficulty=size_t(ports_.settings.difficulty);
-            const auto &book=p.persistent.player.quests.at(difficulty);
-            if(p.entered && (p.persistent.player.questPreludes.at(difficulty).at(size_t(QuestPreludeId::LutGholeinArrival)) || book.at(questIndex(QuestId::RadamentsLair)).stage>=uint32_t(RadamentStage::Slain) || book.at(questIndex(QuestId::ArcaneSanctuary)).stage>0 || book.at(questIndex(QuestId::SevenTombs)).stage>0)) palace=true;
-        }
-        return initFunction==(palace?19:18);
+        return initFunction==(state_.npcStory.palaceRequested?19:18);
     }
     if(code=="tyrael1" && int(area)==73) return state_.actTwo.durielSlain || record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::SevenTombs)).stage>=2;
     if(!code.starts_with("cain")) return true;
-    if(int(area)==38) return !state_.actOne.cainRescued;
+    if(int(area)==38) return !state_.npcStory.cainDeparted;
     if(int(area)!=1) return true;
     return state_.actOne.cainRescued || record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::SearchForCain)).stage>=uint32_t(CainStage::Rescued);
 }
@@ -169,11 +169,12 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
     if(operation==10 && int(actor.area)==38) {
         if(state_.actOne.cainRescued) return {DomainStatus::Applied,std::monostate{}};
         if(unavailable(actor.player,record,QuestId::SearchForCain)) return {DomainStatus::Conflict,{}};
-        const auto portal=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::CainRescue,0,position+Vec{3,3});
-        if(!portal) return {portal.status,{}};
-        captureGoal(QuestId::SearchForCain,uint32_t(CainStage::Rescued),actor.area);
         state_.actOne.cainRescued=true;
-        ports_.travel.commitSpecialPortal(*portal.value);
+        // Operate10 schedules MONUMOD +17; that callback births Cain at
+        // the cage's +3,+3 coordinate. Fn031 owns the subsequent departure.
+        state_.npcStory.cainBirth=position+ports_.areas.at(actor.area).definition.origin+Vec{3,3};
+        state_.npcStory.cainCage=source;
+        state_.npcStory.cainBirthAt=actor.tick+17;
         return {DomainStatus::Applied,std::monostate{}};
     }
     return {DomainStatus::NotImplemented,{}};

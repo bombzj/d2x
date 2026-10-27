@@ -87,11 +87,6 @@ DomainResult<> System::acknowledgeActFive(const ActorContext &actor,const Reques
     case QuestId::BetrayalOfHarrogath:
         if(q.stage==3) q.stage=4;
         else {
-            if(!state_.actFive.anyaPortal) {
-                const auto prepared=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::AnyaTemple,0,p->position+Vec{10,5});
-                if(!prepared) return {prepared.status,{}};
-                portal=*prepared.value;
-            }
             q.stage=1;
         }
         break;
@@ -108,9 +103,9 @@ DomainResult<> System::acknowledgeActFive(const ActorContext &actor,const Reques
     default: return {DomainStatus::InvalidRequest,{}};
     }
     const auto result=commit(actor,std::move(record));
+    if(result && request.quest==QuestId::BetrayalOfHarrogath && !state_.actFive.anyaPortal) state_.npcStory.anyaPortalPending=true;
     if(result && portal) {
         ports_.travel.commitSpecialPortal(std::move(*portal));
-        if(request.quest==QuestId::BetrayalOfHarrogath) state_.actFive.anyaPortal=true;
         if(request.quest==QuestId::EveOfDestruction) state_.actFive.exitPortal=true;
     }
     return result;
@@ -209,14 +204,15 @@ StepStatus System::actFiveStep(TickContext tick) {
         if(available(QuestId::RiteOfPassage) && level==120 && book[questIndex(QuestId::RiteOfPassage)].stage<3) book[questIndex(QuestId::RiteOfPassage)].stage=3;
         const unsigned baal=level==132?4u:level==131?3u:level>=128 && level<=130?2u:0u;
         if(baal && available(QuestId::EveOfDestruction)) book[questIndex(QuestId::EveOfDestruction)].stage=std::max(book[questIndex(QuestId::EveOfDestruction)].stage,baal);
-        if(level==109 && (world.anyaThawed || book[questIndex(QuestId::PrisonOfIce)].stage>=5) && !world.anyaSpawned) {
+        if(level==109 && state_.npcStory.anyaDeparted && (world.anyaThawed || book[questIndex(QuestId::PrisonOfIce)].stage>=5) && !world.anyaSpawned) {
             for(const auto &object:area.definition.objects) if(object.type==459) {
-                if(ports_.world.admitQuestNpc(p.area,"drehya",object.position)) world.anyaSpawned=true;else blocked=true;
+                const auto spawned=spawnStoryNpc(p.area,"drehya",object.position,tick.tick,true);
+                if(spawned) {world.anyaSpawned=true;const auto bound=bindNpcMapAi(*spawned.value);if(!bound) blocked|=isDeferred(bound.status);}else blocked=true;
             }
         }
-        if(level==109 && book[questIndex(QuestId::BetrayalOfHarrogath)].stage && !world.anyaPortal) {
-            const auto portal=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::AnyaTemple,0);
-            if(portal) {ports_.travel.commitSpecialPortal(*portal.value);world.anyaPortal=true;}else blocked=true;
+        if(level==109 && book[questIndex(QuestId::BetrayalOfHarrogath)].stage && !world.anyaPortal &&
+            (book[questIndex(QuestId::BetrayalOfHarrogath)].stage<4 || !p.persistent.waypoints.contains(RegionId(123)))) {
+            state_.npcStory.anyaPortalPending=true;
         }
         if(level==124) {const auto result=spawnQuestGroup(actor,"Nihlathak Boss");if(!result) blocked=true;}
         if(!std::equal(before.begin(),before.end(),book.begin(),[](const auto &a,const auto &b){return a.stage==b.stage && a.flags==b.flags;}) && !commit(actor,std::move(record))) blocked=true;

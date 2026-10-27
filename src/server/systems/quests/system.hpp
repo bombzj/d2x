@@ -6,11 +6,13 @@
 #include "gameplay/quest/id.hpp"
 #include "preparation.hpp"
 #include "state.hpp"
+#include "npc_story.hpp"
 namespace d2x::server::reactions { class ItemTriggers; }
 namespace d2x::server::quests {
 enum class Action { Refresh, ViewLog, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal, ReadAncientAltar };
 struct Request { Action action; QuestId quest; std::optional<EntityId> npc; std::optional<uint32_t> message; std::optional<EntityId> item{}; };
 struct State {
+    NpcStoryState npcStory;
   std::optional<uint64_t> controlRandom;
     ActOneState actOne;
     ActTwoState actTwo;
@@ -30,7 +32,7 @@ struct State {
     std::map<EntityId,bool> completed;
     std::map<EntityId,int> objectModes;
 };
-struct Ports { const PlayerStore &players; const AreaStore &areas; population::System &population; monsters::System &monsters; npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; loot::System &loot; effects::System &effects; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; objects::System &objects; };
+struct Ports { const PlayerStore &players; AreaStore &areas; population::System &population; monsters::System &monsters; npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; loot::System &loot; effects::System &effects; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; objects::System &objects; const spatial::System &spatial; };
 struct Dialogue {QuestId quest; NpcMessage message;};
 class System {
     State state_; const Ports ports_;
@@ -82,7 +84,18 @@ class System {
     void resetAncients();
     DomainResult<> readAncientAltar(const ActorContext &,EntityId);
     void orderStones();
+    StepStatus npcStoryStep(TickContext);
+    DomainResult<> bindNpcMapAi(EntityId);
+    DomainResult<EntityId> spawnStoryNpc(RegionId,std::string_view,Vec,uint64_t,bool critical);
+    DomainResult<std::optional<Vec>> npcSpawnPosition(const AreaNpc &,RegionId,uint64_t tick);
+    bool npcInteracting(EntityId) const;
   public:
+    void registerNpcStoryObject(EntityId,RegionId,int definition,int initialization,Vec);
+    uint64_t cainBirthDue(EntityId) const;
+    DomainResult<> cainBirthEvent(EntityId,uint64_t);
+    DomainResult<bool> admitStoryNpc(const AreaNpc &,RegionId,uint64_t tick);
+    DomainResult<NpcAiResult> npcThink(EntityId,uint64_t tick);
+    void npcInteractionDecision(EntityId,uint64_t tick);
     uint64_t ancientStatueDue(EntityId) const;
     uint64_t ancientObjectAnimationEnd(EntityId) const;
     DomainResult<> ancientStatueEvent(EntityId,uint64_t);

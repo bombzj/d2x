@@ -138,6 +138,17 @@ void System::initialize(const CharacterRecord &creator) {
     }
     const auto sun=book[questIndex(QuestId::TaintedSun)].stage;
     state_.actTwo.dark=sun==1 || sun==2;state_.actTwo.sunScheduled=state_.actTwo.dark;
+    auto &story=state_.npcStory;
+    const auto difficulty=size_t(ports_.settings.difficulty);
+    story.palaceRequested=creator.questPreludes.at(difficulty).at(size_t(QuestPreludeId::LutGholeinArrival)) ||
+        book[questIndex(QuestId::RadamentsLair)].stage>=uint32_t(RadamentStage::Slain) ||
+        book[questIndex(QuestId::ArcaneSanctuary)].stage>0 || book[questIndex(QuestId::SevenTombs)].stage>0;
+    story.palaceOpen=sun>=uint32_t(SunStage::AltarDestroyed) || book[questIndex(QuestId::ArcaneSanctuary)].stage>0 ||
+        book[questIndex(QuestId::HoradricStaff)].stage>=uint32_t(StaffStage::Submitted);
+    story.hratliDeparted=creator.questPreludes.at(difficulty).at(size_t(QuestPreludeId::KurastArrival));
+    story.ormusActivated=book[questIndex(QuestId::BladeOfTheOldReligion)].stage>=4;
+    story.cainDeparted=book[questIndex(QuestId::SearchForCain)].stage>=uint32_t(CainStage::Rescued);
+    story.anyaDeparted=state_.actFive.anyaThawed;story.anyaIceOpened=story.anyaDeparted;
     ports_.world.sunEclipse(state_.actTwo.dark);
 }
 std::array<uint16_t,48> System::gameFlags() const {
@@ -326,6 +337,13 @@ void System::queueStatus(QuestId quest,uint8_t status,std::optional<EntityId> np
     state_.statusNotices.insert_or_assign(quest,StatusNotice{status,npc});
 }
 void System::npcDeactivated(EntityId npc) {
+    const auto *unit=ports_.monsters.find(npc);
+    if(unit && unit->identity.monster=="ormus" && state_.npcStory.ormusDelivery) {
+        state_.npcStory.ormusDelivery=false;state_.npcStory.ormusActivate=true;
+    }
+    if(unit && unit->identity.monster=="alkor" && state_.npcStory.alkorDelivery) {
+        state_.npcStory.alkorDelivery=false;state_.npcStory.alkorAnimate=true;
+    }
     for(auto &[quest,notice]:state_.statusNotices) {
         (void)quest;if(notice.deactivateNpc==npc) notice.deactivateNpc.reset();
     }

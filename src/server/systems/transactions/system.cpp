@@ -763,7 +763,11 @@ DomainResult<> System::commit(Plan plan) {
         fact.switchedWeapons = next.switchedWeapons;
         fact.changes = next.changes;
         for (const auto &change : fact.changes) {
-            if (change.kind == ItemChangeKind::Removed) continue;
+            if (change.kind == ItemChangeKind::Removed) {
+                if (const auto old = player.persistent.inventory.items.find(change.item); old != player.persistent.inventory.items.end())
+                    fact.removedItems.push_back(old->second);
+                continue;
+            }
             projection.inventory.items.emplace(change.item, next.persistent.inventory.items.at(change.item));
         }
         if (fact.switchedWeapons) {
@@ -792,7 +796,14 @@ DomainResult<> System::commit(Plan plan) {
         characterChange ? characterChange->selectedHand : std::nullopt,explicitResources});
     // No authority writes until the complete immutable batch is accepted.
     const auto &extra = edit ? edit->facts : characterChange->facts;
-    batch.facts.insert(batch.facts.end(), extra.begin(), extra.end());
+    size_t targetingPrefix=0;
+    for(const auto &fact:extra) {
+        const auto *targeting=std::get_if<ItemTargetingFact>(&fact);
+        // Native ItemMode cancels targeting while the source still exists on
+        // the client, before the inventory removal receipt in this same batch.
+        if(targeting && targeting->cursor<0) batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
+        else batch.facts.push_back(fact);
+    }
     std::vector<EventBatch> batches; batches.push_back(std::move(batch));
     const auto &publicFacts=edit?edit->publicFacts:characterChange->publicFacts;
     if(!publicFacts.empty()) batches.push_back({0,request->actor.tick,plan.id,{AudienceKind::Area,{},player.area},publicFacts});
@@ -811,9 +822,20 @@ DomainResult<> System::commit(Plan plan) {
         if(peer.player->inventoryChanged) {
             auto projection=peer.player->persistent;
             projection.inventory.containers.insert(target.persistent.inventory.containers.begin(),target.persistent.inventory.containers.end());
-            delivery.facts.insert(delivery.facts.begin(),InventoryFact{std::move(projection),peer.player->changes,false});
+            InventoryFact inventory{std::move(projection),peer.player->changes,false};
+            for(const auto &change:inventory.changes) if(change.kind==ItemChangeKind::Removed) {
+                if(const auto old=target.persistent.inventory.items.find(change.item);old!=target.persistent.inventory.items.end())
+                    inventory.removedItems.push_back(old->second);
+            }
+            delivery.facts.insert(delivery.facts.begin(),std::move(inventory));
         }
-        delivery.facts.insert(delivery.facts.end(),change.facts.begin(),change.facts.end());batches.push_back(std::move(delivery));
+        size_t peerTargetingPrefix=0;
+        for(const auto &fact:change.facts) {
+            const auto *targeting=std::get_if<ItemTargetingFact>(&fact);
+            if(targeting && targeting->cursor<0) delivery.facts.insert(delivery.facts.begin()+peerTargetingPrefix++,fact);
+            else delivery.facts.push_back(fact);
+        }
+        batches.push_back(std::move(delivery));
         if(!change.publicFacts.empty()) batches.push_back({0,request->actor.tick,plan.id,{AudienceKind::Area,{},target.area},change.publicFacts});
     }
     if(plan.auraUnits) for(const auto &fact:plan.auraUnits->facts) {

@@ -13,8 +13,11 @@
 #include "gameplay/combat/attack_timing.hpp"
 #include "content/string_table.hpp"
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <memory>
 #include <stdexcept>
+#include <tuple>
 namespace d2x {
 namespace {
 std::string speechKey(std::string_view value) {
@@ -78,6 +81,11 @@ std::shared_ptr<const server::MonsterRule> prepareNeutralMonsterRule(Archives &a
     if(!profile || !profile->defense) throw std::runtime_error("Missing original NPC stat profile: "+record.id);
     auto rule=std::make_shared<server::MonsterRule>();
     rule->ai.kind=MonsterAiKind::Idle;
+    if(record.ai=="Npc" || record.ai=="Towner" || record.ai=="NpcStationary" || record.ai=="JarJar" || record.ai=="NpcOutOfTown") {
+        const auto ai=loadMonsterAiProfile(data.tables.at("monstats"),record.sourceRow,record.ai,request.difficulty);
+        if(!ai) throw std::runtime_error("Missing original town NPC AI: "+record.id);
+        rule->ai=*ai;
+    }
     if(data.pd2Host && record.index==921) {rule->ai.kind=MonsterAiKind::ScriptedNpc;rule->environmentController=true;}
     if(data.pd2Host && (record.index==1182 || record.index==1113) && record.ai=="Overseer") {
         const auto ai=loadMonsterAiProfile(data.tables.at("monstats"),record.sourceRow,record.ai,request.difficulty);
@@ -117,6 +125,19 @@ std::shared_ptr<const server::MonsterRule> prepareNeutralMonsterRule(Archives &a
     rule->blockWithoutShield=data.tables.at("monstats").number(record.sourceRow,"NoShldBlock").value_or(0)!=0;
     rule->threat=data.tables.at("monstats").number(record.sourceRow,"threat").value_or(0);
     if(!prepareMonsterLifecycle(archives,data,*animations,record,*rule)) throw std::runtime_error("Missing original NPC lifecycle: "+record.id);
+    if(townNpcAi(rule->ai.kind)) {
+        rule->decisionTicks=rule->neutralDelayTicks;
+        const auto &extra=data.tables.at("monstats2");
+        for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==data.tables.at("monstats").value(record.sourceRow,"MonStatsEx")) {
+            for(const auto &[flag,mode,name]:std::array{std::tuple{"mS1",uint8_t{8},"s1"},std::tuple{"mS2",uint8_t{9},"s2"}})
+                if(extra.number(row,flag).value_or(0)) {
+                    const auto motion=loadMonsterMotionTiming(*animations,record.token,name,monsterModeWeapon(archives,record.token,name,record.baseWeapon));
+                    if(!motion) throw std::runtime_error("Missing original NPC MapAI animation: "+record.id+"/"+name);
+                    rule->aiPoseTicks.emplace(mode,monsterAnimationTicks({motion->frames,motion->speed}));
+                }
+            break;
+        }
+    }
     if(record.ai=="BaalToStairs" || record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter" || record.ai=="NpcBarb") rule->decisionTicks=rule->neutralDelayTicks;
     if((record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter") && !prepareAct2MonsterSkills(archives,data,*animations,record,*rule))
         throw std::runtime_error("Missing original scripted monster skills");
@@ -181,9 +202,29 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         const auto *record=catalog.find(code);
         if(wanted && record && record->interact && !record->hostile()) area.questNpcs.emplace(code,npcRule(*record));
     }
+    if(int(area.id)==114) {
+        const auto *record=catalog.find("drehyaiced");
+        if(!record || record->hostile()) throw std::runtime_error("Missing original thawed Anya class");
+        area.questNpcs.emplace(record->id,npcRule(*record));
+    }
+    if(int(area.id)==38) {
+        const auto *record=catalog.find("cain1");
+        if(!record || record->hostile()) throw std::runtime_error("Missing original rescued Cain class");
+        area.questNpcs.emplace(record->id,npcRule(*record));
+    }
     for (size_t sourceIndex=0;sourceIndex<prepared.terrain.map->terrain.data.objects.size();++sourceIndex) {
         const auto &source=prepared.terrain.map->terrain.data.objects[sourceIndex];
         if(source.flags&1u) continue;
+        // SUNIT_SpawnPresetUnit -> QUESTS_MapPresetSpawn transfers only
+        // these three object MapAI buffers, independently of NPC birth order.
+        if(source.type==2 && source.nativeIdentity && !source.path.empty()) {
+            const std::string code=source.id==459?"drehya":source.id==461?"nihlathak":source.id==543?"larzuk":"";
+            if(!code.empty()) {
+                server::AreaDefinition::NpcMapAiPreset path{source.id,{float(source.x),float(source.y)},code,{}};
+                for(const auto &node:source.path) path.nodes.push_back({Vec{float(node.x),float(node.y)}+area.origin,node.action});
+                area.npcMapAi.push_back(std::move(path));
+            }
+        }
         if(int(area.id)==111 && source.type==2 && source.nativeIdentity && source.id>=0) {
             const auto &objects=data.tables.at("objects");bool cage=false;
             for(size_t row=0;row<objects.rows().size();++row) if(objects.number(row,"Id")==source.id && objects.number(row,"InitFn")==62) cage=true;
@@ -213,6 +254,7 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
                     const auto init=objects.number(row,"InitFn").value_or(0);
                     if(int(area.id)==1 && init==54) {record=catalog.find("cain5");questInit=init;}
                     if(int(area.id)==75 && (init==49 || init==50)) {record=catalog.find("hratli");questInit=init;}
+                    if(int(area.id)==75 && init==52) {record=catalog.find("natalya");questInit=init;}
                     if(int(area.id)==40 && (init==18 || init==19)) {record=catalog.find("jerhyn");questInit=init;}
                     if(int(area.id)==109 && init==68) {record=catalog.find("nihlathak");questInit=init;}
                     if(int(area.id)==109 && init==71) {record=catalog.find("larzuk");questInit=init;}
@@ -224,12 +266,24 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
             record->id!="baalthrone" && record->id!="compellingorb")) continue;
         auto rule=npcRule(*record);
         rule.questInitFunction=questInit;
+        if(source.type==1 && !source.path.empty() && townNpcAi(rule.combat->ai.kind)) {
+            auto placement=std::make_shared<server::MonsterRule>(*rule.combat);
+            for(const auto &node:source.path)
+                placement->mapAi.push_back({Vec{float(node.x),float(node.y)}+area.origin,node.action});
+            rule.combat=std::move(placement);
+        }
         const Vec marker{float(source.x)+(source.type==1?.5f:0.f),float(source.y)+(source.type==1?.5f:0.f)};
         // Authored monsters are placed by the server's native retry search;
         // object callbacks retain the actual marker coordinate.
         area.npcs.push_back({{}, marker, std::move(rule),sourceIndex,
             source.type==2?std::optional<Vec>{Vec{float(source.x),float(source.y)}}:std::nullopt,
             source.type==2?source.id:-1});
+        if(int(area.id)==40 && questInit==19) {
+            const auto *guard=catalog.find("act2guard2");
+            if(!guard || guard->hostile() || guard->ai!="JarJar") throw std::runtime_error("Missing original palace guard AI");
+            auto guardRule=npcRule(*guard);guardRule.questInitFunction=19;
+            area.npcs.push_back({{},marker+Vec{1,0},std::move(guardRule),sourceIndex,marker,source.id});
+        }
     }
     // InitFunction60 is an object callback. It creates a distinct native
     // UNIT_MONSTER even when DS1's object identity came through a preset alias.

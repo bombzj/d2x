@@ -80,13 +80,14 @@ DomainResult<bool> System::restoreGroundPresence(EntityId source,const std::func
     stop(source);ports_.areas.moveRoomUnit(actor.id,actor.area,actor.position);refreshCollision(actor);
     return {DomainStatus::Applied,true};
 }
-DomainResult<> System::aiPose(EntityId source,uint8_t mode,bool hold,bool airborne,uint64_t tick,int aiWait,bool preserveMovement) {
+DomainResult<> System::aiPose(EntityId source,uint8_t mode,bool hold,bool airborne,uint64_t tick,int aiWait,bool preserveMovement,std::optional<uint8_t> direction) {
     auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;const auto clock=actor.rule.aiPoseTicks.find(mode);
     if(mode!=1 && clock==actor.rule.aiPoseTicks.end()) return {DomainStatus::Unavailable,{}};
     if(actor.airborne && !airborne && !canLand(source)) return {DomainStatus::Unavailable,{}};
     recordNativeMode(actor,mode);
     actor.aiPose=mode;actor.holdPose=hold;actor.airborne=airborne;actor.poseUntil=tick+uint64_t(mode==1?0:clock->second);
+    actor.poseDirection=direction;
     actor.targetFlagsDisabled=airborne;refreshCollision(actor);
     if(!airborne) {if(!preserveMovement) stop(source);actor.busyUntil=std::max(actor.busyUntil,aiWait>0?tick+uint64_t(aiWait):actor.poseUntil);}
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};

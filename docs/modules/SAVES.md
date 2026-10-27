@@ -1,6 +1,6 @@
 # 服务端D2S与客户端持久化
 
-更新：2026-10-24。本文维护存档格式、校验条件、所有权与恢复边界。原服角色由D2GS／D2DBS保存；自研角色由hosting/CharacterStore与persistence保存。客户端通过原MCP／D2GS操作角色，不访问D2S或PersistentCharacter；客户端／表现库不链接存档库。当前实现见[基线](../../BASELINE.md)，各玩法的原版依据及保存缺口由对应专题维护，不记录自研往返与包身份历史。
+更新：2026-10-27。本文维护存档格式、校验条件、所有权与恢复边界。原服角色由D2GS／D2DBS保存；自研角色由hosting/CharacterStore与persistence保存。客户端通过原MCP／D2GS操作角色，不访问D2S或PersistentCharacter；客户端／表现库不链接存档库。当前实现见[基线](../../BASELINE.md)，各玩法的原版依据及保存缺口由对应专题维护，不记录自研往返与包身份历史。
 
 ## 已迁移的角色与存档入口
 
@@ -12,7 +12,11 @@
 
 七职业创建读取当前MPQ CharStats、物品、初始技能来源和真实种子，创建即写入完整D2S。名称按现有编码支持1–15个ASCII字母／数字／连字符；文件系统保留名与quick不能由建角创建。原服名称规则仍由原服裁定。删角只删除选中D2S，保留.bak和探索侧文件，不递归删除目录。
 
-原版v96新建但尚未首次入局的角色可以只有`0x14F`（335）字节头部，`flags & 1`为INIT；不能按截断完整档拒绝。`decodeSave`先验证原头、大小、校验和及既有支持边界，再要求INIT档恰好只有头部，通过`persistence/initial_character`与本地建角共用MPQ初始化，读取时不改写源文件。初始化后的内存元数据清除INIT，保留原创建时间等头部值；正常保存才输出已有完整v96布局。未带INIT的短档与INIT后带额外段继续拒绝，不把损坏档当新角色。依据本地D2MOO `D2Game/src/PLAYER/PlrSave2.cpp::PLRSAVE2_ReadSaveHeader`及`PLRSAVE2ERROR_NEWBIE_SAVE`分支。当前为源码修复，构建、原版首次加入及保存重入尚待复验，见[消息对比缺陷J1](../development/MESSAGE_COMPARISON_DEFECTS.md)。
+创建及INIT初始化在原起始装备完成后，只有当前活动装备实际提供`CharStats.StartSkill`时才将其选为当前组右手技能；左手和备用组保留普通攻击。该入口供所有职业共用，技能ID取当前MPQ各职业的CharStats与技能目录，不按女巫硬编码；起始物品的技能来自item_singleskill，不能给人物补已学等级，也不能将普通物品技能的选择来源写为物品GUID。初始备用组没有武器，切换过去后左右手均为普通攻击；不把主组的起始技能复制到备用组。依据D2MOO `Player.cpp::PLAYER_CreateStartItem`与`PlrSave2.cpp::PLRSAVE2ERROR_NEWBIE_SAVE`分支的`SKILLS_GetHighestLevelSkillFromUnitAndId`／`D2GAME_AssignSkill(..., 0, StartSkill, -1)`。此前只构造起始物品而漏选右手，原版新建女巫首次Join D2X Host因此收到普通攻击选择。修正仅作用于新建／合法INIT，完整旧档仍恢复其保存的两套武器四个手部选择，不静默更改玩家已有选择；格式和来源序号编码不变。自研新建女巫及完整档重入已确认右手火弹、基础等级0／短杖加成1，完整档也已由原版Host接收并恢复相同选择；原版335字节INIT首次Join仍待实包复验。
+
+原版v96新建但尚未首次入局的角色可以只有`0x14F`（335）字节头部，`flags & 1`为INIT；不能按截断完整档拒绝。`decodeSave`先验证原头、大小、校验和及既有支持边界，再要求INIT档恰好只有头部，通过`persistence/initial_character`与本地建角共用MPQ初始化，读取时不改写源文件。初始化后的内存元数据清除INIT，保留原创建时间等头部值；正常保存才输出已有完整v96布局。未带INIT的短档与INIT后带额外段继续拒绝，不把损坏档当新角色。依据本地D2MOO `D2Game/src/PLAYER/PlrSave2.cpp::PLRSAVE2_ReadSaveHeader`及`PLRSAVE2ERROR_NEWBIE_SAVE`分支。当前已构建，共用创角入口及完整档重入已验证；原版335字节INIT首次Join尚待实包复验，见[消息对比缺陷J1](../development/MESSAGE_COMPARISON_DEFECTS.md)。
+
+腰带实际补位设置原物品UNK1（0x400）并清除NOEQUIP；UNK1随已有32位原flags字段保存，包含自研新生成但尚未重读的物品。依据D2MOO `ItemMode::sub_6FC49140`、`InvMode::D2GAME_ResetSomeItemFlags_6FC415F0`的清理集合（不含UNK1）及`Items::ITEMS_SerializeItem`的原flags写入；原版1.13c Host的补位后腰带交换包仍带0x400。NEWITEM与切入／切出仍只作原包瞬时标志；本次不改布局、不迁移旧档，未发生补位的物品不会凭读取获得UNK1。
 
 选角时取得`<小写文件干名>.character-lock`整局租约，阻止同一目录内多个宿主同时加载写入。角色名／文件名大小写冲突拒绝。选中和删除前比较列表时的完整字节；保存前再次比较租约版本，检测外部改写后拒绝覆盖。锁崩溃残留须人工确认，不自动偷锁。最终写入继续使用resources原子替换与短时.d2s.lock；旧档先备份为.d2s.bak。
 

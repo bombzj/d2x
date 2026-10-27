@@ -14,6 +14,8 @@
 | [monsters/system.cpp](../../src/server/systems/monsters/system.cpp)、[special_actions.cpp](../../src/server/systems/monsters/special_actions.cpp)、[controlled.cpp](../../src/server/systems/monsters/controlled.cpp) | 活动实体、生命、组件、位置／路线、版本、home／节点、复活／出生／死亡连锁及伙伴实体 |
 | [monsters/inactive.cpp](../../src/server/systems/monsters/inactive.cpp) | 普通／特殊怪物及NPC共用压缩、恢复继续点、旧GUID复验和可见性完成边界 |
 | [ai/system.cpp](../../src/server/systems/ai/system.cpp)及family_actions／nest_family／unique_actions | 目标、决策时钟与随机，调用纯策略并提交movement／skills窄请求 |
+| [ai/town_npc.cpp](../../src/server/systems/ai/town_npc.cpp)、[npc_content.cpp](../../src/hosting/npc_content.cpp) | 普通Npc／Towner的DS1 MapAI、任务提醒接近、固定站位NPC及交谈暂停；原版依据和专用剧情边界见[NPC交互](../gameplay/npc/INTERACTIONS.md#宿主npc移动与地图动作) |
+| [quests/npc_story.cpp](../../src/server/systems/quests/npc_story.cpp)、[monsters/npc_story.cpp](../../src/server/systems/monsters/npc_story.cpp) | quests持有杰海因／守卫、Ormus／Alkor、Cain／Anya及标记剧情状态；monsters提交路径重绑定、command10原点及活跃／休眠NPC撤出，路径恢复仍归唯一Actor |
 | [gameplay/monsters](../../src/gameplay/monsters) | 家族／首领纯决策、方向、碰撞、速度、伤害及组件计算 |
 | [ai/act2_actions.cpp](../../src/server/systems/ai/act2_actions.cpp)、[monsters/act2_skills.cpp](../../src/server/systems/monsters/act2_skills.cpp) | 第二幕家族AI、飞行／栖息／颜色／再生、木乃伊支持资格、钻地、子怪及可中断移动；完整范围见所属幕 |
 | [skills/monster_actions.cpp](../../src/server/systems/skills/monster_actions.cpp) | 开始／释放、MonSeq多次事件及目标／中断／代次复验 |

@@ -75,6 +75,8 @@ void System::schedule(Object &object) {
     synchronize(hazardEvent(object),object.hazardAt);
     if(object.rule.initialization>=63 && object.rule.initialization<=65)
         synchronize(FrameEventType::MonsterModifier,ports_.quests.ancientStatueDue(object.id)); // Object QUESTFN is event7.
+    if(object.rule.operation==10 && int(object.area)==38)
+        synchronize(FrameEventType::MonsterModifier,ports_.quests.cainBirthDue(object.id));
     synchronize(FrameEventType::Trap,object.trapAt);
     synchronize(FrameEventType::AiReset,object.lootAt);
     synchronize(FrameEventType::DelayedPortal,object.portalAt);
@@ -125,6 +127,9 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
             if(!queued) return {queued.status,{}};
             object.pending=true;object.lootAt=0;
         }
+    } else if(event.type==FrameEventType::MonsterModifier && object.rule.operation==10 && int(object.area)==38) {
+        const auto result=ports_.quests.cainBirthEvent(object.id,tick);if(!result) return result;
+        object.mode=5;object.until=0;changed=true;
     } else if(event.type==FrameEventType::MonsterModifier && object.rule.initialization>=63 && object.rule.initialization<=65) {
         const auto result=ports_.quests.ancientStatueEvent(object.id,tick);if(!result) return result;
         if(const auto mode=ports_.quests.objectMode(object.area,object.id,object.definition,object.rule.operation,tick);mode && *mode!=object.mode) {

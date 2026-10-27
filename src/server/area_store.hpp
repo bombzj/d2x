@@ -79,6 +79,8 @@ struct AreaMetadata {
     int monsterLevel{}; // Current MPQ area level for this difficulty/expansion.
 };
 struct AreaDefinition : AreaMetadata {
+    struct NpcMapAiPreset {int objectClass{};Vec position;std::string npc;std::vector<MonsterRule::MapAiNode> nodes;};
+    std::vector<NpcMapAiPreset> npcMapAi;
     std::shared_ptr<const PreparedRoomTerrain> roomTerrain;
     uint64_t initialLevelRandom{};
     bool fixedPosition{};

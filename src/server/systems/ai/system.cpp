@@ -117,6 +117,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             controller.observedAiFunctionRevision=monster.aiFunctionRevision;controller.function=function;controller.alternateAi=defer;
             if(!defer) {
                 controller.commands.clear();
+                controller.npc={};
                 if(monster.rule.ai.kind!=MonsterAiKind::Baal && monster.rule.ai.kind!=MonsterAiKind::BaalClone) {
                     controller.homeCommand.reset();ports_.monsters.resetAiFunctionMemory(id);
                 }
@@ -137,7 +138,10 @@ StepStatus System::think(EntityId id,TickContext tick) {
         controller.random=controller.randomExpected=monster.combatRandom;controller.randomPublished=false;sampled=true;
         const auto &area=ports_.areas.at(monster.area);
         const bool active = ports_.areas.active(monster.area, monster.position);
-        if(!active || (area.definition.town && monster.rule.ai.kind!=MonsterAiKind::GoodNpcRanged)) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
+        if(!active || (area.definition.town && monster.rule.ai.kind!=MonsterAiKind::GoodNpcRanged && !townNpcAi(monster.rule.ai.kind))) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
+        if(townNpcAi(monster.rule.ai.kind)) {
+            blocked|=townNpcFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
         // AiUtil::sub_6FCF2110 and DRLGROOM_CheckLOSDraw: initial acquisition
         // in rooms without LOSDraw requires a clear missile-barrier ray.
         // Native flag 8 keeps pursuit enabled once a target was acquired.

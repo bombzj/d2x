@@ -19,6 +19,11 @@ namespace d2x::server::monsters {struct Actor;}
 namespace d2x::server::ai {
 // Decision state only; actions go through skill/movement requests, not direct damage.
 struct Controller {
+    struct NpcCommands {
+        Vec destination,modePosition;
+        int moveCycles{},waitFrames{},modeAttempts{},greetingCooldown{};
+        uint8_t mode{};
+    } npc;
     struct Command {uint8_t code{};UnitTarget target;uint64_t until{};};
     std::deque<Command> commands;
     EntityId actor;
@@ -51,13 +56,14 @@ struct Controller {
     bool pd2CancelAi{};
     std::deque<std::function<DomainResult<>()>> pending;
 };
-struct State { std::map<EntityId, Controller> controllers; };
-struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; quests::System &quests; const travel::System &travel; uint32_t &pd2Random; loot::System &loot; maps::System &maps; const world::System &world; };
+struct State { std::map<EntityId, Controller> controllers; uint32_t npcMoveCounter{}; };
+struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; quests::System &quests; const travel::System &travel; uint32_t &pd2Random; loot::System &loot; maps::System &maps; const world::System &world; const npc::System &npc; EventOutbox &events; };
 class System {
     State state_;
     const Ports ports_;
     DomainResult<> perform(Controller &,std::function<DomainResult<>()>);
     DomainResult<> requestAction(Controller &,const actions::MonsterCastRequest &);
+    StepStatus townNpcFamily(EntityId,TickContext,Controller &);
     StepStatus familyAction(EntityId, UnitTarget, Vec, int, TickContext, Controller &,int continuation=0);
     StepStatus fetishShamanAction(EntityId,std::optional<UnitTarget>,Vec,TickContext,Controller &);
     StepStatus act2Action(EntityId, UnitTarget, Vec, int, TickContext, Controller &,int continuation=0);

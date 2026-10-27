@@ -256,6 +256,8 @@ add_library(d2x_server
   src/server/systems/ai/baal_taunt.cpp src/server/systems/ai/hell_meteor.cpp
   src/server/systems/ai/trapped_soul.cpp src/server/systems/ai/catapult.cpp
   src/server/systems/ai/npc_barb.cpp src/server/systems/ai/catapult_spotter.cpp
+  src/server/systems/ai/town_npc.cpp
+  src/server/systems/monsters/npc_story.cpp src/server/systems/quests/npc_story.cpp
   src/server/systems/ai/ancient_madawc.cpp src/server/systems/ai/nihlathak.cpp
   src/server/systems/ai/putrid_defiler.cpp src/server/systems/ai/baal_minion.cpp
   src/server/systems/ai/frozen_horror.cpp src/server/systems/ai/reanimated_horde.cpp

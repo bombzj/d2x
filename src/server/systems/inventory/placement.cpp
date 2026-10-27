@@ -149,6 +149,10 @@ DomainStatus Draft::compactBeltColumn(int column) {
         if (row!=ready) {
             const auto result=move(item,{belt,{column,ready}});
             if (result!=DomainStatus::Applied) return result;
+            // ItemMode keeps UNK1 after InvMode clears NEWITEM. It also appears
+            // on later belt actions and in the original serialized item flags.
+            auto &moved=edit.inventory.items.at(item);
+            moved.nativeFlags=(moved.nativeFlags|0x400u)&~uint32_t(0x4000); // UNK1 / NOEQUIP.
         }
         ++ready;
     }

@@ -101,7 +101,7 @@ DomainResult<> System::compressRoom(RegionId region,size_t index,uint64_t tick) 
             node.modifiers=unit.rule.nativeModifiers;node.nameSeed=unit.rule.enchantment?unit.rule.enchantment->nameSeed:0;
             node.skillPositions=unit.skillPositions;node.componentParameter=unit.components[10];node.nestSpawned=unit.nestSpawned;
             node.baalThroneWave=unit.rule.ai.kind==MonsterAiKind::BaalThrone?unit.baalThroneWave:0;
-            if(unit.identity.monster=="diablo" && unit.aiHomeCommand &&
+            if((unit.identity.monster=="diablo" || townNpcAi(unit.rule.ai.kind)) && unit.aiHomeCommand &&
                 (unit.aiHomeCommand->x!=0 || unit.aiHomeCommand->y!=0)) node.aiHomeCommand=unit.aiHomeCommand;
             node.impMountedAi=unit.impMountedAi;
             node.pd2EventState=ports_.effects.unitStates(id,tick).contains(213);

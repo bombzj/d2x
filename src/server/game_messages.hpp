@@ -79,6 +79,7 @@ struct MonsterSnapshot {
     int appearOverlay{-1};
     std::optional<EntityId> storedOwner{};
     std::optional<MotionTarget> movementTarget{};
+    std::optional<uint8_t> poseDirection{};
     uint8_t pathSteps{};
     uint8_t pathType{13}, pathDistance{5}; // MonsterMode's ordinary TowardFinish/default distance.
     bool hostile{};

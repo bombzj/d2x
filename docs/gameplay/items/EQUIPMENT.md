@@ -1,10 +1,16 @@
 # 装备资格、属性贡献与切组
 
-更新：2026-10-15。本页负责武器／防具／首饰／护符的资格、活动装备、套装激活与属性贡献。生成与词缀归[GENERATION](GENERATION.md)／[AFFIXES](AFFIXES.md)，战斗消费归[攻击](../combat/ATTACKS.md)，充能／触发归[物品技能](../skills/ITEM_SKILLS.md)。
+更新：2026-10-27。本页负责武器／防具／首饰／护符的资格、活动装备、套装激活与属性贡献。生成与词缀归[GENERATION](GENERATION.md)／[AFFIXES](AFFIXES.md)，战斗消费归[攻击](../combat/ATTACKS.md)，充能／触发归[物品技能](../skills/ITEM_SKILLS.md)。
 
 ## 当前执行
 
 身体需求由公共loadout／contributions／requirements计算，不重复维护力量／敏捷公式。未鉴定、损坏、非活动手部不贡献，护符只在背包生效；普通交换、双手冲突、装备与两组武器切换已有权威执行。属性／需求变化同步重新校验装备，装备资格与人物总值同笔提交。
+
+原0x60切组回包先发送0x97确认和左右0x23技能选择，再发送0x9D/action0x17的手部物品更新。切换物品临时设置NEWITEM（0x1）及SWITCHIN（0x40）或SWITCHOUT（0x80），清除NOEQUIP；顺序为旧活动右／左手、切入右／左手，不能按GUID排序。切组引起的手部资格变化随同一物品切换包发布，不提前再发位置已变的Properties更新。`nativeInventoryDelta`按此编码；固定两套装备位置和资格仍由权威状态持有，原瞬时标志不回写D2S。
+
+依据本地D2MOO `ItemMode.cpp::sub_6FC46840`的标志／四手位队列与即时97／技能发送，以及`InvMode.cpp::sub_6FC410E0`的延迟物品发布。原版1.13c Host／D2X Join对单手斧和空备用组往返切换的实包先97、左右23，后9D/17，物品标志分别为0x00800091／0x00800051；不能以D2MOO的库存刷新调用位置推断物品回包先于97。D2Client.dll MD5 `f5860c629d309b8fc1f96174babcf633`的RVA85B98–85BAC调用D2Common ordinal10197（MD5 `ee1238806ef6d6d9801d12a09d128fe1`，RVA21FE0）检查NEWITEM，缺失时以line1877进入RVA85C22的Halt路径；对应D2X旧包缺少0x1。匕首与短剑两组往返切换的关键物品回包，已与原版Host和D2X单机逐项对照。修正后的原版Join D2X Host表现，以及双持、孔内子项及资格变化组合仍待原版复验。
+
+运行期创建并装备或将Cursor移入装备时，Equip／IndirectEquip／SwapBody回包附加原NEWITEM标志；脱装沿原移出动作保留来源部位。该处理位于`nativeInventoryDelta`，不将运行期重建标志套用于所有初始／他人装备快照。D2MOO ItemMode的入装备分支同时设置对应命令标志及IFLAG_NEWITEM；原版1.13c Host／D2X Join对带孔匕首脱装重装观察到9D/action8与9D/action6，重装带NEWITEM，脱装不带。完整双手冲突、间接装备及有孔内子项的回包组合仍待逐项复验。
 
 武器speed空单元格按原ItemsTbls的DWORD零初始化读取，不表示速度未知。PD2专项说明见[物品界面：基础武器速度编译](../../pd2/ITEM_UI.md#物品界面基础武器速度编译)。
 

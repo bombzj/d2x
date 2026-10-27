@@ -9,6 +9,11 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     if (difficulty < 0 || difficulty > 2) return std::nullopt;
     MonsterAiProfile profile;
     if (ai == "Skeleton") profile.kind = MonsterAiKind::Skeleton;
+    else if (ai == "Npc") profile.kind = MonsterAiKind::Npc;
+    else if (ai == "Towner") profile.kind = MonsterAiKind::Towner;
+    else if (ai == "NpcStationary") profile.kind = MonsterAiKind::NpcStationary;
+    else if (ai == "JarJar") profile.kind = MonsterAiKind::JarJar;
+    else if (ai == "NpcOutOfTown") profile.kind = MonsterAiKind::NpcOutOfTown;
     else if (ai == "Idle" && (stats.value(row,"Id").starts_with("boneprison") || stats.value(row,"Id")=="prisondoor" || stats.value(row,"Id")=="window1" || stats.value(row,"Id")=="window2")) profile.kind = MonsterAiKind::Idle;
     else if (ai == "Brute") profile.kind = MonsterAiKind::Brute;
     else if (ai == "Zombie") profile.kind = MonsterAiKind::Zombie;

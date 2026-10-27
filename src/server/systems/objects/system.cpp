@@ -38,6 +38,7 @@ void System::publishInitialization(const Object &object) {
     ports_.maps.bind(object.pd2Binding,object.id,object.area,object.position,true);
     if(ports_.maps.opensBlockerOnBirth(object.definition)) openNativeBlocker(object.id,ports_.frameEvents.currentFrame());
     ports_.quests.registerCainObject(object.id,object.definition,object.rule.initialization,object.area,object.position);
+    ports_.quests.registerNpcStoryObject(object.id,object.area,object.definition,object.rule.initialization,object.position);
     if(waypointArrival(object)) waypointArrivals_.clear();
     if(object.portalAt) ports_.world.retainControllerRoom(object.area,object.position,true);
 }
@@ -383,8 +384,9 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
                     cainAttempt_.attempted=true;
                     if(!*spawned.value) continue;
                 } else if(!ports_.monsters.find(npc.id)) {
-                    const auto admitted=ports_.monsters.admitNpc(npc.id,region,npc.spawnPosition,npc.rule);
+                    const auto admitted=ports_.quests.admitStoryNpc(npc,region,tick.tick);
                     if(!admitted) return isDeferred(admitted.status) || admitted.status==DomainStatus::Stale?StepStatus::Blocked:StepStatus::NotImplemented;
+                    if(!*admitted.value) continue;
                 }
                 admittedPresetNpcs_.insert(npc.id);
             }
@@ -509,9 +511,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const int mode=quest.tombAt && quest.tomb==object.area?2:leased?1:0;
             if(object.mode!=mode) {object.mode=mode;object.until=0;++object.revision;changed.insert(object.area);}
         }
-        if(object.definition==318) {
+        if(object.definition==318 && int(object.area)==40) {
             // A2Q4 Harem blocker is a shared game object, not a client guess.
-            bool opened=false;for(const auto &[player,p]:ports_.players.all()) {(void)player;if(p.entered && p.persistent.player.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::ArcaneSanctuary)).stage>0) opened=true;}
+            const bool opened=ports_.quests.read().npcStory.palaceOpen;
             if(opened && object.mode!=2) {object.mode=2;++object.revision;changed.insert(object.area);}
         }
         if(object.definition==153 && int(object.area)==73 && ports_.quests.read().actTwo.durielSlain && object.mode!=2) {object.mode=2;++object.revision;changed.insert(object.area);}

@@ -126,7 +126,7 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
 DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext &actor,SpecialPortalKind kind,uint64_t seed,std::optional<Vec> source) {
     const auto *p=ports_.players.find(actor.player);const auto *origin=ports_.areas.find(actor.area);
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !origin || origin->generation!=actor.areaGeneration) return {DomainStatus::InvalidActor,{}};
-    const bool blue=kind==SpecialPortalKind::Shrine || kind==SpecialPortalKind::Andariel || kind==SpecialPortalKind::CainRescue || kind==SpecialPortalKind::Tyrael;
+    const bool blue=kind==SpecialPortalKind::Shrine || kind==SpecialPortalKind::Andariel || kind==SpecialPortalKind::CainRescue || kind==SpecialPortalKind::Tyrael || kind==SpecialPortalKind::AnyaRescue;
     const auto exists=[&](int destination) {return std::any_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.field==actor.area && int(entry.second.town)==destination;});};
     auto rule=blue?origin->definition.portalRule:origin->definition.specialPortalRule;
     if(kind==SpecialPortalKind::ActFive || kind==SpecialPortalKind::BaalExit) {
@@ -160,6 +160,9 @@ DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext 
     } else if(kind==SpecialPortalKind::Tyrael) {
         if(int(actor.area)!=73) return {DomainStatus::InvalidRequest,{}};
         level=40;
+    } else if(kind==SpecialPortalKind::AnyaRescue) {
+        if(int(actor.area)!=114) return {DomainStatus::InvalidRequest,{}};
+        level=109;
     } else if(blue) {
         if(int(actor.area)!=(kind==SpecialPortalKind::CainRescue?38:37)) return {DomainStatus::InvalidRequest,{}};
         level=1;
@@ -242,6 +245,13 @@ DomainResult<SpecialPortalPlan> System::prepareWorldPortal(RegionId region,int l
     auto arrival=exactSource?std::optional<Vec>{}:destination->definition.portalArrival;
     if(!arrival && destination->definition.town) arrival=destination->definition.spawn;
     if(!arrival && !exactSource && !durielOpening) return {DomainStatus::Unavailable,{}};
+    // A prepared quest landing can outlive its room's collision data. Stream
+    // that room before searching it, as the native object callback operates
+    // on an active room. Keep both portal identities unallocated while waiting.
+    if(arrival && !exactSource && !durielOpening) {
+        ports_.world.activate(RegionId(level),*arrival);
+        if(!ports_.areas.loaded(RegionId(level),*arrival)) return {DomainStatus::PendingContent,{}};
+    }
     // Permanent native portals use the supplied subtile without a free-cell search.
     const auto from=exactSource?std::optional<Vec>{Vec{std::floor(source.x),std::floor(source.y)}}:freePoint(*origin,source);
     if(exactSource && (!ports_.areas.roomAtPosition(region,*from,int(from->x+origin->definition.origin.x),int(from->y+origin->definition.origin.y)) ||

@@ -16,6 +16,8 @@ C2S32／33／34／35／36／38／61／62沿既有长度。17d5的33回调0x39338
 
 普通NPC服务与任务奖励保留确认会话、NPC身份、任务字段及服务器资源变化的裁定。自有宿主复用`src/server/systems/{npc,merchant,crafting}`及对应hosting准备，具体资格继续由各域持有。佣兵装备／服务与战斗程序分别维护，见[怪物与伙伴](MONSTERS.md#召唤实体与伙伴)。
 
+自有宿主的Npc／Towner／NpcStationary、JarJar与NpcOutOfTown消费当前MPQ与DS1准备的公共NPC规则；消费者包含杰海因／守卫、Ormus／Alkor、Cain／Anya及原459／461／543标记的MapAI转交，覆盖和原版依据见[NPC交互](../gameplay/npc/INTERACTIONS.md#宿主npc移动与地图动作)。这些原版剧情缓冲不扩展为PD2额外MapAI来源。既有PD2 ScriptedNpc及场景控制器仍优先使用其专用程序；PD2额外任务、原版完整演出时序和多人组合仍未据此认证。
+
 CN商店原图布局的格顶为42（原版62），第二按钮使用buysellbtn/frame4出售图形，绘制与命中共用布局；依据为目标buysell.dc6和当前交互消费者。货架数量是具体会话状态，不作为固定商店规则。收到维修回执不等于已证明实际恢复耐久。
 
 ## CN专属存储与金币

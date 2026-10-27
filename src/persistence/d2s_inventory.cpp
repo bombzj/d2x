@@ -217,7 +217,7 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     // writer saturates its seven-bit level at127; it does not wrap to3.
     output.level = std::min(item.level,127u);
     output.seed = item.nativeSeed;
-    output.flags = item.nativeProperties ? item.nativeFlags : (0x00800000u | (item.nativeFlags & 0x4400000u));
+    output.flags = item.nativeProperties ? item.nativeFlags : (0x00800000u | (item.nativeFlags & 0x4400400u));
     output.flags = (output.flags & ~0x00080110u) | 0x00800000u | (item.identified ? 0x10u : 0u);
     if (definition->maxDurability && !item.durability) output.flags |= 0x100;
     output.format = item.nativeFormat;

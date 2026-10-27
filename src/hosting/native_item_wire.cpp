@@ -6,11 +6,16 @@
 #include "server/runtime/events.hpp"
 #include "protocol/message_catalog.hpp"
 #include <algorithm>
+#include <array>
 #include <map>
+#include <utility>
 
 namespace d2x {
 namespace {
 using net::protocol::BitWriter;
+constexpr uint32_t itemNewFlag = 0x1;
+constexpr uint32_t itemQuantityFlag = 0x20;
+constexpr uint32_t beltRepositionFlags = itemNewFlag | 0x400; // IFLAG_UNK1.
 // D2MOO D2Constants / SCmd original item action identities, not C2S opcodes.
 enum class ItemAction : uint8_t {
     Put = 4, Take = 5, Equip = 6, IndirectEquip = 7, Unequip = 8, SwapEquipment = 9, Quantity = 10, Shop = 11, Properties = 21,
@@ -149,7 +154,7 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
 }
 void emitItem(std::vector<Bytes> &result, const ClassicData &data, const PersistentCharacter &state,
               const ItemInstance &item, ItemAction action, unsigned ownerType, uint32_t owner, std::optional<unsigned> page = {},
-              std::optional<ItemLocation> previous = {}) {
+              std::optional<ItemLocation> previous = {}, uint32_t transientFlags = 0) {
     if (item.id.value > UINT32_MAX) throw std::runtime_error("Item ID exceeds native protocol capacity");
     auto wireItem=item;
     if(action==ItemAction::Shop) {
@@ -176,7 +181,10 @@ void emitItem(std::vector<Bytes> &result, const ClassicData &data, const Persist
             source.location = ContainerLocation{state.containers.backpack, at->cell}; tradeSource = true;
         }
         const auto old = exportD2sItem(state, source, data);
-        saved.body = old.body; saved.x = old.x; saved.y = old.y; saved.page = tradeSource ? 3 : old.page;
+        saved.body = old.body; saved.x = old.x; saved.y = old.y;
+        // SwapInContainer serializes INVPAGE_NULL; only the ordinary Take
+        // receipt temporarily restores the source page from CellOverlap.
+        saved.page = action == ItemAction::SwapStored ? 0 : tradeSource ? 3 : old.page;
         bodyPosition = old.mode == 1;
     }
     if(page) saved.page=*page;
@@ -190,10 +198,13 @@ void emitItem(std::vector<Bytes> &result, const ClassicData &data, const Persist
     }
     if (bodyPosition) { saved.x = saved.body; saved.y = 0; }
     if (action == ItemAction::WeaponSwitch) {
-        // Native transient SWITCHIN/OUT flags; never write these to D2S.
-        saved.flags &= ~uint32_t(0xC0);
-        saved.flags |= (saved.body == 4 || saved.body == 5) ? 0x40 : 0x80;
+        // ItemMode::sub_6FC46840 clears NOEQUIP and marks NEWITEM plus
+        // SWITCHIN/OUT. The native action23 callback requires NEWITEM.
+        // These are wire flags; do not change the saved item or its eligibility.
+        saved.flags &= ~uint32_t(0x40C0);
+        saved.flags |= itemNewFlag | ((saved.body == 4 || saved.body == 5) ? 0x40 : 0x80);
     }
+    saved.flags |= transientFlags;
     const auto body = packed(data, saved);
     const bool ownedPacket = ownedAction(action);
     const size_t prefix = ownedPacket ? 13 : 8;
@@ -305,6 +316,19 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
     const auto &state = fact.projection;
     if (state.player.id.value > UINT32_MAX) throw std::runtime_error("Inventory owner exceeds native GUID capacity");
     std::vector<Bytes> result;
+    const std::array switchSlots{
+        weaponHandSlot(false, state.player.weaponSet ^ 1u), weaponHandSlot(true, state.player.weaponSet ^ 1u),
+        weaponHandSlot(false, state.player.weaponSet), weaponHandSlot(true, state.player.weaponSet)};
+    if (fact.switchedWeapons) {
+        // The native switch queues item updates in InvMode, but sends 97 and
+        // the selected skills immediately, before those 9D/23 updates drain.
+        result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::WeaponSet, [](auto &) {}));
+        for (size_t side = 0; side < 2; ++side)
+            result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::SelectedSkill, [&](auto &out) {
+                out.u8(0); out.u32(uint32_t(state.player.id.value)); out.u8(side == 0);
+                out.u16(uint16_t(std::max(0, state.player.selectedSkills[state.player.weaponSet * 2 + side]))); out.u32(state.player.selectedSkillOwners[state.player.weaponSet*2+side]);
+            }));
+    }
     // ItemMode clears the owner's cursor before removing a consumed cursor
     // item. Emit before a replacement cursor item in the same transaction.
     // Removing a unit with 0A does not replace native CLEARCURSOR semantics.
@@ -317,7 +341,33 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
     if(clearCursor) result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::ItemSkill,[&](auto &out){
         out.u8(0);out.u32(uint32_t(state.player.id.value));
     }));
-    for (const auto &change : fact.changes) {
+    auto changes = fact.changes;
+    // ItemMode queues the displaced stored/belt item before inserting the
+    // cursor item. Keep this wire order independent of the domain edit order.
+    for (size_t index = 0; index < changes.size(); ++index) {
+        const auto &change = changes[index];
+        if (change.kind != ItemChangeKind::Moved || kind(state, change.before) != ContainerKind::Cursor) continue;
+        const auto to = kind(state, change.after);
+        if (to != ContainerKind::Belt && to != ContainerKind::Backpack && to != ContainerKind::Stash &&
+            to != ContainerKind::Cube && to != ContainerKind::Trade) continue;
+        const auto displaced = std::find_if(changes.begin() + index + 1, changes.end(), [&](const auto &other) {
+            return other.kind == ItemChangeKind::Moved && other.before == change.after && other.after == change.before;
+        });
+        if (displaced != changes.end()) std::swap(changes[index], *displaced);
+    }
+    // ItemMode's partial stack merge sends both quantity stats immediately,
+    // then queues ADDQUANTITY for the target with IFLAG_DELETED. The surviving
+    // cursor stack receives only its stat update, not a second item action.
+    const auto cursorQuantity = std::find_if(changes.begin(), changes.end(), [&](const auto &change) {
+        const auto *at = change.before ? std::get_if<ContainerLocation>(&*change.before) : nullptr;
+        return change.kind == ItemChangeKind::QuantityChanged && at && at->container == state.containers.cursor;
+    });
+    const auto partialStackTarget = cursorQuantity == changes.end() ? changes.end() :
+        std::find_if(changes.begin(), changes.end(), [&](const auto &change) {
+            return change.kind == ItemChangeKind::QuantityChanged && change.item != cursorQuantity->item &&
+                state.inventory.items.at(change.item).definition == state.inventory.items.at(cursorQuantity->item).definition;
+        });
+    for (const auto &change : changes) {
         if (change.item.value > UINT32_MAX) throw std::runtime_error("Inventory delta GUID overflow");
         const auto *destination=change.after?std::get_if<ContainerLocation>(&*change.after):nullptr;
         if(destination && destination->container==state.containers.hirelingEquipment) {
@@ -326,6 +376,18 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
             continue;
         }
         if (change.kind == ItemChangeKind::Removed) {
+            const auto *before = change.before ? std::get_if<ContainerLocation>(&*change.before) : nullptr;
+            if (before && kind(state, change.before) == ContainerKind::Belt) {
+                // ItemMode::sub_6FC49220 removes the INBELT item with 9C/0F
+                // and IFLAG_QUANTITY before publishing the column's new positions.
+                const auto old = std::find_if(fact.removedItems.begin(), fact.removedItems.end(), [&](const auto &item) {
+                    return item.id == change.item;
+                });
+                if (old == fact.removedItems.end()) throw std::logic_error("Missing removed belt item projection");
+                auto item = *old; item.location = *change.before;
+                emitItem(result, data, state, item, ItemAction::TakeBelt, 0, uint32_t(state.player.id.value), {}, {}, itemQuantityFlag);
+                continue;
+            }
             result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit,
                 [&](auto &out) { out.u8(4); out.u32(uint32_t(change.item.value)); }));
             continue;
@@ -339,6 +401,16 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
             result.push_back(itemStat(item.id,204,*value,uint16_t(change.statParameter)));continue;
         }
         if (change.kind == ItemChangeKind::QuantityChanged || change.kind == ItemChangeKind::PropertiesChanged || change.kind==ItemChangeKind::DurabilityChanged) {
+            if (partialStackTarget != changes.end() && change.kind == ItemChangeKind::QuantityChanged &&
+                (change.item == cursorQuantity->item || change.item == partialStackTarget->item)) {
+                result.push_back(itemStat(change.item, 70, state.inventory.items.at(change.item).quantity));
+                continue;
+            }
+            // The switch packet already carries the final hand-item properties.
+            // Do not publish an extra eligibility refresh before its transfer.
+            if (fact.switchedWeapons && change.kind == ItemChangeKind::PropertiesChanged && destination &&
+                destination->container == state.containers.equipment &&
+                std::find(switchSlots.begin(), switchSlots.end(), EquipmentSlot(destination->cell.x)) != switchSlots.end()) continue;
             if(change.kind==ItemChangeKind::DurabilityChanged) result.push_back(itemStat(change.item,72,state.inventory.items.at(change.item).durability));
             const auto action = change.kind == ItemChangeKind::QuantityChanged ? ItemAction::Quantity : ItemAction::Properties;
             emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value));
@@ -347,10 +419,19 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         if (change.kind == ItemChangeKind::Created) {
             const auto destination = kind(state, change.after);
             const auto action = destination == ContainerKind::Cursor ? ItemAction::Cursor : destination == ContainerKind::Belt ? ItemAction::PutBelt : equipment(destination) ? ItemAction::Equip : ItemAction::Put;
-            emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value)); continue;
+            emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value), {}, {},
+                equipment(destination) ? itemNewFlag : 0); continue;
         }
         if (change.kind != ItemChangeKind::Moved) throw std::logic_error("Unsupported inventory delta");
         const auto from = kind(state, change.before), to = kind(state, change.after);
+        if (from == ContainerKind::Belt && to == ContainerKind::Belt) {
+            // ItemMode::sub_6FC49140 marks NEWITEM/UNK1; InvMode sends
+            // 9D/UPDATESTATS. SWAPINBELT would put the displaced item on cursor.
+            auto item = state.inventory.items.at(change.item);
+            item.nativeFlags &= ~uint32_t(0x4000); // IFLAG_NOEQUIP.
+            emitItem(result, data, state, item, ItemAction::Properties, 0, uint32_t(state.player.id.value), {}, {}, beltRepositionFlags);
+            continue;
+        }
         if (to == ContainerKind::Corpse) {
             result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(uint32_t(change.item.value)); })); continue;
         }
@@ -359,7 +440,9 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
             return other.item != change.item && other.before == change.after;
         }) != fact.changes.end();
         if (to == ContainerKind::Cursor) {
-            action = equipment(from) ? ItemAction::Unequip : from == ContainerKind::Belt ? ItemAction::TakeBelt : ItemAction::Take;
+            action = equipment(from) ? ItemAction::Unequip : from == ContainerKind::Belt ?
+                (replaced ? ItemAction::SwapBelt : ItemAction::TakeBelt) :
+                (replaced ? ItemAction::SwapStored : ItemAction::Take);
         }
         else if (equipment(to)) {
             const bool indirect = !replaced && std::any_of(fact.changes.begin(), fact.changes.end(), [&](const auto &other) {
@@ -371,24 +454,22 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         else if (to == ContainerKind::Backpack || to == ContainerKind::Stash || to == ContainerKind::Cube || to == ContainerKind::Trade) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; }
         else throw std::logic_error("Unsupported inventory destination");
         emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value), {},
-            to == ContainerKind::Cursor ? change.before : std::nullopt);
+            to == ContainerKind::Cursor ? change.before : std::nullopt, equipment(to) ? itemNewFlag : 0);
     }
+    if (partialStackTarget != changes.end())
+        emitItem(result, data, state, state.inventory.items.at(partialStackTarget->item), ItemAction::Quantity,
+            0, uint32_t(state.player.id.value), {}, {}, 0x8); // IFLAG_DELETED, not unit removal.
     if (fact.switchedWeapons) {
-        for (const auto &[id, item] : state.inventory.items) {
-            (void)id;
-            const auto *at = std::get_if<ContainerLocation>(&item.location);
-            if (!at || at->container != state.containers.equipment) continue;
-            const auto slot = EquipmentSlot(at->cell.x);
-            if (slot == EquipmentSlot::RightHand || slot == EquipmentSlot::LeftHand ||
-                slot == EquipmentSlot::AlternateRightHand || slot == EquipmentSlot::AlternateLeftHand)
-                emitItem(result, data, state, item, ItemAction::WeaponSwitch, 0, uint32_t(state.player.id.value));
+        // ItemMode queues the outgoing right/left hands before the incoming
+        // right/left hands. GUID order can insert into an occupied body slot.
+        for (const auto slot : switchSlots) {
+            const auto item = std::find_if(state.inventory.items.begin(), state.inventory.items.end(), [&](const auto &entry) {
+                const auto *at = std::get_if<ContainerLocation>(&entry.second.location);
+                return at && at->container == state.containers.equipment && at->cell.x == int(slot);
+            });
+            if (item != state.inventory.items.end())
+                emitItem(result, data, state, item->second, ItemAction::WeaponSwitch, 0, uint32_t(state.player.id.value));
         }
-        result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::WeaponSet, [](auto &) {}));
-        for (size_t side = 0; side < 2; ++side)
-            result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::SelectedSkill, [&](auto &out) {
-                out.u8(0); out.u32(uint32_t(state.player.id.value)); out.u8(side == 0);
-                out.u16(uint16_t(std::max(0, state.player.selectedSkills[state.player.weaponSet * 2 + side]))); out.u32(state.player.selectedSkillOwners[state.player.weaponSet*2+side]);
-            }));
     }
     return result;
 }

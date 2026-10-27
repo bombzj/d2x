@@ -7,6 +7,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/loot/system.hpp"
 #include "server/systems/world/system.hpp"
+#include "server/systems/objects/system.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
@@ -317,8 +318,9 @@ DomainResult<> System::install(Prepared prepared) {
             Goal goal;goal.stage=5;goal.eligible=std::move(delivery);queueGoal(QuestId::ToolsOfTheTrade,std::move(goal));
             state_.objectives[questIndex(QuestId::ToolsOfTheTrade)]=true;
         }
-        if(s.kind==RewardKind::DeliverBird) shareProgress(QuestId::GoldenBird,5,std::move(delivery));
+        if(s.kind==RewardKind::DeliverBird) {shareProgress(QuestId::GoldenBird,5,std::move(delivery));state_.npcStory.alkorDelivery=true;}
         if(s.kind==RewardKind::ReturnGidbinn) {
+            state_.npcStory.ormusDelivery=true;
             shareProgress(QuestId::BladeOfTheOldReligion,4,std::move(delivery));
             state_.objectives[questIndex(QuestId::BladeOfTheOldReligion)]=true;
         }
@@ -326,9 +328,15 @@ DomainResult<> System::install(Prepared prepared) {
         if((s.kind==RewardKind::GidbinnRing || s.kind==RewardKind::IronWolf) && book[questIndex(QuestId::BladeOfTheOldReligion)].stage==5) creditPlayer(s.actor.player,QuestId::BladeOfTheOldReligion);
         if(s.kind==RewardKind::SmashSoulstone) captureGoal(QuestId::HellsForge,4,std::move(delivery),false,true);
         if(s.kind==RewardKind::ThawAnya) {
-            state_.actFive.anyaThawed=true;state_.objectModes[s.source]=2;
+            state_.actFive.anyaThawed=true;
+            state_.npcStory.anyaFrozenObject=s.source;
+            state_.npcStory.anyaThawAt=(s.actor.tick/20+2)*20;
+            if(const auto object=ports_.objects.read().objects.find(s.source);object!=ports_.objects.read().objects.end())
+                state_.npcStory.anyaOutsidePosition=object->second.position+ports_.areas.at(object->second.area).definition.origin;
             captureGoal(QuestId::PrisonOfIce,5,std::move(delivery));
         }
+        if(s.kind==RewardKind::ResistanceScroll && state_.actFive.anyaThawed && !state_.npcStory.anyaDeparted)
+            state_.npcStory.anyaReturnRequested=true;
         if(s.kind==RewardKind::ForgeHammer) state_.actFour.hammerDropped=true;
         if(s.kind==RewardKind::PlaceSoulstone) {state_.actFour.forgePlaced=true;state_.objectModes[s.source]=2;}
         if(s.kind==RewardKind::SmashSoulstone) {state_.actFour.forgeSmashed=true;state_.objectModes[s.source]=4;}

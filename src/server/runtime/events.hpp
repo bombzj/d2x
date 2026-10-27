@@ -43,6 +43,8 @@ struct InventoryFact {
     PersistentCharacter projection;
     std::vector<ItemChange> changes;
     bool switchedWeapons{};
+    // Original values for removal receipts; these are not live inventory items.
+    std::vector<ItemInstance> removedItems{};
 };
 struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; std::optional<uint16_t> tombOffset{}; std::optional<bool> eclipse{}; std::optional<uint8_t> staffStatus{}; std::optional<uint8_t> khalimStatus{}; unsigned rescued{}; std::array<uint16_t,48> gameFlags{}; std::array<bool,size_t(QuestId::Count)> unavailable{}, credited{}, entitled{}; bool fullStatus{}; std::optional<uint16_t> zooMonster{}; bool zooOnly{}; };
 struct AttributeFact { EntityId unit; uint64_t revision{}; };

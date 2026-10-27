@@ -170,7 +170,7 @@ Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
             out.u8(monster.mode==8?(monster.movementTarget?13:12):monster.mode==9?(monster.movementTarget?15:14):monster.mode==10?(monster.movementTarget?27:26):(monster.movementTarget?29:28));
             if(monster.movementTarget) key(out,monster.movementTarget->type,monster.movementTarget->id);
             else point(out,monster.destination+origin);
-            out.u8(0);if(!monster.movementTarget) out.u8(0);point(out,monster.position+origin);
+            out.u8(monster.poseDirection.value_or(0));if(!monster.movementTarget) out.u8(0);point(out,monster.position+origin);
         });
     if (monster.mode == 0 || monster.mode == 12)
         return encodeServerPacket(ServerMessage::NpcModePoint, [&](auto &out) {

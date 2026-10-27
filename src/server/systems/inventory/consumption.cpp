@@ -77,6 +77,9 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
     }
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), draft.edit.weaponSet};
+    // SkillItem marks the pSpell source as TARGETING, then ItemMode clears it
+    // with 3F before removing the successfully used item.
+    edit.facts.emplace_back(ItemTargetingFact{id,-1});
     edit.character = effects.value->character; edit.transient = effects.value->transient;
     if(effects.value->staminaPotionSurplus) edit.resources=transactions::ResourceRefresh::StaminaPotion;
     edit.resourceBase=effects.value->resourceBase;edit.publicFacts=effects.value->publicFacts;
