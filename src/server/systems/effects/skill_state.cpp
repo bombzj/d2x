@@ -35,15 +35,19 @@ DomainResult<> System::skillAuraState(EntityId source,EntityId target,int skill,
     if(infection) if(const auto *current=unitEffects(target);current && current->hasState(state,tick))
         return {DomainStatus::Unavailable,{}};
     CombatEffectSpec spec;spec.state=states->at(state);
-    if(battleCry && spec.state.curse) {
+    const bool pd2=owner.player?owner.player->rules.skills->pd2:
+        owner.monster->rule.stats && owner.monster->rule.stats->pd2;
+    if(battleCry && (spec.state.curse || (pd2 && state==89))) {
         const auto resistance=unitCurseResistance(target,tick);
-        if(resistance>=100) return {DomainStatus::Unavailable,{}};
-        duration=*curseStateDuration(duration,resistance,true,pd2Debuff);
+        const auto adjusted=curseStateDuration(duration,resistance,spec.state,pd2);
+        if(!adjusted) return {DomainStatus::Unavailable,{}};
+        duration=*adjusted;
     }
     spec.source=battleCry?EffectSource{CombatEffectSource::Skill,source,skill,rank}:EffectSource{CombatEffectSource::NativeState,infection?target:source,0,0};
     spec.nativeDirectAllocation=!battleCry;
     spec.nativeState=true;spec.nativeValues.emplace();spec.stacking=battleCry?EffectStacking::CurseLevel:EffectStacking::ReuseState;
-    spec.duration=uint32_t(duration);spec.nativeExpiration=NativeStateExpiration::EvenZeroDuration;
+    spec.duration=uint32_t(duration);spec.nativeExpiration=pd2 && battleCry?
+        NativeStateExpiration::NonzeroDuration:NativeStateExpiration::EvenZeroDuration;
     if(battleCry && !configurePd2Curse(spec,target,tick)) return {DomainStatus::Unavailable,{}};
     spec.refreshPassivesOnRemoval=true;
     const bool sourceFormulas=infection || warcry || pd2Debuff;

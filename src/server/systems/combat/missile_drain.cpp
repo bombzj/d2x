@@ -55,15 +55,17 @@ DomainStatus System::advanceMissileDrain(SpellImpact &impact,ParticipantView tar
         transactions::CharacterEdit edit{{player.player,player.actor,player.area,area->generation,0,tick.tick},
             player.inventoryRevision,player.characterRevision,player.persistent.player};
         if(player.persistent.player.hp>0 && contact.drain.lifeGain>0) {
-            const auto next=std::min(player.totals.character.maxLifeFixed.raw(),nativeAdd(edit.player.hp.raw(),contact.drain.lifeGain));
             auto pd2=player.totals.character.combat.pd2;
             if(pd2) {
                 const auto values=ports_.effects.unitStatValues(source.id(),tick.tick);
                 if(!values || !player.rules.skills || !player.rules.skills->stats) return DomainStatus::Unavailable;
                 pd2->lifeDrainCap=values->get({player.rules.skills->stats->names.at("lifedrain_percentcap"),0});
             }
-            if(!pd2 || pd2LifeDrainWriteAllowed(edit.player.hp.raw(),next,player.totals.character.maxLifeFixed.raw(),pd2->lifeDrainCap))
-                edit.player.hp=Fixed8::fromRaw(next);
+            if(pd2) {
+                if(!ports_.effects.unitStates(source.id(),tick.tick).contains(92))
+                    edit.player.hp=Fixed8::fromRaw(pd2SafeLifeAfterGain(edit.player.hp.raw(),contact.drain.lifeGain,
+                        player.totals.character.maxLifeFixed.raw(),pd2->lifeDrainCap));
+            } else edit.player.hp=Fixed8::fromRaw(std::min(player.totals.character.maxLifeFixed.raw(),nativeAdd(edit.player.hp.raw(),contact.drain.lifeGain)));
         }
         if(contact.drain.manaGain>0)
             edit.player.mana=Fixed8::fromRaw(std::min(player.totals.character.maxManaFixed.raw(),nativeAdd(edit.player.mana.raw(),contact.drain.manaGain)));
@@ -75,10 +77,12 @@ DomainStatus System::advanceMissileDrain(SpellImpact &impact,ParticipantView tar
         attributes::MonsterResourceTrace resources(monster,tick.tick);const auto sources=ports_.effects.unitStatSources(monster.id,tick.tick);
         resources.sampleSources(sources);
         if(monster.life>0 && contact.drain.lifeGain>0) {
-            const auto next=std::min(nativeChecked(monster.maximumLife),nativeAdd(nativeChecked(monster.life),contact.drain.lifeGain));
             const auto pd2=ports_.effects.combatModifiers(source.id(),tick.tick).pd2;
-            if(!pd2 || pd2LifeDrainWriteAllowed(nativeChecked(monster.life),next,nativeChecked(monster.maximumLife),pd2->lifeDrainCap))
-                resources.seedLife(Fixed8::fromRaw(next));
+            if(pd2) {
+                if(!ports_.effects.unitStates(source.id(),tick.tick).contains(monster.rule.deathDelayState))
+                    resources.seedLife(Fixed8::fromRaw(pd2SafeLifeAfterGain(nativeChecked(monster.life),contact.drain.lifeGain,
+                        nativeChecked(monster.maximumLife),pd2->lifeDrainCap)));
+            } else resources.seedLife(Fixed8::fromRaw(std::min(nativeChecked(monster.maximumLife),nativeAdd(nativeChecked(monster.life),contact.drain.lifeGain))));
         }
         if(contact.drain.manaGain>0) {
             const auto values=resources.values(sources);const auto &stats=*monster.rule.stats;

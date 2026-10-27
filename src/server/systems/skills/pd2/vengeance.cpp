@@ -17,11 +17,11 @@
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/native_damage.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2/arithmetic.hpp"
 #include "gameplay/rules/pd2_random.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <map>
 #include <stdexcept>
 
@@ -37,10 +37,6 @@ struct Pd2VengeancePulse {
 struct Pd2VengeanceTimers {std::map<FrameEventHandle,std::shared_ptr<Pd2VengeancePulse>> pulses;};
 namespace {
 constexpr int vengeance=111,justHit=86;
-int scaled(int amount,int percentage) {
-    const auto value=double(amount)*double(percentage)/100.0;
-    return int(std::clamp(value,double(INT32_MIN),double(INT32_MAX)));
-}
 DomainStatus advanceVengeance(const Ports &ports,Pd2VengeancePulse &pulse,uint64_t tick,Pd2VengeanceTimers &timers) {
     const combat::Participants participants{ports.players,ports.monsters,ports.social};
     const auto caster=nativeCaster(ports.players,ports.monsters,pulse.source);
@@ -90,7 +86,7 @@ DomainStatus advanceVengeance(const Ports &ports,Pd2VengeancePulse &pulse,uint64
         MissileHitDamage base;rollNativeSkillElement(base,values,vengeance,pulse.rank,random);
         for(size_t index=0;index<channels.size();++index)
             pulse.damage.channels[channels[index]]=nativeAdd(pulse.damage.channels[channels[index]],
-                nativeAdd(base.channels[0],scaled(base.channels[0],stat(masteries[index]))));
+                nativeAdd(base.channels[0],pd2MultiplyDivide(base.channels[0],stat(masteries[index]),100)));
         pulse.damage.coldLength=std::max(0,nativeSubtract(row.number("elen"),nativeMultiply(pulse.depth,15)));
         pulse.chance=formula("calc4");pulse.delay=row.number("param5");pulse.protection=nativeAdd(row.number("param6"),1);
         pulse.state=row.auraTargetState;

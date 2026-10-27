@@ -136,7 +136,10 @@ void NativeRealmService::finishPendingLeave() {
             for(auto *guest:shared.peers) if(guest!=this && guest->binding && guest->binding->game==binding->game)
                 if(!host.prepareSave(*guest->binding) || !host.exportCharacter(*guest->binding)) return;
     }
-    endGame(!preparedReload, preparedReload);
+    if (!preparedReload && externalCheckpoint) {
+        if (!checkpoint()) return;
+        endGame(false, false);
+    } else endGame(!preparedReload, preparedReload);
 }
 void NativeRealmService::ping(net::protocol::Reader &in) {
     in.u32(); in.u32(); in.u32(); in.finish();

@@ -1,4 +1,4 @@
-param([string]$Config = '', [int]$TimeoutSeconds = 120)
+param([string]$Config = '', [int]$TimeoutSeconds = 150)
 $ErrorActionPreference = 'Stop'
 if ($TimeoutSeconds -lt 1) { throw 'TimeoutSeconds must be positive.' }
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))

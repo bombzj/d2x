@@ -114,9 +114,11 @@ flowchart TD
 
 原服与自研均由FrameInput → SceneController → RemoteUiClients／RemoteControl／Combat／Inventory → RealmSession发送原包。回包进入同一RemoteWorld／RemoteTown／RemoteScene，再由公共UI、动画和声音消费。单机仅在组装入口建立内存字节连接；移除了LocalGame／GameClients／GameScene及其CMake目标。
 
-嵌入宿主在应用帧中泵入字节并调用GameHost.advance；内核命令有界FIFO、绑定玩家、校验实例／区域代次和内部序号。每实例独立时钟／区域／玩家表／随机／ID；代次在槽位复用时递增。未来并发调度由宿主承担，不向GameInstance加入窗口或网络工作。
+单机嵌入宿主由应用线程泵入字节并调用GameHost.advance；TCP/IP Host启用独立宿主线程，按自身单调时钟收包、推进和输出，不由窗口帧驱动。EmbeddedRealm公开接口由同一调用线程使用，LAN期间经有界队列同步取得宿主操作结果／只读值，内存字节传输沿用有锁队列；性能观察在调用方pump／shutdown交付。宿主拥有独立MPQ句柄和可变缓存，保留同一挂载配置／语言／松散文件映射，不继承UI加载回调。关闭先保存再停止线程，切回单机先join，首个同步pump不重复累计后台时间。内核命令继续校验实例／区域代次和内部序号；独立GS多房间线程见下段及[线程方案](HOST_RUNTIME_RECONSTRUCTION.md)。
 
-独立进程由控制台循环泵送后端及游戏字节，调用同一NativeRealmHost.advance。NativeRealmService的admitExternal接受已校验D2CS票据与DBS角色值，externalSave连接DBS保存确认；不创建本地CharacterStore租约。后端等待串行、故障恢复和关闭约束由部署页维护，不与嵌入宿主文件保存保证混为一谈。
+最小化时应用继续事件、协议、存档回传和地图CPU消费，跳过场景创建、纹理上传与绘制／交换缓冲。单机世界仍按暂停策略停步，退局待结算不受普通失焦暂停阻塞；LAN世界不因房主窗口状态暂停。恢复清理旧输入并重建场景表现。原版混合客户端及Linux上的线程／最小化行为仍待验证。
+
+独立GS主线程处理TCP／D2CS及路由；固定gameThreads游戏线程分别独占NativeRealmHost、资源句柄、缓存和连接投影，按房间数分配新局且不迁移，同局保持串行25Hz。专用PvpgnStorage线程负责文件与DBS串行事务，游戏线程以externalCheckpoint提交并等待异步确认，不等待网络或磁盘。admitExternal接受已校验票据与角色值，不创建本地CharacterStore租约。连接ID不复用，保存完成另匹配请求序号；故障／关闭及容量限制见[部署页](../development/PVPGN_SERVER.md)。多房间实际吞吐、完整后端故障组合及Linux行为仍未认证。
 
 嵌入宿主在原MCP选角时取得整局角色租约，创建游戏前完成内容和网络入局数据准备；失败不覆盖原档。正常离局先停止接收玩法请求，等待已接受操作结算并完成保存，再确认退出和回收绑定；保存失败不能伪造成功回执，须保留可恢复状态。具体等待条件、TCP/IP房主／客人差异、包序列及检查点／重载操作统一见[存档](../modules/SAVES.md#已迁移的角色与存档入口)，不能将本地租约保证套用于独立DBS后端。
 

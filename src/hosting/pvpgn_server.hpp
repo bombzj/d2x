@@ -10,7 +10,7 @@ struct PvpgnServerOptions {
     net::Endpoint d2cs{"127.0.0.1", 6113}, d2dbs{"127.0.0.1", 6114}, listen{"0.0.0.0", 4000};
     std::filesystem::path recovery;
     std::string realm;
-    uint32_t version{}, maximumGames{16};
+    uint32_t version{}, maximumGames{16}, gameThreads{2};
     ContentPreparation preparation = ContentPreparation::OriginalRules;
 };
 class PvpgnServer {

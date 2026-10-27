@@ -129,17 +129,21 @@ class Evaluation {
                 if(baseAmount<=0) break;
                 const auto multiplier=source();if(!multiplier) break;
                 auto addition=nativeMultiply(baseAmount,multiplier)>>op.shift;
+                // Native += converts the complete floating-point sum, after
+                // the wrapped integer product, rather than just the delta.
                 if(op.code==3 || op.code==5)
-                    addition=int32_t(double(nativeMultiply(addition,previous))/100.0);
-                value=nativeAdd(value,addition);break;
+                    value=nativeTruncate(double(value)+double(nativeMultiply(addition,previous))/100.0);
+                else value=nativeAdd(value,addition);
+                break;
             }
             case 6:case 7: {
                 if(!list.hasOwner || !list.hasAct) break;
                 const auto amount=source();if(!amount) break;
                 if(!context_.time) throw std::runtime_error("Native by-time stat requires act environment context");
                 auto addition=statByTimeAdjustment(amount,*context_.time);
-                if(op.code==7) addition=int32_t(double(nativeMultiply(value,addition))/100.0);
-                value=nativeAdd(value,addition);break;
+                if(op.code==7) value=nativeTruncate(double(value)+double(nativeMultiply(value,addition))/100.0);
+                else value=nativeAdd(value,addition);
+                break;
             }
             case 8:case 9: {
                 if(!list.hasOwner || list.ownerKind!=StatOwnerKind::Player) break;
@@ -283,7 +287,9 @@ class Propagation {
 void collectKeys(const StatList &list,std::set<StatKey> &keys,unsigned depth=0) {
     if(depth>=64) throw std::runtime_error("Excessive native stat list nesting");
     if(list.extended && list.fullValues) {
-        for(const auto &[key,value]:*list.fullValues) if(value) keys.insert(key);
+        // A stored zero is an existing FullStats row. KeepZero and bounded
+        // native copies depend on its presence, even when its value is zero.
+        for(const auto &[key,value]:*list.fullValues) keys.insert(key);
         return;
     }
     for(const auto &[key,value]:list.base) if(value) keys.insert(key);

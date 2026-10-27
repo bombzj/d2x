@@ -28,6 +28,7 @@ struct NativeRealmService {
     RealmOutput realmOutput;
     GameOutput gameOutput;
     std::function<void(const PersistentCharacter &)> externalSave;
+    std::function<bool(const PersistentCharacter &)> externalCheckpoint;
     std::shared_ptr<const ClassicData> &content;
     std::unique_ptr<RealmPortraitCatalog> &portraits;
     std::unique_ptr<CharacterStore> store;
@@ -140,7 +141,7 @@ struct NativeRealmService {
     void sendGameBatch(std::vector<Bytes>);
     void result(uint8_t, uint32_t);
     const CharacterRosterEntry &find(std::string_view) const;
-    void checkpoint();
+    bool checkpoint();
     void prepareReload();
     PreparedGame prepareGame(PersistentCharacter,std::optional<server::GameSettings> settings={});
     void admitExternal(PersistentCharacter, HostedGame &, uint32_t ticketHash, uint16_t gameId);

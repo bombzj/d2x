@@ -23,7 +23,7 @@ void issueTicket(NativeRealmService &peer) {
 }
 }
 void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &room, uint32_t ticketHash, uint16_t gameId) {
-    if (binding || !externalSave || !gameId) throw ProtocolError("Invalid external admission");
+    if (binding || (!externalSave && !externalCheckpoint) || !gameId) throw ProtocolError("Invalid external admission");
     if (saved.player.hardcoreDead) throw AdmissionFailure(21,"Hardcore character is dead");
     if (saved.player.hardcore != room.hardcore) throw AdmissionFailure(room.hardcore?19:20,"Character hardcore mode does not match game");
     selectedName = saved.player.name;

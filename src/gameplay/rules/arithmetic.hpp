@@ -5,6 +5,8 @@ namespace d2x {
 // Explicit x86 integer semantics without C++ signed-overflow undefined behavior.
 int32_t nativeNarrow(int64_t value) noexcept;
 int32_t nativeChecked(int64_t value);
+// CVTTSD2SI: truncate toward zero; invalid signed conversion yields INT_MIN.
+int32_t nativeTruncate(double value) noexcept;
 int32_t nativeAdd(int32_t first, int32_t second) noexcept;
 int32_t nativeSubtract(int32_t first, int32_t second) noexcept;
 int32_t nativeMultiply(int32_t first, int32_t second) noexcept;

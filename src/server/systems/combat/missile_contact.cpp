@@ -242,10 +242,7 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
                 // successful native pierce continuations advance this stat.
                 const auto factor=std::max(double(uint32_t(program.parameters[0])),
                     100.0-double(nativeSubtract(missile.pierceCount,1))*program.percentage);
-                const auto scale=[&](int32_t value) {
-                    const double amount=double(value)*factor/100.0;
-                    return amount>INT32_MAX?INT32_MAX:amount<INT32_MIN?INT32_MIN:int32_t(std::trunc(amount));
-                };
+                const auto scale=[&](int32_t value) {return pd2MultiplyDivide(value,factor,100);};
                 for(auto &channel:rolled.channels) channel=scale(channel);
                 for(auto *drain:{&rolled.lifeLeech,&rolled.manaLeech,&rolled.staminaLeech}) *drain=scale(*drain);
             } else if(program.function==19) {

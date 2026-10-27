@@ -199,8 +199,8 @@ int runHeadless(const AppOptions &options) {
     const auto mode=profile.at("mode").get<std::string>();
     const bool hosting=mode=="host";
     if(!hosting && mode!="clients") throw std::invalid_argument("mode must be host or clients");
-    // Slow outer pumping can diagnose catch-up publication without changing
-    // fixed-step duration, the catch-up bound or authoritative event ordering.
+    // Slow outer pumping delays the diagnostic client, while the TCP/IP host
+    // keeps advancing on its own clock with the existing fixed-step rules.
     const int pollMs=integer(profile,"pollMs",hosting?10:20,5,1000);
     const int duration=integer(profile,"durationSeconds",60,1,3600);
     const int connectTimeout=integer(profile,"connectTimeoutSeconds",60,5,300);
@@ -478,6 +478,7 @@ int runHeadless(const AppOptions &options) {
         if(!failure.empty()) failure+="; ";
         failure+=std::string("Host shutdown: ")+error.what();failed=true;
     }
+    flushTimings();
     auto final=status();final["ok"]=!failed;
     std::ofstream summary(output/"summary.json");summary.exceptions(std::ios::badbit|std::ios::failbit);summary<<final.dump(2)<<'\n';
     std::cout<<final.dump()<<std::endl;

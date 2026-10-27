@@ -574,6 +574,7 @@ target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_persistence r
 
 add_executable(d2x_pvpgn
   src/server_main.cpp src/hosting/pvpgn_server.cpp
+  src/hosting/detail/pvpgn_game_thread.cpp src/hosting/detail/pvpgn_storage.cpp
 )
 target_link_libraries(d2x_pvpgn PRIVATE d2x_character_host d2x_persistence d2x_d2gs_protocol nlohmann_json::nlohmann_json)
 set_target_properties(d2x_pvpgn PROPERTIES OUTPUT_NAME d2x_server)

@@ -61,7 +61,9 @@ D2X现由`content/pd2/skill_data.cpp`准备技能端Throwable，未开放怪物�
 
 `0x2FAE70`在op4／5求值时通过上述查询取真实主人的basis。当前ItemStatCost将484／487分别链接equipped_eth／missing_hp并作用于物品伤害百分比；不能把条件求值后的结果覆盖保存的系数。`0x2FAD10`在装备属性变化后向客户端发送相关物品属性更新，也不等于将条件结果永久写回物品。
 
-代码中动态采样位于`src/gameplay/stats/pd2/owner_values.cpp`，活动无形装备计数位于`src/server/systems/attributes/pd2/item_values.cpp`。临时结果仅供当前查询／接触／公式使用，角色资源仍归CharacterRecord，物品保存原属性系数。装备资格交错、全部伙伴装备与极端回绕值还需逐项对照。飞弹／原生近战共用的advanceMissileDrain在玩家提交时亦重新查询lifedrain_percentcap，怪物路径原已调用实时unitStatValues；仅该安全吸血入口应用F03，普通治疗／击杀回血不据此新增限制。铁魔材料沿D2MOO SkillNec Do57的实际装备调用核对：实时equipped_eth现在纳入保留材料的真实GUID、无形位及活动Item来源，不借主人装备；材料武器补当前ItemTypes父类编译ID与StrBonus／DexBonus，保存仍只保留既有kf材料，不增加另一份装备存档。制造材料已改用实际最大耐久和原BROKEN资格；Do57经ItemMode::sub_6FC45060执行普通装备，不能把最大耐久强置零来接受零耐久材料。原生制造后的全部属性组合仍需运行对照。
+这里的2FAE70（41d49为2FAE80）是物品通知的递归计算helper，已定位外部直接调用者为2FAD10／345520（41d49为2FAD20／345680），没有证据将其整个switch替换所有权威属性查询。其op1包含源属性ID覆写累计寄存器及整数先除100的特殊行为；不移植到通用StatList。op3／5的32位乘法→double除100→加累计值→统一CVTTSD2SI与原D2MOO链一致，公共StatList已修正提前截断增量的差异，op7同样保留整和转换；缓存子列表中的KeepZero行在重建键集合时也继续保留。依据、反例及剩余边界见[F62](parity/ITEMS.md#f62-属性浮点累计与查询边界)。
+
+代码中动态采样位于`src/gameplay/stats/pd2/owner_values.cpp`，活动无形装备计数位于`src/server/systems/attributes/pd2/item_values.cpp`。临时结果仅供当前查询／接触／公式使用，角色资源仍归CharacterRecord，物品保存原属性系数。装备资格交错、全部伙伴装备与极端回绕值还需逐项对照。飞弹／原生近战共用的advanceMissileDrain在玩家提交时亦重新查询lifedrain_percentcap，怪物路径原已调用实时unitStatValues；这些已核安全吸血／吸收入口应用F03，普通治疗／击杀回血不据此新增限制。铁魔材料沿D2MOO SkillNec Do57的实际装备调用核对：实时equipped_eth现在纳入保留材料的真实GUID、无形位及活动Item来源，不借主人装备；材料武器补当前ItemTypes父类编译ID与StrBonus／DexBonus，保存仍只保留既有kf材料，不增加另一份装备存档。制造材料已改用实际最大耐久和原BROKEN资格；Do57经ItemMode::sub_6FC45060执行普通装备，不能把最大耐久强置零来接受零耐久材料。原生制造后的全部属性组合仍需运行对照。
 
 ## 物品充能恢复
 
@@ -114,7 +116,7 @@ Properties的fireskill／coldskill／ltngskill／poisskill／magskill通过函�
 
 初始化`0x36AA90`把伤害表物理行PierceStatId改为425、魔法行改为358。指针经getter `0x31F250`、版本表`0x4A871C`解析到当前D2Game `0x102AB0`，不是仅供Open Wounds使用的表。代码在`src/server/systems/combat/pd2/item_pierce.cpp`，玩家和非玩家伤害接收均按实际来源采样。
 
-属性488由`0x2FC030`限制安全回血入口`0x306E80`的整次生命写入。旧生命、最大生命和属性488按无符号32位值转换为double，候选新生命则按有符号32位转换；旧值或新值低于`(100-cap)/100`即可写入。因此一次吸取可以越过门槛，此后暂停；不能把每次结果钳成门槛，也不能未经依据推广到药水或所有治疗。纯规则位于`src/gameplay/combat/pd2/leech.hpp`。
+属性488由`0x2FC030`限制安全回血入口`0x306E80`的整次生命写入。旧生命、最大生命和属性488按无符号32位值转换为double，候选新生命则按有符号32位转换；旧值或新值低于`(100-cap)/100`即可写入。因此一次吸取可以越过门槛，此后暂停；不能把每次结果钳成门槛，也不能未经依据推广到药水或所有治疗。纯规则位于`src/gameplay/combat/pd2/leech.hpp`。306E80（41d49为307010）先以有符号64位累加并限最大生命，之后才应用写入门槛；state92禁止安全回血。吸血及核心305B60／305E20的AbsLife均经过这个入口，D2X的玩家／怪物吸血和伤害吸收回血共用这组边界，避免32位先加回绕或吸收绕过488；具体安装点和未核实直接治疗路径见F03。
 
 ### 2FC030：生命写入门槛契约
 

@@ -12,6 +12,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/units/resources.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2/arithmetic.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "server/systems/attributes/calculation.hpp"
 #include <algorithm>
@@ -327,8 +328,17 @@ DomainResult<> System::frenzy(const ActorContext &actor,const SkillCastSpec &ski
             const auto count=values?StatSnapshot{*values}.get(stackStat):effect.spec.source.level;
             stacks=nativeAdd(count,1);break;
         }
-    stacks=std::min(stacks,skill.rank);
     auto context=caster->formulaInput(*this,actor.tick);SkillFormulaValues formulas(*caster->programs()->formulas,context);
+    // PD2 replaces only Do009's two ApplyFrenzyStats call sites. MonFrenzy
+    // Do109 still uses the retail level/stack evaluation below.
+    const bool pd2Frenzy=caster->programs()->pd2 && program.doFunction==9;
+    int maximum=skill.rank;
+    if(pd2Frenzy) {
+        const auto limit=formulas.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,"calc4");
+        if(!limit) return {DomainStatus::Unavailable,{}};
+        maximum=*limit;
+    }
+    stacks=std::min(stacks,maximum);
     const auto length=formulas.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,"auralencalc");
     if(!length) return {DomainStatus::Unavailable,{}};
     CombatEffectSpec effect;effect.state=program.frenzyState;effect.duration=uint32_t(*length);
@@ -336,7 +346,9 @@ DomainResult<> System::frenzy(const ActorContext &actor,const SkillCastSpec &ski
     effect.nativeState=true;effect.nativeDirectAllocation=bool(caster->monster);effect.refreshPassivesOnRemoval=true;effect.nativeExpiration=NativeStateExpiration::EvenZeroDuration;
     effect.nativeValues.emplace();
     std::vector<StatValue> writes{{stackStat,stacks}};
-    for(const auto &write:formulas.auraStats(skill.sourceId,stacks,6,true)) {
+    if(pd2Frenzy) writes.emplace_back(StatKey{rules.names.at("modifierlist_level"),0},skill.rank);
+    for(auto write:formulas.auraStats(skill.sourceId,pd2Frenzy?skill.rank:stacks,6,!pd2Frenzy)) {
+        if(pd2Frenzy) write.value=pd2MultiplyDivide(write.value,stacks,uint32_t(maximum));
         writes.push_back(write);
         if(write.key.id==rules.names.at("attackrate")) writes.emplace_back(StatKey{rules.names.at("other_animrate"),0},write.value);
     }

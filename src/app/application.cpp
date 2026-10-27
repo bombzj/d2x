@@ -19,7 +19,7 @@ class Platform {
   public:
     explicit Platform(bool hidden) {
         SetTraceLogLevel(LOG_WARNING);
-        SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | (hidden ? FLAG_WINDOW_HIDDEN : 0));
+        SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_WINDOW_ALWAYS_RUN | (hidden ? FLAG_WINDOW_HIDDEN : 0));
         InitWindow(1280, 816, "D2X - Diablo II Expansion / C++");
         W = GetScreenWidth();
         H = GetScreenHeight();

@@ -57,7 +57,7 @@ DomainResult<std::shared_ptr<AuraUnitPublication>> System::prepareFear(const Nat
     MonsterResourceTrace resources(*unit,tick,&recipient.states);
     // AIUTIL deliberately uses Terror / level 1 and its ordinary state
     // removal callback, regardless of the originating Howl/GrimWard skill.
-    const auto duration=curseStateDuration(request.frames,unitCurseResistance(id,tick),state.curse,
+    const auto duration=curseStateDuration(request.frames,unitCurseResistance(id,tick),state,
         ports_.monsters.skillPrograms() && ports_.monsters.skillPrograms()->pd2);
     auto publication=std::make_shared<AuraUnitPublication>();
     bool posted{};
@@ -156,7 +156,7 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
     }
     // Curse allocation can fail (resistance/Attract protection) after the
     // neutral alignment and nearby selectors have already been prepared.
-    const auto adjusted=curseStateDuration(duration,unitCurseResistance(selected,actor.tick),program.state.curse,player->rules.skills->pd2);
+    const auto adjusted=curseStateDuration(duration,unitCurseResistance(selected,actor.tick),program.state,player->rules.skills->pd2);
     if(adjusted && monster->rule.curseable) {
         auto shadow=*monster;shadow.nativeStats=selectedLife.intrinsic;shadow.life=selectedLife.life.raw();shadow.maximumLife=selectedLife.maximum.raw();
         MonsterResourceTrace resources(shadow,actor.tick,&target.states);
@@ -257,7 +257,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
             const auto &recipient=*peer;
             if(!(program.targetFilter&1) || (!cloak && program.ai!=CurseAi::None) || !recipient.entered || recipient.persistent.player.hp<=0 ||
                !participants.canHarm(actor.actor,id)) continue;
-            const auto duration=curseStateDuration(program.permanent?0:program.frames,unitCurseResistance(recipient.actor,actor.tick),program.state.curse,pd2);
+            const auto duration=curseStateDuration(program.permanent?0:program.frames,unitCurseResistance(recipient.actor,actor.tick),program.state,pd2);
             if(!duration) continue;
             auto &states=nextPlayers[recipient.actor].states;
             if(program.skipActive && states.hasState(program.state.id,actor.tick)) continue;
@@ -300,7 +300,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         };
         const int resistance=unitCurseResistance(id,actor.tick);
         const int divisor=program.ai==CurseAi::None || program.ignoreDifficultyDivisor?1:player->rules.skills->aiCurseDivisor.at(size_t(player->persistent.difficulty));
-        const auto duration=curseStateDuration(program.permanent?0:(divisor?nativeDivide(program.frames,divisor):program.frames),resistance,program.state.curse,pd2);
+        const auto duration=curseStateDuration(program.permanent?0:(divisor?nativeDivide(program.frames,divisor):program.frames),resistance,program.state,pd2);
         if(!duration) {if(program.ai==CurseAi::Taunt) resetTaunt();continue;}
         auto &recipient=next[id];recipient.area=monster.area;
         CombatEffectSpec curse;curse.state=program.state;curse.stacking=EffectStacking::CurseLevel;

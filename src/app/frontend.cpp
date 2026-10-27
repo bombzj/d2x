@@ -267,8 +267,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     bool noPickup=false;
     uint64_t lastRevealAllGeneration = ~uint64_t{};
     bool lastRevealAllShown = false;
+    bool minimized = false;
     auto sceneStatus = [&] {
-        town.update(session.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
+        town.update(session.read(), !minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
         auto status = town.read();
         status.noPickup=noPickup;
         status.automapVisible = mapDisplay.visible;
@@ -429,8 +430,27 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     }
     profile.mark("frontend-ready");
     FrontendTimings frameTimings;
+    bool wasMinimized = false;
+    auto clientFrame = std::chrono::steady_clock::now();
     while (true) {
         FrontendTimings::Frame frameTiming(frameTimings);
+        const auto clientNow = std::chrono::steady_clock::now();
+        const float frameSeconds = std::clamp(std::chrono::duration<float>(clientNow - clientFrame).count(), 0.f, .1f);
+        clientFrame = clientNow;
+        minimized = IsWindowMinimized();
+        if (minimized || wasMinimized) {
+            debugInputs.clear();
+            control.cancelMovement();
+            if (sharedController) sharedController->resetInput();
+        }
+        if (minimized != wasMinimized) {
+            if (sharedUi) {
+                sharedUi->pauseWorldPresentation(minimized || presentationPaused);
+                sharedUi->clearClientMissiles();
+            }
+            if (!minimized) scene.reset();
+            wasMinimized = minimized;
+        }
         if (options.frameLimit > 0 && ++frames > options.frameLimit) quit = true;
         if (WindowShouldClose())
             quit = true;
@@ -438,9 +458,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             flushAutomap(); automapStore.reset();
         }
         const auto hostNow = std::chrono::steady_clock::now();
-        const bool hostFocused = debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused;
+        const bool hostFocused = !minimized && (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused);
         if (embedded) embedded->pump(std::chrono::duration<double>(hostNow - hostFrame).count(),
-            !hostFocused || presentationPaused || (sharedUi && sharedUi->ui().gameMenuOpen));
+            !quit && (!hostFocused || presentationPaused || (sharedUi && sharedUi->ui().gameMenuOpen)));
         hostFrame = hostNow;
         frameTiming.mark(FrontendTimings::Host);
         if (auto error = embedded ? embedded->takeError() : std::string{}; !error.empty()) {
@@ -527,13 +547,13 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 std::cerr<<notice<<'\n'; automapStore.reset();
             }
         }
-        const bool focused = debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused;
+        const bool focused = !minimized && (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused);
         const bool escape = debugInputs.empty() ? IsKeyPressed(KEY_ESCAPE) : debugInputs.front().escape;
         if (focused && escape) control.cancelMovement();
         if (!focused || presentationPaused || (sharedUi && sharedUi->ui().blocksInput()))
             control.cancelMovement();
-        control.tick(scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
-            scene ? scene->playerPathPosition(session.read()) : std::nullopt);
+        control.tick(!minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
+            !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
         if (renderedArea != town.read().area) {
             // Walking into an adjacent level changes the binding, not the
             // actor's path. RemoteScene refreshes palette/origin each frame;
@@ -560,11 +580,15 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     return std::move(config.login);
                 },
                 quit,
-                [&](const std::string &path) { saveFrontendScreenshot(target, path); },
+                [&](const std::string &path) {
+                    if (minimized) throw std::runtime_error("Screenshots are unavailable while minimized");
+                    saveFrontendScreenshot(target, path);
+                },
                 sceneStatus, control, inventory, combat, town, [&](bool visible, bool large) {
                     mapDisplay.visible = visible; mapDisplay.large = large;
                     if (sharedUi) { sharedUi->ui().automap = visible; sharedUi->ui().automapLarge = large; }
                 }, presentationPaused, [&](std::vector<FrameInput> queued) {
+                    if (minimized) throw std::invalid_argument("UI input is unavailable while minimized");
                     if (debugInputs.size() + queued.size() > 32)
                         throw std::invalid_argument("The UI input queue exceeds 32 frames");
                     for (auto &frame : queued) debugInputs.push_back(std::move(frame));
@@ -577,7 +601,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 }, prepareGame);
             if (presentationPaused != wasPaused) {
                 debugInputs.clear();
-                if (sharedUi) sharedUi->pauseWorldPresentation(presentationPaused ||
+                if (sharedUi) sharedUi->pauseWorldPresentation(minimized || presentationPaused ||
                     (localConnection && !lanConnection && (!hostFocused || sharedUi->ui().gameMenuOpen)));
                 if (sharedController) sharedController->resetInput();
                 if (!presentationPaused) {
@@ -613,7 +637,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 {"itemCommands", sharedClients ? sharedClients->queuedItemCommands() : 0},
                 {"waitingItemRequest", waiting ? nlohmann::json(*waiting) : nlohmann::json(nullptr)}};
             constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading", "TcpIp", "JoinHost", "Difficulty"};
-            reply["frontend"] = {{"page", pageNames.at(size_t(page))}, {"notice", notice}};
+            reply["frontend"] = {{"page", pageNames.at(size_t(page))}, {"notice", notice}, {"minimized", minimized}};
             if(request.find("online-status")!=std::string::npos || request.find("server-status")!=std::string::npos)
                 reply["performance"]=frameTimings.summary();
             if (sharedClients && request.find("online-status") != std::string::npos) {
@@ -669,11 +693,16 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             debugInputs.clear();
             // Keep the final scene/screenshot while the independent service completes
             // the bounded save/leave exchange; no further world input is accepted.
-            BeginDrawing();
-            ClearBackground(BLACK);
-            DrawTexturePro(target.texture, {0, 0, float(target.texture.width), -float(target.texture.height)},
-                {0, 0, float(GetScreenWidth()), float(GetScreenHeight())}, {0, 0}, 0, WHITE);
-            EndDrawing();
+            if (minimized) {
+                WaitTime(.02);
+                PollInputEvents();
+            } else {
+                BeginDrawing();
+                ClearBackground(BLACK);
+                DrawTexturePro(target.texture, {0, 0, float(target.texture.width), -float(target.texture.height)},
+                    {0, 0, float(GetScreenWidth()), float(GetScreenHeight())}, {0, 0}, 0, WHITE);
+                EndDrawing();
+            }
             if (quit) continue;
         }
         auto view = session.read();
@@ -811,7 +840,16 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         // RealmSession already reduced these packets into its remote-only view.
         // No opaque queue is retained by this value-only client.
         session.take_game_packets();
-        town.update(session.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
+        town.update(session.read(), !minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
+        if (minimized) {
+            if (sharedClients) sharedClients->update(town.read(), std::nullopt);
+            const auto reveals = town.take_automap_room_reveals_pd2();
+            if (!reveals.empty()) session.report_automap_rooms_pd2(reveals, onlineIntentContext(session.read()));
+            syncPreferences();
+            WaitTime(.02);
+            PollInputEvents();
+            continue;
+        }
         bool showScene =
             view.stage == OnlineStage::ProtocolReady && town.read().available && sceneError.empty();
         if (showScene && !scene) {
@@ -923,7 +961,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         sharedController->resetInput();
                     }
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
-                    sharedUi->refreshUi(std::clamp(GetFrameTime(),0.f,.1f));
+                    sharedUi->refreshUi(frameSeconds);
                     auto &panels = sharedUi->ui();
                     const auto &native = view.world;
                     if (!sharedClients->busy()) { panels.inventory.pending = {}; panels.shopSalePending.reset(); }
@@ -1002,7 +1040,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         input.mouse = tradeCanvasMouse(windowMouse);
                     }
                     chatInput(input);
-                    const bool keepGame = sharedController->handle(input,GetFrameTime());
+                    const bool keepGame = sharedController->handle(input,frameSeconds);
                     if (tradeCanvas) {
                         input.mouse = windowMouse;
                         leaveTradeCanvas();
@@ -1015,7 +1053,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed,
                         localConnection && !lanConnection && (!input.focused || panels.gameMenuOpen));
                     if(noPickup && !input.showLoot) worldFrame.input.pickup.reset();
-                    sharedController->handleWorld(input,worldFrame.input,GetFrameTime());
+                    sharedController->handleWorld(input,worldFrame.input,frameSeconds);
                     scene->drawTargetInfo(view,worldFrame,*sharedUi,combat,sharedController->combatTarget());
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     drawGameUi(input.mouse);
@@ -1035,7 +1073,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 ClearBackground(BLACK);
                 if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
-                    sharedUi->refreshUi(std::clamp(GetFrameTime(), 0.f, .1f));
+                    sharedUi->refreshUi(frameSeconds);
                     const bool tradeCanvas = sharedUi->ui().shopOpen;
                     const Vec windowMouse = input.mouse;
                     if (tradeCanvas) {
@@ -1043,7 +1081,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         input.mouse = tradeCanvasMouse(windowMouse);
                     }
                     chatInput(input);
-                    if (!sharedController->handle(input, GetFrameTime())) leaveGame = true;
+                    if (!sharedController->handle(input, frameSeconds)) leaveGame = true;
                     if (tradeCanvas) {
                         input.mouse = windowMouse;
                         leaveTradeCanvas();
@@ -1051,7 +1089,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     WorldInputView unavailable;
                     unavailable.gameGeneration = view.gameGeneration;
                     unavailable.areaGeneration = view.world.areaGeneration;
-                    sharedController->handleWorld(input, unavailable, GetFrameTime());
+                    sharedController->handleWorld(input, unavailable, frameSeconds);
                     drawGameUi(worldMouse);
                 } else {
                     // Fullscreen frontend pages are original 800x600 art: lay them

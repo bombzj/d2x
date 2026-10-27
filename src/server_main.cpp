@@ -46,6 +46,11 @@ int main(int argc, char **argv) {
         options.realm = config.value("realm", std::string{});
         options.version = config.value("version", uint32_t{});
         options.maximumGames = config.value("maximumGames", uint32_t{16});
+        if (config.contains("gameThreads") && !config.at("gameThreads").is_number_integer())
+            throw std::runtime_error("gameThreads must be an integer");
+        const auto gameThreads = config.value("gameThreads", int64_t{2});
+        if (gameThreads < 1 || gameThreads > 32) throw std::runtime_error("gameThreads must be between 1 and 32");
+        options.gameThreads = uint32_t(gameThreads);
         options.recovery = path("recovery");
         const auto stopFile = path("stopFile");
         if (std::filesystem::exists(stopFile)) throw std::runtime_error("Stale stop request exists; remove it before starting");

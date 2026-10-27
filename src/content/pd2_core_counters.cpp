@@ -8,6 +8,7 @@
 namespace d2x {
 std::pair<std::vector<int16_t>, std::vector<int16_t>> preparePd2CoreCounterSlots(
     const DataTable &misc, const Bytes &compiled) {
+    // 17d5 37D040/37CE20 and 41d49 37EE60/37EC40 select identical slots.
     constexpr std::array<int16_t, 300> currentSlots{
         77, 78, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,

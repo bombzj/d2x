@@ -63,6 +63,8 @@ void preparePd2Authentication(net::protocol::OriginalClientAuth &auth, const std
             auth.cnCoreBuild = Pd2CoreBuild::Normal20261020;
         else if (coreDigest == "17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57")
             auth.cnCoreBuild = Pd2CoreBuild::Normal20261021;
+        else if (coreDigest == "41d49d63d531050bb0c89db9efd191fefd322378683159be5dc059498ae1e424")
+            auth.cnCoreBuild = Pd2CoreBuild::Normal20261026;
         uint32_t bhCrc{};
         // Native BH reports its actual disk bytes. Keep reporting the selected
         // file after updates rather than requiring an old sample's SHA-256.

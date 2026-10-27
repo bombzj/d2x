@@ -50,11 +50,13 @@ const CharacterRosterEntry &NativeRealmService::find(std::string_view name) cons
     if (!found) throw std::runtime_error("Character list changed; select again");
     return *found;
 }
-void NativeRealmService::checkpoint() {
-    if (!binding) return;
+bool NativeRealmService::checkpoint() {
+    if (!binding) return true;
     const auto saved = host.exportCharacter(*binding);
     if (!saved) throw std::runtime_error("Character storage binding expired or character settlement pending");
-    if (externalSave) externalSave(*saved);
+    if (externalCheckpoint) {
+        if (!externalCheckpoint(*saved)) return false;
+    } else if (externalSave) externalSave(*saved);
     else {
         if (!lease) throw std::runtime_error("Character storage binding expired");
         store->save(*lease, *saved);
@@ -63,13 +65,14 @@ void NativeRealmService::checkpoint() {
         hardcoreDeathSavedRevision = host.read(*binding)->characterRevision;
         discardReload();
     }
+    return true;
 }
 void NativeRealmService::discardReload() {
     if (reload) { shared.terrain.erase(reload->game.binding.game); host.destroy(reload->game.binding.game); }
     reload.reset();
 }
 void NativeRealmService::close(bool save, bool keepReload) {
-    if (save) checkpoint(); // Keep the live instance and lease on save failure.
+    if (save && !checkpoint()) throw std::runtime_error("Character save is awaiting confirmation");
     if (binding) {
         const auto *room = shared.find(binding->game);
         if (room && room->tcpIp && room->tcpIpOwner == binding->player) {
@@ -164,7 +167,8 @@ void NativeRealmService::rejectAdmission(uint32_t code,std::string reason) {
 void NativeRealmService::setPaused(bool paused) {
     if (!binding) return;
     const auto *room = shared.find(binding->game);
-    host.pause(binding->game, room && room->capacity == 1 && (paused || peer.phase != GamePhase::Entered));
+    host.pause(binding->game, room && !room->tcpIp && room->capacity == 1 && !leavePending &&
+        (paused || peer.phase != GamePhase::Entered));
 }
 void NativeRealmService::publishMotion(bool force) {
     if (!binding || peer.phase != GamePhase::Entered) return;

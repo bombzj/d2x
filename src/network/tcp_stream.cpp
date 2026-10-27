@@ -144,4 +144,5 @@ void TcpStream::close() {
 bool TcpStream::connected() const {
     return impl_->current && impl_->active(impl_->current) && impl_->current->online;
 }
+size_t TcpStream::pendingWrites() const { return impl_->current ? impl_->current->sendBytes : 0; }
 } // namespace d2x::net

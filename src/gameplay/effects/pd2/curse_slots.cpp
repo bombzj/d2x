@@ -1,14 +1,11 @@
 #include "curse_slots.hpp"
 #include "gameplay/effects/values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
-#include <cmath>
+#include "gameplay/rules/pd2/arithmetic.hpp"
 
 namespace d2x {
 int32_t pd2CursePrimaryValue(int32_t value,int32_t effectiveness) {
-    const double adjusted=double(value)*(100.0-double(effectiveness))/100.0;
-    if(adjusted>INT32_MAX) return INT32_MAX;
-    if(adjusted<INT32_MIN) return INT32_MIN;
-    return int32_t(std::trunc(adjusted));
+    return pd2MultiplyDivide(value,100.0-double(effectiveness),100);
 }
 Pd2CursePosting preparePd2CurseSlots(std::span<ActiveCombatEffect> effects,CombatEffectSpec &incoming,EffectFrame now) {
     // Current core CURSES posting replacement, RVA 0x36C020. Curse slots

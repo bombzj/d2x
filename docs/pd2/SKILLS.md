@@ -237,6 +237,12 @@ RemoteDisplay独立准备Gems的武器／头盔护甲／盾牌属性元数据，
 
 ## 服务端规则
 
+### 狂乱层数与属性比例
+
+17d5的补丁49B30C／49B320将配套D2Game 2966F／296B0的Do009两次ApplyFrenzyStats调用转至3A3A00→306960；41d49的49D2FC／49D310转至3A5DE0→306AF0。只替换这两个调用点，不将怪物Do109共用入口全部替换。Calc4在完整技能等级求层数上限；当前147 Frenzy为5，152 Berserk为空即0。每次保存`min(old+1,limit)`至169 skill_frenzy，351 modifierlist_level仍写实际技能等级。六项AuraStatCalc按完整技能等级求值，再经37A6F0按当前层数／无符号上限缩放；上限0由helper以1作分母，结果零仍写入。攻击速率68同步69。持续时间取完整技能等级的AuraLenCalc并重排移除事件，不按层数求技能等级。
+
+`effects::System::frenzy`已按PD2且Do009选择上述路径，原版及怪物Do109保留以技能等级封顶、按层数求属性的原算法。`skills/weapon.cpp`的St78临时溅射同样使用pd2MultiplyDivide采样旧层数及Calc4，不影响Do009稍后加层的顺序；原施法资格、命中参数和提交继续点不变。完整双持、降级／换装与背压组合仍待原生对照，见[F64](parity/SKILLS.md#f64-狂乱层数与完整等级比例)。
+
 ### 包装器解析
 
 原生模块解析与易误读调用关系统一见[版本与证据](BUILDS.md#包装器解析与反编译纠正)。
@@ -274,6 +280,8 @@ Charge107的St72／Do180为RVA `0x3B4350`／`0x3B23E0`，对应`src/server/syste
 
 Vengeance111／Do174为RVA `0x3B10E0`，范围回调`0x3043C0`、传播`0x303EA0`，代码在`src/server/systems/skills/pd2/vengeance.cpp`。初接触分支看准确率helper的返回值，不能把所有后续防御失败都算成同一门控。先从装备火／冰／电贡献扣掉状态35+16／43+188／46的光环或强化贡献，再套Calc1／2／3与对应掌握329／331／330；技能EType0的物理基础另掷后按掌握复制到三元素，物理清零。
 
+三元素的基础掌握加成调用37A6F0，现共用pd2MultiplyDivide，保留先double乘后除、正超界INT_MAX及无效转换INT_MIN，随后再以32位ADD合并基础伤害。41d49实际3B3550的三次调用指向37C510；不能用双向钳制或原版整数比例替换。牺牲反伤3ADAA0及尸爆303C60的两项贡献同样共用该helper，原版Do64仍使用原比例算法。其余数值消费者及限制见[F02](parity/ITEMS.md#f02-百分比helper37a6f0)。
+
 当前冰时长为ELen80减`15*depth`并钳零；首圈范围7，后续至少2。Calc4决定传播概率，Param5延迟当前4帧，Param6+1保护当前25帧（state86 JustHit）。圆心先写AuraTargetState，接收者伤害后仍存活且无JustHit才写保护；不是施法者当前路径目标且单位随机通过时，登记type7传播。圈后清圆心state107 shatter。延迟触发重新取当前等级和装备，不固定首击快照；D2X定时器标识0x50443256仅属运行态。
 
 Sacrifice96／Do64为RVA `0x3ADAA0`，死亡Hook `0x302930`，回调`0x303C60`，范围`0x303E90→0x304C60`；对应`src/server/systems/effects/pd2/sacrifice.cpp`。主Drain前反伤按当前生命乘Calc2（当前3%）。死亡Hook要求WILLDIE，并检查实际攻击者当前已用技能96，或真实来源飞弹关联技能96；最终归属主人仅参与定时器信用，不可借其已用技能放宽触发。范围伤害携带skill96公式身份也不自动成为“真实飞弹”。
@@ -289,6 +297,8 @@ Desecrate83／Do161为RVA `0x3AFB10`，选池`0x36BE50／0x36BEF0／0x36BFF0`，
 召唤定义、光环和诅咒分别在`src/content/pd2/{summon_data,aura_data,curse_data}.cpp`准备。PetType身份使用原生idx，不能跨Expansion分隔行直接拿TXT行号／Id。fenris的TXT／BIN差异及实体身份规则见[怪物基线](MONSTERS.md#编译字段宽度与monprop)。骷髅MonProp溅射由单位接触事件执行，发布不覆盖当前攻击动作。
 
 Dark Pact按原列表顺序保留最旧的有限时诅咒，移除其余；按移除前数量结算魔法伤害，无诅咒不伤害。Curse Mastery影响可用槽数，不应靠同一状态ID的简单覆盖代替多槽顺序；对应`src/gameplay/effects/pd2/curse_slots.cpp`及`src/server/systems/effects/pd2/{curses,dark_pact}.cpp`。Iron Golem材料／恢复、复活完整动作、伙伴跨区、全部友军治疗及复杂装备组合仍待覆盖。
+
+状态helper 17d5 `36C020`／41d49 `36D940`对诅咒时长及第一属性分别应用curse_resistance／curse_effectiveness；玩家各自最多75，怪物不封顶。非零抗性缩放产生零时拒绝挂载，不能把零结果转为永久状态；未缩放的零时长仍表示无期限。Battle Cry的state89有独立分支，Dark Pact的state196绕过这两项缩放；负结果按原生有符号到期帧安排。D2X的既有PD2诅咒、Battle Cry及专用减益入口现共用这组边界；原版与未改写调用点继续使用原规则，不能因为同调sub_6FD10EC0就推广为全部状态。安装范围和消费者见[F65](parity/SKILLS.md#f65-诅咒缩放的拒绝条件与特殊状态)。
 
 ### 装备命中效果
 

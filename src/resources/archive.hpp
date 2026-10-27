@@ -50,6 +50,7 @@ class Archives {
     Archives(const Archives &) = delete;
     Archives &operator=(const Archives &) = delete;
     ~Archives();
+    std::unique_ptr<Archives> independent() const;
     void mount(const std::filesystem::path &path);
     uint64_t mountIdentity() const { return mountIdentity_.value(); }
     const auto &mountedPaths() const { return mountedPaths_; }

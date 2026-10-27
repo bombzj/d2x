@@ -17,6 +17,7 @@ bool System::configurePd2Curse(CombatEffectSpec &spec,EntityId target,uint64_t t
     const auto allowance=nativeAdd(logicalStatValue(*source,rules,"max_curses"),1);
     auto effectiveness=logicalStatValue(*recipient,rules,"curse_effectiveness");
     if(ports_.players.findActor(target)) effectiveness=std::min(effectiveness,75);
+    if(spec.state.id==196) effectiveness=0;
     if(!spec.state.curse) {
         const auto battleCry=programs->formulas->skillIds.find("battle cry");
         if(battleCry==programs->formulas->skillIds.end() ||

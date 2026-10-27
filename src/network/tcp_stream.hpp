@@ -27,6 +27,7 @@ class TcpStream final : public IByteTransport {
     std::vector<StreamEvent> poll();
     void close();
     bool connected() const;
+    size_t pendingWrites() const;
   private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

@@ -4,6 +4,7 @@
 #include "gameplay/loot/special.hpp"
 #include "gameplay/rules/pd2_random.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2/arithmetic.hpp"
 #include <array>
 #include <algorithm>
 #include <charconv>
@@ -25,7 +26,7 @@ std::vector<ResolvedItemStat> resolvePd2SorceressProperty(const ClassicData &dat
     const auto [end,error]=std::from_chars(property.parameter.data(),property.parameter.data()+property.parameter.size(),bonus);
     if(error!=std::errc{} || end!=property.parameter.data()+property.parameter.size()) bonus=0;
     auto chance=property.minimum.value_or(0),rank=property.maximum.value_or(0);
-    if(table.number(row,"SrcDam").value_or(0)>0) chance=nativeMultiplyDivide(chance,67,100);
+    if(table.number(row,"SrcDam").value_or(0)>0) chance=pd2MultiplyDivide(chance,67,100);
     rank=nativeSubtract(rank,nativeSubtract(table.number(row,"reqlevel").value_or(0),6)/6);
     std::vector<ResolvedItemStat> result;
     const auto append=[&](std::string_view name,int value,int layer) {

@@ -10,8 +10,8 @@
 namespace d2x {
 class Archives;
 namespace hosting { class AutomapStore; }
-// Composition root for an in-process native MCP/D2GS server. No client models,
-// frontend callbacks or decoded messages cross the memory transports.
+// Public methods belong to one caller thread. TCP/IP mode dispatches host work
+// to its service thread; single-player mode advances in the caller's pump.
 class EmbeddedRealm {
     struct Impl;
     std::unique_ptr<Impl> impl_;
@@ -28,7 +28,9 @@ class EmbeddedRealm {
     void receiveTcpIpSave(Bytes);
     std::string prepareStartup(const std::string &load, const std::string &save, const std::string &characterClass);
     void pump(double seconds, bool paused);
+    // Borrowed packet bytes are observed synchronously on the host thread.
     void observeGamePackets(hosting::GamePacketObserver);
+    // Timings are delivered on the caller thread by pump/shutdown.
     void observePerformance(hosting::PerformanceObserver);
     // Host administration, never a proprietary client protocol. Failure keeps
     // the instance and file lease available for a later retry.

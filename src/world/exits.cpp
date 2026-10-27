@@ -80,7 +80,7 @@ void linkLevelExits(std::span<Region> regions, const WorldCatalog &catalog) {
                     });
                     if (record == warps.end()) throw std::runtime_error("Missing LvlWarp direction");
                     candidates.push_back({slot, level.visible[slot], *record,
-                        {float(x * 5 + record->offsetX), float(y * 5 + record->offsetY)}});
+                        {float(x * 5 + record->offsetX), float(y * 5 + record->offsetY)}, {}, {}, {}});
                 }
         for (const auto &candidate : candidates) {
                     const int slot = candidate.slot;

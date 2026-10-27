@@ -8,6 +8,8 @@ int32_t nativeSlowPercentage(int32_t amount,bool player,bool championOrUnique);
 CurseSpec evaluateCurse(const CurseSpec &spec, int rank);
 int32_t curseResistanceAdjustment(int32_t amount,int32_t baseResistance,bool monster,bool hireling,bool pd2=false);
 // sub_6FD10EC0 subtracts a separately truncated percentage. Zero is an
-// untimed list, negative resistance extends it, and only Curse states veto.
+// untimed list; PD2 refuses zero produced by nonzero resistance scaling.
+// The typed PD2 overload also scales Battle Cry and exempts Dark Pact.
 std::optional<int32_t> curseStateDuration(int32_t frames,int32_t resistance,bool curse,bool pd2=false);
+std::optional<int32_t> curseStateDuration(int32_t frames,int32_t resistance,const CombatStateDefinition &,bool pd2=false);
 } // namespace d2x

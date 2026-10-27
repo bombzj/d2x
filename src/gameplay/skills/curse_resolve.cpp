@@ -11,9 +11,25 @@ int32_t nativeSlowPercentage(int32_t amount,bool player,bool championOrUnique) {
 }
 std::optional<int32_t> curseStateDuration(int32_t frames,int32_t resistance,bool curse,bool pd2) {
     if(!curse) return frames;
+    if(pd2) {
+        if(!resistance) return frames;
+        const auto adjusted=pd2CursePrimaryValue(frames,resistance);
+        // Core 36C020 refuses a zero result after resistance scaling. Zero
+        // without scaling is still the native untimed-list request.
+        return adjusted?std::optional{adjusted}:std::nullopt;
+    }
     if(resistance>=100) return {};
-    if(pd2) return pd2CursePrimaryValue(frames,resistance);
     return nativeSubtract(frames,nativePercentage(frames,resistance,100));
+}
+std::optional<int32_t> curseStateDuration(int32_t frames,int32_t resistance,const CombatStateDefinition &state,bool pd2) {
+    // Core 36C020 adjusts Battle Cry even without the Curse flag, while
+    // Dark Pact's state196 bypasses both duration and primary-stat scaling.
+    if(pd2 && state.id==89) {
+        const auto adjusted=curseStateDuration(frames,resistance,true,true);
+        if(!adjusted) return {};
+        frames=*adjusted;
+    }
+    return curseStateDuration(frames,resistance,state.curse && (!pd2 || state.id!=196),pd2);
 }
 int32_t curseResistanceAdjustment(int32_t amount,int32_t baseResistance,bool monster,bool hireling,bool pd2) {
     // Current PD2 core RVA 0x36C760 changes the immune-monster divisor.

@@ -35,6 +35,7 @@
 #include "gameplay/skills/common_actions.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2/arithmetic.hpp"
 #include "gameplay/effects/queries.hpp"
 #include "gameplay/skills/targeting.hpp"
 #include "server/systems/effects/attribute_projection.hpp"
@@ -262,7 +263,7 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
                             const auto count=StatSnapshot{*stats}.get({rules.names.at("skill_frenzy"),0});
                             const auto divisor=formulas.calculation(FormulaDomain::Skill,id,effectiveRank,"calc4");
                             if(!divisor) return {DomainStatus::Unavailable,{}};
-                            splash=int32_t(std::min(double(INT32_MAX),double(*amount)*double(count)/double(std::max(uint32_t(*divisor),1u))));
+                            splash=pd2MultiplyDivide(*amount,count,uint32_t(*divisor));
                         }
             } else if(skill.assassin) {
                 splash=0;

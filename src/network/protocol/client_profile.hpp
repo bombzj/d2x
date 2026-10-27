@@ -8,7 +8,7 @@ namespace d2x::net::protocol {
 // An explicitly selected wire dialect. Resources and authentication are read
 // from the selected files; packet and format consumers enforce their contracts.
 enum class ClientProfile { Lod113c, Pd2CnNormal20261020, Pd2Local };
-enum class Pd2CoreBuild { Normal20261020, Normal20261021 };
+enum class Pd2CoreBuild { Normal20261020, Normal20261021, Normal20261026 };
 enum class AccountPasswordCase { Preserve, LowerAscii };
 enum class RealmPasswordSource { AccountLogonProof, FixedRealmPassword };
 struct ClientCompatibility {

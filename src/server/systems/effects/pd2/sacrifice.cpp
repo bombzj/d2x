@@ -9,6 +9,7 @@
 #include "server/systems/skills/native_caster.hpp"
 #include "gameplay/monsters/life_stats.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2/arithmetic.hpp"
 #include <algorithm>
 #include <map>
 #include <stdexcept>
@@ -61,12 +62,11 @@ DomainResult<> System::pd2SacrificeEvent(const FrameEvent &event,uint64_t tick) 
         if(!table) throw std::logic_error("Missing PD2 Sacrifice corpse life table");
         const auto life=monsterLifeBounds(*table,body->rule.level,body->rule.difficulty,body->rule.statGameType);
         const auto average=nativeShiftLeft(nativeAdd(life.minimum,life.maximum),7);
-        const auto percent=[](int value,int factor){const auto amount=double(value)*double(factor)/100.0;
-            return amount<double(INT32_MIN) || amount>double(INT32_MAX)?INT32_MIN:int32_t(amount);};
         pulse.damage=std::make_shared<NativeAreaPulse>();auto &area=pulse.damage->spec;
         area.source=pulse.source;area.area=body->area;area.center=body->position;area.radius=radius;
         area.skill=96;area.rank=1;area.filter=0x8583;area.resultFlags=1;
-        area.damage.channels[0]=nativeAdd(percent(average,row.number("param5")),percent(pulse.overkill,row.number("param6")));
+        area.damage.channels[0]=nativeAdd(pd2MultiplyDivide(average,row.number("param5"),100),
+            pd2MultiplyDivide(pulse.overkill,row.number("param6"),100));
         pulse.prepared=true;
     }
     if(!pulse.marked) {const auto cleared=setNativeSkillState(pulse.corpse,223,false,tick);if(!cleared) return cleared;pulse.marked=true;}

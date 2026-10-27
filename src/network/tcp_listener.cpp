@@ -132,6 +132,11 @@ void TcpListener::closeAfterWrites(uint64_t id) {
     auto c = found->second; c->closing = true;
     if (c->writes.empty()) impl_->finishWrites(c);
 }
+size_t TcpListener::pendingWrites() const {
+    size_t bytes=0;
+    for (const auto &[id,connection] : impl_->connections) { (void)id; bytes+=connection->queued; }
+    return bytes;
+}
 void TcpListener::shutdown() {
     auto &p = *impl_;
     for (auto &listener : p.listeners) if (listener) { asio::error_code ignored; listener->close(ignored); }

@@ -61,7 +61,7 @@ DomainResult<> System::castMonsterCurse(EntityId source,const AuraDefinition &a,
     program.modifiers=nativeCharacterModifiers(StatSnapshot{*program.nativeValues},*emitter->rule.stats,a.modifiers);
     CombatEffectSpec spec;spec.state=a.state;spec.source={CombatEffectSource::Skill,source,a.skill,a.rank};
     spec.stacking=EffectStacking::CurseLevel;spec.modifiers=program.modifiers;spec.nativeValues=program.nativeValues;
-    const auto duration=curseStateDuration(length,unitCurseResistance(target,tick),a.state.curse,
+    const auto duration=curseStateDuration(length,unitCurseResistance(target,tick),a.state,
         ports_.monsters.skillPrograms() && ports_.monsters.skillPrograms()->pd2);
     if(!duration) return {DomainStatus::Unavailable,{}};
     if(*duration) spec.duration=uint32_t(*duration);

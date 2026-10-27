@@ -33,6 +33,21 @@ Archives::~Archives() {
     for (auto h : handles)
         SFileCloseArchive(h);
 }
+std::unique_ptr<Archives> Archives::independent() const {
+    auto result = std::make_unique<Archives>();
+    for (const auto &path : mountedPaths_) result->mount(path);
+    if (result->mountIdentity() != mountIdentity())
+        throw std::runtime_error("MPQ set changed while opening an independent resource view");
+    result->loose_ = loose_;
+    result->pd2Presets = pd2Presets;
+    result->languageDirectory = languageDirectory;
+    result->languageFontDirectory = languageFontDirectory;
+    result->gameDirectory = gameDirectory;
+    result->languageLocaleId = languageLocaleId;
+    result->languageCode = languageCode;
+    result->languageGameLocale = languageGameLocale;
+    return result;
+}
 void Archives::mount(const std::filesystem::path &p) {
     HANDLE h = nullptr;
     // Known resource paths are hash lookups; loading all member names is needed

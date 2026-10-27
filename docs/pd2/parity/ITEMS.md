@@ -19,14 +19,17 @@
 - **判别例**：输入20,000,000、倍率150、分母100，double乘除得到30,000,000；D2X中间3,000,000,000按int32解释为-1,294,967,296，再除100得到-12,949,672。这是静态算术反例，不声明已经在真实装备场景复现，也不依赖上限常量含义。
 - **结论／步骤**：独立PD2函数、已核定飞弹／近战及Teleport消费者已修正，已构建。仍属P0部分完成：其他调用点、完整物理／元素顺序与随机消费需要分别闭合，不能由这些消费者的静态审查认证整个倍率链。
 
+- **其余已核消费者**：Vengeance 3B10E0的三次掌握缩放、Sacrifice 3ADAA0反伤与303C60的两项尸爆贡献、Fn015 346400的PvP／状态225／抗性缩放、Fn016 3469B0的抗性扣减以及Properties25 39EFB4的67%概率均调用同一37A6F0，D2X现分别接`skills/pd2/vengeance`、`skills/weapon_melee`、`effects/pd2/sacrifice`、`combat/pd2/{wounds,crushing}`及`content/pd2/item_properties`。旧实现有原版整数乘除或独立双向钳制，正溢出／负中间量不能视为等价。状态225的保留贡献严格先将倍率除3，再乘值／除100，不交换浮点运算顺序。飞弹Dmg17亦共用此helper。41d49的Vengeance 3B3550在3B393E／3B3956／3B396E调用37C510，已读实际指令；其他条目仍限定17d5证据，不作全库平移。这些修正不增加掷数或重置准备／提交游标，全部来源组合仍未认证。
+
 ## F03 生命写入门槛2FC030
 
 - **性质／依据**：PD2专用拦截，原生分支见[生命契约](../ITEMS.md#2fc030生命写入门槛契约)。
 - **对应函数**：[pd2LifeDrainWriteAllowed](../../../src/gameplay/combat/pd2/leech.hpp)保留严格小于、候选或旧值任一满足就整次放行、最大值0用1，以及旧生命／最大生命的uint32转换。没有钳至门槛，普通非负cap下局部对应。
 - **已修差异**：原属性488无符号转double，D2X已将double(cap)改为double(uint32_t(cap))。cap=-1、previous=850、next=900、maximum=1000时，旧代码阈值1.01允许；新代码按原4294967295得到负阈值并拒绝。已构建，真实MPQ、聚合、存档／网络是否可形成此值也未确认。
-- **调用者**：[advanceMissileDrain](../../../src/server/systems/combat/missile_drain.cpp)仅在存活且lifeGain>0时准备候选，先限最大生命再调用；玩家走CharacterEdit事务，怪物走MonsterResourceTrace及事实发布，drainCommitted防重复。非生命属性没有送进这个谓词，与原包装器直接委托非6属性在架构上可分离。
+- **调用者与新差异**：17d5的306E80／41d49的307010是安全回血入口，先拒绝非正增量、死亡及state92，再以有符号64位相加、限最大生命，负值或越界饱和INT_MAX后调用2FC030／2FC040。原D2X吸血先nativeAdd再min，会把大正和回绕成负生命。现`pd2SafeLifeAfterGain`共用该候选及门槛，`advanceMissileDrain`玩家／怪物调用均补state92，保留原事务、随机及drainCommitted。原版分支不改。
 - **边界**：玩家飞弹吸血在准备生命写入时通过effects.unitStatValues重新读取实时lifedrain_percentcap，不再直接使用totals.character.combat中的旧cap；怪物仍从当时的effects.combatModifiers取值。该修正已构建，同帧状态变化／背压实测及近战、佣兵等全部安全回血调用点尚未闭合。不能认定所有吸血已一致，也不应把该谓词加到所有药剂／治疗。
-- **结论／步骤**：纯函数的高位解释已修正，调用链仍为P1未完成；继续核所有原安全回血调用者及D2X提交时采样。原版公共资源接口未改，不将本谓词推广到无证据的治疗入口。
+- **吸收消费者**：核心305B60的305CF0及305E20的305F7E以伤害描述符+48的AbsLife调用306E80；3A3810另安装于配套Game位移DBB80／DE23E，分别包含吸血与吸收。`effects/skills::receiveMonster`及`monsters::damage`现让PD2吸收回血使用同一安全入口，在减伤害前读取当时的488；玩家使用吸收回调后资源投影，怪物重新查询unitStatValues，死亡延迟不回血。没有把该规则加到药水、Holy Bolt或Life Tap的未核实直接写入。
+- **结论／步骤**：高位解释、64位候选及已核吸血／吸收消费者已修正；本次新修正尚未构建或运行。全部伙伴、同帧状态、源端死亡模式及其他安全回血调用者仍待对照，不能据此关闭完整T06。
 
 ## F04 充能回调3452D0
 
@@ -58,7 +61,7 @@
 - **性质／依据**：PD2跨暴击、格挡、压碎及溅射复用的筛选helper；当前37F760–37F8EB，证据`town-queries/pd2-final-melee-helpers/0x1037f760.json`。ECX为单位、EDX为属性号，先由30BC90从库存取武器，再由30DFA0复制最多32条属性。
 - **D2X对应**：[pd2ParameterizedItemStat](../../../src/gameplay/items/pd2_parameterized_stat.hpp)。先按EquipmentStats.registeredWeapon查当前活动手位，登记为空或失效返回0；按StatKey(id,layer)有序映射扫描指定属性，前32条计数包括零层，零层不贡献；匹配层用nativeAdd累加，符合原32位ADD。
 - **逐分支核对**：原37F83E起的2han层要求另一手空或同一物品；37F87F起的1han层对双手类型要求另一手存在且不同，对非双手允许另一手空但拒绝同一物品。D2X对应条件一致；双持单位的2han武器可尝试1han层，与原类型不匹配后30DCE0的资格补充分支对应。
-- **仍未闭合**：D2X weapon.typeLayers是否完整包含原ITEMS_CheckItemTypeId的父类，types映射是否使用编译ID，StatSnapshot聚合后32条截取是否等同原FullStats；这些不能仅凭std::map排序认证。D2X另一手来自equipment.weapons及shield，原通过实际身体槽查询，330B90／30BC90已定位为不同的当前技能选手／库存已选GUID入口，实际运行阶段仍待闭合。职业／影子双持资格由调用者传入，不由此纯函数保证。
+- **准备与剩余边界**：`content/items/equipment_data`递归加载Equiv1／2并拒绝循环或缺失父类，`content/skills/formula_data`按ItemTypes记录顺序准备ID→代码，`deriveNativeEquipmentStats`遍历该映射为两手建立包含父类的typeLayers，不能再列为完全缺少类型继承。StatSnapshot的全部动态列表聚合及32行存在性仍需对照；缓存子列表零行丢失已沿F62修正。D2X另一手来自equipment.weapons及shield，原通过实际身体槽查询，330B90／30BC90已定位为不同的当前技能选手／库存已选GUID入口，实际运行阶段及完整编译表身份仍待闭合。职业／影子双持资格由调用者传入，不由此纯函数保证。
 - **反编译纠正**：伪代码把累加器local_11c误用作单位指针；原37F84D／37F889从栈+18读取单位，再取+60库存，不能复制伪代码中的空指针访问。
 - **结论／步骤**：筛选条件局部对应，输入语义证据不足，P1。先闭合原属性复制与实际装备槽，再决定是否需要改D2X；不得取消32条上限、先过滤零层再截32条，或把所有同类武器属性无条件合并。
 
@@ -89,3 +92,16 @@
 - **原生依据**：D2MOO D2Skills.cpp的D2Common_10954以技能记录及物品GUID寻找／创建独立技能，保留真实等级／数量，不检查charclass。当前MPQ The Gavel of Pain的charged参数为442／3／4；442为InGame、ItemEffect1、SrvDo30且有独立SkillDesc的无职业记录，9gm的bitfield1为3，可作金属材料。
 - **已补消费者**：RemoteCombat及SkillCatalog保留有依据的隐藏物品技能元数据，前端仍验证来源GUID、有效充能、手位、目标和当前场景；没有来源的技能不会因元数据存在获得可用等级。PD2内容准备SrvDo30的原诅咒输入，hosting接受已有执行器的隐藏ItemEffect，复用Effects的诅咒与充能原子支付；本人释放及Leap统一查询实际来源等级。
 - **已知阻塞／边界**：此前双端构建后，隐藏ItemEffect元数据将无职业怪物的职业SkillDesc交给通用图集，场景报`Missing original common skill icon: 冰尖柱`。当前已在`content/skills/skill_data.cpp`按SkillDesc的SkillPage／SkillRow／SkillColumn收紧：无职业ItemEffect只有原表明确的通用布局才进入通用图集，MonGlacialSpike等引用职业布局的怪物文本不构造通用图标；AmpDmg Proc等零布局的真实物品技能仍保留。图形单机现已实际进入并完成442选择、施放3→2、定时恢复2→3与保存／新进程恢复；服务端隐藏ItemEffect执行元数据在content/pd2独立准备，避免沿显示布局过滤掉Do30。该结果关闭此前入局及442执行阻塞，其他隐藏技能仍按各自执行器与来源判断。无职业旧前置名和未接执行器的怪物公式已分别限制在非职业元数据／未准备分支，职业前置校验保持严格。没有SkillDesc的记录不自造UI，未准备执行器明确拒绝；材料恢复及原生kf保存沿F04，不以客户端元数据存在代替服务端执行成功。
+
+## F62 属性浮点累计与查询边界
+
+- **证据与范围**：17d5的2FAE70、41d49的2FAE80实际函数体；共同的op3／5在17d5的2FB017–2FB036及41d49的2FB027–2FB046执行IMUL、DIVSD、ADDSD、CVTTSD2SI。原版D2MOO `D2StatList.cpp::sub_6FDB5830`的op3／5／7同样将整个浮点和转回整数。2FAE70的通知用途及op1例外见[函数契约](../functions/ITEMS_AND_STATS.md#2fae70-物品通知的递归属性查询)，不能把该helper整体当权威GetTotalStat。
+- **确定差异与修正**：公共`gameplay/stats/stat_list.cpp::Evaluation::compute`原先先截断百分比增量再nativeAdd，现保留32位乘积回绕，除100后加当前累计值，最后经`nativeTruncate`统一向零转换；非有限值及越界返回INT_MIN。op1／11／13继续沿原版独立增量语义，不受通知helper中的特殊op1污染。
+- **可区分输入**：累计1、乘积-50时，原整和`trunc(1-0.5)=0`，旧实现返回1；累计INT_MAX、乘积200时，原转换返回INT_MIN，旧整数回绕返回-2147483647。这里只说明静态算术，不声称真实装备已复现。
+- **FullStats存在性**：重建根键集合时保留缓存子列表中的零行，随后仍按当前规则的KeepZero决定结果是否存储。D2MOO `D2Common_CopyStats_6FDB9C50`逐行复制且零值占用容量；F07的前32行不能因键集合预先过滤零而前移。基础零值仍删除，未凭空创建不存在的零行。完整动态列表重挂、32行及DamageRelated组合继续保留F07边界。
+
+## F63 41d49核心计数映射
+
+- **版本与原生入口**：41d49完整摘要见BUILDS。37E630先以37DEE0读取实际Misc记录代码，经37DEC0查434DB0的60项代码；失败再用`index-7`的无符号0–299边界索引37EE60字节表及37EC40跳转表，默认37EC38返回空。每个有效case均逐字节核对`mov eax,[esi+14]; pop edi; add eax,offset; pop esi; ret`，offset减436为0–390内偶数。
+- **逐项结果**：300项普通选择与17d5的37D040／37CE20逐项相同，181项有效；60项地图代码与17d5的432DB0逐DWORD相同，29个非零代码优先映射115–143。不是按地址差推测算法。41d49的394060复制98个DWORD至PlayerData+436；394140按包+1的WORD调用37E630，并将包+3的WORD写到返回地址，尾WORD不参与计数。
+- **消费者与边界**：`app/client_setup.cpp`以精确摘要选择Normal20261026，`realm_session_pd2_state.cpp`的85全量与86绝对增量均使用`content/pd2_core_counters.cpp`已准备的current表；仍逐件校验Misc BIN／TXT身份。其他未知核心继续保存原始数组及未映射增量，不放宽登录之外的格式校验，不开放材料存取／共享仓库。此项关闭I07的身份／映射缺口，非零实服同步与未来核心版本仍各自核对。

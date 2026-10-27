@@ -27,7 +27,7 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 - 客户端收到AF后发送6A查询，B2游戏信息以FFFF结束；取得gameId后发送68。收到02后先上传本地v96存档（6C），再发送6B进入游戏。服务端B3回传完整存档，应用交给hosting的本地CharacterStore校验身份、校验和及文件版本后原子替换；network与UI不解码／写盘。传输严格限制小于8192字节，不新增私有包或存档段。
 - 自研宿主检查容量、同名角色、职业／姓名及难度资格。客人断线或正常关闭后宿主保留独立`tcpip-recovery/character-<时间标识>.d2s`恢复副本，不自动回写客户端角色。完整接收前不会替换本机D2S；本机写盘失败保留字节和租约，用户关闭错误提示后重试，不按帧反复写盘。
 
-共享房间按25Hz推进，客人失焦／ESC不暂停其他人；Single Player一人内存实例保留暂停。独立PvPGN入口继续使用D2CS／D2DBS账号、票据和保存，不使用TCP/IP上传，部署见[PvPGN服务端](../development/PVPGN_SERVER.md)。现有内容范围仍见[基线](../../BASELINE.md)。
+共享房间按25Hz推进，TCP/IP Host由独立宿主线程收包／推进／发包，房主及客人失焦／ESC不暂停世界。Single Player仍在应用线程推进，一人内存实例保留暂停，暂停时协议与心跳继续服务；退局待结算解除普通暂停。最小化跳过绘制但继续协议、地图事件及B3回传消费；恢复清理旧输入。原版混合客户端及Linux上的线程和最小化行为仍待验证。独立PvPGN使用固定游戏线程分管房间，主线程处理TCP／D2CS，专用后端线程承担文件／DBS等待；继续使用原账号、票据和保存协议，不使用TCP/IP上传。部署与故障边界见[PvPGN服务端](../development/PVPGN_SERVER.md)。现有内容范围仍见[基线](../../BASELINE.md)。
 
 依据：本地D2MOO的CCmd系统消息、Game的JOINLIST／OPENCHAR／保存回传及D2PacketDef布局用于解释流程；包号／长度以当前1.13c DLL为准：D2Client RVA 0x14630发6A，0x14D90发6C（partSize+7，含忽略的尾字节）；D2Game RVA 0x2BA73发B2／53字节，0x2D1E2发B3／partSize+7，0x8C4B0发B4／5字节入局错误，0x2E3CE同样回送角色加载错误。D2Net长度表0xA900的B4项为5，当前目录补齐该项；RealmSession立即停止入局并保留u32原错误码，TCP/IP预检码6／15／16分别指游戏／姓名资格、满员、版本不符（D2Game RVA 0xCAD60实际检查版本13）。D2Net的实际端口为4000。参考代码不加入源码或替代MPQ内容规则。
 

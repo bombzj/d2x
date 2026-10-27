@@ -1,6 +1,7 @@
 #pragma once
 #include "byte_transport.hpp"
 #include <array>
+#include <cstddef>
 #include <cstdint>
 namespace d2x::net {
 // Transport only. Accepted sockets expose bytes; no MCP, tickets or gameplay.
@@ -23,6 +24,7 @@ class TcpListener {
     bool send(uint64_t connection, Bytes);
     void close(uint64_t connection);
     void closeAfterWrites(uint64_t connection);
+    size_t pendingWrites() const;
     void shutdown();
 };
 }

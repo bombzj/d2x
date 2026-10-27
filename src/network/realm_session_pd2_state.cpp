@@ -80,7 +80,7 @@ bool RealmSession::Impl::handle_player_state_pd2(const Packet &packet) {
         const auto type = update.u16(); const auto count = update.u16(); update.u16(); update.finish();
         if (!view.load.playerUnitId) return true;
         const auto build = options.originalClient.cnCoreBuild;
-        const auto &slots = build == Pd2CoreBuild::Normal20261021
+        const auto &slots = build == Pd2CoreBuild::Normal20261021 || build == Pd2CoreBuild::Normal20261026
             ? stashLayout.coreCounterSlotsCurrent : stashLayout.coreCounterSlotsLegacy;
         view.pd2State.materialMappingAvailable = build.has_value() && !slots.empty();
         if (!view.pd2State.materialMappingAvailable) {
@@ -121,7 +121,7 @@ bool RealmSession::Impl::handle_player_state_pd2(const Packet &packet) {
             view.pd2State.materialSlotUpdates.clear();
             view.pd2State.unmappedMaterialUpdates.clear();
             const auto build = options.originalClient.cnCoreBuild;
-            const auto &slots = build == Pd2CoreBuild::Normal20261021
+            const auto &slots = build == Pd2CoreBuild::Normal20261021 || build == Pd2CoreBuild::Normal20261026
                 ? stashLayout.coreCounterSlotsCurrent : stashLayout.coreCounterSlotsLegacy;
             view.pd2State.materialMappingAvailable = build.has_value() && !slots.empty();
             ++view.pd2State.materialSnapshots;

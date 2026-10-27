@@ -16,6 +16,7 @@
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/targeting.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2/arithmetic.hpp"
 #include "core/random.hpp"
 #include <stdexcept>
 #include <algorithm>
@@ -109,7 +110,8 @@ DomainStatus System::drainWeaponMelee(Release &pending,const ActorContext &actor
         const auto percent=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"calc2");
         if(!percent) throw std::logic_error("Missing native Sacrifice recoil percentage");
         const auto base=pending.skill.pd2?player.persistent.player.hp.raw():nativeChecked(std::min<int64_t>(execution.contact->allocatedPhysical,life));
-        const auto amount=target.aliveIn(actor.area)?nativePercentage(base,*percent,100):0;
+        const auto amount=target.aliveIn(actor.area)?(pending.skill.pd2?
+            pd2MultiplyDivide(base,*percent,100):nativePercentage(base,*percent,100)):0;
         if(amount>0 && player.persistent.player.hp>0) {
             // Do64 executes its already-computed physical total on itself with
             // HitFlags 0x1000 and no SUCCESSFULHIT: no mitigation or GetHit proc.

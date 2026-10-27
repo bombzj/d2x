@@ -36,15 +36,15 @@ std::optional<OpenWoundsApplication> pd2OpenWounds(const Ports &ports,const Spel
     if(target.player) {
         // Current Fn015 uses 8/6/4 percent in normal/nightmare/hell.
         const int factor=std::array{8,6,4}.at(size_t(std::clamp(target.player->persistent.difficulty,0,2)));
-        rate=nativePercentage(rate,factor,100);
+        rate=pd2MultiplyDivide(rate,factor,100);
         double scale=double(factor)*(source.monster && source.monster->rule.nativeClass==290?.5:1.0);
         auto retained=0;bool retainedState=false;
         if(const auto effects=ports.effects.unitEffects(source.id())) if(const auto state=effects->findState(225))
             if(const auto values=combatEffectNativeValues(state->spec)) {
                 retained=StatSnapshot{*values}.get({rules.stats->names.at("deep_wounds"),0});retainedState=true;
             }
-        deep=retainedState?nativeAdd(int32_t(double(nativeSubtract(deep,retained))*double(factor)/100.0),
-            int32_t(double(retained)*double(factor)/300.0)):int32_t(double(deep)*scale/100.0);
+        deep=retainedState?nativeAdd(pd2MultiplyDivide(nativeSubtract(deep,retained),factor,100),
+            pd2MultiplyDivide(retained,double(factor)/3.0,100)):pd2MultiplyDivide(deep,scale,100);
     }
     rate=nativeAdd(rate,nativeMultiply(deep,5));
     const auto &victimRules=target.player?*target.player->rules.skills->stats:*target.monster->rule.stats;
@@ -52,7 +52,7 @@ std::optional<OpenWoundsApplication> pd2OpenWounds(const Ports &ports,const Spel
     resistance=resistance>=100?100:nativeSubtract(resistance,stat("passive_phys_pierce"));
     if(resistance<0) resistance=nativeDivide(resistance,2);
     if(target.player) resistance=std::min(resistance,50);
-    rate=nativePercentage(rate,nativeSubtract(100,resistance),100);
+    rate=pd2MultiplyDivide(rate,nativeSubtract(100,resistance),100);
     if(target.monster) {
         auto owner=ports.monsters.minionOwner(target.id());
         for(size_t depth=0;owner && depth<32;++depth) {

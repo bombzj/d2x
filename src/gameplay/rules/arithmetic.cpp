@@ -13,6 +13,12 @@ int32_t nativeChecked(int64_t value) {
         throw std::overflow_error("Value exceeds native signed integer range");
     return int32_t(value);
 }
+int32_t nativeTruncate(double value) noexcept {
+    const auto truncated=std::trunc(value);
+    if(!std::isfinite(truncated) || truncated<double(std::numeric_limits<int32_t>::min()) ||
+        truncated>double(std::numeric_limits<int32_t>::max())) return std::numeric_limits<int32_t>::min();
+    return int32_t(truncated);
+}
 int32_t nativeAdd(int32_t first, int32_t second) noexcept {
     return nativeNarrow(int64_t(first) + second);
 }

@@ -11,8 +11,8 @@
 #include "gameplay/items/pd2_parameterized_stat.hpp"
 #include "gameplay/rules/pd2_corpse.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/pd2/arithmetic.hpp"
 #include <algorithm>
-#include <cmath>
 #include <stdexcept>
 
 namespace d2x::server::combat {
@@ -65,9 +65,9 @@ int64_t pd2CrushingBlow(const Ports &ports,const SpellImpact &impact,Participant
     // 0x3469B0 keeps the HP quotient in double. Only the resistance helper
     // and final new HP use CVTTSD2SI; rounding the CB amount first differs.
     const double amount=double(uint32_t(life))/divisor;
-    const auto narrowed=amount<double(INT32_MIN) || amount>=2147483648.0?INT32_MIN:int32_t(std::trunc(amount));
-    const double remaining=double(uint32_t(life))-(amount-nativePercentage(narrowed,resistance,100));
-    const auto next=remaining<double(INT32_MIN) || remaining>=2147483648.0?INT32_MIN:int32_t(std::trunc(remaining));
+    const auto narrowed=nativeTruncate(amount);
+    const double remaining=double(uint32_t(life))-(amount-pd2MultiplyDivide(narrowed,resistance,100));
+    const auto next=nativeTruncate(remaining);
     return life-std::max(0,next);
 }
 }

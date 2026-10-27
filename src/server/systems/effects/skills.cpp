@@ -9,6 +9,7 @@
 #include "gameplay/combat/shield.hpp"
 #include "gameplay/effects/native_status.hpp"
 #include "gameplay/combat/reception.hpp"
+#include "gameplay/combat/pd2/leech.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/actions/recovery.hpp"
 #include <array>
@@ -324,7 +325,14 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
     const auto physical=preparedReception?std::min<int64_t>(reception.channels[0].dealt,edit.player.hp.raw()):reception.channels[0].dealt;
     const float dealt=float(std::max<int64_t>(0,dealtFixed))/256.f;
     const int64_t maximumLife=resources.maximum().life.raw();
-    const auto restoredLife=std::min(maximumLife,int64_t(edit.player.hp.raw())+std::max<int64_t>(0,absorbedFixed));
+    auto restoredLife=std::min(maximumLife,int64_t(edit.player.hp.raw())+std::max<int64_t>(0,absorbedFixed));
+    if(p->rules.skills && p->rules.skills->pd2 && absorbedFixed>0) {
+        const auto cap=resources.totals().nativeStats.get({p->rules.skills->stats->names.at("lifedrain_percentcap"),0});
+        // Core 305B60 routes AbsLife through 306E80 before damage. Its
+        // death-delay guard and 2FC030 cap also apply to this safe heal.
+        restoredLife=states.hasState(92,actor.tick)?edit.player.hp.raw():pd2SafeLifeAfterGain(edit.player.hp.raw(),
+            nativeChecked(absorbedFixed),nativeChecked(maximumLife),cap);
+    }
     const auto life=subtractContactResource(std::max<int64_t>(0,restoredLife-adjustment.crushing),dealtFixed);
     edit.player.hp = Fixed8::fromRaw(nativeChecked(life));
     edit.player.mana = Fixed8::fromRaw(nativeChecked(subtractContactResource(preparedReception?edit.player.mana.raw():reception.mana,reception.drain.mana)));

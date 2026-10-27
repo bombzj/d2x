@@ -12,6 +12,7 @@
 #include "gameplay/combat/life.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
 #include "gameplay/combat/reception.hpp"
+#include "gameplay/combat/pd2/leech.hpp"
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
 #include "server/systems/effects/system.hpp"
@@ -40,7 +41,15 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     // The poison rate contributes once to the contact damage as well as to
     // HPREGEN (SUnitDmg total-damage channel). Duration immunity does not erase it.
     if(poison) amount=nativeAdd(nativeChecked(amount),nativeChecked(std::max<int64_t>(0,poison->rate)));
-    const auto restoredLife=std::min(actor.maximumLife,actor.life+std::max<int64_t>(0,absorbed));
+    const auto states=ports_.effects.unitStates(id,tick);
+    auto restoredLife=std::min(actor.maximumLife,actor.life+std::max<int64_t>(0,absorbed));
+    if(actor.rule.stats && actor.rule.stats->pd2 && absorbed>0) {
+        const auto values=ports_.effects.unitStatValues(id,tick);
+        if(!values) return {DomainStatus::Unavailable,{}};
+        const auto cap=values->get({actor.rule.stats->names.at("lifedrain_percentcap"),0});
+        restoredLife=!actor.alive() || states.contains(actor.rule.deathDelayState)?actor.life:
+            pd2SafeLifeAfterGain(nativeChecked(actor.life),nativeChecked(absorbed),nativeChecked(actor.maximumLife),cap);
+    }
     const auto afterCrushing=std::max<int64_t>(0,restoredLife-crushing);
     const auto remainingLife=status.actionOnly?actor.life:poisonOnly && !poison?std::max<int64_t>(0,afterCrushing-amount):subtractContactResource(afterCrushing,amount);
     const auto life=std::max(actor.hireling && poisonOnly && !poison && ports_.areas.at(actor.area).definition.town?int64_t(256):int64_t(0),remainingLife);
@@ -50,7 +59,6 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     if(actor.combatCompanion()) mergeCombatModifiers(modifiers,actor.petStats.attributes.combat);
     auto chilled=actor.chilledUntil, frozen=actor.frozenUntil;
     auto shatterActive=actor.shatterActive;
-    const auto states=ports_.effects.unitStates(id,tick);
     const bool uninterruptable=states.contains(actor.rule.uninterruptableState) || actor.aiStates.contains(actor.rule.uninterruptableState);
     if(actor.delayedDeathSource && (amount || uninterruptable)) return {DomainStatus::Unavailable,{}};
     const bool delayDeath=!life && uninterruptable;

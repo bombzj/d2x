@@ -61,7 +61,8 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
     try {
         switch (request.operation) {
         case AdminOperation::Save:
-            checkpoint(); return {AdminStatus::Applied, "Character saved"};
+            if (!checkpoint()) return {AdminStatus::Unavailable, "Character save is awaiting confirmation"};
+            return {AdminStatus::Applied, "Character saved"};
         case AdminOperation::Reload:
             prepareReload(); return {AdminStatus::Applied, "Reload prepared; native leave and rejoin required"};
         case AdminOperation::CancelReload:
