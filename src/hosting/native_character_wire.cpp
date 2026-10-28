@@ -155,6 +155,23 @@ void emitAttributes(std::vector<Bytes> &packets, const ClassicData &data,const s
     }
 }
 }
+CharacterRecord nativeCharacterIdentity(CharacterRecord record,const hosting::NativeIdentityView &ids) {
+    record.id={ids.guid(record.id,0)};
+    const auto source=[&](uint32_t &value) {if(value!=UINT32_MAX) value=ids.guid(EntityId{value},4);};
+    for(auto &hotkey:record.skillHotkeys) source(hotkey.owner);
+    for(auto &owner:record.selectedSkillOwners) source(owner);
+    return record;
+}
+std::vector<Bytes> nativeCharacterPackets(const ClassicData &data,const CharacterRecord &record,const server::attributes::Totals &totals,const hosting::NativeIdentityView &ids) {
+    return nativeCharacterPackets(data,nativeCharacterIdentity(record,ids),totals);
+}
+std::vector<Bytes> nativePublicCharacterAttributes(const ClassicData &data,const CharacterRecord &record,const hosting::NativeIdentityView &ids) {
+    return nativePublicCharacterAttributes(data,nativeCharacterIdentity(record,ids));
+}
+std::vector<Bytes> nativeCharacterDelta(const ClassicData &data,const server::CharacterFact &fact,const hosting::NativeIdentityView &ids) {
+    auto value=fact;value.before=nativeCharacterIdentity(value.before,ids);value.after=nativeCharacterIdentity(value.after,ids);
+    return nativeCharacterDelta(data,value);
+}
 std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const CharacterRecord &record, const server::attributes::Totals &totals) {
     std::vector<Bytes> result;
     emitAttributes(result, data,nativeValues(data, values(data, record, totals)));

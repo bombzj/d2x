@@ -41,6 +41,9 @@ class CombatEffectSet {
     CombatEffectSet(CombatEffectSet &&other) noexcept:storage_(other.storage_) {}
     CombatEffectSet &operator=(CombatEffectSet &&other) noexcept {storage_=other.storage_;return *this;}
     std::span<const ActiveCombatEffect> entries() const { return storage_->effects; }
+    // Posted lists and registrations remain references until actual removal,
+    // including expired lists whose native callback has not run yet.
+    void collectEntityReferences(std::set<EntityId> &) const;
     size_t size() const { return storage_->effects.size(); }
     bool hasUnitEvents() const {return !storage_->skillEvents.empty();}
     bool sharesSnapshot(const CombatEffectSet &other) const noexcept {return storage_==other.storage_;}

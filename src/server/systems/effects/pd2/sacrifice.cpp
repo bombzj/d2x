@@ -23,10 +23,18 @@ struct Pd2SacrificeTimers {
     };
     std::map<FrameEventHandle,Pulse> pulses;
 };
+void System::collectPd2SacrificeReferences(std::set<EntityId> &entities) const {
+    if(!pd2Sacrifice_) return;
+    for(const auto &[handle,pulse]:pd2Sacrifice_->pulses) {
+        if(!ports_.frameEvents.find(handle)) continue;
+        if(pulse.source) entities.insert(pulse.source);
+        if(pulse.corpse) entities.insert(pulse.corpse);
+    }
+}
 DomainResult<> System::pd2SacrificeKill(EntityId source,EntityId target,int32_t overkill,int damageSkill,uint64_t tick) {
     const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,source);
     const auto *body=ports_.monsters.find(target);
-    if(!caster || !caster->programs() || !caster->programs()->pd2 || !body || body->life>0)
+    if(!caster || !caster->programs() || !caster->programs()->pd2 || !body || body->alive())
         return {DomainStatus::Applied,std::monostate{}};
     const auto used=ports_.actions.usedSkill(source);
     if(damageSkill!=96 && (!used || used->skill!=96)) return {DomainStatus::Applied,std::monostate{}};

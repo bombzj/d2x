@@ -270,7 +270,7 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     }
     if(impact.nativeSkill && !impact.nativeSkill->actionComplete) {
         const auto previous=live->hitOccurrence;
-        const auto action=impact.nativeSkill->defense.block && live->life>0 && !impact.knockback?
+        const auto action=impact.nativeSkill->defense.block && live->alive() && live->life>0 && !impact.knockback?
             ports_.monsters.block(execution.target,tick.tick):
             ports_.monsters.finishDamageAction(execution.target,impact.binding.credit,execution.callbacks.total,tick.tick,execution.hitClass,
                 impact.softHit,execution.getHit);
@@ -307,7 +307,7 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     if(source && source->hireling) ports_.monsters.recordHirelingKill(live->id,source->id);
     ports_.itemTriggers.commit(std::move(execution.itemEvents),!live->alive());
     if(impact.nextDelay) ports_.monsters.hitDelay(live->id,tick.tick+impact.nextDelay);
-    if(impact.knockback && live->life>0) {
+    if(impact.knockback && live->alive() && live->life>0) {
         if(source || player) ports_.monsters.knockback(live->id,source?source->position:player->position,tick.tick);
         cancel(live->id);
     }

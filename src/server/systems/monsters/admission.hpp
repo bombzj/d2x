@@ -18,9 +18,11 @@ struct ModifierPreparation {
     uint64_t token{},tick{},generation{},expectedRandom{},nextRandom{};
     RegionId area;Unit leader;MonsterEnchantment selection;std::vector<Unit> minions;
     bool promoteMinions{};
+    std::optional<uint16_t> initialNameSeed{}; // Restore constructs before overwriting saved name.
 };
 struct PreparedModifiers {
     uint64_t token{};MonsterRule leader;std::map<EntityId,MonsterRule> minions;std::string deferred;
+    std::optional<AuraDefinition> initialAura{};
 };
 struct EquipmentPreparation {
     uint64_t token{},tick{},generation{},gameRandom{},unitRandom{};

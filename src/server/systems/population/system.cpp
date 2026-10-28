@@ -2,6 +2,7 @@
 #include "server/systems/quests/system.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/objects/system.hpp"
+#include "server/systems/items/system.hpp"
 #include "server/systems/monsters/native_birth.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "server/systems/world/system.hpp"
@@ -663,6 +664,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             continue; // Entry continuations must settle before native scene birth/scaling.
         const auto monsters=ports_.monsters.restoreRoom(region,roomIndex,tick.tick,ports_.quests.read().actFour.sanctumCleared);
         if(monsters!=StepStatus::Complete) return monsters;
+        const auto items=ports_.items.restoreRoom(region,roomIndex,tick.tick);
+        if(items!=StepStatus::Complete) return items;
         const auto restored=ports_.objects.restoreRoom(region,roomIndex,tick.tick);
         if(restored!=StepStatus::Complete) return restored;
         const auto act=size_t(area.definition.act);

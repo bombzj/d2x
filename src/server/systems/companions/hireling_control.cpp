@@ -81,7 +81,7 @@ std::optional<HirelingExperienceAward> System::experience(PlayerId owner,const m
         !hirelingCanGainExperience(record.hp>0,record.level,player->persistent.player.level)) return {};
     const monsters::Actor *body=nullptr;
     for(const auto &[id,pet]:state_.companions) if(pet.owner==owner && pet.kind==Kind::Hireling) {body=ports_.monsters.find(id);break;}
-    if(!body || body->life<=0 || body->area!=victim.area) return {};
+    if(!body || !body->alive() || body->life<=0 || body->area!=victim.area) return {};
     const auto plan=planHirelingExperience(victim.rule.experience[size_t(record.level)],
         {record.experience,prepared->second.baseExperience,prepared->second.nextExperience,record.level,player->persistent.player.level,
             body->petStats.attributes.combat.experiencePercent,true,victim.hirelingKiller==body->id});
@@ -90,7 +90,7 @@ std::optional<HirelingExperienceAward> System::experience(PlayerId owner,const m
 }
 DomainResult<> System::awardExperience(const ActorContext &actor,const HirelingExperienceAward &award) {
     const auto *player=ports_.players.find(actor.player);const auto *body=ports_.monsters.find(award.actor);
-    if(!player || !body || body->life<=0 || body->owner!=actor.player || !sameHirelingIdentity(player->persistent.player.hireling,award.before) ||
+    if(!player || !body || !body->alive() || body->life<=0 || body->owner!=actor.player || !sameHirelingIdentity(player->persistent.player.hireling,award.before) ||
         player->persistent.player.hireling.experience!=award.before.experience) return {DomainStatus::Stale,{}};
     auto record=player->persistent.player;record.hireling.level=award.after.level;record.hireling.experience=award.after.experience;
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
@@ -276,7 +276,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};edit.player.hireling.hp=life;
         auto plan=ports_.transactions.prepare(std::move(edit));if(!plan || !ports_.transactions.commit(std::move(*plan.value))) return StepStatus::Blocked;
     }
-    if(body->life<=0 || p->persistent.player.hp<=0) {ports_.monsters.stop(pet.actor);return StepStatus::Complete;}
+    if(!body->alive() || body->life<=0 || p->persistent.player.hp<=0) {ports_.monsters.stop(pet.actor);return StepStatus::Complete;}
     const auto &bodyArea=ports_.areas.at(body->area);
     const int distanceToOwner=ownerDistance(nativePosition(body->position)+bodyArea.definition.origin,
         nativePosition(p->position)+area.definition.origin,body->rule.size);

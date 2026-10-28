@@ -8,6 +8,7 @@
 #include "gameplay/items/state.hpp"
 #include "gameplay/items/generation.hpp"
 #include "gameplay/items/replenishment.hpp"
+#include "gameplay/items/native_save.hpp"
 #include "gameplay/events/frame_queue.hpp"
 #include <map>
 #include <set>
@@ -19,16 +20,44 @@
 namespace d2x::server::items {
 // Canonical non-character items; character-owned items remain in PlayerStore.
 struct CreateItem { std::string code; unsigned level{}; ItemGeneration generation; ItemLocation location; };
-struct PreparedBatch { std::vector<ItemInstance> items; std::shared_ptr<const EquipmentRules> equipment; std::set<size_t> limitedUniques; };
+struct PreparedBatch {
+    std::vector<ItemInstance> items;
+    std::shared_ptr<const EquipmentRules> equipment;
+    std::set<size_t> limitedUniques;
+    std::map<EntityId,EntityId> identities{}; // Prepared item ID -> already allocated native unit.
+};
 struct Address { std::optional<PlayerId> character; ItemHandle item; };
-struct Ports { const PlayerStore &players; AreaStore &areas; EntityIds &ids; uint64_t &random; const ItemCatalog *definitions; EventOutbox &events; FrameEventQueue &frameEvents; const spatial::System &spatial; };
+struct InactiveItem {
+    Bytes bitstream;
+    struct Derived {int requiredLevel{},socketRequiredLevel{};};
+    std::vector<Derived> derived;
+    EquipmentValues equipment;
+    uint64_t expires{};
+    std::optional<PlayerId> goldOwner;
+};
+using InactiveRooms=std::map<std::pair<RegionId,size_t>,std::vector<InactiveItem>>;
+struct InactiveItemRequest {uint64_t token{};ItemInstance item;Vec global;};
+struct PreparedInactiveItem {InactiveItemRequest source;InactiveItem node;std::string deferred;};
+struct RoomCompression {
+    uint64_t expectedRevision{};
+    State next;
+    InactiveRooms rooms;
+    std::vector<EntityId> retired;
+};
+struct Ports { const PlayerStore &players; AreaStore &areas; EntityIds &ids; uint64_t &random; const ItemCatalog *definitions; EventOutbox &events; FrameEventQueue &frameEvents; const spatial::System &spatial; std::shared_ptr<const NativeItemSaveRules> itemSave; };
 class System {
     friend class transactions::System;
     friend class loot::System;
     struct GroundLifetime { uint64_t generation{}, expires{}; };
     std::map<EntityId,GroundLifetime> groundLifetimes_;
     std::map<EntityId,ItemRestorationClock> restoration_;
+    InactiveRooms inactive_;
+    std::string inactiveFailure_;
+    struct InactivePreparation {InactiveItemRequest source;std::optional<PreparedInactiveItem> prepared;};
+    std::map<EntityId,InactivePreparation> inactivePreparation_;
+    uint64_t nextInactiveToken_{1};
     void commit(State next) noexcept;
+    void prepareGroundRooms(State &) const;
     State state_;
     mutable uint64_t groundIndexRevision_{};
     mutable std::map<RegionId,std::vector<EntityId>> groundByArea_;
@@ -36,6 +65,14 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
+    void prepareGroundOrder(State &,std::span<const DomainFact>) const;
+    DomainResult<RoomCompression> prepareRoomCompression(RegionId,size_t,uint64_t tick,EntityId only={});
+    const std::string &inactiveFailure() const {return inactiveFailure_;}
+    std::optional<InactiveItemRequest> pendingInactiveItem();
+    DomainResult<> prepareInactiveItem(PreparedInactiveItem);
+    void publishRoomCompression(RoomCompression) noexcept;
+    void retireCompressedItem(const RoomCompression &,EntityId) noexcept;
+    StepStatus restoreRoom(RegionId,size_t,uint64_t tick);
     std::vector<EntityId> groundInAreas(std::span<const RegionId>) const;
     // Stable for this stay on the ground, including regeneration/partial pickup.
     // Removal, pickup followed by drop, or relocation retires the old identity.
@@ -63,13 +100,22 @@ class System {
     }
     void clearRestoration(EntityId id) {restoration_.erase(id);ports_.frameEvents.cancelHandler({FrameEventUnit::Item,id},FrameEventType::StatRegeneration,0);}
     DomainResult<> restoreGround(EntityId,uint64_t tick);
-    bool identityCapacity(size_t count) const { return ports_.ids.cursor()<=UINT32_MAX && count<=uint64_t(UINT32_MAX)-ports_.ids.cursor()+1; }
+    bool identityCapacity(size_t count) const { return !count || (ports_.ids.cursor()<=UINT32_MAX && count<=uint64_t(UINT32_MAX)-ports_.ids.cursor()+1); }
     uint64_t identityCursor() const {return ports_.ids.cursor();}
-    void publishIdentities(uint64_t expected,size_t count) {
+    std::shared_ptr<EntityIds::Publication> prepareIdentities(uint64_t expected,size_t count) const {
         if(ports_.ids.cursor()!=expected || !identityCapacity(count)) throw std::logic_error("Stale native item identity allocation");
-        ports_.ids=EntityIds(expected+count);
+        auto publication=ports_.ids.preparePublication(count);
+        for(size_t index=0;index<count;++index) publication->bind(EntityId{expected+index},NativeUnitType::Item);
+        return publication;
     }
-    EntityId reserveIdentity() { if (ports_.ids.cursor() > UINT32_MAX) throw std::overflow_error("Native item identity exhausted"); return ports_.ids.allocate(); }
+    void publishIdentities(EntityIds::Publication &publication) noexcept {ports_.ids.publish(publication);}
+    void publishIdentities(uint64_t expected,size_t count) {
+        auto publication=prepareIdentities(expected,count);publishIdentities(*publication);
+    }
+    EntityId reserveIdentity(std::optional<NativeUnitType> type=NativeUnitType::Item) {
+        if(ports_.ids.cursor()>UINT32_MAX) throw std::overflow_error("Native item identity exhausted");
+        return type?ports_.ids.allocate(*type):ports_.ids.allocate();
+    }
     DomainResult<State> prepare(PreparedBatch, GroundLocation);
     DomainResult<> install(PreparedBatch, GroundLocation);
     DomainResult<> installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &,uint64_t tick,std::span<const EntityId> identities={},std::shared_ptr<EntityIds::Publication> allocation={});

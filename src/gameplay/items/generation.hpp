@@ -1,6 +1,7 @@
 #pragma once
 #include "gameplay/items/quality.hpp"
 #include "core/random.hpp"
+#include "core/entity_id.hpp"
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -12,7 +13,9 @@ struct ItemPropertyTarget {
     std::string code, parameter;
     std::optional<int> value, minimum, maximum;
 };
-struct ItemSeeds { uint32_t unit{}, properties{}; };
+// Optional live allocation belongs to the invoking authority, never the item
+// save format. Pure/offline generators leave it empty.
+struct ItemSeeds { uint32_t unit{}, properties{}; EntityId allocation{}; };
 inline ItemSeeds rollNativeItemSeeds(uint64_t &gameRandom) {return {rollRandom(gameRandom),rollRandom(gameRandom)};}
 using ItemSeedSource = std::function<ItemSeeds()>;
 struct ItemAffixInstance {

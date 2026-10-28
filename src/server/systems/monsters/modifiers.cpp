@@ -27,7 +27,8 @@ DomainResult<> System::prepareBirthModifiers(EntityId id,MonsterRank rank,std::v
     std::span<const EntityId> minions,uint64_t tick,std::optional<std::pair<uint64_t,uint64_t>> random,bool promoteMinions,std::optional<uint16_t> nameSeed) {
     const auto *actor=find(id);
     if(!actor || (!actor->alive() && !actor->restorationPending) || modifiers.size()>9 ||
-        (rank!=MonsterRank::Unique && rank!=MonsterRank::Champion && rank!=MonsterRank::SuperUnique && !(nameSeed && rank==MonsterRank::Minion)))
+        (rank!=MonsterRank::Unique && rank!=MonsterRank::Champion && rank!=MonsterRank::SuperUnique &&
+         !(nameSeed && (rank==MonsterRank::Minion || actor->restorationPending))))
         return {DomainStatus::InvalidRequest,{}};
     if(modifierPending_) return {DomainStatus::Conflict,{}};
     if(nextModifierToken_==UINT64_MAX || actor->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
@@ -42,8 +43,10 @@ DomainResult<> System::prepareBirthModifiers(EntityId id,MonsterRank rank,std::v
     };
     request.leader={id,actor->revision,actor->identity,currentLevel(*actor),actor->rule.nativeClass};request.leader.identity.rank=rank;
     request.selection.ids=std::move(modifiers);
-    const auto rolledName=rank==MonsterRank::Minion?uint16_t{}:uint16_t(rollRandom(request.nextRandom));
+    const bool unique=rank==MonsterRank::Unique || rank==MonsterRank::Champion || rank==MonsterRank::SuperUnique;
+    const auto rolledName=unique?uint16_t(rollRandom(request.nextRandom)):uint16_t{};
     request.selection.nameSeed=nameSeed.value_or(rolledName);
+    if(actor->restorationPending && unique && nameSeed) request.initialNameSeed=rolledName;
     for(const auto child:minions) {
         const auto *minion=find(child);
         if(!minion || minion->area!=actor->area || !minion->alive() || child==id) return {DomainStatus::Stale,{}};
@@ -64,6 +67,8 @@ DomainResult<> System::prepareModifiers(PreparedModifiers prepared) {
         };
         if(!valid(prepared.leader,request.leader) || prepared.leader.enchantment->ids!=request.selection.ids ||
             prepared.leader.enchantment->nameSeed!=request.selection.nameSeed || prepared.minions.size()!=request.minions.size())
+            return {DomainStatus::InvalidRequest,{}};
+        if(bool(prepared.initialAura)!=(request.initialNameSeed.has_value() && prepared.leader.enchantment->aura.has_value()))
             return {DomainStatus::InvalidRequest,{}};
         for(const auto &unit:request.minions) if(!prepared.minions.contains(unit.id) || !valid(prepared.minions.at(unit.id),unit))
             return {DomainStatus::InvalidRequest,{}};
@@ -95,6 +100,8 @@ StepStatus System::finishModifiers(TickContext context) {
         candidate.rule.selfResurrection=current.rule.selfResurrection;candidate.rule.restore=current.rule.restore;
         candidate.rule.neverCount=current.rule.neverCount;
         candidate.rule.flying=current.rule.flying;
+        candidate.rule.restoreNpcCommands=current.rule.restoreNpcCommands;
+        candidate.rule.mapAi=current.rule.mapAi;
         candidate.rule.spawnCollision=current.rule.spawnCollision;
         candidate.rule.collisionPattern=current.rule.collisionPattern;
         candidate.rule.nativeSpawnFloor=current.rule.nativeSpawnFloor;
@@ -106,7 +113,9 @@ StepStatus System::finishModifiers(TickContext context) {
         resources.sampleSources(sources);
         auto maximum=resources.read().maximum.raw();
         maximum=nativeAdd(maximum,nativePercentage(maximum,mods.lifePercent,100));
-        resources.writeBaseStat("maxhp",maximum,sources);resources.seedLife(Fixed8::fromRaw(current.alive()?maximum:0));
+        resources.writeBaseStat("maxhp",maximum,sources);
+        if(unique || rank==MonsterRank::Minion || mods.lifePercent)
+            resources.seedLife(Fixed8::fromRaw(current.alive()?maximum:0));
         if(mods.stopRegeneration) resources.writeBaseStat("hpregen",0,sources);
         const auto value=[&](std::string_view name) {return resources.values(sources).get({candidate.rule.stats->names.at(std::string(name)),0});};
         resources.writeBaseStat("level",nativeAdd(value("level"),mods.levelBonus),sources);
@@ -147,8 +156,10 @@ StepStatus System::finishModifiers(TickContext context) {
         return candidate;
     };
     std::map<EntityId,Actor> candidates;
-    auto leader=upgrade(actor,std::move(rule),request.leader.identity.rank,request.leader.identity.rank!=MonsterRank::Minion);
-    if(request.leader.identity.rank!=MonsterRank::Minion) leader.identity.ownerSpawnKey.clear();
+    const auto rank=request.leader.identity.rank;
+    const bool unique=rank==MonsterRank::Unique || rank==MonsterRank::Champion || rank==MonsterRank::SuperUnique;
+    auto leader=upgrade(actor,std::move(rule),rank,unique);
+    if(unique) leader.identity.ownerSpawnKey.clear();
     leader.combatRandom=request.nextRandom;
     leader.rule.nativeModifiers=request.selection.ids;
     candidates.emplace(id,std::move(leader));
@@ -163,13 +174,20 @@ StepStatus System::finishModifiers(TickContext context) {
     publishActors(publication);
     modifierCommitted_=true;
     }
+    if(actor.alive() && modifierPrepared_->initialAura && !modifierInitialAuraCommitted_) {
+        const auto &aura=*modifierPrepared_->initialAura;
+        const auto assigned=ports_.effects.assignUnitAura(id,aura,tick,aura.rank);
+        if(!assigned) return isDeferred(assigned.status) || assigned.status==DomainStatus::Conflict
+            ?StepStatus::Blocked:StepStatus::NotImplemented;
+        modifierInitialAuraCommitted_=true;
+    }
     if(actor.alive() && actor.rule.enchantment->aura) {
         const auto &aura=*actor.rule.enchantment->aura;
         const auto assigned=ports_.effects.assignUnitAura(id,aura,tick,aura.rank);
         if(!assigned) return isDeferred(assigned.status) || assigned.status==DomainStatus::Conflict
             ?StepStatus::Blocked:StepStatus::NotImplemented;
     }
-    modifierPending_.reset();modifierPrepared_.reset();modifierCommitted_=false;
+    modifierPending_.reset();modifierPrepared_.reset();modifierCommitted_=modifierInitialAuraCommitted_=false;
     return StepStatus::Complete;
 }
 } // namespace d2x::server::monsters

@@ -103,8 +103,8 @@ DomainResult<> System::monsterWhirlwindEvent(const FrameEvent &event,uint64_t ti
             if(mode.whirlwindHit && !mode.whirlwindContact) {
                 if(!mode.whirlwindTarget) {
                     const auto candidates=ports_.effects.nativeAuraCandidateRecipients({id,source->area,5,0xa783,false,{},effects::NativeAuraTargetMode::OwnerRange,tick});
-                    mode.whirlwindTarget=nativeSkillSuccessor(candidates,mode.whirlwindPrevious);
-                    mode.whirlwindPrevious=*mode.whirlwindTarget?uint32_t(mode.whirlwindTarget->value):UINT32_MAX;
+                    mode.whirlwindTarget=nativeSkillSuccessor(candidates,mode.whirlwindPrevious,ports_.monsters.nativeIdentities());
+                    mode.whirlwindPrevious=*mode.whirlwindTarget?ports_.monsters.nativeIdentities().guid(*mode.whirlwindTarget):UINT32_MAX;
                 }
                 const auto target=*mode.whirlwindTarget;
                 if(target) {

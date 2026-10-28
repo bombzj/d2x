@@ -231,6 +231,7 @@ class System {
     uint64_t mindBlastOccurrence_{};
     uint64_t corpseExplosionOccurrence_{};
     std::shared_ptr<Pd2SacrificeTimers> pd2Sacrifice_;
+    void collectPd2SacrificeReferences(std::set<EntityId> &) const;
     uint64_t nativeAreaOccurrence_{};
     DomainResult<> advanceNativeCallback(NativeContactBatch &,uint64_t);
     struct PaladinCycle {
@@ -309,6 +310,7 @@ class System {
     AuraUnitPublication prepareDamageStates(monsters::Actor,UnitDamageStates,uint64_t tick) const;
     void stageDamageStates(AuraUnitPublication &,monsters::Actor,UnitDamageStates,uint64_t tick) const;
     const State &read() const { return state_; }
+    void collectEntityReferences(std::set<EntityId> &) const;
     PlayerEffectsPublication preparePlayerEffects(const ActorContext &,const CombatEffectSet &,const attributes::Totals &,const CharacterRecord &,const RightAuraTimerChange &right={}) const;
     PlayerPoisonCandidate preparePlayerPoison(EntityId) const;
     uint64_t reserveAuraEventOrder();
@@ -449,6 +451,7 @@ class System {
     NativeContactBatch prepareMissileEvents(EntityId source,EntityId target,uint64_t tick,bool returnFire=true) const;
     DomainResult<> advanceDamageEvents(NativeContactBatch &,uint64_t tick);
     bool hasContactEffects() const {return !monsterCurses_.empty();}
+    bool retirementPending(EntityId) const;
     bool reactionCapacity() const { return monsterCurses_.size()<=4096-128; }
     StepStatus step(TickContext, FrameFacts &);
 };

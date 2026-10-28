@@ -377,6 +377,65 @@ DomainResult<> System::prepareUnitCurseRemoval(AuraUnitPublication &publication,
     }
     return {DomainStatus::Applied,std::monostate{}};
 }
+void System::collectEntityReferences(std::set<EntityId> &entities) const {
+    const auto retain=[&](EntityId id) {if(id) entities.insert(id);};
+    const auto timerSources=[&](FrameEventOwner owner) {
+        for(const auto &event:ports_.frameEvents.events(owner)) {
+            if(event.handler) continue;
+            if(event.type==FrameEventType::PeriodicStats ||
+                (event.type==FrameEventType::Pd2MissileHitDelay && event.customId!=-1))
+                retain(EntityId{uint32_t(event.customId)});
+        }
+    };
+    const auto damage=[&](const auto &unit) {
+        if(unit.poison) {retain(unit.poison->source);retain(unit.poison->damage.actualSource);}
+        if(unit.wound) {
+            retain(unit.wound->source);retain(unit.wound->credit);
+            retain(unit.wound->pd2Attacker);retain(unit.wound->pd2Credit);
+        }
+    };
+    for(const auto &[id,recovery]:state_.players) {
+        retain(id);recovery.states.collectEntityReferences(entities);
+        damage(recovery);retain(recovery.killer);
+    }
+    for(const auto &[id,unit]:units_) {retain(id);unit.states.collectEntityReferences(entities);}
+    for(const auto &[id,player]:ports_.players.all()) {
+        (void)id;
+        for(const auto &timer:player.totals.itemAuraTimers) retain(timer.source);
+        timerSources({FrameEventUnit::Player,player.actor});
+    }
+    for(const auto &[id,unit]:ports_.monsters.read().actors) {
+        (void)id;damage(unit);
+        retain(unit.curseControl.caster);retain(unit.curseControl.target);
+        for(const auto &timer:unit.itemAuraTimers) retain(timer.source);
+        timerSources({FrameEventUnit::Monster,id});
+    }
+    for(const auto &[key,cycle]:itemAuraCycles_) {
+        retain(key.first);retain(key.second);
+        if(cycle.itemTimer) retain(cycle.itemTimer->source);
+        if(cycle.itemReplacement) retain(cycle.itemReplacement->source);
+    }
+    collectPd2SacrificeReferences(entities);
+}
+bool System::retirementPending(EntityId id) const {
+    if(std::any_of(nativeStateRemovals_.begin(),nativeStateRemovals_.end(),[&](const auto &entry){return entry.unit==id;})) return true;
+    for(const auto &[source,curse]:monsterCurses_) {
+        if(source==id) return true;
+        if(std::find(curse.targets.begin()+curse.next,curse.targets.end(),id)!=curse.targets.end()) return true;
+    }
+    for(const auto &[handle,execution]:modifierExecutions_) {(void)handle;if(execution.owner==id) return true;}
+    if(const auto found=uniqueCycles_.find(id);found!=uniqueCycles_.end() &&
+        (found->second.emissionPending || found->second.deathExecution)) return true;
+    const auto includes=[&](const auto &entry) {
+        const auto &cycle=entry.second;
+        return cycle.pending && (entry.first==id || std::find(cycle.targets.begin(),cycle.targets.end(),id)!=cycle.targets.end());
+    };
+    if(std::any_of(unitAuraCycles_.begin(),unitAuraCycles_.end(),includes) ||
+        std::any_of(paladinCycles_.begin(),paladinCycles_.end(),includes)) return true;
+    for(const auto &[key,cycle]:itemAuraCycles_) if(cycle.pending &&
+        (key.first==id || std::find(cycle.targets.begin(),cycle.targets.end(),id)!=cycle.targets.end())) return true;
+    return false;
+}
 void System::forgetUnit(EntityId id) noexcept {
     units_.erase(id);unitAuraCycles_.erase(id);uniqueCycles_.erase(id);movementSkillPhases_.erase(id);
     std::erase_if(modifierExecutions_,[&](const auto &entry){return entry.second.owner==id;});

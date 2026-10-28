@@ -45,6 +45,14 @@ SkillSpec elementalSpec(const DataTable &table, size_t row, bool missile) {
     return spec;
 }
 } // namespace
+std::optional<AuraDefinition> resolveMonsterModifierAura(const ClassicData &data,int level,uint16_t nameSeed,bool lordDeSeis,bool enableSkillEffects) {
+    constexpr int skills[]{98,102,108,114,123,122,118,103};
+    constexpr int divisors[]{6,6,5,7,8,8,8,1};
+    uint64_t random=(uint64_t(666)<<32)|nameSeed;
+    const int choice=lordDeSeis?5:int(roll(random,level>=999?8:level>=20?7:6));
+    const int rank=choice==7?1:std::clamp(std::max(level,1)/divisors[choice],1,99);
+    return enableSkillEffects?resolveBaseAura(data,skills[choice],rank):resolveAura(data,skills[choice],rank);
+}
 bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster) {
     if (!monster.hostile() || monster.boss) return false;
     const auto &stats = data.tables.at("monstats"), &extra = data.tables.at("monstats2");
@@ -166,13 +174,7 @@ MonsterEnchantment resolveMonsterEnchantment(const ClassicData &data,const Monst
         case 28: result.defensePercent += 100; resist(0, 50); break;
         case 29: break; // Missile creation executes multishot.
         case 30: {
-            constexpr int skills[]{98, 102, 108, 114, 123, 122, 118};
-            constexpr int divisors[]{6, 6, 5, 7, 8, 8, 8};
-            uint64_t auraSeed = (uint64_t(666) << 32) | result.nameSeed;
-            const int choice = fixed && fixed->id=="Lord De Seis"?5:int(roll(auraSeed, level >= 20 ? 7 : 6));
-            const int auraRank = std::clamp(level / divisors[choice], 1, 99);
-            if (enableSkillEffects) result.aura = resolveBaseAura(data, skills[choice], auraRank);
-            else result.aura = resolveAura(data, skills[choice], auraRank);
+            result.aura=resolveMonsterModifierAura(data,level,result.nameSeed,fixed && fixed->id=="Lord De Seis",enableSkillEffects);
             break;
         }
         case 16: case 36: case 37: case 38:

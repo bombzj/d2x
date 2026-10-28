@@ -42,6 +42,7 @@ struct NativeBirthPublication::Data {
     uint64_t cursor{},randomExpected{},randomNext{};
     size_t prefix{};
     std::map<EntityId,Missile> missiles;
+    std::optional<NativeUnitIds::Publication> identities;
     std::vector<System::Admission> timers;
     std::vector<DomainFact> facts;
     std::optional<uint32_t> pathSeedExpected;
@@ -55,7 +56,7 @@ EntityId NativeBirthPublication::first() const {return data_->missiles.empty()?E
 bool NativeBirthPublication::changesOwnerSeed() const {return data_->ownerExpected!=data_->ownerNext;}
 bool NativeBirthPublication::validate(size_t prefix) const {
     const auto &d=*data_;const auto &ports=d.system->ports_;
-    if(d.published || d.prefix!=prefix || ports.ids.cursor()!=d.cursor || ports.random!=d.randomExpected) return false;
+    if(d.published || d.prefix!=prefix || ports.ids.cursor()!=d.cursor || ports.random!=d.randomExpected || !ports.ids.validateNative(d.identities)) return false;
     if(d.pathSeedExpected) {
         const auto current=d.system->runtime_->pd2PathSeeds.find(d.owner);
         if((current==d.system->runtime_->pd2PathSeeds.end()?0:current->second)!=*d.pathSeedExpected) return false;
@@ -80,6 +81,7 @@ bool NativeBirthPublication::validate(size_t prefix) const {
 void NativeBirthPublication::publish() noexcept {
     auto &d=*data_;auto &system=*d.system;const auto &ports=system.ports_;
     if(d.published || ports.ids.cursor()!=d.cursor+d.prefix || ports.random!=d.randomExpected) std::terminate();
+    ports.ids.publishNative(d.identities);
     if(changesOwnerSeed()) {
         const auto consumed=d.monster?ports.monsters.consumeRandom(d.owner,d.ownerExpected,d.ownerNext):
             ports.transactions.consumeRandom(d.context,d.ownerExpected,d.ownerNext);
@@ -166,7 +168,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
                     data->pathSeeds.emplace(lead.owner,*data->pathSeedExpected);
                 }
                 auto &seed=data->pathSeeds.at(lead.owner);
-                seed=pd2MissilePathSeed(seed,monster?1:0,uint32_t(lead.owner.value));
+                seed=pd2MissilePathSeed(seed,monster?1:0,ports_.ids.nativeIdentities().guid(lead.owner));
                 const auto frames=std::min(missile.nativeTotalFrames,77);
                 if(missile.nativeTotalFrames>77) {missile.nativeTotalFrames=77;missile.setCurrentFrame(77);}
                 missile.random=(missile.random&0xffffffff00000000ULL)|seed;
@@ -208,6 +210,9 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
     data->facts.insert(data->facts.end(),extraFacts.begin(),extraFacts.end());
     for(auto &missile:launched) data->missiles.emplace(missile.id,std::move(missile));
     data->timers=prepareTimers(data->missiles,lead.transient);
+    std::vector<NativeUnitIds::Request> identities;
+    for(const auto &[id,missile]:data->missiles) {(void)missile;identities.push_back({id,NativeUnitType::Missile});}
+    data->identities=ports_.ids.prepareNative(identities);
     auto result=std::shared_ptr<NativeBirthPublication>{new NativeBirthPublication{std::move(data)}};
     return {DomainStatus::Applied,std::move(result)};
 }
@@ -446,6 +451,9 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
     data->facts=visuals(launched);
     for(auto &missile:launched) data->missiles.emplace(missile.id,std::move(missile));
     data->timers=prepareTimers(data->missiles);
+    std::vector<NativeUnitIds::Request> identities;
+    for(const auto &[id,missile]:data->missiles) {(void)missile;identities.push_back({id,NativeUnitType::Missile});}
+    data->identities=ports_.ids.prepareNative(identities);
     NativeBirthPublication publication{std::move(data)};const auto first=publication.first();
     if(!publication.validate()) return {DomainStatus::Stale,{}};
     std::vector<EventBatch> batches;

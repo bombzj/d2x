@@ -31,7 +31,7 @@ void NativeRealmService::publishAreas(RegionId region) {
         for(const auto id:peer.warps) removals.emplace(5,id);
         std::vector<Bytes> unload;
         for(const auto &[type,id]:removals) unload.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out) {
-            out.u8(type);out.u32(uint32_t(id.value));
+            out.u8(type);out.u32(wireId(id));
         }));
         for(const auto &room:peer.rooms) unload.push_back(encodeServerPacket(ServerMessage::HideRoom,[&](auto &out) {
             out.u16(uint16_t(room.x));out.u16(uint16_t(room.y));out.u8(uint8_t(room.area));
@@ -79,7 +79,7 @@ void NativeRealmService::publishAreas(RegionId region) {
         for (auto &packet : nativeAreaWarps(areas.at(next), exits)) packets.push_back(std::move(packet));
     }
     for (const auto id : peer.warps) if (!warps.contains(id))
-        packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(5); out.u32(uint32_t(id.value)); }));
+        packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(5); out.u32(wireId(id)); }));
     if (!packets.empty()) sendGameBatch(std::move(packets));
     peer.areas = std::move(desired);
     peer.rooms.insert(rooms.begin(), rooms.end()); peer.warps = std::move(warps);
@@ -92,7 +92,7 @@ void NativeRealmService::publishAreas(RegionId region) {
         if(!view) throw net::protocol::ProtocolError("Loaded act lacks its native player");
         const auto position=view->actor.position+terrain.origin;
         sendGame(encodeServerPacket(ServerMessage::Reposition,[&](auto &out) {
-            out.u8(0);out.u32(uint32_t(view->actor.id.value));
+            out.u8(0);out.u32(wireId(view->actor.id));
             out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(1);
         }));
     }
@@ -123,7 +123,7 @@ void NativeRealmService::changeArea(const server::TravelFact &fact) {
     if (fact.revived) sendGame(nativePlayerAssignment(*content, *host.exportCharacter(*binding,false), *host.read(*binding), terrain.origin));
     const auto position = fact.position + terrain.origin;
     if (!fact.walking && !crossAct) sendGame(encodeServerPacket(ServerMessage::Reposition, [&](auto &out) {
-        out.u8(0); out.u32(uint32_t(fact.actor.value));
+        out.u8(0); out.u32(wireId(fact.actor));
         out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y))); out.u8(1);
     }));
     peer.lastMotion.clear(); peer.sentRevision = 0;
@@ -143,7 +143,7 @@ void NativeRealmService::publishGroundItems(std::span<const EntityId> pendingDro
         }
     }
     for (const auto &[id, revision] : peer.groundItems) if (!next.contains(id)) {
-        (void)revision; packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(uint32_t(id.value)); }));
+        (void)revision; packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(wireId(id)); }));
     }
     if (!packets.empty()) sendGameBatch(std::move(packets));
     peer.groundItems.swap(next);
@@ -157,11 +157,11 @@ void NativeRealmService::publishCorpses() {
     // 8E is the game-wide ownership roster, independent of room visibility.
     for (const auto &[corpse, owner] : peer.corpseOwners) if (!owners.contains(corpse))
         packets.push_back(encodeServerPacket(ServerMessage::CorpseAssignment, [&](auto &out) {
-            out.u8(0); out.u32(uint32_t(owner.value)); out.u32(uint32_t(corpse.value));
+            out.u8(0); out.u32(wireId(owner)); out.u32(wireId(corpse));
         }));
     for (const auto &[corpse, owner] : owners) if (!peer.corpseOwners.contains(corpse))
         packets.push_back(encodeServerPacket(ServerMessage::CorpseAssignment, [&](auto &out) {
-            out.u8(1); out.u32(uint32_t(owner.value)); out.u32(uint32_t(corpse.value));
+            out.u8(1); out.u32(wireId(owner)); out.u32(wireId(corpse));
         }));
     std::map<EntityId, std::set<EntityId>> equipment;
     // A recovered GUID may already be projected as owned/private or public
@@ -192,7 +192,7 @@ void NativeRealmService::publishCorpses() {
         if (old == peer.corpses.end()) {
             packets.push_back(nativePlayerAssignment(*content, view.equipment, motion, origin));
             packets.push_back(nativePlayerMotion(motion, origin));
-            packets.push_back(encodeServerPacket(ServerMessage::PlayerCorpse, [&](auto &out) { out.u8(1); out.u32(uint32_t(corpse.owner.value)); out.u32(uint32_t(corpse.id.value)); }));
+            packets.push_back(encodeServerPacket(ServerMessage::PlayerCorpse, [&](auto &out) { out.u8(1); out.u32(wireId(corpse.owner)); out.u32(wireId(corpse.id)); }));
         }
         auto items = nativeCorpseEquipment(*content, view.equipment);
         for (auto &packet : items) packets.push_back(std::move(packet));
@@ -200,10 +200,10 @@ void NativeRealmService::publishCorpses() {
     }
     for (const auto &[corpse, previous] : peer.corpseEquipment) for (const auto id : previous)
         if ((!equipment.contains(corpse) || !equipment.at(corpse).contains(id)) && !retainedItem(id))
-            packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(uint32_t(id.value)); }));
+            packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(wireId(id)); }));
     for (const auto &[id, revision] : peer.corpses) if (!next.contains(id)) {
         (void)revision;
-        packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(0); out.u32(uint32_t(id.value)); }));
+        packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(0); out.u32(wireId(id)); }));
     }
     if (!packets.empty()) sendGameBatch(std::move(packets));
     peer.corpses.swap(next); peer.corpseEquipment.swap(equipment); peer.corpseOwners = owners;
@@ -221,7 +221,7 @@ void NativeRealmService::publishObjects() {
             // keeps its initial target flag; ENDANIM writes ON silently.
             if(object.mode==1) packets.push_back(encodeServerPacket(ServerMessage::UnitMode,[&](auto &out) {
                 const auto area=host.area(binding->game,object.area);
-                out.u8(2);out.u32(uint32_t(object.id.value));out.u8(3);
+                out.u8(2);out.u32(wireId(object.id));out.u8(3);
                 out.u8(object.rule.selectable[area->definition.town?2:0]?2:0);out.u32(object.mode);
             }));
             continue;
@@ -234,14 +234,14 @@ void NativeRealmService::publishObjects() {
         } else {
             const auto position = object.position + shared.terrain.at(binding->game).at(object.area).origin;
             packets.push_back(encodeServerPacket(ServerMessage::AssignObject, [&](auto &out) {
-                out.u8(2); out.u32(uint32_t(object.id.value)); out.u16(uint16_t(object.definition)); out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y)));
+                out.u8(2); out.u32(wireId(object.id)); out.u16(uint16_t(object.definition)); out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y)));
                 out.u8(uint8_t(object.mode)); out.u8(object.rule.shrine ? uint8_t(object.rule.shrine->code) : object.rule.chest ? uint8_t((object.rule.chest->locked ? 128 : 0) | object.rule.chest->trap) : object.rule.initialization==11 || object.rule.initialization==12 ? object.portalDestination : object.rule.operation==22 ? uint8_t(object.uses) : uint8_t(object.rule.trap));
             }));
         }
     }
     for (const auto &[id, revision] : peer.objects) if (!next.contains(id)) {
         (void)revision;
-        packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(2); out.u32(uint32_t(id.value)); }));
+        packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(2); out.u32(wireId(id)); }));
     }
     if (!packets.empty()) sendGameBatch(std::move(packets));
     peer.objects.swap(next);
@@ -260,7 +260,7 @@ void NativeRealmService::publishNpcs() {
         for(const auto &npc:view->npcs) if(peer.monsters.contains(npc.id)) {
             if(const auto message=host.npcQuestAlert(*binding,npc.rule,area)) {
                 if(!peer.npcQuestAlerts.contains(npc.id) || peer.npcQuestAlerts.at(npc.id)!=*message)
-                    packets.push_back(encodeServerPacket(ServerMessage::QuestAlert,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));}));
+                    packets.push_back(encodeServerPacket(ServerMessage::QuestAlert,[&](auto &out){out.u8(1);out.u32(wireId(npc.id));}));
                 peer.npcQuestAlerts.insert_or_assign(npc.id,*message);
             } else peer.npcQuestAlerts.erase(npc.id);
         }
@@ -275,7 +275,7 @@ void NativeRealmService::publishShop() {
         for (const auto &[id,item] : stock->inventory.items) { (void)item; next.insert(id); if (peer.shopItems.contains(id)) projection.inventory.items.erase(id); }
         packets=nativeShopItems(*content,projection); peer.shopOwner=stock->player.id;
     }
-    for (const auto id : peer.shopItems) if (!next.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(id.value));}));
+    for (const auto id : peer.shopItems) if (!next.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(wireId(id));}));
     if (!packets.empty()) sendGameBatch(std::move(packets));
     peer.shopItems.swap(next);
 }
@@ -298,12 +298,12 @@ void NativeRealmService::publishPortals() {
             if(peer.portals.contains(id) && peer.portals.at(id)==portal.revision) continue;
             changed=true; const auto position=(town?portal.townPosition:portal.fieldPosition)+shared.terrain.at(binding->game).at(area).origin;
             if(std::none_of(objects.begin(),objects.end(),[&](const auto &object){return object.id==id;}))
-                packets.push_back(encodeServerPacket(ServerMessage::AssignObject,[&](auto &out){out.u8(2);out.u32(uint32_t(id.value));out.u16(uint16_t(portal.rule.definition));out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(portal.isOpened(town)?2:1);out.u8(uint8_t(town?portal.field:portal.town));}));
-            packets.push_back(encodeServerPacket(ServerMessage::PortalState,[&](auto &out){out.u8(0);out.u8(uint8_t(town?portal.field:portal.town));out.u32(uint32_t(id.value));}));
+                packets.push_back(encodeServerPacket(ServerMessage::AssignObject,[&](auto &out){out.u8(2);out.u32(wireId(id));out.u16(uint16_t(portal.rule.definition));out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(portal.isOpened(town)?2:1);out.u8(uint8_t(town?portal.field:portal.town));}));
+            packets.push_back(encodeServerPacket(ServerMessage::PortalState,[&](auto &out){out.u8(0);out.u8(uint8_t(town?portal.field:portal.town));out.u32(wireId(id));}));
         }
-        if(changed && !portal.shared) packets.push_back(encodeServerPacket(ServerMessage::PortalOwner,[&](auto &out){out.u32(uint32_t(portal.owner.value));for(size_t i=0;i<16;++i) out.u8(i<portal.name.size()?uint8_t(portal.name[i]):0);out.u32(uint32_t(portal.fieldId.value));out.u32(uint32_t(portal.townId.value));}));
+        if(changed && !portal.shared) packets.push_back(encodeServerPacket(ServerMessage::PortalOwner,[&](auto &out){out.u32(wireId(portal.owner));for(size_t i=0;i<16;++i) out.u8(i<portal.name.size()?uint8_t(portal.name[i]):0);out.u32(wireId(portal.fieldId));out.u32(wireId(portal.townId));}));
     }
-    for(const auto &[id,revision]:peer.portals) if(!next.contains(id) || (!next.at(id) && revision)) { (void)revision; packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(2);out.u32(uint32_t(id.value));})); }
+    for(const auto &[id,revision]:peer.portals) if(!next.contains(id) || (!next.at(id) && revision)) { (void)revision; packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(2);out.u32(wireId(id));})); }
     if(!packets.empty()) sendGameBatch(std::move(packets));
     peer.portals.swap(next);
 }
@@ -311,7 +311,7 @@ void NativeRealmService::publishItemSkills() {
     const auto player=host.read(*binding); if(!player) return;
     std::vector<Bytes> packets;
     for(const auto &[skill,quantity]:player->itemSkills) if(!peer.itemSkills.contains(skill) || peer.itemSkills.at(skill)!=quantity)
-        packets.push_back(encodeServerPacket(ServerMessage::ItemSkillQuantity,[&](auto &out){out.u8(0);out.u8(0);out.u32(uint32_t(player->actor.id.value));out.u16(uint16_t(skill));out.u8(uint8_t(quantity));out.u8(0);out.u8(0);}));
+        packets.push_back(encodeServerPacket(ServerMessage::ItemSkillQuantity,[&](auto &out){out.u8(0);out.u8(0);out.u32(wireId(player->actor.id));out.u16(uint16_t(skill));out.u8(uint8_t(quantity));out.u8(0);out.u8(0);}));
     if(!packets.empty()) sendGameBatch(std::move(packets));
     peer.itemSkills=player->itemSkills;
 }

@@ -164,7 +164,7 @@ DomainStatus System::drainWeaponMelee(Release &pending,const ActorContext &actor
             } else {
                 const auto candidates=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,calculation("calc1"),0xa783,false,
                     target.position()+ports_.areas.at(actor.area).definition.origin,effects::NativeAuraTargetMode::TargetRange,actor.tick});
-                const auto next=nativeSkillSuccessor(candidates,uint32_t(target.id().value));
+                const auto next=nativeSkillSuccessor(candidates,ports_.monsters.nativeIdentities().guid(target.id()),ports_.monsters.nativeIdentities());
                 if(next) {
                     // Retail 1.13c Do14 (6FC6CFE4/6FC6CFF1) calls X then Y;
                     // D2MOO's Y/Y expression is a transcription difference.

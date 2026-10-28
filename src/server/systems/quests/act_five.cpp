@@ -161,7 +161,7 @@ StepStatus System::actFiveStep(TickContext tick) {
     world.rescued=0;
     for(const auto &[id,escape]:ports_.npc.read().escapes) {(void)id;if(int(escape.area)==111) ++world.rescued;}
     for(const auto &[monsterId,m]:ports_.monsters.read().actors) {
-        (void)monsterId;if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
+        (void)monsterId;if(m.alive() || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
         if(int(m.area)==110 && m.identity.superUnique=="Siege Boss") captureGoal(QuestId::SiegeOnHarrogath,3,m.area,m.position);
         if(int(m.area)==124 && m.identity.superUnique=="Nihlathak Boss") captureGoal(QuestId::BetrayalOfHarrogath,3,m.area,m.position);
         if(int(m.area)==111 && m.identity.monster=="prisondoor") {

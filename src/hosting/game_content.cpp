@@ -169,8 +169,22 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     std::fill(dormant.lightBlocked.begin(),dormant.lightBlocked.end(),1);
     area.collision=std::move(dormant);
     for (auto &room : area.populationRooms) {
-        room.regions.clear();room.cells.clear();room.floors.clear();
+        decltype(room.regions){}.swap(room.regions);
+        decltype(room.cells){}.swap(room.cells);
+        decltype(room.floors){}.swap(room.floors);
     }
+    // Protocol projection only needs room bounds and the generation metadata.
+    // Keeping the offline Map here would pin every DS1/DT1 and a second full
+    // collision grid even after authority releases its level inputs.
+    auto projection=std::make_shared<Map>();
+    projection->activation=area.activation;
+    result.terrain.map=std::move(projection);
+    result.terrain.roomTerrain.reset();
+    result.terrain.recipe={};
+    result.terrain.nearRooms.clear();
+    result.terrain.populationRooms.clear();
+    decltype(result.terrain.populationWarpCenters){}.swap(result.terrain.populationWarpCenters);
+    decltype(result.terrain.tileInfo){}.swap(result.terrain.tileInfo);
     const auto completed = std::chrono::steady_clock::now();
     std::clog << "[area-load] host level=" << request.level << " difficulty=" << request.difficulty
         << " terrain_ms=" << result.terrain.preparationMilliseconds

@@ -108,7 +108,7 @@ void System::prepareUnitTimers(AuraUnitPublication &plan) const {
     for(const auto &[id,life]:plan.life) {
         const auto *actor=ports_.monsters.find(id);
         if(plan.actors) if(const auto candidate=plan.actors->actors.find(id);candidate!=plan.actors->actors.end()) actor=&candidate->second;
-        if(!actor || life.life<=0 || !life.intrinsic || !life.intrinsic->sources || !actor->rule.stats) continue;
+        if(!actor || actor->deathMode || life.life<=0 || !life.intrinsic || !life.intrinsic->sources || !actor->rule.stats) continue;
         const auto &rule=*actor->rule.stats;
         auto rate=nativeAdd(nativeStatValue(life.intrinsic->values,rule,"hpregen"),nativeChecked(actor->aiRegenerationBonus));
         const auto unit=plan.units.find(id);

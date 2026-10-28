@@ -22,6 +22,7 @@ class PlayerStore {
     friend class transactions::System;
     friend class travel::System;
     std::map<PlayerId, PlayerState> players_;
+    const NativeUnitIds *nativeIdentities_{};
     void admit(PlayerId, CharacterDefinition, PersistentCharacter, AreaStore &, const PreparedRules &,uint64_t tick,uint64_t unitSeed,
         RoomPoint,const spatial::System &,world::System &);
   public:

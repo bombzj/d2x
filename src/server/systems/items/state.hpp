@@ -5,6 +5,11 @@
 #include "gameplay/items/state.hpp"
 #include <cstdint>
 #include <map>
+#include <memory>
+#include <utility>
+#include <vector>
+
+namespace d2x::server {struct RoomUnitRegistration;}
 
 namespace d2x::server::items {
 struct State {
@@ -12,5 +17,6 @@ struct State {
     EquipmentRules equipment;
     uint64_t revision = 1;
     std::map<EntityId, PlayerId> goldOwners;
+    std::vector<std::pair<EntityId,std::shared_ptr<RoomUnitRegistration>>> groundRegistrations;
 };
 }

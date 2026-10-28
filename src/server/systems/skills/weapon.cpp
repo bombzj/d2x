@@ -217,7 +217,7 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         const auto targets=volleyTargets(ports_,actor,p,skill);
         // St08/09/37 keep an explicit target; only an absent target invokes
         // the GUID finder. The subsequent Do callback checks current range.
-        if(!target) target=nativeSkillSuccessor(targets,UINT32_MAX);
+        if(!target) target=nativeSkillSuccessor(targets,UINT32_MAX,ports_.monsters.nativeIdentities());
         const int minimum=strafe?volleyFormula(p,skill,"calc3"):0;
         const int maximum=volleyFormula(p,skill,"calc1");
         rewindCount=zeal?maximum:strafe?
@@ -396,7 +396,7 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         pending.nativeContact.reset();
         if(pending.rewindRemaining<=1) return;
         const auto *player=ports_.players.find(actor.player);if(!player) return;
-        const auto next=nativeSkillSuccessor(volleyTargets(ports_,actor,*player,pending.skill),uint32_t(pending.unit.value));
+        const auto next=nativeSkillSuccessor(volleyTargets(ports_,actor,*player,pending.skill),ports_.monsters.nativeIdentities().guid(pending.unit),ports_.monsters.nativeIdentities());
         if(next) {pending.unit=next;pending.unitType=ports_.players.findActor(next)?0:1;}
         else pending.rewindRemaining=1;
     };
@@ -427,11 +427,11 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
     if(pending.rewindRemaining>0) {
         const auto current=participants.find(selectedTarget);
         if(!current.id() || (!strafe && !playerMeleeReach(ports_.areas.at(actor.area).definition.collision,p.position,current.position(),current.size(),found->rangeAdder)))
-            selectedTarget=nativeSkillSuccessor(volleyTargets(ports_,actor,p,pending.skill),uint32_t(pending.unit.value));
+            selectedTarget=nativeSkillSuccessor(volleyTargets(ports_,actor,p,pending.skill),ports_.monsters.nativeIdentities().guid(pending.unit),ports_.monsters.nativeIdentities());
         if(!selectedTarget) return DomainStatus::Unavailable;
         destination=participants.find(selectedTarget).position();
     } else if(secondSwing) {
-        const auto target=nativeSkillSuccessor(volleyTargets(ports_,actor,p,pending.skill),uint32_t(pending.unit.value));
+        const auto target=nativeSkillSuccessor(volleyTargets(ports_,actor,p,pending.skill),ports_.monsters.nativeIdentities().guid(pending.unit),ports_.monsters.nativeIdentities());
         if(!target) return DomainStatus::Unavailable;
         selectedTarget=target;destination=participants.find(target).position();
     }

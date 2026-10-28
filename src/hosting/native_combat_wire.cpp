@@ -10,6 +10,60 @@
 #include <algorithm>
 #include <optional>
 namespace d2x {
+namespace {
+void nativeStateIdentities(const ClassicData &data,std::vector<StatValue> &values,const hosting::NativeIdentityView &ids) {
+    const auto typeStat=data.nativeStats->names.find("source_unit_type"),idStat=data.nativeStats->names.find("source_unit_id");
+    if(typeStat==data.nativeStats->names.end() || idStat==data.nativeStats->names.end()) return;
+    const auto type=std::find_if(values.begin(),values.end(),[&](const auto &value){return value.key.id==typeStat->second;});
+    for(auto &value:values) if(value.key.id==idStat->second && value.value>0) {
+        if(type==values.end() || type->value<0 || type->value>5) throw std::logic_error("Missing native state source type");
+        value.value=ids.guid(EntityId{uint64_t(value.value)},uint8_t(type->value));
+    }
+}
+}
+Bytes nativeMissile(const server::MissileFact &source,Vec origin,const hosting::NativeIdentityView &ids) {
+    auto value=source;value.owner={ids.guid(value.owner,value.ownerType)};
+    return nativeMissile(value,origin);
+}
+Bytes nativeState(const ClassicData &data,const server::StateFact &source,const hosting::NativeIdentityView &ids) {
+    auto value=source;value.actor={ids.guid(value.actor,value.type)};
+    nativeStateIdentities(data,value.stats,ids);
+    return nativeState(data,value);
+}
+Bytes nativeStateSnapshot(const ClassicData &data,EntityId actor,uint8_t type,const std::set<int> &states,
+    const std::map<int,std::vector<StatValue>> &stats,const hosting::NativeIdentityView &ids) {
+    auto values=stats;for(auto &[state,entries]:values) {(void)state;nativeStateIdentities(data,entries,ids);}
+    return nativeStateSnapshot(data,EntityId{ids.guid(actor,type)},type,states,values);
+}
+namespace {
+MonsterSnapshot nativeMonsterIdentity(MonsterSnapshot value,const hosting::NativeIdentityView &ids) {
+    value.id={ids.guid(value.id,1)};
+    if(value.hirelingOwner) value.hirelingOwner={ids.guid(value.hirelingOwner,0)};
+    if(value.storedOwner) value.storedOwner=EntityId{ids.guid(*value.storedOwner)};
+    if(value.movementTarget) value.movementTarget->id={ids.guid(value.movementTarget->id,value.movementTarget->type)};
+    return value;
+}
+}
+Bytes nativeMonsterAssignment(const ClassicData &data,const MonsterSnapshot &source,Vec origin,const hosting::NativeIdentityView &ids) {
+    return nativeMonsterAssignment(data,nativeMonsterIdentity(source,ids),origin);
+}
+Bytes nativeMonsterMotion(const MonsterSnapshot &source,Vec origin,const hosting::NativeIdentityView &ids) {
+    return nativeMonsterMotion(nativeMonsterIdentity(source,ids),origin);
+}
+std::vector<Bytes> nativeAttack(const server::AttackFact &source,Vec origin,const hosting::NativeIdentityView &ids) {
+    auto value=source;value.actor={ids.guid(value.actor,value.actorType)};
+    if(value.target) value.target={ids.guid(value.target,value.targetType)};
+    return nativeAttack(value,origin);
+}
+Bytes nativeReposition(const server::RepositionFact &source,Vec origin,const hosting::NativeIdentityView &ids) {
+    auto value=source;value.actor={ids.guid(value.actor,0)};
+    return nativeReposition(value,origin);
+}
+std::vector<Bytes> nativeHit(const server::HitFact &source,Vec origin,const hosting::NativeIdentityView &ids) {
+    auto value=source;value.target={ids.guid(value.target,value.type)};
+    if(value.actionTarget) value.actionTarget->id={ids.guid(value.actionTarget->id,value.actionTarget->type)};
+    return nativeHit(value,origin);
+}
 Bytes nativeMissile(const server::MissileFact &missile,Vec origin) {
     return hosting::encodeServerPacket(hosting::ServerMessage::Missile,[&](auto &out) {
         out.u32(0);out.u16(uint16_t(missile.definition));

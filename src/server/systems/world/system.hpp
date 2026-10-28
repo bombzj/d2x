@@ -15,7 +15,7 @@ namespace d2x::server::world {
 // Area activation and prepared-area handoff; generation stays in the host.
 enum class Residency { Prepared, Active, Sleeping };
 struct AreaLease { RegionId area; uint64_t generation{}; Residency residency; };
-struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; std::shared_ptr<const pd2::MapInstance> pd2Map{}; };
+struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; std::shared_ptr<const pd2::MapInstance> pd2Map{}; uint64_t terrainGeneration{}; };
 struct PreparedArea { uint64_t request{}; AreaDefinition definition; };
 struct EnvironmentNotice {EnvironmentFact value;uint64_t revision{};};
 struct QuestPosition {RegionId area;Vec position;std::optional<RoomView> room{};};
@@ -25,7 +25,7 @@ struct Ports {
     const travel::System &travel; monsters::System &monsters; const missiles::System &missiles;
     const skills::System &skills; objects::System &objects; const loot::System &loot;
     const spatial::System &spatial; const population::System &population;
-    maps::System &maps;
+    maps::System &maps; items::System &items;
 };
 class System {
     friend class travel::System;
@@ -47,6 +47,8 @@ class System {
     void updateRooms(TickContext);
     void invalidateRooms();
     void refreshRoomTerrain();
+    bool roomInputsReady(RegionId) const;
+    bool restoreRoomInputs(const AreaDefinition &);
     DomainResult<uint64_t> request(RegionId,std::shared_ptr<const pd2::MapInstance> = {});
     bool cancelPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &);
     void commitPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &) noexcept;
@@ -58,6 +60,8 @@ class System {
     explicit System(Ports ports);
     ~System();
     const State &read() const { return state_; }
+    bool retiringRoom() const;
+    bool awaitingRoomInputs() const;
     DomainResult<uint64_t> requestWaypoint(const ActorContext &,RegionId);
     DomainResult<uint64_t> requestTown(const ActorContext &);
     DomainResult<uint64_t> requestArea(const ActorContext &, RegionId);
@@ -94,7 +98,7 @@ class System {
     std::vector<RoomView> visibleRooms(PlayerId) const;
     bool clientRoomsReady(PlayerId) const;
     bool visible(PlayerId, RegionId, Vec) const;
-    void activate(RegionId, Vec); // Synchronous destination-room acquisition.
+    void activate(RegionId, Vec); // Acquires resident terrain; queues released inputs. Caller checks loaded().
     void changeClientRoom(PlayerId); // Current entered player, including initial admission.
     StepStatus step(TickContext, FrameFacts &);
 };

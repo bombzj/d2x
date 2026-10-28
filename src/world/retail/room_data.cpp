@@ -5,9 +5,14 @@ RetailOutdoorRoomData buildRetailOutdoorRoomData(TileLibraryCache &cache, const 
     const LevelRecord &level, const RetailRoom &room, const RetailDirtPaths &paths,
     const RetailPatternReader &reader, const RetailPresetScan &identities,
     std::shared_ptr<RetailTileSelector> libraries) {
+    if(!libraries) libraries=std::make_shared<RetailTileSelector>(cache,catalog,level.levelType,room.dt1Mask);
+    return buildRetailOutdoorRoomData(catalog,level,room,paths,reader,identities,std::move(libraries));
+}
+RetailOutdoorRoomData buildRetailOutdoorRoomData(const WorldCatalog &catalog,const LevelRecord &level,
+    const RetailRoom &room,const RetailDirtPaths &paths,const RetailPatternReader &reader,
+    const RetailPresetScan &identities,std::shared_ptr<RetailTileSelector> libraries) {
     RetailOutdoorRoomData result{room, initializeRetailOutdoorRoomGrids(room, paths), {},
-        libraries ? std::move(libraries) :
-            std::make_shared<RetailTileSelector>(cache, catalog, level.levelType, room.dt1Mask)};
+        std::move(libraries)};
     // 1.13c D2Common RVA 0x7c101 resets both seed words in InitRoomGrids.
     // Theme eligibility was already picked with the allocation stream.
     result.room.seed.random = Seed(room.seed.initial);

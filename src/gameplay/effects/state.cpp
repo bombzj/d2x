@@ -8,6 +8,10 @@
 #include <utility>
 
 namespace d2x {
+void CombatEffectSet::collectEntityReferences(std::set<EntityId> &entities) const {
+    for(const auto &effect:storage_->effects) if(effect.spec.source.entity) entities.insert(effect.spec.source.entity);
+    for(const auto &event:storage_->skillEvents) if(event.source.entity) entities.insert(event.source.entity);
+}
 void CombatEffectSet::detach() {
     if(!storage_.unique()) storage_=std::make_shared<Storage>(*storage_);
 }

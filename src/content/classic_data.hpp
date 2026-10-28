@@ -38,6 +38,7 @@ struct SkillFormulaCatalog;
 struct MonsterModeTable;
 struct MonsterLifeTable;
 struct MonsterTypeCatalog;
+struct NativeItemSaveRules;
 using ClassicTreasureClass = TreasureClass;
 struct ClassicMonsterData {
     std::string name, token;
@@ -65,6 +66,7 @@ struct MonsterSpecialMissile {
 };
 struct ClassicData {
     bool pd2Host = false;
+    std::shared_ptr<const NativeItemSaveRules> nativeItemSave;
     std::shared_ptr<const CollisionField> nativeCollisionField;
     std::shared_ptr<const StatRuleCatalog> nativeStats;
     std::shared_ptr<const SkillFormulaCatalog> nativeFormulas;

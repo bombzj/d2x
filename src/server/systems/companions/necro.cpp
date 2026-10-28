@@ -149,7 +149,7 @@ StepStatus System::synchronizeIronGolems(TickContext tick) {
         bool present=false,dead=owner.persistent.player.hp<=0;
         for(const auto &[id,pet]:state_.companions) if(pet.owner==owner.player && pet.kind==Kind::IronGolem) {
             const auto *body=ports_.monsters.find(id);
-            if(body && body->necroMaterial && body->necroMaterial->id==owner.persistent.ironGolem->id) {present=true;dead|=body->life<=0 || bool(pet.removeAt);}
+            if(body && body->necroMaterial && body->necroMaterial->id==owner.persistent.ironGolem->id) {present=true;dead|=!body->alive() || bool(pet.removeAt);}
         }
         if(dead) {
             transactions::CharacterEdit edit{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};edit.ironGolem=std::optional<ItemInstance>{};

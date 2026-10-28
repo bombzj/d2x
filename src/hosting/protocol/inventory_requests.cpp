@@ -3,7 +3,7 @@
 
 namespace d2x::hosting::handlers {
 RequestResult ItemToCube(GameplayContext &context, net::protocol::Reader &in) {
-    const auto id=EntityId{in.u32()}, box=EntityId{in.u32()}; in.finish();
+    const auto id=context.entity(in.u32(),4), box=context.entity(in.u32(),4); in.finish();
     const auto state=context.host.inventoryInput(context.player);
     if(!state || !state->items.contains(box)) return {RequestStatus::Rejected};
     const auto cube=state->items.at(box).handle;
@@ -17,7 +17,7 @@ RequestResult MercenaryItem(GameplayContext &context, net::protocol::Reader &in)
     return submitGameplay(context,server::companions::Request{server::companions::Action::Equipment,{},body});
 }
 RequestResult InventoryToBelt(GameplayContext &context, net::protocol::Reader &in) {
-    const auto id=EntityId{in.u32()}; in.finish();
+    const auto id=context.entity(in.u32(),4); in.finish();
     const auto state=context.host.inventoryInput(context.player);
     if(!state || !state->items.contains(id)) return {RequestStatus::Rejected};
     return submitGameplay(context,server::inventory::Request{server::inventory::AutoStoreItem{state->items.at(id).handle}});
@@ -26,8 +26,8 @@ namespace {
 using namespace server::inventory;
 using net::protocol::Reader;
 RequestResult reject() { return {RequestStatus::Rejected, CommandStatus::InvalidRequest}; }
-const InputItem *item(const InputState &state, uint32_t id) {
-    const auto found = state.items.find(EntityId{id});
+const InputItem *item(const InputState &state, EntityId id) {
+    const auto found = state.items.find(id);
     return found == state.items.end() ? nullptr : &found->second;
 }
 std::optional<EquipmentSlot> slot(uint32_t body, unsigned set) {
@@ -43,14 +43,14 @@ const InputItem *equipped(const InputState &state, EquipmentSlot at) {
 RequestResult take(GameplayContext &context, Reader &in, Source source) {
     const auto id = in.u32(); in.finish();
     const auto state = context.host.inventoryInput(context.player);
-    const auto *value = state ? item(*state, id) : nullptr;
+    const auto *value = state ? item(*state, context.entity(id,4)) : nullptr;
     if (!value) return reject();
     return submitGameplay(context, Request{MoveItem{value->handle, ContainerLocation{state->containers.cursor, {}}}, source});
 }
 RequestResult equip(GameplayContext &context, Reader &in, EquipmentMode mode) {
     const auto id = in.u32(), body = in.u32(); in.finish();
     const auto state = context.host.inventoryInput(context.player);
-    const auto *value = state ? item(*state, id) : nullptr;
+    const auto *value = state ? item(*state, context.entity(id,4)) : nullptr;
     const auto at = state ? slot(body, state->weaponSet) : std::nullopt;
     if (!value || !at) return reject();
     Request request{d2x::EquipItem{value->handle, at}, Source::Cursor, mode, state->weaponSet};
@@ -69,7 +69,7 @@ RequestResult PlaceItem(GameplayContext &context, Reader &in) {
     if (page != 0 && page != 2 && page != 3 && page != 4) return {RequestStatus::Rejected};
     if (x > 15 || y > 15) return reject();
     const auto state = context.host.inventoryInput(context.player);
-    const auto *value = state ? item(*state, id) : nullptr;
+    const auto *value = state ? item(*state, context.entity(id,4)) : nullptr;
     if (!value || (page==2 && !state->trade)) return reject();
     return submitGameplay(context, Request{MoveItem{value->handle, ContainerLocation{page == 4 ? state->containers.stash : page == 3 ? state->containers.cube : page == 2 ? state->trade : state->containers.backpack, {int(x), int(y)}}}});
 }
@@ -90,7 +90,7 @@ RequestResult SwapItem(GameplayContext &context, Reader &in) {
     const auto first = in.u32(), second = in.u32(), x = in.u32(), y = in.u32(); in.finish();
     if (x > 15 || y > 15) return reject();
     const auto state = context.host.inventoryInput(context.player);
-    const auto *a = state ? item(*state, first) : nullptr, *b = state ? item(*state, second) : nullptr;
+    const auto *a = state ? item(*state, context.entity(first,4)) : nullptr, *b = state ? item(*state, context.entity(second,4)) : nullptr;
     if (!a || !b) return reject();
     if (b->location.container != state->containers.backpack && b->location.container != state->containers.stash && b->location.container != state->containers.cube && (!state->trade || b->location.container!=state->trade)) return {RequestStatus::Rejected};
     return submitGameplay(context, Request{SwapItems{a->handle, b->handle,
@@ -100,14 +100,14 @@ RequestResult PlaceBeltItem(GameplayContext &context, Reader &in) {
     const auto id = in.u32(), cell = in.u32(); in.finish();
     if (cell >= 16) return reject();
     const auto state = context.host.inventoryInput(context.player);
-    const auto *value = state ? item(*state, id) : nullptr;
+    const auto *value = state ? item(*state, context.entity(id,4)) : nullptr;
     if (!value) return reject();
     return submitGameplay(context, Request{MoveItem{value->handle, ContainerLocation{state->containers.belt, {int(cell % 4), int(cell / 4)}}}});
 }
 RequestResult SwapBeltItem(GameplayContext &context, Reader &in) {
     const auto first = in.u32(), second = in.u32(); in.finish();
     const auto state = context.host.inventoryInput(context.player);
-    const auto *a = state ? item(*state, first) : nullptr, *b = state ? item(*state, second) : nullptr;
+    const auto *a = state ? item(*state, context.entity(first,4)) : nullptr, *b = state ? item(*state, context.entity(second,4)) : nullptr;
     if (!a || !b) return reject();
     return submitGameplay(context, Request{SwapItems{a->handle, b->handle}, Source::Belt});
 }
@@ -120,14 +120,14 @@ RequestResult SwitchWeapons(GameplayContext &context, Reader &in) {
 RequestResult StackItem(GameplayContext &context, Reader &in) {
     const auto source = in.u32(), target = in.u32(); in.finish();
     const auto state = context.host.inventoryInput(context.player);
-    const auto *a = state ? item(*state, source) : nullptr, *b = state ? item(*state, target) : nullptr;
+    const auto *a = state ? item(*state, context.entity(source,4)) : nullptr, *b = state ? item(*state, context.entity(target,4)) : nullptr;
     if (!a || !b) return reject();
     return submitGameplay(context, Request{MergeStacks{a->handle, b->handle}});
 }
 RequestResult LoadBook(GameplayContext &context, Reader &in) {
     const auto source = in.u32(), target = in.u32(); in.finish();
     const auto state = context.host.inventoryInput(context.player);
-    const auto *a = state ? item(*state, source) : nullptr, *b = state ? item(*state, target) : nullptr;
+    const auto *a = state ? item(*state, context.entity(source,4)) : nullptr, *b = state ? item(*state, context.entity(target,4)) : nullptr;
     if (!a || !b) return reject();
     if (a->location.container!=state->containers.cursor ||
         (b->location.container!=state->containers.backpack && b->location.container!=state->containers.stash && b->location.container!=state->containers.cube))

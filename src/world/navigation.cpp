@@ -98,6 +98,22 @@ bool clearSegment(Vec a, Vec b, int width, int height, Clear clear, bool blockCo
     return true;
 }
 } // namespace
+void Grid::releaseStorage() {
+    decltype(blocked){}.swap(blocked);decltype(lightBlocked){}.swap(lightBlocked);
+    decltype(terrainCollision){}.swap(terrainCollision);decltype(fullTerrainCollision){}.swap(fullTerrainCollision);
+    decltype(objectCollision){}.swap(objectCollision);decltype(objectLightBlocked){}.swap(objectLightBlocked);
+    decltype(missileCollision){}.swap(missileCollision);decltype(nativeCollision){}.swap(nativeCollision);
+    ++obstacleRevision;++missileCollisionRevision;++nativeCollisionRevision;
+}
+void Grid::restoreStorage() {
+    if(!terrainCollision.empty()) return;
+    const auto count=size_t(width)*height;
+    blocked.assign(count,1);lightBlocked.assign(count,1);terrainCollision.assign(count,0xff);
+    fullTerrainCollision.assign(count,0xffff);objectCollision.assign(count,0);objectLightBlocked.assign(count,0);
+    missileCollision.assign(count,0);nativeCollision.assign(count,0xffff);
+    auto saved=std::move(obstacles);obstacles.clear();setObstacles(std::move(saved));
+    ++obstacleRevision;++missileCollisionRevision;++nativeCollisionRevision;
+}
 void Grid::setObstacles(std::vector<Obstacle> next) {
     // Client A8880 tests the native collision mask 0x22. Objects.BlocksLight
     // controls a unit drawing flag; it never adds a collision footprint.
@@ -120,6 +136,7 @@ void Grid::setObstacles(std::vector<Obstacle> next) {
     }
     obstacles = std::move(next);
     ++obstacleRevision;
+    if(objectCollision.empty()) return;
     std::fill(objectCollision.begin(), objectCollision.end(), 0);
     std::fill(objectLightBlocked.begin(), objectLightBlocked.end(), 0);
     for (const auto &obstacle : obstacles)
@@ -131,7 +148,7 @@ void Grid::setObstacles(std::vector<Obstacle> next) {
             }
 }
 uint16_t Grid::objectMask(int x, int y, EntityId ignored) const {
-    if (x < 0 || y < 0 || x >= width || y >= height) return 0xffff;
+    if (x < 0 || y < 0 || x >= width || y >= height || objectCollision.empty()) return 0xffff;
     if (!ignored) return objectCollision[size_t(y) * width + x];
     uint16_t mask = 0;
     for (const auto &obstacle : obstacles)
@@ -145,6 +162,7 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
     if (!navigationSources.empty()) {
         for (const auto &source : navigationSources) {
             const auto &grid = *source.grid;
+            if(grid.terrainCollision.empty()) continue;
             const int column = x + source.offsetX, row = y + source.offsetY;
             if (column < 0 || row < 0 || column >= grid.width || row >= grid.height) continue;
             const size_t index = size_t(row) * grid.width + column;
@@ -156,7 +174,7 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
         return 0xffff;
     }
     // D2Collision resolves the owning room before consulting adjacent rooms.
-    if (x >= 0 && y >= 0 && x < width && y < height) {
+    if (x >= 0 && y >= 0 && x < width && y < height && !terrainCollision.empty()) {
         const size_t index = size_t(y) * width + x;
         const auto terrain = fullTerrainCollision.empty() ? terrainCollision[index] : fullTerrainCollision[index];
         if (terrain != 0xffff) return terrain | objectMask(x, y, ignored) | (missileCollision.empty()?0:missileCollision[index]) |
@@ -170,6 +188,7 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
         if (!outside || lateral < neighbour.start || lateral >= neighbour.end) continue;
         const int nx = x + neighbour.offsetX, ny = y + neighbour.offsetY;
         const auto &other = *neighbour.grid;
+        if(other.terrainCollision.empty()) continue;
         if (nx >= 0 && ny >= 0 && nx < other.width && ny < other.height) {
             const size_t index = size_t(ny) * other.width + nx;
             const uint16_t terrain = other.fullTerrainCollision.empty()
@@ -178,7 +197,7 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
                 (other.blocked[index] && !(other.terrainCollision[index] & 0x09) ? 0x01 : 0);
         }
     }
-    if (x < 0 || y < 0 || x >= width || y >= height) return 0xffff;
+    if (x < 0 || y < 0 || x >= width || y >= height || terrainCollision.empty()) return 0xffff;
     const size_t index = size_t(y) * width + x;
     // Coarse outdoor planning grids have blocked cells without DT1 flags.
     const uint16_t terrain = fullTerrainCollision.empty() ? terrainCollision[index] : fullTerrainCollision[index];
@@ -226,6 +245,7 @@ uint16_t Grid::nativeMovementMask(int x,int y,EntityId ignored) const {
     if(!navigationSources.empty()) {
         for(const auto &source:navigationSources) {
             const auto &grid=*source.grid;const int column=x+source.offsetX,row=y+source.offsetY;
+            if(grid.terrainCollision.empty()) continue;
             if(column<0 || row<0 || column>=grid.width || row>=grid.height) continue;
             if(!grid.fullTerrainCollision.empty() && grid.fullTerrainCollision[size_t(row)*grid.width+column]==0xffff) continue;
             return sample(grid,column,row);
@@ -450,7 +470,7 @@ bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
     // D2MOO COLLISION_CheckMaskWithSize: 0/1 point, 2 cross, 3 square.
     if (rule.size < 0 || rule.size > 3) return false;
     const auto clear = [&](int x, int y) {
-        if (x < 0 || y < 0 || x >= width || y >= height) return false;
+        if (x < 0 || y < 0 || x >= width || y >= height || terrainCollision.empty()) return false;
         // Step.cpp stops missile travel on WALL/BARRIER only. Other mode bits
         // find units; e.g. DT1 water sharing unit bits must not stop travel.
         return !((terrainCollision[size_t(y) * width + x] | objectMask(x, y)) & rule.mask & 0x0005);
@@ -534,7 +554,7 @@ bool Grid::lightSegment(Vec a, Vec b) const {
         int x = int(std::floor(p.x)), y = int(std::floor(p.y));
         if (x == targetX && y == targetY)
             return true;
-        if (x < 0 || y < 0 || x >= width || y >= height || lightBlocked[y * width + x] ||
+        if (x < 0 || y < 0 || x >= width || y >= height || lightBlocked.empty() || lightBlocked[y * width + x] ||
             objectLightBlocked[size_t(y) * width + x])
             return false;
     }

@@ -115,6 +115,8 @@ class System {
     System(const System &) = delete;
     System &operator=(const System &) = delete;
     const State &read() const { return state_; }
+    void collectEntityReferences(std::set<EntityId> &) const;
+    void releaseRetiredSources();
     std::vector<MissileFact> visible(PlayerId) const;
     DomainResult<EntityId> spawn(const Spawn &);
     DomainResult<MonsterLaunch> spawnMonster(const MonsterSpawn &);

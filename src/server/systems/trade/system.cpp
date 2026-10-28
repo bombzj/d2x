@@ -231,7 +231,7 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         for (auto *o : {&next.first,&next.second}) {
             const auto &player=*ports_.players.find(o->player);
             if (!player.rules.character || !player.rules.equipment) return {DomainStatus::Unavailable,{}};
-            o->container=ports_.items.reserveIdentity(); o->original=player.persistent.inventory; o->equipment=player.rules.equipment;
+            o->container=ports_.items.reserveIdentity(std::nullopt); o->original=player.persistent.inventory; o->equipment=player.rules.equipment;
             auto inventory=o->original;
             inventory.containers.emplace(o->container,ContainerState{o->container,{player.actor,ContainerKind::Trade,
                 player.rules.character->tradeColumns,player.rules.character->tradeRows}});

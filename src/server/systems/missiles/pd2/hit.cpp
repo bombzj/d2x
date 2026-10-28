@@ -1,3 +1,4 @@
+#include "gameplay/skills/targeting.hpp"
 #include "../system.hpp"
 #include "../runtime.hpp"
 #include "server/player_store.hpp"
@@ -197,8 +198,8 @@ std::optional<uint8_t> System::pd2Hit(Advance &plan,EntityId target) const {
         const auto &area=ports_.areas.at(missile.area);
         const auto targets=ports_.effects.nativeAuraCandidateRecipients({missile.owner,unitArea(missile.owner),radius,0x8a783,false,
             missile.position+area.definition.origin,effects::NativeAuraTargetMode::TargetRange,missile.executionTick});
-        std::vector<uint64_t> candidates;for(const auto id:targets) candidates.push_back(id.value);
-        const EntityId selected{missileChainSuccessor(target.value,candidates)};
+        std::vector<EntityId> candidates;for(const auto id:targets) candidates.push_back(id);
+        const auto selected=nativeMissileSuccessor(candidates,target,ports_.ids.nativeIdentities());
         if(selected) if(const auto point=unitPosition(missile,selected)) {
             auto &child=planNativeChild(plan,missile.definition,missile.position,*point-missile.position);
             child.parameters[0]=nativeSubtract(missile.parameters[0],1);

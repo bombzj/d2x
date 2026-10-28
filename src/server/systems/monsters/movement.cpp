@@ -240,11 +240,11 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             if(actor.attractionUntil<=tick.tick) actor.attractionTarget={};
         }
         (void)id; if(actor.nativeAi()) actor.moving = false;
-        if(actor.conversion && (actor.life<=0 || !actor.owner || !ports_.players.find(*actor.owner) || !ports_.players.find(*actor.owner)->entered)) {
+        if(actor.conversion && (!actor.alive() || actor.life<=0 || !actor.owner || !ports_.players.find(*actor.owner) || !ports_.players.find(*actor.owner)->entered)) {
             const auto result=ports_.effects.endConversion(id,tick.tick);
             if(!result) {blocked=true;continue;}
         }
-        if(actor.knockbackGoal && actor.life>0) {
+        if(actor.knockbackGoal && actor.alive() && actor.life>0) {
             const auto grid=ports_.spatial.navigationGrid(actor.area,actor.id);
             const Vec delta=*actor.knockbackGoal-actor.position;
             const Vec next=actor.position+delta.unit()*std::min(delta.length(),25.f*TickContext::seconds);

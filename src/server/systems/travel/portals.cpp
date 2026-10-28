@@ -107,7 +107,7 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     const auto linked=ports_.world.nativeLinkPortalPosition(area->definition.townRegion);
     if(!linked) return {DomainStatus::Unavailable,{}};
     auto portals=state_.portals;
-    Portal portal{actor.player,actor.actor,ports_.items.reserveIdentity(),ports_.items.reserveIdentity(),p->persistent.player.name,field->room.area,linked->area,field->position,linked->position,*area->definition.portalRule,actor.tick+uint64_t(area->definition.portalRule->openingTicks),1,false};
+    Portal portal{actor.player,actor.actor,ports_.items.reserveIdentity(NativeUnitType::Object),ports_.items.reserveIdentity(NativeUnitType::Object),p->persistent.player.name,field->room.area,linked->area,field->position,linked->position,*area->definition.portalRule,actor.tick+uint64_t(area->definition.portalRule->openingTicks),1,false};
     portal.fieldRoom=field->room;portal.townRoom=linked->room;
     portals[actor.player]=portal;
     auto &consumed=draft.edit.inventory.items.at(item->id); ++consumed.revision;
@@ -284,7 +284,7 @@ DomainResult<SpecialPortalPlan> System::prepareWorldPortal(RegionId region,int l
     const auto to=exactSource || durielOpening?(nativeTo?std::optional<Vec>{nativeTo->position}:std::nullopt):freePoint(*destination,*arrival);
     if(!from || !to) return {DomainStatus::Conflict,{}};
     SpecialPortalPlan plan{state_.specialPortals};
-    Portal portal{{},{},ports_.items.reserveIdentity(),ports_.items.reserveIdentity(),{},region,nativeTo?nativeTo->area:RegionId(level),*from,*to,rule,tick,1,true,true};
+    Portal portal{{},{},ports_.items.reserveIdentity(NativeUnitType::Object),ports_.items.reserveIdentity(NativeUnitType::Object),{},region,nativeTo?nativeTo->area:RegionId(level),*from,*to,rule,tick,1,true,true};
     if(rule.openingTicks>0) {portal.opened=false;portal.ready=tick+uint64_t(rule.openingTicks);portal.linkedOpened=true;}
     if(nativeTo) portal.townRoom=nativeTo->room;
     plan.next.emplace(portal.fieldId,std::move(portal));return {DomainStatus::Applied,std::move(plan)};

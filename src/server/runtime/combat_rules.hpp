@@ -69,6 +69,7 @@ struct MonsterRule {
     // DS1-authored MapAI, in global subtiles; preserve even no-op actions.
     struct MapAiNode {Vec position;int action{};};
     std::vector<MapAiNode> mapAi;
+    bool restoreNpcCommands{};
     struct SelfResurrection {int chance{},delay{},ticks{};};
     std::optional<SelfResurrection> selfResurrection;
     std::shared_ptr<const CombatStateRules> states;

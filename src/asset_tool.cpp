@@ -621,7 +621,7 @@ int main(int argc, char **argv) {
                                     {"x", unit.unit.x}, {"y", unit.unit.y}});
                             auto append = [&](const auto &indices, const char *array) {
                                 for (auto tileIndex : indices) {
-                                    const auto &tile = generator.tiles().tiles()[tileIndex];
+                                    const auto &tile = generator.tiles().tiles().at(tileIndex);
                                     const auto identity = active.libraries->identity(*tile.tile);
                                     data["tiles"].push_back({{"array", array}, {"x", tile.x}, {"y", tile.y},
                                         {"library", identity.first}, {"record", identity.second},
@@ -740,10 +740,12 @@ int main(int argc, char **argv) {
                               << " selectedShadows=" << materialized.shadows.size()
                               << " tileUnits=" << materialized.units.size()
                               << " collisionSubtiles=" << collision.width << ',' << collision.height << '\n';
-                    for (const auto &tile : tiles.tiles())
+                    for (const auto &[tileId,tile] : tiles.tiles()) {
+                        (void)tileId;
                         std::cout << "tile=" << tile.x << ',' << tile.y << " type=" << tile.type
                                   << " flags=" << tile.flags << " key=" << tile.tile->key()
                                   << " rarity=" << tile.tile->rarity << '\n';
+                    }
                     for (const auto &unit : materialized.units)
                         std::cout << "tileUnit=" << unit.type << ':' << unit.id << " position="
                                   << unit.x << ',' << unit.y << '\n';

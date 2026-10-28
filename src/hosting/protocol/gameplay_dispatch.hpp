@@ -1,6 +1,7 @@
 #pragma once
 #include "message_catalog.hpp"
 #include "hosting/game_host.hpp"
+#include "hosting/native_identity.hpp"
 
 namespace d2x::hosting {
 enum class RequestStatus { Queued, NotImplemented, Rejected };
@@ -16,6 +17,13 @@ struct GameplayContext {
     PlayerBinding player;
     Vec origin;
     uint64_t &sequence;
+    EntityId entity(uint32_t guid,uint32_t type) const {return NativeIdentityView{host,player.game}.entity(guid,type);}
+    uint32_t itemSource(uint32_t guid) const {
+        if(guid==UINT32_MAX) return guid;
+        const auto id=entity(guid,4);
+        if(!id || id.value>UINT32_MAX) throw net::protocol::ProtocolError("Unknown native skill item source");
+        return uint32_t(id.value);
+    }
 };
 RequestResult dispatchGameplay(std::span<const uint8_t>, GameplayContext &);
 RequestResult submitGameplay(GameplayContext &, server::CommandPayload);

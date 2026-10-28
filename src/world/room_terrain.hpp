@@ -48,6 +48,11 @@ class RoomTerrainSession {
     virtual void prepare(RoomTerrainId) = 0;
     virtual void create(RoomTerrainId) = 0;
     virtual void release(RoomTerrainId) = 0;
+    virtual bool resident(RoomTerrainId) const = 0;
+    virtual std::vector<int> visibleLevels(int level) const = 0;
+    // Includes this level and reciprocal exit rooms in adjacent levels.
+    virtual std::vector<RoomTerrainId> releaseDependencies(int level) const = 0;
+    virtual void releaseLevel(int level) = 0;
     virtual std::optional<RoomTerrainSample> sample(RoomTerrainId, bool tiles = false,
         std::span<const std::pair<int,int>> openedTombTiles = {}) const = 0;
 };

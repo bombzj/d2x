@@ -30,6 +30,15 @@ ItemEventPlan &ItemEventPlan::operator=(ItemEventPlan &&) noexcept = default;
 ItemTriggers::ItemTriggers(ItemTriggerPorts ports) : ports_(ports) {}
 ItemTriggers::~ItemTriggers() = default;
 size_t ItemTriggers::pending() const { return pending_.size(); }
+bool ItemTriggers::involves(EntityId id) const {
+    const auto matches=[&](const auto &job) {return job.actor.actor==id || job.target==id || (job.effectActor && job.effectActor->actor==id);};
+    if(std::any_of(pending_.begin(),pending_.end(),matches)) return true;
+    for(const auto &[handle,plan]:scheduled_) {
+        (void)handle;
+        if(std::any_of(plan.jobs.begin(),plan.jobs.end(),matches)) return true;
+    }
+    return false;
+}
 void ItemTriggers::append(ItemEventPlan &target,ItemEventPlan source) const noexcept {target.jobs.splice(target.jobs.end(),source.jobs);}
 void ItemTriggers::commit(ItemEventPlan plan, bool terminal) noexcept {
     if (!terminal) std::erase_if(plan.jobs, [](const auto &job) {

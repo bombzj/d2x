@@ -276,6 +276,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     const auto souls=prepareSoulPlaceholder(object,request.tick,random,controlRandom,ids,births,soulRandom,ports_.spatial.nativeCollisionSample());
     if(!souls) return {souls.status,{}};
     auto actors=ports_.monsters.prepareActorPublication(std::move(births.actors),size_t(ids.cursor()-ports_.ids.cursor()));
+    actors.identities->bind(id,NativeUnitType::Object);
     auto room=ports_.areas.prepareRoomUnit(id,2,object.area,object.position,request.room);
     const auto installed=ports_.items.installNativeGroundBatch(gold,request.tick,goldIds,actors.identities);
     if(!installed) return {installed.status,{}};
@@ -299,14 +300,32 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     collision(request.area);
     return {DomainStatus::Applied,id};
 }
-void System::compressRoom(RegionId region,size_t index,uint64_t tick) {
+void System::collectEntityReferences(std::set<EntityId> &entities) const {
+    for(const auto &[room,nodes]:inactive_) {
+        (void)room;
+        for(const auto &node:nodes) {
+            entities.insert(node.previous);
+            if(node.nativePortalOwner) entities.insert(node.nativePortalOwner);
+        }
+    }
+}
+DomainResult<System::RoomCompression> System::prepareRoomCompression(RegionId region,size_t index,uint64_t tick,EntityId only) const {
     const auto &area=ports_.areas.at(region).definition;
     const auto &bounds=area.activation.rooms().at(index);
     const RoomView room{region,(int(area.origin.x)+bounds.x)/5,(int(area.origin.y)+bounds.y)/5};
-    auto &saved=inactive_[{region,index}];
+    RoomCompression plan;plan.area=region;plan.generation=ports_.areas.at(region).generation;
+    plan.collision=area.collision.obstacles;
+    auto &saved=plan.nodes[{region,index}];
+    if(const auto previous=inactive_.find({region,index});previous!=inactive_.end()) saved=previous->second;
     for(const auto id:ports_.areas.roomUnitOrder(room)) {
+        if(only && id!=only) continue;
         const auto found=state_.objects.find(id);if(found==state_.objects.end()) continue;
         const auto &object=found->second;const auto &rule=object.rule;
+        if(object.pending || object.specialPending || object.urnPending || object.lootAt || object.trapAt ||
+            damageExecutions_.contains(id) || (rule.initialization==59 && object.hazardAt)) return {DomainStatus::Unavailable,{}};
+        plan.retired.emplace(id,object.revision);
+        std::erase_if(plan.collision,[&](const auto &obstacle){return obstacle.id==id;});
+        plan.collisionSteps.emplace(id,plan.collision);
         EntityId preset;
         for(const auto &[source,current]:presetObjects_) if(current==id) {preset=source;break;}
         if((area.saveMonsters || object.resurrected) && rule.restore && !(object.sparkChest&2) && !(rule.restoreVirgins && object.mode!=0)) {
@@ -317,13 +336,36 @@ void System::compressRoom(RegionId region,size_t index,uint64_t tick) {
                 rule.shrine?rule.shrine->code:0,tick,object.reset,rule.chest && rule.chest->locked,object.sparkChest,object.portalDestination,
                 object.pd2Binding,object.collisionReleased,object.nativePortalOwner,object.pd2Portal});
         }
-        ports_.frameEvents.cancelOwner({FrameEventUnit::Object,id});
-        ports_.areas.removeRoomUnit(id);
-        std::erase_if(approaches_,[&](const auto &entry){return entry.second.request.target.id==id;});
-        state_.objects.erase(found);
     }
-    if(saved.empty()) inactive_.erase({region,index});
-    collision(region);
+    return {DomainStatus::Applied,std::move(plan)};
+}
+bool System::validateRoomCompression(const RoomCompression &plan) const {
+    const auto *area=ports_.areas.find(plan.area);
+    if(!area || area->generation!=plan.generation || plan.nodes.size()!=1) return false;
+    for(const auto &[id,revision]:plan.retired) {
+        const auto found=state_.objects.find(id);
+        if(found==state_.objects.end() || found->second.area!=plan.area || found->second.revision!=revision) return false;
+    }
+    return true;
+}
+void System::retireCompressedObject(RoomCompression &plan,EntityId id) noexcept {
+    const auto expected=plan.retired.find(id);if(expected==plan.retired.end()) return;
+    const auto found=state_.objects.find(id);
+    if(found==state_.objects.end() || found->second.revision!=expected->second) std::terminate();
+    ports_.frameEvents.cancelOwner({FrameEventUnit::Object,id});
+    ports_.areas.removeRoomUnit(id);
+    std::erase_if(approaches_,[&](const auto &entry){return entry.second.request.target.id==id;});
+    state_.objects.erase(found);
+    ports_.world.objectCollision(plan.area,std::move(plan.collisionSteps.at(id)));
+    plan.retired.erase(expected);
+}
+void System::publishRoomCompression(RoomCompression plan) noexcept {
+    if(!validateRoomCompression(plan) || !plan.retired.empty()) std::terminate();
+    auto node=plan.nodes.extract(plan.nodes.begin());
+    if(node.mapped().empty()) inactive_.erase(node.key());
+    else if(const auto found=inactive_.find(node.key());found!=inactive_.end()) found->second.swap(node.mapped());
+    else inactive_.insert(std::move(node));
+    ports_.world.objectCollision(plan.area,std::move(plan.collision));
 }
 StepStatus System::restoreRoom(RegionId region,size_t index,uint64_t tick) {
     const auto found=inactive_.find({region,index});if(found==inactive_.end()) return StepStatus::Complete;
@@ -430,7 +472,7 @@ DomainResult<> System::damage(Object &object,DamageType type,bool playersOnly,in
         damageExecutions_.erase(execution);
         return {DomainStatus::Applied,std::monostate{}};
     } else for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==object.area) add(p.actor,p.position,int64_t(p.persistent.player.hp.raw()),p.persistent.player.level,p.totals.character.dexterity,p.totals.character.defense);}
-    if(!playersOnly) for(const auto &[id,m]:ports_.monsters.read().actors) if(m.area==object.area && m.damageable()) add(id,m.position,m.life,m.rule.level,m.hireling?m.hirelingDexterity:0,ports_.effects.unitDefense(id,tick.tick));
+    if(!playersOnly) for(const auto &[id,m]:ports_.monsters.read().actors) if(m.area==object.area && m.alive() && m.damageable()) add(id,m.position,m.life,m.rule.level,m.hireling?m.hirelingDexterity:0,ports_.effects.unitDefense(id,tick.tick));
     const auto result=ports_.combat.enqueue(std::move(impact));if(result) object.random=random;return result;
 }
 DomainResult<> System::explode(Object &object,const ActorContext &actor) {

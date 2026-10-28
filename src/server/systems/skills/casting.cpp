@@ -193,7 +193,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
             const auto candidate=area.definition.collision.nativeSpawn(attempt,1,playerMovement);
             if(!candidate || (!skill.leap->attack && missileDistance(p.position,*candidate)>skill.leap->range) || !area.definition.collision.collisionSegment(p.position,*candidate,0x804)) continue;
             bool occupied=false;
-            for(const auto &[id,m]:ports_.monsters.read().actors) { (void)id;if(m.area==actor.area && m.life>0 && meleeDistance(*candidate,2,m.position,m.rule.size)<=0) {occupied=true;break;} }
+            for(const auto &[id,m]:ports_.monsters.read().actors) { (void)id;if(m.area==actor.area && m.alive() && meleeDistance(*candidate,2,m.position,m.rule.size)<=0) {occupied=true;break;} }
             if(!occupied) {chosen=candidate;break;}
         }
         if(!chosen || (*chosen-p.position).length()<.001f) return {DomainStatus::Unavailable,{}};
@@ -485,7 +485,7 @@ StepStatus System::release(TickContext tick,EntityId only) {
             if(!*step.value) {pending.tick=tick.tick+1;state_.casts.at(actor.actor).until=tick.tick+1;++it;continue;}
             if(!pending.unit) {
                 const auto targets=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,3,0xa783,false,{},effects::NativeAuraTargetMode::OwnerRange,tick.tick});
-                pending.unit=nativeSkillSuccessor(targets,UINT32_MAX);
+                pending.unit=nativeSkillSuccessor(targets,UINT32_MAX,ports_.monsters.nativeIdentities());
                 if(pending.unit) {const auto found=participants.find(pending.unit);pending.unitType=found.player?0:1;target=found.position();}
                 if(!pending.unit) {state_.casts.at(actor.actor).until=tick.tick+1;it=releases_.erase(it);continue;}
             }
@@ -607,7 +607,7 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
             ports_.effects.monsterCurse(actor.actor,skill.sourceId,skill.rank,position,actor.tick,pending->monsterCurse).status:
             pending->skill.appliedEffect && !pending->skill.druid && !pending->skill.assassin?
             ports_.effects.unitSkill(actor.actor,pending->skill,actor.tick).status:activate(*pending,actor,position);
-        if(result!=DomainStatus::Capacity) pending.reset();
+        if(!isDeferred(result)) pending.reset();
         return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
     }
     const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
@@ -620,7 +620,7 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
         std::shared_ptr<Release> local;auto &pending=continuation?*continuation:local;
         if(!pending) pending=std::make_shared<Release>(Release{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick,uint8_t(ports_.players.findActor(target)?0:1)});
         const auto result=skill.effect==SkillBehavior::AreaEnchant?activatePd2Enchant(*pending,actor):activatePd2Teleport(*pending,actor,position);
-        if(result!=DomainStatus::Capacity) pending.reset();
+        if(!isDeferred(result)) pending.reset();
         return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
     }
     if(!dead && !skill.druid && !skill.warcry && skill.appliedEffect && !(skill.assassin && skill.assassin->program==AssassinProgram::BladeShield)) {
@@ -643,7 +643,7 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
         std::shared_ptr<Release> local;auto &pending=continuation?*continuation:local;
         if(!pending) pending=std::make_shared<Release>(Release{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick,uint8_t(ports_.players.findActor(target)?0:1)});
         const auto result=activate(*pending,actor,position);
-        if(result!=DomainStatus::Capacity) pending.reset();
+        if(!isDeferred(result)) pending.reset();
         return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
     }
     case ActivationProgram::AmazonSummon: return skill.summon && skill.summon->amazon?ports_.companions.amazon(actor,skill,position):ports_.companions.necro(actor,skill,position,target);

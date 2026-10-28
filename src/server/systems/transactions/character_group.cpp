@@ -163,6 +163,10 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
     }
     // Native unit skill assignments may change only authoritative attributes.
     // They still commit atomically, without reserving an empty output batch.
+    if(world) {
+        for(const auto &batch:batches) ports_.items.prepareGroundOrder(world->next,batch.facts);
+        if(batches.empty()) ports_.items.prepareGroundOrder(world->next,{});
+    }
     if(!batches.empty()) {
         const auto output=ports_.events.publishGroup(std::move(batches));if(!output) return {output.status,{}};
     }

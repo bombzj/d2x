@@ -87,6 +87,7 @@ struct System::Advance {
         uint64_t gameRandom{};
         std::optional<OwnerSeedLoan> ownerSeed;
         std::optional<OriginSeedLoan> originSeed;
+        std::shared_ptr<EntityIds::Publication> identities;
         bool identityCommitted{};
         bool published{};
         EntityId child;

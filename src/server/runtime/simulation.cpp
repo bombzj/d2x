@@ -56,7 +56,14 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     }
     if(phase_==Phase::Domains) {
     run(SystemId::Social,[&]{systems.social.step(tick);return StepStatus::Complete;});
+    phase_=Phase::Rooms;
+    }
+    if(phase_==Phase::Rooms) {
     run(SystemId::World,[&]{return systems.world.step(tick,facts_);});
+    if(systems.world.retiringRoom() || systems.world.awaitingRoomInputs()) return false;
+    // Retired actors can restore with the same GUID in Population. Their old
+    // dynamic-path seed must disappear before that new admission exists.
+    systems.missiles.releaseRetiredSources();
     phase_=Phase::Population;
     }
     if(phase_==Phase::Population) {
@@ -84,7 +91,11 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     if(phase_==Phase::Movement) {
     run(SystemId::Movement,[&]{systems.movement.step(tick);return StepStatus::Complete;});
     run(SystemId::Inventory,[&]{return systems.inventory.step(tick,facts_);});
+    phase_=Phase::Items;
+    }
+    if(phase_==Phase::Items) {
     run(SystemId::Items,[&]{return systems.items.step(tick,facts_);});
+    if(steps_[size_t(SystemId::Items)]==StepStatus::Blocked) return false;
     run(SystemId::Spatial,[&]{return systems.spatial.step(tick,facts_);});
     phase_=Phase::Effects;
     }

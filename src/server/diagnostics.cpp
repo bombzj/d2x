@@ -190,6 +190,7 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         result.commands.push_back(commandHistory_[(sequence - 1) % commandHistory_.size()]);
     result.lootPending = systems_.loot.read().pending.size(); result.lootDeferred = systems_.loot.read().deferred;
     result.itemTriggersPending=systems_.effects.pendingItemTriggers();result.itemTriggersDeferred=systems_.effects.read().itemDeferred;
+    result.inactiveItemsDeferred=systems_.items.inactiveFailure();
     result.chargedSkills=player->totals.chargedSkills;
     result.itemAuras=player->totals.itemAuraTimers;
     if (const auto found = systems_.effects.read().players.find(player->actor); found != systems_.effects.read().players.end()) {
@@ -323,7 +324,7 @@ DomainResult<> GameInstance::grantGold(PlayerId id,uint32_t amount) {
 }
 DomainResult<> GameInstance::missileHit(PlayerId id,EntityId source,uint32_t amount,DamageType type,bool returnFire) {
     const auto *p=players_.find(id);const auto *m=systems_.monsters.find(source);
-    if(!p || !p->entered || !m || m->owner || m->life<=0 || m->area!=p->area || !amount || type==DamageType::Poison || amount>INT32_MAX/256) return {DomainStatus::InvalidActor,{}};
+    if(!p || !p->entered || !m || m->owner || !m->alive() || m->life<=0 || m->area!=p->area || !amount || type==DamageType::Poison || amount>INT32_MAX/256) return {DomainStatus::InvalidActor,{}};
     if(!systems_.effects.reactionCapacity()) return {DomainStatus::Capacity,{}};
     combat::SpellImpact impact{source,source,p->area,type,int64_t(amount)*256,{p->actor}};
     impact.occurrence=(uint64_t{1}<<57)|revision_;impact.returnFire=returnFire;impact.unblockable=true;
@@ -342,7 +343,7 @@ DomainResult<> GameInstance::damageMonster(PlayerId id, EntityId target, std::op
     const auto *player = players_.find(id);
     const auto *monster = systems_.monsters.find(target);
     if (!player || !player->entered || player->persistent.player.hp <= 0 || !monster ||
-        monster->area != player->area || monster->life <= 0 || (amount && !*amount))
+        monster->area != player->area || !monster->alive() || monster->life <= 0 || (amount && !*amount))
         return {DomainStatus::InvalidActor, {}};
     return systems_.monsters.damage(target, player->actor, amount ? int64_t(*amount) * 256 : monster->life, tick_);
 }

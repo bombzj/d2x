@@ -69,7 +69,7 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
                 }
     } else
     for(const auto &[key,other]:ports_.monsters.read().actors) {
-        if(key==id || other.area!=monster.area || other.life<=0 || !area.definition.activation.nearby(monster.position,other.position)) continue;
+        if(key==id || other.area!=monster.area || !other.alive() || !area.definition.activation.nearby(monster.position,other.position)) continue;
         const int distanceSquared=squared(other.position);
         if((kind==MonsterAiKind::SandRaider?other.enemyTarget():other.rule.baseClass==monster.rule.baseClass) && distanceSquared<allyDistance) {ally=other.position;allyDistance=distanceSquared;}
     }

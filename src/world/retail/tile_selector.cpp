@@ -25,10 +25,22 @@ void RetailTileSelector::index() {
         }
     }
 }
-std::shared_ptr<RetailTileSelector> RetailTileSelector::collisionOnly() const {
+std::shared_ptr<RetailTileSelector> RetailTileSelector::collisionOnly(Archives &archives) const {
+    // The mount owns only weak indices. Prepared areas/sessions own the actual
+    // collision records, shared even when their ordered library sets differ.
+    struct SharedCollisionLibraries {
+        mutable std::map<std::string,std::weak_ptr<const std::vector<Tile>>> libraries;
+        mutable std::map<std::vector<std::string>,std::weak_ptr<RetailTileSelector>> selectors;
+    };
+    const auto shared=archives.prepared<SharedCollisionLibraries>([] {return SharedCollisionLibraries{};});
+    auto &selector=shared->selectors[paths_];
+    if(auto existing=selector.lock()) return existing;
     auto result = std::shared_ptr<RetailTileSelector>(new RetailTileSelector);
     result->paths_ = paths_;
-    for (const auto &library : libraries_) {
+    for (size_t index=0;index<libraries_.size();++index) {
+        auto &entry=shared->libraries[paths_[index]];
+        if(auto existing=entry.lock()) {result->libraries_.push_back(std::move(existing));continue;}
+        const auto &library=libraries_[index];
         auto values = std::make_shared<std::vector<Tile>>();
         values->reserve(library->size());
         for (const auto &tile : *library) {
@@ -38,9 +50,10 @@ std::shared_ptr<RetailTileSelector> RetailTileSelector::collisionOnly() const {
             value.materialFlags=tile.materialFlags;value.flags=tile.flags;
             values->push_back(std::move(value));
         }
-        result->libraries_.push_back(std::move(values));
+        entry=values;result->libraries_.push_back(std::move(values));
     }
     result->index();
+    selector=result;
     return result;
 }
 const Tile &RetailTileSelector::record(std::string_view path, size_t index) const {

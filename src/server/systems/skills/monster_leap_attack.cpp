@@ -70,7 +70,7 @@ DomainResult<> System::monsterLeapAttackEvent(const FrameEvent &event,uint64_t t
         const auto saved=std::get<UnitTarget>(pending.request.target).id;
         if(ports_.players.findActor(saved) || ports_.monsters.find(saved)) return saved;
         const auto candidates=ports_.effects.nativeAuraCandidateRecipients({id,source->area,source->rule.meleeRange+4,0x2a783,false,{},effects::NativeAuraTargetMode::OwnerRange,tick});
-        return nativeSkillSuccessor(candidates,UINT32_MAX);
+        return nativeSkillSuccessor(candidates,UINT32_MAX,ports_.monsters.nativeIdentities());
     };
     if(pending.nativeCallbackStarted || ((leap.flags&0x100) && leap.landed) || mode.step.event==1 || mode.step.event==2 || mode.step.event==4) {
         if(leap.flags&0x100) {

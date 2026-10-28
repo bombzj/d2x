@@ -390,6 +390,8 @@ void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::
     rule.bossTransfer=monsters.number(monsterRow,"bossxfer").value_or(0)!=0;
     rule.neverCount=monsters.number(monsterRow,"neverCount").value_or(0)!=0;
     rule.flying=monsters.number(monsterRow,"flying").value_or(0)!=0;
+    rule.restoreNpcCommands=monsters.number(monsterRow,"interact").value_or(0)!=0 ||
+        monsters.number(monsterRow,"npc").value_or(0)!=0 || monsters.number(monsterRow,"inTown").value_or(0)!=0;
     const auto id=monsters.value(monsterRow,"Id");
     const auto baseId=monsters.value(monsterRow,"BaseId");
     prepareMonsterBirthProperties(data,monsterRow,rule);

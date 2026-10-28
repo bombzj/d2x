@@ -4,6 +4,23 @@
 #include <cstdint>
 
 namespace d2x {
+EntityId nativeSkillSuccessor(std::span<const EntityId> candidates,uint32_t previous,const NativeUnitIds &identities) {
+    uint32_t larger=UINT32_MAX,wrapped=previous;
+    EntityId next,first;
+    for(const auto id:candidates) {
+        const auto guid=identities.guid(id);
+        if(guid>previous && guid<larger) {larger=guid;next=id;}
+        if(guid<=wrapped) {wrapped=guid;first=id;}
+    }
+    return next?next:first;
+}
+EntityId nativeMissileSuccessor(std::span<const EntityId> candidates,EntityId hit,const NativeUnitIds &identities) {
+    // MISSMODE_SrvHit12 uses the same aura callback as skills, then rejects
+    // the hit unit. Do not exclude it before selection: equal GUIDs of other
+    // types still participate, with the native last wrapped tie winning.
+    const auto selected=nativeSkillSuccessor(candidates,identities.guid(hit),identities);
+    return selected==hit?EntityId{}:selected;
+}
 EntityId nativeSkillSuccessor(std::span<const EntityId> candidates,uint32_t previous) {
     uint32_t larger=UINT32_MAX,wrapped=previous;bool hasLarger=false,hasWrapped=false;
     for(const auto id:candidates) {

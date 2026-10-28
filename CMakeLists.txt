@@ -78,6 +78,7 @@ add_library(d2x_items
   src/gameplay/items/property_program.cpp src/gameplay/items/skill_sources.cpp
   src/gameplay/items/inventory_error.cpp src/gameplay/items/equipment_rules.cpp
   src/gameplay/items/equipment_combat.cpp
+  src/gameplay/items/native_save.cpp
 )
 target_link_libraries(d2x_items PUBLIC d2x_core d2x_rules)
 
@@ -122,6 +123,7 @@ add_library(d2x_content
   src/content/items/chest_loot.cpp src/content/items/item_quality.cpp
   src/content/items/item_loot.cpp src/content/items/special_items.cpp
   src/content/items/item_affixes.cpp src/content/items/item_properties.cpp
+  src/content/items/native_save_data.cpp
   src/content/items/item_descriptions.cpp src/content/items/item_pricing.cpp
   src/content/items/item_consumables.cpp src/content/items/item_magic_loot.cpp
   src/content/items/item_grades.cpp src/content/npc/npc_dialogue.cpp

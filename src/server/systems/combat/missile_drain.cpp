@@ -76,7 +76,7 @@ DomainStatus System::advanceMissileDrain(SpellImpact &impact,ParticipantView tar
         const auto &monster=*source.monster;
         attributes::MonsterResourceTrace resources(monster,tick.tick);const auto sources=ports_.effects.unitStatSources(monster.id,tick.tick);
         resources.sampleSources(sources);
-        if(monster.life>0 && contact.drain.lifeGain>0) {
+        if(monster.alive() && monster.life>0 && contact.drain.lifeGain>0) {
             const auto pd2=ports_.effects.combatModifiers(source.id(),tick.tick).pd2;
             if(pd2) {
                 if(!ports_.effects.unitStates(source.id(),tick.tick).contains(monster.rule.deathDelayState))

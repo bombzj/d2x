@@ -7,6 +7,7 @@
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
 #include "classic_data.hpp"
+#include "content/items/native_save_data.hpp"
 #include "monsters/monster_type_data.hpp"
 #include "content/character/character_attributes.hpp"
 #include "content/character/character_progression.hpp"
@@ -596,6 +597,7 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
                 }
         }
         if(preparation == ContentPreparation::Pd2TownHost) preparePd2TownData(data, archives);
+        data.nativeItemSave=std::make_shared<const NativeItemSaveRules>(prepareNativeItemSaveRules(data));
         return data;
     }
 }

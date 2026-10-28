@@ -183,14 +183,19 @@ void NativeRoomActivation::update(uint64_t tick, const std::function<bool(size_t
     // Original D2Game does not import/call DRLG_Update (10715). Its room
     // materialization comes from StreamRoomAtCoords and reference propagation.
     if (tick % 12 == 0) {
-        const auto active=activeRooms_;
-        for (const auto room : active) {
+        if(retirementTick_!=tick) {
+            retirementTick_=tick;retirementNext_=0;
+            retirementRooms_.assign(activeRooms_.begin(),activeRooms_.end());
+        }
+        while(retirementNext_<retirementRooms_.size()) {
+            const auto room=retirementRooms_[retirementNext_++];
             auto &state=states_.at(room);
             // D2Common_10081 resets while a client has room visibility.
             if (state.status <= 1) { state.inactiveChecks = 0; continue; }
             if (state.inactiveChecks < 11) ++state.inactiveChecks;
             if (state.inactiveChecks <= 10 || (retain && retain(room))) continue;
             retire(room);
+            if(operations_.retirementPending && operations_.retirementPending()) {failed_=false;return;}
         }
     }
     failed_ = false;

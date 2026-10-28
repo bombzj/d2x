@@ -29,7 +29,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
     const auto recipient=host.read(*binding);
     for(const auto &pet:host.pets(*binding)) {
         auto packet=encodeServerPacket(ServerMessage::PetOwnership,[&](auto &out){
-            out.u8(1);out.u8(pet.type);out.u16(pet.nativeClass);out.u32(uint32_t(pet.owner.value));out.u32(uint32_t(pet.id.value));
+            out.u8(1);out.u8(pet.type);out.u16(pet.nativeClass);out.u32(wireId(pet.owner));out.u32(wireId(pet.id));
         });
         const auto prior=peer.pets.find(pet.id);
         if(prior==peer.pets.end() || prior->second!=packet) {
@@ -41,7 +41,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
         // of visible-unit removal. Its scale is 0..100, not motion's 0..128.
         if(recipient && pet.owner==recipient->actor.id) {
             auto vitals=encodeServerPacket(ServerMessage::AllyPosition,[&](auto &out){
-                out.u8(0);out.u16(pet.lifePercentage);out.u32(uint32_t(pet.id.value));out.u16(uint16_t(pet.area));
+                out.u8(0);out.u16(pet.lifePercentage);out.u32(wireId(pet.id));out.u16(uint16_t(pet.area));
             });
             const auto previous=peer.petVitals.find(pet.id);
             if(prior==peer.pets.end() || prior->second!=pets.at(pet.id) || previous==peer.petVitals.end() || previous->second!=vitals)
@@ -64,7 +64,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
         const auto origin = shared.terrain.at(binding->game).at(monster.area).origin;
         auto [entry, fresh] = peer.monsters.try_emplace(monster.id);
         if(!fresh && (entry->second.nativeClass!=monster.nativeClass || entry->second.modifiers!=monster.modifiers || entry->second.rankFlags!=monster.rankFlags || entry->second.nameSeed!=monster.nameSeed)) {
-            packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(1);out.u32(uint32_t(monster.id.value));}));
+            packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(1);out.u32(wireId(monster.id));}));
             entry->second={};fresh=true;
         }
         if (fresh) packets.push_back(nativeMonsterAssignment(*content,monster, origin));
@@ -76,7 +76,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
             // MonsterMode stat regeneration uses >4 on the native 0..128
             // scale. SUnitMsg publishes AB only to hostile observers.
             packets.push_back(encodeServerPacket(ServerMessage::UnitLife,[&](auto &out) {
-                out.u8(1);out.u32(uint32_t(monster.id.value));out.u8(monster.life);
+                out.u8(1);out.u32(wireId(monster.id));out.u8(monster.life);
             }));
             entry->second.life=monster.life;
         }
@@ -87,8 +87,8 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
             const auto name=content->hirelingNameIds.find(record.nameKey);
             if(definition==content->hirelings.end() || name==content->hirelingNameIds.end()) throw std::runtime_error("Missing prepared hireling identity");
             auto identity=encodeServerPacket(ServerMessage::HirelingIdentity,[&](auto &out){
-                out.u8(7);out.u16(uint16_t(record.classId));out.u32(uint32_t(monster.hirelingOwner.value));
-                out.u32(uint32_t(monster.id.value));out.u32(record.seed);out.u32(uint32_t(name->second));
+                out.u8(7);out.u16(uint16_t(record.classId));out.u32(wireId(monster.hirelingOwner));
+                out.u32(wireId(monster.id));out.u32(record.seed);out.u32(uint32_t(name->second));
             });
             if(identity!=entry->second.hirelingIdentity) {packets.push_back(identity);entry->second.hirelingIdentity=std::move(identity);}
             const auto &values=monster.hirelingAttributes;
@@ -99,7 +99,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
                 const auto encoded=uint32_t(value->second);
                 const auto prior=entry->second.hirelingStats.find(uint8_t(*stat));
                 if(prior!=entry->second.hirelingStats.end() && prior->second==encoded) continue;
-                packets.push_back(encodeServerPacket(ServerMessage::HirelingAttributeDword,[&](auto &out){out.u8(uint8_t(*stat));out.u32(uint32_t(monster.id.value));out.u32(encoded);}));
+                packets.push_back(encodeServerPacket(ServerMessage::HirelingAttributeDword,[&](auto &out){out.u8(uint8_t(*stat));out.u32(wireId(monster.id));out.u32(encoded);}));
                 entry->second.hirelingStats[uint8_t(*stat)]=encoded;
             }
         }
@@ -115,7 +115,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
                     for(auto &stat:values) stat.value=0;
                 }
             }
-            return nativeState(*content,{monster.id,1,monster.area,state,enabled,std::move(values)});
+            return nativeState(*content,server::StateFact{monster.id,1,monster.area,state,enabled,std::move(values)});
         };
         if(fresh) packets.push_back(nativeStateSnapshot(*content,monster.id,1,monster.states,monster.stateStats));
         else {
@@ -133,14 +133,14 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
             if(fresh || equipment!=entry->second.equipment) {
                 if(!monster.hireling) for(const auto &[id,revision]:entry->second.equipment) {
                     (void)revision;
-                    if(!equipment.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(id.value));}));
+                    if(!equipment.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(wireId(id));}));
                 }
                 auto gear=nativeMonsterEquipment(*content,*monster.equipment,monster.id,!monster.hireling.has_value());
                 packets.insert(packets.end(),std::make_move_iterator(gear.begin()),std::make_move_iterator(gear.end()));
                 entry->second.equipment=std::move(equipment);
             }
         }
-        if(fresh && monster.appearOverlay>=0) packets.push_back(encodeServerPacket(ServerMessage::Overlay,[&](auto &out){out.u8(1);out.u32(uint32_t(monster.id.value));out.u16(uint16_t(monster.appearOverlay));}));
+        if(fresh && monster.appearOverlay>=0) packets.push_back(encodeServerPacket(ServerMessage::Overlay,[&](auto &out){out.u8(1);out.u32(wireId(monster.id));out.u16(uint16_t(monster.appearOverlay));}));
         // Reliable hit facts already begin GH/BL. A snapshot must not restart
         // their animations, including when only the UMod life flag changes.
         // A newly interested observer still needs the current reaction mode.
@@ -172,7 +172,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
     }
     for (auto it = peer.monsters.begin(); it != peer.monsters.end();) {
         if (!visible.contains(it->first)) {
-            packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(1); out.u32(uint32_t(it->first.value)); }));
+            packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(1); out.u32(wireId(it->first)); }));
             it = peer.monsters.erase(it);
         } else ++it;
     }

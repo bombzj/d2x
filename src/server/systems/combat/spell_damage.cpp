@@ -37,7 +37,7 @@ bool System::weaponContact(const WeaponSkillDamage &attack,EntityId id,uint64_t 
             weapon.attackRatingPercent,weapon.target,{player->persistent.player.level,defense,false,false,false,true,false},MonsterRank::Normal));
     }
     const auto *target=ports_.monsters.find(id);
-    if(!target || target->life<=0 || !target->damageable()) return false;
+    if(!target || !target->alive() || target->life<=0 || !target->damageable()) return false;
     if(attack.automatic) return true;
     const auto &weapon=attack.weapon;
     const auto stats=ports_.effects.unitStatValues(id,tick);
@@ -342,7 +342,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 if(impact.phase==ImpactPhase::Contact) ++impact.next;
                 continue;
             }
-            if (!target || !participants.canHarm(source,participant) || target->life <= 0 || target->area != impact.area ||
+            if (!target || !target->alive() || !participants.canHarm(source,participant) || target->life <= 0 || target->area != impact.area ||
                 (impact.undeadOnly && !target->rule.undead) ||
                 (impact.nextDelay && target->nextHitTick > tick.tick)) { ++impact.next; continue; }
             int64_t amount = impact.currentDamage();

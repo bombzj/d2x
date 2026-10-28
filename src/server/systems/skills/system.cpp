@@ -1,6 +1,8 @@
 #include "system.hpp"
 #include "runtime.hpp"
 #include "pd2/requirements.hpp"
+#include "pd2/vengeance.hpp"
+#include "native_caster.hpp"
 #include "shape.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
@@ -10,6 +12,7 @@
 #include "weapon_melee.hpp"
 #include "gameplay/skills/use_source.hpp"
 #include "server/player_store.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "server/area_store.hpp"
 #include "server/movement.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -18,6 +21,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/companions/system.hpp"
 #include "server/systems/travel/system.hpp"
+#include "server/systems/reactions/pd2/item_events.hpp"
 #include "server/systems/inventory/item_skills.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/combat/attack_timing.hpp"
@@ -25,6 +29,39 @@
 namespace d2x::server::skills {
 System::System(Ports ports):state_(ports.actions),ports_(ports),runtime_(std::make_unique<Runtime>(state_.releases(),state_.monsterReleases())) {}
 System::~System()=default;
+void System::collectEntityReferences(std::set<EntityId> &entities) const {
+    collectPd2VengeanceReferences(ports_.frameEvents,runtime_->pd2Vengeance.get(),entities);
+    const auto release=[&](const Release &value) {
+        entities.insert(value.actor.actor);entities.insert(value.unit);entities.insert(value.shield);
+        if(value.skill.charge) entities.insert(value.skill.charge->item.id);
+    };
+    for(const auto *queue:{&runtime_->releases,&runtime_->assassinStarts,&runtime_->druidStarts,&runtime_->weaponStarts})
+        for(const auto &[id,value]:*queue) {(void)id;release(value);}
+    for(const auto &[id,value]:runtime_->monsters) {
+        entities.insert(id);
+        if(const auto *target=std::get_if<UnitTarget>(&value.request.target)) entities.insert(target->id);
+        if(value.nativeSkill) release(*value.nativeSkill);
+    }
+    for(const auto &[id,cast]:state_.casts) {entities.insert(id);entities.insert(cast.target);}
+    for(const auto &[id,skill]:state_.usedSkills_) {
+        entities.insert(id);if(skill) entities.insert(skill->owner);
+    }
+    const auto activeStateSources=[&](FrameEventOwner owner) {
+        const auto caster=nativeCaster(ports_.players,ports_.monsters,owner.unit);
+        for(const auto &event:ports_.frameEvents.events(owner)) {
+            if(event.type==FrameEventType::MonsterModifier && event.handler==reactions::pd2ItemEventTimerHandler &&
+                event.customId==14 && event.payload) entities.insert(EntityId{event.payload});
+            if(!caster || !caster->programs()) continue;
+            if(event.type!=FrameEventType::ActiveState || event.handler || !event.payload) continue;
+            const auto definition=caster->programs()->definitions.find(event.customId);
+            if(definition==caster->programs()->definitions.end() || !definition->second.spec.druid) continue;
+            const auto function=definition->second.spec.druid->activeFunction;
+            if(function==145 || function==146) entities.insert(EntityId{event.payload});
+        }
+    };
+    for(const auto &[id,player]:ports_.players.all()) {(void)id;activeStateSources({FrameEventUnit::Player,player.actor});}
+    for(const auto &[id,unit]:ports_.monsters.read().actors) {(void)unit;activeStateSources({FrameEventUnit::Monster,id});}
+}
 bool System::uninterruptible(EntityId actor) const {
     if(!state_.usedSkill(actor)) return false;
     const auto &releases_=runtime_->releases;

@@ -6,6 +6,7 @@
 #include "server/systems/skills/system.hpp"
 #include "server/systems/objects/system.hpp"
 #include "server/systems/loot/system.hpp"
+#include "server/systems/items/system.hpp"
 #include "server/systems/population/system.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "server/systems/maps/system.hpp"
@@ -45,10 +46,46 @@ struct System::RoomRuntime {
     std::array<Act,5> acts;
     bool dirty{true};
     uint64_t currentTick{};
+    std::map<RegionId,unsigned> inactiveLevels;
+    std::map<PlayerId,RegionId> clientLevels;
+    std::optional<uint64_t> levelCheckTick;
+    bool awaitingInputs{};
+    struct Retirement {
+        size_t room{};
+        uint64_t generation{},tick{};
+        std::vector<EntityId> order;
+        size_t next{};
+    };
+    std::optional<Retirement> retirement;
     explicit RoomRuntime(System &system) : owner(system) {}
     AreaState &area(RegionId id) { return owner.ports_.areas.areas_.at(id); }
     NativeRoomActivation &activation(size_t id) {return *acts.at(size_t(rooms.at(id).act)).activation;}
     RoomTerrainSession &terrain(size_t id) {return *acts.at(size_t(rooms.at(id).act)).terrain;}
+    bool ensure(size_t id,unsigned depth) {
+        std::map<size_t,unsigned> needed{{id,depth}};
+        std::vector<size_t> queue{id};
+        for(size_t at=0;at<queue.size();++at) {
+            const auto current=queue[at];const auto remaining=needed.at(current);
+            if(!remaining) continue;
+            for(const auto near:rooms.at(current).near) {
+                const auto found=needed.find(near);
+                if(found==needed.end() || found->second<remaining-1) {
+                    needed[near]=remaining-1;queue.push_back(near);
+                }
+            }
+        }
+        bool ready=true;
+        for(const auto &[current,remaining]:needed) {
+            (void)remaining;const auto &room=rooms.at(current);
+            if(terrain(current).resident(room.key)) continue;
+            const auto *source=owner.ports_.areas.find(room.area);
+            const auto *root=owner.ports_.areas.find(rooms.at(id).area);
+            owner.request(room.area,source?source->definition.pd2Map:root?root->definition.pd2Map:nullptr);
+            ready=false;
+        }
+        if(!ready) awaitingInputs=true;
+        return ready;
+    }
     std::optional<size_t> locate(RegionId id, Vec point) const {
         const auto *source = owner.ports_.areas.find(id);
         if (!source) return {};
@@ -79,6 +116,10 @@ struct System::RoomRuntime {
             grid.nativeCollision.at(cell)=0xffff;++grid.nativeCollisionRevision;
         });
         auto &state = area(room.area);
+        auto &population=state.definition.populationRooms.at(room.index);
+        decltype(population.regions){}.swap(population.regions);
+        decltype(population.cells){}.swap(population.cells);
+        decltype(population.floors){}.swap(population.floors);
         state.rooms.at(room.index).loaded = false;
         state.rooms.at(room.index).random.reset();
         state.rooms.at(room.index).lastDead={};state.rooms.at(room.index).deathIndex=0;
@@ -94,6 +135,7 @@ struct System::RoomRuntime {
     void project(size_t id,const RoomTerrainSample &sample) {
         const auto &room=rooms.at(id);
         auto &state=area(room.area);
+        state.definition.collision.restoreStorage();
         auto &active=state.rooms.at(room.index);
         if (sample.width!=room.bounds.width || sample.height!=room.bounds.height ||
             sample.collision.size()!=size_t(sample.width)*sample.height)
@@ -175,6 +217,7 @@ struct System::RoomRuntime {
             std::fill(grid.blocked.begin(), grid.blocked.end(), 1);
             std::fill(grid.lightBlocked.begin(), grid.lightBlocked.end(), 1);
             ++grid.obstacleRevision;
+            state.definition.roomTerrain.reset();
         }
         for (auto &act : acts) if (act.terrain && !act.activation)
           act.activation = std::make_unique<NativeRoomActivation>(NativeRoomActivation::Operations{
@@ -182,7 +225,8 @@ struct System::RoomRuntime {
             [this](size_t id) { terrain(id).prepare(rooms.at(id).key); },
             [this](size_t id) { create(id); },
             [this](size_t id) { release(id); },
-            [this](size_t id) { return tryRetire(id); }}, NativeRoomActivation::Side::Server);
+            [this](size_t id) { return tryRetire(id); },
+            [this] {return retirement.has_value();}}, NativeRoomActivation::Side::Server);
         dirty = false;
         publish();
     }
@@ -215,12 +259,75 @@ struct System::RoomRuntime {
         }
         for (auto &act : acts) act.terrainDirty = false;
     }
-    void change(std::optional<size_t> previous,std::optional<size_t> next) {
+    bool change(std::optional<size_t> previous,std::optional<size_t> next) {
+        if(next && previous!=next && !ensure(*next,3)) return false;
         if (previous && next && rooms.at(*previous).act==rooms.at(*next).act)
             activation(*next).changeClientRoom(previous,next);
         else {
             if (next) activation(*next).changeClientRoom({},next);
             if (previous) activation(*previous).changeClientRoom(previous,{});
+        }
+        return true;
+    }
+    void releaseLevels(uint64_t tick) {
+        // DRLG_ChangeRoom resets both the old/new level and their Vis levels.
+        const auto touch=[&](RegionId region) {
+            inactiveLevels[region]=10;
+            const auto *source=owner.ports_.areas.find(region);if(!source) return;
+            const auto &act=acts.at(size_t(source->definition.act));if(!act.terrain) return;
+            for(const auto other:act.terrain->visibleLevels(int(region))) inactiveLevels[RegionId(other)]=10;
+        };
+        std::map<PlayerId,RegionId> current;
+        std::set<RegionId> active;
+        for(const auto &[player,id]:clients) {
+            const auto &room=rooms.at(id);current.emplace(player,room.area);active.insert(room.area);
+            for(const auto other:terrain(id).visibleLevels(int(room.area))) active.insert(RegionId(other));
+            const auto old=clientLevels.find(player);
+            if(old==clientLevels.end() || old->second!=room.area) {
+                if(old!=clientLevels.end()) touch(old->second);
+                touch(room.area);
+            }
+        }
+        for(const auto &[player,region]:clientLevels) if(!current.contains(player)) touch(region);
+        clientLevels=std::move(current);
+        if(tick%11 || levelCheckTick==tick) return;
+        levelCheckTick=tick;
+        // The descriptor walk is separate from active-room retirement. It
+        // never changes population progress, unit IDs or saved inactive nodes.
+        std::vector<std::pair<int,int>> levels;
+        std::set<std::pair<int,int>> seen;
+        for(size_t id=0;id<rooms.size();++id) {
+            const auto &room=rooms[id];const auto key=std::pair{room.act,room.key.level};
+            if(terrain(id).resident(room.key) && seen.insert(key).second) levels.insert(levels.begin(),key);
+        }
+        // Act traversal is ascending; each DRLG prepends newly allocated levels.
+        std::stable_sort(levels.begin(),levels.end(),[](const auto &a,const auto &b){return a.first<b.first;});
+        for(const auto &[actId,level]:levels) {
+            const auto region=RegionId(level);
+            if(active.contains(region)) continue;
+            auto &delay=inactiveLevels[region];if(delay) {--delay;continue;}
+            auto &act=acts.at(size_t(actId));
+            if(std::any_of(owner.state_.preparation.begin(),owner.state_.preparation.end(),[&](const auto &p){return p.destination==region;})) continue;
+            const auto dependencies=act.terrain->releaseDependencies(level);
+            bool busy=false;
+            for(const auto key:dependencies) {
+                const auto id=anchors.at({actId,key});const auto state=act.activation->states().find(id);
+                if(state!=act.activation->states().end() && (state->second.status<=3 || state->second.active)) {busy=true;break;}
+            }
+            if(busy) {delay=10;continue;}
+            for(const auto key:dependencies) {
+                const auto id=anchors.at({actId,key});
+                if(key.level==level && !act.activation->discardUnreferenced(id))
+                    throw std::logic_error("Inactive level regained room references during release");
+            }
+            const auto installed=owner.ports_.areas.areas_.find(region);
+            if(installed!=owner.ports_.areas.areas_.end() && installed->second.terrainGeneration==UINT64_MAX)
+                throw std::overflow_error("Native terrain generation exhausted");
+            act.terrain->releaseLevel(level);
+            if(installed!=owner.ports_.areas.areas_.end()) {
+                installed->second.definition.collision.releaseStorage();
+                ++installed->second.terrainGeneration;
+            }
         }
     }
     void changeClientRooms(PlayerId player,const std::vector<RoomView> &next,uint64_t tick) {
@@ -270,7 +377,7 @@ struct System::RoomRuntime {
             if(value.skillReservation && contains(value.area,value.skillReservation->position)) return true;
             if (!contains(value.area, value.position)) continue;
             if (value.owner || value.busyUntil > tick || value.poison || value.wound || value.skillMotion ||
-                value.knockbackGoal || (value.life <= 0 && !value.rewardComplete) || ports.skills.busy(key, tick)) return true;
+                value.knockbackGoal || (!value.alive() && !value.rewardComplete) || ports.skills.busy(key, tick)) return true;
         }
         for (const auto &[key, value] : ports.missiles.read().missiles) { (void)key; if (contains(value.area, value.position)) return true; }
         for (const auto &[key, value] : ports.objects.read().objects) {
@@ -283,10 +390,38 @@ struct System::RoomRuntime {
     }
     bool tryRetire(size_t id) {
         const auto &room=rooms.at(id);
-        if (room.index==SIZE_MAX) return true;
-        if(!owner.ports_.monsters.compressRoom(room.area,room.index,currentTick)) return false;
-        owner.ports_.objects.compressRoom(room.area,room.index,currentTick);
-        return true;
+        if(room.index==SIZE_MAX) return true;
+        const auto &area=owner.ports_.areas.at(room.area);
+        if(!retirement) {
+            if(!owner.ports_.monsters.canCompressRoom(room.area,room.index,currentTick)) return false;
+            const RoomView view{room.area,(int(area.definition.origin.x)+room.bounds.x)/5,
+                (int(area.definition.origin.y)+room.bounds.y)/5};
+            retirement=Retirement{id,area.generation,currentTick,owner.ports_.areas.roomUnitOrder(view)};
+        }
+        if(retirement->room!=id) return false;
+        if(retirement->generation!=area.generation || retirement->tick!=currentTick)
+            throw std::logic_error("Room retirement crossed its generation or frame");
+        auto &pending=*retirement;
+        while(pending.next<pending.order.size()) {
+            const auto unit=pending.order[pending.next];
+            if(owner.ports_.monsters.find(unit)) {
+                if(!owner.ports_.monsters.compressUnit(room.area,room.index,currentTick,unit)) return false;
+            } else if(owner.ports_.items.read().world.items.contains(unit)) {
+                auto plan=owner.ports_.items.prepareRoomCompression(room.area,room.index,currentTick,unit);
+                if(!plan) return false;
+                owner.ports_.items.retireCompressedItem(*plan.value,unit);
+                owner.ports_.items.publishRoomCompression(std::move(*plan.value));
+            } else if(owner.ports_.objects.read().objects.contains(unit)) {
+                auto plan=owner.ports_.objects.prepareRoomCompression(room.area,room.index,currentTick,unit);
+                if(!plan || !owner.ports_.objects.validateRoomCompression(*plan.value)) return false;
+                owner.ports_.objects.retireCompressedObject(*plan.value,unit);
+                owner.ports_.objects.publishRoomCompression(std::move(*plan.value));
+            } else if(owner.ports_.areas.hasRoomUnit(unit)) {
+                throw std::logic_error("Unsupported live unit in retiring room");
+            }
+            ++pending.next;
+        }
+        retirement.reset();return true;
     }
 };
 System::System(Ports ports) : ports_(ports), rooms_(std::make_unique<RoomRuntime>(*this)) {}
@@ -315,6 +450,33 @@ bool System::discardPreparedRooms(std::span<const RegionId> regions) {
     return true;
 }
 void System::invalidateRooms() { rooms_->dirty = true; }
+bool System::roomInputsReady(RegionId region) const {
+    const auto *area=ports_.areas.find(region);if(!area) return false;
+    if(area->definition.roomTerrain) return true;
+    bool found=false;
+    for(size_t id=0;id<rooms_->rooms.size();++id) {
+        const auto &room=rooms_->rooms[id];if(room.area!=region) continue;
+        found=true;if(!rooms_->terrain(id).resident(room.key)) return false;
+    }
+    return found;
+}
+bool System::restoreRoomInputs(const AreaDefinition &prepared) {
+    auto &area=ports_.areas.areas_.at(prepared.id);
+    const auto &old=area.definition;
+    if(!prepared.roomTerrain || prepared.act!=old.act || prepared.origin.x!=old.origin.x || prepared.origin.y!=old.origin.y ||
+       prepared.initialLevelRandom!=old.initialLevelRandom || prepared.roomNear!=old.roomNear ||
+       prepared.collision.width!=old.collision.width || prepared.collision.height!=old.collision.height ||
+       prepared.activation.rooms().size()!=old.activation.rooms().size()) return false;
+    for(size_t i=0;i<old.activation.rooms().size();++i) {
+        const auto &a=old.activation.rooms()[i],&b=prepared.activation.rooms()[i];
+        if(a.x!=b.x || a.y!=b.y || a.width!=b.width || a.height!=b.height) return false;
+    }
+    auto &act=rooms_->acts.at(size_t(old.act));
+    if(!act.terrain) return false;
+    act.terrain->include(*prepared.roomTerrain);
+    act.terrainDirty=true;
+    return true;
+}
 void System::refreshRoomTerrain() {
     rooms_->rebuild();
     for (auto &act : rooms_->acts) act.terrainDirty = true;
@@ -326,6 +488,7 @@ void System::activate(RegionId region, Vec point) {
     if (const auto id = rooms_->locate(region, point)) {
         // Original StreamRoomAtCoords initializes the destination only.
         // ChangeClientRoom supplies the actual reference propagation later.
+        if(!rooms_->ensure(*id,0)) return;
         rooms_->activation(*id).initialize(*id);
         rooms_->publish();
     }
@@ -336,13 +499,17 @@ void System::changeClientRoom(PlayerId id) {
     const auto old=rooms_->clients.find(id);
     const std::optional<size_t> previous=old==rooms_->clients.end()?std::nullopt:std::optional<size_t>{old->second};
     const auto next=player && player->entered?rooms_->locate(player->area,player->position+Vec{.5f,.5f}):std::nullopt;
-    rooms_->change(previous,next);
+    if(!rooms_->change(previous,next)) return;
     if (next) rooms_->clients.insert_or_assign(id,*next);else rooms_->clients.erase(id);
     rooms_->publish();
 }
+bool System::retiringRoom() const {return rooms_->retirement.has_value();}
+bool System::awaitingRoomInputs() const {return rooms_->awaitingInputs;}
 void System::updateRooms(TickContext tick) {
     rooms_->rebuild();
+    rooms_->awaitingInputs=false;
     rooms_->currentTick=tick.tick;
+    if(rooms_->retirement && !rooms_->activation(rooms_->retirement->room).retire(rooms_->retirement->room)) return;
     auto previous = rooms_->clients;
     std::set<PlayerId> departed;
     for(const auto &[player,registered]:rooms_->clientRooms) {(void)registered;departed.insert(player);}
@@ -351,7 +518,7 @@ void System::updateRooms(TickContext tick) {
         const auto next = rooms_->locate(player.area, player.position + Vec{.5f, .5f});
         if (!next) throw std::runtime_error("Entered player has no owning native room");
         const auto old = rooms_->clients.find(id);
-        rooms_->change(old == rooms_->clients.end() ? std::nullopt : std::optional<size_t>{old->second}, next);
+        if(!rooms_->change(old == rooms_->clients.end() ? std::nullopt : std::optional<size_t>{old->second}, next)) return;
         rooms_->clients.insert_or_assign(id, *next);
         rooms_->publish();
         std::vector<RoomView> registered;
@@ -371,10 +538,12 @@ void System::updateRooms(TickContext tick) {
     }
     for(const auto id:departed) {rooms_->changeClientRooms(id,{},tick.tick);rooms_->clientRooms.erase(id);}
     for (auto &act : rooms_->acts) if (act.activation && act.advancedTick!=tick.tick) {
-        act.activation->update(tick.tick, [&](size_t room) { return rooms_->retain(room, tick.tick); });
+        act.activation->update(tick.tick, [&](size_t room) { return rooms_->retirement.has_value() || rooms_->retain(room, tick.tick); });
+        if(rooms_->retirement) return;
         act.advancedTick=tick.tick;
     }
     rooms_->publish();
+    rooms_->releaseLevels(tick.tick);
     for (const auto &act : rooms_->acts) if (act.activation) for (const auto &[id, state] : act.activation->states()) {
         if (state.status >= 3) continue;
         const auto &room = rooms_->rooms.at(id);

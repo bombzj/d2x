@@ -25,6 +25,34 @@
 namespace d2x::server::missiles {
 System::System(Ports ports) : ports_(ports), runtime_(std::make_unique<Runtime>()) {}
 System::~System() = default;
+void System::collectEntityReferences(std::set<EntityId> &entities) const {
+    for(const auto &[id,missile]:state_.missiles) {
+        entities.insert(id);
+        for(const auto reference:{missile.owner,missile.playerActor,missile.lastHit,missile.emitter,missile.guidance,
+            missile.binding.actor,missile.binding.controller,missile.binding.credit})
+            if(reference) entities.insert(reference);
+        if(missile.hitOnCreation) entities.insert(*missile.hitOnCreation);
+        entities.insert(missile.weaponContacts.begin(),missile.weaponContacts.end());
+        if(missile.skill.charge) entities.insert(missile.skill.charge->item.id);
+        if(missile.nativeDamage) {
+            const auto &rule=missile.nativeDamage->rule;
+            // These native parameter slots contain internal entity handles;
+            // ordinary counters, coordinates and random seeds are not roots.
+            if(rule.serverDoFunction==13 || rule.serverDoFunction==18 ||
+                rule.serverHitFunction==28 || rule.serverHitFunction==35)
+                entities.insert(EntityId{uint32_t(missile.parameters[0])});
+            if(rule.serverDoFunction==30 || rule.serverHitFunction==22)
+                entities.insert(EntityId{uint32_t(missile.parameters[1])});
+        }
+    }
+    for(const auto &[handle,delayed]:runtime_->pd2DelayedSkills)
+        if(ports_.frameEvents.find(handle)) entities.insert(delayed.owner);
+}
+void System::releaseRetiredSources() {
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    std::erase_if(runtime_->pd2PathSeeds,[&](const auto &entry){return !participants.find(entry.first).id();});
+    std::erase_if(runtime_->pd2DelayedSkills,[&](const auto &entry){return !ports_.frameEvents.find(entry.first);});
+}
 std::vector<EntityId> System::collisionCandidates(const Missile &missile,Vec next) const {
     (void)next;
     std::vector<EntityId> result;
@@ -387,6 +415,8 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                 if(child.creationRejected || !creationRoom(child) || !townAllowed(child)) {++plan.nextOperation;continue;}
                 child.id=EntityId{ports_.ids.cursor()};child.created=child.executionTick=tick.tick;child.expires=tick.tick+uint64_t(child.lifetimeFrames);
                 Advance::ChildPublication publication;
+                publication.identities=ports_.ids.preparePublication(1);
+                publication.identities->bind(child.id,NativeUnitType::Missile);
                 publication.child=child.id;publication.area=child.area;publication.hitTarget=child.hitOnCreation;child.hitOnCreation.reset();
                 publication.facts=visuals({child});publication.insertion.emplace(child.id,std::move(child));
                 publication.timers=prepareTimers(publication.insertion);
@@ -415,7 +445,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                     if(loan.state->random!=loan.expected) throw std::logic_error("Stale native origin missile seed");
                     loan.state->random=loan.next;
                 }
-                ports_.ids.allocate();ports_.random=publication.gameRandom;plan.started=true;publication.identityCommitted=true;
+                ports_.ids.publish(*publication.identities);ports_.random=publication.gameRandom;plan.started=true;publication.identityCommitted=true;
             }
             if(!publication.published) {
                 if(!publication.facts.empty() && !ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},publication.area},publication.facts})) return DomainStatus::Capacity;

@@ -130,6 +130,8 @@ Properties的fireskill／coldskill／ltngskill／poisskill／magskill通过函�
 
 ## 装备触发与装备自带技能
 
+公共`skills::itemTrigger`在`Capacity`或`PendingContent`时均保留原释放继续点，reactions重试不重新创建释放；覆盖玩家、怪物及PD2 Enchant／Teleport入口，不改变已准备程序资格，未实现的ItemCheckStart与替代程序仍拒绝。
+
 当前`0x36E240`在普通SrvDo前登记dospellcast，5帧后采样当时的物品属性；`0x302930`在盾格挡或武器格挡后登记doblock，延迟2帧。它们通过`0x36AED0`登记原MonsterModifier事件，`0x36AE60`按事件号、单位类型及GUID恢复目标，再调用`0x347670`。目标飞弹等不支持的类型回到自身；空目标不是自身。普通施法另排除城镇和`0x37B650`的PvP安全区；后者是Level157／159的固定全局坐标矩形，不是DT1 NoHarm瓦片。该资格已在PD2施法准备中接入，扩展布局可由管理旅行进入；正常PvP／BR入口和胜负程序仍未实现，详见[特殊PvP区域](MAPS.md#特殊pvp区域)。
 
 玩家施法事件通常要求SC，或序列6／12／18的SQ；怪物按实际模式7／14判断，没有玩家的序列编号限制。`0x190E20`初始化强制集合242、251、256、261、262、313、272、276、392；`0x190E90`初始化排除集合277、57、219、220、514、217、218、513。怪物强制集合可绕过模式，符合条件时在原Do调用前登记，即使Do随后失败也保留5帧后事件；空目标类型／GUID照原值保存。消费者为`skills/pd2/item_events.cpp`，通用怪物释放、喷射及独立MonsterWhirlwind路径分别接入，背压续办不重复登记同一次回调。每次普通Do均可登记，物品／光环强制Do不递归触发此事件；独立Dash现亦在每次Do185前登记，容量续办沿同一回调标记；其他全部装备／目标组合仍需原生对照。ItemStatCost中的docrit／dopierce回调槽可登记，但当前核心未发现实际发送事件16／17的入口，也没有当前物品使用它们，不能自行加进暴击／穿透循环。
@@ -174,7 +176,7 @@ op30在`0x365790`匹配后直接退出，是明确阻断配方，不能照output
 
 ## Open Wounds与Crushing Blow
 
-Open Wounds Fn015为RVA `0x346400`，常量表`0x44E310={0,1,125,74}`，state62；属性189是openwounds_stack而非modifierlist_level。持续125帧，最多3层，未满时相加伤害率，满后只刷新全层共用期限。复用状态helper `0x36C020`保留原来源／信用；对应`src/server/systems/combat/pd2/wounds.cpp`，层数与伤害率不写入角色存档。
+Open Wounds Fn015为RVA `0x346400`，常量表`0x44E310={0,1,125,74}`，state62；属性189是openwounds_stack而非modifierlist_level。持续125帧，最多3层，未满时相加伤害率，满后只刷新全层共用期限。复用状态helper `0x36C020`保留原来源／信用；对应`src/server/systems/combat/pd2/wounds.cpp`，层数与伤害率不写入角色存档。公共效果域的身份回收同时保留伤口现存的source／credit及pd2Attacker／pd2Credit，避免来源实体撤出后丢失仍被伤口持有的原生GUID映射；该回收变化尚未运行验证。
 
 基础率40，按等级分段增量9／18／27／36／45，再加Deep Wounds乘5。PvP普通／噩梦／地狱分别取8／6／4百分比，并非除以8／6／4；没有state225时，血魔290使Deep Wounds的PvP比例减半；有state225时，该列表贡献的Deep Wounds取普通PvP比例的三分之一，其余部分用普通比例。目标物抗减来源属性425，免疫≥100不按普通穿透处理；负有效物抗减半、PvP封顶50，玩家所属宠物再取四分之一，PvP城镇率为零。MPQ属性代码`Deep-Wounds`的大小写不能导致准备时漏掉`deep_wounds`。扩展首领935／936的伤口镜像现由`combat/pd2/wounds.cpp`与`monsters/pd2/rathma.cpp`消费：本次贡献减半，伙伴使用独立层数／期限并检查状态8，沿公共属性发布提交，不再列作缺少实现；双本体武器毒与连续伤口的有限运行范围见[怪物分册](MONSTERS.md#专属场景ai)，全部来源／撤销组合与原生整场对照仍未完成。
 

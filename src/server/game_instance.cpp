@@ -2,14 +2,29 @@
 #include "movement.hpp"
 #include "player_projection.hpp"
 #include "core/random.hpp"
+#include "gameplay/items/inventory_order.hpp"
 #include <algorithm>
 
 namespace d2x::server {
+namespace {
+NativeUnitIds::Publication prepareCharacterIdentities(const NativeUnitIds &identities,const PersistentCharacter &character) {
+    std::vector<NativeUnitIds::Request> requests{{character.player.id,NativeUnitType::Player}};
+    const auto appendItem=[&](auto &&self,const ItemInstance &item)->void {
+        requests.push_back({item.id,NativeUnitType::Item});
+        for(const auto &child:item.socketedItems) self(self,child);
+    };
+    for(const auto id:inventoryItemOrder(character.inventory)) appendItem(appendItem,character.inventory.items.at(id));
+    if(character.ironGolem) appendItem(appendItem,*character.ironGolem);
+    for(const auto &corpse:character.corpses) requests.push_back({corpse.id,NativeUnitType::Player});
+    return identities.prepare(requests);
+}
+}
 GameInstance::GameInstance(GameDefinition definition)
     : settings_(definition.settings), areas_(std::move(definition.area)),
-      entities_(definition.persistent.nextEntityId), random_(initialRandom(settings_.mapSeed)),
+    entities_(definition.persistent.nextEntityId,&nativeEntities_), random_(initialRandom(settings_.mapSeed)),
       rules_(std::move(definition.rules)),
       systems_(players_, areas_, entities_, random_, events_, rules_, settings_) {
+        players_.nativeIdentities_=&nativeEntities_;
     if (definition.persistent.player.hardcore != settings_.hardcore) throw std::runtime_error("Character hardcore mode does not match game");
         if(!rules_.monsterRegions) throw std::runtime_error("Missing native monster region rules");
         systems_.population.initializeRegions(*rules_.monsterRegions);
@@ -21,8 +36,10 @@ GameInstance::GameInstance(GameDefinition definition)
     systems_.world.activateAct(definition.persistent.lastRegion);
     const auto arrival=systems_.world.nativeActSpawnLocationEx(definition.persistent.lastRegion,0,2);
     if(!arrival || !arrival->room) throw std::runtime_error("No native player entry position");
+    auto identities=prepareCharacterIdentities(nativeEntities_,definition.persistent);
     players_.admit({1}, std::move(definition.character), std::move(definition.persistent), areas_, rules_,tick_,childRandom(random_),
         {*arrival->room,arrival->position},systems_.spatial,systems_.world);
+    nativeEntities_.publish(identities);
     if(!systems_.transactions.initializeItemAuras({1},tick_))
         throw std::runtime_error("Unable to initialize admitted item auras");
     systems_.effects.registerPlayer(players_.find({1})->actor,tick_);
@@ -30,6 +47,83 @@ GameInstance::GameInstance(GameDefinition definition)
 }
 bool GameInstance::clientLoadReady(PlayerId id) const {
     return systems_.world.clientRoomsReady(id);
+}
+void GameInstance::collectNativeIdentities(std::set<EntityId> retained) {
+    if(simulationPending_ || !events_.pending().empty() || systems_.itemTriggers.pending()) return;
+    const auto item=[&](auto &&self,const ItemInstance &value)->void {
+        retained.insert(value.id);
+        for(const auto &child:value.socketedItems) self(self,child);
+    };
+    const auto inventory=[&](const InventoryState &value) {
+        for(const auto &[id,value]:value.items) {(void)id;item(item,value);}
+    };
+    for(const auto &[id,player]:players_.all()) {
+        (void)id;retained.insert(player.actor);inventory(player.persistent.inventory);
+        if(player.persistent.ironGolem) item(item,*player.persistent.ironGolem);
+        for(const auto &corpse:player.persistent.corpses) retained.insert(corpse.id);
+        for(const auto &hotkey:player.persistent.player.skillHotkeys) if(hotkey.owner!=UINT32_MAX) retained.insert(EntityId{hotkey.owner});
+        for(const auto owner:player.persistent.player.selectedSkillOwners) if(owner!=UINT32_MAX) retained.insert(EntityId{owner});
+        if(player.movementTarget) retained.insert(player.movementTarget->id);
+        if(player.movementArrival) retained.insert(player.movementArrival->id);
+        for(const auto &skill:player.totals.skillOrder) retained.insert(skill.owner);
+        for(const auto &skill:player.totals.clearedSkillSelections) retained.insert(skill.owner);
+    }
+    for(const auto &[id,unit]:systems_.monsters.read().actors) {
+        retained.insert(id);retained.insert(unit.nativeOwner);
+        if(unit.nativeMinionOwner) retained.insert(*unit.nativeMinionOwner);
+        retained.insert(unit.nativeMinions.begin(),unit.nativeMinions.end());
+        retained.insert(unit.killer);retained.insert(unit.movementTarget);
+        retained.insert(unit.lastAttacker);retained.insert(unit.hirelingKiller);
+        retained.insert(unit.tauntTarget);retained.insert(unit.attractionTarget);
+        if(unit.skillMotion) retained.insert(unit.skillMotion->target);
+        if(unit.rightSkill) retained.insert(unit.rightSkill->owner);
+        for(const auto &charge:unit.nativeCharges) retained.insert(charge.item.id);
+        for(const auto &change:unit.preparedItemAuras) retained.insert(change.source);
+        if(unit.necroMaterial) item(item,*unit.necroMaterial);
+        if(unit.delayedDeathSource) retained.insert(*unit.delayedDeathSource);
+        if(unit.equipment) inventory(unit.equipment->inventory);
+    }
+    for(const auto &[room,units]:systems_.monsters.read().inactive) {
+        (void)room;for(const auto &unit:units) {
+            retained.insert(unit.id);if(unit.minionOwner) retained.insert(*unit.minionOwner);
+            retained.insert(unit.minions.begin(),unit.minions.end());
+        }
+    }
+    inventory(systems_.items.read().world);
+    for(const auto &[id,unit]:systems_.objects.read().objects) {retained.insert(id);retained.insert(unit.nativePortalOwner);}
+    for(const auto &[id,unit]:systems_.missiles.read().missiles) {retained.insert(id);retained.insert(unit.owner);}
+    for(const auto &[region,area]:areas_.all()) {
+        (void)region;
+        for(const auto &exit:area.definition.exits) retained.insert(exit.id);
+        for(const auto &npc:area.definition.npcs) retained.insert(npc.id);
+        for(const auto &object:area.definition.objects) retained.insert(object.id);
+    }
+    const auto portals=[&](const auto &values) {
+        for(const auto &[id,portal]:values) {
+            (void)id;retained.insert(portal.fieldId);retained.insert(portal.townId);retained.insert(portal.owner);
+        }
+    };
+    portals(systems_.travel.read().portals);portals(systems_.travel.read().specialPortals);
+    const auto stock=[&](const auto &stocks) {
+        for(const auto &[key,value]:stocks) {(void)key;for(const auto &[id,offer]:value.offers) {(void)id;item(item,offer.item);}}
+    };
+    stock(systems_.merchant.read().stocks);stock(systems_.merchant.read().gambles);
+    for(const auto &[id,exchange]:systems_.trade.read().exchanges) {
+        (void)id;
+        for(const auto *offer:{&exchange.first,&exchange.second}) {
+            inventory(offer->original);
+            for(const auto &[source,mirror]:offer->mirrors) {retained.insert(source);retained.insert(mirror.id);}
+        }
+    }
+    systems_.effects.collectEntityReferences(retained);
+    systems_.skills.collectEntityReferences(retained);
+    systems_.missiles.collectEntityReferences(retained);
+    systems_.objects.collectEntityReferences(retained);
+    for(const auto &[source,pending]:systems_.loot.read().pending) {
+        retained.insert(source);
+        for(const auto &seeds:pending.itemSeeds) retained.insert(seeds.allocation);
+    }
+    nativeEntities_.retain(retained);
 }
 PlayerId GameInstance::admit(GameDefinition definition) {
     if (players_.all().size() >= 8 || nextPlayer_ == UINT64_MAX)
@@ -40,11 +134,14 @@ PlayerId GameInstance::admit(GameDefinition definition) {
         definition.persistent.nextEntityId <= definition.persistent.player.id.value || definition.persistent.nextEntityId > UINT32_MAX)
         throw std::runtime_error("Invalid participant game settings or identity range");
     const PlayerId id{nextPlayer_};
+    entities_.advanceTo(definition.persistent.nextEntityId);
     systems_.world.activateAct(definition.persistent.lastRegion);
     const auto arrival=systems_.world.nativeActSpawnLocationEx(definition.persistent.lastRegion,0,2);
     if(!arrival || !arrival->room) throw std::runtime_error("No native player entry position");
+    auto identities=prepareCharacterIdentities(nativeEntities_,definition.persistent);
     players_.admit(id, std::move(definition.character), std::move(definition.persistent), areas_, definition.rules,tick_,childRandom(random_),
         {*arrival->room,arrival->position},systems_.spatial,systems_.world);
+    nativeEntities_.publish(identities);
     if(!systems_.transactions.initializeItemAuras(id,tick_)) {
         PlayerStore::publishCorpseCollision(areas_,players_.find(id)->persistent.corpses,{});
         areas_.removeRoomUnit(players_.find(id)->actor);
@@ -52,7 +149,6 @@ PlayerId GameInstance::admit(GameDefinition definition) {
         throw std::runtime_error("Unable to initialize admitted item auras");
     }
     systems_.effects.registerPlayer(players_.find(id)->actor,tick_);
-    entities_ = EntityIds(players_.find(id)->persistent.nextEntityId);
     ++nextPlayer_; ++revision_;
     return id;
 }

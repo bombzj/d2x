@@ -51,7 +51,7 @@ struct WanderRoom {
   std::string deferred;
 };
 struct State { std::map<RegionId, AreaPopulation> areas; std::optional<uint64_t> regionRandom; std::map<int,MonsterRegionSelection> regions; std::map<int,std::vector<std::string>> rosters; std::set<int> superUniques; std::vector<QuestBirth> questBirths; std::vector<ObjectBirth> objectBirths; std::map<std::pair<RegionId,size_t>,WanderRoom> wanderRooms; std::map<RegionId,int> wanderCounts; std::array<uint64_t,5> roomEpochs{}; };
-struct Ports { AreaStore &areas; monsters::System &monsters; uint64_t &random; const GameSettings &settings; objects::System &objects; const spatial::System &spatial; quests::System &quests; const PlayerStore &players; world::System &world; maps::System &maps; const travel::System &travel; };
+struct Ports { AreaStore &areas; monsters::System &monsters; uint64_t &random; const GameSettings &settings; objects::System &objects; const spatial::System &spatial; quests::System &quests; const PlayerStore &players; world::System &world; maps::System &maps; const travel::System &travel; items::System &items; };
 class System {
     State state_;
     const Ports ports_;

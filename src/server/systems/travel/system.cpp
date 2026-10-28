@@ -127,6 +127,7 @@ DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, F
     const auto *player = ports_.players.find(actor.player);
     if (!player) return {DomainStatus::InvalidActor, {}};
     ports_.world.activate(target.area, target.position + Vec{.5f,.5f});
+    if(!ports_.areas.loaded(target.area,target.position+Vec{.5f,.5f})) return {DomainStatus::PendingContent,{}};
     const auto result = ports_.transactions.release(actor, player->characterRevision, manaCost, target,charge,{},{},skill);
     if (result) {
         cancel(actor.player);
@@ -161,12 +162,12 @@ DomainResult<> System::castTeleport(const ActorContext &actor,PointTarget target
         const auto *room=area->definition.activation.room(point+Vec{.5f,.5f});
         if(!room || (int(area->definition.origin.x)+room->x)/5!=view.x ||
             (int(area->definition.origin.y)+room->y)/5!=view.y) return false;
-        ports_.world.activate(view.area,point+Vec{.5f,.5f});return true;
+        ports_.world.activate(view.area,point+Vec{.5f,.5f});return ports_.areas.loaded(view.area,point+Vec{.5f,.5f});
     };
     bool acquired=acquire(current);
     if(!acquired) for(const auto room:definition.roomNear.at(size_t(bounds-definition.activation.rooms().data())))
         if(acquire(room)) {acquired=true;break;}
-    if(!acquired) return {DomainStatus::Unavailable,{}};
+    if(!acquired) return {ports_.world.awaitingRoomInputs()?DomainStatus::PendingContent:DomainStatus::Unavailable,{}};
     // UNITS_TestCollisionByCoordinates shortens both ends by unit size 2.
     if(player->rules.skills && player->rules.skills->pd2) {
         const auto landing=pd2TeleportLanding(actor.area,player->position,target.position,2);
@@ -214,6 +215,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 (transition.kind == Kind::Npc || transition.kind==Kind::QuestObject) ? ports_.world.request(transition.to) : ports_.world.requestArea(actor, transition.to);
             if (!prepared) { pending = state_.transitions.erase(pending); continue; }
             ++pending; continue;
+        }
+        if(!ports_.world.roomInputsReady(transition.to)) {
+            ports_.world.request(transition.to,destination->definition.pd2Map);
+            ++pending;continue;
         }
         if (transition.kind == Kind::Exit) {
             if (nativeUnitDistance(player.position, 2, transition.approach, 1) > 4) {

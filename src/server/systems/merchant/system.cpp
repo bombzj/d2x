@@ -196,8 +196,9 @@ DomainResult<> System::install(Prepared prepared) {
             if(!candidate) return {candidate.status,{}};
             control=std::move(*candidate.value);
         }
+        auto identities=identityCount?ports_.items.prepareIdentities(identityCursor,identityCount):nullptr;
         auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{MerchantFact{request.npc.id,{},0,0,player->persistent.player.gold,true}}}); if (!sent) return {sent.status,{}};
-        if(identityCount) ports_.items.publishIdentities(identityCursor,identityCount);
+        if(identities) ports_.items.publishIdentities(*identities);
         state_.stocks.swap(stocks);state_.gambles.swap(gambles);state_.opened.swap(opened);state_.gambling.swap(gambling);
         if(source.controlRandom) {
             ports_.npc.publishVendorControl(std::move(*control));
@@ -385,9 +386,10 @@ DomainResult<> System::install(Prepared prepared) {
     auto bought=state_.bought;
     if(request.action==Action::Buy) bought.insert_or_assign(actor.player,receiptItem);
     auto plan=ports_.transactions.prepare(std::move(edit)); if (!plan) { if(isDeferred(plan.status)) return {plan.status,{}}; return failure(plan.status); }
+    auto identities=itemIdentityCount?ports_.items.prepareIdentities(itemIdentityCursor,itemIdentityCount):nullptr;
     const auto result=ports_.transactions.commit(std::move(*plan.value)); if (!result) return {result.status,{}};
     if(itemIdentityCount) {
-        ports_.items.publishIdentities(itemIdentityCursor,itemIdentityCount);
+        ports_.items.publishIdentities(*identities);
         ports_.random=itemRandom;
     }
     if(changedStocks) state_.stocks.swap(*changedStocks);

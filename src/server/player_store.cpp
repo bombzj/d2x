@@ -14,9 +14,11 @@ namespace d2x::server {
 std::vector<EntityId> PlayerStore::nativeActorOrder() const {
     std::vector<EntityId> result;result.reserve(players_.size());
     for(const auto &[id,player]:players_) result.push_back(player.actor);
-    std::sort(result.begin(),result.end(),[](EntityId first,EntityId second) {
-        const auto a=first.value&127,b=second.value&127;
-        return a==b?first.value>second.value:a<b;
+    std::sort(result.begin(),result.end(),[&](EntityId first,EntityId second) {
+        if(!nativeIdentities_) throw std::logic_error("Missing native player identities");
+        const auto firstGuid=nativeIdentities_->find(first).value().guid,secondGuid=nativeIdentities_->find(second).value().guid;
+        const auto firstBucket=firstGuid&127,secondBucket=secondGuid&127;
+        return firstBucket==secondBucket?firstGuid>secondGuid:firstBucket<secondBucket;
     });
     return result;
 }

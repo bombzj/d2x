@@ -1,6 +1,7 @@
 #include "native_map.hpp"
 #include <algorithm>
 #include <stdexcept>
+#include <tuple>
 #include <variant>
 
 namespace d2x {
@@ -12,7 +13,8 @@ struct RoomInput {
     std::shared_ptr<RetailTileSelector> libraries;
     std::array<int,8> warpSlots{};
     std::vector<std::pair<int,RoomTerrainId>> warps;
-    std::variant<std::monostate,RetailOutdoorRoomData,RetailPresetRoomData> data;
+    std::shared_ptr<const RetailDirtPaths> paths;
+    std::map<std::string,std::shared_ptr<const MapData>> patterns;
     std::shared_ptr<const MapData> unitSource;
     bool preloaded{};
     std::vector<RetailPresetUnit> preloadedUnits;
@@ -27,6 +29,7 @@ class NativePreparedRoomTerrain final : public PreparedRoomTerrain {
     RetailPresetScan identities;
     std::vector<RoomTerrainLink> links;
     std::vector<std::shared_ptr<const RoomInput>> inputs;
+    std::map<int,std::array<int,8>> visible;
     explicit NativePreparedRoomTerrain(const RetailPresetScan &scan) : identities(scan) {}
     int act() const override { return actValue; }
     std::span<const RoomTerrainLink> rooms() const override { return links; }
@@ -41,6 +44,9 @@ class NativeRoomTerrainSession final : public RoomTerrainSession {
     RetailTileMaterializer tiles_;
     std::map<RoomTerrainId,size_t> indices_;
     std::map<RoomTerrainId,std::shared_ptr<const RoomInput>> inputs_;
+    struct Identity {RetailRoom room;std::array<int,8> warpSlots;RoomTerrainLink link;};
+    std::map<RoomTerrainId,Identity> identitiesByRoom_;
+    std::map<int,std::array<int,8>> visible_;
   public:
     explicit NativeRoomTerrainSession(const NativePreparedRoomTerrain &source)
         : act_(source.actValue),difficulty_(source.difficulty),seed_(source.seed),mountIdentity_(source.mountIdentity),
@@ -50,12 +56,32 @@ class NativeRoomTerrainSession final : public RoomTerrainSession {
         if (!source || source->actValue!=act_ || source->difficulty!=difficulty_ || source->seed!=seed_ ||
             source->mountIdentity!=mountIdentity_)
             throw std::runtime_error("Prepared room terrain belongs to another DRLG");
+        // Validate the whole handoff before replacing any evicted input.
+        for(const auto &[level,visible]:source->visible) {
+            const auto old=visible_.find(level);
+            if(old!=visible_.end() && old->second!=visible) throw std::runtime_error("Prepared level connections changed");
+        }
+        for(const auto &input:source->inputs) if(const auto found=identitiesByRoom_.find(input->link.id);found!=identitiesByRoom_.end()) {
+            const auto &old=found->second;
+            const auto descriptor=[](const RetailRoom &room) {
+                return std::tuple{room.x,room.y,room.width,room.height,room.preset,room.file,room.mapX,room.mapY,
+                    room.flags,room.outdoorFlags,room.auxiliary,room.dt1Mask,room.themeMask,room.seed.initial};
+            };
+            if(descriptor(old.room)!=descriptor(input->room) ||
+               old.warpSlots!=input->warpSlots || (!old.link.near.empty() && !input->link.near.empty() && old.link.near!=input->link.near))
+                throw std::runtime_error("Prepared room identity changed within a game");
+        }
+        visible_.insert(source->visible.begin(),source->visible.end());
         for (const auto &input : source->inputs) {
             const auto key=input->link.id;
             const auto found=inputs_.find(key);
             if (found==inputs_.end()) {
                 const auto id=tiles_.registerRoom(key.level,input->room,input->libraries,input->warpSlots);
                 inputs_.emplace(key,input);indices_.emplace(key,id);
+                identitiesByRoom_.emplace(key,Identity{input->room,input->warpSlots,input->link});
+            } else if(!found->second) {
+                tiles_.restoreRoom(indices_.at(key),input->room,input->libraries);
+                found->second=input;
             } else {
                 const auto &old=*found->second;
                 if (old.room.seed.initial!=input->room.seed.initial || old.room.width!=input->room.width ||
@@ -69,6 +95,7 @@ class NativeRoomTerrainSession final : public RoomTerrainSession {
         }
         for (const auto &input : source->inputs) {
             if (input->link.near.empty()) continue;
+            identitiesByRoom_.at(input->link.id).link=input->link;
             std::vector<size_t> near;
             std::vector<std::pair<int,size_t>> warps;
             for (const auto key : input->link.near) near.push_back(indices_.at(key));
@@ -93,14 +120,43 @@ class NativeRoomTerrainSession final : public RoomTerrainSession {
         if (room.near.empty()) throw std::runtime_error("Missing prepared native room neighbourhood");
         prepare(key);
         const auto near=room.near;
-        if (const auto *outdoor=std::get_if<RetailOutdoorRoomData>(&input.data))
-            tiles_.loadOutdoor(index,*outdoor,near);
-        else tiles_.loadPreset(index,std::get<RetailPresetRoomData>(input.data),near);
+        if(input.paths) {
+            const auto data=buildRetailOutdoorRoomData(*catalog_,catalog_->level(key.level),input.room,*input.paths,
+                [&](const std::string &path)->const MapData & {return *input.patterns.at(path);},identities_,input.libraries);
+            tiles_.loadOutdoor(index,data,near);
+        } else {
+            const auto data=buildRetailPresetRoomData(catalog_->presets().at(input.room.preset),input.room,*input.unitSource);
+            tiles_.loadPreset(index,data,near);
+        }
         auto active=near;
         std::erase_if(active,[&](size_t other) {return other!=index && !tiles_.collision(other);});
         tiles_.activateCollision(index,active);
     }
     void release(RoomTerrainId key) override { tiles_.releaseRoom(indices_.at(key)); }
+    bool resident(RoomTerrainId key) const override {
+        const auto found=inputs_.find(key);return found!=inputs_.end() && bool(found->second);
+    }
+    std::vector<int> visibleLevels(int level) const override {
+        std::vector<int> result;
+        if(const auto found=visible_.find(level);found!=visible_.end())
+            for(const auto other:found->second) if(other) result.push_back(other);
+        return result;
+    }
+    std::vector<RoomTerrainId> releaseDependencies(int level) const override {
+        std::vector<RoomTerrainId> result;
+        for(const auto &[key,input]:identitiesByRoom_) if(key.level==level) result.push_back(key);
+        for(const auto other:visibleLevels(level)) {
+            const auto found=visible_.find(other);if(found==visible_.end()) continue;
+            uint32_t mask{};
+            for(size_t slot=0;slot<found->second.size();++slot) if(found->second[slot]==level) mask|=uint32_t(0x10)<<slot;
+            for(const auto &[key,input]:identitiesByRoom_) if(key.level==other && (input.room.flags&mask)) result.push_back(key);
+        }
+        return result;
+    }
+    void releaseLevel(int level) override {
+        tiles_.forgetLevel(level);
+        for(auto &[key,input]:inputs_) if(key.level==level) input.reset();
+    }
     std::optional<RoomTerrainSample> sample(RoomTerrainId key, bool details,
         std::span<const std::pair<int,int>> openedTombTiles) const override {
         const auto found=indices_.find(key);
@@ -151,6 +207,7 @@ class NativeRoomTerrainSession final : public RoomTerrainSession {
                     std::optional<std::pair<std::string,size_t>> identity;
                     for (const auto &[other,input] : inputs_) {
                         (void)other;
+                        if(!input) continue;
                         try {const auto [path,record]=input->libraries->identity(*tile.tile);identity={{std::string(path),record}};break;}
                         catch (const std::runtime_error &) {}
                     }
@@ -186,10 +243,12 @@ std::shared_ptr<const PreparedRoomTerrain> NativeMapGenerator::prepareRoomTerrai
         for (const auto other : near(id)) if (depth.emplace(other,distance+1).second) queue.push_back(other);
     }
     std::map<const RetailTileSelector *,std::shared_ptr<RetailTileSelector>> selectors;
-    std::map<std::string,std::shared_ptr<const MapData>> unitSources;
+    std::map<int,std::shared_ptr<const RetailDirtPaths>> paths;
     const auto key=[&](size_t id) {const auto &r=tiles_.rooms().at(id);return RoomTerrainId{r.level,r.room.x,r.room.y};};
     for (const auto &[id,distance] : depth) {
         const auto &room=tiles_.rooms().at(id);
+        const auto connection=layout_.connections.find(room.level);
+        result->visible.emplace(room.level,connection==layout_.connections.end()?catalog_.level(room.level).visible:connection->second.visible);
         auto input=std::make_shared<RoomInput>(room.room);
         input->link={key(id),room.room.width,room.room.height,catalog_.level(room.level).town,{}};
         if (distance<3) {
@@ -200,16 +259,12 @@ std::shared_ptr<const PreparedRoomTerrain> NativeMapGenerator::prepareRoomTerrai
         const auto &allocated=levels_.at(room.level);
         input->allocationOrder=size_t(std::find(allocated.rooms.begin(),allocated.rooms.end(),id)-allocated.rooms.begin());
         auto &selector=selectors[room.libraries.get()];
-        if (!selector) selector=room.libraries->collisionOnly();
+        if (!selector) selector=room.libraries->collisionOnly(archives_);
         input->libraries=selector;
         if (room.room.preset) {
             const auto &preset=catalog_.presets().at(room.room.preset);
             const auto &path=preset.variants.at(size_t(room.room.file));
-            const auto &data=pattern(path);
-            input->data=buildRetailPresetRoomData(preset,room.room,data);
-            auto &units=unitSources[path];
-            if (!units) {auto value=std::make_shared<MapData>();value->version=data.version;value->act=data.act;value->objects=data.objects;units=std::move(value);}
-            input->unitSource=units;input->preloaded=preset.scan || preset.pops;
+            input->unitSource=patternSource(path);input->preloaded=preset.scan || preset.pops;
             if (input->preloaded) {
                 const RetailPresetKey presetKey{room.level,room.room.preset,room.room.file,room.room.mapX,room.room.mapY};
                 if (allocated.outdoor) input->preloadedUnits=allocated.outdoor->presetUnits.at(presetKey);
@@ -220,8 +275,13 @@ std::shared_ptr<const PreparedRoomTerrain> NativeMapGenerator::prepareRoomTerrai
             const auto &outdoor=*allocated.outdoor;
             // Substitution/shadow choices depend only on the reset room seed;
             // defer linked floor/wall choices to actual room materialization.
-            input->data=buildRetailOutdoorRoomData(cache_,catalog_,catalog_.level(room.level),room.room,outdoor.paths,
-                [this](const std::string &path)->const MapData & {return pattern(path);},identities_,selector);
+            auto &source=paths[room.level];if(!source) source=std::make_shared<RetailDirtPaths>(outdoor.paths);
+            input->paths=source;
+            buildRetailOutdoorRoomData(catalog_,catalog_.level(room.level),room.room,*source,
+                [&](const std::string &path)->const MapData & {
+                    auto data=patternSource(path);
+                    input->patterns.emplace(path,data);return *data;
+                },identities_,selector);
         }
         result->links.push_back(input->link);result->inputs.push_back(std::move(input));
     }

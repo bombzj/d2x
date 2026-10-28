@@ -8,6 +8,7 @@
 #include "gameplay/maps/pd2/definition.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/monsters/monster_loot.hpp"
+#include "content/monsters/monster_enchantment.hpp"
 #include "content/world/world_catalog.hpp"
 #include "content/items/item_quality.hpp"
 #include "content/items/item_properties.hpp"
@@ -17,6 +18,7 @@
 #include "core/random.hpp"
 #include "persistence/d2s_quests.hpp"
 #include "persistence/d2s_fixed_sections.hpp"
+#include "persistence/d2s_inventory.hpp"
 #include "gameplay/rules/pd2_random.hpp"
 #include "content/pd2/cube.hpp"
 #include <algorithm>
@@ -175,6 +177,7 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
         if (item.quality == ItemQuality::Unique && item.specialRow >= 0 && !data.tables.at("uniqueitems").number(size_t(item.specialRow), "nolimit").value_or(0)) batch.limitedUniques.insert(size_t(item.specialRow));
         if(nativeDrop && !nativeDrop->placementValid) continue;
         item.id = EntityId{id++}; item.location = ContainerLocation{character.containers.backpack, {}};
+        batch.identities.emplace(item.id,drop.generation.seeds->allocation);
         character.inventory.items.emplace(item.id, item); batch.items.push_back(std::move(item));
     }
     batch.equipment = prepareEquipmentRules(data, character);
@@ -269,6 +272,13 @@ void preparePendingLoot(GameHost &host, GameHandle game, Archives &archives, con
                 request->leader.level,request->selection,nullptr,&reason);
             if(!leader || !leader->rule.enchantment) throw std::runtime_error("Native modifier leader "+leaderIdentity.monster+": "+reason);
             prepared.leader=leader->rule;
+            if(request->initialNameSeed && prepared.leader.enchantment->aura) {
+                const auto level=prepared.leader.level;
+                // sub_6FC6FBA0 executes UMod30 during construction and again
+                // after restoring wNameSeed; wBossHcIdx is assigned afterwards.
+                prepared.initialAura=resolveMonsterModifierAura(data,level,*request->initialNameSeed,false,true);
+                prepared.leader.enchantment->aura=resolveMonsterModifierAura(data,level,request->selection.nameSeed,false,true);
+            }
             for(const auto &unit:request->minions) {
                 auto identity=actualIdentity(unit);identity.rank=MonsterRank::Minion;
                 const auto minion=prepareSelectedMonster(archives,data,generation,std::move(identity),unit.level,
@@ -295,6 +305,36 @@ void preparePendingLoot(GameHost &host, GameHandle game, Archives &archives, con
             server::monsters::PreparedModifiers failure;failure.token=request->token;
             failure.deferred="Native modifier rules failed authority validation";
             host.prepareModifiers(game,std::move(failure));
+        }
+        return;
+    }
+    if(const auto request=host.pendingInactiveItem(game)) {
+        server::items::PreparedInactiveItem prepared;prepared.source=*request;
+        try {
+            if(!data.nativeItemSave) throw std::runtime_error("Missing native item save rules");
+            PersistentCharacter context;initializeD2sInventory(context,data);
+            auto item=request->item;item.location=ContainerLocation{context.containers.cursor,{}};
+            context.inventory.items.emplace(item.id,item);
+            auto saved=exportD2sItem(context,item,data);
+            saved.mode=3;saved.page=0;saved.x=unsigned(std::clamp(int(request->global.x),0,65535));saved.y=unsigned(std::clamp(int(request->global.y),0,65535));
+            prepared.node.bitstream=writeNativeSavedItem(saved,*data.nativeItemSave,true);
+            auto decoded=readNativeSavedItem(prepared.node.bitstream,*data.nativeItemSave,true).item;
+            decoded.mode=4;decoded.body=decoded.x=decoded.y=decoded.page=0;
+            PersistentCharacter restored;initializeD2sInventory(restored,data);
+            importD2sItem(restored,decoded,data,false);
+            const auto &root=restored.inventory.items.begin()->second;
+            const auto equipment=prepareEquipmentRules(data,restored);
+            prepared.node.equipment=equipment->items.at(root.id);
+            const auto collect=[&](auto &&self,const ItemInstance &value)->void {
+                prepared.node.derived.push_back({value.requiredLevel,value.socketRequiredLevel});
+                for(const auto &child:value.socketedItems) self(self,child);
+            };
+            collect(collect,root);
+        } catch(const std::exception &error) {prepared.deferred=error.what();}
+        const auto result=host.prepareInactiveItem(game,std::move(prepared));
+        if(result.status==server::DomainStatus::InvalidRequest) {
+            server::items::PreparedInactiveItem failure;failure.source=*request;failure.deferred="Inactive item failed authority validation";
+            host.prepareInactiveItem(game,std::move(failure));
         }
         return;
     }

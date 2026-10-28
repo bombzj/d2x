@@ -25,7 +25,7 @@
 #include <memory>
 #include <vector>
 
-namespace d2x {class CombatEffectSet;}
+namespace d2x {class CombatEffectSet;struct NativeItemSaveRules;}
 namespace d2x::pd2 {struct MapCatalog;}
 namespace d2x::server {
 using EffectRules = std::map<int, CombatStateDefinition>;
@@ -86,6 +86,7 @@ struct TransientAttributes {
     }
 };
 struct PreparedRules {
+    std::shared_ptr<const NativeItemSaveRules> itemSave;
     std::shared_ptr<const MonsterRegionRules> monsterRegions;
     std::shared_ptr<const PotionRules> potions;
     std::shared_ptr<const ItemCatalog> items;

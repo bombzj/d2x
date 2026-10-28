@@ -1,3 +1,4 @@
+#include "gameplay/skills/targeting.hpp"
 #include "system.hpp"
 #include "runtime.hpp"
 #include "server/area_store.hpp"
@@ -191,11 +192,11 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
         if(!target || !participants.find(missile.owner).id() || missile.parameters[0]<=1) return 3;
         auto range=rule.hitParameters[0];
         if(range<=0) {const auto value=missileSkillFormula(plan,"aurarangecalc");if(!value) return 3;range=std::max(*value,1);}
-        const auto &area=ports_.areas.at(missile.area);std::vector<uint64_t> candidates;
+        const auto &area=ports_.areas.at(missile.area);std::vector<EntityId> candidates;
         const auto targets=ports_.effects.nativeAuraCandidateRecipients({missile.owner,unitArea(missile.owner),range,0x88583u|0xA783u,false,
             missile.position+area.definition.origin,effects::NativeAuraTargetMode::TargetRange,missile.executionTick});
-        for(const auto id:targets) candidates.push_back(id.value);
-        const EntityId selected{missileChainSuccessor(target.value,candidates)};
+        for(const auto id:targets) candidates.push_back(id);
+        const auto selected=nativeMissileSuccessor(candidates,target,ports_.ids.nativeIdentities());
         if(selected && selected!=target) if(const auto point=unitPosition(missile,selected)) {
             auto &next=planNativeChild(plan,missile.definition,missile.position,*point-missile.position);
             next.parameters[0]=nativeSubtract(missile.parameters[0],1);next.guidance=selected;

@@ -27,6 +27,7 @@ class NativeRoomActivation {
         std::function<void(size_t)> release; // Client tile/collision removal.
         // Server retirement may defer before releasing collision and room state.
         std::function<bool(size_t)> tryRetire;
+        std::function<bool()> retirementPending{};
     };
   private:
     Operations operations_;
@@ -37,6 +38,9 @@ class NativeRoomActivation {
     std::optional<size_t> prefetchCursor_;
     unsigned initialized_{}, initializationTimeout_{};
     bool failed_{};
+    std::optional<uint64_t> retirementTick_;
+    std::vector<size_t> retirementRooms_;
+    size_t retirementNext_{};
     void status(size_t, uint8_t);
     void ensureActive(size_t, bool resetTimeout);
     void setStatus(size_t, uint8_t);

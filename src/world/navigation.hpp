@@ -66,6 +66,9 @@ struct Grid {
                          terrainCollision(size_t(w) * h), objectCollision(size_t(w) * h),
                          objectLightBlocked(size_t(w) * h) {}
     void setObstacles(std::vector<Obstacle> next);
+    // Preserve the Grid address/topology while an authority level is absent.
+    void releaseStorage();
+    void restoreStorage();
     uint16_t objectMask(int x, int y, EntityId ignored = {}) const;
     uint16_t movementMask(int x, int y, EntityId ignored = {}) const;
     uint16_t nativeMovementMask(int x,int y,EntityId ignored={}) const;
@@ -74,7 +77,7 @@ struct Grid {
     uint64_t navigationRevision() const;
     bool movementClear(int x, int y, MovementCollisionRule rule, EntityId ignored = {}) const;
     bool walkable(int x, int y) const {
-        return x >= 0 && y >= 0 && x < width && y < height && !blocked[y * width + x] &&
+        return x >= 0 && y >= 0 && x < width && y < height && !blocked.empty() && !blocked[y * width + x] &&
             !(objectCollision[size_t(y) * width + x] & 0x1c00);
     }
     bool walkable(Vec p) const {

@@ -65,7 +65,7 @@ DomainStatus System::activateWhirlwind(Release &pending,const ActorContext &acto
             const auto current=std::find_if(owner.totals.equipment.weapons.begin(),last,[&](const auto &w){return w.item==hand.item;});
             if(current==last) {pending.whirlHand=count;break;}
             const auto targets=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,5,0xa783,false,{},effects::NativeAuraTargetMode::OwnerRange,actor.tick});
-            const auto successor=nativeSkillSuccessor(targets,pending.unit?uint32_t(pending.unit.value):UINT32_MAX);
+            const auto successor=nativeSkillSuccessor(targets,pending.unit?ports_.monsters.nativeIdentities().guid(pending.unit):UINT32_MAX,ports_.monsters.nativeIdentities());
             if(successor) {
                 WeaponSkillDamage weapon;weapon.weapon=*current;weapon.level=owner.persistent.player.level;
                 missiles::Spawn request{actor,pending.skill,{},participants.find(successor).position(),true};request.weapon=weapon;
@@ -119,7 +119,7 @@ DomainStatus System::activateLeap(Release &pending,const ActorContext &actor,Vec
         auto victim=participants.find(pending.unit);
         if(!victim.aliveIn(actor.area) || !playerMeleeReach(grid,owner.position,victim.position(),victim.size(),pending.weapon->rangeAdder)) {
             const auto targets=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,pending.weapon->rangeAdder+4,0x20003,false,{},effects::NativeAuraTargetMode::OwnerRange,actor.tick});
-            victim=participants.find(nativeSkillSuccessor(targets,UINT32_MAX));
+            victim=participants.find(nativeSkillSuccessor(targets,UINT32_MAX,ports_.monsters.nativeIdentities()));
         }
         if(!victim.id()) {pending.landed=true;state_.casts.at(actor.actor).until=actor.tick+4;return DomainStatus::Unavailable;}
         pending.unit=victim.id();pending.unitType=victim.player?0:1;pending.landed=true;
@@ -135,7 +135,7 @@ DomainStatus System::activateLeap(Release &pending,const ActorContext &actor,Vec
         return DomainStatus::Applied;
     }
     const int radius=pending.skill.leap->knockbackRadius;
-    for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && missileDistance(landing,m.position)<=radius)
+    for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.alive() && m.life>0 && m.area==actor.area && missileDistance(landing,m.position)<=radius)
         ports_.monsters.knockback(id,landing,actor.tick);
     pending.landed=true;state_.casts.at(actor.actor).until=actor.tick+1;
     return DomainStatus::Applied;

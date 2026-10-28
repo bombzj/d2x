@@ -35,6 +35,15 @@ struct Pd2VengeancePulse {
     bool prepared{},centerMarked{},damaged{},recipientMarked{},chancePrepared{},propagate{},complete{};
 };
 struct Pd2VengeanceTimers {std::map<FrameEventHandle,std::shared_ptr<Pd2VengeancePulse>> pulses;};
+void collectPd2VengeanceReferences(const FrameEventQueue &events,const Pd2VengeanceTimers *timers,std::set<EntityId> &entities) {
+    if(!timers) return;
+    const auto retain=[&](EntityId id) {if(id) entities.insert(id);};
+    for(const auto &[handle,pulse]:timers->pulses) {
+        if(!events.find(handle)) continue;
+        retain(pulse->source);retain(pulse->center);retain(pulse->selected);
+        for(const auto target:pulse->targets) retain(target);
+    }
+}
 namespace {
 constexpr int vengeance=111,justHit=86;
 DomainStatus advanceVengeance(const Ports &ports,Pd2VengeancePulse &pulse,uint64_t tick,Pd2VengeanceTimers &timers) {

@@ -7,7 +7,8 @@ RequestResult cast(GameplayContext &context, net::protocol::Reader &in, bool rig
     if (unit) {
         const auto type = in.u32(), id = in.u32(); in.finish();
         if ((type != 0 && type != 1 && type != 2 && type != 4) || !id) return {RequestStatus::Rejected, CommandStatus::InvalidRequest};
-        request.target = server::UnitTarget{EntityId{id}, 0, uint8_t(type)};
+        const auto entity=context.entity(id,type);if(!entity) return {RequestStatus::Rejected};
+        request.target = server::UnitTarget{entity, 0, uint8_t(type)};
     } else {
         const auto x = in.u16(), y = in.u16(); in.finish();
         const auto view = context.host.read(context.player);
@@ -37,7 +38,7 @@ RequestResult SelectSkill(GameplayContext &context, net::protocol::Reader &in) {
     if ((selected & 0x7FFF0000u)) return {RequestStatus::Rejected, CommandStatus::InvalidRequest};
     server::skills::Request request{server::skills::Action::Select, 0, false, false, false, {}, {}};
     request.skill = uint16_t(selected); request.right = !(selected & 0x80000000u);
-    request.owner=owner;
+    request.owner=context.itemSource(owner);
     return submitGameplay(context, request);
 }
 }

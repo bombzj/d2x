@@ -7,6 +7,7 @@
 
 namespace d2x {
 bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster);
+std::optional<AuraDefinition> resolveMonsterModifierAura(const ClassicData &,int level,uint16_t nameSeed,bool lordDeSeis,bool enableSkillEffects);
 std::vector<MonsterModifierChoice> prepareMonsterModifierChoices(const ClassicData &,const MonsterRecord &,int difficulty,bool champion);
 MonsterEnchantment resolveMonsterEnchantment(const ClassicData &,const MonsterRecord &,const MonsterCombatProfile &,
     int difficulty,MonsterRank,std::vector<int> modifiers,uint16_t nameSeed,bool enableSkillEffects=true,

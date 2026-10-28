@@ -117,7 +117,7 @@ DomainResult<> System::releasePd2HirelingSkill(MonsterRelease &pending,TickConte
         if(!radius) throw std::logic_error("Missing PD2 hireling Strafe range");
         const auto candidates=ports_.effects.nativeAuraCandidateRecipients({current->id(),current->area(),*radius,0xa783u,false,
             {},effects::NativeAuraTargetMode::OwnerRange,tick.tick});
-        const auto next=nativeSkillSuccessor(candidates,uint32_t(release.unit.value));
+        const auto next=nativeSkillSuccessor(candidates,ports_.monsters.nativeIdentities().guid(release.unit),ports_.monsters.nativeIdentities());
         if(next) {
             release.unit=next;release.unitType=ports_.players.findActor(next)?0:1;
             pending.request.target=UnitTarget{next,0,release.unitType};

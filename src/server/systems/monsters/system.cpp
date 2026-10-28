@@ -145,7 +145,7 @@ DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,Entit
     const auto lifeBonus=int32_t(50*(actor.admittedPlayerCount-1));
     const auto admittedLife=std::min(nativeAdd(rolledLife,nativePercentage(rolledLife,lifeBonus,100)),(1<<23)-1);
     actor.life=actor.maximumLife=nativeShiftLeft(admittedLife,8);actor.modeAlive=admittedLife==0;
-    if(request.deadMode) {actor.life=0;actor.modeAlive=false;actor.deathTick=request.tick;actor.rewardComplete=true;}
+    if(request.deadMode) {actor.life=0;actor.modeAlive=false;actor.deathMode=true;actor.deathTick=request.tick;actor.rewardComplete=true;}
     else if(request.birthTicks>0) {
         actor.riseMode=8;actor.riseUntil=actor.busyUntil=request.tick+uint64_t(request.birthTicks);
         actor.neutralAt=actor.riseUntil;
@@ -265,6 +265,7 @@ DomainResult<> System::prepareAdmissionEquipment(Actor &actor,uint64_t &random,u
     if(!prepared.deferred.empty()) return {DomainStatus::NotImplemented,{}};
     actor.equipment=std::make_shared<PersistentCharacter>(*prepared.equipment);actor.equipmentStats=prepared.stats;
     actor.petWeapon=prepared.weapon;actor.birthEquipmentItems=prepared.allocatedItems;
+    actor.birthEquipmentFirst=itemCursor;
     actor.birthUniquesExpected=found->second.first.uniquesExpected;actor.birthLimitedUniques=prepared.limitedUniques;
     actor.nativeCharges.clear();actor.nativeChargesTracked=true;
     attributes::MonsterResourceTrace resources(actor,actor.admissionTick);
@@ -376,7 +377,8 @@ DomainResult<> System::registerWanderTarget(EntityId id) {
 DomainResult<Vec> System::ensureAiHomeCommand(EntityId id) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
     auto &unit=found->second;
-    if(!unit.aiHomeCommand) {
+    const bool countess=unit.identity.rank==MonsterRank::SuperUnique && unit.rule.superUniqueIndex==6;
+    if(!unit.aiHomeCommand || (countess && (unit.aiHomeCommand->x==0 || unit.aiHomeCommand->y==0))) {
         if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
         const auto global=unit.position+ports_.areas.at(unit.area).definition.origin;
         unit.aiHomeCommand=Vec{std::floor(global.x),std::floor(global.y)};++unit.revision;

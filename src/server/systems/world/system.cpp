@@ -8,7 +8,7 @@ namespace d2x::server::world {
 void System::prepareActTime(int act) {
     if(act<0 || act>=5) throw std::invalid_argument("Invalid prepared act time");
     auto &time=ports_.areas.actTimes_.at(size_t(act));
-    if(!time) {time.emplace();if(act==1 && sunDark_) setActSunEclipse(time->value,true);}
+    if(!time) {time.emplace(AreaStore::ActTime{});if(act==1 && sunDark_) setActSunEclipse(time->value,true);}
 }
 void System::activateAct(RegionId region) {
     prepareActTime(ports_.areas.at(region).definition.act);
@@ -79,7 +79,7 @@ void System::registerAreaUnits(RegionId region) {
     ports_.areas.areas_.at(region).definition.collision.setObstacles({});
 }
 void System::assign(AreaDefinition &area) {
-    for (auto &exit : area.exits) exit.id = ports_.ids.allocate();
+    for (auto &exit : area.exits) exit.id = ports_.ids.allocate(NativeUnitType::Tile);
     for (auto &npc : area.npcs) npc.id = ports_.ids.allocate();
     for (auto &object : area.objects) {
         const auto previous = object.id; object.id = ports_.ids.allocate();
@@ -101,16 +101,23 @@ DomainResult<uint64_t> System::request(RegionId destination,std::shared_ptr<cons
     if (const auto *area = ports_.areas.find(destination)) {
         if(area->provisionalPd2Map && (!map || area->definition.pd2Map!=map)) return {DomainStatus::Conflict,{}};
         if(map && area->definition.pd2Map!=map) return {DomainStatus::Conflict,{}};
-        activateAct(destination);return {DomainStatus::Applied, area->generation};
+        activateAct(destination);
+        if(roomInputsReady(destination)) return {DomainStatus::Applied, area->generation};
     }
-    if (failed_.contains(destination)) return {DomainStatus::Unavailable, {}};
+    if (failed_.contains(destination)) {
+        // Existing authority is intact after a failed resource reload. A new
+        // ticket may retry it; never reuse an expired completion's request ID.
+        if(!ports_.areas.find(destination)) return {DomainStatus::Unavailable,{}};
+        failed_.erase(destination);
+    }
     for (const auto &pending : state_.preparation) if (pending.destination == destination) {
         if(pending.pd2Map!=map) return {DomainStatus::Conflict,{}};
         return {DomainStatus::Applied, pending.request};
     }
     if (state_.preparation.size() >= 16 || nextRequest_ == UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto id = nextRequest_;
-    state_.preparation.push_back({destination, id, ports_.settings,std::move(map)});
+    const auto *existing=ports_.areas.find(destination);
+    state_.preparation.push_back({destination, id, ports_.settings,std::move(map),existing?existing->terrainGeneration:0});
     ++nextRequest_;
     return {DomainStatus::Applied, id};
 }
@@ -140,9 +147,16 @@ void System::link() {
 }
 DomainResult<> System::install(PreparedArea prepared) {
     const auto pending = std::find_if(state_.preparation.begin(), state_.preparation.end(), [&](const auto &p) { return p.request == prepared.request; });
-    if (pending == state_.preparation.end() || pending->destination != prepared.definition.id || pending->pd2Map!=prepared.definition.pd2Map || ports_.areas.find(prepared.definition.id))
+    if (pending == state_.preparation.end() || pending->destination != prepared.definition.id || pending->pd2Map!=prepared.definition.pd2Map)
         return {DomainStatus::Stale, {}};
     AreaStore::validate(prepared.definition);
+    if(const auto *existing=ports_.areas.find(prepared.definition.id)) {
+        if(pending->terrainGeneration!=existing->terrainGeneration) return {DomainStatus::Stale,{}};
+        if(!restoreRoomInputs(prepared.definition)) return {DomainStatus::Stale,{}};
+        state_.preparation.erase(pending);
+        return {DomainStatus::Applied,std::monostate{}};
+    }
+    if(pending->terrainGeneration) return {DomainStatus::Stale,{}};
     if(prepared.definition.pd2Map && prepared.definition.pd2Map==pd2ProgramMap_)
         prepared.definition.pd2RuntimeGlobal=pd2RuntimeGlobal_;
     assign(prepared.definition);
@@ -174,6 +188,7 @@ std::vector<RegionId> System::visible(PlayerId id) const {
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     updateRooms(tick);
+    if(retiringRoom() || awaitingRoomInputs()) return StepStatus::Blocked;
     std::set<RegionId> resident;
     for (const auto &[id, player] : ports_.players.all()) {
         (void)id;

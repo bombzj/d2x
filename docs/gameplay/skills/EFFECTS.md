@@ -32,9 +32,11 @@ SrvDo18补入当前MPQ的飓风装甲、Quickness、Fade和Venom，六AuraStat�
 
 ## 跨单位接收与载体边界
 
-`CombatEffectSet`、`CombatEffectSpec`与`StatList`是公共机制，单位身份、敌我和主人关系不能决定是否另建一套Buff模型。玩家和非玩家各持唯一主列表，技能、药剂与损伤状态均投递到该列表；`effects::System::unitEffects`借用实际列表，`unitStatSources`／`unitStates`／`unitStateStats`投影实际来源与原生状态。玩家已有总属性包含状态来源，公共查询不再次叠加。非玩家药剂来源按列表实际内容参与，不以佣兵身份作为数值查询开关；复制层从公共查询读取，不维护另一份状态集合。技能列表移除仍由原帧事件完成，不能按查询时刻提前丢弃仍投递的原始列表。
+`CombatEffectSet`、`CombatEffectSpec`与`StatList`是公共机制，单位身份、敌我和主人关系不能决定是否另建一套Buff模型。玩家和非玩家各持唯一主列表，技能、药剂与损伤状态均投递到该列表；`effects::System::unitEffects`借用实际列表，`unitStatSources`／`unitStates`／`unitStateStats`投影实际来源与原生状态。玩家已有总属性包含状态来源，公共查询不再次叠加。非玩家药剂来源按列表实际内容参与，不以佣兵身份作为数值查询开关；复制层从公共查询读取，不维护另一份状态集合。技能列表移除仍由原帧事件完成，不能按查询时刻提前丢弃仍投递的原始列表。原生身份回收通过`effects::System::collectEntityReferences`汇集实际列表、独立单位事件注册、毒伤／伤口来源与信用、装备光环计时器及专用延迟效果引用；`CombatEffectSet::collectEntityReferences`不按到期时间过滤，实际撤列表／注销回调后才允许释放来源映射。实例仍在执行或可靠输出未排空时不回收；保留映射不会重新创建已撤出的来源实体。该回收路径尚未运行验证。
 
 接收资格分开处理：`NativeMonsterStateTarget::acceptsCurseList`表达D2MOO `SKILLS/Skills.cpp::sub_6FD10EC0`的原UNIT_MONSTER检查，即MonStats.npc为假且MonStats2.isAtt为真；名称中的Curse来自原结构，该入口也被Enchant调用，并非仅用于负面诅咒。NoAura、技能filter、敌我／队伍／主人、死亡与技能专用AI条件分别检查；Necro部分程序的mA1条件继续保留。不能以isAtt替代mA1，也不能把“可作为原生状态接收者”等同于“敌对怪物”。这些值由hosting从当前MPQ准备，玩法不读取资源。自然怪物、佣兵、死灵／亚马逊／刺客召唤物、Hydra通过公共状态规则准备入口读取资格。
+
+`skills::System::collectEntityReferences`补充释放队列、当前施法／已用技能来源、延迟传播及德鲁伊ActiveState计时器payload中的充能源物品身份，也识别PD2装备事件延迟目标。弹体域保留引导、命中、信用、充能来源及骨墙／狂犬病／FoH等已明确含实体的参数槽；休眠物件保留旧身份和门户拥有者。效果域另按实际PeriodicStats及PD2命中间隔事件识别custom ID来源，保留有符号字段中的原32位身份位型，排除PD2的-1共享键。通用帧队列不将任意payload、坐标或技能编号猜作实体引用。各域根集合与实例／连接投影合并后再回收，待测条件见[世界生命周期](../../development/ORIGINAL_GAPS.md#后续验证需要覆盖的边界)。
 
 | 单位 | 当前承载 | 边界 |
 | --- | --- | --- |

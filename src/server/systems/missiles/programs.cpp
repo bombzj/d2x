@@ -131,7 +131,7 @@ System::Advance System::advance(const Missile &sourceMissile,TickContext tick) c
     const auto &area=ports_.areas.at(m.area);
     Spawn source{{m.player,m.playerActor,m.area,m.generation,0,m.created},m.skill,m.collision,{},true,m.emitter,m.emitterType,{}};
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    const auto enemy = [&](const auto &target) { return target.life>0 && participants.canHarm(m.owner,target.id) && target.area==m.area; };
+    const auto enemy = [&](const auto &target) { return target.alive() && target.life>0 && participants.canHarm(m.owner,target.id) && target.area==m.area; };
     const auto child = [&](Vec at, Vec direction, int id, int frames, float speed, Program program,bool fresh=false,ChildSetup setup={}) -> Missile & {
         return planChild(plan,source,at,direction,id,frames,speed,program,fresh && owner && m.owner==owner->actor,std::move(setup));
     };
@@ -329,14 +329,14 @@ System::Advance System::advance(const Missile &sourceMissile,TickContext tick) c
             for(const auto &[fraction,id]:contacts) {
                 targets.push_back(id);m.lastHit=id;
                 if(m.program==Program::Arc && (m.skill.effect==SkillBehavior::ChainLightning || (m.skill.weapon && m.skill.weapon->spear && m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike))) {
-                    const Vec at=next;std::vector<uint64_t> eligible;
+                    const Vec at=next;std::vector<EntityId> eligible;
                     if(m.remainingHits>1) for(const auto candidate:nearbyUnits(m)) {
                         const auto point=unitPosition(m,candidate);
                         if(!point || !participants.canHarm(m.owner,candidate) || candidate==id || !missileHitAllowed(m,candidate) ||
                             !radius(at,*point,m.skill.arc->range) || !area.definition.collision.missileSegment(at,*point,{4,1})) continue;
-                        eligible.push_back(candidate.value);
+                        eligible.push_back(candidate);
                     }
-                    const EntityId successor{missileChainSuccessor(id.value,eligible)};
+                    const auto successor=nativeMissileSuccessor(eligible,id,ports_.ids.nativeIdentities());
                     if(successor) {
                         auto &c=child(cell(at),*unitPosition(m,successor)-cell(at),m.definition,m.lifetimeFrames,m.skill.missileVelocity,Program::Arc,true);
                         c.remainingHits=m.remainingHits-1;c.lastHit=id;
@@ -399,13 +399,13 @@ bool System::projectileImpact(Advance &plan,EntityId target) const {
     if(target && m.program==Program::Arc && (m.skill.effect==SkillBehavior::ChainLightning ||
         (m.skill.weapon && m.skill.weapon->spear && m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike))) {
         const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-        const auto &area=ports_.areas.at(m.area);std::vector<uint64_t> eligible;
+        const auto &area=ports_.areas.at(m.area);std::vector<EntityId> eligible;
         if(m.remainingHits>1) for(const auto id:nearbyUnits(m)) {
             const auto point=unitPosition(m,id);
             if(point && participants.canHarm(m.owner,id) && id!=target && missileHitAllowed(m,id) &&
-                radius(m.position,*point,m.skill.arc->range) && area.definition.collision.missileSegment(m.position,*point,{4,1})) eligible.push_back(id.value);
+                radius(m.position,*point,m.skill.arc->range) && area.definition.collision.missileSegment(m.position,*point,{4,1})) eligible.push_back(id);
         }
-        const EntityId next{missileChainSuccessor(target.value,eligible)};
+        const auto next=nativeMissileSuccessor(eligible,target,ports_.ids.nativeIdentities());
         if(next) {
             Spawn source{{m.player,m.playerActor,m.area,m.generation,0,m.created},m.skill,m.collision,{},true,m.emitter,m.emitterType,{}};
             auto &child=planChild(plan,source,cell(m.position),*unitPosition(m,next)-cell(m.position),m.definition,

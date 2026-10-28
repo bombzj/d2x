@@ -82,7 +82,7 @@ bool System::commitLife(LifeChange &&change) noexcept {
         if(change.modeAlive) unit.modeAlive=*change.modeAlive;
         refreshCollision(unit);
         if(change.random) unit.combatRandom=change.random->second;
-        if(unit.petRegistrationOrder && !unit.life && !unit.modeAlive) unit.inactivePet=true;
+        if(unit.petRegistrationOrder && !unit.alive()) unit.inactivePet=true;
         if(change.cureColdPoison) {unit.poison.reset();unit.chilledUntil=unit.frozenUntil=0;unit.shatterActive=false;}
         if(change.shatter) unit.shatterActive=*change.shatter;
         if(change.poison) unit.poison=*change.poison;
@@ -147,7 +147,7 @@ DomainResult<Actor> System::prepareDeathActor(EntityId id,uint64_t tick) const {
 DomainResult<Actor> System::prepareDeathActor(const Actor &current,uint64_t tick) const {
     const auto id=current.id;if(!current.alive()) return {DomainStatus::Applied,current};
     if(current.revision>UINT64_MAX-4 || current.interruption==UINT64_MAX) return {DomainStatus::Capacity,{}};
-    auto unit=current;unit.life=0;unit.modeAlive=false;unit.deathTick=tick;unit.deathOccurrence=0;
+    auto unit=current;unit.life=0;unit.modeAlive=false;unit.deathMode=true;unit.deathTick=tick;unit.deathOccurrence=0;
     if(unit.petRegistrationOrder) unit.inactivePet=true;
     if(unit.questNpc || unit.rule.environmentController) unit.rewardComplete=!pd2ControllerDeath(unit);
     unit.itemAuraTimers.clear();unit.poison.reset();unit.wound.reset();
@@ -252,14 +252,14 @@ DomainResult<> System::finishTrap(EntityId id,uint64_t tick) {
     return scriptDeath(id,tick);
 }
 DomainResult<> System::reduceShrineLife(EntityId id,int64_t amount) {
-    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.damageable() || found->second.life<=0 || amount<0 || amount>=found->second.life) return {DomainStatus::InvalidActor,{}};
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.alive() || !found->second.damageable() || found->second.life<=0 || amount<0 || amount>=found->second.life) return {DomainStatus::InvalidActor,{}};
     found->second.life-=amount;++found->second.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::upgradeShrine(EntityId id,uint64_t tick) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::Stale,{}};
     auto &actor=found->second;
     if(modifierPending_) return {DomainStatus::Conflict,{}};
-    if(!actor.enemyTarget() || actor.life<=0 || actor.identity.rank!=MonsterRank::Normal || !actor.rule.shrineEligible || !actor.rule.modifierChoices ||
+    if(!actor.enemyTarget() || !actor.alive() || actor.life<=0 || actor.identity.rank!=MonsterRank::Normal || !actor.rule.shrineEligible || !actor.rule.modifierChoices ||
         (actor.moving && actor.running) || actor.busyUntil>tick || actor.revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
     if(nextModifierToken_==UINT64_MAX) return {DomainStatus::Capacity,{}};
     ModifierPreparation request;request.token=nextModifierToken_;request.tick=tick;request.area=actor.area;
@@ -273,7 +273,7 @@ DomainResult<> System::upgradeShrine(EntityId id,uint64_t tick) {
     std::vector<EntityId> minions;
     for(const auto otherId:actor.nativeMinions) {
         const auto *minion=find(otherId);
-        if(!minion || otherId==id || minion->area!=actor.area || minion->life<=0 || !minion->enemyTarget() || minionOwner(otherId)!=id) continue;
+        if(!minion || otherId==id || minion->area!=actor.area || !minion->alive() || minion->life<=0 || !minion->enemyTarget() || minionOwner(otherId)!=id) continue;
         minions.push_back(otherId);
     }
     return prepareBirthModifiers(id,request.leader.identity.rank,std::move(request.selection.ids),minions,tick,

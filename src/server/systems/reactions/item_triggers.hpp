@@ -48,6 +48,7 @@ class ItemTriggers {
     ItemTriggers(const ItemTriggers &) = delete;
     ItemTriggers &operator=(const ItemTriggers &) = delete;
     size_t pending() const;
+    bool involves(EntityId) const;
     const std::string &deferred() const { return deferred_; }
     DomainResult<ItemEventPlan> prepare(const ActorContext &, std::initializer_list<ItemSkillEvent>, EntityId, Vec,const StatSnapshot *weaponStats=nullptr) const;
     void commit(ItemEventPlan plan, bool terminal) noexcept;

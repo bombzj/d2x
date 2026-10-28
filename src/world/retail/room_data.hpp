@@ -18,4 +18,6 @@ struct RetailOutdoorRoomData {
 RetailOutdoorRoomData buildRetailOutdoorRoomData(TileLibraryCache &, const WorldCatalog &,
     const LevelRecord &, const RetailRoom &, const RetailDirtPaths &, const RetailPatternReader &,
     const RetailPresetScan &, std::shared_ptr<RetailTileSelector> libraries = {});
+RetailOutdoorRoomData buildRetailOutdoorRoomData(const WorldCatalog &,const LevelRecord &,const RetailRoom &,
+    const RetailDirtPaths &,const RetailPatternReader &,const RetailPresetScan &,std::shared_ptr<RetailTileSelector>);
 } // namespace d2x

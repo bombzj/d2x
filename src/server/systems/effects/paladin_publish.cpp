@@ -213,6 +213,7 @@ void System::publishAuraUnits(AuraUnitPublication &plan) noexcept {
             if(life.changed) {
                 const auto alignment=staged->alignment();
                 staged->life=life.life.raw();staged->maximumLife=life.maximum.raw();staged->nativeStats=std::move(life.intrinsic);++staged->revision;
+                if(life.modeAlive) staged->modeAlive=*life.modeAlive;
                 if(life.cureColdPoison) {staged->poison.reset();staged->chilledUntil=staged->frozenUntil=0;staged->shatterActive=false;}
                 if(life.poison) staged->poison=*life.poison;
                 if(life.wound) staged->wound=*life.wound;
@@ -227,7 +228,7 @@ void System::publishAuraUnits(AuraUnitPublication &plan) noexcept {
                 if(life.periodicEvents) publishPeriodicEvents(*life.periodicEvents);
                 if(life.curseControl) {
                     if(life.reselectAi || (staged->curseControl.ai!=life.curseControl->ai && staged->curseControl.ai!=CurseAi::Confuse && life.curseControl->ai!=CurseAi::Confuse && staged->curseControl.ai!=CurseAi::Attract && life.curseControl->ai!=CurseAi::Attract)) {
-                        ++staged->aiFunctionRevision;staged->aiThinkAt=0;
+                        ++staged->aiFunctionRevision;staged->aiThinkAt=0;staged->whippedAi=false;
                     }
                     staged->curseControl=*life.curseControl;
                 }

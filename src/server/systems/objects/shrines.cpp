@@ -58,7 +58,7 @@ DomainResult<> System::specialShrine(const ActorContext &actor,Object &object) {
     if(rule.code==20) {
         const auto &area=ports_.areas.at(object.area);EntityId selected;float distance=std::numeric_limits<float>::max();
         for(const auto &[id,m]:ports_.monsters.read().actors) {
-            if(m.area!=object.area || !m.enemyTarget() || m.life<=0 || m.identity.rank!=MonsterRank::Normal || !m.rule.shrineEligible || !m.rule.modifierChoices ||
+            if(m.area!=object.area || !m.enemyTarget() || !m.alive() || m.life<=0 || m.identity.rank!=MonsterRank::Normal || !m.rule.shrineEligible || !m.rule.modifierChoices ||
                 (m.moving && m.running) || m.busyUntil>actor.tick || !area.definition.activation.nearby(object.position,m.position)) continue;
             const auto delta=m.position-player->position;const auto candidate=delta.x*delta.x+delta.y*delta.y;
             if(candidate<distance) {selected=id;distance=candidate;}

@@ -153,7 +153,7 @@ DomainResult<> System::modifierEvent(const FrameEvent &event,uint64_t tick,
         auto candidate=*unit;attributes::MonsterResourceTrace resources(candidate,tick);
         resources.sampleSources(ports_.effects.unitStatSources(unit->id,tick));resources.seedLife(resources.read().maximum);
         auto life=resources.take();candidate.nativeStats=std::move(life.intrinsic);
-        candidate.life=life.life.raw();candidate.maximumLife=life.maximum.raw();candidate.modeAlive=false;
+        candidate.life=life.life.raw();candidate.maximumLife=life.maximum.raw();candidate.modeAlive=false;candidate.deathMode=false;
         // UMod34 clears the NOXP | NOTC flags installed by ResurrectUnit.
         candidate.rule.noTreasure=candidate.rule.noExperience=false;candidate.rewardComplete=false;
         candidate.targetFlagsDisabled=true;

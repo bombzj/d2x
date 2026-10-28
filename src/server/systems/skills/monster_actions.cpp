@@ -343,7 +343,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
             const auto low=values.calculation(FormulaDomain::Skill,request.skill,slot.rank,"calc1");
             const auto high=values.calculation(FormulaDomain::Skill,request.skill,slot.rank,"calc2");
             if(!low || !high) return {DomainStatus::Unavailable,{}};
-            auto seed=initialRandom(uint32_t(monster->id.value+target->id.value));
+            auto seed=initialRandom(ports_.monsters.nativeIdentities().guid(monster->id)+ports_.monsters.nativeIdentities().guid(target->id));
             release.mosquitoLoops=std::max(1,nativeAdd(*low,int(limitedRandom(seed,uint32_t(nativeSubtract(*high,*low))))));
         }
         if((monster->assassinPet || slot.action==MonsterAttackRule::Action::Inferno) &&
@@ -600,7 +600,7 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
                     if(victim.id!=unit.id && candidate<distance && participants.canHarm(source->id,victim.id)) {distance=candidate;nearby=victim;}
                 };
                 for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==pending.area && p.persistent.player.hp>0) consider({p.actor,0,0},p.position,2);}
-                for(const auto &[key,m]:ports_.monsters.read().actors) if(m.area==pending.area && m.life>0) consider({key,0,1},m.position,m.rule.size);
+                for(const auto &[key,m]:ports_.monsters.read().actors) if(m.area==pending.area && m.alive()) consider({key,0,1},m.position,m.rule.size);
                 if(!nearby) {it=monsterReleases_.erase(it);continue;}
                 unit=*nearby;
             }

@@ -24,7 +24,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::preparePd2RoyalFir
         return {DomainStatus::InvalidActor,{}};
     const auto previous=runtime_->pd2PathSeeds.find(request.owner);
     const uint32_t expected=previous==runtime_->pd2PathSeeds.end()?0:previous->second;
-    const uint32_t seed=pd2MissilePathSeed(expected,monster?1:0,uint32_t(request.owner.value));
+    const uint32_t seed=pd2MissilePathSeed(expected,monster?1:0,ports_.ids.nativeIdentities().guid(request.owner));
     const auto ownerRandom=monster?monster->combatRandom:player->combatRandom;
     auto random=initialRandom(seed);
     auto center=Vec{std::floor(request.position.x)+.5f,std::floor(request.position.y)+.5f};

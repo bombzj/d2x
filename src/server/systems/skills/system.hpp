@@ -120,6 +120,7 @@ class System {
     System(const System &)=delete;
     System &operator=(const System &)=delete;
     const State &read() const { return state_; }
+    void collectEntityReferences(std::set<EntityId> &) const;
     void cancel(PlayerId, EntityId);
     DomainResult<> ejectImp(EntityId carrier,uint64_t tick);
     void interrupt(const ActorContext &);

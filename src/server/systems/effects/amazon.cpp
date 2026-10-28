@@ -186,7 +186,7 @@ DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec
     const auto &program=*skill.amazonMagic;auto next=units_;auto nextPlayers=state_.players;
     std::vector<transactions::Change> changes;
     const auto *pet=emitter?ports_.monsters.find(*emitter):nullptr;
-    if(emitter && (!pet || !pet->hireling || pet->owner!=actor.player || pet->area!=actor.area || pet->life<=0 || skill.manaCost || skill.charge)) return {DomainStatus::InvalidActor,{}};
+    if(emitter && (!pet || !pet->hireling || pet->owner!=actor.player || pet->area!=actor.area || !pet->alive() || pet->life<=0 || skill.manaCost || skill.charge)) return {DomainStatus::InvalidActor,{}};
     const EntityId source=pet?pet->id:actor.actor;
     auto units=std::make_shared<AuraUnitPublication>();
     transactions::CharacterEdit debit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;

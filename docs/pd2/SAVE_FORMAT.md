@@ -6,6 +6,8 @@ PD2本地角色的原生格式、隔离目录、读写校验与拒绝边界。�
 
 ## 原生存档：格式与边界
 
+JM编解码主体位于`gameplay/items/native_save`，内容层准备不可变基底／位宽规则，persistence保留原接口包装；PD2格式选择与饱和helper位于`gameplay/items/pd2/save_encoding`，旧content头转发同一实现。世界休眠显式允许地面坐标和金币，角色存档默认仍拒绝地面物品，不改变v96布局或旧档迁移策略。地面休眠中字段截断后的属性由宿主重新准备，不沿用截断前缓存；具体生命周期见[人口恢复](../gameplay/monsters/POPULATION.md#公共出生压缩与特殊恢复)。
+
 来源：[docs/modules/SAVES.md](../modules/SAVES.md)。
 
 自有PD2城镇宿主沿用原生PD2 D2S：v96头、固定段、校验和、Skills最大职业行数及原JM／jf／kf结构，默认目录`saves/pd2`。不写D2X私有标记，也不把原生档转成私有格式；此前带`D2XPD2`头标记的试验档明确拒绝，须使用原生角色副本或重新建角，不静默迁移。原版与PD2目录、资源配置保持隔离，载入仍须通过完整内容与边界校验。

@@ -76,6 +76,13 @@ StepStatus System::fetishShamanAction(EntityId id,std::optional<UnitTarget> targ
 StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, int size, TickContext tick, Controller &controller,int continuation) {
     const auto &monster = *ports_.monsters.find(id);
     const auto &area = ports_.areas.at(monster.area);
+    Vec home=monster.home;
+    if(monster.rule.ai.kind==MonsterAiKind::BloodRaven ||
+        (monster.identity.rank==MonsterRank::SuperUnique && monster.rule.superUniqueIndex==6)) {
+        const auto command=ports_.monsters.ensureAiHomeCommand(id);
+        if(!command) return isDeferred(command.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+        home=*command.value-area.definition.origin;
+    }
     const auto distance = meleeDistance(monster.position, monster.rule.size, position, size);
     const bool clear = area.definition.collision.missileSegment(monster.position,position,{4,1});
     if (monster.rule.ai.kind == MonsterAiKind::Fallen) {
@@ -146,10 +153,10 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     int firewallPhase=controller.phase;
     if(monster.rule.ai.kind==MonsterAiKind::Countess && firewallPhase>=int(monster.skillPositions.size()) && tick.tick-controller.firewallCycle>700) firewallPhase=0;
     if(hasBossDecision(monster.rule.ai.kind)) {
-        const auto *homeRoom=area.definition.activation.room(monster.home);
+        const auto *homeRoom=area.definition.activation.room(home);
         const auto *monsterRoom=area.definition.activation.room(monster.position);
         const auto *targetRoom=area.definition.activation.room(position);
-        boss=decideBossMonster(monster.rule.ai,{input,monsterAiDistance(monster.home,0,monster.position),monsterAiDistance(monster.home,0,position),controller.summonChance,homeRoom==monsterRoom,firewallPhase<int(monster.skillPositions.size()),homeRoom==targetRoom});
+        boss=decideBossMonster(monster.rule.ai,{input,monsterAiDistance(home,0,monster.position),monsterAiDistance(home,0,position),controller.summonChance,homeRoom==monsterRoom,firewallPhase<int(monster.skillPositions.size()),homeRoom==targetRoom});
     }
     auto decision = boss?std::optional{boss->action}:monster.rule.ai.kind==MonsterAiKind::FallenShaman?std::optional{decideFallenShaman(monster.rule.ai,input,bool(corpse),corpse && monster.rule.skillIds[0] && ports_.monsters.resurrectionPlacement(corpse->id))}:
         hasRangedDecision(monster.rule.ai.kind)?decideRangedMonster(monster.rule.ai,input):hasSpecialDecision(monster.rule.ai.kind)?decideSpecialMonster(monster.rule.ai,input):decideMeleeMonster(monster.rule.ai,input);
@@ -253,7 +260,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
                 const Vec goal = monsterRadiusApproachPoint(monster.position, monster.rule.size, position, decision->approachRadius,decision->targetDistance);
                 controller.pursuing = bool(ports_.monsters.requestMove({id, {monster.area, area.generation, goal}, {}, 0, decision->velocityPercent, decision->running,decision->pathSteps}));
                 if(!controller.pursuing && (monster.rule.ai.kind==MonsterAiKind::Wraith || monster.rule.ai.kind==MonsterAiKind::SkeletonBow)) decision->waitFrames=10;
-            } else if(boss && boss->returnHome) controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,monster.home},{},0,decision->velocityPercent,decision->running}));
+            } else if(boss && boss->returnHome) controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,home},{},0,decision->velocityPercent,decision->running}));
             else controller.pursuing = bool(ports_.monsters.requestMove({id,{monster.area,area.generation,actionPosition},actionTarget.id,decision->stopDistance,decision->velocityPercent,decision->running,decision->pathSteps,0,0,13,uint8_t(decision->pathDistance)}));
             if(!controller.pursuing && ((monster.rule.ai.kind==MonsterAiKind::FlyingScimitar && !decision->approachRadius) || monster.rule.ai.kind==MonsterAiKind::Smith || monster.rule.ai.kind==MonsterAiKind::DoomKnight || monster.rule.ai.kind==MonsterAiKind::ThornHulk || monster.rule.ai.kind==MonsterAiKind::Vampire || monster.rule.ai.kind==MonsterAiKind::Skeleton || monster.rule.ai.kind==MonsterAiKind::Goatman || monster.rule.ai.kind==MonsterAiKind::Brute || (monster.rule.ai.kind==MonsterAiKind::Bighead && input.lifePercent>=monster.rule.ai.params[0]) ||
                 (monster.rule.ai.kind==MonsterAiKind::Fallen && !input.commanded && !input.retaliating) ||
@@ -303,6 +310,6 @@ void System::commandParty(const monsters::Actor &leader) {
         return;
     }
     for(const auto &[id,minion]:ports_.monsters.read().actors)
-        if(minion.life>0 && minion.area==leader.area && ports_.monsters.minionOwner(id)==leader.id) deliver(minion,false);
+        if(minion.alive() && minion.area==leader.area && ports_.monsters.minionOwner(id)==leader.id) deliver(minion,false);
 }
 }

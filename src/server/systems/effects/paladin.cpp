@@ -134,7 +134,7 @@ void System::prepareImmediateAuraUnit(AuraUnitPublication &plan,const ActorConte
         if(staged!=plan.actors->actors.end()) candidate=&staged->second;
     }
     const auto *live=candidate?candidate:ports_.monsters.find(id);
-    const bool alive=live && (borrowed?(borrowed->read().life.raw()>0 || live->modeAlive):live->alive());
+    const bool alive=live && !live->deathMode && (borrowed?(borrowed->read().life.raw()>0 || live->modeAlive):live->alive());
     if(!alive || (!owner && live->rule.noAura) || !live->rule.stateTarget.acceptsCurseList()) return;
     if(!live->rule.stats || !live->rule.formulas || !live->nativeStats || !live->nativeStats->sources || !a.targetWrites || a.serverDoFunction!=65)
         throw std::runtime_error("Missing native immediate aura monster sources");

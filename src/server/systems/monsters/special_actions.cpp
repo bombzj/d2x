@@ -336,13 +336,13 @@ DomainResult<> System::lightningEmission(EntityId id,bool emitted,uint64_t tick)
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::introduction(EntityId id,uint64_t tick) {
-    const auto *actor=find(id);if(!actor || actor->life<=0) return {DomainStatus::InvalidActor,{}};
+    const auto *actor=find(id);if(!actor || !actor->alive()) return {DomainStatus::InvalidActor,{}};
     if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor->area},{SoundFact{id,1,actor->area,16}}})) return {DomainStatus::Capacity,{}};
     stop(id);return beginAttack(id,tick+20,true);
 }
 bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const {
     const auto *caster=find(source),*dead=find(corpse);
-    if(!caster || !dead || source==corpse || caster->life<=0 || dead->life>0 || dead->owner || !dead->rule.corpseSelectable ||
+    if(!caster || !dead || source==corpse || !caster->alive() || dead->alive() || dead->owner || !dead->rule.corpseSelectable ||
         dead->corpse.unavailable || dead->corpse.searched || tick<dead->busyUntil || !dead->rewardComplete || dead->area!=caster->area) return false;
     if(caster->rule.ai.kind==MonsterAiKind::GreaterMummy) return mummySupportTarget(source,corpse,tick,true);
     if(caster->rule.ai.kind==MonsterAiKind::FetishShaman) {
@@ -380,7 +380,7 @@ bool System::resurrectionPlacement(EntityId corpse) const {
     const auto *actor=find(corpse);if(!actor) return false;
     const auto &grid=ports_.areas.at(actor->area).definition.collision;
     if(!grid.walkable(actor->position,actor->rule.collision)) return false;
-    for(const auto &[id,other]:state_.actors) if(id!=corpse && other.area==actor->area && other.life>0 && (actor->position-other.position).length()<1.f) return false;
+    for(const auto &[id,other]:state_.actors) if(id!=corpse && other.area==actor->area && other.alive() && (actor->position-other.position).length()<1.f) return false;
     for(const auto &[id,p]:ports_.players.all()) { (void)id;if(p.entered && p.area==actor->area && p.persistent.player.hp>0 && (actor->position-p.position).length()<1.f) return false; }
     return true;
 }
@@ -389,7 +389,7 @@ DomainResult<> System::resurrect(EntityId source,EntityId corpse,uint64_t tick) 
     auto &actor=state_.actors.at(corpse);
     // SrvDo097 restores HP and enters the resurrection mode. It does not
     // generate MonsterMsg's UPGRLIFENHITCLASS soft-hit notification.
-    actor.life=actor.maximumLife;actor.chilledUntil=actor.frozenUntil=0;actor.shatterActive=false;actor.corpse={};actor.poison.reset();
+    actor.life=actor.maximumLife;actor.deathMode=false;actor.chilledUntil=actor.frozenUntil=0;actor.shatterActive=false;actor.corpse={};actor.poison.reset();
     refreshCollision(actor);
     actor.riseUntil=actor.busyUntil=tick+uint64_t(actor.rule.resurrectionTicks);actor.riseMode=actor.rule.resurrectionMode;
     actor.neutralAt=actor.riseUntil;
@@ -675,7 +675,7 @@ std::optional<Vec> System::nestBirthPoint(EntityId id,Vec origin,uint64_t &rando
         if(x==-radius && y<radius) ++y;else if(y==radius && x<radius) ++x;else if(x==radius && y>-radius) --y;else --x;
         if(!grid.walkable(point,child.rule.spawnCollision)) continue;
         bool occupied=false;
-        for(const auto &[key,actor]:state_.actors) { (void)key;if(actor.area==nest.area && actor.life>0 && (point-actor.position).length()<1.f) {occupied=true;break;} }
+        for(const auto &[key,actor]:state_.actors) { (void)key;if(actor.area==nest.area && actor.alive() && (point-actor.position).length()<1.f) {occupied=true;break;} }
         for(const auto &[key,p]:ports_.players.all()) { (void)key;if(p.entered && p.area==nest.area && p.persistent.player.hp>0 && (point-p.position).length()<1.f) {occupied=true;break;} }
         if(occupied) continue;
         return point;
@@ -707,7 +707,7 @@ DomainResult<> System::activateWeb(EntityId id,int skill,int rank,uint64_t tick)
     ports_.effects.publishAuraUnits(plan);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::heal(EntityId id,int64_t amount) {
-    auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || amount<0) return {DomainStatus::InvalidActor,{}};
+    auto it=state_.actors.find(id);if(it==state_.actors.end() || !it->second.alive() || amount<0) return {DomainStatus::InvalidActor,{}};
     auto &actor=it->second;actor.life=std::min(actor.maximumLife,actor.life+amount);++actor.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
@@ -734,7 +734,7 @@ DomainResult<> System::convert(EntityId id,const ActorContext &actor,const Nativ
     std::optional<ConversionResourceSave> saved,std::vector<DomainFact> facts) {
     auto it=state_.actors.find(id);const auto *p=ports_.players.find(actor.player);
     const auto *source=find(actor.actor);const auto origin=source?source->position:p?p->position:Vec{};
-    if(it==state_.actors.end() || !p || !p->rules.skills || (skill.procedure==NativeConversionProcedure::Paladin && !it->second.rule.convertible) || it->second.owner || it->second.alignment()!=UnitAlignment::Evil || it->second.life<=0 ||
+    if(it==state_.actors.end() || !p || !p->rules.skills || (skill.procedure==NativeConversionProcedure::Paladin && !it->second.rule.convertible) || it->second.owner || it->second.alignment()!=UnitAlignment::Evil || !it->second.alive() ||
        it->second.identity.rank==MonsterRank::Unique || it->second.identity.rank==MonsterRank::SuperUnique ||
        (it->second.area!=actor.area && (skill.procedure!=NativeConversionProcedure::MindBlast || !ports_.areas.nearby(actor.area,origin,it->second.area,it->second.position))))
         return {DomainStatus::InvalidRequest,{}};
@@ -788,7 +788,7 @@ DomainResult<> System::teleport(EntityId id,Vec point,uint64_t tick,int heal,boo
     return teleport(id,PointTarget{source->area,ports_.areas.at(source->area).generation,point},tick,heal,nativeFreePosition);
 }
 DomainResult<> System::teleport(EntityId id,PointTarget target,uint64_t tick,int heal,bool nativeFreePosition) {
-    auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
+    auto it=state_.actors.find(id);if(it==state_.actors.end() || !it->second.alive()) return {DomainStatus::InvalidActor,{}};
     auto &m=it->second;const auto *destination=ports_.areas.find(target.area);
     const auto &source=ports_.areas.at(m.area);
     if(!destination || destination->generation!=target.generation || destination->provisionalPd2Map ||

@@ -46,9 +46,9 @@ DomainResult<> System::nativeTeleport(EntityId id,Vec point,uint64_t tick,const 
     return {DomainStatus::Applied,std::monostate{}};
 }
 bool System::canLand(EntityId source) const {
-    const auto *actor=find(source);if(!actor || actor->life<=0) return false;
+    const auto *actor=find(source);if(!actor || !actor->alive() || actor->life<=0) return false;
     if(!ports_.areas.at(actor->area).definition.collision.walkable(actor->position,actor->rule.spawnCollision)) return false;
-    for(const auto &[id,other]:state_.actors) if(id!=source && other.life>0 && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && other.area==actor->area && meleeDistance(actor->position,actor->rule.size,other.position,other.rule.size)<=0) return false;
+    for(const auto &[id,other]:state_.actors) if(id!=source && other.alive() && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && other.area==actor->area && meleeDistance(actor->position,actor->rule.size,other.position,other.rule.size)<=0) return false;
     for(const auto &[id,player]:ports_.players.all()) {
         (void)id;if(player.entered && player.area==actor->area && player.persistent.player.hp>0 && meleeDistance(actor->position,actor->rule.size,player.position,2)<=0) return false;
     }
@@ -93,7 +93,7 @@ DomainResult<> System::aiPose(EntityId source,uint8_t mode,bool hold,bool airbor
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::aiColor(EntityId source,int color,int overlay,uint64_t tick) {
-    auto found=state_.actors.find(source);if(found==state_.actors.end() || found->second.life<=0) return {DomainStatus::InvalidActor,{}};
+    auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive() || found->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;
     if(color<0 || color>2 || actor.rule.blueState<0 || actor.rule.redState<0 || overlay>UINT16_MAX) return {DomainStatus::InvalidRequest,{}};
     auto states=actor.aiStates;states.erase(actor.rule.blueState);states.erase(actor.rule.redState);
@@ -128,7 +128,7 @@ void System::beginHatch(EntityId id) {
 }
 bool System::mummySupportTarget(EntityId source,EntityId target,uint64_t tick,bool dead,bool healthy) const {
     const auto *caster=find(source),*other=find(target);
-    if(!caster || !other || source==target || caster->life<=0 || caster->rule.ai.kind!=MonsterAiKind::GreaterMummy ||
+    if(!caster || !other || source==target || !caster->alive() || caster->life<=0 || caster->rule.ai.kind!=MonsterAiKind::GreaterMummy ||
        other->area!=caster->area || other->targetFlagsDisabled || other->hatching ||
        !sameAlignment(caster->alignment(),other->alignment()) || other->alignment()==UnitAlignment::Good) return false;
     // Fn022: ordinary greater mummies support lUndead; Radament supports both
@@ -171,7 +171,7 @@ DomainResult<> System::spawnSkillChildren(EntityId source,Vec target,int count,b
             if(birthStatus!=DomainStatus::Applied) return false;
             if(!grid.walkable(point,child.rule.spawnCollision)) return false;
             bool occupied=false;
-            for(const auto &[id,other]:state_.actors) if(id!=source && other.area==parent.area && other.life>0 && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && meleeDistance(point,child.rule.size,other.position,other.rule.size)<=0) {occupied=true;break;}
+            for(const auto &[id,other]:state_.actors) if(id!=source && other.area==parent.area && other.alive() && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && meleeDistance(point,child.rule.size,other.position,other.rule.size)<=0) {occupied=true;break;}
             for(const auto &[id,other]:candidates) if(meleeDistance(point,child.rule.size,other.position,other.rule.size)<=0) {occupied=true;break;}
             for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==parent.area && p.persistent.player.hp>0 && meleeDistance(point,child.rule.size,p.position,2)<=0) occupied=true;}
             if(occupied) return false;
@@ -238,12 +238,12 @@ DomainResult<> System::spawnSkillChildren(EntityId source,Vec target,int count,b
     return hatch || !execution.children.empty()?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{DomainStatus::Unavailable,{}};
 }
 DomainResult<> System::burrow(EntityId source,bool below,uint64_t tick) {
-    auto found=state_.actors.find(source);if(found==state_.actors.end() || found->second.life<=0) return {DomainStatus::InvalidActor,{}};
+    auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive() || found->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;
     if(!below) {
         const auto &grid=ports_.areas.at(actor.area).definition.collision;
         if(!grid.walkable(actor.position,actor.rule.spawnCollision)) return {DomainStatus::Unavailable,{}};
-        for(const auto &[id,other]:state_.actors) if(id!=source && other.life>0 && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && other.area==actor.area && meleeDistance(actor.position,actor.rule.size,other.position,other.rule.size)<=0) return {DomainStatus::Unavailable,{}};
+        for(const auto &[id,other]:state_.actors) if(id!=source && other.alive() && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && other.area==actor.area && meleeDistance(actor.position,actor.rule.size,other.position,other.rule.size)<=0) return {DomainStatus::Unavailable,{}};
         for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==actor.area && p.persistent.player.hp>0 && meleeDistance(actor.position,actor.rule.size,p.position,2)<=0) return {DomainStatus::Unavailable,{}};}
     }
     (void)tick;stop(source);actor.burrowed=below;refreshCollision(actor);
@@ -253,7 +253,7 @@ DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t unti
     auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive() || until<=tick) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;const auto &grid=ports_.areas.at(actor.area).definition.collision;
     const auto occupied=[&](Vec point) {
-        for(const auto &[id,other]:state_.actors) if(id!=source && other.area==actor.area && other.life>0 && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && meleeDistance(point,actor.rule.size,other.position,other.rule.size)<=0) return true;
+        for(const auto &[id,other]:state_.actors) if(id!=source && other.area==actor.area && other.alive() && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && meleeDistance(point,actor.rule.size,other.position,other.rule.size)<=0) return true;
         for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==actor.area && p.persistent.player.hp>0 && meleeDistance(point,actor.rule.size,p.position,2)<=0) return true;}
         return false;
     };
@@ -283,7 +283,7 @@ DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t unti
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::startSwarmMove(EntityId source,Vec target,uint64_t tick) {
-    auto found=state_.actors.find(source);if(found==state_.actors.end() || found->second.life<=0) return {DomainStatus::InvalidActor,{}};
+    auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive() || found->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;const auto &grid=ports_.areas.at(actor.area).definition.collision;
     auto path=grid.path(actor.position,target,true,actor.rule.collision);
     if(path.empty()) return {DomainStatus::Unavailable,{}};

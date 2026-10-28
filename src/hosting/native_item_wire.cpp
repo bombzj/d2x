@@ -232,6 +232,66 @@ ContainerKind kind(const PersistentCharacter &state, const std::optional<ItemLoc
     return state.inventory.containers.at(position->container).spec.kind;
 }
 }
+namespace {
+void nativeItemIdentity(ItemInstance &item,const hosting::NativeIdentityView &ids) {
+    item.id={ids.guid(item.id,4)};
+    if(auto *socket=std::get_if<SocketLocation>(&item.location)) socket->host={ids.guid(socket->host,4)};
+    for(auto &child:item.socketedItems) nativeItemIdentity(child,ids);
+}
+}
+PersistentCharacter nativeInventoryIdentity(PersistentCharacter value,const hosting::NativeIdentityView &ids,uint8_t ownerType) {
+    const auto owner=value.player.id;
+    value.player.id={ids.guid(owner,ownerType)};
+    for(auto &hotkey:value.player.skillHotkeys) if(hotkey.owner!=UINT32_MAX) hotkey.owner=ids.guid(EntityId{hotkey.owner},4);
+    for(auto &source:value.player.selectedSkillOwners) if(source!=UINT32_MAX) source=ids.guid(EntityId{source},4);
+    for(auto &[id,container]:value.inventory.containers) {
+        (void)id;
+        if(container.spec.owner==owner) container.spec.owner=value.player.id;
+        if(container.registeredWeapon) container.registeredWeapon={ids.guid(container.registeredWeapon,4)};
+    }
+    std::map<EntityId,ItemInstance> items;
+    for(auto &[id,item]:value.inventory.items) {(void)id;nativeItemIdentity(item,ids);items.emplace(item.id,std::move(item));}
+    value.inventory.items=std::move(items);
+    for(auto &id:value.inventory.itemOrder) id={ids.guid(id,4)};
+    return value;
+}
+std::vector<Bytes> nativeShopItems(const ClassicData &data,const PersistentCharacter &value,const hosting::NativeIdentityView &ids) {
+    return nativeShopItems(data,nativeInventoryIdentity(value,ids,1));
+}
+std::vector<Bytes> nativeCorpseEquipment(const ClassicData &data,PersistentCharacter value,const hosting::NativeIdentityView &ids) {
+    return nativeCorpseEquipment(data,nativeInventoryIdentity(std::move(value),ids));
+}
+Bytes nativeGroundItem(const ClassicData &data,const ItemInstance &source,Vec origin,GroundItemAction action,const hosting::NativeIdentityView &ids) {
+    auto item=source;nativeItemIdentity(item,ids);return nativeGroundItem(data,item,origin,action);
+}
+std::vector<Bytes> nativeMonsterEquipment(const ClassicData &data,PersistentCharacter value,EntityId owner,bool hide,const hosting::NativeIdentityView &ids) {
+    value.player.id=owner;
+    return nativeMonsterEquipment(data,nativeInventoryIdentity(std::move(value),ids,1),EntityId{ids.guid(owner,1)},hide);
+}
+std::vector<Bytes> nativePublicEquipment(const ClassicData &data,const PersistentCharacter &value,const hosting::NativeIdentityView &ids) {
+    return nativePublicEquipment(data,nativeInventoryIdentity(value,ids));
+}
+std::vector<Bytes> nativePublicUnequip(const ClassicData &data,const PersistentCharacter &value,const ItemInstance &source,const hosting::NativeIdentityView &ids) {
+    auto item=source;nativeItemIdentity(item,ids);return nativePublicUnequip(data,nativeInventoryIdentity(value,ids),item);
+}
+std::vector<Bytes> nativeInventoryPackets(const ClassicData &data,const PersistentCharacter &value,const hosting::NativeIdentityView &ids) {
+    return nativeInventoryPackets(data,nativeInventoryIdentity(value,ids));
+}
+std::vector<Bytes> nativeInventoryDelta(const ClassicData &data,const server::InventoryFact &source,const hosting::NativeIdentityView &ids) {
+    auto value=source;value.projection=nativeInventoryIdentity(value.projection,ids);
+    for(auto &change:value.changes) {
+        change.item={ids.guid(change.item,4)};
+        for(auto *location:{&change.before,&change.after}) if(*location)
+            if(auto *socket=std::get_if<SocketLocation>(&**location)) socket->host={ids.guid(socket->host,4)};
+    }
+    for(auto &item:value.removedItems) nativeItemIdentity(item,ids);
+    return nativeInventoryDelta(data,value);
+}
+std::vector<Bytes> nativeTradeItems(const ClassicData &data,const server::TradeItemsFact &source,EntityId receiver,const hosting::NativeIdentityView &ids) {
+    auto value=source;value.projection=nativeInventoryIdentity(value.projection,ids);
+    for(auto &item:value.removed) nativeItemIdentity(item,ids);
+    return nativeTradeItems(data,value,EntityId{ids.guid(receiver,0)});
+}
 std::vector<Bytes> nativeCorpseEquipment(const ClassicData &data, PersistentCharacter projection) {
     std::vector<Bytes> result;
     for (auto &[id, item] : projection.inventory.items) {

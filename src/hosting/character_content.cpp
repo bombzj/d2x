@@ -54,6 +54,7 @@ std::shared_ptr<const server::EquipmentRules> prepareEquipmentRules(const Classi
     return equipment;
 }
 void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data, const PersistentCharacter &saved) {
+    rules.itemSave=data.nativeItemSave;
     rules.potions = std::make_shared<const server::PotionRules>(data.potions);
     auto character = std::make_shared<server::CharacterRules>();
     if(data.pd2Host) character->maps=pd2::prepareMapCatalog(data);

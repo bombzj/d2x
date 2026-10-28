@@ -177,7 +177,7 @@ DomainResult<> System::monsterAura(EntityId source,const AuraDefinition &a,Entit
         return apply({key,id,p.area,ports_.areas.at(p.area).generation,0,tick},std::move(spec));
     }
     const auto *target=ports_.monsters.find(id);
-    if(!target || target->area!=m->area || target->life<=0) return {DomainStatus::InvalidActor,{}};
+    if(!target || target->area!=m->area || !target->alive() || target->life<=0) return {DomainStatus::InvalidActor,{}};
     if(state.curse && target->rule.enchantment && target->rule.enchantment->has(38)) return {DomainStatus::Applied,std::monostate{}};
     if(a.skill==123) {
         const auto previous=stateModifiers(id,state.id,tick),existing=unitModifiers(id,tick);

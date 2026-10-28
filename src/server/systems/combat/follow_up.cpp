@@ -9,7 +9,7 @@ namespace d2x::server::combat {
 DomainStatus System::finishImpact(SpellImpact &impact,const PlayerState *owner,uint64_t generation,uint64_t tick) {
     if(owner && impact.source!=owner->actor) {
         const auto *pet=ports_.monsters.find(impact.source);
-        if(pet && pet->life>0 && (impact.lifeGain || impact.contactOverlay>=0 || impact.leechOverlay>=0)) {
+        if(pet && pet->alive() && pet->life>0 && (impact.lifeGain || impact.contactOverlay>=0 || impact.leechOverlay>=0)) {
             std::vector<DomainFact> visuals;
             if(impact.contactOverlay>=0) visuals.emplace_back(OverlayFact{impact.targets[impact.next],uint8_t(ports_.players.findActor(impact.targets[impact.next])?0:1),impact.area,impact.contactOverlay});
             if(impact.leechOverlay>=0 && impact.lifeGain) visuals.emplace_back(OverlayFact{impact.source,1,impact.area,impact.leechOverlay});

@@ -147,7 +147,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     actor.life = life;
     if(status.deferAction && !life) actor.modeAlive=true;
     if(delayDeath) {actor.modeAlive=true;actor.delayedDeathSource=status.source?status.source:source;actor.killer=source;}
-    else if(dead) {actor.modeAlive=false;actor.delayedDeathSource.reset();}
+    else if(dead) {actor.modeAlive=false;actor.deathMode=true;actor.delayedDeathSource.reset();}
     refreshCollision(actor);
     if(dead && actor.petRegistrationOrder) actor.inactivePet=true;
     ++actor.revision; if(amount>0 && !poisonOnly && !status.actionOnly) ++actor.damageOccurrence;
@@ -213,7 +213,7 @@ DomainResult<> System::finishDamageAction(EntityId id,EntityId source,int64_t am
     return damage(id,source,amount,tick,0,false,hitClass,{},false,0,{},0,false,0,0,softHit,{},getHit,status);
 }
 DomainResult<> System::block(EntityId id,uint64_t tick) {
-    auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
+    auto it=state_.actors.find(id);if(it==state_.actors.end() || !it->second.alive() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &actor=it->second;
     if(actor.rule.blockTicks>0) {
         const auto ended=ports_.effects.endMode(id,tick);if(!ended) return ended;
@@ -247,7 +247,7 @@ DomainResult<> System::holyFreeze(EntityId id,uint64_t until,uint64_t tick) {
 }
 void System::hitDelay(EntityId id, uint64_t until) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.nextHitTick = std::max(it->second.nextHitTick, until); }
 void System::knockback(EntityId id, Vec source, uint64_t tick) {
-    auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || it->second.owner || it->second.rule.knockbackTicks<=0) return;
+    auto it=state_.actors.find(id);if(it==state_.actors.end() || !it->second.alive() || it->second.life<=0 || it->second.owner || it->second.rule.knockbackTicks<=0) return;
     auto &m=it->second;stop(id);m.knockbackSource=source;m.knockbackGoal=knockbackDestination(m.position,source,3);
     m.knockedUntil=tick+uint64_t(m.rule.knockbackTicks);m.busyUntil=m.knockedUntil;m.neutralAt.reset();++m.hitOccurrence;++m.interruption;++m.revision;
 }

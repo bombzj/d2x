@@ -36,13 +36,14 @@ class NativeMapGenerator {
     // Global game-tile buckets; only allocated rooms participate in lookups.
     std::map<std::pair<int,int>, std::vector<size_t>> roomBuckets_;
     std::map<std::pair<int, uint32_t>, std::shared_ptr<RetailTileSelector>> selectors_;
-    std::map<std::string, MapData> patterns_;
+    std::map<std::string, std::shared_ptr<const MapData>> patterns_;
     std::set<int> allocating_;
     NativeRoomActivation activation_;
     bool failed_{};
     uint64_t terrainRevision_{};
     std::function<void()> roomInitializedObserver_;
     const MapData &pattern(const std::string &);
+    std::shared_ptr<const MapData> patternSource(const std::string &);
     void ensureLevel(int);
     std::vector<size_t> near(size_t);
     void prepare(size_t);

@@ -99,9 +99,6 @@ void System::restoreRoomFootprints(RoomView room) const {
     for(const auto &[id,player]:ports_.players.all()) if(player.collisionActive) {
         (void)id;for(const auto &corpse:player.persistent.corpses) rectangle(corpse.region,corpse.position,3,3,0x8000);
     }
-    for(const auto &[id,item]:ports_.items.read().world.items) {
-        (void)id;if(const auto *at=std::get_if<GroundLocation>(&item.location)) rectangle(at->region,at->position,1,1,0x200);
-    }
     const auto portal=[&](const travel::Portal &value) {
         if(value.rule.collision[size_t(value.isOpened(false)?2:1)]) rectangle(value.field,value.fieldPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
         if(value.rule.collision[size_t(value.isOpened(true)?2:1)]) rectangle(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);

@@ -88,7 +88,7 @@ DomainResult<> System::begin(const ActorContext &actor) {
             item.ear=ItemEarIdentity{unsigned(nativeClass-classes.begin()),unsigned(record.level),record.name};item.location=*position;
             EquipmentValues values;values.levels.resize(player->rules.character->experience.size());
             world.equipment.items.emplace(item.id,std::move(values));world.world.items.emplace(item.id,item);
-            drops.emplace_back(GroundDropFact{std::move(item)});
+            drops.emplace_back(GroundDropFact{std::move(item),false});
             break;
         }
     } else if(penalty>record.gold) {
@@ -139,7 +139,7 @@ DomainResult<> System::settle(const ActorContext &actor) {
     corpse.recoverableExperience=transition->second.recoverableExperience;
     if (corpses.size() < 16) {
         if (!ports_.items.identityCapacity(2)) return {DomainStatus::Capacity, {}};
-        corpse.id = ports_.items.reserveIdentity(); corpse.items = ports_.items.reserveIdentity();
+        corpse.id = ports_.items.reserveIdentity(NativeUnitType::Player); corpse.items = ports_.items.reserveIdentity(std::nullopt);
         draft.edit.inventory.containers.emplace(corpse.items, ContainerState{corpse.items, {actor.actor, ContainerKind::Corpse, int(EquipmentSlot::Count) + 1, 1}});
     }
     const auto drop = [&](EntityId id) -> bool {

@@ -149,7 +149,7 @@ StepStatus System::actTwoStep(TickContext tick) {
             auto &summoner=book.at(questIndex(QuestId::Summoner));
             if(available(QuestId::Summoner) && !summoner.stage) for(const auto &[monsterId,monster]:ports_.monsters.read().actors) {
                 (void)monsterId;
-                if(monster.area==p.area && monster.identity.monster=="summoner" && monster.identity.origin!=SpawnOrigin::Debug && monster.life>0 && area.definition.activation.nearby(p.position,monster.position)) {summoner.stage=uint32_t(SummonerStage::Encountered);break;}
+                if(monster.area==p.area && monster.identity.monster=="summoner" && monster.identity.origin!=SpawnOrigin::Debug && monster.alive() && area.definition.activation.nearby(p.position,monster.position)) {summoner.stage=uint32_t(SummonerStage::Encountered);break;}
             }
         }
         const auto &items=p.rules.character->actTwo;auto &staff=book.at(questIndex(QuestId::HoradricStaff));

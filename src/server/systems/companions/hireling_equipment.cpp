@@ -178,7 +178,7 @@ monsters::Actor prepareHirelingBody(const monsters::Actor &live,const Persistent
     const std::set<int> &states,std::span<const ModifierStatSource> effects,uint64_t tick,bool initial,const attributes::MonsterAuraMutation &mutation) {
     if(live.revision==UINT64_MAX) throw std::overflow_error("Hireling revision exhausted");
     const auto stats=calculateHirelingEquipment(owner,catalog,rules,prepared,{},states,live.id,Fixed8::fromRaw(nativeChecked(live.life)));
-    auto candidate=live;const bool levelUp=prepared.rule.level>live.rule.level && live.life>0;
+    auto candidate=live;const bool levelUp=prepared.rule.level>live.rule.level && live.alive() && live.life>0;
     candidate.rule=prepared.rule;
     candidate.rule.statGameType=live.rule.statGameType;
     candidate.rule.minimumLife=candidate.rule.maximumLife=std::max(1,stats.life.raw()>>8);

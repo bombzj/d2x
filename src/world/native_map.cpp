@@ -29,10 +29,23 @@ void NativeMapGenerator::observeRoomInitialization(std::function<void()> observe
     roomInitializedObserver_ = std::move(observer);
 }
 const MapData &NativeMapGenerator::pattern(const std::string &path) {
+    return *patternSource(path);
+}
+std::shared_ptr<const MapData> NativeMapGenerator::patternSource(const std::string &path) {
+    struct SharedPatterns {
+        mutable std::map<std::string,std::weak_ptr<const MapData>> entries;
+    };
     const auto key = normalize(path);
-    auto [entry, fresh] = patterns_.try_emplace(key);
-    if (fresh) entry->second = decodeDs1(archives_.read(key), key);
-    return entry->second;
+    if(const auto found=patterns_.find(key);found!=patterns_.end()) return found->second;
+    const auto shared=archives_.prepared<SharedPatterns>([] {return SharedPatterns{};});
+    auto &entry=shared->entries[key];
+    auto decoded=entry.lock();
+    if(!decoded) {
+        decoded=std::make_shared<const MapData>(decodeDs1(archives_.read(key),key));
+        entry=decoded;
+    }
+    patterns_.emplace(key,decoded);
+    return decoded;
 }
 void NativeMapGenerator::ensureLevel(int level) {
     if (levels_.contains(level)) return;

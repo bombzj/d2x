@@ -12,4 +12,6 @@ bool withinSkillArea(Vec origin, Vec target, float radius, SkillAreaCoordinates 
 bool withinNativeAuraArea(Vec origin,Vec target,int32_t radius);
 bool skillAiControlAllowed(MonsterRank rank, bool switchAi, bool boss);
 EntityId nativeSkillSuccessor(std::span<const EntityId>,uint32_t previous);
+EntityId nativeSkillSuccessor(std::span<const EntityId>,uint32_t previous,const NativeUnitIds &);
+EntityId nativeMissileSuccessor(std::span<const EntityId>,EntityId hit,const NativeUnitIds &);
 }

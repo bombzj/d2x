@@ -54,7 +54,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         if(monster.movementTarget) {
             if(const auto *target=ports_.players.findActor(monster.movementTarget);target && target->entered && target->area==monster.area)
                 result.back().movementTarget=MotionTarget{target->actor,0};
-            else if(const auto *target=ports_.monsters.find(monster.movementTarget);target && target->area==monster.area && target->life>0)
+            else if(const auto *target=ports_.monsters.find(monster.movementTarget);target && target->area==monster.area && target->alive())
                 result.back().movementTarget=MotionTarget{target->id,1};
         }
         // AC's hireling owner is public; only the detailed identity/stat

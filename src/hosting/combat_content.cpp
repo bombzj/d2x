@@ -114,10 +114,13 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if (profile && (identity.rank == MonsterRank::Unique || identity.rank == MonsterRank::Champion || identity.rank == MonsterRank::SuperUnique)) {
         enchantment = selected?resolveMonsterEnchantment(data,*record,*profile,request.difficulty,identity.rank,
             selected->ids,selected->nameSeed,true,fixed):rollMonsterEnchantment(data,*record,*profile,request.difficulty,random,identity.rank,preserveRank,true,identity.championVariantAllowed,fixed);
-    } else if (profile && identity.rank == MonsterRank::Minion) {
+    } else if (profile && (identity.rank == MonsterRank::Minion || selected)) {
         const auto *source=owner?owner:selected;
         if(!source) return {};
         enchantment = inheritedMonsterEnchantment(data,*record,*profile,request.difficulty,*source);
+        // AssignUMod(..., false) on an ordinary restored monster runs only
+        // the appended callbacks, without SpawnMinions' base 1/2/3/4 bonus.
+        if(identity.rank!=MonsterRank::Minion) enchantment->lifePercent=0;
         if(!owner && selected) {enchantment->ids=selected->ids;enchantment->nameSeed=selected->nameSeed;}
     }
     if (profile && enchantment) profile = enchantedMonsterCombat(*profile,*enchantment);
@@ -804,6 +807,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
                 nativeUnitCollisionPattern(record.collisionSize);
             rule.neverCount=data.tables.at("monstats").number(record.sourceRow,"neverCount").value_or(0)!=0;
             rule.flying=record.flying;
+            rule.restoreNpcCommands=record.interact || record.npc || data.tables.at("monstats").number(record.sourceRow,"inTown").value_or(0)!=0;
             const auto &extra=data.tables.at("monstats2");
             const auto name=data.tables.at("monstats").value(record.sourceRow,"MonStatsEx");
             for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==name) {

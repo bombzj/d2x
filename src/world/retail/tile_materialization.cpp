@@ -2,6 +2,7 @@
 #include "core/random.hpp"
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 
 // Native RoomTile / OutRoom / Preset / Collision dispatch from D2MOO.
@@ -272,8 +273,10 @@ size_t RetailTileMaterializer::create(size_t current, int type, uint32_t p, int 
     std::optional<size_t> *head, const Tile *selected, bool wallArray) {
     auto &r = rooms_.at(current);
     if (!selected) selected = &r.libraries->pick(type, p, r.room.seed.random);
-    const auto index = tiles_.size();
-    tiles_.push_back({current, x, y, type, p, 0, selected, head ? *head : std::nullopt});
+    if(nextTile_==std::numeric_limits<size_t>::max()) throw std::overflow_error("Native tile identity exhausted");
+    const auto index = nextTile_++;
+    RetailMaterializedTile value{current,x,y,type,p,0,selected,head?*head:std::nullopt};
+    tiles_.emplace(index,value);
     if (head) *head = index;
     (wallArray ? r.walls : type == 0 ? r.floors : type == 13 ? r.shadows : r.walls).push_back(index);
     initializeFlags(current, index, p);
@@ -601,19 +604,29 @@ void RetailTileMaterializer::loadPreset(size_t index, const RetailPresetRoomData
 void RetailTileMaterializer::releaseRoom(size_t index) {
     if (failed_) throw std::runtime_error("Discard failed native tile session before releasing rooms");
     auto &r = rooms_.at(index);
+    std::vector<size_t> released;
+    released.reserve(r.floors.size()+r.walls.size()+r.shadows.size());
+    released.insert(released.end(),r.floors.begin(),r.floors.end());
+    released.insert(released.end(),r.walls.begin(),r.walls.end());
+    released.insert(released.end(),r.shadows.begin(),r.shadows.end());
+    std::sort(released.begin(),released.end());released.erase(std::unique(released.begin(),released.end()),released.end());
+    for(const auto tile:released) if(tiles_.at(tile).owner!=index || !tiles_.at(tile).tile)
+        throw std::logic_error("Room released a foreign or already retired tile");
     for (auto adjacent : r.activeNear) {
         if (adjacent == index) continue;
         auto &list = rooms_.at(adjacent).activeNear;
         const auto found = std::find(list.begin(), list.end(), index);
         if (found != list.end()) { *found = list.back(); list.pop_back(); }
     }
-    r.activeNear.clear();
+    decltype(r.activeNear){}.swap(r.activeNear);
     collisions_.erase(index);
-    r.floors.clear(); r.walls.clear(); r.shadows.clear();
+    std::erase_if(changes_,[&](const auto &change){return std::binary_search(released.begin(),released.end(),change.tile);});
+    for(const auto tile:released) tiles_.erase(tile);
+    decltype(r.floors){}.swap(r.floors);decltype(r.walls){}.swap(r.walls);decltype(r.shadows){}.swap(r.shadows);
     r.mapLinks = {};
-    r.animations.clear(); r.roofPopups.clear();
+    decltype(r.animations){}.swap(r.animations);decltype(r.roofPopups){}.swap(r.roofPopups);
     r.grids = {};
-    r.logicalRegions.clear();r.logicalCells.clear();
+    decltype(r.logicalRegions){}.swap(r.logicalRegions);decltype(r.logicalCells){}.swap(r.logicalCells);
     for (auto &warp : r.warps) { warp.visible.reset(); warp.lit.reset(); }
     r.loaded = false;
     r.initialActiveRandom.reset();
@@ -621,6 +634,23 @@ void RetailTileMaterializer::releaseRoom(size_t index) {
     // survive FreeRoom; only FreeRoomEx destroys that chain.
     // Loaded libraries and the established near graph survive as well.
     // The next InitRoomGrids resets the tile stream to the original init seed.
+}
+
+void RetailTileMaterializer::forgetLevel(int level) {
+    for (const auto &room:rooms_) if(room.level==level && room.loaded)
+        throw std::logic_error("Cannot free a level with materialized rooms");
+    for (auto &room:rooms_) if(room.level==level) {
+        room.libraries.reset();
+        decltype(room.units){}.swap(room.units);
+        decltype(room.authoredUnits){}.swap(room.authoredUnits);
+    }
+    std::erase_if(presetUnits_,[&](const auto &entry){return std::get<0>(entry.first)==level;});
+    logicalCounters_.erase(level);
+}
+void RetailTileMaterializer::restoreRoom(size_t index,const RetailRoom &source,std::shared_ptr<RetailTileSelector> libraries) {
+    auto &room=rooms_.at(index);
+    if(room.loaded || room.libraries || !libraries) throw std::logic_error("Room inputs are not awaiting restoration");
+    room.room=source;room.libraries=std::move(libraries);
 }
 
 void sortRetailNearRooms(std::vector<size_t> &near, const std::deque<RetailTileRoom> &rooms) {

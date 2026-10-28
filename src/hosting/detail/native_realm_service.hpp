@@ -4,6 +4,9 @@
 #include "hosting/game_host.hpp"
 #include "hosting/game_content.hpp"
 #include "hosting/native_game_wire.hpp"
+#include "hosting/native_combat_wire.hpp"
+#include "hosting/native_character_wire.hpp"
+#include "hosting/native_item_wire.hpp"
 #include "hosting/administration.hpp"
 #include "hosting/protocol/message_catalog.hpp"
 #include "content/classic_data.hpp"
@@ -138,6 +141,31 @@ struct NativeRealmService {
     void initialize();
     void sendRealm(uint8_t, net::protocol::Writer);
     void sendGame(Bytes);
+    NativeIdentityView identities() const {return {host,binding.value().game};}
+    uint32_t wireId(EntityId id) const {return id?identities().guid(id):0;}
+    template<class... Arguments> auto nativeMissile(Arguments &&...args) const {return d2x::nativeMissile(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeState(Arguments &&...args) const {return d2x::nativeState(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeStateSnapshot(Arguments &&...args) const {return d2x::nativeStateSnapshot(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeMonsterAssignment(Arguments &&...args) const {return d2x::nativeMonsterAssignment(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeMonsterMotion(Arguments &&...args) const {return d2x::nativeMonsterMotion(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeAttack(Arguments &&...args) const {return d2x::nativeAttack(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeHit(Arguments &&...args) const {return d2x::nativeHit(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeReposition(Arguments &&...args) const {return d2x::nativeReposition(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeInventoryDelta(Arguments &&...args) const {return d2x::nativeInventoryDelta(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeCharacterDelta(Arguments &&...args) const {return d2x::nativeCharacterDelta(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeTradeItems(Arguments &&...args) const {return d2x::nativeTradeItems(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeMonsterEquipment(Arguments &&...args) const {return d2x::nativeMonsterEquipment(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativePlayerRoster(Arguments &&...args) const {return d2x::nativePlayerRoster(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativePlayerAssignment(Arguments &&...args) const {return d2x::nativePlayerAssignment(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativePublicCharacterAttributes(Arguments &&...args) const {return d2x::nativePublicCharacterAttributes(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativePublicEquipment(Arguments &&...args) const {return d2x::nativePublicEquipment(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativePublicUnequip(Arguments &&...args) const {return d2x::nativePublicUnequip(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativePlayerInitialStates(Arguments &&...args) const {return d2x::nativePlayerInitialStates(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeAreaWarps(Arguments &&...args) const {return d2x::nativeAreaWarps(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeCorpseEquipment(Arguments &&...args) const {return d2x::nativeCorpseEquipment(std::forward<Arguments>(args)...,identities());}
+    template<class... Arguments> auto nativeShopItems(Arguments &&...args) const {return d2x::nativeShopItems(std::forward<Arguments>(args)...,identities());}
+    Bytes nativePlayerMotion(const PlayerSnapshot &view,Vec origin,bool targetVisible=false) const {return d2x::nativePlayerMotion(view,origin,targetVisible,identities());}
+    Bytes nativeGroundItem(const ClassicData &data,const ItemInstance &item,Vec origin,GroundItemAction action=GroundItemAction::Add) const {return d2x::nativeGroundItem(data,item,origin,action,identities());}
     void sendGameBatch(std::vector<Bytes>);
     void result(uint8_t, uint32_t);
     const CharacterRosterEntry &find(std::string_view) const;

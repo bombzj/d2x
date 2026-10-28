@@ -505,6 +505,9 @@ StepStatus System::populateRandomRoom(RegionId requestedRegion,size_t requestedR
             const auto identities=groundItems.empty() || !goldIds.empty()?
                 ports_.ids.preparePublication(size_t(ids.cursor()-ports_.ids.cursor())):nullptr;
             std::optional<monsters::ActorPublication> actors;
+            if(identities) for(const auto &[id,object]:created) {
+                (void)object;identities->bind(id,NativeUnitType::Object);
+            }
             if(!births.actors.empty()) actors=ports_.monsters.prepareActorPublication(std::move(births.actors),size_t(ids.cursor()-ports_.ids.cursor()),{},identities);
             if(actors && actors->uniquesNext) {
                 for(const auto row:*actors->uniquesNext) if(!actors->uniquesExpected->contains(row) && !uniques.insert(row).second)

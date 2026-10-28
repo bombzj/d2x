@@ -20,7 +20,7 @@ class RetailTileSelector {
     std::pair<std::string_view, size_t> identity(const Tile &) const;
     // Retain record order/rarity/collision, without carrying decoded images
     // into an authoritative room generation session.
-    std::shared_ptr<RetailTileSelector> collisionOnly() const;
+    std::shared_ptr<RetailTileSelector> collisionOnly(Archives &) const;
     const Tile &record(std::string_view path, size_t index) const;
 };
 } // namespace d2x

@@ -15,6 +15,35 @@
 #include <cmath>
 
 namespace d2x {
+namespace {
+PlayerSnapshot nativePlayerIdentity(PlayerSnapshot value,const hosting::NativeIdentityView &ids) {
+    value.actor.id={ids.guid(value.actor.id,0)};
+    if(value.actor.target) value.actor.target->id={ids.guid(value.actor.target->id,value.actor.target->type)};
+    return value;
+}
+}
+std::vector<Bytes> nativeGameAdmission(const ClassicData &data,const PersistentCharacter &state,const GeneratedArea &area,
+    const PlayerSnapshot &view,const server::AreaMetadata &metadata,const server::QuestFact &quests,
+    const NativeActEnvironment &environment,uint32_t objectSeed,const hosting::NativeIdentityView &ids) {
+    return nativeGameAdmission(data,nativeInventoryIdentity(state,ids),area,nativePlayerIdentity(view,ids),metadata,quests,environment,objectSeed);
+}
+std::vector<Bytes> nativeAreaWarps(const GeneratedArea &area,std::span<const server::AreaExit> exits,const hosting::NativeIdentityView &ids) {
+    std::vector<server::AreaExit> values(exits.begin(),exits.end());
+    for(auto &exit:values) exit.id={ids.guid(exit.id,5)};
+    return nativeAreaWarps(area,values);
+}
+Bytes nativePlayerAssignment(const ClassicData &data,const PersistentCharacter &state,const PlayerSnapshot &view,Vec origin,const hosting::NativeIdentityView &ids) {
+    return nativePlayerAssignment(data,state,nativePlayerIdentity(view,ids),origin);
+}
+Bytes nativePlayerInitialStates(const ClassicData &data,const PlayerSnapshot &view,const hosting::NativeIdentityView &ids) {
+    return nativePlayerInitialStates(data,nativePlayerIdentity(view,ids));
+}
+Bytes nativePlayerRoster(const ClassicData &data,const CharacterRecord &record,const hosting::NativeIdentityView &ids) {
+    auto value=record;value.id={ids.guid(value.id,0)};return nativePlayerRoster(data,value);
+}
+Bytes nativePlayerMotion(const PlayerSnapshot &view,Vec origin,bool targetVisible,const hosting::NativeIdentityView &ids) {
+    return nativePlayerMotion(nativePlayerIdentity(view,ids),origin,targetVisible);
+}
 using net::protocol::Writer;
 using hosting::ServerMessage;
 using hosting::encodeServerPacket;

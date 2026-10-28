@@ -67,6 +67,8 @@ class GameHost {
     server::DomainResult<> spawnItems(PlayerBinding, server::items::PreparedBatch, std::optional<Vec>);
     std::map<EntityId, server::loot::Preparation> pendingLoot(GameHandle) const;
     std::optional<server::objects::GroundGenerationRequest> pendingGroundGeneration(GameHandle) const;
+    std::optional<server::items::InactiveItemRequest> pendingInactiveItem(GameHandle);
+    server::DomainResult<> prepareInactiveItem(GameHandle,server::items::PreparedInactiveItem);
     std::optional<server::monsters::ModifierPreparation> pendingModifiers(GameHandle) const;
     std::optional<server::monsters::EquipmentPreparation> pendingMonsterEquipment(GameHandle);
     server::DomainResult<> prepareMonsterEquipment(GameHandle,server::monsters::PreparedEquipment);
@@ -93,6 +95,9 @@ class GameHost {
     std::optional<NativeActEnvironment> environment(GameHandle,RegionId) const;
     std::optional<server::GameSettings> settings(GameHandle) const;
     uint64_t nextEntity(GameHandle) const;
+    std::optional<NativeUnitId> nativeIdentity(GameHandle,EntityId) const;
+    std::optional<EntityId> entityIdentity(GameHandle,NativeUnitId) const;
+    void collectNativeIdentities(GameHandle,std::set<EntityId>);
     bool pause(GameHandle, bool);
     bool debugPause(GameHandle, std::optional<bool>);
     void advance(double seconds);

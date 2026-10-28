@@ -258,7 +258,7 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
         r.skill.minimumDamage.raw()<0 || r.skill.maximumDamage<r.skill.minimumDamage)
         return {DomainStatus::InvalidRequest,{}};
     if(r.emitterType==1) if(const auto *unit=ports_.monsters.find(r.emitter);unit && unit->hireling &&
-        (unit->life<=0 || unit->owner!=r.actor.player || unit->area!=r.actor.area || !r.free)) return {DomainStatus::InvalidActor,{}};
+        (!unit->alive() || unit->life<=0 || unit->owner!=r.actor.player || unit->area!=r.actor.area || !r.free)) return {DomainStatus::InvalidActor,{}};
     auto random = ports_.random;
     const auto *nativeOwner=r.emitterType==1?ports_.monsters.find(r.emitter):nullptr;
     if(r.sourceOwner && r.sourceOwner!=(nativeOwner?nativeOwner->id:p->actor)) return {DomainStatus::InvalidRequest,{}};
@@ -275,6 +275,8 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
     if (!ports_.events.hasCapacity(facts.size()+1,2)) return {DomainStatus::Capacity,{}};
     std::map<EntityId,Missile> prepared; auto cursor = ports_.ids.cursor();
     for (auto &m : launched) { m.id=EntityId{cursor++}; prepared.emplace(m.id,std::move(m)); }
+    auto allocation=ports_.ids.preparePublication(prepared.size());
+    for(const auto &[identity,missile]:prepared) {(void)missile;allocation->bind(identity,NativeUnitType::Missile);}
     const auto id=prepared.begin()->first;
     auto timers=prepareTimers(prepared);
     auto cost=r.cost;
@@ -296,7 +298,7 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
     if (!released) return {released.status,{}};
     if(resourcePayment) facts.clear();
     if (!facts.empty()) ports_.events.publish({0,r.actor.tick,{}, {AudienceKind::Area,{},r.actor.area},std::move(facts)});
-    for (size_t i=0;i<prepared.size();++i) ports_.ids.allocate();
+    ports_.ids.publish(*allocation);
     state_.missiles.merge(prepared);publishTimers(timers);ports_.random=random;
     return {DomainStatus::Applied,id};
 }

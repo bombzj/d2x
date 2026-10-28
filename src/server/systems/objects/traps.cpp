@@ -99,7 +99,7 @@ StepStatus System::monsterTrap(TickContext tick,EntityId only) {
         const auto &[id,monster]=*entry;
         if(!ports_.events.hasCapacity(4,2)) return StepStatus::Blocked;
         if (!ports_.areas.loaded(monster.area, monster.position)) continue;
-        const auto &rule=monster.rule;if(rule.trap==Trap::None || rule.ai.kind==MonsterAiKind::TrappedSoul || monster.life<=0) continue;
+        const auto &rule=monster.rule;if(rule.trap==Trap::None || rule.ai.kind==MonsterAiKind::TrappedSoul || !monster.alive() || monster.life<=0) continue;
         auto &clock=traps_[id];
         if(clock.admissionRevision!=monster.admissionRevision) {clock={};clock.admissionRevision=monster.admissionRevision;}
         if(clock.release && clock.interruption!=monster.interruption) {clock.release=0;clock.next=monster.busyUntil;}const auto &area=ports_.areas.at(monster.area);if(area.definition.town) continue;
@@ -169,7 +169,7 @@ StepStatus System::monsterTrap(TickContext tick,EntityId only) {
             rule.trap==Trap::Turret?EntityId{}:target->actor);if(!result) continue;
         clock.interruption=monster.interruption;clock.mode=mode;clock.aim=aim;clock.target=target->actor;clock.release=tick.tick+uint64_t(attack.release);clock.next=tick.tick+uint64_t(attack.duration)+delay;
     }
-    std::erase_if(traps_,[&](const auto &entry){const auto *m=ports_.monsters.find(entry.first);return !m || m->life<=0;});
+    std::erase_if(traps_,[&](const auto &entry){const auto *m=ports_.monsters.find(entry.first);return !m || !m->alive() || m->life<=0;});
     return blocked?StepStatus::Blocked:StepStatus::Complete;
 }
 }

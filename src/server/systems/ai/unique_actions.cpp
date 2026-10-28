@@ -24,7 +24,7 @@ std::optional<StepStatus> System::uniqueAction(EntityId id,UnitTarget target,Vec
         if(!area.definition.collision.walkable(point,{0x3c01,m.rule.size}) || !area.definition.collision.segment(m.position,point,{}, {0x0c01,1})) continue;
         bool occupied=false;
         for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && monsterAiDistance(p.position,0,point)<=m.rule.size) occupied=true;}
-        for(const auto &[key,p]:ports_.monsters.read().actors) if(key!=id && p.area==m.area && p.life>0 && monsterAiDistance(p.position,p.rule.size,point)<=m.rule.size) occupied=true;
+        for(const auto &[key,p]:ports_.monsters.read().actors) if(key!=id && p.area==m.area && p.alive() && monsterAiDistance(p.position,p.rule.size,point)<=m.rule.size) occupied=true;
         if(occupied) continue;
         int heal=0;
         if(m.life*100<m.maximumLife*30 && limitedRandom(random,100)<25) heal=mods.level;

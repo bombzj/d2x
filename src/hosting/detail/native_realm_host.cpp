@@ -79,11 +79,20 @@ void NativeRealmHost::advance(double seconds) {
                 areaPreparations.erase(found);
                 if (!result->error.empty()) throw std::runtime_error(result->error);
                 auto prepared = std::move(result->area.value());
-                auto [entry, inserted] = areas.emplace(request.destination, std::move(prepared.terrain));
-                if (!inserted) throw std::logic_error("Prepared terrain already installed");
+                // An existing level may only be restoring released inputs.
+                // Authority validates the ticket/DRLG identity before the host
+                // replaces its lightweight protocol projection.
+                // Allocate a host slot before committing authority. Existing
+                // projections remain intact if the incoming ticket is stale.
+                const auto [projection,inserted]=areas.try_emplace(request.destination);
                 try {
-                    if (!host.installArea(game, {request.request, std::move(prepared.authority)})) throw std::runtime_error("Prepared area handoff expired");
-                } catch (...) { areas.erase(entry); throw; }
+                    if (!host.installArea(game, {request.request, std::move(prepared.authority)}))
+                        throw std::runtime_error("Prepared area handoff expired");
+                } catch (...) {
+                    if(inserted) areas.erase(projection);
+                    throw;
+                }
+                projection->second=std::move(prepared.terrain);
                 break;
             } catch (const std::exception &error) {
                 if (const auto found = areaPreparations.find(key); found != areaPreparations.end()) {
@@ -124,6 +133,23 @@ void NativeRealmHost::advance(double seconds) {
         const auto now=Clock::now();
         const auto ns=[](auto duration){return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count());};
         performanceObserver({ns(simulated-started),ns(prepared-simulated),ns(eventsPublished-prepared),ns(now-eventsPublished)});
+    }
+    for(const auto &[game,areas]:terrain) {
+        (void)areas;std::set<EntityId> retained;
+        const auto keys=[&](const auto &values) {for(const auto &[id,value]:values) {(void)value;retained.insert(id);}};
+        for(const auto *connection:peers) if(connection->binding && connection->binding->game==game) {
+            const auto &peer=connection->peer;
+            retained.insert(peer.warps.begin(),peer.warps.end());retained.insert(peer.missiles.begin(),peer.missiles.end());
+            retained.insert(peer.shopItems.begin(),peer.shopItems.end());retained.insert(peer.shopOwner);
+            keys(peer.roster);keys(peer.social);keys(peer.monsters);keys(peer.pets);keys(peer.petVitals);
+            keys(peer.groundItems);keys(peer.corpses);keys(peer.portals);keys(peer.objects);keys(peer.states);keys(peer.stateStats);keys(peer.hover);
+            for(const auto &[id,player]:peer.visible) {(void)id;retained.insert(player.actor);keys(player.equipment);}
+            for(const auto &[id,monster]:peer.monsters) {(void)id;keys(monster.equipment);}
+            for(const auto &[corpse,items]:peer.corpseEquipment) {retained.insert(corpse);retained.insert(items.begin(),items.end());}
+            for(const auto &[corpse,owner]:peer.corpseOwners) {retained.insert(corpse);retained.insert(owner);}
+            for(const auto &[relation,flags]:peer.relations) {(void)flags;retained.insert(relation.first);retained.insert(relation.second);}
+        }
+        host.collectNativeIdentities(game,std::move(retained));
     }
     // Drain published facts before retrying save/leave. Frozen party rewards
     // may require another authoritative step after their content installation.

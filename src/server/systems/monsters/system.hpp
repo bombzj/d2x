@@ -79,6 +79,7 @@ struct Actor {
     uint64_t admissionRevision{1};
     uint64_t admissionTick{};
     size_t birthEquipmentItems{};
+    uint64_t birthEquipmentFirst{};
     std::optional<std::set<size_t>> birthUniquesExpected;
     std::set<size_t> birthLimitedUniques;
     std::optional<uint8_t> ravenInitialCircle;
@@ -156,9 +157,10 @@ struct Actor {
     std::vector<SkillAuraChange> preparedItemAuras; // Unconsumed preparation callbacks, not final aura totals.
     int64_t life{}, maximumLife{};
     bool modeAlive{}; // Zero-HP native units remain active until a death mode.
+    bool deathMode{};
     bool nativeRevive{}; // UNITFLAG_ISREVIVE; independent of player Revive ownership.
     std::optional<EntityId> delayedDeathSource;
-    bool alive() const {return life>0 || modeAlive;}
+    bool alive() const {return !deathMode && (life>0 || modeAlive);}
     bool reviveFlag() const {return nativeRevive || revived();}
     bool hydra() const {return implementation==MonsterKind::Hydra1 || implementation==MonsterKind::Hydra2 || implementation==MonsterKind::Hydra3;}
     unsigned admittedPlayerCount = 1;
@@ -299,12 +301,13 @@ class System {
     std::optional<PreparedModifiers> modifierPrepared_;
     uint64_t nextModifierToken_{1};
     bool modifierCommitted_{};
+    bool modifierInitialAuraCommitted_{};
     std::map<uint64_t,std::pair<EquipmentPreparation,std::optional<PreparedEquipment>>> birthEquipment_;
     uint64_t nextEquipmentToken_{1};
-    struct Restoration {RegionId area;size_t room;EntityId actor;};
+    struct Restoration {RegionId area;size_t room;EntityId actor;bool stateRestored{};};
     std::optional<Restoration> restoring_;
     StepStatus advanceRestoration(uint64_t tick);
-    DomainResult<> finishRestoration(const InactiveMonster &,uint64_t tick);
+    DomainResult<> finishRestoration(const InactiveMonster &,uint64_t tick,bool pending=false);
     void setStoredOwner(Actor &,EntityId) const;
     bool pd2ControllerDeath(const Actor &) const;
     void stagePd2RathmaStatuses(effects::AuraUnitPublication &,EntityId,EntityId,const std::optional<PoisonApplication> &,
@@ -332,6 +335,7 @@ class System {
         if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.hirelingNextExperience=next;it->second.hirelingPassiveMask=passives;it->second.hirelingMovementPercent=movement;it->second.hirelingBaseAttributes=std::move(base);}
     }
     explicit System(Ports ports) : ports_(ports) {}
+    const NativeUnitIds &nativeIdentities() const {return ports_.ids.nativeIdentities();}
     const SkillRules *skillPrograms() const {return ports_.skillPrograms.get();}
     std::optional<EquipmentPreparation> pendingEquipment();
     DomainResult<> prepareEquipment(PreparedEquipment);
@@ -376,7 +380,8 @@ class System {
     DomainResult<EntityId> stageRoomSpawn(const Admission &,RoomRandomLoan &,int attempts,EntityIds &,uint64_t &random,
         NativeBirthBatch &,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     void publishBirthComponents(NativeBirthBatch &) noexcept;
-    DomainResult<> compressRoom(RegionId,size_t,uint64_t tick);
+    DomainResult<> canCompressRoom(RegionId,size_t,uint64_t tick) const;
+    DomainResult<> compressUnit(RegionId,size_t,uint64_t tick,EntityId);
     StepStatus restoreRoom(RegionId,size_t,uint64_t tick,bool sanctumCleared);
     const State &read() const { return state_; }
     const GameSettings &gameSettings() const noexcept {return ports_.settings;}
@@ -498,7 +503,7 @@ class System {
     void recordHirelingKill(EntityId victim,EntityId source) {
         const auto *killer=find(source);
         if(!killer || !killer->hireling) return;
-        if(auto found=state_.actors.find(victim);found!=state_.actors.end() && found->second.life<=0) {
+        if(auto found=state_.actors.find(victim);found!=state_.actors.end() && !found->second.alive()) {
             found->second.hirelingKiller=source;
             found->second.hirelingLootMagicFind=killer->petStats.attributes.combat.magicFind;
             found->second.hirelingLootGoldFind=killer->petStats.attributes.combat.goldFind;

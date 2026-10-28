@@ -195,7 +195,7 @@ StepStatus System::actOneStep(TickContext tick) {
         }
     }
     for(const auto &[id,m]:ports_.monsters.read().actors) {
-        (void)id;if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug) continue;
+        (void)id;if(m.alive() || m.owner || m.identity.origin==SpawnOrigin::Debug) continue;
         std::optional<QuestId> goal;
         if(int(m.area)==17 && m.identity.monster=="bloodraven") goal=QuestId::SistersBurialGrounds;
         if(int(m.area)==25 && m.identity.superUnique=="The Countess") goal=QuestId::ForgottenTower;

@@ -152,7 +152,7 @@ StepStatus System::spawnCagedPrisoners(const AreaObject &source,RegionId region,
 }
 DomainResult<> System::openMonsterDoor(EntityId id,Vec destination,uint64_t tick) {
     const auto *monster=ports_.monsters.find(id);
-    if(!monster || monster->life<=0 || monster->owner || !monster->rule.opensDoors) return {DomainStatus::InvalidActor,{}};
+    if(!monster || !monster->alive() || monster->life<=0 || monster->owner || !monster->rule.opensDoors) return {DomainStatus::InvalidActor,{}};
     const auto &grid=ports_.areas.at(monster->area).definition.collision;
     if(grid.collisionSegment(monster->position,destination,0x0800)) return {DomainStatus::Unavailable,{}};
     Object *nearest=nullptr;float distance=9;
@@ -257,7 +257,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if (object.mode) {
             const auto occupied = [&](Vec at) { return std::abs(at.x - object.position.x) <= rule.width / 2.f + 1 && std::abs(at.y - object.position.y) <= rule.height / 2.f + 1; };
             for (const auto &[id, other] : ports_.players.all()) { (void)id; if (other.entered && other.area == actor.area && other.persistent.player.hp > 0 && occupied(other.position)) return {DomainStatus::Conflict, {}}; }
-            for (const auto &[id, other] : ports_.monsters.read().actors) { (void)id; if (other.area == actor.area && other.life > 0 && occupied(other.position)) return {DomainStatus::Conflict, {}}; }
+            for (const auto &[id, other] : ports_.monsters.read().actors) { (void)id; if (other.area == actor.area && other.alive() && occupied(other.position)) return {DomainStatus::Conflict, {}}; }
         }
         object.mode = object.mode ? 0 : 2; object.until = actor.tick + std::max(uint64_t{1},rule.openingTicks); ++object.revision; collision(actor.area);
         return {DomainStatus::Applied, std::monostate{}};
@@ -442,6 +442,8 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
             paired=*born.value;
         }
         auto actors=ports_.monsters.prepareActorPublication(std::move(births.actors),size_t(ids.cursor()-ports_.ids.cursor()));
+        if(!actors.identities) actors.identities=ports_.ids.preparePublication(size_t(ids.cursor()-ports_.ids.cursor()));
+        actors.identities->bind(source.id,NativeUnitType::Object);
         auto room=ports_.areas.prepareRoomUnit(source.id,2,region,object.position);
         const auto installed=ports_.items.installNativeGroundBatch(gold,tick.tick,goldIds,actors.identities);
         if(!installed) return isDeferred(installed.status)?StepStatus::Blocked:StepStatus::NotImplemented;

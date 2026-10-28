@@ -124,7 +124,7 @@ StepStatus System::actFourStep(TickContext tick) {
     bool blocked=false;auto &world=state_.actFour;
     for(const auto &[monsterId,m]:ports_.monsters.read().actors) {
         (void)monsterId;
-        if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
+        if(m.alive() || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
         if(int(m.area)==105 && m.identity.monster=="izual") {
             captureGoal(QuestId::FallenAngel,3,m.area,m.position,killerPlayer(m.killer));world.izualSlain=true;world.ghostPosition=m.position;
         }
@@ -140,7 +140,7 @@ StepStatus System::actFourStep(TickContext tick) {
             bool cleared=world.seals.size()==5;
             for(const auto *name:{"Infector of Souls","Lord De Seis","Grand Vizier of Chaos"}) {
                 bool killed=false;
-                for(const auto &[monsterId,m]:ports_.monsters.read().actors) {(void)monsterId;if(m.area==p.area && m.identity.superUnique==name && m.identity.origin!=SpawnOrigin::Debug && m.life<=0) killed=true;}
+                for(const auto &[monsterId,m]:ports_.monsters.read().actors) {(void)monsterId;if(m.area==p.area && m.identity.superUnique==name && m.identity.origin!=SpawnOrigin::Debug && !m.alive()) killed=true;}
                 cleared=cleared && killed;
             }
             if(cleared && !world.diabloAt) {
@@ -149,7 +149,7 @@ StepStatus System::actFourStep(TickContext tick) {
                 // before Diablo's spawn. Keep normal death/event ownership.
                 bool retired=true;
                 for(const auto &[monsterId,m]:ports_.monsters.read().actors)
-                    if(m.area==p.area && m.life>0 && !m.owner && m.identity.monster!="diablo" && m.identity.origin!=SpawnOrigin::Debug && m.identity.origin!=SpawnOrigin::Summoned)
+                    if(m.area==p.area && m.alive() && !m.owner && m.identity.monster!="diablo" && m.identity.origin!=SpawnOrigin::Debug && m.identity.origin!=SpawnOrigin::Summoned)
                         if(!ports_.monsters.damage(monsterId,p.actor,m.life,tick.tick)) retired=false;
                 if(retired) world.diabloAt=tick.tick+10;else blocked=true;
             }
@@ -162,7 +162,7 @@ StepStatus System::actFourStep(TickContext tick) {
         }
         if(int(p.area)==107 && !world.hammerDropped && !state_.pending.contains(id)) {
             for(const auto &[monsterId,m]:ports_.monsters.read().actors)
-                if(m.area==p.area && m.identity.superUnique=="The Feature Creep" && m.life<=0 && m.identity.origin!=SpawnOrigin::Debug)
+                if(m.area==p.area && m.identity.superUnique=="The Feature Creep" && !m.alive() && m.identity.origin!=SpawnOrigin::Debug)
                     if(!prepareReward(actor,monsterId,RewardKind::ForgeHammer,false,m.position)) blocked=true;
         }
         if(int(p.area)==103 && !world.portalOpened && (book[questIndex(QuestId::TerrorsEnd)].flags&terrorPortalOpened)) {

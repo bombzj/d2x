@@ -1,10 +1,25 @@
 #include "game_host.hpp"
+#include "native_identity.hpp"
 #include <chrono>
 #include <cmath>
 #include <limits>
 #include <utility>
 
 namespace d2x {
+uint32_t hosting::NativeIdentityView::guid(EntityId entity,uint8_t type) const {
+    const auto native=host_.nativeIdentity(game_,entity);
+    if(!native || uint8_t(native->type)!=type) throw std::logic_error("Missing or mismatched native unit identity");
+    return native->guid;
+}
+EntityId hosting::NativeIdentityView::entity(uint32_t guid,uint32_t type) const {
+    if(type>uint32_t(NativeUnitType::Tile)) return {};
+    return host_.entityIdentity(game_,NativeUnitId{NativeUnitType(type),guid}).value_or(EntityId{});
+}
+uint32_t hosting::NativeIdentityView::guid(EntityId entity) const {
+    const auto native=host_.nativeIdentity(game_,entity);
+    if(!native) throw std::logic_error("Missing native unit identity");
+    return native->guid;
+}
 std::set<size_t> GameHost::usedUniques(GameHandle handle) const {const auto *slot=find(handle);return slot?slot->game->usedUniques():std::set<size_t>{};}
 std::optional<server::inventory::InputState> GameHost::inventoryInput(PlayerBinding binding) const {
     const auto *slot = find(binding.game);
@@ -128,6 +143,15 @@ std::optional<NativeActEnvironment> GameHost::environment(GameHandle handle,Regi
 }
 uint64_t GameHost::nextEntity(GameHandle handle) const {
     const auto *slot = find(handle); if (!slot) throw std::runtime_error("Game instance expired"); return slot->game->nextEntity();
+}
+std::optional<NativeUnitId> GameHost::nativeIdentity(GameHandle handle,EntityId id) const {
+    const auto *slot=find(handle);return slot?slot->game->nativeIdentity(id):std::nullopt;
+}
+std::optional<EntityId> GameHost::entityIdentity(GameHandle handle,NativeUnitId id) const {
+    const auto *slot=find(handle);return slot?slot->game->entityIdentity(id):std::nullopt;
+}
+void GameHost::collectNativeIdentities(GameHandle handle,std::set<EntityId> retained) {
+    if(auto *slot=find(handle)) slot->game->collectNativeIdentities(std::move(retained));
 }
 bool GameHost::destroy(GameHandle handle) {
     auto *slot = find(handle);
@@ -345,6 +369,13 @@ server::DomainResult<> GameHost::spawnItems(PlayerBinding binding, server::items
 std::map<EntityId, server::loot::Preparation> GameHost::pendingLoot(GameHandle game) const { const auto *slot = find(game); return slot ? slot->game->pendingLoot() : std::map<EntityId, server::loot::Preparation>{}; }
 std::optional<server::objects::GroundGenerationRequest> GameHost::pendingGroundGeneration(GameHandle game) const {
     const auto *slot=find(game);return slot?slot->game->pendingGroundGeneration():std::nullopt;
+}
+std::optional<server::items::InactiveItemRequest> GameHost::pendingInactiveItem(GameHandle game) {
+    const auto *slot=find(game);return slot?slot->game->pendingInactiveItem():std::nullopt;
+}
+server::DomainResult<> GameHost::prepareInactiveItem(GameHandle game,server::items::PreparedInactiveItem prepared) {
+    auto *slot=find(game);if(!slot) return {server::DomainStatus::Stale,{}};
+    return slot->game->prepareInactiveItem(std::move(prepared));
 }
 std::optional<server::monsters::ModifierPreparation> GameHost::pendingModifiers(GameHandle game) const {
     const auto *slot=find(game);return slot?slot->game->pendingModifiers():std::nullopt;

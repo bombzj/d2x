@@ -2,6 +2,7 @@
 #include "room_data.hpp"
 #include "preset_room.hpp"
 #include <deque>
+#include <map>
 #include <optional>
 #include <span>
 #include <set>
@@ -63,7 +64,8 @@ struct RetailRoomCollision {
 class RetailTileMaterializer {
     const WorldCatalog &catalog_;
     std::deque<RetailTileRoom> rooms_;
-    std::deque<RetailMaterializedTile> tiles_;
+    std::map<size_t,RetailMaterializedTile> tiles_;
+    size_t nextTile_{};
     std::map<size_t, RetailRoomCollision> collisions_;
     std::map<RetailPresetKey, std::vector<RetailPresetUnit>> presetUnits_;
     std::map<int,int> logicalCounters_;
@@ -116,6 +118,8 @@ class RetailTileMaterializer {
     const auto &rooms() const { return rooms_; }
     const auto &tiles() const { return tiles_; }
     void releaseRoom(size_t room);
+    void forgetLevel(int level);
+    void restoreRoom(size_t room, const RetailRoom &, std::shared_ptr<RetailTileSelector>);
     bool valid() const { return !failed_; }
     void activateCollision(size_t room, std::span<const size_t> activeNear);
     const RetailRoomCollision *collision(size_t room) const;

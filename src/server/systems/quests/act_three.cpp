@@ -105,7 +105,7 @@ StepStatus System::actThreeStep(TickContext tick) {
     std::set<std::string> deadCouncil;
     const monsters::Actor *lastCouncil=nullptr;
     for(const auto &[id,m]:ports_.monsters.read().actors) {
-        (void)id;if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
+        (void)id;if(m.alive() || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
         if(int(m.area)==102 && m.identity.monster=="mephisto") {
             world.mephistoSlain=true;captureGoal(QuestId::Guardian,4,m.area,{},killerPlayer(m.killer));
         }
@@ -128,7 +128,7 @@ StepStatus System::actThreeStep(TickContext tick) {
         }
         if(world.gidbinnSpawned && !world.gidbinnDropped && !state_.pending.contains(id))
             for(const auto &[monsterId,m]:ports_.monsters.read().actors)
-                if(m.area==p.area && m.identity.spawnKey=="quest.gidbinn" && m.life<=0)
+                if(m.area==p.area && m.identity.spawnKey=="quest.gidbinn" && !m.alive())
                     if(!prepareReward(actor,monsterId,RewardKind::Gidbinn,false,m.position)) blocked=true;
         auto record=p.persistent.player;auto &q=record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::GoldenBird));
         const auto before=record.quests.at(size_t(ports_.settings.difficulty));const auto &items=p.rules.character->laterQuests;
@@ -152,7 +152,7 @@ StepStatus System::actThreeStep(TickContext tick) {
             for(const auto &[monsterId,m]:ports_.monsters.read().actors) {
                 (void)monsterId;
                 if(m.area!=p.area || m.owner || m.identity.origin==SpawnOrigin::Debug || !m.identity.monster.starts_with("council")) continue;
-                if(m.life<=0 && !state_.pending.contains(id)) {
+                if(!m.alive() && !state_.pending.contains(id)) {
                     if(!world.flailDropped && khalim.stage<4 && !detail::actTwoCarried(p,items.khalimParts[3],ports_.settings.difficulty) && !detail::actTwoCarried(p,items.khalimWill,ports_.settings.difficulty)) prepareReward(actor,monsterId,RewardKind::KhalimFlail,false,m.position);
                     else if(!world.cubeDropped && !detail::actTwoCarried(p,p.rules.character->actTwo.cube,ports_.settings.difficulty)) prepareReward(actor,monsterId,RewardKind::CouncilCube,false,m.position);
                 }
@@ -160,11 +160,11 @@ StepStatus System::actThreeStep(TickContext tick) {
         }
         auto &guardian=book[questIndex(QuestId::Guardian)];
         if(available(QuestId::Guardian) && int(p.area)>=94 && int(p.area)<=102 && guardian.stage<4) guardian.stage=std::max(guardian.stage,int(p.area)==102?3u:int(p.area)>=100?2u:1u);
-        for(const auto &[monsterId,m]:ports_.monsters.read().actors) if(int(m.area)==102 && m.identity.monster=="mephisto" && m.identity.origin!=SpawnOrigin::Debug && m.life<=0) {
+        for(const auto &[monsterId,m]:ports_.monsters.read().actors) if(int(m.area)==102 && m.identity.monster=="mephisto" && m.identity.origin!=SpawnOrigin::Debug && !m.alive()) {
             if(p.area==m.area && !world.soulstoneDropped && !state_.pending.contains(id)) prepareReward(actor,monsterId,RewardKind::Soulstone,false,m.position);
         }
         if(!std::equal(before.begin(),before.end(),book.begin(),[](const auto &a,const auto &b){return a.stage==b.stage && a.flags==b.flags;}) && !commit(actor,record)) blocked=true;
-        if(source && source->life<=0 && !world.figurineDropped && p.area==source->area && q.stage<5 && p.persistent.player.hp>0) {
+        if(source && !source->alive() && !world.figurineDropped && p.area==source->area && q.stage<5 && p.persistent.player.hp>0) {
             bool preparing=false;for(const auto &[player,pending]:state_.pending) {(void)player;if(pending.kind==RewardKind::Figurine) preparing=true;}
             if(!preparing && !prepareReward(actor,source->id,RewardKind::Figurine,false,source->position)) blocked=true;
         }

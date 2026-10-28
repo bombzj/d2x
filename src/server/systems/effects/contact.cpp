@@ -143,7 +143,7 @@ DomainResult<> System::advanceNativeCallback(NativeContactBatch &batch,uint64_t 
                 Fixed8::fromRaw(nativeAdd(player.persistent.player.hp.raw(),nativeChecked(gain))),player.persistent.player.mana,player.persistent.player.stamina);
             return {committed.status,committed?std::optional{gain}:std::nullopt};
         }
-        if(target.monster->life<=0) return {DomainStatus::Applied,int64_t{0}};
+        if(!target.monster->alive() || target.monster->life<=0) return {DomainStatus::Applied,int64_t{0}};
         const auto gain=std::min(requested,std::max<int64_t>(0,target.monster->maximumLife-target.monster->life));
         const auto committed=ports_.monsters.heal(recipient,gain);
         return {committed.status,committed?std::optional{gain}:std::nullopt};
@@ -215,7 +215,7 @@ DomainResult<> System::advanceNativeCallback(NativeContactBatch &batch,uint64_t 
             batch.random=std::pair{expected,random};batch.pendingDamage=std::move(damage);
         }
     } else if(function==4) {
-        if(batch.physical<=0 || (unit.player?unit.player->persistent.player.hp<=0:unit.monster->life<=0)) return done();
+        if(batch.physical<=0 || (unit.player?unit.player->persistent.player.hp<=0:!unit.monster->alive() || unit.monster->life<=0)) return done();
         if(!batch.pendingDamage) {
             const auto field=unit.player || (unit.monster && unit.monster->hireling)?(other.monster?"calc2":"calc3"):"calc1";
             const auto percent=calculate(callback.event.source.entity,field);if(!percent) return {DomainStatus::Unavailable,{}};
@@ -228,7 +228,7 @@ DomainResult<> System::advanceNativeCallback(NativeContactBatch &batch,uint64_t 
         }
     } else if(function==5) {
         if(batch.phase==0) {
-            if(batch.physical<=0 || (other.player?other.player->persistent.player.hp<=0:other.monster->life<=0)) return done();
+            if(batch.physical<=0 || (other.player?other.player->persistent.player.hp<=0:!other.monster->alive() || other.monster->life<=0)) return done();
             const auto percent=calculate(callback.event.source.entity,"calc1");if(!percent) return {DomainStatus::Unavailable,{}};
             const auto gain=nativePercentage(nativeChecked(batch.physical),*percent,100);
             DomainResult<> healed;
@@ -249,7 +249,7 @@ DomainResult<> System::advanceNativeCallback(NativeContactBatch &batch,uint64_t 
     } else if(function==23) {
         if(!unit.monster || !unit.monster->owner) return done();
         const auto *owner=ports_.players.find(*unit.monster->owner);
-        if(!owner || owner->persistent.player.hp<=0 || unit.monster->life<=0) return done();
+        if(!owner || owner->persistent.player.hp<=0 || !unit.monster->alive() || unit.monster->life<=0) return done();
         if(!batch.phase) {
             if(other.alignment()!=UnitAlignment::Evil) return done();
             const int drain=other.monster?other.monster->rule.drain:100;

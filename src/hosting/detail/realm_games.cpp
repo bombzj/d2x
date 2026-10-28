@@ -45,7 +45,7 @@ void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &ro
         for (auto &corpse : definition.persistent.corpses) { corpse.region = room.town; corpse.position = state->definition.spawn; }
         const auto staged = host.admit(room.handle, std::move(definition));
         try {
-            admission = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged),host.environment(staged.game,room.town).value(),host.objectSeed(staged.game).value());
+            admission = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged),host.environment(staged.game,room.town).value(),host.objectSeed(staged.game).value(),NativeIdentityView{host,staged.game});
             for (const auto &packet : admission) validateServerPacket(packet);
             terrain = area; binding = staged;
         } catch (...) { host.remove(staged); throw; }
@@ -119,7 +119,7 @@ void NativeRealmService::joinGame(net::protocol::Reader &in) {
             const auto staged = host.admit(room.handle, std::move(definition));
             stagedBinding = staged;
             try {
-                auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged),host.environment(staged.game,room.town).value(),host.objectSeed(staged.game).value());
+                auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged),host.environment(staged.game,room.town).value(),host.objectSeed(staged.game).value(),NativeIdentityView{host,staged.game});
                 for (const auto &packet : packets) validateServerPacket(packet);
                 terrain = area; admission = std::move(packets); binding = staged;
             } catch (...) { host.remove(staged); throw; }

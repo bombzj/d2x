@@ -214,7 +214,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             if(!live || live->alive() || live->revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
             auto candidate=*live;
             candidate.life=candidate.maximumLife;candidate.inactivePet=false;
-            candidate.aiPose=1;candidate.holdPose=false;candidate.modeAlive=false;
+            candidate.aiPose=1;candidate.holdPose=false;candidate.modeAlive=false;candidate.deathMode=false;
             candidate.busyUntil=candidate.poseUntil=candidate.riseUntil=candidate.reactionUntil=0;
             candidate.neutralAt.reset();candidate.delayedDeathSource.reset();candidate.corpse={};
             candidate.frozenUntil=0;candidate.shatterActive=false;
@@ -235,7 +235,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     DomainResult<transactions::Plan> plan;
     {
         transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
-        edit.facts.emplace_back(MerchantFact{request.npc,{},0,5,edit.player.gold});
+        edit.facts.emplace_back(MerchantFact{request.npc,revivedActor.value_or(EntityId{}),0,5,edit.player.gold});
         if(revivedUnits) {
             for(auto &fact:revivedUnits->facts) edit.publicFacts.push_back(std::move(fact));
             revivedUnits->facts.clear();
@@ -262,7 +262,7 @@ DomainResult<> System::equipHireling(const ActorContext &actor, uint32_t bodySlo
         !player->rules.items || !player->rules.equipment || ports_.skills.busy(actor.actor,actor.tick)) return {DomainStatus::InvalidActor,{}};
     const monsters::Actor *merc=nullptr;
     for(const auto &[id,pet]:state_.companions) if(pet.owner==actor.player && pet.kind==Kind::Hireling) {merc=ports_.monsters.find(id);break;}
-    if(!merc || merc->life<=0 || merc->area!=actor.area || !area->definition.activation.nearby(player->position,merc->position)) return {DomainStatus::Unavailable,{}};
+    if(!merc || !merc->alive() || merc->life<=0 || merc->area!=actor.area || !area->definition.activation.nearby(player->position,merc->position)) return {DomainStatus::Unavailable,{}};
     auto candidate=player->persistent;
     const auto &containers=candidate.containers;
     auto cursor=candidate.inventory.items.end();
@@ -342,9 +342,9 @@ DomainResult<> System::drink(const ActorContext &actor,ItemHandle item,bool belt
     if(definition==player->rules.potions->end()) return {DomainStatus::NotImplemented,{}};
     const auto &potion=definition->second;
     if(potion.kind!=PotionKind::Healing && potion.kind!=PotionKind::Rejuvenation && potion.kind!=PotionKind::Remedy) return {DomainStatus::InvalidRequest,{}};
-    if ((!merc || merc->life<=0) && belt)
+    if ((!merc || !merc->alive() || merc->life<=0) && belt)
         return ports_.inventory.execute(actor,{UseItem{item},inventory::Source::Belt});
-    if(!merc || merc->life<=0 || (!belt && (merc->area!=actor.area || !area->definition.activation.nearby(player->position,merc->position)))) return {DomainStatus::Unavailable,{}};
+    if(!merc || !merc->alive() || merc->life<=0 || (!belt && (merc->area!=actor.area || !area->definition.activation.nearby(player->position,merc->position)))) return {DomainStatus::Unavailable,{}};
     if(merc->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     auto recipient=*merc;++recipient.revision;
     effects::UnitDamageStates statuses;statuses.source=merc->id;

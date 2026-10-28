@@ -7,6 +7,7 @@
 #include "server/runtime/simulation.hpp"
 #include "server/runtime/prepared_rules.hpp"
 #include "server/runtime/diagnostics.hpp"
+#include "core/native_unit_id.hpp"
 #include <optional>
 
 namespace d2x { enum class PointRefund; }
@@ -24,6 +25,7 @@ class GameInstance {
     GameSettings settings_;
     uint32_t objectSeed_{}; // Original dwObjSeed: the control stream's initial low word.
     AreaStore areas_;
+    NativeUnitIds nativeEntities_;
     EntityIds entities_;
     uint64_t random_, tick_{}, revision_{1};
     uint64_t nextPlayer_ = 2;
@@ -50,6 +52,9 @@ class GameInstance {
     bool remove(PlayerId);
     bool enter(PlayerId, bool active = true);
     uint64_t nextEntity() const { return entities_.cursor(); }
+    std::optional<NativeUnitId> nativeIdentity(EntityId id) const {return nativeEntities_.find(id);}
+    std::optional<EntityId> entityIdentity(NativeUnitId id) const {return nativeEntities_.find(id);}
+    void collectNativeIdentities(std::set<EntityId> retained);
     const GameSettings &settings() const { return settings_; }
     uint32_t objectSeed() const { return objectSeed_; }
     const AreaState *area(RegionId id) const { return areas_.find(id); }
@@ -100,6 +105,8 @@ class GameInstance {
     auto shop(PlayerId id) const { return systems_.merchant.shop(id); }
     auto pendingLoot() const { auto pending=systems_.loot.read().pending; for(auto &[id,value]:pending) { (void)id; value.uniques=systems_.loot.read().uniques; } return pending; }
     auto pendingGroundGeneration() const {return systems_.objects.pendingGroundGeneration();}
+    auto pendingInactiveItem() {return systems_.items.pendingInactiveItem();}
+    DomainResult<> prepareInactiveItem(items::PreparedInactiveItem prepared) {return systems_.items.prepareInactiveItem(std::move(prepared));}
     auto pendingModifiers() const {return systems_.monsters.pendingModifiers();}
     auto pendingMonsterEquipment() {return systems_.monsters.pendingEquipment();}
     DomainResult<> prepareMonsterEquipment(monsters::PreparedEquipment prepared) {return systems_.monsters.prepareEquipment(std::move(prepared));}

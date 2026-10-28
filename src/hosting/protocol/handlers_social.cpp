@@ -8,7 +8,7 @@ RequestResult PlayerRelation(GameplayContext &context, net::protocol::Reader &in
         if(enabled!=0 && enabled!=1 && enabled!=mask) return {RequestStatus::Rejected};
         for (const auto id : context.host.participants(context.player.game)) {
             const auto view=context.host.read({context.player.game,id});
-            if(view && view->actor.id==EntityId{target}) {
+            if(view && view->actor.id==context.entity(target,0)) {
                 server::social::Request request{action==1?server::social::Action::AllowLoot:action==2?server::social::Action::Ignore:action==3?server::social::Action::Squelch:server::social::Action::Hostility,id,{}};
                 request.enabled=enabled!=0; return submitGameplay(context,std::move(request));
             }
@@ -22,7 +22,7 @@ RequestResult PartyAction(GameplayContext &context, net::protocol::Reader &in) {
     if(action<6 || action>9) return {RequestStatus::Rejected};
     for(const auto id:context.host.participants(context.player.game)) {
         const auto view=context.host.read({context.player.game,id});
-        if(!view || !view->entered || view->actor.id!=EntityId{target}) continue;
+        if(!view || !view->entered || view->actor.id!=context.entity(target,0)) continue;
         using A=server::social::Action;
         return submitGameplay(context,server::social::Request{action==6?A::Invite:action==7?A::CancelInvite:action==8?A::Accept:A::LeaveParty,id,{}});
     }

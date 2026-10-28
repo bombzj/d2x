@@ -113,11 +113,19 @@ class System {
     StepStatus objectTrap(TickContext,EntityId);
     StepStatus monsterTrap(TickContext,EntityId);
   public:
+    struct RoomCompression {
+      RegionId area;uint64_t generation{};
+      std::map<std::pair<RegionId,size_t>,std::vector<InactiveObject>> nodes;
+      std::map<EntityId,uint64_t> retired;
+      std::vector<Grid::Obstacle> collision;
+      std::map<EntityId,std::vector<Grid::Obstacle>> collisionSteps;
+    };
     explicit System(Ports ports) : ports_(ports) {}
     void initializeControl();
     StepStatus populatePresets(RegionId,size_t,TickContext,std::optional<EntityId> only={});
     StepStatus populateRoom(RegionId region,size_t room,TickContext tick) {return populateRandomRoom(region,room,tick);}
     const State &read() const { return state_; }
+    void collectEntityReferences(std::set<EntityId> &) const;
     const std::map<RegionId,ObjectRegionPopulation> &population() const {return population_;}
     std::optional<GroundGenerationRequest> pendingGroundGeneration() const;
     DomainResult<> prepareGroundGeneration(uint64_t,items::PreparedBatch,std::string);
@@ -126,7 +134,10 @@ class System {
       if(found!=state_.objects.end() && found->second.random==expected) found->second.random=next;
     }
     DomainResult<EntityId> admit(const Admission &);
-    void compressRoom(RegionId,size_t,uint64_t tick);
+    DomainResult<RoomCompression> prepareRoomCompression(RegionId,size_t,uint64_t tick,EntityId only={}) const;
+    bool validateRoomCompression(const RoomCompression &) const;
+    void publishRoomCompression(RoomCompression) noexcept;
+    void retireCompressedObject(RoomCompression &,EntityId) noexcept;
     StepStatus restoreRoom(RegionId,size_t,uint64_t tick);
     DomainResult<> execute(const ActorContext &, const Request &, std::optional<int> remoteRange = {});
     DomainResult<> openMonsterDoor(EntityId,Vec destination,uint64_t tick);

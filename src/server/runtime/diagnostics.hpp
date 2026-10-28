@@ -156,6 +156,7 @@ struct DiagnosticSnapshot {
     std::string lootDeferred;
     size_t itemTriggersPending{};
     std::string itemTriggersDeferred;
+    std::string inactiveItemsDeferred;
     std::vector<ChargedSkill> chargedSkills;
     std::vector<ItemAuraTimer> itemAuras;
     uint64_t tick{}, eventFirst{}, eventLast{}, commandFirst{}, commandLast{};

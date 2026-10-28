@@ -152,6 +152,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     result["virtualPlayers"]=s.virtualPlayers;
     result["loot"] = {{"pending", s.lootPending}, {"deferred", s.lootDeferred}};
     result["itemTriggers"]={{"pending",s.itemTriggersPending},{"deferred",s.itemTriggersDeferred}};
+    result["inactiveItems"]={{"deferred",s.inactiveItemsDeferred}};
     result["chargedSkills"]=Json::array();
     for(const auto &charge:s.chargedSkills) result["chargedSkills"].push_back({{"item",charge.item.id.value},{"revision",charge.item.revision},{"skill",charge.skill},{"rank",charge.rank},{"charges",charge.charges},{"maximum",charge.maximum}});
     result["itemAuras"]=auraTimers(s.itemAuras);

@@ -57,21 +57,21 @@ void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const 
         // assignment roster (75) have independent publication lifetimes.
         if(rosterChanged)
             packets.push_back(encodeServerPacket(ServerMessage::PartyMember,[&](auto &out){
-                out.u32(uint32_t(view->actor.id.value));out.u16(view->partyId);out.u16(uint16_t(view->level));out.u16(flags);out.u16(status);
+                out.u32(wireId(view->actor.id));out.u16(view->partyId);out.u16(uint16_t(view->level));out.u16(flags);out.u16(status);
             }));
         // PartyScreen rebuilds 8D for living players when joining. Leave uses
         // roster updates, plus a self 8D for each removed/disbanded member.
         if(initial || joiningParty || (membershipChanged && id==binding->player))
-            packets.push_back(encodeServerPacket(ServerMessage::PlayerPartyFlags,[&](auto &out){out.u32(uint32_t(view->actor.id.value));out.u16(view->partyId);}));
+            packets.push_back(encodeServerPacket(ServerMessage::PlayerPartyFlags,[&](auto &out){out.u32(wireId(view->actor.id));out.u16(view->partyId);}));
         if(id!=binding->player && (!leavingParty || !rosterChanged) && (initial || previous->second.status!=status))
-            packets.push_back(encodeServerPacket(ServerMessage::PlayerRelationship,[&](auto &out){out.u32(uint32_t(view->actor.id.value));out.u8(status);}));
+            packets.push_back(encodeServerPacket(ServerMessage::PlayerRelationship,[&](auto &out){out.u32(wireId(view->actor.id));out.u8(status);}));
         peer.social[view->actor.id]={view->partyId,uint16_t(view->level),flags,status};
         if(id!=binding->player && local->partyId!=UINT16_MAX && local->partyId==view->partyId) {
             allies.insert(view->actor.id);
             if(!publishPartyVitals) continue;
             auto vitals=encodeServerPacket(ServerMessage::AllyPosition,[&](auto &out){
                 out.u8(1);out.u16(playerLifePercentage(int64_t(view->life*256),int64_t(view->attributes.maxLife)*256));
-                out.u32(uint32_t(view->actor.id.value));out.u16(uint16_t(view->actor.region));
+                out.u32(wireId(view->actor.id));out.u16(uint16_t(view->actor.region));
             });
             if(!peer.partyVitals.contains(view->actor.id) || peer.partyVitals.at(view->actor.id)!=vitals) {
                 packets.push_back(vitals);peer.partyVitals[view->actor.id]=std::move(vitals);
@@ -80,7 +80,7 @@ void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const 
             // Far party coordinates never assign a spatial player or reveal rooms.
             if(view->actor.region!=local->actor.region || (view->actor.position-local->actor.position).length()>50) {
                 auto location=encodeServerPacket(ServerMessage::PartyVitals,[&](auto &out){
-                    out.u32(uint32_t(view->actor.id.value));out.u32(uint32_t(std::floor(position.x)));out.u32(uint32_t(std::floor(position.y)));
+                    out.u32(wireId(view->actor.id));out.u32(uint32_t(std::floor(position.x)));out.u32(uint32_t(std::floor(position.y)));
                 });
                 if(!peer.partyPositions.contains(view->actor.id) || peer.partyPositions.at(view->actor.id)!=location) {
                     packets.push_back(location);peer.partyPositions[view->actor.id]=std::move(location);
@@ -101,7 +101,7 @@ void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const 
             const auto sent=peer.relations.find(key);
             if(sent!=peer.relations.end() && sent->second==relation.flags) continue;
             packets.push_back(encodeServerPacket(ServerMessage::PlayerRelationFlags,[&](auto &out){
-                out.u32(uint32_t(actor.value));out.u32(uint32_t(target->second.value));out.u16(relation.flags);
+                out.u32(wireId(actor));out.u32(wireId(target->second));out.u16(relation.flags);
             }));
             peer.relations[key]=relation.flags;
         }
@@ -112,7 +112,7 @@ void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const 
     std::erase_if(peer.partyPositions,[&](const auto &p){return !allies.contains(p.first);});
     for (auto it = peer.roster.begin(); it != peer.roster.end();) {
         if (!present.contains(it->first)) {
-            packets.push_back(encodeServerPacket(ServerMessage::PlayerLeft, [&](auto &out) { out.u32(uint32_t(it->first.value)); }));
+            packets.push_back(encodeServerPacket(ServerMessage::PlayerLeft, [&](auto &out) { out.u32(wireId(it->first)); }));
             it = peer.roster.erase(it);
         } else ++it;
     }
@@ -123,8 +123,8 @@ void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const 
             // by actor identity separately from instance-local participant IDs.
             const auto actor = it->second.actor;
             for (const auto &[item, removal] : it->second.equipment)
-                packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(uint32_t(item.value)); }));
-            packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(0); out.u32(uint32_t(actor.value)); }));
+                packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(wireId(item)); }));
+            packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(0); out.u32(wireId(actor)); }));
             it = peer.visible.erase(it);
         } else ++it;
     }
@@ -187,12 +187,12 @@ void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const 
         if(view->hover && view->hover->recipients.contains(binding->player)) {
             if(hover==peer.hover.end() || hover->second!=view->hover->revision) {
                 packets.push_back(encodeServerPacket(ServerMessage::Chat,[&](auto &out){
-                    out.u8(5);out.u8(0);out.u8(0);out.u32(uint32_t(actor.value));out.u8(0);out.u8(0);out.string({});out.string(view->hover->text);
+                    out.u8(5);out.u8(0);out.u8(0);out.u32(wireId(actor));out.u8(0);out.u8(0);out.string({});out.string(view->hover->text);
                 }));
                 peer.hover[actor]=view->hover->revision;
             }
         } else if(hover!=peer.hover.end()) {
-            packets.push_back(encodeServerPacket(ServerMessage::Reserved76,[&](auto &out){out.u8(0);out.u32(uint32_t(actor.value));}));
+            packets.push_back(encodeServerPacket(ServerMessage::Reserved76,[&](auto &out){out.u8(0);out.u32(wireId(actor));}));
             peer.hover.erase(hover);
         }
         auto &previous = peer.states[actor];

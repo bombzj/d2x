@@ -57,7 +57,11 @@ std::optional<ItemSeeds> System::reserveSeeds(EntityId source,uint64_t occurrenc
     if(index<seeds.size()) return seeds[index];
     if(index!=seeds.size() || index>=64) return {};
     auto random=ports_.random;
-    const ItemSeeds next{rollRandom(random),rollRandom(random)};
+    ItemSeeds next{rollRandom(random),rollRandom(random)};
+    // CreateItemEx allocates before InitItemStats; a later discarded item
+    // still consumes both game seeds and its item GUID. Retries reuse this row.
+    seeds.reserve(seeds.size()+1);
+    next.allocation=ports_.items.reserveIdentity();
     seeds.push_back(next);
     ports_.random=random;
     return next;
@@ -167,6 +171,14 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
         return {DomainStatus::Applied, std::monostate{}};
     }
     if(!found->second.prepared) {
+        std::set<EntityId> allocations;
+        for(const auto &item:batch.items) {
+            const auto identity=batch.identities.find(item.id);
+            if(identity==batch.identities.end() || !allocations.insert(identity->second).second ||
+               std::none_of(found->second.itemSeeds.begin(),found->second.itemSeeds.end(),
+                   [&](const auto &seeds){return seeds.allocation==identity->second;})) return {DomainStatus::InvalidRequest,{}};
+        }
+        if(batch.identities.size()!=batch.items.size()) return {DomainStatus::InvalidRequest,{}};
         if(pd2Random && found->second.pd2Random!=ports_.pd2Random) return {DomainStatus::Stale,{}};
         if(found->second.roomSeed && !ports_.areas.validateRoomRandom(*found->second.roomSeed)) return {DomainStatus::Stale,{}};
         if(found->second.monsterSeed) if(const auto *monster=ports_.monsters.find(source))
@@ -212,6 +224,7 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
                 std::optional<RoomPoint>{{*room,request.position}}:ports_.areas.nativeFreeSpace(*room,int(global.x),int(global.y),1,collision);
             if(!position) continue;
             items::PreparedBatch single;single.equipment=batch.equipment;
+            single.identities.emplace(item.id,batch.identities.at(item.id));
             single.items.push_back(std::move(item));
             placed.emplace_back(std::move(single),GroundLocation{position->room.area,position->position});
         }

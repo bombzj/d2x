@@ -55,7 +55,7 @@ void System::curseControl(EntityId id,Actor::CurseControl control) {
 }
 void System::refreshNecro(EntityId id,MonsterRule rule,UnitCombatStats stats,std::shared_ptr<const NecroPetSpec> pet,std::optional<WeaponDamage> weapon,
     std::optional<NativeUnitStats> intrinsic,uint64_t tick) {
-    if(auto it=state_.actors.find(id);it!=state_.actors.end() && it->second.necroSummon && it->second.life>0) {
+    if(auto it=state_.actors.find(id);it!=state_.actors.end() && it->second.necroSummon && it->second.alive() && it->second.life>0) {
         auto &body=it->second;
         std::optional<LifeChange> life;
         if(intrinsic) {
@@ -245,6 +245,24 @@ ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors
             throw std::invalid_argument("Invalid staged actor retirement");
     }
     for(auto &[id,candidate]:result.actors) {
+        const auto bind=[&](EntityId entity,NativeUnitType type) {
+            if(ports_.ids.hasNative(entity,type)) return;
+            if(!result.identities) result.identities=ports_.ids.preparePublication(allocatedIds);
+            result.identities->bind(entity,type);
+        };
+        bind(id,NativeUnitType::Monster);
+        if(candidate.birthEquipmentFirst && result.identities && result.identities->covers(EntityId{candidate.birthEquipmentFirst}))
+            for(size_t index=0;index<candidate.birthEquipmentItems;++index)
+                bind(EntityId{candidate.birthEquipmentFirst+index},NativeUnitType::Item);
+        if(candidate.equipment) {
+            const auto bindItem=[&](auto &&self,const ItemInstance &item)->void {
+                bind(item.id,NativeUnitType::Item);
+                for(const auto &child:item.socketedItems) self(self,child);
+            };
+            for(const auto &[itemId,item]:candidate.equipment->inventory.items) {
+                (void)itemId;bindItem(bindItem,item);
+            }
+        }
         if(candidate.birthUniquesExpected) {
             if(result.uniquesExpected && result.uniquesExpected!=candidate.birthUniquesExpected)
                 throw std::invalid_argument("Conflicting native birth unique snapshots");
@@ -417,7 +435,7 @@ DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec positio
     const auto found=state_.actors.find(id);const auto *area=ports_.areas.find(owner.area);
     if(found==state_.actors.end() || (!(found->second.amazonPet && found->second.amazonPet->warp) && !(found->second.assassinPet && found->second.assassinPet->definition->warp) && !found->second.druidPet && !found->second.necroSummon && !found->second.hireling) || found->second.owner!=owner.player || !area || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
     auto &pet=found->second;if(!area->definition.collision.walkable(position,pet.rule.collision)) return {DomainStatus::Unavailable,{}};
-    for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
+    for(const auto &[other,body]:state_.actors) if(other!=id && body.alive() && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }
     stop(id);pet.area=owner.area;pet.position=position;ports_.areas.moveRoomUnit(id,pet.area,pet.position);refreshCollision(pet);pet.busyUntil=owner.tick;pet.neutralAt.reset();pet.frozenUntil=pet.chilledUntil=0;++pet.revision;return {DomainStatus::Applied,std::monostate{}};
 }

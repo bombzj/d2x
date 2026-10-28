@@ -14,12 +14,13 @@ RequestResult move(GameplayContext &context, net::protocol::Reader &in, bool run
 }
 RequestResult approach(GameplayContext &context, net::protocol::Reader &in, bool run) {
     const auto type = in.u32(), id = in.u32(); in.finish();
-    if (type == 0) return submitGameplay(context, MovementCommand{MovementAction::ApproachCorpse, {}, run, EntityId{id}});
-    if (type == 1) return submitGameplay(context, MovementCommand{MovementAction::ApproachNpc, {}, run, EntityId{id}});
-    if (type == 2) return submitGameplay(context, MovementCommand{MovementAction::ApproachObject, {}, run, EntityId{id}});
-    if (type == 4) return submitGameplay(context, MovementCommand{MovementAction::ApproachItem, {}, run, EntityId{id}});
+    const auto entity=context.entity(id,type);if(!entity) return {RequestStatus::Rejected};
+    if (type == 0) return submitGameplay(context, MovementCommand{MovementAction::ApproachCorpse, {}, run, entity});
+    if (type == 1) return submitGameplay(context, MovementCommand{MovementAction::ApproachNpc, {}, run, entity});
+    if (type == 2) return submitGameplay(context, MovementCommand{MovementAction::ApproachObject, {}, run, entity});
+    if (type == 4) return submitGameplay(context, MovementCommand{MovementAction::ApproachItem, {}, run, entity});
     if (type != 5) return {RequestStatus::NotImplemented};
-    return submitGameplay(context, MovementCommand{MovementAction::ApproachExit, {}, run, EntityId{id}});
+    return submitGameplay(context, MovementCommand{MovementAction::ApproachExit, {}, run, entity});
 }
 }
 RequestResult WalkPoint(GameplayContext &context, net::protocol::Reader &in) { return move(context, in, false); }
