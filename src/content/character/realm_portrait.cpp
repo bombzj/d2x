@@ -175,11 +175,10 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineChara
     // Newly created MCP characters can still use version 4 with empty equipment.
     // Component/color/class slots are shared with the saved version 10/13 layout.
     if (version != 4 && version != 10 && version != 13) return {};
-    // Component transforms require a separate per-layer palette consumer. Keep
-    // unsupported previews absent rather than substituting unequipped art.
-    for (size_t i = 14; i < 25; ++i)
-        if (c.portrait[i] != 0xFF)
-            return {};
+    // Bytes 14..24 carry per-component dye transforms. The live unit preview
+    // (decode(OnlineUnit)) rebuilds them as 0xFF and draws the base component
+    // art without a palette consumer; keep the same in-game behavior instead
+    // of dropping the whole character card.
     constexpr std::array tokens{"am", "so", "ne", "pa", "ba", "dz", "ai"};
     RealmPortraitParts p;
     p.token = tokens[*c.characterClass];

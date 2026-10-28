@@ -387,7 +387,11 @@ struct RealmFrontend::Impl {
             }
             found = portraits.emplace(c.portrait, std::move(animation)).first;
         }
-        if (const auto *cel = found->second.frame(0, int(GetTime() * 25))) {
+        // Screen-down (south, world +x+y) is direction 4 in the DCC direction
+        // tables (dir8/dir16/dir32 all map it to 4); direction 0 faces
+        // down-left. The portrait stands facing the viewer straight on.
+        const int facing = direction({1.f, 1.f}, found->second.directions);
+        if (const auto *cel = found->second.frame(facing, int(GetTime() * 25))) {
             // D2Launch CharSel writes cell flag 0x10 (dead) on the portrait
             // control (D2Win!10194); dead Hardcore characters draw as a
             // translucent ghost. The dead flag does not affect the name color.
