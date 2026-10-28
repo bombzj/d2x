@@ -24,6 +24,7 @@ struct Ports { const PlayerStore &players; monsters::System &monsters; const Are
 class System {
     State state_;
     const Ports ports_;
+    void storeLastAttacker(SpellImpact &,ParticipantView,EntityId source);
     StepStatus resolveSpells(TickContext,std::optional<std::pair<EntityId,uint64_t>> selected={},bool allocateOnly=false);
     DomainStatus resolveEnvironment(SpellImpact &,TickContext);
     DomainStatus prepareMissileContact(SpellImpact &,ParticipantView,ParticipantView,uint64_t generation,TickContext,bool preludeOnly=false);
@@ -67,6 +68,7 @@ class System {
     DomainStatus postNativeSkillCharge(SpellImpact &,TickContext);
     DomainStatus finishNativeMeleeDrain(SpellImpact &,int64_t physical,TickContext);
     void discardNativeMelee(EntityId source,uint64_t occurrence);
+    DomainResult<> itemMeleeDrain(EntityId source,EntityId target,TickContext,std::shared_ptr<SpellImpact> &);
     bool addAllocatedPhysical(EntityId source,uint64_t occurrence,int32_t amount);
     void cancel(EntityId);
     StepStatus step(TickContext, FrameFacts &);

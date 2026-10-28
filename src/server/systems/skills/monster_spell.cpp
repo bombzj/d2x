@@ -259,12 +259,13 @@ DomainResult<> System::releaseMonsterSpell(MonsterRelease &pending,TickContext t
     std::vector<missiles::NativeSpawn> births;
     if(function==17 || function==102) {
         const auto target=ports_.monsters.nativeTargetPosition(std::get<UnitTarget>(pending.request.target).id,source->area);
-        if(!target) return done();
-        const auto global=target->first+ports_.areas.at(source->area).definition.origin;
+        const auto point=target?std::optional{target->first}:pending.launch?std::optional{pending.launch->second}:std::nullopt;
+        if(!point) return done();
+        const auto global=*point+ports_.areas.at(source->area).definition.origin;
         if(!int(global.x) || !int(global.y) || pending.formulaValue<=0) return done();
         if(pending.formulaValue>512) return {DomainStatus::Capacity,{}};
         for(int index=0;index<pending.formulaValue;++index) {
-            missiles::NativeSpawn birth{source->id,source->area,pending.generation,tick.tick,source->position,target->first,*missile,function==102?0:pending.request.skill,pending.attack.rank};
+            missiles::NativeSpawn birth{source->id,source->area,pending.generation,tick.tick,source->position,*point,*missile,function==102?0:pending.request.skill,pending.attack.rank};
             birth.initialization=function==102?missiles::NativeSpawn::Initialization::DiabWall:missiles::NativeSpawn::Initialization::ChargedSkill;
             birth.initializationIndex=index;births.push_back(birth);
         }

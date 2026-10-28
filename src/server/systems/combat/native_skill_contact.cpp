@@ -764,6 +764,77 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
     if(execution.melee && !execution.hit) return finishNativeMeleeMiss(impact,target,tick);
     return DomainStatus::Applied;
 }
+DomainResult<> System::itemMeleeDrain(EntityId source,EntityId target,TickContext tick,std::shared_ptr<SpellImpact> &pending) {
+    // SrvDo002 does not allocate another hit. Drain copies the most recent
+    // matching AllocCombat record; a missing record is a successful no-op.
+    if(!pending) {
+        const auto found=std::find_if(state_.spells.rbegin(),state_.spells.rend(),[&](const auto &impact) {
+            return impact.source==source && impact.next<impact.targets.size() && impact.targets[impact.next]==target &&
+                impact.nativeSkill && impact.nativeSkill->melee && impact.nativeSkill->heldPrepared &&
+                !impact.nativeSkill->allocationFreed && !impact.nativeSkill->cancelled;
+        });
+        if(found==state_.spells.rend()) return {DomainStatus::Applied,std::monostate{}};
+        pending=std::make_shared<SpellImpact>(*found);
+        auto &copy=*pending;copy.nativeDrainHeld=false;copy.phase=ImpactPhase::Contact;
+        copy.nativeSkill=std::make_shared<NativeSkillContact>();auto &native=*copy.nativeSkill;
+        native.skill=found->nativeSkill->skill;native.rank=found->nativeSkill->rank;
+        native.melee=true;native.hit=found->nativeSkill->hit;native.defense=found->nativeSkill->defense;
+        native.heldPrepared=true;native.chargePosted=native.postAllocationComplete=native.flagsComplete=true;
+        native.borrowedAllocation=found->nativeSkill;
+        if(found->areaDamage) copy.areaDamage=*found->areaDamage;
+        if(found->missileContact) {
+            const auto &old=*found->missileContact;auto fresh=std::make_shared<MissileContactExecution>();
+            fresh->targetIndex=old.targetIndex;fresh->accuracyPrepared=old.accuracyPrepared;fresh->hit=old.hit;
+            fresh->damagePrepared=old.damagePrepared;fresh->defensePrepared=old.defensePrepared;
+            fresh->blocked=old.blocked;fresh->criticalPrepared=old.criticalPrepared;fresh->reactionPrepared=old.reactionPrepared;
+            fresh->avoidance=old.avoidance;fresh->damage=old.damage;fresh->resultSuccessful=old.resultSuccessful;
+            fresh->suppressEvents=old.suppressEvents;fresh->flagsPrepared=old.flagsPrepared;
+            copy.missileContact=std::move(fresh);
+        }
+        if(found->playerContact) {
+            const auto &old=*found->playerContact;auto fresh=std::make_shared<PlayerContactExecution>();
+            fresh->targetIndex=old.targetIndex;fresh->victim=old.victim;fresh->attacker=old.attacker;
+            fresh->target=old.target;fresh->hit=old.hit;fresh->states=old.states;fresh->adjustment=old.adjustment;
+            fresh->defense=old.defense;fresh->defensePrepared=fresh->defenseCommitted=true;
+            fresh->nativeMissile=old.nativeMissile;fresh->missile=old.missile;fresh->hostile=old.hostile;
+            fresh->hitClass=old.hitClass;fresh->remainingLife=old.remainingLife;
+            copy.playerContact=std::move(fresh);
+        }
+        if(found->monsterContact) {
+            const auto &old=*found->monsterContact;auto fresh=std::make_shared<MonsterContactExecution>();
+            fresh->targetIndex=old.targetIndex;fresh->target=old.target;fresh->channels=old.channels;fresh->pierce=old.pierce;
+            fresh->lifeDrain=old.lifeDrain;fresh->manaDrain=old.manaDrain;fresh->staminaDrain=old.staminaDrain;
+            fresh->nativeMissile=old.nativeMissile;fresh->bypass=old.bypass;fresh->statuses=old.statuses;
+            fresh->getHit=old.getHit;fresh->defense=old.defense;fresh->amount=old.amount;
+            fresh->absorbed=old.absorbed;fresh->physical=old.physical;fresh->cold=old.cold;
+            fresh->stun=old.stun;fresh->freeze=old.freeze;fresh->poison=old.poison;
+            fresh->hitClass=old.hitClass;fresh->hostile=old.hostile;fresh->sanctuary=old.sanctuary;
+            fresh->clearStun=old.clearStun;fresh->receptionPrepared=fresh->defenseCommitted=true;
+            copy.monsterContact=std::move(fresh);
+        }
+    }
+    auto &copy=*pending;
+    if(!copy.nativeSkill->drainRangeChecked && !nativeMeleeReach(copy)) {
+        if(const auto allocation=copy.nativeSkill->borrowedAllocation.lock()) allocation->allocationFreed=true;
+        return {DomainStatus::Applied,std::monostate{}};
+    }
+    const auto victim=Participants{ports_.players,ports_.monsters,ports_.social}.find(target);
+    if(!victim.id()) return {DomainStatus::Unavailable,{}};
+    DomainStatus status=DomainStatus::Applied;
+    if(copy.phase==ImpactPhase::Contact) {
+        if(!copy.nativeSkill->hit) status=finishNativeMeleeMiss(copy,victim,tick);
+        else if(copy.playerContact && victim.player) status=finishPlayerContact(copy,*victim.player,tick);
+        else if(copy.monsterContact && victim.monster) status=finishMonsterContact(copy,*victim.monster,tick);
+    }
+    if(status!=DomainStatus::Applied) return {status,{}};
+    if(copy.phase==ImpactPhase::FollowUp) {
+        const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,source);
+        status=finishImpact(copy,caster?caster->controller:nullptr,ports_.areas.at(copy.area).generation,tick.tick);
+        if(status!=DomainStatus::Applied) return {status,{}};
+    }
+    if(const auto allocation=copy.nativeSkill->borrowedAllocation.lock()) allocation->allocationFreed=true;
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainStatus System::finishNativeMeleeMiss(SpellImpact &impact,ParticipantView target,TickContext tick) {
     auto &execution=*impact.nativeSkill;
     if(impact.nativeDrainHeld || execution.skipMissDrain || !nativeMeleeDrainReach(impact)) return DomainStatus::Applied;
@@ -833,10 +904,10 @@ DomainStatus System::finishNativeMeleeDrain(SpellImpact &impact,int64_t physical
     if(impact.nativeSkill->directFunction==163 || impact.nativeSkill->directFunction==153) return DomainStatus::Applied;
     auto &execution=*impact.nativeSkill;
     if(!execution.attackItemsComplete) {
-        if(const auto *player=ports_.players.findActor(impact.source)) {
+        if(const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,impact.source)) {
             if(!execution.attackItems) {
                 const auto target=Participants{ports_.players,ports_.monsters,ports_.social}.find(impact.targets.at(impact.next));
-                const ActorContext actor{player->player,player->actor,player->area,ports_.areas.at(player->area).generation,0,tick.tick};
+                const auto actor=caster->context(ports_.areas,tick.tick);
                 auto events=ports_.itemTriggers.prepare(actor,{ItemSkillEvent::Attack},target.id(),target.position());
                 if(!events) return events.status;
                 execution.attackItems=std::make_shared<reactions::ItemEventPlan>(std::move(*events.value));

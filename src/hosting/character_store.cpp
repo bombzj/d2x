@@ -2,6 +2,7 @@
 #include "character_creation.hpp"
 #include "content/classic_data.hpp"
 #include "persistence/save_codec.hpp"
+#include "persistence/d2s_header.hpp"
 #include "resources/atomic_file.hpp"
 #include <algorithm>
 #include <fstream>
@@ -156,6 +157,12 @@ void CharacterStore::create(std::string name, unsigned characterClass, uint32_t 
         if (saved && folded(saved->player.name) == key) throw std::runtime_error("A saved character already uses this name");
     }
     auto bytes = encodeSave(createCharacter(content_, std::move(name), characterClass, seed, hardcore), content_);
+    if (!content_.pd2Host) {
+        auto header = readD2sHeader(bytes);
+        bytes.resize(d2sHeaderSize);
+        header.flags |= 1u;
+        writeD2sHeader(bytes, header);
+    }
     decodeSave(bytes, content_);
     if (std::filesystem::exists(path)) throw std::runtime_error("Character file appeared during creation");
     writeFileAtomically(path, bytes, false);

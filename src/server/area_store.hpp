@@ -274,6 +274,7 @@ class AreaStore {
     std::vector<std::pair<RegionId,size_t>> loadedRoomOrder() const;
     void initializeUnitRooms(RegionId);
     std::shared_ptr<RoomUnitRegistration> prepareRoomUnit(EntityId,uint8_t kind,RegionId,Vec,std::optional<RoomView> room={}) const;
+    std::shared_ptr<RoomUnitRegistration> prepareUnplacedRoomUnit(EntityId,uint8_t kind) const;
     void publishRoomUnit(RoomUnitRegistration &) noexcept;
     bool validateRoomUnit(const RoomUnitRegistration &,EntityId) const;
     bool hasRoomUnit(EntityId id) const noexcept {return roomUnits_.contains(id);}

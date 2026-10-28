@@ -52,7 +52,7 @@ StepStatus System::advancePd2EquippedSkill(const ActorContext &actor,PaladinCycl
         result=advancePd2EquippedStorm(actor,skill,*cycle.equippedStorm);
     } else if(skill.pd2 && skill.pd2->doFunction==54)
         result=bladeShield(actor,skill,cycle.equippedBladeShield);
-    else result=ports_.skills.itemTrigger(actor,std::move(skill),definition.collision,actor.actor,caster->position(),false,false,&cycle.equippedRelease);
+    else result=ports_.skills.itemTrigger(actor,std::move(skill),definition.collision,actor.actor,caster->position(),false,0,&cycle.equippedRelease);
     if(isDeferred(result.status)) return StepStatus::Blocked;
     if(!result) state_.itemAuraDeferred="PD2 equipped skill program is unavailable: "+std::to_string(cycle.skill);
     cycle.pulseCommitted=true;return StepStatus::Complete;

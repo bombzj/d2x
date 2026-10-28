@@ -4,6 +4,7 @@
 #include "gameplay/stats/modifier_values.hpp"
 #include <algorithm>
 #include <utility>
+#include <stdexcept>
 
 namespace d2x::server::monsters {
 void recordNativeMode(Actor &unit,uint8_t mode) {
@@ -31,6 +32,7 @@ DomainResult<> System::setNativeTarget(EntityId id,EntityId target) {
 }
 void System::storeLastAttacker(EntityId target,EntityId source) {
     if(auto found=state_.actors.find(target);found!=state_.actors.end() && found->second.alive() && found->second.lastAttacker!=source) {
+        if(found->second.revision==UINT64_MAX) throw std::overflow_error("Monster last-attacker revision exhausted");
         found->second.lastAttacker=source;++found->second.revision;
     }
 }

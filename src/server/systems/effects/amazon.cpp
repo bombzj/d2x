@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "attribute_projection.hpp"
 #include "server/systems/skills/system.hpp"
+#include "server/systems/skills/native_caster.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -180,17 +181,25 @@ std::map<int,std::vector<StatValue>> System::unitStateStats(EntityId id,uint64_t
     return values;
 }
 DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec &skill,std::optional<EntityId> emitter) {
-    const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
-    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 ||
-        !area || area->generation!=actor.areaGeneration || !skill.amazonMagic || p->persistent.player.mana<skill.manaCost) return {DomainStatus::InvalidActor,{}};
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    const auto *p=caster?caster->player:nullptr;const auto *area=ports_.areas.find(actor.area);
+    if(!caster || !caster->programs() || caster->area()!=actor.area ||
+        (p?(!p->entered || p->persistent.player.hp<=0 || p->persistent.player.mana<skill.manaCost):
+            (!caster->monster->alive() || skill.manaCost || skill.charge)) ||
+        !area || area->generation!=actor.areaGeneration || !skill.amazonMagic) return {DomainStatus::InvalidActor,{}};
     const auto &program=*skill.amazonMagic;auto next=units_;auto nextPlayers=state_.players;
     std::vector<transactions::Change> changes;
     const auto *pet=emitter?ports_.monsters.find(*emitter):nullptr;
     if(emitter && (!pet || !pet->hireling || pet->owner!=actor.player || pet->area!=actor.area || !pet->alive() || pet->life<=0 || skill.manaCost || skill.charge)) return {DomainStatus::InvalidActor,{}};
     const EntityId source=pet?pet->id:actor.actor;
     auto units=std::make_shared<AuraUnitPublication>();
-    transactions::CharacterEdit debit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
-    const auto &rules=*p->rules.skills->stats;
+    std::optional<transactions::CharacterEdit> debit;
+    if(p) {
+        debit.emplace(actor,p->inventoryRevision,p->characterRevision,p->persistent.player);
+        debit->player.mana-=skill.manaCost;debit->skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit->charge=skill.charge;
+    }
+    const auto &programs=*caster->programs();
+    const auto &rules=*programs.stats;
     const auto &stat=rules.definitions.at(program.stat);
     const auto primary=program.nativeStat?*program.nativeStat:StatValue{{stat.id,0},
         nativeShiftLeft(program.defenseReduction?nativeSubtract(0,program.defenseReduction):program.slowPercent,stat.valueShift)};
@@ -214,7 +223,7 @@ DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec
                 edit.publicFacts.emplace_back(StateFact{id,0,recipient->area,removed.effect.spec.state.id,false});
             const auto *installed=states.find(application.handle);
             if(!installed) throw std::runtime_error("Missing installed player Amazon state");
-            edit.publicFacts.emplace_back(StateFact{id,0,recipient->area,program.state.id,true,nativeEffectStats(*p->rules.skills,installed->spec)});
+            edit.publicFacts.emplace_back(StateFact{id,0,recipient->area,program.state.id,true,nativeEffectStats(programs,installed->spec)});
             changes.emplace_back(std::move(edit));continue;
         }
         const auto *monster=ports_.monsters.find(id);if(!monster) return {DomainStatus::Stale,{}};
@@ -235,12 +244,18 @@ DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec
         }
         const auto *installed=target.states.find(application.handle);
         if(!installed) throw std::runtime_error("Missing installed native Amazon state");
-        target.nativeStats[program.state.id]=nativeEffectStats(*p->rules.skills,installed->spec);
+        target.nativeStats[program.state.id]=nativeEffectStats(programs,installed->spec);
         units->facts.emplace_back(StateFact{id,1,m.area,program.state.id,true,target.nativeStats.at(program.state.id)});
         auto life=resources?resources->take():monsters::LifeChange{id,m.revision,Fixed8::fromRaw(m.life),Fixed8::fromRaw(m.maximumLife),m.nativeStats,false};
         prepareUnitEffects(*units,id,target,std::move(life),actor.tick);
     }
-    changes.emplace_back(std::move(debit));
+    if(debit) changes.emplace_back(std::move(*debit));
+    if(changes.empty()) {
+        if(!validateAuraUnits(*units)) return {DomainStatus::Conflict,{}};
+        const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},std::move(units->facts)});
+        if(!output) return {output.status,{}};
+        publishAuraUnits(*units);return {DomainStatus::Applied,std::monostate{}};
+    }
     auto prepared=ports_.transactions.prepareGroup(std::move(changes),std::move(units));if(!prepared) return {prepared.status,{}};
     auto plans=std::move(*prepared.value);
     const auto result=plans.size()==1?ports_.transactions.commit(std::move(plans.front())):ports_.transactions.commitCharacters(std::move(plans));

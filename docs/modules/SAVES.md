@@ -12,7 +12,7 @@
 
 排序依据为原1.13c `D2Launch.dll`（SHA-256 `99cabc4751c95d035b5e77151b3605b809884fec2c10edf37d4c4e4e231e8479`）：CharSel RVA `0xCC50`枚举D2S，`0xCD1B–0xCD36`传入`WIN32_FIND_DATAA.ftLastWriteTime`的高／低32位；`0xCA41–0xCA6D`在资料片分支按无符号高／低位降序插入，仅新时间严格较大才插到当前项之前，同时间继续遍历。使用文件时间而非D2S头部`0x30`保存时间或角色名；`hosting/character_store.cpp::list`用标准文件时间及稳定排序实现，不改D2S格式。远端MCP `0x19`经CharSel RVA `0xCB00`接入时传入两个零时间值，保留服务器给定次序；客户端不套用本地排序。
 
-七职业创建读取当前MPQ CharStats、物品、初始技能来源和真实种子，创建即写入完整D2S。名称按现有编码支持1–15个ASCII字母／数字／连字符；文件系统保留名与quick不能由建角创建。原服名称规则仍由原服裁定。删角只删除选中D2S，保留.bak和探索侧文件，不递归删除目录。
+七职业创建读取当前MPQ CharStats、物品、初始技能来源和真实种子；原版配置新角色创建时写335字节v96 INIT头，首次入局后的正常保存写完整D2S。PD2本地创建仍沿用既有完整存档路径，初始格式差异尚未核实。名称按现有编码支持1–15个ASCII字母／数字／连字符；文件系统保留名与quick不能由建角创建。原服名称规则仍由原服裁定。删角只删除选中D2S，保留.bak和探索侧文件，不递归删除目录。
 
 创建及INIT初始化在原起始装备完成后，只有当前活动装备实际提供`CharStats.StartSkill`时才将其选为当前组右手技能；左手和备用组保留普通攻击。该入口供所有职业共用，技能ID取当前MPQ各职业的CharStats与技能目录，不按女巫硬编码；起始物品的技能来自item_singleskill，不能给人物补已学等级，也不能将普通物品技能的选择来源写为物品GUID。初始备用组没有武器，切换过去后左右手均为普通攻击；不把主组的起始技能复制到备用组。依据D2MOO `Player.cpp::PLAYER_CreateStartItem`与`PlrSave2.cpp::PLRSAVE2ERROR_NEWBIE_SAVE`分支的`SKILLS_GetHighestLevelSkillFromUnitAndId`／`D2GAME_AssignSkill(..., 0, StartSkill, -1)`。此前只构造起始物品而漏选右手，原版新建女巫首次Join D2X Host因此收到普通攻击选择。修正仅作用于新建／合法INIT，完整旧档仍恢复其保存的两套武器四个手部选择，不静默更改玩家已有选择；格式和来源序号编码不变。自研新建女巫及完整档重入已确认右手火弹、基础等级0／短杖加成1，完整档也已由原版Host接收并恢复相同选择；原版335字节INIT首次Join已实包确认右手火弹，取消后的空备用组与主组W切换也正常；此实机例不等于七职业逐项联机认证。
 

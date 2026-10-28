@@ -64,12 +64,12 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     const bool delayDeath=!life && uninterruptable;
     const bool dead=!life && !delayDeath && !status.deferAction;
     reactions::ItemEventPlan itemEvents;
-    if(!status.suppressEvents && ports_.skillPrograms && ports_.skillPrograms->pd2 && (dead || (!status.actionOnly && !poisonOnly))) {
+    if(!status.suppressEvents && ports_.skillPrograms && (dead || (!status.actionOnly && !poisonOnly))) {
         const combat::Participants participants{ports_.players,*this,ports_.social};
         const auto attacker=participants.find(status.source?status.source:actor.lastAttacker);
         const ActorContext context{actor.owner.value_or(PlayerId{}),actor.id,actor.area,ports_.areas.at(actor.area).generation,0,tick};
-        auto events=ports_.itemTriggers.prepare(context,status.actionOnly || poisonOnly?std::initializer_list{ItemSkillEvent::Death}:
-            std::initializer_list{ItemSkillEvent::GetHit,ItemSkillEvent::Death},attacker.id(),attacker.id()?attacker.position():actor.position);
+        auto events=ports_.itemTriggers.prepare(context,status.actionOnly || poisonOnly || !getHit.value_or(!softHit) || uninterruptable?std::initializer_list<ItemSkillEvent>{ItemSkillEvent::Death}:
+            std::initializer_list<ItemSkillEvent>{ItemSkillEvent::GetHit,ItemSkillEvent::Death},attacker.id(),attacker.id()?attacker.position():actor.position);
         if(!events) return {events.status,{}};
         itemEvents=std::move(*events.value);
     }
@@ -209,7 +209,9 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
 }
 DomainResult<> System::finishDamageAction(EntityId id,EntityId source,int64_t amount,uint64_t tick,uint8_t hitClass,bool softHit,std::optional<bool> getHit) {
     const auto *unit=find(id);if(!unit || !unit->alive() || unit->delayedDeathSource) return {DomainStatus::Applied,std::monostate{}};
-    DamageStatus status;status.source=source;status.actionOnly=true;
+    // ExecuteEvents already dispatched item callbacks on the accepted
+    // contact. ExecuteMissileDamage only finishes the reaction/death mode.
+    DamageStatus status;status.source=source;status.actionOnly=true;status.suppressEvents=true;
     return damage(id,source,amount,tick,0,false,hitClass,{},false,0,{},0,false,0,0,softHit,{},getHit,status);
 }
 DomainResult<> System::block(EntityId id,uint64_t tick) {

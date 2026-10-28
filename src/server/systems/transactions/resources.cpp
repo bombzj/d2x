@@ -9,7 +9,17 @@
 #include <cmath>
 #include <utility>
 #include <vector>
+#include <stdexcept>
 namespace d2x::server::transactions {
+void System::storeLastAttacker(EntityId target,EntityId source) {
+    for(auto &[id,player]:ports_.players.players_) {
+        (void)id;
+        if(player.actor!=target || !player.entered || player.persistent.player.hp<=0 || player.lastAttacker==source) continue;
+        if(player.characterRevision==UINT64_MAX) throw std::overflow_error("Player last-attacker revision exhausted");
+        player.lastAttacker=source;++player.characterRevision;player.totals.sourceRevision=player.characterRevision;
+        return;
+    }
+}
 DomainResult<> System::incrementPd2Counter(const ActorContext &actor,size_t index,std::optional<size_t> second,uint32_t bossFlag) {
     const auto found=ports_.players.players_.find(actor.player);
     if(found==ports_.players.players_.end()) return {DomainStatus::InvalidActor,{}};

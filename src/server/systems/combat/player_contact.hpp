@@ -48,7 +48,7 @@ struct PlayerContactExecution {
     reactions::ItemEventPlan itemEvents;
     uint32_t hitClass{};
     int64_t remainingLife{};
-    bool damageCommitted{};int64_t receivedPhysical{};
+    bool damageCommitted{},victimItemsPrepared{},lethal{},actionComplete{};int64_t receivedPhysical{};
     bool defensePrepared{},defenseCommitted{},callbacksPrepared{},callbacksComplete{},missile{},hostile{},fillEventComplete{},meleeEventComplete{};
 };
 struct MonsterContactExecution {
@@ -64,7 +64,7 @@ struct MonsterContactExecution {
     effects::NativeContactBatch callbacks;
     std::optional<effects::UnitReceptionPlan> defense;
     int64_t amount{},absorbed{},physical{},beforeDamage{};
-    bool sacrificeComplete{};
+    bool sacrificeComplete{},victimItemsPrepared{},lethal{},actionComplete{};
     uint64_t cold{},stun{},freeze{};
     std::optional<PoisonApplication> poison;
     WeaponHitEffects extras;

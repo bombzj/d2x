@@ -23,24 +23,32 @@
 #include <array>
 #include "server/systems/skills/evaluation.hpp"
 #include <algorithm>
+#include <optional>
 
 namespace d2x::server::effects {
 DomainResult<> System::nativeTerror(const ActorContext &actor,const SkillCastSpec &skill,EntityId id) {
-    const auto *player=ports_.players.findActor(actor.actor);const auto *unit=ports_.monsters.find(id);
-    if(!player || !player->rules.skills || !skill.curse || !unit || !unit->alive() || !unit->nativeStats || !unit->rule.stats)
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    const auto *player=caster?caster->player:nullptr;const auto *unit=ports_.monsters.find(id);
+    if(!caster || !caster->programs() || !skill.curse || !unit || !unit->alive() || !unit->nativeStats || !unit->rule.stats)
         return {DomainStatus::Unavailable,{}};
     const auto &program=*skill.curse;
-    const auto &rules=*player->rules.skills;const auto state=rules.terror;
+    const auto &rules=*caster->programs();const auto state=rules.terror;
     if(!unit->rule.switchAi || !unit->damageable() || unit->rule.boss || unit->identity.rank==MonsterRank::Unique ||
         unit->identity.rank==MonsterRank::SuperUnique || unit->identity.rank==MonsterRank::Champion ||
         unitStates(id,actor.tick).contains(unit->rule.uninterruptableState)) return {DomainStatus::Unavailable,{}};
     if(program.skipActive && unitStates(id,actor.tick).contains(program.state.id)) return {DomainStatus::Applied,std::monostate{}};
-    if(program.targetLevelBonus && nativeAdd(nativeAdd(skill.rank,program.targetLevelBonus),player->persistent.player.level)<=unit->rule.level)
+    if(program.targetLevelBonus && nativeAdd(nativeAdd(skill.rank,program.targetLevelBonus),caster->level())<=unit->rule.level)
         return {DomainStatus::Applied,std::monostate{}};
     const NativeFear request{id,program.fearSource?program.fearSource:actor.actor,state,
         rules.formulas->skillIds.at("terror"),1,program.frames,true,program.fearOrigin};
     auto candidate=prepareFear(request,actor.tick);if(!candidate) return {candidate.status,{}};
     auto publication=std::move(*candidate.value);
+    if(!player) {
+        if(!validateAuraUnits(*publication)) return {DomainStatus::Conflict,{}};
+        const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},std::move(publication->facts)});
+        if(!output) return {output.status,{}};
+        publishAuraUnits(*publication);return {DomainStatus::Applied,std::monostate{}};
+    }
     transactions::CharacterEdit debit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
     debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
     auto prepared=ports_.transactions.prepare(std::move(debit),nullptr,{},std::move(publication));if(!prepared) return {prepared.status,{}};
@@ -101,15 +109,17 @@ DomainResult<> System::nativeFear(const NativeFear &request,uint64_t tick) {
     publishAuraUnits(publication);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSpec &skill,EntityId selected) {
-    const auto *player=ports_.players.find(actor.player);const auto *monster=ports_.monsters.find(selected);
-    if(!player || !skill.curse || !monster || !monster->rule.stateTarget.acceptsCurseList() || monster->alignment()!=UnitAlignment::Evil || !monster->alive() ||
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    const auto *player=caster?caster->player:nullptr;const auto *monster=ports_.monsters.find(selected);
+    if(!caster || !caster->programs() || !skill.curse || !monster || !monster->rule.stateTarget.acceptsCurseList() || monster->alignment()!=UnitAlignment::Evil || !monster->alive() ||
        !skillAiControlAllowed(monster->identity.rank,monster->rule.switchAi,monster->rule.boss) ||
        ports_.areas.at(monster->area).definition.town) return {DomainStatus::Unavailable,{}};
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(!participants.canHarm(actor.actor,selected)) return {DomainStatus::Unavailable,{}};
     if(!monster->nativeStats || !monster->nativeStats->sources || !monster->rule.stats) return {DomainStatus::Unavailable,{}};
-    const auto &program=*skill.curse;
-    const int divisor=player->rules.skills->aiCurseDivisor.at(size_t(player->persistent.difficulty));
+    const auto &program=*skill.curse;const auto &rules=*caster->programs();
+    const auto difficulty=player?int(player->persistent.difficulty):caster->monster->rule.difficulty;
+    const int divisor=rules.aiCurseDivisor.at(size_t(difficulty));
     const int32_t duration=(divisor?nativeDivide(program.frames,divisor):program.frames);
     const auto frame=nativeAdd(nativeNarrow(uint32_t(actor.tick)),duration);
     const auto deadline=nativeEventDeadline(actor.tick,frame);
@@ -136,8 +146,8 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
         life.nativeMinions=parent->nativeMinions;std::erase(*life.nativeMinions,selected);
         changes.push_back(std::move(life));
     }
-    publication->facts.emplace_back(StateFact{selected,1,monster->area,player->rules.skills->alignment.id,true,
-        {{player->rules.skills->nativeStats.at("alignment"),1}}});
+    publication->facts.emplace_back(StateFact{selected,1,monster->area,rules.alignment.id,true,
+        {{rules.nativeStats.at("alignment"),1}}});
     const Vec center=monster->position+ports_.areas.at(monster->area).definition.origin;
     NativeAuraTargetQuery query{actor.actor,actor.area,program.radius,uint32_t(program.targetFilter),false,center,NativeAuraTargetMode::TargetRange,actor.tick};
     for(const auto id:nativeAuraCandidateRecipients(query)) {
@@ -156,7 +166,7 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
     }
     // Curse allocation can fail (resistance/Attract protection) after the
     // neutral alignment and nearby selectors have already been prepared.
-    const auto adjusted=curseStateDuration(duration,unitCurseResistance(selected,actor.tick),program.state,player->rules.skills->pd2);
+    const auto adjusted=curseStateDuration(duration,unitCurseResistance(selected,actor.tick),program.state,rules.pd2);
     if(adjusted && monster->rule.curseable) {
         auto shadow=*monster;shadow.nativeStats=selectedLife.intrinsic;shadow.life=selectedLife.life.raw();shadow.maximumLife=selectedLife.maximum.raw();
         MonsterResourceTrace resources(shadow,actor.tick,&target.states);
@@ -166,7 +176,7 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
         auto allocation=program;allocation.primaryStat.reset();allocation.nativeValues.emplace();allocation.nativeWrites.clear();
         auto applied=EffectApplication{{},{},false};
         if(configurePd2Curse(curse,selected,actor.tick))
-            applied=applyCurseState(target.states,allocation,curse,{},*player->rules.skills->stats,actor.tick,
+            applied=applyCurseState(target.states,allocation,curse,{},*rules.stats,actor.tick,
                 [&]{resources.sample(target.states,true);});
         if(applied.accepted) {
             auto life=resources.take();retainPreparedUnitControl(life,selectedLife);selectedLife=std::move(life);
@@ -176,12 +186,18 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
             }
             const auto *installed=target.states.find(applied.handle);
             if(!installed) throw std::runtime_error("Missing selected Attract state");
-            target.nativeStats[program.state.id]=nativeEffectStats(*player->rules.skills,installed->spec);
+            target.nativeStats[program.state.id]=nativeEffectStats(rules,installed->spec);
             publication->facts.emplace_back(StateFact{selected,1,monster->area,program.state.id,true,target.nativeStats[program.state.id]});
         }
     }
     changes.push_back(std::move(selectedLife));
     for(auto &life:changes) {const auto id=life.actor;prepareUnitEffects(*publication,id,next.at(id),std::move(life),actor.tick);}
+    if(!player) {
+        if(!validateAuraUnits(*publication)) return {DomainStatus::Conflict,{}};
+        const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},std::move(publication->facts)});
+        if(!output) return {output.status,{}};
+        publishAuraUnits(*publication);return {DomainStatus::Applied,std::monostate{}};
+    }
     transactions::CharacterEdit debit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
     debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
     auto prepared=ports_.transactions.prepare(std::move(debit),nullptr,{},std::move(publication));if(!prepared) return {prepared.status,{}};
@@ -189,13 +205,17 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
 }
 DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skill,Vec center,EntityId selected) {
     const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
-    const auto *player=caster?caster->controller:nullptr;const auto *area=ports_.areas.find(actor.area);
-    if(!caster || !player || !player->entered || caster->area()!=actor.area || (caster->player?player->persistent.player.hp<=0:!caster->monster->alive()) ||
-       !area || area->generation!=actor.areaGeneration || !skill.curse || player->persistent.player.mana<skill.manaCost)
+    const auto *player=caster?caster->player:nullptr;const auto *area=ports_.areas.find(actor.area);
+    if(!caster || !caster->programs() || caster->area()!=actor.area ||
+       (player?(!player->entered || player->persistent.player.hp<=0 || player->persistent.player.mana<skill.manaCost):
+           (!caster->monster->alive() || skill.manaCost || skill.charge)) ||
+       !area || area->generation!=actor.areaGeneration || !skill.curse)
         return {DomainStatus::InvalidActor,{}};
     const auto &program=*skill.curse;
-    const bool pd2=caster->programs() && caster->programs()->pd2;
-    if(caster->monster && program.targetProcedure!=CurseSpec::TargetProcedure::Cloak) return {DomainStatus::Unavailable,{}};
+    const auto &rules=*caster->programs();
+    const bool pd2=rules.pd2;
+    const auto difficulty=player?int(player->persistent.difficulty):caster->monster->rule.difficulty;
+    if(pd2 && caster->monster && program.targetProcedure!=CurseSpec::TargetProcedure::Cloak) return {DomainStatus::Unavailable,{}};
     if(program.targetProcedure==CurseSpec::TargetProcedure::TerrorUtility) return nativeTerror(actor,skill,selected);
     if(program.ai==CurseAi::Attract) return nativeAttract(actor,skill,selected);
     const auto aiEligible=[](const monsters::Actor &m) {return skillAiControlAllowed(m.identity.rank,m.rule.switchAi,m.rule.boss);};
@@ -203,9 +223,11 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
     auto next=units_;auto nextPlayers=state_.players;
     std::vector<transactions::Change> changesToPrepare;
     std::vector<monsters::LifeChange> lifeChanges;
-    const auto payment=caster->monster?ActorContext{player->player,player->actor,player->area,ports_.areas.at(player->area).generation,actor.sequence,actor.tick}:actor;
-    transactions::CharacterEdit debit{payment,player->inventoryRevision,player->characterRevision,player->persistent.player};
-    debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
+    std::optional<transactions::CharacterEdit> debit;
+    if(player) {
+        debit.emplace(actor,player->inventoryRevision,player->characterRevision,player->persistent.player);
+        debit->player.mana-=skill.manaCost;debit->skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit->charge=skill.charge;
+    }
     auto publication=std::make_shared<AuraUnitPublication>();
     const bool cloak=program.targetProcedure==CurseSpec::TargetProcedure::Cloak;
     if(cloak) {
@@ -227,14 +249,14 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         } else {
         auto &states=nextPlayers[player->actor].states;
         PlayerResourceTrace resources(*player,actor.tick,skill.manaCost,ports_.areas.statTime(actor.area));
-        const auto applied=applySkillState(states,skill,*skill.appliedEffect,*player->rules.skills->stats,*player->rules.character->states,actor.tick,
+        const auto applied=applySkillState(states,skill,*skill.appliedEffect,*rules.stats,*player->rules.character->states,actor.tick,
             [&]{resources.sample(states,true);});
         if(!applied.accepted) return {DomainStatus::Unavailable,{}};
-        debit.player=resources.record();debit.resourceBase=resources.maximum();debit.transient=projectEffectAttributes(states,actor.tick);
+        debit->player=resources.record();debit->resourceBase=resources.maximum();debit->transient=projectEffectAttributes(states,actor.tick);
         for(const auto &removed:applied.removed) if(!states.hasState(removed.effect.spec.state.id,actor.tick))
-            debit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,removed.effect.spec.state.id,false});
+            debit->publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,removed.effect.spec.state.id,false});
         const auto *installed=states.find(applied.handle);if(!installed) throw std::logic_error("Missing native Cloak owner list");
-        debit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,installed->spec.state.id,true,nativeEffectStats(*player->rules.skills,installed->spec)});
+        debit->publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,installed->spec.state.id,true,nativeEffectStats(rules,installed->spec)});
         }
     }
     Vec origin=center+area->definition.origin;
@@ -267,7 +289,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
             if(*duration) curse.duration=uint32_t(*duration);
             if(!configurePd2Curse(curse,id,actor.tick)) continue;
             PlayerResourceTrace resources(recipient,actor.tick,{},ports_.areas.statTime(recipient.area));
-            const auto applied=applyCurseState(states,program,curse,program.nativeWrites,*player->rules.skills->stats,actor.tick,
+            const auto applied=applyCurseState(states,program,curse,program.nativeWrites,*rules.stats,actor.tick,
                 [&]{resources.sample(states,true);});
             if(!applied.accepted) continue;
             transactions::CharacterEdit edit{{recipient.player,recipient.actor,recipient.area,ports_.areas.at(recipient.area).generation,0,actor.tick},recipient.inventoryRevision,recipient.characterRevision,resources.record()};
@@ -277,7 +299,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
                 edit.publicFacts.emplace_back(StateFact{recipient.actor,0,recipient.area,removed.effect.spec.state.id,false});
             const auto *installed=states.find(applied.handle);
             if(!installed) throw std::runtime_error("Missing installed native player curse state");
-            edit.publicFacts.emplace_back(StateFact{recipient.actor,0,recipient.area,program.state.id,true,nativeEffectStats(*player->rules.skills,installed->spec)});
+            edit.publicFacts.emplace_back(StateFact{recipient.actor,0,recipient.area,program.state.id,true,nativeEffectStats(rules,installed->spec)});
             changesToPrepare.emplace_back(std::move(edit));
             continue;
         }
@@ -290,7 +312,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         if(!cloak && program.ai!=CurseAi::None && (!aiEligible(monster) || monster.alignment()==UnitAlignment::Neutral)) continue;
         const auto controlAi=cloak && !aiEligible(monster)?CurseAi::None:program.ai;
         if((program.ai==CurseAi::Confuse || program.ai==CurseAi::Attract) && monster.alignment()!=UnitAlignment::Evil) continue;
-        if(program.targetLevelBonus && skill.rank+program.targetLevelBonus+player->persistent.player.level<=monster.rule.level) continue;
+        if(program.targetLevelBonus && skill.rank+program.targetLevelBonus+caster->level()<=monster.rule.level) continue;
         if(program.skipActive && unitStates(id,actor.tick).contains(program.state.id)) continue;
         const auto resetTaunt=[&] {
             auto &recipient=next[id];recipient.area=monster.area;
@@ -299,7 +321,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
             lifeChanges.push_back(std::move(life));
         };
         const int resistance=unitCurseResistance(id,actor.tick);
-        const int divisor=program.ai==CurseAi::None || program.ignoreDifficultyDivisor?1:player->rules.skills->aiCurseDivisor.at(size_t(player->persistent.difficulty));
+        const int divisor=program.ai==CurseAi::None || program.ignoreDifficultyDivisor?1:rules.aiCurseDivisor.at(size_t(difficulty));
         const auto duration=curseStateDuration(program.permanent?0:(divisor?nativeDivide(program.frames,divisor):program.frames),resistance,program.state,pd2);
         if(!duration) {if(program.ai==CurseAi::Taunt) resetTaunt();continue;}
         auto &recipient=next[id];recipient.area=monster.area;
@@ -326,7 +348,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
             curse.nativeValues=program.nativeValues;
             const std::array<std::string_view,6> names{"damageresist","magicresist","fireresist","lightresist","coldresist","poisonresist"};
             for(size_t channel=0;channel<names.size();++channel) {
-                const auto stat=player->rules.skills->stats->names.at(std::string(names[channel]));
+                const auto stat=rules.stats->names.at(std::string(names[channel]));
                 if(auto value=curse.nativeValues->find({stat,0});value!=curse.nativeValues->end())
                     value->second=curseResistanceAdjustment(value->second,baseResistance(names[channel],channel),true,monster.hireling,pd2);
                 for(auto &write:nativeWrites) if(write.key.id==stat)
@@ -337,7 +359,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         std::optional<MonsterResourceTrace> resources;
         if(monster.nativeStats && monster.nativeStats->sources && monster.rule.stats) resources.emplace(monster,actor.tick,&recipient.states);
         const bool targetControl=program.ai==CurseAi::Confuse || program.ai==CurseAi::Attract;
-        const auto applied=applyCurseState(recipient.states,program,curse,nativeWrites,*player->rules.skills->stats,actor.tick,
+        const auto applied=applyCurseState(recipient.states,program,curse,nativeWrites,*rules.stats,actor.tick,
             [&]{if(resources) resources->sample(recipient.states,true);},[&](const EffectApplication &application) {
                 if(resources && controlAi!=CurseAi::None && !targetControl) {
                     const auto *installed=recipient.states.find(application.handle);
@@ -375,13 +397,19 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         }
         auto &stats=recipient.nativeStats[program.state.id];stats.clear();
         for(const auto &effect:recipient.states.entries()) if(effect.activeAt(actor.tick) && effect.spec.state.id==program.state.id)
-            stats=nativeEffectStats(*player->rules.skills,effect.spec);
+            stats=nativeEffectStats(rules,effect.spec);
         publication->facts.emplace_back(StateFact{id,1,monster.area,program.state.id,true,stats});
     }
     for(const auto &change:lifeChanges) if(!ports_.monsters.canCommitLife(change)) return {DomainStatus::Conflict,{}};
-    changesToPrepare.emplace_back(std::move(debit));
+    if(debit) changesToPrepare.emplace_back(std::move(*debit));
     for(auto &life:lifeChanges) {
         const auto id=life.actor;prepareUnitEffects(*publication,id,next.at(id),std::move(life),actor.tick);
+    }
+    if(changesToPrepare.empty()) {
+        if(!validateAuraUnits(*publication)) return {DomainStatus::Conflict,{}};
+        const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},std::move(publication->facts)});
+        if(!output) return {output.status,{}};
+        publishAuraUnits(*publication);return {DomainStatus::Applied,std::monostate{}};
     }
     auto prepared=ports_.transactions.prepareGroup(std::move(changesToPrepare),std::move(publication));if(!prepared) return {prepared.status,{}};
     auto plans=std::move(*prepared.value);

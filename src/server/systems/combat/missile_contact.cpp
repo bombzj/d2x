@@ -44,6 +44,7 @@ DomainResult<MissilePreludeResult> System::missilePrelude(SpellImpact &impact,Ti
 }
 DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView source,ParticipantView target,
     uint64_t generation,TickContext tick,bool preludeOnly) {
+    if(!target.player && !target.monster) return DomainStatus::Stale;
     if(!impact.missileContact || impact.missileContact->targetIndex!=impact.next) {
         impact.missileContact=std::make_shared<MissileContactExecution>();
         impact.missileContact->targetIndex=impact.next;
@@ -56,12 +57,13 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
     const auto seed=[](ParticipantView unit) {return unit.player?unit.player->combatRandom:unit.monster->combatRandom;};
     const auto publishSeed=[&](ParticipantView unit,uint64_t expected,uint64_t next) {
         if(unit.monster) return ports_.monsters.consumeRandom(unit.id(),expected,next).status;
+        if(!unit.player) return DomainStatus::Stale;
         const auto &player=*unit.player;const auto *area=ports_.areas.find(player.area);
         if(!area) return DomainStatus::Stale;
         return ports_.transactions.consumeRandom({player.player,player.actor,player.area,area->generation,0,tick.tick},expected,next).status;
     };
     if(!contact.accuracyPrepared) {
-        const auto expected=source.id()?seed(source):0;auto random=expected;
+        const auto expected=source.player || source.monster?seed(source):0;auto random=expected;
         contact.hit=true;
         if(impact.monsterToHit && !source.id()) contact.hit=false;
         else if(impact.monsterToHit) {
@@ -120,7 +122,7 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
         source=participants.find(impact.source);target=participants.find(impact.targets[impact.next]);
         if(!target.id()) return DomainStatus::Stale;
     }
-    if(!preludeOnly && target.monster) ports_.monsters.storeLastAttacker(target.id(),source.id());
+    if(!preludeOnly) storeLastAttacker(impact,target,source.id());
     if(preludeOnly || !contact.hit) return DomainStatus::Applied;
     if(!source.id()) return DomainStatus::Unavailable;
     if(impact.nativeSkill) {
@@ -188,6 +190,7 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
             }
         }
         if(!impact.areaDamage && !impact.nativeDamageFlagsOnly && (program.function==1 || program.function==7 || program.function==9 || program.function==11 || program.function==12 || program.function==13 || (pd2 && (program.function==15 || program.function==16 || program.function==17)))) {
+            if(!source.player && !source.monster) return DomainStatus::Stale;
             if(!missile.formulas || !missile.statRules) throw std::runtime_error("Missing native missile damage program definitions");
             const auto owner=source.player?std::optional{source.player->totals.nativeStats}:ports_.effects.unitStatValues(source.id(),tick.tick);
             if(!owner) throw std::runtime_error("Missing native missile damage program owner");
@@ -384,12 +387,12 @@ DomainStatus System::prepareContactProcedures(SpellImpact &impact,ParticipantVie
             if(pd2) {extras.crushing=crushing;playerExtras.crushing=crushing;extras.wound=pd2Wound;}
         }
         reactions::ItemEventPlan events;
-        if(!contact.suppressEvents && (source.player || (source.monster && ports_.monsters.skillPrograms() && ports_.monsters.skillPrograms()->pd2))) {
+        if(!contact.suppressEvents && (source.player || (source.monster && ports_.monsters.skillPrograms()))) {
             const auto region=source.player?source.player->area:source.monster->area;
             const auto *sourceArea=ports_.areas.find(region);if(!sourceArea) return DomainStatus::Stale;
             const ActorContext actor{source.player?source.player->player:source.monster->owner.value_or(PlayerId{}),source.id(),region,sourceArea->generation,0,tick.tick};
-            auto prepared=ports_.itemTriggers.prepare(actor,(impact.weapon || impact.melee) && !impact.suppressSourceEvents?std::initializer_list{ItemSkillEvent::Hit,ItemSkillEvent::Kill}:
-                std::initializer_list{ItemSkillEvent::Kill},target.id(),target.position());
+            auto prepared=ports_.itemTriggers.prepare(actor,(impact.weapon || impact.melee) && !impact.suppressSourceEvents?std::initializer_list<ItemSkillEvent>{ItemSkillEvent::Hit,ItemSkillEvent::Kill}:
+                std::initializer_list<ItemSkillEvent>{ItemSkillEvent::Kill},target.id(),target.position());
             if(!prepared) return prepared.status;
             events=std::move(*prepared.value);
             if(!impact.suppressSourceEvents) {

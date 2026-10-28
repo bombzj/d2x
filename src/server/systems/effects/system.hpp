@@ -46,6 +46,7 @@ struct BladeShieldPulse;
 struct MindBlastPulse;
 struct CorpseExplosionPulse;
 struct NativeAreaSpec;struct NativeAreaPulse;
+struct ItemAuraCast;
 struct Pd2DarkPactPulse;
 struct MonsterCursePulse {
     AuraDefinition aura;CurseSpec program;int32_t length{};uint64_t tick{};
@@ -245,6 +246,7 @@ class System {
         std::shared_ptr<BladeShieldPulse> equippedBladeShield;
         std::optional<StormPulse> equippedStorm;
     };
+    friend struct ItemAuraCast;
     std::map<EntityId,PaladinCycle> paladinCycles_;
     DomainResult<> advancePd2EquippedStorm(const ActorContext &,const SkillCastSpec &,StormPulse &);
     std::map<EntityId,PaladinCycle> unitAuraCycles_;
@@ -324,6 +326,7 @@ class System {
     DomainResult<> frameEvent(const FrameEvent &,uint64_t tick);
     std::vector<EntityId> auraCandidateRecipients(EntityId,const AuraDefinition &,RegionId,uint64_t tick,const monsters::Actor *source=nullptr) const;
     std::vector<EntityId> nativeAuraCandidateRecipients(NativeAuraTargetQuery,const monsters::Actor *source=nullptr) const;
+    DomainResult<> itemAura(const ActorContext &,int skill,int rank,std::shared_ptr<ItemAuraCast> &);
     void prepareImmediateAuraUnit(AuraUnitPublication &,const ActorContext &,const AuraDefinition &,const SkillAuraChange &,EntityId,
         bool owner=false,const monsters::Actor *candidate=nullptr);
     using AuraRecipientPreparation=std::function<void(const ActorContext &,const AuraDefinition &,const SkillAuraChange &,EntityId)>;

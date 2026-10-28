@@ -18,14 +18,17 @@ DomainStatus System::resolveEnvironment(SpellImpact &impact,TickContext tick) {
     if(!area || area->generation!=impact.environmentGeneration || area->definition.town) return DomainStatus::Stale;
     const Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto nextTarget=[&] {
-        impact.environmentDefense.reset();impact.environmentDefenseCommitted=false;impact.playerContact.reset();++impact.next;
+        impact.environmentDefense.reset();impact.environmentDefenseCommitted=false;
+        impact.playerContact.reset();impact.monsterContact.reset();impact.phase=ImpactPhase::Contact;++impact.next;
     };
     while(impact.next<impact.targets.size()) {
         const auto target=participants.find(impact.targets[impact.next]);
-        if(!target.aliveIn(impact.area) || (target.monster && !target.monster->damageable())) {nextTarget();continue;}
         const bool retained=(impact.environmentDefense && impact.environmentDefense->target==target.id()) ||
-            (impact.playerContact && impact.playerContact->target==target.id());
+            (impact.playerContact && impact.playerContact->target==target.id()) ||
+            (impact.monsterContact && impact.monsterContact->target==target.id());
+        if((!target.player && !target.monster) || (!retained && (!target.aliveIn(impact.area) || (target.monster && !target.monster->damageable())))) {nextTarget();continue;}
         if(!retained && impact.nextDelay && (target.player?!ports_.effects.missileHitAllowed(target.id(),tick.tick):target.monster->nextHitTick>tick.tick)) {nextTarget();continue;}
+        if(!impact.directLife) storeLastAttacker(impact,target,impact.source);
         if(!impact.directLife && impact.monsterHit && !retained) {
             const auto defended=directDefense(impact,participants.find(impact.source),target,tick);
             if(!defended) return defended.status;
@@ -37,50 +40,40 @@ DomainStatus System::resolveEnvironment(SpellImpact &impact,TickContext tick) {
         if(impact.playerContact) hit=impact.playerContact->hit;
         else if(!impact.directLife) hit.hitClass=monsterDamageHitClass(hit,impact.hitClass,cursor);
         DomainResult<> result;
+        if(impact.nativeObjectDamage && !impact.directLife) {
+            // Object damage also enters ExecuteEvents. Retain the same
+            // pre-HP and Killed callback cursors as unit contacts, including
+            // a lethal hit or a victim teleported before output can resume.
+            if(!retained) {
+                if(target.player) {
+                    auto contact=std::make_shared<PlayerContactExecution>();
+                    const auto &player=*target.player;
+                    contact->victim={player.player,player.actor,player.area,area->generation,0,tick.tick};
+                    contact->target=player.actor;contact->hit=hit;contact->hitClass=cursor;contact->states=impact.monsterStates;
+                    impact.playerContact=std::move(contact);
+                } else {
+                    auto contact=std::make_shared<MonsterContactExecution>();
+                    contact->target=target.id();contact->channels=hit.channels;contact->hitClass=hit.hitClass;
+                    contact->cold=hit.coldFrames;contact->freeze=hit.freezeFrames;contact->stun=hit.stunFrames;
+                    contact->getHit=hit.getHit;contact->statuses={impact.source,hit.burn,hit.burnFrames};
+                    if(hit.channels[5]>0) contact->poison=PoisonApplication{hit.channels[5],hit.poisonFrames,impact.monsterStates.poison.id};
+                    impact.monsterContact=std::move(contact);
+                }
+                state_.hitClassCursor=cursor;
+            }
+            const auto status=target.player?finishPlayerContact(impact,*target.player,tick):finishMonsterContact(impact,*target.monster,tick);
+            if(isDeferred(status) || status==DomainStatus::Conflict) return status;
+            if(status!=DomainStatus::Applied) return status;
+            nextTarget();continue;
+        }
         if(target.player) {
             const auto &player=*target.player;
             const ActorContext actor{player.player,player.actor,player.area,area->generation,0,tick.tick};
             if(impact.directLife) result=ports_.transactions.resources(actor,player.characterRevision,
                 Fixed8::fromRaw(std::max<int64_t>(256,int64_t(player.persistent.player.hp.raw())-hit.channels[size_t(impact.type)])),player.persistent.player.mana,player.persistent.player.stamina);
             else {
-                if(impact.nativeObjectDamage) {
-                    if(!impact.playerContact) {
-                        auto contact=std::make_shared<PlayerContactExecution>();contact->victim=actor;
-                        contact->target=target.id();contact->hit=hit;contact->hitClass=cursor;
-                        impact.playerContact=std::move(contact);
-                        state_.hitClassCursor=cursor;
-                    }
-                    auto &contact=*impact.playerContact;
-                    if(!contact.defensePrepared) {
-                        auto prepared=ports_.effects.preparePlayerReception(actor,impact.source,contact.hit);
-                        if(!prepared) return prepared.status;
-                        contact.defense=std::move(*prepared.value);contact.defensePrepared=true;
-                    }
-                    if(!contact.defenseCommitted) {
-                        auto candidate=contact.defense;
-                        const auto committed=ports_.effects.commitPlayerReception(std::move(candidate));
-                        if(!committed) return committed.status;
-                        contact.defenseCommitted=true;
-                    }
-                    if(!contact.callbacksPrepared) {
-                        contact.callbacks=ports_.effects.prepareDamageEvents(impact.source,target.id(),contact.defense.damage.channels[0].dealt,
-                            contact.defense.damage.dealt,false,false,tick.tick);
-                        contact.callbacks.thorns=0;
-                        contact.callbacksPrepared=true;
-                    }
-                    if(!contact.callbacksComplete) {
-                        const auto advanced=ports_.effects.advanceDamageEvents(contact.callbacks,tick.tick);
-                        if(!advanced) return advanced.status;
-                        contact.callbacksComplete=true;
-                    }
-                    auto reception=contact.defense.damage;reception.dealt=contact.callbacks.total;
-                    const auto received=ports_.effects.receiveMonster(actor,impact.source,contact.hit,impact.monsterStates,{}, {},&reception);
-                    result={received.status,received?std::optional{std::monostate{}}:std::nullopt};
-                    cursor=state_.hitClassCursor;
-                } else {
-                    const auto received=ports_.effects.receiveMonster(actor,impact.source,hit,impact.monsterStates);
-                    result={received.status,received?std::optional{std::monostate{}}:std::nullopt};
-                }
+                const auto received=ports_.effects.receiveMonster(actor,impact.source,hit,impact.monsterStates);
+                result={received.status,received?std::optional{std::monostate{}}:std::nullopt};
             }
         } else {
             const auto &unit=*target.monster;int64_t amount=0,absorbed=0;

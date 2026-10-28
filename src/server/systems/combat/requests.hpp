@@ -72,6 +72,8 @@ struct NativeSkillContact {
     int32_t directHealing{};
     bool directHealingComplete{};
     bool lifeHitClassUpdated{};
+    bool allocationFreed{};
+    std::weak_ptr<NativeSkillContact> borrowedAllocation;
 };
 struct SpellImpact {
     EntityId projectile, source;
@@ -101,6 +103,7 @@ struct SpellImpact {
     int missileCriticalChance{};
     bool missileCriticalCommitted{};
     std::shared_ptr<MissileContactExecution> missileContact{};
+    std::optional<size_t> lastAttackerTarget{};
     std::optional<CombatStateDefinition> nativeNextHit{};
     std::optional<std::array<int32_t,2>> pd2NextHitKey{};
     MonsterHitStates monsterStates{};

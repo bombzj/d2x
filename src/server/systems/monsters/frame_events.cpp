@@ -10,7 +10,7 @@
 namespace d2x::server::monsters {
 void System::prepareInitialTimers(Actor &unit,uint64_t tick) const {
     const FrameEventOwner owner{FrameEventUnit::Monster,unit.id};
-    if(!unit.nativeAi()) return;
+    if(unit.roomless || !unit.nativeAi()) return;
     if(!unit.initialAiTimer && (unit.alive() || unit.owner)) unit.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::AiThink,tick+1}));
     if(!unit.initialModeTimer) unit.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::ModeChange,tick+1,true}));
 }

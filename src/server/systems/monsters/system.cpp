@@ -28,6 +28,7 @@
 #include "system_detail.hpp"
 namespace d2x::server::monsters {
 void System::refreshCollision(const Actor &unit) noexcept {
+    if(unit.roomless) {ports_.areas.setUnitCollision(unit.id,{});return;}
     NativeFootprint body,reservation;
     if(unit.hatching || (!unit.alive() && !unit.rule.deadCollision))
         body=ports_.areas.rectangleFootprint(unit.area,unit.position,3,3,0x8000);
@@ -397,7 +398,7 @@ void System::registerPet(Actor &unit) noexcept {
     if(!unit.owner || unit.conversion || unit.rule.petType<=0 || unit.petRegistrationOrder) return;
     if(state_.nextPetRegistrationOrder==UINT64_MAX) std::terminate();
     unit.petRegistrationOrder=state_.nextPetRegistrationOrder++;
-    unit.inactivePet=false;
+    unit.inactivePet=unit.roomless;
 }
 std::vector<EntityId> System::pets(PlayerId owner) const {
     std::vector<EntityId> result;

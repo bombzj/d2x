@@ -38,6 +38,7 @@ class System {
     DomainResult<> initializeItemAuras(PlayerId,uint64_t tick);
     // Native draws publish without manufacturing a client attribute change.
     DomainResult<> consumeRandom(const ActorContext &,uint64_t expected,uint64_t next);
+    void storeLastAttacker(EntityId target,EntityId source);
     DomainResult<> consumeRoomRandom(const RoomRandomLoan &);
     DomainResult<> consumeRoomRandom(std::span<const std::shared_ptr<const RoomRandomLoan>>,std::optional<EventBatch> facts={});
     DomainResult<> commit(Plan);

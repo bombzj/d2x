@@ -349,7 +349,23 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             return;
         }
         auto actor = source->second; actor.actionSkill = event.skill;actor.actionSkillLevel=event.level;
-        const auto *castAnimation = actor.key.type == 0 ? character(actor, false, town, shared) : monster(actor, false, shared);
+        const auto *castAnimation = triggered ? nullptr : actor.key.type == 0 ? character(actor, false, town, shared) : monster(actor, false, shared);
+        // Item callbacks execute immediately and never own the actor's cast clock.
+        const float releaseTime=triggered?0.f:castAnimation?castAnimation->releaseTime:-1.f;
+        const std::vector<float> releaseTimes=triggered?std::vector<float>{0.f}:
+            castAnimation?castAnimation->releaseTimes:std::vector<float>{};
+        const bool runStart=!triggered || skills.number(row->second,"ItemCltCheckStart").value_or(0);
+        if(triggered && runStart && skills.number(row->second,"cltstfunc")==21) {
+            const auto corpse=event.target?v.world.units.find(*event.target):v.world.units.end();
+            // C9030 temporarily clears CORPSE_NOSELECT for this check only.
+            // The replicated state is untouched, including its restored value.
+            if(corpse==v.world.units.end()) return;
+            // Retail CltSt21 (RVA C8330) applies the corpse-selection helper
+            // only to the local caster. Remote notifications retain their
+            // resolved target without repeating local selection eligibility.
+            if(playerId && event.source==OnlineUnitKey{0,*playerId} && !onlineMonsterCorpse(corpse->second)) return;
+        }
+
         if (!triggered && (!castAnimation || castAnimation->animation.frames.empty()))
             effectLimitations.insert("Skill animation unavailable: " + std::string(skills.value(row->second, "skill")));
         if (actor.key.type == 1 && !triggered) {
@@ -369,11 +385,22 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             else action.action.reset();
             monsterSoundEvent(action, source->second, age);
         }
-        emitSound(PresentationSoundEvent::Kind::Cast,source->second,age,*event.skill,
-            castAnimation ? castAnimation->releaseTime : -1.f);
-        const auto castOverlay = overlayNames.find(skills.value(row->second, "castoverlay"));
-        if (castOverlay != overlayNames.end()) overlay(int(castOverlay->second), event.source);
-        if(skills.number(row->second,"cltstfunc")==44) {
+        const auto soundField=[&](std::string_view field) {
+            const auto sound=skills.value(row->second,field);
+            if(!sound.empty()) emitSound(PresentationSoundEvent::Kind::Original,source->second,age,-1,-1,std::string(sound));
+        };
+        const auto overlayField=[&](std::string_view field) {
+            const auto visual=overlayNames.find(skills.value(row->second,field));
+            if(visual!=overlayNames.end()) overlay(int(visual->second),event.source);
+        };
+        if(triggered) {
+            if(runStart) {soundField("stsound");overlayField("castoverlay");}
+            soundField("itemcastsound");overlayField("itemcastoverlay");
+        } else {
+            emitSound(PresentationSoundEvent::Kind::Cast,source->second,age,*event.skill,releaseTime);
+            overlayField("castoverlay");
+        }
+        if(runStart && skills.number(row->second,"cltstfunc")==44) {
             // Native CltSt44 constructs in this order, at skill start.
             constexpr std::array<std::string_view,6> names{"hellmeteordown","hellmeteorball",
                 "hellmeteorup","hellmeteorball","hellmeteorlaunch2","hellmeteorlaunch1"};
@@ -413,7 +440,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 secondCreated?launchAnimation:ClientMissileInitialization{});
             return;
         }
-        if(skills.number(row->second,"cltstfunc")==47) {
+        if(runStart && skills.number(row->second,"cltstfunc")==47) {
             const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
             const auto chain=catapultChainOffsets.find(unitClass(actor).value_or(UINT16_MAX));
             auto point=event.point;if(!point && event.target) point=targetPosition(*event.target);
@@ -433,7 +460,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             launch(missile->second,at,at,level,-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
             return;
         }
-        if(skills.number(row->second,"cltstfunc")==46) {
+        if(runStart && skills.number(row->second,"cltstfunc")==46) {
             const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
             auto point=event.point;if(!point && event.target) point=targetPosition(*event.target);
             const auto sound=skills.value(row->second,"prgsound");
@@ -445,13 +472,13 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             }
             return;
         }
-        if(skills.value(row->second,"charclass")=="ass" && skills.number(row->second,"cltstfunc")==5 && event.target) {
+        if(runStart && skills.value(row->second,"charclass")=="ass" && skills.number(row->second,"cltstfunc")==5 && event.target) {
             const auto targetOverlay=overlayNames.find(skills.value(row->second,"tgtoverlay"));
-            if(targetOverlay!=overlayNames.end() && castAnimation && castAnimation->releaseTime>=0)
+            if(targetOverlay!=overlayNames.end() && releaseTime>=0)
                 if(const auto *visual=shared.overlayVisual(int(targetOverlay->second)))
-                    overlayVisuals.push_back({int(targetOverlay->second),*event.target,time+castAnimation->releaseTime-age,visual->frames/visual->fps});
+                    overlayVisuals.push_back({int(targetOverlay->second),*event.target,time+releaseTime-age,visual->frames/visual->fps});
         }
-        if(skills.number(row->second,"cltstfunc")==45) {
+        if(runStart && skills.number(row->second,"cltstfunc")==45) {
             bool transformed=false;
             if(const auto snapshot=combat.states().find(event.source);snapshot!=combat.states().end())
                 for(const auto &[state,record]:snapshot->second.states) { (void)record;const auto native=stateRows.find(state);
@@ -460,7 +487,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             const auto visual=overlayNames.find(skills.value(row->second,transformed?"cltoverlayb":"cltoverlaya"));
             if(visual!=overlayNames.end()) overlay(int(visual->second),event.source);
         }
-        if(skills.number(row->second,"cltstfunc")==49) {
+        if(runStart && skills.number(row->second,"cltstfunc")==49) {
             const int rank=event.level.value_or(1);const Vec start{float(actor.position->x)+.5f,float(actor.position->y)+.5f};
             if(const auto facade=missileNames.find(skills.value(row->second,"cltmissilea"));facade!=missileNames.end())
                 launch(facade->second,start,start,rank,-age,{},event.source);
@@ -477,17 +504,46 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             }
             return;
         }
-        if(skills.number(row->second,"cltstfunc")==48) {
+        if(runStart && skills.number(row->second,"cltstfunc")==48) {
             const Vec start{float(actor.position->x)+.5f,float(actor.position->y)+.5f};
             if(const auto departure=missileNames.find(skills.value(row->second,"cltmissilea"));departure!=missileNames.end())
                 launch(departure->second,start,start,event.level.value_or(1),-age,{},event.source);
         }
-        const int function = skills.number(row->second, "cltdofunc").value_or(0);
+        const int alternative=triggered && event.auxiliary?skills.number(row->second,"ItemCltEffect").value_or(0):0;
+        const int function=alternative>1?alternative:skills.number(row->second,"cltdofunc").value_or(0);
+        bool clientDoSucceeded=!function;
+        const auto launchDo=[&](size_t missileRow,Vec start,Vec target,int level,float delay,std::optional<float> remaining,
+            OnlineUnitKey owner,int pathIndex=-1,int pierce=0,ClientMissileSource origin=ClientMissileSource::Program,
+            EntityId guidedTarget={},int velocityBonus=0,ClientMissileInitialization initialization={}) {
+            const bool created=launch(missileRow,start,target,level,delay,remaining,owner,pathIndex,pierce,origin,guidedTarget,velocityBonus,initialization);
+            clientDoSucceeded|=created;return created;
+        };
+        const auto runDo=[&] {
+        if(triggered && (function==10 || function==96)) {
+            const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
+            auto target=event.target?targetPosition(*event.target):event.point;
+            if(missile==missileNames.end() || !target || (function==10 && !event.target)) return;
+            const int rank=event.level.value_or(1);if(rank<=0) return;
+            const Vec at{float(target->x)+.5f,float(target->y)+.5f};
+            if(function==10) {
+                // Retail 407C0: 64 native directions centred on the victim.
+                for(int direction=0;direction<64;++direction)
+                    launchDo(missile->second,at,at+missileRingDirection(direction),rank,-age,{},event.source,-1,0,ClientMissileSource::Program);
+            } else {
+                // Retail 74610: target-relative origin, then TargetX=Calc1.
+                if(!target->x || !target->y) return;
+                const auto count=skillCalculation(*event.skill,rank,"calc1",event.source);if(!count) return;
+                ClientMissileInitialization init;init.parameters=std::array<int32_t,2>{*count,0};
+                const Vec origin=event.target?at:Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f};
+                launchDo(missile->second,origin,at,rank,-age,{},event.source,-1,0,ClientMissileSource::Program,{},0,init);
+            }
+            return;
+        }
         if(function==57) {
             // Retail Client 58070: coordinate ray, explicit runtime skill and
             // rank in missile TargetX. Calc1's loop field has no flag8 and
             // therefore does not extend the constructor's table lifetime.
-            if(!castAnimation || castAnimation->releaseTime<0 || !event.level) return;
+            if(releaseTime<0 || !event.level) return;
             const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
             auto target=event.point;
             const auto unit=event.target?event.target:actor.destinationUnit;
@@ -498,9 +554,9 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             if(!skillCalculation(*event.skill,rank,"calc1",event.source)) return;
             ClientMissileInitialization init;init.sourceSkill=*event.skill;init.parameters=std::array<int32_t,2>{rank,0};
             const Vec start=presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
-            shared.cancelPendingClientMissiles(effectOwner(event.source));missileCastRevisions[event.source]=source->second.actionRevision;
-            launch(missile->second,start,{float(target->x)+.5f,float(target->y)+.5f},rank,
-                castAnimation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+            if(!triggered) {shared.cancelPendingClientMissiles(effectOwner(event.source));missileCastRevisions[event.source]=source->second.actionRevision;}
+            launchDo(missile->second,start,{float(target->x)+.5f,float(target->y)+.5f},rank,
+                releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
             return;
         }
         // Current CltDo109 (3A9710) delegates to retail Do25, then Do46
@@ -510,7 +566,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         if(function==34) {
             // Retail CltDo34 / RVA 2B530 emits one blood missile opposite
             // the facing, with a three-slot spread and CltCalc1 variants.
-            if(!castAnimation || castAnimation->releaseTime<0) return;
+            if(releaseTime<0) return;
             const auto base=missileNames.find(skills.value(row->second,"cltmissilea"));
             if(base==missileNames.end()) return;
             const auto variants=skillCalculation(*event.skill,event.level.value_or(1),"cltcalc1",event.source);
@@ -526,17 +582,17 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 (*variants>0?int(limitedRandom(random,uint32_t(*variants))):0);
             const auto selected=missileRows.find(missile);if(selected==missileRows.end()) return;
             const Vec start{float(actor.position->x)+.5f,float(actor.position->y)+.5f};
-            shared.cancelPendingClientMissiles(effectOwner(event.source));
-            missileCastRevisions[event.source]=source->second.actionRevision;
-            launch(selected->second,start,start+offsets[size_t(direction)],event.level.value_or(1),
-                castAnimation->releaseTime-age,{},event.source);
+            if(!triggered) shared.cancelPendingClientMissiles(effectOwner(event.source));
+            if(!triggered) missileCastRevisions[event.source]=source->second.actionRevision;
+            launchDo(selected->second,start,start+offsets[size_t(direction)],event.level.value_or(1),
+                releaseTime-age,{},event.source);
             return;
         }
         const bool pd2CorpseSearch=pd2 && function==104 && (*event.skill==131 || *event.skill==142);
         if(function==38 || function==40 || pd2CorpseSearch) {
             // CN 3A6EB0 delegates these two skills to retail 38/40. Both
             // invoke 4C500 on the actual corpse with an initial count of 5.
-            if(!event.target || !castAnimation || castAnimation->releaseTime<0) return;
+            if(!event.target || releaseTime<0) return;
             const auto corpse=v.world.units.find(*event.target);
             if(corpse==v.world.units.end() || !onlineMonsterCorpse(corpse->second)) return;
             int64_t count=0;
@@ -548,10 +604,10 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     for(const auto &stat:state.stats)
                         if(stat.id==damageBloodStat && !stat.parameter) count+=std::clamp<int64_t>(stat.value,-2048,2048);
                 }
-            shared.cancelPendingClientMissiles(effectOwner(event.source));
-            missileCastRevisions[event.source]=source->second.actionRevision;
+            if(!triggered) shared.cancelPendingClientMissiles(effectOwner(event.source));
+            if(!triggered) missileCastRevisions[event.source]=source->second.actionRevision;
             emitUnitBlood(corpse->second,int(std::clamp<int64_t>(count?count:5,0,2048)),
-                castAnimation->releaseTime-age,event.source,shared,collision,worldOrigin);
+                releaseTime-age,event.source,shared,collision,worldOrigin);
             return;
         }
         if (pd2) {
@@ -559,30 +615,30 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             // Their resource programs do not depend on CN wire extensions.
             if (function == 103) return; // Aura visuals arrive through unit states.
             if(function==83) {
-                if(!castAnimation || castAnimation->releaseTime<0) return;
+                if(releaseTime<0) return;
                 auto plan=preparePd2RoyalFire(row->second,event,actor);if(!plan) return;
-                shared.cancelPendingClientMissiles(effectOwner(event.source));
-                missileCastRevisions[event.source]=source->second.actionRevision;
+                if(!triggered) shared.cancelPendingClientMissiles(effectOwner(event.source));
+                if(!triggered) missileCastRevisions[event.source]=source->second.actionRevision;
                 for(int direction=0;direction<64;) {
                     ClientMissileInitialization init;init.path=ClientMissileInitialization::Path::Spiral;
                     init.seed=rollRandom(plan->random);init.parameters=std::array<int32_t,2>{plan->targetX,0};
-                    launch(plan->missile,plan->center,plan->center+missileRingDirection(direction),event.level.value_or(1),
-                        castAnimation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Program,{},0,init);
+                    launchDo(plan->missile,plan->center,plan->center+missileRingDirection(direction),event.level.value_or(1),
+                        releaseTime-age,{},event.source,-1,0,ClientMissileSource::Program,{},0,init);
                     if(plan->step>=64-direction) break;
                     direction+=plan->step;
                 }
                 return;
             }
             if(function==94) {
-                if(!castAnimation || castAnimation->releaseTime<0) return;
+                if(releaseTime<0) return;
                 const auto missile=pd2DoomKnightMissile(row->second,actor);
                 auto target=event.point;if(event.target) target=targetPosition(*event.target);
                 if(!missile || !target || !target->x || !target->y) return;
                 const Vec start=presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
                 const Vec end{float(target->x)+.5f,float(target->y)+.5f};
                 const auto delta=end-start;if(delta.x*delta.x+delta.y*delta.y>10000.f) return;
-                shared.cancelPendingClientMissiles(effectOwner(event.source));missileCastRevisions[event.source]=source->second.actionRevision;
-                launch(*missile,start,end,event.level.value_or(1),castAnimation->releaseTime-age,{},event.source);
+                if(!triggered) {shared.cancelPendingClientMissiles(effectOwner(event.source));missileCastRevisions[event.source]=source->second.actionRevision;}
+                launchDo(*missile,start,end,event.level.value_or(1),releaseTime-age,{},event.source);
                 return;
             }
             if (function == 97 && actor.key.type<=1)
@@ -594,15 +650,15 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             if (function == 105) {
                 // Core 3A6F30 reads Skills.SrvMissileA, not CltMissileA.
                 const auto missile = missileNames.find(skills.value(row->second,"srvmissilea"));
-                if (missile == missileNames.end() || !castAnimation || castAnimation->releaseTime < 0) return;
+                if (missile == missileNames.end() || releaseTime < 0) return;
                 const Vec at{float(actor.position->x)+.5f,float(actor.position->y)+.5f};
-                shared.cancelPendingClientMissiles(effectOwner(event.source));
-                missileCastRevisions[event.source] = source->second.actionRevision;
-                launch(missile->second,at,at,event.level.value_or(1),castAnimation->releaseTime-age,{},event.source);
+                if(!triggered) shared.cancelPendingClientMissiles(effectOwner(event.source));
+                if(!triggered) missileCastRevisions[event.source] = source->second.actionRevision;
+                launchDo(missile->second,at,at,event.level.value_or(1),releaseTime-age,{},event.source);
                 return;
             }
             if(function==98) {
-                if(!castAnimation || castAnimation->releaseTimes.size()!=2) return;
+                if(releaseTimes.size()!=2) return;
                 auto target=event.point;if(!target && event.target) target=targetPosition(*event.target);
                 if(!target) return;
                 const int rank=std::max(1,int(event.level.value_or(1)));
@@ -611,8 +667,8 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 if(!hits || !radius) {
                     effectLimitations.insert("PD2 double throw chain inputs unavailable");return;
                 }
-                shared.cancelPendingClientMissiles(effectOwner(event.source));
-                missileCastRevisions[event.source]=source->second.actionRevision;
+                if(!triggered) shared.cancelPendingClientMissiles(effectOwner(event.source));
+                if(!triggered) missileCastRevisions[event.source]=source->second.actionRevision;
                 const Vec start=presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
                 const Vec end{float(target->x)+.5f,float(target->y)+.5f};
                 for(int hand=0;hand<2;++hand) for(const auto &[id,item]:v.world.items) {
@@ -624,13 +680,13 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     ClientMissileInitialization init;init.chainHits=std::max(0,*hits);
                     init.chainRadius=std::max(1,missiles.number(*missile,"cHitPar1").value_or(0)>0?
                         missiles.number(*missile,"cHitPar1").value():*radius);
-                    launch(*missile,start,end,rank,castAnimation->releaseTimes[size_t(hand)]-age,{},
+                    launchDo(*missile,start,end,rank,releaseTimes[size_t(hand)]-age,{},
                         event.source,-1,0,ClientMissileSource::Cast,{},0,init);
                 }
                 return;
             }
             if(function==118) {
-                if(!castAnimation || castAnimation->releaseTime<0) return;
+                if(releaseTime<0) return;
                 auto target=event.point;if(!target && event.target) target=targetPosition(*event.target);
                 if(!target) return;
                 std::optional<int> weaponMissile;
@@ -654,16 +710,16 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 }
                 const Vec start=presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
                 const auto layout=pd2MissileFanLayout(start,{float(target->x)+.5f,float(target->y)+.5f},*count);
-                shared.cancelPendingClientMissiles(effectOwner(event.source));
-                missileCastRevisions[event.source]=source->second.actionRevision;
+                if(!triggered) shared.cancelPendingClientMissiles(effectOwner(event.source));
+                if(!triggered) missileCastRevisions[event.source]=source->second.actionRevision;
                 ClientMissileInitialization init;init.activationDelay=1; // creation flags 0x10820, +0x44=1
                 for(int index=0;index<*count;++index)
-                    launch(*missile,start,layout.first+layout.step*float(index),rank,
-                        castAnimation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                    launchDo(*missile,start,layout.first+layout.step*float(index),rank,
+                        releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
                 return;
             }
             if(function==110 || function==119) {
-                if(!castAnimation || castAnimation->releaseTime<0) return;
+                if(releaseTime<0) return;
                 auto target=event.point;
                 if(event.target) target=targetPosition(*event.target);
                 if(!target || (function==110 && !event.target)) return;
@@ -676,21 +732,21 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 }
                 const Vec origin=presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
                 const Vec destination{float(target->x)+.5f,float(target->y)+.5f};
-                shared.cancelPendingClientMissiles(effectOwner(event.source));
-                missileCastRevisions[event.source]=source->second.actionRevision;
+                if(!triggered) shared.cancelPendingClientMissiles(effectOwner(event.source));
+                if(!triggered) missileCastRevisions[event.source]=source->second.actionRevision;
                 for(int index=0;index<*count;++index) {
                     // CN 36B9A0 clamps the path to 77 frames, refreshes the
                     // owner's local seed, then prepares ChargedBolt path 10.
                     ClientMissileInitialization init;
                     init.path=ClientMissileInitialization::Path::Charged;
                     init.seed=nextPd2PathSeed(event.source);
-                    launch(missile->second,origin,destination,rank,castAnimation->releaseTime-age,{},
+                    launchDo(missile->second,origin,destination,rank,releaseTime-age,{},
                         event.source,-1,0,ClientMissileSource::Cast,{},0,init);
                 }
                 return;
             }
             if (function == 100 || function == 101 || function == 102 || function == 113 || function == 116 || function == 117) {
-                if (!castAnimation || castAnimation->releaseTime < 0) return;
+                if (releaseTime < 0) return;
                 auto target = event.point;
                 if (event.target) {
                     if (const auto position = targetPosition(*event.target)) target = position;
@@ -727,11 +783,11 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     return;
                 }
                 if (function == 113 && *count == 0) return;
-                shared.cancelPendingClientMissiles(effectOwner(event.source));
-                missileCastRevisions[event.source] = source->second.actionRevision;
-                const float release = castAnimation->releaseTime-age;
+                if(!triggered) shared.cancelPendingClientMissiles(effectOwner(event.source));
+                if(!triggered) missileCastRevisions[event.source] = source->second.actionRevision;
+                const float release = releaseTime-age;
                 if (directed) {
-                    launch(missile->second,origin,destination,level,release,{},event.source,-1,0,ClientMissileSource::Cast,
+                    launchDo(missile->second,origin,destination,level,release,{},event.source,-1,0,ClientMissileSource::Cast,
                         function==116?effectOwner(*event.target):EntityId{});
                 } else {
                     // CN helper 369AF0 / 36BBC0 advances by integer 64/count.
@@ -740,13 +796,13 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     const int rays = *count == 0 || *count > 64 ? 64 : *count;
                     const Vec center = function == 100 || function == 113 ? origin : destination;
                     for (int direction = 0; direction < 64; direction += 64/rays)
-                        launch(missile->second,center,center+missileRingDirection(direction),level,release,{},event.source,
+                        launchDo(missile->second,center,center+missileRingDirection(direction),level,release,{},event.source,
                             -1,0,ClientMissileSource::Program);
                     if (function == 101) {
                         const auto second = missileFor("cltmissileb"), third = missileFor("cltmissilec");
                         if (second != missileNames.end() && third != missileNames.end()) {
-                            launch(second->second,center,center,level,release,{},event.source);
-                            launch(third->second,center,center,level,release,{},event.source);
+                            launchDo(second->second,center,center,level,release,{},event.source);
+                            launchDo(third->second,center,center,level,release,{},event.source);
                         } else effectLimitations.insert("PD2 skill secondary missile missing: " + std::to_string(*event.skill));
                     }
                 }
@@ -763,27 +819,27 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             // Clt73 samples the caster's position at its action callback,
             // after any authoritative placement/correction has arrived.
             const auto arrival=missileNames.find(skills.value(row->second,"cltmissileb"));
-            if(arrival!=missileNames.end() && castAnimation && castAnimation->releaseTime>=0)
+            if(arrival!=missileNames.end() && releaseTime>=0)
                 ownerMissiles[event.source]={arrival->second,*event.skill,1,
-                    time+castAnimation->releaseTime-age,source->second.assignmentRevision,
+                    time+releaseTime-age,source->second.assignmentRevision,
                     source->second.actionRevision,source->second.positionDiscontinuity};
             return;
         }
         if(function==75) {
-            if(castAnimation && castAnimation->releaseTime>=0)
+            if(releaseTime>=0)
                 shared.shakeScreen(skills.number(row->second,"Param1").value_or(0),skills.number(row->second,"Param2").value_or(0),
-                    skills.number(row->second,"Param3").value_or(0),skills.number(row->second,"Param4").value_or(0),castAnimation->releaseTime-age);
+                    skills.number(row->second,"Param3").value_or(0),skills.number(row->second,"Param4").value_or(0),releaseTime-age);
             return;
         }
         if(function==42 && skills.number(row->second,"seqnum")==15) {
-            if(!castAnimation || castAnimation->releaseTimes.size()!=2) return;
+            if(releaseTimes.size()!=2) return;
             auto target=event.point;if(!target && event.target) target=targetPosition(*event.target);if(!target) return;
             const Vec origin{float(actor.position->x)+.5f,float(actor.position->y)+.5f},destination{float(target->x)+.5f,float(target->y)+.5f};
-            shared.cancelPendingClientMissiles(effectOwner(event.source));missileCastRevisions[event.source]=source->second.actionRevision;
+            if(!triggered) {shared.cancelPendingClientMissiles(effectOwner(event.source));missileCastRevisions[event.source]=source->second.actionRevision;}
             for(int hand=0;hand<2;++hand) for(const auto &[key,item]:v.world.items) {
                 (void)key;if(item.ownerType!=event.source.type || item.owner!=event.source.id || item.mode!=1 || item.body!=4+hand) continue;
                 const auto id=shared.weaponMissile(item.code);if(!id || !missileRows.contains(*id)) continue;
-                launch(missileRows.at(*id),origin,destination,event.level.value_or(1),castAnimation->releaseTimes[size_t(hand)]-age,{},event.source);
+                launchDo(missileRows.at(*id),origin,destination,event.level.value_or(1),releaseTimes[size_t(hand)]-age,{},event.source);
             }
             return;
         }
@@ -846,24 +902,31 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         // Retail CltDo6 (RVA 413A0) creates the owner's Blade Fury
         // missile directly; ClientSend does not suppress that callback.
         const bool bladeFury = function == 6 && skills.value(row->second,"charclass") == "ass";
-        if (!pd2MindBlast && !bladeFury && !pd2PoisonEgg && function != 26 && function != 28 && function!=55 && function!=58 && function!=70 && function!=76 && missiles.number(missile->second, "ClientSend").value_or(0)) return;
+        if (!triggered && !pd2MindBlast && !bladeFury && !pd2PoisonEgg && function != 26 && function != 28 && function!=55 && function!=58 && function!=70 && function!=76 && missiles.number(missile->second, "ClientSend").value_or(0)) return;
         auto target = event.point;
         if (!target && event.target) target=targetPosition(*event.target);
         if (!target && (function == 25 || function==55 || pd2PoisonEgg)) target = actor.position; // Nova has no required target.
         if (!target) return;
-        const auto *animation = castAnimation;
-        if (!animation || animation->animation.frames.empty() || animation->releaseTime < 0) return;
-        shared.cancelPendingClientMissiles(effectOwner(event.source));
-        missileCastRevisions[event.source] = source->second.actionRevision;
-        const Vec start = presentationOrigin.value_or(Vec{float(actor.position->x) + .5f, float(actor.position->y) + .5f});
-        const Vec end{float(target->x) + .5f, float(target->y) + .5f};
+        if (releaseTime<0 || (!triggered && (!castAnimation || castAnimation->animation.frames.empty()))) return;
+        if(!triggered) shared.cancelPendingClientMissiles(effectOwner(event.source));
+        if(!triggered) missileCastRevisions[event.source] = source->second.actionRevision;
+        Vec start = presentationOrigin.value_or(Vec{float(actor.position->x) + .5f, float(actor.position->y) + .5f});
+        Vec end{float(target->x) + .5f, float(target->y) + .5f};
+        if(triggered && event.auxiliary && target->x && target->y &&
+            skills.value(row->second,"cltmissile")==missiles.value(missile->second,"Missile")) {
+            const Vec delta=end-start;start=end;end=end+delta;
+        }
         const int level = std::max(1, int(event.level.value_or(1)));
         auto emit = [&](Vec destination, int index = -1) {
-            launch(missile->second, start, destination, level, animation->releaseTime-age, {}, event.source, index);
+            launchDo(missile->second, start, destination, level, releaseTime-age, {}, event.source, index);
         };
         if(channelSkill(*event.skill) || function==54 || function==56 || function==71 || function==77) {
-            channels[event.source]={row->second,missile->second,level,time+(function==54?1.f/25.f:animation->releaseTime)-age,time-age,source->second.actionRevision,*target,event.target,initialRandom(source->second.key.id)};
-            channels[event.source].releaseAt=time+animation->releaseTime-age;
+            if(triggered) {
+                effectLimitations.insert("Item channel callback unavailable: "+std::string(skills.value(row->second,"skill")));
+                return;
+            }
+            channels[event.source]={row->second,missile->second,level,time+(function==54?1.f/25.f:releaseTime)-age,time-age,source->second.actionRevision,*target,event.target,initialRandom(source->second.key.id)};
+            channels[event.source].releaseAt=time+releaseTime-age;
             if(function==77) channels[event.source].until=time-age+float(std::max(1,skillCalculation(*event.skill,level,"calc2",event.source).value_or(1)))/25.f;
         }
         else if(function==72) {
@@ -872,7 +935,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             if(const auto pose=motion.find(event.source);pose!=motion.end()) height-=int(pose->second.riderOffset.y);
             ClientMissileInitialization init;ClientMissileGraphics graphics;
             graphics.position[2]=nativeShiftLeft(height,11);graphics.velocity[2]=nativeShiftLeft(-height/frames,11);init.graphics=graphics;
-            launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+            launchDo(missile->second,start,end,level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
         }
         else if(function==74) {
             ClientMissileInitialization init;ClientMissileGraphics graphics;
@@ -885,7 +948,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             }
             init.graphics=graphics;
             const auto arrival=missileNames.find(skills.value(row->second,"cltmissileb"));
-            if(arrival!=missileNames.end()) launch(arrival->second,end,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+            if(arrival!=missileNames.end()) launchDo(arrival->second,end,end,level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
         }
         else if(function==5 && skills.value(row->second,"charclass")=="ass") {
             const auto count=skillCalculation(*event.skill,level,"prgcalc1",event.source),range=skillCalculation(*event.skill,level,"aurarangecalc",event.source);
@@ -909,10 +972,10 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 return;
             }
             for(int index=0;index<*count;++index)
-                launch(missile->second,end,end*2.f-start,level,animation->releaseTime-age,{},event.source,index);
+                launchDo(missile->second,end,end*2.f-start,level,releaseTime-age,{},event.source,index);
         }
         else if(function==7 && skills.value(row->second,"charclass")=="ass")
-            launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source);
+            launchDo(missile->second,end,end,level,releaseTime-age,{},event.source);
         else if(function==67 || function==68 || function==69) {
             const int count=skillCalculation(*event.skill,level,"calc1",event.source).value_or(0);
             for(int index=0;index<count;++index) {
@@ -921,7 +984,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     initialization.path=ClientMissileInitialization::Path::Charged;
                     initialization.seed=uint32_t(int(end.x)+(function==67?index-1:index));
                 }
-                launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,initialization);
+                launchDo(missile->second,start,end,level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,initialization);
             }
         }
         else if(function==76) {
@@ -938,34 +1001,34 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     const int frames=missiles.number(trail->second,"Range").value_or(0)+level*missiles.number(trail->second,"LevRange").value_or(0);
                     ClientMissileInitialization init;init.totalFrames=frames+count*drawDelay;init.hiddenUntilCurrentFrame=frames-count*drawDelay;
                     const Vec at{float(int(start.x)+advance*dx/100)+.5f,float(int(start.y)+advance*dy/100)+.5f};
-                    launch(trail->second,at,at,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                    launchDo(trail->second,at,at,level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
                 }
             }
             const int frames=missiles.number(missile->second,"Range").value_or(0)+level*missiles.number(missile->second,"LevRange").value_or(0);
             ClientMissileInitialization init;init.totalFrames=frames+count*drawDelay;init.hiddenUntilCurrentFrame=frames-count*drawDelay;
             if(const auto rate=skillCalculation(*event.skill,level,"calc1",event.source);rate && *rate>0) init.animationRate=*rate;
-            launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+            launchDo(missile->second,end,end,level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
         }
         else if(function==70 || function==81) {
             ClientMissileInitialization initialization;
             initialization.parameters=std::array<int32_t,2>{-(int(end.y)-int(start.y)),int(end.x)-int(start.x)};
-            launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,initialization);
+            launchDo(missile->second,start,end,level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,initialization);
         }
         else if(function==78) {
-            launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source);
+            launchDo(missile->second,end,end,level,releaseTime-age,{},event.source);
             const auto blast=missileNames.find(skills.value(row->second,"cltmissileb"));
-            if(blast!=missileNames.end()) launch(blast->second,end,end,level,animation->releaseTime-age,{},event.source);
+            if(blast!=missileNames.end()) launchDo(blast->second,end,end,level,releaseTime-age,{},event.source);
         }
         else if (function == 26) {
             // Retail CltDo26 / RVA 74770 creates two perpendicular makers
             // at the target, then their CltSubMissile1 center fire.
             const Vec heading = missileWallDirection({float(actor.position->x), float(actor.position->y)}, end);
             for (const auto direction : {heading, heading * -1.f})
-                launch(missile->second, end, end + direction, level, animation->releaseTime-age, {}, event.source,
+                launchDo(missile->second, end, end + direction, level, releaseTime-age, {}, event.source,
                     -1, 0, ClientMissileSource::Cast);
             const auto fire = missileNames.find(missiles.value(missile->second,"CltSubMissile1"));
             if (fire != missileNames.end())
-                launch(fire->second, end, end, level, animation->releaseTime-age, {}, event.source,
+                launchDo(fire->second, end, end, level, releaseTime-age, {}, event.source,
                     -1, 0, ClientMissileSource::Cast);
         }
         else if(function==8 && skills.value(row->second,"charclass")=="ass") {
@@ -1000,13 +1063,13 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     break;
                 }
             }
-            launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source,
+            launchDo(missile->second,end,end,level,releaseTime-age,{},event.source,
                 -1,0,ClientMissileSource::Cast,{},0,initialization);
         }
         else if (function == 28 || function==36 || function==30 || function==31 || function==32 || function==33)
-            launch(missile->second, end, end, level, animation->releaseTime-age, {}, event.source,
+            launchDo(missile->second, end, end, level, releaseTime-age, {}, event.source,
                 -1, 0, ClientMissileSource::Cast);
-        else if(function==18) launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,event.target?effectOwner(*event.target):EntityId{});
+        else if(function==18) launchDo(missile->second,start,end,level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,event.target?effectOwner(*event.target):EntityId{});
         else if(function==22 && event.target) {
             // Retail CltDo22 RVA15660: origin is the struck unit; Calc1
             // searches a GUID successor, Calc2 carries the full hop count.
@@ -1034,8 +1097,8 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     const int fixedRadius=missiles.number(missile->second,"cHitPar1").value_or(0);
                     init.chainRadius=std::max(1,fixedRadius>0?fixedRadius:*range);
                 }
-                launch(missile->second,end,{float(u->second.position->x)+.5f,float(u->second.position->y)+.5f},level,
-                    animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                launchDo(missile->second,end,{float(u->second.position->x)+.5f,float(u->second.position->y)+.5f},level,
+                    releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
             }
         }
         else if(function==20) {
@@ -1044,19 +1107,19 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             for(const auto &[key,u]:v.world.units) if(key.type==1 && u.position && combat.hostileSource(u) && u.mode!=0 && u.mode!=12 && missileDistance(start,{float(u.position->x),float(u.position->y)})<=radius) targets.push_back(key.id);
             uint64_t previous=event.target?event.target->id:0;
             bool first=true;
-            for(float release:animation->releaseTimes) {
+            for(float release:releaseTimes) {
                 const auto id=first && std::find(targets.begin(),targets.end(),previous)!=targets.end()?previous:missileChainSuccessor(previous,targets);
                 first=false;
                 const auto u=v.world.units.find({1,uint32_t(id)});
                 if(!id || u==v.world.units.end() || !u->second.position) break;
-                launch(missile->second,start,{float(u->second.position->x)+.5f,float(u->second.position->y)+.5f},level,release-age,{},event.source);
+                launchDo(missile->second,start,{float(u->second.position->x)+.5f,float(u->second.position->y)+.5f},level,release-age,{},event.source);
                 previous=id;
             }
         }
         else if(function==79 && skills.number(row->second,"cltstfunc")==51) {
             // Retail CltSt51 retains the corpse coordinates; CltDo79
             // constructs cltmissilea there at the action frame.
-            launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source);
+            launchDo(missile->second,end,end,level,releaseTime-age,{},event.source);
         }
         else if(pd2 && function==27 && missiles.number(missile->second,"pCltHitFunc")==16) {
             // Retail CltDo27 / RVA73E80 stores Calc1 as the hit counter.
@@ -1066,7 +1129,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             ClientMissileInitialization init;init.chainHits=std::max(0,*hits);
             const int fixedRadius=missiles.number(missile->second,"cHitPar1").value_or(0);
             init.chainRadius=std::max(1,fixedRadius>0?fixedRadius:*radius);
-            launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+            launchDo(missile->second,start,end,level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
         }
         else if (!function || function == 1 || function == 2 || function==27 || function==35 || function==95 ||
             (function == 29 && missiles.number(missile->second, "pCltDoFunc") == 19)) emit(end);
@@ -1076,7 +1139,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             for(int index=0;index<*count;++index) {
                 ClientMissileInitialization init;init.path=ClientMissileInitialization::Path::DiabWall;
                 init.seed=uint32_t(int(std::floor(end.x))+index);
-                launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                launchDo(missile->second,start,end,level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
             }
         }
         else if(function==55) {
@@ -1091,7 +1154,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 init.totalFrames=missiles.number(missile->second,"Range").value_or(0)+level*missiles.number(missile->second,"LevRange").value_or(0);
                 if(missiles.number(missile->second,"SubLoop").value_or(0))
                     *init.totalFrames+=*loops*(missiles.number(missile->second,"SubStop").value_or(0)-missiles.number(missile->second,"SubStart").value_or(0));
-                launch(missile->second,start,start+primePoisonNovaDirection(index),level,animation->releaseTime-age,{},event.source,
+                launchDo(missile->second,start,start+primePoisonNovaDirection(index),level,releaseTime-age,{},event.source,
                     -1,0,ClientMissileSource::Cast,{},0,init);
             };
             for(int index=0;index<16;index+=2) emitCloud(index,1);
@@ -1109,25 +1172,25 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 bonus=*value;
             }
             for (int direction = 0; direction < 64; ++direction)
-                launch(missile->second,start,start+missileRingDirection(direction),level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Program,{},bonus);
+                launchDo(missile->second,start,start+missileRingDirection(direction),level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Program,{},bonus);
         } else if (function == 51 && actor.key.type == 1) {
             // Retail GargoyleTrap / RVA 585C0 and ObjMode's real GT actor:
             // choose the closer cardinal axis, four subtiles, then use its
             // original muzzle offset. Sequence release flags supply timing.
             const auto ray=gargoyleTrapRay(start,end,GargoyleRaySide::Client);
             auto fire = [&](float release) {
-                launch(missile->second,ray.first+Vec{.5f,.5f},ray.second+Vec{.5f,.5f},level,
+                launchDo(missile->second,ray.first+Vec{.5f,.5f},ray.second+Vec{.5f,.5f},level,
                        release-age,{},event.source);
             };
-            if (animation->releaseTimes.empty()) fire(animation->releaseTime);
-            else for (const float release : animation->releaseTimes) fire(release);
+            if (releaseTimes.empty()) fire(releaseTime);
+            else for (const float release : releaseTimes) fire(release);
         }
-        else if (function==48 && skills.number(row->second,"srvdofunc")==88 && animation->releaseTimes.size()==9) {
-            for (size_t index=0;index<animation->releaseTimes.size();++index) {
+        else if (function==48 && skills.number(row->second,"srvdofunc")==88 && releaseTimes.size()==9) {
+            for (size_t index=0;index<releaseTimes.size();++index) {
                 const auto ray=andarielSprayRay(start,end,4+int(index));
                 // Keep the renderer's subtile centre; native packets carry cells.
-                launch(missile->second,start,ray.second+Vec{.5f,.5f},
-                    level,animation->releaseTimes[index]-age,{},event.source);
+                launchDo(missile->second,start,ray.second+Vec{.5f,.5f},
+                    level,releaseTimes[index]-age,{},event.source);
             }
         } else if (function == 23 || (function == 17 && skills.number(row->second, "srvdofunc") == 8)) {
             auto formula = skills.value(row->second, "calc1");
@@ -1164,15 +1227,33 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 }
             }
             else effectLimitations.insert("Unresolved client bolt count: " + std::string(skills.value(row->second, "skill")));
-        } else effectLimitations.insert("Skill client program unavailable: " + std::string(skills.value(row->second, "skill")));
+        } else {
+            effectLimitations.insert("Skill client program unavailable: " + std::string(skills.value(row->second, "skill")));
+            return;
+        }
         if(function==30 || function==32 || function==33) {
             const auto extra=missileNames.find(skills.value(row->second,"cltmissilec"));
-            if(extra!=missileNames.end()) launch(extra->second,function==30?start:end,function==30?start:end,level,animation->releaseTime-age,{},event.source);
+            if(extra!=missileNames.end()) launchDo(extra->second,function==30?start:end,function==30?start:end,level,releaseTime-age,{},event.source);
         }
-        if(function==32) {const auto blast=missileNames.find(skills.value(row->second,"cltmissileb"));if(blast!=missileNames.end()) launch(blast->second,end,end,level,animation->releaseTime-age,{},event.source);}
+        if(function==32) {const auto blast=missileNames.find(skills.value(row->second,"cltmissileb"));if(blast!=missileNames.end()) launchDo(blast->second,end,end,level,releaseTime-age,{},event.source);}
         if(function==33) {
             const auto cloud=missileNames.find(skills.value(row->second,"cltmissileb"));
-            if(cloud!=missileNames.end()) for(const auto direction:poisonCloudDirections(2,0)) launch(cloud->second,end,end+direction.direction,level,animation->releaseTime-age,{},event.source);
+            if(cloud!=missileNames.end()) for(const auto direction:poisonCloudDirections(2,0)) launchDo(cloud->second,end,end+direction.direction,level,releaseTime-age,{},event.source);
+        }
+        clientDoSucceeded=true;
+        };
+        runDo();
+        if(triggered && clientDoSucceeded) {
+            soundField("dosound");
+            if(event.target) {
+                const auto recipient=v.world.units.find(*event.target);
+                if(recipient!=v.world.units.end()) {
+                    const auto sound=skills.value(row->second,"tgtsound");
+                    if(!sound.empty()) emitSound(PresentationSoundEvent::Kind::Original,recipient->second,age,-1,-1,std::string(sound));
+                    const auto visual=overlayNames.find(skills.value(row->second,"tgtoverlay"));
+                    if(visual!=overlayNames.end()) overlay(int(visual->second),*event.target);
+                }
+            }
         }
     };
     for (const auto &event : v.world.combatEvents) {

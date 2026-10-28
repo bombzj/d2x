@@ -6,6 +6,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/skills/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
+#include "server/systems/skills/native_caster.hpp"
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/combat/system.hpp"
@@ -164,14 +165,21 @@ StepStatus System::synchronizeIronGolems(TickContext tick) {
 }
 DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &original,Vec target,EntityId corpse,bool restoring) {
     auto skill=original;
-    const auto *owner=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
-    if(owner && skill.bone && skill.bone->barrier) {
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    const auto *owner=caster?caster->player:nullptr;const auto *area=ports_.areas.find(actor.area);
+    if(!caster || !caster->programs() || (!owner && (!skill.bone || !skill.bone->barrier))) return {DomainStatus::Unavailable,{}};
+    const auto &programs=*caster->programs();const int difficulty=owner?int(owner->persistent.difficulty):caster->monster->rule.difficulty;
+    const auto ranks=caster->formulaInput(ports_.effects,actor.tick);
+    const auto &hardRanks=ranks.baseRanks;const auto &effectiveRanks=ranks.effectiveRanks;
+    const auto revision=owner?owner->inventoryRevision:0;
+    const auto ownerLevel=caster->level();const auto origin=caster->position();
+    if(skill.bone && skill.bone->barrier) {
         SummonCastSpec wall;wall.monster="bonewall";wall.kind=MonsterKind::BoneWall;wall.corpse=false;wall.limit=INT32_MAX;
-        wall.stats=skill.bone->barrierStats.at(size_t(owner->persistent.difficulty));
+        wall.stats=skill.bone->barrierStats.at(size_t(difficulty));
         if(!skill.bone->barrierNative) return {DomainStatus::Unavailable,{}};
         wall.native=*skill.bone->barrierNative;wall.native->base=wall.stats;skill.summon=std::move(wall);
     }
-    if(!owner || !owner->entered || owner->actor!=actor.actor || owner->area!=actor.area || owner->persistent.player.hp<=0 || !area || area->generation!=actor.areaGeneration || !skill.summon || skill.summon->amazon) return {DomainStatus::InvalidActor,{}};
+    if((owner?(!owner->entered || owner->persistent.player.hp<=0):!caster->monster->alive()) || caster->area()!=actor.area || !area || area->generation!=actor.areaGeneration || !skill.summon || skill.summon->amazon) return {DomainStatus::InvalidActor,{}};
     const auto &summon=*skill.summon;
     if(summon.necro && summon.necro->kind==NecroSummonKind::Revive) return revive(actor,skill,corpse);
     const bool iron=summon.necro && summon.necro->kind==NecroSummonKind::Iron;
@@ -182,22 +190,22 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
     if(prior!=pending_.end() && (prior->second.actor.sequence!=actor.sequence || prior->second.skill!=skill.sourceId)) {cancel(actor.actor);prior=pending_.end();}
     if(prior==pending_.end()) {
         if(nextPreparation_==UINT64_MAX) return {DomainStatus::Capacity,{}};
-        auto random=ports_.random;Preparation source{actor,owner->inventoryRevision,childRandom(random),skill.sourceId,skill.rank,owner->persistent.difficulty,owner->persistent.player.level,owner->persistent.player.skillRanks,summon,{}};
+        auto random=ports_.random;Preparation source{actor,revision,childRandom(random),skill.sourceId,skill.rank,difficulty,ownerLevel,hardRanks,summon,{}};
         source.material=material;
         source.birthRandom=std::pair{ports_.random,random};
-        source.effectiveRanks=owner->totals.skillRanks;source.token=nextPreparation_++;
+        source.effectiveRanks=effectiveRanks;source.token=nextPreparation_++;
         if(summon.kind!=MonsterKind::BoneWall) {
-            source.ownerRandom=owner->combatRandom;
+            source.ownerRandom=caster->random();
             const auto palettes=ports_.monsters.read().componentPalettes.find(actor.area);
             source.componentPalettes=palettes==ports_.monsters.read().componentPalettes.end()?area->definition.componentPalettes:palettes->second;
         }
         pending_.emplace(actor.actor,std::move(source));return {DomainStatus::Capacity,{}};
     }
-    if(prior->second.rank!=skill.rank || prior->second.effectiveRanks!=owner->totals.skillRanks) {cancel(actor.actor);return necro(actor,original,target,corpse,restoring);}
-    if(prior->second.inventoryRevision!=owner->inventoryRevision || prior->second.ownerLevel!=owner->persistent.player.level || prior->second.hardRanks!=owner->persistent.player.skillRanks || prior->second.actor.area!=actor.area || prior->second.actor.areaGeneration!=actor.areaGeneration) {cancel(actor.actor);return {DomainStatus::Stale,{}};}
+    if(prior->second.rank!=skill.rank || prior->second.effectiveRanks!=effectiveRanks) {cancel(actor.actor);return necro(actor,original,target,corpse,restoring);}
+    if(prior->second.inventoryRevision!=revision || prior->second.ownerLevel!=ownerLevel || prior->second.hardRanks!=hardRanks || prior->second.actor.area!=actor.area || prior->second.actor.areaGeneration!=actor.areaGeneration) {cancel(actor.actor);return {DomainStatus::Stale,{}};}
     if(iron && (!prior->second.material || prior->second.material->id!=material->id || prior->second.material->revision!=material->revision)) {cancel(actor.actor);return {DomainStatus::Stale,{}};}
     if((prior->second.birthRandom && prior->second.birthRandom->first!=ports_.random) ||
-        (prior->second.ownerRandom && *prior->second.ownerRandom!=owner->combatRandom)) {
+        (prior->second.ownerRandom && *prior->second.ownerRandom!=caster->random())) {
         cancel(actor.actor);return necro(actor,original,target,corpse,restoring);
     }
     if(prior->second.componentPalettes) {
@@ -221,7 +229,7 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
     };
     const auto place=[&](Vec center)->DomainResult<bool> {
         const auto global=center+area->definition.origin;
-        const auto room=ports_.areas.roomAtPosition(actor.area,owner->position,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
+        const auto room=ports_.areas.roomAtPosition(actor.area,origin,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
         if(!room || room->area!=actor.area) return {DomainStatus::Applied,false};
         auto loan=roomRandoms.find(*room);
         if(loan==roomRandoms.end()) {
@@ -276,29 +284,29 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
     }
     const uint64_t expires=skill.bone && skill.bone->barrier?actor.tick+uint64_t(rule.summonLifeFrames):UINT64_MAX;
     auto next=state_;
-    for(const auto &[key,body]:actors) {(void)body;Companion pet{key,actor.player,iron?Kind::IronGolem:Kind::Summon,uint16_t(skill.sourceId)};pet.rank=skill.rank;pet.expires=expires;pet.nextDecision=actor.tick+(ready->second.components || (skill.bone && skill.bone->barrier)?25:1);pet.ownerTeleport=owner->teleportRevision;pet.ownerLevel=owner->persistent.player.level;pet.effectiveRanks=owner->totals.skillRanks;pet.hardRanks=owner->persistent.player.skillRanks;next.companions.emplace(key,std::move(pet));}
+    for(const auto &[key,body]:actors) {(void)body;Companion pet{key,owner?actor.player:PlayerId{},iron?Kind::IronGolem:Kind::Summon,uint16_t(skill.sourceId)};pet.rank=skill.rank;pet.expires=expires;pet.nextDecision=actor.tick+(ready->second.components || (skill.bone && skill.bone->barrier)?25:1);pet.ownerTeleport=owner?owner->teleportRevision:0;pet.ownerLevel=ownerLevel;pet.effectiveRanks=effectiveRanks;pet.hardRanks=hardRanks;next.companions.emplace(key,std::move(pet));}
     const auto sameType=[&](const Companion &existing) {
         if(existing.sourceSkill==uint16_t(skill.sourceId)) return true;
-        if(owner->rules.skills->pd2) {
+        if(programs.pd2) {
             const auto *body=ports_.monsters.find(existing.actor);
             return body && body->rule.petType==ready->second.summon.petType;
         }
         if(!summon.golem || !existing.sourceSkill) return false;
-        const auto found=owner->rules.skills->definitions.find(*existing.sourceSkill);
-        return found!=owner->rules.skills->definitions.end() && found->second.spec.summon && found->second.spec.summon->golem;
+        const auto found=programs.definitions.find(*existing.sourceSkill);
+        return found!=programs.definitions.end() && found->second.spec.summon && found->second.spec.summon->golem;
     };
     size_t count=0;for(const auto &[key,existing]:next.companions) {(void)key;if(existing.owner==actor.player && sameType(existing) && !existing.removeAt) ++count;}
     std::vector<EntityId> retire;
     for(auto &[key,existing]:next.companions) {
         if(count<=size_t(summon.limit)) break;
-        if(existing.owner!=actor.player || !sameType(existing) || existing.removeAt) continue;
+        if(!owner || existing.owner!=actor.player || !sameType(existing) || existing.removeAt) continue;
         const auto *body=ports_.monsters.find(key);if(!body) continue;
         existing.removeAt=actor.tick+uint64_t(body->rule.deathTicks);existing.release=0;retire.push_back(key);--count;
     }
     auto auraUnits=std::make_shared<effects::AuraUnitPublication>();
     ports_.effects.stageAuraActors(*auraUnits,std::move(actors),positions.size());
     for(const auto &[eventId,body]:auraUnits->actors->actors) {
-        (void)body;ports_.effects.stageSummonEvents(*auraUnits,eventId,skill.sourceId,skill.rank,*owner->rules.skills->formulas,actor.tick);
+        (void)body;ports_.effects.stageSummonEvents(*auraUnits,eventId,skill.sourceId,skill.rank,*programs.formulas,actor.tick);
     }
     if(iron) {
         const auto sourceProgram=ready->second.summon;
@@ -318,7 +326,7 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
     const auto retired=ports_.monsters.stageRetirements(*auraUnits,retire,actor.tick);if(!retired) return retired;
     std::shared_ptr<missiles::NativeBirthPublication> makers;
     if(skill.bone && skill.bone->barrier && !skill.bone->prison && skill.bone->sideCount>1) {
-        auto direction=missileWallDirection(owner->position,positions.front());if(!direction.length()) direction={0,1};
+        auto direction=missileWallDirection(origin,positions.front());if(!direction.length()) direction={0,1};
         std::array<missiles::NativeSpawn,2> births;
         for(size_t index=0;index<births.size();++index) {
             auto &birth=births[index];birth.owner=actor.actor;birth.area=actor.area;birth.generation=actor.areaGeneration;birth.tick=actor.tick;
@@ -338,11 +346,24 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
         if(!positions.empty()) cost.value->gameRandom=transactions::UnitRandomEdit{prior->second.birthRandom->first,gameRandom};
         for(const auto &[room,loan]:roomRandoms) {(void)room;cost.value->roomRandomLoans.push_back(std::make_shared<const RoomRandomLoan>(loan));}
         debit=ports_.transactions.commit(std::move(*cost.value));
+    } else if(!owner) {
+        ports_.effects.prepareUnitTimers(*auraUnits);ports_.effects.prepareStagedSkillEvents(*auraUnits,actor.tick);
+        if(ports_.random!=prior->second.birthRandom->first || !ports_.effects.validateAuraUnits(*auraUnits) ||
+            (makers && !makers->validate(positions.size()))) return {DomainStatus::Stale,{}};
+        for(const auto &[room,loan]:roomRandoms) {(void)room;if(!ports_.areas.validateRoomRandom(loan)) return {DomainStatus::Stale,{}};}
+        auto facts=auraUnits->facts;
+        if(makers) facts.insert(facts.end(),makers->facts().begin(),makers->facts().end());
+        const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},std::move(facts)});
+        if(!sent) return {sent.status,{}};
+        ports_.effects.publishAuraUnits(*auraUnits);
+        if(makers) makers->publish();else if(!positions.empty()) ports_.random=gameRandom;
+        for(const auto &[room,loan]:roomRandoms) {(void)room;if(!ports_.transactions.consumeRoomRandom(loan)) std::terminate();}
+        debit={DomainStatus::Applied,std::monostate{}};
     } else {
-        transactions::CharacterEdit edit{actor,owner->inventoryRevision,owner->characterRevision,owner->persistent.player};
+        transactions::CharacterEdit edit{actor,revision,owner->characterRevision,owner->persistent.player};
         edit.player.mana-=skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.charge=skill.charge;
-        if(ownerRandom) edit.random=transactions::UnitRandomEdit{owner->combatRandom,*ownerRandom};
-        if(summon.golem && !iron && owner->persistent.ironGolem && !owner->rules.skills->pd2) edit.ironGolem=std::optional<ItemInstance>{};
+        if(ownerRandom) edit.random=transactions::UnitRandomEdit{caster->random(),*ownerRandom};
+        if(summon.golem && !iron && owner->persistent.ironGolem && !programs.pd2) edit.ironGolem=std::optional<ItemInstance>{};
         auto cost=ports_.transactions.prepare(std::move(edit),nullptr,{},auraUnits);if(!cost) return {cost.status,{}};
         cost.value->missileBirth=std::move(makers);
         if(!positions.empty() && !missileRandom) cost.value->gameRandom=transactions::UnitRandomEdit{prior->second.birthRandom->first,gameRandom};
@@ -399,15 +420,16 @@ StepStatus System::necroStep(Companion &pet,TickContext tick) {
     pet.nextDecision=tick.tick+uint64_t(std::max(1,body->rule.decisionTicks));return StepStatus::Complete;
 }
 DomainResult<bool> System::growBoneWall(EntityId source,EntityId root,int skillId,int rank,RegionId region,Vec position,uint64_t tick) {
-    const auto *owner=ports_.players.findActor(source);const auto *parent=ports_.monsters.find(root);const auto *area=ports_.areas.find(region);
-    if(!owner || !parent || !area || parent->implementation!=MonsterKind::BoneWall || !owner->rules.skills)
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,source);
+    const auto *owner=caster?caster->player:nullptr;const auto *parent=ports_.monsters.find(root);const auto *area=ports_.areas.find(region);
+    if(!caster || !caster->programs() || !parent || !area || parent->implementation!=MonsterKind::BoneWall)
         return {DomainStatus::Unavailable,{}};
-    const auto skill=skills::evaluate(*owner,skillId,rank);
+    const auto skill=skills::evaluateNativeSkill(*caster,ports_.effects,skillId,rank,tick);
     if(!skill.bone || !skill.bone->barrierNative) return {DomainStatus::Unavailable,{}};
     const auto &rule=parent->rule;
     position={std::floor(position.x)+.5f,std::floor(position.y)+.5f};
     const auto global=position+area->definition.origin;
-    const auto room=ports_.areas.roomAtPosition(owner->area,owner->position,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
+    const auto room=ports_.areas.roomAtPosition(caster->area(),caster->position(),int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
     if(!room || room->area!=region) return {DomainStatus::Applied,false};
     auto roomRandom=ports_.areas.roomRandom(*room);if(!roomRandom) return {roomRandom.status,{}};
     const auto collision=ports_.spatial.nativeCollisionSample();
@@ -422,9 +444,9 @@ DomainResult<bool> System::growBoneWall(EntityId source,EntityId root,int skillI
     position=**point.value;
     if(parent->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     SummonCastSpec summon;summon.monster="bonewall";summon.kind=MonsterKind::BoneWall;summon.limit=INT32_MAX;summon.petType=rule.petType;
-    summon.stats=skill.bone->barrierStats.at(size_t(owner->persistent.difficulty));summon.native=*skill.bone->barrierNative;summon.native->base=summon.stats;
+    summon.stats=skill.bone->barrierStats.at(size_t(owner?int(owner->persistent.difficulty):caster->monster->rule.difficulty));summon.native=*skill.bone->barrierNative;summon.native->base=summon.stats;
     summon.native->initialLife=summon.stats.attributes.maxLifeFixed;
-    ActorContext context{owner->player,source,region,area->generation,0,tick};
+    ActorContext context{owner?owner->player:PlayerId{},source,region,area->generation,0,tick};
     const auto expectedRandom=ports_.random;
     auto random=expectedRandom,seed=childRandom(random);
     const auto components=chooseMonsterComponents(rule.componentCounts,{},seed);limitedRandom(seed,1);
@@ -432,12 +454,12 @@ DomainResult<bool> System::growBoneWall(EntityId source,EntityId root,int skillI
     const auto id=prepared.value->begin()->first;auto &body=prepared.value->begin()->second;body.nativeMinionOwner=root;
     auto updated=*parent;++updated.revision;updated.nativeMinions.insert(updated.nativeMinions.begin(),id);
     prepared.value->emplace(root,std::move(updated));
-    auto next=state_;Companion pet{id,owner->player,Kind::Summon,uint16_t(skillId)};
+    auto next=state_;Companion pet{id,owner?owner->player:PlayerId{},Kind::Summon,uint16_t(skillId)};
     pet.rank=rank;pet.expires=tick+uint64_t(rule.summonLifeFrames);pet.nextDecision=tick+25;
-    pet.ownerTeleport=owner->teleportRevision;pet.ownerLevel=owner->persistent.player.level;
-    pet.effectiveRanks=owner->totals.skillRanks;pet.hardRanks=owner->persistent.player.skillRanks;next.companions.emplace(id,std::move(pet));
+    pet.ownerTeleport=owner?owner->teleportRevision:0;pet.ownerLevel=caster->level();
+    const auto ranks=caster->formulaInput(ports_.effects,tick);pet.effectiveRanks=ranks.effectiveRanks;pet.hardRanks=ranks.baseRanks;next.companions.emplace(id,std::move(pet));
     effects::AuraUnitPublication publication;ports_.effects.stageAuraActors(publication,std::move(*prepared.value),1);
-    ports_.effects.stageSummonEvents(publication,id,skillId,rank,*owner->rules.skills->formulas,tick);
+    ports_.effects.stageSummonEvents(publication,id,skillId,rank,*caster->programs()->formulas,tick);
     ports_.effects.prepareStagedSkillEvents(publication,tick);
     if(ports_.random!=expectedRandom || !ports_.effects.validateAuraUnits(publication) || !ports_.areas.validateRoomRandom(*roomRandom.value)) return {DomainStatus::Stale,{}};
     if(!publication.facts.empty()) {const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},region},std::move(publication.facts)});if(!sent) return {sent.status,{}};}

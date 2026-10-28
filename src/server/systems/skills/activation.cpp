@@ -14,6 +14,7 @@
 #include "server/systems/effects/corpse_explosion.hpp"
 #include "server/systems/effects/native_area.hpp"
 #include "evaluation.hpp"
+#include "native_caster.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/pd2_corpse.hpp"
 #include "server/systems/companions/system.hpp"
@@ -28,6 +29,7 @@
 #include "gameplay/skills/barbarian_sequence.hpp"
 #include "gameplay/skills/amazon_sequence.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "gameplay/skills/amazon_missile.hpp"
 #include "gameplay/skills/targeting.hpp"
 #include "gameplay/skills/pd2_program.hpp"
 #include "server/movement.hpp"
@@ -203,11 +205,50 @@ DomainStatus System::activateGrimWard(Release &pending,const ActorContext &actor
     const auto result=ports_.missiles.spawn(request);if(result) ports_.monsters.consumeCorpse(pending.unit);
     return result.status;
 }
-DomainStatus System::activateCorpse(Release &pending,const ActorContext &actor,Vec center) {
+DomainStatus System::activateCorpse(Release &pending,const ActorContext &actor,Vec) {
     if(pending.skill.effect==SkillBehavior::PoisonExplosion) {
-        if(!ports_.monsters.usableCorpse(pending.unit,actor.area,actor.tick)) return DomainStatus::Unavailable;
-        const auto result=ports_.missiles.spawn({actor,pending.skill,pending.collision,center,false,actor.actor,0,center});
-        if(result) ports_.monsters.consumeCorpse(pending.unit);
+        const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
+        if(!caster || !caster->programs()) return DomainStatus::InvalidActor;
+        const auto &catalog=*caster->programs()->formulas;
+        const auto missile=catalog.missileIds.find(catalog.skills.at(pending.skill.sourceId).reference("srvmissilea"));
+        if(missile==catalog.missileIds.end()) return DomainStatus::Applied;
+        const auto *corpse=ports_.monsters.find(pending.unit);
+        if(!corpse) return DomainStatus::Unavailable;
+        if(!pending.manaPaid) {
+            if(!ports_.monsters.nativeUsableCorpse(pending.unit,actor.tick)) return DomainStatus::Unavailable;
+            if(corpse->revision==UINT64_MAX) return DomainStatus::Capacity;
+            const int noSelect=catalog.corpseNoSelectState;
+            if(noSelect<0) return DomainStatus::Unavailable;
+            auto candidate=*corpse;candidate.corpse.states.insert(noSelect);++candidate.revision;
+            auto publication=std::make_shared<effects::AuraUnitPublication>();publication->tick=actor.tick;
+            ports_.effects.stageAuraActors(*publication,{{pending.unit,std::move(candidate)}},0);
+            publication->facts.emplace_back(StateFact{pending.unit,1,corpse->area,noSelect,true});
+            DomainResult<> consumed;
+            if(caster->player) {
+                const auto &p=*caster->player;
+                transactions::CharacterEdit edit{actor,p.inventoryRevision,p.characterRevision,p.persistent.player};
+                edit.player.mana-=pending.skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};edit.charge=pending.skill.charge;
+                auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},publication);
+                if(!plan) return plan.status;
+                consumed=ports_.transactions.commit(std::move(*plan.value));
+            } else consumed=ports_.transactions.commitUnitAuras({},publication,actor);
+            if(!consumed) return consumed.status;
+            pending.manaPaid=true;pending.nativeCallbackStarted=true;
+        }
+        corpse=ports_.monsters.find(pending.unit);
+        if(!corpse) return DomainStatus::Unavailable;
+        std::vector<missiles::NativeSpawn> births;
+        const int velocity=nativeShiftLeft(catalog.missiles.at(missile->second).number("param1"),7);
+        for(const auto heading:poisonCloudDirections(2,0)) {
+            missiles::NativeSpawn birth{actor.actor,corpse->area,ports_.areas.at(corpse->area).generation,actor.tick,
+                corpse->position,corpse->position+heading.direction,missile->second,pending.skill.sourceId,pending.skill.rank};
+            birth.nativeVelocity=velocity;birth.velocityFixed=true;
+            births.push_back(std::move(birth));
+        }
+        auto prepared=ports_.missiles.prepareNativeBirth(births);
+        if(!prepared) return prepared.status;
+        const auto result=ports_.missiles.commitNativeBirth(std::move(*prepared.value));
+        if(result) pending.nativeCallbackStarted=false;
         return result.status;
     }
     const auto result=ports_.effects.corpseExplosion(actor.actor,pending.unit,pending.skill.sourceId,pending.skill.rank,
@@ -258,40 +299,47 @@ DomainStatus System::activateEffect(Release &pending, const ActorContext &actor,
     return ports_.effects.skill(actor, skill, recipient).status;
 }
 DomainStatus System::activateStaticField(Release &pending, const ActorContext &actor, Vec) {
-    const auto &player = *ports_.players.find(actor.player);
+    const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    if(!caster || !caster->programs()) return DomainStatus::InvalidActor;
+    const auto &rules=*caster->programs();
     if(!pending.directSkill) {
         if(ports_.areas.at(actor.area).definition.town) return DomainStatus::Unavailable;
-        auto random=player.combatRandom;
+        auto random=caster->random();
         const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {
             return low>=high?low:nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));
         };
-        auto input=formulaInput(player,draw);SkillFormulaValues values(*player.rules.skills->formulas,input);
+        auto input=caster->formulaInput(ports_.effects,actor.tick,draw);SkillFormulaValues values(*rules.formulas,input);
         const auto formula=[&](std::string_view field) {const auto value=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,field);
             if(!value) throw std::logic_error("Missing native Static Field formula");
             return *value;
             };
         NativeStaticField program;program.minimumDamage=formula("calc2");program.percent=formula("calc1");
-        program.minimumPercent=player.rules.skills->staticMinimum.at(size_t(player.persistent.difficulty));
+        program.minimumPercent=rules.staticMinimum.at(size_t(caster->player?caster->player->persistent.difficulty:caster->monster->rule.difficulty));
         const auto length=values.parameter(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"edln");
         if(!length) return DomainStatus::Unavailable;
-        program.length=*length;const auto &row=player.rules.skills->formulas->skills.at(pending.skill.sourceId);
+        program.length=*length;const auto &row=rules.formulas->skills.at(pending.skill.sourceId);
         program.element=MissileDamageElement(row.elementType);
         const auto radius=formula("aurarangecalc");
         auto pulse=std::make_shared<effects::NativeAreaPulse>();auto &spec=pulse->spec;
-        spec.source=actor.actor;spec.area=actor.area;spec.center=player.position;spec.skill=pending.skill.sourceId;spec.rank=pending.skill.rank;
+        spec.source=actor.actor;spec.area=actor.area;spec.center=caster->position();spec.skill=pending.skill.sourceId;spec.rank=pending.skill.rank;
         spec.directFunction=20;spec.staticField=program;
         spec.targets=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,radius,uint32_t(row.number("aurafilter")),false,
             {},effects::NativeAuraTargetMode::OwnerRange,actor.tick});
-        transactions::CharacterEdit payment{actor,player.inventoryRevision,player.characterRevision,player.persistent.player};
-        if(!pending.manaPaid) {payment.player.mana-=pending.skill.manaCost;payment.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};payment.charge=pending.skill.charge;}
-        payment.random=transactions::UnitRandomEdit{player.combatRandom,random};
-        auto plan=ports_.transactions.prepare(std::move(payment));if(!plan) return plan.status;
-        const auto paid=ports_.transactions.commit(std::move(*plan.value));if(!paid) return paid.status;
+        if(caster->monster) {
+            const auto consumed=ports_.monsters.consumeRandom(actor.actor,caster->random(),random);if(!consumed) return consumed.status;
+        } else {
+            const auto &player=*caster->player;
+            transactions::CharacterEdit payment{actor,player.inventoryRevision,player.characterRevision,player.persistent.player};
+            if(!pending.manaPaid) {payment.player.mana-=pending.skill.manaCost;payment.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};payment.charge=pending.skill.charge;}
+            payment.random=transactions::UnitRandomEdit{player.combatRandom,random};
+            auto plan=ports_.transactions.prepare(std::move(payment));if(!plan) return plan.status;
+            const auto paid=ports_.transactions.commit(std::move(*plan.value));if(!paid) return paid.status;
+        }
         pending.manaPaid=true;pending.directSkill=std::move(pulse);
     }
     pending.nativeCallbackStarted=true;
     auto result=ports_.effects.nativeArea(pending.directSkill->spec,actor.tick,pending.directSkill);
-    if(result && pending.skill.pd2 && pending.skill.curse) {
+    if(result && caster->player && pending.skill.pd2 && pending.skill.curse) {
         // Current Do160 (RVA 0x3AF930) completes Static Field damage before
         // posting its six aura stat slots. The retained damage pulse prevents
         // repeating hits if the later state publication encounters backpressure.
@@ -351,7 +399,9 @@ DomainStatus System::activateCurse(Release &pending,const ActorContext &actor,Ve
         const auto *victim=ports_.monsters.find(pending.unit);
         if(!eligible(victim)) {
             victim=nullptr;int32_t best=INT32_MAX;
-            const Vec origin=ports_.players.find(actor.player)->position+ports_.areas.at(actor.area).definition.origin;
+            const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
+            if(!caster) return DomainStatus::InvalidActor;
+            const Vec origin=caster->position()+ports_.areas.at(actor.area).definition.origin;
             for(const auto id:ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,20,0x8783u,false})) {
                 const auto *candidate=ports_.monsters.find(id);if(!eligible(candidate)) continue;
                 const Vec point=candidate->position+ports_.areas.at(candidate->area).definition.origin;
@@ -361,7 +411,8 @@ DomainStatus System::activateCurse(Release &pending,const ActorContext &actor,Ve
             }
         }
         if(!victim) return DomainStatus::Unavailable;
-        return ports_.effects.curse(actor,pending.skill,victim->position,victim->id).status;
+        return ports_.effects.curse(actor,pending.skill,
+            victim->position+ports_.areas.at(victim->area).definition.origin-ports_.areas.at(actor.area).definition.origin,victim->id).status;
     }
     return ports_.effects.curse(actor,pending.skill,target,pending.unit).status;
 }

@@ -184,7 +184,13 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             skillTable.number(findSkillTableRow(skillTable,"Id",std::to_string(id)),"ItemEffect").value_or(0)>0;
         if(!playerClass && !itemEffect) continue;
         if(skill.auraImplemented) prepared->auras.emplace(id,server::SkillRules::Aura{prepareAura(data,id),skill.auraImmediate});
-        if (!skill.spell || skill.spell->effect==SkillBehavior::None) continue;
+        if (!skill.spell || skill.spell->effect==SkillBehavior::None) {
+            if(skill.auraImplemented) {
+                server::SkillDefinition definition{};definition.spec.sourceId=id;definition.allowedInTown=skill.allowedInTown;
+                prepared->definitions.emplace(id,std::move(definition));
+            }
+            continue;
+        }
         const auto &spec = *skill.spell;
         server::SkillDefinition definition{spec.rules(), skill.allowedInTown, {}};
         if(definition.spec.summon) {
@@ -338,6 +344,8 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         definition.itemTargetDo=skillTable.number(row,"ItemTgtDo").value_or(0)!=0;
         definition.itemEffect=skillTable.number(row,"ItemEffect").value_or(0);
         definition.itemEffectUsesPreparedProgram=definition.itemEffect<=1 || definition.itemEffect==skillTable.number(row,"srvdofunc").value_or(0);
+        if(!data.pd2Host && (definition.itemEffect==36 || definition.itemEffect==151))
+            definition.itemEffectUsesPreparedProgram=true;
         if(data.pd2Host && (definition.itemEffect==151 || definition.itemEffect==183 || definition.itemEffect==187 || definition.itemEffect==188))
             definition.itemEffectUsesPreparedProgram=true;
         definition.itemTarget=skillTable.number(row,"ItemTarget").value_or(0);

@@ -31,7 +31,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
     const auto *player = ports_.players.find(id);
     if (!player || !player->entered) return result;
     for (const auto &[key, monster] : ports_.monsters.read().actors) {
-        if(monster.restorationPending) continue;
+        if(monster.roomless || monster.restorationPending) continue;
         if (!ports_.areas.nearby(player->area, player->position + Vec{.5f,.5f}, monster.area, monster.position)) continue;
         if(!monster.alive() && monster.corpse.unavailable && tick>=monster.busyUntil) continue;
         const bool dead = !monster.alive();

@@ -7,7 +7,7 @@ struct ItemTriggerRule {
     bool targetDo{}, checkStart{}, alternativeCompatible{}, pd2{}, preparedStart{};
 };
 enum class ItemTriggerSupport { Ready, NoEffect, AlternativeProgram, TargetProgram };
-enum class ItemTriggerTarget { EventTarget, Self, RandomPosition, RandomCorpse };
+enum class ItemTriggerTarget { EventTarget, Self, RandomPosition, RandomCorpse, LastAttacker };
 struct ItemTriggerPolicy {
     ItemTriggerSupport support{ItemTriggerSupport::NoEffect};
     ItemTriggerTarget target{ItemTriggerTarget::EventTarget};

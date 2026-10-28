@@ -12,6 +12,7 @@
 #include "server/systems/combat/participants.hpp"
 #include "server/systems/social/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
+#include "server/systems/skills/native_caster.hpp"
 #include "core/random.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
@@ -30,6 +31,25 @@
 #include <exception>
 #include <limits>
 namespace d2x::server::effects {
+struct ItemAuraCast {System::PaladinCycle cycle;bool complete{};};
+DomainResult<> System::itemAura(const ActorContext &actor,int skill,int rank,std::shared_ptr<ItemAuraCast> &execution) {
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    if(!caster || !caster->programs() || !caster->programs()->auras.contains(skill)) return {DomainStatus::Unavailable,{}};
+    if(!execution) {
+        execution=std::make_shared<ItemAuraCast>();
+        execution->cycle.skill=skill;execution->cycle.rank=rank;execution->cycle.area=actor.area;
+    }
+    if(!execution->complete) {
+        const auto status=caster->player?
+            advanceAuraCycle(actor,*caster->player,caster->programs()->auras.at(skill).spec,execution->cycle,actor.tick):
+            advanceUnitAuraCycle(actor,actor.actor,execution->cycle,actor.tick);
+        if(status==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+        execution->complete=true;
+    }
+    // ItemEffect invokes Do once; it does not select a right-hand aura or
+    // install another periodic-skills timer.
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinition &a,EntityId id,uint64_t duration,bool owner,bool healing,EntityId emitter,bool *committedAffected) {
     const auto *caster=ports_.players.find(actor.player);
     const auto *emittingUnit=emitter?ports_.monsters.find(emitter):nullptr;

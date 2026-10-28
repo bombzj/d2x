@@ -35,6 +35,9 @@
 #include "gameplay/skills/pd2_program.hpp"
 #include "gameplay/rules/pd2_corpse.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/skills/projectile_path.hpp"
+#include "gameplay/rules/arithmetic.hpp"
+#include "server/systems/spatial/system.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -592,13 +595,179 @@ DomainResult<> System::objectKick(const ActorContext &actor, UnitTarget target) 
         }
     return {DomainStatus::Unavailable,{}};
 }
-DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill,MissileCollisionRule collision,EntityId target,Vec position,bool dead,bool itemTargetDo,std::shared_ptr<actions::SkillRelease> *continuation) {
+DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill,MissileCollisionRule collision,EntityId target,Vec position,bool dead,int alternativeEffect,std::shared_ptr<actions::SkillRelease> *continuation) {
+    const auto invoking=nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    const auto *region=ports_.areas.find(actor.area);
+    if(!invoking || invoking->area()!=actor.area || !invoking->programs() || !region || region->generation!=actor.areaGeneration)
+        return {DomainStatus::InvalidActor,{}};
+    const bool resumed=continuation && *continuation && (*continuation)->nativeCallbackStarted;
+    if(!dead && !resumed && (invoking->player?invoking->player->persistent.player.hp<=0:!invoking->monster->alive()))
+        return {DomainStatus::Unavailable,{}};
+    if(invoking->programs()->auras.contains(skill.sourceId)) {
+        std::shared_ptr<Release> local;auto &pending=continuation?*continuation:local;
+        if(!pending) pending=std::make_shared<Release>(Release{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick});
+        const auto result=ports_.effects.itemAura(actor,skill.sourceId,skill.rank,pending->itemAura);
+        pending->nativeCallbackStarted=isDeferred(result.status);
+        if(!isDeferred(result.status)) pending.reset();
+        return result;
+    }
+    if(!invoking->programs()->pd2 && skill.sourceId==139) {
+        // The original Stun ItemEffect has no overlay or aura states. Its
+        // Do002 only drains an existing combat record, without rerunning St32.
+        if(!target) return {DomainStatus::Unavailable,{}};
+        std::shared_ptr<Release> local;auto &pending=continuation?*continuation:local;
+        if(!pending) pending=std::make_shared<Release>(Release{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick});
+        const auto result=ports_.combat.itemMeleeDrain(actor.actor,target,{actor.tick},pending->itemDrain);
+        pending->nativeCallbackStarted=isDeferred(result.status);
+        if(!isDeferred(result.status)) pending.reset();
+        return result;
+    }
+    if(!invoking->programs()->pd2) {
+        const auto &rules=*invoking->programs();const auto &row=rules.formulas->skills.at(skill.sourceId);
+        const auto missile=rules.formulas->missileIds.find(row.reference("srvmissile"));
+        if(!row.number("srvdofunc") && missile!=rules.formulas->missileIds.end()) {
+            const auto targetPosition=ports_.monsters.nativeTargetPosition(target,actor.area);
+            Vec origin=invoking->position(),destination=targetPosition?targetPosition->first:position;
+            const auto global=destination+region->definition.origin;
+            if(alternativeEffect && int(std::floor(global.x)) && int(std::floor(global.y))) {
+                const auto delta=destination-origin;origin=destination;destination=destination+delta;
+            }
+            missiles::NativeSpawn birth{actor.actor,actor.area,actor.areaGeneration,actor.tick,origin,destination,missile->second,skill.sourceId,skill.rank};
+            birth.copyMonsterAttackBonus=true;
+            auto prepared=ports_.missiles.prepareNativeBirth(std::span{&birth,1});if(!prepared) return {prepared.status,{}};
+            const auto result=ports_.missiles.commitNativeBirth(std::move(*prepared.value));
+            return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
+        }
+    }
+    const int nativeEffect=alternativeEffect>1?alternativeEffect:
+        invoking->monster && !invoking->programs()->pd2?invoking->programs()->formulas->skills.at(skill.sourceId).number("srvdofunc"):0;
+    if(alternativeEffect>1 || nativeEffect==22 || nativeEffect==26) {
+        if(invoking->programs()->pd2 || (nativeEffect!=36 && nativeEffect!=151 && nativeEffect!=22 && nativeEffect!=26)) return {DomainStatus::NotImplemented,{}};
+        if(skill.rank<=0 || (!dead && (invoking->player?invoking->player->persistent.player.hp<=0:!invoking->monster->alive())))
+            return {DomainStatus::Unavailable,{}};
+        const auto &rules=*invoking->programs();const auto &row=rules.formulas->skills.at(skill.sourceId);
+        const auto missile=rules.formulas->missileIds.find(row.reference("srvmissilea"));
+        if(missile==rules.formulas->missileIds.end()) return {DomainStatus::Unavailable,{}};
+        auto input=invoking->formulaInput(ports_.effects,actor.tick);SkillFormulaValues values(*rules.formulas,input);
+        const auto amount=values.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,"calc1");
+        if(!amount) return {DomainStatus::Unavailable,{}};
+        const auto aim=ports_.monsters.nativeTargetPosition(target,actor.area);
+        std::vector<missiles::NativeSpawn> births;
+        if(nativeEffect==36 || nativeEffect==22) {
+            if((nativeEffect==36 && !aim) || missile->second<=0) return {DomainStatus::Unavailable,{}};
+            const auto center=nativeEffect==36?aim->first:invoking->position();
+            const auto &projectile=rules.formulas->missiles.at(missile->second);
+            const auto velocity=nativeAdd(*amount,nativeAdd(projectile.number("vel"),nativeMultiply(projectile.number("vellev"),skill.rank)/8));
+            for(int direction=0;direction<64;++direction) {
+                births.push_back({actor.actor,actor.area,actor.areaGeneration,actor.tick,center,center+missileRingDirection(direction),missile->second,skill.sourceId,skill.rank});
+                if(velocity) births.back().nativeVelocity=velocity;
+            }
+        } else {
+            // sub_6FD11420 adds the supplied delta to the caster's coordinates,
+            // so a real target is both the origin and the aim of Do151.
+            const auto origin=nativeEffect==151 && aim?aim->first:invoking->position(),destination=aim?aim->first:position;
+            const auto global=destination+region->definition.origin;
+            if(!int(std::floor(global.x)) || !int(std::floor(global.y))) return {DomainStatus::Unavailable,{}};
+            births.push_back({actor.actor,actor.area,actor.areaGeneration,actor.tick,origin,destination,missile->second,skill.sourceId,skill.rank});
+            births.back().copyMonsterAttackBonus=true;
+            // Do151 writes TargetX after construction; it is not a constructor parameter.
+            births.back().firstFinalParameters=std::array<int32_t,2>{*amount,0};
+        }
+        auto prepared=ports_.missiles.prepareNativeBirth(births);if(!prepared) return {prepared.status,{}};
+        const auto result=ports_.missiles.commitNativeBirth(std::move(*prepared.value));
+        return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
+    }
+    if(!invoking->programs()->pd2) {
+        const auto &rules=*invoking->programs();const auto &row=rules.formulas->skills.at(skill.sourceId);
+        const int function=row.number("srvdofunc");
+        if(function==8 || function==10 || function==73 || function==80) {
+            const auto aim=ports_.monsters.nativeTargetPosition(target,actor.area);
+            const auto destination=aim?aim->first:position;
+            const auto global=destination+region->definition.origin;
+            if((function==80 && !aim) || !int(std::floor(global.x)) || !int(std::floor(global.y)))
+                return function==8?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{DomainStatus::Unavailable,{}};
+            const auto missile=rules.formulas->missileIds.find(row.reference("srvmissilea"));
+            if(missile==rules.formulas->missileIds.end()) return {DomainStatus::Unavailable,{}};
+            auto input=invoking->formulaInput(ports_.effects,actor.tick);SkillFormulaValues values(*rules.formulas,input);
+            const auto calculation=[&](std::string_view field) {
+                const auto value=values.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,field);
+                if(!value) throw std::logic_error("Missing native item missile formula");
+                return *value;
+            };
+            std::vector<missiles::NativeSpawn> births;
+            std::vector<DomainFact> facts;
+            if(function==8) {
+                const int count=calculation("calc1"),middle=calculation("calc3");
+                if(count>512) return {DomainStatus::Capacity,{}};
+                if(count<=0) return {DomainStatus::Applied,std::monostate{}};
+                const int central=middle?middle:count,first=(count-central)/2;
+                const auto destinations=missileFanTargets(invoking->position(),destination,count,{0,1});
+                for(size_t index=0;index<destinations.size();++index) {
+                    missiles::NativeSpawn birth{actor.actor,actor.area,actor.areaGeneration,actor.tick,invoking->position(),destinations[index],missile->second,skill.sourceId,skill.rank};
+                    birth.activateFrame=calculation("calc2");birth.suppressSourceEvents=int(index)<first || int(index)>=first+central;
+                    births.push_back(std::move(birth));
+                }
+                if(births.empty()) return {DomainStatus::Applied,std::monostate{}};
+            } else {
+                missiles::NativeSpawn birth{actor.actor,actor.area,actor.areaGeneration,actor.tick,
+                    function==80?destination:invoking->position(),destination,missile->second,skill.sourceId,skill.rank};
+                if(function==10) {
+                    birth.guidedTarget=target;birth.distanceCountdown=!aim;birth.initialDamagePercent=calculation("calc1");
+                    const auto source=invoking->position()+region->definition.origin;
+                    const auto dx=uint16_t(nativeSubtract(int(std::floor(global.x)),int(std::floor(source.x))));
+                    const auto dy=uint16_t(nativeSubtract(int(std::floor(global.y)),int(std::floor(source.y))));
+                    birth.firstFinalParameters=std::array<int32_t,2>{aim?1:2,nativeNarrow(uint32_t(dx)|(uint32_t(dy)<<16))};
+                } else if(function==73) birth.initialization=missiles::NativeSpawn::Initialization::BlessedHammer;
+                else {
+                    // Missile parameter identities are internal handles; the
+                    // native GUID conversion remains at the protocol boundary.
+                    birth.firstFinalParameters=std::array<int32_t,2>{ports_.players.findActor(target)?0:1,nativeNarrow(target.value)};
+                    if(skill.hitOverlayId>=0) facts.emplace_back(OverlayFact{target,uint8_t(ports_.players.findActor(target)?0:1),actor.area,skill.hitOverlayId});
+                }
+                births.push_back(std::move(birth));
+            }
+            auto prepared=ports_.missiles.prepareNativeBirth(births,0,facts);if(!prepared) return {prepared.status,{}};
+            const auto result=ports_.missiles.commitNativeBirth(std::move(*prepared.value));
+            return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
+        }
+    }
     if(const auto *monster=ports_.monsters.find(actor.actor)) {
         const bool continuing=continuation && *continuation && (*continuation)->nativeCallbackStarted;
         if(monster->area!=actor.area || (!monster->alive() && !dead && !continuing)) return {DomainStatus::Unavailable,{}};
         const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
         const auto *programs=caster?caster->programs():nullptr;
-        if(!programs || !programs->pd2 || itemTargetDo || (!skill.pd2 && !skill.curse && !skill.appliedEffect))
+        if(programs && !programs->pd2 && skill.effect==SkillBehavior::Teleport) {
+            if(dead || !region->definition.teleportMode) return {DomainStatus::Unavailable,{}};
+            if(region->definition.teleportMode==2 && !region->definition.collision.interactionSegment(monster->position,position,monster->rule.size,{}))
+                return {DomainStatus::Unavailable,{}};
+            const auto global=position+region->definition.origin;
+            const auto room=ports_.areas.roomAtPosition(actor.area,monster->position,int(std::floor(global.x)),int(std::floor(global.y)));
+            if(!room) return {DomainStatus::Unavailable,{}};
+            const auto free=ports_.areas.nativeFreeCoordinates(*room,int(std::floor(global.x)),int(std::floor(global.y)),monster->rule.size,0x1c09,ports_.spatial.nativeCollisionSample(0x1c09));
+            if(!free) return {DomainStatus::Unavailable,{}};
+            return ports_.monsters.teleport(actor.actor,PointTarget{free->room.area,ports_.areas.at(free->room.area).generation,free->position},actor.tick,0,true);
+        }
+        const int function=programs?programs->formulas->skills.at(skill.sourceId).number("srvdofunc"):0;
+        // 1.13c Do16 (RVA 4D710) adds a player-type guard absent from the
+        // D2MOO version. A hireling's Valkyrie proc deliberately fails.
+        if(programs && !programs->pd2 && function==16) return {DomainStatus::Unavailable,{}};
+        if(programs && !programs->pd2 && (function==17 || function==24 || function==28 || function==102)) {
+            MonsterRelease release{};release.request.actor=actor.actor;release.request.skill=skill.sourceId;
+            release.request.target=UnitTarget{target,0,uint8_t(ports_.players.findActor(target)?0:1)};
+            release.attack.rank=skill.rank;release.area=actor.area;release.generation=actor.areaGeneration;
+            release.launch=std::pair{monster->position,position};
+            return releaseMonsterSpell(release,{actor.tick});
+        }
+        if(programs && !programs->pd2 && skill.effect==SkillBehavior::Hydra) return ports_.companions.hydra(actor,skill,position);
+        if(programs && !programs->pd2 && skill.amazonMagic) return ports_.effects.amazonMagic(actor,skill);
+        if(programs && !programs->pd2 && skill.bone && skill.bone->barrier) return ports_.companions.necro(actor,skill,position,target);
+        if(programs && !programs->pd2 && skill.curse) {
+            Release pending{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick,uint8_t(ports_.players.findActor(target)?0:1)};
+            const auto result=activateCurse(pending,actor,position);
+            return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
+        }
+        if(!programs || (!skill.pd2 && !skill.curse && !skill.appliedEffect && !skill.druid && !skill.assassin &&
+            skill.effect!=SkillBehavior::CorpseExplosion && skill.effect!=SkillBehavior::PoisonExplosion && skill.effect!=SkillBehavior::StaticField))
             return {DomainStatus::NotImplemented,{}};
         skill.manaCost=skill.startMana=skill.delayFrames=0;skill.charge.reset();
         std::shared_ptr<Release> local;auto &pending=continuation?*continuation:local;
@@ -613,7 +782,7 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
     const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
     const bool continuing=continuation && *continuation && (*continuation)->nativeCallbackStarted;
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !area || area->generation!=actor.areaGeneration || (p->persistent.player.hp<=0 && !dead && !continuing)) return {DomainStatus::InvalidActor,{}};
-    if(itemTargetDo || skill.weapon || skill.effect==SkillBehavior::ItemSkill || skill.effect==SkillBehavior::Kick || skill.effect==SkillBehavior::Unsummon) return {DomainStatus::NotImplemented,{}};
+    if(skill.weapon || skill.effect==SkillBehavior::ItemSkill || skill.effect==SkillBehavior::Kick || skill.effect==SkillBehavior::Unsummon) return {DomainStatus::NotImplemented,{}};
     skill.manaCost=skill.startMana=0;skill.delayFrames=0;skill.charge.reset();
     if(skill.pd2 && (skill.effect==SkillBehavior::AreaEnchant || skill.effect==SkillBehavior::Teleport)) {
         if(dead) return {DomainStatus::Unavailable,{}};
@@ -637,6 +806,7 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
     case ActivationProgram::Pd2:
     case ActivationProgram::Assassin:
     case ActivationProgram::Warcry:
+    case ActivationProgram::Curse:
     case ActivationProgram::StaticField:
     case ActivationProgram::Telekinesis:
     case ActivationProgram::Corpse: {
@@ -647,7 +817,6 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
         return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
     }
     case ActivationProgram::AmazonSummon: return skill.summon && skill.summon->amazon?ports_.companions.amazon(actor,skill,position):ports_.companions.necro(actor,skill,position,target);
-    case ActivationProgram::Curse: return ports_.effects.curse(actor,skill,position,target);
     case ActivationProgram::AmazonMagic: return ports_.effects.amazonMagic(actor,skill);
     case ActivationProgram::Teleport: return ports_.travel.castTeleport(actor,{actor.area,actor.areaGeneration,position},0);
     case ActivationProgram::Hydra: return ports_.companions.hydra(actor,skill,position);

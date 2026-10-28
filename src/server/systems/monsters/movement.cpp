@@ -48,7 +48,7 @@ std::optional<std::pair<Vec,int>> System::nativeTargetPosition(EntityId id,Regio
         if(target && target->definition.act==area->definition.act)
             return std::pair{player.position+target->definition.origin-area->definition.origin,2};
     }
-    if(const auto *unit=find(id)) {
+    if(const auto *unit=find(id);unit && !unit->roomless) {
         const auto *target=ports_.areas.find(unit->area);
         if(target && target->definition.act==area->definition.act)
             return std::pair{unit->position+target->definition.origin-area->definition.origin,unit->rule.size};

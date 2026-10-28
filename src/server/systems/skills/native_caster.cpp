@@ -6,6 +6,8 @@
 #include "server/systems/effects/system.hpp"
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
+#include "gameplay/skills/summon_resolve.hpp"
+#include "gameplay/skills/druid_summon.hpp"
 #include <stdexcept>
 namespace d2x::server::skills {
 EntityId NativeCaster::id() const {return player?player->actor:monster->id;}
@@ -39,6 +41,13 @@ SkillCastSpec evaluateNativeSkill(const NativeCaster &caster,const effects::Syst
         auto ownerInput=skills::formulaInput(*caster.controller);SkillFormulaValues ownerValues(*programs->formulas,ownerInput);
         result.summon=resolveAssassinSummon(*definition.summon,rank,caster.controller->persistent.player.level,
             caster.monster->rule.difficulty,ownerValues,skill,programs->pd2);
+    }
+    if(definition.summon && definition.summon->druid)
+        result.summon=resolveDruidSummon(*definition.summon,rank,caster.monster->rule.difficulty,values,skill);
+    else if(definition.summon && !definition.summon->assassin && !definition.summon->amazon) {
+        const auto effective=[&](int id) {const auto found=input.effectiveRanks.find(id);return found==input.effectiveRanks.end()?0:found->second;};
+        result.summon=resolveSummon(*definition.summon,rank,effective(definition.summon->masterySkill),effective(definition.summon->resistSkill),
+            caster.level(),caster.monster->rule.difficulty,input.baseRanks,&values,skill,programs->pd2);
     }
     result.manaCost=result.startMana=0;return result;
 }

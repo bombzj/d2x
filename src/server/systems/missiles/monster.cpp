@@ -31,6 +31,7 @@ namespace d2x::server::missiles {
 RegionId nativeBirthFactArea(const DomainFact &fact) {
     if(const auto *missile=std::get_if<MissileFact>(&fact)) return missile->area;
     if(const auto *pulse=std::get_if<SkillPulseFact>(&fact)) return pulse->area;
+    if(const auto *overlay=std::get_if<OverlayFact>(&fact)) return overlay->area;
     throw std::logic_error("Unsupported native missile birth fact");
 }
 struct NativeBirthPublication::Data {
@@ -122,6 +123,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
             !ports_.nativeRules->formulas->missiles.contains(request.definition)) return {DomainStatus::InvalidRequest,{}};
         MonsterSpawn spawn;spawn.source=request.owner;spawn.area=request.area;spawn.generation=request.generation;spawn.tick=request.tick;
         spawn.position=request.position;spawn.target=request.target;spawn.attack.missile=nativeDamageRule(*ports_.nativeRules,request.definition,request.rank);
+        spawn.attack.rank=request.rank;
         if(request.ownerSeedEdit) {
             if(data->ownerNext!=request.ownerSeedEdit->first) return {DomainStatus::Conflict,{}};
             data->ownerNext=request.ownerSeedEdit->second;

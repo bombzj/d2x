@@ -37,6 +37,7 @@ struct PlayerState {
     uint32_t pd2AchievementSelection{}; // Native runtime PlayerData+1BC.
     uint64_t lastExperienceAward{};
     uint64_t combatRandom{}; // Native unit seed, runtime only.
+    EntityId lastAttacker; // UNITS_StoreLastAttacker; runtime only, including unsuccessful contacts.
     CommandResult result;
 };
 } // namespace d2x::server

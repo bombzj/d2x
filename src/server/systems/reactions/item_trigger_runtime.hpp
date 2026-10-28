@@ -19,8 +19,10 @@ struct ItemTrigger {
     EntityId target;
     Vec position;
     int chance{};
+    std::optional<StatKey> chanceStat;
     ItemTriggerPolicy policy;
     bool supported{};
+    int alternativeEffect{},startCheck{};
     ItemTriggerPhase phase{ItemTriggerPhase::ResolveTarget};
     uint8_t targetType{1};
     std::optional<bool> rolled;

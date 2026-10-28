@@ -213,8 +213,12 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             const auto *live=ports_.monsters.find(id);
             if(!live || live->alive() || live->revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
             auto candidate=*live;
+            const Vec restored{std::floor(player->position.x)+.5f,std::floor(player->position.y)+.5f};
+            if(!ports_.areas.at(actor.area).definition.activation.room(restored)) return {DomainStatus::Unavailable,{}};
+            candidate.area=actor.area;candidate.position=candidate.home=restored;candidate.roomless=false;
+            candidate.revivalPosition=PointTarget{actor.area,actor.areaGeneration,restored};
             candidate.life=candidate.maximumLife;candidate.inactivePet=false;
-            candidate.aiPose=1;candidate.holdPose=false;candidate.modeAlive=false;candidate.deathMode=false;
+            candidate.aiPose=candidate.nativeMode=1;candidate.holdPose=false;candidate.modeAlive=false;candidate.deathMode=false;
             candidate.busyUntil=candidate.poseUntil=candidate.riseUntil=candidate.reactionUntil=0;
             candidate.neutralAt.reset();candidate.delayedDeathSource.reset();candidate.corpse={};
             candidate.frozenUntil=0;candidate.shatterActive=false;
@@ -228,7 +232,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             record.hireling.hp=life.life;
             revivedActor=id;break;
         }
-        if(!revivedActor) return {DomainStatus::NotImplemented,{}};
+        if(!revivedActor) return {DomainStatus::PendingContent,{}};
     } else return {DomainStatus::NotImplemented,{}};
     if (uint64_t(record.gold)+record.bankGold < price) return reject(12);
     const auto wallet=std::min(record.gold,price);record.gold-=wallet;record.bankGold-=price-wallet;
@@ -249,7 +253,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if(revivedActor) {
         auto &pet=state_.companions.at(*revivedActor);
         pet.pendingAction.reset();pet.pendingAura.reset();pet.target={};pet.release=pet.removeAt=0;
-        pet.nextDecision=actor.tick+1;
+        pet.nextDecision=actor.tick+1;pet.ownerTeleport=player->teleportRevision;
         return committed;
     }
     return committed;

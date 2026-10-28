@@ -91,6 +91,10 @@ DomainResult<> System::enqueue(SpellImpact impact) {
 }
 StepStatus System::drainNativeMelee(EntityId source,uint64_t occurrence,TickContext tick) {
     for(auto &impact:state_.spells) if(impact.source==source && impact.occurrence==occurrence) {
+        if(impact.nativeDrainHeld && impact.nativeSkill && impact.nativeSkill->allocationFreed) {
+            impact.nativeSkill->cancelled=true;
+            continue;
+        }
         if(impact.weapon && impact.weapon->wearSkill.pd2 && impact.weapon->wearSkill.weapon &&
             impact.weapon->wearSkill.weapon->doFunction==158 && impact.nativeSkill && impact.nativeSkill->directFunction!=158) {
             // Do158 clears the primary AllocCombat's knockback before Drain.
@@ -346,7 +350,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 (impact.undeadOnly && !target->rule.undead) ||
                 (impact.nextDelay && target->nextHitTick > tick.tick)) { ++impact.next; continue; }
             int64_t amount = impact.currentDamage();
-            ports_.monsters.storeLastAttacker(target->id,source.id());
+            storeLastAttacker(impact,participant,source.id());
             int64_t absorbed=0;
             const int sourcePercent=monsterSource?hirelingDamagePercent(*monsterSource,*target):100;
             const auto scale=[&](int64_t value){return sourcePercent==100 || value<=0?nativeChecked(value):nativePercentage(nativeChecked(value),sourcePercent,100);};
@@ -365,9 +369,9 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             const auto frames=impact.poisonFrames;
             if(rate>0) poison=PoisonApplication{ports_.effects.unitDamageFixed(target->id,scale(rate),DamageType::Poison,tick.tick,pierce[5]).dealt,frames,owner->rules.skills->poisonState,{},pierce[5]};
             if(impact.type==DamageType::Poison) amount=0;
-            const ActorContext itemActor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
-            auto itemEvents=hirelingSource?DomainResult<reactions::ItemEventPlan>{DomainStatus::Applied,reactions::ItemEventPlan{}}:
-                ports_.itemTriggers.prepare(itemActor,{ItemSkillEvent::Kill},target->id,target->position);
+            const ActorContext itemActor{source.player?source.player->player:source.monster->owner.value_or(PlayerId{}),source.id(),
+                source.player?source.player->area:source.monster->area,area->generation,0,tick.tick};
+            auto itemEvents=ports_.itemTriggers.prepare(itemActor,{ItemSkillEvent::Kill},target->id,target->position);
             if(!itemEvents) {blocked=true;break;}
             if(poison && monsterSource && monsterSource->hireling) poison->actualSource=monsterSource->id;
             auto execution=std::make_shared<MonsterContactExecution>();execution->targetIndex=impact.next;execution->target=target->id;

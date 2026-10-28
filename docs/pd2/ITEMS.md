@@ -130,6 +130,8 @@ Properties的fireskill／coldskill／ltngskill／poisskill／magskill通过函�
 
 ## 装备触发与装备自带技能
 
+公共接触消费者已区分扣血前非终结事件与扣血后Kill事件，并在回调执行时重读概率属性；Notify保留独立继续点。原版专用Do36／151、单次光环和Stun分支不替换PD2程序，通用NativeSpawn保留实际rank。共享诅咒／AmazonMagic／Hydra及客户端99／9A改动的全部PD2组合仍待复测，不沿用历史构建／运行结论。
+
 公共`skills::itemTrigger`在`Capacity`或`PendingContent`时均保留原释放继续点，reactions重试不重新创建释放；覆盖玩家、怪物及PD2 Enchant／Teleport入口，不改变已准备程序资格，未实现的ItemCheckStart与替代程序仍拒绝。
 
 当前`0x36E240`在普通SrvDo前登记dospellcast，5帧后采样当时的物品属性；`0x302930`在盾格挡或武器格挡后登记doblock，延迟2帧。它们通过`0x36AED0`登记原MonsterModifier事件，`0x36AE60`按事件号、单位类型及GUID恢复目标，再调用`0x347670`。目标飞弹等不支持的类型回到自身；空目标不是自身。普通施法另排除城镇和`0x37B650`的PvP安全区；后者是Level157／159的固定全局坐标矩形，不是DT1 NoHarm瓦片。该资格已在PD2施法准备中接入，扩展布局可由管理旅行进入；正常PvP／BR入口和胜负程序仍未实现，详见[特殊PvP区域](MAPS.md#特殊pvp区域)。

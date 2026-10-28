@@ -55,6 +55,7 @@ class ItemTriggers {
     void append(ItemEventPlan &,ItemEventPlan) const noexcept;
     StepStatus advance(uint64_t tick);
     StepStatus advance(ItemEventPlan &,uint64_t tick);
+    StepStatus advanceContact(ItemEventPlan &,uint64_t tick,bool beforeDamage,bool terminal=false);
     DomainResult<> frameEvent(const FrameEvent &,uint64_t tick);
     void schedulePd2Block(EntityId blocker,EntityId attacker,uint64_t tick);
 };

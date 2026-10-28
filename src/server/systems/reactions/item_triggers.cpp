@@ -51,7 +51,6 @@ DomainResult<ItemEventPlan> ItemTriggers::prepare(const ActorContext &actor,std:
     if(!caster || caster->area()!=actor.area || !caster->programs() ||
         (caster->player && (!caster->player->entered || caster->player->player!=actor.player))) return {DomainStatus::InvalidActor,{}};
     const auto *player=caster->player;const auto &programs=*caster->programs();
-    if(caster->monster && !programs.pd2) return {DomainStatus::Applied,ItemEventPlan{}};
     if(!programs.stats) throw std::runtime_error("Missing native item event stat rules");
     const auto &stats=*programs.stats;
     const auto sampled=caster->monster?ports_.effects.unitStatValues(actor.actor,actor.tick):std::optional<StatSnapshot>{};
@@ -87,24 +86,21 @@ DomainResult<ItemEventPlan> ItemTriggers::prepare(const ActorContext &actor,std:
         if(requested==ItemSkillEvent::HitHeal?!chance:chance<=0) continue;
         ItemTrigger job;job.actor=actor;job.actor.areaGeneration=ports_.areas.at(actor.area).generation;job.event=requested;job.target=target;job.position=position;job.chance=chance;
         if(requested==ItemSkillEvent::HitHeal) {job.healStat=key;plan.jobs.push_back(std::move(job));continue;}
+        if(requested!=ItemSkillEvent::MeleeSplash) job.chanceStat=key;
         job.targetType=ports_.players.findActor(target)?0:1;
         if(requested==ItemSkillEvent::Cast && !target) job.position=caster->position();
         const auto source=decodeItemSkillLayer(key.layer);
         const int id=source.skill,rank=source.rank;
         if(programs.definitions.contains(id)) {
-            const auto &definition=programs.definitions.at(id);job.skill=skills::evaluateNativeSkill(*caster,ports_.effects,id,rank,actor.tick);job.collision=definition.collision;
-            const int start=programs.pd2?programs.formulas->skills.at(id).number("srvstfunc"):0;
+            const auto &definition=programs.definitions.at(id);job.skill.sourceId=id;job.skill.rank=rank;job.collision=definition.collision;
+            const int start=programs.formulas->skills.at(id).number("srvstfunc");
             // A null native St is already prepared, including Raven's Druid
             // program. It does not require a Pd2SkillProgram wrapper.
-            const bool preparedStart=programs.pd2 && (!start || definition.spec.effect==SkillBehavior::Hydra ||
-                (start==19 && definition.spec.effect==SkillBehavior::BonePrison));
+            const bool preparedStart=!start || start==14 || start==19;
             job.policy=resolveItemTriggerPolicy(job.event,{definition.itemEffect,definition.itemTarget,definition.itemTargetDo,definition.itemCheckStart,definition.itemEffectUsesPreparedProgram,programs.pd2,preparedStart});
-            if(programs.pd2 && job.policy.alternativeProgram && definition.itemEffect>1 && job.skill.pd2) {
-                auto program=std::make_shared<Pd2SkillProgram>(*job.skill.pd2);
-                program->doFunction=definition.itemEffect;
-                job.skill.pd2=std::move(program);job.skill.effect=SkillBehavior::Pd2;
-                job.skill.weapon.reset();job.skill.appliedEffect.reset();
-            }
+            if(definition.itemCheckStart) job.startCheck=start;
+            if(!programs.pd2 && job.policy.alternativeProgram)
+                job.alternativeEffect=definition.itemEffect;
             job.supported=true;
         } else {job.skill.sourceId=id;job.skill.rank=rank;}
         plan.jobs.push_back(std::move(job));
@@ -125,6 +121,31 @@ StepStatus ItemTriggers::advance(uint64_t tick) {
 StepStatus ItemTriggers::advance(ItemEventPlan &plan,uint64_t tick) {
     return advanceJobs(plan.jobs,tick);
 }
+StepStatus ItemTriggers::advanceContact(ItemEventPlan &plan,uint64_t tick,bool beforeDamage,bool terminal) {
+    if(!beforeDamage) {
+        // ExecuteEvents sends Killed before Kill, even though the attacker's
+        // registrations were prepared first. Retain each subscription order.
+        std::list<ItemTrigger> killed;
+        for(auto it=plan.jobs.begin();it!=plan.jobs.end();) {
+            auto current=it++;
+            if(current->event==ItemSkillEvent::Death) killed.splice(killed.end(),plan.jobs,current);
+        }
+        plan.jobs.splice(plan.jobs.begin(),killed);
+        if(!terminal) std::erase_if(plan.jobs,[](const auto &job) {return job.event==ItemSkillEvent::Death || job.event==ItemSkillEvent::Kill;});
+        return advanceJobs(plan.jobs,tick);
+    }
+    // Keep the same callback objects across output pressure. Moving only the
+    // nonterminal callbacks leaves Kill at its native post-damage boundary.
+    std::list<ItemTrigger> callbacks;
+    for(auto it=plan.jobs.begin();it!=plan.jobs.end();) {
+        auto current=it++;
+        if(current->event!=ItemSkillEvent::Kill && current->event!=ItemSkillEvent::Death)
+            callbacks.splice(callbacks.end(),plan.jobs,current);
+    }
+    const auto result=advanceJobs(callbacks,tick);
+    plan.jobs.splice(plan.jobs.begin(),callbacks);
+    return result;
+}
 StepStatus ItemTriggers::advanceJobs(std::list<ItemTrigger> &jobs,uint64_t tick) {
     for(auto it=jobs.begin();it!=jobs.end();) {
         auto &job=*it;const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,job.actor.actor);
@@ -141,6 +162,15 @@ StepStatus ItemTriggers::advanceJobs(std::list<ItemTrigger> &jobs,uint64_t tick)
             return caster->monster?ports_.monsters.consumeRandom(actor.actor,expected,next):ports_.transactions.consumeRandom(actor,expected,next);
         };
         if(!job.rolled) {
+            // EventFunc20/21/30 query the aggregate stat when their callback
+            // runs. Earlier callbacks may remove equipment or change a layer.
+            if(job.chanceStat) {
+                const auto current=caster->player?std::optional{caster->player->totals.nativeStats}:
+                    ports_.effects.unitStatValues(actor.actor,tick);
+                if(!current) {it=jobs.erase(it);continue;}
+                job.chance=current->get(*job.chanceStat);
+                if(job.chance<=0) {it=jobs.erase(it);continue;}
+            }
             const auto expected=caster->random();auto random=expected;
             const bool accepted=int(job.event==ItemSkillEvent::Cast?pd2UnitEventRandom(random)%100:limitedRandom(random,100))<job.chance;
             const auto consumed=consume(expected,random);
@@ -165,26 +195,57 @@ StepStatus ItemTriggers::advanceJobs(std::list<ItemTrigger> &jobs,uint64_t tick)
             if(job.policy.victimCasts) {
                 invoking=skills::nativeCaster(ports_.players,ports_.monsters,job.target);
                 if(!invoking || invoking->area()!=job.actor.area) {it=jobs.erase(it);continue;}
+                if(!invoking->programs() || !invoking->programs()->definitions.contains(job.skill.sourceId)) {
+                    deferred_="Victim item trigger skill program is unavailable: "+std::to_string(job.skill.sourceId);
+                    it=jobs.erase(it);continue;
+                }
                 actor=invoking->context(ports_.areas,tick);job.effectActor=actor;
-                job.skill=skills::evaluateNativeSkill(*invoking,ports_.effects,job.skill.sourceId,job.skill.rank,tick);
                 job.target=actor.actor;job.targetType=invoking->player?0:1;job.position=invoking->position();
+            }
+            if(ports_.effects.unitStates(actor.actor,tick).contains(invoking->programs()->uninterruptable.id)) {
+                it=jobs.erase(it);continue;
+            }
+            if(job.target) {
+                const auto position=ports_.monsters.nativeTargetPosition(job.target,actor.area);
+                if(position) {job.position=position->first;job.targetType=ports_.players.findActor(job.target)?0:1;}
+                else job.target={};
+            }
+            if(job.policy.target==ItemTriggerTarget::LastAttacker && !job.target) {
+                const auto last=invoking->player?invoking->player->lastAttacker:invoking->monster->lastAttacker;
+                if(const auto position=ports_.monsters.nativeTargetPosition(last,actor.area)) {
+                    job.target=last;job.position=position->first;job.targetType=ports_.players.findActor(last)?0:1;
+                }
             }
             if(job.policy.target==ItemTriggerTarget::Self) {job.target=actor.actor;job.targetType=invoking->player?0:1;job.position=invoking->position();}
             if(job.policy.target==ItemTriggerTarget::RandomCorpse) {
-                if(!job.target) {it=jobs.erase(it);continue;}
+                if(!job.target || job.skill.rank<=0) {it=jobs.erase(it);continue;}
                 const auto center=job.position+area->definition.origin;EntityId chosen;
                 for(const auto candidate:ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,10,0x1002,false,center,effects::NativeAuraTargetMode::TargetRange,tick}))
                     if(ports_.monsters.nativeUsableCorpse(candidate,tick)) {chosen=candidate;break;}
                 if(!chosen) {it=jobs.erase(it);continue;}
-                job.target=chosen;job.targetType=1;job.position=ports_.monsters.find(chosen)->position;
+                job.target=chosen;job.targetType=1;
+                const auto &corpse=*ports_.monsters.find(chosen);
+                job.position=corpse.position+ports_.areas.at(corpse.area).definition.origin-area->definition.origin;
             }
             if(job.policy.target==ItemTriggerTarget::RandomPosition) {
                 bool found=false;Vec chosen;
                 const auto expected=invoking->random();auto random=expected;
+                const auto *unit=invoking->monster;
+                const auto pattern=unit?unit->collisionPattern.value_or(unit->rule.collisionPattern):NativeCollisionPattern::SmallUnit;
+                const int size=pattern==NativeCollisionPattern::None?1:
+                    pattern==NativeCollisionPattern::BigUnit || pattern==NativeCollisionPattern::BigPet?3:2;
+                const uint16_t mask=unit?(unit->airborne || unit->burrowed || unit->submerged?0:
+                    !unit->alive() && !unit->rule.deadCollision?0x8000:0x100):invoking->player->persistent.player.hp<=0?0x8000:0x80;
+                const auto origin=area->definition.origin;
+                const auto current=invoking->position()+origin;
+                const auto room=ports_.areas.roomAtPosition(actor.area,invoking->position(),int(std::floor(current.x)),int(std::floor(current.y)));
+                if(!room) {it=jobs.erase(it);continue;}
+                const auto sample=[&](RoomView source,int32_t x,int32_t y){return ports_.areas.sampleNativeCollision(source,x,y,mask);};
                 for(int attempt=0;attempt<10;++attempt) {
                     const int offsetX=int(limitedRandom(random,40))-20,offsetY=int(limitedRandom(random,40))-20;
                     const Vec point{std::floor(invoking->position().x)+float(offsetX),std::floor(invoking->position().y)+float(offsetY)};
-                    if(area->definition.collision.walkable(point,invoking->monster?invoking->monster->rule.collision:playerMovement)) {chosen=point;found=true;break;}
+                    const auto global=point+origin;
+                    if(!ports_.areas.nativeCollisionMask(*room,int(std::floor(global.x)),int(std::floor(global.y)),size,mask,sample)) {chosen=point;found=true;break;}
                 }
                 const auto consumed=invoking->monster?ports_.monsters.consumeRandom(actor.actor,expected,random):ports_.transactions.consumeRandom(actor,expected,random);
                 if(isDeferred(consumed.status)) return StepStatus::Blocked;
@@ -192,10 +253,29 @@ StepStatus ItemTriggers::advanceJobs(std::list<ItemTrigger> &jobs,uint64_t tick)
                 if(found) {job.position=chosen;job.target={};}
                 if(!found) {it=jobs.erase(it);continue;}
             }
+            if(job.startCheck==14 || job.startCheck==19) {
+                if(job.startCheck==19 && !job.target) {it=jobs.erase(it);continue;}
+                const auto global=job.position+area->definition.origin;
+                const auto room=ports_.areas.roomAtPosition(actor.area,invoking->position(),int(std::floor(global.x)),int(std::floor(global.y)));
+                if(!room || ports_.areas.at(room->area).definition.town) {it=jobs.erase(it);continue;}
+            }
+            // Earlier callbacks in this event may have changed the caster's
+            // equipment or states. Sample formulas only when this callback
+            // starts; a deferred execution then retains this exact snapshot.
+            const auto &definition=invoking->programs()->definitions.at(job.skill.sourceId);
+            if(!invoking->programs()->auras.contains(job.skill.sourceId))
+                job.skill=skills::evaluateNativeSkill(*invoking,ports_.effects,job.skill.sourceId,job.skill.rank,tick);
+            job.collision=definition.collision;
+            if(invoking->programs()->pd2 && job.policy.alternativeProgram && definition.itemEffect>1 && job.skill.pd2) {
+                auto program=std::make_shared<Pd2SkillProgram>(*job.skill.pd2);
+                program->doFunction=definition.itemEffect;
+                job.skill.pd2=std::move(program);job.skill.effect=SkillBehavior::Pd2;
+                job.skill.weapon.reset();job.skill.appliedEffect.reset();
+            }
             job.phase=ItemTriggerPhase::Execute;
         }
         if(job.phase==ItemTriggerPhase::Execute) {
-            const auto result=ports_.skills.itemTrigger(actor,job.skill,job.collision,job.target,job.position,job.policy.death,false,&job.continuation);
+            const auto result=ports_.skills.itemTrigger(actor,job.skill,job.collision,job.target,job.position,job.policy.death,job.alternativeEffect,&job.continuation);
             if(isDeferred(result.status)) return StepStatus::Blocked;
             if(!result) {
                 if(result.status==DomainStatus::NotImplemented) deferred_="Original item trigger behavior requires its skill program: "+std::to_string(job.skill.sourceId);

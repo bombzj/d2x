@@ -297,6 +297,11 @@ std::shared_ptr<RoomUnitRegistration> AreaStore::prepareRoomUnit(EntityId id,uin
     std::map<EntityId,RoomUnitEntry> prepared;prepared.emplace(id,RoomUnitEntry{kind,room,{},{}});
     auto result=std::make_shared<RoomUnitRegistration>();result->node=prepared.extract(id);return result;
 }
+std::shared_ptr<RoomUnitRegistration> AreaStore::prepareUnplacedRoomUnit(EntityId id,uint8_t kind) const {
+    if(!id || kind>5 || roomUnits_.contains(id)) throw std::invalid_argument("Invalid unplaced unit registration");
+    std::map<EntityId,RoomUnitEntry> prepared;prepared.emplace(id,RoomUnitEntry{kind,{},{},{}});
+    auto result=std::make_shared<RoomUnitRegistration>();result->node=prepared.extract(id);return result;
+}
 void AreaStore::linkRoomUnit(EntityId id,RoomUnitEntry &entry) noexcept {
     if(!entry.room) return;
     auto &head=areas_.at(entry.room->first).unitHeads.at(entry.room->second);

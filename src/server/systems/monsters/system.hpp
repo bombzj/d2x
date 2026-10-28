@@ -66,6 +66,8 @@ struct Actor {
     std::shared_ptr<const StatSnapshot> pd2DeathStats;
     bool pd2DeathEventState{};
     std::shared_ptr<RoomUnitRegistration> roomAdmission;
+    bool roomless{}; // Loaded dead hireling: identity/equipment exist, no room or footprint.
+    std::optional<PointTarget> revivalPosition; // Prepared relocation, cleared by publication.
     std::shared_ptr<FrameEventQueue::PreparedInsertion> initialAiTimer;
     std::shared_ptr<FrameEventQueue::PreparedInsertion> initialModeTimer,initialWakeTimer;
     std::vector<std::shared_ptr<FrameEventQueue::PreparedInsertion>> initialModifierTimers;
@@ -232,7 +234,7 @@ struct Actor {
     }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
     bool nativeAi() const { return !questNpc || townNpcAi(rule.ai.kind) || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter || rule.ai.kind==MonsterAiKind::NpcBarb || rule.ai.kind==MonsterAiKind::ScriptedNpc || (rule.environmentController && rule.ai.kind==MonsterAiKind::Overseer); }
-    bool damageable() const { return !restorationPending && !burrowed && !targetFlagsDisabled && !hatching && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
+    bool damageable() const { return !roomless && !restorationPending && !burrowed && !targetFlagsDisabled && !hatching && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
     bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || bool(druidPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
     bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || assassinPet || druidPet || necroSummon || conversion || hydra(); }

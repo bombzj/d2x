@@ -128,7 +128,7 @@ class System {
     size_t pendingReleases() const;
     bool busy(EntityId id, uint64_t tick) const;
     DomainResult<> requestCast(const CastRequest &);
-    DomainResult<> itemTrigger(const ActorContext &,SkillCastSpec,MissileCollisionRule,EntityId,Vec,bool dead,bool itemTargetDo,std::shared_ptr<actions::SkillRelease> *continuation=nullptr);
+    DomainResult<> itemTrigger(const ActorContext &,SkillCastSpec,MissileCollisionRule,EntityId,Vec,bool dead,int alternativeEffect,std::shared_ptr<actions::SkillRelease> *continuation=nullptr);
     // Native OperateFn05 invokes the hidden Kick without changing either hand.
     DomainResult<> objectKick(const ActorContext &, UnitTarget);
     DomainResult<> avoidance(const ActorContext &, WeaponAvoidance, EntityId attacker);

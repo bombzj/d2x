@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "server/player_store.hpp"
+#include "server/systems/skills/native_caster.hpp"
 #include "server/area_store.hpp"
 #include <cmath>
 #include "core/random.hpp"
@@ -83,15 +84,18 @@ void System::refreshNecro(EntityId id,MonsterRule rule,UnitCombatStats stats,std
 }
 DomainResult<std::map<EntityId,Actor>> System::prepareNecro(const ActorContext &owner,const MonsterRule &rule,Vec position,const SummonCastSpec &summon,uint64_t random,size_t offset,std::span<const std::shared_ptr<const StatList>> equipmentSources,std::optional<MonsterComponents> components,std::optional<bool> shield) const {
     if(offset>=65536-state_.actors.size() || offset>=UINT32_MAX-ports_.ids.cursor()) return {DomainStatus::Capacity,{}};
-    const auto *p=ports_.players.find(owner.player);if(!p) return {DomainStatus::InvalidActor,{}};
-    Actor actor;actor.id=EntityId{ports_.ids.cursor()+offset};actor.area=owner.area;actor.position=actor.home=position;actor.revision=1;actor.owner=owner.player;
+    const auto caster=skills::nativeCaster(ports_.players,*this,owner.actor);
+    const auto *p=caster?caster->player:nullptr;
+    if(!caster || !caster->programs() || (!p && summon.kind!=MonsterKind::BoneWall)) return {DomainStatus::InvalidActor,{}};
+    const auto &programs=*caster->programs();
+    Actor actor;actor.id=EntityId{ports_.ids.cursor()+offset};actor.area=owner.area;actor.position=actor.home=position;actor.revision=1;if(p) actor.owner=p->player;else actor.owner=caster->monster->owner;
     actor.admissionTick=owner.tick;actor.nativeMinionOwner=owner.actor;
     actor.identity.monster=summon.monster;actor.identity.spawnKey="pet."+std::to_string(actor.id.value);actor.identity.origin=SpawnOrigin::Summoned;
     actor.implementation=summon.kind;actor.rule=rule;actor.rule.petType=summon.petType;actor.necroSummon=true;actor.necroPet=summon.necro;actor.petStats=summon.stats;
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();
-    actor.rule.level=summon.stats.level;actor.rule.difficulty=p->persistent.difficulty;
-    actor.rule.coldDivisor=p->rules.skills->coldDivisor.at(size_t(actor.rule.difficulty));
-    actor.rule.freezeDivisor=p->rules.skills->freezeDivisor.at(size_t(actor.rule.difficulty));
+    actor.rule.level=summon.stats.level;actor.rule.difficulty=p?int(p->persistent.difficulty):caster->monster->rule.difficulty;
+    actor.rule.coldDivisor=programs.coldDivisor.at(size_t(actor.rule.difficulty));
+    actor.rule.freezeDivisor=programs.freezeDivisor.at(size_t(actor.rule.difficulty));
     const auto &a=summon.stats.attributes;
     actor.rule.defense=a.defense;actor.rule.attackRating=a.attackRating;
     actor.rule.minimumDamage=int(summon.stats.minimumDamage);actor.rule.maximumDamage=int(summon.stats.maximumDamage);
@@ -148,7 +152,7 @@ DomainResult<std::map<EntityId,Actor>> System::prepareNecro(const ActorContext &
 }
 DomainResult<std::map<EntityId,Actor>> System::prepareHireling(const ActorContext &owner,const MonsterRule &rule,std::string_view code,Vec position,int64_t life,uint64_t random,NativeUnitStats intrinsic,int birthLevel,NativeBirthBatch &birth,std::span<const EntityId> retired) const {
     const auto *p=ports_.players.find(owner.player);const auto *area=ports_.areas.find(owner.area);
-    if(!p || !p->entered || p->actor!=owner.actor || p->area!=owner.area || !area || area->generation!=owner.areaGeneration || life<=0 || rule.minimumLife<=0 || !area->definition.collision.walkable(position,rule.collision)) return {DomainStatus::InvalidActor,{}};
+    if(!p || !p->entered || p->actor!=owner.actor || p->area!=owner.area || !area || area->generation!=owner.areaGeneration || life<0 || rule.minimumLife<=0 || (life>0 && !area->definition.collision.walkable(position,rule.collision))) return {DomainStatus::InvalidActor,{}};
     std::set<EntityId> removals;
     for(const auto id:retired) if(!removals.insert(id).second || !canRemove(id)) return {DomainStatus::InvalidRequest,{}};
     if(state_.actors.size()-removals.size()>=65536 || ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
@@ -158,7 +162,8 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHireling(const ActorContex
     const auto maximum=nativeStatValue(intrinsic.values,*rule.stats,"maxhp");
     if(maximum<=0) return {DomainStatus::InvalidRequest,{}};
     intrinsic.sources=statListWithOwner(*intrinsic.sources,actor.id);actor.nativeStats=std::move(intrinsic);
-    actor.rule=rule;actor.hireling=true;actor.life=std::min(life,int64_t(maximum));actor.maximumLife=maximum;
+    actor.rule=rule;actor.hireling=true;actor.roomless=life==0;actor.deathMode=actor.roomless;actor.inactivePet=actor.roomless;
+    if(actor.roomless) {actor.aiPose=actor.nativeMode=12;actor.position=actor.home={};}actor.life=std::min(life,int64_t(maximum));actor.maximumLife=maximum;
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();
     actor.petStats.damageRegen=rule.damageRegen;
     actor.admissionTick=owner.tick;actor.nativeMinionOwner=owner.actor;
@@ -173,9 +178,9 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHireling(const ActorContex
         return player.entered && ports_.areas.nearby(player.area,player.position+Vec{.5f,.5f},actor.area,actor.position);
     });
     actor.aiThinkAt=owner.tick+(clients?2:uint64_t(rule.neutralDelayTicks>0?rule.neutralDelayTicks:15));
-    actor.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+    if(!actor.roomless) actor.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
         {{},{FrameEventUnit::Monster,actor.id},FrameEventType::AiThink,actor.aiThinkAt}));
-    std::map<EntityId,Actor> result;actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);prepareInitialTimers(actor,owner.tick);result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
+    std::map<EntityId,Actor> result;actor.roomAdmission=actor.roomless?ports_.areas.prepareUnplacedRoomUnit(actor.id,1):ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);prepareInitialTimers(actor,owner.tick);result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
 }
 DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &owner,const HydraRules &spec,const SummonCastSpec &summon,const std::array<std::optional<Vec>,3> &positions,uint64_t &random,std::optional<std::array<RegionId,3>> destinationAreas) const {
     const auto *p=ports_.players.findActor(owner.actor);const auto *caster=find(owner.actor);const auto *area=ports_.areas.find(owner.area);
@@ -279,11 +284,11 @@ ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors
             candidate.initialWakeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
                 {{},{FrameEventUnit::Monster,id},FrameEventType::MonsterModifier,ports_.frameEvents.currentFrame()+75,false,0,41}));
         if(!live || (!live->alive() && candidate.alive())) prepareInitialTimers(candidate,ports_.frameEvents.currentFrame());
-        if(candidate.nativeAi() &&
+        if(!candidate.roomless && candidate.nativeAi() &&
            (!live || candidate.alive()!=live->alive()) && (candidate.alive() || candidate.owner) && !candidate.initialAiTimer)
             candidate.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
                 {{},{FrameEventUnit::Monster,id},FrameEventType::AiThink,ports_.frameEvents.currentFrame()+1}));
-        if(candidate.nativeAi() && (!live || (!live->alive() && candidate.alive())) && !candidate.initialModeTimer)
+        if(!candidate.roomless && candidate.nativeAi() && (!live || (!live->alive() && candidate.alive())) && !candidate.initialModeTimer)
             candidate.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
                 {{},{FrameEventUnit::Monster,id},FrameEventType::ModeChange,ports_.frameEvents.currentFrame()+1,true}));
     }
@@ -308,12 +313,22 @@ bool System::validateActors(const ActorPublication &plan) const {
     }
     size_t additions=0,registrations=0,wanderRegistrations=0;
     for(const auto &[id,candidate]:plan.actors) {
-        if(candidate.id!=id || !ports_.areas.find(candidate.area)) return false;
+        if(candidate.id!=id || !ports_.areas.find(candidate.area) || (candidate.roomless && (!candidate.hireling || candidate.alive()))) return false;
         if(candidate.owner && !candidate.conversion && candidate.rule.petType>0 && !candidate.petRegistrationOrder) ++registrations;
         const auto expected=plan.expected.find(id);const auto *live=find(id);
         if(expected!=plan.expected.end()) {
-            if(!live || live->revision!=expected->second || candidate.area!=live->area || (candidate.position.x!=live->position.x || candidate.position.y!=live->position.y) ||
-               expected->second==UINT64_MAX || candidate.revision<=expected->second) return false;
+            if(!live || live->revision!=expected->second || expected->second==UINT64_MAX || candidate.revision<=expected->second) return false;
+            if(candidate.revivalPosition) {
+                const auto &placement=*candidate.revivalPosition;
+                const auto *owner=candidate.owner?ports_.players.find(*candidate.owner):nullptr;
+                const auto *area=ports_.areas.find(placement.area);
+                if(!live->hireling || live->alive() || !candidate.hireling || !candidate.alive() || candidate.roomless ||
+                    !owner || !owner->entered || !area || area->generation!=placement.generation ||
+                    candidate.area!=owner->area || placement.area!=candidate.area ||
+                    placement.position.x!=candidate.position.x || placement.position.y!=candidate.position.y ||
+                    candidate.position.x!=std::floor(owner->position.x)+.5f || candidate.position.y!=std::floor(owner->position.y)+.5f ||
+                    !area->definition.activation.room(candidate.position)) return false;
+            } else if(candidate.area!=live->area || candidate.position.x!=live->position.x || candidate.position.y!=live->position.y || candidate.roomless!=live->roomless) return false;
         } else {
             const bool restored=plan.restoredIdentities.contains(id);
             if(live || !candidate.roomAdmission) return false;
@@ -351,6 +366,11 @@ void System::publishActors(ActorPublication &plan) noexcept {
             ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,node.key()},FrameEventType::AiThink,0);
         if(live!=state_.actors.end()) {
             if(live->second.alive() && !node.mapped().alive()) ports_.areas.recordMonsterDeath(node.key());
+            if(node.mapped().revivalPosition) {
+                ports_.areas.setUnitCollision(node.key(),{});
+                ports_.areas.moveRoomUnit(node.key(),node.mapped().area,node.mapped().position);
+                node.mapped().revivalPosition.reset();
+            }
             live->second=std::move(node.mapped());
             refreshCollision(live->second);
         }

@@ -11,8 +11,9 @@
 
 namespace d2x::server::effects {struct BladeShieldPulse;struct MindBlastPulse;struct CorpseExplosionPulse;struct NativeAreaPulse;struct MonsterCursePulse;}
 namespace d2x::server::effects {struct Pd2DarkPactPulse;}
+namespace d2x::server::effects {struct ItemAuraCast;}
 namespace d2x::server::skills {struct AssassinKickExecution;struct DruidMeleeExecution;struct WeaponMeleeExecution;struct Pd2CastExecution;}
-namespace d2x::server::combat {struct NativeSkillContact;}
+namespace d2x::server::combat {struct NativeSkillContact;struct SpellImpact;}
 namespace d2x::server::monsters {struct SkillChildrenExecution;}
 namespace d2x::server::actions {
 struct MonsterTentacleExecution {
@@ -43,6 +44,7 @@ struct SkillRelease {
     bool motionFinished{};
     std::optional<uint64_t> nativeMeleeOccurrence{};
     std::shared_ptr<combat::NativeSkillContact> nativeContact{};
+    std::shared_ptr<combat::SpellImpact> itemDrain{};
     bool frenzyPrepared{};
     bool cancelled{};
     bool nativeCallbackStarted{};
@@ -56,6 +58,7 @@ struct SkillRelease {
     std::shared_ptr<effects::MindBlastPulse> mindBlastPulse{};
     std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion{};
     std::shared_ptr<effects::NativeAreaPulse> directSkill{};
+    std::shared_ptr<effects::ItemAuraCast> itemAura{};
     std::shared_ptr<effects::Pd2DarkPactPulse> pd2DarkPact{};
     std::shared_ptr<effects::MonsterCursePulse> monsterCurse{};
     std::shared_ptr<skills::AssassinKickExecution> assassinKick{};

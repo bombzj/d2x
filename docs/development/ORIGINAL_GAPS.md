@@ -16,9 +16,9 @@
 | 跨区域准备包资源共享 | 同一Archives内按规范化路径弱缓存不可变DS1及无图像DT1，按有序库路径集合复用选择索引；准备包／幕会话持有实际共享源。房间种子与运行状态不进入资源缓存，独立Archives仍各持缓存。 | 验证跨区域重叠房间、不同库集合共用DT1、源生成器销毁后的资源寿命，以及挂载变化时旧包／新包隔离；核对选砖记录身份、种子和房间边界不变。当前共享范围不包含独立Archives之间的统一缓存，也没有内存下降或无卡顿的实测结论。[DS1共享](../../src/world/native_map.cpp) · [DT1共享](../../src/world/retail/tile_selector.cpp) · [准备包](../../src/world/room_terrain.cpp) |
 | 蓝图与资源回收 | 每11帧按幕和层首次接入的逆序检查无玩家／Vis引用的层，切换层重置10次等待，复验整层及出口邻层房间状态后释放DS1／DT1输入、预设单位缓存与区域碰撞数组容量。宿主释放离线整图，仅保留协议布局。重入使用新票据及独立terrainGeneration，复验挂载、幕、种子、房间图及尺寸，再接回原会话；保留Gameplay generation、人口进度、身份和休眠节点。缺输入先等待，碰撞Grid地址和邻接借用保持稳定。 | 紧凑拓扑／规则元数据继续保留，不能声称与原版堆布局逐字一致。重载失败、过期票据、跨区接缝、人口不重生与实际内存下降均待测。[地图边界](../modules/MAP.md#地图缓存与分帧准备) |
 
-## 本次构建与静态检查范围
+## 世界生命周期提交的构建与静态检查范围
 
-2026-10-28，Windows／MinGW，Release配置下`cmake --build build --config Release --target all --parallel 3`完成全量编译／链接，最后修改的room_terrain与world/system及其依赖目标再次增量构建成功；成功构建日志未报告警告或错误。初始脚本的8路编译因内存压力主动中止，改为上述3路继续，该中止不计为构建通过。未执行测试、运行游戏／工具程序或打包；Linux与Debug未构建。
+以下结果仅覆盖世界生命周期提交`8c3d190d`；装备触发工作区的后续构建／有限运行范围见下文，不扩大为其他领域完成。2026-10-28，Windows／MinGW，Release配置下`cmake --build build --config Release --target all --parallel 3`完成全量编译／链接，最后修改的room_terrain与world/system及其依赖目标再次增量构建成功；成功构建日志未报告警告或错误。初始脚本的8路编译因内存压力主动中止，改为上述3路继续，该中止不计为构建通过。未执行测试、运行游戏／工具程序或打包；Linux与Debug未构建。
 
 最终补齐后，`clang-tidy --checks=-*,clang-analyzer-* --warnings-as-errors=*`复核了world/system、world/rooms、monsters/inactive、monsters/modifiers、items/system、loot/system、hosting/detail/native_realm_host、game_instance、world/navigation和world/room_terrain共10个编译单元，默认头过滤下均退出成功。此前对game_instance展开`--header-filter=.*`复核时，8条`clang-analyzer-optin.performance.Padding`提示因warnings-as-errors使该次检查退出失败，分别涉及CombatEffectSpec、WeaponSkillSpec、MonsterRule、DiagnosticMonster、SpellImpact、Missile、LifeChange和Actor；均为公共结构体布局优化建议，未在本项中重排字段。最终定向复核未报告错误，但不能将默认过滤或有限范围检查当成全仓零诊断。`git diff --check`与BASELINE、ORIGINAL_GAPS、MAP、POPULATION中的131个本地文件链接检查通过；链接检查不包含标题锚点。
 
@@ -26,14 +26,34 @@
 
 | 领域 | 具体缺口 |
 | --- | --- |
-| 装备触发 | 部分替代 `ItemEffect`、原版受害者施法、尸体／起手检查仍缺对应程序；玩家缺统一最后攻击者状态，随机目标缺原动态脚印碰撞语义。专用客户端表现及完整组合仍未齐。[触发入口](../../src/server/systems/reactions/item_triggers.cpp) |
-| 佣兵 | **死亡佣兵读档后复活仍未实现**：缺无房间实体及其装备／归属生命周期，当前无实体时返回 `NotImplemented` 且不扣款。原复活归位、近处motion0逻辑区／有序偏移及完整跟随仍缺。[复活源码](../../src/server/systems/companions/hireling.cpp) · [佣兵边界](../gameplay/characters/HIRELINGS.md) |
-| 技能／飞弹特殊程序 | 单地板记录的原异常边界、跨区域水面出生及附魔特殊出生仍暂缓；非玩家骨墙、部分动态碰撞模式、门户检查／出生顺序及剩余客户端程序未齐。[出生入口](../../src/server/systems/monsters/special_actions.cpp) · [执行边界](../modules/SERVER_SYSTEMS.md) |
+| 装备触发 | 已接原版替代Do36／151、受害者传送、玩家／怪物最后攻击者、失效目标回退、尸体顺序选择、St14／19及动态脚印随机落点；99／9A即时表现、专用音效／覆盖图及Clt10／96已接，触发不取消正常施法。普通srvMissile攻击触发从目标出生，怪物包装器保留实际技能等级。已补非玩家诅咒／Static Field／AmazonMagic／Hydra及专用弹体，补入原版怪物GetHit／Death、回调时概率采样及接触内Hit／GetHit→HP→Death／Kill→最终动作顺序，物件伤害共用继续点；冻结致死结果并防止HP接收重复登记；保留技能表允许但实际装备未使用的单次光环及Stun现有伤害记录Drain分支。非玩家骨墙／骨牢、延伸和独立寿命已接；当前MPQ启用的服务端St14／19和客户端CltSt21条件已接；非玩家Fire Golem／德鲁伊召唤因原AI要求PlayerData仍明确拒绝，合法非玩家后续程序缺依据，不自造跟随。该限制及完整原版组合验收尚未闭合，当前不标记无条件全域完成。[触发入口](../../src/server/systems/reactions/item_triggers.cpp) |
+| 库存／保存 | 装备触发验证的准备阶段复现：把原输入档的带孔qui换下后从光标丢弃，宿主因`D2S item mapping: socket parent identity/order`关闭；错误来自D2S映射校验，原因尚未定位，不能计为装备触发通过。隔离现场保留于忽略产物目录；空副手bsh镶入刻面、死亡存尸及重入取尸路径可继续执行。需单独补带孔根／子项移交与地面保存映射。 |
+| 佣兵 | 已接死亡佣兵读档的无房间实体、装备／归属、原GUID复活及主人坐标归位，金币／生命／房间链同笔发布；无房间实体排除碰撞、AI和可见副本。motion0接原逻辑区和七个有序偏移。原PetMove远距寻位、完整跟随分支及复活时其他可随行宠物的归位仍需补齐；公共事务与光环交错仍需审计。装备触发全目标构建包含这些源码，不计为佣兵行为验收。[复活源码](../../src/server/systems/companions/hireling.cpp) · [佣兵边界](../gameplay/characters/HIRELINGS.md) |
+| 技能／飞弹特殊程序 | 单地板记录的原异常边界、跨区域水面出生及附魔特殊出生仍暂缓；非玩家特殊召唤AI、部分动态碰撞模式、门户检查／出生顺序及剩余客户端程序未齐。[出生入口](../../src/server/systems/monsters/special_actions.cpp) · [执行边界](../modules/SERVER_SYSTEMS.md) |
 | 任务特殊分支 | 囚犯缺真实受伤／死亡、蓝门与自然失败流程，以及三组生成完成且生成数＝释放数＋死亡数的结算；当前仅救出15人捕获完成目标，12–14人自然完成链未闭合。安雅门户两端交错、完整NPC迁移时序、熔炉分批掉落及第三幕已完成队友跨幕材料清除仍缺。[任务入口](../../src/server/systems/quests/act_five.cpp) · [后三幕任务](../gameplay/quests/ACT3_5.md) |
 | PvP | Leap纯击退仍待对齐；Slow Missiles的敌意／状态组合、耳朵完整生成随机／消失时序及全部PvP组合仍待核实。[PvP边界](../gameplay/combat/WEAPON_EFFECTS.md) |
 | 原版高级事件 | World Event触发、Pandemonium／Uber专用出生、召唤及奖励链仍未闭合。本机1.13c三个Uber AI入口为空，与D2MOO扩展程序存在版本差异，尚缺对应目标运行依据；PD2专用召唤不可代替原版事件。[特殊怪物](../gameplay/monsters/SPECIAL.md) · [门户入口](../../src/server/systems/travel/portals.cpp) |
 | UI／输入／表现 | 技能循环／角色语音键、头顶聊天本地场景绘制、中文聊天／输入法仍缺；中文需打通语言编码、Unicode编辑及IME组合文本，当前输入／协议／social仍限制ASCII。部分画面／3D音效设置、跳跃高度、Holy Shield特殊盾图、完整彩光／天气未齐；改键实际设备／重启保存尚待验证。[UI边界](../gameplay/ui/CLASSIC_HUD.md) · [输入](../../src/app/input.cpp) · [聊天状态](../../src/server/systems/social/system.cpp) |
 | 模式／联网外围 | Ladder身份／赛季／房间匹配运行链与经典非资料片的内容／保存布局尚未支持，当前仍明确拒绝。频道操作、账号设置、影片及完整认证／故障恢复未齐。[存档范围](../modules/SAVES.md) · [联网范围](../modules/NETWORK.md) |
+
+## 装备触发工作区验证范围
+
+2026-10-28，Windows／MinGW Release，`cmake --build build --config Release --target all --parallel 3`全目标构建及最后可移植性修正增量复编成功，成功日志未报告警告或错误；服务端／客户端Vec的`+=`、三处误导缩进及initializer_list显式类型已修正。`git diff --check`通过；Linux与Debug未构建。clang-tidy复核与有限运行范围分别列于下文，不沿用世界生命周期提交的结论。
+
+使用`clang-tidy -p build --checks=-*,clang-analyzer-* --warnings-as-errors=*`定向检查item_triggers、player_damage、environment、missile_contact、casting、native_caster、companions/necro、effects/skills、monsters/damage和remote_scene_effects十个编译单元。初次检查发现initializer_list类型推导、回调后目标撤出／空参与者访问及一处死存储，修正后分别复核受影响单元；最后missile_contact／effects/skills命令退出0，player_damage及其余单元无未修复诊断。武器格挡参数层改为显式值捕获，保留原选择规则。检查使用默认头过滤，存在非用户代码的抑制提示，不宣称全仓／全头文件零警告。
+
+使用既有运行／调试入口和隔离角色，原版assets/mpq2：90级ShotSorceress正常入局；从当前MPQ生成Oculus，经原拾取、卷轴鉴定和装备请求安装其25%受击传送。管理旅行至Blood Moor、生成三只fallen1仅用于准备条件，由怪物实际攻击触发；已观察两次技能54、等级1的0x9A（事件序号107／123，目标坐标4955,4657及4970,4647）及权威位置改变。结束观察时队列pending=0、deferred为空。正常返城、save返回applied并退出；新进程重入确认oba仍为活动武器、生命上限569，10秒无窗口运行正常结束，failure为空且宿主failures=0。该观察不认证25%概率分布、逐随机轨迹、佣兵装备触发、其他Do／Clt程序或强制背压。客户端仍报告既有组件着色／无形透明限制；没有据此标记画面完全对齐。原始输出位于忽略目录artifacts/item-triggers-20261028，不纳入源码提交。
+
+Oculus与保存重入观察使用的d2x.exe SHA-256为`c7521d8d909a708fc872bad8fcf9953a83e5982a41609da9bdd2c616dbc4e573`，不冒称覆盖后续新增骨墙路径。装备触发领域仍有表中列出的源码缺口，不能以这次构建及Oculus有限实测标记整个领域完成。
+
+骨牢共享路径另以当前MPQ的Arm of King Leoric（9bw）验证，使用独立角色副本，经原拾取／鉴定／装备请求替换Oculus；管理撤掉佣兵并在Blood Moor生成三只fallen1，仅用于保持实际攻击条件。观察三次技能88、等级2的0x99通知（序号92／105／211），首次12段骨牢；后续快照24段已死亡、最近一圈12段仍存活，队列pending=0且deferred为空，正常返城、保存退出。测试产物SHA-256为`2b958945717c23728084f6c95728214af9e1d707bb9d7b5f76ace068d8d930b8`。本次没有观察到骨魂触发，不据此认证Do10；非玩家来源、骨墙延伸、尸体远端CltSt21及强制背压仍待测；NPC主人死亡不另加清除规则。核对Fn067／PetMove后，撤回未经核实的非玩家Fire Golem跟随推广及NPC主人死亡强制清除规则，不以现有玩家近似跟随替代原NPC程序。
+
+受击顺序以版本`d237a230c2d4124b9b773bec1f700ebfa32d292aab7d2b5e19db6442d902dc6c`的独立Oculus角色观察：两次0x9A传送序号43／72，分别在同一时刻的受击0x0D序号44／73之前，位置实际改变，pending=0且deferred为空。该客户端事件顺序不单独证明全部内部HP／随机轨迹。
+
+死亡触发使用当前MPQ生成的冷系Rainbow Facet（jew，seed1000，属性197／层3813／100%，技能59等级37），经原拾取、卷轴鉴定、镶孔及装备请求装入空副手bsh。管理旅行、生成hellbovine及把HP降至约1仅准备条件，致死由真实怪物攻击完成。版本`2524b0e2f882f86f92a50752468758f8b48feeca77422d4d2ad252cad8009291`观察到一次等级37的弹体158（0x73序号9）及技能59（0x99序号10），玩家和攻击怪物均死亡，tick2694宿主failures=0，pending=0且deferred为空；保存返回Character saved并正常退出。此前版本`5cff9a8485a14262b4e9900889bdf11abfdad1e48ce6adb2ae98d519314e13ef`在死亡触发弹体承伤后崩溃，已定位普通接触误入要求nativeSkill的PD2生命通知，修复后上述路径通过；失败版本不计通过。重新载入上次死亡档并取尸后，刻面仍在副手孔内。该观察不认证强制背压、死亡触发概率分布或所有原版死亡技能。
+
+最终构建产物SHA-256为`70cfde46d762dfa3d2bb832be3af9a803aeb1df4463aa88f09a74b314411fd9a`。死亡运行证据早于最后的空参与者／回调后目标撤出检查及静态分析修正，不扩大为最终版本全部组合实测；最终版本另执行隔离存档重入，运行采样确认ready=true、人物生命1、城镇位置4473,4628、宿主tick300且failures=0，10秒正常结束且failure为空。退局后的summary已清空参与者，入局证据以运行中的samples为准。所有测试复用既有游戏、调试管道及无窗口入口，没有新增测试脚本、用例或专用程序。
+
 
 ## 后续验证需要覆盖的边界
 
@@ -54,3 +74,9 @@
 补充整层回收待测：第11帧检查与10次等待边界；当前层／Vis层及出口邻层阻止释放；失效票据、挂载／种子／房间图不匹配拒绝；重载失败后新票据重试；跨层邻接碰撞在缺输入期间阻挡；重载不重新生成人口、不重置休眠进度／玩法代次；宿主离线整图、DS1／DT1最后强引用与碰撞数组容量实际下降。
 
 补充恢复待测：新姓名和保存姓名选中不同光环时，两次技能指定及即时效果顺序与原版一致；第一次成功、第二次背压不重复初始回调；普通怪物恢复伤残HP后追加修饰器不灌满生命。补充掉落待测：属性生成失败、落点失败和输出背压分别核对双种子／GUID消耗，失败物品留空号、重试不重复消耗。
+
+补充装备触发待测：同一击多层触发和嵌套回调后最后攻击者不回退；无效目标回退、跨区尸体顺序、十次随机脚印寻位及受害者传送；Do36／151与Clt10／96比较出生坐标、64向顺序、等级、速度及TargetX写入；普通攻击触发弹体从目标出发；99／9A不改变当前动作、不取消既有弹体／通道，独立音效和覆盖图；输出背压不重复掷数、伤害或通知。
+
+补充佣兵待测：死亡档带装备入局后有身份但无房间链／碰撞／AI／可见尸体；同GUID复活到主人坐标，保留装备、组件、随机和归属，钱包／私人箱只扣一次；金币不足、内容等待、跨幕、输出背压和旧发布失败不出现半复活。近处motion0按原逻辑区比较和七点顺序寻路，失败后的随机消费待对照。
+
+补充触发待测：原版佣兵装备GetHit／Death；物件伤害、受害者先传送／死亡后输出背压、Killed回调改变HP后Kill仍沿已冻结结果执行；GetHit标记与受击动画分离；前一回调改变装备后下一层重新采样；Hit／GetHit在扣血前、Death先于Kill且两者在最终死亡动作之前；Stun没有AllocCombat时不发起新攻击，已有记录与嵌套Drain的释放顺序；技能表允许的单次光环不改右手选择／周期。概率、效果和99／9A通知分别遇到输出背压时，不重复已受理步骤。以上仍为待测，构建或有限冒烟结果不代替原版全组合认证。

@@ -15,6 +15,7 @@
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/units/distance.hpp"
+#include "gameplay/units/direction.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
@@ -40,6 +41,50 @@ bool walkingConnection(const AreaStore &areas,RegionId from,RegionId to) {
     Vec origin;const auto view=source.definition.collision.linkedNavigation(origin);
     return std::any_of(view.navigationSources.begin(),view.navigationSources.end(),
         [&](const auto &entry){return entry.grid==&destination.definition.collision;});
+}
+std::optional<int> logicalRegion(const AreaStore &areas,RegionId source,Vec observer,Vec global) {
+    const auto room=areas.roomAtPosition(source,observer,int(global.x),int(global.y));
+    if(!room) return 0; // Common 10095: outside the current/near room array.
+    const auto &area=areas.at(room->area).definition;
+    const auto *bounds=area.activation.room(Vec{float(room->x*5),float(room->y*5)}-area.origin);
+    if(!bounds) return {};
+    const auto index=size_t(bounds-area.activation.rooms().data());
+    if(index>=area.populationRooms.size()) return {};
+    const auto &layout=area.populationRooms[index];
+    if(layout.regions.empty()) return {};
+    if(layout.single) return layout.regions.front().index;
+    const int x=int(global.x)/5-layout.x,y=int(global.y)/5-layout.y;
+    if(x<0 || y<0 || x>layout.width || y>layout.height) return -1;
+    const auto cell=size_t(y)*size_t(layout.width+1)+size_t(x);
+    if(cell>=layout.cells.size() || layout.cells[cell]>=layout.regions.size()) return {};
+    return layout.regions[layout.cells[cell]].index;
+}
+void followOwnerNear(const Ports &ports,Companion &pet,const PlayerState &owner,const monsters::Actor &body,int speed) {
+    const auto &area=ports.areas.at(body.area);
+    const auto origin=ports.areas.at(owner.area).definition.origin;
+    const auto current=nativePosition(owner.position)+origin,goal=nativePosition(owner.routeDestination)+origin;
+    const auto region=logicalRegion(ports.areas,owner.area,owner.position,current);
+    if(!region) return;
+    const auto direction=nativeDirectionVector(int64_t(goal.x-current.x),int64_t(goal.y-current.y));
+    auto index=nativeOverlayDirection(direction.index);
+    constexpr std::array<unsigned,8> order{4,3,2,1,0,7,6,5};
+    constexpr std::array<Vec,8> offsets{Vec{0,-1},Vec{-1,-1},Vec{-1,0},Vec{-1,1},Vec{0,1},Vec{1,1},Vec{1,0},Vec{1,-1}};
+    const auto move=[&](Vec global) {
+        monsters::MoveRequest request{pet.actor,{body.area,area.generation,global-area.definition.origin},{},0,75+speed,false};
+        request.pathSteps=1;request.pathDistance=40;
+        return bool(ports.monsters.requestMove(request));
+    };
+    for(int attempt=0;attempt<7;++attempt,index=uint8_t((index+1)&7)) {
+        const auto point=goal+offsets[order[index]]*8.f;
+        if(logicalRegion(ports.areas,owner.area,owner.position,point)==region && move(point)) return;
+    }
+    auto random=body.combatRandom;int x{},y{};
+    if(rollRandom(random)&1) {x=4;y=int(limitedRandom(random,4));}
+    else {x=int(limitedRandom(random,4));y=4;}
+    if(rollRandom(random)&1) x=-x;
+    if(rollRandom(random)&1) y=-y;
+    ports.monsters.commitCombatRandom(body.id,random);
+    move(current+Vec{float(x),float(y)});
 }
 void followOwnerTrail(const Ports &ports,Companion &pet,const PlayerState &owner,
                       const monsters::Actor &body,int distance) {
@@ -143,10 +188,12 @@ DomainResult<std::shared_ptr<System::HirelingBirthPublication>> System::prepareH
         if(!ports_.monsters.canRemove(it->first)) return {DomainStatus::Unavailable,{}};
         retired.push_back(it->first);it=result->companions.erase(it);
     }
+    const bool loadedDead=!replacement && owner.player.hireling.hp<=0;
     std::map<RoomView,RoomRandomLoan> loans;
     std::optional<Vec> position;
     std::vector<std::pair<Vec,int>> attempts;
-    if(seller) {attempts.emplace_back(*seller,4);attempts.emplace_back(player->position,4);}
+    if(loadedDead) position=Vec{};
+    else if(seller) {attempts.emplace_back(*seller,4);attempts.emplace_back(player->position,4);}
     else for(const int radius:{4,6,12}) attempts.emplace_back(player->position,radius);
     const auto collision=ports_.spatial.nativeCollisionSample();
     for(const auto &[center,radius]:attempts) {
@@ -171,7 +218,7 @@ DomainResult<std::shared_ptr<System::HirelingBirthPublication>> System::prepareH
     auto rule=prepared.rule;rule.minimumLife=rule.maximumLife=std::max(1,equipment.life.raw()>>8);
     result->expectedRandom=result->nextRandom=ports_.random;
     const auto unitRandom=childRandom(result->nextRandom);
-    auto bodies=ports_.monsters.prepareHireling(actor,rule,prepared.code,*position,equipment.life.raw(),unitRandom,
+    auto bodies=ports_.monsters.prepareHireling(actor,rule,prepared.code,*position,loadedDead?0:equipment.life.raw(),unitRandom,
         {equipment.statSources,equipment.nativeStats},prepared.birthLevel,result->components,retired);
     if(!bodies) return {bodies.status,{}};
     const auto key=bodies.value->begin()->first;
@@ -216,7 +263,7 @@ StepStatus System::synchronizeHirelings(TickContext tick) {
         else hirelingReplacements_.erase(id);
     }
     for(const auto &[id,prepared]:hirelingRules_) {
-        const auto *p=ports_.players.find(id);if(!p || !p->entered || p->persistent.player.hp<=0 || p->persistent.player.hireling.hp<=0 || !prepared.deferred.empty()) continue;
+        const auto *p=ports_.players.find(id);if(!p || !p->entered || p->persistent.player.hp<=0 || !prepared.deferred.empty()) continue;
         if(prepared.source.actor.actor!=p->actor || prepared.source.difficulty!=p->persistent.difficulty ||
             prepared.source.inventoryRevision!=p->inventoryRevision || !sameHirelingIdentity(p->persistent.player.hireling,prepared.source.record)) continue;
         bool present=false;for(const auto &[key,pet]:state_.companions) {(void)key;if(pet.owner==id && pet.kind==Kind::Hireling) {present=true;break;}}
@@ -301,11 +348,8 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;
     }
     if(distanceToOwner>16 && p->moving) {
-        // Near-owner motion remains a unit approach; publish its true native
-        // arrival bound as PATH_SetStepNum instead of sending zero to clients.
-        monsters::MoveRequest request{pet.actor,{body->area,area.generation,p->position},p->actor,16,p->runningNow?135:75,false};
-        request.pathSteps=17;request.pathDistance=40;
-        ports_.monsters.requestMove(request);pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;
+        followOwnerNear(ports_,pet,*p,*body,p->runningNow?60:0);
+        pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;
     }
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     EntityId target;int nearest=prepared.vision;
@@ -364,6 +408,12 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         if(result.status==DomainStatus::Unavailable && (!chosen || !chosen->aura)) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,participants.find(target).position()},target,body->rule.meleeRange,75,false});
         pet.nextDecision=tick.tick+uint64_t(chosen && chosen->aura?10:prepared.think);
     } else {
+        const auto bodyRegion=logicalRegion(ports_.areas,body->area,body->position,nativePosition(body->position)+bodyArea.definition.origin);
+        const auto ownerRegion=logicalRegion(ports_.areas,p->area,p->position,nativePosition(p->position)+area.definition.origin);
+        if(bodyRegion && ownerRegion && bodyRegion!=ownerRegion) {
+            followOwnerNear(ports_,pet,*p,*body,60);
+            pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;
+        }
         if(missileDistance(body->position,p->position)>4) {
             monsters::MoveRequest request{pet.actor,{body->area,area.generation,p->position},p->actor,4,75,false};
             request.pathSteps=5;request.pathDistance=40;ports_.monsters.requestMove(request);

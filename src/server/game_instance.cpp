@@ -65,6 +65,7 @@ void GameInstance::collectNativeIdentities(std::set<EntityId> retained) {
         for(const auto owner:player.persistent.player.selectedSkillOwners) if(owner!=UINT32_MAX) retained.insert(EntityId{owner});
         if(player.movementTarget) retained.insert(player.movementTarget->id);
         if(player.movementArrival) retained.insert(player.movementArrival->id);
+        retained.insert(player.lastAttacker);
         for(const auto &skill:player.totals.skillOrder) retained.insert(skill.owner);
         for(const auto &skill:player.totals.clearedSkillSelections) retained.insert(skill.owner);
     }

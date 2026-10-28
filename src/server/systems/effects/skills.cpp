@@ -221,7 +221,7 @@ DomainResult<PlayerReceptionPlan> System::preparePlayerReception(const ActorCont
     if(!absorption) return {absorption.status,{}};
     if(random!=p->combatRandom) plan.random=std::pair{p->combatRandom,random};
     const auto reception=receiveDamageChannels(channels,defenses,std::move(absorbed));
-    if(attacker.id()) {
+    if(attacker.player || attacker.monster) {
         const auto region=attacker.player?attacker.player->area:attacker.monster->area;
         const auto target=p->position+ports_.areas.at(p->area).definition.origin;
         const auto origin=attacker.position()+ports_.areas.at(region).definition.origin;
@@ -311,7 +311,7 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
     PlayerResourceTrace resources(*p,actor.tick,{},ports_.areas.statTime(p->area));
     auto random=p->combatRandom;
     DamageReception reception;auto defenses=p->totals.character;
-    int poisonPierce=adjustment.poisonPierce;
+    int poisonPierce;
     if(preparedReception) {reception=*preparedReception;defenses.coldResist=reception.coldResistance;poisonPierce=reception.poisonPierce;}
     else {
         auto prepared=preparePlayerReception(actor,source,hit,adjustment);if(!prepared) return {prepared.status,{}};
@@ -457,8 +457,8 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
         inventory.random=resource.random;
         change=std::move(inventory);
     }
-    auto itemEvents=itemTriggers_.prepare(actor,adjustment.suppressEvents?std::initializer_list<ItemSkillEvent>{}:successfulHit?std::initializer_list{ItemSkillEvent::GetHit,ItemSkillEvent::Death}:
-        std::initializer_list{ItemSkillEvent::Death},source,source?combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source).position():p->position);
+    auto itemEvents=itemTriggers_.prepare(actor,adjustment.suppressEvents?std::initializer_list<ItemSkillEvent>{}:successfulHit && hit.getHit.value_or(!hit.softHit)?std::initializer_list<ItemSkillEvent>{ItemSkillEvent::GetHit,ItemSkillEvent::Death}:
+        std::initializer_list<ItemSkillEvent>{ItemSkillEvent::Death},source,source?combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source).position():p->position);
     if(!itemEvents) return {itemEvents.status,{}};
     auto plan = ports_.transactions.prepare(std::move(change)); if (!plan) return {plan.status,{}};
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) {
