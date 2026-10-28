@@ -89,7 +89,7 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 
 角色名 2–15 字符，首字符英文字母，其余英文字母、连字符或下划线；classId 为 0 Amazon、1 Sorceress、2 Necromancer、3 Paladin、4 Barbarian、5 Druid、6 Assassin。初始属性、装备和 D2S 由原服生成；客户端仅提交 MCP 0x02 的职业／状态与名字：资料片固定0x20，专家级加0x04、天梯加0x40，资格由所连Realm裁定（原版旗标见[DLL取证](../resources/PD2_CN_DLL_ANALYSIS.md#最小闭环认证注册选角与入局)）。删角用 MCP 0x0A，command 要求 confirmName 完全匹配。注册账号／密码为 2–15 可打印 ASCII 字符，更细名字限制由服务器拒绝码说明。
 
-肖像仅绘制已保存 native 1.13c、无组件染色且原 COF／DCC 完整的外观；legacy 新角、染色或未核实组合保留真实身份，肖像暂不绘制。建角使用当前 MPQ 七职业前端动画。
+肖像绘制已保存 native 1.13c 且原 COF／DCC 完整的外观；组件染色字节与游戏内单位预览同样不套调色板、按基础组件图绘制，染色外观不呈现但仍出图。肖像动画取屏幕正南朝向（DCC方向表 8／16／32 均映射到方向 4，方向 0 为左下）。legacy 新角（非已知版本）或未核实组件编号组合保留真实身份，肖像暂不绘制。建角使用当前 MPQ 七职业前端动画。
 
 选角产品页只走RealmFrontend；旧app/character_frontend未编译／调用，保留作功能参考，不维护第二条本地选角执行链。沿旧选择器和OpenDiablo2 character_select核对双击同一角色1.25秒进入、滚轮／PageUp／PageDown翻页和两列四行布局；卡片步距读取当前MPQ charselectbox的两段总宽及原高度（当前272×92），标签及肖像位置对齐原布局。翻页使用既有MPQ numberarrows及页码；完整原Scrollbar仍未还原。Realm空白底图的标题／名称没有烘焙文字；Current Realm、Realm名称及Change Realm按钮统一使用已有原font16。字体字宽来自当前MPQ，角色列表、选择、创建和删除仍由MCP原协议驱动；Ladder／经典角色转换仍不可用。槽位角色名颜色经原D2Launch CharSel反汇编认证：名字经D2Win!10022写入，颜色参数=hardcore?1:4，绘制路径把4归一化为0，死亡位不参与颜色且原版该字段无灰色；RealmFrontend据此用当前MPQ font16的PL2文字色1渲染HC名字、其余白色，可选性仍由既有playable门控（realm_frontend.cpp）。死亡位另经原D2Launch认证写入肖像格子控件flags的0x10位（hardcore写0x20，经D2Win!10194），原版据此把死亡HC角色肖像画成半透明幽灵；RealmFrontend在portrait里对dead角色以半透明alpha绘制该槽位肖像（realm_frontend.cpp:407），颜色与幽灵都不进可选性判定。选中角色大名字与槽位同规则（hardcore红、死亡位不参与），仅无权限的Ladder等其他不可选状态显示灰色；Ladder／描述行颜色及其余文字效果仍待原版对照。
 
