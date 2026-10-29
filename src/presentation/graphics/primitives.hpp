@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <numbers>
+#include <optional>
 #include <string_view>
 #include <vector>
 namespace d2x {
@@ -97,11 +98,34 @@ class UiPainter {
 // World-space heading to the original interleaved DCC direction index.
 int direction(Vec look, int count);
 void sprite(const Sprite *sprite, Vec position, Color tint = WHITE);
-// Use the opaque bounds of the original frame for both local and remote selection.
-inline bool spriteHit(const Sprite *image, Vec position, Vec mouse) {
-    return image && image->hitWidth > 0 && image->hitHeight > 0 &&
-        CheckCollisionPointRec(rv(mouse), {position.x + image->hitX, position.y + image->hitY,
-            float(image->hitWidth), float(image->hitHeight)});
+inline bool selectionRectHit(Rectangle bounds, Vec position, Vec mouse) {
+    const auto point = mouse - position;
+    return bounds.width >= 0 && bounds.height >= 0 && point.x >= bounds.x && point.y >= bounds.y &&
+        point.x <= bounds.x + bounds.width && point.y <= bounds.y + bounds.height;
+}
+// Retail 1.13c D2Client A68E0 / A6730: COF broad phase, then selectable
+// component frames with 12-pixel padding and symmetric minimum-32 growth.
+// Single-piece art (including ground items) uses its entire original frame.
+inline bool spriteHit(const Sprite *image, Vec position, Vec mouse, bool multiPiece = true,
+                      std::optional<Vec> coarsePosition = {}) {
+    if (!image) return false;
+    if (image->selectionCoarseBounds) {
+        const auto point = mouse - coarsePosition.value_or(position);
+        if (!CheckCollisionPointRec(rv(point), *image->selectionCoarseBounds)) return false;
+    }
+    const auto hit = [&](Rectangle bounds) {
+        bounds.x -= 12; bounds.y -= 12; bounds.width += 24; bounds.height += 24;
+        if (bounds.width < 32) {const int grow = (32 - int(bounds.width)) / 2; bounds.x -= grow; bounds.width += 2 * grow;}
+        if (bounds.height < 32) {const int grow = (32 - int(bounds.height)) / 2; bounds.y -= grow; bounds.height += 2 * grow;}
+        return selectionRectHit(bounds, position, mouse);
+    };
+    if (!image->componentBounds.empty()) {
+        for (const auto &component : image->componentBounds)
+            if ((!multiPiece || component.selectable) && hit(component.bounds)) return true;
+        return false;
+    }
+    return image->texture.width > 0 && image->texture.height > 0 &&
+        hit({float(image->x),float(image->y),float(image->texture.width),float(image->texture.height)});
 }
 // Cursor hotspots are texture-local, measured from the top-left pixel.
 Vec handCursorHotspot(const Sprite *sprite);

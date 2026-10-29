@@ -32,6 +32,8 @@ RemoteInventory消费9C／9D、0A、3E、2A、58、77、97；UI预览位置、Cu
 
 地面flippy按原25Hz播放一次停末帧；action=2／新mode=5触发，静态快照和属性更新不重播，mode=5不可拾取。怪物／物件新生掉落和手动丢弃使用同一事实与原包入口。原item_flippy起始声、dropsound／dropsfxframe落地声由SoundCatalog和SceneAudio消费；缺声组或帧给诊断，不使用替代WAV。
 
+掉落本体的悬停、名称显现和拾取点击共用当前flippy原帧的12像素外扩／最小尺寸处理，入口为`loot_view.cpp`与共同`graphics/primitives.hpp::spriteHit`；规则及零售依据见[世界选取几何](../world/OBJECTS.md#世界悬停与点击选取)。名称框继续共用已有布局，mode5与不可拾取物品仍受副本资格限制；未进行游戏运行对照。
+
 地面图形由`item_appearance.cpp::groundColorTransform`准备底表`Transform`组及暗金／套装`chrtransform`颜色；词缀、第一颗宝石和自动词缀的优先级与下方库存染色共用，不把`InvTrans/invtransform`套给地面。`SceneAssets`使用当前MPQ八张21×256索引变换和当前幕调色板上传每个flippy帧，缓存区分原图及颜色组／颜色行，换幕清理当前地面缓存。同底材不同染色不会共用未染色原图。地面普通绘制使用CelDraw mode 5语义，选中使用当前幕原调色板高亮变换（mode 7），不再用RGB约三倍增亮；无形物品在地面不套库存的TRANS50。
 
 地面名称与提示共用`itemTextFontIndex`及当前MPQ Sky PL2字体变换，不再用手写RGB乘原字体像素。魔法／稀有／套装／暗金／Crafted／Tempered按原品质颜色，符文为橙色、已鉴定符文之语为金色、普通镶孔／无形为灰色；名称色调由共同物品描述的首行提供。当前PL2灰色RGB为(105,105,105)，原地面路径使用的(128,128,128)已撤出。

@@ -19,6 +19,7 @@ OnlinePoint point(Vec p) {
 }
 }
 bool DebugAutoWalk::active() const {return state_=="searching" || state_=="moving" || state_=="interacting";}
+nlohmann::json DebugAutoWalk::snapshot() const {return status();}
 void DebugAutoWalk::finish(std::string state,std::string reason,RemoteControl &control) {
     state_=std::move(state);reason_=std::move(reason);control.cancelMovement();segment_.reset();
 }
@@ -26,6 +27,7 @@ void DebugAutoWalk::manualInput(RemoteControl &control) {if(active()) finish("ca
 nlohmann::json DebugAutoWalk::status() const {
     using Json=nlohmann::json;
     return {{"state",state_},{"active",active()},{"reason",reason_},{"gameGeneration",game_},{"areaGeneration",area_},
+        {"area",level_?Json(*level_):Json(nullptr)},
         {"target",point_?Json{{"x",point_->x},{"y",point_->y}}:Json(nullptr)},
         {"unit",unit_?Json{{"type",unit_->type},{"id",unit_->id}}:Json(nullptr)},
         {"segment",segment_?Json{{"x",segment_->x},{"y",segment_->y}}:Json(nullptr)},
@@ -49,7 +51,11 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
         }
     } else if(name=="debug-walk") {
         if(active()) throw std::invalid_argument("Cancel the current debug walk before starting another");
-        const auto &view=session.read();town.update(view);
+        const auto &view=session.read();
+        // The frontend already bound this scene using the local DynamicPath
+        // position. Updating it here without that position can select the
+        // other side of a walking boundary from a sparse server sample and
+        // make the parent/child cancel and rebind each other indefinitely.
         const auto &scene=town.read();
         if(view.stage!=OnlineStage::ProtocolReady || !scene.movementAvailable || !scene.origin ||
             !view.world.playerPosition || onlinePlayerDead(view.world)) throw std::invalid_argument("Debug walk requires a live player and native map");
@@ -166,16 +172,21 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         if(!point_) {
             // The known connection guides the frontier approach. Partial AStar
             // may use only currently reconstructed collision, never unseen floor.
-            const auto goal=edgePoint(*edge,std::clamp(edge->side%2?int(player.y):int(player.x),edge->start+1,edge->end-2),3);
-            const Vec local{std::clamp(float(int(goal.x)-origin.x)+.5f,.5f,float(map.grid.width)-.5f),
-                std::clamp(float(int(goal.y)-origin.y)+.5f,.5f,float(map.grid.height)-.5f)};
-            const auto path=map.grid.path(from,local,true,playerMovement,true);
-            if(!path.empty()) {
+            int frontierScore=INT32_MAX;
+            for(int along=edge->start+1;along<edge->end-1;along+=8) {
+                const auto goal=edgePoint(*edge,along,3);
+                const Vec local{std::clamp(float(int(goal.x)-origin.x)+.5f,.5f,float(map.grid.width)-.5f),
+                    std::clamp(float(int(goal.y)-origin.y)+.5f,.5f,float(map.grid.height)-.5f)};
+                const auto path=map.grid.path(from,local,true,playerMovement,true);if(path.empty()) continue;
                 const auto frontier=point(path.back()+offset);
-                if(distance(player,frontier)>2 && distance(frontier,goal)<distance(player,goal)) {
-                    point_=frontier;source_="walking-connection-frontier";++searches_;reason_.clear();
+                if(distance(player,frontier)<=2 || distance(frontier,goal)>=distance(player,goal)) continue;
+                if(std::any_of(visited_.begin(),visited_.end(),[&](auto p){return distance(frontier,{uint16_t(p.first),uint16_t(p.second)})<8;})) continue;
+                const int score=distance(player,frontier)+distance(frontier,goal)*2;
+                if(score<frontierScore) {
+                    frontierScore=score;point_=frontier;source_="walking-connection-frontier";reason_.clear();
                 }
             }
+            if(point_) ++searches_;
             if(!point_) {
                 if(pathMoving) {reason_="Keeping the moving native path until a safe approach can be planned";return;}
                 finish("failed","Known walking connection has no reachable reconstructed approach",control);return;
@@ -223,7 +234,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     }
     const bool searching=!unit_ && !landmark_ && (goal_==Goal::Waypoint || goal_==Goal::Exit);
     if(distance(player,*point_)<=(unit_ || landmark_?4:1)) {
-        if(searching) {if(goal_==Goal::Waypoint) visited_.emplace(point_->x,point_->y);point_.reset();segment_.reset();return;}
+        if(searching) {visited_.emplace(point_->x,point_->y);point_.reset();segment_.reset();return;}
         if(!interact_) {finish("completed","Reached target vicinity through client movement",control);return;}
     }
     const Vec target{float(int(point_->x)-origin.x)+.5f,float(int(point_->y)-origin.y)+.5f};
@@ -273,7 +284,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     if(lastFrom_==player && lastRequest_==next) ++stationaryAttempts_;else stationaryAttempts_=0;
     if(stationaryAttempts_>=3) {finish("failed","Native client path repeatedly stopped before the planned segment",control);return;}
     lastFrom_=player;lastRequest_=next;
-    if(!control.move(next,run_,{},pathPosition)) {finish("failed",control.reason(),control);return;}
+    if(!control.move(next,run_,{},pathPosition)) {reason_=control.reason();return;}
     segment_=next;submittedAt_=now;++moves_;reason_.clear();if(!searching) state_="moving";
     } catch(const std::exception &error) {finish("failed",error.what(),control);}
 }

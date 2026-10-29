@@ -30,21 +30,18 @@ Bytes readBytes(const std::filesystem::path &path) {
     return bytes;
 }
 }
-CharacterStore::Lease::Lease(std::filesystem::path file, std::filesystem::path directory)
-    : path(std::move(file)), lock(std::move(directory)) {}
-CharacterStore::Lease::~Lease() { if (!lock.empty()) { std::error_code ec; std::filesystem::remove(lock, ec); } }
+CharacterStore::Lease::Lease(std::filesystem::path file, std::unique_ptr<FileLock> owner)
+    : path(std::move(file)), lock(std::move(owner)) {}
 CharacterStore::CharacterStore(std::filesystem::path root, const ClassicData &content) : content_(content) {
     std::filesystem::create_directories(root);
     root_ = std::filesystem::canonical(root);
 }
 std::unique_ptr<CharacterStore::Lease> CharacterStore::lock(const std::filesystem::path &path) const {
     if (path.parent_path() != root_) throw std::runtime_error("Character path escaped repository");
-    const auto directory = root_ / (folded(path.stem().string()) + ".character-lock");
-    if (!std::filesystem::create_directory(directory)) {
-        throw std::runtime_error("Character is in use (or has a stale .character-lock directory)");
-    }
-    try { return std::make_unique<Lease>(path, directory); }
-    catch (...) { std::error_code ec; std::filesystem::remove(directory, ec); throw; }
+    const auto lockPath = root_ / (folded(path.stem().string()) + ".character-lock");
+    auto owner = FileLock::tryAcquire(lockPath);
+    if (!owner) throw std::runtime_error("Character is in use by another session");
+    return std::make_unique<Lease>(path, std::move(owner));
 }
 CharacterRosterView CharacterStore::list(bool includeQuick, std::string_view fileName) {
     CharacterRosterView view;
@@ -90,8 +87,8 @@ CharacterRosterView CharacterStore::list(bool includeQuick, std::string_view fil
             entry.level = unsigned(saved.player.level);
             entry.appearance = characterAppearance(content_, saved);
             if (stems.at(folded(path.stem().string())) != 1) throw std::runtime_error("Case-insensitive filename collision");
-            if (std::filesystem::exists(root_ / (folded(path.stem().string()) + ".character-lock")))
-                throw std::runtime_error("Character is in use (or its lock needs manual recovery)");
+            // Probe the actual OS lease, not the persistent sidecar's existence.
+            auto available = lock(path);
             entry.playable = true;
         } catch (const std::exception &e) { entry.problem = e.what(); }
         view.characters.push_back(std::move(entry));

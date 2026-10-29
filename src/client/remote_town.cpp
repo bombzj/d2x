@@ -54,6 +54,8 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
             automapPositionPd2_ = {};
             explored_.clear(); discoveredCels_.clear(); discoveredTowns_.clear(); preparedTownAutomaps_.clear(); actSeeds_.clear();
             nativeAutomapCells_.clear();
+            knownTargetPositions_.clear();
+            knownConnections_.clear();knownWaypoints_.clear();
         }
         gameGeneration_ = v.gameGeneration;
         areaGeneration_ = v.world.areaGeneration;
@@ -90,6 +92,9 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
                         std::erase_if(discoveredCels_,[&](const auto &entry){return std::get<1>(entry.first)==act;});
                         std::erase_if(discoveredTowns_,[&](const auto &entry){return std::get<1>(entry.first)==act;});
                         std::erase_if(preparedTownAutomaps_,[&](const auto &entry){return std::get<1>(entry)==act;});
+                        std::erase_if(knownTargetPositions_,[&](const auto &entry){return catalog_->level(std::get<0>(entry.first)).act==act;});
+                        std::erase_if(knownConnections_,[&](const auto &entry){return catalog_->level(entry.first.first).act==act;});
+                        std::erase_if(knownWaypoints_,[&](const auto &entry){return catalog_->level(entry.first).act==act;});
                     }
                     actSeeds_[act]=*v.load.mapSeed;
                     try {
@@ -159,6 +164,8 @@ void RemoteTown::updateUnitRooms(const OnlineView &v) {
     std::erase_if(unitRooms_,[&](const auto &entry) {return !v.world.units.contains(entry.first);});
     for(const auto &[key,unit]:v.world.units) {
         const auto room=unit.position?nativeMap_->clientRoom(unit.position->x,unit.position->y):std::nullopt;
+        if(room && (key.type==1 || key.type==2) && unit.classId)
+            knownTargetPositions_[{uint16_t(nativeMap_->tiles().rooms().at(*room).level),key.type,*unit.classId}]=*unit.position;
         if(!room || !nativeMap_->tiles().rooms().at(*room).loaded) {unitRooms_.erase(key);continue;}
         const auto found=unitRooms_.find(key);
         if(found==unitRooms_.end() || found->second.room!=*room || found->second.assignment!=unit.assignmentRevision)
@@ -324,6 +331,13 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         }
     }
     nativeTerrain_->grid.setObstacles(std::move(obstacles));
+    for(const auto &entry:view_.mapTargets) {
+        const auto room=nativeMap_->clientRoom(entry.position.x,entry.position.y);if(!room) continue;
+        const auto level=uint16_t(nativeMap_->tiles().rooms().at(*room).level);
+        if(entry.interaction==OnlineMapInteraction::Exit && entry.destination)
+            knownConnections_[{level,*entry.destination}]=entry.position;
+        if(entry.interaction==OnlineMapInteraction::Waypoint) knownWaypoints_[level]=entry.position;
+    }
     if (v.world.npcConversation) {
         const auto &conversation = *v.world.npcConversation;
         const auto target = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
@@ -550,6 +564,57 @@ std::vector<RemoteTown::WalkingBoundary> RemoteTown::walkingBoundaries() const {
         merged.push_back(edge);
     }
     return merged;
+}
+void RemoteTown::refreshNavigationCache() const {
+    if(!nativeMap_ || !catalog_ || !view_.nativeMapReady || !view_.area) {
+        navigationRooms_.clear();navigationConnections_.clear();navigationCached_=false;return;
+    }
+    const auto key=std::tuple{gameGeneration_,areaGeneration_,nativeMap_->terrainRevision()};
+    if(navigationCached_ && key==navigationKey_ && navigationSeen_==view_.automapRevealedCells) return;
+    navigationKey_=key;navigationSeen_=view_.automapRevealedCells;navigationCached_=true;++navigationCacheBuilds_;
+    navigationRooms_.clear();navigationConnections_.clear();
+    for(const auto &room:nativeMap_->tiles().rooms()) {
+        size_t seen=0;
+        const auto layer=explored_.layers().find(RegionId(room.level));
+        const auto placement=nativeMap_->layout().levels.find(room.level);
+        if(layer!=explored_.layers().end() && placement!=nativeMap_->layout().levels.end()) {
+            const auto &known=layer->second;const auto &bounds=placement->second;
+            for(int y=std::max(0,room.room.y-bounds.y);y<std::min(known.height,room.room.y+room.room.height-bounds.y);++y)
+                for(int x=std::max(0,room.room.x-bounds.x);x<std::min(known.width,room.room.x+room.room.width-bounds.x);++x)
+                    seen+=known.seen[size_t(y)*known.width+x]!=0;
+        }
+        navigationRooms_.push_back({room.level,room.room.x*5,room.room.y*5,room.room.width*5,room.room.height*5,room.loaded,seen});
+    }
+    const int act=catalog_->level(*view_.area).act;
+    for(const auto &[id,level]:catalog_->levels()) if(level.act==act) {
+        const auto found=nativeMap_->layout().connections.find(id);
+        const auto visible=found==nativeMap_->layout().connections.end()?level.visible:found->second.visible;
+        for(int destination:visible) if(destination>0 && std::find(navigationConnections_[id].begin(),navigationConnections_[id].end(),destination)==navigationConnections_[id].end())
+            navigationConnections_[id].push_back(destination);
+    }
+}
+const std::vector<RemoteTown::NavigationRoom> &RemoteTown::navigationRooms() const {
+    refreshNavigationCache();return navigationRooms_;
+}
+std::optional<OnlinePoint> RemoteTown::knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const {
+    const auto found=knownTargetPositions_.find({area,type,identity});
+    return found==knownTargetPositions_.end()?std::nullopt:std::optional{found->second};
+}
+std::optional<OnlinePoint> RemoteTown::knownConnectionPosition(uint16_t from,uint16_t to) const {
+    const auto found=knownConnections_.find({from,to});return found==knownConnections_.end()?std::nullopt:std::optional{found->second};
+}
+std::optional<OnlinePoint> RemoteTown::knownWaypointPosition(uint16_t area) const {
+    const auto found=knownWaypoints_.find(area);return found==knownWaypoints_.end()?std::nullopt:std::optional{found->second};
+}
+const std::map<int,std::vector<int>> &RemoteTown::navigationConnections() const {
+    refreshNavigationCache();return navigationConnections_;
+}
+uint64_t RemoteTown::navigationRevision() const {
+    uint64_t revision=(gameGeneration_*0x100000001b3ULL+areaGeneration_)*0x100000001b3ULL;
+    if(nativeMap_) revision+=nativeMap_->terrainRevision();
+    if(map_) revision=revision*0x100000001b3ULL+map_->grid.navigationRevision();
+    if(view_.origin) revision=(revision*0x100000001b3ULL+view_.origin->x)*0x100000001b3ULL+view_.origin->y;
+    return revision;
 }
 bool RemoteTown::permits(const OnlineView &v, OnlinePoint target) const {
     if (!view_.available || !view_.movementAvailable || !map_ || !view_.origin ||

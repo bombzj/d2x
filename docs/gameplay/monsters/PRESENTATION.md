@@ -1,6 +1,6 @@
 # 怪物原协议与客户端表现
 
-更新：2026-10-27。客户端专题负责原包、动作、原图、声音与视觉限制；权威程序及覆盖范围见[怪物目录](README.md)。
+更新：2026-10-29。客户端专题负责原包、动作、原图、声音与视觉限制；权威程序及覆盖范围见[怪物目录](README.md)。
 
 所连接的服务端负责出生、AI、攻击／技能、命中、复活、召唤、经验／掉落和任务。当前客户端只消费真实单位与原动作／技能／状态。
 
@@ -106,6 +106,8 @@ D2X Host复验覆盖12个连续移动帧的一次路径启动、同目标后续�
 依据包含本地D2MOO D2StatList、SUnit、SkillSor::SrvDo025、SkillPal::SrvDo079及MissMode::SrvHit07、当前MPQ表、原版Host消息与原1.13c DLL静态反汇编。原版悬停恢复仍待实机核对；静态NPC伤亡、未实现AI、完整PvP和完整空间可选性仍有专题所列缺口。
 
 ## 原图、声音与尸体
+
+玩家、NPC、怪物和尸体的鼠标几何共用[世界悬停与点击选取](../world/OBJECTS.md#世界悬停与点击选取)：读取当前COF外层范围／Selectable与原组件帧外扩；MonStats2.noGfxHitTest启用时改读ht矩形，不按图像不透明边缘裁小。普通悬停、交互和当前技能目标共用同次命中结果，尸体仍需通过技能资格；当前仅静态修复，全部动画及重叠单位仍待原版运行对照。
 
 MonStats→MonStats2组件／尺寸／Light、Skills／Missiles／MonSeq、AnimData、原COF／DCC及变换来自当前MPQ；ActorAnimation统一资源与动作，SoundCatalog／SceneAudio唯一解释并消费MonSounds。
 

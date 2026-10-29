@@ -67,7 +67,10 @@ Cof decodeCof(const Bytes &b) {
     c.layers = r.u8();
     c.frames = r.u8();
     c.directions = r.u8();
-    r.skip(25);
+    r.skip(5);
+    c.minX = r.i32(); c.maxX = r.i32();
+    c.minY = r.i32(); c.maxY = r.i32();
+    r.skip(4);
     // Empty native composites are valid: PD2's ZZ event marker has zero
     // layers, one frame and one direction, with no component order entries.
     if (c.layers > 16 || c.frames < 1 || c.directions < 1 || c.directions > 32)
@@ -75,7 +78,7 @@ Cof decodeCof(const Bytes &b) {
     for (int i = 0; i < c.layers; i++) {
         c.components.push_back(r.u8());
         c.shadows.push_back(r.u8() != 0);
-        r.skip(1); // Selectable.
+        c.selectable.push_back(r.u8() != 0);
         c.transparent.push_back(r.u8() != 0);
         c.drawEffects.push_back(r.u8());
         std::string w;

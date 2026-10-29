@@ -12,17 +12,23 @@ struct SpriteLayer {
     int x = 0, y = 0;
     bool softAdditive = false;
 };
+struct SpriteComponentBounds {
+    Rectangle bounds{};
+    bool selectable = false;
+};
 struct Sprite {
     Texture2D texture{};
     int x = 0, y = 0;
+    // Opaque extents remain available for font ink/layout measurements.
     int hitX = 0, hitY = 0, hitWidth = 0, hitHeight = 0;
     Texture2D shadowTexture{};
     int shadowX = 0, shadowY = 0;
     std::vector<SpriteLayer> layers;
     // Original DCC/DC6 indices for PL2 blending; zero remains transparent.
     Texture2D indexedTexture{};
-    // Original component frame rectangles retained for DT/DD selection.
-    std::vector<Rectangle> corpseComponentBounds;
+    // Native selection uses original frame extents, including transparent pixels.
+    std::optional<Rectangle> selectionCoarseBounds;
+    std::vector<SpriteComponentBounds> componentBounds;
 };
 struct GpuAnimation {
     int directions = 0, count = 0;

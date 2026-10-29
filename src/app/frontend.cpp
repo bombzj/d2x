@@ -12,6 +12,8 @@
 #include "app/debug/debug_pipe.hpp"
 #include "app/debug/online_commands.hpp"
 #include "app/debug/auto_walk.hpp"
+#include "app/debug/ai.hpp"
+#include "app/debug/ui_input.hpp"
 #include "app/debug/server_commands.hpp"
 #include "client/remote_town.hpp"
 #include "client/remote_control.hpp"
@@ -45,6 +47,19 @@
 
 namespace d2x {
 namespace {
+bool debugInputTakesControl(const FrameInput &input) {
+    // Observation keys (especially Tab/automap panning) do not replace a
+    // gameplay intention. Inspecting a character must not cancel a task.
+    return input.leftPressed || input.rightPressed || input.escape || input.enter || input.chat || input.mouseWheel ||
+        input.run || input.weaponSwap || input.previousSkill || input.nextSkill || input.skillPicker || input.voice>=0 ||
+        input.save || input.load || input.reload || input.debugQuit ||
+        std::ranges::any_of(input.skills,[](bool pressed){return pressed;}) ||
+        std::ranges::any_of(input.belt,[](bool pressed){return pressed;});
+}
+bool debugInspectionOpen(const ViewState &ui) {
+    return ui.inventory.open || ui.characterOpen || ui.skillTreeOpen || ui.questOpen || ui.hirelingOpen || ui.partyOpen ||
+        ui.help || ui.messageLogOpen || ui.chatInputOpen || ui.bhSettingsOpen;
+}
 // Bounded diagnostics of completed presentation frames, independent of game time.
 class FrontendTimings {
   public:
@@ -224,6 +239,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     auto hostFrame = std::chrono::steady_clock::now();
     RemoteControl control(town, session);
     DebugAutoWalk debugWalk;
+    DebugAi debugAi(archives);
     RemoteInventory inventory(archives, options.protocolProfile);
     if (options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020)
         session.configure_stash(inventory.stashLayout());
@@ -293,6 +309,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     };
     DebugPipe pipe(pipeName);
     bool quit = false, manualRealm = false, presentationPaused = false;
+    bool quitAwaitingLeave = false;
     int frames = 0;
     std::deque<FrameInput> debugInputs;
     auto submitChatInput=[&](const std::string &text) -> std::string {
@@ -460,7 +477,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             flushAutomap(); automapStore.reset();
         }
         const auto hostNow = std::chrono::steady_clock::now();
-        const bool hostFocused = !minimized && (debugWalk.active() || (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused));
+        const bool hostFocused = !minimized && (debugAi.active() || debugWalk.active() || (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused));
         if (embedded) embedded->pump(std::chrono::duration<double>(hostNow - hostFrame).count(),
             !quit && (!hostFocused || presentationPaused || (sharedUi && sharedUi->ui().gameMenuOpen)));
         hostFrame = hostNow;
@@ -549,14 +566,20 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 std::cerr<<notice<<'\n'; automapStore.reset();
             }
         }
-        const bool focused = !minimized && (debugWalk.active() || (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused));
+        const bool focused = !minimized && (debugAi.active() || debugWalk.active() || (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused));
         const bool escape = debugInputs.empty() ? IsKeyPressed(KEY_ESCAPE) : debugInputs.front().escape;
         if (focused && escape) control.cancelMovement();
-        if (!focused || presentationPaused || (sharedUi && sharedUi->ui().blocksInput()))
+        if (!focused || presentationPaused || (sharedUi && (sharedUi->ui().blocksInput() ||
+            (debugAi.active() && debugInspectionOpen(sharedUi->ui())))))
             control.cancelMovement();
         control.tick(!minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
-        debugWalk.tick(session,town,control,minimized || presentationPaused || (sharedUi && sharedUi->ui().blocksInput()),
+        debugAi.tick(session,town,debugWalk,control,combat,inventory,
+            minimized || presentationPaused || (sharedUi && (sharedUi->ui().gameMenuOpen || debugInspectionOpen(sharedUi->ui()))),
+            !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
+            scene && std::ranges::any_of(scene->players(),[](const auto &player){return player.local && player.moving;}));
+        debugWalk.tick(session,town,control,debugAi.controlsMovement() || minimized || presentationPaused ||
+            (sharedUi && (sharedUi->ui().blocksInput() || (debugAi.active() && debugInspectionOpen(sharedUi->ui())))),
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
             scene && std::ranges::any_of(scene->players(),[](const auto &player){return player.local && player.moving;}));
         if (renderedArea != town.read().area) {
@@ -602,14 +625,20 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     inventory.update(session.read());
                     return sharedClients->itemQuote(item, action);
                 }, submitChatInput, [&](const nlohmann::json &command) {
-                    if(auto navigation=debugWalk.command(command,session,town,control,combat)) return navigation;
                     const auto name=command.at("command").get<std::string>();
-                    if(debugWalk.active() && (name=="ui-input" || name=="quit" || name=="pause" ||
+                    if(auto ai=debugAi.command(command,session,town,debugWalk,control,combat,inventory)) return ai;
+                    if(name=="debug-walk" || name=="debug-walk-cancel") debugAi.manualInput(session,debugWalk,control,combat);
+                    if(auto navigation=debugWalk.command(command,session,town,control,combat)) return navigation;
+                    const bool inputTakeover=name=="ui-input" && std::ranges::any_of(parseDebugInput(command),debugInputTakesControl);
+                    if((debugAi.hasPlan() || debugWalk.active()) && (inputTakeover || name=="quit" || name=="pause" ||
                         name=="travel" || name=="load" ||
                         (name.starts_with("online-") && name!="online-status" && name!="online-world" &&
                          name!="online-items" && name!="online-ground" && name!="online-social" &&
                          name!="online-combat" && name!="online-skills" && name!="online-item-quote")))
+                    {
+                        debugAi.manualInput(session,debugWalk,control,combat);
                         debugWalk.manualInput(control);
+                    }
                     return serverDebugCommand(command, localConnection || lanListening ? embedded.get() : nullptr, administerLocal);
                 }, prepareGame);
             if (presentationPaused != wasPaused) {
@@ -693,13 +722,28 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             return reply.dump();
         });
         frameTiming.mark(FrontendTimings::Debug);
+        if (!quit) quitAwaitingLeave = false;
         if (quit) {
-            if (session.read().stage == OnlineStage::ProtocolReady ||
-                session.read().stage == OnlineStage::LoadingGame)
-                session.leave_game();
+            const auto stage = session.read().stage;
+            if (stage == OnlineStage::LeavingGame) quitAwaitingLeave = true;
+            if (stage == OnlineStage::ProtocolReady || stage == OnlineStage::LoadingGame) {
+                quitAwaitingLeave = true;
+                if (!session.leave_game()) {
+                    const auto error = session.read().error;
+                    notice = error ? error->message : "Save and leave could not be requested; window remains open";
+                    quit = false; frames = 0;
+                }
+            }
+            const auto &leaving = session.read();
+            if (quitAwaitingLeave && leaving.stage != OnlineStage::LeavingGame && leaving.error) {
+                // A timeout/transport failure also ends LeavingGame. It must
+                // never be mistaken for confirmation that the character saved.
+                notice = leaving.error->message;
+                quit = false; frames = 0;
+            }
             // Keep pumping the same bounded leave exchange when the window closes
             // or command quit is requested. Closing TCP immediately can skip saving.
-            if (session.read().stage != OnlineStage::LeavingGame && !pipe.responsePending()) {
+            if (quit && leaving.stage != OnlineStage::LeavingGame && !pipe.responsePending()) {
                 try { if (embedded) embedded->shutdown(); break; }
                 catch (const std::exception &e) { notice = e.what(); quit = false; frames = 0; }
             }
@@ -1035,10 +1079,13 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         input = std::move(debugInputs.front());
                         debugInputs.pop_front();
                     }
-                    if(debugWalk.active()) {
-                        if(input.leftPressed || input.rightPressed || input.escape || input.controlKeyPressed || input.enter || input.mouseWheel)
+                    if(debugAi.hasPlan() || debugWalk.active()) {
+                        if(debugInputTakesControl(input))
+                        {
+                            debugAi.manualInput(session,debugWalk,control,combat);
                             debugWalk.manualInput(control);
-                        else input.focused=true; // Explicit debug input owns the client while navigating in background.
+                        }
+                        else if(debugAi.active() || debugWalk.active()) input.focused=true; // Active debug input owns background navigation.
                     }
                     captureRequested = input.screenshot && !panels.capturesWorldInput();
                     if (localConnection && input.focused && !panels.gameMenuOpen && (input.save || input.load)) {
@@ -1087,10 +1134,13 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             if (!showScene) {
                 auto input = pollInput(viewport, sharedUi ? sharedUi->ui().controls : preferences.controls);
                 if (!debugInputs.empty()) { input = std::move(debugInputs.front()); debugInputs.pop_front(); }
-                if(debugWalk.active()) {
-                    if(input.leftPressed || input.rightPressed || input.escape || input.controlKeyPressed || input.enter || input.mouseWheel)
+                if(debugAi.hasPlan() || debugWalk.active()) {
+                    if(debugInputTakesControl(input))
+                    {
+                        debugAi.manualInput(session,debugWalk,control,combat);
                         debugWalk.manualInput(control);
-                    else input.focused=true;
+                    }
+                    else if(debugAi.active() || debugWalk.active()) input.focused=true;
                 }
                 captureRequested = input.screenshot && (!sharedUi || !sharedUi->ui().capturesWorldInput());
                 ClearBackground(BLACK);

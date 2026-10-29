@@ -4,6 +4,21 @@ PD2专项内容：[城镇服务](../../pd2/TOWN_CLIENT.md)。本页保留原版�
 
 Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸、模式／动画、名称、AutoMap及灯光。静态地形物件与原服可交互GUID分开；操作、开门、井水、神坛、宝箱锁／陷阱、掉落和任务效果由所连接的服务端执行；自研实际范围见下文，不把原服支持当作自研已实现。
 
+## 世界悬停与点击选取
+
+世界选取共用`graphics/primitives.hpp::spriteHit`与`remote_scene_draw.cpp`的单位分支；地面掉落的名称显现、发亮与本体点击也使用该帧几何。范围来自当前MPQ的COF、DCC／DC6及表字段，不裁到不透明像素包围框，不使用统一大小的自造交互框。可选模式、技能SelectProc、尸体／阵营资格仍由原有客户端副本入口筛选；鼠标命中不代表服务端允许操作。
+
+| 单位／条件 | 原版几何与当前消费者 |
+| --- | --- |
+| 普通玩家、NPC、怪物、尸体及物件 | 先以当前COF头的min／max矩形每侧扩16像素作外层筛选；再按当前方向／帧的原组件矩形每侧扩12像素。宽或高小于32时，两侧各加`(32-当前尺寸)/2`的整数值，奇数差保留原截断。玩家使用可选组件；怪物／物件以当前MonStats2／Objects.TotalPieces是否大于1决定是否检查COF层的Selectable。单组件及独立DCC／DC6使用原帧范围，包含透明边缘。组件矩形边界包含端点，COF外层右／下边界不包含端点 |
+| 门和替代碰撞物件 | IsDoor门只在mode2／4／5使用Objects.Left／Top／Width／Height；非门CollisionSubst非零时各模式都使用该矩形。其他情况沿普通帧分支。固定矩形锚定静态单位落点，不加Objects.Xoffset／Yoffset或原帧外扩，边界包含端点 |
+| MonStats2.noGfxHitTest | 使用htLeft／htTop／htWidth／htHeight的有符号16位值，锚定动态单位地面位置，右／下边界不包含端点；不再依赖翅膀、烟雾等图像的透明裁边。当前原MPQ包含泰瑞尔、受困灵魂、衣卒尔灵魂、投石机与恶魔小屋等定义 |
+| 地面掉落与关卡出口 | 掉落本体使用当前flippy原帧及共同12像素／最小尺寸算法；名称点击仍共用已有名称布局。出口继续读取LvlWarp.SelectX／Y／DX／DY，矩形边界包含端点；世界输入被面板等遮挡时不悬停点亮出口 |
+
+COF外层矩形跟随单位地面锚点，普通组件框跟随当前绘图／高度偏移；保留分组件范围，不把多层之间的空隙合并成整张合成纹理。资源缺失仍按现有原图不可用路径处理，不补造矩形或图形。
+
+依据：D2MOO `ObjectsTbls::D2ObjectsTxt`、`MonsterTbls::D2MonStats2Txt`及表编译器确认字段，`UNITS_GetClientCoordX／Y`与`UNITS_InitializeStaticPath`确认坐标；OpenD2 `Engine/COF.hpp`交叉核对COF布局。D2MOO缺D2Client，且旧实现将普通范围裁小，故定点核对零售1.13c D2Client.dll（SHA-256 `dd8bc6025de921216a97c17f97cd1a50fbb85926e838ec60e13451448836d906`）：RVA A68E0为选取分派，A6A77为noGfxHitTest，A6B15／A6BD5为物件条件，A5720／A57E0为表矩形，6A550为COF外层16像素，A6730为原帧外扩／最小尺寸，6E670→6D700读取COF层Selectable。当前源码已构建；原版MPQ、独立DebugSorceress的营地画面中，以ui-input实际点击恰西本体打开交谈、私人箱本体打开仓库，并丢下一张鉴定卷轴再点击地面原图拾回（同一物品ID恢复本人背包）。原包、完整快照及截图位于忽略目录artifacts/debug-ai-acceptance-20261029/ui-01，EXE SHA-256为DC89A302F380BB5C76309C52944B39B76A8FFA8164051DAD36D2CAB2962E53C3。仅认证这些具体操作；名称布局、遮挡及重叠目标优先级、全部动画／五幕物件与PD2运行时改写仍未逐项认证。PD2消费者边界见[城镇服务](../../pd2/TOWN_CLIENT.md#城镇服务物件交互)。
+
 ## 碰撞与靠近
 
 原版悬停门时发送C2S `3D`（5字节，u32对象GUID）。宿主共用分帧及物件领域请求处理，检查绑定玩家、对象同幕及原整数坐标每轴10格限制；不会移动玩家或操作关门。仅当对象当前mode为OPENED(2)／SPECIAL3(5)时，以原SizeX／SizeY矩形读取PLAYER／MONSTER／CORPSE碰撞（0x8180），占用时设5、空闲时设2；改变模式才递增revision并更新对象碰撞，由既有0E投影同步。依据D2MOO `PlrMsg::Rcv0x3D_HighlightADoor`、`ObjMode::sub_6FC78BB0`及`D2Collision::COLLISION_CreateBoundingBox`。D2X客户端也已接Door悬停发送3D，按原1.13c D2Client RVA 519BA–51A1C排除mode4并逐对象以大于500ms间隔发送，换区清时钟；宿主与客户端均待原版运行复验；未知、跨幕及超距对象通过普通拒绝返回，不把合法悬停当未知协议而断线。完整复验见消息对比缺陷J4。

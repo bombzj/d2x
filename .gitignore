@@ -13,10 +13,22 @@
 /pd2-host.local.json
 *.credentials.local
 *.credentials.local.tmp
-/client-settings.json.lock/
+/client-settings.json.lock
+/client-settings.json.snapshot.tmp
+/client-settings.json.backup.tmp
 *.d2xsave
 *.d2xsave.bak
-*.d2xsave.lock/
+*.d2xsave.lock
+*.character-lock
+*.d2s.lock
+*.d2s.snapshot.tmp
+*.d2s.backup.tmp
+*.map.lock
+*.map.snapshot.tmp
+*.map.backup.tmp
+*.ma[0-3].lock
+*.ma[0-3].snapshot.tmp
+*.ma[0-3].backup.tmp
 *.log
 # Local network captures and crash dumps
 *.pcap
@@ -30,4 +42,4 @@
 
 *.d2xmap
 *.d2xmap.bak
-*.d2xmap.lock/
+*.d2xmap.lock

@@ -108,8 +108,8 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
         LootLabel label{item.handle(), std::move(text), box, ground, itemTextFontIndex(item.quality, tone)};
         layout.push_back(label);
         if (view_.showLoot || view_.bhAlwaysShowLoot || id == inventoryView_.pickupTarget ||
-            CheckCollisionPointRec(rv(mouse), box) || CheckCollisionPointRec(rv(mouse), ([&] { const auto at=screen(staticUnitPosition(location->position)); const auto *image=groundItemSprite(item);
-                return image?Rectangle{at.x+image->x-5,at.y+image->y-5,float(image->texture.width+10),float(image->texture.height+10)}:Rectangle{}; }())))
+            CheckCollisionPointRec(rv(mouse), box) ||
+            spriteHit(groundItemSprite(item),ground,mouse,false))
             visible.push_back(std::move(label));
     }
     return visible;
@@ -127,7 +127,7 @@ std::optional<ItemHandle> SceneView::lootAt(Vec mouse, bool labelsOnly) const {
             if(!location || location->region!=mapView().region || !item.groundPickupAllowed) continue;
             const auto *image=groundItemSprite(item); if(!image) continue;
             const auto p=screen(staticUnitPosition(location->position));
-            if(!CheckCollisionPointRec(rv(mouse),{p.x+image->x-5,p.y+image->y-5,float(image->texture.width+10),float(image->texture.height+10)})) continue;
+            if(!spriteHit(image,p,mouse,false)) continue;
             const float candidate=(p-mouse).length();
             if(candidate<distance) { closest=item.handle(); distance=candidate; }
         }

@@ -43,7 +43,7 @@ actions持有动作与待释放队列，skills解释并推进技能程序，comp
 
 证据为固定1.13c D2Client RVA51C9C–51CC2读取SearchEnemyNear并调用51650，5170E–517D0准备TargetCorpse查询与半径9，517EB–51846以初值10严格比较最近距离；D2Common ordinal10591／10052／10080分别对应RVA12030／12720／7F5E0，默认候选测试位于124E0；D2MOO的SkillsTbls、UNITFINDS_TestUnit、UNITFINDS_FindAllMatchingUnitsInNeighboredRooms及UNITROOM_AddUnitToRoomEx提供字段／遍历依据。PD2专项说明见[职业技能：尸体搜索距离差异](../../pd2/CLASS_SKILLS.md#职业技能尸体搜索距离差异)。
 
-尸体鼠标命中按原DT／DD组件帧边界各外扩12像素，并按原整数算法补足32像素范围；悬停检查左右两个已选技能，实际施法仍使用当前手。名称使用原Font16红色字形，在可见世界视口顶部基线32居中，追加当前语言TBL的corpse后缀（非英文加括号），不显示生命条或词缀。依据固定1.13c D2Client.dll（MD5 `f5860c629d309b8fc1f96174babcf633`）SelectProc表RVADE838、A6070／A6250、A6730／A6C90及C0850–C0B66；请求距离保留PlrMsg::sub_6FC83C60的每轴50 subtile边界，不把鼠标像素范围当成游戏作用半径。PD2专项说明见[职业技能：尸体选择观察边界](../../pd2/CLASS_SKILLS.md#职业技能尸体选择观察边界)。
+尸体鼠标命中共用[世界选取几何](../world/OBJECTS.md#世界悬停与点击选取)，读取当前DT／DD的COF外层范围／Selectable及原组件帧外扩；最小尺寸保留原整数截断。悬停检查左右两个已选技能，实际施法仍使用当前手。名称使用原Font16红色字形，在可见世界视口顶部基线32居中，追加当前语言TBL的corpse后缀（非英文加括号），不显示生命条或词缀。依据固定1.13c D2Client.dll（MD5 `f5860c629d309b8fc1f96174babcf633`）SelectProc表RVADE838、A6070／A6250、A6730／A6C90及C0850–C0B66；请求距离保留PlrMsg::sub_6FC83C60的每轴50 subtile边界，不把鼠标像素范围当成游戏作用半径。PD2专项说明见[职业技能：尸体选择观察边界](../../pd2/CLASS_SKILLS.md#职业技能尸体选择观察边界)。
 
 公共curseStateDuration现供死灵、亚马逊状态和祭坛使用：先算nativePercentage(期限,抗性,100)，再从原期限中减去；仅当前States.curse启用抗性拒绝，负抗性不钳零，零期限不强行变成一帧。怪物抗性从当前原始属性来源查询，缺原始来源的旧生产端保留显式适配。AI难度除法仍在原调用端先执行。依据D2MOO Skills::sub_6FD10EC0，完整原事件排序仍未闭合。
 

@@ -131,6 +131,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     if(!cof.layers) return {};
     std::map<int, const Animation *> parts;
     std::array<bool, 16> castsShadow{};
+    std::array<bool, 16> selectable{};
     std::array<bool, 16> softAdditive{};
     int omitted = 0;
     static const std::string codes[] = {"hd", "tr", "lg", "ra", "la", "rh", "lh", "sh",
@@ -140,6 +141,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
         if (c < 0 || c >= 16)
             throw std::runtime_error("Invalid COF component");
         castsShadow[size_t(c)] = cof.shadows[size_t(i)] && !cof.transparent[size_t(i)];
+        selectable[size_t(c)] = cof.selectable[size_t(i)];
         softAdditive[size_t(c)] = cof.transparent[size_t(i)] && cof.drawEffects[size_t(i)] == 3;
         if (equipment && std::string_view((*equipment)[c]) == "nil") {
             ++omitted;
@@ -274,11 +276,13 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             if (splitLayers) flushSegment();
             recolor(merged);
             auto frame = upload(merged);
-            if(mode=="dt" || mode=="dd") for(const auto &[component,animation]:parts) {
+            frame.selectionCoarseBounds = Rectangle{float(cof.minX) - 16, float(cof.minY) - 16,
+                float(cof.maxX) - float(cof.minX) + 32, float(cof.maxY) - float(cof.minY) + 32};
+            for(const auto &[component,animation]:parts) {
                 (void)animation;
                 const auto *part=get(component);
                 if(part && part->width>0 && part->height>0)
-                    frame.corpseComponentBounds.push_back({float(part->x),float(part->y),float(part->width),float(part->height)});
+                    frame.componentBounds.push_back({{float(part->x),float(part->y),float(part->width),float(part->height)},selectable[size_t(component)]});
             }
             frame.layers = std::move(layers);
             const auto shadow = upload(projectShadow(shadowMask));

@@ -14,6 +14,9 @@ namespace d2x {
 // MPQ-backed scene binding, separate from the server replica and local authority.
 // All five acts reconstruct the same native room core used by offline maps.
 class RemoteTown {
+  public:
+    struct NavigationRoom {int level{},x{},y{},width{},height{};bool loaded{};size_t exploredTiles{};};
+  private:
     Archives &archives_;
     TileLibraryCache libraries_;
     DataTable objects_, monsters_, monsterSizes_, skills_, shrines_, petTypes_;
@@ -49,6 +52,18 @@ class RemoteTown {
     std::map<int, std::string> nativeErrors_;
     struct UnitRoomEntry { size_t room{}; uint64_t assignment{}, entered{}; };
     std::map<OnlineUnitKey,UnitRoomEntry> unitRooms_;
+    // Last positions learned from real client unit assignments, retained when
+    // a unit/room leaves the current interest set; never a live GUID guarantee.
+    std::map<std::tuple<uint16_t,uint8_t,uint16_t>,OnlinePoint> knownTargetPositions_;
+    std::map<std::pair<uint16_t,uint16_t>,OnlinePoint> knownConnections_;
+    std::map<uint16_t,OnlinePoint> knownWaypoints_;
+    mutable std::vector<NavigationRoom> navigationRooms_;
+    mutable std::map<int,std::vector<int>> navigationConnections_;
+    mutable std::map<uint16_t,size_t> navigationSeen_;
+    mutable std::tuple<uint64_t,uint64_t,uint64_t> navigationKey_{};
+    mutable bool navigationCached_{};
+    mutable uint64_t navigationCacheBuilds_{};
+    void refreshNavigationCache() const;
     void updateUnitRooms(const OnlineView &);
     OnlineSceneView view_;
     uint64_t gameGeneration_{~uint64_t{}}, areaGeneration_{~uint64_t{}}, revision_{~uint64_t{}};
@@ -74,6 +89,14 @@ class RemoteTown {
     // before it becomes active. Global subtile coordinates; no room generation.
     struct WalkingBoundary {uint16_t destination{};int side{},plane{},start{},end{};};
     std::vector<WalkingBoundary> walkingBoundaries() const;
+    const std::vector<NavigationRoom> &navigationRooms() const;
+    std::optional<OnlinePoint> knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const;
+    std::optional<OnlinePoint> knownConnectionPosition(uint16_t from,uint16_t to) const;
+    std::optional<OnlinePoint> knownWaypointPosition(uint16_t area) const;
+    uint64_t navigationRevision() const;
+    uint64_t navigationCacheBuilds() const {return navigationCacheBuilds_;}
+    // The layout's resolved Vis slots override the table's static slots.
+    const std::map<int,std::vector<int>> &navigationConnections() const;
     bool permits(const OnlineView &, OnlinePoint target) const;
     // Native player-room / active-neighbor order, then room-unit prepend order.
     std::vector<OnlineUnitKey> nearbyUnits(const OnlineView &, OnlinePoint center, int radius) const;

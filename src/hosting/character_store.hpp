@@ -2,6 +2,7 @@
 #include "core/bytes.hpp"
 #include "hosting/character_directory.hpp"
 #include "gameplay/character/persistent_character.hpp"
+#include "resources/atomic_file.hpp"
 #include <filesystem>
 #include <map>
 #include <string_view>
@@ -12,12 +13,12 @@ struct ClassicData;
 class CharacterStore {
   public:
     struct Lease {
-        std::filesystem::path path, lock;
+        std::filesystem::path path;
+        std::unique_ptr<FileLock> lock;
         std::vector<uint8_t> expected;
-        ~Lease();
         Lease(const Lease &) = delete;
         Lease &operator=(const Lease &) = delete;
-        Lease(std::filesystem::path, std::filesystem::path);
+        Lease(std::filesystem::path, std::unique_ptr<FileLock>);
     };
     CharacterStore(std::filesystem::path root, const ClassicData &);
     CharacterRosterView list(bool includeQuick = false, std::string_view fileName = {});

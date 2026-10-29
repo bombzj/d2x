@@ -31,6 +31,7 @@ class DebugAutoWalk {
     nlohmann::json status() const;
   public:
     bool active() const;
+    nlohmann::json snapshot() const;
     std::optional<std::string> command(const nlohmann::json &,net::RealmSession &,RemoteTown &,RemoteControl &,RemoteCombat &);
     void tick(net::RealmSession &,RemoteTown &,RemoteControl &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
     void manualInput(RemoteControl &);

@@ -1,0 +1,215 @@
+{
+  "schema": 1,
+  "description": "Reusable debug preparation; current MPQ equipment and legal level-99 budgets. Fresh normal quests; restore an isolated baseline copy and create a new game for repeat runs. Not natural progression/loot evidence.",
+  "characters": [
+    {
+      "id": "DebugSorceress",
+      "name": "DebugSorceress",
+      "class": "Sorceress",
+      "level": 99,
+      "difficulty": 0,
+      "mapSeed": 557488535,
+      "allocated": [
+        70,
+        50,
+        320,
+        50
+      ],
+      "skills": {
+        "Fire Bolt": 20,
+        "Fire Ball": 20,
+        "Fire Mastery": 20,
+        "Teleport": 20,
+        "Telekinesis": 1,
+        "Warmth": 1,
+        "Static Field": 1,
+        "Frozen Armor": 1,
+        "Ice Bolt": 1,
+        "Frost Nova": 1,
+        "Ice Blast": 1,
+        "Glacial Spike": 1,
+        "Blizzard": 1,
+        "Frozen Orb": 8,
+        "Cold Mastery": 1
+      },
+      "leftSkill": "Fire Ball",
+      "rightSkill": "Teleport",
+      "items": [
+        {
+          "code": "uap",
+          "quality": "unique",
+          "special": "Harlequin Crest",
+          "level": 99,
+          "seed": 2026102900,
+          "location": "equipment",
+          "slot": "head"
+        },
+        {
+          "code": "xea",
+          "quality": "unique",
+          "special": "Skin of the Vipermagi",
+          "level": 99,
+          "seed": 2026102901,
+          "location": "equipment",
+          "slot": "tors"
+        },
+        {
+          "code": "7dg",
+          "quality": "unique",
+          "special": "Wizardspike",
+          "level": 99,
+          "seed": 2026102902,
+          "location": "equipment",
+          "slot": "rarm"
+        },
+        {
+          "code": "xsh",
+          "quality": "unique",
+          "special": "Lidless Wall",
+          "level": 99,
+          "seed": 2026102903,
+          "location": "equipment",
+          "slot": "larm"
+        },
+        {
+          "code": "tgl",
+          "quality": "unique",
+          "special": "Magefist",
+          "level": 99,
+          "seed": 2026102904,
+          "location": "equipment",
+          "slot": "glov"
+        },
+        {
+          "code": "ulc",
+          "quality": "unique",
+          "special": "Arachnid Mesh",
+          "level": 99,
+          "seed": 2026102905,
+          "location": "equipment",
+          "slot": "belt"
+        },
+        {
+          "code": "xmb",
+          "quality": "unique",
+          "special": "Silkweave",
+          "level": 99,
+          "seed": 2026102906,
+          "location": "equipment",
+          "slot": "feet"
+        },
+        {
+          "code": "amu",
+          "quality": "unique",
+          "special": "Mara's Kaleidoscope",
+          "level": 99,
+          "seed": 2026102907,
+          "location": "equipment",
+          "slot": "neck"
+        },
+        {
+          "code": "rin",
+          "quality": "unique",
+          "special": "Bul Katho's Wedding Band",
+          "level": 99,
+          "seed": 2026102908,
+          "location": "equipment",
+          "slot": "rrin"
+        },
+        {
+          "code": "rin",
+          "quality": "unique",
+          "special": "Bul Katho's Wedding Band",
+          "level": 99,
+          "seed": 2026102909,
+          "location": "equipment",
+          "slot": "lrin"
+        },
+        {
+          "code": "tsc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102950,
+          "location": "backpack"
+        },
+        {
+          "code": "tsc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102951,
+          "location": "backpack"
+        },
+        {
+          "code": "tsc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102952,
+          "location": "backpack"
+        },
+        {
+          "code": "tsc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102953,
+          "location": "backpack"
+        },
+        {
+          "code": "tsc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102954,
+          "location": "backpack"
+        },
+        {
+          "code": "tsc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102955,
+          "location": "backpack"
+        },
+        {
+          "code": "tsc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102956,
+          "location": "backpack"
+        },
+        {
+          "code": "tsc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102957,
+          "location": "backpack"
+        },
+        {
+          "code": "tsc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102958,
+          "location": "backpack"
+        },
+        {
+          "code": "tsc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102959,
+          "location": "backpack"
+        },
+        {
+          "code": "isc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102960,
+          "location": "backpack"
+        },
+        {
+          "code": "isc",
+          "quality": "normal",
+          "level": 99,
+          "seed": 2026102961,
+          "location": "backpack"
+        }
+      ]
+    }
+  ]
+}

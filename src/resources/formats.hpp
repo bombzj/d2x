@@ -68,8 +68,9 @@ Animation decodeDcc(const Bytes &data);
 Animation decodeDc6(const Bytes &data);
 struct Cof {
     int layers = 0, frames = 0, directions = 0;
+    int minX = 0, maxX = 0, minY = 0, maxY = 0;
     std::vector<int> components;
-    std::vector<bool> shadows, transparent;
+    std::vector<bool> shadows, selectable, transparent;
     std::vector<uint8_t> drawEffects;
     std::vector<std::string> weapons;
     Bytes order;

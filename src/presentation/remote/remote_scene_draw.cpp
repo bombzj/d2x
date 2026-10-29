@@ -2,22 +2,6 @@
 #include "network/chat_text.hpp"
 
 namespace d2x {
-namespace {
-bool corpseSpriteHit(const Sprite &image,Vec position,Vec mouse) {
-    // Retail D2Client A6730/A6C90: select each original component frame
-    // with twelve pixels on each side and a minimum extent of 32.
-    for(auto bounds:image.corpseComponentBounds) {
-        bounds.x-=12;bounds.y-=12;bounds.width+=24;bounds.height+=24;
-        if(bounds.width<32) {const int grow=(32-int(bounds.width))/2;bounds.x-=grow;bounds.width+=2*grow;}
-        if(bounds.height<32) {const int grow=(32-int(bounds.height))/2;bounds.y-=grow;bounds.height+=2*grow;}
-        bounds.x+=position.x;bounds.y+=position.y;
-        if(mouse.x>=bounds.x && mouse.x<=bounds.x+bounds.width &&
-           mouse.y>=bounds.y && mouse.y<=bounds.y+bounds.height) return true;
-    }
-    return false;
-}
-}
-
 RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, const OnlineSceneView &binding,
                        SceneView &shared, const RemoteCombat &combat, const RemoteUiClients &clients, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
     RemoteSceneFrame intent;
@@ -184,7 +168,6 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     const bool surface = shared.ui().blocksInput() || shared.ui().skillPicker || shared.ui().inventory.drag ||
         shared.ui().inventory.goldDialog || shared.ui().inventory.identify ||
         shared.characterView().dead || hudSurface(mouse) || !CheckCollisionPointRec(rv(mouse),viewport) || uiConsumed;
-    const bool menu = shared.ui().gameMenuOpen;
     auto screen = [&](Vec p) { return shared.screen(p); };
     const auto groundTarget = surface ? std::optional<ItemHandle>{} : shared.lootAt(mouse);
     std::optional<size_t> selectedExit;
@@ -194,7 +177,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     float monsterDistance = std::numeric_limits<float>::max();
     float playerDistance = std::numeric_limits<float>::max();
     float corpseDistance = std::numeric_limits<float>::max();
-    if (!menu && !waypointOpen && !hudSurface(mouse)) for (size_t i = 0; i < map.terrain.exits.size(); ++i) {
+    if (!surface && !waypointOpen) for (size_t i = 0; i < map.terrain.exits.size(); ++i) {
         const auto &exit = map.terrain.exits[i];
         const bool assigned = std::any_of(v.world.units.begin(), v.world.units.end(), [&](const auto &entry) {
             const auto &[key, unit] = entry;
@@ -205,8 +188,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if (!assigned) continue;
         const auto at = screen(exit.position);
         const auto &r = exit.selection;
-        if (CheckCollisionPointRec(rv(mouse), {at.x + r.selectX, at.y + r.selectY,
-            float(r.selectWidth), float(r.selectHeight)})) {
+        if (selectionRectHit({float(r.selectX), float(r.selectY),
+            float(r.selectWidth), float(r.selectHeight)}, at, mouse)) {
             selectedExit = i;
             for (const auto &target : binding.mapTargets)
                 if (target.unit.type == 5 && local(target.position).x == exit.position.x &&
@@ -524,21 +507,57 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if (!image || !visible(*image, p))
             continue;
         if (player) { player->visible = true; player->reason.clear(); }
+        const bool unitHit = !surface && [&] {
+            bool multiPiece = key.type == 0;
+            if (key.type == 2) {
+                const auto row = objectRows.find(*unitClass(u));
+                if (row == objectRows.end()) return false;
+                const bool door = objects.number(row->second,"IsDoor").value_or(0) != 0;
+                // A6BD5: a door uses its fixed rectangle only in ON/S2/S3;
+                // CollisionSubst applies to other objects in every mode.
+                const bool fixed = door ? (u.mode == 2 || u.mode == 4 || u.mode == 5)
+                    : objects.number(row->second,"CollisionSubst").value_or(0) != 0;
+                if (fixed) return selectionRectHit({
+                    float(objects.number(row->second,"Left").value_or(0)),
+                    float(objects.number(row->second,"Top").value_or(0)),
+                    float(objects.number(row->second,"Width").value_or(0)),
+                    float(objects.number(row->second,"Height").value_or(0))},screen(feet),mouse);
+                multiPiece = objects.number(row->second,"TotalPieces").value_or(0) > 1;
+            } else if (key.type == 1) {
+                const auto row = monsterRows.find(*unitClass(u));
+                if (row == monsterRows.end()) return false;
+                const auto extra = monsterExtra.find(monstats.value(row->second,"MonStatsEx"));
+                if (extra == monsterExtra.end()) return false;
+                if (monstats2.number(extra->second,"noGfxHitTest").value_or(0)) {
+                    // A6A8D reads signed WORDs and calls Win32 PtInRect
+                    // (exclusive right/bottom); no platform API is needed here.
+                    const auto value = [&](const char *field) {
+                        return float(int16_t(monstats2.number(extra->second,field).value_or(0)));
+                    };
+                    const auto point = mouse - screen(feet);
+                    return CheckCollisionPointRec(rv(point),
+                        {value("htLeft"),value("htTop"),value("htWidth"),value("htHeight")});
+                }
+                multiPiece = monstats2.number(extra->second,"TotalPieces").value_or(0) > 1;
+            }
+            // The COF broad phase and table rectangles follow the ground
+            // anchor; only component frames follow graphics/height offsets.
+            return spriteHit(image,p,mouse,multiPiece,screen(feet));
+        }();
         if (player && !player->local && !player->dead && !surface && !waypointOpen &&
-            !binding.npcConversation && spriteHit(image, p, mouse)) {
+            !binding.npcConversation && unitHit) {
             const float distance = (p - mouse).length();
             if (distance < playerDistance) { playerDistance = distance; hoveredPlayer = key; }
         }
         if (!selectedExit && !surface && !waypointOpen && !binding.npcConversation &&
-            (key.type == 0 || key.type == 1 || key.type == 2) && spriteHit(image, p, mouse) &&
+            (key.type == 0 || key.type == 1 || key.type == 2) && unitHit &&
             std::any_of(binding.mapTargets.begin(), binding.mapTargets.end(),
                 [&](const auto &target) { return target.unit == key; })) {
             const float distance = (p - mouse).length();
             if (distance < targetDistance) { targetDistance = distance; selectedTarget = key; hasSelectedTarget=true; }
         }
         const bool corpse=key.type==1 && onlineMonsterCorpse(u);
-        const bool combatHit=corpse?corpseSpriteHit(*image,p,mouse):spriteHit(image,p,mouse);
-        if (!surface && (key.type == 0 || key.type == 1 || key.type == 2) && combatHit) {
+        if (!surface && (key.type == 0 || key.type == 1 || key.type == 2) && unitHit) {
             const float distance = (p - mouse).length();
             if (combat.monsterTargetEligible(u, false) && distance < monsterDistance) {
                 monsterDistance = distance;

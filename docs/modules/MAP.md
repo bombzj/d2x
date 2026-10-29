@@ -24,6 +24,8 @@ PD2扩展预设区域复用本模块的生成、房间物化、碰撞和原生�
 
 调试导航通过RemoteTown.walkingBoundaries只读当前客户端已经建立的逻辑near及Vis／warp=-1步行连接，包括尚未激活的邻室描述；不调用新的房间生成／激活，也不从宿主取得出口。已激活绘制快照不足以回答完整逻辑连接，不能据缺少邻层图块改为巡游。具体输入周期、客户端路径位置与原请求边界见[调试导航](../development/DEBUG_PIPE.md#客户端自主行走)。
 
+任务AI另通过navigationRooms／navigationConnections读取已分配房间描述、本幕解析后的Vis图及累计探索标记，用普通操作探索、开门及跨区；已知范围不受当前屏幕或小地图窗口裁切。索引按游戏／区域／地形及探索修订缓存，以const引用复用；客户端实际见过的NPC、物件、出口和传送点位置另保留线索，当前单位撤出后先接近线索，重新指派才交互。不读NPC预设、不生成整图、不新增视野引用，资源未知时只规划到已知可达前沿。传送按已知路径进度挑选、检查实际发送的整数落点及后续通路。源码与运行范围见[调试任务AI](../development/DEBUG_AI.md)。
+
 ## 地图缓存与分帧准备
 
 单机的hosting与客户端共用同一Archives挂载；server内核不读取MPQ。sharedWorldCatalog按挂载／三难度复用不可变世界表，TileLibraryCache按规范化路径共享已解码DT1的弱引用，地图和本地缓存持有资源寿命；新增挂载会清除共享条目。NativeMapGenerator按LevelType／Dt1Mask复用只读瓦片选择索引，随机流仍归每个生成器／房间；已分配房间另有坐标分桶，clientRoom只检查命中桶并保留重叠歧义拒绝。

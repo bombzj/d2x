@@ -21,6 +21,7 @@ param(
         'online-waypoint-travel', 'online-waypoint-close', 'online-automap',
         'online-move-to-unit', 'online-town-portal', 'online-npc-interact',
         'debug-walk', 'debug-walk-status', 'debug-walk-cancel',
+        'debug-ai-start', 'debug-ai-append', 'debug-ai-status', 'debug-ai-pause', 'debug-ai-resume', 'debug-ai-cancel',
         'online-resurrect', 'online-recover-corpse',
         'online-npc-message', 'online-npc-close', 'online-npc-travel', 'online-npc-respec', 'online-staff-update',
         'online-items', 'online-ground', 'online-item-action', 'online-item-quote',

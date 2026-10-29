@@ -39,6 +39,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 客户端自主行走
 
+批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方，仍由下面的行走驱动执行接近。Windows Release已构建并入局检查；实际覆盖和剩余组合以该专题为准，不把单目标行走结果当作整条任务验收。
+
 `debug-walk`启动异步调试输入，`debug-walk-status`只读进度，`debug-walk-cancel`取消后沿客户端Stop提交停止请求。目标`goal=waypoint`（默认）自动寻找本区已指派传送点并用正常交互打开；`goal=exit`选择本区出口，可给`level`筛目的地，默认只走到附近；没有可点击warp的步行连接读取客户端已重建的逻辑near及原Vis／warp=-1连接（不要求邻层房间已激活），扫描当前已知碰撞的通行开口并选择本层内侧落点，可用于城镇门口，不自动跨区；这种连接不接受interact=true；`goal=point`需要全局subtile的`x/y`；`goal=unit`需要实际`unitId`，`unitType`默认2。`interact`默认在waypoint／unit目标启用，其他目标关闭；`run`默认true，`timeoutSeconds`为5–300，默认120。没有使用服务端管理旅行、坐标写入、私有包或鼠标模拟。
 
 导航只读取RemoteTown已重建的地形／碰撞、逻辑步行连接与当前mapTargets，不额外生成或激活房间。出口目标先按目的层及真实共边选定连接，再找已知通行开口；输入不足时只沿该连接方向接近当前可达地形前沿，缺连接不回退为任意房间巡游。传送点未指派时仍可探索当前层可达房间；缺地图／资源不穿墙或补造目标，不自动战斗／喝药／复活／解锁任务／传送点。当前不实现跨层导航任务，换区、重入、离局或死亡终止旧意图。

@@ -566,6 +566,10 @@ add_executable(d2x
   src/app/debug/ui_input.cpp src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp
   src/app/debug/server_snapshot.cpp
   src/app/debug/auto_walk.cpp
+  src/app/debug/ai.cpp
+  src/app/debug/ai_navigation.cpp
+  src/app/debug/ai_actions.cpp
+  src/app/debug/ai_mobility.cpp
 )
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_remote_client d2x_character_host d2x_hash nlohmann_json::nlohmann_json)
 if(WIN32)
