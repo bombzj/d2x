@@ -7,6 +7,7 @@
 #include <string>
 
 namespace d2x {
+inline constexpr auto debugDecisionInterval=std::chrono::milliseconds(200);
 class RemoteTown;
 class RemoteControl;
 class RemoteCombat;
@@ -25,7 +26,7 @@ class DebugAutoWalk {
     std::optional<OnlineUnitKey> unit_;
     std::set<std::pair<int,int>> visited_;
     Clock::time_point deadline_,progressAt_,next_,submittedAt_;
-    unsigned moves_{},interactions_{},searches_{},stationaryAttempts_{},decisions_{};
+    unsigned moves_{},interactions_{},searches_{},decisions_{};
     bool run_=true,interact_{},landmark_{},clientMoving_{};
     void finish(std::string,std::string,RemoteControl &);
     nlohmann::json status() const;

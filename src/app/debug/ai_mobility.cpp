@@ -66,6 +66,21 @@ bool DebugAi::Impl::mobility(Context &c) {
         mobilityHold=true;wait("mobility-select","Waiting for normal Vigor selection");return true;
     }
     if(!canTeleport && !canCharge) return false;
+    const OnlinePoint goal{uint16_t(wanted.x),uint16_t(wanted.y)};
+    if(!mobilityGoal || *mobilityGoal!=goal) {
+        mobilityGoal=goal;mobilityBestDistance=distance;mobilityProgressAt=now;
+    } else if(distance+2<mobilityBestDistance) {
+        mobilityBestDistance=distance;mobilityProgressAt=now;
+    } else if(now-mobilityProgressAt>=std::chrono::seconds(8)) {
+        // A relocation alone is not progress toward this stable child goal.
+        // Repeated landings in a wall pocket must release input ownership so
+        // ordinary native walking can follow its route around the obstruction.
+        nextMobility=now+std::chrono::seconds(15);mobilityGoal.reset();
+        if(child.value("interactionRequests",0u)==0 && walkIntent.is_object()) {
+            c.walk.command(walkIntent,c.session,c.town,c.control,c.combat);++moveGoals;
+        }
+        note("mobility-route-stalled","No closer approach for 8 seconds; allowing 15 seconds of ordinary walking");return false;
+    }
     const auto *map=c.town.map();const auto origin=c.town.read().origin;if(!map || !origin) return false;
     const Vec offset{float(origin->x),float(origin->y)};
     const Vec localGoal=wanted-offset+Vec{.5f,.5f};

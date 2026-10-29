@@ -33,7 +33,7 @@ MapAI三类分派另定点核对上述1.13c DLL的RVA `35E50`（目标`59E10/59D
 
 SceneController统一悬停、高亮、姓名、点击／目标锁定和释放；RemoteControl按真实GUID靠近后0x13交谈，原0x27对白列表→0x29公共标志→带NPC身份的0x28交互确认→0x2F准备及公共对白UI继续消费。D2X先保存27待确认列表，收到匹配的28才打开会话并发送2F；2F确认已有权威会话，不重发27／28。一般私人任务刷新使用28/type6，不把玩家GUID编码成NPC身份。0x31确认实际原stringId，已确认话题不重复提交；0x30关闭，旅行0x38 action=0等原幕／位置结果。
 
-当前TBL对白首行数字按a1npc SPEED元数据移除，通用字符串查询仍保留原文。hosting比对当前MPQ的NPC文本与TBL时同时处理UTF-8及原单字节省略号／弯引号，避免遗漏阿卡拉女巫介绍；对白编号仍由实际TBL匹配得到。原0x27消息的menu=0自动对白依次显示未确认集合；menu=2为可选任务评论，通过Talk打开，不在每次点击NPC时抢先弹出。任务原表中的menu=1经QUESTS_InitScrollTextChain转为回包menu=0，不能直接发送为原版的紧急交互菜单。普通闲谈由客户端读取当前MPQ，不占27的任务／介绍槽，也不发31任务确认；D2X通过Talk里的Gossip轮播。首次介绍和任务自动对白由服务端消息及PlrIntro旗标决定，不增加客户端推测的个人任务资格。独立91只设置待播放的返程问候，客户端打开NPC菜单时按原声音选择程序播放并发4D清标志；不在普通Gossip时发送4D，不代替31任务对白确认。宿主91生产及完整音频时序边界见[消息速查](../../modules/MESSAGES.md#d2x客户端对应入口与消费)。NPC0x8A提示用原npcalert与MonStats2高度；它不是本地任务资格。原字幕时序、重播间隔及提示精确像素定位尚未完整认证。
+当前TBL对白首行数字按a1npc SPEED元数据移除，通用字符串查询仍保留原文。hosting比对当前MPQ的NPC文本与TBL时同时处理UTF-8及原单字节省略号／弯引号，避免遗漏阿卡拉女巫介绍；对白编号仍由实际TBL匹配得到。原0x27消息的menu=0自动对白依次显示未确认集合；menu=2为可选任务评论，通过Talk打开，不在每次点击NPC时抢先弹出。任务原表中的menu=1经QUESTS_InitScrollTextChain转为回包menu=0，不能直接发送为原版的紧急交互菜单。普通闲谈由客户端读取当前MPQ，不占27的任务／介绍槽，也不发31任务确认；D2X通过Talk里的Gossip轮播。首次介绍和任务自动对白由服务端消息及PlrIntro旗标决定，不增加客户端推测的个人任务资格。独立91只设置待播放的返程问候，客户端打开NPC菜单时按原声音选择程序播放并发4D清标志；不在普通Gossip时发送4D，不代替31任务对白确认。宿主91生产及完整音频时序边界见[消息速查](../../modules/MESSAGES.md#d2x客户端对应入口与消费)。NPC0x8A感叹号读取原npcalert，按MonStats2.OverlayHeight-1选取Overlay.Height1..4，定位复用[公共覆盖图](../skills/COMMON.md)的地面加8、原X／Y偏移及单位图形／抬升偏移，保留DCC锚点；AnimRate沿原8.8增量换算为25Hz帧时钟。它不是本地任务资格。最近定位与动画速率修正已通过Windows Release构建，运行仍待验收；原字幕时序、重播间隔及提示全部像素／时钟组合尚未完整认证。
 
 原0x27有8个物理消息槽，但当前1.13c D2Common `TEXT_CreateTextListFromMessageList`要求count小于8；hosting拒绝超过7条的事实，D2X接收端也按0..7校验，避免掩盖原版断言。自研NPC按原任务回调集合及未确认的首次介绍组织列表，分别接受31确认，不附加闲谈。依据为当前DLL的line274断言、本地D2MOO `D2Common/src/D2Text.cpp`及原版Host阿卡拉先64任务、后12介绍且均为menu0的录包；已有任务进度的角色也可只有12介绍。
 
@@ -43,7 +43,7 @@ NPC服务／Talk菜单与交易邀请共用[OriginalMenu](../../../src/presentat
 
 客户端在自己的当前路径到达后提交13，直接点击已有交谈范围也用当前显示位置判定请求；不等稀疏18／95／96位置采样。显示位置只授权发送意图，服务端按真实位置／资格决定27／28、菜单与奖励。请求绑定、目标GUID和新移动revision仍用于取消旧靠近；没有显示路径位置的调用使用已有协议采样。移除requirePositionUpdate历史等待状态，收到匹配28才打开会话的流程不变。
 
-悬停和小地图共用当前MPQ NameStr→TBL名称；Flavie的NameStr键为navi，不能直接把键作为悬停姓名。NameStr指向TBL占位键（dummy／Dummy／not used／unused／Not used）的行视为无名：悬停标签、小地图姓名与交互标签均不绘制，服务端对白speaker匹配仍用原始键不受影响；唯一暗金仍按SuperUniques.Name显示。宿主查NPC GUID时允许同幕、已准备且步行相连的邻区，距离计算先转换为本人区域坐标，仍保持交谈6、走近7–8、9以上不回复的门槛，不通过放宽距离补偿跨区错误。
+悬停和小地图共用当前MPQ NameStr→TBL名称；Flavie的NameStr键为navi，不能直接把键作为悬停姓名。NameStr指向TBL占位键（dummy／Dummy／not used／unused／Not used）的行视为无名：悬停标签、小地图姓名与交互标签均不绘制，服务端对白speaker匹配仍用原始键不受影响；唯一暗金仍按SuperUniques.Name显示。NPC悬停名称在remote_scene_draw→object_hint::drawNpcLabel读取MonStats→MonStatsEx→MonStats2.pixHeight，以显示位置的地面锚点定位，不跟随组件绘图偏移；原版框底为地面屏幕Y加10减pixHeight。font16的原TBL高度／逐字宽度、所选语言行高与基线、DC6底部偏移、8像素总横向留白及PL2 TRANS75底板共同决定名称布局，不再共用固定70像素／24像素高标签或TTF替换。依据为零售1.13c D2Client RVA C0D30→C0850（C0CA0读取pixHeight）→D2Win ordinal10085，以及D2MOO D2WinFont::FONT／DrawFramedText／10124；已通过Windows Release构建，运行对照仍待验收。宿主查NPC GUID时允许同幕、已准备且步行相连的邻区，距离计算先转换为本人区域坐标，仍保持交谈6、走近7–8、9以上不回复的门槛，不通过放宽距离补偿跨区错误。
 
 未收到27／28确认的NPC请求不封锁整个世界手势；新的移动／攻击／其他交互可通过原30关闭等待并提交新的请求。已确认会话及实际菜单仍消费输入。远点靠近在本地原单位路径到达后发13，服务端资格拒绝或无回复时仍可用新手势取消等待；等待超时保留。点击取消、跨边界NPC靠近及姓名画面仍需完整原版对照。
 

@@ -301,6 +301,16 @@ bool System::usableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) c
 bool System::consumableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) const {
     return usableCorpse(id,area,tick,revive) && find(id)->rule.nativeVelocity!=0;
 }
+DomainResult<Vec> System::removeConsumableCorpse(EntityId id,RegionId area,uint64_t tick) {
+    if(!consumableCorpse(id,area,tick)) return {DomainStatus::Unavailable,{}};
+    const auto position=find(id)->position;
+    // SrvDo031: AllocDrlgDelete / SUNIT_RemoveUnit precede SummonPet.
+    // Absence from the room and actor snapshot produces the native deletion;
+    // an unavailable birth must not leave a hidden, resolvable corpse behind.
+    ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});
+    ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);state_.actors.erase(id);
+    return {DomainStatus::Applied,position};
+}
 void System::consumeCorpse(EntityId id) noexcept {
     if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.corpse.unavailable=true;++it->second.revision;}
 }

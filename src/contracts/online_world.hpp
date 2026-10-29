@@ -45,6 +45,7 @@ struct OnlineQuestState {
     std::map<uint8_t, std::array<uint16_t, 3>> updates; // Quest number -> flags, status, progress (0x5D).
     std::optional<uint16_t> denRemaining, rescuedBarbsRemaining, staffTombOffset;
     std::optional<std::array<int,5>> cainStones; // Original 0x50 classes 17..21.
+    uint64_t cainStonesRevision{}; // Changes only on the actual 0x50/id4 clue response.
     std::optional<uint16_t> zooMonster;
     uint64_t revision{};
 };

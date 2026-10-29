@@ -27,13 +27,15 @@ bool System::canNativeTeleport(EntityId id,Vec point,const std::function<uint16_
         !ports_.areas.nativeCollisionMask(*room,x,y,unit->rule.size,0x3c01,collision) &&
         area.collision.segment(unit->position,point,{}, {0xc01,1});
 }
-DomainResult<> System::nativeTeleport(EntityId id,Vec point,uint64_t tick,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+DomainResult<> System::nativeTeleport(EntityId id,Vec point,uint64_t tick,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision,bool minionRoomFallback) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.alive() || !collision) return {DomainStatus::InvalidActor,{}};
-    auto &unit=found->second;if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    auto &unit=found->second;
+    const uint64_t revisions=1+uint64_t(!unit.route.empty() || unit.moving || unit.running);
+    if(unit.revision>UINT64_MAX-revisions) return {DomainStatus::Capacity,{}};
     const auto global=point+ports_.areas.at(unit.area).definition.origin;
     const int x=int(std::floor(global.x)),y=int(std::floor(global.y));
     auto room=ports_.areas.roomAtPosition(unit.area,unit.position,x,y);
-    if(!room) if(const auto *owner=find(minionOwner(id))) {
+    if(!room && minionRoomFallback) if(const auto *owner=find(minionOwner(id))) {
         const auto &area=ports_.areas.at(owner->area).definition;
         if(const auto *bounds=area.activation.room(owner->position))
             room=RoomView{owner->area,(int(area.origin.x)+bounds->x)/5,(int(area.origin.y)+bounds->y)/5};

@@ -38,7 +38,7 @@ DomainResult<bool> System::removeStateGroup(const ActorContext &actor,int group)
         states.setNativeState(state,false);states.removeState(state,[&]{resources.sample(states,true);});
         edit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,state,false});
     }
-    edit.player=resources.record();edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,actor.tick);
+    edit.player=resources.record();edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(states,actor.tick);
     auto prepared=ports_.transactions.prepare(std::move(edit));if(!prepared) return {prepared.status,{}};
     const auto result=ports_.transactions.commit(std::move(*prepared.value));if(!result) return {result.status,{}};
     publishPlayers(next.players);return {DomainStatus::Applied,true};

@@ -289,7 +289,7 @@ DomainResult<> System::postModeRate(EntityId id,int skill,int rank,int32_t rate,
         const auto posted=states.apply(spec,tick,observe);
         if(!states.writeNativeStats(posted.handle,writes,rules,spec,observe)) throw std::logic_error("Missing anonymous mode rate list");
         transactions::CharacterEdit edit{{player.player,id,player.area,area.generation,0,tick},player.inventoryRevision,player.characterRevision,resources.record()};
-        edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,tick);
+        edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(states,tick);
         edit.random=transactions::UnitRandomEdit{random.first,random.second};
         auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
         const auto committed=ports_.transactions.commit(std::move(*plan.value));if(committed) publishPlayers(next.players);
@@ -313,7 +313,7 @@ DomainResult<> System::endMode(EntityId id,uint64_t tick,std::optional<uint64_t>
         const auto removed=states.endModeEffects(activeRevision,[&]{resources.sample(states,true);});
         transactions::CharacterEdit edit{{player->player,id,player->area,ports_.areas.at(player->area).generation,0,tick},
             player->inventoryRevision,player->characterRevision,resources.record()};
-        edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,tick);
+        edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(states,tick);
         for(const auto &entry:removed) if(entry.effect.spec.state.id>=0 && !states.hasState(entry.effect.spec.state.id,tick))
             edit.publicFacts.emplace_back(StateFact{id,0,player->area,entry.effect.spec.state.id,false});
         auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};

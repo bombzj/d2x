@@ -35,6 +35,7 @@ Animation decodeDc6(const Bytes &b) {
         f.height = r.u32();
         f.x = r.i32();
         f.y = r.i32();
+        f.cellOffsetY = f.y;
         r.skip(8);
         auto len = r.u32();
         if (f.width < 1 || f.height < 1 || f.width > 4096 || f.height > 4096)

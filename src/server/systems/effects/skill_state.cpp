@@ -150,7 +150,7 @@ DomainResult<> System::skillAuraState(EntityId source,EntityId target,int skill,
         if(!installed.accepted) return {DomainStatus::Unavailable,{}};
         resources.sample(effects);
         transactions::CharacterEdit edit{{player.player,target,player.area,area.generation,0,tick},player.inventoryRevision,player.characterRevision,resources.record()};
-        edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(effects,tick);
+        edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(effects,tick);
         if(random!=expected && formulaUnit.id()==target) edit.random=transactions::UnitRandomEdit{expected,random};
         for(const auto &removed:installed.removed) if(!effects.hasState(removed.effect.spec.state.id,tick))
             edit.publicFacts.emplace_back(StateFact{target,0,region,removed.effect.spec.state.id,false});

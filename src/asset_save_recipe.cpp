@@ -6,6 +6,7 @@
 #include "content/items/socket_data.hpp"
 #include "hosting/item_content.hpp"
 #include "gameplay/quest/catalog.hpp"
+#include "gameplay/items/gold_limits.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include "persistence/initial_character.hpp"
 #include "persistence/save_codec.hpp"
@@ -46,7 +47,7 @@ Json describeSave(const ClassicData &data, const PersistentCharacter &save) {
     Json report{{"name",player.name},{"class",player.characterClass},{"level",player.level},
         {"scope","Decoded save/assembly diagnostics; item descriptions are D2X-derived, not original expected values."},
         {"mapSeed",save.mapSeed},{"difficulty",save.difficulty},{"weaponSet",player.weaponSet},
-        {"experience",player.experience},{"unspentAttributes",player.unspentAttributes},
+        {"experience",player.experience},{"gold",player.gold},{"bankGold",player.bankGold},{"unspentAttributes",player.unspentAttributes},
         {"allocated",{player.allocated.strength,player.allocated.dexterity,player.allocated.vitality,player.allocated.energy}},
         {"unspentSkills",player.unspentSkills},{"skills",player.skillRanks},{"selectedSkills",player.selectedSkills},
         {"items",Json::array()},{"containers",Json::object()},{"quests",Json::array()}};
@@ -274,6 +275,10 @@ void generateSaveRecipes(const ClassicData &data, const std::filesystem::path &r
                 quest.flags=iceScrollGranted|iceScrollUsed|iceRareGranted;
             }
             require(player.level>=1 && player.level<=99,"character level");
+            const auto gold=entry.value("gold",Json(player.gold));const auto bankGold=entry.value("bankGold",Json(player.bankGold));
+            require(gold.is_number_integer() && gold>=0 && gold<=uint64_t(player.level)*10000,"carried gold budget");
+            require(bankGold.is_number_integer() && bankGold>=0 && bankGold<=stashGoldLimit(unsigned(player.level)),"stash gold budget");
+            player.gold=gold.get<unsigned>();player.bankGold=bankGold.get<unsigned>();
             player.experience=data.experienceByClass.at(className).at(size_t(player.level));
             const auto &a=entry.at("allocated");
             player.allocated={a.at(0),a.at(1),a.at(2),a.at(3)};

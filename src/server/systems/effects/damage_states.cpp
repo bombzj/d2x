@@ -11,6 +11,45 @@
 #include <stdexcept>
 
 namespace d2x::server::effects {
+DomainResult<> System::stagePetLimit(AuraUnitPublication &plan,PlayerId owner,const SkillPetLimitChange &limit,uint64_t tick,bool includePending) const {
+    // PlayerPets::sub_6FC7D150: SINGLE only accepts one, HIREABLE never
+    // retires here. The list head is the oldest registration, including corpses.
+    if((limit.type==1 && limit.maximum!=1) || limit.type==7) return {DomainStatus::Applied,std::monostate{}};
+    std::vector<EntityId> pets;
+    for(const auto id:ports_.monsters.pets(owner,true)) {
+        const auto *unit=ports_.monsters.find(id);
+        if(plan.actors) if(const auto staged=plan.actors->actors.find(id);staged!=plan.actors->actors.end()) unit=&staged->second;
+        if(unit && !unit->petUnregistered && unit->rule.petType==limit.type) pets.push_back(id);
+    }
+    // Skill consumption follows pet registration. In particular, removal of
+    // the last charged skill can retire the pet born by that same transaction.
+    if(includePending && plan.actors) {
+        const auto append=[&](EntityId id) {
+            const auto &unit=plan.actors->actors.at(id);
+            if(unit.owner==owner && !unit.conversion && !unit.petRegistrationOrder && !unit.petUnregistered && unit.rule.petType==limit.type)
+                if(std::find(pets.begin(),pets.end(),id)==pets.end()) pets.push_back(id);
+        };
+        for(const auto id:plan.actors->publicationOrder) if(plan.actors->actors.contains(id)) append(id);
+        for(const auto &[id,unit]:plan.actors->actors) {(void)unit;append(id);}
+    }
+    const size_t maximum=size_t(std::max(0,limit.maximum));
+    for(size_t index=0;pets.size()-index>maximum;++index) {
+        const auto id=pets[index];
+        const std::array<EntityId,1> retired{id};
+        const auto result=ports_.monsters.stageRetirements(plan,retired,tick);
+        if(!result) return result;
+        if(!plan.actors || !plan.actors->actors.contains(id)) {
+            auto unit=*ports_.monsters.find(id);
+            if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+            ++unit.revision;
+            auto publication=ports_.monsters.prepareActorPublication({{id,std::move(unit)}},0);
+            if(!plan.actors) plan.actors=std::make_shared<monsters::ActorPublication>(std::move(publication));
+            else {plan.actors->actors.merge(publication.actors);plan.actors->expected.merge(publication.expected);}
+        }
+        plan.actors->actors.at(id).petUnregistered=true;
+    }
+    return {DomainStatus::Applied,std::monostate{}};
+}
 AuraUnitPublication System::prepareDamageStates(monsters::Actor candidate,UnitDamageStates damage,uint64_t tick) const {
     AuraUnitPublication plan;
     stageDamageStates(plan,std::move(candidate),std::move(damage),tick);return plan;

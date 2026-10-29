@@ -178,7 +178,7 @@ struct UnitReceptionPlan {
 };
 // Prepared before inventory consumption, installed without allocation only after
 // the character transaction succeeds. No callback can observe half a drink.
-struct PotionPlan { State next; CharacterRecord character; TransientAttributes transient; std::optional<std::pair<uint64_t,uint64_t>> unitRandom{}; std::vector<DomainFact> publicFacts{}; std::optional<ResourceMaximums> resourceBase{}; std::shared_ptr<AuraUnitPublication> units{}; bool staminaPotionSurplus{}; };
+struct PotionPlan { State next; CharacterRecord character; TransientAttributes transient; std::optional<std::pair<uint64_t,uint64_t>> unitRandom{}; std::vector<DomainFact> publicFacts{}; std::optional<ResourceMaximums> resourceBase{}; std::shared_ptr<AuraUnitPublication> units{}; bool staminaPotionSurplus{}; std::vector<SkillPetLimitChange> petLimitChanges{}; };
 struct WellRestoration { bool usesCharge{}; };
 struct Ports {
     const PlayerStore &players; const AreaStore &areas; skills::System &skills;
@@ -311,6 +311,7 @@ class System {
     void publishBirthEffects(BirthEffectsPublication &) noexcept;
     AuraUnitPublication prepareDamageStates(monsters::Actor,UnitDamageStates,uint64_t tick) const;
     void stageDamageStates(AuraUnitPublication &,monsters::Actor,UnitDamageStates,uint64_t tick) const;
+    DomainResult<> stagePetLimit(AuraUnitPublication &,PlayerId,const SkillPetLimitChange &,uint64_t tick,bool includePending=true) const;
     const State &read() const { return state_; }
     void collectEntityReferences(std::set<EntityId> &) const;
     PlayerEffectsPublication preparePlayerEffects(const ActorContext &,const CombatEffectSet &,const attributes::Totals &,const CharacterRecord &,const RightAuraTimerChange &right={}) const;

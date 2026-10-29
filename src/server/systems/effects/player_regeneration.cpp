@@ -104,7 +104,7 @@ DomainResult<> System::regeneratePlayer(EntityId id,uint64_t tick) {
     }
     resources.sample(states);const auto &area=ports_.areas.at(player->area);
     transactions::CharacterEdit edit{{player->player,id,player->area,area.generation,0,tick},player->inventoryRevision,player->characterRevision,resources.record()};
-    edit.transient=projectEffectAttributes(states,tick);edit.resourceBase=resources.maximum();
+    edit.transient=projectEffectAttributes(states,tick);edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();
     for(const auto &effect:removed) if(!states.hasState(effect.effect.spec.state.id,tick))
         edit.publicFacts.emplace_back(StateFact{id,0,player->area,effect.effect.spec.state.id,false});
     if(!ports_.frameEvents.validate(timer)) return {DomainStatus::Conflict,{}};

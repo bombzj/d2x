@@ -75,14 +75,31 @@ std::optional<Vec> System::portalPosition(const ActorContext &actor,EntityId id)
     }
     return {};
 }
+bool System::pendingPortalCommand(PlayerId player,uint64_t sequence) const {
+    const auto found=portalCreations_.find(player);
+    return found!=portalCreations_.end() && (!sequence || found->second.actor.sequence==sequence);
+}
+void System::collectEntityReferences(std::set<EntityId> &retained) const {
+    for(const auto &[player,pending]:portalCreations_) {
+        (void)player;retained.insert(pending.actor.actor);retained.insert(pending.item.id);
+        if(pending.portal) {retained.insert(pending.portal->fieldId);retained.insert(pending.portal->townId);}
+    }
+}
 DomainResult<> System::createPortal(const ActorContext &actor,std::optional<ItemHandle> requested,std::optional<int> skill) {
+    const auto fail=[&](DomainStatus status)->DomainResult<> {
+        if(!isDeferred(status)) portalCreations_.erase(actor.player);
+        return {status,{}};
+    };
     const auto *p=ports_.players.find(actor.player); const auto *area=ports_.areas.find(actor.area);
-    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !area || area->generation!=actor.areaGeneration || area->definition.town || !area->definition.portalRule || !p->rules.character) return {DomainStatus::InvalidActor,{}};
-    const auto *town=ports_.areas.find(area->definition.townRegion);
-    if(!town) { ports_.world.requestTown(actor); return {DomainStatus::Unavailable,{}}; }
+    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !area || area->generation!=actor.areaGeneration || area->definition.town || !area->definition.portalRule || !p->rules.character) return fail(DomainStatus::InvalidActor);
+    auto pending=portalCreations_.find(actor.player);
+    if(pending!=portalCreations_.end() && (pending->second.actor.actor!=actor.actor ||
+        pending->second.actor.area!=actor.area || pending->second.actor.areaGeneration!=actor.areaGeneration ||
+        pending->second.actor.sequence!=actor.sequence)) return fail(DomainStatus::Stale);
     inventory::detail::Draft draft(*p,*p->rules.items,*p->rules.equipment,*p->rules.character);
     const ItemInstance *item=nullptr; const ItemSkillRule *rule=nullptr;
     for(const auto &[id,value]:p->persistent.inventory.items) {
+        if(pending!=portalCreations_.end() && (pending->second.item.id!=id || pending->second.item.revision!=value.revision)) continue;
         if(requested && (requested->id!=id || requested->revision!=value.revision)) continue;
         const auto found=p->rules.character->itemSkills.find(value.definition); if(found==p->rules.character->itemSkills.end() || found->second.action!=ItemSkillAction::Portal || (skill && *skill!=found->second.skill)) continue;
         const auto *at=std::get_if<ContainerLocation>(&value.location);
@@ -92,24 +109,55 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
         if(!stored || !(found->second.book?value.charges:value.quantity)) continue;
         item=&value; rule=&found->second; break;
     }
-    if(!item || item->revision==UINT64_MAX) return {DomainStatus::InvalidRequest,{}};
-    if(!ports_.items.identityCapacity(2) || !ports_.events.hasCapacity(2)) return {DomainStatus::Capacity,{}};
-    const auto global=p->position+area->definition.origin;
-    const int column=int(std::floor(global.x)),row=int(std::floor(global.y));
-    const auto sourceRoom=ports_.areas.roomAtPosition(actor.area,p->position+Vec{.5f,.5f},column,row);
-    if(!sourceRoom) return {DomainStatus::Unavailable,{}};
+    if(!item || item->revision==UINT64_MAX) return fail(DomainStatus::InvalidRequest);
+    if(pending==portalCreations_.end()) {
+        PortalCreation creation{};creation.actor=actor;creation.item={item->id,item->revision};
+        pending=portalCreations_.emplace(actor.player,std::move(creation)).first;
+    }
+    auto &creation=pending->second;
+    const auto *town=ports_.areas.find(area->definition.townRegion);
+    if(!town) {
+        const auto request=ports_.world.requestTown(actor);
+        return fail(request?DomainStatus::PendingContent:request.status);
+    }
+    if((!creation.portal && !ports_.items.identityCapacity(2)) || !ports_.events.hasCapacity(2)) return fail(DomainStatus::Capacity);
     // CreatePortalObject uses the native spawn footprint and expfield before
     // CreateLinkPortal streams the destination's tile11 room. A prepared town
     // anchor is not evidence that its current room collision is loaded/clear.
-    const auto field=ports_.areas.nativeFreeCoordinates(*sourceRoom,column,row,3,0x3e01,
-        ports_.spatial.nativeCollisionSample(),std::pair{column,row},0x0c01);
-    if(!field) return {DomainStatus::Unavailable,{}};
-    const auto linked=ports_.world.nativeLinkPortalPosition(area->definition.townRegion);
-    if(!linked) return {DomainStatus::Unavailable,{}};
+    if(!creation.field) {
+        const auto global=p->position+area->definition.origin;
+        const int column=int(std::floor(global.x)),row=int(std::floor(global.y));
+        const auto sourceRoom=ports_.areas.roomAtPosition(actor.area,p->position+Vec{.5f,.5f},column,row);
+        if(!sourceRoom) return fail(DomainStatus::Unavailable);
+        creation.field=ports_.areas.nativeFreeCoordinates(*sourceRoom,column,row,3,0x3e01,
+            ports_.spatial.nativeCollisionSample(),std::pair{column,row},0x0c01);
+        if(!creation.field) return fail(DomainStatus::Unavailable);
+    }
+    if(!creation.townStart) {
+        const auto start=ports_.world.nativeActSpawnLocation(town->definition.id,11);
+        if(!start) return fail(DomainStatus::Unavailable);
+        creation.townStart=NativeLinkPosition{town->definition.id,town->generation,*start,{}};
+    }
+    if(!creation.linked) {
+        const auto &start=*creation.townStart;
+        const auto *destination=ports_.areas.find(start.area);
+        if(!destination || destination->generation!=start.generation) return fail(DomainStatus::Stale);
+        ports_.world.activate(start.area,start.position);
+        if(!ports_.areas.loaded(start.area,start.position))
+            return fail(ports_.world.awaitingRoomInputs()?DomainStatus::PendingContent:DomainStatus::Unavailable);
+        const auto free=ports_.world.nativeActSpawnLocationExAt(start.area,start.position,3);
+        if(!free) return fail(DomainStatus::Unavailable);
+        const auto linked=ports_.world.nativeLinkPortalPositionFrom(*free);
+        if(!linked) return fail(DomainStatus::Unavailable);
+        creation.linked=NativeLinkPosition{linked->area,ports_.areas.at(linked->area).generation,linked->position,linked->room};
+    }
+    if(!creation.portal) {
+        const auto &field=*creation.field;const auto &linked=*creation.linked;
+        creation.portal=Portal{actor.player,actor.actor,ports_.items.reserveIdentity(NativeUnitType::Object),ports_.items.reserveIdentity(NativeUnitType::Object),p->persistent.player.name,field.room.area,linked.area,field.position,linked.position,*area->definition.portalRule,actor.tick+uint64_t(area->definition.portalRule->openingTicks),1,false};
+        creation.portal->fieldRoom=field.room;creation.portal->townRoom=linked.room;
+    }
     auto portals=state_.portals;
-    Portal portal{actor.player,actor.actor,ports_.items.reserveIdentity(NativeUnitType::Object),ports_.items.reserveIdentity(NativeUnitType::Object),p->persistent.player.name,field->room.area,linked->area,field->position,linked->position,*area->definition.portalRule,actor.tick+uint64_t(area->definition.portalRule->openingTicks),1,false};
-    portal.fieldRoom=field->room;portal.townRoom=linked->room;
-    portals[actor.player]=portal;
+    portals[actor.player]=*creation.portal;
     auto &consumed=draft.edit.inventory.items.at(item->id); ++consumed.revision;
     const bool remove=rule->book? (--consumed.charges,false):--consumed.quantity==0;
     draft.edit.changes.push_back({item->id,consumed.revision,remove?ItemChangeKind::Removed:ItemChangeKind::QuantityChanged,item->location,remove?std::nullopt:std::optional<ItemLocation>{item->location},consumed.quantity});
@@ -117,11 +165,14 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     if(remove) draft.edit.inventory.items.erase(item->id);
     if(remove && origin.container==p->persistent.containers.belt) {
         const auto result=draft.compactBeltColumn(origin.cell.x);
-        if(result!=DomainStatus::Applied) return {result,{}};
+        if(result!=DomainStatus::Applied) return fail(result);
     }
     transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),p->persistent.player.weaponSet};
-    auto plan=ports_.transactions.prepare(std::move(edit)); if(!plan) return {plan.status,{}};
-    const auto result=ports_.transactions.commit(std::move(*plan.value)); if(result) {publishPortalCollision(ports_.areas,state_.portals,portals);state_.portals.swap(portals);ports_.quests.onTownPortal(actor.area);} return result;
+    auto plan=ports_.transactions.prepare(std::move(edit)); if(!plan) return fail(plan.status);
+    const auto result=ports_.transactions.commit(std::move(*plan.value));
+    if(!result) return fail(result.status);
+    publishPortalCollision(ports_.areas,state_.portals,portals);state_.portals.swap(portals);
+    portalCreations_.erase(pending);ports_.quests.onTownPortal(actor.area);return result;
 }
 DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext &actor,SpecialPortalKind kind,uint64_t seed,std::optional<Vec> source) {
     const auto *p=ports_.players.find(actor.player);const auto *origin=ports_.areas.find(actor.area);

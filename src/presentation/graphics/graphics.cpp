@@ -46,6 +46,8 @@ Sprite Graphics::upload(const IndexedFrame &f, bool translucent) {
     mix(f.height);
     mix(uint32_t(f.x));
     mix(uint32_t(f.y));
+    mix(f.cellOffsetY.has_value());
+    if (f.cellOffsetY) mix(uint32_t(*f.cellOffsetY));
     mix(translucent);
     for (auto pixel : f.pixels)
         mix(pixel);
@@ -73,6 +75,9 @@ Sprite Graphics::upload(const IndexedFrame &f, bool translucent) {
     result.texture = t;
     result.x = f.x;
     result.y = f.y;
+    if (f.cellOffsetY)
+        result.selectionFrameBounds = Rectangle{float(f.x), float(*f.cellOffsetY - f.height),
+            float(f.width), float(f.height)};
     if (translucent) {
         for (size_t i = 0; i < pixels.size(); ++i)
             pixels[i] = {f.pixels[i], 0, 0, uint8_t(f.pixels[i] ? 255 : 0)};
@@ -282,7 +287,9 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                 (void)animation;
                 const auto *part=get(component);
                 if(part && part->width>0 && part->height>0)
-                    frame.componentBounds.push_back({{float(part->x),float(part->y),float(part->width),float(part->height)},selectable[size_t(component)]});
+                    frame.componentBounds.push_back({{float(part->x),
+                        float(part->cellOffsetY ? *part->cellOffsetY - part->height : part->y),
+                        float(part->width),float(part->height)},selectable[size_t(component)],component});
             }
             frame.layers = std::move(layers);
             const auto shadow = upload(projectShadow(shadowMask));

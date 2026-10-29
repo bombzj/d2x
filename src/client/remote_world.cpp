@@ -975,7 +975,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
                 if(value>=5 || (seen&(1u<<value))) throw ProtocolError("Invalid native Cairn Stone order");
                 seen|=1u<<value;stones[index]=17+value;
             }
-            w.quests.cainStones=stones;w.quests.revision=w.revision;
+            w.quests.cainStones=stones;w.quests.cainStonesRevision=w.revision;w.quests.revision=w.revision;
         } else if(id==36) {
             w.quests.zooMonster=payload[0];w.quests.revision=w.revision;
         }

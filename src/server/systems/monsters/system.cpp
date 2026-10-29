@@ -30,9 +30,9 @@ namespace d2x::server::monsters {
 void System::refreshCollision(const Actor &unit) noexcept {
     if(unit.roomless) {ports_.areas.setUnitCollision(unit.id,{});return;}
     NativeFootprint body,reservation;
-    if(unit.hatching || (!unit.alive() && !unit.rule.deadCollision))
+    if(unit.hatching || (!unit.alive() && !unit.rule.deadCollision && !unit.reviveCorpseCollisionCleared))
         body=ports_.areas.rectangleFootprint(unit.area,unit.position,3,3,0x8000);
-    else if(!unit.burrowed && !unit.airborne && !unit.submerged)
+    else if((unit.alive() || unit.rule.deadCollision) && !unit.burrowed && !unit.airborne && !unit.submerged)
         body=ports_.areas.patternFootprint(unit.area,unit.position,unit.collisionPattern.value_or(unit.rule.collisionPattern),0x100);
     if(unit.pd2NoPathDisabled && unit.alive()) {
         const auto pattern=unit.collisionPattern.value_or(unit.rule.collisionPattern);

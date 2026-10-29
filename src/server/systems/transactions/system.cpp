@@ -363,6 +363,12 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
     const auto &resourceBase=characterEdit?characterEdit->resourceBase:inventoryEdit->resourceBase;
     if(resourceBase) resourceMaximum=*resourceBase;
     const auto &transitions=characterEdit?characterEdit->resourceMaximums:inventoryEdit->resourceMaximums;
+    const auto &petLimits=characterEdit?characterEdit->petLimitChanges:inventoryEdit->petLimitChanges;
+    for(const auto &limit:petLimits) {
+        if(!graph.units) graph.units=std::make_shared<effects::AuraUnitPublication>();
+        const auto result=ports_.effects.stagePetLimit(*graph.units,player->player,limit,request->actor.tick);
+        if(!result) return {result.status,{}};
+    }
     if(request->resources==ResourceRefresh::Clamp) for(const auto &after:transitions) {
         auto &record=next.persistent.player;
         applyResourceMaximums(record.hp,record.mana,record.stamina,resourceMaximum,after);resourceMaximum=after;
@@ -573,7 +579,12 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
         next.totals = attributes::calculate(player->definition, next.persistent, *player->rules.items,
             *equipment, *player->rules.character, {}, transient.modifiers,transient.states,transient.statSources(),admission?nullptr:&player->totals,ports_.areas.statTime(player->area),
             bool(inventoryEdit) || (characterEdit && characterEdit->refreshEquipment),resourceMaximum,registeredInsertions,auraMutation,bindRecipient,
-            attributes::PassiveCacheRefresh::Refresh,admission?nullptr:&player->persistent,finishRightAura);
+            attributes::PassiveCacheRefresh::Refresh,admission?nullptr:&player->persistent,finishRightAura,
+            [&](const SkillPetLimitChange &limit) {
+                if(!graph.units) graph.units=std::make_shared<effects::AuraUnitPublication>();
+                const auto result=ports_.effects.stagePetLimit(*graph.units,player->player,limit,request->actor.tick);
+                if(!result) throw AuraPreparationFailure(result.status);
+            });
         if(next.totals.auraTransient) {
             if(auto *edit=std::get_if<InventoryEdit>(&change)) edit->transient=*next.totals.auraTransient;
             else std::get<CharacterEdit>(change).transient=*next.totals.auraTransient;

@@ -146,7 +146,7 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
         transactions::CharacterEdit edit{{player->player,player->actor,player->area,area.generation,0,tick},
             player->inventoryRevision,player->characterRevision,resources.record()};
         restoreStaminaOnEffectRemoval(edit.player.stamina,resources.maximum().stamina,removed);
-        edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,tick);
+        edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(states,tick);
         for(const auto &entry:removed) if(entry.effect.spec.state.id>=0 && !states.hasState(entry.effect.spec.state.id,tick) &&
             (!entry.effect.spec.nativeMissileHitGate || !entry.effect.spec.state.noSend))
             edit.publicFacts.emplace_back(StateFact{player->actor,0,player->area,entry.effect.spec.state.id,false});

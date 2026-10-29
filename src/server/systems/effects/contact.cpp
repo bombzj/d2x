@@ -312,7 +312,7 @@ DomainResult<> System::advanceNativeCallback(NativeContactBatch &batch,uint64_t 
             const auto application=applyCurseState(recovery.states,program,spec,program.nativeWrites,rules,tick,[&]{resources.sample(recovery.states,true);});
             if(!application.accepted) return done();
             transactions::CharacterEdit edit{{player.player,player.actor,player.area,area.generation,0,tick},player.inventoryRevision,player.characterRevision,resources.record()};
-            edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(recovery.states,tick);
+            edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(recovery.states,tick);
             for(const auto &removed:application.removed) if(!recovery.states.hasState(removed.effect.spec.state.id,tick)) edit.publicFacts.emplace_back(StateFact{player.actor,0,player.area,removed.effect.spec.state.id,false});
             const auto *installed=recovery.states.find(application.handle);if(!installed) throw std::logic_error("Missing native slowed player list");
             edit.publicFacts.emplace_back(StateFact{player.actor,0,player.area,state.id,true,nativeEffectStats(*player.rules.skills,installed->spec)});

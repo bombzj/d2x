@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -59,6 +60,9 @@ Palette decodePalette(const Bytes &data);
 struct IndexedFrame {
     int width = 0, height = 0, x = 0, y = 0;
     Bytes pixels;
+    // Original cell bottom offset; DCC's decoded top-left is one pixel
+    // below offsetY-height, while DC6 keeps its bottom offset in y.
+    std::optional<int> cellOffsetY;
 };
 struct Animation {
     int directions = 0, framesPerDirection = 0;

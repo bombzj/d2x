@@ -874,6 +874,7 @@ Animation decodeDcc(const Bytes &bytes) {
             f.height = int(view.height);
             f.x = h.extents.xLower;
             f.y = h.extents.yLower;
+            f.cellOffsetY = h.yOffset;
             f.pixels.resize(view.width * view.height);
             for (size_t y = 0; y < view.height; y++)
                 std::memcpy(f.pixels.data() + y * view.width, view.buffer + y * view.stride, view.width);

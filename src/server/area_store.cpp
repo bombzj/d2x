@@ -402,6 +402,16 @@ bool AreaStore::nearby(RegionId from, Vec observer, RegionId to, Vec target) con
     const auto &near = source->definition.roomNear.at(index);
     return std::find(near.begin(), near.end(), desired) != near.end();
 }
+std::optional<Vec> AreaStore::linkedPosition(RegionId from,RegionId to,Vec point) const {
+    const auto *source=find(from),*destination=find(to);
+    if(!source || !destination || source->definition.act!=destination->definition.act) return {};
+    if(from!=to) {
+        Vec origin;const auto view=source->definition.collision.linkedNavigation(origin);
+        if(std::none_of(view.navigationSources.begin(),view.navigationSources.end(),
+            [&](const auto &entry){return entry.grid==&destination->definition.collision;})) return {};
+    }
+    return point+destination->definition.origin-source->definition.origin;
+}
 std::optional<RoomView> AreaStore::roomAtPosition(RegionId source,Vec observer,int32_t x,int32_t y) const {
     const auto *area=find(source);if(!area) return {};
     const auto &definition=area->definition;

@@ -33,7 +33,7 @@ bool System::waypointArrival(const Object &object) const {
     });
 }
 void System::publishInitialization(const Object &object) {
-    if(object.rule.chest || object.rule.shrine)
+    if(object.rule.chest || object.rule.shrine || object.rule.operation==18)
         publishedModes_.insert_or_assign(object.id,std::pair{object.revision,object.mode});
     ports_.maps.bind(object.pd2Binding,object.id,object.area,object.position,true);
     if(ports_.maps.opensBlockerOnBirth(object.definition)) openNativeBlocker(object.id,ports_.frameEvents.currentFrame());
@@ -206,16 +206,21 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         }
         return {DomainStatus::Applied,std::monostate{}};
     }
-    if(object.area!=actor.area) return {DomainStatus::Stale,{}};
-    const InteractionTarget target{object.id, object.position, object.position, rule.width, rule.height, float(rule.range), true};
+    // PlrMsg's UNIT_OBJECT path does not require the same level. Ordinary
+    // doors on a level seam still use the actual object and the player's grid.
+    // Other operators keep their current area-bound domain contracts.
+    if(object.area!=actor.area && (!rule.door || rule.operation!=8)) return {DomainStatus::Stale,{}};
+    const auto point=ports_.areas.linkedPosition(actor.area,object.area,object.position);
+    if(!point) return {DomainStatus::Stale,{}};
+    const InteractionTarget target{object.id, *point, *point, rule.width, rule.height, float(rule.range), true};
     if (!remoteRange && !interactionClear(area->definition.collision, player->position, target)) {
-        if(nativeUnitDistance(player->position,2,object.position,rule.width)>50) return {DomainStatus::InvalidRequest,{}};
-        if(ports_.movement.execute(actor,{MovementAction::Move,object.position,true,{},MotionTarget{object.id,2},target})!=CommandStatus::Applied)
+        if(nativeUnitDistance(player->position,2,*point,rule.width)>50) return {DomainStatus::InvalidRequest,{}};
+        if(ports_.movement.execute(actor,{MovementAction::Move,*point,true,{},MotionTarget{object.id,2},target})!=CommandStatus::Applied)
             return {DomainStatus::Unavailable,{}};
         approaches_.insert_or_assign(actor.player,Approach{actor,request,player->locomotionSequence});
         return {DomainStatus::Applied,std::monostate{}};
     }
-    if (remoteRange) {const int dx=int(object.position.x)-int(player->position.x),dy=int(object.position.y)-int(player->position.y);if(dx*dx+dy*dy>*remoteRange * *remoteRange) return {DomainStatus::InvalidRequest,{}};}
+    if (remoteRange) {const int dx=int(point->x)-int(player->position.x),dy=int(point->y)-int(player->position.y);if(dx*dx+dy*dy>*remoteRange * *remoteRange) return {DomainStatus::InvalidRequest,{}};}
     if (object.pending || object.specialPending || object.revision == UINT64_MAX) return {DomainStatus::Conflict, {}};
     if(!remoteRange) ports_.movement.execute(actor,{MovementAction::Stop,{},false});
     if(rule.operation==15) return ports_.travel.useSpecial(actor,{travel::Kind::Portal,{object.id,object.revision,2},{}},remoteRange);
@@ -288,14 +293,28 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         }
         return result;
     }
+    if(rule.operation==18) {
+        // ObjMode::OBJECTS_OperateFunction18_SecretDoor only opens neutral
+        // objects, clears TARGETABLE and frees collision before ENDANIM.
+        // This is not the reversible ordinary-door operation.
+        if(object.mode) return {DomainStatus::Applied,std::monostate{}};
+        object.operatorActor=actor.actor;
+        return openNativeBlocker(object.id,actor.tick);
+    }
     if (rule.door) {
         if (object.until > actor.tick) return {DomainStatus::Conflict, {}};
         if (object.mode) {
-            const auto occupied = [&](Vec at) { return std::abs(at.x - object.position.x) <= rule.width / 2.f + 1 && std::abs(at.y - object.position.y) <= rule.height / 2.f + 1; };
-            for (const auto &[id, other] : ports_.players.all()) { (void)id; if (other.entered && other.area == actor.area && other.persistent.player.hp > 0 && occupied(other.position)) return {DomainStatus::Conflict, {}}; }
-            for (const auto &[id, other] : ports_.monsters.read().actors) { (void)id; if (other.area == actor.area && other.alive() && occupied(other.position)) return {DomainStatus::Conflict, {}}; }
+            const auto occupied = [&](RegionId region,Vec at) {
+                const auto *other=ports_.areas.find(region),*source=ports_.areas.find(object.area);
+                if(!other || !source || other->definition.act!=source->definition.act) return false;
+                const auto local=at+other->definition.origin-source->definition.origin;
+                if(std::abs(local.x-object.position.x)>rule.width/2.f+1 || std::abs(local.y-object.position.y)>rule.height/2.f+1) return false;
+                return region==object.area || ports_.areas.linkedPosition(object.area,region,at).has_value();
+            };
+            for (const auto &[id, other] : ports_.players.all()) { (void)id; if (other.entered && other.persistent.player.hp > 0 && occupied(other.area,other.position)) return {DomainStatus::Conflict, {}}; }
+            for (const auto &[id, other] : ports_.monsters.read().actors) { (void)id; if (other.alive() && occupied(other.area,other.position)) return {DomainStatus::Conflict, {}}; }
         }
-        object.mode = object.mode ? 0 : 2; object.until = actor.tick + std::max(uint64_t{1},rule.openingTicks); ++object.revision; collision(actor.area);
+        object.mode = object.mode ? 0 : 2; object.until = actor.tick + std::max(uint64_t{1},rule.openingTicks); ++object.revision; collision(object.area);
         return {DomainStatus::Applied, std::monostate{}};
     }
     if(rule.operation==11 || rule.operation==13) {
@@ -516,11 +535,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const auto object=state_.objects.find(pending.request.target.id);
         if(!player || !player->entered || player->actor!=pending.actor.actor || player->area!=pending.actor.area ||
             player->persistent.player.hp<=0 || !area || area->generation!=pending.actor.areaGeneration ||
-            player->locomotionSequence!=pending.locomotion || object==state_.objects.end() || object->second.area!=pending.actor.area) {
+            player->locomotionSequence!=pending.locomotion || object==state_.objects.end()) {
             it=approaches_.erase(it);continue;
         }
         const auto &at=object->second;const auto &rule=at.rule;
-        if(!interactionClear(area->definition.collision,player->position,{at.id,at.position,at.position,rule.width,rule.height,float(rule.range),true})) {
+        const auto point=ports_.areas.linkedPosition(pending.actor.area,at.area,at.position);
+        if(!point || (at.area!=pending.actor.area && (!rule.door || rule.operation!=8))) {it=approaches_.erase(it);continue;}
+        if(!interactionClear(area->definition.collision,player->position,{at.id,*point,*point,rule.width,rule.height,float(rule.range),true})) {
             if(player->route.empty()) it=approaches_.erase(it);else ++it;
             continue;
         }
@@ -571,7 +592,11 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (*result) {
                 if(object.rule.shrine) object.specialPending=true;
                 else if(object.rule.operation!=51) {
-                    object.mode=object.rule.operation==26 || object.rule.operation==19 || object.rule.operation==20?2:object.rule.operation==48?(object.phase?3:5):1;object.until=object.mode==1?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;
+                    // ObjMode::OBJECTS_ChestEnd skips OP when Objects.Mode1 is
+                    // absent. Retail clients halt on that unsupported mode.
+                    if(object.rule.operation==4) object.mode=object.rule.openingMode?1:2;
+                    else object.mode=object.rule.operation==26 || object.rule.operation==19 || object.rule.operation==20?2:object.rule.operation==48?(object.phase?3:5):1;
+                    object.until=object.mode==1?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;
                     if(object.mode==3) object.hazardAt=tick.tick+object.rule.closingTicks;
                     object.trap=object.rule.trap;
                     if(object.rule.chest) {object.rule.chest->locked=false;object.trap=object.definition==623 && ports_.areas.at(object.area).definition.pd2Map?0:object.rule.chest->trap;}

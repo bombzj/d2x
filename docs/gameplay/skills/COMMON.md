@@ -215,6 +215,8 @@ SceneController／RemoteCombat处理首次、Hold、锁定与停止，客户端�
 
 States／Overlay定义覆盖层和状态属性；客户端消费A7–AA，真实期限、互斥、反击／吸收、周期及死亡清理由服务端持有。晚入视野恢复已公开单位／状态／装备／归属，不重播历史施法／弹体。尸体资格、碎冰及未完成客户端程序见联网与对应职业专题。
 
+覆盖图定位由`presentation/world/overlay_geometry.hpp`统一消费当前MPQ `Overlay.Xoffset/Yoffset/Height1..4`：玩家高度索引为1，怪物／NPC为`MonStats2.OverlayHeight-1`，物件为0；不用MonStats2.Height替代。索引-1沿原分支加75，0..3选对应Height，其余不加高度；Xoffset保持原符号。绘制从单位地面屏幕坐标加8，再叠加原表偏移及单位当前图形／抬升偏移，保留原DCC锚点；祭坛领取后的shrine状态标记、诅咒及其他已接状态覆盖图共用该入口。NPC感叹号也复用此定位，动画按`AnimRate×25/16`且量化25Hz。依据为本地D2MOO `UNITS_GetOverlayHeight`和原1.13c D2Client RVA6B300／6AEE0的高度选择、坐标与图形偏移分支；当前MPQ仍决定实际图形和高度，不按截图写死各效果位置。最近定位修正已通过Windows Release构建，运行仍待验收，全部覆盖图、跳跃与多人逐帧对照仍待验收。
+
 原生救赎的尸体判定由`monsters::selectableCorpse`集中读取实际死亡动作、CorpseSel和Udead状态，不以经验／掉落结算完成代替死亡模式。玩家／非玩家的资源与种子、尸体REDEEMED及不可选标记通过同一候选提交。拉达门特的回收者是实际飞弹，求值和恢复不借用死亡怪物的资源；救赎及复活专用分支的完整原版行为仍待对齐。
 
 ## 原服施法参考

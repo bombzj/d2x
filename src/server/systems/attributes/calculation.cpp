@@ -66,7 +66,8 @@ EquipmentLoadout loadout(const PersistentCharacter &state, const ItemCatalog &ca
 Totals calculate(const CharacterDefinition &definition, const PersistentCharacter &state, const ItemCatalog &catalog,
                  const EquipmentRules &equipment, const CharacterRules &rules, EntityId excluded, const CharacterModifiers &initialTemporary,const std::set<int> &initialStates,
                  std::optional<std::span<const ModifierStatSource>> initialSources,const Totals *previous,std::optional<StatTimeContext> time,bool refreshEquipment,
-                 std::optional<ResourceMaximums> resourceBase,std::span<const EntityId> registeredInsertions,const AuraMutation &auraMutation,const InitialAuraMutation &initialAura,PassiveCacheRefresh passiveRefresh,const PersistentCharacter *previousState,const InitialAuraMutation &finalAura) {
+                 std::optional<ResourceMaximums> resourceBase,std::span<const EntityId> registeredInsertions,const AuraMutation &auraMutation,const InitialAuraMutation &initialAura,PassiveCacheRefresh passiveRefresh,const PersistentCharacter *previousState,const InitialAuraMutation &finalAura,
+                 const std::function<void(const SkillPetLimitChange &)> &petLimitChanged,bool refreshPetLists) {
     auto temporary=initialTemporary;auto states=initialStates;
     std::optional<std::vector<ModifierStatSource>> temporarySources;
     std::shared_ptr<const CombatEffectSet> auraEffects;
@@ -238,7 +239,9 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
         rules.innateSkillOrder,previous?std::span<const NativeSkillSlot>{previous->skillOrder}:std::span<const NativeSkillSlot>{},
         previous?std::span<const ChargedSkill>{previous->chargedSkills}:std::span<const ChargedSkill>{},*rules.formulas,*rules.stats,
         [&](EntityId id){const auto current=state.inventory.items.find(id);return current==state.inventory.items.end()?sourceState.inventory.items.at(id).handle():current->second.handle();},
-        previous?std::span<const ItemStatEvent>{previous->itemEvents}:std::span<const ItemStatEvent>{},auraChanged},cachedPassives,itemFullStats,candidateValues,readRoot,
+        previous?std::span<const ItemStatEvent>{previous->itemEvents}:std::span<const ItemStatEvent>{},auraChanged,
+        [&](const SkillPetLimitChange &limit){result.petLimitChanges.push_back(limit);if(petLimitChanged) petLimitChanged(limit);},
+        refreshPetLists || !previous || (previousState && previousState->player.skillRanks!=record.skillRanks)},cachedPassives,itemFullStats,candidateValues,readRoot,
         [&](StatValue value){sourceChanged(value);},[&] {
             return std::map<StatKey,int32_t>{{{rules.stats->names.at("hitpoints"),0},sampledResources.hp.raw()},
                 {{rules.stats->names.at("mana"),0},sampledResources.mana.raw()},{{rules.stats->names.at("stamina"),0},sampledResources.stamina.raw()}};

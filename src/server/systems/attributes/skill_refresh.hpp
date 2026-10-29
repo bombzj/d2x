@@ -17,6 +17,8 @@ struct PlayerSkillRefreshInput {
     std::function<ItemHandle(EntityId)> itemHandle;
     std::span<const ItemStatEvent> previousItemEvents;
     std::function<void(const SkillAuraChange &)> auraChanged;
+    std::function<void(const SkillPetLimitChange &)> petLimitChanged;
+    bool refreshPetLists{};
 };
 // Synchronous candidate only. No live player, world, storage or output ports.
 class PlayerSkillRefresh {
@@ -41,12 +43,14 @@ class PlayerSkillRefresh {
     int highest(int) const;
     void refresh(int);
     void refreshAll();
+    void refreshPetType(int);
+    void refreshPetLimits();
   public:
     PlayerSkillRefresh(PlayerSkillRefreshInput,std::vector<PassiveStatContribution> &,
         const std::map<EntityId,StatSnapshot> &,const StatSnapshot &,StatRootRead,
         std::function<void(StatValue)>,std::function<std::map<StatKey,int32_t>()>);
     void initialize();
-    void refreshPassives() {refreshAll();}
+    void refreshPassives() {refreshAll();refreshPetLimits();}
     SkillFormulaSnapshot formulaSnapshot() const;
     void changed(StatKey,int32_t,EntityId source={});
     int level(int id) const {return highest(id);}

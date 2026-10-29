@@ -243,7 +243,7 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
                 edit.player=resources.record();
             }
         }
-        edit.resourceBase=resources.maximum();
+        edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();
         edit.transient=projectEffectAttributes(r.states,actor.tick);
         if(application) {
             for(const auto &removed:application->removed) if(!r.states.hasState(removed.effect.spec.state.id,actor.tick))
@@ -382,7 +382,7 @@ DomainResult<> System::consumeAuraMana(const ActorContext &actor,const AuraDefin
         }
     } else {recovery.states.setNativeState(state,false);observe();}
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,resources.record()};
-    edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(recovery.states,actor.tick);
+    edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(recovery.states,actor.tick);
     const auto previous=state_.players.find(actor.actor);
     if(previous!=state_.players.end()) for(const auto state:previous->second.states.stateIds(actor.tick))
         if(!recovery.states.hasState(state,actor.tick))

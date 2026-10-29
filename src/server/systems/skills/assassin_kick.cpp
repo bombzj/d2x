@@ -97,7 +97,7 @@ DomainResult<> System::startAssassinKick(Release &pending,const ActorContext &ac
             const auto *player=caster->player;
             auto states=ports_.effects.skillState(actor,std::move(mode),writes);if(!states) return fail(states.status);
             transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,states.value->character};
-            edit.transient=states.value->transient;edit.resourceBase=states.value->resourceBase;edit.publicFacts=states.value->publicFacts;
+            edit.transient=states.value->transient;edit.resourceBase=states.value->resourceBase;edit.petLimitChanges=states.value->petLimitChanges;edit.publicFacts=states.value->publicFacts;
             auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return fail(plan.status);
             const auto applied=ports_.transactions.commit(std::move(*plan.value));if(!applied) return fail(applied.status);
             ports_.effects.commit(std::move(*states.value));

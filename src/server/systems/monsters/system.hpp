@@ -132,6 +132,7 @@ struct Actor {
     uint64_t petRegistrationOrder{}; // PlayerPets appends to each type's list.
     bool inactivePet{}; // PlayerPets nFlags & 1; kept independently of GUID.
     bool petUnregistered{}; // Pet node removed; the dying/corpse unit can remain.
+    bool reviveCorpseCollisionCleared{}; // Do58 clears the corpse mask even without a landing.
     struct Conversion {
         int state{-1},alignment{-1},stat{-1};uint64_t until{};
         std::optional<ConversionResourceSave> savedResources;
@@ -410,6 +411,7 @@ class System {
     DomainResult<> retireQuestNpc(EntityId);
     DomainResult<> departQuestNpc(EntityId,uint64_t tick);
     void resetAiFunctionMemory(EntityId);
+    DomainResult<> clearMinionLeash(EntityId);
     std::vector<EntityId> pets(PlayerId,bool includeInactive=false) const;
     bool canRegisterSpecialTargets(size_t count) const noexcept {return count<=UINT64_MAX-state_.nextSpecialTargetOrder;}
     DomainResult<> beginAttack(EntityId, uint64_t until, bool returnToNeutral = false, EntityId target = {},std::optional<NativeUnitStats> modeStats = {},uint8_t mode=4);
@@ -441,6 +443,7 @@ class System {
     bool deadMode(EntityId,uint64_t tick) const;
     bool selectableCorpse(EntityId,uint64_t tick) const;
     bool consumableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;
+    DomainResult<Vec> removeConsumableCorpse(EntityId,RegionId,uint64_t tick);
     void consumeCorpse(EntityId) noexcept;
     DomainResult<> eatCorpse(EntityId,EntityId,int skill,int rank,uint64_t tick);
     void searchCorpse(EntityId id) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.corpse.searched=true;++it->second.revision;}}
@@ -488,7 +491,7 @@ class System {
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0,bool nativeFreePosition = false);
     DomainResult<> teleport(EntityId,PointTarget,uint64_t tick,int heal,bool nativeFreePosition);
     bool canNativeTeleport(EntityId,Vec,const std::function<uint16_t(RoomView,int32_t,int32_t)> &) const;
-    DomainResult<> nativeTeleport(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<> nativeTeleport(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,bool minionRoomFallback=true);
     DomainResult<> activateWeb(EntityId,int skill,int rank,uint64_t tick);
     DomainResult<> heal(EntityId,int64_t amount);
     DomainResult<> healSkill(EntityId source,EntityId target,int64_t,uint64_t,std::pair<uint64_t,uint64_t>);

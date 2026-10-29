@@ -38,15 +38,7 @@ bool nativeUnitRequestRange(Vec player, Vec target) {
         std::abs(y-int(std::floor(target.y+.5f))) <= 50;
 }
 std::optional<Vec> movementPoint(const AreaStore &areas, RegionId from, RegionId to, Vec point) {
-    const auto &source = areas.at(from);
-    const auto *destination = areas.find(to);
-    if (!destination || destination->definition.act != source.definition.act) return {};
-    if (from != to) {
-        Vec origin; const auto view = source.definition.collision.linkedNavigation(origin);
-        if (std::none_of(view.navigationSources.begin(), view.navigationSources.end(),
-            [&](const auto &entry) { return entry.grid == &destination->definition.collision; })) return {};
-    }
-    return point + destination->definition.origin - source.definition.origin;
+    return areas.linkedPosition(from,to,point);
 }
 std::optional<std::pair<Vec, int>> npcPoint(const AreaStore &areas,const monsters::System &monsters, RegionId region, EntityId id) {
     const auto *unit=monsters.find(id);if(!unit || !unit->questNpc || !unit->alive()) return {};

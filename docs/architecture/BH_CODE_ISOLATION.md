@@ -28,19 +28,21 @@ BH::Initialize注册GameSettings、ScreenInfo、Gamefilter、Bnet、Item、Party
 | MapNotify，Modules/MapNotify/MapNotify.cpp | 官方版只遍历实际Room1物品；filterLevel／pingLevel、ITEM_NEW及通知去重；声音排除loop与SoundGroup2；边框／填充／点／像素图层独立 | 复用automap_view与scene_audio；通知状态不借用玩法单位位。读取lineColor不代表实际绘制连线。历史CN的地图揭示另见下节 |
 | Gamefilter，Modules/Gamefilter及ParsedFilterString.cpp | ASCII大写；gs:逗号列表、gs+1显示；其他词合并为名称子串；难度筛选在解析器外 | 唯一MCP解码后过滤值记录；gs缺失保持未知，全量源列表与选中身份保留 |
 | Bnet，Modules/Bnet/Bnet.cpp | 成功入退局后保存表单；非公会局递增末尾数字，15字符边界可能回1 | 复用realm前端；失败入局不算退局，密码不进入普通配置／日志／导出 |
-| Party，Modules/Party/Party.cpp | Roster一致性、最低有效partyId与邀请状态；HC尸体权限独立；循环计数节流 | 输出既有社交意图并等回包；默认开关及确认状态独立，不把已发送当已接受 |
-| ScreenInfo，Modules/ScreenInfo | 经验增量／速率、时间、区域与模板；部分窗口标题／警告代码已注释 | 复用角色投影、时钟、内容及UI；任务同步不放绘制帧发包，展示常量不改怪物规则 |
+| Party，Modules/Party/Party.cpp | Roster一致性、最低有效partyId与邀请状态；HC尸体权限独立；循环计数节流 | 已有手动组队／关系操作，尚无BH式循环自动邀请／接受策略；应输出既有社交意图并等回包，默认开关及确认状态独立，不把已发送当已接受 |
+| ScreenInfo，Modules/ScreenInfo | 经验增量／速率、时间、区域与模板；部分窗口标题／警告代码已注释 | D2X已有区域名、当前等级经验进度及腰带数量HUD，尚无完整局次统计、经验速率／升级预估和Run Tracker文件输出。历史CN的AddDrop／OnGameExit／WriteRunTrackerData包含已提醒掉落与可配置列记录；应复用角色投影与时钟，不把未观察掉落计入记录，也不照搬旧经验表 |
 | GameSettings，Modules/GameSettings | 实际OnKey为UI_GAME、无Ctrl、抬键切换；大段UI及部分功能仅注释 | 复用client_preferences和输入焦点；热键、聊天与重复键冲突需核对，不将注释列为已支持功能 |
 | ChatColor，Modules/ChatColor | 已解码BNCS0F事件4、发送者匹配、原代码页与颜色控制 | 复用chat_view；历史消息保留，不把聊天文本当格式串 |
 | StashExport，Modules/StashExport | OnLoad设置被注释，但OnKey仍可导出；物品递归、合并、JSON／Mustache与名称排除规则 | 只读已同步库存，应用层文件／剪贴板IO；未知仓库页不猜、不为导出移动物品 |
-| StatsDisplay，Drawing/Stats/StatsDisplay.cpp | 本人／佣兵行顺序、原值与已投影值区分、难度修正只算一次 | 复用remote_ui_character；全部公式／字体／布局未认证，展示结果不替代战斗规则 |
+| StatsDisplay，Drawing/Stats/StatsDisplay.cpp | 本人／佣兵行顺序、原值与已投影值区分、难度修正只算一次 | 既有人物／佣兵面板及部分FCR等投影不等于BH集中扩展属性面板；MF、FCR／FHR／IAS和档位列表可按已观察值逐项接入。历史CN含硬编码档位与职业别名，不直接套当前PD2；全部公式／字体／布局未认证，展示结果不替代战斗规则 |
 | Config.cpp、Formula.h、RuleLookupCache.h | 首冒号分割并保留规则顺序；float AST与resolver不是技能整数公式；原GUID缓存不足以覆盖全部依赖 | 内容、语言、规则、物品、人物及发现revision按实际依赖失效；错误重载保留旧规则，unknown不按0隐藏或授权操作 |
 
 GetItemDiscoveryState的发现／拥有及未鉴定候选集合、GetItemStorageType的存储域、PlaySoundWithCustomVolumeOrPriority均需窄适配；不建立GetAnyStat／FindAnyUnit／SendRawPacket式万能接口。现有能力不是空白，字段完整也不代表全部BH条件已实现。
 
 ## 历史CN模块单列
 
-历史CN另注册ItemMover和AutoTele，不注册StashExport；MultiStash目录存在但注册未核实。ItemMover的移物／药剂／回城应沿现有库存命令；AutoTele涉及额外地图加载、路径、施法及线程，尚未逐分支恢复。它们不作为本次地图显示的前置功能，也不沿用旧包解析／格子尺寸／线程或自动授予移动能力。
+历史CN另注册ItemMover和AutoTele，不注册StashExport；MultiStash目录存在但注册未核实。ItemMover有按类型选药、一键补腰带、回城／回城后进入门户、回城书余量提醒及快捷鉴定／容器移动；D2X已有普通使用、腰带列快捷键和原版单物品入带，不等于这些组合快捷操作。其消费者应沿现有库存／技能／交互命令，PD2增强显式隔离，不把额外转移手势重新混入原版规则。
+
+AutoTele涉及额外地图加载、路径、施法及线程，尚未逐分支恢复；D2X已有独立调试导航／任务AI，不宜为它另建重复导航器。上述模块不作为地图显示的前置功能，也不沿用旧包解析／格子尺寸／线程或自动授予移动能力。MultiStash不能仅因源码目录存在就当作可独立提供的本地多页仓库，仍需核对注册、服务端与保存消费者。
 
 ## 小地图底图、投影与BH叠层
 
@@ -50,7 +52,7 @@ BH没有独立实现原版的小地图底图、城镇拼图、Fade或原生裁�
 | --- | --- |
 | Drawing/Hook.cpp::ScreenToAutomap | 原生整数x／y先乘32，X依次除2／divisor、Y除4／divisor，再减地图Offset，加(8,-8)；小图另加(-1,+5)。新增AutomapProjection::bhPoint独立实现该顺序，箱子、连线、怪物及附加文字共用，不重复补偏移 |
 | 原版地形投影与显示 | AutomapProjection::cell保留原相机和图元分别截断、大小图除10／20、平移及单侧栏原点；DC6原偏移、PL2 Fade、地图裁剪和单位锚点接纳仍由automap_view／automap_assets执行，不借BH常量替换原版 |
-| Drawing/Basic/Crosshook | 公开官方／历史CN源码都是13点、12段、X±8／Y±4轮廓。原版动态单位保留这一路径；用户提供的当前CN截图显示细线轴向“+”，PD2 NPC／怪物／任务点改用半径4像素的一像素“+”。这是截图复刻差异，不声称公开Crosshook就是该样式；怪物仍受PD2能力与Show Monsters双门控 |
+| Drawing/Basic/Crosshook | 公开官方／历史CN源码都是13点、12段、X±8／Y±4轮廓。NPC及其他原生单位在所有模式保留原路径，任务点保留既有十二段轮廓；仅PD2怪物使用半径4像素的一像素“+”。“+”是按用户CN截图选择的显示样式，不把截图中的白色点推定为修改NPC的依据，也不声称公开Crosshook就是该样式；怪物仍受PD2能力与Show Monsters双门控 |
 | Drawing/Basic/Boxhook、Linehook | 传原矩形端点或一条直线；历史CN箱子以坐标减1、size2调用。现有3×3绘制暂保留，原D2Gfx端点／混色及BH裁剪仍待像素对照 |
 | 历史CN MapNotify::OnAutomapDraw | 怪物、附魔／免疫文字、箱子及LK线路均先ScreenToAutomap。实际文字偏移有活动的-20／-8分支，不能引用已注释的-14作为已实现规则；当前文字基线／配置与图层仍待核对 |
 | 官方MapNotify与历史CN边界 | 官方固定提交只有物品通知／图元；完整怪物／箱子／出口／LK线路来自历史CN。既有D2X引导线的三类颜色、端点圆点和文字排布尚未找到同版本依据，不将其称为准确BH复刻 |
@@ -155,7 +157,7 @@ frontend（仅PD2模式）→ client/pd2/automap::updateAutomapRevealCn
 | 关闭／重开及调试覆盖 | 关闭后图元回731，完成缓存重开无需再借房间；on可覆盖关闭的BH偏好，auto恢复偏好；show=false完成开图仍不显示地图。新137场景running期间off取消并释放会话，重新on后从布局重新开始 |
 | 不同生成类型／换区 | 8号洞窟仅本层27房间；40号城镇步行闭包仅40–45，447房间；140号PD2预设仅本层361房间、2505图元，借还平衡。均为管理旅行准备条件，不作为正常地图开启、战斗或掉落流程证明 |
 | 137号UberDiabloLvl无图元边界 | 当前MPQ LevelType=26、Layer=98；18房间导出零图元。返回partial及“Current MPQ automap rules produced no artwork…”原因，不缓存为完成、不自造替代地图；仍需原CN特殊自动地图入口依据 |
-| 当前CN用户截图／PD2野外实际怪物 | NPC白色及按品质着色的怪物均为细线“+”；原版保持原十二段形状，不显示PD2怪物点。公开Crosshook轮廓与截图不同，版本边界见上表 |
+| 当前CN用户截图／PD2野外实际怪物 | 按品质着色的PD2怪物“+”已有运行观察；NPC现恢复所有模式共用原生十二段标记，未将截图白点作为NPC改形依据。本次恢复需另以新EXE核对，不沿用此前NPC“+”画面作为验收；原版不显示PD2怪物点 |
 | 1280×800图形客户端，城镇及Blood Moor | 大小图、左右切换、每键16像素正／负平移、Home、背包／人物侧栏避让、Names／Party开关均可操作；大图No→Center→Everything→Auto、小图No→Everything→Auto，正常Automap Options中Center转小图回No。仅验证所列操作和画面，没有原版同分辨率像素金图 |
 | 实际收包怪物及Objects.Id=5容器 | 修复后大小图出现怪物十字及箱子白框，负平移可用；Show Chests关闭撤框，重开恢复。容器由宿主管理生成，只用于准备显示条件，不证明自然生成／交互／掉落；文字基线、矩形端点和边缘裁剪仍未完成原版对照 |
 

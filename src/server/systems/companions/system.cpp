@@ -40,11 +40,12 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
     } else if(pet.pendingAction) {
         const auto accepted=ports_.skills.requestCast(*pet.pendingAction);
         if(isDeferred(accepted.status)) return accepted;
-        if(!accepted && pet.kind==Kind::Hireling) {
-            if(pet.pendingHirelingUseSkill) {ports_.monsters.neutralMode(id);pet.nextDecision=tick.tick+10;}
+        if(!accepted && (pet.kind==Kind::Hireling || pet.pendingNecroAction)) {
+            if(pet.pendingHirelingUseSkill || pet.pendingNecroUseSkill) {ports_.monsters.neutralMode(id);pet.nextDecision=tick.tick+10;}
             else pet.cancelAi=true;
         }
         pet.pendingHirelingUseSkill=false;
+        pet.pendingNecroAction=pet.pendingNecroUseSkill=false;
         pet.pendingAction.reset();
     } else if(const auto *body=ports_.monsters.find(id);body && body->alive() && tick.tick<pet.nextDecision && tick.tick<=pet.expires && !pet.removeAt) {
         ports_.monsters.scheduleAi(id,pet.nextDecision);return {DomainStatus::Applied,std::monostate{}};
@@ -59,7 +60,12 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
     const auto *body=ports_.monsters.find(id);
     if(body) {
         auto due=std::max(tick.tick+1,found->second.nextDecision);
-        if(body->revived() && body->alive()) {
+        const auto special=body->curseControl.ai;
+        const auto control=ports_.ai.read().controllers.find(id);
+        const bool nativeNecroControl=body->necroSummon && body->rule.stats && !body->rule.stats->pd2 &&
+            (special==CurseAi::DimVision || special==CurseAi::Terror || special==CurseAi::Taunt ||
+             (control!=ports_.ai.read().controllers.end() && !control->second.pending.empty()));
+        if((body->revived() || nativeNecroControl) && body->alive()) {
             // A newly accepted owner-follow path belongs to companions until
             // it ends; invoking the family here would overwrite it immediately.
             if(!found->second.nativePetMoving || body->route.empty()) {
@@ -238,7 +244,7 @@ StepStatus System::advancePet(EntityId only,TickContext tick) {
         if(body->amazonPet && p && p->persistent.player.hp>0) {if(amazonStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(body->assassinPet) {if(assassinStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(body->druidPet) {if(refreshDruid(pet,tick)==StepStatus::Blocked || (!pet.removeAt && druidStep(pet,tick)==StepStatus::Blocked)) blocked=true;++it;continue;}
-        if(body->necroSummon && p && p->persistent.player.hp>0) {if(refreshNecro(pet,tick)==StepStatus::Blocked) blocked=true;if(necroStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
+        if(body->necroSummon && p && p->persistent.player.hp>0) {if(refreshNecro(pet,tick)==StepStatus::Blocked || necroStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(!p || p->area!=body->area || p->persistent.player.hp<=0) {++it;continue;}
         if(body->amazonPet) {++it;continue;}
         const auto &area=ports_.areas.at(body->area);

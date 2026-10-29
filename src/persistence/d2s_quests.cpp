@@ -47,7 +47,7 @@ unsigned questBits(const QuestRecord &quest, size_t index) {
         return stage >= 8 ? 0x2001 : stage >= 7 ? 0x2002 : stage >= 4 ? 0x1C : stage >= 2 ? 0xC : stage == 1 ? 4 : 0;
     case 3: return stage >= 4 ? 0x2001 : stage == 3 ? 0x1C : stage == 2 ? 0xC : stage == 1 ? 4 : 0;
     case 4: return stage >= 6 ? 0x2001 : stage >= 5 ? 0x2002 : stage >= 2 ? 0xC : stage == 1 ? 4 : 0;
-    case 5: return stage >= 5 ? 0x2001 : stage >= 3 ? 0x2002 : stage == 2 ? 0x1C : stage == 1 ? 4 : 0;
+    case 5: return stage >= 4 ? 0x2001 : stage == 3 ? 0x2002 : stage == 2 ? 0x1C : stage == 1 ? 4 : 0;
     }
     return 0;
 }
@@ -79,7 +79,11 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
                 break;
             case 3: quest.stage = rewarded ? 4 : entered ? 3 : flags & 8 ? 2 : started ? 1 : 0; break;
             case 4: quest.stage = rewarded ? 6 : pending ? 5 : flags & 8 ? 2 : started ? 1 : 0; break;
-            case 5: quest.stage = rewarded ? 5 : pending ? 3 : entered ? 2 : started ? 1 : 0; break;
+            case 5:
+                // A1Q6's Warriv183 grants the reward before the separate
+                // act-change word. Do not infer a journey from that reward.
+                quest.stage = rewarded ? (player.completedActs[difficulty][0] ? 5u : 4u) : pending ? 3u : entered ? 2u : started ? 1u : 0u;
+                break;
             }
         }
         if (word(sections.quests,10 + difficulty * 96 + 0x52) & 1u) {
@@ -382,6 +386,8 @@ int validateD2sQuestRecords(const QuestBook &book) {
             "Forgotten Tower quest progress");
         require(difficulty[4].stage <= uint32_t(ToolsStage::Imbued) && !difficulty[4].flags,
             "Tools of the Trade quest progress");
+        // PassageReady(4) already owns REWARDGRANTED; Completed(5) records
+        // the later normal act transfer. Both are valid native v96 states.
         require(difficulty[5].stage <= uint32_t(SlaughterStage::Completed) && !difficulty[5].flags,
             "Sisters to the Slaughter quest progress");
         rewards += den.stage == uint32_t(DenStage::Rewarded);

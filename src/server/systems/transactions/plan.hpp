@@ -51,6 +51,7 @@ struct InventoryEdit {
     std::optional<EntityId> lootedCorpse{}; // Paired owner/recipient inventory transaction.
     std::optional<std::optional<ItemInstance>> ironGolem{};
     std::vector<ResourceMaximums> resourceMaximums{};
+    std::vector<SkillPetLimitChange> petLimitChanges{};
     std::optional<ResourceMaximums> resourceBase{};
     std::optional<UnitRandomEdit> random{};
     std::optional<SkillManaPayment> skillPayment{};
@@ -78,6 +79,7 @@ struct CharacterEdit {
     std::shared_ptr<const EquipmentRules> equipment{};
     std::optional<std::optional<ItemInstance>> ironGolem{};
     std::vector<ResourceMaximums> resourceMaximums{};
+    std::vector<SkillPetLimitChange> petLimitChanges{};
     // Candidate resources may already include callback effects before a later
     // recovery pulse; this supplies their current cap for the final refresh.
     std::optional<ResourceMaximums> resourceBase{};

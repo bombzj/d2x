@@ -130,7 +130,7 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     const ActorContext targetActor{target->player,target->actor,target->area,area.generation,0,actor.tick};
     transactions::CharacterEdit edit{targetActor,target->inventoryRevision,target->characterRevision,resources.record()};
     edit.transient=projectEffectAttributes(recovery.states,actor.tick);
-    edit.resourceBase=resources.maximum();
+    edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();
     for(const int state:application.clearedStates) if(!recovery.states.hasState(state,actor.tick)) edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,state,false});
     for(const auto &removed:application.removed) if(removed.effect.spec.state.id>=0 && !recovery.states.hasState(removed.effect.spec.state.id,actor.tick))
         edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,removed.effect.spec.state.id,false});
@@ -249,7 +249,7 @@ DomainResult<> System::commitPlayerReception(PlayerReceptionPlan &&plan) {
        (current==state_.players.end()?plan.recovery.states.size()==0:plan.recovery.states.sharesSnapshot(current->second.states)))
         return {DomainStatus::Applied,std::monostate{}};
     transactions::CharacterEdit edit{plan.actor,plan.inventoryRevision,plan.characterRevision,plan.character};
-    edit.transient=std::move(plan.transient);edit.resourceBase=plan.maximum;edit.publicFacts=std::move(plan.facts);
+    edit.transient=std::move(plan.transient);edit.resourceBase=plan.maximum;edit.petLimitChanges=std::move(plan.totals.petLimitChanges);edit.publicFacts=std::move(plan.facts);
     if(plan.random) edit.random=transactions::UnitRandomEdit{plan.random->first,plan.random->second};
     auto next=state_;next.players.insert_or_assign(plan.actor.actor,std::move(plan.recovery));
     auto prepared=ports_.transactions.prepare(std::move(edit));if(!prepared) return {prepared.status,{}};
@@ -410,7 +410,7 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
     }
 
     resources.seedResources(edit.player.hp,edit.player.mana,edit.player.stamina);resources.sample(states,true);
-    edit.player=resources.record();edit.resourceBase=resources.maximum();
+    edit.player=resources.record();edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();
     edit.transient = projectEffectAttributes(states,actor.tick);
     const auto clock=reactionTiming(*p,"gh");
     const bool getHit=!deferAction && source && hit.getHit.value_or(!hit.softHit) && (dealt>0 || hit.stunFrames) && edit.player.hp>0 && !hit.knockback && clock &&
@@ -424,7 +424,7 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
         const auto removed=states.endModeEffects({},observe);
         for(const auto &entry:removed) if(entry.effect.spec.state.id>=0 && !states.hasState(entry.effect.spec.state.id,actor.tick))
             edit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,entry.effect.spec.state.id,false});
-        edit.player=resources.record();edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,actor.tick);
+        edit.player=resources.record();edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(states,actor.tick);
     }
     actions::State::PreparedRecovery recoveryAction;
     if(getHit || knockback) {
@@ -453,7 +453,7 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
         inventory.changes.push_back({item.id,item.revision,ItemChangeKind::DurabilityChanged,item.location,item.location,item.quantity});
         inventory.character=resource.player;inventory.transient=resource.transient;inventory.publicFacts=resource.publicFacts;inventory.knockback=resource.knockback;
         inventory.resourceMaximums=resource.resourceMaximums;
-        inventory.resourceBase=resource.resourceBase;
+        inventory.resourceBase=resource.resourceBase;inventory.petLimitChanges=resource.petLimitChanges;
         inventory.random=resource.random;
         change=std::move(inventory);
     }

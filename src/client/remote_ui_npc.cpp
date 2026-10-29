@@ -122,7 +122,7 @@ void RemoteUiClients::Impl::projectInteractions() {
             if(!row || !mon.number(*row,"interact").value_or(0)) continue;
             for (size_t sub=0; sub<extra.rows().size(); ++sub)
                 if (extra.value(sub,"Id")==mon.value(*row,"MonStatsEx")) {
-                    npcScene.npcs[npcId(key.id)]={true,extra.number(sub,"OverlayHeight").value_or(0)-1};
+                    npcScene.npcs[npcId(key.id)]={true,int(uint8_t(extra.number(sub,"OverlayHeight").value_or(0)))-1};
                     break;
                 }
         }

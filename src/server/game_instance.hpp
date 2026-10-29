@@ -35,8 +35,13 @@ class GameInstance {
     GameSystems systems_;
     Simulation simulation_;
     bool simulationPending_{};
-    struct Pending { PlayerId player; GameCommand command; };
+    struct Pending {
+        PlayerId player; GameCommand command;
+        bool awaitingCrafting{};
+        CommandStatus dispatchedResult{CommandStatus::Unavailable};
+    };
     std::deque<Pending> commands_;
+    bool pendingSynchronousCommand(PlayerId,uint64_t sequence=0) const;
     std::array<DiagnosticCommand, 512> commandHistory_{};
     uint64_t commandHistoryNext_ = 1;
     void observeCommand(PlayerId, uint64_t sequence, CommandStatus) noexcept;

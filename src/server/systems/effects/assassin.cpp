@@ -27,7 +27,7 @@ DomainResult<> System::setNativeSkillState(EntityId id,int state,bool active,uin
         PlayerResourceTrace resources(*player,tick,{},ports_.areas.statTime(player->area));resources.sample(states,true);
         const ActorContext actor{player->player,id,player->area,ports_.areas.at(player->area).generation,0,tick};
         transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,resources.record()};
-        edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,tick);
+        edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(states,tick);
         edit.publicFacts.emplace_back(StateFact{id,0,player->area,state,active});
         auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
         const auto result=ports_.transactions.commit(std::move(*plan.value));if(result) publishPlayers(next.players);return result;
@@ -90,7 +90,7 @@ DomainResult<> System::progressiveValue(const ActorContext &actor,const Assassin
     PlayerResourceTrace resources(*player,actor.tick,{},ports_.areas.statTime(actor.area));
     if(!states.writeNativeStats(handle,writes,rules,spec,[&]{resources.sample(states,true);})) return {DomainStatus::Unavailable,{}};
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,resources.record()};
-    edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,actor.tick);
+    edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(states,actor.tick);
     auto prepared=ports_.transactions.prepare(std::move(edit));if(!prepared) return {prepared.status,{}};
     auto next=state_;next.players[actor.actor].states=std::move(states);
     const auto committed=ports_.transactions.commit(std::move(*prepared.value));if(committed) publishPlayers(next.players);

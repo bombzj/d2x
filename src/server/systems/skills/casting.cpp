@@ -816,7 +816,14 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
         if(!isDeferred(result)) pending.reset();
         return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
     }
-    case ActivationProgram::AmazonSummon: return skill.summon && skill.summon->amazon?ports_.companions.amazon(actor,skill,position):ports_.companions.necro(actor,skill,position,target);
+    case ActivationProgram::AmazonSummon: {
+        if(skill.summon && skill.summon->amazon) return ports_.companions.amazon(actor,skill,position);
+        std::shared_ptr<Release> local;auto &pending=continuation?*continuation:local;
+        if(!pending) pending=std::make_shared<Release>(Release{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick});
+        const auto result=activateAmazonSummon(*pending,actor,position);
+        if(!isDeferred(result)) pending.reset();
+        return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
+    }
     case ActivationProgram::AmazonMagic: return ports_.effects.amazonMagic(actor,skill);
     case ActivationProgram::Teleport: return ports_.travel.castTeleport(actor,{actor.area,actor.areaGeneration,position},0);
     case ActivationProgram::Hydra: return ports_.companions.hydra(actor,skill,position);

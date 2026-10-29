@@ -21,6 +21,7 @@ std::optional<OnlineUnit> DebugAi::Impl::find(const Context &c,const Selector &s
         if(key.type!=selector.type || !unit.position || !unit.classId) continue;
         const auto identity=key.type==1?c.combat.monsterClass(unit):unit.classId;
         if(identity!=selector.identity || (key.type==1 && !corpses && onlineMonsterCorpse(unit))) continue;
+        if(selector.superUnique && c.combat.superUnique(unit)!=selector.superUnique) continue;
         float d=(position(*unit.position)-c.position).length();
         // Prefer a live target, but an actually assigned corpse is evidence of
         // the "target dead" postcondition, never evidence of personal kill credit.
@@ -40,6 +41,8 @@ bool DebugAi::Impl::owned(const Context &c,std::string_view code) const {
 bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     const auto &view=c.session.read();
     if(!policy.enabled || c.town.read().town || view.world.npcRequested || view.world.waypointSource) return false;
+    const auto now=Clock::now();
+    std::erase_if(bypassedThreats,[&](const auto &entry){return now>=entry.second;});
     const auto clearLine=[&](const OnlineUnit &unit) {
         const auto *map=c.town.map();const auto origin=c.town.read().origin;if(!map || !origin) return false;
         const Vec offset{float(origin->x),float(origin->y)};
@@ -49,11 +52,14 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     const bool nearObjective=objective && (position(*objective->position)-c.position).length()<=policy.engage;
     std::vector<OnlineUnit> enemies;std::optional<OnlineUnit> chosen;float nearest=float(policy.engage);
     for(const auto &[key,unit]:view.world.units) {
-        if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false)) continue;
+        if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false) ||
+            bypassedThreats.contains({key,unit.assignmentRevision})) continue;
         const float d=(position(*unit.position)-c.position).length();
         const bool visible=clearLine(unit);
         if(d<=policy.engage && visible) enemies.push_back(unit);
-        const bool relevant=policy.scope=="clear" || nearObjective || d<=policy.radius;
+        const bool clearing=goal.kind==Kind::Quest && goal.area==area && cursor<goals.size() && questRun.step<goals[cursor].steps.size() &&
+            goals[cursor].steps[questRun.step].action==QuestAction::Clear;
+        const bool relevant=policy.scope=="clear" || clearing || nearObjective || (policy.scope=="defensive" && d<=policy.radius);
         if(relevant && visible && d<nearest) {nearest=d;chosen=unit;}
     }
     if(nearObjective && c.combat.hostile(*objective)) chosen=objective;
@@ -65,13 +71,27 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     }
     if(combatTarget!=chosen->key) {
         cancelWalk(c);combatTarget=chosen->key;note("combat-target",std::to_string(chosen->key.id));
+        combatLife=chosen->lifePercent;combatProgress=now;
         if(travelPhase==TravelPhase::CrossWait && !legUnit) {
             travelPhase=TravelPhase::Route;legDestination.reset();
         }
     }
-    const auto now=Clock::now();
+    if(combatLife!=chosen->lifePercent) {combatLife=chosen->lifePercent;combatProgress=now;}
+    const bool required=(goal.kind==Kind::Hunt && objective && chosen->key==objective->key) ||
+        (goal.kind==Kind::Quest && goal.area==area && cursor<goals.size() && questRun.step<goals[cursor].steps.size() &&
+         goals[cursor].steps[questRun.step].action==QuestAction::Clear);
+    if(!required && chosen->lifePercent && now-combatProgress>=std::chrono::seconds(6)) {
+        // A queued cast is not a hit. Do not let an incidental target with no
+        // observed life change indefinitely consume the high-level journey.
+        // This only resumes normal input; required kills/clear remain intact.
+        bypassedThreats[{chosen->key,chosen->assignmentRevision}]=now+std::chrono::seconds(10);
+        note("unproductive-threat-bypassed",std::to_string(chosen->key.id));
+        stop(c.walk,c.control,c.combat);walkIntent=nullptr;combatTarget.reset();retreatPoint.reset();return false;
+    }
     if(retreatPoint) {
-        if(now<retreatUntil && (position(*retreatPoint)-c.position).length()>2) {
+        if(walkState(c)=="failed") {
+            note("retreat-unavailable",c.walk.snapshot().value("reason",std::string{}));
+        } else if(now<retreatUntil && (position(*retreatPoint)-c.position).length()>2) {
             wait("retreat","Keeping distance from the observed close crowd");walkPoint(c,*retreatPoint);return true;
         }
         cancelWalk(c);retreatPoint.reset();
@@ -90,9 +110,11 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
                 const float angle=float(direction)*6.28318530718f/16;
                 const Vec candidate=c.position+Vec{std::cos(angle),std::sin(angle)}*float(policy.retreat);
                 if(candidate.x<0 || candidate.y<0 || candidate.x>65535 || candidate.y>65535) continue;
-                const Vec local=candidate-offset+Vec{.5f,.5f};
-                if(map->grid.path(c.position-offset+Vec{.5f,.5f},local,false,playerMovement,true).empty()) continue;
-                const float score=safety(candidate);if(score>best) {best=score;safe=point(candidate);}
+                const auto requested=point(candidate);const auto actual=position(requested);
+                const Vec local=actual-offset+Vec{.5f,.5f};
+                const auto path=map->grid.path(c.position-offset+Vec{.5f,.5f},local,false,playerMovement,true);
+                if(path.empty() || point(path.back()+offset)!=requested) continue;
+                const float score=safety(actual);if(score>best) {best=score;safe=requested;}
             }
         }
         retreatReady=now+std::chrono::seconds(4);
@@ -147,7 +169,10 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     return true;
 }
 void DebugAi::Impl::acquire(Context &c,const Goal &goal) {
-    if(owned(c,goal.item)) {advance(c,"Owned item observed: "+goal.item);return;}
+    if(acquireItem(c,goal)) advance(c,"Owned item observed: "+goal.item);
+}
+bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
+    if(owned(c,goal.item)) return true;
     const auto now=Clock::now();const auto &world=c.session.read().world;
     if(pickupIssued) {
         wait("pickup-wait","Waiting for actual item ownership, not merely a related inventory update");
@@ -155,7 +180,7 @@ void DebugAi::Impl::acquire(Context &c,const Goal &goal) {
             (world.itemRequest->state==OnlineItemRequest::State::Rejected || world.itemRequest->state==OnlineItemRequest::State::Interrupted ||
              world.itemRequest->state==OnlineItemRequest::State::TimedOut)) throw std::runtime_error("Native pickup did not confirm ownership");
         if(now>=actionDeadline) throw std::runtime_error("Pickup ownership was not observed; request is not blindly repeated");
-        return;
+        return false;
     }
     std::optional<OnlineItem> ground;float nearest=std::numeric_limits<float>::max();
     for(const auto &[id,item]:world.items) {
@@ -164,19 +189,19 @@ void DebugAi::Impl::acquire(Context &c,const Goal &goal) {
     }
     if(ground) {
         if(nearest>3) {
-            if(openDoor(c)) return;
-            wait("pickup-approach","Approaching the assigned ground item");walkPoint(c,{ground->groundX,ground->groundY});return;
+            if(openDoor(c)) return false;
+            wait("pickup-approach","Approaching the assigned ground item");walkPoint(c,{ground->groundX,ground->groundY});return false;
         }
         cancelWalk(c);OnlineItemCommand take;take.action=OnlineItemAction::Pickup;take.item=ground->id;take.itemRevision=ground->revision;
         if(c.inventory.submit(c.session,take)) {
             pickupId=ground->id;pickupIssued=true;actionDeadline=now+std::chrono::seconds(12);note("pickup-submitted",goal.item);
         } else wait("pickup-blocked",c.inventory.reason());
-        return;
+        return false;
     }
     if(objectIssued) {
         wait("item-source-wait","Source interaction submitted; waiting for the actual ground item");
         if(now>=actionDeadline) throw std::runtime_error("Source did not publish the requested item; no drop or quest eligibility is fabricated");
-        return;
+        return false;
     }
     if(goal.sourceObject) {
         const auto source=find(c,Selector{2,*goal.sourceObject,"item source"},true);
@@ -186,21 +211,24 @@ void DebugAi::Impl::acquire(Context &c,const Goal &goal) {
             if(walk(c,{{"goal","unit"},{"unitType",source->key.type},{"unitId",source->key.id},{"interact",true}})) {
                 objectIssued=true;actionDeadline=now+std::chrono::seconds(12);++interactions;cancelWalk(c);note("item-source-submitted",goal.item);
             }
-            return;
+            return false;
         }
     }
-    if(goal.sourceObject && approachKnown(c,Selector{2,*goal.sourceObject,"item source"})) return;
-    explore(c,"item "+goal.item);
+    if(goal.sourceObject && approachKnown(c,Selector{2,*goal.sourceObject,"item source"})) return false;
+    explore(c,"item "+goal.item);return false;
 }
 void DebugAi::Impl::returnTown(Context &c) {
-    if(c.town.read().town) {advance(c,"Native town scene observed");return;}
+    if(reachTown(c)) advance(c,"Native town scene observed");
+}
+bool DebugAi::Impl::reachTown(Context &c) {
+    if(c.town.read().town) return true;
     const auto &view=c.session.read();const auto now=Clock::now();
     if(!view.load.townArea) throw std::runtime_error("Current native act has no assigned town");
     if(portalIssued) {
         if(portalUsed) {
             wait("town-portal-wait","Waiting for the native town scene");
             if(now>=actionDeadline) throw std::runtime_error("Own portal was used but town was not observed");
-            return;
+            return false;
         }
         std::optional<OnlineMapTarget> portal;
         for(const auto &entry:c.town.read().mapTargets) if(entry.interaction==OnlineMapInteraction::Portal && entry.destination==view.load.townArea) {
@@ -214,21 +242,21 @@ void DebugAi::Impl::returnTown(Context &c) {
                 portalUsed=true;actionDeadline=now+std::chrono::seconds(15);
                 phase="town-portal-wait";reason="Waiting for the native town scene";
             }
-            return;
+            return false;
         }
         if(now>=actionDeadline && !view.world.townPortalPending) {
             portalIssued=false;cancelWalk(c);
             note("town-portal-unconfirmed","No usable own portal observed; continuing by ordinary travel without recasting");
-            return;
+            return false;
         }
-        wait("town-portal-wait","Waiting for a newly assigned own portal");return;
+        wait("town-portal-wait","Waiting for a newly assigned own portal");return false;
     }
     if(!portalAttempted) for(const auto &entry:c.town.read().mapTargets)
         if(entry.interaction==OnlineMapInteraction::Portal && entry.destination==view.load.townArea) {
             const auto unit=view.world.units.find(entry.unit);
             if(unit!=view.world.units.end() && unit->second.portalOwner==view.load.playerUnitId) {
                 portalAttempted=portalIssued=true;oldPortals.clear();actionDeadline=now+std::chrono::seconds(12);
-                note("existing-own-portal-observed");return;
+                note("existing-own-portal-observed");return false;
             }
         }
     // A scroll/tome is a real resource. If none is available, use normal
@@ -238,10 +266,10 @@ void DebugAi::Impl::returnTown(Context &c) {
         oldPortals.clear();for(const auto &[key,unit]:view.world.units)
             if(key.type==2 && unit.portalOwner==view.load.playerUnitId) oldPortals.insert(key.id);
         cancelWalk(c);
-        if(c.control.townPortal()) {portalIssued=true;actionDeadline=now+std::chrono::seconds(12);note("town-portal-submitted");return;}
+        if(c.control.townPortal()) {portalIssued=true;actionDeadline=now+std::chrono::seconds(12);note("town-portal-submitted");return false;}
     }
     wait("return-walking","No usable town portal; using normal travel back to town");
-    if(travel(c,*view.load.townArea)) advance(c,"Town reached by normal travel");
+    return travel(c,*view.load.townArea);
 }
 void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
     const auto &view=c.session.read();const auto slot=goal.questSlot;
@@ -276,6 +304,7 @@ void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
     if(now>=actionDeadline) throw std::runtime_error("NPC did not confirm item consumption and reward readiness");
 }
 void DebugAi::Impl::execute(Context &c,const Goal &goal) {
+    if(goal.kind==Kind::Quest) {quest(c,goal);return;}
     if(goal.kind==Kind::Acquire && owned(c,goal.item)) {advance(c,"Owned item already satisfies acquire: "+goal.item);return;}
     if(goal.area && (area!=goal.area || travelDestination) && !travel(c,*goal.area)) return;
     switch(goal.kind) {
@@ -283,6 +312,10 @@ void DebugAi::Impl::execute(Context &c,const Goal &goal) {
     case Kind::ReturnTown: returnTown(c);return;
     case Kind::Acquire: acquire(c,goal);return;
     case Kind::Deliver: deliver(c,goal);return;
+    case Kind::Restock:
+        if(reachTown(c) && restock(c)) advance(c,"Observed potion reserves satisfy restock");
+        return;
+    case Kind::Quest: return;
     case Kind::Find: case Kind::Hunt: break;
     }
     const auto unit=find(c,*goal.target,goal.kind==Kind::Hunt || !goal.interact);

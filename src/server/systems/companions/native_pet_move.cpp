@@ -32,6 +32,7 @@ bool followNativePet(const Ports &ports,Companion &pet,const PlayerState &owner,
     const auto ownerPoint=owner.position+ownerArea.definition.origin-area.definition.origin;
     const int distance=unitCoordinateDistanceWithSize(int(body.position.x),int(body.position.y),int(ownerPoint.x),int(ownerPoint.y),body.rule.size);
     int count{};for(const auto &[id,entry]:ports.monsters.read().actors) {(void)id;if(entry.owner==owner.player && entry.alive()) ++count;}
+    if(options.registeredCount) count=int(ports.monsters.pets(owner.player,true).size());
     const auto bound=std::min((count>>1)+options.spacing,36);
     const bool neutral=!ownerArea.definition.town && !owner.moving && !ports.skills.read().busy(owner.actor,tick);
     if(options.motion<0 && (distance>1 || !neutral || combat) && target && !area.definition.town && distance<=80) return false;

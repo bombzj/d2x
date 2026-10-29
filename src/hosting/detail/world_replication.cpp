@@ -226,7 +226,7 @@ void NativeRealmService::publishObjects() {
             }));
             continue;
         }
-        if(old!=peer.objects.end() && (object.rule.chest || object.rule.shrine)) {
+        if(old!=peer.objects.end() && (object.rule.chest || object.rule.shrine || object.rule.operation==18)) {
             // Existing-unit changes belong to frozen ObjectFacts. Retain the
             // delivered baseline even if a partial frame exposes newer state.
             next.at(object.id)=old->second;

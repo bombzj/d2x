@@ -194,6 +194,19 @@ void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
     if (original->frames.empty() ||
         !parseClassicFontTable(std::string_view(reinterpret_cast<const char *>(tbl.data()), tbl.size()), font))
         throw std::runtime_error("Original UI font is missing: " + path);
+    // D2Win FONT / DrawFramedText: language metrics multiply the original
+    // Woo! header height, independently of the DC6 glyph's pixel height.
+    int lineHeight = 17, baselineOffset = 3;
+    switch (archives.languageGameLocale) {
+    case 0: case 1: case 2: case 3: case 4: lineHeight = 16; break;
+    case 5: lineHeight = 15; baselineOffset = 5; break;
+    case 6: baselineOffset = 5; break;
+    case 7: lineHeight = 14; baselineOffset = 2; break;
+    case 8: lineHeight = 13; break;
+    default: break;
+    }
+    font.framedLineHeight = lineHeight * tbl[10] / 10;
+    font.framedBaselineOffset = baselineOffset * tbl[10] / 10;
     collectFontCodepoints(font.codes);
     font.ready = true;
 }

@@ -352,6 +352,13 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         definition.itemCheckStart=skillTable.number(row,"ItemCheckStart").value_or(0)!=0;break;
     }
     const auto &petTypes=data.tables.at("pettype");
+    if(!data.pd2Host) {
+        const auto &monsters=data.tables.at("monstats");
+        const auto skeleton=findSkillTableRow(monsters,"Id","necroskeleton");
+        server::MonsterRule probe;prepareMonsterPlacementRules(data,skeleton,probe);
+        prepared->nativePetProbeClass=compiledMonsterIndex(monsters,skeleton);
+        prepared->nativePetProbeCollision=probe.spawnCollision;
+    }
     for(size_t pet=0;pet<petTypes.rows().size();++pet) if(!petTypes.value(pet,"pet type").empty()) {
         const int type=petTypes.number(pet,"idx").value_or(int(pet));
         prepared->petTypeBaseLimits.emplace(type,petTypes.number(pet,"basemax").value_or(0));

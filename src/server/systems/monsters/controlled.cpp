@@ -21,6 +21,12 @@
 #include <vector>
 #include <span>
 namespace d2x::server::monsters {
+DomainResult<> System::clearMinionLeash(EntityId id) {
+    auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;if(unit.mainOwnerCleared) return {DomainStatus::Applied,std::monostate{}};
+    if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    unit.mainOwnerCleared=true;++unit.revision;return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::attackProfile(EntityId id,std::shared_ptr<const StatList> mode,uint64_t expected,uint64_t next) {
     auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.nativeStats) return {DomainStatus::InvalidActor,{}};
     auto &unit=found->second;if(unit.combatRandom!=expected) return {DomainStatus::Stale,{}};
@@ -340,11 +346,14 @@ bool System::validateActors(const ActorPublication &plan) const {
                 const bool resurrection=live->hireling && !live->alive() && candidate.hireling && live->owner==candidate.owner;
                 const bool following=live->alive() && live->owner==candidate.owner && live->rule.petType==candidate.rule.petType &&
                     owner && owner->rules.skills && (candidate.hireling || owner->rules.skills->warpPetTypes.contains(candidate.rule.petType));
-                if((!resurrection && !following) || !candidate.alive() || candidate.roomless ||
+                const bool revive=!live->alive() && candidate.revived() &&
+                    (candidate.reviveCorpseCollisionCleared || (candidate.petUnregistered && candidate.deathMode)) &&
+                    owner && owner->rules.skills && !owner->rules.skills->pd2 && candidate.nativeMinionOwner==owner->actor;
+                if((!resurrection && !following && !revive) || (!candidate.alive() && !(revive && candidate.petUnregistered)) || candidate.roomless ||
                     !owner || !owner->entered || !area || area->generation!=placement.generation ||
-                    candidate.area!=owner->area || placement.area!=candidate.area ||
+                    (!revive && candidate.area!=owner->area) || placement.area!=candidate.area ||
                     placement.position.x!=candidate.position.x || placement.position.y!=candidate.position.y ||
-                    candidate.position.x!=std::floor(owner->position.x)+.5f || candidate.position.y!=std::floor(owner->position.y)+.5f ||
+                    (!revive && (candidate.position.x!=std::floor(owner->position.x)+.5f || candidate.position.y!=std::floor(owner->position.y)+.5f)) ||
                     !area->definition.activation.room(candidate.position)) return false;
             } else if(candidate.area!=live->area || candidate.position.x!=live->position.x || candidate.position.y!=live->position.y || candidate.roomless!=live->roomless) return false;
         } else {
@@ -487,8 +496,9 @@ DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec positio
 }
 DomainResult<> System::stageRetirements(effects::AuraUnitPublication &publication,std::span<const EntityId> ids,uint64_t tick) const {
     for(const auto id:ids) {
-        const auto *unit=find(id);if(!unit || !unit->owner) return {DomainStatus::InvalidActor,{}};
+        const auto *unit=find(id);
         if(publication.actors) if(const auto staged=publication.actors->actors.find(id);staged!=publication.actors->actors.end()) unit=&staged->second;
+        if(!unit || !unit->owner) return {DomainStatus::InvalidActor,{}};
         if(!unit->alive()) continue;
         auto prepared=prepareDeathActor(*unit,tick);if(!prepared) return {prepared.status,{}};
         // These actors leave the player's active pet list without a hostile

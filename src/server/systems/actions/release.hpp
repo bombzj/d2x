@@ -15,6 +15,7 @@ namespace d2x::server::effects {struct ItemAuraCast;}
 namespace d2x::server::skills {struct AssassinKickExecution;struct DruidMeleeExecution;struct WeaponMeleeExecution;struct Pd2CastExecution;}
 namespace d2x::server::combat {struct NativeSkillContact;struct SpellImpact;}
 namespace d2x::server::monsters {struct SkillChildrenExecution;}
+namespace d2x::server::companions {struct CorpseSummonExecution;}
 namespace d2x::server::actions {
 struct MonsterTentacleExecution {
     int count{},next{},nativeClass{-1};
@@ -65,6 +66,7 @@ struct SkillRelease {
     std::shared_ptr<skills::DruidMeleeExecution> druidMelee{};
     std::shared_ptr<skills::WeaponMeleeExecution> weaponMelee{};
     std::shared_ptr<skills::Pd2CastExecution> pd2Execution{};
+    std::shared_ptr<companions::CorpseSummonExecution> corpseSummon{};
 };
 struct MonsterRelease {
     MonsterCastRequest request;

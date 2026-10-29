@@ -16,6 +16,7 @@
 #include "server/systems/effects/system.hpp"
 #include "core/random.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/units/distance.hpp"
 #include <algorithm>
 namespace d2x::server::ai {
 DomainResult<> System::replacePetCommand(EntityId id,uint8_t code,UnitTarget target,std::optional<Vec> destination,uint64_t tick) {
@@ -106,7 +107,10 @@ StepStatus System::think(EntityId id,TickContext tick) {
         // Idle destructibles have the original empty Fn000, with no pursuit
         // or combat callback. Room/mode and damage handling remain shared.
         if(monster.implementation==MonsterKind::PrisonDoor || monster.implementation==MonsterKind::Window) {ports_.monsters.stop(id);continue;}
-        if (!monster.alive() || (monster.owner && !monster.conversion && !monster.revived())) continue;
+        const auto special=monster.curseControl.ai;
+        const bool nativeNecroCurse=monster.necroSummon && monster.rule.stats && !monster.rule.stats->pd2 &&
+            (special==CurseAi::DimVision || special==CurseAi::Terror || special==CurseAi::Taunt);
+        if (!monster.alive() || (monster.owner && !monster.conversion && !monster.revived() && !nativeNecroCurse)) continue;
         auto [entry, fresh] = state_.controllers.try_emplace(id);
         auto &controller = entry->second;
         if (fresh) {
@@ -148,7 +152,38 @@ StepStatus System::think(EntityId id,TickContext tick) {
         controller.random=controller.randomExpected=monster.combatRandom;controller.randomPublished=false;sampled=true;
         const auto &area=ports_.areas.at(monster.area);
         const bool active = ports_.areas.active(monster.area, monster.position);
-        if(!active || (area.definition.town && monster.rule.ai.kind!=MonsterAiKind::GoodNpcRanged && !townNpcAi(monster.rule.ai.kind))) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
+        const bool nativeRevive=monster.revived() && monster.rule.stats && !monster.rule.stats->pd2;
+        if(!active || (!nativeRevive && area.definition.town && monster.rule.ai.kind!=MonsterAiKind::GoodNpcRanged && !townNpcAi(monster.rule.ai.kind))) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
+        if(nativeRevive && !rescheduled && !monster.route.empty() && (monster.nativeMode==2 || monster.nativeMode==15)) {
+            controller.nextDecision=tick.tick+1;continue;
+        }
+        if(nativeRevive && !monster.mainOwnerCleared) {
+            // AICORE_MinionLeash precedes the retained family/curse AI.
+            // Main-owner removal does not discard AIGENERAL's Ex owner.
+            const auto *owner=monster.owner?ports_.players.find(*monster.owner):nullptr;
+            if(!monster.rule.nativeWalkMode || !owner || !owner->entered || owner->persistent.player.hp<=0) {
+                const auto cleared=ports_.monsters.clearMinionLeash(id);
+                if(isDeferred(cleared.status)) {blocked=true;continue;}
+            } else {
+                const auto point=owner->position+ports_.areas.at(owner->area).definition.origin-area.definition.origin;
+                const int distance=unitCoordinateDistanceWithSize(int(monster.position.x),int(monster.position.y),int(point.x),int(point.y),monster.rule.size);
+                if(distance<=1 || distance>20) {
+                    const auto move=[&](Vec destination,int path=13,int bound=100) {
+                        monsters::MoveRequest request{id,{monster.area,area.generation,destination},{},0,75,false};
+                        request.pathType=uint8_t(path);request.pathDistance=uint8_t(bound);request.pathSteps=1;
+                        return ports_.monsters.requestMove(request);
+                    };
+                    bool escaped=false;
+                    if(distance<=1) escaped=bool(move(monsterRetreatPoint(monster.position,point,19)-Vec{.5f,.5f},13,19));
+                    if(!escaped) {
+                        const auto destination=monsterWanderPoint(point,19,controller.random)-Vec{.5f,.5f};
+                        move(destination,distance>20?7:13,distance>20?40:100);
+                    }
+                    controller.nextDecision=tick.tick+1;continue;
+                }
+            }
+        }
+        if(nativeRevive && area.definition.town) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
         if(townNpcAi(monster.rule.ai.kind)) {
             blocked|=townNpcFamily(id,tick,controller)==StepStatus::Blocked;continue;
         }

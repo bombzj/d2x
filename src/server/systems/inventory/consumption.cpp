@@ -82,7 +82,7 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
     edit.facts.emplace_back(ItemTargetingFact{id,-1});
     edit.character = effects.value->character; edit.transient = effects.value->transient;
     if(effects.value->staminaPotionSurplus) edit.resources=transactions::ResourceRefresh::StaminaPotion;
-    edit.resourceBase=effects.value->resourceBase;edit.publicFacts=effects.value->publicFacts;
+    edit.resourceBase=effects.value->resourceBase;edit.petLimitChanges=effects.value->petLimitChanges;edit.publicFacts=effects.value->publicFacts;
     if(effects.value->unitRandom) edit.random=transactions::UnitRandomEdit{effects.value->unitRandom->first,effects.value->unitRandom->second};
     auto plan = ports_.transactions.prepare(std::move(edit),nullptr,{},effects.value->units);
     if (!plan) return {plan.status, {}};

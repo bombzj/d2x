@@ -13,7 +13,7 @@ namespace d2x::server::objects {
 StepStatus System::publishChanges(TickContext tick) {
     std::erase_if(publishedModes_,[&](const auto &entry){return !state_.objects.contains(entry.first);});
     for(const auto &[id,object]:state_.objects) {
-        if(!object.rule.chest && !object.rule.shrine) continue;
+        if(!object.rule.chest && !object.rule.shrine && object.rule.operation!=18) continue;
         auto [previous,inserted]=publishedModes_.try_emplace(id,object.revision,object.mode);
         // Initialization seeds the baseline before any operation, including
         // operations in the birth frame. Unknown initial state is a snapshot.
@@ -27,7 +27,7 @@ StepStatus System::publishChanges(TickContext tick) {
                 ?std::optional<int>{object.rule.shrine->code}:std::nullopt;
             const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},object.area},
                 {ObjectFact{id,object.operatorActor,object.area,object.revision,object.position,object.mode,
-                    object.rule.selectable[size_t(object.mode)],shrine}}});
+                    object.rule.operation!=18 && object.rule.selectable[size_t(object.mode)],shrine}}});
             if(!sent) return StepStatus::Blocked;
         }
         // Advance only after acceptance. A full outbox retries this publication

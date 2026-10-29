@@ -35,7 +35,7 @@ PD2专项说明见[技能显示：专用描述输入](../../pd2/SKILL_DISPLAY.md
 
 选择器非光环分支读取当前 Skills 的 `restrict`、`State1–3` 和 States 的 `restrict` 标记：0 禁止受限形态，1及其他非2值不加限制，2要求处于受限形态并依次匹配三个状态，遇空槽即停止。本人状态必须解码完整、序号与单位一致，所有状态ID均能映射当前目录；不完整时不推断禁用。该判断只影响图标／提示着色，不改变学习资格、技能选择请求或服务端施法权限，充能技能复用相同投影。
 
-SrvDo116在血魔法下仍检查生命，不享有普通法力豁免；依据同一文件 `D2Common_SKILLMANA_CheckStat_6FDB0F50`。非血魔法的变身豁免依赖单位 `UNITFLAGEX_ISSHAPESHIFTED`，不能用 States.restrict 或 transform 掩码代替。其写入者为 `D2StatList.cpp::D2Common_STATES_ToggleState_6FDB8900`：任一disguise状态存在即置位，最后一个移除才清位。现从完整且序号一致的状态快照独立准备disguise事实，未变身时检查原法力，已变身时豁免普通法力；血魔法、startmana及充能分支仍各自保留。状态未知不推断普通法力不足，本项尚未构建或实机核对。
+SrvDo116在血魔法下仍检查生命，不享有普通法力豁免；依据同一文件 `D2Common_SKILLMANA_CheckStat_6FDB0F50`。非血魔法的变身豁免依赖单位 `UNITFLAGEX_ISSHAPESHIFTED`，不能用 States.restrict 或 transform 掩码代替。其写入者为 `D2StatList.cpp::D2Common_STATES_ToggleState_6FDB8900`：任一disguise状态存在即置位，最后一个移除才清位。现从完整且序号一致的状态快照独立准备disguise事实，未变身时检查原法力，已变身时豁免普通法力；血魔法、startmana及充能分支仍各自保留。状态未知不推断普通法力不足，本项已通过Windows Release构建，实机核对仍待验收。
 
 ## 两个界面的原调用规则
 

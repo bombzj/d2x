@@ -10,6 +10,7 @@
 namespace d2x {
 enum class SkillStatRefreshKind { None,Skill,Passives,Charges,Aura };
 struct SkillStatRefresh {SkillStatRefreshKind kind{};int skill{};};
+struct SkillPetLimitChange {int type{},maximum{};};
 // One synchronous item-aura stat callback, in original source-write order.
 // source identifies the timer custom ID; rank is the unit's aggregate layer.
 // rank == 0 deactivates; every nonzero rank activates, including negatives.

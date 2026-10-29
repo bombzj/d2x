@@ -104,6 +104,12 @@ void SceneAudio::update(float clock, std::span<const SoundActorView> actors, std
                 catalog_.sounds().value(size_t(event.nativeSound),"Sound"):std::string_view(event.sound);
             submit(SoundRule{std::string(name)});
         }
+        else if(event.kind==Kind::IzualComplete) {
+            // 53070 -> 45570: sound-table music slot, immediate start,
+            // 250 client frames, no voice and environment resume Block0.
+            if(event.nativeSound>=0 && size_t(event.nativeSound)<catalog_.sounds().rows().size())
+                streams_.questCue(catalog_.sounds().value(size_t(event.nativeSound),"Sound"),0,250,{},0,0);
+        }
         else if (event.kind == Kind::ObjectMode) {
             if (const auto *sound = catalog_.object(source->identity,event.mode)) submit(*sound);
         }

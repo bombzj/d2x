@@ -56,6 +56,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<> execute(const ActorContext &, const Request &);
+    bool pendingTransmute(PlayerId,uint64_t sequence=0) const;
     std::vector<Preparation> pending() const;
     DomainResult<> install(Prepared);
     StepStatus step(TickContext, FrameFacts &);

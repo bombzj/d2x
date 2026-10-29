@@ -95,13 +95,24 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         const auto row=monsterRows.find(*unitClass(unit));
         if(row==monsterRows.end()) continue;
         const auto code=monstats.value(row->second,"Id");
-        if(code!="andariel" && code!="bloodraven") continue;
+        if(code!="andariel" && code!="bloodraven" && (pd2 || (code!="mephisto" && code!="duriel" && code!="izual"))) continue;
         preparedDeaths.insert(key);
         auto dead=unit; dead.mode=0; dead.actionSkill.reset(); monster(dead,false,shared);
         std::vector<size_t> pending;
-        for(const auto *name:{"andycontrol0","brdeathcontrol","brdeathspirits1","brdeathsmokes1"})
-            if((code=="andariel")==std::string_view(name).starts_with("andy"))
+        for(const auto *name:{"andycontrol0","brdeathcontrol","brdeathspirits1","brdeathsmokes1",
+                             "mephistodeathcontrol","mephistoholedelay","mephistodonotdraw","durieldeathcontrol","izual control"})
+            if((code=="andariel" && std::string_view(name).starts_with("andy")) ||
+               (code=="bloodraven" && std::string_view(name).starts_with("br")) ||
+               (code=="mephisto" && std::string_view(name).starts_with("mephisto")) ||
+               (code=="duriel" && std::string_view(name).starts_with("duriel")) ||
+               (code=="izual" && std::string_view(name).starts_with("izual")))
                 if(const auto missile=missileNames.find(name);missile!=missileNames.end()) pending.push_back(missile->second);
+        if(code=="duriel")
+            for(const int id:{42,364,365,366})
+                if(const auto missile=missileRows.find(id);missile!=missileRows.end()) pending.push_back(missile->second);
+        if(code=="izual")
+            for(const int id:{379,380,381,382})
+                if(const auto missile=missileRows.find(id);missile!=missileRows.end()) pending.push_back(missile->second);
         std::set<size_t> loaded;
         while(!pending.empty()) {
             const auto missile=pending.back();pending.pop_back();
@@ -150,6 +161,13 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         missileAnchors.push_back({effectOwner(key),{float(unit.position->x)+.5f,float(unit.position->y)+.5f},key.id,key.type});
     shared.advanceClientMissiles(suspended ? 0.f : elapsed, map,
         {float(origin.x), float(origin.y)}, missileTargets,missileAnchors);
+    for(const auto owner:shared.takeClientMissileHiddenOwners())
+        if(const auto anchor=std::find_if(missileAnchors.begin(),missileAnchors.end(),[&](const auto &value){return value.id==owner;});
+           anchor!=missileAnchors.end()) {
+            const OnlineUnitKey key{anchor->type,anchor->nativeId};
+            if(const auto unit=v.world.units.find(key);unit!=v.world.units.end())
+                mapDisplay.questEffects.hiddenUnits.insert_or_assign(key,unit->second.assignmentRevision);
+        }
     clientMissiles.clear();
     for (const auto &missile : shared.clientMissiles())
         clientMissiles.push_back({missile.missileId, missile.pos, missile.age, missile.duration - missile.age});
@@ -580,7 +598,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if (key.type == 0 && v.load.playerUnitId == key.id)
             playerDisplayed = true;
         WorldDrawItem actorEntry;
-        actorEntry.image = image; actorEntry.position = feet; actorEntry.pixelOffset = visual->offset+m.riderOffset;
+        actorEntry.image = image; actorEntry.position = feet; actorEntry.pixelOffset = p-screen(feet);
         actorEntry.shadow = visual->shadow; actorEntry.orderFlag = visual->order; actorEntry.unit = effectOwner(key);
         draw.push_back(actorEntry);
     }
@@ -614,14 +632,16 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         entry.overlayFrame = frame;
         entry.lightOwner = effectOwner(key); entry.lightStartedAt = born;
         entry.height = objectUnit ? 0 : 1;
-        if (objectUnit)
-            if (const auto owner = std::find_if(draw.begin(), draw.end(),
-                    [&](const auto &item) { return item.image && item.unit == effectOwner(key); }); owner != draw.end())
-                entry.orderFlag = owner->orderFlag;
+        if (const auto owner = std::find_if(draw.begin(),draw.end(),
+                [&](const auto &item) { return item.image && item.unit == effectOwner(key); }); owner != draw.end()) {
+            entry.pixelOffset = owner->pixelOffset;
+            if (objectUnit) entry.orderFlag = owner->orderFlag;
+        }
         if (key.type == 1 && unitClass(actor->second)) {
             const auto row = monsterRows.find(*unitClass(actor->second));
             const auto extra = row == monsterRows.end() ? monsterExtra.end() : monsterExtra.find(monstats.value(row->second,"MonStatsEx"));
-            if (extra != monsterExtra.end()) entry.height = monstats2.number(extra->second,"Height").value_or(1);
+            entry.height = extra == monsterExtra.end() ? 0
+                : int(uint8_t(monstats2.number(extra->second,"OverlayHeight").value_or(0))) - 1;
         }
         draw.push_back(entry);
     };
@@ -682,8 +702,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 }
             }
             if(states.number(row->second,"setfunc")==16) {
-                const auto stat=[&](std::string_view name) {const int id=monsterText->nativeStats->names.at(std::string(name));
-                    for(const auto &value:state.stats) if(value.id==id && !value.parameter) return int(value.value);
+                const auto stat=[&,stats=&state.stats](std::string_view name) {const int id=monsterText->nativeStats->names.at(std::string(name));
+                    for(const auto &value:*stats) if(value.id==id && !value.parameter) return int(value.value);
                     return 0;};
                 const int count=stat("skill_frenzy"),skill=stat("modifierlist_skill"),rank=stat("modifierlist_level");
                 const int limit=skillCalculation(skill,rank,"calc2",key).value_or(0);
@@ -733,27 +753,55 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if(message.type!=5 || message.unitType!=0) continue;
         const uint64_t lifetime=(125+8*std::min(message.text.size(),size_t{254}))*40;
         if(hoverNow>message.receivedMilliseconds && hoverNow-message.receivedMilliseconds>lifetime) continue;
-        const auto player=std::find_if(draw.begin(),draw.end(),[&](const auto &entry){return entry.unit==effectOwner({0,id});});
+        const auto player=std::find_if(draw.begin(),draw.end(),[owner=effectOwner({0,id})](const auto &entry){return entry.unit==owner;});
         const auto decoded=net::decodeChatText({reinterpret_cast<const char *>(message.text.data()),std::min(message.text.size(),size_t{254})},message.language,archives.languageGameLocale);
-        if(player!=draw.end() && decoded) shared.drawOverheadText(*decoded,screen(player->position)+player->pixelOffset);
+        if(player!=draw.end() && decoded) shared.drawOverheadText(*decoded,screen(player->position));
     }
+    const auto playerNameLife = [&](OnlineUnitKey key) {
+        const auto roster = v.world.social.players.find(key.id);
+        if (roster != v.world.social.players.end() && roster->second.lifePercentage)
+            return std::min(100,int(*roster->second.lifePercentage))*128/100;
+        const auto unit = v.world.units.find(key);
+        return unit != v.world.units.end() && unit->second.lifePercent
+            ? std::min(128,int(*unit->second.lifePercent)) : 0;
+    };
     if (hasSelectedTarget && !surface && !groundTarget)
         for (const auto &target : binding.mapTargets) if (target.unit == selectedTarget) {
             const auto drawn = std::find_if(draw.begin(), draw.end(), [&](const auto &entry) { return entry.unit == effectOwner(selectedTarget); });
             const auto at = drawn == draw.end() ? screen(local(target.position)) : screen(drawn->position) + drawn->pixelOffset;
-            if (selectedTarget.type == 0 && target.interaction == OnlineMapInteraction::Corpse) shared.drawCorpseLabel(target.name, at);
-            else if (selectedTarget.type == 0) {
+            if (selectedTarget.type == 0) {
                 const auto unit = v.world.units.find(selectedTarget);
-                shared.drawPlayerLabel(target.name, at,
-                    unit != v.world.units.end() && combat.hostileSource(unit->second));
+                const auto ground = drawn == draw.end() ? screen(local(target.position) + Vec{.5f,.5f})
+                    : screen(drawn->position);
+                if (target.interaction == OnlineMapInteraction::Corpse) shared.drawCorpseLabel(target.name,ground);
+                else shared.drawPlayerLabel(target.name, ground,
+                    unit != v.world.units.end() && combat.hostileSource(unit->second),playerNameLife(selectedTarget));
             } else {
                 const auto localized = strings.find(target.name);
+                const auto name = localized.empty() ? target.name : std::string(localized);
+                const auto drawName = [&] {
+                    if (selectedTarget.type != 1) {
+                        shared.drawInteractionLabel(name,at);
+                        return;
+                    }
+                    const auto unit = v.world.units.find(selectedTarget);
+                    const auto row = unit != v.world.units.end() && unitClass(unit->second)
+                        ? monsterRows.find(*unitClass(unit->second)) : monsterRows.end();
+                    const auto extra = row == monsterRows.end() ? monsterExtra.end()
+                        : monsterExtra.find(monstats.value(row->second,"MonStatsEx"));
+                    if (extra != monsterExtra.end()) {
+                        const auto ground = drawn == draw.end() ? screen(local(target.position) + Vec{.5f,.5f})
+                            : screen(drawn->position);
+                        shared.drawNpcLabel(name,ground,
+                            uint8_t(monstats2.number(extra->second,"pixHeight").value_or(0)));
+                    }
+                };
                 const auto &report=v.pd2State.mapAttributes;
                 if(pd2 && report && report->headerFirst==selectedTarget.id && report->headerSecond==selectedTarget.type) {
                     const auto lines=pd2MapDescription(*report);
                     if(!lines.empty()) shared.drawInteractionDetails(lines,at);
-                    else shared.drawInteractionLabel(localized.empty()?target.name:std::string(localized),at);
-                } else shared.drawInteractionLabel(localized.empty() ? target.name : std::string(localized), at);
+                    else drawName();
+                } else drawName();
             }
             break;
         }
@@ -765,7 +813,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             return entry.unit == effectOwner(*hoveredPlayer);
         });
         if (actor != draw.end()) shared.drawPlayerLabel(v.world.units.at(*hoveredPlayer).name,
-            screen(actor->position) + actor->pixelOffset, combat.hostileSource(v.world.units.at(*hoveredPlayer)));
+            screen(actor->position), combat.hostileSource(v.world.units.at(*hoveredPlayer)),playerNameLife(*hoveredPlayer));
     }
     auto automap = binding.automap;
     // Native hosts send path verification sparsely. The same collision-
@@ -896,7 +944,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         const auto unit=v.world.units.find(key);
         if(unit==v.world.units.end() || !unitClass(unit->second)) continue;
         auto [name,modifiers]=monsterCaption(unit->second);
-        monsters.push_back({key.id,*unitClass(unit->second),std::move(name),std::move(modifiers),transform.first,transform.second});
+        monsters.push_back({key.id,*unitClass(unit->second),std::move(name),std::move(modifiers),transform.first,transform.second,
+            !pd2 && mapDisplay.questEffects.hiddenUnits.contains(key)});
     }
     return intent;
 }

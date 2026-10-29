@@ -88,10 +88,7 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
         using Mark = AutomapDrawView::UnitMark;
         if ((marker.unitMark == Mark::Party || marker.unitMark == Mark::PartyPet) && !view_.automapParty) continue;
         switch (marker.unitMark) {
-        case Mark::Npc:
-            if (view_.bhEnabled) drawBhAutomapMarker(marker,projection,area,miniOrigin,*blend);
-            else unitMark(marker.position, {244,244,244,255});
-            break;
+        case Mark::Npc: unitMark(marker.position, {244,244,244,255}); break;
         case Mark::Party: unitMark(marker.position, {0,255,0,255}); break;
         case Mark::OtherPlayer: unitMark(marker.position, {255,0,0,255}); break;
         case Mark::Corpse: unitMark(marker.position, {255,0,255,255}); break;

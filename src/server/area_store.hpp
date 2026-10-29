@@ -292,6 +292,8 @@ class AreaStore {
     void recordMonsterDeath(EntityId) noexcept;
     std::array<EntityId,4> roomLastDead(RoomView) const noexcept;
     std::optional<RoomView> roomAtPosition(RegionId source,Vec observer,int32_t worldX,int32_t worldY) const;
+    // Convert a point only across the current prepared, linked navigation graph.
+    std::optional<Vec> linkedPosition(RegionId from,RegionId to,Vec point) const;
     using CollisionSample=std::function<uint16_t(RoomView,int32_t,int32_t)>;
     DomainResult<RoomRandomLoan> roomRandom(RoomView) const;
     bool validateRoomRandom(const RoomRandomLoan &) const noexcept;

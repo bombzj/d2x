@@ -34,7 +34,7 @@ nlohmann::json DebugAutoWalk::status() const {
         {"clientPosition",client_?Json{{"x",client_->x},{"y",client_->y}}:Json(nullptr)},
         {"serverPosition",server_?Json{{"x",server_->x},{"y",server_->y}}:Json(nullptr)},
         {"targetSource",source_},{"exitLevel",exitLevel_?Json(*exitLevel_):Json(nullptr)},
-        {"decisionIntervalMs",300},{"decisions",decisions_},{"clientMoving",clientMoving_},
+        {"decisionIntervalMs",debugDecisionInterval.count()},{"decisions",decisions_},{"clientMoving",clientMoving_},
         {"boundaryStart",edgeStart_?Json{{"x",edgeStart_->x},{"y",edgeStart_->y}}:Json(nullptr)},
         {"boundaryEnd",edgeEnd_?Json{{"x",edgeEnd_->x},{"y",edgeEnd_->y}}:Json(nullptr)},
         {"moveRequests",moves_},{"interactionRequests",interactions_},{"searchRooms",searches_}};
@@ -83,7 +83,7 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
         state_="searching";reason_.clear();segment_.reset();previous_=view.world.playerPosition;visited_.clear();
         source_=kind==Goal::Point?"explicit-point":kind==Goal::Unit?"assigned-unit":"";
         client_.reset();server_=view.world.playerPosition;edgeStart_.reset();edgeEnd_.reset();exitLevel_.reset();
-        lastFrom_.reset();lastRequest_.reset();stationaryAttempts_=decisions_=0;clientMoving_=false;
+        lastFrom_.reset();lastRequest_.reset();decisions_=0;clientMoving_=false;
         moves_=interactions_=searches_=0;progressAt_=next_=Clock::now();deadline_=next_+std::chrono::seconds(timeout);
     }
     return Json{{"ok",true},{"navigation",status()}}.dump();
@@ -102,7 +102,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         finish("completed","Server waypoint menu opened",control);return;
     }
     if(blocked || !scene.movementAvailable || !scene.origin || !view.world.playerPosition || !town.map() || now<next_) return;
-    next_=now+std::chrono::milliseconds(300);
+    next_=now+debugDecisionInterval;
     ++decisions_;clientMoving_=pathMoving;
     server_=view.world.playerPosition;
     if(!pathPosition) {reason_="Waiting for the normal client path position";return;}
@@ -198,6 +198,13 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         if(target==scene.mapTargets.end()) {finish("failed","Target is no longer assigned in the client scene",control);return;}
         point_=target->position;
         if(interact_ && town.interactionReady(view,*unit_,pathPosition)) {
+            // An NPC 13 outside the server's <9 distance window is ignored
+            // (PlrMsg::sub_6FC828D0), while the local path can already be near.
+            // This debug input strategy waits for its ordinary approach to
+            // settle; it neither changes native eligibility nor retries 13.
+            if(unit_->type==1 && (pathMoving || now-progressAt_<debugDecisionInterval || !town.interactionReady(view,*unit_))) {
+                reason_="Waiting for the local NPC approach and native position confirmation";return;
+            }
             if(state_=="interacting" && control.approaching()) return;
             if(interactions_ && now-progressAt_<std::chrono::seconds(1)) return;
             if(interactions_>=3) {finish("failed","Server did not open the requested interaction",control);return;}
@@ -281,8 +288,13 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         if(distance(player,*segment_)>6 && lengths>0 && dot>.98f*lengths &&
             map.grid.segment(from,oldLocal,{},playerMovement) && map.grid.nativeMovementSegment(from,oldLocal,playerMovement)) return;
     }
-    if(lastFrom_==player && lastRequest_==next) ++stationaryAttempts_;else stationaryAttempts_=0;
-    if(stationaryAttempts_>=3) {finish("failed","Native client path repeatedly stopped before the planned segment",control);return;}
+    // Newly hired/following units and moving NPCs can briefly block a normal
+    // path. Keep the existing 15-second progress bound rather than declaring
+    // failure after three 200-ms samples. Identical stopped input is bounded
+    // to once per second; actual progress/direction changes replan normally.
+    if(lastFrom_==player && lastRequest_==next && now-submittedAt_<std::chrono::seconds(1)) {
+        reason_="Waiting before retrying the same temporarily stopped native path";return;
+    }
     lastFrom_=player;lastRequest_=next;
     if(!control.move(next,run_,{},pathPosition)) {reason_=control.reason();return;}
     segment_=next;submittedAt_=now;++moves_;reason_.clear();if(!searching) state_="moving";

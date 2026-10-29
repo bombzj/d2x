@@ -576,7 +576,17 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             control.cancelMovement();
         control.tick(!minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
-        debugAi.tick(session,town,debugWalk,control,combat,inventory,
+        DebugAi::SuppliesView aiSupplies;
+        if(debugAi.active() && sharedClients) {
+            const auto &player=sharedClients->character().read();
+            // Shared UI identities encode a native GUID as GUID+1.
+            if(session.read().load.playerUnitId && player.actor.value==uint64_t(*session.read().load.playerUnitId)+1) {
+                if(!player.unknownStats.contains("maxhp") && player.maxLife>0) aiSupplies.maxLife=player.maxLife;
+                if(!player.unknownStats.contains("maxmana") && player.maxMana>0) aiSupplies.maxMana=player.maxMana;
+            }
+            aiSupplies.buyQuote=[&](uint32_t item){return sharedClients->itemQuote(item,OnlineItemAction::Buy);};
+        }
+        debugAi.tick(session,town,debugWalk,control,combat,inventory,aiSupplies,
             minimized || presentationPaused || (sharedUi && (sharedUi->ui().gameMenuOpen || debugInspectionOpen(sharedUi->ui()))),
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
             scene && std::ranges::any_of(scene->players(),[](const auto &player){return player.local && player.moving;}));

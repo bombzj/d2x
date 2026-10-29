@@ -22,6 +22,7 @@ enum class Kind { Hireling, Summon, IronGolem };
 enum class Action { Hire, Resurrect, Dismiss, List, Equipment, Potion, CommandInteract, CommandMove };
 struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; std::optional<ItemHandle> item{}; bool belt{}; UnitTarget target{}; std::optional<Vec> destination{}; };
 struct ShadowDecision;struct DruidDecision;struct Pd2ShadowFollow;
+struct CorpseSummonExecution {EntityId corpse;Vec position;};
 struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint16_t> sourceSkill;
     int rank{}, attackSkill{}; uint64_t expires{}, nextDecision{}, release{}, removeAt{}; EntityId target{};
     uint64_t ownerTeleport{}; int attackBias{},projectedSkillBonus{};
@@ -39,6 +40,9 @@ struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint
     bool pendingHirelingUseSkill{},cancelAi{};
     uint64_t observedAiThinkRevision{};
     std::vector<std::pair<NativeSkillSlot,int>> druidSkillRanks{};
+    std::array<int64_t,3> necroAi{};
+    bool necroInitialized{},pendingNecroAction{},pendingNecroUseSkill{};
+    uint64_t observedNecroAiFunctionRevision{};
 };
 struct State { std::map<EntityId, Companion> companions; };
 struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; const spatial::System &spatial; ai::System &ai; items::System &items; FrameEventQueue &frameEvents; };
@@ -75,6 +79,7 @@ class System {
     DomainResult<> nativeSummon(const ActorContext &,const SkillCastSpec &,Vec);
     StepStatus shadowStep(Companion &,TickContext);
     StepStatus necroStep(Companion &,TickContext);
+    StepStatus nativeNecroStep(Companion &,TickContext);
     StepStatus refreshNecro(Companion &,TickContext);
     StepStatus hirelingStep(Companion &,TickContext);
     DomainResult<bool> maintainPd2Hireling(Companion &,const PreparedHireling &,TickContext);
@@ -100,7 +105,8 @@ class System {
     DomainResult<> amazon(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> assassin(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> druid(const ActorContext &,const SkillCastSpec &,Vec);
-    DomainResult<> necro(const ActorContext &, const SkillCastSpec &, Vec,EntityId,bool restoring=false);
+    DomainResult<> necro(const ActorContext &, const SkillCastSpec &, Vec,EntityId,bool restoring=false,
+        std::shared_ptr<CorpseSummonExecution> *continuation=nullptr);
     DomainResult<bool> growBoneWall(EntityId owner,EntityId root,int skill,int rank,RegionId,Vec,uint64_t tick);
     DomainResult<> hydra(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> execute(const ActorContext &, const Request &);

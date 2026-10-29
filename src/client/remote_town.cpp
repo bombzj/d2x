@@ -353,7 +353,7 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                     ((*v.world.quests.playerFlags)[slot] & 1);
             };
             const char *label = nullptr;
-            if (id == "warriv1" && v.world.quests.playerFlags && ((*v.world.quests.playerFlags)[6]&3u)) {label = "WarrivMenu1b";dialog.travelDestination=40;}
+            if (id == "warriv1" && rewarded(6)) {label = "WarrivMenu1b";dialog.travelDestination=40;}
             else if (id == "warriv2") {label = "WarrivMenu1c";dialog.travelDestination=1;}
             else if (id == "meshif1" && rewarded(14)) {label = "MeshifMenuEast";dialog.travelDestination=75;}
             else if (id == "meshif2") {label = "MeshifMenuWest";dialog.travelDestination=40;}
@@ -467,11 +467,15 @@ bool RemoteTown::updateNative(const OnlineView &v) {
             nativeMap_->updateClient();
             nextNativeUpdateMilliseconds_ = now + 40;
         }
-        if (displayPlayerPosition_ && world.playerPosition) {
-            if (const auto room = nativeMap_->clientRoom(displayPlayerPosition_->x, displayPlayerPosition_->y)) {
+        auto position = displayPlayerPosition_;
+        if (!position && !deferred && nativeLoadComplete_) position = world.playerPosition;
+        if (position) {
+            if (const auto room = nativeMap_->clientRoom(position->x, position->y)) {
                 const auto &prepared = nativeMap_->tiles().rooms().at(*room);
-                // Presentation selects only a room already assigned by 07.
-                // No new room interest or terrain is acquired by prediction.
+                // Loading uses the ordered map-event anchor above. Afterward,
+                // normal movement follows the current client unit coordinates;
+                // callers without a display sample must not return to the last
+                // loading/warp position. Only an assigned 07 room is selected.
                 if (prepared.loaded && world.rooms.contains({uint8_t(prepared.level), uint16_t(prepared.room.x), uint16_t(prepared.room.y)})) {
                     selectRoom(*room);
                 }

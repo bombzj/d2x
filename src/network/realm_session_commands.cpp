@@ -646,7 +646,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         }
     }
     if (hasItem && command.action != OnlineItemAction::Pickup && command.action != OnlineItemAction::Buy &&
-        !(p.view.remoteLobbyOnly && command.action == OnlineItemAction::CubeStore && item->second.mode == 3) &&
+        !(command.action == OnlineItemAction::CubeStore && item->second.mode == 3) &&
         (item->second.ownerType != 0 || item->second.owner != p.view.load.playerUnitId) &&
         !(command.action==OnlineItemAction::HirelingEquipment && world.hireling && item->second.ownerType==1 && item->second.owner==world.hireling->id)) {
         p.error(OnlineErrorKind::Input, "Item is not owned by this server player"); return false;
@@ -884,8 +884,12 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             ++world.interactionGeneration;
             p.stashPageDeadline = Clock::now() + p.options.timeout;
         }
+        // Retail 4F/24 has no generic result packet: an unmatched recipe or
+        // the 1.13c empty portal output may legitimately change nothing.
+        const bool noReply=command.reusableUse || command.questClue ||
+            (command.action==OnlineItemAction::Transmute && p.compatibility.profile==ClientProfile::Lod113c);
         world.itemRequest = OnlineItemRequest{++p.itemSequence, command,
-            (command.reusableUse || command.questClue) ? OnlineItemRequest::State::SentNoAck : OnlineItemRequest::State::Pending};
+            noReply ? OnlineItemRequest::State::SentNoAck : OnlineItemRequest::State::Pending};
         if (command.action == OnlineItemAction::GoldDeposit || command.action == OnlineItemAction::GoldWithdraw ||
             command.action == OnlineItemAction::GoldDrop) {
             if (const auto before = world.playerAttributes.find(14); before != world.playerAttributes.end())
@@ -916,7 +920,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         if (command.action == OnlineItemAction::Pickup) {
             world.movementRequest = OnlineMovementRequest{{}, OnlineUnitKey{4, command.item}, true, world.revision + 1, true};
         }
-        p.itemDeadline = (command.reusableUse || command.questClue) ? Clock::time_point{} : Clock::now() + p.options.timeout;
+        p.itemDeadline = noReply ? Clock::time_point{} : Clock::now() + p.options.timeout;
         p.nextItem = Clock::now() + std::chrono::milliseconds(100);
         ++world.revision; p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {

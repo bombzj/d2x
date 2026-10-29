@@ -130,6 +130,8 @@ struct MonsterRule {
     int nativeRunVelocity{};
     NativeMonsterStateTarget stateTarget;
     bool noAura{};
+    bool petIgnore{};
+    bool nativeWalkMode{};
     int petType{},petVariant{-1};
     bool primeEvil{};
     bool environmentController{};

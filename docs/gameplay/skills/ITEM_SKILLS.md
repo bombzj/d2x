@@ -34,6 +34,6 @@ D2MOO `SUnitDmg::ExecuteEvents`在HP扣除前发送伤害事件，扣除后按Ki
 
 触发计划的ResolveTarget／Execute／Notify和一次概率结果是源码继续点；可靠输出未受理时保留当前阶段。它们不构成已通过背压／重复执行验证的结论。非玩家骨墙／骨牢保留真实nativeMinionOwner，不进入玩家PetMax替换；延伸段继承原根，墙体按自身原寿命时钟推进，不另造NPC主人死亡清除规则。Fire Golem／德鲁伊非玩家召唤的合法主人及后续AI、客户端成功／音效时序的完整运行对照、全来源嵌套及逐随机轨迹仍未闭合，整个领域尚不能标记完全复刻。
 
-有限运行范围：当前原版MPQ的Oculus受击传送、Arm of King Leoric受击骨牢及冷系Rainbow Facet死亡暴风雪均经真实物品请求安装、由实际怪物攻击触发；死亡暴风雪已观察原等级弹体及后续怪物死亡。隔离存档保存／重入、对应EXE身份、曾修复的失败及未覆盖范围见[验证记录](../../development/ORIGINAL_GAPS.md#装备触发工作区验证范围)。这些结果不认证全部技能、佣兵或强制背压组合。
+有限运行范围：当前原版MPQ的Oculus受击传送、Arm of King Leoric受击骨牢及冷系Rainbow Facet死亡暴风雪均经真实物品请求安装、由实际怪物攻击触发；死亡暴风雪已观察原等级弹体及后续怪物死亡。剩余验证边界见[装备触发待验收](../../development/ORIGINAL_GAPS.md#待验收装备触发)。这些结果不认证全部技能、佣兵或强制背压组合。
 
 非玩家召唤的拒绝边界：D2MOO Do56／119及公共SummonPet存在非玩家出生入口，但AIGENERAL_SetOwnerData直接保存实际来源，GetMinionOwner不向上寻找玩家；Fn067、Fn108调用的`sub_6FCE34E0`／PetMove读取PlayerData移动历史及传送坐标。当前1.13c Fn067跟随RVA1E140经Common导入序号10920取PlayerData，并在RVA1E36A／1E370读取传送坐标；配套Common的该导出RVA2EB70检查类型为玩家。不能据出生无类型守卫就推广玩家跟随或自造NPC兜底AI。相关非玩家入口明确拒绝，仍缺合法非玩家主人的完整原版执行依据；玩家召唤分支保留，未启用装备配置不伪装成功。PlayerPets::sub_6FC7D7A0在非玩家来源直接返回，因此NPC骨墙／骨牢不加入玩家容量替换。CltSt21（当前D2Client RVA C8330）的尸体选择检查只对本地施法者执行，远端只要求实际目标可解析。

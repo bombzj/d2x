@@ -32,7 +32,7 @@ DomainStatus System::startDruidPeriodic(Release &pending,const ActorContext &act
         auto prepared=ports_.effects.skillState(actor,std::move(effect),pending.skill.nativeEffectWrites);if(!prepared) return prepared.status;
         const auto *player=caster->player;
         transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,prepared.value->character};
-        edit.transient=prepared.value->transient;edit.resourceBase=prepared.value->resourceBase;edit.publicFacts=prepared.value->publicFacts;
+        edit.transient=prepared.value->transient;edit.resourceBase=prepared.value->resourceBase;edit.petLimitChanges=prepared.value->petLimitChanges;edit.publicFacts=prepared.value->publicFacts;
         edit.random=transactions::UnitRandomEdit{player->combatRandom,random};
         if(!pending.manaPaid) {edit.player.mana-=pending.skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};edit.charge=pending.skill.charge;}
         auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return plan.status;

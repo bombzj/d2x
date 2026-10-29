@@ -209,6 +209,12 @@ DomainResult<> System::castTeleport(const ActorContext &actor,PointTarget target
     return teleport(actor,{free->room.area,destination.generation,free->position},manaCost,charge,skill);
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    std::erase_if(portalCreations_,[&](const auto &entry) {
+        const auto &actor=entry.second.actor;const auto *player=ports_.players.find(entry.first);
+        const auto *area=ports_.areas.find(actor.area);
+        return !player || !player->entered || player->actor!=actor.actor || player->area!=actor.area ||
+            player->persistent.player.hp<=0 || !area || area->generation!=actor.areaGeneration;
+    });
     advancePd2Map(tick);
     if(synchronizePd2MapReports(tick)==StepStatus::Blocked) return StepStatus::Blocked;
     const auto synchronizationStatus=expireSynchronizations(tick);
@@ -276,7 +282,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const auto *npc=ports_.npc.find(actor,transition.source);
             const auto &book=player.persistent.player.quests.at(size_t(player.persistent.difficulty));
             if(!npc || (conversation && conversation->revision!=transition.npcConversation) ||
-                ((npc->rule.code=="warriv1" || npc->rule.code=="warriv2") && book.at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::AndarielSlain)) ||
+                (npc->rule.code=="warriv1" && book.at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::PassageReady)) ||
                 (npc->rule.code=="meshif1" && book.at(questIndex(QuestId::SevenTombs)).stage<uint32_t(TombsStage::PassageGranted)) ||
                 (npc->rule.code=="meshif2" && !player.persistent.player.completedActs.at(size_t(player.persistent.difficulty)).at(1))) {pending=state_.transitions.erase(pending);continue;}
             if(!transition.arrivalGeneration) {

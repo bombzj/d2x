@@ -47,7 +47,7 @@ RemoteTown按约4毫秒软预算消费原顺序地图事件，未处理完时即
 
 两端释放活动瓦片／碰撞，重入均按保留的图层、原始种子及当前共享边界状态重新物化。瓦片记录以稳定编号存于可删除节点，释放房间时删除其记录并清理变更链，不保留高水位空槽、不重排活动引用；房间局部逻辑格／动画／地板数组及服务端人口副本释放容量。区域移交给幕会话后释放重复PreparedRoomTerrain包装；会话在整层回收时释放图层输入和原单位描述，保留近邻／出口与寻位元数据；区域碰撞数组随整层回收释放容量。旧Run／initialRoomRandom恢复已删除；已开墓墙从当前实际选中的地板／墙／阴影记录重投影，物件碰撞由objects按当前模式重建。InitRoomGrids重置瓦片流，选砖后再分出活动房间种子；后续玩法消费只更新活动随机。对照范围见[实机核对](../gameplay/world/MAPS.md#实机首差与合成调用边界)。
 
-整层回收沿GAME_Update每11帧的DUNGEON_UpdateAndFreeInactiveRooms／DRLG_UpdateAndFreeInactiveRooms链：玩家当前层及Vis层保持活动，换层重置原10次等待，按幕及层首次接入的逆序检查整层status／HAS_ROOM和出口邻层后释放解码输入、选择器、预设单位缓存及区域碰撞容量。紧凑房间身份／拓扑和规则元数据仍保留，不声称堆布局等同DRLG_FreeLevel。已安装区域缺输入时重新提交准备票据，独立terrainGeneration防过期完成；接收前验证挂载、幕、地图种子、房间初始种子／邻接／尺寸，不替换玩法generation、人口进度、单位身份或休眠节点。Grid对象地址保留，空存储查询按未加载处理，首次房间重投影恢复数组。旅行与房间引用变更在输入齐备前等待。待测条件见[世界生命周期](../development/ORIGINAL_GAPS.md#后续验证需要覆盖的边界)。
+整层回收沿GAME_Update每11帧的DUNGEON_UpdateAndFreeInactiveRooms／DRLG_UpdateAndFreeInactiveRooms链：玩家当前层及Vis层保持活动，换层重置原10次等待，按幕及层首次接入的逆序检查整层status／HAS_ROOM和出口邻层后释放解码输入、选择器、预设单位缓存及区域碰撞容量。紧凑房间身份／拓扑和规则元数据仍保留，不声称堆布局等同DRLG_FreeLevel。已安装区域缺输入时重新提交准备票据，独立terrainGeneration防过期完成；接收前验证挂载、幕、地图种子、房间初始种子／邻接／尺寸，不替换玩法generation、人口进度、单位身份或休眠节点。Grid对象地址保留，空存储查询按未加载处理，首次房间重投影恢复数组。旅行与房间引用变更在输入齐备前等待。待测条件见[世界生命周期](../development/ORIGINAL_GAPS.md#待验收世界生命周期)。
 
 Play-Diagnostic.cmd的stderr.log中[area-load]记录宿主terrain_ms／content_ms与超过一个25Hz tick的客户端map_ms，供定位剩余开销；诊断入口见[调试管道](../development/DEBUG_PIPE.md)。性能需按当前实现和相同地图／种子／人数核对。
 

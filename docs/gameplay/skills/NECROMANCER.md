@@ -21,7 +21,7 @@ PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版
 | 75黏土石魔、85鲜血石魔、90钢铁石魔、94火焰石魔 | 四种石魔共用上限及原始召唤来源。黏土减速、鲜血吸取、铁魔材料／反伤、火魔吸收／Holy Fire分别保留过程策略；材料在基础与技能加值前投递，后续属性、生命增长和召唤抵抗按原顺序准备。火魔死亡爆炸已迁出伙伴AI，进入UMod31四帧事件及同步联系；完整事件组合与结算仍待对齐。 |
 | 78骨墙、88骨牢 | 原BoneWall生命／寿命／动作与墙段参数；骨墙根及两侧生长、骨牢12个原偏移，按碰撞和占用检查位置。墙段参与玩家／怪物移动阻挡及敌人低Threat目标选择。 |
 | 95重生 | 检查MonStats2.revive、原AI资格、普通尸体及死亡完成；保留原单位ID、真实身份／组件和已准备家族AI。原基础生命重掷、主人等级限制、精通贡献、速度和寿命；无奖励、不可再消费，原revive状态／归属／图形。 |
-| 69支配骷髅、79支配石魔、89召唤抗性 | 有效精通／抗性和基础协同分别求值；主人等级、装备技能或学习变化后刷新现有召唤。hosting重新准备铁魔材料贡献，避免重复消耗材料。被动不产生独立施法动作。 |
+| 69支配骷髅、79支配石魔、89召唤抗性 | 有效精通／抗性和基础协同在出生时分别求值。零售现存召唤保留出生贡献；技能／状态回调只按PlayerPets更新数量，不轮询重掷HP／精通／抵抗或材料。PD2属性刷新独立保留。被动不产生独立施法动作。 |
 
 ## 状态、归属与保存
 
@@ -59,21 +59,27 @@ AI诅咒源码开始区分两类移除：微暗灵视／恐惧／嘲讽的Restor
 
 ## 依据与入口
 
-NativeSummonStats从主人公式准备五项Passive基础加值、六项Aura非零写入、Calc1生命百分比、PetMax和SumSkill槽；prepareSummonStatSources与亚马逊召唤共用基础、普通／L列MonLvl、初始／继承技能及被动缓存的安装机制。骷髅支配生命先作为raw maxhp基础加值，再执行百分比增长；item_normaldamage、命中／防御及damagepercent保留原基础／列表位置，不把最终标量重建成第二份基础来源。原初始技能槽与难度技能加成保留，SumSkill仅在公式正值时覆盖；法师公式零值不抹掉原初始飞弹技能，完整召唤流程仍待对齐。
+NativeSummonStats从主人公式准备五项Passive基础加值、六项Aura非零写入、Calc1生命百分比、PetMax和SumSkill槽；prepareSummonStatSources与亚马逊召唤共用基础、普通／L列MonLvl、初始／继承技能及被动缓存的安装机制。骷髅支配生命先作为raw maxhp基础加值，再执行百分比增长；item_normaldamage、命中／防御及damagepercent保留原基础／列表位置，不把最终标量重建成第二份基础来源。原初始技能槽与难度技能加成保留，SumSkill仅在公式正值时覆盖；法师公式零值不抹掉原初始飞弹技能；完整来源组合仍须运行验收。
 
 四种石魔现也开始从主人原Calc／Passive／Aura／SumSkill进入相同来源入口：黏土的复合生命百分比、命中／速度／防御／增伤及减速，鲜血的生命和基础加值，铁魔的反伤／fade，火魔的火抗／吸收／火伤与Holy Fire赋值，不再只依赖手写参数曲线安装标量。当前支持的MonStats仍为noRatio且MinHP=MaxHP的既有记录，raw生命及上限回调共用公共算子；原随机流、全部过程参数和更新时点未认证。
 
 当前源码将普通骷髅／法师／石魔分开使用游戏、单位和施法者随机流：实际单位种子从游戏流分配，单位流先准备区域组件池／组件，再保留当前等生命范围的单选投掷；法师元素与三级以上骷髅的盾牌机会使用施法者流，费用提交时复验并发布。普通召唤、骨墙根和骨牢复用怪物出生搜索的原位置−1／半径4回退、房间边界与辅助碰撞；骨牢沿十二偏移逐段搜索，后续搜索采样本批已有段的原生碰撞占位，多房间随机贷款同笔复验。属性刷新复用现有Actor的已掷MonProp列表，不重新创建出生候选或消费组件／生命随机。
 
-骷髅外观共用原十一行组件覆盖表，盾牌、右手和法师S4／S5分开覆盖。原枚举STATE_ITEMFULLSET在当前MPQ实际名为skel_mastery（97），不是fullsetgeneric；出生从施法者实际效果或仍启用的骷髅支配被动列表读取modifierlist_level，缺列表为1，最高10，负值明确拒绝。此处不以穿齐套装推算外观等级。异步召唤准备携带唯一票据、实际施法等级及有效／硬技能快照，重备同种子不能接收旧返回；属性刷新同样复验主人快照。完整法师AI控制参数及原AI程序仍未闭合；尸体仍在事务成功后消费，与原先消费尸体再尝试出生的失败副作用不同，不能认证完整SrvDo031。
+骷髅外观共用原十一行组件覆盖表，盾牌、右手和法师S4／S5分开覆盖。原枚举STATE_ITEMFULLSET在当前MPQ实际名为skel_mastery（97），不是fullsetgeneric；出生从施法者实际效果或仍启用的骷髅支配被动列表读取modifierlist_level，缺列表为1，最高10，负值明确拒绝。此处不以穿齐套装推算外观等级。异步召唤准备携带唯一票据、实际施法等级及有效／硬技能快照，重备同种子不能接收旧返回。零售Fn067由nativeNecroStep执行；法师出生参数为1／0／−666，实际AI函数切换推进修订并清参数；普通召唤与法师分别沿原选敌、近战／施法／绕行及PetMove分支，不再共用最近敌人／直接距离追赶。
 
-钢铁石魔按SkillNec::SrvDo057先继承材料，再SetSummonBaseStats／SetSummonPassiveStats／SetSummonResistance。材料从native_sources保留原始物品／孔内／参数层贡献，以真实材料ID进入候选；materialBeforeStats使其在等级与MonLvl加值、召唤Passive／Aura及生命增长前投递，装备授予技能同时准备。已有类型化武器／过程参数仍保留；材料的物品光环与逐写充能回调已接共享来源候选；完整物品事件、技能实例归属、装备有效性与存档投影仍需继续核对。刷新将准备结果的材料来源转交候选，不以最终整点生命替代原来源计算；完整周期事件及重构流程仍须按实际消费者核对。
+零售PetMax由attributes/skill_refresh的同步回调与effects::stagePetLimit维护：Skills::sub_6FD108D0按PetType编译反链（最多15项）读取各技能的原最高实例，优先无归属实例，再比较充能等级；PlayerPets::sub_6FC7DF40按实际技能登记链逐项执行增长前缀，没有实例才回落basemax。单技能／非本职技能写回及充能移除、学习与原状态被动刷新分别沿各自原入口，不给每次普通+allskills被动刷新增加全表更新。PlayerResourceTrace把中间采样的上限回调顺序带入人物／库存事务；先发生的超额移除不因后续上限增大回滚。退役按petRegistrationOrder选最早节点，包括死但仍登记的节点，保留原死亡回调；SINGLE与佣兵例外沿原函数。出生替换也按同一名册预留新节点数量，不依赖尸体EntityId先后；后续最后充能移除回调包含该笔新宠，死亡后不重新安装出生／物品光环。
 
-召唤抵抗单独投递来源，火／电／冰各自检查当前吸收百分比，正值时跳过该元素，毒抗始终写入。新增来源、基础AddStat和每项写入通过MonsterResourceTrace刷新快照及生命上限回调。普通召唤伙伴刷新会绑定实际ID、保留当前模式来源，并结合当前状态准备新的生命／上限候选；其刷新触发时机、墙／牢上下文与完整原事件仍需继续迁移。
+Fn067依据AiThink::AITHINK_Fn067_NecroPet／sub_6FCE3740、AiUtil::sub_6FCF2110／2CC0／14D0及AiTactics。近战分支保留50／28主人距离、24／6本体选敌与36主人后备，法师保留15／20、80%技能及后续75%绕行选择；沿原bCombat、单位随机、PETIGNORE后备过滤及三射线资格。PetMove复用原逻辑区／路径／探针，探针class及碰撞从当前MPQ的necroskeleton准备；Fn067的7／8间距按真实登记宠物数。待受理施法保存原决定，UseSkill失败NU10而普通A1模式失败不补时钟。失明／恐惧／嘲讽仍进入共享特殊AI，迷乱和吸引留在原选择器路径。零售火魔的继承光环从出生时指定右手及准备周期，不在Fn067轮询补放。
 
-复生现在按当前尸体原属性等级重新读取独立MonsterLifeTable：hosting从当前MPQ准备MonStats三难度MinHP／MaxHP、noRatio及MonLvl普通／L-HP列，gameplay复用DATATBLS_ApplyRatio整数算子并按原上界钳制等级。prepareReviveStatSources保留原单位ID、属性来源与基础技能，使用本单位随机流重新投掷生命并左移8位，先Set MAXHP再Set HP；等级高于主人时，按raw生命执行原百分比计算，最低1 raw，再Set MAXHP／HP／LEVEL。随后与普通召唤共用Passive基础Add、独立Aura写入、Calc1生命增长和继承技能；不调用普通召唤的MonLvl护甲／命中加值或召唤抵抗。主人等级／技能变化不再用旧整点比例重写复生生命，原技能变化的PetMax名册回调仍待事件阶段接入；Calc2仅正值安排到期。
+零售SrvDo031按D2MOO `SkillNec::SKILLS_SrvDo031_RaiseSkeleton_Mage`，先记录实际尸体坐标并删除Actor、房间链／碰撞、效果及时钟，再尝试出生。`CorpseSummonExecution`由本次技能释放或装备触发持有，内容等待／输出背压及内部重备使用同一已删除前缀和冻结坐标；不因目标已撤出取消回调，不恢复失败召唤的尸体，也不再次删除、扣费或提交单位。当前费用与身份仍由实际出生／人物事务阶段提交；失败空位保留原房间搜索的随机消费。PD2保持其原有尸体消费路径，本段不外推核心规则；源码已通过Windows Release构建，未运行验收。
 
-固定原1.13c D2Game.dll（MD5 `978f6f74cd031bce6ecee602cd5988cc`）SrvDo表RVA1074A8第58项为RVA51340；RVA513F2–5143B确认游戏类型布尔选择、当前等级及HP表调用，5143F–514C4确认本单位投掷、shift8、MAXHP→HP、raw等级比例、最低1及LEVEL写入顺序，514DC调用公共召唤贡献。原中立模式切换、碰撞重定位、周期技能事件／右技能清理、AuraEvent／UMod和控制节点仍需在后续程序与调度阶段闭合。
+钢铁石魔按SkillNec::SrvDo057先继承材料，再SetSummonBaseStats／SetSummonPassiveStats／SetSummonResistance。材料从native_sources保留原始物品／孔内／参数层贡献，以真实材料ID进入候选；materialBeforeStats使其在等级与MonLvl加值、召唤Passive／Aura及生命增长前投递，装备授予技能同时准备。已有类型化武器／过程参数仍保留；材料的物品光环与逐写充能回调已接共享来源候选；完整物品事件、技能实例归属、装备有效性与存档投影仍需继续核对。PD2既有刷新将准备结果的材料来源转交候选；零售不再轮询刷新出生贡献。完整材料／周期／保存组合保留运行验收。
+
+召唤抵抗单独投递来源，火／电／冰各自检查当前吸收百分比，正值时跳过该元素，毒抗始终写入。新增来源、基础AddStat和每项写入通过MonsterResourceTrace刷新快照及生命上限回调。零售普通召唤的主人贡献在出生时安装，已有单位不因主人等级／装备／学习变化重新准备出生属性。PD2原有属性刷新仍绑定实际ID、保留当前模式来源；其等价边界归PD2专题。
+
+复生现在按当前尸体原属性等级重新读取独立MonsterLifeTable：hosting从当前MPQ准备MonStats三难度MinHP／MaxHP、noRatio及MonLvl普通／L-HP列，gameplay复用DATATBLS_ApplyRatio整数算子并按原上界钳制等级。prepareReviveStatSources保留原单位ID、属性来源与基础技能，使用本单位随机流重新投掷生命并左移8位，先Set MAXHP再Set HP；等级高于主人时，按raw生命执行原百分比计算，最低1 raw，再Set MAXHP／HP／LEVEL。随后与普通召唤共用Passive基础Add、独立Aura写入、Calc1生命增长和继承技能；不调用普通召唤的MonLvl护甲／命中加值或召唤抵抗。主人等级／技能变化不重写既有复生生命；PetMax走下述同步名册回调。Calc2正值才附加原UMod21与MONUMOD；不可打断时再等3帧，正常到期从自身名册节点移除并走死亡回调，已提交死亡的背压继续点保留。
+
+固定原1.13c D2Game.dll（MD5 `978f6f74cd031bce6ecee602cd5988cc`）SrvDo表RVA1074A8第58项为RVA51340；RVA513F2–5143B确认游戏类型布尔选择、当前等级及HP表调用，5143F–514C4确认本单位投掷、shift8、MAXHP→HP、raw等级比例、最低1及LEVEL写入顺序，514DC调用公共召唤贡献。零售Do58已按D2MOO同名入口补原落点搜索：找到空位才切中立、清死亡模式、恢复目标标志、摘除旧主从、清PeriodicSkills／右技能并迁移同一GUID；空位失败仍继续原属性／归属登记分支。新主人同时写Ex关系与主牵引，首次AITHINK为+15；保留家族AI，主牵引按AICORE_MinionLeash执行≤1逃离19／>20以path7和40搜索界跟随，失去主牵引不抹掉Ex主人。未新增Revive自行远距传送。
 
 骨墙／骨牢开始使用同一原始召唤属性入口：当前MPQ的bonewall为noRatio，三难度生命范围相等，保留MonStats等级7／40／73及原防御、抗性、DamageRegen和raw初始生命。主人Calc1及Passive／Aura／SumSkill从公共公式环境采样，原SrvDo060／062只调用公共召唤贡献，因此setBaseStats关闭额外的主人等级／MonLvl护甲／命中安装；不再先用整点生命百分比生成另一份基础。骨墙Calc2控制每侧段数。独立BoneGrowth计时器已撤出：根段和两条真实控制飞弹一起预备／发布，Do13按前次PATH跨格尝试原位置出生、成功才减TargetY；后续墙段重新采样当前玩家贡献，从各自出生帧安装MonStats.Skill1所指Param2寿命。出生模式读取Skills.summode，当前骨墙为S1、骨牢为NU；monsters::System::prepareNecro（controlled.cpp）同时写入Actor.riseMode及aiPose，出生计时期间不沿用通用S2默认值；原sub_6FC40280(...,9)选择目标链节点，不是S2模式。AIGENERAL所有者／子列表与实际玩家归属分开，骨牢链接首段／其余段；UMod15死亡候选按原清除子所有者／子列表、清除实际怪物主人AI所有者及死亡模式的顺序处理。DD保留真实Actor，未对死亡根GUID作提前撤销。非玩家公共召唤生产、完整出生随机顺序、尸体／房间退休与全局调度仍未闭合。
 
@@ -90,3 +96,5 @@ NativeSummonStats从主人公式准备五项Passive基础加值、六项Aura非�
 MonStats数值准备必须保留原表合法空白：bonewall第344行三个难度的ToBlock为空，necroskeleton第363行三个难度的Level为空；当前MPQ对应MonStats.bin记录中的值均为0。D2MOO MonsterTbls分别绑定BYTE偏移163–165及WORD偏移170／172／174，当前BIN记录大小424字节。bone_data和necromancer_data对此采用BlankIsZero，仍拒绝缺列和非法数字，不修改MPQ。
 
 当前MPQ的Skills／Missiles／MonStats／MonStats2／MonLvl／PetType／States／ItemStatCost／DifficultyLevels和AnimData负责规则与原图；本地D2MOO SkillNec、AiUtil／AiThink、PlayerPets、SUnitDmg及MissMode提供执行证据。Fire Golem死亡的固定100物理＋100火焰、六subtile范围及四帧延迟，另由固定1.13c D2Game.dll UMod31回调RVA265E0／21A90确认；同一伤害结构通过真实monstercorpseexplode飞弹结算，来源不再受主人同区／存活限制。来源职责见[资料来源](../../resources/THIRD_PARTY.md)，通用规范见[COMMON](COMMON.md)。
+
+本节新增召唤失败顺序、Fn067、名册回调及Revive初始化／到期源码已通过Windows Release构建，未运行验收；待验收场景集中维护在[原版缺口](../../development/ORIGINAL_GAPS.md#待验收死灵召唤)。

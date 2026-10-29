@@ -203,6 +203,8 @@ expected 数据先与截图证据保存在同一批次；需要长期回归时�
 
 配方 `schema:1`、`characters[]` 每项指定唯一 `id`、2–15 个 ASCII 字母的 `name`、`class`、`level`、`mapSeed`、`allocated:[力量,敏捷,体力,精力]`、按 MPQ 技能原名索引的 `skills`、可选 `leftSkill`／`rightSkill` 和 `items[]`。余点由当前 CharStats 及已分配值计算，再由 codec 校验经验、预算与前置。`difficulty:1/2` 配置低难度五幕首领完成及跨幕进度；仅 `resistanceRewards:[难度索引]` 明确设置抗性卷轴发放／消费位，不附带其他永久成长奖励。
 
+当前源码增加可选整数`gold`／`bankGold`，省略时保留原创角余额；要求非负且分别不超过等级×10000的钱包上限及公共`stashGoldLimit`，manifest／save-json输出实际余额。不改变v96格式、存档校验或运行中的授金入口。用于[第一幕调试女巫配方](fixtures/debug-act1.json)的购买准备；新增字段与该配方已通过Windows Release构建、原v96编码／重读及独立入局；任务运行覆盖见[调试AI](DEBUG_AI.md#实现入口与待验收范围)，不沿用本页其他角色比对结果。
+
 物品指定 `code`、`quality`、`level`、32 位 `seed`；`location` 为 `equipment`／`backpack`／`stash`／`cube`，装备另给原 `slot` 与可选手部 `weaponSet:1`。网格按当前 Inventory 首个空位放置。特殊品质用精确 `special` 原名；魔法／稀有可用已有合法 `properties:[{code,parameter?,value}]` 或非直接属性的 `min/max` 选择器。Crafted 另给 `cubeRecipe` 的原行号和 `inputLevel`，检查基底、配方条件及输出等级后应用固定层。`children[]` 按顺序生成填料，检查孔数和类型，再经现有符文之语准备；`runeword` 可明确核对最终原名。`ethereal`、`identified:false`、`broken:true` 仅用于明确样件。
 
 该入口检查槽位／职业、等级、容量、品质来源及既有 codec 边界；不替代完整装备资格链与各状态的原版采集。新装配须按矩阵确认基础需求、双手组合、单件携带限制及场景生效条件。未知来源明确暂缓。

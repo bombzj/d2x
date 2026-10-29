@@ -69,7 +69,7 @@ DomainResult<bool> System::redeemUnitCorpse(EntityId source,EntityId corpse,int 
         const int mana=std::min(nativeAdd(resources.record().mana.raw(),nativeShiftLeft(evaluate(input(),"calc3"),8)),resources.maximum().mana.raw());
         resources.seedResources(resources.record().hp,Fixed8::fromRaw(mana),resources.record().stamina);
         transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,resources.record()};
-        edit.resourceBase=resources.maximum();edit.random=transactions::UnitRandomEdit{expected,random};
+        edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.random=transactions::UnitRandomEdit{expected,random};
         auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},publication);
         committed=plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
     } else {

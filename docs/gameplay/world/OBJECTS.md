@@ -10,14 +10,16 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 
 | 单位／条件 | 原版几何与当前消费者 |
 | --- | --- |
-| 普通玩家、NPC、怪物、尸体及物件 | 先以当前COF头的min／max矩形每侧扩16像素作外层筛选；再按当前方向／帧的原组件矩形每侧扩12像素。宽或高小于32时，两侧各加`(32-当前尺寸)/2`的整数值，奇数差保留原截断。玩家使用可选组件；怪物／物件以当前MonStats2／Objects.TotalPieces是否大于1决定是否检查COF层的Selectable。单组件及独立DCC／DC6使用原帧范围，包含透明边缘。组件矩形边界包含端点，COF外层右／下边界不包含端点 |
+| 普通玩家、NPC、怪物、尸体及物件 | 先以当前COF头的min／max矩形每侧扩16像素作外层筛选；再按当前方向／帧的原组件矩形每侧扩12像素。宽或高小于32时，两侧各加`(32-当前尺寸)/2`的整数值，奇数差保留原截断。玩家使用可选组件；怪物／物件以当前MonStats2／Objects.TotalPieces是否大于1决定是否检查COF层的Selectable。单组件分支只取TR（组件1），独立DCC／DC6使用原帧范围，包含透明边缘。组件矩形边界包含端点，COF外层右／下边界不包含端点 |
 | 门和替代碰撞物件 | IsDoor门只在mode2／4／5使用Objects.Left／Top／Width／Height；非门CollisionSubst非零时各模式都使用该矩形。其他情况沿普通帧分支。固定矩形锚定静态单位落点，不加Objects.Xoffset／Yoffset或原帧外扩，边界包含端点 |
 | MonStats2.noGfxHitTest | 使用htLeft／htTop／htWidth／htHeight的有符号16位值，锚定动态单位地面位置，右／下边界不包含端点；不再依赖翅膀、烟雾等图像的透明裁边。当前原MPQ包含泰瑞尔、受困灵魂、衣卒尔灵魂、投石机与恶魔小屋等定义 |
 | 地面掉落与关卡出口 | 掉落本体使用当前flippy原帧及共同12像素／最小尺寸算法；名称点击仍共用已有名称布局。出口继续读取LvlWarp.SelectX／Y／DX／DY，矩形边界包含端点；世界输入被面板等遮挡时不悬停点亮出口 |
 
-COF外层矩形跟随单位地面锚点，普通组件框跟随当前绘图／高度偏移；保留分组件范围，不把多层之间的空隙合并成整张合成纹理。资源缺失仍按现有原图不可用路径处理，不补造矩形或图形。
+COF外层矩形跟随单位地面锚点，普通组件框跟随当前绘图／高度偏移，并采用绘制时的整数像素锚点；保留分组件范围，不把多层之间的空隙合并成整张合成纹理。帧范围由原cell的`offsetX／offsetY／width／height`计算，顶部为`offsetY-height`；解码器独立保留cellOffsetY，不用DCC绘图顶部的`offsetY-height+1`或DC6的底部偏移代替选取顶部。资源缺失仍按现有原图不可用路径处理，不补造矩形或图形。
 
-依据：D2MOO `ObjectsTbls::D2ObjectsTxt`、`MonsterTbls::D2MonStats2Txt`及表编译器确认字段，`UNITS_GetClientCoordX／Y`与`UNITS_InitializeStaticPath`确认坐标；OpenD2 `Engine/COF.hpp`交叉核对COF布局。D2MOO缺D2Client，且旧实现将普通范围裁小，故定点核对零售1.13c D2Client.dll（SHA-256 `dd8bc6025de921216a97c17f97cd1a50fbb85926e838ec60e13451448836d906`）：RVA A68E0为选取分派，A6A77为noGfxHitTest，A6B15／A6BD5为物件条件，A5720／A57E0为表矩形，6A550为COF外层16像素，A6730为原帧外扩／最小尺寸，6E670→6D700读取COF层Selectable。当前源码已构建；原版MPQ、独立DebugSorceress的营地画面中，以ui-input实际点击恰西本体打开交谈、私人箱本体打开仓库，并丢下一张鉴定卷轴再点击地面原图拾回（同一物品ID恢复本人背包）。原包、完整快照及截图位于忽略目录artifacts/debug-ai-acceptance-20261029/ui-01，EXE SHA-256为DC89A302F380BB5C76309C52944B39B76A8FFA8164051DAD36D2CAB2962E53C3。仅认证这些具体操作；名称布局、遮挡及重叠目标优先级、全部动画／五幕物件与PD2运行时改写仍未逐项认证。PD2消费者边界见[城镇服务](../../pd2/TOWN_CLIENT.md#城镇服务物件交互)。
+场景传送点沿该通用分支，当前MPQ的OperateFn23记录TotalPieces为2，使用各自当前模式COF的Selectable及原帧矩形，不按OperateRange／SizeX／SizeY另造点击框，也不涉及目的地菜单命中。营地wp的ON资源为TR／S1两层，二者Selectable均为1；原TR帧宽131、高27、offsetX=-71、offsetY=5，因此外扩后相对落点为x=-83..72、y=-34..17（包含端点），另合并当前S1层命中并受COF外层筛选。依据为当前MPQ的Objects、wponhth.cof及wptrlitonhth.dcc，和零售1.13c D2Client RVA A6730／A6C90／A6CE9；该帧偏移与单组件修正已通过Windows Release构建，运行对照仍待验收，不能沿用下述旧EXE结果认证新几何。
+
+依据：D2MOO `ObjectsTbls::D2ObjectsTxt`、`MonsterTbls::D2MonStats2Txt`及表编译器确认字段，`UNITS_GetClientCoordX／Y`与`UNITS_InitializeStaticPath`确认坐标；OpenD2 `Engine/COF.hpp`交叉核对COF布局。D2MOO缺D2Client，且旧实现将普通范围裁小，故定点核对零售1.13c D2Client.dll（SHA-256 `dd8bc6025de921216a97c17f97cd1a50fbb85926e838ec60e13451448836d906`）：RVA A68E0为选取分派，A6A77为noGfxHitTest，A6B15／A6BD5为物件条件，A5720／A57E0为表矩形，6A550为COF外层16像素，A6730为原帧外扩／最小尺寸，6E670→6D700读取COF层Selectable。此前EXE在原版MPQ、独立DebugSorceress的营地画面中，以ui-input实际点击恰西本体打开交谈、私人箱本体打开仓库，并丢下一张鉴定卷轴再点击地面原图拾回（同一物品ID恢复本人背包）。原包、完整快照及截图位于忽略目录artifacts/debug-ai-acceptance-20261029/ui-01，EXE SHA-256为DC89A302F380BB5C76309C52944B39B76A8FFA8164051DAD36D2CAB2962E53C3。仅认证这些具体操作；名称布局、遮挡及重叠目标优先级、全部动画／五幕物件与PD2运行时改写仍未逐项认证。PD2消费者边界见[城镇服务](../../pd2/TOWN_CLIENT.md#城镇服务物件交互)。
 
 ## 碰撞与靠近
 
@@ -25,7 +27,13 @@ COF外层矩形跟随单位地面锚点，普通组件框跟随当前绘图／�
 
 共同Grid保留DT1地形层及独立对象层，按真实SizeX／Y、HasCollision0–7、BlocksLight0–7、BlockMissile等模式字段更新；不按画面石头类别猜阻挡，不覆盖重叠物体／原墙。已核实的静默ENDANIM衔接也更新对象层，后续原服模式仍优先。
 
+OperateFn18暗门依据D2MOO `ObjMode::OBJECTS_OperateFunction18_SecretDoor`：只在NEUTRAL进入OPERATING，清除可选标志并立即释放本体碰撞，以当前FrameCnt1+1安排ENDANIM，结束静默转OPENED，不执行普通门的再次关门。宿主复用原阻挡释放及事件继续点、ObjectFact发布；客户端共用原表的模式／碰撞及动画期限。当前MPQ对象129为1×5、IsDoor=0、仅Selectable0／HasCollision0开启、FrameCnt1=15；不能因界面将它列为门而套用可逆OperateFn8。地牢第三层实际开门回归见[调试AI](../../development/DEBUG_AI.md#实现入口与待验收范围)。
+
 交互几何核对D2MOO UNITS_IsObjectInInteractRange／D2Common_10399：原整数子格、对象矩形及外侧条带，OperateRange不当中心圆半径。接近点查询完整行走体积与原射线；范围预览不能证明原服操作成功。
+
+普通蓝门与travel持有的特殊门户也复用上述原物件矩形及交互射线，排除目标自身的占位；不再以OperateRange作中心圆半径，也不使用普通行走线段穿过门户自身的碰撞。依据为PlrMsg::sub_6FC828D0的UNIT_OBJECT前置与ObjMode::OBJECTS_OperateFunction15_Portal；所有权、队伍、敌意延迟及目的地资格保留。已链接的OperateFn15门户在OPERATING即能使用，原函数不检查OPENED，动画／碰撞仍按原计时推进；其他操作的开启资格不外推。直接发送远距门户0x13时的宿主自动接近仍未补齐，常规客户端先通过正常移动接近再提交交互，不能由近处过门结果认证远距原包。
+
+普通OperateFn8门的0x13操作已补相邻区域接缝：复用AreaStore.linkedPosition与移动入口相同的同幕／已连接碰撞图坐标换算，保留原距离50、原对象交互矩形与射线；等待接近时仍复验当前人物代次、移动意图和实际门。门的碰撞更新归门所属区域，关闭占位检查使用同一坐标系，不能因两侧玩家所在Levels不同漏掉。依据D2MOO PlrMsg::sub_6FC828D0的UNIT_OBJECT分支及ObjMode::OBJECTS_OperateFunction08_Door；其他任务门／非门跨区操作仍沿现有领域资格，不因这一修复放宽任务检查。Release新EXE已定点验证：管理准备军营28的15140,4798后，实际0x13打开外侧回廊27的门15141,4802，人物仍在28时收到mode2；随后普通移动跨入27的15141,4808，门碰撞已撤除，宿主failures为0、地图错误为空。该结果不认证全部门模式、钥匙、关闭占位或冷却边界，剩余验收见[缺口清单](../../development/ORIGINAL_GAPS.md#待验收门户与物件)。
 
 自研服务端的原02／04物件靠近按当前objects运行态GUID查找目标，不再查AreaDefinition预设列表；随机生成和休眠恢复后的木桶使用实际位置、尺寸及对象交互几何，保留每轴50子格的请求边界。行进期间复验目标，撤出或离开可达区域时取消旧路线。02／04只负责靠近，原13才请求操作；13距离不足时由objects绑定人物意图继续靠近，到达后复验并操作，木桶再经skills触发隐藏Kick。依据PlrMsg::Rcv0x02／Rcv0x04／sub_6FC828D0、PlrModes::sub_6FC7F780及ObjMode::OperateFunction05；当前修改仅作源码核对，远距离点击与逐帧衔接仍待运行对照。
 
@@ -48,6 +56,10 @@ OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(Fr
 清单来自当前MPQ Objects.txt，以下计数是表内定义数，包含同族变体及不绘制的控制物件，不是随机生成数量。既有GUID交互、原图／各模式、掉落副本沿用公共入口；本批补动画结束衔接、碰撞及声音，没有重写箱子掉落、钥匙消耗或陷阱AI。
 
 自研锁箱按公共ChestState判定：非刺客只查本人背包的MPQ钥匙类型，无钥匙保留锁／中立模式并可靠私发0x2C事件22；成功打开在库存／掉落事务中私发事件11，刺客免钥匙也走该成功通知。钥匙消耗与掉落安装共同提交，容量受阻不能提前消费或重复通知。依据D2MOO `ObjMode::OBJECTS_OperateFunction04_Chest`、`D2GAME_DoKeyCheck`；1.13c普通TCP/IP对照已覆盖女巫无钥匙／有钥匙及刺客无钥匙，未认证全部锁箱变体和概率。
+
+OperateFn4的掉落完成路径按当前MPQ `Objects.Mode1`选择模式：`hosting/object_content.cpp`准备`ObjectRule::openingMode`，`objects::System::step`只在该位存在时进入OP(1)并设置ENDANIM期限，否则直接进入OPENED(2)，不安装开启动画期限；既有塔楼箱路径使用相同分支。依据D2MOO `ObjMode::OBJECTS_ChestEnd`（内联于`OBJECTS_OperateFunction04_Chest`），不能把其他物件程序固定使用OP的规则套给普通箱子。掉落、钥匙、陷阱及随机消费沿原有提交链。
+
+原版1.13c Join D2X Host开class5箱子曾触发`line #1244 / 6fb19fe0`：D2Client MD5 `f5860c629d309b8fc1f96174babcf633`、基址`6FAB0000`，RVA `69F83–69FE0`在`Objects.nMode[请求模式] != 1`时Halt。2026-10-29 20:44:16现场栈保留class5／mode1；同次宿主消息sequence5161为操作GUID86，5168为`0E0256000000030001000000`。当前`Patch_D2.mpq`的Objects TXT及BIN均确认class5（Token=L1）的Mode1=0、Mode2=1，旧普通掉落完成路径无条件选OP导致该非法通知。源码已按上述原表分支修正；修复后的原版开箱、含开启动画箱子及锁箱组合尚未运行复验。
 
 箱子／祭坛初次可见使用当前0x51快照；已经可见的物件由objects::publishChanges在每个权威固定帧末尾冻结ObjectFact，保存revision、位置、模式、可选性、操作者及Shrines.Code，进入既有可靠outbox。初始化先建立模式基线，包括出生同帧操作；只有事实入队后才推进基线，满队列停留Simulation::ObjectPublication重试，不重做开箱、库存或祭坛事务。hosting::receiveEvent按已知GUID和房间兴趣发送0x0E，祭坛SubClass位1且非位4的OP另发0x4D，操作者GUID／类型取冻结事实，不读后续ON快照补造操作。每个观察者缓存最后已发送版本，部分帧暴露的新状态不能覆盖它；新进入视野者只收到当前51，不重放历史0E／4D。ENDANIM的OP→ON只更新权威状态，不补通知；神坛仅在Objects.CycleAnim1=0且Mode2存在时安排ENDANIM，重置清操作者并发布中立模式。依据D2MOO ObjMode::sub_6FC752A0／OBJECTS_OperateFunction02_Shrine及1.13c原包；X3R已完成8帧合并、双客户端、迟到OP／ON及单机单步复验，见[对比计划](../../development/MESSAGE_COMPARISON_PLAN.md#x3r-多帧合并修复复验)。其他物件族仍沿既有发布入口，不据此认证井水、门和任务物件全部增量。
 
@@ -155,6 +167,10 @@ Init59按Objects::VileDogAfterglow及Quests::ObjectEvents接入：仅中立对�
 Init54现登记真实凯恩起始标记GUID及坐标，任务要求进城前不创建隐藏Actor，不提前消耗出生种子。内容准备不再替该标记选最近可走点；运行时执行任务专用矩形寻位，再按5、最多二十次10、最后15的出生搜索顺序尝试，实际成功才创建凯恩，搜索失败仍保留房间随机消费。完整失败后冻结尝试，标记、任务进城请求或新玩家进入城镇时才允许重试，不在每帧持续推进随机；容量阻塞不标记尝试完成。零售1.13c D2Game的Init54入口6FC86320、出生入口6FC860D0及任务寻位6FC54130确认上述顺序、边界修正、半径100及Y比较房间右边界的原分支。当前仍使用预分配NPC身份；全部任务位／事件触发、原GUID分配和NPC初始AI仍未闭合。
 
 ## 自研回城门
+
+普通玩家蓝门创建已新增同次调用继续点：固定人物／区域代次、命令序号与实际卷轴／书本revision，先保存野外原生落点及城镇tile11选点；城镇整层输入未驻留时激活并返回PendingContent，沿同一技能释放或库存命令恢复，不要求客户端重发。已选城镇种子结果、两端落点及分配身份在内容／输出等待中复用，等待前缀不重新扣费或替换旧门；事务成功后才消费一次物品并发布新门对。等待的身份提供回收引用根，未结算时不允许后续命令、暂停清队列或退局保存越过原操作；真实资格／位置失败仍保留卷轴。此为原同步构造链的异步适配，不增加门户玩法或存档字段。
+
+依据D2MOO SkillItem::SKILLS_SrvDo113_Scroll_Book、D2GAME_CreatePortalObject_6FD13DF0及D2GAME_CreateLinkPortal_6FD13B20的创建／连接／成功后物品消费顺序。旧EXE已复现28区施放时城镇1输入归零、请求受理但无门且卷轴未消耗。修复后Release实机同条件仅发送一次0x0C施法：城镇collisionBytes／roomInputs／loadedRooms均0，随后生成一对门户，唯一卷轴tsc移除，正常操作真实野外门户返回城镇1；宿主failures为0、地图错误为空，正常保存离局。剩余验收见[缺口清单](../../development/ORIGINAL_GAPS.md#待验收门户与物件)；完整多客户端交错、碰撞变化、失败票据及强制背压仍待验收。
 
 回城物品代码和技能号从当前MPQ解析，原20使用物品或原右键物品技能都走同一创建入口。卷轴数量／书本charges和门对替换原子提交；城镇落点取原地图标记，图形、范围和开启时间读Objects原59，缺落点或资源拒绝且不消耗。每人一对门，原51／60／82投影，两端GUID的客户端生命周期一并管理，原22更新物品技能数量。
 

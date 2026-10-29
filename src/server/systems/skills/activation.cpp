@@ -261,7 +261,10 @@ DomainStatus System::activateCorpse(Release &pending,const ActorContext &actor,V
     return result.status;
 }
 DomainStatus System::activateItem(Release &pending, const ActorContext &actor, Vec) {
-    return ports_.inventory.useSkill(actor, pending.skill.sourceId).status;
+    const auto result=ports_.inventory.useSkill(actor,pending.skill.sourceId);
+    if(isDeferred(result.status) && ports_.travel.pendingPortalCommand(actor.player,actor.sequence))
+        pending.nativeCallbackStarted=true;
+    return result.status;
 }
 DomainStatus System::activateUnsummon(Release &pending, const ActorContext &actor, Vec) {
     return ports_.companions.dismiss(actor, pending.unit).status;
@@ -271,7 +274,10 @@ DomainStatus System::activateKick(Release &pending, const ActorContext &actor, V
     return pending.weaponMelee?drainWeaponMelee(pending,actor):DomainStatus::Unavailable;
 }
 DomainStatus System::activateAmazonSummon(Release &pending, const ActorContext &actor, Vec target) {
-    return pending.skill.summon && pending.skill.summon->amazon?ports_.companions.amazon(actor,pending.skill,target).status:ports_.companions.necro(actor,pending.skill,target,pending.unit).status;
+    if(pending.skill.summon && pending.skill.summon->amazon) return ports_.companions.amazon(actor,pending.skill,target).status;
+    const auto result=ports_.companions.necro(actor,pending.skill,target,pending.unit,false,&pending.corpseSummon);
+    pending.nativeCallbackStarted=pending.corpseSummon && isDeferred(result.status);
+    return result.status;
 }
 DomainStatus System::activateAmazonMagic(Release &pending, const ActorContext &actor, Vec) {
     return ports_.effects.amazonMagic(actor, pending.skill).status;

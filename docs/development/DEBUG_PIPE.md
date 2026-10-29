@@ -39,13 +39,15 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 客户端自主行走
 
-批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方，仍由下面的行走驱动执行接近。Windows Release已构建并入局检查；实际覆盖和剩余组合以该专题为准，不把单目标行走结果当作整条任务验收。
+批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方，新增源码含scenario=act1的六任务整链及单项quest，仍由下面的行走驱动执行接近。Windows Release已构建并入局检查；实际覆盖和剩余组合以该专题为准，不把单目标行走结果当作整条任务验收。
+
+新增第一幕六任务配方与200毫秒决策，以及`supplies`整计划药剂策略和`goals:[{action:'restock'}]`补给目标，支持低血／低法力饮药、正常货架购买和安全的缺药回城往返；这批源码已通过Windows Release构建并执行实机回归，实际奖励、药剂和补给覆盖见该专题。其他任务／五幕首领的前置覆盖限制见同一专题，不能把通用hunt视为所有任务已完成。
 
 `debug-walk`启动异步调试输入，`debug-walk-status`只读进度，`debug-walk-cancel`取消后沿客户端Stop提交停止请求。目标`goal=waypoint`（默认）自动寻找本区已指派传送点并用正常交互打开；`goal=exit`选择本区出口，可给`level`筛目的地，默认只走到附近；没有可点击warp的步行连接读取客户端已重建的逻辑near及原Vis／warp=-1连接（不要求邻层房间已激活），扫描当前已知碰撞的通行开口并选择本层内侧落点，可用于城镇门口，不自动跨区；这种连接不接受interact=true；`goal=point`需要全局subtile的`x/y`；`goal=unit`需要实际`unitId`，`unitType`默认2。`interact`默认在waypoint／unit目标启用，其他目标关闭；`run`默认true，`timeoutSeconds`为5–300，默认120。没有使用服务端管理旅行、坐标写入、私有包或鼠标模拟。
 
 导航只读取RemoteTown已重建的地形／碰撞、逻辑步行连接与当前mapTargets，不额外生成或激活房间。出口目标先按目的层及真实共边选定连接，再找已知通行开口；输入不足时只沿该连接方向接近当前可达地形前沿，缺连接不回退为任意房间巡游。传送点未指派时仍可探索当前层可达房间；缺地图／资源不穿墙或补造目标，不自动战斗／喝药／复活／解锁任务／传送点。当前不实现跨层导航任务，换区、重入、离局或死亡终止旧意图。
 
-移动衔接使用正常RemoteScene.playerPathPosition（客户端DynamicPath位置，不含绘制校正），每0.3秒判断并重新规划，包括行走过程中；方向改变、原段受阻或接近段尾时沿同一RemoteControl.move／interact入口更新输入，同方向仍有效时保留当前请求，并传递同一客户端操作原点；不等待稀疏0x96服务器位置才发下一次输入。规划复用Grid.path，只在首条碰撞核实的直线段内前视最多18子格，量化到实际整数点击目标后复核同一碰撞射线，不跨尚未走过的转角，保留原50子格请求、资格／限流及服务端碰撞裁决。客户端预测不写OnlineView或权威位置；服务器采样另保留供诊断。无路、目标撤出、无进展及总期限明确失败；传送点以服务器菜单确认，其他交互的submitted仍须另核对服务器结果。
+移动衔接使用正常RemoteScene.playerPathPosition（客户端DynamicPath位置，不含绘制校正），每0.2秒判断并重新规划，包括行走过程中；方向改变、原段受阻或接近段尾时沿同一RemoteControl.move／interact入口更新输入，同方向仍有效时保留当前请求，并传递同一客户端操作原点；不等待稀疏0x96服务器位置才发下一次输入。规划复用Grid.path，只在首条碰撞核实的直线段内前视最多18子格，量化到实际整数点击目标后复核同一碰撞射线，不跨尚未走过的转角，保留原50子格请求、资格／限流及服务端碰撞裁决。客户端预测不写OnlineView或权威位置；服务器采样另保留供诊断。无路、目标撤出、无进展及总期限明确失败；传送点以服务器菜单确认，其他交互的submitted仍须另核对服务器结果。
 
 显式导航期间调试输入持有后台客户端焦点，窗口未最小化时单机可正常推进；客户端菜单／表现暂停会阻止操作，最小化不执行输入；显式server-pause仍由宿主独立持有，导航不读取宿主暂停真值，无位置进展将按期限失败。人工点击／按键及其他修改客户端状态的调试请求取消导航，让位正常操作。返回`navigation`含state、reason、gameGeneration／areaGeneration、target／unit／segment、clientPosition／serverPosition、targetSource、exitLevel与boundaryStart／boundaryEnd、decisionIntervalMs／decisions／clientMoving，以及moveRequests／interactionRequests／searchRooms（位置为最近一次导航决策采样，停止后实时位置见online-status；前两项为客户端入口受理次数，同目标合并时不等于发包数）；`completed`对传送点表示已收到服务器菜单，其他交互只表示已提交正常请求，不表示奖励或旅行成功。源码入口为[auto_walk.cpp](../../src/app/debug/auto_walk.cpp)，没有新增测试脚本／专用测试程序；构建与实际覆盖见[原版缺口](ORIGINAL_GAPS.md)。
 
@@ -382,3 +384,5 @@ server-snapshot的怪物identity包含rank／superUnique／spawnKey／ownerSpawn
 源码中的`server-snapshot.frameEvents`观察实例玩法定时器，和可靠输出历史`eventHistory`分开；包含总数、当前帧／阶段、执行／下一游标及受limit限制的记录，记录按事件身份排列，不代表派发顺序。事件记录暴露单位类别、事件号、期限、持续标记、原custom参数、本地状态事件payload及延迟删除标记；怪物AIRESET列表同时暴露独立identity。诊断不写入存档或原客户端消息，原始调度入口及缺口见[技能公共规范](../gameplay/skills/EFFECTS.md#帧事件底座与持续效果期限)。
 
 管理命令`missile-hit`接收`source`（当前区域真实活敌怪GUID）、`amount`（正伤害生命单位）、`missile`（当前MPQ原弹体ID）。它投递公共combat命中候选，单步推进后执行伤害／护盾及ReturnFire反击，用于隔离观察ChillingArmor反击链；不生成怪物AI、不增加客户端私有消息。`player-damage`也走物理伤害／护盾入口。server-snapshot怪物增加chilledUntil／frozenUntil／knockedUntil／nextHitTick／owner，弹体增加skill／rank／program／age／lifetime／remainingHits。诊断操作不能替代通过原技能包进行冒烟。
+
+`online-status.online.scene.monsters[].effectHidden`只读当前指派单位被客户端剧情／弹体回调隐藏的状态；怪物诊断列表仍可包含隐藏单位，不等于实际绘制清单。

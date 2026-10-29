@@ -21,6 +21,7 @@ struct ClientMissileInitialization {
     enum class Path { None,Charged,Spiral,DiabWall } path{};
     std::optional<uint32_t> seed;
     std::optional<int> sourceSkill; // Explicit native creation skill; absent means unobserved.
+    std::optional<int> sourceLevel; // Creation may explicitly override the parent's rank.
     std::optional<int> animationRate,pixelHeight,ballisticHeight;
     std::optional<ClientMissileGraphics> graphics;
     bool distanceLimited{};
@@ -46,13 +47,12 @@ struct ClientMissileProgram {
     MissileAnimationRule animation;
     MissileCollisionRule collision;
     bool collide{}, killOnContact{}, explodeOnExpiry{};
-    std::array<int, 5> parameters{};
+    std::array<int, 5> parameters{},serverParameters{};
     std::array<int, 3> hitParameters{}, children{-1,-1,-1};
     std::array<int, 3> serverHitParameters{}; // CN CltHit6 reads HitPar1-3.
     std::array<int, 4> hitChildren{-1,-1,-1,-1};
     bool childServerSent{}, returnFire{};
     bool clientSend{};
-    int serverTurnPeriod{};
     int sourceTownFrames{}; // Missiles.CltSrcTown: cap when the actual owner is in town.
     bool canSlow{}, groundThrow{};
     int guidedRadius{};
@@ -77,6 +77,7 @@ struct ClientMissileVisual {
     Vec pos, velocity;
     float age = 0, duration = 0;
     Vec direction;
+    std::optional<uint8_t> nativeDirection; // Graphic facing, independent of stationary motion.
     // Existing static effects leave flight false. Flights advance at native 25 Hz.
     bool flight{}, deathProgram{}, movedCell{};
     int level{1}, frame{}, velocityFixed{}, acceleration{}, directionIndex{};

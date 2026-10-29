@@ -50,6 +50,7 @@ struct Totals {
     std::map<EntityId,StatSnapshot> itemFullStats; // Each posted item's stored FullStats.
     std::optional<StatTimeContext> time; // Input snapshot used for these totals.
     std::vector<ResourceMaximums> resourceMaximums; // Native source-write order.
+    std::vector<SkillPetLimitChange> petLimitChanges; // This calculation's callback order; never serialized.
     std::map<EntityId,bool> equipmentNoEquip;
     std::vector<std::string> equipmentSetSlots; // Native unit has six ITEMSET state slots.
     std::vector<NativeSkillSlot> skillOrder;
@@ -72,5 +73,6 @@ EquipmentLoadout loadout(const PersistentCharacter &, const ItemCatalog &, const
 Totals calculate(const CharacterDefinition &, const PersistentCharacter &, const ItemCatalog &,
     const EquipmentRules &, const CharacterRules &, EntityId excluded = {}, const CharacterModifiers &temporary = {}, const std::set<int> &states = {},
     std::optional<std::span<const ModifierStatSource>> temporarySources={},const Totals *previous=nullptr,std::optional<StatTimeContext> time={},bool refreshEquipment=false,
-    std::optional<ResourceMaximums> resourceBase={},std::span<const EntityId> registeredInsertions={},const AuraMutation &auraMutation={},const InitialAuraMutation &initialAura={},PassiveCacheRefresh passiveRefresh=PassiveCacheRefresh::Refresh,const PersistentCharacter *previousState=nullptr,const InitialAuraMutation &finalAura={});
+    std::optional<ResourceMaximums> resourceBase={},std::span<const EntityId> registeredInsertions={},const AuraMutation &auraMutation={},const InitialAuraMutation &initialAura={},PassiveCacheRefresh passiveRefresh=PassiveCacheRefresh::Refresh,const PersistentCharacter *previousState=nullptr,const InitialAuraMutation &finalAura={},
+    const std::function<void(const SkillPetLimitChange &)> &petLimitChanged={},bool refreshPetLists=false);
 }

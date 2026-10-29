@@ -48,7 +48,7 @@ PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版
 - `content/skills/druid_data`只准备当前MPQ的Skills／States／PetType／MonStats／MonLvl及AnimData；`hosting/druid_summon_content`补齐真实单位动作、序列、组件、生命周期和原伤害来源。服务器不读取MPQ。
 - `skills/druid`承接出生／持续起手，`druid_active`保存ActiveState145／146的回调续点，`druid_melee`保存St56／57／58及动作阶段的已分配接触；容量不足时复用已掷值与阶段，不重做伤害或费用。
 - 变形配置共用`gameplay/actions/shape_timing`与`skills/shape`，按原玩家→怪物模式回退、UseAttackRate、原形态帧数和武器自身速度计算，保留真实玩家身份。狼／熊状态退出按原组内状态ID顺序撤销，狂怒／撞槌单独直分配列表，不误触变形互斥。
-- `companions/native_summon`、`native_pet_move`和`monsters::prepareNativePet`供刺客／德鲁伊共用；AI阶段不拥有第二份单位位置、属性或随机流。动物、灵体、毒藤和资源藤各保留原分支。技能等级变化只重算PetType上限并从旧宠物起撤出，不重掷存活宠物的出生生命或重做被动列表。
+- `companions/native_summon`、`native_pet_move`和`monsters::prepareNativePet`供刺客／德鲁伊共用；AI阶段不拥有第二份单位位置、属性或随机流。动物、灵体、毒藤和资源藤各保留原分支。零售PetType上限由属性阶段的原技能／状态回调同步更新，按登记链逐次处理前缀并移除最早节点，AI不额外轮询最终等级重算上限；既有召唤不重掷出生生命或重做被动列表。PD2原有容量刷新路径独立保留；公共回调依据见[死灵召唤](NECROMANCER.md#依据与入口)。
 - 灵体隐藏光环按当前MPQ的sumskill链接准备，SetSummonPassiveStats在出生事务内按继承次序选择右技能；共用`effects/unit_aura_selection`的列表／原周期事件，不延迟到AI或用装备光环替代。
 - 藤蔓／狂狼找尸体走原圆形UnitFind范围和房间单位顺序，再检查原DEAD模式、deadCol、corpseSel、udead及敌我资格。CorpseCycler先标记不可选择、创建以主人为owner的恢复弹体，再发布A3；Fenris Rage保留独立吃尸／状态阶段。公共移动路径按真实单位查询目标位置，不以活体攻击资格拒绝尸体追踪；攻击／施法接收仍独立复验资格。
 - `presentation/remote`只消费原状态与A3／73／动作包；补齐原Clt67–69、Hurricane90、Volcano91、Armageddon92、CorpseCycler93和Vine89／St49，Fenris St51／Do79，以及飞弹Clt47–51／60、Hit52–56。熔浆巨岩反弹／地面火焰已有；飞石数量、显式速度及构造Gfx步进使用共用助手，原程序与缺口见[怪物117项](../monsters/ACT3.md#逐项接入)；火山落石使用原11位定点Gfx轨迹。客户端公式目录包含cltcalc1／2／3，原CelFile=null的控制弹体保留程序与寿命但不绘制图像。未传输的客户端粒子种子仅用于本地表现，不消费权威战斗种子。

@@ -13,6 +13,7 @@
 #include <set>
 #include <span>
 #include <utility>
+#include <vector>
 
 namespace d2x {
 enum class FormulaDomain { Skill,Missile };
@@ -22,6 +23,7 @@ struct SkillFormulaRecord {
     int classId{-1},page{};
     int passiveState{-1},suppressionState{-1};
     int auraState{-1},auraTargetState{-1};
+    int petType{-1};
     int reactionOverlay{-1},procOverlay{-1},serverOverlay{-1},summonOverlay{-1};
     uint16_t passiveLayer{};
     uint8_t elementType{};
@@ -36,6 +38,8 @@ struct SkillFormulaRecord {
     std::string_view reference(std::string_view) const;
 };
 struct SkillFormulaCatalog {
+    struct PetType {int baseMaximum{};std::vector<int> skills;};
+    std::map<int,PetType> petTypes;
     int maximumSkillRank{}; // Experience.MaxLvl for native class zero.
     int skillShrineState{-1}; // Current States identity, not an allskills stat.
     int corpseNoDrawState{-1},corpseNoSelectState{-1};

@@ -71,7 +71,7 @@ const SkillOverlayVisual *SceneAssets::ensureOverlay(int id) {
     visual.fps = float(table.number(row, "AnimRate").value_or(0)) * 25.f / 16.f;
     visual.trans = table.number(row, "Trans").value_or(5);
     visual.preDraw = table.number(row, "PreDraw").value_or(0) != 0;
-    visual.offset = {-float(table.number(row, "Xoffset").value_or(0)), float(table.number(row, "Yoffset").value_or(0))};
+    visual.offset = {float(table.number(row, "Xoffset").value_or(0)), float(table.number(row, "Yoffset").value_or(0))};
     for (int h = 0; h < 4; ++h) visual.heights[h] = table.number(row, "Height" + std::to_string(h + 1)).value_or(0);
     const auto file = table.value(row, "Filename");
     visual.art = "data/global/overlays/" + std::string(file) + ".dcc";
@@ -88,7 +88,7 @@ void SceneAssets::loadNpcAlert(const DataTable &overlays) {
         const auto file = std::string(overlays.value(row, "Filename"));
         npcAlert.animation = unitsGraphics_.single("data/global/overlays/" + file + ".dcc");
         npcAlert.frames = overlays.number(row, "Frames").value_or(0);
-        npcAlert.fps = overlays.number(row, "AnimRate").value_or(0);
+        npcAlert.fps = float(overlays.number(row, "AnimRate").value_or(0)) * 25.f / 16.f;
         npcAlert.trans = overlays.number(row, "Trans").value_or(5);
         npcAlert.preDraw = overlays.number(row, "PreDraw").value_or(0) != 0;
         npcAlert.offset = {float(overlays.number(row, "Xoffset").value_or(0)),
@@ -121,11 +121,9 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
         loadClassicFont(uiGraphics_, archives, automapTextFonts[size_t(color)], "font6", color);
     loadClassicFont(uiGraphics_, archives, characterRedFont, "font16", 1);
     loadClassicFont(uiGraphics_, archives, deathFont, "font30", 1);
-    // Original red font RGB, blended through the active PL2 for player labels.
+    // D2Win DrawFramedTextEx mixes RGB(80,0,0) into the current palette.
+    playerNameBackground = {80, 0, 0, 255};
     const auto skyPalette = archives.read("data/global/palette/sky/pal.pl2");
-    constexpr size_t redFontColor = 0x6B600 + 3;
-    if (skyPalette.size() < redFontColor + 3) throw std::runtime_error("Original player name color is missing");
-    playerNameBackground = {skyPalette[redFontColor], skyPalette[redFontColor + 1], skyPalette[redFontColor + 2], 255};
     // Client BEE60 uses the same title for softcore and hardcore. D2Win
     // #10138 draws the original tiled cells with PL2 text-color transform 1.
     constexpr size_t fontShifts = 0x6B600 + 13 * 3;

@@ -81,6 +81,14 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
         if(!result->missileIds.emplace(name,*id).second || !result->missiles.emplace(*id,std::move(record)).second)
             throw std::runtime_error("Duplicate native missile formula identity");
     }
+    const auto &petTypes=data.tables.at("pettype");
+    std::map<std::string,int,std::less<>> petTypeIds;
+    for(size_t row=0;row<petTypes.rows().size();++row) {
+        const auto name=petTypes.value(row,"pet type");if(name.empty()) continue;
+        const int id=petTypes.number(row,"idx").value_or(int(row));
+        SkillFormulaCatalog::PetType type;type.baseMaximum=petTypes.number(row,"basemax").value_or(0);
+        petTypeIds.emplace(name,id);result->petTypes.emplace(id,std::move(type));
+    }
     for(const auto &[id,source]:sources.skills) {
         const auto action=source.number("srvdofunc").value_or(0);
         const bool equipped=data.pd2Host && source.number("aura").value_or(0) &&
@@ -97,6 +105,13 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
             return found==data.states.end()?-1:found->second.definition.id;
         };
         record.auraState=sourceState("aurastate");record.auraTargetState=sourceState("auratargetstate");
+        if(const auto type=petTypeIds.find(source.reference("pettype"));type!=petTypeIds.end()) {
+            record.petType=type->second;
+            // SkillsTbls builds this backlink in compiled skill order, with
+            // the native PetTypeTxt.wSkillIds[15] bound.
+            auto &linked=result->petTypes.at(type->second).skills;
+            if(linked.size()<15) linked.push_back(id);
+        }
         if(data.pd2Host) record.useThrowMastery=pd2SkillUsesThrowMastery(data,source.reference("itypea1"));
         // Keep references for unsupported programs without granting class
         // availability. Equipment-only aura records still own real metadata.

@@ -87,9 +87,48 @@ void PlayerSkillRefresh::refresh(int id) {
 void PlayerSkillRefresh::refreshAll() {
     for(size_t index=0;index<order_.size();++index) refresh(order_[index].skill);
 }
+void PlayerSkillRefresh::refreshPetType(int skill) {
+    if(input_.stats.pd2 || !input_.petLimitChanged) return;
+    const auto &record=input_.formulas.skills.at(skill);
+    const auto type=input_.formulas.petTypes.find(record.petType);
+    if(type==input_.formulas.petTypes.end()) return;
+    const auto snapshot=formulaSnapshot();auto context=snapshot.input(input_.stats);
+    SkillFormulaValues values(input_.formulas,context);
+    int maximum=0;
+    for(const auto id:type->second.skills) {
+        // D2Common's "highest" prefers the unowned skill even when a
+        // charged instance has a larger level. Only otherwise compare charges.
+        const int rank=highest(id);
+        if(rank<=0) continue;
+        const auto limit=values.calculation(FormulaDomain::Skill,id,rank,"petmax");
+        if(!limit) throw std::runtime_error("Unavailable native pet capacity");
+        maximum=std::max(maximum,std::max(*limit,1));
+    }
+    input_.petLimitChanged({record.petType,maximum});
+}
+void PlayerSkillRefresh::refreshPetLimits() {
+    if(input_.stats.pd2 || !input_.petLimitChanged) return;
+    const auto snapshot=formulaSnapshot();auto context=snapshot.input(input_.stats);
+    SkillFormulaValues values(input_.formulas,context);const auto effective=ranks();
+    std::map<int,int> counters;
+    // PlayerPets::sub_6FC7DF40 publishes each increasing prefix, not just
+    // the maximum of the final skill list. An early smaller cap can kill pets.
+    for(const auto slot:order_) {
+        const auto &record=input_.formulas.skills.at(slot.skill);
+        if(record.petType<=0 || !input_.formulas.petTypes.contains(record.petType)) continue;
+        const auto rank=nativeSkillSlotLevel(slot,order_,effective,charges_,input_.formulas.maximumSkillRank);
+        const auto limit=values.calculation(FormulaDomain::Skill,slot.skill,rank,"petmax");
+        if(!limit) throw std::runtime_error("Unavailable native pet capacity");
+        const int maximum=std::max(*limit,1);
+        if(maximum>counters[record.petType]) {counters[record.petType]=maximum;input_.petLimitChanged({record.petType,maximum});}
+    }
+    for(const auto &[type,record]:input_.formulas.petTypes)
+        if(counters[type]<=0) input_.petLimitChanged({type,record.baseMaximum});
+}
 void PlayerSkillRefresh::initialize() {
     const auto cached=passives_;for(const auto &source:cached) if(highest(source.skill)<=0) refresh(source.skill);
     refreshAll();
+    if(input_.refreshPetLists) refreshPetLimits();
 }
 SkillFormulaSnapshot PlayerSkillRefresh::formulaSnapshot() const {
     const auto root=read_();const auto values=projectNativeStatValues(input_.stats,*root,values_);
@@ -129,6 +168,7 @@ void PlayerSkillRefresh::changed(StatKey key,int32_t value,EntityId source) {
             base_[request.skill]=0;refresh(request.skill);
         }
         refresh(request.skill);
+        refreshPetType(request.skill);
         if(value<=0) {
             const bool remove=base_[request.skill]<=0;
             if(remove || highest(request.skill)<=0) clearedSelections_.push_back(slot);
@@ -149,6 +189,7 @@ void PlayerSkillRefresh::changed(StatKey key,int32_t value,EntityId source) {
         } else {
             std::erase(order_,slot);clearedSelections_.push_back(slot);
             clearedUses_.push_back({layer.skill,{}});
+            refreshPetType(layer.skill);
         }
     }
 }

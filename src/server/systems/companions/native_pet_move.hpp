@@ -7,6 +7,7 @@ struct Ports;struct Companion;
 struct NativePetMovement {
     int probeClass{-1};MovementCollisionRule probeCollision;
     int motion{-1},velocityBonus{},spacing{6};bool running{},suppressIdle{};
+    bool registeredCount{};
 };
 bool followNativePet(const Ports &,Companion &,const PlayerState &,const monsters::Actor &,EntityId target,bool combat,uint64_t tick,const NativePetMovement &);
 DomainResult<bool> followPd2Shadow(const Ports &,Companion &,const PlayerState &,const monsters::Actor &,EntityId target,uint64_t tick,const NativePetMovement &);

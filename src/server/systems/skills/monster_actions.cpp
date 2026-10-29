@@ -58,6 +58,9 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     else {const auto found=rule.attacks.find(request.monsterMode);if(found!=rule.attacks.end()) prepared=&found->second;}
     if((petAttack && request.skill) || !prepared) return {DomainStatus::Unavailable,{}};
     auto slot=*prepared;
+    const bool retailImpTeleport=slot.action==MonsterAttackRule::Action::Teleport && !rule.stats->pd2 && request.skill &&
+        rule.formulas->skills.at(request.skill).number("srvdofunc")==129;
+    if(retailImpTeleport) destination=ports_.monsters.nativeTargetPosition(target->id,monster->area);
     if(slot.action==MonsterAttackRule::Action::Whirlwind && !request.position) {
         if(destination && unitMeleeReach(area.definition.collision,monster->position,monster->rule.size,destination->first,destination->second,rule.meleeRange))
             return requestCast({request.actor,0,*target,request.tick,4});
@@ -808,11 +811,24 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
                 specialResult=releasePd2MonsterSkill(pending,tick);break;
             }
             if(pending.request.skill && source->rule.formulas->skills.at(pending.request.skill).number("srvdofunc")==129) {
-                const auto target=ports_.monsters.targetPosition(unit.id,source->area);
-                const auto at=pending.request.position?pending.request.position:target?std::optional{target->first}:std::nullopt;
+                const auto target=source->rule.stats->pd2?ports_.monsters.targetPosition(unit.id,source->area):
+                    ports_.monsters.nativeTargetPosition(unit.id,source->area);
+                const auto at=source->impDetachDeathPending?std::optional{source->position}:
+                    pending.request.position?pending.request.position:target?std::optional{target->first}:std::nullopt;
                 specialResult=at?ports_.monsters.impTeleport(source->id,pending.request.position?EntityId{}:unit.id,*at,pending.request.skill,pending.attack.rank,tick.tick,ports_.spatial.nativeCollisionSample(0x1c09)):
                     DomainResult<>{DomainStatus::Unavailable,{}};
-                pending.nativeCallbackStarted=isDeferred(specialResult.status);break;
+                pending.nativeCallbackStarted=isDeferred(specialResult.status);
+                if(pending.nativeCallbackStarted && source->impDetachDeathPending && source->area!=pending.area) {
+                    // The owned Do129 branch can relocate before KillMonster
+                    // waits on its callbacks. Keep that already-started death
+                    // in its new room instead of cancelling it as an old cast.
+                    const auto &destination=ports_.areas.at(source->area);
+                    const auto offset=area->definition.origin-destination.definition.origin;
+                    if(pending.request.position) *pending.request.position=*pending.request.position+offset;
+                    if(pending.launch) {pending.launch->first=pending.launch->first+offset;pending.launch->second=pending.launch->second+offset;}
+                    pending.area=source->area;pending.generation=destination.generation;
+                }
+                break;
             }
             if(pending.request.skill && source->rule.formulas->skills.at(pending.request.skill).number("srvdofunc")==98) {
                 specialResult=pending.request.position?ports_.monsters.nativeTeleport(source->id,*pending.request.position,tick.tick,ports_.spatial.nativeCollisionSample(0x1c09)):DomainResult<>{DomainStatus::InvalidRequest,{}};break;

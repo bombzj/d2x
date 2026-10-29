@@ -21,7 +21,7 @@ DomainResult<> System::nativeMissileHitDelay(EntityId target,const CombatStateDe
         states.apply(effect,tick,[&]{resources.sample(states,true);});resources.sample(states);
         transactions::CharacterEdit edit{{player->player,player->actor,player->area,area->generation,0,tick},
             player->inventoryRevision,player->characterRevision,resources.record()};
-        edit.transient=projectEffectAttributes(states,tick);edit.resourceBase=resources.maximum();
+        edit.transient=projectEffectAttributes(states,tick);edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();
         if(!definition.noSend) edit.publicFacts.emplace_back(StateFact{target,0,player->area,definition.id,true});
         auto prepared=ports_.transactions.prepare(std::move(edit));
         return prepared?ports_.transactions.commit(std::move(*prepared.value)):DomainResult<>{prepared.status,{}};

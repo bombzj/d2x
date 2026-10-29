@@ -39,6 +39,7 @@ struct ClassicFont {
     std::array<uint8_t, 256> transform{}; // optional PL2 index transform
     bool transformed = false;
     Color textColor = WHITE; // PL2 font color for the outline-font backend
+    int framedLineHeight = 0, framedBaselineOffset = 0;
     std::vector<uint32_t> codes;  // sorted code points
     std::vector<uint16_t> frames; // parallel DC6 frame
     std::vector<uint8_t> widths;  // parallel advance width
@@ -110,22 +111,26 @@ inline bool spriteHit(const Sprite *image, Vec position, Vec mouse, bool multiPi
                       std::optional<Vec> coarsePosition = {}) {
     if (!image) return false;
     if (image->selectionCoarseBounds) {
-        const auto point = mouse - coarsePosition.value_or(position);
+        const auto anchor = coarsePosition.value_or(position);
+        const auto point = mouse - Vec{float(int(anchor.x)),float(int(anchor.y))};
         if (!CheckCollisionPointRec(rv(point), *image->selectionCoarseBounds)) return false;
     }
     const auto hit = [&](Rectangle bounds) {
         bounds.x -= 12; bounds.y -= 12; bounds.width += 24; bounds.height += 24;
         if (bounds.width < 32) {const int grow = (32 - int(bounds.width)) / 2; bounds.x -= grow; bounds.width += 2 * grow;}
         if (bounds.height < 32) {const int grow = (32 - int(bounds.height)) / 2; bounds.y -= grow; bounds.height += 2 * grow;}
-        return selectionRectHit(bounds, position, mouse);
+        return selectionRectHit(bounds, {float(int(position.x)),float(int(position.y))}, mouse);
     };
     if (!image->componentBounds.empty()) {
         for (const auto &component : image->componentBounds)
-            if ((!multiPiece || component.selectable) && hit(component.bounds)) return true;
+            // A6CE9 requests TR (component 1) for single-piece units;
+            // the multi-piece branch visits each selectable COF component.
+            if ((multiPiece ? component.selectable : component.component == 1) && hit(component.bounds)) return true;
         return false;
     }
     return image->texture.width > 0 && image->texture.height > 0 &&
-        hit({float(image->x),float(image->y),float(image->texture.width),float(image->texture.height)});
+        hit(image->selectionFrameBounds.value_or(Rectangle{
+            float(image->x),float(image->y),float(image->texture.width),float(image->texture.height)}));
 }
 // Cursor hotspots are texture-local, measured from the top-left pixel.
 Vec handCursorHotspot(const Sprite *sprite);

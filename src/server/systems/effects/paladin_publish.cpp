@@ -66,6 +66,9 @@ void System::stageAuraSource(AuraUnitPublication &plan,EntityId id,AuraUnitPubli
 void System::prepareStagedItemAuras(AuraUnitPublication &plan,uint64_t tick,const AuraRecipientPreparation &recipient) {
     if(!plan.actors) return;
     for(auto &[id,candidate]:plan.actors->actors) {
+        // A skill/charge callback may already have removed this pet before
+        // source preparation finishes. Do not reinstall its birth/item auras.
+        if(candidate.petUnregistered && !candidate.alive()) {plan.sources.erase(id);continue;}
         if(candidate.initialEffects && !ports_.monsters.find(id) && !plan.units.contains(id)) {
             UnitEffect unit;unit.area=candidate.area;unit.states=*candidate.initialEffects;
             for(const auto &effect:unit.states.entries()) if(effect.spec.nativeState)

@@ -252,7 +252,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         const auto applied=applySkillState(states,skill,*skill.appliedEffect,*rules.stats,*player->rules.character->states,actor.tick,
             [&]{resources.sample(states,true);});
         if(!applied.accepted) return {DomainStatus::Unavailable,{}};
-        debit->player=resources.record();debit->resourceBase=resources.maximum();debit->transient=projectEffectAttributes(states,actor.tick);
+        debit->player=resources.record();debit->resourceBase=resources.maximum();debit->petLimitChanges=resources.petLimits();debit->transient=projectEffectAttributes(states,actor.tick);
         for(const auto &removed:applied.removed) if(!states.hasState(removed.effect.spec.state.id,actor.tick))
             debit->publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,removed.effect.spec.state.id,false});
         const auto *installed=states.find(applied.handle);if(!installed) throw std::logic_error("Missing native Cloak owner list");
@@ -293,7 +293,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
                 [&]{resources.sample(states,true);});
             if(!applied.accepted) continue;
             transactions::CharacterEdit edit{{recipient.player,recipient.actor,recipient.area,ports_.areas.at(recipient.area).generation,0,actor.tick},recipient.inventoryRevision,recipient.characterRevision,resources.record()};
-            edit.resourceBase=resources.maximum();
+            edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();
             edit.transient=projectEffectAttributes(states,actor.tick);
             for(const auto &removed:applied.removed) if(!states.hasState(removed.effect.spec.state.id,actor.tick))
                 edit.publicFacts.emplace_back(StateFact{recipient.actor,0,recipient.area,removed.effect.spec.state.id,false});

@@ -218,7 +218,7 @@ DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec
             if(!application.accepted) continue;
             const ActorContext receiver{recipient->player,id,recipient->area,ports_.areas.at(recipient->area).generation,0,actor.tick};
             transactions::CharacterEdit edit{receiver,recipient->inventoryRevision,recipient->characterRevision,resources.record()};
-            edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,actor.tick);
+            edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(states,actor.tick);
             for(const auto &removed:application.removed) if(!states.hasState(removed.effect.spec.state.id,actor.tick))
                 edit.publicFacts.emplace_back(StateFact{id,0,recipient->area,removed.effect.spec.state.id,false});
             const auto *installed=states.find(application.handle);

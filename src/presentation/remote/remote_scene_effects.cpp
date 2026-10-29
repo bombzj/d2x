@@ -1487,6 +1487,30 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                         else if(code=="bloodraven") {
                             deathMissile("brdeathcontrol"); deathMissile("brdeathspirits1"); deathMissile("brdeathsmokes1");
                         }
+                        else if(!pd2 && code=="izual") {
+                            emitSound(PresentationSoundEvent::Kind::IzualComplete,unit->second,age,-1,0,{},-1,4691);
+                            deathMissile("izual control");
+                        }
+                        else if(!pd2 && code=="duriel" && v.load.playerUnitId) {
+                            // 52620 uses the local player as owner, while the
+                            // explicit creation coordinates belong to Duriel.
+                            ClientMissileInitialization initialization;initialization.sourceSkill=0;
+                            if(const auto missile=missileNames.find("durieldeathcontrol");missile!=missileNames.end())
+                                launch(missile->second,at,at,1,-age,{},OnlineUnitKey{0,*v.load.playerUnitId},-1,0,
+                                    ClientMissileSource::Death,{},0,initialization);
+                        }
+                        else if(!pd2 && code=="mephisto") {
+                            // Retail 52270: two clocks start at 75, followed
+                            // by the hole delay and the corpse-hide controller.
+                            ClientMissileInitialization initialization;initialization.sourceSkill=0;
+                            initialization.parameters=std::array<int32_t,2>{75,75};
+                            if(const auto missile=missileNames.find("mephistodeathcontrol");missile!=missileNames.end())
+                                launch(missile->second,at,at,1,-age,{},event.source,-1,0,ClientMissileSource::Death,{},0,initialization);
+                            initialization.parameters.reset();
+                            for(const auto *name:{"mephistoholedelay","mephistodonotdraw"})
+                                if(const auto missile=missileNames.find(name);missile!=missileNames.end())
+                                    launch(missile->second,at,at,1,-age,{},event.source,-1,0,ClientMissileSource::Death,{},0,initialization);
+                        }
                         else if(code=="ancientbarb1" || code=="ancientbarb2" || code=="ancientbarb3") {
                             const int operation=code=="ancientbarb1"?63:code=="ancientbarb2"?64:62;
                             for(const auto &[key,statue]:v.world.units) if(key.type==2 && statue.position) {

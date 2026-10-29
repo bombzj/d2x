@@ -47,15 +47,12 @@ void SceneView::drawBhAutomapMarker(const AutomapDrawView::Marker &marker, const
         if (!unitVisible(at)) return;
         // Current CN screenshot supplied by the user: one-pixel axial '+'.
         // Public BH Crosshook uses a twelve-segment outline instead; retain
-        // that original path for non-PD2 native unit marks.
+        // NPCs and other native unit marks always retain the original path.
         DrawLineV(rv(at + Vec{-4,0}), rv(at + Vec{5,0}), color);
         DrawLineV(rv(at + Vec{0,-4}), rv(at + Vec{0,5}), color);
     };
     using Mark = AutomapDrawView::UnitMark;
     switch (marker.unitMark) {
-        case Mark::Npc:
-            cross(blend.paletteColor({244,244,244,255}));
-            break;
         // CN '+' with BH's palette-byte rank color.
         case Mark::Monster: {
             cross(blend.paletteByte(marker.markColor));
@@ -85,7 +82,10 @@ void SceneView::drawBhAutomapMarker(const AutomapDrawView::Marker &marker, const
             break;
         }
         case Mark::Quest:
-            cross({120,255,120,255});
+            if (unitVisible(at))
+                for (size_t i = 1; i < automapUnitOutline.size(); ++i)
+                    DrawLineV(rv(at + automapUnitOutline[i - 1] * 2),
+                        rv(at + automapUnitOutline[i] * 2), {120,255,120,255});
             break;
         // Retain the existing 3x3 box until native endpoint comparison.
         case Mark::Chest: {

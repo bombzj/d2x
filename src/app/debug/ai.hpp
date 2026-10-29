@@ -1,6 +1,7 @@
 #pragma once
 #include "contracts/online_scene.hpp"
 #include <memory>
+#include <functional>
 #include <optional>
 #include <string>
 #include <nlohmann/json_fwd.hpp>
@@ -18,6 +19,10 @@ class DebugAi {
     struct Impl;
     std::unique_ptr<Impl> impl_;
   public:
+    struct SuppliesView {
+        std::optional<int> maxLife,maxMana;
+        std::function<std::optional<unsigned>(uint32_t)> buyQuote;
+    };
     explicit DebugAi(Archives &);
     ~DebugAi();
     bool active() const;
@@ -27,6 +32,6 @@ class DebugAi {
     std::optional<std::string> command(const nlohmann::json &,net::RealmSession &,RemoteTown &,
         DebugAutoWalk &,RemoteControl &,RemoteCombat &,RemoteInventory &);
     void tick(net::RealmSession &,RemoteTown &,DebugAutoWalk &,RemoteControl &,RemoteCombat &,
-        RemoteInventory &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
+        RemoteInventory &,const SuppliesView &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
 };
 }

@@ -29,6 +29,7 @@ class PlayerResourceTrace {
     uint64_t tick_{};
     std::optional<StatTimeContext> time_;
     std::vector<ResourceMaximums> maximums_;
+    std::vector<SkillPetLimitChange> petLimits_;
     uint64_t passiveRefresh_{};
     uint64_t staminaRestore_{};
   public:
@@ -41,6 +42,7 @@ class PlayerResourceTrace {
     const attributes::Totals &totals() const {return previous_;}
     ResourceMaximums maximum() const;
     const std::vector<ResourceMaximums> &maximums() const {return maximums_;}
+    const std::vector<SkillPetLimitChange> &petLimits() const {return petLimits_;}
 };
 EffectApplication applyCurseState(CombatEffectSet &,const CurseSpec &,const CombatEffectSpec &,std::span<const StatValue>,const StatRuleCatalog &,uint64_t tick,
     const std::function<void()> &observe={},const std::function<void(const EffectApplication &)> &afterPost={});

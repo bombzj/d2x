@@ -1,6 +1,7 @@
 #include "presentation/world/world_draw_view.hpp"
 #include "presentation/world/lighting_view.hpp"
 #include "presentation/world/palette_blend_view.hpp"
+#include "presentation/world/overlay_geometry.hpp"
 #include "client/actor_client.hpp"
 #include "content/classic_data.hpp"
 #include "content/world/world_catalog.hpp"
@@ -183,6 +184,11 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         entry.suppressMissileLight=effect.suppressLight;
         entry.position = clientMissilePosition(effect, map.grid, scene.terrainOrigin) - scene.terrainOrigin;
         entry.heading = effect.flight || effect.direction.length() <= 0 ? effect.velocity : effect.direction;
+        if(effect.nativeDirection) {
+            // Same native 64-way path facing as displayed remote units.
+            const float angle=(float(*effect.nativeDirection&63)-7.5f)*2.f*pi/64.f;
+            entry.heading={-std::sin(angle),std::cos(angle)};
+        }
         entry.age = effect.age; entry.remaining = effect.duration - effect.age;
         if(effect.flight) entry.missileFrame=effect.nativeSequenceFrame>>8;
         entry.pixelOffset=effect.pixelOffset;
@@ -234,13 +240,13 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
             const auto light = lighting_->sample(item.position);
             const auto alert = std::find_if(scene.alerts.begin(), scene.alerts.end(),
                 [&](const auto &value) { return item.unit && value.unit == item.unit; });
-            if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(alert->position), true);
+            if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(item.position) + item.pixelOffset, true);
             if (item.shadow) spriteShadow(entry.image, entry.at);
             if (item.missile >= 0) drawMissile(item.missile, item.position, item.heading, item.age, item.remaining,item.pixelOffset,item.missileFrame,&palette,light);
-            else if (item.overlay >= 0) drawSpellOverlay(item.overlay, item.position, item.age, item.loop, item.height,&palette,light,item.overlayFrame);
+            else if (item.overlay >= 0) drawSpellOverlay(item.overlay, item.position, item.age, item.loop, item.height,&palette,light,item.overlayFrame,item.pixelOffset);
             else if (item.ground) drawGroundItem(*item.ground, item.highlighted,&palette,light);
             else drawSelectableSprite(entry.image, entry.at, item.highlighted,WHITE,{2,1},&palette,light);
-            if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(alert->position), false);
+            if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(item.position) + item.pixelOffset, false);
         }
     };
     uiScissor(viewport.x, viewport.y, viewport.width, viewport.height);
@@ -356,7 +362,7 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
     if (translucent) EndBlendMode();
 }
 void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop, int height,
-                                const PaletteBlendView *lighting, Color light,std::optional<int> preciseFrame) const {
+                                const PaletteBlendView *lighting, Color light,std::optional<int> preciseFrame,Vec pixelOffset) const {
     const auto found = assets_.spellOverlays.find(id);
     if (found == assets_.spellOverlays.end()) return;
     const auto &overlay = found->second;
@@ -364,8 +370,7 @@ void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop, int
     const double ticks = std::floor(std::max(0.0,double(age))*25.0+1e-5);
     const int elapsed = preciseFrame.value_or(int(ticks*overlay.visual.fps/25.0));
     const int frame = loop ? elapsed % overlay.visual.frames : std::min(overlay.visual.frames - 1, elapsed);
-    const int heightOffset = height < 0 ? 75 : overlay.visual.heights[std::clamp(height, 0, 3)];
-    const Vec at = screen(position) + overlay.visual.offset + Vec{0, float(heightOffset)};
+    const Vec at = screen(position) + pixelOffset + overlayScreenOffset(overlay.visual.offset,overlay.visual.heights,height);
     if (lighting) lighting->drawLit(overlay.animation.frame(0, frame), at, {&light,1}, WHITE,{1,1},overlay.visual.trans == 3);
     else if (overlay.visual.trans == 3) paletteBlend_->draw(overlay.animation.frame(0, frame), at);
     else sprite(overlay.animation.frame(0, frame), at);

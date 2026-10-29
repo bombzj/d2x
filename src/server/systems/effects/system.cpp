@@ -108,7 +108,7 @@ TransientAttributes projectEffectAttributes(const CombatEffectSet &effects,uint6
 PlayerResourceTrace::PlayerResourceTrace(const PlayerState &player,uint64_t tick,Fixed8 manaCost,std::optional<StatTimeContext> time)
     :player_(player),current_(player.persistent),previous_(player.totals),tick_(tick),time_(time?time:player.totals.time),
      passiveRefresh_(player.transient.effects?player.transient.effects->passiveRefreshEpoch():0),
-     staminaRestore_(player.transient.effects?player.transient.effects->staminaRestoreEpoch():0) {current_.player.mana-=manaCost;}
+     staminaRestore_(player.transient.effects?player.transient.effects->staminaRestoreEpoch():0) {current_.player.mana-=manaCost;previous_.petLimitChanges.clear();}
 ResourceMaximums PlayerResourceTrace::maximum() const {
     const auto &value=previous_.character;return {value.maxLifeFixed,value.maxManaFixed,value.maxStaminaFixed};
 }
@@ -116,6 +116,7 @@ void PlayerResourceTrace::seedResources(Fixed8 life,Fixed8 mana,Fixed8 stamina) 
     current_.player.hp=life;current_.player.mana=mana;current_.player.stamina=stamina;
 }
 void PlayerResourceTrace::inheritPrepared(CharacterRecord record,attributes::Totals totals,const CombatEffectSet &states) {
+    petLimits_=totals.petLimitChanges;
     current_.player=std::move(record);previous_=std::move(totals);
     passiveRefresh_=states.passiveRefreshEpoch();staminaRestore_=states.staminaRestoreEpoch();maximums_.clear();
 }
@@ -124,7 +125,9 @@ void PlayerResourceTrace::sample(const CombatEffectSet &states,bool includePendi
     const auto passiveRefresh=passiveRefresh_==states.passiveRefreshEpoch()?attributes::PassiveCacheRefresh::Retain:attributes::PassiveCacheRefresh::Refresh;
     passiveRefresh_=states.passiveRefreshEpoch();
     auto next=attributes::calculate(player_.definition,current_,*player_.rules.items,*player_.rules.equipment,*player_.rules.character,
-        {},transient.modifiers,transient.states,transient.statSources(),&previous_,time_,false,{}, {},{}, {},passiveRefresh);
+        {},transient.modifiers,transient.states,transient.statSources(),&previous_,time_,false,{}, {},{}, {},passiveRefresh,nullptr,{},
+        [&](const SkillPetLimitChange &limit){petLimits_.push_back(limit);},passiveRefresh==attributes::PassiveCacheRefresh::Refresh);
+    next.petLimitChanges=petLimits_;
     // CharacterRecord owns current stamina; derived FullStats contains only
     // the posted list's stamina contribution. Propagate its delta before
     // MAXSTAMINA callbacks, as ExpireStatList withdraws stat 10 before 11.
@@ -290,7 +293,7 @@ DomainResult<PotionPlan> System::potion(const ActorContext &actor,const PotionDe
         const auto *effect=recovery.states.find(installed.handle);if(!effect) throw std::logic_error("Missing posted potion list");
         plan.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,potion.state.id,true,nativeEffectStats(rules,effect->spec)});
     }
-    resources.sample(recovery.states);plan.character=resources.record();plan.resourceBase=resources.maximum();
+    resources.sample(recovery.states);plan.character=resources.record();plan.resourceBase=resources.maximum();plan.petLimitChanges=resources.petLimits();
     plan.transient=projectEffectAttributes(recovery.states,actor.tick);
     if(recovery.poison && !recovery.states.hasState(recovery.poison->damage.state,actor.tick)) recovery.poison.reset();
     return {DomainStatus::Applied,std::move(plan)};
@@ -312,7 +315,7 @@ DomainResult<PotionPlan> System::skillState(const ActorContext &actor,CombatEffe
         plan.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,removed.effect.spec.state.id,false});
     const auto *installed=states.find(applied.handle);if(!installed) throw std::runtime_error("Missing posted attack state list");
     if(spec.state.id>=0) plan.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,spec.state.id,true,nativeEffectStats(*player->rules.skills,installed->spec)});
-    plan.character=resources.record();plan.resourceBase=resources.maximum();
+    plan.character=resources.record();plan.resourceBase=resources.maximum();plan.petLimitChanges=resources.petLimits();
     plan.transient=projectEffectAttributes(states,actor.tick);return {DomainStatus::Applied,std::move(plan)};
 }
 DomainResult<> System::frenzy(const ActorContext &actor,const SkillCastSpec &skill) {
@@ -379,7 +382,7 @@ DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {
     for(const int state:player->rules.character->healerCureStates)
         if(player->rules.character->states->at(state).curable && recovery.states.hasState(state,actor.tick)) removePlayerState(state);
     if(recovery.poison && !recovery.states.hasState(recovery.poison->damage.state,actor.tick)) recovery.poison.reset();
-    plan.character=resources.record();plan.resourceBase=resources.maximum();plan.transient=projectEffectAttributes(recovery.states,actor.tick);
+    plan.character=resources.record();plan.resourceBase=resources.maximum();plan.petLimitChanges=resources.petLimits();plan.transient=projectEffectAttributes(recovery.states,actor.tick);
     auto units=units_;plan.units=std::make_shared<AuraUnitPublication>();
     for(const auto id:ports_.monsters.pets(actor.player)) {
         const auto &m=*ports_.monsters.find(id);
@@ -425,7 +428,7 @@ DomainResult<> System::removeState(const ActorContext &actor,int state) {
     PlayerResourceTrace resources(*player,actor.tick,{},ports_.areas.statTime(player->area));
     const auto removed=states.removeState(state,[&]{resources.sample(states,true);});
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,resources.record()};
-    edit.resourceBase=resources.maximum();
+    edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();
     for(const auto &effect:removed) if(!states.hasState(effect.effect.spec.state.id,actor.tick))
         edit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,effect.effect.spec.state.id,false});
     edit.transient=projectEffectAttributes(states,actor.tick);
@@ -451,7 +454,7 @@ DomainResult<WellRestoration> System::restoreWell(const ActorContext &actor,Fixe
     if(recovery.poison && !recovery.states.hasState(recovery.poison->damage.state,actor.tick)) recovery.poison.reset();
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
     edit.explicitResources=true;
-    edit.player=resources.record();edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(recovery.states,actor.tick);
+    edit.player=resources.record();edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(recovery.states,actor.tick);
     for(const auto &effect:removedStates) if(!recovery.states.hasState(effect.effect.spec.state.id,actor.tick))
         edit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,effect.effect.spec.state.id,false});
     auto unitPublication=std::make_shared<AuraUnitPublication>();
@@ -509,7 +512,7 @@ DomainResult<> System::apply(const ActorContext &actor, CombatEffectSpec spec, b
         throw std::runtime_error("Missing native shrine state list");
     if(refreshPassives) states.refreshPassiveSkills(observe);
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,resources.record()};
-    edit.resourceBase=resources.maximum();
+    edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();
     edit.transient = projectEffectAttributes(states, actor.tick);
     for(const auto &removed:application.removed) if(removed.effect.spec.state.id>=0 && !states.hasState(removed.effect.spec.state.id,actor.tick))
         edit.publicFacts.emplace_back(StateFact{player->actor,0,player->area,removed.effect.spec.state.id,false});
@@ -577,7 +580,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (!removed.empty() || !clearedStates.empty() || !player.totals.itemAuraTimers.empty()) {
                 transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,resources->record()};
                 restoreStaminaOnEffectRemoval(edit.player.stamina,resources->maximum().stamina,removed);
-                edit.resourceBase=resources->maximum();
+                edit.resourceBase=resources->maximum();edit.petLimitChanges=resources->petLimits();
                 edit.transient=projectEffectAttributes(next.states,tick.tick);
                 edit.cancelItemAuras=true;
                 for(const auto &effect:removed) if(effect.effect.spec.state.id>=0 && !next.states.hasState(effect.effect.spec.state.id,tick.tick))
@@ -597,7 +600,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(!removed.empty()) {
             auto record=resources->record();restoreStaminaOnEffectRemoval(record.stamina,resources->maximum().stamina,removed);
             transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,std::move(record)};
-            edit.transient=projectEffectAttributes(next.states,tick.tick);edit.resourceBase=resources->maximum();
+            edit.transient=projectEffectAttributes(next.states,tick.tick);edit.resourceBase=resources->maximum();edit.petLimitChanges=resources->petLimits();
             for(const auto &effect:removed) if(effect.effect.spec.state.id>=0 && !next.states.hasState(effect.effect.spec.state.id,tick.tick))
                 edit.publicFacts.emplace_back(StateFact{player.actor,0,player.area,effect.effect.spec.state.id,false});
             auto plan=ports_.transactions.prepare(std::move(edit));

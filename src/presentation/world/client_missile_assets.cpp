@@ -115,9 +115,10 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         program.killOnContact = number("CollideKill") != 0;
         program.explodeOnExpiry = number("AlwaysExplode") != 0;
         program.explosion = linked(row, "ExplosionMissile");
-        for (size_t i = 0; i < program.parameters.size(); ++i)
+        for (size_t i = 0; i < program.parameters.size(); ++i) {
             program.parameters[i] = number("CltParam" + std::to_string(i + 1));
-        program.serverTurnPeriod=number("Param1");
+            program.serverParameters[i] = number("Param" + std::to_string(i + 1));
+        }
         for (size_t i = 0; i < program.hitParameters.size(); ++i) {
             program.hitParameters[i] = number("cHitPar" + std::to_string(i + 1));
             program.serverHitParameters[i] = number("sHitPar" + std::to_string(i + 1));

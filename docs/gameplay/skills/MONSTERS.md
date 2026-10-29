@@ -45,7 +45,7 @@
 | HellMeteor | Fn033／原213技能和坐标Do28服务端见[台账101项](../monsters/ACT3.md#逐项接入)；落地CltHit36／起始CltSt44源码见112至113项，完整行为仍待对齐 |
 | Submerge／Emerge | St51／52保留原目标资格开关；Do94使用MonSeq显示零帧对应的序列位置停帧，支持触手／触手头倒放；不把触手下潜改成FrogDemon的额外脱离碰撞流程。六种水域身份及Fn056／057见[108项](../monsters/ACT3.md#逐项接入)，尚无该项实机结论 |
 | Baal Tentacle | Do140逐次抽数、原房间单点出生及初始A1／Idle15已接源码；普通Baal／UberBaal与clone的BaseId分支分别保留。普通Baal／clone的AI见92项，出生／恢复实机尚未完成，见[台账80至81项](../monsters/ACT3.md#逐项接入) |
-| Nihlathak | 五技能及Fn128接入见[台账74项](../monsters/ACT3.md#逐项接入)；Do55复用原尸体资格及公共尸爆，Do129接无拥有者／无单位目标的坐标传送，St62保存实际出生类型和模式。共用Clt54按客户端25Hz发射两束；本批尚无正常战斗实机 |
+| Nihlathak | 五技能及Fn128接入见[台账74项](../monsters/ACT3.md#逐项接入)；Do55复用原尸体资格及公共尸爆，Do129使用通用拥有者／单位目标／坐标分支，Imp挂载另按BaseId限定，St62保存实际出生类型和模式。共用Clt54按客户端25Hz发射两束；本批尚无正常战斗实机 |
 
 普通箭矢、尖刺、骷髅法师元素弹、近战与元素附伤已有共享程序，但A1／A2或MissA1／A2不一定对应独立Skills行。SkeletonRaise槽是复活动画，不归普通AI主动；关系见[第一幕](../monsters/ACT1.md)。第三至第五幕程序尚未全面迁入，任务死亡链和身份替身不能认证战斗技能。
 
@@ -105,3 +105,11 @@ MonBow（339）／MonFireArrow（340）／MonExplodingArrow（342）：`cr_arche
 已有公共方向／路径计算及原Clt／Srv差异沿[技能COMMON](COMMON.md)和[怪物COMMON](../monsters/COMMON.md)维护。怪物调用职业技能时链接职业页，怪物专用程序才在本页登记算法；与物件、任务死亡演出、伙伴能力的分类见[目录](README.md)。
 
 后续逐项补当前MPQ技能ID／原名、实际使用槽与AI条件、Clt／Srv程序、共享函数、实际执行、原版依据及明确缺口。当前表为代码执行家族摘要，不是全部非玩家Skills行清单；未归档行先列入[SPECIAL](SPECIAL.md)。第一幕类型及程序边界见[第一幕](../monsters/ACT1.md)，不以自研运行记录提升完成度。
+
+## 非玩家通用传送
+
+Do129由`monsters::System::impTeleport`统一执行，Nihlathak与Imp共用原程序；不以AI名称拒绝通用拥有者或单位目标。Skills.AuraState须在实际States目录内。存在拥有者时先尝试带空位搜索的通用传送，再调用Imp专用下马助手；非Imp或非载具拥有者不改变双方归属，原分支仍返回成功，实际空位失败不变成挂载失败。拥有者分支直接调用通用寻位，不借用Do98专有的AI仆从拥有者房间后备；无拥有者／无目标仍完整保留Do98后备。无拥有者时，路径目标为自己按无目标处理；无目标走坐标传送，有目标则拒绝已有拥有者／死亡目标，直接到真实玩家或怪物所在房间的整数坐标，不搜索其他落点。原SUNIT_IsDead将其他单位类型判为不可用，物件不作为这里的有效目标。
+
+上／下马助手只在源BaseId为当前MPQ的imp1且目标／拥有者BaseId为SiegeBeast或BarricadeTower时修改attached、双方sourceunit、ActiveState与RESET。下马在迁移前为三条状态事实预留完整输出容量，避免仅剩一／两条容量时先迁移再失败重试。生命不足10%的原死亡分支保留；死亡回调等待时保留已经完成的迁移／下马，技能继续点改用当前房间与代次，并在原目标撤出后仍继续死亡，不重新寻位或恢复挂载。普通可攻击目标筛选不提前替代Do129自身的目标检查，起手与释放均按原单位身份查找。
+
+依据为D2MOO SkillDruid::SKILLS_SrvDo129_ImpTeleport、sub_6FD00EC0／sub_6FD01010、SUnit::sub_6FCBDFE0及SUNIT_IsDead；本机1.13c D2Game RVA DBD0–DD3F另核实AuraState检查、清除自身目标、拥有者分支恒返回1、无拥有者强制单位目标落点。当前源码已接，统一构建／运行验收仍待执行；边界维护在[缺口清单](../../development/ORIGINAL_GAPS.md#待验收特殊ai与事件)。

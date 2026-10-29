@@ -103,6 +103,11 @@ bool RemoteCombat::innateSkill(uint16_t id) const {
     const auto found=innateSkills_.find(classCode());
     return found!=innateSkills_.end() && found->second.contains(id);
 }
+std::optional<uint16_t> RemoteCombat::superUnique(const OnlineUnit &unit) const {
+    const auto found=unitOwners_.find(unit.key);
+    if(found==unitOwners_.end() || !found->second.decoded || found->second.revision!=unit.appearanceRevision) return {};
+    return found->second.superUnique;
+}
 bool RemoteCombat::hostile(const OnlineUnit &unit) const {
     if (!hostileSource(unit)) return false;
     if(unit.key.type==0) return true;
@@ -431,8 +436,12 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
                 return reject("Server has not reported an available active skill for this hand");
             if (command.action == Action::Cast) {
                 const auto &binding = scene_.read();
-                if (!binding.nativeMapReady || !binding.movementAvailable || !world.playerPosition || !eligibility.usableNow)
-                    return reject("Skill cannot be cast in the current loaded area");
+                if (!binding.nativeMapReady)
+                    return reject("Skill is waiting for the active map: " + binding.nativeMapReason);
+                if (!binding.movementAvailable || !world.playerPosition)
+                    return reject("Skill requires an active player position");
+                if (!eligibility.usableNow)
+                    return reject(facts.town ? "Skill cannot be cast in town" : "Skill is not currently usable");
                 if (command.point.has_value() == command.target.has_value()) return reject("Specify exactly one point or unit target");
                 if(command.point && tables_.at("skills").number(row->second,"TargetCorpse").value_or(0) &&
                    tables_.at("skills").number(row->second,"SearchEnemyNear").value_or(0)) {
@@ -541,7 +550,7 @@ void RemoteCombat::update() {
                     if (bits.read(1)) {
                         const auto rank = bits.read(5);
                         owner.rank = rank;
-                        if (rank & 4) bits.read(16);
+                        if (rank & 4) owner.superUnique=uint16_t(bits.read(16));
                         unsigned modifiers = 0;
                         while (bits.read(8)) if (++modifiers > 9) throw std::runtime_error("Too many NPC modifiers");
                         bits.read(16);

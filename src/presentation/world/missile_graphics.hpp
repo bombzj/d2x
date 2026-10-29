@@ -26,10 +26,10 @@ struct ClientMissileGraphics {
         value.velocity[2]=nativeDivide(nativeSubtract(0,nativeMultiply(nativeMultiply(frames,frames),value.acceleration[2])/2),frames);
         return value;
     }
-    static ClientMissileGraphics arc(int frames,int height) {
+    static ClientMissileGraphics arc(int frames,int height,int acceleration=-4096) {
         ClientMissileGraphics value;frames=std::max(frames,1);
         value.flags=2;value.remaining=frames;value.position[2]=nativeShiftLeft(height,11);
-        value.acceleration[2]=-4096;
+        value.acceleration[2]=acceleration?acceleration:-4096;
         value.velocity[2]=nativeDivide(nativeSubtract(nativeSubtract(0,value.position[2]),
             nativeMultiply(nativeMultiply(frames,frames),value.acceleration[2])/2),frames);
         return value;

@@ -186,6 +186,7 @@ class SceneView {
     void advanceGroundAnimations(float dt);
     using ClientMissile = ClientMissileVisual;
     std::vector<ClientMissile> clientMissiles_;
+    std::vector<EntityId> clientMissileHiddenOwners_;
     uint64_t projectileVisualRandom_ = 0;
     uint64_t nextClientMissile_ = 0;
     void createMissileImpactVisuals(int missileId, Vec position);
@@ -338,9 +339,15 @@ class SceneView {
                               std::span<const ClientMissileAnchor> = {});
     void clearClientMissiles() {
         clientMissiles_.clear();
+        clientMissileHiddenOwners_.clear();
         assets_.sceneAudio.reset();
     }
     const auto &clientMissiles() const { return clientMissiles_; }
+    std::vector<EntityId> takeClientMissileHiddenOwners() {
+        std::vector<EntityId> result;
+        result.swap(clientMissileHiddenOwners_);
+        return result;
+    }
     void retireClientMissileRoom(const std::array<int,3> &room) {
         std::erase_if(clientMissiles_,[&](const auto &value){return value.roomAttachment && *value.roomAttachment==room;});
     }
@@ -354,10 +361,10 @@ class SceneView {
     }
     void drawSpellOverlay(int id, Vec position, float age, bool loop, int height = 1,
                           const PaletteBlendView *lighting = nullptr, Color light = WHITE,
-                          std::optional<int> preciseFrame = {}) const;
+                          std::optional<int> preciseFrame = {}, Vec pixelOffset = {}) const;
     void drawGroundLabels(Vec mouse) const { drawLootLabels(mouse); }
     void drawDeathNotice() const;
-    void drawCorpseLabel(const std::string &label, Vec screenPosition) const;
+    void drawCorpseLabel(const std::string &label, Vec ground) const;
     void drawHighlightedActor(const Sprite *image, Vec position) const { drawSelectableSprite(image, position, true); }
     void drawNpcQuestAlert(EntityId npc, Vec position, bool back) const { drawNpcAlert(npc, position, back); }
     void drawAutomap(const AutomapDrawView &);
@@ -403,8 +410,9 @@ class SceneView {
     void shakeScreen(int magnitude,int buildFrames,int holdFrames,int fadeFrames,float delay);
     Vec world(Vec position) const;
     void drawInteractionLabel(const std::string &, Vec, int offset = 70) const;
+    void drawNpcLabel(const std::string &, Vec ground, int pixelHeight) const;
     void drawInteractionDetails(const std::vector<std::string> &,Vec) const;
-    void drawPlayerLabel(const std::string &, Vec, bool hostile) const;
+    void drawPlayerLabel(const std::string &, Vec ground, bool hostile, int life) const;
     void drawOverheadText(const std::string &,Vec);
     bool leftSkillAllowed(int skill) const;
     struct SkillPickerSlot { std::optional<int> skill; Rectangle bounds; uint32_t owner=UINT32_MAX; };

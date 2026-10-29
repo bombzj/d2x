@@ -29,7 +29,7 @@
 - **调用者与新差异**：17d5的306E80／41d49的307010是安全回血入口，先拒绝非正增量、死亡及state92，再以有符号64位相加、限最大生命，负值或越界饱和INT_MAX后调用2FC030／2FC040。原D2X吸血先nativeAdd再min，会把大正和回绕成负生命。现`pd2SafeLifeAfterGain`共用该候选及门槛，`advanceMissileDrain`玩家／怪物调用均补state92，保留原事务、随机及drainCommitted。原版分支不改。
 - **边界**：玩家飞弹吸血在准备生命写入时通过effects.unitStatValues重新读取实时lifedrain_percentcap，不再直接使用totals.character.combat中的旧cap；怪物仍从当时的effects.combatModifiers取值。该修正已构建，同帧状态变化／背压实测及近战、佣兵等全部安全回血调用点尚未闭合。不能认定所有吸血已一致，也不应把该谓词加到所有药剂／治疗。
 - **吸收消费者**：核心305B60的305CF0及305E20的305F7E以伤害描述符+48的AbsLife调用306E80；3A3810另安装于配套Game位移DBB80／DE23E，分别包含吸血与吸收。`effects/skills::receiveMonster`及`monsters::damage`现让PD2吸收回血使用同一安全入口，在减伤害前读取当时的488；玩家使用吸收回调后资源投影，怪物重新查询unitStatValues，死亡延迟不回血。没有把该规则加到药水、Holy Bolt或Life Tap的未核实直接写入。
-- **结论／步骤**：高位解释、64位候选及已核吸血／吸收消费者已修正；本次新修正尚未构建或运行。全部伙伴、同帧状态、源端死亡模式及其他安全回血调用者仍待对照，不能据此关闭完整T06。
+- **结论／步骤**：高位解释、64位候选及已核吸血／吸收消费者已修正；本次新修正已通过Windows Release公共目标构建，PD2运行仍待验收。全部伙伴、同帧状态、源端死亡模式及其他安全回血调用者仍待对照，不能据此关闭完整T06。
 
 ## F04 充能回调3452D0
 

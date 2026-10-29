@@ -19,6 +19,12 @@ EntityId serviceNpc(const Intent &intent) {
     }, intent);
 }
 }
+bool System::pendingTransmute(PlayerId player,uint64_t sequence) const {
+    const auto found=state_.pending.find(player);const auto *p=ports_.players.find(player);
+    return found!=state_.pending.end() && p && p->rules.skills && !p->rules.skills->pd2 &&
+        (!sequence || found->second.actor.sequence==sequence) &&
+        std::holds_alternative<TransmuteCube>(found->second.request.intent);
+}
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
     const auto *p = ports_.players.find(actor.player);
     const auto *area = ports_.areas.find(actor.area);

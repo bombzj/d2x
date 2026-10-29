@@ -100,7 +100,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     result["scene"]["clientMissiles"] = Json::array();
     result["scene"]["monsters"] = Json::array();
     for(const auto &m:scene.monsters) result["scene"]["monsters"].push_back({{"id",m.id},{"classId",m.classId},
-        {"name",m.name},{"modifiers",m.modifiers},{"transform",m.transform},{"randomTransform",m.random}});
+        {"name",m.name},{"modifiers",m.modifiers},{"transform",m.transform},{"randomTransform",m.random},{"effectHidden",m.effectHidden}});
     for (const auto &missile : scene.clientMissiles)
         result["scene"]["clientMissiles"].push_back({{"id", missile.id}, {"age", missile.age}, {"remaining", missile.remaining},
             {"position", {{"x", missile.position.x}, {"y", missile.position.y}}}});
@@ -339,7 +339,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         {"gameFlags",optional(quests.gameFlags)}, {"availability",optional(quests.availability)},
         {"npcIntroductionReports",std::move(npcIntroductions)}, {"statuses",std::move(statuses)}, {"updates",quests.updates},
         {"denRemaining",optional(quests.denRemaining)}, {"staffTombOffset",optional(quests.staffTombOffset)},
-        {"rescuedBarbsRemaining",optional(quests.rescuedBarbsRemaining)}, {"cainStones",optional(quests.cainStones)}};
+        {"rescuedBarbsRemaining",optional(quests.rescuedBarbsRemaining)}, {"cainStones",optional(quests.cainStones)},
+        {"cainStonesRevision",quests.cainStonesRevision}};
     result["world"]["eclipse"]=optional(v.world.eclipse);
     result["world"]["playerPortalFlags"]=optional(v.world.playerPortalFlags);
     result["world"]["staffInteraction"]={{"source",optional(v.world.staffSource)},{"revision",v.world.staffRevision},{"result",v.world.staffResult}};

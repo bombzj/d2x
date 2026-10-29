@@ -120,6 +120,7 @@ void GameInstance::collectNativeIdentities(std::set<EntityId> retained) {
     systems_.skills.collectEntityReferences(retained);
     systems_.missiles.collectEntityReferences(retained);
     systems_.objects.collectEntityReferences(retained);
+    systems_.travel.collectEntityReferences(retained);
     for(const auto &[actor,transition]:systems_.death.read().transitions) {
         retained.insert(actor);retained.insert(transition.corpseId);retained.insert(transition.corpseItems);
     }
@@ -157,10 +158,17 @@ PlayerId GameInstance::admit(GameDefinition definition) {
     ++nextPlayer_; ++revision_;
     return id;
 }
+bool GameInstance::pendingSynchronousCommand(PlayerId id,uint64_t sequence) const {
+    return systems_.inventory.pendingGoldCommand(id,sequence) || systems_.travel.pendingPortalCommand(id,sequence) ||
+        systems_.crafting.pendingTransmute(id,sequence) ||
+        std::any_of(commands_.begin(),commands_.end(),[&](const auto &pending) {
+            return pending.player==id && pending.awaitingCrafting && (!sequence || pending.command.sequence==sequence);
+        });
+}
 bool GameInstance::enter(PlayerId id, bool active) {
     auto found = players_.players_.find(id);
     if (found == players_.players_.end()) return false;
-    if(!active && systems_.inventory.pendingGoldCommand(id)) return false;
+    if(!active && pendingSynchronousCommand(id)) return false;
     if(found->second.entered==active && found->second.collisionActive==active) return true;
     std::optional<world::QuestPosition> arrival;
     if(active && !found->second.collisionActive) {
@@ -194,7 +202,7 @@ bool GameInstance::enter(PlayerId id, bool active) {
 }
 bool GameInstance::remove(PlayerId id) {
     if (!players_.find(id)) return false;
-    if(systems_.inventory.pendingGoldCommand(id)) return false;
+    if(pendingSynchronousCommand(id)) return false;
     if (!systems_.trade.cancelFor(id,tick_)) return false;
     if (!systems_.social.disconnect(id,tick_)) return false;
     std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
@@ -221,7 +229,7 @@ std::optional<PersistentCharacter> GameInstance::exportCharacter(PlayerId id,boo
     // committed record here would retire the player before its queued log
     // receipt (or another accepted character change) reaches the fixed step.
     if(settledOnly && std::any_of(commands_.begin(),commands_.end(),[&](const auto &pending) {return pending.player==id;})) return {};
-    if(settledOnly && systems_.quests.pendingGoals(id)) return {};
+    if(settledOnly && (systems_.quests.pendingGoals(id) || pendingSynchronousCommand(id))) return {};
     if (player->persistent.player.hp <= 0) {
         const auto death = systems_.death.read().transitions.find(player->actor);
         if (death == systems_.death.read().transitions.end() || !death->second.finalized || !death->second.companionsSettled) return {};
@@ -302,15 +310,15 @@ void GameInstance::step() {
     if (systems_.trade.step({tick_})==StepStatus::Blocked) return;
     size_t processedCommands=0;
     bool inventoryWaiting=false;
-    for (const auto &pending : commands_) {
+    for (auto &pending : commands_) {
         auto &player = players_.players_.at(pending.player);
         const auto &command = pending.command;
         const auto &area = areas_.at(player.area);
         const ActorContext actor{pending.player, player.actor, player.area,
             area.generation, command.sequence, tick_};
         // Recheck at execution: earlier commands may have replaced the area.
-        auto result = CommandStatus::Unavailable;
-        if (player.entered) {
+        auto result = pending.awaitingCrafting?pending.dispatchedResult:CommandStatus::Unavailable;
+        if (!pending.awaitingCrafting && player.entered) {
             if (command.area != player.area || command.areaGeneration != area.generation) result = CommandStatus::Stale;
             else {
                 const auto *movement=std::get_if<MovementCommand>(&command.payload);
@@ -348,9 +356,17 @@ void GameInstance::step() {
                         }
             }
         }
-        // A native gold constructor is synchronous in retail. Content/output
-        // waits retain this command and stop later commands and frame phases.
-        if(systems_.inventory.pendingGoldCommand(pending.player,command.sequence)) {
+        // Retail transmutation is synchronous. Its content worker finishes
+        // outside dispatch, so retain the accepted result rather than calling
+        // execute again after installation has removed the pending operation.
+        if(systems_.crafting.pendingTransmute(pending.player,command.sequence)) {
+            pending.awaitingCrafting=true;pending.dispatchedResult=result;
+            inventoryWaiting=true;break;
+        }
+        // Native constructors retain their own dispatch continuation while
+        // content/output waits stop later commands and frame phases.
+        if(systems_.inventory.pendingGoldCommand(pending.player,command.sequence) ||
+            systems_.travel.pendingPortalCommand(pending.player,command.sequence)) {
             inventoryWaiting=true;break;
         }
         player.result = {command.sequence, result};
@@ -370,7 +386,7 @@ void GameInstance::step() {
 }
 void GameInstance::suspend() {
     for (const auto &pending : commands_) {
-        if(systems_.inventory.pendingGoldCommand(pending.player,pending.command.sequence)) continue;
+        if(pendingSynchronousCommand(pending.player,pending.command.sequence)) continue;
         auto &player = players_.players_.at(pending.player);
         player.result = {pending.command.sequence, CommandStatus::Paused};
         observeCommand(pending.player, pending.command.sequence, CommandStatus::Paused);
@@ -378,7 +394,7 @@ void GameInstance::suspend() {
             player.movementSequence = pending.command.sequence;
     }
     std::erase_if(commands_,[&](const auto &pending) {
-        return !systems_.inventory.pendingGoldCommand(pending.player,pending.command.sequence);
+        return !pendingSynchronousCommand(pending.player,pending.command.sequence);
     });
     for (const auto &[id, player] : players_.all()) { systems_.travel.cancel(id); systems_.skills.cancel(id, player.actor); }
     systems_.movement.suspend();

@@ -232,7 +232,7 @@ DomainResult<> System::removeAura(const ActorContext &actor,int skill) {
     auto next=state_;auto &r=next.players[actor.actor];PlayerResourceTrace resources(*p,actor.tick,{},ports_.areas.statTime(p->area));
     const auto removed=removeDefinition(r.states,actor.actor,skill,[&]{resources.sample(r.states,true);});
     transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,resources.record()};
-    edit.resourceBase=resources.maximum();
+    edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();
     for(const auto &effect:removed) if(!r.states.hasState(effect.effect.spec.state.id,actor.tick))
         edit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,effect.effect.spec.state.id,false});
     edit.transient=projectEffectAttributes(r.states,actor.tick);

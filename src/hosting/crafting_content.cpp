@@ -3,6 +3,7 @@
 #include "character_content.hpp"
 #include "item_content.hpp"
 #include "content/items/cube_data.hpp"
+#include "gameplay/items/native_save.hpp"
 #include "content/items/socket_data.hpp"
 #include "content/items/item_magic_loot.hpp"
 #include "content/items/item_properties.hpp"
@@ -57,6 +58,7 @@ void sockets(const ClassicData &data, Prepared &result, const SocketItem &reques
 const CubeRecipe *cube(const ClassicData &data, Prepared &result,uint64_t &random,bool allowNoMatch=false) {
     const auto &s = result.source; const auto &c = s.character.containers;
     require(s.cube && carriedCube(data,s), "Cube must be open and carried in the backpack");
+    if(!data.pd2Host) require(bool(data.nativeItemSave),"Item quest-difficulty rules are unavailable");
     std::vector<const ItemInstance *> inputs;
     for (const auto &[id,item] : s.character.inventory.items) {
         (void)id; const auto *at = std::get_if<ContainerLocation>(&item.location);
@@ -88,7 +90,8 @@ const CubeRecipe *cube(const ClassicData &data, Prepared &result,uint64_t &rando
                 const auto &item = *inputs[i]; const auto *base = data.items.find(item.definition);
                 if (used[i] || !base || !matchesCubeInput(wanted,item,*base,data.cubeBases.at(item.definition)) ||
                     (data.pd2Host && slot==0 && !matchesPd2CubeCondition(data,recipe,item,s.character.player.level)) ||
-                    (recipe.operation == 28 && base->questTag && item.nativeQuestDifficulty < unsigned(s.difficulty))) continue;
+                    (recipe.operation == 28 && base->questTag && data.nativeItemSave->bases.at(item.definition).questDifficulty &&
+                     item.nativeQuestDifficulty < unsigned(s.difficulty))) continue;
                 used[i]=true; ordered.push_back(&item);
                 if (match(slot,count+1)) return true;
                 ordered.pop_back(); used[i]=false;
@@ -113,6 +116,13 @@ const CubeRecipe *cube(const ClassicData &data, Prepared &result,uint64_t &rando
         result.outputs.push_back({std::move(item),{},c.cube});return matched;
     }
     require(!matched->outputs.empty(),"PD2 CubeMain operation or property program is not implemented");
+    // Retail 1.13c output table FA5E8 entries 2/3 return zero (70180/70170).
+    // These actual MPQ recipes also use op28: its quest-difficulty input
+    // check does not make their output a Staff/Will quest assembly.
+    if(!data.pd2Host && matched->outputs.size()==1 &&
+        (matched->outputs.front().kind==CubeOutputKind::UberPortal || matched->outputs.front().kind==CubeOutputKind::UberFinale)) {
+        result.retailPortalNoop=true;return matched;
+    }
     const auto &original = *ordered.front();
     const auto targetConsumption=std::find_if(consumed.begin(),consumed.end(),[&](const auto &part){return part.first==&original;});
     const bool partialTarget=data.pd2Host && targetConsumption!=consumed.end() && targetConsumption->second<original.quantity;
@@ -133,11 +143,14 @@ const CubeRecipe *cube(const ClassicData &data, Prepared &result,uint64_t &rando
     if(matched->operation==28) {
         const auto &code=matched->outputs.front().code;
         const auto quest=code==data.staffRecipe.output?QuestId::HoradricStaff:code==data.khalimRecipe.output?QuestId::KhalimsWill:QuestId::Count;
-        require(quest!=QuestId::Count,"Unknown original quest assembly");
-        auto record=s.character.player;auto &progress=record.quests.at(size_t(s.difficulty)).at(questIndex(quest));
-        require(progress.stage<questCompletionStage(quest),"Quest assembly already submitted");
-        progress.stage=quest==QuestId::HoradricStaff?uint32_t(StaffStage::Assembled):uint32_t(KhalimStage::Assembled);
-        result.character=std::move(record);
+        // Op28 checks quest-item input difficulty; Cow Portal and other
+        // output programs are not themselves Staff/Will quest updates.
+        if(quest!=QuestId::Count) {
+            auto record=s.character.player;auto &progress=record.quests.at(size_t(s.difficulty)).at(questIndex(quest));
+            require(progress.stage<questCompletionStage(quest),"Quest assembly already submitted");
+            progress.stage=quest==QuestId::HoradricStaff?uint32_t(StaffStage::Assembled):uint32_t(KhalimStage::Assembled);
+            result.character=std::move(record);
+        }
     }
     uint64_t temporary=1;
     for(const auto &[id,item] : s.character.inventory.items) { (void)item; temporary=std::max(temporary,id.value+1); }
@@ -145,11 +158,6 @@ const CubeRecipe *cube(const ClassicData &data, Prepared &result,uint64_t &rando
         const bool preserve=output.kind==CubeOutputKind::UseItem || output.copy;
         if(output.kind==CubeOutputKind::CowPortal || output.kind==CubeOutputKind::UberPortal || output.kind==CubeOutputKind::UberFinale) {
             require(matched->outputs.size()==1,"Mixed portal outputs are not an original supported recipe");
-            // Retail 1.13c Cube output table FA5E8 entries 2/3 are
-            // xor eax,eax;ret (70180/70170), unlike D2MOO's later extension.
-            if(!data.pd2Host && output.kind!=CubeOutputKind::CowPortal) {
-                result.retailPortalNoop=true;result.consumed.clear();result.outputs.clear();return matched;
-            }
             result.portal=output.kind==CubeOutputKind::CowPortal?server::travel::SpecialPortalKind::Cow:output.kind==CubeOutputKind::UberPortal?server::travel::SpecialPortalKind::Pandemonium:server::travel::SpecialPortalKind::Finale;continue;
         }
         std::string code = output.kind==CubeOutputKind::UseType || output.kind==CubeOutputKind::UseItem ? original.definition : output.code;

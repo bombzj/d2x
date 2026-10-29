@@ -8,6 +8,7 @@
 
 namespace d2x::server::monsters {
 void recordNativeMode(Actor &unit,uint8_t mode) {
+    if(mode==0) unit.reviveCorpseCollisionCleared=false;
     if(unit.nativeMode!=1) unit.nativeAiState=unit.nativeAiState>=16?uint8_t(unit.nativeAiState-16):
         unit.nativeAiState==13 && unit.nativeMode==3?13:unit.nativeMode;
     unit.nativeMode=mode;

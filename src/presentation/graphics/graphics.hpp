@@ -15,6 +15,7 @@ struct SpriteLayer {
 struct SpriteComponentBounds {
     Rectangle bounds{};
     bool selectable = false;
+    int component = -1;
 };
 struct Sprite {
     Texture2D texture{};
@@ -27,6 +28,7 @@ struct Sprite {
     // Original DCC/DC6 indices for PL2 blending; zero remains transparent.
     Texture2D indexedTexture{};
     // Native selection uses original frame extents, including transparent pixels.
+    std::optional<Rectangle> selectionFrameBounds;
     std::optional<Rectangle> selectionCoarseBounds;
     std::vector<SpriteComponentBounds> componentBounds;
 };

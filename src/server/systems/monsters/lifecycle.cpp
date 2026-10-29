@@ -147,7 +147,7 @@ DomainResult<Actor> System::prepareDeathActor(EntityId id,uint64_t tick) const {
 DomainResult<Actor> System::prepareDeathActor(const Actor &current,uint64_t tick) const {
     const auto id=current.id;if(!current.alive()) return {DomainStatus::Applied,current};
     if(current.revision>UINT64_MAX-4 || current.interruption==UINT64_MAX) return {DomainStatus::Capacity,{}};
-    auto unit=current;unit.life=0;unit.modeAlive=false;unit.deathMode=true;unit.deathTick=tick;unit.deathOccurrence=0;
+    auto unit=current;unit.life=0;unit.modeAlive=false;unit.deathMode=true;unit.deathTick=tick;unit.deathOccurrence=0;unit.reviveCorpseCollisionCleared=false;
     if(unit.petRegistrationOrder) unit.inactivePet=true;
     if(unit.questNpc || unit.rule.environmentController) unit.rewardComplete=!pd2ControllerDeath(unit);
     unit.itemAuraTimers.clear();unit.poison.reset();unit.wound.reset();

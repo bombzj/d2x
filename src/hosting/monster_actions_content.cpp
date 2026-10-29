@@ -355,6 +355,7 @@ bool prepareMonsterComponents(const ClassicData &data,const MonsterRecord &recor
 void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::MonsterRule &rule) {
     rule.states=data.nativeStates;
     rule.noAura=data.tables.at("monstats").number(monsterRow,"noaura").value_or(0)!=0;
+    rule.petIgnore=data.tables.at("monstats").number(monsterRow,"petignore").value_or(0)!=0;
     rule.stateTarget.npc=data.tables.at("monstats").number(monsterRow,"npc").value_or(0)!=0;
     rule.alignment=data.tables.at("monstats").number(monsterRow,"Align").value_or(0);
     if(rule.alignment<0 || rule.alignment>2) throw std::runtime_error("Invalid original monster alignment");
@@ -416,6 +417,7 @@ void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::
         if(monsters.value(monsterRow,"BaseId")=="wraith1") rule.collisionPattern=NativeCollisionPattern::SmallNoPresence;
         prepareMonsterPlacementRules(data,monsterRow,rule);
         rule.stateTarget.attackable=extra.number(row,"isAtt").value_or(0)!=0;
+        rule.nativeWalkMode=extra.number(row,"mWL").value_or(0)!=0;
         rule.curseable=extra.number(row,"mA1").value_or(0)!=0;
         rule.deadCollision=extra.number(row,"deadCol").value_or(0)!=0;
         rule.restore=extra.number(row,"Restore").value_or(0);
@@ -700,6 +702,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         if(chain!=record.id || rule.monsterChainOffset>=4) return false;
     }
     if(record.ai=="Imp") {
+        rule.impBaseClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","imp1"));
         rule.attachedState=data.states.at("attached").definition.id;
         rule.siegeBeastBaseClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","siegebeast1"));
         rule.barricadeTowerBaseClass=compiledMonsterIndex(stats,findSkillTableRow(stats,"Id","barricadetower"));

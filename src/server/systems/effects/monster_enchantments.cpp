@@ -72,7 +72,7 @@ DomainResult<> System::castMonsterCurse(EntityId source,const AuraDefinition &a,
         const auto application=applyCurseState(states,program,spec,program.nativeWrites,*emitter->rule.stats,tick,[&]{resources.sample(states,true);});
         if(!application.accepted) return {DomainStatus::Unavailable,{}};
         transactions::CharacterEdit edit{{player.player,target,player.area,ports_.areas.at(player.area).generation,0,tick},player.inventoryRevision,player.characterRevision,resources.record()};
-        edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,tick);
+        edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();edit.transient=projectEffectAttributes(states,tick);
         for(const auto &removed:application.removed) if(!states.hasState(removed.effect.spec.state.id,tick)) edit.publicFacts.emplace_back(StateFact{target,0,player.area,removed.effect.spec.state.id,false});
         const auto *installed=states.find(application.handle);if(!installed) throw std::runtime_error("Missing native monster curse recipient");
         edit.publicFacts.emplace_back(StateFact{target,0,player.area,a.state.id,true,nativeEffectStats(*player.rules.skills,installed->spec)});
@@ -283,6 +283,26 @@ DomainResult<> System::executeMonsterModifier(EntityId id,int modifier,uint64_t 
     if(modifier==33) return suicideDeathEffect(id,tick,execution);
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
     const auto *unit=ports_.monsters.find(id);if(!unit) return done();
+    if(modifier==21 && unit->rule.stats && !unit->rule.stats->pd2) {
+        if(!unit->alive()) return execution.damagePrepared?monsterDeathEffect(id,tick):done();
+        // MonsterUnique::sub_6FC6DFC0 postpones expiry during an
+        // uninterruptible mode, then removes this pet's own list node.
+        if(unitStates(id,tick).contains(unit->rule.uninterruptableState)) {
+            auto timer=ports_.frameEvents.prepareInsertion({{},{FrameEventUnit::Monster,id},FrameEventType::MonsterModifier,
+                tick+3,false,monsterModifierTimerHandler});
+            ports_.frameEvents.publish(std::move(timer));return done();
+        }
+        const auto *owner=ports_.players.findActor(ports_.monsters.minionOwner(id));
+        if(!owner) {execution.damagePrepared=true;return ports_.monsters.scriptDeath(id,tick);}
+        AuraUnitPublication publication;const std::array<EntityId,1> retired{id};
+        const auto prepared=ports_.monsters.stageRetirements(publication,retired,tick);if(!prepared) return prepared;
+        publication.actors->actors.at(id).petUnregistered=true;
+        if(!validateAuraUnits(publication)) return {DomainStatus::Stale,{}};
+        const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},unit->area},std::move(publication.facts)});
+        if(!sent) return {sent.status,{}};
+        publishAuraUnits(publication);execution.damagePrepared=true;
+        return monsterDeathEffect(id,tick);
+    }
     const auto &m=*unit;const auto &area=ports_.areas.at(m.area);
     const bool unique=nativeUniqueMonster(m.identity.rank);
     const auto values=unitStatValues(id,tick);if(!values || !m.rule.stats) return {DomainStatus::Unavailable,{}};

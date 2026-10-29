@@ -38,6 +38,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     if((program.function==30 || program.function==37 || program.function==46) && program.rules!=ClientMissileProgram::Rules::Original) return false;
     if((program.function==16 || program.function==59 || program.function==62 || program.function==63) && program.rules!=ClientMissileProgram::Rules::Original) return false;
     if((program.function==32 || program.function==45 || program.function==54 || program.function==57 || program.function==68) && program.rules!=ClientMissileProgram::Rules::Original) return false;
+    if((program.function==26 || program.function==28 || program.function==36 || program.function==42) && program.rules!=ClientMissileProgram::Rules::Original) return false;
     // CN replaces these contact programs. Do not display the retail
     // fallback while their target/path inputs are still unsupported.
     if (program.rules==ClientMissileProgram::Rules::Pd2Cn &&
@@ -65,7 +66,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     if (!assets_.ensureProjectile(id) &&
         !(capabilities->allowChildArtwork && program.children[0] >= 0 &&
           assets_.ensureProjectile(program.children[0]))) return false;
-    level = std::max(0, level);
+    level = std::max(0, initialization.sourceLevel.value_or(level));
     const auto nativeVelocity = missileVelocityFixed(program.velocity+velocityBonus,program.velocityPerLevel,level,program.canSlow?slowPercent:0);
     if (!nativeVelocity ||
         (program.acceleration && program.maximumVelocity <= 0)) return false;
@@ -284,6 +285,54 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
         return &pending.back();
     };
     auto impact = [&](ClientMissile &effect, const ClientMissileProgram &program, float overshoot,bool unitContact=false,bool largeMonster=false,std::optional<Vec> unitPosition={}) {
+        if(program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==41) {
+            if(unitContact) return false;
+            // BBEE0 -> A27B0 / B9A80: three probes, no retry for near
+            // points. The parent seed is reinitialized from its path target X.
+            Vec target=effect.pathTarget;
+            if(!int(std::floor(target.x)) || !int(std::floor(target.y))) {
+                if(!effect.nativeDirection) return true;
+                constexpr std::array<int,8> x{0,-1,-2,-1,0,1,2,1},y{2,1,0,-1,-2,-1,0,1};
+                const size_t facing=(*effect.nativeDirection&63)>>3;
+                target={std::floor(effect.pos.x)+float(x[facing])+.5f,std::floor(effect.pos.y)+float(y[facing])+.5f};
+            }
+            effect.random=initialRandom(uint32_t(int32_t(std::floor(target.x))));
+            ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+            initialization.distanceLimited=true;initialization.ballisticHeight=30;
+            for(int index=0;index<3;++index) {
+                const int x=nativeAdd(int(std::floor(target.x)),int(limitedRandom(effect.random,12))-6);
+                const int y=nativeAdd(int(std::floor(target.y)),int(limitedRandom(effect.random,12))-6);
+                const int dx=nativeSubtract(x,int(std::floor(effect.pos.x))),dy=nativeSubtract(y,int(std::floor(effect.pos.y)));
+                if(nativeAdd(nativeMultiply(dx,dx),nativeMultiply(dy,dy))>=4 && relatedOwner(effect))
+                    emit(365,effect.pos,{float(dx),float(dy)},effect,overshoot,-1,0,-1,initialization);
+            }
+            if(relatedOwner(effect)) {
+                initialization.distanceLimited=false;initialization.ballisticHeight.reset();
+                emit(366,effect.pos,{},effect,overshoot,-1,0,-1,initialization);
+            }
+            return true;
+        }
+        if(program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==34) {
+            // B07E0 changes the actual related unit's client NODRAW flag.
+            if(relatedOwner(effect)) clientMissileHiddenOwners_.push_back(effect.owner);
+            return true;
+        }
+        if(program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==33) {
+            // B5DD0: TargetX is a count, not a direction or a damage target.
+            if(program.hitChildren[0]<0 || !relatedOwner(effect)) return true;
+            const int count=effect.nativeParameters?(*effect.nativeParameters)[0]:0;
+            const int radius=std::max(3,program.hitParameters[0]);
+            const auto span=uint32_t(nativeAdd(nativeMultiply(radius,2),1));
+            for(int index=0;index<count;++index) {
+                ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                initialization.sourceLevel=int(limitedRandom(effect.random,5))+1;
+                int x=nativeSubtract(int(limitedRandom(effect.random,span)),radius);
+                const int y=nativeSubtract(int(limitedRandom(effect.random,span)),radius);
+                if(!x && !y) x=int(limitedRandom(effect.random,uint32_t(radius)))+1;
+                emit(program.hitChildren[0],effect.pos,{float(x),float(y)},effect,overshoot,-1,0,-1,initialization);
+            }
+            return true;
+        }
         if(program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==37) {
             if(unitContact) return false;
             // B49F0 reinitializes the hand's seed from the parent's saved
@@ -693,6 +742,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
             }
             if(program.function==16 && (program.children[0]<0 || !relatedOwner(effect))) {finished=true;break;}
             if(program.function==30 && program.children[0]<0) {finished=true;break;}
+            if(program.function==28 && program.children[0]<0) {finished=true;break;}
             if(program.function==46 && program.children[0]<0) {finished=true;break;}
             if(program.function==57 && (program.children[0]<0 ||
                 std::none_of(targets.begin(),targets.end(),[&](const auto &target){return target.id==effect.owner;}))) {finished=true;break;}
@@ -707,6 +757,92 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
             }
             if (!frame) assets_.sceneAudio.playRegistered("missile-release:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
             switch (program.function) {
+            case 42: {
+                // BA680 -> B55C0: mist precedes the lightning window and
+                // owner checks. The window reads class379 Param1/2.
+                const Vec mist{float(int(limitedRandom(effect.random,20))-10),float(int(limitedRandom(effect.random,20))-10)};
+                ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                emit(380,effect.pos,mist,effect,childAge,-1,0,-1,initialization);
+                const auto control=assets_.clientMissilePrograms.find(379);
+                if(control==assets_.clientMissilePrograms.end()) break;
+                if(effect.nativeCurrentFrames>=nativeSubtract(control->second.frames,control->second.serverParameters[0]) ||
+                   effect.nativeCurrentFrames<=nativeSubtract(control->second.frames,control->second.serverParameters[1])) break;
+                const auto owner=std::find_if(anchors.begin(),anchors.end(),[&](const auto &anchor){return anchor.id==effect.owner;});
+                if(owner==anchors.end()) break;
+                const Vec at{std::floor(owner->position.x)+float(int(limitedRandom(effect.random,10))-5)+.5f,
+                    std::floor(owner->position.y)+float(int(limitedRandom(effect.random,10))-5)+.5f};
+                if(auto *child=emit(382,effect.pos,at-effect.pos,effect,childAge,-1,0,-1,initialization)) {
+                    const int gravity=nativeShiftLeft(-3-int(limitedRandom(effect.random,3)),11);
+                    child->graphics=ClientMissileGraphics::arc(15,0,gravity);
+                    child->graphics->flags&=~uint32_t{2};
+                }
+                break;
+            }
+            case 36: {
+                // B41F0 / D3610: native CurrentFrame selects a strict band.
+                // These constants are executable data, not MPQ substitutes.
+                constexpr std::array<std::array<int,3>,5> bands{{{350,3,5},{300,2,3},{200,3,2},{175,5,1},{0,100,5}}};
+                const int current=effect.nativeCurrentFrames;
+                if(current==325) shakeScreen(20,0,150,0,-childAge);
+                size_t band=0;
+                while(band+1<bands.size() && current<=bands[band][0]) ++band;
+                for(size_t index=1;index<=2;++index) {
+                    if(current%bands[band][index]) continue;
+                    const Vec at{std::floor(effect.pos.x)+float(int(limitedRandom(effect.random,40))-20)+.5f,
+                        std::floor(effect.pos.y)+float(int(limitedRandom(effect.random,40))-20)+.5f};
+                    ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                    if(index==2) {
+                        ClientMissileGraphics graphics;graphics.position[2]=0x4b000;graphics.velocity[2]=-0x5000;
+                        initialization.graphics=graphics;initialization.totalFrames=15;initialization.animationRate=128;
+                    }
+                    if(auto *child=emit(index==1?42:364,at,{},effect,childAge,-1,0,-1,initialization))
+                        child->nativeDirection=uint8_t(limitedRandom(child->random,64));
+                }
+                break;
+            }
+            case 26: {
+                // BB780 / B82B0: separate TargetX/Y clocks, both seeded by
+                // the death creator. Missing owners still execute common Do1.
+                if(!relatedOwner(effect)) break;
+                if(!effect.nativeParameters) effect.nativeParameters=std::array<int32_t,2>{};
+                const int radius=program.parameters[2];
+                const auto span=uint32_t(nativeAdd(nativeMultiply(radius,2),1));
+                auto heading=[&] {
+                    int x=nativeSubtract(int(limitedRandom(effect.random,span)),radius);
+                    const int y=nativeSubtract(int(limitedRandom(effect.random,span)),radius);
+                    if(!x && !y) x=int(limitedRandom(effect.random,uint32_t(nativeSubtract(radius,1))))+1;
+                    return Vec{float(x),float(y)};
+                };
+                for(size_t index=0;index<2;++index) {
+                    if(program.children[index]<=0) continue;
+                    auto &countdown=(*effect.nativeParameters)[index];
+                    if(countdown<=0) {
+                        ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                        if(index) initialization.sourceLevel=int(limitedRandom(effect.random,5))+1;
+                        const Vec direction=heading();
+                        if(!index) initialization.parameters=std::array<int32_t,2>{int(direction.x),int(direction.y)};
+                        if(auto *child=emit(program.children[index],effect.pos,direction,effect,childAge,-1,0,-1,initialization))
+                            if(index) child->nativeParameters=std::array<int32_t,2>{int(limitedRandom(effect.random,5)),0};
+                        countdown=program.parameters[index];
+                    }
+                    countdown=nativeSubtract(countdown,1);
+                }
+                break;
+            }
+            case 28: {
+                // B8010: exact elapsed frame, actual owner's integer cell,
+                // four ordered neighbors. Flag2000 rolls the child's seed.
+                if(elapsedFrames!=program.parameters[0]) break;
+                const auto owner=std::find_if(anchors.begin(),anchors.end(),[&](const auto &anchor){return anchor.id==effect.owner;});
+                if(owner==anchors.end()) break;
+                constexpr std::array<Vec,4> offsets{Vec{-1,0},Vec{0,-1},Vec{1,0},Vec{0,1}};
+                const Vec at{std::floor(owner->position.x)+.5f,std::floor(owner->position.y)+.5f};
+                ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                for(const auto offset:offsets)
+                    if(auto *child=emit(program.children[0],at+offset,{},effect,childAge,-1,0,-1,initialization))
+                        child->nativeDirection=uint8_t(limitedRandom(child->random,64));
+                break;
+            }
             case 57: {
                 // B6F60 first follows the live owner (B2890), then A1340
                 // reads that owner's target unit, path target, or facing fallback.
@@ -1168,7 +1304,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                 }
                 break;
             case 58:
-                if(elapsedFrames%std::max(1,program.serverTurnPeriod)==0) {
+                if(elapsedFrames%std::max(1,program.serverParameters[0])==0) {
                     if(effect.nativeParameters) effect.random=initialRandom(uint32_t((*effect.nativeParameters)[0]));
                     const int packed=effect.nativeParameters?(*effect.nativeParameters)[1]:0;
                     const int x=effect.nativeParameters?int16_t(packed):int(effect.turnTarget.x),y=effect.nativeParameters?int16_t(uint32_t(packed)>>16):int(effect.turnTarget.y);

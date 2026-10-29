@@ -697,7 +697,12 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
             ? (std::floor(m.goal->x+.5f) != std::floor(goal->x+.5f) ||
                std::floor(m.goal->y+.5f) != std::floor(goal->y+.5f))
             : (*m.goal - *goal).length() > .5f);
-        if (changedTarget || corrected ||
+        // A fresh ordinary input must retry a path stopped by dynamic
+        // collision, even when its pointer target is unchanged. Otherwise
+        // the retained goal prevents replanning forever after the blocker
+        // moves away, while authority has already accepted the new input.
+        const bool retryStoppedPath=requested && request->revision!=m.requestRevision && m.route.empty();
+        if (changedTarget || corrected || retryStoppedPath ||
             m.actionRevision != u.actionRevision)
             plan(m, *goal, map, origin, rule, speed, u,
                 requested?request->unit:u.destinationUnit);

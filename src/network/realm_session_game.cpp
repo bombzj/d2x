@@ -267,7 +267,9 @@ void RealmSession::Impl::handle_game(Packet packet) {
     }
     if(packet.id==0x2A && view.world.hirelingService.result && *view.world.hirelingService.result>=7)
         error(OnlineErrorKind::Server,"Original hireling transaction was rejected",0x2A,*view.world.hirelingService.result);
-    if (auto &request = view.world.itemRequest; request && request->state == OnlineItemRequest::State::Pending) {
+    if (auto &request = view.world.itemRequest; request &&
+        (request->state == OnlineItemRequest::State::Pending ||
+         (request->state == OnlineItemRequest::State::SentNoAck && request->command.action == OnlineItemAction::Transmute))) {
         const auto action = request->command.action;
         if (identifyTargetPending && action == OnlineItemAction::Identify && packet.id == 0x3F) {
             const auto &command = request->command;
@@ -436,7 +438,8 @@ void RealmSession::Impl::handle_game(Packet packet) {
         }
         // Merchant 0x2A is the explicit result; preliminary item packets are not its ACK.
         if (merchant && packet.id != 0x2A) related = false;
-        if (related && request->state == OnlineItemRequest::State::Pending) {
+        if (related && (request->state == OnlineItemRequest::State::Pending ||
+            (request->state == OnlineItemRequest::State::SentNoAck && action == OnlineItemAction::Transmute))) {
             if (action == OnlineItemAction::Pickup) finish_pickup(OnlineItemRequest::State::Updated);
             else request->state = OnlineItemRequest::State::Updated;
         }

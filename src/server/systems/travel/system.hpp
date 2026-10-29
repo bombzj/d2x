@@ -32,6 +32,14 @@ class System {
     uint64_t nextWaypointRevision_=1;
     void writePortalCollision(const Portal &,bool) noexcept;
     struct NativeLinkPosition {RegionId area;uint64_t generation{};Vec position;std::optional<RoomView> room;};
+    struct PortalCreation {
+        ActorContext actor;
+        ItemHandle item;
+        std::optional<RoomPoint> field;
+        std::optional<NativeLinkPosition> townStart,linked;
+        std::optional<Portal> portal;
+    };
+    std::map<PlayerId,PortalCreation> portalCreations_;
     std::map<EntityId,NativeLinkPosition> nativeLinks_;
     struct Pd2PortalLanding {NativeLinkPosition anchor;std::optional<NativeLinkPosition> landing;};
     std::map<std::tuple<int,int,int,int,int>,Pd2PortalLanding> pd2PortalLandings_;
@@ -51,6 +59,8 @@ class System {
     DomainResult<> openWaypoint(const ActorContext &,EntityId,bool menu,std::optional<int> remoteRange = {});
     DomainResult<> unlockWaypoints(const ActorContext &,std::optional<RegionId>); // Local host administration; absent destination selects all.
     DomainResult<> createPortal(const ActorContext &,std::optional<ItemHandle> = {},std::optional<int> skill = {});
+    bool pendingPortalCommand(PlayerId,uint64_t sequence=0) const;
+    void collectEntityReferences(std::set<EntityId> &) const;
     DomainResult<> createPd2Map(const ActorContext &,ItemHandle);
     DomainResult<SpecialPortalPlan> prepareSpecialPortal(const ActorContext &,SpecialPortalKind,uint64_t seed,std::optional<Vec> source = {});
     DomainResult<SpecialPortalPlan> prepareNativePermanentPortal(RegionId,Vec,int destination,uint64_t tick,int definition=60);

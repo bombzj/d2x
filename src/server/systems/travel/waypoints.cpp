@@ -102,7 +102,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         const bool sail=npc->rule.code=="meshif1" && int(actor.area)==40 && int(*request.destination)==75;
         const bool returnSail=npc->rule.code=="meshif2" && int(actor.area)==75 && int(*request.destination)==40;
         const auto &book=p->persistent.player.quests.at(size_t(p->persistent.difficulty));
-        if((!east && !west && !sail && !returnSail) || ((east || west) && book.at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::AndarielSlain)) ||
+        if((!east && !west && !sail && !returnSail) || (east && book.at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::PassageReady)) ||
             (sail && book.at(questIndex(QuestId::SevenTombs)).stage<uint32_t(TombsStage::PassageGranted)) || (returnSail && !p->persistent.player.completedActs.at(size_t(p->persistent.difficulty)).at(1))) return {DomainStatus::InvalidRequest,{}};
         const auto prepared=ports_.world.request(*request.destination);if(!prepared) return {prepared.status,{}};
         Transition next{actor.area,*request.destination,*prepared.value,actor.areaGeneration,actor.sequence,npc->id,p->position,{}};next.kind=Kind::Npc;
@@ -151,26 +151,32 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         const bool returning=portal.town==actor.area && portal.townId==request.source.id;
         if(!returning && !(portal.field==actor.area && portal.fieldId==request.source.id)) continue;
         (void)destination;
-        if(!portal.isOpened(returning)) return {DomainStatus::Unavailable,{}};
+        const auto operation=area->definition.objectRules.find(portal.rule.definition);
+        const bool nativePortal=operation!=area->definition.objectRules.end() && operation->second.operation==15;
+        // ObjMode15 accepts an already linked portal while OPERATING too;
+        // ENDANIM is a display/collision transition, not travel permission.
+        if(!portal.isOpened(returning) && !nativePortal) return {DomainStatus::Unavailable,{}};
         const auto target=returning?portal.field:portal.town;
         if(!ports_.quests.allowsTravel(p->persistent.player,actor.area,target)) return {DomainStatus::Conflict,{}};
         if(int(portal.town)==39 && p->persistent.player.cowKingKilled.at(size_t(p->persistent.difficulty))) return {DomainStatus::Unavailable,{}};
         const auto at=returning?portal.townPosition:portal.fieldPosition;
-        if((at-p->position).length()>portal.rule.range || !area->definition.collision.segment(p->position,at,{},playerMovement)) return {DomainStatus::InvalidRequest,{}};
+        const InteractionTarget access{request.source.id,at,at,portal.rule.width,portal.rule.height,float(portal.rule.range),true};
+        if(!interactionClear(area->definition.collision,p->position,access)) return {DomainStatus::InvalidRequest,{}};
         Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,request.source.id,p->position,returning?portal.fieldPosition:portal.townPosition};next.kind=Kind::SpecialPortal;
         state_.transitions[actor.player]=next;auto &player=ports_.players.players_.at(actor.player);player.locomotionSequence=actor.sequence;player.route.clear();player.moving=false;return {DomainStatus::Applied,std::monostate{}};
     }
     for(const auto &[owner,portal]:state_.portals) {
         const bool returning=portal.town==actor.area && portal.townId==request.source.id;
         if(!returning && !(portal.field==actor.area && portal.fieldId==request.source.id)) continue;
-        if((owner!=actor.player && !ports_.social.sameParty(owner,actor.player)) || !portal.opened) return {DomainStatus::InvalidRequest,{}};
+        if(owner!=actor.player && !ports_.social.sameParty(owner,actor.player)) return {DomainStatus::InvalidRequest,{}};
         if(ports_.social.hostilityTravelDelay(actor.player,5000)) {
             const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{SoundFact{actor.actor,0,actor.area,0x13}}});
             return sent?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{sent.status,{}};
         }
         const auto at=returning?portal.townPosition:portal.fieldPosition;
         const int x=int(at.x)-int(p->position.x),y=int(at.y)-int(p->position.y);
-        if(remoteRange ? x*x+y*y>*remoteRange * *remoteRange : ((at-p->position).length()>portal.rule.range || !area->definition.collision.segment(p->position,at,{},playerMovement))) return {DomainStatus::InvalidRequest,{}};
+        const InteractionTarget access{request.source.id,at,at,portal.rule.width,portal.rule.height,float(portal.rule.range),true};
+        if(remoteRange ? x*x+y*y>*remoteRange * *remoteRange : !interactionClear(area->definition.collision,p->position,access)) return {DomainStatus::InvalidRequest,{}};
         Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,request.source.id,p->position,returning?portal.fieldPosition:portal.townPosition}; next.kind=Kind::Portal;
         state_.transitions[actor.player]=next; auto &mutablePlayer=ports_.players.players_.at(actor.player); mutablePlayer.route.clear(); mutablePlayer.moving=false;
         return {DomainStatus::Applied,std::monostate{}};

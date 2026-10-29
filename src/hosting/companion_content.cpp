@@ -88,7 +88,7 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
     if(!record) throw std::runtime_error("Missing original necromancer pet monster");
     AnimDataTable animations(archives.read("data/global/animdata.d2"));
     auto &rule=result.rule;rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;
-    if(data.pd2Host) rule.auraPrograms=data.nativeAuraPrograms;
+    rule.auraPrograms=data.nativeAuraPrograms;
     rule.nativeClass=record->index;rule.size=record->collisionSize;
     rule.collision=record->movementRule();rule.spawnCollision=record->spawnRule();
     rule.nativeVelocity=record->walkVelocity.value_or(0);rule.meleeRange=record->meleeRange;
@@ -163,7 +163,9 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
             if(const auto id=skills.number(row,"Id")) {
                 if(!payload.levelDamage || payload.levelDamage->skill!=*id) throw std::runtime_error("Missing native skeleton mage level damage binding");
                 rule.attacks.at(4).missile->levelDamage=payload.levelDamage;
-                rule.skillActions.emplace(uint16_t(*id),rule.attacks.at(4));
+                auto action=rule.attacks.at(4);
+                if(!data.pd2Host) {rule.skillIds[0]=*id;action.nativeMode=nativeMonsterMode(table.value(record->sourceRow,"Sk1mode"));}
+                rule.skillActions.emplace(uint16_t(*id),std::move(action));
             }
     }
     if(archer) {

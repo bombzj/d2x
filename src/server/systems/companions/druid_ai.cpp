@@ -28,6 +28,12 @@ struct DruidDecision {
 StepStatus System::refreshDruid(Companion &pet,TickContext tick) {
     const auto *owner=ports_.players.find(pet.owner);const auto *body=ports_.monsters.find(pet.actor);
     if(!owner || !body || !body->druidPet) return StepStatus::Complete;
+    if(owner->rules.skills && !owner->rules.skills->pd2) {
+        // Retail caps are synchronous skill/state callbacks in attributes;
+        // a later AI poll must not add another final-rank capacity update.
+        pet.effectiveRanks=owner->totals.skillRanks;pet.ownerLevel=owner->persistent.player.level;
+        return StepStatus::Complete;
+    }
     // PlayerPets walks every registered skill instance, including each owned
     // charged entry. Quantities do not change its level; removing an item or
     // switching weapon sets does change the registered source snapshot.

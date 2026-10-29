@@ -60,7 +60,7 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
         case QuestId::ToolsOfTheTrade: status=stage>=6?13:stage>=5?5:stage>=3?3:stage==2?2:uint8_t(stage);break;
         case QuestId::SearchForCain: status=stage>=8?13:stage>=7?6:stage>=5?5:stage>=4?4:stage>=2?3:uint8_t(stage);break;
         case QuestId::ForgottenTower: status=stage>=4?13:stage==3?4:stage==2?3:stage==1?1:0;break;
-        case QuestId::SistersToTheSlaughter: status=stage>=5?13:stage>=3?3:uint8_t(stage);break;
+        case QuestId::SistersToTheSlaughter: status=stage>=4?13:stage==3?3:uint8_t(stage);break;
         case QuestId::RadamentsLair: status=stage>=4?13:stage==3?5:uint8_t(stage);break;
         case QuestId::HoradricStaff: status=fact.staffStatus.value_or(stage>=6?(book.at(questIndex(QuestId::SevenTombs)).stage>=5?13:6):stage>=5?uint8_t(6-bool(book.at(questIndex(definition.id)).flags&staffAssemblyExplained)):stage?uint8_t(book.at(questIndex(definition.id)).flags&staffScrollExplained?2:4):0);break;
         case QuestId::TaintedSun: status=stage>=4?13:stage==3?4:uint8_t(stage);break;
