@@ -263,6 +263,17 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         result["scene"]["automap"]["markers"].push_back({{"kind",markNames.at(size_t(mark.unitMark))},{"x",mark.position.x},{"y",mark.position.y},{"name",mark.name},{"cel",mark.cel}});
     for (const auto &[level, count] : scene.automapRevealedCells)
         result["scene"]["automap"]["revealedCells"][std::to_string(level)] = count;
+    const auto &reveal = scene.automapReveal;
+    auto &revealJson = result["scene"]["automap"]["reveal"];
+    revealJson = {{"enabled", reveal.enabled}, {"state", reveal.state}, {"reason", reveal.reason},
+        {"rootLevel", reveal.rootLevel}, {"roomsCompleted", reveal.roomsCompleted},
+        {"roomsTotal", reveal.roomsTotal}, {"borrowed", reveal.borrowed}, {"released", reveal.released},
+        {"activeRooms", reveal.activeRooms}, {"levels", Json::array()}};
+    for (const auto &level : reveal.levels)
+        revealJson["levels"].push_back({{"id", level.id}, {"layer", level.layer},
+            {"roomsCompleted", level.roomsCompleted}, {"roomsTotal", level.roomsTotal},
+            {"cells", level.cells}, {"presetCells", level.presetCells}, {"exits", level.exits},
+            {"complete", level.complete}});
     result["scene"]["layoutOrigin"] = point(scene.layoutOrigin);
     result["scene"]["layoutMatched"] = scene.layoutMatched;
     result["scene"]["noPickup"] = scene.noPickup;
@@ -504,7 +515,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                                const std::function<void(const std::string &)> &screenshot,
                                const std::function<OnlineSceneView()> &sceneSnapshot,
                                RemoteControl &control, RemoteInventory &inventory, RemoteCombat &combat, const RemoteTown &town,
-                               const std::function<void(bool, bool)> &automap, bool &presentationPaused,
+                               const std::function<void(bool, bool)> &automap,
+                               const std::function<void(std::optional<bool>)> &revealMap, bool &presentationPaused,
                                const std::function<void(std::vector<FrameInput>)> &inputFrames,
                                const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote,
                                const std::function<std::string(const std::string &)> &chatInput,
@@ -543,7 +555,21 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                 throw std::invalid_argument("Online command number is outside the supported range");
             return uint8_t(value);
         };
-        if (command == "ui-input") {
+        if (command == "debug-reveal-map") {
+            const auto action = request.value("action", std::string{"on"});
+            if (action != "status") {
+                mutation = true;
+                if (session.read().stage != OnlineStage::ProtocolReady || !sceneSnapshot().nativeMapReady)
+                    throw std::invalid_argument("Map reveal requires an entered, reconstructed client map");
+                if (action == "on") {
+                    revealMap(true);
+                    if (request.value("show", true)) automap(true, sceneSnapshot().automapLarge);
+                }
+                else if (action == "off") revealMap(false);
+                else if (action == "auto") revealMap({});
+                else throw std::invalid_argument("Map reveal action must be on, off, auto or status");
+            }
+        } else if (command == "ui-input") {
             if (presentationPaused || (session.read().stage == OnlineStage::ProtocolReady &&
                 !sceneSnapshot().playerDisplayed && !onlinePlayerDead(session.read().world)))
                 throw std::invalid_argument("UI input requires a displayed frontend or online game");

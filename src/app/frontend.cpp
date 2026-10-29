@@ -16,6 +16,7 @@
 #include "app/debug/ui_input.hpp"
 #include "app/debug/server_commands.hpp"
 #include "client/remote_town.hpp"
+#include "client/pd2/automap.hpp"
 #include "client/remote_control.hpp"
 #include "client/remote_inventory.hpp"
 #include "client/remote_combat.hpp"
@@ -249,6 +250,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     bool preferencesDirty = false;
     double preferencesRetryAt = 0;
     RemoteMapDisplayState mapDisplay;
+    std::optional<bool> debugMapReveal;
+    uint64_t debugMapRevealGame{};
     mapDisplay.running = preferences.running;
     mapDisplay.large = preferences.automapLarge;
     std::unique_ptr<RemoteUiClients> sharedClients;
@@ -283,8 +286,6 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     uint64_t sceneGeneration = ~uint64_t{};
     uint64_t inputAreaGeneration = ~uint64_t{};
     bool noPickup=false;
-    uint64_t lastRevealAllGeneration = ~uint64_t{};
-    bool lastRevealAllShown = false;
     bool minimized = false;
     auto sceneStatus = [&] {
         town.update(session.read(), !minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
@@ -342,7 +343,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         sharedUi->updateChat(session.read().world.social,session.read().accountChat);
         sharedUi->updateParty(session.read().world.social, session.read().load.playerUnitId.value_or(UINT32_MAX), session.read().gameGeneration,town.read().town);
         sharedUi->updatePlayerTrade(session.read().world.playerTrade);
-        if (sharedUi->ui().gameMenuOpen) return;
+        if (sharedUi->ui().gameMenuOpen ||
+            (sharedUi->ui().bhEnabled && sharedUi->ui().bhSettingsOpen)) return;
         auto trade = sharedUi->handlePlayerTrade(input);
         bool consumed = trade.consumed;
         if (!trade.error.empty()) sharedUi->notice(std::move(trade.error), true);
@@ -615,6 +617,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 sceneStatus, control, inventory, combat, town, [&](bool visible, bool large) {
                     mapDisplay.visible = visible; mapDisplay.large = large;
                     if (sharedUi) { sharedUi->ui().automap = visible; sharedUi->ui().automapLarge = large; }
+                }, [&](std::optional<bool> enabled) {
+                    debugMapReveal = enabled; debugMapRevealGame = session.read().gameGeneration;
+                    if (!enabled && !pd2Resources) town.updateAutomapReveal(session.read(), false, nullptr);
                 }, presentationPaused, [&](std::vector<FrameInput> queued) {
                     if (minimized) throw std::invalid_argument("UI input is unavailable while minimized");
                     if (debugInputs.size() + queued.size() > 32)
@@ -680,6 +685,22 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 {"waitingItemRequest", waiting ? nlohmann::json(*waiting) : nlohmann::json(nullptr)}};
             constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading", "TcpIp", "JoinHost", "Difficulty"};
             reply["frontend"] = {{"page", pageNames.at(size_t(page))}, {"notice", notice}, {"minimized", minimized}};
+            reply["frontend"]["debugRevealMap"] = debugMapReveal ? nlohmann::json(*debugMapReveal) : nlohmann::json(nullptr);
+            if (sharedUi) {
+                const auto &panels = sharedUi->ui();
+                constexpr std::array fadeNames{"No", "Everything", "Auto", "Center"};
+                reply["frontend"]["automap"] = {{"visible", panels.automap}, {"large", panels.automapLarge},
+                    {"right", panels.minimapRight}, {"fade", fadeNames.at(size_t(panels.automapFade))},
+                    {"names", panels.automapNames}, {"party", panels.automapParty},
+                    {"offset", {{"x", panels.automapOffset.x}, {"y", panels.automapOffset.y}}}};
+                reply["frontend"]["bh"] = {{"enabled", panels.bhEnabled}, {"settingsOpen", panels.bhSettingsOpen},
+                    {"selected", panels.bhSettingsSelected}, {"revealMap", panels.bhRevealMap},
+                    {"alwaysShowLoot", panels.bhAlwaysShowLoot}, {"forceLightRadius", panels.bhForceLightRadius},
+                    {"pathLine", panels.bhShowPathLine}, {"monsters", panels.bhShowMonsters},
+                    {"resistances", panels.bhShowResistances}, {"enchantments", panels.bhShowEnchantments},
+                    {"chests", panels.bhShowChests}, {"automapOnJoin", panels.bhAutomapOnJoin},
+                    {"lkChestLines", panels.bhShowLkChestLines}};
+            }
             if(request.find("online-status")!=std::string::npos || request.find("server-status")!=std::string::npos)
                 reply["performance"]=frameTimings.summary();
             if (sharedClients && request.find("online-status") != std::string::npos) {
@@ -993,7 +1014,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         sharedController = std::make_unique<SceneController>(sharedClients->actor(),sharedClients->inventory(),
                             sharedClients->character(),sharedClients->npc(),sharedClients->map(),*sharedUi);
                         auto &initial = sharedUi->ui();
-                        initial.automap = mapDisplay.visible || preferences.bhAutomapOnJoin;
+                        initial.automap = mapDisplay.visible || (pd2Resources && preferences.bhAutomapOnJoin);
                         initial.miniPanelOpen = preferences.miniPanelOpen;
                         initial.automapLarge = preferences.automapLarge;
                         initial.automapCenterWhenCleared = preferences.automapCenterWhenCleared;
@@ -1002,6 +1023,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         initial.automapFade = preferences.automapFade;
                         initial.lighting = preferences.lighting;
                         initial.controls = preferences.controls;
+                        initial.bhEnabled = pd2Resources;
                         initial.bhRevealMap = preferences.bhRevealMap;
                         initial.bhAlwaysShowLoot = preferences.bhAlwaysShowLoot;
                         initial.bhShowAreaName = preferences.bhShowAreaName;
@@ -1201,18 +1223,12 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         if (quit || presentationPaused)
             continue;
         town.revealVisibleTiles(session.read(), worldFrame.visibleMapTiles);
-        // BH reveal_map: every tile when entering an area, and again as soon
-        // as the toggle turns on within the same area.
-        const bool revealAll = sharedUi && sharedUi->ui().bhRevealMap;
-        if (revealAll) {
-            const auto generation = session.read().gameGeneration * 0x100000000ULL +
-                session.read().world.areaGeneration;
-            if (generation != lastRevealAllGeneration || !lastRevealAllShown) {
-                lastRevealAllGeneration = generation;
-                town.revealAllTiles(session.read());
-            }
-        }
-        lastRevealAllShown = revealAll;
+        if (debugMapReveal && (session.read().stage != OnlineStage::ProtocolReady ||
+            debugMapRevealGame != session.read().gameGeneration)) debugMapReveal.reset();
+        if (pd2Resources)
+            updateAutomapRevealCn(town, session.read(), debugMapReveal.value_or(sharedUi && sharedUi->ui().bhRevealMap));
+        else if (debugMapReveal)
+            town.updateAutomapReveal(session.read(), *debugMapReveal, nullptr);
         const auto automapCallbacksPd2 = town.take_automap_room_reveals_pd2();
         if (!automapCallbacksPd2.empty())
             session.report_automap_rooms_pd2(automapCallbacksPd2, onlineIntentContext(session.read()));

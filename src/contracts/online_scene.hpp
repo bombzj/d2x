@@ -1,5 +1,6 @@
 #pragma once
 #include "contracts/map.hpp"
+#include "contracts/automap_reveal.hpp"
 #include "contracts/online_world.hpp"
 #include <vector>
 
@@ -81,6 +82,7 @@ struct OnlineSceneView {
     std::vector<OnlineWaypointDestination> waypoints;
     std::vector<OnlineAutomapStamp> automapStamps;
     AutomapDrawView automap;
+    AutomapRevealProgress automapReveal;
     std::optional<uint32_t> automapLayer;
     std::vector<OnlineAutomapTown> automapTowns;
     std::map<uint16_t, size_t> automapRevealedCells;

@@ -26,6 +26,7 @@ struct Grid;
 struct Map;
 class LightingView;
 class PaletteBlendView;
+class AutomapProjection;
 struct WorldDrawView;
 struct WorldDrawItem;
 enum class AutomapFade { No, Everything, Auto, Center };
@@ -111,6 +112,8 @@ struct ViewState {
     float noticeTime = 0;
     bool noticeError = false;
     // BH/D2Hackmap display features.
+    // Session capability, supplied by app; preferences alone cannot enable BH.
+    bool bhEnabled = false;
     bool bhRevealMap = false;
     bool bhAlwaysShowLoot = false;
     bool bhShowAreaName = false;
@@ -226,6 +229,10 @@ class SceneView {
     void drawExitHint(Vec mouse) const;
     void drawBhOverlay() const;
     void drawBhSettings() const;
+    void drawBhAutomapLines(const AutomapDrawView &, const AutomapProjection &,
+                           Rectangle clip, const PaletteBlendView &) const;
+    void drawBhAutomapMarker(const AutomapDrawView::Marker &, const AutomapProjection &,
+                            Rectangle clip, Vec miniOrigin, const PaletteBlendView &) const;
     void drawInventory(Vec mouse) const;
     void drawCharacter(Vec mouse) const;
     void drawHireling(Vec mouse) const;

@@ -194,6 +194,23 @@ std::vector<size_t> NativeMapGenerator::levelRooms(int level) {
     failed_ = false;
     return levels_.at(level).rooms;
 }
+bool NativeMapGenerator::visitAutomapRoom(size_t room,
+        const std::function<void(const RetailTileMaterializer &, size_t)> &visit) {
+    if (!valid()) throw std::runtime_error("Discard failed native map session");
+    failed_ = true;
+    const bool borrowed = !tiles_.rooms().at(room).loaded;
+    activation_.initialize(room);
+    try {
+        visit(tiles_, room);
+    } catch (...) {
+        if (borrowed) activation_.retire(room);
+        throw;
+    }
+    if (borrowed && !activation_.retire(room))
+        throw std::runtime_error("Temporary automap room acquired unexpected references");
+    failed_ = false;
+    return borrowed;
+}
 size_t NativeMapGenerator::reveal(int level, int x, int y) {
     if (!valid()) throw std::runtime_error("Discard failed native map session");
     failed_ = true;

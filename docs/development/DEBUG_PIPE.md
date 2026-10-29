@@ -82,6 +82,17 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 `online-world.scene.monsters`返回当前已解析怪物的原classId、实际姓名／词缀和最终transform／randomTransform，复用显示姓名与调色路径；不是服务端真值或准入列表。跨进程探索保存只在本地单机／TCP/IP角色入口工作，规则与侧文件边界见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。
 
+`scene.automap.reveal`只读内部开图进度：enabled、state（disabled／running／complete／partial）、reason、rootLevel、roomsCompleted／roomsTotal、borrowed／released、activeRooms及逐level的layer／房间／图元／预设／已匹配出口数。范围是当前连续步行区域；完成后专用生成器销毁，activeRooms归零，借还数应平衡。逐level的complete表示房间遍历完毕，最终状态还要检查是否导出可显示图元；全部零图元返回partial及原因。`automap.revealedCells`仍只统计自然探索，既有`nativeCells`字段统计最终显示图元，含启用时的独立开图叠层；关闭后撤去，不能把该显示数当真实房间引用或存档内容。开图不提供服务端管理命令，普通PD2模式使用BH面板开关；原版无自动调用。细节见[内部开图](../architecture/BH_CODE_ISOLATION.md#内部实现与bh调用边界)。
+
+`debug-reveal-map`是显式客户端显示调试命令，原版和PD2均可调用同一内部开图服务，不产生玩法单位或视野引用。action默认on，另有off、auto、status；on默认显示当前大小的地图，show=false仅准备图层；off撤去额外图层，auto恢复模式／BH偏好控制，status只读。覆盖不持久化，本局退出或新游戏代次清除；`frontend.debugRevealMap`为true／false／null，对应强制开／关／自动。回执accepted只表示修改覆盖，随后查询`online.scene.automap.reveal`直到complete；partial必须读取reason。原版使用普通Objects.AutoMap预设，不借此开启BH面板／怪物标记；正常原版无自动调用。
+
+```powershell
+.\scripts\Send-D2XCommand.ps1 -Command debug-reveal-map
+.\scripts\Send-D2XCommand.ps1 -Command debug-reveal-map -Arguments @{action='status'}
+.\scripts\Send-D2XCommand.ps1 -Command debug-reveal-map -Arguments @{action='off'}
+.\scripts\Send-D2XCommand.ps1 -Command debug-reveal-map -Arguments @{action='auto'}
+```
+
 `online-world.scene.localCast`为本人当前施法表现的skill／age；age=-1表示仍待接近／开始，动作结束或真正中断后为null。`scene.clientMissiles`返回当前视觉队列的id、全局position、age和remaining；负age表示还没到释放帧，队列包含飞行及命中图形，不包含服务端伤害或命中真值。用它核对普通点击后Stop仍保留待释放飞弹、引导停止清理及生命周期；结合截图检查实际原图，不能仅凭服务端missileCount／伤害宣称客户端显示完成。
 
 JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
@@ -345,6 +356,8 @@ d2x_assets <MPQ目录> save-info <file.d2s>
 - 该脚本是通用调用入口，未加入专用测试脚本／测试程序。调试接口由用户授权新增。
 
 局前 `ui-input` 与游戏内共用帧输入契约；`entryText` 为至多255个可打印ASCII字节，`tab` 切换字段，`wheel` 为有限滚轮增量。`key=1–4`复用腰带列快捷键，`key=belt`／`expand-belt`／`~`切换腰带展开，`f1–f8`选择已绑定技能或绑定选择器悬停项；原 `text` 仍只用于数字输入。局前坐标同样使用逻辑视口，应用转换到800×600原图布局；回执 `frontend.page/notice/minimized` 提供页面、提示和最小化状态，不包含字段内容或密码。测试暂停或窗口最小化时拒绝所有 UI 输入，最小化切换清理已排队输入。
+
+地图诊断输入另支持`key=automap-side`／`automap-center`（或home）／`automap-names`／`automap-party`／`automap-fade`及方向键，均进入普通SceneController；`bh-settings`或`z`加`control:true`复用BH面板入口，原版模式拒绝开启。BH面板占有Enter／Esc，打开时不先送给聊天处理。共享游戏界面就绪时，回执另含只读`frontend.automap`（visible／large／right／fade／names／party／offset）及`frontend.bh`（enabled／settingsOpen／selected及主要偏好开关）。right是用户选边，侧栏临时强制的有效边仍应结合实际画面检查；enabled是会话能力，偏好为true不代表原版启用BH。这些字段不读取宿主隐藏状态，不证明绘制／揭示完成；批量输入须等`uiQueue.inputFrames=0`后再核对结果。
 
 LAN宿主的server-status新增rooms／participants摘要：实例slot／generation、容量、玩家、区域、阶段及失败信息。宿主未连接本机角色时也可查询；管理远端角色须同时指定hostSlot、hostGeneration、hostPlayer，不能按名字猜绑定。save／grant-experience沿原管理入口处理对应服务端角色；断线保存失败保留实例和租约，显式save成功后才继续回收。load需要主内存客户端重建入局，不能用另一人的请求操纵本机客户端；共享房间禁止重载。调试管道仍只在本机用户授权范围内，LAN不开放它。
 

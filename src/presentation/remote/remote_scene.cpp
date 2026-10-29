@@ -345,7 +345,7 @@ void RemoteScene::drawTargetInfo(const OnlineView &view, const RemoteSceneFrame 
     } else if(!combat.monsterTargetEligible(unit,false)) return;
     const auto row = impl_->monsterRows.find(combat.monsterClass(unit).value_or(UINT16_MAX));
     if (row == impl_->monsterRows.end()) return;
-    auto [name, description] = impl_->monsterCaption(unit, shared.ui().bhShowResistances);
+    auto [name, description] = impl_->monsterCaption(unit, shared.ui().bhEnabled && shared.ui().bhShowResistances);
     if (name.empty()) return;
     if(corpse) {
         const auto suffix=impl_->strings.find("corpse");

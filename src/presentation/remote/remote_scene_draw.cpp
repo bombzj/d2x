@@ -772,9 +772,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     // checked position drives camera, visibility, effects and automap each
     // frame; packet coordinates remain the authority/acknowledgement state.
     automap.observer = observer;
-    if (playerId && shared.ui().bhShowPathLine) {
-        // BH path guidance on the automap: lines from the player's own dot
-        // to waypoints, next-scene exits and quest points (0x8A hints).
+    if (playerId && shared.ui().bhEnabled && shared.ui().bhShowPathLine) {
+        // Existing D2X guidance to observed waypoints/exits/quest alerts.
+        // This is not evidence that official BH implements the same policy.
         for (const auto &target : binding.mapTargets)
             if (target.interaction == OnlineMapInteraction::Waypoint ||
                 target.interaction == OnlineMapInteraction::Exit)
@@ -789,7 +789,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 AutomapDrawView::UnitMark::Quest, std::pair{key.type, key.id}, 0, {}, {}});
         }
     }
-    if (shared.ui().bhShowChests) {
+    if (shared.ui().bhEnabled && shared.ui().bhShowChests) {
         // BH Show Chests: unopened selectable containers (IsObjectChest
         // OperateFn list) get a 3x3 palette-white box on the automap.
         constexpr std::array<int, 12> chestOps{{1, 3, 4, 5, 7, 14, 19, 20, 33, 48, 51, 68}};
@@ -805,10 +805,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 false, AutomapDrawView::UnitMark::Chest, std::pair{key.type, key.id}, 0, {}, {}});
         }
     }
-    if (shared.ui().bhShowMonsters) {
-        // BH Maphack::OnAutomapDraw draws a Crosshook per live monster of the
-        // loaded rooms; IsValidMonster (D2Helpers.cpp) drops corpses, quest
-        // triggers and named placeholder units.
+    if (shared.ui().bhEnabled && shared.ui().bhShowMonsters) {
+        // Historical BH-CN MapNotify draws live loaded-room monster crosses.
+        // The current official MapNotify only draws item markers.
         std::set<std::pair<uint8_t, uint32_t>> drawn;
         for (const auto &marker : binding.automap.markers)
             if (marker.unit) drawn.insert(*marker.unit);
@@ -831,7 +830,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             if (const auto row = monsterRows.find(*cls); row != monsterRows.end() &&
                 monstats.number(row->second, "npc").value_or(0)) continue;
             decodeMonsterIdentity(unit);
-            // BH "Monster Color" defaults, overridden by rank like Maphack.cpp.
+            // Existing rank colors; full versioned BH configuration is pending.
             uint8_t color = 0x5B;
             if (const auto identity = monsterIdentities.find(key); identity != monsterIdentities.end()) {
                 if (identity->second.unique || identity->second.superUnique) color = 0x84;
@@ -844,7 +843,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 shared.ui().bhShowEnchantments ? monsterAutomapEnchant(unit) : std::string{}});
         }
     }
-    for (auto &marker : automap.markers) if (marker.unit) {
+    // Static objects keep their received coordinates; their animation cache
+    // does not own a movement position. BH reads the same object coordinates.
+    for (auto &marker : automap.markers) if (marker.unit && marker.unit->first <= 1) {
         const OnlineUnitKey key{marker.unit->first, marker.unit->second};
         const auto unit = v.world.units.find(key);
         const auto moving = motion.find(key);

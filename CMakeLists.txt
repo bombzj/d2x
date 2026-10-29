@@ -499,18 +499,19 @@ target_link_libraries(d2x_character_host PUBLIC d2x_host d2x_game_content d2x_ne
 include(cmake/Networking.cmake)
 
 add_library(d2x_client
-  src/client/inventory_view.cpp src/client/automap_exploration.cpp
+  src/client/inventory_view.cpp src/client/automap_exploration.cpp src/client/automap_cells.cpp
   src/client/character_projection.cpp src/client/quest_projection.cpp
   src/client/pet_projection.cpp
 )
 target_link_libraries(d2x_client PUBLIC d2x_client_api PRIVATE d2x_content)
 
 add_library(d2x_remote_scene
-  src/client/remote_town.cpp src/client/remote_control.cpp src/client/remote_inventory.cpp
+  src/client/remote_town.cpp src/client/automap_reveal.cpp src/client/remote_control.cpp src/client/remote_inventory.cpp
   src/client/remote_combat.cpp src/client/remote_ui_clients.cpp src/client/remote_ui_actor.cpp
   src/client/remote_ui_inventory.cpp src/client/remote_ui_character.cpp
   src/client/pd2/player_rates.cpp
   src/client/pd2/charge_targets.cpp
+  src/client/pd2/automap.cpp
   src/client/remote_ui_npc.cpp src/client/remote_ui_items.cpp
 )
 target_link_libraries(d2x_remote_scene PUBLIC d2x_client d2x_world d2x_remote_client)
@@ -540,6 +541,8 @@ add_library(d2x_presentation
   src/presentation/npc/hireling_view.cpp src/presentation/npc/client_views.cpp
   src/presentation/npc/commerce_controller.cpp src/presentation/hud/pet_portraits.cpp
   src/presentation/world/automap_assets.cpp src/presentation/world/automap_view.cpp
+  src/presentation/world/automap_projection.cpp
+  src/presentation/world/bh_automap_view.cpp
   src/presentation/world/map_view.cpp src/presentation/world/map_controller.cpp
   src/presentation/world/object_hint.cpp src/presentation/world/lighting_view.cpp
   src/presentation/world/palette_blend_view.cpp src/presentation/world/tile_visibility.cpp

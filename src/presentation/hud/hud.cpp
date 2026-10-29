@@ -237,7 +237,7 @@ float SceneView::partyPortraitOffset() const {
         float(party_.portraitCount()) * 56 * classicPanelScale() : 0;
 }
 void SceneView::drawBhOverlay() const {
-    if (view_.capturesWorldInput()) return;
+    if (!view_.bhEnabled || view_.capturesWorldInput()) return;
     // Area name: top-left, matching BH's display_level_names.
     if (view_.bhShowAreaName) {
         if (const auto &level = assets_.worldLevel(int(mapView().region)); !level.name.empty()) {
@@ -300,7 +300,7 @@ void SceneView::drawBhOverlay() const {
     }
 }
 void SceneView::drawBhSettings() const {
-    if (!view_.bhSettingsOpen) return;
+    if (!view_.bhEnabled || !view_.bhSettingsOpen) return;
     DrawRectangle(0, 0, W, H, {0, 0, 0, 140});
     const int width = 340;
     const int rows = 14;

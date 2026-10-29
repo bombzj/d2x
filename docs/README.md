@@ -30,7 +30,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |
 | PD2技能／物品／地图／怪物／城镇与协议存档差异 | [PD2差异阅读导航](pd2/README.md#如何理解pd2对原版的修改)、[逐函数契约入口与未完成范围](pd2/README.md#逐函数说明入口)、[目标版本与证据边界](pd2/BUILDS.md) |
 | PD2能力、启动部署与客户端专项 | [能力状态](pd2/STATUS.md)、[运行与部署](pd2/OPERATIONS.md)、[客户端接入](pd2/CLIENT_INTEGRATION.md)、[专项分册目录](pd2/README.md#分册与归属) |
-| BH源码模块、过滤与客户端增强的独立接入 | [BH模块分析与代码隔离方案](architecture/BH_CODE_ISOLATION.md)，含官方／历史CN边界、许可路线、D2X适配及实施顺序 |
+| BH源码模块、客户端增强与地图揭示 | [BH内部接入设计](architecture/BH_CODE_ISOLATION.md)，含官方／历史CN差异、已有消费者、开图调用链、模式隔离及待验收范围 |
 | 原版与PD2／CN版本选择、发行方式、初始化及资源／协议差异 | [版本选择与兼容设计](architecture/PD2_COMPATIBILITY.md#版本选择与发布方式)、[CN样本DLL／位流取证](resources/PD2_CN_DLL_ANALYSIS.md)、[ProjectDiablo完整函数目录与概览](resources/pd2-core/README.md) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[调试任务AI](development/DEBUG_AI.md)、[崩溃记录](development/CRASH_REPORTS.md) |
 | 代码结构优化候选、取样依据与重新评估条件 | [代码待优化](development/CODE_OPTIMIZATION_TODO.md)，不替代功能优先级，也不表示已实施 |

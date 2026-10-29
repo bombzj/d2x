@@ -12,23 +12,15 @@
 #include "content/world/object_mode.hpp"
 
 namespace d2x {
-namespace {
-void insertNativeCell(std::set<NativeAutomapCell> &cells, NativeAutomapCell cell) {
-    const int group = nativeAutomapCellGroup(cell.cel);
-    for (auto it = cells.lower_bound({0, cell.x, cell.y});
-         it != cells.end() && it->x == cell.x && it->y == cell.y; ++it)
-        if (group < 0 || nativeAutomapCellGroup(it->cel) == group) return;
-    cells.insert(cell);
-}
-}
 RemoteTown::RemoteTown(Archives &a, bool reportAutomapRoomsPd2)
     : archives_(a), libraries_(a), objects_(a.read("data/global/excel/objects.txt")),
       monsters_(a.read("data/global/excel/monstats.txt")),
       monsterSizes_(a.read("data/global/excel/monstats2.txt")),
       skills_(a.read("data/global/excel/skills.txt")), shrines_(a.read("data/global/excel/shrines.txt")),
       petTypes_(a.read("data/global/excel/pettype.txt")), automap_(a), strings_(a),
+      nativeAutomapCelCount_(decodeDc6(a.read("data/global/ui/automap/maximap.dc6")).frames.size()),
+      revealed_(a, automap_, nativeAutomapCelCount_),
       reportAutomapRoomsPd2_(reportAutomapRoomsPd2) {
-    nativeAutomapCelCount_ = decodeDc6(a.read("data/global/ui/automap/maximap.dc6")).frames.size();
     for (size_t row = 0; row < shrines_.rows().size(); ++row)
         if (auto code = shrines_.number(row, "Code")) shrineRows_.emplace(*code, row);
     for(size_t row=0;row<petTypes_.rows().size();++row)
@@ -51,6 +43,7 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
     displayPlayerPosition_ = point;
     if (gameGeneration_ != v.gameGeneration || areaGeneration_ != v.world.areaGeneration) {
         if (gameGeneration_ != v.gameGeneration) {
+            revealed_.reset();
             automapPositionPd2_ = {};
             explored_.clear(); discoveredCels_.clear(); discoveredTowns_.clear(); preparedTownAutomaps_.clear(); actSeeds_.clear();
             nativeAutomapCells_.clear();
@@ -791,15 +784,18 @@ void RemoteTown::revealVisibleTiles(const OnlineView &v, std::span<const size_t>
     refresh_automap_rooms_pd2(v);
     updateAutomapView(v);
 }
-void RemoteTown::revealAllTiles(const OnlineView &v) {
-    if (!view_.nativeMapReady || !map_ || !v.load.mapSeed || !v.load.act ||
-        v.gameGeneration != gameGeneration_ || v.world.areaGeneration != areaGeneration_) return;
-    std::vector<size_t> all(map_->terrain.instances.size());
-    for (size_t i = 0; i < all.size(); ++i) all[i] = i;
-    revealVisibleTiles(v, all);
+void RemoteTown::updateAutomapReveal(const OnlineView &v, bool enabled, AutomapPresetCellSelector selector) {
+    if (enabled && v.stage == OnlineStage::ProtocolReady && view_.nativeMapReady && view_.area &&
+        v.load.mapSeed && v.load.secondarySeed && v.load.act && v.load.difficulty &&
+        v.gameGeneration == gameGeneration_ && v.world.areaGeneration == areaGeneration_) {
+        revealed_.update({v.gameGeneration, v.world.areaGeneration, *v.load.mapSeed, *v.load.secondarySeed,
+            *v.load.act, *v.load.difficulty}, *view_.area, selector);
+    } else revealed_.disable();
+    updateAutomapView(v);
 }
 void RemoteTown::updateAutomapView(const OnlineView &v) {
     view_.automapStamps.clear(); view_.automapTowns.clear(); view_.automapRevealedCells.clear(); view_.automap = {};
+    view_.automapReveal = revealed_.progress();
     if (!nativeMap_ || !view_.area || !v.load.mapSeed || !v.load.act) return;
     // Remember visited walking neighbours; stairs and portals keep separate layers.
     std::set<int> component{*view_.area};
@@ -843,17 +839,24 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
             if (preset[0] == 160)
                 view_.automap.lkChestLines.push_back({float(preset[1]), float(preset[2])});
     view_.automap.observerVisible=!onlinePlayerDead(v.world);
+    NativeCells displayCells;
+    const int displayLayer = catalog_->level(*view_.area).automapLayer;
     for (const auto &[key, groups] : nativeAutomapCells_) {
         const auto &[seed, layer, objectSeed] = key;
         if (seed != *v.load.mapSeed || layer != uint32_t(catalog_->level(*view_.area).automapLayer)) continue;
         for (size_t group = 0; group < groups.size(); ++group) {
             if (group == 2 && objectSeed != v.load.secondarySeed) continue;
-            for (const auto &cell : groups[group])
-                view_.automap.stamps.push_back({unproject({cell.x * 10.f, cell.y * 10.f}), cell.cel});
+            for (const auto &cell : groups[group]) insertNativeCell(displayCells[group], cell);
         }
     }
+    // Merge at display time only. Natural discoveries win variant collisions;
+    // disabling reveal removes the overlay without rewriting native caches.
+    revealed_.appendCells(displayLayer, displayCells);
+    for (const auto &group : displayCells) for (const auto &cell : group)
+        view_.automap.stamps.push_back({unproject({cell.x * 10.f, cell.y * 10.f}), cell.cel});
     for (const auto &town : view_.automapTowns)
         view_.automap.towns.push_back({town.level, town.variant, {float(town.center.x), float(town.center.y)}});
+    revealed_.appendTowns(displayLayer, view_.automap.towns);
     using Mark = AutomapDrawView::UnitMark;
     const auto self = v.load.playerUnitId ? v.world.social.players.find(*v.load.playerUnitId) : v.world.social.players.end();
     const auto inParty=[&](uint32_t id) {

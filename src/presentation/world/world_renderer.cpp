@@ -301,7 +301,7 @@ PaletteBlendView &SceneView::prepareWorldLighting(const WorldDrawView &scene, st
         actPaletteBlends_[size_t(level.palette)] = std::make_unique<PaletteBlendView>(archives_, level.palette);
     // BH force_light_radius: cap at the native maximum of 18 instead of the
     // character's current lightRadius stat.
-    const int lightRadius = view_.bhForceLightRadius
+    const int lightRadius = view_.bhEnabled && view_.bhForceLightRadius
         ? std::max(actorClient_.controlledActor().lightRadius, 18)
         : actorClient_.controlledActor().lightRadius;
     lighting_->prepare(scene.map->grid, level, scene.observer, lightRadius,

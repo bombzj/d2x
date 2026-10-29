@@ -155,6 +155,7 @@ bool SceneController::handleMenu(const FrameInput &input) {
 }
 bool SceneController::handleBhSettings(const FrameInput &input) {
     auto &ui = view_.ui();
+    if (!ui.bhEnabled) { ui.bhSettingsOpen = false; return false; }
     if (input.bhSettings && !ui.chatInputOpen && !ui.gameMenuOpen) {
         ui.bhSettingsOpen = !ui.bhSettingsOpen;
         ui.bhSettingsSelected = 0;

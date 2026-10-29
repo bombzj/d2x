@@ -51,7 +51,7 @@ PD2参考用于区分原版共用路径与有源码依据的局部扩展，不�
 
 固定核心的[完整函数目录与功能概览](pd2-core/README.md)保存地址、真实分析器函数边界、调用关系、补丁与程序表登记、原生解析绑定及未归属范围。目录是静态分析事实，不是公开核心源码；自动名称和BH地址匹配均保留证据级别。目标二进制、整批反编译文本、Ghidra工程及分析脚本仍留在忽略的reference目录。
 
-公开BH源码的模块分析、直接抽取与独立实现的许可边界、原客户端注入层替换及D2X接入方式见[BH独立接入方案](../architecture/BH_CODE_ISOLATION.md)。该方案未将BH源码加入产品，也未证明当前BH.dll与公开提交一致；不能因目录另含Apache许可文本就将整个BH改标为Apache。
+公开BH源码的模块契约、已有D2X消费者、来源边界及地图揭示调用链见[BH内部接入设计](../architecture/BH_CODE_ISOLATION.md)。官方固定提交没有全图揭示调用，完整链来自另列版本的历史BH-CN；内部地图能力与BH策略入口分别归属原模块。该方案未将BH源码加入产品，也未证明当前BH.dll与公开提交一致；不能因目录另含Apache许可文本就将整个BH改标为Apache。
 
 REA属于开发期分析工具，不进入D2X构建或玩法依赖。上述快照的`docs/windows-ghidra-p0.md`及`src/ghidra/GhidraProviderCapabilities.ts`支持Windows x64上的原生x86／x64 PE与DLL只读分析；本次已用固定npm版本实际查询核心、Storm、当前BH及原D2Client，并将有效Evidence与失败诊断分开。运行依赖与main文档须分开核对；npm6.7.0使用`--mcp`启动stdio，并不提供main文档中所有CLI形式。静态DLL导入使用不可变副本，不调用目标入口。`docs/native-function-matching.md`及`src/domain/native/functionMatching.ts`基于已有Evidence给出名称、完整函数字节或结构候选关系，不证明行为等价或恢复原始源码。用于PD2时先从公开BH／原D2MOO定位，再定点追查核心DLL的初始化补丁登记、收发包与物品位流入口；保留目标摘要、模块／RVA、调用关系和未知项。运行时改写须另追补丁目标，不能把磁盘原函数或客户端可见逻辑当作当前服务器完整实现。
 

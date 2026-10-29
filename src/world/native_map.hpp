@@ -60,6 +60,10 @@ class NativeMapGenerator {
     size_t reveal(int level, int tileX, int tileY);
     // Allocation order; MPQ AutoMap presets also initialize their native rooms.
     std::vector<size_t> levelRooms(int level);
+    // Borrow a room's native tiles/presets for an observer-only export. Release
+    // only data initialized by this call; no sight root or room observer added.
+    bool visitAutomapRoom(size_t room,
+        const std::function<void(const RetailTileMaterializer &, size_t)> &);
     void hide(int level, int tileX, int tileY);
     // Position lookups only inspect allocated rooms; they never infer a level
     // or generate distant levels from a coordinate supplied by the caller.

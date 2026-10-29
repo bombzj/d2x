@@ -1,4 +1,5 @@
 #include "presentation/world/palette_blend_view.hpp"
+#include "presentation/world/automap_projection.hpp"
 #include "presentation/scene_view.hpp"
 #include "core/text.hpp"
 #include <algorithm>
@@ -23,19 +24,8 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
     const Rectangle area = large ? Rectangle{0, 0, float(W), float(H)}
         : Rectangle{right ? float(W - 281) : 0.f, right ? 57.f : miniOrigin.y - 21, 280, 226};
     const float sideShift = large && leftPanel != rightPanel ? (leftPanel ? W / 4 : -W / 4) : 0;
-    const int divisor = large ? 10 : 20;
-    // The native camera is a projected top-left, with a 16-pixel vertical
-    // bias (RVA 3F860). Divide camera and cell separately, truncating to zero.
-    const auto observer = project(map.observer);
-    const Vec camera{float(int(observer.x) - W / 2), float(int(observer.y) - H / 2 + 16)};
-    const Vec cleared = large ? Vec{} : Vec{float(W / 3) - miniOrigin.x - 16,
-        float(H / 3) - miniOrigin.y - 16};
-    const Vec origin{float(int(camera.x) / divisor - W / 2 + 40) - sideShift + cleared.x,
-        float(int(camera.y) / divisor - (H - 40) / 2 + 15) + cleared.y};
-    auto onMap = [&](Vec world) {
-        const auto pixel = project(world);
-        return Vec{float(int(pixel.x) / divisor), float(int(pixel.y) / divisor)} - origin + view_.automapOffset;
-    };
+    const AutomapProjection projection(W,H,large,miniOrigin,sideShift,map.observer,view_.automapOffset);
+    auto onMap = [&](Vec world) { return projection.cell(world); };
     const int palette = std::clamp(mapView().palette, 0, 4);
     const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
     if (!blend) return;
@@ -72,10 +62,8 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
         auto at = onMap(world) + Vec{8, -8};
         if (!unitVisible(at)) return;
         if (!large) at = at + Vec{-1, 5};
-        constexpr std::array<Vec, 13> points{{{0,-1}, {2,-2}, {4,-1}, {2,0}, {4,1}, {2,2},
-            {0,1}, {-2,2}, {-4,1}, {-2,0}, {-4,-1}, {-2,-2}, {0,-1}}};
-        for (size_t i = 1; i < points.size(); ++i)
-            DrawLineV(rv(at + points[i - 1] * 2), rv(at + points[i] * 2), color);
+        for (size_t i = 1; i < automapUnitOutline.size(); ++i)
+            DrawLineV(rv(at + automapUnitOutline[i - 1] * 2), rv(at + automapUnitOutline[i] * 2), color);
     };
     auto unitMark = [&](Vec world, Color rgb) { unitMarkAt(world, blend->paletteColor(rgb)); };
     uiScissor(area.x, area.y, area.width, area.height);
@@ -95,36 +83,15 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
     EndBlendMode();
     EndScissorMode();
     uiScissor(0, 0, float(W), float(H));
-    if (view_.bhShowPathLine && !map.pathLines.empty()) {
-        // BH path lines run from the player's own automap dot to the area
-        // targets, clipped to the active automap rectangle (mini or full).
-        const auto from = onMap(map.observer);
-        uiScissor(area.x, area.y, area.width, area.height);
-        for (const auto &line : map.pathLines) {
-            const auto to = onMap(line.position);
-            const Color color = line.kind == 0 ? Color{80, 200, 255, 220}   // waypoint: cyan
-                              : line.kind == 1 ? Color{255, 220, 80, 220}   // exit: gold
-                                               : Color{120, 255, 120, 220}; // quest: green
-            DrawLineV(rv(from), rv(to), color);
-            DrawCircleV(rv(to), 3.f, color);
-        }
-        uiScissor(0, 0, float(W), float(H));
-    }
-    if (view_.bhShowLkChestLines && !map.lkChestLines.empty()) {
-        // CN BH "LK Chest Lines": player dot to each Lower Kurast superchest
-        // preset, palette color 105 (CN default), same clip as the path lines.
-        uiScissor(area.x, area.y, area.width, area.height);
-        const auto from = onMap(map.observer);
-        const Color color = blend->paletteByte(105);
-        for (const auto &target : map.lkChestLines)
-            DrawLineV(rv(from), rv(onMap(target)), color);
-        uiScissor(0, 0, float(W), float(H));
-    }
+    drawBhAutomapLines(map,projection,area,*blend);
     for (const auto &marker : map.markers) {
         using Mark = AutomapDrawView::UnitMark;
         if ((marker.unitMark == Mark::Party || marker.unitMark == Mark::PartyPet) && !view_.automapParty) continue;
         switch (marker.unitMark) {
-        case Mark::Npc: unitMark(marker.position, {244,244,244,255}); break;
+        case Mark::Npc:
+            if (view_.bhEnabled) drawBhAutomapMarker(marker,projection,area,miniOrigin,*blend);
+            else unitMark(marker.position, {244,244,244,255});
+            break;
         case Mark::Party: unitMark(marker.position, {0,255,0,255}); break;
         case Mark::OtherPlayer: unitMark(marker.position, {255,0,0,255}); break;
         case Mark::Corpse: unitMark(marker.position, {255,0,255,255}); break;
@@ -133,44 +100,8 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
         case Mark::Stash: if(!view_.automapNames) unitMark(marker.position,{0,0,0,255}); break;
         case Mark::BluePortal:
         case Mark::RedPortal: unitMark(marker.position, {244,244,0,255}); break;
-        // BH Crosshook: the same twelve segments, colored by the BH palette byte.
-        case Mark::Monster: {
-            unitMarkAt(marker.position, blend->paletteByte(marker.markColor));
-            // BH draws enchantment letters at y-14 and resistance letters at
-            // y-8, centered on the cross, each in its PL2 text color.
-            auto markText = [&](const std::string &text, float lift) {
-                if (text.empty()) return;
-                auto at = onMap(marker.position) + Vec{8, -8};
-                if (!unitVisible(at)) return;
-                int width = 0;
-                for (size_t i = 1; i < text.size(); i += 2)
-                    width += assets_.characterLabelFont.widthOf(uint8_t(text[i]));
-                float x = at.x - width / 2.f;
-                for (size_t i = 1; i < text.size(); i += 2) {
-                    const size_t color = size_t(text[i - 1] - '0');
-                    const auto &font = color < assets_.automapTextFonts.size() &&
-                            assets_.automapTextFonts[color].ready
-                        ? assets_.automapTextFonts[color]
-                        : assets_.characterLabelFont;
-                    if (const auto *glyph = font.glyphOf(uint8_t(text[i])); glyph)
-                        DrawTexture(glyph->texture, int(x + glyph->x),
-                            int(at.y - lift + glyph->y - glyph->texture.height), WHITE);
-                    x += font.widthOf(uint8_t(text[i]));
-                }
-            };
-            markText(marker.markEnchant, 22);
-            markText(marker.markResist, 10);
-            break;
-        }
-        case Mark::Quest: unitMarkAt(marker.position, {120,255,120,255}); break;
-        // BH Boxhook 3x3 in palette byte 255 over unopened containers.
-        case Mark::Chest: {
-            const auto at = onMap(marker.position);
-            if (at.x >= area.x && at.y >= area.y && at.x < area.x + area.width &&
-                at.y < area.y + area.height)
-                DrawRectangle(int(at.x) - 1, int(at.y) - 1, 3, 3, blend->paletteByte(255));
-            break;
-        }
+        case Mark::Monster: case Mark::Quest: case Mark::Chest:
+            drawBhAutomapMarker(marker,projection,area,miniOrigin,*blend);break;
         default: break;
         }
     }

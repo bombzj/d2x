@@ -8,6 +8,7 @@
 #include "content/world/automap_data.hpp"
 #include "content/string_table.hpp"
 #include "client/automap_exploration.hpp"
+#include "client/automap_reveal.hpp"
 #include <span>
 
 namespace d2x {
@@ -30,9 +31,10 @@ class RemoteTown {
     AutomapExploration explored_;
     std::map<int,uint32_t> actSeeds_;
     std::map<Discovery, std::set<int>> discoveredCels_;
-    using NativeCells = std::array<std::set<NativeAutomapCell>, 4>;
+    using NativeCells = AutomapCells;
     std::map<std::tuple<uint32_t, uint32_t, uint32_t>, NativeCells> nativeAutomapCells_;
     size_t nativeAutomapCelCount_{};
+    AutomapReveal revealed_;
     void rememberTile(const OnlineView &, int level, int x, int y, int type, bool wallArray, const MapCell &);
     std::map<std::tuple<uint32_t, int, int>, OnlineAutomapTown> discoveredTowns_;
     std::set<std::tuple<uint32_t, int, int>> preparedTownAutomaps_;
@@ -103,8 +105,8 @@ class RemoteTown {
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
     bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}, bool approaching = false) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices);
-    // BH reveal_map: marks every terrain instance in the current area as seen.
-    void revealAllTiles(const OnlineView &);
+    // Observer-only overlay; does not enter discovery, navigation or live DRLG.
+    void updateAutomapReveal(const OnlineView &, bool enabled, AutomapPresetCellSelector);
     std::vector<uint32_t> take_automap_room_reveals_pd2();
     AutomapDiscovery discovery() const;
     void restoreDiscovery(const AutomapDiscovery &, const OnlineView &);
