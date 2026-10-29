@@ -5,6 +5,7 @@
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 #include "world/interaction_geometry.hpp"
 #include "core/fingerprint.hpp"
@@ -510,6 +511,45 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         view_.nativeMapReason = nativeReason_;
         return false;
     }
+}
+std::vector<RemoteTown::WalkingBoundary> RemoteTown::walkingBoundaries() const {
+    std::vector<WalkingBoundary> result;
+    if(!nativeMap_ || !catalog_ || !view_.nativeMapReady || !view_.area) return result;
+    const int level=*view_.area;const auto &layout=nativeMap_->layout();
+    const auto found=layout.connections.find(level);const auto &record=catalog_->level(level);
+    const auto slots=found==layout.connections.end()?NativeActLayout::ConnectionSlots{record.visible,record.warps}:found->second;
+    const auto &rooms=nativeMap_->tiles().rooms();
+    for(const auto &source:rooms) if(source.level==level) for(const auto near:source.near) {
+        const auto &other=rooms.at(near);if(other.level==level) continue;
+        bool walking=false;
+        for(size_t slot=0;slot<slots.visible.size();++slot)
+            walking|=slots.visible[slot]==other.level && slots.warps[slot]==-1;
+        if(!walking) continue;
+        const auto &a=source.room,&b=other.room;
+        int side=-1,plane=0,start=0,end=0;
+        if(a.x+a.width==b.x || b.x+b.width==a.x) {
+            side=a.x+a.width==b.x?3:1;plane=(side==3?a.x+a.width:a.x)*5;
+            start=std::max(a.y,b.y)*5;end=std::min(a.y+a.height,b.y+b.height)*5;
+        } else if(a.y+a.height==b.y || b.y+b.height==a.y) {
+            side=a.y+a.height==b.y?0:2;plane=(side==0?a.y+a.height:a.y)*5;
+            start=std::max(a.x,b.x)*5;end=std::min(a.x+a.width,b.x+b.width)*5;
+        }
+        if(side>=0 && start<end) result.push_back({uint16_t(other.level),side,plane,start,end});
+    }
+    std::sort(result.begin(),result.end(),[](const auto &a,const auto &b) {
+        return std::tie(a.destination,a.side,a.plane,a.start,a.end)<std::tie(b.destination,b.side,b.plane,b.start,b.end);
+    });
+    std::vector<WalkingBoundary> merged;
+    for(const auto &edge:result) {
+        if(!merged.empty()) {
+            auto &last=merged.back();
+            if(last.destination==edge.destination && last.side==edge.side && last.plane==edge.plane && edge.start<=last.end) {
+                last.end=std::max(last.end,edge.end);continue;
+            }
+        }
+        merged.push_back(edge);
+    }
+    return merged;
 }
 bool RemoteTown::permits(const OnlineView &v, OnlinePoint target) const {
     if (!view_.available || !view_.movementAvailable || !map_ || !view_.origin ||

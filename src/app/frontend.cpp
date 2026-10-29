@@ -556,7 +556,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             control.cancelMovement();
         control.tick(!minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
-        debugWalk.tick(session,town,control,minimized || presentationPaused || (sharedUi && sharedUi->ui().blocksInput()));
+        debugWalk.tick(session,town,control,minimized || presentationPaused || (sharedUi && sharedUi->ui().blocksInput()),
+            !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
+            scene && std::ranges::any_of(scene->players(),[](const auto &player){return player.local && player.moving;}));
         if (renderedArea != town.read().area) {
             // Walking into an adjacent level changes the binding, not the
             // actor's path. RemoteScene refreshes palette/origin each frame;

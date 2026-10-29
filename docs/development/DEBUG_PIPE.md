@@ -39,11 +39,13 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 客户端自主行走
 
-`debug-walk`启动异步调试输入，`debug-walk-status`只读进度，`debug-walk-cancel`取消后沿客户端Stop提交停止请求。目标`goal=waypoint`（默认）自动寻找本区已指派传送点并用正常交互打开；`goal=exit`选择本区出口，可给`level`筛目的地，默认只走到附近；没有可点击warp的步行连接只从客户端已重建房间的真实共边选择本层内侧落点，可用于城镇门口，不自动跨区；`goal=point`需要全局subtile的`x/y`；`goal=unit`需要实际`unitId`，`unitType`默认2。`interact`默认在waypoint／unit目标启用，其他目标关闭；`run`默认true，`timeoutSeconds`为5–300，默认120。没有使用服务端管理旅行、坐标写入、私有包或鼠标模拟。
+`debug-walk`启动异步调试输入，`debug-walk-status`只读进度，`debug-walk-cancel`取消后沿客户端Stop提交停止请求。目标`goal=waypoint`（默认）自动寻找本区已指派传送点并用正常交互打开；`goal=exit`选择本区出口，可给`level`筛目的地，默认只走到附近；没有可点击warp的步行连接读取客户端已重建的逻辑near及原Vis／warp=-1连接（不要求邻层房间已激活），扫描当前已知碰撞的通行开口并选择本层内侧落点，可用于城镇门口，不自动跨区；这种连接不接受interact=true；`goal=point`需要全局subtile的`x/y`；`goal=unit`需要实际`unitId`，`unitType`默认2。`interact`默认在waypoint／unit目标启用，其他目标关闭；`run`默认true，`timeoutSeconds`为5–300，默认120。没有使用服务端管理旅行、坐标写入、私有包或鼠标模拟。
 
-导航只读取RemoteTown已重建的地形／碰撞与当前mapTargets；目标尚未出现时探索当前层可达的已重建房间，普通行走带来新的原房间／单位消息，再选择真实目标。规划复用Grid.path，逐段调用与UI相同的RemoteControl.move／interact，沿规划路线向前选取最多18子格路径长度的目标，避免逐个点击短转角并保留原50子格请求、原生资格／限流／服务端碰撞裁决。目标尚未指派且暂时没有可达探索房间时继续等待正常客户端更新；搜索房间的接近路线无进展时放弃该探索点并改查其他已重建房间，显式目标仍明确失败；无路、目标撤出、15秒未观察到位置进展或总期限到达会明确失败；缺地图／资源不穿墙或补造目标，不自动战斗／喝药／复活／解锁任务／传送点。当前不实现跨层寻路任务，换区、重入、离局或死亡终止旧意图；出口交互的submitted仍须另核对服务器旅行结果。
+导航只读取RemoteTown已重建的地形／碰撞、逻辑步行连接与当前mapTargets，不额外生成或激活房间。出口目标先按目的层及真实共边选定连接，再找已知通行开口；输入不足时只沿该连接方向接近当前可达地形前沿，缺连接不回退为任意房间巡游。传送点未指派时仍可探索当前层可达房间；缺地图／资源不穿墙或补造目标，不自动战斗／喝药／复活／解锁任务／传送点。当前不实现跨层导航任务，换区、重入、离局或死亡终止旧意图。
 
-显式导航期间调试输入持有后台客户端焦点，窗口未最小化时单机可正常推进；客户端菜单／表现暂停会阻止操作，最小化不执行输入；显式server-pause仍由宿主独立持有，导航不读取宿主暂停真值，无位置进展将按期限失败。人工点击／按键及其他修改客户端状态的调试请求取消导航，让位正常操作。返回`navigation`含state、reason、gameGeneration／areaGeneration、target／unit／segment、moveRequests／interactionRequests／searchRooms（前两项为客户端入口受理次数，同目标合并时不等于发包数）；`completed`对传送点表示已收到服务器菜单，其他交互只表示已提交正常请求，不表示奖励或旅行成功。源码入口为[auto_walk.cpp](../../src/app/debug/auto_walk.cpp)，没有新增测试脚本／专用测试程序；构建与实际覆盖见[原版缺口](ORIGINAL_GAPS.md)。
+移动衔接使用正常RemoteScene.playerPathPosition（客户端DynamicPath位置，不含绘制校正），每0.3秒判断并重新规划，包括行走过程中；方向改变、原段受阻或接近段尾时沿同一RemoteControl.move／interact入口更新输入，同方向仍有效时保留当前请求，并传递同一客户端操作原点；不等待稀疏0x96服务器位置才发下一次输入。规划复用Grid.path，只在首条碰撞核实的直线段内前视最多18子格，量化到实际整数点击目标后复核同一碰撞射线，不跨尚未走过的转角，保留原50子格请求、资格／限流及服务端碰撞裁决。客户端预测不写OnlineView或权威位置；服务器采样另保留供诊断。无路、目标撤出、无进展及总期限明确失败；传送点以服务器菜单确认，其他交互的submitted仍须另核对服务器结果。
+
+显式导航期间调试输入持有后台客户端焦点，窗口未最小化时单机可正常推进；客户端菜单／表现暂停会阻止操作，最小化不执行输入；显式server-pause仍由宿主独立持有，导航不读取宿主暂停真值，无位置进展将按期限失败。人工点击／按键及其他修改客户端状态的调试请求取消导航，让位正常操作。返回`navigation`含state、reason、gameGeneration／areaGeneration、target／unit／segment、clientPosition／serverPosition、targetSource、exitLevel与boundaryStart／boundaryEnd、decisionIntervalMs／decisions／clientMoving，以及moveRequests／interactionRequests／searchRooms（位置为最近一次导航决策采样，停止后实时位置见online-status；前两项为客户端入口受理次数，同目标合并时不等于发包数）；`completed`对传送点表示已收到服务器菜单，其他交互只表示已提交正常请求，不表示奖励或旅行成功。源码入口为[auto_walk.cpp](../../src/app/debug/auto_walk.cpp)，没有新增测试脚本／专用测试程序；构建与实际覆盖见[原版缺口](ORIGINAL_GAPS.md)。
 
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command debug-walk -Arguments @{goal='waypoint'}

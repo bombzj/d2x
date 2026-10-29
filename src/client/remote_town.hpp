@@ -70,6 +70,10 @@ class RemoteTown {
     void update(const OnlineView &, std::optional<Vec> displayPosition = {});
     const OnlineSceneView &read() const { return view_; }
     const Map *map() const { return map_; }
+    // Already reconstructed logical walking links, including an adjoining room
+    // before it becomes active. Global subtile coordinates; no room generation.
+    struct WalkingBoundary {uint16_t destination{};int side{},plane{},start{},end{};};
+    std::vector<WalkingBoundary> walkingBoundaries() const;
     bool permits(const OnlineView &, OnlinePoint target) const;
     // Native player-room / active-neighbor order, then room-unit prepend order.
     std::vector<OnlineUnitKey> nearbyUnits(const OnlineView &, OnlinePoint center, int radius) const;
