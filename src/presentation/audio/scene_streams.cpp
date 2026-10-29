@@ -43,9 +43,13 @@ struct SceneStreams::Impl {
     std::map<std::string, Speech, std::less<>> speeches;
     std::map<uint32_t, Speech> speechIds;
     std::unique_ptr<Stream> song, speech;
+    std::unique_ptr<Stream> questSong;
+    struct QuestCue {std::string music,voice;double frames{};int start{},end{},voiceAt{};bool musicPending{true},voicePending{};};
+    std::optional<QuestCue> quest;
     std::vector<std::unique_ptr<Stream>> fading;
     std::set<std::string> limitations;
     std::optional<int> requestedSong;
+    int environmentSong{};
     float songAge = 0, checkpointAge = 0;
     bool speechStarted = false;
     Impl(Archives &archives, const ClassicData &content, const SoundCatalog &catalog)
@@ -120,6 +124,7 @@ struct SceneStreams::Impl {
         checkpoints[song->id] = next;
     }
     void selectSong(int id) {
+        environmentSong=id;
         if (!audio.sound || !audio.music) {
             song.reset();
             fading.clear();
@@ -150,6 +155,7 @@ void SceneStreams::settings(const AudioSettings &settings) {
     if (settings.speech == NpcSpeechMode::TextOnly) stopSpeech();
     if (impl_->song) impl_->song->update(0, settings);
     if (impl_->speech) impl_->speech->update(0, settings);
+    if (impl_->questSong) impl_->questSong->update(0, settings);
     for (auto &stream : impl_->fading) stream->update(0, settings);
 }
 void SceneStreams::update(int level, float dt) {
@@ -160,7 +166,7 @@ void SceneStreams::update(int level, float dt) {
     const int desired = state.audio.sound && state.audio.music && found != state.songs.end() ? found->second : 0;
     // RVA 45740: retain a playing song for at least 75 game frames before
     // changing environments. Zero volume stops it without that wait.
-    if ((!state.requestedSong || *state.requestedSong != desired) && (!state.song || state.songAge >= 3 || !desired)) {
+    if (!state.quest && (!state.requestedSong || *state.requestedSong != desired) && (!state.song || state.songAge >= 3 || !desired)) {
         state.requestedSong = desired;
         state.selectSong(desired);
     }
@@ -173,6 +179,55 @@ void SceneStreams::update(int level, float dt) {
     for (auto &stream : state.fading) stream->update(dt, state.audio);
     std::erase_if(state.fading, [](const auto &stream) { return stream->envelope <= 0; });
     if (state.speech) state.speech->update(dt, state.audio);
+    if (state.questSong) state.questSong->update(dt, state.audio);
+}
+void SceneStreams::questCue(std::string_view music,int startFrames,int endFrames,std::string_view voice,int voiceFrames,int resumeBlock) {
+    if(startFrames<0 || endFrames<startFrames || voiceFrames<0 || resumeBlock<0 || resumeBlock>3) return;
+    auto &state=*impl_;
+    // 455B8..455E8 saves the selected fixed Block marker, then stops music.
+    // Replacing a cue replaces its unplayed voice too; this is not a FIFO.
+    if(state.song) {
+        state.checkpoints[state.song->id]=resumeBlock?state.song->blocks[size_t(resumeBlock-1)]:0;
+        state.song->releasing=true;state.fading.push_back(std::move(state.song));
+    } else if(state.environmentSong) {
+        // The native environment song identity survives while another task
+        // cue is playing. Replacing that cue still rewrites its resume marker.
+        const auto &table=state.catalog.sounds();
+        for(size_t row=0;row<table.rows().size();++row) if(table.number(row,"Index")==state.environmentSong) {
+            state.checkpoints[state.environmentSong]=resumeBlock?table.number(row,"Block "+std::to_string(resumeBlock)).value_or(0):0;
+            break;
+        }
+    }
+    if(state.questSong) {state.questSong->releasing=true;state.fading.push_back(std::move(state.questSong));}
+    state.quest=Impl::QuestCue{std::string(music),std::string(voice),0,startFrames,endFrames,voiceFrames,true,!voice.empty()};
+    state.requestedSong.reset();
+}
+std::optional<std::string> SceneStreams::advanceQuestCue(float dt,bool playerAlive) {
+    auto &state=*impl_;
+    if(!state.quest || !std::isfinite(dt) || dt<0) return {};
+    auto &cue=*state.quest;cue.frames+=double(dt)*25.0;
+    std::optional<std::string> voice;
+    if(cue.musicPending && cue.frames>=cue.start) {
+        cue.musicPending=false;
+        // Task cues have their own Sounds.Music Vol flag (currently zero).
+        // Muting environment music must not mute a sound-volume task cue.
+        if(!cue.music.empty() && state.audio.sound) {
+            if(const auto row=state.catalog.soundRow(cue.music)) state.questSong=state.load(*row,"data/global/music/");
+            else state.unavailable(cue.music);
+        }
+    }
+    if(cue.voicePending && cue.frames>=cue.voiceAt) {
+        cue.voicePending=false;
+        if(playerAlive) voice=cue.voice; // 457E9..45813 consumes even when the player is dead.
+    }
+    if(cue.frames>=cue.end) {
+        if(state.questSong) {state.questSong->releasing=true;state.fading.push_back(std::move(state.questSong));}
+        state.quest.reset();state.requestedSong.reset();
+    }
+    return voice;
+}
+void SceneStreams::resetQuestCue() {
+    impl_->questSong.reset();impl_->quest.reset();impl_->requestedSong.reset();
 }
 void SceneStreams::speak(std::string_view text, std::optional<uint32_t> stringId) {
     stopSpeech();

@@ -352,8 +352,12 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         definition.itemCheckStart=skillTable.number(row,"ItemCheckStart").value_or(0)!=0;break;
     }
     const auto &petTypes=data.tables.at("pettype");
-    for(size_t pet=0;pet<petTypes.rows().size();++pet) if(!petTypes.value(pet,"pet type").empty())
-        prepared->petTypeBaseLimits.emplace(petTypes.number(pet,"idx").value_or(int(pet)),petTypes.number(pet,"basemax").value_or(0));
+    for(size_t pet=0;pet<petTypes.rows().size();++pet) if(!petTypes.value(pet,"pet type").empty()) {
+        const int type=petTypes.number(pet,"idx").value_or(int(pet));
+        prepared->petTypeBaseLimits.emplace(type,petTypes.number(pet,"basemax").value_or(0));
+        if(petTypes.number(pet,"warp").value_or(0)) prepared->warpPetTypes.insert(type);
+        if(petTypes.number(pet,"range").value_or(0)) prepared->rangePetTypes.insert(type);
+    }
     for(size_t row=0;row<skillTable.rows().size();++row) {
         const auto type=skillTable.value(row,"pettype");if(type.empty()) continue;
         for(size_t pet=0;pet<petTypes.rows().size();++pet) if(petTypes.value(pet,"pet type")==type) {

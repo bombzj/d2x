@@ -69,7 +69,7 @@ void System::schedule(Object &object) {
         ports_.frameEvents.cancelHandler(owner,type,0);
         if(timer) ports_.frameEvents.publish(std::move(*timer));
     };
-    synchronize(FrameEventType::EndAnimation,!object.rule.door && object.rule.initialization!=22 &&
+    synchronize(FrameEventType::EndAnimation,!ports_.quests.prisonerPortalDue(object.id) && !ports_.quests.npcPortalDue(object.id) && !object.rule.door && object.rule.initialization!=22 &&
         object.rule.initialization!=24 && object.mode==1?object.until:0);
     synchronize(FrameEventType::ActiveState,object.reset);
     synchronize(hazardEvent(object),object.hazardAt);
@@ -77,6 +77,12 @@ void System::schedule(Object &object) {
         synchronize(FrameEventType::MonsterModifier,ports_.quests.ancientStatueDue(object.id)); // Object QUESTFN is event7.
     if(object.rule.operation==10 && int(object.area)==38)
         synchronize(FrameEventType::MonsterModifier,ports_.quests.cainBirthDue(object.id));
+    if(const auto due=ports_.quests.prisonerPortalDue(object.id))
+        synchronize(FrameEventType::MonsterModifier,due);
+    if(const auto due=ports_.quests.forgeRewardDue(object.id))
+        synchronize(FrameEventType::MonsterModifier,due);
+    if(const auto due=ports_.quests.npcPortalDue(object.id))
+        synchronize(FrameEventType::MonsterModifier,due);
     synchronize(FrameEventType::Trap,object.trapAt);
     synchronize(FrameEventType::AiReset,object.lootAt);
     synchronize(FrameEventType::DelayedPortal,object.portalAt);
@@ -109,7 +115,7 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
             const auto region=object.area;
             ports_.world.retainControllerRoom(region,object.position,false);
             ports_.frameEvents.cancelOwner({FrameEventUnit::Object,object.id});
-            ports_.areas.removeRoomUnit(object.id);
+            ports_.events.discardUnitSound(object.id);ports_.areas.removeRoomUnit(object.id);
             state_.objects.erase(found);collision(region);
             return {DomainStatus::Applied,std::monostate{}};
         }
@@ -127,6 +133,12 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
             if(!queued) return {queued.status,{}};
             object.pending=true;object.lootAt=0;
         }
+    } else if(event.type==FrameEventType::MonsterModifier && ports_.quests.npcPortalDue(object.id)) {
+        const auto result=ports_.quests.npcPortalEvent(object.id,tick);if(!result) return result;
+    } else if(event.type==FrameEventType::MonsterModifier && ports_.quests.forgeRewardDue(object.id)) {
+        const auto result=ports_.quests.forgeRewardEvent(object.id,tick);if(!result) return result;
+    } else if(event.type==FrameEventType::MonsterModifier && ports_.quests.prisonerPortalDue(object.id)) {
+        const auto result=ports_.quests.prisonerPortalEvent(object.id,tick);if(!result) return result;
     } else if(event.type==FrameEventType::MonsterModifier && object.rule.operation==10 && int(object.area)==38) {
         const auto result=ports_.quests.cainBirthEvent(object.id,tick);if(!result) return result;
         object.mode=5;object.until=0;changed=true;

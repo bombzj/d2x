@@ -18,6 +18,7 @@ struct InventoryDefinitionView {
     int width = 0, height = 0, beltRows = 0;
     unsigned maxStack = 0, bookCapacity = 0;
     bool beltAllowed = false, opensCube = false, identifySource = false;
+    bool readableQuestClue = false; // Native client program; independent of Misc.useable.
     bool usable = false;
     bool autoBelt = false;
     std::string beltPotionType;
@@ -93,6 +94,7 @@ struct InventoryView {
     bool pd2Sacrifice{};
     std::vector<EntityId> pd2SacrificeItems;
     uint64_t targetingRevision{};
+    int targetingCursor=-1;
     bool targetingReady{true};
     std::optional<ItemHandle> targetingSource;
     uint64_t revision = 0;

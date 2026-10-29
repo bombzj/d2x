@@ -132,6 +132,18 @@ D2Client的03处理RVA `ADB50`读取幕号、地图种子、城镇及尾部种�
 
 萨满另只读核对同一1.13c D2Game：AI表第65项RVA87BB0、SrvDo表第95项B6A60；死亡结束76040附近调用AFC50，以原GUID更改class并重新初始化。MPQ原表／动画提供当前资源，此处为静态依据；实际接入及缺口由[第三幕台账](../gameplay/monsters/ACT3.md#逐项接入)维护。
 
+本机1.13c还定点核对囚犯Fn131（D2Game RVA A7A10）：A7A51／A7A59分别读取门Y／X，纠正D2MOO的X／X转录；RVA59290读取组计数114并判非零，不与蓝门关闭所需五人混为一条件。方块4F回调D1470经74200→734E0→72FC0→72220到特殊输出表FA5E8：第1项72210调用牛门674A0，第2／3项70180／70170均xor eax,eax;ret。原版据此保留钥匙门／最终门空输出，不移植带D2_VERSION_HAS_UBERS的D2MOO 1.14d门户／奖励扩展；PD2仍以其当前模块／MPQ的专用消费者为准。上述为静态依据，新增源码已构建，行为仍待实测，具体边界见任务、方块及原版缺口文档。
+
+死亡金币补查同一1.13c：RVA37F80为DT／玩家金币掉落路径（3801A上限2,000,000,000、38068成功后扣钱包）；CORPSE_Handler在796AE–796C3先清gold再调用78C50，与D2MOO旧版失败保留钱包有差异。78C7D／38037共用11CA0，11CD7–11CE6读取当前区域等级并减1，11D33调用F780的Misc类型4选择，再预搜索／构造，不能拿固定ilvl1的普通金币堆构造代用。新增源码及待测边界见[玩家死亡](../gameplay/characters/PLAYER_DEATH.md)。
+
+局内聊天本地化只读核对同一1.13c D2Client RVA71034–7104D（WideCharToMultiByte：CP_ACP、flags0x250）、70AF7–70B6D（语言字节及原生正文）、7B4F0–7B570（语言6／7／9／12的MultiByteToWideChar ACP/1及同语言／7↔12资格）；D2Lang #10062 RVA8320是单字节展开。结合D2MOO PlrMsg的原正文／语言透传，不能把D2Lang其他toUtf消费者误当聊天线路UTF-8证据。实现与平台边界见[联网](../modules/NETWORK.md#多人只读副本)及[聊天UI](../gameplay/ui/CLASSIC_HUD.md#聊天与消息日志)。
+
+头顶气泡只读核对同一1.13c D2Client RVA7DC00／7CA40／7B240：单位坐标上移30、正文框再上移50及原行数留白；FontInGameChat、180像素换行、15像素行距、20像素横向留白、10行上限和DrawBox mode1。D2Win字体名表1C588第13项为FontInGameChat，10150（12FA0）及12940确认原字形基线；D2Common #10454（18280）确认125+8×长度的显示／过期时钟，不能沿用1.10的旧导出号。新增源码与剩余边界见[经典HUD](../gameplay/ui/CLASSIC_HUD.md)。
+
+Holy Shield特殊盾图只读核对同一1.13c D2Client RVA6E1E0，6E289–6E2A6限定组件7、状态101及真实GetEquippedShield，返回DWORD20687368（hsh）；D2Common #10854（1FF40）分别检查活动右／左手、BROKEN／NOEQUIP及ANY_SHIELD类型。状态身份由当前MPQ按holyshield读取，不写死101。实现与待测范围见[圣骑士](../gameplay/skills/PALADIN.md)。
+
+玩家跳跃另只读核对同一1.13c D2Client CltDo表DEA48：43为C6ED0、44为C6D00，共用C5F20／C65B0的RunVelocity与图形初始化；D5F54分段表为(27,-270,8462)／(36,-72,1224)，C65B0只以27分界并把重力低端夹到500，不能把第二行36擅自增加为新分支。C7C80给出初速及11位定点，C7FB0先加速度到位置再加加速度到速度，计数到零后还执行一次原更新。新增共用消费者与待测范围见[野蛮人](../gameplay/skills/BARBARIAN.md)。
+
 ## 补充资料的边界
 
 PD2认证资源的固定模块、地址与SHA-256依据见[认证资源证据](../pd2/RESOURCE_LOADING.md#认证资源证据)；原资源、密钥和目标DLL不提交或分发，不执行native模块。
@@ -143,3 +155,29 @@ MonStats基础攻击空值另以当前MPQ的TXT／BIN和同快照1.13c D2Common�
 [Blizzard原手册](https://ftp.blizzard.com/pub/misc/Diablo%20II%20Manual.pdf)、[LoD手册](https://ftp.blizzard.com/pub/misc/Diablo%20II%20-%20Lord%20of%20Destruction.pdf)与Arreat Summit用于交叉核对操作、物品／药剂／技能用途；[D2R Data Guide](https://locbones.github.io/D2R_DataGuide/#missilestxt)及原数据字段指南只补函数／字段含义，不能把D2R时钟、参数或简化客户端行为当1.13c规范。
 
 RandStart、非零FsOff、字幕节拍、雨线／天气、精确Fade／光照及多个客户端程序仍缺证据；明确暂缓，不导入第三方数值、地图或素材。资源路径发现曾使用OpenDiablo2 MPQ Viewer／Zezula文件名表；运行时只读明确路径与当前MPQ内置清单。
+
+零售客户端任务表现补核：同一1.13c D2Client的packet89回调表F2138按0–19为52440／52D00／空／53450／空／空／52C50／空／空／空／空／空／533F0／52420／53220／空／52B70／52AF0／空／52410。FX0由52440置计数0，53720–53756在30帧后只完成一次；53550给8区房间创建最多3个287号光束、最多25次探针及掩码5，536D3／536F0／440C0给出房间／活动链入口。CltDo表DD8A0的23=B2980使用当前帧<100→500；本机D2Common #10737 RVA6A270／#10970 RVA6A6D0是对应读写，不能套旧导出号。新增消费者及未齐范围见[第一幕任务](../gameplay/quests/ACT1.md)。
+
+单位声音槽依据D2MOO SUnit::SUNIT_AttachSound覆盖nUpdateType／pUpdateUnit并置HASEVENTSOUND，SUnitMsg::D2GAME_UpdateUnit按pUpdateUnit资格发2C、MonsterMsg检查该标记，以及SUnit的帧末清标记。PlrMsg的3F接收在HASEVENTSOUND未清时拒绝。Den的A1Q1清场先置个人目标、向PRIMARYGOALDONE单位AttachSound(35,自己)，再TriggerFX(0)；晚入资格为CanClientFXBeTriggered的bNotIntro且fState>=4。客户端35另核对同一1.13c D2Client RVA232A9–232CE（职业speech-base+2，经45570）；当前MPQ对应七职业*_act1_complete_den，E24C0引用各职业声音／文本表；45570另已证实是任务音乐／延后声音槽，当前消费者与完整恢复边界见后文，不能把其首参数当TBL。消费者与边界见[第一幕任务](../gameplay/quests/ACT1.md)及[内核输出](../modules/SERVER_SYSTEMS.md)。
+
+零售客户端剧情补充定位：Den环境524D0／A9A20读取5E初始化表第1项，RGB255／64／48、80×Fog10083量化余弦后截断；Fog本机16730按(index+128)&511读单精度表，30个输出强度已静态核对。熔炉FX14=53220，CltDo38=BA7E0→B4FB0、39=B2480、40=BA880→B5380、41=B24A0，CltHit表DDA10中42=B5300／43=B51C0；Common10754本机122B0按近房间／单位链查类376，Common10534本机6A290读取TotalFrames。控制373／碎片374–376／灵魂377的引擎身份和方向属原代码常量，其资源及Range仍读当前MPQ；原53220的45570第1参数已核实为任务Sounds4689；其后另调用88A70播放Sounds35，不把它当附着单位事件35。此批新源码已构建，行为仍待实测，不认证视觉随机初值或原全局交错。
+
+客户端路径回调补充：本机Clt16=B8AA0，Common10203=CE90读取DynamicPath.flags&8；D2MOO Path/Step.cpp::sub_6FDAD5E0在整数位置改变时设置该位，回调先读前次结果再执行公共更新。子火墙的四选随机非零写创建flags0x4021，3/4抑制光；零写0x21。Clt59=B1CC0以Gfx.positionZ>>11和有符号TargetX/Y界限决定移除；Clt63=B1F20每次按(x+y-TargetY,y-x+TargetX)改第一路径点并重算，不能套用Clt60偶数帧门槛。新增源码已构建，行为仍待实测，Worldstone上游尚未齐；Nihlathak上游新接范围见下段。
+
+Nihlathak原链补充：D2MOO A5Q4::Callback08_MonsterKilled→TriggerFX17，UnitIterate_AttachCompletionSound对PRIMARYGOALDONE玩家AttachSound82／自身。零售客户端52AF0查Monster526，创建606／603并设置FlagEx.NODRAW；Clt62=BA4A0→B3D60／B3C40，Clt63=B1F20，CltHit60=B5770。23297–232AF以职业speech-base+(event-33)计算声音：本机F7694的职业表各+24字段给出base2961／3273／3117／3195／3039／3429／3351，82对应3010／3322／3166／3244／3088／3478／3400，与当前MPQ各职业_act5_defeat_nihlathak匹配。Common10240本机6A2B0、11029本机6A2D0是飞弹Skill／Level；AFF10入口的末两参数是Skill／Level，不能误当目标坐标。各子创建显式继承，FX0／14／17初始Skill0、Level1。任务音乐槽见下段，其他语音消费者及逐视觉随机仍未认证，新增源码已构建，行为仍待实测。
+
+任务音乐调度定位：45570接六个参数，存任务曲ID、当前客户端帧+启动／结束延迟、人物声音ID及其延迟／启用位；45660–4595E在到期启动曲目、玩家非死亡时播放延后声、到期后恢复环境曲，88930／888B0按原Sounds Fade Out停曲。35分支232B5–232CE取4688／0／300／职业speech-base+2／250／1，82分支2342C–23445取4697／0／550／职业speech-base+49／400／1；两者EBX1保存环境曲Block1。FX14的5324F–53263取4689／0／350／0／0／0、EBX0保存恢复点0，随后53268–53271以Sounds35播放熔炉声。当前MPQ三任务曲均Stream1／Music Vol0／Loop0／Fade Out125，实际曲资源分别act1/denofevilaction.wav、act4/forgeaction.wav、act5/nihlathakmusic.wav；首参数不是TBL编号。源码已接公共单槽，完整后端交错／曲目恢复未实测。
+
+Clt37本机B2500先读Common10737的CurrentFrame：150时写震屏幅度25及0／4000／0毫秒，50时以NULL单位调用88A70播放原Sounds4638（当前monster_diablo_taunt_1），随后公共Do1；不是按elapsed150／50。上游已继续接FX12与372，完整原交错尚未运行。
+
+混沌清场依据D2MOO A4Q2::KillAllMonstersInCS，先置bSanctumCleared／TriggerFX12，再按Act房间链及单位链对非243／333的Evil活怪物ModeChange(DEATH)，不是由开封印玩家造成致死伤害。SpawnDiablo以QuestUpdater累计十次；原1.13c D2Game BBDC0的BBDDC比较10、Init55与对象GUID检查，BA850使用-1／5／10出生并置flags0x3000000。原Timer创建33AF0将Timeout1加到QuestControl.tick，33B70的33BC7–33BD1用严格小于、33C2D–33C35用当前tick+timeout重设，GameUpdate2E0EE–2E101仅在游戏帧%20==0调用。客户端FX12=533F0创建372；52200／A9A20仅107／108使用255／64／48、160底光，5375B–5378D在结束计数30时清位。FX13=52420的90秒期限仅非资料片路径有宿主发生依据，当前LoD不添加自动退局。6A0C0读取1A8字节怪物记录，243为Diablo资源预备，不能误作覆盖图或Sounds243。新源码已构建，行为仍待实测，第一次全局相位及跨域提交交错仍待实测。
+
+Clt30=B79F0：elapsed==cCltPar1置TargetY，非零后按elapsed%max(cCltPar2,1)向CltSubMissile1提供父坐标与两次半径偏移；1380与1330均为同一原SEED有限随机，前者从ESI取范围。Clt46=B7880用Common10983／10764（本机34AB0／34AA0）读取DynamicPath+10／+12的tTargetCoord，而非路径队列头；elapsed0／1缓存垂线、旧PATH.flags&8控制正反双发，创建flags0xB的循环延长按原SubLoop字段。Hit51=BA9A0复用A25C0七组方向表，cHitPar2非零安装73B60路径初始化；D2X沿已有missileChargedBurstDirections及charged-path初始化消费者接入。数据范围与未运行边界见职业／第一幕文档。
+
+零售安雅演出补缺依据：D2MOO A5Q3::OBJECTS_OperateFunction67_FrozenAnya成功消耗药剂并设奖励位后调用QUESTS_TriggerFX(16)，再处理同队人物与定时器。本机上述D2Client身份的FX表F2138[16]=52B70，用Common10754找Objects460，创建528、Skill0／Level1、TargetX25。Clt表DD8A0[54]=B9C10，蒸汽阶段和成功分配后的三次随机见B9CA4–B9E27；震屏与7帧喷口见B9E2D–B9E8D，B39E0保留原四探针及X／Y非对称拒绝，mask4合格创建615、616。Clt68=B77A0使用Common10203路径换格、零子ID判断、flag9及CltParam1子循环；B3430–B344E按子表SubLoop加寿命。Gfx构造C7B00清零、C7BF0置bit8。当前MPQ的441子项为空，不能据回调存在自造子弹。新增源码已构建，行为仍待实测。
+
+罗达门特客户端依据为同一零售D2Client DD8A0[32]=B2340、D3688六组三元组(300,25,1)/(250,10,3)/(100,8,4)/(75,6,4)/(30,4,3)/(0,100,0)，按CurrentFrame依次越过小于等于阈值；创建348并写TargetX／Y。DDA10[37]=B49F0非单位接触，Common10614／RVA36740把低种子设为TargetY、高字置666，再抽双Random(20)-10，双零重试；创建349后调用73B60。Common10637／69FB0及10019／69F70分别写MissileData+28／+2C（TargetX／Y）。不据已有347服务端来源推断新客户端源码已验证。
+
+零售Clt57=B6F60先调用B2890随主人定位，再以主人为输入调用A1340；目标单位、DynamicPath.tTargetCoord及A0B30朝向后备各有明确原分支，朝向>>3的八偏移X=[0,-1,-2,-1,0,1,2,1]、Y=[2,1,0,-1,-2,-1,0,1]，任一坐标为0走后备。创建子项后Common PATH_SetType(14)并重新求路径；D2MOO Path.h确认为PATHTYPE_BLESSEDHAMMER。当前技能277引用553为srvmissilea，但D2MOO SrvSt28仅验证声明并安装状态、Do54不直接创建该飞弹，客户端函数为空，因此不从状态158自行补造根控制器；原实际创建来源仍须核实。新消费者只接零售，已构建，行为仍待实测。
+
+零售Clt45=BB500的有效定义分支与Clt4=BBE00均将CltParam1／2／3及CltSubMissile1传入B9470，再执行公共Do1；45仅在无效父定义时直接移除，4则继续公共Do1。B9470先验证子定义，CurrentFrame0跳过机会，否则Random(CltParam1)==0才生成；每个子项双Random(2*radius)减radius，再按符号向外偏radius。当前394的36／1／6及395资源保留原表，Clt44／实际生产者仍待补，不因Distraction名称关联亚马逊诱饵。

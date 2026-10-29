@@ -137,6 +137,7 @@ struct RealmSession::Impl {
     size_t worldBytes{};
     Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{}, lastGameReceive{}, nextMovement{};
     std::optional<uint32_t> initializedNpc;
+    std::map<uint32_t,Clock::time_point> doorHighlights;
     Clock::time_point npcDeadline{}, waypointDeadline{}, playerTradeDeadline{};
     struct PortalRequest {
         std::optional<OnlineSkillSelection> previous;

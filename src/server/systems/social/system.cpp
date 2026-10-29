@@ -6,6 +6,18 @@ namespace d2x::server::social {
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
     const auto *player = ports_.players.find(actor.player);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area) return {DomainStatus::InvalidActor, {}};
+    if(request.action==Action::Voice) {
+        if(player->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
+        if(ports_.events.hasPendingSound(actor.actor)) return {DomainStatus::Conflict,{}};
+        if(request.sound<25 || request.sound>32) return {DomainStatus::InvalidRequest,{}};
+        const auto previous=state_.voiceTicks.find(actor.player);
+        if(previous!=state_.voiceTicks.end() && previous->second==actor.tick) return {DomainStatus::Conflict,{}};
+        const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
+            {SoundFact{actor.actor,0,actor.area,request.sound}}});
+        if(!sent) return {sent.status,{}};
+        state_.voiceTicks[actor.player]=actor.tick;
+        return {DomainStatus::Applied,std::monostate{}};
+    }
     if(request.action==Action::Hostility) return hostility(actor,request);
     if(request.action==Action::Invite || request.action==Action::CancelInvite || request.action==Action::Accept || request.action==Action::LeaveParty)
         return party(actor,request);
@@ -38,21 +50,23 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     if(request.action!=Action::Chat) return {};
     const auto ascii=[](std::string_view value) { return std::all_of(value.begin(),value.end(),[](unsigned char c){return c>=32 && c<127;}); };
-    if (request.target || request.language || request.text.empty() || request.text.size() > 255 || !ascii(request.text) ||
+    const auto nativeText=[](std::string_view value) {return std::all_of(value.begin(),value.end(),[](unsigned char c){return c>=32 && c!=127;});};
+    if (request.target || request.text.empty() || request.text.size() > 255 || !nativeText(request.text) ||
         request.receiver.size()>15 || !ascii(request.receiver) || (request.overhead && !request.receiver.empty()) ||
         std::all_of(request.text.begin(),request.text.end(),[](char c){return c==' ';})) return {DomainStatus::InvalidRequest, {}};
     if(request.overhead) {
         if(state_.nextHover==UINT64_MAX) return {DomainStatus::Capacity,{}};
         auto next=state_.hover;
         const auto length=std::min<size_t>(request.text.size(),254);
-        next[actor.player]={request.text.substr(0,length),actor.tick+125+8*length,state_.nextHover};
+        next[actor.player]={request.text.substr(0,length),actor.tick+125+8*length,state_.nextHover,request.language};
         // Replication emits the current hover to visible recipients and late arrivals.
         const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Game,{},actor.area},
-            {ChatFact{actor.actor,{},request.text,{},5,0,0,0}}});
+            {ChatFact{actor.actor,{},request.text,{},5,request.language,0,0}}});
         if(!sent) return {sent.status,{}};
         state_.hover.swap(next);++state_.nextHover;return {DomainStatus::Applied,std::monostate{}};
     }
     ChatFact fact{{},player->persistent.player.name,request.text,{}};
+    fact.language=request.language;
     fact.nameColor=uint8_t(player->persistent.player.level);
     std::vector<DomainFact> facts;
     if (!request.receiver.empty()) {
@@ -87,7 +101,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
 std::optional<PlayerSnapshot::Hover> System::overhead(PlayerId id,uint64_t tick) const {
     const auto hover=state_.hover.find(id); const auto *source=ports_.players.find(id);
     if(hover==state_.hover.end() || !source || !source->entered || hover->second.expires<=tick) return {};
-    PlayerSnapshot::Hover result{hover->second.text,hover->second.revision,{}};
+    PlayerSnapshot::Hover result{hover->second.text,hover->second.revision,{},hover->second.language};
     for(const auto &[recipient,player]:ports_.players.all()) if(player.entered) {
         const auto senderRelation=state_.relations.find({id,recipient}), receiverRelation=state_.relations.find({recipient,id});
         if((senderRelation!=state_.relations.end() && (senderRelation->second.flags&2)) ||

@@ -559,16 +559,17 @@ target_link_libraries(d2x_presentation PUBLIC d2x_client raylib PRIVATE d2x_cont
 add_executable(d2x
   src/app/headless.cpp
   src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
-  src/app/client_setup.cpp
+  src/app/client_setup.cpp src/app/ime_input.cpp
   src/app/account_login.cpp
   src/app/frontend.cpp src/app/frontend_commands.cpp src/app/online_login_memory.cpp
   src/app/client_preferences.cpp src/app/crash_report.cpp src/app/debug/debug_pipe.cpp
   src/app/debug/ui_input.cpp src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp
   src/app/debug/server_snapshot.cpp
+  src/app/debug/auto_walk.cpp
 )
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_remote_client d2x_character_host d2x_hash nlohmann_json::nlohmann_json)
 if(WIN32)
-  target_link_libraries(d2x PRIVATE advapi32 dbghelp)
+  target_link_libraries(d2x PRIVATE advapi32 dbghelp imm32)
 endif()
 
 add_executable(d2x_assets src/asset_tool.cpp src/asset_save_recipe.cpp src/hosting/item_content.cpp)

@@ -40,6 +40,7 @@ struct OnlineQuestState {
     // Latest 0x91 report per zero-based act. FFFF is an absent entry,
     // not a request to clear an already introduced NPC.
     std::array<std::optional<std::array<uint16_t,12>>,5> npcIntroductionReports;
+    std::set<uint16_t> npcReturnGreetings;
     std::array<std::optional<uint8_t>, 41> statuses;
     std::map<uint8_t, std::array<uint16_t, 3>> updates; // Quest number -> flags, status, progress (0x5D).
     std::optional<uint16_t> denRemaining, rescuedBarbsRemaining, staffTombOffset;
@@ -242,6 +243,7 @@ struct OnlineWorldView {
     uint64_t itemRevision{};
     std::optional<OnlineItemRequest> itemRequest;
     uint64_t itemTargetingRevision{};
+    int itemTargetingCursor=-1;
     std::optional<uint32_t> itemTargetingSource; // Native 0x3F preparation, not identification success.
     OnlineStorageContext storage;
     uint32_t stashPage = 1;
@@ -299,6 +301,7 @@ struct OnlineWorldView {
     std::optional<WaypointActivation> waypointActivation;
     uint64_t lateWaypointReplies{};
     uint32_t questEffects{}; // Original packet89 event bitmap, cleared per game.
+    std::array<uint64_t,20> questEffectOccurrences{};
     uint64_t ignoredPackets{};
 
     void clear() {
@@ -325,7 +328,7 @@ struct OnlineWorldView {
         items.clear();
         itemRevision = 0;
         itemRequest.reset();
-        itemTargetingSource.reset();itemTargetingRevision=0;
+        itemTargetingSource.reset();itemTargetingRevision=0;itemTargetingCursor=-1;
         storage = {}; stashPage = 1; stashInitialized = stashSynchronized = false;
         sharedStash = cnStashConfirmed = requestedSharedStash = false;
         coreStashPage = 1;
@@ -360,6 +363,7 @@ struct OnlineWorldView {
         quests.gameFlags.reset();
         quests.availability.reset();
         quests.npcIntroductionReports = {};
+        quests.npcReturnGreetings.clear();
         playerPortalFlags.reset();
         for (auto &status : quests.statuses) status.reset();
         quests.updates.clear();
@@ -376,7 +380,7 @@ struct OnlineWorldView {
         waypointSource.reset();
         waypointRequested.reset();
         waypointActivation.reset();
-        lateWaypointReplies = ignoredPackets = 0; questEffects=0;
+        lateWaypointReplies = ignoredPackets = 0; questEffects=0;questEffectOccurrences={};
     }
 };
 inline bool onlineMonsterCorpse(const OnlineUnit &unit) {

@@ -1,6 +1,6 @@
 # 原协议消息速查
 
-更新：2026-10-12。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)。原版版本与来源、当前编码支持和未核实字段分别注明；不维护自研运行台账。
+更新：2026-10-29。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)。原版版本与来源、当前编码支持和未核实字段分别注明；不维护自研运行台账。
 
 ## 编码约定
 
@@ -16,7 +16,7 @@
 | 入口 | 维护内容 |
 | --- | --- |
 | [message_schema.hpp](../../src/network/protocol/message_schema.hpp) | 两方向身份、分帧种类、长度偏移／最低包长、编译期完整性约束 |
-| [C2S目录](../../src/network/protocol/client_messages.inc) | 75个已核对身份和长度，双方共同分帧／发送校验 |
+| [C2S目录](../../src/network/protocol/client_messages.inc) | 95个已核对身份和长度，双方共同分帧／发送校验 |
 | [S2C目录](../../src/network/protocol/server_messages.inc) | 143个身份，含仅保留ID的Reserved项 |
 | [原长度表](../../src/network/protocol/lod113c_lengths.inc) | 唯一1.13c S2C长度表，0未定义、-1变长 |
 | [分帧实现](../../src/network/protocol/lod113c.cpp) | 两方向有界拆帧，不知道长度则拒绝，不尝试扫描下一个ID |
@@ -26,12 +26,52 @@
 
 `server-protocol`给出profile、ID、名称、领域、支持状态和计数；C2S另有phase／framing，S2C另有bytes／framing／frameSupported，有长度字段时给lengthOffset／minimumBytes。bytes=0表示非固定长度，不是空包。unknownGameRequests只列到达服务分派层的未知请求；流分帧提前拒绝的错误由连接失败诊断记录。使用见[DEBUG_PIPE](../development/DEBUG_PIPE.md)，不输出原始认证载荷。
 
+## 原版C2S补齐与版本边界
+
+现有目录为95项。补齐以D2MOO PlrMsg／PlrIntro／AiThink／ItemMode为调用链参考，并定点核对本机零售1.13c：D2Net.dll SHA256 `99AF2F04A87FDBD91810BE963DF9C365CEF529AE22E6A345193BA5018E9910C9`，长度表RVA `0xABD8`；D2Game.dll SHA256 `24B293B86F95BEA0228826C502EA04737BA21B91CA9832E52AAC4B11FEF14F53`，回调表RVA `0xFA078`。下表为源码实现；构建与运行状态见消息对比计划，不把登记入口当作实机认证。
+
+| ID | 字节／参数 | 原版依据与处理 |
+| --- | --- | --- |
+| 0B | 1，无 | 合法空操作，不停止技能或移动 |
+| 22 | 5，u32物品 | 原版CD4F0返回错误，旧分堆禁用；普通拒绝，不拆物品 |
+| 2D／52 | 1／5，52含u32旧字段 | 原版错误返回，普通拒绝 |
+| 2E／42／43 | 3／1／1，2E含u16旧字段 | 完整读字段后按原版空操作完成 |
+| 39／45 | 5／9 | CB560／CB550直接返回3，不能沿用D2MOO旧治疗／改门户逻辑；普通拒绝 |
+| 3E | 5，u32物品 | quests::ReadClue验证本人库存；bkd输出50/quest4石柱顺序，trs输出50/quest13墓室偏移，不消耗卷轴 |
+| 3F | 3，u16声音 | social::Voice验证25–32及重复请求，发布单位声音事件 |
+| 46 | 13，u32佣兵、目标、类型 | 验本人Hireling，目标归属／同幕／每轴50格，替换AI命令12并发声音15；不直接攻击 |
+| 47 | 13，u32佣兵、x、y | 坐标取低16位，验本人Hireling及每轴50格，替换AI命令13并发声音15；原Hireable未消费的命令不擅自变强制移动 |
+| 48 | 1，无 | 清除人物运行态nativeBusy，未busy时普通拒绝。不是关闭NPC交谈；原S2C61过场生产／播放仍受既有缺口约束 |
+| 4B | 9，u32类型、GUID | 按原1.13c验玩家／目标房间近邻，冻结位置；玩家／怪物输出15(flag1)；其他类型的DOUPDATE重投影未核实，明确NotImplemented，不制造模式／物品操作 |
+| 4C | 5，u32物品或FFFFFFFF | 按MPQ Transmogrify／TMogType／Min／Max接crafting准备和事务；成功消费／放置／溢出落地，原子提交人物随机流，声音4及3F清目标。非转换物品／FFFFFFFF仅清目标；构造seed缺失／为零或目标不可用明确暂缓并保留原物品，不猜随机数。全部旧未使用身体部件尚未认证 |
+| 4D | 3，u16 MonStats类号 | 复验当前MPQ类号范围，清除独立NpcIntroFlags索引位；不设置QuestIntroFlags |
+| 53／54 | 各1，无 | 仅切换已有走跑动作，53检查非零耐力，不翻转人物跑步选择 |
+
+零售长度表中2C／64／65为0，保持不支持分帧；旧回调存在不代表当前版本有功能。4B仅实现玩家／怪物；59为Stub、4F／61为Partial的既有功能缺口仍保留。所有新增入口共用阶段校验、字段完读和连接身份；有效包的业务拒绝不走未知包断线。缺陷与剩余范围见[消息对比J5](../development/MESSAGE_COMPARISON_DEFECTS.md)。
+
+## D2X客户端对应入口与消费
+
+静态对照为同机零售1.13c D2Client.dll，SHA256 `DD8BC6025DE921216A97C17F97CD1A50FBB85926E838EC60E13451448836D906`。以下新增发送仅用于LoD profile；没有将未核实的差异套用到PD2。
+
+| 操作／消息 | 当前客户端链路与边界 |
+| --- | --- |
+| 门悬停3D | 原地图目标Door → 世界输入的doorHighlight → RealmSession排除mode4，按原519BA–51A1C为每对象记录发送时刻，仅在间隔大于500ms时发3D；换区清理对象时钟。每轴10格限制由宿主权威校验。收到0E仍走既有物件模式／碰撞消费者 |
+| 角色语音3F → 2C | Configure Controls八个Say键已启用，按原回调39D60–39C80依次发送声音25–32；收到2C后按角色CharStats名称取Sounds的chat_a_1至chat_h_1及原Group Size，不将事件号当Sounds行号。原消费23270–23293按人物声音基址及双条组偏移选择；完整占声／打断时序尚未认证 |
+| 线索3E → 50 | 本人bkd右键读取发送3E，独立于Misc.useable（当前原表为0），无库存变更ACK，不等待消费确认；50/quest4保留原五柱顺序，quest13读取墓室偏移；原客户端7F1B3–7F210只确认bkd发送端，当前MPQ没有trs物品，未为其造入口。尚缺原线索卷轴专用画面，当前已消费的任务数据不能当作画面复刻完成 |
+| NPC返程问候91 → 4D | 91按原类号累积待问候标志，FFFF不清旧标志；实际打开NPC菜单时选当前MPQ原返程问候声音，随后4D清本地待发标志。原4A802–4A872及9CAD0／9CCE0(mode2)确认这是返程问候，不是每次Gossip，也不同于31任务对白ACK。原程序对Cain／Elzix／Halbu／Tyrael沿用普通问候，Jamella取old组，Meshif2未入此选择表；不从名字推造额外选择器。声音资源缺失保留诊断，不合成替代。宿主跨幕设NpcIntroFlags／91生产仍未接全，独立4D处理与持久化不能代替该生产链 |
+| 目标取消4C → 3F | Esc／包裹内右键取消目标状态发4C/FFFFFFFF；原194AE–194CA／1BE48检查的是全局光标模式8，不是3F载荷的DC6帧8。3F保存实际目标光标帧并使用原图；未为未使用身体部件额外造转换UI |
+| 走跑53／54 | 原3AE40–3AE90／3ADF0–3AE35只对已有Walk／Run动作发单字节包。Run切换／按住Run沿同一入口发送；后续普通移动仍用原走／跑消息，不用53／54替代寻路 |
+| 单位刷新4B → 15 | 已有15消费者按原坐标纠正并清路径／插值；原2B1E0–2B260由本地单位标志控制发送，不是未知单位消息的定时补包。该客户端原触发标志的完整生产链尚未核实，保持缺口，不添加500ms等无依据重试 |
+| 46／47、48及旧入口 | 服务端接入不等于原客户端有常规UI。未核实46／47普通操作发送端，不增加自定义佣兵命令按钮；48须由真实过场完成触发，原S2C61播放链尚未补齐，不能提前ACK。39／45／22禁用及其他旧空操作不增加产品入口 |
+
+本轮按用户要求不运行游戏／测试。未覆盖链路保留在J5，不以静态发送／消费成功宣称原版端到端等价。
+
 ## 状态
 
 | 状态 | 含义 |
 | --- | --- |
 | implemented | 宿主已接具名处理或输出，不保证所有技能／参数／目标都支持 |
-| partial | 父包有已实现和未实现子操作，须查子目录；当前C2S 4F |
+| partial | 父包有已实现和未实现子操作，须查子目录或目标类型；当前C2S 4B／4F／61 |
 | admission-only | 仅入场投影，不代表持续同步 |
 | stub | C2S只读完整字段后NotImplemented，无世界写入；S2C禁止编码输出，不产生空ACK |
 | ReservedXX | 只确认S2C身份／长度，参数语义未核实；宿主Reserved／stub |
@@ -91,6 +131,7 @@
 | 3A | SpendAttribute | 3 | u16 packed；低8位属性0力量1精力2敏捷3体力，高8位count-1 |
 | 3B | LearnSkill | 3 | u16 skill |
 | 3C | SelectSkill | 9 | u32 selected,owner；selected低16位skill、bit31左手，其他位0；普通owner=FFFFFFFF |
+| 3D | HighlightDoor | 5 | u32 objectGuid；门悬停状态刷新，不是开门操作 |
 | 40／41 | RequestQuests／Resurrect | 1 | 无 |
 | 44 | StaffUpdate | 17 | u32 player,object,item; u16 state,reserved；state2取消／3提交 |
 | 49 | Waypoint | 9 | u32 waypoint,destination；0关闭 |
@@ -115,7 +156,7 @@
 
 4F子命令：2取消交易、3接受、4同意、7重置、8报价金币均stub；18关闭仓库、19取金币、20存金币、23关闭方块、24合成已接。38子命令：0旅行／奖励加工、1商店、2赌博已接；未知子操作拒绝，不从父包推断全部NPC服务支持。
 
-未列C2S继续按未知格式拒绝；旧14聊天／22分堆／2B自定义／旧存档上传等不因d2moo存在符号就自动接受。未来先核实1.13c身份、长度和参数，再登记具名stub或正式处理器。
+未列C2S继续按未知格式拒绝；2B自定义、2C／64／65零长度入口及旧存档上传等不因d2moo存在符号就自动接受。22旧分堆按原1.13c禁用行为解析并拒绝；其他扩展先核实当前身份、长度和参数。
 
 ## S2C 分帧
 
@@ -238,3 +279,5 @@ C2S36雇佣、62复活已接第一幕；61由stub转partial，含罗格装备及
 MCP请求：01启动、02建角、03建房、04加入、05列表、06详情、07选角、0A删角、19角色列表；对应响应已接，14排队由客户端消费、自研输出stub。字段由[客户端会话](../../src/network/realm_session.cpp)、[realm_protocol](../../src/hosting/detail/realm_protocol.cpp)、[realm_characters](../../src/hosting/detail/realm_characters.cpp)及[realm_games](../../src/hosting/detail/realm_games.cpp)维护；不能用D2GS长度表拆MCP。
 
 SID当前流程为50／51、3D、3A、40、3E、0A、0C、0F及25心跳。自研宿主不实现BNCS；新增D2GS预留不代表账号协议完成。密码、key、票据和原始认证载荷不输出到消息诊断，功能边界见[NETWORK](NETWORK.md)。
+
+原附着2C声音现经每单位一个帧末槽发布，同帧后写覆盖前写，3F的HASEVENTSOUND检查只看尚未出槽的当前事件；原F0直接声音不进该槽。帧末容量不足逐前缀继续，不重复已发单位，单位销毁／压缩清槽。Den清场35已按原职业speech-base+2消费当前MPQ的*_act1_complete_den，本局奖励目标及原PRIMARYGOALDONE角色收到自身声音；字幕／语音队列及全部打断顺序仍待核对。新增槽与35消费者已构建，行为仍待实测，较早语音25–32的结果不能覆盖新路径。

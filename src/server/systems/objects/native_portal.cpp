@@ -8,7 +8,7 @@ DomainResult<> System::removeNative(EntityId id) {
     const auto region=found->second.area;
     const auto point=found->second.position;
     ports_.world.retainControllerUnitRoom(id,region,point,false);
-    ports_.frameEvents.cancelOwner({FrameEventUnit::Object,id});ports_.areas.removeRoomUnit(id);
+    ports_.frameEvents.cancelOwner({FrameEventUnit::Object,id});ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);
     publishedModes_.erase(id);state_.objects.erase(found);collision(region);
     return {DomainStatus::Applied,std::monostate{}};
 }
@@ -24,13 +24,13 @@ void System::restoreNativePortalReferences(EntityId previous,EntityId current) {
     }
     ports_.maps.objectRestored(previous,current);
 }
-DomainResult<> System::setNativeMode(EntityId id,int mode,uint64_t tick,bool animate) {
+DomainResult<> System::setNativeMode(EntityId id,int mode,uint64_t tick,bool animate,bool synchronizeTimers) {
     const auto found=state_.objects.find(id);if(found==state_.objects.end()) return {DomainStatus::Stale,{}};
     auto &object=found->second;
     if(mode<0 || mode>=8) return {DomainStatus::InvalidRequest,{}};
     if(object.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     object.mode=mode;object.until=animate?tick+object.rule.openingTicks:0;
-    ++object.revision;collision(object.area);return {DomainStatus::Applied,std::monostate{}};
+    ++object.revision;collision(object.area,synchronizeTimers);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::linkNativePortals(EntityId source,EntityId destination,bool mutual,uint64_t tick) {
     const auto first=state_.objects.find(source),second=state_.objects.find(destination);

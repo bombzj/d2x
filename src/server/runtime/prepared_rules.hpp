@@ -19,6 +19,7 @@
 #include "gameplay/loot/loot.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/effects/definition.hpp"
+#include "gameplay/quest/forge_rewards.hpp"
 #include "gameplay/monsters/region_generation.hpp"
 #include <map>
 #include <set>
@@ -44,6 +45,8 @@ enum class ItemSkillAction { Identify, Portal };
 struct ItemSkillRule { int skill{}; bool book{}; ItemSkillAction action{}; int cursor{-1}; };
 enum class QuestConsumable { SkillBook, LifePotion, ResistanceScroll, RespecToken };
 struct CharacterRules {
+    std::map<int,unsigned> nativeNpcIntroductionBits;
+    unsigned nativeMonsterCount{};
     std::shared_ptr<const pd2::MapCatalog> maps;
     std::shared_ptr<const CombatStateRules> states;
     std::shared_ptr<const StatRuleCatalog> stats;
@@ -57,6 +60,7 @@ struct CharacterRules {
         std::string figurine,bird,lifePotion,gidbinn,tome,soulstone,hammer,defrostPotion,resistanceScroll;
         std::array<std::string,4> khalimParts;
         std::string khalimWill;
+        std::shared_ptr<const ForgeRewardRules> forge;
     } laterQuests;
     std::map<RegionId,int> waypointIndices; // Immutable MPQ Levels identities, including unloaded areas.
     std::set<RegionId> areaIds; // Prepared content; administrative travel never invents a level.

@@ -24,7 +24,7 @@ struct Controller {
         int moveCycles{},waitFrames{},modeAttempts{},greetingCooldown{};
         uint8_t mode{};
     } npc;
-    struct Command {uint8_t code{};UnitTarget target;uint64_t until{};};
+    struct Command {uint8_t code{};UnitTarget target;uint64_t until{}; std::optional<Vec> destination{};};
     std::deque<Command> commands;
     EntityId actor;
   uint64_t admissionRevision{};
@@ -54,6 +54,7 @@ struct Controller {
     bool pd2LootPending{};
     bool pd2MovingTimer{};
     bool pd2CancelAi{};
+    bool cancelAi{};
     std::deque<std::function<DomainResult<>()>> pending;
 };
 struct State { std::map<EntityId, Controller> controllers; uint32_t npcMoveCounter{}; };
@@ -106,6 +107,7 @@ class System {
     StepStatus trappedSoulFamily(EntityId,TickContext,Controller &);
     StepStatus catapultFamily(EntityId,TickContext,Controller &);
     StepStatus npcBarbFamily(EntityId,TickContext,Controller &);
+    StepStatus cagedWussieFamily(EntityId,TickContext,Controller &);
     StepStatus catapultSpotterFamily(EntityId,TickContext,Controller &);
     StepStatus nihlathakFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
     StepStatus putridDefilerFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
@@ -145,5 +147,6 @@ class System {
     StepStatus step(TickContext, FrameFacts &);
     StepStatus think(EntityId,TickContext);
     void commandMinions(EntityId,UnitTarget,uint64_t until);
+    DomainResult<> replacePetCommand(EntityId,uint8_t,UnitTarget,std::optional<Vec>,uint64_t tick);
 };
 }

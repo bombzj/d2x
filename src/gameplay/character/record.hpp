@@ -28,6 +28,7 @@ struct CharacterRecord {
     Fixed8 hp, mana, stamina;
     unsigned weaponSet = 0, gold = 0, bankGold = 0;
     std::array<std::set<std::string>, 3> npcIntroductions;
+    std::array<std::array<uint8_t,8>,3> npcVoiceFlags{}; // Native independent NpcIntroFlags.
     QuestPreludeBook questPreludes{};
     uint64_t experience = 0;
     int level = 1;
@@ -35,7 +36,7 @@ struct CharacterRecord {
     int unspentAttributes = 0;
     std::map<int, int> skillRanks;
     int unspentSkills = 0;
-    std::array<SkillHotkey, 16> skillHotkeys{}; // Native D2S/0x7B slots; HUD uses the first eight.
+    std::array<SkillHotkey, 16> skillHotkeys{}; // Native D2S/0x7B slots and client hotkey order.
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
     QuestBook quests{};
     // Native UPDATEQUESTLOG, by difficulty and filter slot; not reward authority.

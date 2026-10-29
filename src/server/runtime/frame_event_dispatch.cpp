@@ -41,6 +41,7 @@ DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,T
     if(event.handler) return {DomainStatus::NotImplemented,{}};
     switch(event.owner.type) {
     case FrameEventUnit::Player:
+        if(event.type==FrameEventType::DelayedPortal) return systems.companions.synchronizePets(event,tick.tick);
         if(event.type==FrameEventType::ModeChange || event.type==FrameEventType::EndAnimation) return systems.skills.actionEvent(event,tick.tick);
         if(event.type==FrameEventType::StatRegeneration) return systems.effects.frameEvent(event,tick.tick);
         if(event.type==FrameEventType::PeriodicSkills) return systems.effects.frameEvent(event,tick.tick);

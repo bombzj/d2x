@@ -16,11 +16,14 @@ struct FrameInput {
     bool skillPicker = false;
     uint16_t controlKeyPressed = 0;
     bool holdRun = false, standStill = false;
+    int voice=-1;
     bool previousSkill = false, nextSkill = false;
     bool automapFade = false, automapParty = false, clearScreen = false, clearMessages = false;
     int quantityDelta = 0, pageDelta = 0, menuDelta = 0;
     std::string text;
     std::string entryText;
+    std::u32string entryUnicode;
+    bool entryComposing{},entryCompositionCommitted{};
     bool tab = false, chat = false, clear = false, end = false;
     float wheel = 0, mouseWheel = 0;
     int menuUp = 0, menuDown = 0, menuLeft = 0, menuRight = 0, menuSelect = 0, menuCancel = 0;

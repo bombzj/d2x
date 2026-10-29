@@ -157,6 +157,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         }
         for(size_t mode=0;mode<8;++mode) rule.selectable[mode]=objectTable.number(row,"Selectable"+std::to_string(mode)).value_or(0)!=0;
         rule.openingTicks=uint64_t(std::max(1,object.animationRules[1].frames+1));rule.closingTicks=uint64_t(std::max(1,object.animationRules[3].frames+1));
+        for(size_t mode=0;mode<8;++mode) rule.frameTicks[mode]=uint64_t(std::max(0,objectTable.number(row,"FrameCnt"+std::to_string(mode)).value_or(0)));
         if(rule.initialization==22 && objectTable.number(row,"Mode2").value_or(0) && !objectTable.number(row,"Mode0").value_or(0)) rule.initialMode=2;
         area.objectRules.emplace(*definition,std::move(rule));
     }
@@ -349,6 +350,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
                 const auto value=objectTable.number(row,"Selectable"+std::to_string(mode));
                 if(rule.operation==23 && !value) throw std::runtime_error("Missing native waypoint Selectable mode");
                 rule.selectable[mode]=value.value_or(0)!=0;
+                rule.frameTicks[mode]=uint64_t(std::max(0,objectTable.number(row,"FrameCnt"+std::to_string(mode)).value_or(0)));
             }
             break;
         }

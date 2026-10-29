@@ -63,7 +63,7 @@ void System::withdrawQuestGroup(RegionId region,std::string_view name) {
         if(actor.area!=region || actor.owner || actor.identity.origin!=SpawnOrigin::Preset ||
            (actor.identity.spawnKey!=key && actor.identity.ownerSpawnKey!=key)) {++it;continue;}
         stopScriptedMotion(it->first);
-        ports_.effects.forgetUnit(it->first);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,it->first});ports_.areas.removeRoomUnit(it->first);
+        ports_.effects.forgetUnit(it->first);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,it->first});ports_.events.discardUnitSound(it->first);ports_.areas.removeRoomUnit(it->first);
         it=state_.actors.erase(it);
     }
 }
@@ -340,7 +340,7 @@ DomainResult<> System::moveNpc(EntityId id,RegionId region,Vec position,Vec dest
     if(actor.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     if(escaped) {
         ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});
-        ports_.areas.removeRoomUnit(id);state_.actors.erase(found);
+        ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);state_.actors.erase(found);
     } else {
         actor.position=position;actor.movementGoal=destination;actor.moving=(destination-position).length()>.001f;
         actor.pathType=1;actor.pathSteps=1;++actor.revision;ports_.areas.moveRoomUnit(id,region,position);refreshCollision(actor);
@@ -368,8 +368,8 @@ std::vector<EntityId> System::specialTargets() const {
 DomainResult<> System::registerWanderTarget(EntityId id) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
     auto &unit=found->second;
-    if(unit.rule.ai.kind!=MonsterAiKind::NpcBarb) return {DomainStatus::InvalidRequest,{}};
-    // Fn127 only registers node11. Existing group9/player nodes stay there.
+    if(unit.rule.ai.kind!=MonsterAiKind::NpcBarb && unit.rule.ai.kind!=MonsterAiKind::CagedWussie) return {DomainStatus::InvalidRequest,{}};
+    // Fn127/Fn131 only register node11. Existing group9/player nodes stay there.
     if(unit.wanderTargetOrder || unit.specialTargetOrder || unit.owner) return {DomainStatus::Applied,std::monostate{}};
     if(state_.nextWanderTargetOrder==UINT64_MAX || unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     unit.wanderTargetOrder=state_.nextWanderTargetOrder++;++unit.revision;
@@ -395,15 +395,15 @@ void System::resetAiFunctionMemory(EntityId id) {
 }
 void System::registerPet(Actor &unit) noexcept {
     publishInitialAi(unit);
-    if(!unit.owner || unit.conversion || unit.rule.petType<=0 || unit.petRegistrationOrder) return;
+    if(!unit.owner || unit.conversion || unit.rule.petType<=0 || unit.petRegistrationOrder || unit.petUnregistered) return;
     if(state_.nextPetRegistrationOrder==UINT64_MAX) std::terminate();
     unit.petRegistrationOrder=state_.nextPetRegistrationOrder++;
     unit.inactivePet=unit.roomless;
 }
-std::vector<EntityId> System::pets(PlayerId owner) const {
+std::vector<EntityId> System::pets(PlayerId owner,bool includeInactive) const {
     std::vector<EntityId> result;
     for(const auto &[id,unit]:state_.actors)
-        if(unit.owner==owner && unit.petRegistrationOrder && !unit.inactivePet && !unit.conversion) result.push_back(id);
+        if(unit.owner==owner && unit.petRegistrationOrder && !unit.petUnregistered && (includeInactive || !unit.inactivePet) && !unit.conversion) result.push_back(id);
     std::sort(result.begin(),result.end(),[&](EntityId left,EntityId right) {
         const auto &a=state_.actors.at(left),&b=state_.actors.at(right);
         return a.rule.petType!=b.rule.petType?a.rule.petType<b.rule.petType:a.petRegistrationOrder<b.petRegistrationOrder;

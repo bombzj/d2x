@@ -4,6 +4,7 @@
 #include "server/runtime/combat_rules.hpp"
 namespace d2x {
 struct ClassicData;
+uint8_t nativeMonsterMode(std::string_view);
 bool prepareMonsterActionClock(Archives &,const AnimDataTable &,const DataTable &,const MonsterRecord &,std::string_view,int event,server::MonsterAttackRule &);
 void prepareMonsterStateRules(const ClassicData &, size_t monsterRow, server::MonsterRule &);
 void prepareMonsterBirthProperties(const ClassicData &,size_t monsterRow,server::MonsterRule &);

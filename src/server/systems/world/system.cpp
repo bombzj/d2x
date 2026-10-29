@@ -50,7 +50,7 @@ void System::setActEclipse(int act,bool dark) {
 }
 DomainResult<> System::moveQuestNpc(RegionId region,EntityId id,Vec position,Vec destination,bool escaped) {
     const auto found=ports_.areas.areas_.find(region);if(found==ports_.areas.areas_.end()) return {DomainStatus::Unavailable,{}};
-    for(const auto &npc:found->second.definition.npcs) if(npc.id==id && npc.rule.code=="act5pow")
+    if(const auto *unit=ports_.monsters.find(id);unit && unit->questNpc && unit->identity.monster=="act5pow")
         return ports_.monsters.moveNpc(id,region,position,destination,escaped);
     return {DomainStatus::Stale,{}};
 }

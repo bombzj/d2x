@@ -1,6 +1,13 @@
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting::handlers {
+RequestResult PlayVoice(GameplayContext &context, net::protocol::Reader &in) {
+    const auto sound=in.u16();
+    if(sound<25 || sound>32) return {RequestStatus::Completed};
+    server::social::Request request{server::social::Action::Voice,{}, {}};request.sound=sound;
+    return submitGameplay(context,std::move(request));
+}
+
 RequestResult PlayerRelation(GameplayContext &context, net::protocol::Reader &in) {
     const auto action=in.u8(),enabled=in.u8(); const auto target=in.u32(); in.finish();
     if(action>=1 && action<=4) {
@@ -50,13 +57,13 @@ RequestResult OfferTradeGold(GameplayContext &context, uint32_t amount) {
 }
 RequestResult Chat(GameplayContext &context, net::protocol::Reader &in) {
     const auto type = in.u8(), language = in.u8(); const auto text = in.string(255), receiver = in.string(15); const auto extension = in.u8(); in.take(extension); in.finish();
-    if ((type != 1 && type != 2) || (type==2 && receiver.empty()) || language || extension) return {RequestStatus::Rejected};
-    return submitGameplay(context, server::social::Request{server::social::Action::Chat, {}, text,receiver});
+    if ((type != 1 && type != 2) || (type==2 && receiver.empty()) || extension) return {RequestStatus::Rejected};
+    return submitGameplay(context, server::social::Request{server::social::Action::Chat, {}, text,receiver,false,language});
 }
 RequestResult OverheadChat(GameplayContext &context, net::protocol::Reader &in) {
     const auto type=in.u8(),language=in.u8(); const auto text=in.string(255),receiver=in.string(15);
     const auto extension=in.u8();in.take(extension);in.finish();
-    if((type!=0 && type!=1) || language || !receiver.empty() || extension) return {RequestStatus::Rejected};
-    return submitGameplay(context,server::social::Request{server::social::Action::Chat,{},text,{},true});
+    if((type!=0 && type!=1) || !receiver.empty() || extension) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::social::Request{server::social::Action::Chat,{},text,{},true,language});
 }
 }

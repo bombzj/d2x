@@ -14,7 +14,7 @@ NPC是所连接服务端的真实type1单位，位置／模式、对白、任务
 
 定点只读核对本机1.13c D2Game.dll，MD5 `978f6f74cd031bce6ecee602cd5988cc`、ImageBase `6FC20000`：AI表第32／41／54项分别为RVA `1DB40/1BC60/19880`，MapAI选择为`1BBC0`。Npc的交互辅助`19C20`在`19C62–19C67`要求交互结构非空；本地D2MOO `sub_6FCE5EE0`的该判空方向有转录错误，不能照搬为“有交互结构就跳过”。`16A30`读取全局绕行计数，不能照搬D2MOO局部零变量；执行器在实例内保留该计数。预设传递及休眠依据为D2MOO `SUNIT_SpawnPresetUnit`、`SUNITINACTIVE_*`与`DRLGPRESET_CreateCopyOfMapAI/ChangeMapAI`。
 
-专用剧情入口为`server/systems/quests/npc_story.cpp`，状态归quests，Actor位置／模式／出生搜索归monsters，门户归travel；不由UI推导剧情。当前接入范围：
+专用剧情入口为`server/systems/quests/npc_story.cpp`，状态归quests，Actor位置／模式／出生搜索归monsters，玩家／红门归travel，Fn031的189号剧情蓝门归objects及任务QUESTFN；不由UI推导剧情。当前接入范围：
 
 | 原版入口 | 当前消费者 |
 |---|---|
@@ -25,15 +25,15 @@ NPC是所连接服务端的真实type1单位，位置／模式、对白、任务
 | A3Q0 Init49／50、Natalya Init52、A5Q3／Q4／Q1 | 赫拉铁力欢迎后待起点房间失活再转至终点，保留交谈；墨菲斯托死亡撤出娜塔亚，解冻撤出城镇尼拉塞克；拉苏克使用原出生搜索 |
 | QUESTS_MapPresetSpawn／DRLGPRESET_ChangeMapAI | 只接原物件459／461／543的安雅／尼拉塞克／拉苏克路径缓冲；标记与NPC两种加载先后均可转交一次，安雅野外出生可消费已有缓冲；路径写回Actor恢复规则，房间重入不恢复旧路径或已撤出的NPC |
 
-MapAI三类分派另定点核对上述1.13c DLL的RVA `35E50`（目标`59E10/59D30/5A5C0`）。Hratli／Natalya虽有任务缓冲字段，本地D2MOO及该分派均没有对应提供者，当前不自造MapAI来源。剧情状态仅属于本局，不改角色存档格式；已完成档按既有个人任务位恢复城镇状态。当前双端任务门户准备先激活目标落点房间，再读取碰撞选择落点；已准备的城镇坐标不代表房间仍驻留，等待期间不分配门户身份或提交退场。原版Cain门户在A1Q4_SpawnCainPortalOutsideTown／SpawnCainPortalInTown分别基于实际房间创建；当前双端准备仍不代表原版两端演出交错完全一致。
+MapAI三类分派另定点核对上述1.13c DLL的RVA `35E50`（目标`59E10/59D30/5A5C0`）。Hratli／Natalya虽有任务缓冲字段，本地D2MOO及该分派均没有对应提供者，当前不自造MapAI来源。剧情状态仅属于本局，不改角色存档格式；已完成档按既有个人任务位恢复城镇状态。Fn031正常退场已拆除双端玩家门户准备：A1Q4／A5Q3在野外和城镇分别准入Objects189，使用各自25帧QUESTFN，城镇第六次ON更新或Cain到位后关闭，野外随返城标志关闭，随后3→4。两端不互相钉住房间、不提前请求城镇地图、不登记可供玩家旅行的双向门。返城回调遇到已激活的54／66标记时先出生城镇NPC，再在实际NPC坐标创建城镇蓝门；标记晚到时只沿原Init分支出生NPC，不补造蓝门。Cain出生失败仍保留A1Q4_SpawnCainInTristram明确创建的玩家回城门，该异常分支不与正常退场混用。命令3在Actor重新准入后重建，Cain坐标已初始化时沿原返城分支，Anya重新捕获坐标；容量／内容等待保存本次出生阶段，原分配失败不无限重造城镇门。Fn031末尾沿MonMode直接DD分支清零生命、切到12，撤出目标／非死亡状态／碰撞并取消原生事件；不触发DT杀敌奖励、UMod死亡伤害或房间死亡GUID，尸体保留至正常房间生命周期撤出。依据D2MOO MonMode::sub_6FC642C0／sub_6FC63E80及Fn031；新增源码已构建，行为仍待实测。
 
-剩余边界包括完整ActiveFilter／PLAYER_IsBusy组合、原房间客户端列表顺序、返城门户两端生成的精确交错、退场死模式表现、完整休眠AI命令恢复及全部多人／逐随机轨迹。普通MapAI和上述专用分支已接入，原版完整演出及上述边界仍待逐项对照。救援囚犯独立逃离程序的限制见[后三幕任务](../quests/ACT3_5.md)。
+剩余边界包括完整ActiveFilter／PLAYER_IsBusy组合、原房间客户端列表顺序、返城门户两端及标记／NPC加载顺序的运行对照、直接DD的协议／表现与状态回调、完整休眠AI命令恢复及全部多人／逐随机轨迹。普通MapAI和上述专用分支已接入，原版完整演出及上述边界仍待逐项对照。救援囚犯独立逃离程序的限制见[后三幕任务](../quests/ACT3_5.md)。
 
 ## 交谈与对白
 
 SceneController统一悬停、高亮、姓名、点击／目标锁定和释放；RemoteControl按真实GUID靠近后0x13交谈，原0x27对白列表→0x29公共标志→带NPC身份的0x28交互确认→0x2F准备及公共对白UI继续消费。D2X先保存27待确认列表，收到匹配的28才打开会话并发送2F；2F确认已有权威会话，不重发27／28。一般私人任务刷新使用28/type6，不把玩家GUID编码成NPC身份。0x31确认实际原stringId，已确认话题不重复提交；0x30关闭，旅行0x38 action=0等原幕／位置结果。
 
-当前TBL对白首行数字按a1npc SPEED元数据移除，通用字符串查询仍保留原文。hosting比对当前MPQ的NPC文本与TBL时同时处理UTF-8及原单字节省略号／弯引号，避免遗漏阿卡拉女巫介绍；对白编号仍由实际TBL匹配得到。原0x27消息的menu=0自动对白依次显示未确认集合；menu=2为可选任务评论，通过Talk打开，不在每次点击NPC时抢先弹出。任务原表中的menu=1经QUESTS_InitScrollTextChain转为回包menu=0，不能直接发送为原版的紧急交互菜单。普通闲谈由客户端读取当前MPQ，不占27的任务／介绍槽，也不发31任务确认；D2X通过Talk里的Gossip轮播。首次介绍和任务自动对白由服务端消息及PlrIntro旗标决定，不增加客户端“已问候”状态。NPC0x8A提示用原npcalert与MonStats2高度；它不是本地任务资格。原字幕时序、重播间隔及提示精确像素定位尚未完整认证。
+当前TBL对白首行数字按a1npc SPEED元数据移除，通用字符串查询仍保留原文。hosting比对当前MPQ的NPC文本与TBL时同时处理UTF-8及原单字节省略号／弯引号，避免遗漏阿卡拉女巫介绍；对白编号仍由实际TBL匹配得到。原0x27消息的menu=0自动对白依次显示未确认集合；menu=2为可选任务评论，通过Talk打开，不在每次点击NPC时抢先弹出。任务原表中的menu=1经QUESTS_InitScrollTextChain转为回包menu=0，不能直接发送为原版的紧急交互菜单。普通闲谈由客户端读取当前MPQ，不占27的任务／介绍槽，也不发31任务确认；D2X通过Talk里的Gossip轮播。首次介绍和任务自动对白由服务端消息及PlrIntro旗标决定，不增加客户端推测的个人任务资格。独立91只设置待播放的返程问候，客户端打开NPC菜单时按原声音选择程序播放并发4D清标志；不在普通Gossip时发送4D，不代替31任务对白确认。宿主91生产及完整音频时序边界见[消息速查](../../modules/MESSAGES.md#d2x客户端对应入口与消费)。NPC0x8A提示用原npcalert与MonStats2高度；它不是本地任务资格。原字幕时序、重播间隔及提示精确像素定位尚未完整认证。
 
 原0x27有8个物理消息槽，但当前1.13c D2Common `TEXT_CreateTextListFromMessageList`要求count小于8；hosting拒绝超过7条的事实，D2X接收端也按0..7校验，避免掩盖原版断言。自研NPC按原任务回调集合及未确认的首次介绍组织列表，分别接受31确认，不附加闲谈。依据为当前DLL的line274断言、本地D2MOO `D2Common/src/D2Text.cpp`及原版Host阿卡拉先64任务、后12介绍且均为menu0的录包；已有任务进度的角色也可只有12介绍。
 

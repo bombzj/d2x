@@ -47,9 +47,29 @@ bool SceneController::handleSkills(const FrameInput &input) {
             (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
                 skill < 0 ? std::nullopt : std::optional<int>{skill};
             characterClient_.submit(SelectMouseSkill{skill, hotkeys[i].right,hotkeys[i].owner});
+            lastSkillHotkey_ = i;
             cancelWorldGesture();
             releaseAfterLoad_ = input.leftHeld || input.rightHeld;
         }
+    }
+    if (input.previousSkill || input.nextSkill) {
+        // Retail D2Client 3D6D0 cycles sixteen hotkey slots from the last
+        // selected slot, skipping left-hand bindings and unavailable owners.
+        const int direction = input.previousSkill ? -1 : 1;
+        for (size_t count = 1; count <= hotkeys.size(); ++count) {
+            const auto index = size_t((int(lastSkillHotkey_) + direction * int(count) + int(hotkeys.size())) % int(hotkeys.size()));
+            const auto &hotkey = hotkeys[index];
+            if (!hotkey.right || hotkey.skill == -2) continue;
+            const auto *skill = hotkey.skill >= 0 ? view_.characterView().skill(hotkey.skill, hotkey.owner) : nullptr;
+            if (hotkey.skill >= 0 && (!skill || !skill->available)) continue;
+            ui.rightSkill = hotkey.skill < 0 ? std::nullopt : std::optional<int>{hotkey.skill};
+            characterClient_.submit(SelectMouseSkill{hotkey.skill, true, hotkey.owner});
+            lastSkillHotkey_ = index;
+            cancelWorldGesture();
+            releaseAfterLoad_ = input.leftHeld || input.rightHeld;
+            break;
+        }
+        return true;
     }
     if (!input.insideViewport)
         return ui.skillPicker.has_value();
@@ -80,7 +100,7 @@ bool SceneController::handleSkills(const FrameInput &input) {
                 return true;
             }
     if (input.leftPressed && CheckCollisionPointRec(rv(input.mouse), hudRunButton())) {
-        actorClient_.toggleRun();
+        toggleRunning();
         return true;
     }
     return false;

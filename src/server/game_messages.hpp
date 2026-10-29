@@ -20,7 +20,7 @@
 namespace d2x {
 // Internal authority/host values. These are not client messages or wire structs.
 struct PlayerSnapshot {
-    struct Hover { std::string text; uint64_t revision{}; std::set<PlayerId> recipients; };
+    struct Hover { std::string text; uint64_t revision{}; std::set<PlayerId> recipients; uint8_t language{}; };
     std::optional<Hover> hover;
     uint16_t partyId{UINT16_MAX};
     struct SocialRelation {uint8_t partyStatus{};uint16_t flags{};};

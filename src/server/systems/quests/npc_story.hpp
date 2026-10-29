@@ -1,6 +1,7 @@
 #pragma once
 #include "server/runtime/combat_rules.hpp"
 #include "server/runtime/contracts.hpp"
+#include <array>
 #include <map>
 #include <optional>
 #include <set>
@@ -30,8 +31,15 @@ struct NpcStoryState {
     EntityId cainCage;
     uint64_t cainBirthAt{};
     bool cainOutsideSpawned{},cainBirthFailed{};
-    struct Escape {Vec start,portal;int phase{},attempts{};};
+    struct Escape {Vec start,portal;int phase{},attempts{};uint64_t admissionRevision{};};
     std::map<EntityId,Escape> escapes;
+    struct Portal {EntityId object;RegionId area;Vec position;bool anya{},town{};uint64_t due{};unsigned updates{};};
+    std::vector<Portal> bluePortals;
+    struct Return {EntityId marker,actor;int phase{};bool portal{};uint64_t invocation{};};
+    std::array<Return,2> returns;
+    EntityId anyaTownObject;
+    bool cainPortalCoordsInitialized{};
+    unsigned cainPortalUpdates{},anyaPortalUpdates{};
     std::map<EntityId,uint64_t> guardDecisionAt;
     uint64_t anyaThawAt{};
     EntityId anyaFrozenObject;

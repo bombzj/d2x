@@ -176,6 +176,7 @@ void NativeRealmService::game(std::span<const uint8_t> bytes) {
         const auto result = dispatchGameplay(bytes, context);
         if (!result.operation.empty()) counters.lastRequest += "/" + std::string(result.operation);
         switch (result.status) {
+        case RequestStatus::Completed: ++stats.completed; counters.lastResult = "handled"; break;
         case RequestStatus::Queued: ++stats.queued; counters.lastResult = "queued"; break;
         case RequestStatus::NotImplemented:
             ++stats.notImplemented; counters.lastResult = "not-implemented"; break;

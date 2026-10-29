@@ -133,6 +133,18 @@ std::pair<Conversation,NpcMessagesFact> System::offer(const ActorContext &actor,
     return {std::move(next),std::move(fact)};
 }
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
+    if(std::holds_alternative<ConfirmNpcVoice>(request.intent)) {
+        const auto *player=ports_.players.find(actor.player);
+        if(!player || !player->entered || player->actor!=actor.actor || player->area!=actor.area || player->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
+        const auto nativeClass=std::get<ConfirmNpcVoice>(request.intent).nativeClass;
+        if(!player->rules.character || nativeClass>=player->rules.character->nativeMonsterCount) return {DomainStatus::InvalidRequest,{}};
+        const auto &indices=player->rules.character->nativeNpcIntroductionBits;
+        const auto found=indices.find(int(nativeClass));const auto bit=found==indices.end()?0u:found->second;
+        auto record=player->persistent.player;auto &flags=record.npcVoiceFlags.at(size_t(ports_.settings.difficulty));
+        flags.at(bit/8)&=uint8_t(~(1u<<(bit%8)));
+        auto plan=ports_.transactions.prepare(transactions::CharacterEdit{actor,player->inventoryRevision,player->characterRevision,std::move(record)});
+        return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
+    }
     if (const auto *end=std::get_if<EndNpcConversation>(&request.intent)) {
         const auto current=state_.conversations.find(actor.player);
         if(current!=state_.conversations.end() && current->second.npc!=end->target) return {DomainStatus::Stale,{}};
@@ -211,13 +223,22 @@ DomainResult<> System::escape(RegionId region,EntityId id,Vec destination) {
     if(state_.escapes.contains(id)) return {DomainStatus::Applied,std::monostate{}};
     const auto *area=ports_.areas.find(region);if(!area) return {DomainStatus::Unavailable,{}};
     const auto *unit=ports_.monsters.find(id);
-    for(const auto &npc:area->definition.npcs) if(npc.id==id && npc.rule.code=="act5pow" && unit && unit->alive() && unit->area==region && npc.rule.walkVelocity>0) {
-        const auto point=area->definition.collision.nearest(destination,npc.rule.movement);
-        auto route=area->definition.collision.path(unit->position,point,false,npc.rule.movement);
-        if(route.empty() && (unit->position-point).length()>1) return {DomainStatus::Unavailable,{}};
-        state_.escapes.emplace(id,Escape{region,point,std::move(route),false});return {DomainStatus::Applied,std::monostate{}};
+    for(const auto &npc:area->definition.npcs) if(npc.id==id && npc.rule.code=="act5pow" && unit && unit->alive() && unit->area==region) {
+        // A5Q2 counts the release callback independently of movement or a
+        // successful portal allocation. Path failure cannot undo that credit.
+        state_.escapes.emplace(id,Escape{region,destination,{},false});return {DomainStatus::Applied,std::monostate{}};
     }
     return {DomainStatus::Stale,{}};
+}
+DomainResult<> System::finishEscape(EntityId id) {
+    const auto found=state_.escapes.find(id);
+    if(found==state_.escapes.end()) return {DomainStatus::Stale,{}};
+    if(found->second.escaped) return {DomainStatus::Applied,std::monostate{}};
+    const auto *unit=ports_.monsters.find(id);if(!unit || !unit->alive()) return {DomainStatus::Stale,{}};
+    const auto removed=ports_.world.moveQuestNpc(unit->area,id,unit->position,unit->position,true);
+    if(!removed) return removed;
+    found->second.escaped=true;found->second.route.clear();
+    return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked=false;
@@ -245,30 +266,6 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         const auto result=execute(pending.actor,pending.request);
         if(isDeferred(result.status)) ++it;else it=approaches_.erase(it);
-    }
-    for(auto &[id,escape]:state_.escapes) {
-        if(escape.escaped) continue;
-        const auto *area=ports_.areas.find(escape.area);if(!area) continue;
-        const auto npc=std::find_if(area->definition.npcs.begin(),area->definition.npcs.end(),[&](const auto &n){return n.id==id;});
-        const auto *unit=ports_.monsters.find(id);
-        if(npc==area->definition.npcs.end() || !unit || !unit->alive()) continue;
-        if(!ports_.areas.loaded(unit->area,unit->position) || ports_.monsters.frozen(id,tick.tick) || unit->stunnedUntil>tick.tick || unit->knockedUntil>tick.tick || unit->reactionUntil>tick.tick) continue;
-        auto point=unit->position;bool reachedWaypoint=false;
-        if(!escape.route.empty()) {
-            const auto delta=escape.route.front()-point;
-            const auto distance=delta.length(),stride=float(npc->rule.walkVelocity)*float(monsters::movementPercent(*unit,tick.tick))/(16.f*75.f);
-            point=distance<=stride?escape.route.front():point+delta*(stride/distance);
-            reachedWaypoint=distance<=stride;
-        }
-        const bool routeComplete=escape.route.empty() || (reachedWaypoint && escape.route.size()==1);
-        const bool escaped=routeComplete && (point-escape.destination).length()<=1;
-        const auto destination=routeComplete?escape.destination:escape.route[reachedWaypoint?1:0];
-        if(ports_.world.moveQuestNpc(escape.area,id,point,destination,escaped)) {
-            // The route cursor follows the actor publication. A rejected
-            // move must retry the same waypoint with the same live position.
-            if(reachedWaypoint) escape.route.pop_front();
-            escape.escaped=escaped;
-        }
     }
     std::erase_if(state_.conversations,[&](const auto &entry){
         if(conversation(entry.first)) return false;

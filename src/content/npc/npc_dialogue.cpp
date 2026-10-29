@@ -225,6 +225,7 @@ NpcDialogues loadNpcDialogues(Archives &archives, const DataTable &monsters, con
                 // Cain5 has no MonPreset, while Tyrael1 also appears in Act II.
                 const int act = nativeNpcClasses[index] == 265 ? 0 : nativeNpcClasses[index] == 251 ? 3
                     : presetActs.at(std::string(id));
+                result.nativeIntroductionBits.emplace(int(nativeNpcClasses[index]),unsigned(index+1));
                 result.introductionKeys.emplace(index + 1,
                     npcIntroductionKey(display == strings.end() ? nameKey : display->second, act));
                 break;

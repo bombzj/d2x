@@ -1,4 +1,5 @@
 #include "realm_session_impl.hpp"
+#include "chat_text.hpp"
 
 namespace d2x {
 namespace net {
@@ -106,13 +107,14 @@ bool RealmSession::send_chat(std::string text,std::string receiver,bool overhead
         p.error(OnlineErrorKind::Input, "The active game changed; refresh before sending chat");
         return false;
     }
-    if ((!receiver.empty() && !text_valid(receiver,15)) || (overhead && !receiver.empty()) || !text_valid(text, 255) ||
+    const auto encoded=encodeChatText(text);
+    if ((!receiver.empty() && !text_valid(receiver,15)) || (overhead && !receiver.empty()) || !encoded || encoded->empty() || encoded->size()>255 ||
         std::all_of(text.begin(), text.end(), [](unsigned char c) { return c == ' '; })) {
-        p.error(OnlineErrorKind::Input, "Chat requires 1-255 printable ASCII bytes and a non-space character");
+        p.error(OnlineErrorKind::Input, "Chat must fit in 255 native text bytes and contain a non-space character");
         return false;
     }
     try {
-        p.sent(p.gs, game_chat(text,receiver,overhead));
+        p.sent(p.gs, game_chat(*encoded,receiver,overhead,p.options.gameLocale));
         // No generic native ACK and no client echo; the original 0x26 is the
         // only source of messages, including the sender's own room broadcast.
         p.view.error.reset();

@@ -460,7 +460,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                     const bool remove=publication.immediate->finished;
                     if(remove) {
                         ports_.frameEvents.cancelOwner({FrameEventUnit::Missile,publication.child});
-                        ports_.areas.removeRoomUnit(publication.child);state_.missiles.erase(live);
+                        ports_.events.discardUnitSound(publication.child);ports_.areas.removeRoomUnit(publication.child);state_.missiles.erase(live);
                     } else live->second=std::move(publication.immediate->next);
                 }
             }
@@ -508,7 +508,7 @@ StepStatus System::advanceFrame(EntityId id,TickContext tick) {
     if(!accepted && ((!missile.enemy && !missile.nativeDamage && !validOwner) ||
         !area || area->generation!=missile.generation || !townAllowed(missile))) {
         if(area && area->generation==missile.generation) ports_.areas.setMissileMask(missile.area,missile.position,missile.collision.size,false);
-        runtime_->pending.erase(id);ports_.areas.removeRoomUnit(id);state_.missiles.erase(it);return StepStatus::Complete;
+        runtime_->pending.erase(id);ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);state_.missiles.erase(it);return StepStatus::Complete;
     }
     if(!accepted && tick.tick<=missile.created) return StepStatus::Complete;
     auto [entry,fresh]=runtime_->pending.try_emplace(id);if(fresh) entry->second=advance(missile,tick);
@@ -522,7 +522,7 @@ StepStatus System::advanceFrame(EntityId id,TickContext tick) {
         if(!finished) ports_.areas.setMissileMask(plan.next.area,plan.next.position,plan.next.collision.size,true);
     } else if(finished && plan.next.nativeDamage) ports_.areas.setMissileMask(plan.next.area,plan.next.position,plan.next.collision.size,false);
     it->second=std::move(plan.next);runtime_->pending.erase(entry);
-    if(finished) {ports_.areas.removeRoomUnit(id);state_.missiles.erase(it);}
+    if(finished) {ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);state_.missiles.erase(it);}
     else ports_.areas.moveRoomUnit(id,it->second.area,it->second.position);
     return StepStatus::Complete;
 }

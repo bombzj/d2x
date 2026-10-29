@@ -21,6 +21,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     StepStatus step(TickContext, FrameFacts &);
+    StepStatus flushUnitSounds(TickContext);
     DomainResult<> admit(PlayerId);
     std::vector<PlayerId> visible(PlayerId) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerId, uint64_t tick) const;

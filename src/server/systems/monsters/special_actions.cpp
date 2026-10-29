@@ -149,7 +149,16 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareRoomSpawn(c
     if(rule.nativeSpawnFloor) {
         const auto destination=ports_.areas.roomAtPosition(request.area,Vec{float(room.x*5),float(room.y*5)}-roomArea.origin,point->first,point->second);
         if(!destination) return finish();
-        if(destination->area!=request.area) return {DomainStatus::NotImplemented,{}};
+        if(destination->area!=request.area) {
+            const auto &target=ports_.areas.at(destination->area);
+            const auto prototype=target.definition.nativeMonsterClasses.find(rule.nativeClass);
+            if(prototype==target.definition.nativeMonsterClasses.end() || prototype->second.rule.enchantment)
+                return {DomainStatus::NotImplemented,{}};
+            // Resolve the actual native room before assigning level-dependent
+            // stats. Its registration token also validates the target generation.
+            admission.area=destination->area;admission.rule=prototype->second.rule;
+            admission.position=Vec{float(point->first)+.5f,float(point->second)+.5f}-target.definition.origin;
+        }
     }
     data->randomExpected=data->randomNext=ports_.random;data->actor=EntityId{ports_.ids.cursor()};
     auto prepared=prepareAdmissionActor(admission,data->actor,data->randomNext,data->palettes);
@@ -320,7 +329,7 @@ DomainResult<> System::eatCorpse(EntityId source,EntityId target,int skill,int r
     // Do108 removes the actual GUID before writing the eater's HP. It does
     // not leave a hidden corpse which another AI can resolve later.
     ports_.effects.forgetUnit(target);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,target});
-    ports_.areas.removeRoomUnit(target);state_.actors.erase(target);
+    ports_.events.discardUnitSound(target);ports_.areas.removeRoomUnit(target);state_.actors.erase(target);
     if(!commitLife(std::move(change))) throw std::logic_error("Regurgitator resource commit lost its reservation");
     return {DomainStatus::Applied,std::monostate{}};
 }

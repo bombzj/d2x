@@ -97,11 +97,11 @@ DomainResult<bool> System::spawnTownCain(const AreaNpc &npc,RegionId region,Vec 
     for(const auto &[view,loan]:loans) {(void)view;ports_.areas.publishRoomRandom(loan);}
     return {DomainStatus::Applied,placed.value->has_value()};
 }
-void System::collision(RegionId area) {
+void System::collision(RegionId area,bool synchronizeTimers) {
     std::vector<Grid::Obstacle> values;
     for (auto &[id, object] : state_.objects) {
         if (object.area != area) continue;
-        schedule(object);
+        if(synchronizeTimers) schedule(object);
         const auto &rule = object.rule; const auto mode = size_t(object.mode);
         const bool statueReleased=rule.initialization>=63 && rule.initialization<=65 && (object.mode==3 || object.mode==4);
         const bool colliding=rule.collision[mode] && !statueReleased && !object.collisionReleased;
@@ -110,6 +110,14 @@ void System::collision(RegionId area) {
             rule.width, rule.height, rule.collisionMask, (rule.collisionMask & 0x22) != 0});
     }
     ports_.world.objectCollision(area, std::move(values));
+}
+std::pair<unsigned,unsigned> System::prisonerSpawnCounts() const {
+    unsigned count{},completed{};
+    for(const auto &group:prisonerGroups_) {
+        if(group.attempts>=25 || group.spawned>=5) ++completed;
+        count+=group.spawned;
+    }
+    return {count,completed};
 }
 StepStatus System::spawnCagedPrisoners(const AreaObject &source,RegionId region,uint64_t tick) {
     if(ports_.quests.read().initialFlags[questDefinition(QuestId::RescueOnMountArreat).nativeSlot]&0x8000)
@@ -169,8 +177,36 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     const auto *player = ports_.players.find(actor.player); const auto *area = ports_.areas.find(actor.area);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     const auto found = state_.objects.find(request.target.id);
-    if (!area || area->generation != actor.areaGeneration || found == state_.objects.end() || found->second.area != actor.area) return {DomainStatus::Stale, {}};
+    if (!area || area->generation != actor.areaGeneration || found == state_.objects.end()) return {DomainStatus::Stale, {}};
     auto &object = found->second; const auto &rule = object.rule;
+    if(request.action==Action::HighlightDoor) {
+        // PlrMsg::Rcv0x3D and ObjMode::sub_6FC78BB0: hovering only
+        // refreshes OPENED/SPECIAL3 occupancy, it never operates the object.
+        const auto *objectArea=ports_.areas.find(object.area);
+        if(!objectArea || objectArea->definition.act!=area->definition.act) return {DomainStatus::InvalidRequest,{}};
+        const auto playerPoint=player->position+area->definition.origin;
+        const auto objectPoint=object.position+objectArea->definition.origin;
+        if(std::abs(int(playerPoint.x)-int(objectPoint.x))>10 || std::abs(int(playerPoint.y)-int(objectPoint.y))>10)
+            return {DomainStatus::InvalidRequest,{}};
+        if(object.mode!=2 && object.mode!=5) return {DomainStatus::Applied,std::monostate{}};
+        const auto *bounds=objectArea->definition.activation.room(object.position);
+        if(!bounds) return {DomainStatus::Unavailable,{}};
+        const RoomView room{object.area,(int(objectArea->definition.origin.x)+bounds->x)/5,
+            (int(objectArea->definition.origin.y)+bounds->y)/5};
+        const auto sample=ports_.spatial.nativeCollisionSample(0x8180); // PLAYER | MONSTER | CORPSE.
+        const int width=std::max(1,rule.width),height=std::max(1,rule.height);
+        const int left=int(objectPoint.x)-width/2,bottom=int(objectPoint.y)-height/2;
+        bool occupied=false;
+        for(int y=bottom;y<bottom+height && !occupied;++y)
+            for(int x=left;x<left+width;++x) if(sample(room,x,y)) {occupied=true;break;}
+        const int mode=occupied?5:2;
+        if(object.mode!=mode) {
+            if(object.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+            object.mode=mode;++object.revision;collision(object.area);
+        }
+        return {DomainStatus::Applied,std::monostate{}};
+    }
+    if(object.area!=actor.area) return {DomainStatus::Stale,{}};
     const InteractionTarget target{object.id, object.position, object.position, rule.width, rule.height, float(rule.range), true};
     if (!remoteRange && !interactionClear(area->definition.collision, player->position, target)) {
         if(nativeUnitDistance(player->position,2,object.position,rule.width)>50) return {DomainStatus::InvalidRequest,{}};
@@ -505,7 +541,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         };
         if(const auto status=advanceUrn();status!=StepStatus::Complete) return status;
         if(const auto mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick);mode && object.mode!=*mode) {
-            object.mode=*mode;object.until=ports_.quests.ancientObjectAnimationEnd(id);++object.revision;changed.insert(object.area);
+            object.mode=*mode;object.until=object.rule.operation==49?ports_.quests.forgeAnimationEnd(id):ports_.quests.ancientObjectAnimationEnd(id);++object.revision;changed.insert(object.area);
         }
         if(object.rule.operation==25) {
             const auto &quest=ports_.quests.read().actTwo;
@@ -524,7 +560,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         if(object.pending) if(const auto result=ports_.quests.takeCompletion(id)) {
             object.pending=false;
-            if(*result) {object.mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick).value_or(1);object.until=object.mode==1?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;++object.revision;changed.insert(object.area);}
+            if(*result) {object.mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick).value_or(1);object.until=object.mode==1?(object.rule.operation==49?ports_.quests.forgeAnimationEnd(id):tick.tick+std::max(uint64_t{1},object.rule.openingTicks)):0;++object.revision;changed.insert(object.area);}
         }
         if(object.pending && !towerOpening_.contains(id) && !ports_.events.hasCapacity(1)) {
             for(const auto area:changed) collision(area);

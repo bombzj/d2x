@@ -77,6 +77,13 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
         (request.object || request.towerGold || request.source.sourceSeed))) return {DomainStatus::InvalidRequest,{}};
     for(const auto &drop:request.nativeDrops) if((drop.code.empty() && !drop.uniqueRow) || drop.level<1 ||
         drop.level>131 || drop.preferredPrefix<-1 || drop.preferredSuffix<-1) return {DomainStatus::InvalidRequest,{}};
+    for(const auto &drop:request.nativeDrops) if(drop.ear && (drop.code!="ear" || drop.uniqueRow ||
+        drop.quality!=ItemQuality::Normal || !drop.exactPosition || drop.ear->characterClass>=7 ||
+        drop.ear->name.empty() || drop.ear->name.size()>15 || drop.ear->level!=unsigned(drop.level)))
+        return {DomainStatus::InvalidRequest,{}};
+    for(const auto &drop:request.nativeDrops) if((drop.quantityOverride && (!*drop.quantityOverride || *drop.quantityOverride>unsigned(INT32_MAX))) ||
+        (drop.goldOwner && !drop.quantityOverride) || (drop.unforcedCreation && (drop.uniqueRow || drop.ear)))
+        return {DomainStatus::InvalidRequest,{}};
     if(const auto pending=state_.pending.find(request.source.source);pending!=state_.pending.end()) {
         const auto &prior=pending->second.request;
         if(prior.occurrence==request.occurrence && prior.environment==request.environment &&
@@ -231,7 +238,9 @@ DomainResult<> System::install(EntityId source, TickContext tick, items::Prepare
         auto completions=state_.completed;
         if(request.reportCompletion || (request.object && request.object->reportCompletion))
             completions.insert_or_assign(source,Completion{true,placed.size()});
-        const auto installed=ports_.items.installNativeGroundBatch(placed,tick.tick);
+        const auto installed=ports_.items.installNativeGroundBatch(placed,tick.tick,{}, {},
+            request.nativeDrops.empty() || request.nativeDrops.front().flip,
+            request.nativeDrops.empty()?std::optional<PlayerId>{}:request.nativeDrops.front().goldOwner);
         if(!installed) return installed;
         state_.completed.swap(completions);state_.pending.erase(found);state_.deferred.clear();
         return {DomainStatus::Applied,std::monostate{}};

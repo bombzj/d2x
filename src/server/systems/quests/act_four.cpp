@@ -8,9 +8,65 @@
 #include "server/systems/travel/system.hpp"
 #include "server/systems/objects/system.hpp"
 #include "server/systems/population/system.hpp"
+#include "server/systems/loot/system.hpp"
 #include "gameplay/quest/acts/act_four_state.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 namespace d2x::server::quests {
+uint64_t System::forgeRewardDue(EntityId id) const {
+    return state_.actFour.forgeObject==id?state_.actFour.forgeDue:0;
+}
+uint64_t System::forgeAnimationEnd(EntityId id) const {
+    return state_.actFour.forgeObject==id && !state_.actFour.forgeSmashed?state_.actFour.forgeOpenAt:0;
+}
+DomainResult<> System::forgeRewardEvent(EntityId id,uint64_t tick) {
+    auto &forge=state_.actFour;
+    if(id!=forge.forgeObject || !forge.forgeDue) return {DomainStatus::Applied,std::monostate{}};
+    const auto object=ports_.objects.read().objects.find(id);
+    if(object==ports_.objects.read().objects.end()) return {DomainStatus::Stale,{}};
+    if(!forge.forgeRewards || !state_.controlRandom) return {DomainStatus::NotImplemented,{}};
+    if(!forge.forgeStarted) {
+        // Keep the currently executing QUESTFN installed while content/output
+        // waits. Its continuation rearms the next tier after all drops finish.
+        const auto changed=ports_.objects.setNativeMode(id,4,tick,false,false);if(!changed) return changed;
+        forge.forgeStarted=true;state_.objectModes.at(id)=4;
+    }
+    if(!forge.forgePlayers) {forge.forgeDue=0;return {DomainStatus::Applied,std::monostate{}};}
+    for(;;) {
+        if(forge.forgeAwaiting) {
+            const auto result=ports_.loot.takeCompletionDetail(id);
+            if(!result) return {DomainStatus::PendingContent,{}};
+            forge.forgeAwaiting=false;forge.forgeCode.clear();
+            if(!forge.forgeTier) {forge.forgeDue=0;return {DomainStatus::Applied,std::monostate{}};}
+            if(result->accepted && result->created) ++forge.forgeSuccessful;
+            ++forge.forgeDropIndex;
+        }
+        if(forge.forgeTier && forge.forgeDropIndex>=forge.forgePlayers) {
+            // A4Q3 does not rearm QUESTFN when the whole tier failed.
+            if(!forge.forgeSuccessful) {forge.forgeDue=0;return {DomainStatus::Applied,std::monostate{}};}
+            --forge.forgeTier;forge.forgeDropIndex=forge.forgeSuccessful=0;
+            if(forge.forgeTier) {forge.forgeDue=tick+20;return {DomainStatus::Applied,std::monostate{}};}
+        }
+        if(forge.forgeCode.empty()) {
+            // QUESTS_GetGlobalSeed is distinct from the game/unit/item seeds.
+            // Select the next code only after the preceding drop has finished.
+            auto random=*state_.controlRandom;
+            if(forge.forgeTier) {
+                const auto tier=forge.forgeTier==4?0u:forge.forgeTier==1?2u:1u;
+                forge.forgeCode=forge.forgeRewards->gems[tier][rollRandom(random)%7];
+            } else forge.forgeCode=forge.forgeRewards->runes.at(size_t(ports_.settings.difficulty))[rollRandom(random)%11];
+            state_.controlRandom=random;
+        }
+        loot::Request request;request.occurrence=uint64_t(forge.forgeTier)*9+forge.forgeDropIndex;
+        request.source.source=id;request.source.region=object->second.area;request.source.difficulty=ports_.settings.difficulty;
+        request.position=object->second.position;request.environment=true;request.reportCompletion=true;
+        loot::NativeDrop drop;drop.code=forge.forgeCode;drop.level=50;drop.quality=ItemQuality::Normal;
+        request.nativeDrops.push_back(std::move(drop));
+        const auto queued=ports_.loot.queue(request);if(!queued) return queued;
+        forge.forgeAwaiting=true;
+        return {DomainStatus::PendingContent,{}};
+    }
+}
 DomainResult<> System::activateIzual(uint64_t tick) {
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
     const auto quest=QuestId::FallenAngel;const auto &definition=questDefinition(quest);
@@ -88,7 +144,8 @@ DomainResult<> System::operateActFour(const ActorContext &actor,EntityId source,
             if(!detail::actTwoCarried(*p,items.soulstone,ports_.settings.difficulty)) return {DomainStatus::Conflict,{}};
             return prepareReward(actor,source,RewardKind::PlaceSoulstone,false,position);
         }
-        if(!detail::equippedQuestWeapon(*p,items.hammer,ports_.settings.difficulty)) return {DomainStatus::Conflict,{}};
+        if(!detail::actTwoCarried(*p,items.hammer,ports_.settings.difficulty) ||
+            !detail::equippedQuestWeapon(*p,items.hammer)) return {DomainStatus::Conflict,{}};
         if(world.forgeHits<2) {++world.forgeHits;return {DomainStatus::Applied,std::monostate{}};}
         return prepareReward(actor,source,RewardKind::SmashSoulstone,false,position);
     }
@@ -122,6 +179,71 @@ DomainResult<> System::sealAfterglow(RegionId region,EntityId source,Vec positio
 }
 StepStatus System::actFourStep(TickContext tick) {
     bool blocked=false;auto &world=state_.actFour;
+    const auto sanctumEffect=[&] {
+        if(!world.sanctumCompletion) return true;
+        if(!publishCompletion(*world.sanctumCompletion,12,{},tick)) return false;
+        world.sanctumCompletion.reset();return true;
+    };
+    if(!sanctumEffect()) return StepStatus::Blocked;
+    const auto sanctumSweep=[&] {
+        if(!world.sanctumSweep) return true;
+        auto &sweep=*world.sanctumSweep;
+        while(sweep.room<sweep.rooms.size()) {
+            if(!sweep.prepared) {
+                // Freeze each room's chain only when reached: an earlier
+                // death callback may have moved units into this later room.
+                sweep.units=ports_.areas.roomUnitOrder(sweep.rooms[sweep.room]);sweep.unit=0;sweep.prepared=true;
+            }
+            while(sweep.unit<sweep.units.size()) {
+                const auto id=sweep.units[sweep.unit];const auto *unit=ports_.monsters.find(id);
+                if(sweep.pendingDeath || (unit && unit->alive() && unit->rule.nativeClass!=243 && unit->rule.nativeClass!=333 &&
+                    unit->alignment()==UnitAlignment::Evil)) {
+                    sweep.pendingDeath=id;
+                    // The original calls MONMODE_DEATH, not a lethal hit by
+                    // the player opening the seal. Resume pending death effects
+                    // before walking to the next unit, even after HP became zero.
+                    if(unit && !ports_.monsters.scriptDeath(id,tick.tick)) return false;
+                    sweep.pendingDeath={};
+                }
+                ++sweep.unit;
+            }
+            ++sweep.room;sweep.units.clear();sweep.prepared=false;
+        }
+        world.sanctumSweep.reset();world.diabloTimerCalls=0;world.diabloAt=(tick.tick/20+2)*20;
+        return true;
+    };
+    if(!sanctumSweep()) return StepStatus::Blocked;
+    if(world.diabloAt && !world.diabloSpawned && tick.tick>=world.diabloAt) {
+        // QuestUpdater runs every 20 frames. Timeout1 uses a strict '<'
+        // deadline, so successive callback attempts are two quest ticks apart.
+        if(!world.diabloBirthPending) ++world.diabloTimerCalls;
+        if(world.diabloTimerCalls>=10 || world.diabloBirthPending) {
+            const objects::Object *anchor=nullptr;
+            for(const auto &[id,object]:ports_.objects.read().objects) {
+                (void)id;
+                if(int(object.area)==108 && object.rule.initialization==55) anchor=&object;
+            }
+            if(anchor) {
+                const auto result=ports_.population.requestQuestBirth(anchor->area,"diablo",tick,anchor->position);
+                if(result) {world.diabloSpawned=true;world.diabloBirthPending=false;}
+                else if(result.status==DomainStatus::Conflict || isDeferred(result.status)) {
+                    world.diabloBirthPending=true;return StepStatus::Blocked;
+                } else {
+                    // A completed failed -1/5/10 sequence is a failed native
+                    // timer callback, not a permanently completed birth request.
+                    if(result.status==DomainStatus::Unavailable) ports_.population.resetQuestBirth(anchor->area,"diablo");
+                    else state_.deferred="Original Diablo birth unavailable";
+                    world.diabloBirthPending=false;
+                }
+            } else world.diabloBirthPending=false;
+        }
+        if(!world.diabloSpawned) world.diabloAt=(tick.tick/20+2)*20;
+    }
+    if(world.forgeFxPending) {
+        const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{14}}});
+        if(!sent) return StepStatus::Blocked;
+        world.forgeFxPending=false;
+    }
     for(const auto &[monsterId,m]:ports_.monsters.read().actors) {
         (void)monsterId;
         if(m.alive() || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
@@ -144,17 +266,22 @@ StepStatus System::actFourStep(TickContext tick) {
                 cleared=cleared && killed;
             }
             if(cleared && !world.diabloAt) {
-                world.sanctumCleared=true;
-                // ACT4Q2_KillAllMonstersInCS: remaining original hostiles die
-                // before Diablo's spawn. Keep normal death/event ownership.
-                bool retired=true;
-                for(const auto &[monsterId,m]:ports_.monsters.read().actors)
-                    if(m.area==p.area && m.alive() && !m.owner && m.identity.monster!="diablo" && m.identity.origin!=SpawnOrigin::Debug && m.identity.origin!=SpawnOrigin::Summoned)
-                        if(!ports_.monsters.damage(monsterId,p.actor,m.life,tick.tick)) retired=false;
-                if(retired) world.diabloAt=tick.tick+10;else blocked=true;
-            }
-            if(world.diabloAt && tick.tick>=world.diabloAt && !world.diabloSpawned) {
-                if(spawnQuestGroup(actor,"diablo")) world.diabloSpawned=true;else blocked=true;
+                if(!world.sanctumCleared) {
+                    QuestCompletion completion;
+                    for(const auto &[id,player]:ports_.players.all()) if(player.entered)
+                        completion.recipients.emplace(id,player.actor);
+                    world.sanctumCompletion=std::move(completion);world.sanctumCleared=true;
+                    ActFourState::SanctumSweep sweep;
+                    for(const auto &[region,index]:ports_.areas.loadedRoomOrder()) if(int(region)==108) {
+                        const auto &area=ports_.areas.at(region);const auto &bounds=area.definition.activation.rooms().at(index);
+                        sweep.rooms.push_back({region,(int(area.definition.origin.x)+bounds.x)/5,(int(area.definition.origin.y)+bounds.y)/5});
+                    }
+                    world.sanctumSweep=std::move(sweep);
+                    // ACT4Q2_KillAllMonstersInCS publishes FX12 before the
+                    // monster walk. Retrying it cannot re-broadcast the prefix.
+                    if(!sanctumEffect()) return StepStatus::Blocked;
+                }
+                if(!sanctumSweep()) return StepStatus::Blocked;
             }
         }
         if(int(p.area)==105 && world.izualSlain && !world.ghostSpawned) {

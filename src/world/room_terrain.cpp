@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <tuple>
 #include <variant>
+#include <set>
+#include <sstream>
 
 namespace d2x {
 namespace {
@@ -64,12 +66,25 @@ class NativeRoomTerrainSession final : public RoomTerrainSession {
         for(const auto &input:source->inputs) if(const auto found=identitiesByRoom_.find(input->link.id);found!=identitiesByRoom_.end()) {
             const auto &old=found->second;
             const auto descriptor=[](const RetailRoom &room) {
+                // D2MOO sub_6FD77BB0 adds POPULATION_ZERO after finding a
+                // town neighbour. A depth-limited preparation can see the same
+                // room before or after that step; preparedLinks reapplies it.
                 return std::tuple{room.x,room.y,room.width,room.height,room.preset,room.file,room.mapX,room.mapY,
-                    room.flags,room.outdoorFlags,room.auxiliary,room.dt1Mask,room.themeMask,room.seed.initial};
+                    room.flags&~0x00800000u,room.outdoorFlags,room.auxiliary,room.dt1Mask,room.themeMask,room.seed.initial};
             };
             if(descriptor(old.room)!=descriptor(input->room) ||
-               old.warpSlots!=input->warpSlots || (!old.link.near.empty() && !input->link.near.empty() && old.link.near!=input->link.near))
-                throw std::runtime_error("Prepared room identity changed within a game");
+               old.warpSlots!=input->warpSlots || (!old.link.near.empty() && !input->link.near.empty() && old.link.near!=input->link.near)) {
+                const auto describe=[&](const RetailRoom &room) {
+                    std::ostringstream text;
+                    std::apply([&](const auto &...value){((text<<value<<' '),...);},descriptor(room));
+                    return text.str();
+                };
+                throw std::runtime_error("Prepared room identity changed within a game: level="+std::to_string(input->link.id.level)+
+                    " room="+std::to_string(input->link.id.x)+","+std::to_string(input->link.id.y)+
+                    " old=["+describe(old.room)+"] new=["+describe(input->room)+"] warp="+
+                    std::to_string(old.warpSlots!=input->warpSlots)+" near="+
+                    std::to_string(!old.link.near.empty() && !input->link.near.empty() && old.link.near!=input->link.near));
+            }
         }
         visible_.insert(source->visible.begin(),source->visible.end());
         for (const auto &input : source->inputs) {
@@ -156,6 +171,19 @@ class NativeRoomTerrainSession final : public RoomTerrainSession {
     void releaseLevel(int level) override {
         tiles_.forgetLevel(level);
         for(auto &[key,input]:inputs_) if(key.level==level) input.reset();
+    }
+    RoomTerrainResources resources(int level) const override {
+        RoomTerrainResources result;
+        std::set<uintptr_t> ds1,dt1,selectors;
+        const auto source=[&](const auto &value) {if(value) ds1.insert(reinterpret_cast<uintptr_t>(value.get()));};
+        for(const auto &[key,input]:inputs_) if(key.level==level && input) {
+            ++result.roomInputs;source(input->unitSource);
+            for(const auto &[path,value]:input->patterns) {(void)path;source(value);}
+            if(input->libraries && selectors.insert(reinterpret_cast<uintptr_t>(input->libraries.get())).second)
+                for(const auto &library:input->libraries->libraries()) if(library) dt1.insert(reinterpret_cast<uintptr_t>(library.get()));
+        }
+        result.selectors=selectors.size();result.ds1.assign(ds1.begin(),ds1.end());result.dt1.assign(dt1.begin(),dt1.end());
+        return result;
     }
     std::optional<RoomTerrainSample> sample(RoomTerrainId key, bool details,
         std::span<const std::pair<int,int>> openedTombTiles) const override {

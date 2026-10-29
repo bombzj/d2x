@@ -294,7 +294,7 @@ Desecrate83／Do161为RVA `0x3AFB10`，选池`0x36BE50／0x36BEF0／0x36BFF0`，
 
 死态怪物创建包装器`0x39F0A0`经表`0x4A710C`解析到D2Game `0x47CF0`，以DD创建、记录主人并修正计数，无经验和掉落。位置为圆心、+2/+2、-2/+2，后续每轴累加`rand%2-2`。碰撞失败保留已生成尸体，全部5具成功才发8条毒云217并支付法力；不能把部分失败当事务回滚。400帧后仍可选的尸体加state104 corpse_nodraw并取消选择，不删除实体。D2X更新实体revision后再准备发布，防止新尸体内部存在而客户端遗漏。
 
-召唤定义、光环和诅咒分别在`src/content/pd2/{summon_data,aura_data,curse_data}.cpp`准备。PetType身份使用原生idx，不能跨Expansion分隔行直接拿TXT行号／Id。fenris的TXT／BIN差异及实体身份规则见[怪物基线](MONSTERS.md#编译字段宽度与monprop)。骷髅MonProp溅射由单位接触事件执行，发布不覆盖当前攻击动作。
+召唤定义、光环和诅咒分别在`src/content/pd2/{summon_data,aura_data,curse_data}.cpp`准备。PetType身份使用原生idx，不能跨Expansion分隔行直接拿TXT行号／Id。公共佣兵使用原PETTYPE_HIREABLE=7注册，复活消费者同时读取当前PetType.warp／range：warp活宠归主人同格，range仅在距离平方超过1600时退役，无两种标志则退役；这沿原PlayerPets同行分支，不推导CN附加规则。新消费者已通过Release构建，PD2状态／装备组合尚未运行验收。fenris的TXT／BIN差异及实体身份规则见[怪物基线](MONSTERS.md#编译字段宽度与monprop)。骷髅MonProp溅射由单位接触事件执行，发布不覆盖当前攻击动作。
 
 Dark Pact按原列表顺序保留最旧的有限时诅咒，移除其余；按移除前数量结算魔法伤害，无诅咒不伤害。Curse Mastery影响可用槽数，不应靠同一状态ID的简单覆盖代替多槽顺序；对应`src/gameplay/effects/pd2/curse_slots.cpp`及`src/server/systems/effects/pd2/{curses,dark_pact}.cpp`。Iron Golem材料／恢复、复活完整动作、伙伴跨区、全部友军治疗及复杂装备组合仍待覆盖。
 

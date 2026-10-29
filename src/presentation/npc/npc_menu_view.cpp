@@ -30,6 +30,8 @@ void SceneView::openNpcMenu(EntityId object, std::string speaker, bool firstIntr
     view_.shopOpen = false;
     view_.npcMenu = true;
     view_.npcTopics = false;
+    if(npcView_.returnGreetingClass && assets_.sceneAudio.npcReturnGreeting(*npcView_.returnGreetingClass))
+        npcClient_.submit(AcknowledgeNpcGreeting{object});
     view_.inventory.open = false;
     auto turn = view_.npcGossipTurns.try_emplace(view_.dialogueSpeaker, 0u);
     view_.dialogueGossipTurn = turn.first->second;

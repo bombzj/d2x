@@ -11,6 +11,8 @@
 #include <optional>
 #include <span>
 #include <vector>
+#include <map>
+#include <functional>
 
 namespace d2x::server {
 struct DeathFact { uint64_t occurrence{}; EntityId victim, killer; RegionId area; uint32_t goldLost{}; };
@@ -19,10 +21,13 @@ struct AttackFact { EntityId actor, target; uint8_t actorType{}, targetType{}; R
 // carries the lightning-enchanted emission flag, independently of rank.
 struct HitFact { EntityId target; uint8_t type{}; RegionId area; uint8_t life{}; bool killed{}; Vec position; uint8_t hitClass{}, monsterMode{}; std::optional<Vec> knockback{}; bool lightningReady{}; uint8_t playerMode{}; std::optional<MotionTarget> actionTarget{}; };
 struct SoundFact { EntityId actor; uint8_t type{}; RegionId area; uint16_t sound{}; bool directSound{}; };
+struct UnitRefreshFact { EntityId actor; uint8_t type{}; RegionId area; Vec position; };
+struct QuestClueFact { uint16_t quest{}; std::array<uint16_t,6> payload{}; };
 struct OverlayFact { EntityId actor; uint8_t type{}; RegionId area; int overlay{}; };
 struct QuestStatusFact {QuestId quest;uint8_t status{};uint16_t counter{};};
 struct QuestEffectFact {uint8_t effect{};};
 struct MonsterClassHintFact {EntityId actor;RegionId area;uint16_t nativeClass{};};
+struct QuestAlertFact {EntityId actor;RegionId area;uint8_t type{1};};
 struct Pd2MapAttributesFact {EntityId portal;RegionId area;uint32_t itemIndex{};uint8_t quality{};std::vector<StatValue> attributes;};
 struct LifeFact { EntityId actor; Fixed8 life; };
 struct ManaFact { EntityId actor; Fixed8 mana; };
@@ -46,7 +51,7 @@ struct InventoryFact {
     // Original values for removal receipts; these are not live inventory items.
     std::vector<ItemInstance> removedItems{};
 };
-struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; std::optional<uint16_t> tombOffset{}; std::optional<bool> eclipse{}; std::optional<uint8_t> staffStatus{}; std::optional<uint8_t> khalimStatus{}; unsigned rescued{}; std::array<uint16_t,48> gameFlags{}; std::array<bool,size_t(QuestId::Count)> unavailable{}, credited{}, entitled{}; bool fullStatus{}; std::optional<uint16_t> zooMonster{}; bool zooOnly{}; };
+struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; std::optional<uint16_t> tombOffset{}; std::optional<bool> eclipse{}; std::optional<uint8_t> staffStatus{}; std::optional<uint8_t> khalimStatus{}; unsigned rescued{}; std::array<uint16_t,48> gameFlags{}; std::array<bool,size_t(QuestId::Count)> unavailable{}, credited{}, entitled{}; bool fullStatus{}; std::optional<uint16_t> zooMonster{}; bool zooOnly{}; bool denEffect{}; };
 struct AttributeFact { EntityId unit; uint64_t revision{}; };
 struct EnvironmentFact {int act{},cycle{},ticks{};bool eclipse{};};
 struct CharacterFact {
@@ -88,7 +93,7 @@ struct InventoryResetFact { PersistentCharacter projection; };
 struct PlayerMessageFact { uint8_t type{}; std::string name; std::string other{}; uint32_t value{}; uint8_t parameter{}; std::string characterClass{}; };
 struct ChatRelationFact { EntityId from,to; uint16_t flags{}, reverse{}, fromLevel{}, toLevel{}; };
 struct PartyNoticeFact {PlayerId recipient;EntityId player;uint8_t action{};};
-using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact, ItemTargetingFact, GroundDropFact, NpcServiceFact, GroundRemoveFact, ItemSkillFact, GroundRestoredFact, HirelingListFact, TradeFact, TradeItemsFact, PlayerMessageFact, ChatRelationFact, PartyNoticeFact, EnvironmentFact, ResourcesFact, SkillEndFact, QuestStatusFact, QuestEffectFact, MonsterClassHintFact, Pd2MapAttributesFact, InventoryResetFact>;
+using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact, ItemTargetingFact, GroundDropFact, NpcServiceFact, GroundRemoveFact, ItemSkillFact, GroundRestoredFact, HirelingListFact, TradeFact, TradeItemsFact, PlayerMessageFact, ChatRelationFact, PartyNoticeFact, EnvironmentFact, ResourcesFact, SkillEndFact, QuestStatusFact, QuestEffectFact, MonsterClassHintFact, Pd2MapAttributesFact, InventoryResetFact, QuestAlertFact, UnitRefreshFact, QuestClueFact>;
 // Compact bounded observation, independent of reliable delivery and acknowledgement.
 struct DiagnosticEvent {
     uint64_t sequence{}, batch{}, tick{}, transaction{};
@@ -117,18 +122,28 @@ struct EventBatch {
 // Reliable authority-to-host output. Queries do not consume it. Acknowledgement
 // follows successful native encoding/delivery preparation, not merely a read.
 class EventOutbox {
+    struct UnitSound {EventBatch batch;uint64_t order{};};
+    std::map<EntityId,UnitSound> unitSounds_;
+    uint64_t nextSoundOrder_{1};
     std::deque<EventBatch> batches_;
     size_t facts_{};
     uint64_t next_ = 1, acknowledged_{};
     std::array<DiagnosticEvent, 1024> history_{};
     uint64_t historyNext_ = 1;
     void observe(const EventBatch &) noexcept;
+    DomainResult<uint64_t> publishReadyGroup(std::vector<EventBatch>);
   public:
     bool hasCapacity(size_t count, size_t batches = 1) const;
+    // Attached sounds share the native per-unit update slot. Sequence zero
+    // means its state was accepted; flushUnitSounds publishes the final wire fact.
     DomainResult<uint64_t> publish(EventBatch);
     DomainResult<uint64_t> publishGroup(std::vector<EventBatch>);
+    DomainResult<uint64_t> flushUnitSounds(uint64_t tick,const std::function<std::optional<RegionId>(const SoundFact &)> &);
+    bool hasStagedSounds() const {return !unitSounds_.empty();}
+    void discardUnitSound(EntityId actor) noexcept {unitSounds_.erase(actor);}
     const std::deque<EventBatch> &pending() const { return batches_; }
     bool acknowledge(uint64_t sequence);
+    bool hasPendingSound(EntityId) const;
     uint64_t historyFirst() const { return historyNext_ > history_.size() ? historyNext_ - history_.size() : 1; }
     uint64_t historyLast() const { return historyNext_ - 1; }
     std::vector<DiagnosticEvent> history(uint64_t since, size_t limit) const;

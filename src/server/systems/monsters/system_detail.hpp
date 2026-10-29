@@ -21,7 +21,9 @@ inline std::optional<std::pair<Vec,int>> nativePathTarget(const PlayerStore &pla
     }
     const auto *unit=monsters.find(id);
     if(unit && unit->area==area) return std::pair{unit->position,unit->rule.size};
-    return {};
+    // Object targets (Fn131's Cain portal) have a static path and retain
+    // their type-2 identity independently of combat/life eligibility.
+    return monsters.nativeTargetPosition(id,area);
 }
 inline int recoveryTicks(const Actor &actor,const effects::System &effects,uint64_t tick,bool block) {
     const auto &clock=block?actor.rule.blockAnimation:actor.rule.hitRecoveryAnimation;

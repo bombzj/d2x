@@ -65,6 +65,7 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
+    const InactiveRooms &inactiveRooms() const {return inactive_;}
     void prepareGroundOrder(State &,std::span<const DomainFact>) const;
     DomainResult<RoomCompression> prepareRoomCompression(RegionId,size_t,uint64_t tick,EntityId only={});
     const std::string &inactiveFailure() const {return inactiveFailure_;}
@@ -118,8 +119,10 @@ class System {
     }
     DomainResult<State> prepare(PreparedBatch, GroundLocation);
     DomainResult<> install(PreparedBatch, GroundLocation);
-    DomainResult<> installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &,uint64_t tick,std::span<const EntityId> identities={},std::shared_ptr<EntityIds::Publication> allocation={});
+    DomainResult<> installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &,uint64_t tick,std::span<const EntityId> identities={},std::shared_ptr<EntityIds::Publication> allocation={},bool flip=true,std::optional<PlayerId> goldOwner={});
     DomainResult<PreparedBatch> prepareNativeGold(unsigned level,uint64_t &random,bool inStore) const;
+    struct PlayerGoldSelection {std::string code;unsigned level{};};
+    DomainResult<PlayerGoldSelection> selectPlayerGold(RegionId,Vec);
     // Raw CreateItemEx spawn type 3: placement has already been resolved by
     // the caller. Uses the unit seed for quantity, the item seed for quality.
     DomainResult<EntityId> createNativeGold(GroundLocation,unsigned level,uint64_t tick);

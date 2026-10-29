@@ -150,6 +150,7 @@ class SceneView {
     SceneAssets assets_;
     int itemGroundPalette_ = -1;
     std::unique_ptr<LightingView> lighting_;
+    std::optional<uint64_t> questAudioGameGeneration_;
     std::unique_ptr<PaletteBlendView> paletteBlend_;
     std::array<std::unique_ptr<PaletteBlendView>, 5> actPaletteBlends_;
     Shader highlightShader_{};
@@ -292,6 +293,12 @@ class SceneView {
     void updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events) {
         assets_.sceneAudio.update(clock,actors,events);
     }
+    void questMusic(std::string_view music,int endFrames,int resumeBlock) {
+        assets_.streams.questCue(music,0,endFrames,{},0,resumeBlock);
+    }
+    void beginWorldGame(uint64_t generation) {
+        if(questAudioGameGeneration_!=generation) {questAudioGameGeneration_=generation;assets_.streams.resetQuestCue();}
+    }
     const auto &soundLimitations() const { return assets_.sceneAudio.limitations(); }
     void drawUi(Vec mouse) const;
     void updateChat(const OnlineSocialView &social,const OnlineSocialView &account) { chat_.update(social,account); }
@@ -320,12 +327,16 @@ class SceneView {
                              EntityId owner = {}, bool hostile = false, int pierce = 0,
                                ClientMissileSource source = ClientMissileSource::Program,int slowPercent = 0,EntityId guidedTarget = {},int velocityBonus = 0,
                                ClientMissileInitialization initialization = {});
-    void advanceClientMissiles(float dt, const Map &, Vec origin, std::span<const ClientMissileTarget>);
+    void advanceClientMissiles(float dt, const Map &, Vec origin, std::span<const ClientMissileTarget>,
+                              std::span<const ClientMissileAnchor> = {});
     void clearClientMissiles() {
         clientMissiles_.clear();
         assets_.sceneAudio.reset();
     }
     const auto &clientMissiles() const { return clientMissiles_; }
+    void retireClientMissileRoom(const std::array<int,3> &room) {
+        std::erase_if(clientMissiles_,[&](const auto &value){return value.roomAttachment && *value.roomAttachment==room;});
+    }
     std::optional<int> weaponMissile(std::string_view code) const {
         const auto found = assets_.weaponMissiles.find(code);
         return found == assets_.weaponMissiles.end() ? std::nullopt : std::optional{found->second};
@@ -387,6 +398,7 @@ class SceneView {
     void drawInteractionLabel(const std::string &, Vec, int offset = 70) const;
     void drawInteractionDetails(const std::vector<std::string> &,Vec) const;
     void drawPlayerLabel(const std::string &, Vec, bool hostile) const;
+    void drawOverheadText(const std::string &,Vec);
     bool leftSkillAllowed(int skill) const;
     struct SkillPickerSlot { std::optional<int> skill; Rectangle bounds; uint32_t owner=UINT32_MAX; };
     std::vector<SkillPickerSlot> skillPickerSlots(bool right) const;

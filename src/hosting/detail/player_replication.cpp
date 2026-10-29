@@ -187,7 +187,7 @@ void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const 
         if(view->hover && view->hover->recipients.contains(binding->player)) {
             if(hover==peer.hover.end() || hover->second!=view->hover->revision) {
                 packets.push_back(encodeServerPacket(ServerMessage::Chat,[&](auto &out){
-                    out.u8(5);out.u8(0);out.u8(0);out.u32(wireId(actor));out.u8(0);out.u8(0);out.string({});out.string(view->hover->text);
+                    out.u8(5);out.u8(view->hover->language);out.u8(0);out.u32(wireId(actor));out.u8(0);out.u8(0);out.string({});out.string(view->hover->text);
                 }));
                 peer.hover[actor]=view->hover->revision;
             }

@@ -8,6 +8,7 @@
 #include "server/systems/loot/system.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/systems/objects/system.hpp"
+#include "server/systems/social/system.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
@@ -66,7 +67,8 @@ DomainResult<> System::prepareReward(const ActorContext &actor,EntityId source,R
         if(!hireling) return {DomainStatus::Unavailable,{}};
     }
     auto random=ports_.random;
-    const auto seed=kind==RewardKind::Rogue || kind==RewardKind::IronWolf?uint64_t{}:childRandom(random);
+    const auto seed=kind==RewardKind::Rogue || kind==RewardKind::IronWolf || kind==RewardKind::PlaceSoulstone ||
+        kind==RewardKind::SmashSoulstone || kind==RewardKind::SmashOrb?uint64_t{}:childRandom(random);
     Preparation request{actor,state_.next,seed,p->inventoryRevision,p->characterRevision,conversation?lease->revision:0,source,kind,p->persistent,p->definition.code,ports_.settings.difficulty};
     request.hireling=hireling;
     request.dropPosition=dropPosition;
@@ -107,6 +109,14 @@ DomainResult<> System::install(Prepared prepared) {
     const auto *p=ports_.players.find(s.actor.player);const auto *area=ports_.areas.find(s.actor.area);
     if(!p || !p->entered || p->actor!=s.actor.actor || p->area!=s.actor.area || p->persistent.player.hp<=0 || !area || area->generation!=s.actor.areaGeneration ||
         p->inventoryRevision!=s.inventoryRevision || p->persistent.player.level!=s.character.player.level) return fail(DomainStatus::Stale);
+    uint64_t forgeAnimation{};
+    if(s.kind==RewardKind::PlaceSoulstone || s.kind==RewardKind::SmashSoulstone) {
+        const auto object=ports_.objects.read().objects.find(s.source);
+        if(object==ports_.objects.read().objects.end() || object->second.area!=s.actor.area) return fail(DomainStatus::Stale);
+        forgeAnimation=object->second.rule.frameTicks[s.kind==RewardKind::PlaceSoulstone?1:3];
+        if(forgeAnimation>UINT64_MAX-s.actor.tick || (s.kind==RewardKind::SmashSoulstone && !p->rules.character->laterQuests.forge))
+            return fail(DomainStatus::NotImplemented);
+    }
     const auto *lease=ports_.npc.conversation(s.actor.player);
     if(s.conversation && (!lease || lease->revision!=s.conversation || lease->npc!=s.source)) return fail(DomainStatus::Stale);
     if(!prepared.deferred.empty() || !prepared.items.equipment) return fail(DomainStatus::Unavailable);
@@ -154,10 +164,15 @@ DomainResult<> System::install(Prepared prepared) {
     if(s.kind==RewardKind::SmashSoulstone) consume=p->rules.character->laterQuests.hammer;
     if(s.kind==RewardKind::ThawAnya) consume=p->rules.character->laterQuests.defrostPotion;
     if(!consume.empty()) {
-        const auto *item=s.kind==RewardKind::SmashOrb || s.kind==RewardKind::SmashSoulstone?detail::equippedQuestWeapon(*p,consume,s.difficulty):s.kind==RewardKind::TranslateScroll?detail::carried(*p,consume,s.difficulty):detail::actTwoCarried(*p,consume,s.difficulty);
-        if(!item || item->revision==UINT64_MAX) return fail(DomainStatus::Stale);
-        draft.edit.changes.push_back({item->id,item->revision+1,ItemChangeKind::Removed,item->location,{},0});
-        draft.edit.inventory.items.erase(item->id);rules->items.erase(item->id);
+        const auto *item=s.kind==RewardKind::TranslateScroll?detail::carried(*p,consume,s.difficulty):detail::actTwoCarried(*p,consume,s.difficulty);
+        // Operate53 checks the registered weapon's code only. DeleteItem
+        // can find no difficulty-qualified copy; that does not undo the orb.
+        if(!item && s.kind!=RewardKind::SmashOrb) return fail(DomainStatus::Stale);
+        if(item) {
+            if(item->revision==UINT64_MAX) return fail(DomainStatus::Stale);
+            draft.edit.changes.push_back({item->id,item->revision+1,ItemChangeKind::Removed,item->location,{},0});
+            draft.edit.inventory.items.erase(item->id);rules->items.erase(item->id);
+        }
     }
     switch(s.kind) {
     case RewardKind::RescueRunes: {
@@ -329,6 +344,9 @@ DomainResult<> System::install(Prepared prepared) {
         if(s.kind==RewardKind::SmashSoulstone) captureGoal(QuestId::HellsForge,4,std::move(delivery),false,true);
         if(s.kind==RewardKind::ThawAnya) {
             state_.actFive.anyaThawed=true;
+            QuestCompletion completion;
+            for(const auto &[id,player]:ports_.players.all()) if(player.entered) completion.recipients.emplace(id,player.actor);
+            state_.actFive.anyaCompletion=std::move(completion);
             state_.npcStory.anyaFrozenObject=s.source;
             state_.npcStory.anyaThawAt=(s.actor.tick/20+2)*20;
             if(const auto object=ports_.objects.read().objects.find(s.source);object!=ports_.objects.read().objects.end())
@@ -338,14 +356,35 @@ DomainResult<> System::install(Prepared prepared) {
         if(s.kind==RewardKind::ResistanceScroll && state_.actFive.anyaThawed && !state_.npcStory.anyaDeparted)
             state_.npcStory.anyaReturnRequested=true;
         if(s.kind==RewardKind::ForgeHammer) state_.actFour.hammerDropped=true;
-        if(s.kind==RewardKind::PlaceSoulstone) {state_.actFour.forgePlaced=true;state_.objectModes[s.source]=2;}
-        if(s.kind==RewardKind::SmashSoulstone) {state_.actFour.forgeSmashed=true;state_.objectModes[s.source]=4;}
+        if(s.kind==RewardKind::PlaceSoulstone) {
+            auto &forge=state_.actFour;forge.forgePlaced=true;forge.forgeObject=s.source;
+            forge.forgeOpenAt=s.actor.tick+forgeAnimation;
+            state_.objectModes[s.source]=2;
+        }
+        if(s.kind==RewardKind::SmashSoulstone) {
+            auto &forge=state_.actFour;forge.forgeSmashed=true;forge.forgeObject=s.source;
+            forge.forgeRewards=p->rules.character->laterQuests.forge;
+            forge.forgeTier=4;forge.forgePlayers=s.quantity;
+            forge.forgeDue=s.actor.tick+forgeAnimation;
+            forge.forgeFxPending=true;state_.objectModes[s.source]=3;
+        }
         if(s.kind==RewardKind::KhalimFlail) state_.actThree.flailDropped=true;
         if(s.kind==RewardKind::CouncilCube) state_.actThree.cubeDropped=true;
         if(s.kind==RewardKind::SmashOrb) {
             state_.actThree.orbSmashed=true;state_.objectModes[s.source]=2;
             state_.actThree.orbSequenceStarted=true;state_.actThree.orbFxPending=true;
-            Goal goal;goal.stage=4;goal.eligible=std::move(delivery);goal.consumeKhalimItems=true;
+            // A3Q5_DeleteKhalimItems iterates the courier's actual party.
+            // Completed members are included across acts; fresh completion
+            // still requires Act III. A solo courier only loses the used Will.
+            const bool party=ports_.social.partyId(s.actor.player)!=UINT16_MAX;
+            Goal cleanup;cleanup.stage=4;cleanup.primaryGoal=false;cleanup.notifyQuest=false;cleanup.consumeKhalimItems=true;
+            if(party) for(const auto &[id,member]:ports_.players.all()) {
+                if(!member.entered || delivery.contains(id) || !ports_.social.sameParty(id,s.actor.player)) continue;
+                if(member.persistent.player.quests.at(size_t(s.difficulty))[questIndex(QuestId::KhalimsWill)].stage>=4)
+                    cleanup.eligible.insert(id);
+            }
+            if(!cleanup.eligible.empty()) queueGoal(QuestId::KhalimsWill,std::move(cleanup));
+            Goal goal;goal.stage=4;goal.eligible=std::move(delivery);goal.consumeKhalimItems=party;
             queueGoal(QuestId::KhalimsWill,std::move(goal));state_.objectives[questIndex(QuestId::KhalimsWill)]=true;
         }
         if(s.kind==RewardKind::LamTome || s.kind==RewardKind::KhalimEye || s.kind==RewardKind::KhalimBrain || s.kind==RewardKind::KhalimHeart) state_.objectModes[s.source]=2;

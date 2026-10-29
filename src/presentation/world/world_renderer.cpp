@@ -65,10 +65,12 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     if (newGame || worldAreaGeneration_ != scene.areaGeneration) {
         worldGameGeneration_ = scene.gameGeneration; worldAreaGeneration_ = scene.areaGeneration;
         assets_.resetWorldTiles(); worldVisibility_.clear(); lighting_->resetSources();
-        if (newGame) lighting_->resetEnvironment();
+        if (newGame) {lighting_->resetEnvironment();beginWorldGame(scene.gameGeneration);}
     }
     view_.camera = project(scene.observer);
     if(scene.eclipse) lighting_->setEclipse(*scene.eclipse);
+    lighting_->setDenIntensity(scene.denIntensity);
+    lighting_->setSanctumIntensity(scene.sanctumIntensity);
     if(scene.cloakDuration) lighting_->beginCloak(*scene.cloakDuration,level.id);
     lighting_->advance(scene.elapsed, level);
     assets_.prepareWorldTiles(map, scene.palette);

@@ -1,5 +1,7 @@
 #include "gameplay_dispatch.hpp"
 namespace d2x::hosting::handlers {
+RequestResult LegacySkillEnd(GameplayContext &, net::protocol::Reader &) { return {RequestStatus::Completed}; }
+RequestResult LegacySkill52(GameplayContext &, net::protocol::Reader &in) { in.u32(); return {RequestStatus::Rejected}; }
 namespace {
 RequestResult cast(GameplayContext &context, net::protocol::Reader &in, bool right, bool unit, bool repeat, bool stationary) {
     server::skills::Request request{server::skills::Action::Cast, 0, false, false, false, {}, {}};

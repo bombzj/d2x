@@ -147,6 +147,10 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             item.targetCursor = number("spellicon").value_or(-1);
             item.opensCube = family == ItemFamily::Misc &&
                              (originalRules ? value("type") == "ques" : item.usable) && number("pSpell") == 7;
+            item.transmogrify = number("Transmogrify").value_or(0)!=0;
+            item.transmogrifyType=std::string(value("TMogType"));
+            item.transmogrifyMin=unsigned(std::max(0,number("TMogMin").value_or(0)));
+            item.transmogrifyMax=unsigned(std::max(0,number("TMogMax").value_or(0)));
             item.autoBelt = number("autobelt").value_or(0) != 0;
             item.ironGolemMaterial = (number("bitfield1").value_or(0)&2)!=0;
             item.imbueable = (number("bitfield1").value_or(0) & 1) != 0 &&

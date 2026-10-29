@@ -224,6 +224,9 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
     // its constituent COFs (maggot down can contain a one-frame NU pose).
     baseRequest.sequenceStart = 0; baseRequest.sequenceEnd = -1;
     baseRequest.persistentCycle = false;
+    // MonSeq indexes the full source COF even when the assembled sequence
+    // is held at its final sample (MagottDown ends at S1 frame 0).
+    baseRequest.finalFrame = false;
     if(request.category=="chars" && (request.playerSequence==16 || request.playerSequence==21 || request.playerSequence==23)) {
         const auto sequence=assassinSequence(request.playerSequence,request.appearance.weapon);if(sequence.empty()) return {};
         std::map<std::string_view,const ActorAnimation *> modes;

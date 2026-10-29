@@ -113,6 +113,11 @@ class RealmSession {
     // Application validates MonStats.interact and native approach range first.
     bool interact_npc(uint32_t serverUnitId, std::optional<OnlineIntentContext> context = {});
     bool close_npc(std::optional<OnlineIntentContext> context = {});
+    bool cancel_item_targeting(std::optional<OnlineIntentContext> context = {});
+    bool play_voice(uint16_t sound, std::optional<OnlineIntentContext> context = {});
+    bool highlight_door(uint32_t object, std::optional<OnlineIntentContext> context = {});
+    bool set_running_animation(bool run, std::optional<OnlineIntentContext> context = {});
+    bool confirm_npc_voice(uint16_t nativeClass, std::optional<OnlineIntentContext> context = {});
     bool acknowledge_npc_message(uint16_t stringId, std::optional<OnlineIntentContext> context = {});
     bool acknowledge_quest_log(uint16_t nativeSlot, uint64_t gameGeneration);
     bool npc_travel(uint32_t parameter, std::optional<OnlineIntentContext> context = {}); // Original action 0, NPC-dependent parameter.

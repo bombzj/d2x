@@ -35,6 +35,7 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
         if(steps_[size_t(SystemId::Spatial)]==StepStatus::Blocked) return false;
         if(!systems.frameEvents.advance(tick.tick,[&](const FrameEvent &event) {
             const auto owner=event.owner.type==FrameEventUnit::Missile?SystemId::Missiles:
+                event.owner.type==FrameEventUnit::Player && event.type==FrameEventType::DelayedPortal?SystemId::Companions:
                 event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::AiThink?SystemId::Ai:
                 event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::ModeChange && !event.payload?SystemId::Monsters:
                 (event.owner.type==FrameEventUnit::Player || event.owner.type==FrameEventUnit::Monster) && (event.type==FrameEventType::ModeChange || event.type==FrameEventType::EndAnimation)?SystemId::Skills:
@@ -120,7 +121,14 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     }
     if(phase_==Phase::Tail) {
     run(SystemId::Maps,[&]{return systems.maps.step(tick,facts_);});
+    phase_=Phase::Death;
+    }
+    if(phase_==Phase::Death) {
     run(SystemId::Death,[&]{return systems.death.step(tick,facts_);});
+    if(steps_[size_t(SystemId::Death)]==StepStatus::Blocked) return false;
+    phase_=Phase::Services;
+    }
+    if(phase_==Phase::Services) {
     run(SystemId::Npc,[&]{return systems.npc.step(tick,facts_);});
     run(SystemId::Merchant,[&]{return systems.merchant.step(tick,facts_);});
     run(SystemId::Crafting,[&]{return systems.crafting.step(tick,facts_);});
@@ -142,6 +150,7 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     }
     if(phase_==Phase::Quests) {
     run(SystemId::Quests,[&]{return systems.quests.step(tick,facts_);});
+    if(systems.quests.nativeCallbackPending()) return false;
     phase_=Phase::Tower;
     }
     if(phase_==Phase::Tower) {
@@ -156,8 +165,15 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     run(SystemId::Replication,[&]{return systems.replication.step(tick,facts_);});
     phase_=Phase::ObjectPublication;
     }
-    run(SystemId::Objects,[&]{return systems.objects.publishChanges(tick);});
-    if(steps_[size_t(SystemId::Objects)]!=StepStatus::Complete) return false;
+    if(phase_==Phase::ObjectPublication) {
+        run(SystemId::Objects,[&]{return systems.objects.publishChanges(tick);});
+        if(steps_[size_t(SystemId::Objects)]!=StepStatus::Complete) return false;
+        phase_=Phase::UnitSounds;
+    }
+    if(phase_==Phase::UnitSounds) {
+        run(SystemId::Replication,[&]{return systems.replication.flushUnitSounds(tick);});
+        if(steps_[size_t(SystemId::Replication)]!=StepStatus::Complete) return false;
+    }
     phase_=Phase::Environment;frame_.reset();return true;
 }
 }

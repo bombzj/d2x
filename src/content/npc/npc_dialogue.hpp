@@ -24,6 +24,7 @@ struct NpcSpeech {
 struct NpcDialogues : std::map<std::string, std::vector<NpcSpeech>, std::less<>> {
     std::map<std::string, std::string, std::less<>> speakers;
     std::map<unsigned, std::string> introductionKeys;
+    std::map<int,unsigned> nativeIntroductionBits;
 };
 NpcDialogues loadNpcDialogues(Archives &archives, const DataTable &monsters, const DataTable &presets,
                              const std::map<std::string, std::string, std::less<>> &strings,

@@ -261,7 +261,7 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
             admission.pd2SceneLifePercent=pd2::outerVoidLifePercent(preset->pd2SceneMarker);
         admission.ignoreSpawnCollision=preset && cursor.phase==DensityRoom::Phase::Leader && preset->ignoreSpawnCollision;
         if(object && object->birthTicks && cursor.phase==DensityRoom::Phase::Leader) admission.birthTicks=object->birthTicks;
-        admission.resurrected=presetIndex.has_value() && cursor.phase==DensityRoom::Phase::Leader;
+        admission.resurrected=(presetIndex.has_value() || (preset && preset->nativeResurrected)) && cursor.phase==DensityRoom::Phase::Leader;
         if(preset && cursor.phase==DensityRoom::Phase::Leader) admission.skillPositions=preset->skillPositions;
         admission.deadMode=preset && preset->dead && cursor.phase==DensityRoom::Phase::Leader;
         if(preset && preset->prisonDoor && cursor.phase==DensityRoom::Phase::Leader &&

@@ -3,6 +3,7 @@
 #include "server/runtime/ports.hpp"
 #include "server/runtime/prepared_rules.hpp"
 #include "server/runtime/events.hpp"
+#include "server/systems/transactions/plan.hpp"
 #include "gameplay/items/intents.hpp"
 #include "gameplay/npc/intents.hpp"
 #include "server/systems/travel/system.hpp"
@@ -14,7 +15,8 @@
 namespace d2x::server::crafting {
 struct RewardItem { EntityId npc; ItemHandle item; };
 struct Pd2SacrificeItem { EntityId altar;ItemHandle input; };
-using Intent = std::variant<TransmuteCube, SocketItem, ImbueItem, SocketQuestItem, PersonalizeQuestItem, RewardItem,Pd2SacrificeItem>;
+struct TransmogrifyItem { std::optional<ItemHandle> source; };
+using Intent = std::variant<TransmuteCube, SocketItem, ImbueItem, SocketQuestItem, PersonalizeQuestItem, RewardItem,Pd2SacrificeItem,TransmogrifyItem>;
 struct Request { Intent intent; };
 struct Pending { ActorContext actor; Request request; uint64_t token{}, seed{}, inventoryRevision{}, characterRevision{}, conversation{}; };
 // Immutable content-worker input. Authority revalidates revisions and access
@@ -26,6 +28,7 @@ struct Preparation {
     uint32_t pd2Random{};
     uint8_t pd2BossDifficulty{};
     bool retained{};
+    uint64_t unitRandom{};
 };
 struct Output { ItemInstance item; std::optional<ItemHandle> replacement; EntityId container; };
 struct Prepared {
@@ -35,6 +38,8 @@ struct Prepared {
     std::optional<travel::SpecialPortalKind> portal;
     std::optional<uint32_t> pd2Random;
     std::optional<uint64_t> nativeGameRandom;
+    std::optional<transactions::UnitRandomEdit> unitRandom;
+    bool retailPortalNoop{};
 };
 struct State { std::map<PlayerId, Pending> pending; uint64_t next = 1; std::string deferred; std::map<PlayerId,Prepared> retained; };
 struct Ports {

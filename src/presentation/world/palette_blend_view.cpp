@@ -192,9 +192,11 @@ void main() {
 constexpr const char *rectangleFragment = R"(
 uniform sampler2D rectangleTable;
 uniform int rectangleColor;
+uniform int rectangleTranspose;
 void main() {
     int backgroundIndex = paletteIndex(texelFetch(destination, ivec2(gl_FragCoord.xy), 0).rgb);
-    finalColor = texelFetch(rectangleTable, ivec2(rectangleColor, backgroundIndex), 0);
+    finalColor = texelFetch(rectangleTable, rectangleTranspose != 0 ?
+        ivec2(backgroundIndex,rectangleColor) : ivec2(rectangleColor, backgroundIndex), 0);
 }
 )";
 Texture2D upload(const Color *pixels, int width, int height) {
@@ -345,7 +347,7 @@ int PaletteBlendView::paletteIndex(Color color) const {
     }
     return index;
 }
-void PaletteBlendView::drawRectangle(Rectangle bounds, Color color) const {
+void PaletteBlendView::drawRectangle(Rectangle bounds, Color color,bool half) const {
     const int left = std::max(0, int(bounds.x)), top = std::max(0, int(bounds.y));
     const int right = std::min(W, int(bounds.x + bounds.width));
     const int bottom = std::min(H, int(bounds.y + bounds.height));
@@ -365,7 +367,9 @@ void PaletteBlendView::drawRectangle(Rectangle bounds, Color color) const {
     texture("destination", destination_.texture);
     texture("palette", palette_);
     texture("paletteIndices", paletteIndices_);
-    texture("rectangleTable", rectangleTable_);
+    texture("rectangleTable", half?halfTable_:rectangleTable_);
+    const int transpose=half?1:0;
+    SetShaderValue(rectangleShader_, GetShaderLocation(rectangleShader_, "rectangleTranspose"), &transpose, SHADER_UNIFORM_INT);
     SetShaderValue(rectangleShader_, GetShaderLocation(rectangleShader_, "rectangleColor"), &index, SHADER_UNIFORM_INT);
     DrawRectangle(left, top, right - left, bottom - top, WHITE);
     EndShaderMode();

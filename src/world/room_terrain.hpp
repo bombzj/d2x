@@ -38,6 +38,10 @@ struct RoomTerrainSample {
     std::vector<RoomTerrainId> activeNear;
 };
 class PreparedRoomTerrain;
+struct RoomTerrainResources {
+    size_t roomInputs{},selectors{};
+    std::vector<uintptr_t> ds1,dt1; // Process-local diagnostic identities; never saved or replicated.
+};
 // Pure generation state over already decoded immutable inputs. No file/MPQ,
 // image, device, actor or transport access is allowed through this interface.
 // The authoritative world owns one session per act and supplies DRLG events.
@@ -53,6 +57,7 @@ class RoomTerrainSession {
     // Includes this level and reciprocal exit rooms in adjacent levels.
     virtual std::vector<RoomTerrainId> releaseDependencies(int level) const = 0;
     virtual void releaseLevel(int level) = 0;
+    virtual RoomTerrainResources resources(int level) const = 0;
     virtual std::optional<RoomTerrainSample> sample(RoomTerrainId, bool tiles = false,
         std::span<const std::pair<int,int>> openedTombTiles = {}) const = 0;
 };

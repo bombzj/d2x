@@ -98,6 +98,8 @@ void SceneView::advanceWorldPresentation(float dt) {
     dt = std::clamp(dt, 0.f, .1f);
     advanceGroundAnimations(dt);
     view_.animationTime += dt;
+    if(const auto voice=assets_.streams.advanceQuestCue(dt,!characterView().dead))
+        assets_.sceneAudio.play(*voice,uint64_t(view_.animationTime*25.f));
     if(screenShake_) {
         const auto &shake=*screenShake_;
         const double now=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();

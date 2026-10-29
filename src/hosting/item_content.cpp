@@ -98,11 +98,15 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
     if (!definition || !drop.quantity || drop.quantity > definition->maxStack || drop.level < 1 ||
         drop.level > (data.pd2Host?131u:127u))
         throw std::runtime_error("Invalid prepared item generation");
-    if (definition->equipment.isType("body"))
+    const auto &generation = drop.generation;
+    if (definition->equipment.isType("body") &&
+        (!generation.ear || !definition->equipment.isType("play")))
         throw std::runtime_error("A body part requires its original player/monster identity; generic generation cannot create one");
+    if(generation.ear && (!definition->equipment.isType("play") || generation.quality!=ItemQuality::Normal ||
+        generation.ear->characterClass>=7 || generation.ear->name.empty() || generation.ear->name.size()>15))
+        throw std::runtime_error("Invalid original player identity for ear generation");
     // Ported from master's InventoryService::createItem. Placement, ownership
     // and entity allocation deliberately remain in the authority.
-    const auto &generation = drop.generation;
     ItemInstance item;
     if(data.pd2Host) item.nativeFormat=104;
     item.definition = drop.code; item.quantity = definition->bookCapacity?1:drop.quantity; item.level = drop.level;
@@ -113,11 +117,16 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
     item.gradeRow = generation.gradeRow; item.rarePrefixRow = generation.rarePrefixRow;
     item.rareSuffixRow = generation.rareSuffixRow; item.propertyRolls = generation.propertyRolls; item.affixes = generation.affixes;
     item.operationRolls=generation.operationRolls;
+    if(generation.ear) {
+        item.ear=generation.ear;item.nativeBodyPart=generation.ear->characterClass;
+        item.nativeFlags|=0x2000u|0x10000u|(generation.namedEar?0x8000u:0);
+    }
     auto identified = item; identified.identified = true;
     const auto stats = resolveItemStats(data, identified, int(item.level));
     const auto property = [&](std::string_view name) { int value = 0; for (const auto &stat : stats) if (stat.name == name) value += int(stat.value); return value; };
     item.durability = itemMaximumDurability(data, identified, stats);
     const auto seeds=generation.seeds?*generation.seeds:ItemSeeds{rollRandom(random),rollRandom(random)};
+    item.nativeUnitSeed=seeds.unit;
     item.nativeSeed = seeds.properties;
     auto local = generation.propertyRandom.value_or(initialRandom(seeds.properties));
     auto unitRandom = generation.unitRandom.value_or(initialRandom(seeds.unit));

@@ -1,4 +1,5 @@
 #include "remote_scene_impl.hpp"
+#include "network/chat_text.hpp"
 
 namespace d2x {
 namespace {
@@ -33,12 +34,14 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     playerId = v.load.playerUnitId;
     worldDifficulty=v.load.difficulty.value_or(0);
     pd2=v.protocolProfile!="lod113c";
+    shared.beginWorldGame(v.gameGeneration);
     uiClients=&clients;
     artPalette = binding.palette.value_or(0);
     if(gameGeneration!=v.gameGeneration) {pd2VisualSeeds.clear();boneWallVisualRandom.clear();}
     if (gameGeneration != v.gameGeneration || areaGeneration != v.world.areaGeneration) {
         gameGeneration = v.gameGeneration;
         areaGeneration = v.world.areaGeneration;
+        denLightRooms.clear();
         motion.clear();
         monsterIdentities.clear();
         monsterTransforms.clear();
@@ -70,7 +73,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         // Clearing motion here would restart them at a stale 68/6D sample
         // every time a boundary room loads. Assignment, removal and native
         // position updates below still own invalidation and reconciliation.
-        for(auto &[key,phase]:motion) {(void)key;phase.pd2PlayerLeap.reset();phase.pd2PlayerCharge.reset();}
+        for(auto &[key,phase]:motion) {(void)key;phase.playerLeap.reset();phase.pd2PlayerCharge.reset();}
         monsterEffects.clear();
         for (const auto &[key, revision] : missileCastRevisions) {
             (void)revision;
@@ -97,6 +100,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         return unit==v.world.units.end() || !onlineMonsterCorpse(unit->second);
     });
     observeEffects(v, shared, combat, binding.town,map.grid,{float(binding.origin->x),float(binding.origin->y)});
+    observeDenLights(v,map,shared,suspended?0.f:elapsed);
+    observeQuestMissileEffects(v,map,shared,suspended?0.f:elapsed);
     intent.input.castInputBusy = localCast && !channelSkill(localCast->command.skill) &&
         (localCast->started < 0 || time < localCast->started + localCast->duration);
     // Decode the real death art when a boss is first visible, before its
@@ -135,6 +140,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             .size=movementRule(unit).size,.hostile=enemy,.target={}});
         missileTargets.back().monster=key.type==1;
         if(unit.destinationUnit) missileTargets.back().target=effectOwner(*unit.destinationUnit);
+        if(const auto point=unit.verifiedDestination?unit.verifiedDestination:unit.destination)
+            missileTargets.back().targetPoint=Vec{float(point->x)+.5f,float(point->y)+.5f};
+        missileTargets.back().direction=unit.direction;
         if(key.type==1 && monsterText->nativeMonsterTypes) if(const auto size=monsterText->nativeMonsterTypes->dimensions.find(unitClass(unit).value_or(UINT16_MAX));size!=monsterText->nativeMonsterTypes->dimensions.end()) missileTargets.back().large=size->second.second;
         if(key.type==1) if(const auto row=monsterRows.find(unitClass(unit).value_or(UINT16_MAX));row!=monsterRows.end())
             missileTargets.back().undead=monstats.number(row->second,"lUndead").value_or(0)!=0 || monstats.number(row->second,"hUndead").value_or(0)!=0;
@@ -153,8 +161,11 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     if(elapsed>0 && !suspended) emitDruidStates(v,shared,combat,binding.town);
     if (elapsed > 0 && !suspended)
         emitWoundBlood(v,shared,combat,map.grid,{float(origin.x),float(origin.y)});
+    std::vector<ClientMissileAnchor> missileAnchors;
+    for(const auto &[key,unit]:v.world.units) if(unit.position && key.type<=2)
+        missileAnchors.push_back({effectOwner(key),{float(unit.position->x)+.5f,float(unit.position->y)+.5f},key.id,key.type});
     shared.advanceClientMissiles(suspended ? 0.f : elapsed, map,
-        {float(origin.x), float(origin.y)}, missileTargets);
+        {float(origin.x), float(origin.y)}, missileTargets,missileAnchors);
     clientMissiles.clear();
     for (const auto &missile : shared.clientMissiles())
         clientMissiles.push_back({missile.missileId, missile.pos, missile.age, missile.duration - missile.age});
@@ -221,6 +232,17 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     worldScene.terrainOrigin = {float(origin.x), float(origin.y)};
     worldScene.time = time; worldScene.elapsed = suspended ? 0.f : elapsed;
     worldScene.eclipse=v.world.eclipse;
+    if(!pd2 && mapDisplay.questEffects.sanctumLight && mapDisplay.questEffects.sanctumEndFrames<0)
+        worldScene.sanctumIntensity=160;
+    // 524D0 reads 5E's initialization-table entry 1, not the private
+    // quest record or 52/5D log status. The game-local FX0 clock owns fading.
+    if(!pd2 && !mapDisplay.questEffects.denComplete && v.world.quests.availability &&
+       (*v.world.quests.availability)[1]) {
+        const auto frames=mapDisplay.questEffects.denFrames;
+        const int angle=frames<0?0:128*std::clamp(int(frames),0,29)/30;
+        const float cosine=float(std::cos(double(angle)*3.14159265358979323846/256.0));
+        worldScene.denIntensity=frames<0?80:int(double(cosine)*80.0);
+    }
     worldScene.selectedExit = selectedExit; worldScene.groundHighlight = groundTarget ? groundTarget->id : EntityId{};
     auto &draw = worldScene.items;
     rendered = unavailable = 0;
@@ -274,6 +296,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if (key.type == 2 && m.assignmentRevision != u.assignmentRevision) {
             m = {}; m.assignmentRevision = u.assignmentRevision;
         }
+        if(!pd2 && mapDisplay.questEffects.hiddenUnits.contains(key)) continue;
         bool frozen=false, hiddenCorpse=false, shatter=false;
         stateColorShifts.erase(key);int colorPriority=0;
         if (key.type<=1) {
@@ -352,7 +375,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 for(const auto &[state,record]:snapshot->second.states) {(void)record;if(const auto row=stateRows.find(state);row!=stateRows.end() && states.value(row->second,"state")=="skill_move") flying=true;}
             }
             if(known && flying) m.leapFlying=true;
-            else if(known && m.leapFlying && m.leapLanding<0 && !m.pd2PlayerLeap) m.leapLanding=time;
+            else if(known && m.leapFlying && m.leapLanding<0 && !m.playerLeap) m.leapLanding=time;
             if(m.leapLanding>=0) m.animation.startedAt=m.leapLanding;
         } else {m.leapFlying=false;m.leapLanding=-1;}
         if(const auto channel=channels.find(key);channel!=channels.end() && u.actionSkill==41 && u.mode==21)
@@ -496,7 +519,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             : visual->sample(animationClock, animationElapsed, m.look,m.animationFrame());
           const auto p = screen(feet) + visual->offset+m.riderOffset+
               (m.scriptedSequence && m.scriptedSequence->leapGraphics?m.scriptedSequence->leapGraphics->offset():Vec{})+
-              (m.pd2PlayerLeap?m.pd2PlayerLeap->graphics.offset():Vec{});
+              (m.playerLeap?m.playerLeap->graphics.offset():Vec{});
         if (player) player->reason = "Outside viewport";
         if (!image || !visible(*image, p))
             continue;
@@ -686,6 +709,15 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             found->second.position - worldScene.terrainOrigin});
     }
     intent.visibleMapTiles = shared.drawWorld(worldScene);
+    const auto hoverNow=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+    for(const auto &[id,message]:v.world.social.hover) {
+        if(message.type!=5 || message.unitType!=0) continue;
+        const uint64_t lifetime=(125+8*std::min(message.text.size(),size_t{254}))*40;
+        if(hoverNow>message.receivedMilliseconds && hoverNow-message.receivedMilliseconds>lifetime) continue;
+        const auto player=std::find_if(draw.begin(),draw.end(),[&](const auto &entry){return entry.unit==effectOwner({0,id});});
+        const auto decoded=net::decodeChatText({reinterpret_cast<const char *>(message.text.data()),std::min(message.text.size(),size_t{254})},message.language,archives.languageGameLocale);
+        if(player!=draw.end() && decoded) shared.drawOverheadText(*decoded,screen(player->position)+player->pixelOffset);
+    }
     if (hasSelectedTarget && !surface && !groundTarget)
         for (const auto &target : binding.mapTargets) if (target.unit == selectedTarget) {
             const auto drawn = std::find_if(draw.begin(), draw.end(), [&](const auto &entry) { return entry.unit == effectOwner(selectedTarget); });
@@ -814,6 +846,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     const auto aim = shared.world(mouse);
     hit.point = {std::floor(aim.x) + origin.x, std::floor(aim.y) + origin.y};
     hit.interaction = hasSelectedTarget ? effectOwner(selectedTarget) : EntityId{};
+    if(hasSelectedTarget) for(const auto &target:binding.mapTargets)
+        if(target.unit==selectedTarget && target.interaction==OnlineMapInteraction::Door) {hit.doorHighlight=effectOwner(selectedTarget);break;}
     hit.combat = combatTarget ? effectOwner(*combatTarget) : EntityId{};
     if(groundTarget) {
         const auto selected=rightHand?v.world.rightSkill:v.world.leftSkill;

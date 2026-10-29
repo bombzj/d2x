@@ -7,6 +7,8 @@
 #include "gameplay/items/handle.hpp"
 #include "presentation/world/world_input_view.hpp"
 #include <memory>
+#include <array>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -18,6 +20,21 @@ struct RemoteMapDisplayState {
     bool visible{}, large{true}, right{true};
     bool running{true}; // Session preference survives terrain/act renderer replacement.
     Vec offset;
+    struct QuestEffects {
+        uint64_t gameGeneration{},denOccurrence{};
+        uint64_t forgeOccurrence{};
+        uint64_t nihlathakOccurrence{};
+        uint64_t anyaOccurrence{};
+        uint64_t sanctumOccurrence{},sanctumEndOccurrence{};
+        bool sanctumLight{};
+        float sanctumEndFrames{-1};
+        std::map<OnlineUnitKey,uint64_t> hiddenUnits;
+        float denFrames{-1};
+        float seconds{};
+        bool denComplete{};
+        struct DenRoom {uint64_t revision{};float born{};std::vector<Vec> positions;};
+        std::map<std::array<int,3>,DenRoom> denRooms;
+    } questEffects;
 };
 struct RemoteSceneFrame {
     WorldInputView input;

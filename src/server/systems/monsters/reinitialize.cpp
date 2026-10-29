@@ -104,7 +104,7 @@ DomainResult<> System::reinitializeWhipped(EntityId source,EntityId target,int n
         candidate.rule.superUniqueIndex=previous->rule.superUniqueIndex;candidate.rule.uniqueTranslation=previous->rule.uniqueTranslation;
         candidate.rule.noExperience|=previous->rule.noExperience;candidate.rule.noTreasure|=previous->rule.noTreasure;
         candidate.owner=previous->conversion?std::nullopt:previous->owner;candidate.necroSummon=previous->necroSummon;candidate.necroPet=previous->necroPet;
-        candidate.petRegistrationOrder=previous->petRegistrationOrder;candidate.inactivePet=previous->inactivePet;
+        candidate.petRegistrationOrder=previous->petRegistrationOrder;candidate.inactivePet=previous->inactivePet;candidate.petUnregistered=previous->petUnregistered;
         candidate.nativeMinionOwner=EntityId{};candidate.mainOwnerCleared=previous->mainOwnerCleared;
         candidate.roomAdmission=previous->roomAdmission;
         candidate.revision=previous->revision+1;candidate.admissionRevision=previous->admissionRevision+1;candidate.allegianceRevision=previous->allegianceRevision+1;
@@ -152,7 +152,7 @@ DomainResult<> System::reinitializeAfterDeath(EntityId id,uint64_t tick) {
     // removed with its StatList; a Revive's permanent unit flag survives.
     candidate.owner=previous->conversion?std::nullopt:previous->owner;
     candidate.necroSummon=previous->necroSummon;candidate.necroPet=previous->necroPet;
-    candidate.petRegistrationOrder=previous->petRegistrationOrder;candidate.inactivePet=previous->inactivePet;
+    candidate.petRegistrationOrder=previous->petRegistrationOrder;candidate.inactivePet=previous->inactivePet;candidate.petUnregistered=previous->petUnregistered;
     candidate.nativeMinionOwner=EntityId{};candidate.mainOwnerCleared=previous->mainOwnerCleared;
     candidate.roomAdmission=previous->roomAdmission;
     candidate.revision=previous->revision+1;candidate.admissionRevision=previous->admissionRevision+1;

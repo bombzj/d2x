@@ -22,6 +22,15 @@ StepStatus System::step(TickContext, FrameFacts &) {
     }
     state_ = std::move(next); return StepStatus::Complete;
 }
+StepStatus System::flushUnitSounds(TickContext tick) {
+    const auto sent=ports_.events.flushUnitSounds(tick.tick,[&](const SoundFact &sound)->std::optional<RegionId> {
+        if(sound.type==0) {
+            const auto *player=ports_.players.findActor(sound.actor);if(!player || !player->entered) return {};
+        }
+        return ports_.areas.roomUnitRegion(sound.actor,sound.type);
+    });
+    return sent?StepStatus::Complete:StepStatus::Blocked;
+}
 DomainResult<> System::admit(PlayerId id) {
     if (!ports_.players.find(id)) return {DomainStatus::InvalidActor, {}};
     return {DomainStatus::Applied, std::monostate{}};
@@ -52,10 +61,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         result.back().hostile=monster.enemyTarget();
         if(monster.poseUntil>tick || monster.holdPose) result.back().poseDirection=monster.poseDirection;
         if(monster.movementTarget) {
-            if(const auto *target=ports_.players.findActor(monster.movementTarget);target && target->entered && target->area==monster.area)
-                result.back().movementTarget=MotionTarget{target->actor,0};
-            else if(const auto *target=ports_.monsters.find(monster.movementTarget);target && target->area==monster.area && target->alive())
-                result.back().movementTarget=MotionTarget{target->id,1};
+            result.back().movementTarget=ports_.monsters.nativeTargetIdentity(monster.movementTarget,monster.area);
         }
         // AC's hireling owner is public; only the detailed identity/stat
         // messages below are restricted to that owner.
@@ -110,7 +116,7 @@ std::vector<PetOwnershipSnapshot> System::pets(PlayerId id) const {
     if(!recipient || !recipient->entered) return result;
     // PlayerPets broadcasts ownership to the game independently of room interest.
     for(const auto &[key,body]:ports_.monsters.read().actors) {
-        if((!body.amazonPet && !body.assassinPet && !body.druidPet && !((body.necroSummon || body.hydra()) && body.rule.petType>0) && !body.hireling) || !body.owner || !body.alive()) continue;
+        if((!body.amazonPet && !body.assassinPet && !body.druidPet && !((body.necroSummon || body.hydra()) && body.rule.petType>0) && !body.hireling) || !body.owner || !body.alive() || body.inactivePet || body.petUnregistered) continue;
         const auto *owner=ports_.players.find(*body.owner);
         if(owner && owner->entered)
             result.push_back({key,owner->actor,uint8_t(body.hireling?7:body.amazonPet?body.amazonPet->petType:body.rule.petType),uint16_t(body.rule.nativeClass),

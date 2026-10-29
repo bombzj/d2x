@@ -120,7 +120,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | effects | 状态效果、来源、持续时间 | apply／step；原状态定义由宿主准备 |
 | combat | 命中／减免／伤害结算请求 | enqueue／step；死亡转移归death |
 | death | 死亡发生标识、复活／尸体回收 | execute／step；死亡终态及击杀奖励去重；经验委托progression，已接死亡结算、城镇复活与本人尸体回收 |
-| maps | PD2地图场景运行阶段与特殊死亡游标 | 在普通死亡TC前协作计数、门户和奖励；World、Population、Loot、Travel保留各自权威；当前场景32已接首领技能依赖并在源码准入，尚未构建／运行 |
+| maps | PD2地图场景运行阶段与特殊死亡游标 | 在普通死亡TC前协作计数、门户和奖励；World、Population、Loot、Travel保留各自权威；当前场景32已接首领技能依赖并在源码准入，已通过Windows Release构建，PD2场景行为仍待实测 |
 | companions | 雇佣兵／召唤物／铁魔归属 | summon／execute／step；不复制活动实体 |
 | objects | 门、箱、祭坛及任务物件状态 | admit／execute／step；掉落／效果／任务各归其领域 |
 | npc | 对话会话和对白确认 | execute／close；商店、雇佣、工艺、旅行各自分派 |
@@ -160,6 +160,8 @@ PreparedRules持有不可变纯值；全局ItemCatalog共享同一宿主只读�
 transactions的Plan含TransactionId、库存／人物双RevisionGuard、InventoryEdit／CharacterEdit及候选PersistentCharacter／Totals。inventory和progression只改临时值；事务prepare重算总值、装备失效标志和资源，commit复验身份／区域、双版本及发生标识，先插入完整不可变Outbox批，再以不抛异常的值交换提交库存／人物／总值／revision，并按候选技能移除事实清空actions中的玩家used引用；此引用不作为整动作取消命令。经验最后发生标识按玩家仅在成功后更新；事务身份递增，旧计划拒绝，无无界集合。通用ItemTransfer／Reward／Exchange类型仍为stub；实际交易使用commitInventories，人物技能组使用commitCharacters，自然金堆共享使用最多8名同区域人物及一个WorldEdit，先统一预留全部事实，再共同提交钱包及世界；经验及邪恶洞穴奖励由CharacterEdit提交，地面转移／尸体通过WorldEdit及对应计划提交，不假装通用Reward完成。随机物品由hosting读取MPQ准备，领域仅安装值；实例实体ID单调分配不复用，失败可留下空号，不回退为已存在身份。
 
 实现提交时必须一起处理：目标／所有权／版本再校验、所有参与者资源及空间资格、事件容量预留、随机及ID的提交语义、去重，以及完整成功后的状态／事件发布。失败不得部分扣费、移物、推进随机或记录已领奖；不能先改库存再发现输出队列已满。掉落发生标识、任务奖励资格和交易版本均由服务端产生，不能以客户端重试次数结算。
+
+附着单位声音先沿原SUNIT_AttachSound写入每单位一个待同步槽，同帧后写覆盖事件号与接收范围；directSound的原F0直接声音继续作为可靠事实。publish／publishGroup对纯附着声音返回内部序号0表示槽状态已受理，只有帧末flushUnitSounds才分配真实可靠序号，序号0不作为网络ACK。槽在独立UnitSounds阶段按已确定前缀发布；容量不足保留剩余槽与同一逻辑帧，不重跑Objects发布或此前玩法。准入失败、单位完整移除／压缩时清槽，恢复单位不重播旧事件；待发布槽存在时身份映射暂不回收。槽的跨单位顺序与原每客户端房间遍历仍待对照，不能据单槽覆盖实现宣称全部输出交错已认证。
 
 EventOutbox有256批／4096事实容量及有序累计确认。InventoryFact保留当次稀疏物品值，CharacterFact保留前后人物／Totals，TravelFact保留提交区域／位置，ChatFact保留提交时收件人。NativeRealmHost集中路由：库存／人物／换区仅本人，聊天仅已捕获的同局连接。每位接收者完整编码后一次提交字节队列；失败明确终止该连接、移出投影并保留可恢复存档租约，再确认已送达或明确退役的批，不向其他连接重复发送。Area受众按同实例可见区域及单位过滤；未实现事实明确拒绝。玩家／世界／怪物增量由独立player_replication／world_replication／monster_replication编码；只发别人穿戴外观，不发背包、Cursor、私人箱或人物属性。
 

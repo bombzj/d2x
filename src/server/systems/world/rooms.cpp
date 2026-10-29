@@ -14,6 +14,7 @@
 #include "world/room_terrain.hpp"
 #include <algorithm>
 #include <limits>
+#include <functional>
 
 namespace d2x::server::world {
 // Decoded room inputs are immutable; each act owns its mutable DRLG and shared
@@ -426,6 +427,26 @@ struct System::RoomRuntime {
 };
 System::System(Ports ports) : ports_(ports), rooms_(std::make_unique<RoomRuntime>(*this)) {}
 System::~System() = default;
+Observation System::observe() const {
+    Observation result;result.levelCheckTick=rooms_->levelCheckTick;
+    if(rooms_->retirement) {
+        result.retirementTick=rooms_->retirement->tick;result.retirementNext=rooms_->retirement->next;
+        result.retirementUnits=rooms_->retirement->order.size();
+    }
+    for(const auto &[id,area]:ports_.areas.all()) {
+        LevelObservation level;level.area=id;level.generation=area.generation;level.terrainGeneration=area.terrainGeneration;
+        if(const auto delay=rooms_->inactiveLevels.find(id);delay!=rooms_->inactiveLevels.end()) level.unloadDelay=delay->second;
+        level.rooms=area.rooms.size();
+        for(const auto &room:area.rooms) level.loadedRooms+=room.loaded;
+        const auto &grid=area.definition.collision;
+        level.collisionBytes=grid.blocked.capacity()+grid.lightBlocked.capacity()+grid.terrainCollision.capacity()+grid.objectLightBlocked.capacity()+
+            sizeof(uint16_t)*(grid.fullTerrainCollision.capacity()+grid.objectCollision.capacity()+grid.missileCollision.capacity()+grid.nativeCollision.capacity());
+        const auto &act=rooms_->acts.at(size_t(area.definition.act));
+        if(act.terrain) level.resources=act.terrain->resources(int(id));
+        result.levels.push_back(std::move(level));
+    }
+    return result;
+}
 bool System::discardPreparedRooms(std::span<const RegionId> regions) {
     const auto selected=[&](const RoomRuntime::Room &room) {
         return std::find(regions.begin(),regions.end(),room.area)!=regions.end();
@@ -505,6 +526,18 @@ void System::changeClientRoom(PlayerId id) {
 }
 bool System::retiringRoom() const {return rooms_->retirement.has_value();}
 bool System::awaitingRoomInputs() const {return rooms_->awaitingInputs;}
+std::vector<PlayerId> System::nativeRoomClients(RoomView room) const {
+    std::vector<const PlayerState *> clients;
+    for(const auto &[id,registered]:rooms_->clientRooms)
+        if(std::find(registered.begin(),registered.end(),room)!=registered.end())
+            if(const auto *player=ports_.players.find(id);player && player->entered) clients.push_back(player);
+    // DUNGEON_UpdateClientListOfRoom sorts ppClients by pointer, rather than
+    // player/unit GUID. Use a defined total order for our live binding objects.
+    std::sort(clients.begin(),clients.end(),std::less<const PlayerState *>{});
+    std::vector<PlayerId> result;result.reserve(clients.size());
+    for(const auto *player:clients) result.push_back(player->player);
+    return result;
+}
 void System::updateRooms(TickContext tick) {
     rooms_->rebuild();
     rooms_->awaitingInputs=false;

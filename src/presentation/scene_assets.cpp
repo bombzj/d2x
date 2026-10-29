@@ -19,6 +19,14 @@
 #include <utility>
 
 namespace d2x {
+const ClassicFont *SceneAssets::ensureOverheadFont() {
+    if(!overheadFontAttempted_) {
+        overheadFontAttempted_=true;
+        try {loadClassicFont(uiGraphics_,archives_,overheadFont_,"fontingamechat");}
+        catch(const std::exception &error) {overheadFontFailure_=error.what();}
+    }
+    return overheadFont_.ready?&overheadFont_:nullptr;
+}
 const SceneAssets::ProjectileVisual *SceneAssets::ensureProjectile(int id) {
     if (projectileAnimations.contains(id) || imageLessProjectiles.contains(id)) return &projectileVisuals.at(id);
     if (!unavailableProjectiles.insert(id).second) return nullptr;
@@ -97,7 +105,7 @@ void SceneAssets::loadNpcAlert(const DataTable &overlays) {
 SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     : archives_(archives), soundCatalog_(archives), graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
       unitsGraphics_(archives, "data/global/palette/units/pal.dat"), automapCatalog_(archives), audio(),
-      sceneAudio(archives, soundCatalog_, audio), streams(archives, content, soundCatalog_), escapeMenu(archives) {
+      streams(archives, content, soundCatalog_), sceneAudio(archives, soundCatalog_, audio,streams), escapeMenu(archives) {
     loadClassicFont(uiGraphics_, archives, font, "font16");
     loadClassicFont(uiGraphics_, archives, skillGreenFont, "font16", 2);
     loadClassicFont(uiGraphics_, archives, characterLabelFont, "font6");

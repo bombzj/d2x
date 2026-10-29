@@ -220,7 +220,7 @@ void System::retireCompressedItem(const RoomCompression &plan,EntityId id) noexc
     if(std::find(plan.retired.begin(),plan.retired.end(),id)==plan.retired.end()) return;
     if(plan.expectedRevision!=state_.revision) std::terminate();
     clearRestoration(id);inactivePreparation_.erase(id);groundLifetimes_.erase(id);
-    ports_.areas.removeRoomUnit(id);
+    ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);
     state_.world.items.erase(id);state_.equipment.items.erase(id);state_.goldOwners.erase(id);
     std::erase(state_.world.itemOrder,id);
 }
@@ -289,7 +289,9 @@ void System::commit(State next) noexcept {
         });
         for(const auto &[id,item]:state_.world.items) if(std::holds_alternative<GroundLocation>(item.location)) {
             const auto found=next.world.items.find(id);
-            if(found==next.world.items.end() || !std::holds_alternative<GroundLocation>(found->second.location)) ports_.areas.removeRoomUnit(id);
+            if(found==next.world.items.end() || !std::holds_alternative<GroundLocation>(found->second.location)) {
+                ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);
+            }
         }
         for(const auto &[id,registration]:next.groundRegistrations) {
             if(registration) {
@@ -347,8 +349,9 @@ std::optional<GroundLocation> System::placement(GroundLocation origin, const Inv
     const auto *area = ports_.areas.find(origin.region);
     if (!area || !std::isfinite(origin.position.x) || !std::isfinite(origin.position.y)) return {};
     const auto global=origin.position+area->definition.origin;
-    const int32_t x=int32_t(std::floor(global.x+.5f)),y=int32_t(std::floor(global.y+.5f));
-    const auto room=ports_.areas.roomAtPosition(origin.region,origin.position+Vec{.5f,.5f},x,y);
+    const int32_t x=int32_t(std::floor(global.x)),y=int32_t(std::floor(global.y));
+    const auto observer=Vec{float(x)+.5f,float(y)+.5f}-area->definition.origin;
+    const auto room=ports_.areas.roomAtPosition(origin.region,observer,x,y);
     if(!room) return {};
     // Project item occupancy from the transaction draft, so split piles and
     // spills reserve each previous landing cell before the next search.
@@ -359,7 +362,7 @@ std::optional<GroundLocation> System::placement(GroundLocation origin, const Inv
         const auto *owner=at?ports_.areas.find(at->region):nullptr;
         if(!owner || owner->definition.act!=area->definition.act) continue;
         const auto point=at->position+owner->definition.origin;
-        occupied.emplace(owner->definition.act,int32_t(std::floor(point.x+.5f)),int32_t(std::floor(point.y+.5f)));
+        occupied.emplace(owner->definition.act,int32_t(std::floor(point.x)),int32_t(std::floor(point.y)));
     }
     // Spatial supplies live unit/pet/portal masks; items come from the draft.
     const auto sample=ports_.spatial.nativeCollisionSample(0x3c01);
@@ -419,7 +422,7 @@ DomainResult<> System::install(PreparedBatch batch, GroundLocation origin) {
     auto next = prepare(std::move(batch), origin); if (!next) return {next.status, {}};
     commit(std::move(*next.value)); return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &batch,uint64_t tick,std::span<const EntityId> identities,std::shared_ptr<EntityIds::Publication> allocation) {
+DomainResult<> System::installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &batch,uint64_t tick,std::span<const EntityId> identities,std::shared_ptr<EntityIds::Publication> allocation,bool flip,std::optional<PlayerId> goldOwner) {
     if(allocation && !ports_.ids.validate(*allocation)) return {DomainStatus::Stale,{}};
     if(batch.empty()) return {DomainStatus::Applied,std::monostate{}};
     if(allocation && identities.empty()) return {DomainStatus::InvalidRequest,{}};
@@ -458,6 +461,10 @@ DomainResult<> System::installNativeGroundBatch(const std::vector<std::pair<Prep
         if(!area || !ports_.areas.loaded(location.region,location.position) || !area->definition.activation.room(location.position))
             return {DomainStatus::Stale,{}};
         auto item=prepared.items.front();
+        if(goldOwner) {
+            const auto *base=ports_.definitions?ports_.definitions->find(item.definition):nullptr;
+            if(!base || !base->equipment.isType("gold")) return {DomainStatus::InvalidRequest,{}};
+        }
         const auto values=prepared.equipment->items.find(item.id);
         if(values==prepared.equipment->items.end()) return {DomainStatus::InvalidRequest,{}};
         const auto reservedId=prepared.identities.find(item.id);
@@ -466,11 +473,12 @@ DomainResult<> System::installNativeGroundBatch(const std::vector<std::pair<Prep
         next.equipment.items.emplace(item.id,values->second);
         next.equipment.includeSets(*prepared.equipment);
         next.world.items.emplace(item.id,item);
+        if(goldOwner) next.goldOwners.emplace(item.id,*goldOwner);
         next.world.itemOrder.push_back(item.id);
         if(allocation) allocation->bind(item.id,NativeUnitType::Item);
         if(events.empty() || events.back().audience.area!=location.region)
             events.push_back({0,tick,{}, {AudienceKind::Area,{},location.region},{}});
-        events.back().facts.emplace_back(GroundDropFact{std::move(item)});
+        events.back().facts.emplace_back(GroundDropFact{std::move(item),flip});
     }
     ++next.revision;
     prepareGroundRooms(next);
@@ -486,9 +494,10 @@ DomainResult<PreparedBatch> System::prepareNativeGold(unsigned level,uint64_t &r
     const auto *base=ports_.definitions?ports_.definitions->find("gld"):nullptr;
     if(!base || !base->equipment.isType("gold") || !level || level>99) return {DomainStatus::InvalidRequest,{}};
     auto nextRandom=random;
-    auto unitRandom=initialRandom(rollRandom(nextRandom));
+    const auto unitSeed=rollRandom(nextRandom);auto unitRandom=initialRandom(unitSeed);
     ItemInstance item;item.id=EntityId{1};item.definition=base->code;
-    item.nativeSeed=rollRandom(nextRandom);item.level=level;
+    item.nativeUnitSeed=unitSeed;item.nativeSeed=rollRandom(nextRandom);item.level=level;
+    item.nativePropertyRandom=initialRandom(item.nativeSeed);
     item.quantity=std::max(limitedRandom(unitRandom,5*level)+level,1u);
     item.nativeProperties=true;item.nativeFlags=inStore?0x82010:0x80010;
     if(!base->inventoryIcons.empty()) {
@@ -500,6 +509,29 @@ DomainResult<PreparedBatch> System::prepareNativeGold(unsigned level,uint64_t &r
     equipment->items.emplace(item.id,std::move(values));
     random=nextRandom;
     return {DomainStatus::Applied,PreparedBatch{{std::move(item)},std::move(equipment),{}}};
+}
+DomainResult<System::PlayerGoldSelection> System::selectPlayerGold(RegionId region,Vec position) {
+    const auto *area=ports_.areas.find(region);if(!area || !ports_.definitions) return {DomainStatus::Unavailable,{}};
+    const auto global=position+area->definition.origin;
+    const auto room=ports_.areas.roomAtPosition(region,position,int(global.x),int(global.y));
+    if(!room) return {DomainStatus::Unavailable,{}};
+    const unsigned level=unsigned(area->definition.town?1:std::max(1,area->definition.monsterLevel-1));
+    std::vector<const ItemDefinition *> choices;
+    for(const auto &[code,base]:ports_.definitions->entries()) {
+        (void)code;
+        if(base.family!=ItemFamily::Misc || base.base.type!="gold" || base.questTag) continue;
+        if(!base.base.spawnable || !base.base.level) return {DomainStatus::NotImplemented,{}};
+        if(*base.base.spawnable && *base.base.level<=int(level)) choices.push_back(&base);
+    }
+    if(choices.empty()) return {DomainStatus::Unavailable,{}};
+    std::sort(choices.begin(),choices.end(),[](const auto *left,const auto *right){return left->base.sourceRow<right->base.sourceRow;});
+    if(choices.size()>1023) choices.resize(1023);
+    const auto borrowed=ports_.areas.roomRandom(*room);if(!borrowed) return {borrowed.status,{}};
+    auto loan=*borrowed.value;
+    // ItemMode::sub_6FC4C3D0 rolls even for a single eligible Misc row.
+    const auto *selected=choices.at(limitedRandom(loan.next,unsigned(choices.size())));
+    ports_.areas.publishRoomRandom(loan);
+    return {DomainStatus::Applied,PlayerGoldSelection{selected->code,level}};
 }
 DomainResult<EntityId> System::createNativeGold(GroundLocation origin,unsigned level,uint64_t tick) {
     const auto *area=ports_.areas.find(origin.region);
@@ -612,7 +644,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         if(!base || !ground || base->questTag) {++it;continue;}
         if(!sweep || tick.tick<lifetime->second.expires) {++it;continue;}
         if(state_.revision==UINT64_MAX || !ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},ground->region},{GroundRemoveFact{item.id}}})) {blocked=true;++it;continue;}
-        ports_.areas.removeRoomUnit(item.id);
+        ports_.events.discardUnitSound(item.id);ports_.areas.removeRoomUnit(item.id);
         std::erase(state_.world.itemOrder,item.id);
         groundLifetimes_.erase(item.id);clearRestoration(item.id);state_.goldOwners.erase(item.id);state_.equipment.items.erase(item.id);it=state_.world.items.erase(it);++state_.revision;
     }

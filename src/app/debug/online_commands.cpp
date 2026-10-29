@@ -258,7 +258,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         {"nativeLayer", scene.automapLayer ? Json(*scene.automapLayer) : Json()},
         {"revealedCells", Json::object()}};
     result["scene"]["automap"]["markers"]=Json::array();
-    constexpr std::array markNames{"none","npc","party","other-player","corpse","own-pet","party-pet","stash","blue-portal","red-portal"};
+    constexpr std::array markNames{"none","npc","party","other-player","corpse","own-pet","party-pet","stash","blue-portal","red-portal","monster","quest","chest"};
     for(const auto &mark:scene.automap.markers)
         result["scene"]["automap"]["markers"].push_back({{"kind",markNames.at(size_t(mark.unitMark))},{"x",mark.position.x},{"y",mark.position.y},{"name",mark.name},{"cel",mark.cel}});
     for (const auto &[level, count] : scene.automapRevealedCells)

@@ -1,7 +1,117 @@
 #include "remote_scene_impl.hpp"
 #include "gameplay/rules/pd2_phasing.hpp"
+#include "gameplay/skills/cast_timing.hpp"
 
 namespace d2x {
+
+std::optional<std::pair<int,int>> RemoteScene::Impl::findPlayerLeapLanding(
+    const OnlineUnit &u,Vec start,Vec target,int range,const Map &map,Vec origin) const {
+    const int x=int(std::floor(start.x)),y=int(std::floor(start.y));
+    int tx=int(std::floor(target.x)),ty=int(std::floor(target.y));
+    const int distance=std::max(1,unitCoordinateDistance(x,y,tx,ty));
+    if(distance>range) {tx=x+nativeMultiply(tx-x,range)/distance;ty=y+nativeMultiply(ty-y,range)/distance;}
+    const int dx=std::clamp(ty-y,-2,2),dy=std::clamp(x-tx,-2,2);
+    const auto collision=navigationCollision(map.grid,origin,u.key);
+    const auto clear=[&](int column,int line) {
+        // Linked collision rooms already return FFFF for unavailable cells.
+        return collision.walkable(Vec{float(column),float(line)}-origin,{0x1c09,unitSize(u)});
+    };
+    for(const auto &[cx,cy]:{std::pair{tx,ty},std::pair{tx+dx,ty+dy},std::pair{tx-dx,ty-dy}}) {
+        const auto free=nativeSpawnCoordinate(cx,cy,50,clear);
+        if(free && unitCoordinateDistance(x,y,free->first,free->second)<=range &&
+           map.grid.collisionSegment(Vec{float(x),float(y)}-origin,Vec{float(free->first),float(free->second)}-origin,0x804)) return free;
+    }
+    return {};
+}
+bool RemoteScene::Impl::displayPlayerLeap(const OnlineUnit &u,Motion &m,const Map &map,Vec origin) {
+    const bool controlled=u.key.id==playerId;
+    const bool local=controlled && localCast && localCast->started>=0;
+    const auto skill=local?std::optional<int>{localCast->command.skill}:
+        !controlled && u.actionSkill?std::optional<int>{*u.actionSkill}:
+        !controlled && m.playerLeap && m.playerLeap->revision==u.actionRevision?
+            std::optional<int>{m.playerLeap->skill}:std::nullopt;
+    const auto row=skill?skillRows.find(*skill):skillRows.end();
+    if(u.key.type!=0 || !skill ||
+       row==skillRows.end() || !(pd2?skills.number(row->second,"cltdofunc")==97:
+           skills.number(row->second,"cltdofunc")==43 || skills.number(row->second,"cltdofunc")==44) || playerDead(u)) {
+        m.playerLeap.reset();return false;
+    }
+    const auto revision=local?localCast->revision:!u.actionSkill && m.playerLeap?m.playerLeap->revision:u.actionRevision;
+    if(m.invalidatedSkillMovement==revision) return false;
+    const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    const float age=u.actionReceivedMilliseconds && now>=u.actionReceivedMilliseconds?float(now-u.actionReceivedMilliseconds)/1000.f:0.f;
+    const float started=local?localCast->started:m.playerLeap && m.playerLeap->revision==revision?m.playerLeap->started:time-age;
+    const auto snapshot=combatBinding->states().find(u.key);
+    if(snapshot==combatBinding->states().end() || !snapshot->second.decoded || snapshot->second.sequence!=u.stateSequence)
+        return false;
+    bool flying=false;
+    for(const auto &[id,list]:snapshot->second.states) {
+        (void)list;const auto state=stateRows.find(id);
+        if(state!=stateRows.end() && states.value(state->second,"state")=="skill_move") flying=true;
+    }
+    // The server's movement-state removal can precede the final position
+    // packet. A confirmed flight still owns its native arc/landing.
+    if(!flying && !m.playerLeap) return false;
+    if(m.leapRevision==revision && m.leapLanding>=0) return false;
+    const auto sequence=playerCastSequence(skills.number(row->second,"seqnum").value_or(-1));
+    if(!sequence || sequence->fixedSpeed<=0 ||
+       time<started+float(playerCastSequenceTiming(*sequence,sequence->fixedSpeed).impact)/25.f)
+        return false;
+    if(!m.playerLeap || m.playerLeap->revision!=revision) {
+        auto destination=local?localCast->command.point:u.destination;
+        const auto target=local?localCast->command.target:u.destinationUnit;
+        if(target) destination=targetPosition(*target);
+        int rank=u.actionSkillLevel.value_or(0);
+        if(local) {
+            const auto *known=uiClients->character().read().skill(*skill,localCast->command.owner);
+            if(!known || !known->effectiveRankKnown) return false;
+            rank=known->effectiveRank;
+        }
+        if(!destination || rank<1) return false;
+        const auto range=skillCalculation(*skill,rank,"aurarangecalc",u.key);
+        std::optional<int> speed;
+        if(pd2) speed=skillCalculation(*skill,rank,"calc2",u.key);
+        else if(u.classId && *u.classId<characterRows.size()) speed=charstats.number(characterRows[*u.classId],"RunVelocity");
+        if(!range || !speed || *range<1 || (!pd2 && *speed<=0)) {
+            effectLimitations.insert("Original leap range or velocity unresolved");return false;
+        }
+        // Retail CltSt29/C66A0 uses the range formula, then three rotated
+        // candidates with the original free-coordinate search and 804 ray.
+        const int x=int(std::floor(m.position.x)),y=int(std::floor(m.position.y));
+        const auto landing=findPlayerLeapLanding(u,m.position,Vec{float(destination->x),float(destination->y)},*range,map,origin);
+        if(!landing) {effectLimitations.insert("Original leap landing unavailable");return false;}
+        // Retail C5F20 uses CharStats.RunVelocity. PD2 CltDo97 instead
+        // uses Calc2*41+2560, with its native minimum of 2560.
+        const int velocity=pd2?std::max(2560,nativeAdd(nativeMultiply(*speed,41),2560)):nativeShiftLeft(*speed,8);
+        const int travel=std::max(1,unitCoordinateDistance(x,y,landing->first,landing->second));
+        const auto graphics=ClientMissileGraphics::leap(travel,velocity);if(!graphics) return false;
+        Motion::PlayerLeap run;run.revision=revision;run.position=m.position;run.skill=*skill;run.started=started;
+        run.destination={float(landing->first),float(landing->second)};
+        run.velocity=float(velocity)*25.f/4096.f;run.nextTick=time+NativePathStep::seconds;
+        // Retail C65B0/C7C80: distance-dependent gravity and zero initial
+        // height; flight ticks use the common native graphics accumulator.
+        run.graphics=*graphics;
+        m.playerLeap=std::move(run);m.leapRevision=revision;m.leapFlying=true;m.leapLanding=-1;
+        m.route.clear();m.goal.reset();m.correction={};m.correctionLeft=0;m.pathStep.reset();
+    }
+    auto &run=*m.playerLeap;
+    while(run.nextTick<=time) {
+        const Vec center{.5f,.5f};
+        const auto step=run.path.advance(map.grid,run.position+center,run.destination+center,
+            run.velocity*NativePathStep::seconds,{0,unitSize(u)},origin);
+        m.look=run.destination-run.position;run.position=step.position-center;
+        run.graphics.step();run.nextTick+=NativePathStep::seconds;
+        if(step.reached || (run.graphics.position[2]>>11)<=0) {
+            m.position=run.destination;m.pathMoving=false;m.leapLanding=time;m.playerLeap.reset();
+            return true;
+        }
+        if(step.blocked) {
+            effectLimitations.insert("Original leap flight path unavailable");m.playerLeap.reset();return false;
+        }
+    }
+    m.position=run.position;m.pathMoving=true;
+    return true;
+}
 
 bool RemoteScene::Impl::walking(const OnlineUnit &u) const {
     if (u.actionSkill) return false;
@@ -183,7 +293,7 @@ bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,co
         return displayPd2MonsterCharge(u,m,map,origin);
     const bool whirlwind=skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==45;
     const bool pd2Leap=pd2 && skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==97;
-    if(pd2Leap && m.pd2InvalidatedMovement==u.actionRevision) return false;
+    if(pd2Leap && m.invalidatedSkillMovement==u.actionRevision) return false;
     const bool leap=skill!=skillRows.end() && (skills.number(skill->second,"cltdofunc")==44 || pd2Leap);
     if(u.key.type!=1 || skill==skillRows.end() || (!whirlwind && !leap && skills.number(skill->second,"cltdofunc")!=59) || onlineMonsterCorpse(u)) {
         m.scriptedSequence.reset();return false;
@@ -201,7 +311,7 @@ bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,co
             if(!u.actionSkillLevel) return false;
             const auto range=skillCalculation(*u.actionSkill,*u.actionSkillLevel,"aurarangecalc",u.key);
             if(!range || *range<1) return false;
-            const auto landing=findPd2LeapLanding(u,m.position,*destination,*range,map,origin);
+            const auto landing=findPlayerLeapLanding(u,m.position,*destination,*range,map,origin);
             if(!landing) return false;
             destination=Vec{float(landing->first),float(landing->second)};
         } else if(leap) {
@@ -295,11 +405,8 @@ bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,co
                 } else if(run.leapFlags&0x80) {
                     const int speed=monstats.number(monster->second,"Run").value_or(0);if(speed<=0) return false;
                     const int distance=std::max(1,unitCoordinateDistance(int(std::floor(m.position.x)),int(std::floor(m.position.y)),int(run.destination.x),int(run.destination.y)));
-                    int frames=distance*16/speed;if(frames>1) --frames;frames=std::max(1,frames);
-                    ClientMissileGraphics graphics;graphics.flags=2;graphics.remaining=frames;
-                    const int gravity=std::max(500,distance<27?8462-270*distance:1224-72*distance);
-                    graphics.acceleration[2]=-gravity;graphics.velocity[2]=nativeDivide(nativeMultiply(nativeMultiply(frames,frames),gravity)/2,frames);
-                    run.leapGraphics=graphics;run.leapFlags=0x1101;run.velocity=float(speed)*25.f/16.f;
+                    const auto graphics=ClientMissileGraphics::leap(distance,nativeShiftLeft(speed,8));if(!graphics) return false;
+                    run.leapGraphics=*graphics;run.leapFlags=0x1101;run.velocity=float(speed)*25.f/16.f;
                     m.route={run.destination};m.goal=run.destination;m.pathStep.reset();run.moving=true;
                 }
                 if(stopped) {run.leapFlags=0;run.stopping=true;run.moving=false;run.leapGraphics.reset();m.route.clear();m.goal.reset();}
@@ -405,10 +512,10 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     } else if (m.discontinuity != u.positionDiscontinuity) {
         m.position = target; m.correction = {}; m.correctionLeft = 0;
         m.route.clear(); m.samples.clear(); m.goal.reset(); m.pathMoving = false;
-        if(pd2) {
-            m.pd2InvalidatedMovement=own && localCast?localCast->revision:u.actionRevision;
-            if(own && localCast && (m.pd2PlayerLeap || m.pd2PlayerCharge)) localCast.reset();
-            m.pd2PlayerLeap.reset();m.pd2PlayerCharge.reset();m.scriptedSequence.reset();
+        if(pd2 || m.playerLeap) {
+            m.invalidatedSkillMovement=own && localCast?localCast->revision:u.actionRevision;
+            if(own && localCast && (m.playerLeap || m.pd2PlayerCharge)) localCast.reset();
+            m.playerLeap.reset();m.pd2PlayerCharge.reset();m.scriptedSequence.reset();
             m.leapFlying=false;m.leapLanding=-1;
         }
         m.castHandoff.reset();
@@ -479,7 +586,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     // Keep the old native walking destination from restarting motion after
     // the owner starts a cast (the server normally omits its skill packet).
     if (m.castHandoff) activeRequest = false;
-    if(pd2 && (displayPd2PlayerLeap(u,m,map,origin) || displayPd2PlayerCharge(u,m,map,origin))) {
+    if(displayPlayerLeap(u,m,map,origin) || (pd2 && displayPd2PlayerCharge(u,m,map,origin))) {
         m.actionRevision=u.actionRevision;m.last=u.position;m.positionRevision=u.positionRevision;m.discontinuity=u.positionDiscontinuity;
         m.requestRevision=request?request->revision:0;
         return m.position+m.correction;

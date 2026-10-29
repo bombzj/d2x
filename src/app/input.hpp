@@ -8,4 +8,5 @@ struct Viewport {
 };
 Viewport currentViewport();
 FrameInput pollInput(const Viewport &viewport, const ControlBindings &);
+bool nativeImeComposing(void *window);
 } // namespace d2x

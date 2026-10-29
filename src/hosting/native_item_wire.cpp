@@ -323,6 +323,9 @@ Bytes nativeGroundItem(const ClassicData &data, const ItemInstance &item, Vec or
     projection.containers.cursor = EntityId{1};
     projection.inventory.containers.emplace(EntityId{1}, ContainerState{EntityId{1}, {EntityId{1}, ContainerKind::Cursor, 1, 1}});
     copy.location = ContainerLocation{EntityId{1}, {}};
+    // The shared JM exporter validates every socket child's parent/order.
+    // Ground projections need the same root inventory context as saved items.
+    projection.inventory.items.emplace(copy.id,copy);
     auto saved = exportD2sItem(projection, copy, data);
     const auto position = std::get<GroundLocation>(item.location).position + origin;
     if (position.x < 0 || position.y < 0 || position.x > 65535 || position.y > 65535) throw std::runtime_error("Ground item outside native coordinates");

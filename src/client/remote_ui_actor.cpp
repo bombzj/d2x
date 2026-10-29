@@ -25,6 +25,13 @@ ActorView RemoteUiClients::Impl::Actor::controlledActor() const {
             return v;
         }
 bool RemoteUiClients::Impl::Actor::control(ActorControlIntent intent) {
+            if(intent.action==ActorControlIntent::Action::CancelTargeting) return o.session.cancel_item_targeting(o.context);
+            if(intent.action==ActorControlIntent::Action::Voice) return o.session.play_voice(intent.voice,o.context);
+            if(intent.action==ActorControlIntent::Action::RunningMode) return o.session.set_running_animation(o.run || intent.forceRun,o.context);
+            if(intent.action==ActorControlIntent::Action::HighlightDoor) {
+                if(!intent.target) return false;
+                return o.session.highlight_door(uint32_t(intent.target.value-1),o.context);
+            }
             if (intent.action == ActorControlIntent::Action::Interact) {
                 if (!intent.target) return false;
                 const auto raw = intent.target.value - 1;

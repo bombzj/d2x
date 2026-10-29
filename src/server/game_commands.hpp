@@ -7,7 +7,7 @@
 #include <optional>
 
 namespace d2x {
-enum class MovementAction { Move, Stop, ToggleRunning, ApproachExit, ApproachCorpse, ApproachObject, ApproachNpc, Synchronize, ApproachItem };
+enum class MovementAction { Move, Stop, ToggleRunning, ApproachExit, ApproachCorpse, ApproachObject, ApproachNpc, Synchronize, ApproachItem, StartRunning, StopRunning };
 struct MotionTarget { EntityId id; uint8_t type{1}; };
 struct MovementCommand {
     MovementAction action = MovementAction::Move;

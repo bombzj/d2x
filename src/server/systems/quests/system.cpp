@@ -31,10 +31,14 @@ void System::rebindObject(EntityId previous,EntityId current) {
     if(state_.npcStory.blockerId==previous) state_.npcStory.blockerId=current;
     if(state_.npcStory.ormusAltar==previous) state_.npcStory.ormusAltar=current;
     if(state_.npcStory.anyaFrozenObject==previous) state_.npcStory.anyaFrozenObject=current;
+    if(state_.npcStory.anyaTownObject==previous) state_.npcStory.anyaTownObject=current;
+    for(auto &portal:state_.npcStory.bluePortals) if(portal.object==previous) portal.object=current;
     if(state_.npcStory.cainCage==previous) state_.npcStory.cainCage=current;
     if(auto mode=state_.objectModes.extract(previous);!mode.empty()) {mode.key()=current;state_.objectModes.insert(std::move(mode));}
     if(state_.actThree.gidbinnAltar==previous) state_.actThree.gidbinnAltar=current;
     if(state_.actFive.ancientAltar==previous) state_.actFive.ancientAltar=current;
+    if(state_.actFour.forgeObject==previous) state_.actFour.forgeObject=current;
+    for(auto &portal:state_.actFive.rescuePortals) if(portal.object==previous) portal.object=current;
     for(auto &[player,reader]:state_.actFive.ancientAltarReaders) {(void)player;if(reader.altar==previous) reader.altar=current;}
     for(auto &ancient:state_.actFive.ancients) if(ancient.statue==previous) ancient.statue=current;
     if(state_.actOne.cairnPending && state_.actOne.cairnPending->owner==previous) state_.actOne.cairnPending->owner=current;
@@ -146,6 +150,22 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         record.questLogViewed[difficulty][slot]=true;
         return commit(actor,std::move(record));
     }
+    if(request.action==Action::ReadClue) {
+        if(p->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
+        if(!request.item) return {DomainStatus::InvalidRequest,{}};
+        const auto item=p->persistent.inventory.items.find(*request.item);
+        if(item==p->persistent.inventory.items.end()) return {DomainStatus::InvalidRequest,{}};
+        QuestClueFact clue;
+        if(item->second.definition=="bkd") {
+            orderStones();clue.quest=4;
+            for(size_t i=0;i<5;++i) clue.payload[i]=uint16_t(state_.actOne.stones[i]-17);
+        } else if(item->second.definition=="trs") {
+            if(!state_.actTwo.tombOffset) return {DomainStatus::Unavailable,{}};
+            clue.quest=13;clue.payload[0]=*state_.actTwo.tombOffset;
+        } else return {DomainStatus::Applied,std::monostate{}};
+        const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{clue}});
+        return {sent.status,sent?std::optional{std::monostate{}}:std::nullopt};
+    }
     if(request.action==Action::Refresh) {
         orderStones();
         const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{projection(actor.player,p->persistent.player,actor.area)}});
@@ -218,16 +238,48 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
     return result;
 }
 StepStatus System::step(TickContext tick,FrameFacts &) {
-    std::erase_if(state_.credited,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || state_.creditedActors.at(entry.first)!=p->actor;});
-    std::erase_if(state_.creditedActors,[&](const auto &entry){return !state_.credited.contains(entry.first);});
-    const auto story=npcStoryStep(tick),den=denStep(tick),act=actOneStep(tick),two=actTwoStep(tick),three=actThreeStep(tick),four=actFourStep(tick),five=actFiveStep(tick),ancients=ancientsStep(tick),baal=baalStep(tick),goals=flushGoals(tick),statuses=flushStatuses(tick);
+    if(!stepResuming_) {
+        stepCursor_=0;stepBlocked_=false;
+        std::erase_if(state_.credited,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || state_.creditedActors.at(entry.first)!=p->actor;});
+        std::erase_if(state_.creditedActors,[&](const auto &entry){return !state_.credited.contains(entry.first);});
+    }
+    constexpr std::array stages{&System::npcStoryStep,&System::denStep,&System::actOneStep,&System::actTwoStep,
+        &System::actThreeStep,&System::actFourStep,&System::actFiveStep,&System::ancientsStep,&System::baalStep,
+        &System::flushGoals,&System::flushStatuses};
+    for(;stepCursor_<stages.size();++stepCursor_) {
+        const auto result=(this->*stages[stepCursor_])(tick);
+        stepBlocked_|=result==StepStatus::Blocked;
+        // A native completion callback is synchronous. Content/output waiting
+        // resumes this stage in the same frame, without running its prefix again.
+        // Background quest work retains its existing non-blocking semantics.
+        if(result==StepStatus::Blocked && completionPending()) {
+            stepResuming_=true;return StepStatus::Blocked;
+        }
+    }
     bool publicationBlocked=false;
     const auto flags=gameFlags();
-    if(flags!=state_.publishedFlags) {
-        for(const auto &[id,p]:ports_.players.all()) if(p.entered &&
-            !ports_.events.publish({0,tick.tick,{}, {AudienceKind::Player,id,p.area},{projection(id,p.persistent.player,p.area)}})) publicationBlocked=true;
-        if(!publicationBlocked) state_.publishedFlags=flags;
+    const auto previous=flagPublications_.empty()?state_.publishedFlags:flagPublications_.back().flags;
+    if(flags!=previous) {
+        FlagPublication publication;publication.flags=flags;
+        for(const auto &[id,p]:ports_.players.all()) if(p.entered)
+            publication.recipients.push_back({p.actor,projection(id,p.persistent.player,p.area)});
+        flagPublications_.push_back(std::move(publication));
     }
+    while(!flagPublications_.empty()) {
+        auto &publication=flagPublications_.front();
+        while(publication.next<publication.recipients.size()) {
+            const auto &recipient=publication.recipients[publication.next];
+            const auto *player=ports_.players.find(recipient.fact.player);
+            if(player && player->entered && player->actor==recipient.actor &&
+                !ports_.events.publish({0,tick.tick,{}, {AudienceKind::Player,player->player,player->area},{recipient.fact}})) {
+                publicationBlocked=true;break;
+            }
+            ++publication.next;
+        }
+        if(publicationBlocked) break;
+        state_.publishedFlags=publication.flags;flagPublications_.pop_front();
+    }
+    if(publicationBlocked) {stepResuming_=true;return StepStatus::Blocked;}
     std::erase_if(state_.pending,[&](const auto &entry){
         const auto *p=ports_.players.find(entry.first);const auto &s=entry.second;
         const auto *area=ports_.areas.find(s.actor.area);
@@ -236,7 +288,8 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         if(stale && !s.conversation && !s.dropPosition) state_.completed.insert_or_assign(s.source,false);
         return stale;
     });
-    return publicationBlocked || story==StepStatus::Blocked || den==StepStatus::Blocked || act==StepStatus::Blocked || two==StepStatus::Blocked || three==StepStatus::Blocked || four==StepStatus::Blocked || five==StepStatus::Blocked || ancients==StepStatus::Blocked || baal==StepStatus::Blocked || goals==StepStatus::Blocked || statuses==StepStatus::Blocked?StepStatus::Blocked:StepStatus::Complete;
+    stepResuming_=false;
+    return stepBlocked_?StepStatus::Blocked:StepStatus::Complete;
 }
 StepStatus System::denStep(TickContext tick) {
     for(const auto &[id,player]:ports_.players.all()) {
@@ -274,7 +327,17 @@ StepStatus System::denStep(TickContext tick) {
         state_.actOne.denRemaining=unsigned(std::min<size_t>(alive,UINT16_MAX));
         state_.actOne.denHasKills|=killed!=0;
         if(!state_.actOne.denCleared && state_.actOne.denHasKills && !alive && generated) {
-            captureGoal(QuestId::DenOfEvil,uint32_t(DenStage::Cleared),RegionId(8));
+            if(!(state_.initialFlags[questDefinition(QuestId::DenOfEvil).nativeSlot]&0x8000)) {
+                auto eligible=eligibleParty(QuestId::DenOfEvil,uint32_t(DenStage::Cleared),RegionId(8),{},{});
+                ActOneState::DenCompletion completion;completion.soundRecipients=eligible;
+                for(const auto &[id,player]:ports_.players.all()) if(player.entered) {
+                    completion.recipients.emplace(id,player.actor);
+                    if(player.persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::DenOfEvil)].stage>=uint32_t(DenStage::Cleared))
+                        completion.soundRecipients.insert(id);
+                }
+                captureGoal(QuestId::DenOfEvil,uint32_t(DenStage::Cleared),std::move(eligible));
+                state_.actOne.denCompletion=std::move(completion);
+            }
             state_.actOne.denCleared=true;
         }
     }

@@ -94,7 +94,7 @@ std::shared_ptr<const server::MonsterRule> prepareNeutralMonsterRule(Archives &a
         hosting::pd2::prepareMonsterAi(data,record,*rule);
     }
     if(data.pd2Host && record.ai=="Npc" && record.index==1168) rule->ai.kind=MonsterAiKind::ScriptedNpc;
-    if(record.ai=="BaalToStairs" || record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter" || record.ai=="NpcBarb") {
+    if(record.ai=="BaalToStairs" || record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter" || record.ai=="NpcBarb" || record.ai=="Wussie") {
         const auto ai=loadMonsterAiProfile(data.tables.at("monstats"),record.sourceRow,record.ai,request.difficulty);
         if(!ai) throw std::runtime_error("Missing original scripted NPC AI: "+record.id);
         rule->ai=*ai;
@@ -138,7 +138,7 @@ std::shared_ptr<const server::MonsterRule> prepareNeutralMonsterRule(Archives &a
             break;
         }
     }
-    if(record.ai=="BaalToStairs" || record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter" || record.ai=="NpcBarb") rule->decisionTicks=rule->neutralDelayTicks;
+    if(record.ai=="BaalToStairs" || record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter" || record.ai=="NpcBarb" || record.ai=="Wussie") rule->decisionTicks=rule->neutralDelayTicks;
     if((record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter") && !prepareAct2MonsterSkills(archives,data,*animations,record,*rule))
         throw std::runtime_error("Missing original scripted monster skills");
     const auto &extra=data.tables.at("monstats2");

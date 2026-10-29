@@ -14,6 +14,8 @@ ControlBindings defaultControlBindings() {
     result[ControlAction::SkillPicker] = {'S', 0};
     for (size_t slot = 0; slot < 8; ++slot)
         result.keys[size_t(ControlAction::Skill1) + slot] = {uint16_t(0x70 + slot), 0};
+    result[ControlAction::PreviousSkill] = {controlWheelUp, 0};
+    result[ControlAction::NextSkill] = {controlWheelDown, 0};
     result[ControlAction::Belt] = {0xC0, 0};
     for (size_t slot = 0; slot < 4; ++slot)
         result.keys[size_t(ControlAction::Belt1) + slot] = {uint16_t('1' + slot), 0};
@@ -46,9 +48,7 @@ bool validControlKey(uint16_t key) {
         key == controlWheelUp || key == controlWheelDown;
 }
 bool controlActionAvailable(ControlAction action) {
-    return action < ControlAction::Count &&
-        action != ControlAction::PreviousSkill && action != ControlAction::NextSkill &&
-        !(action >= ControlAction::Say0 && action <= ControlAction::Say7);
+    return action < ControlAction::Count;
 }
 bool validControlBinding(ControlAction action, uint16_t key) {
     if (action >= ControlAction::Count || !validControlKey(key)) return false;

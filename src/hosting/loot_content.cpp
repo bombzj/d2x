@@ -76,11 +76,17 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
             // though CreateItemEx(a3=0,bForce=0) retains its allocated seeds.
             if(drop.crtInitialization) {pd2CrtRandom(programRandom);pd2CrtRandom(programRandom);}
             if(!drop.placementValid && drop.uniqueSelection==server::loot::NativeDrop::UniqueSelection::Exact) continue;
-            auto stage=planSelectedItem(data,token,drop.level,plan.randomState,uniques,request.classCode,nativeDropQuality(drop.quality),false,seeds,
-                drop.preferredPrefix,drop.preferredSuffix);
+            auto stage=drop.unforcedCreation?planCreatedItem(data,token,drop.level,uniques,seeds()):
+                planSelectedItem(data,token,drop.level,plan.randomState,uniques,request.classCode,nativeDropQuality(drop.quality),false,seeds,
+                    drop.preferredPrefix,drop.preferredSuffix);
             if(!stage.deferred.empty()) {plan.deferred=std::move(stage.deferred);break;}
             plan.randomState=stage.randomState;
             for(auto &item:stage.drops) {
+                item.generation.ear=drop.ear;item.generation.namedEar=drop.namedEar;
+                if(drop.ear) {
+                    item.generation.rollNaturalSockets=item.generation.rollNaturalEthereal=false;
+                    item.generation.suppressNaturalSockets=true;
+                }
                 if(item.generation.quality==ItemQuality::Unique && item.generation.specialRow>=0)
                     uniques.insert(size_t(item.generation.specialRow));
                 plan.drops.push_back(std::move(item));
@@ -168,6 +174,8 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
         if(request.pd2Map && request.request.nativeDrops.empty()) finishPd2MapItemDrop(data,request.pd2Map->properties,item,itemRandom,programRandom);
         const auto *nativeDrop=request.request.nativeDrops.empty()?nullptr:&request.request.nativeDrops.at(nativeIndex++);
         if(nativeDrop) {
+            if(nativeDrop->unforcedCreation) item.nativeFlags|=0x2000u; // CreateItemEx: !bForce -> INSTORE.
+            if(nativeDrop->quantityOverride) item.quantity=*nativeDrop->quantityOverride;
             if(nativeDrop->adjustment==server::loot::NativeDrop::Adjustment::Corruption)
                 applyPd2AutomaticCorruption(data,item,itemRandom,programRandom);
             else if(nativeDrop->adjustment==server::loot::NativeDrop::Adjustment::RandomSockets)

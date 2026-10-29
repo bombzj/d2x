@@ -57,6 +57,10 @@ struct PreparedHireling {
     MonsterRule rule;
     std::vector<HirelingAction> actions;
     int defaultChance{}, vision{}, follow{}, warp{}, think{};
+    bool meleeAi{};
+    uint8_t defaultMode{4};
+    int warpProbeClass{-1};
+    MovementCollisionRule warpProbeCollision;
     int strength{}, dexterity{};
     std::string weaponType;
     std::string weaponType2;

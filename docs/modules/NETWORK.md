@@ -134,7 +134,7 @@ UI登录记忆由应用层[OnlineLoginMemory](../../src/app/online_login_memory.
 
 ### 游戏内命令分流
 
-输入先由`network/chat_command`识别客户端命令与聊天语法，再由应用／RealmSession选择目标；不在游戏服务端解析通用斜杠命令，不增加私有D2GS包。名称不区分ASCII大小写；正文仍只支持255字节内可打印ASCII。已识别命令的参数或模式错误直接提示，不降级为广播或其他服务命令。
+输入先由`network/chat_command`识别客户端命令与聊天语法，再由应用／RealmSession选择目标；不在游戏服务端解析通用斜杠命令，不增加私有D2GS包。名称不区分ASCII大小写；局内正文在UI使用UTF-8，发送前按原系统ANSI代码页转换，原包正文不超过255字节。已识别命令的参数或模式错误直接提示，不降级为广播或其他服务命令。
 
 | 输入 | 执行位置与范围 |
 | --- | --- |
@@ -195,10 +195,10 @@ read() 借用客户端快照，有效至下一次 tick 或公共修改／随后 
 | D2GS S→C 51／59／60／63／82／8E | 固定14／26／7／21／29／10字节 | 对象／玩家指派、移出视野、旅行／传送点、门户、尸体归属 | 0x0A仅撤销空间指派、0x5C才移除名册；完整多人门户与尸体权限待接 |
 | D2GS S→C 67–6D | 固定16／21／12／12／16／16／10字节 | 原怪物路径、动作、生命比例 | 速度／尺寸读MPQ；原动作12／13映射SKILL1；真正序列消费技能通知，保留wireAction |
 | D2GS S→C A3／A7–AA／AC | 原表；A8／AA／AC byte长度 | 状态快照／开关、位流、NPC身份与外观前缀 | 位宽由MPQ消费者解析，状态历史64条；不代表全部状态效果可画 |
-| D2GS C→S 15 | ID／type=1／language=0、text NUL、receiver NUL、零扩展长度；普通广播最大261字节，私聊最大276字节 | 局内ASCII广播／私聊，RealmSession::send_chat、Enter聊天UI及online-send-chat；14为头顶消息 | Clt15／PlrMsg及D2Net SERVER_GetClientPacketSize核对；仅入队、无本地回显；独立服已接广播／私聊／屏蔽与头顶投影，其他编码暂缓 |
+| D2GS C→S 15 | ID／type=1／当前原语言字节、text NUL、receiver NUL、零扩展长度；普通广播最大261字节，私聊最大276字节 | 局内原生代码页广播／私聊，RealmSession::send_chat、Enter聊天UI及online-send-chat；14为头顶消息 | Clt15／PlrMsg及D2Net SERVER_GetClientPacketSize核对；仅入队、无本地回显；独立服保留原正文／语言字节，新增转换路径已构建，行为仍待实测 |
 | D2GS S→C 26／5B／5C／75／7F／8B–8D／90 | 26双NUL字符串，发送者≤15字节、文本≤255字节；5B word长度；其余原1.13c固定表 | remote_social归并聊天原字节、名册、队伍／关系原值和公开位置；普通消息投影至左上及M日志 | 组队邀请状态已解释；7F非玩家分支更新已登记宠物的生命／区域；不创建视野外单位；完整逐包核对仍缺 |
 | D2GS S→C 5E／5F | 38／5 | 保存37项任务初始化及本人门户访问位；诊断见world.quests.availability／world.playerPortalFlags | 不将初始化顺序当任务日志槽位，不用访问位推断永久旅行资格 |
-| D2GS S→C 7D／91 | 18／26字节 | 物品损坏／修复标志；按幕保存NPC初次交谈标记原报告 | 7D只更新已存在且归属匹配的物品／装备；91未联动对白选择，不改变任务奖励 |
+| D2GS S→C 7D／91 | 18／26字节 | 物品损坏／修复标志；NPC返程问候待发标志及按幕原报告 | 7D只更新已存在且归属匹配的物品／装备；原版91已接菜单开启时的原问候声音及4D回执，不改变任务奖励；宿主生产缺口见[消息速查](MESSAGES.md#d2x客户端对应入口与消费) |
 | D2GS S→C 5A／7E／81／A4–A5 等 | 原表固定 | **能分帧但未消费完整语义**，unconsumed 按 ID 暴露 | 系统事件、任务／宠物等关键后续状态；M4／M7／M8／M9仍未完成，不能归为无关消息或宣布M1全覆盖 |
 | D2GS S→C 其他有长度包 | 原始固定表或已核实变长程序 | 未消费ID公开计数 | 不把能跳过当成功；未知长度／未核实变长／Warden明确失败 |
 | D2GS C→S 行走／交互／旅行 | 原01–04／13／49等请求编码 | 当前地图资格＋完整坐标终点／原GUID靠近、传送点／退出 | 位置信息始终以服确认；取消只结束客户端未发意图 |
@@ -263,9 +263,11 @@ read() 借用客户端快照，有效至下一次 tick 或公共修改／随后 
 
 空间单位与名册分离：0x0A不退出名册，0x5C移除成员及其关系；离开视野不会生成幽灵角色，也不清除未收到原删除的尸体归属。本人换幕保留本局名册／关系／聊天，退局／断线／新局清空。名册暂存上限64（缓冲保护，不是允许64人游戏），关系4096，聊天256条。诊断以nameBytes／textBytes保留原语言字节，避免将原编码误当UTF-8；组队按钮仅使用已核实的邀请状态，未授予敌对资格，不算M4完成。
 
-聊天发送源码：`RealmSession::send_chat`要求ProtocolReady及当前连接／游戏／本人身份，跨区、死亡、库存／NPC面板不作为聊天禁用资格；拒绝空白、非可打印ASCII及超过255字节的文本。`protocol::game_chat`编码0x15广播／具名私聊或0x14头顶消息：type=1／language=0、文本NUL、收件人NUL、扩展长度0；末尾额外长度字节依据`reference/d2moo/source/D2Net/src/Server.cpp::SERVER_GetClientPacketSize`，不能仅发两个字符串。D2Game `PLAYER/PlrMsg.cpp::Rcv0x15_HandleChatMessage`由服务端真实角色名生成0x26，并按原关系／交互限制转发，发送者也等真实回显；不插本地消息或伪造ACK，不自动重试，不停止原服移动／施法。接收分帧限制姓名15／文本255字节，支持跨包与同帧后续包。原0x26的unitType=2／GUID=0不代表发送者GUID；`nNameColor`在普通玩家广播中是发送者等级，不直接作为字体色。原类型1／2／3／4／5／6／7按原字节保留。独立服务social按不区分大小写角色名路由私聊，接收者type2、发送者type6真实回包；找不到角色／被屏蔽分别回原5A/type4／13。原5D/action2(ignore)与3(squelch)更新方向关系，75／8C投影；广播沿原PlrMsg的聊天屏蔽及交易双方限制。14头顶消息按D2Chat原公式125+8×长度(最多254)帧保留，26/type5发送给可见且未屏蔽玩家，晚入可见也投影，到期76清除。客户端保留world.social.hover；头顶气泡的图形绘制未新增。BNCS频道命令、表情与中文编码仍未实现。
+聊天发送源码：`RealmSession::send_chat`要求ProtocolReady及当前连接／游戏／本人身份，跨区、死亡、库存／NPC面板不作为聊天禁用资格；拒绝空白、无效UTF-8／非BMP字符及原生编码后超过255字节的文本；network/chat_text负责UI与原字节转换，玩法不调用平台转换API。`protocol::game_chat`编码0x15广播／具名私聊或0x14头顶消息：原类型／当前gameLocale语言字节、文本NUL、收件人NUL、扩展长度0；末尾额外长度字节依据`reference/d2moo/source/D2Net/src/Server.cpp::SERVER_GetClientPacketSize`，不能仅发两个字符串。D2Game `PLAYER/PlrMsg.cpp::Rcv0x15_HandleChatMessage`由服务端真实角色名生成0x26，并按原关系／交互限制转发，发送者也等真实回显；不插本地消息或伪造ACK，不自动重试，不停止原服移动／施法。接收分帧限制姓名15／文本255字节，支持跨包与同帧后续包。原0x26的unitType=2／GUID=0不代表发送者GUID；`nNameColor`在普通玩家广播中是发送者等级，不直接作为字体色。原类型1／2／3／4／5／6／7按原字节保留。独立服务social按不区分大小写角色名路由私聊，接收者type2、发送者type6真实回包；找不到角色／被屏蔽分别回原5A/type4／13。原5D/action2(ignore)与3(squelch)更新方向关系，75／8C投影；广播沿原PlrMsg的聊天屏蔽及交易双方限制。14头顶消息按D2Chat原公式125+8×长度(最多254)帧保留，26/type5发送给可见且未屏蔽玩家，晚入可见也投影，到期76清除。客户端保留world.social.hover；气泡已有原字体／底板绘制，复用局内原生代码页解码。中文局内转换新增源码已构建，行为仍待实测；BNCS频道、表情及其完整本地化编码仍未实现。
 
 用户原版入房截图中的三条消息为参考服公告：参考D2GS的`handle_s2s.c`中`D2GSCBEnterGame`将角色加入MOTD队列，`d2gamelist.c`／`d2ge.c`的`D2GSSendMOTD`按顺序发送商业用途提示、配置MOTD、World Event提示。2026-10-07本机原服向D2X客户端发送的消息均为0x26 type4、language0、messageColor1、姓名字节[administrator]；第一条含FF c8橙色，Hello world!沿包的红色，第三条含FF c9黄色且本服key item为空。当前聊天源码支持type4无姓名前缀和这些颜色串，同样进入顶部与M日志；文案、颜色及顺序来自原服，不在客户端写入固定欢迎消息。此记录只说明该参考服配置下的消息，不代表原版所有服务器具有相同公告。
+
+局内本地化依据为本机1.13c D2Client RVA71034–7104D的WideCharToMultiByte(CP_ACP,0x250)，70AF7–70B6D写入当前语言并复制原生字节；7B4F0–7B570按语言6／7／9／12调用MultiByteToWideChar(CP_ACP,1)，其他语言使用D2Lang #10062（8320）逐字节展开。相同语言及7／12互通，其他多字节组合拒绝非ASCII显示。D2Lang的toUtf／toUnicode是其他文本消费者，不能仅凭其存在把局内原包改成UTF-8。服务器沿D2MOO PlrMsg透传正文及语言，晚可见头顶投影也保留语言。Windows代码页与原机条件一致才可逐字节比较；Linux的环境字符集是平台适配，不声称所有跨代码页客户端能互通。
 
 聊天原图、输入／日志操作、显示寿命和布局限制见[聊天与消息日志](../gameplay/ui/CLASSIC_HUD.md#聊天与消息日志)；本页只维护协议、队列及请求／回包边界。
 

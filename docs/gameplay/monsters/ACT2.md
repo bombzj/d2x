@@ -1,6 +1,6 @@
 # 第二幕怪物执行边界
 
-更新：2026-10-17。第二幕已有逐身份AI、动画、普通攻击与技能接线；本页登记当前实现、原版依据与缺口。当前MPQ的第二幕Levels三难度候选、Act 2 MonPreset及SuperUniques固定记录，再递归spawn／minion，得到74个enabled、killable、非中立MonStats身份、33类AI。技能槽去重30项，逐项关系见[怪物技能](../skills/MONSTERS.md#第二幕技能逐项台账)。规范见[COMMON](COMMON.md)。
+更新：2026-10-29。第二幕已有逐身份AI、动画、普通攻击与技能接线；本页登记当前实现、原版依据与缺口。当前MPQ的第二幕Levels三难度候选、Act 2 MonPreset及SuperUniques固定记录，再递归spawn／minion，得到74个enabled、killable、非中立MonStats身份、33类AI。技能槽去重30项，逐项关系见[怪物技能](../skills/MONSTERS.md#第二幕技能逐项台账)。规范见[COMMON](COMMON.md)。
 
 ## 三难度重新核对
 
@@ -70,6 +70,8 @@ MonPreset固定身份包括Radament、Bloodwitch the Wild、Fangskin、Beetlebur
 `monsters/act2_skills.cpp`负责钻地、移动、出生及木乃伊支持目标；`skills/monster_actions.cpp`持释放队列；`missiles/monster.cpp`持冰尖柱爆炸／冻结、延迟陨石／地火及毒瓶子弹体。甲虫／虫后固有回调与精英词缀分开计时，本身光环与精英光环各自执行。客户端消费真实MonSeq、钻地末帧、甲虫闪电及虫后死亡毒云，不判伤害或生成战斗子怪。Vulture空中使用无碰撞移动、不可攻击／选择，S1沿原移动包持续显示，落地S2复验原碰撞及动态占位。BatDemon的S3／S4／S2使用各自AnimData时钟与原26／28动作包。蓝／红及其他颜色状态按States.colorpri选择当前幕PL2的colorshift，不自造RGB替身。
 
 虫卵与石棺虽有MonStats2.inert，仍按enabled／killable／Align及自己的AI准入；inert不作为这两类敌怪的拒绝条件。ArcaneTower保留原表1000毒抗，抗性校验采用原有符号16位字段范围；其MissA1的CelFile=null使用原CltDo8程序，不要求不存在的DCC。MaggotEgg的原calc1先按公式字段去除外围引号，再核对及按原等级求值；出生先探原点，再按原搜索参数1–4展开3／6／9／12格周界，每次完整失败才提高参数，追加调用最多2×目标数量。冲锋的回绕／落地区间只作用于完整MonSeq，内部COF仍使用全部原帧，MonSeq.dir不作为拒绝条件。豹族投矛手的1HT DT／DD COF引用S5 bld，但当前MPQ只含该组件A1图；保留原身体并略过缺失的血迹装饰层，不借用其他身体或自制像素。
+
+沙虫钻地的MonSeq按原表S1帧11→0组装，已钻地下的末帧保持只应用于完整序列，不传给组成COF；原D2MOO SkillMonst::SKILLS_SrvDo086_MaggotDown在完成边界冻结序列速度，不把组成动画改成零速。客户端此前因错误传播finalFrame拒绝seq_maggotdown，此处已修正；实机范围见[原版缺口](../../development/ORIGINAL_GAPS.md)。
 
 沙虫／虫后子怪只禁经验，保留MPQ掉落资格；Nest和复活同时禁重复经验／掉落。Bestow当前calc1／calc2均为空，治疗量为0，不自造比例。SkeletonRaise是复活显示声明，不添加AI主动施放。Swarm Move及VampireMeteor保留声明与原AI开启条件，不因有槽擅自启用。
 

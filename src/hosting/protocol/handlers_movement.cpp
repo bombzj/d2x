@@ -1,6 +1,12 @@
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting::handlers {
+RequestResult StartRunning(GameplayContext &context, net::protocol::Reader &) {
+    return submitGameplay(context,MovementCommand{MovementAction::StartRunning,{},false});
+}
+RequestResult StopRunning(GameplayContext &context, net::protocol::Reader &) {
+    return submitGameplay(context,MovementCommand{MovementAction::StopRunning,{},false});
+}
 RequestResult UpdatePosition(GameplayContext &context, net::protocol::Reader &in) {
     const auto x = in.u16(), y = in.u16(); in.finish();
     return submitGameplay(context, MovementCommand{MovementAction::Synchronize,

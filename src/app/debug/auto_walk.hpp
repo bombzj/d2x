@@ -1,0 +1,36 @@
+#pragma once
+#include "contracts/online_scene.hpp"
+#include <chrono>
+#include <nlohmann/json_fwd.hpp>
+#include <optional>
+#include <set>
+#include <string>
+
+namespace d2x {
+class RemoteTown;
+class RemoteControl;
+class RemoteCombat;
+namespace net {class RealmSession;}
+// Explicit debug input driver. Never reads host state or writes replica positions.
+class DebugAutoWalk {
+    using Clock=std::chrono::steady_clock;
+    enum class Goal {Point,Unit,Waypoint,Exit} goal_{};
+    std::string state_="idle",reason_;
+    uint64_t game_{},area_{};
+    std::optional<uint16_t> level_;
+    std::optional<uint16_t> destination_;
+    std::optional<OnlinePoint> point_,segment_,previous_;
+    std::optional<OnlineUnitKey> unit_;
+    std::set<std::pair<int,int>> visited_;
+    Clock::time_point deadline_,progressAt_,next_;
+    unsigned moves_{},interactions_{},searches_{};
+    bool run_=true,interact_{},landmark_{};
+    void finish(std::string,std::string,RemoteControl &);
+    nlohmann::json status() const;
+  public:
+    bool active() const;
+    std::optional<std::string> command(const nlohmann::json &,net::RealmSession &,RemoteTown &,RemoteControl &,RemoteCombat &);
+    void tick(net::RealmSession &,RemoteTown &,RemoteControl &,bool blocked);
+    void manualInput(RemoteControl &);
+};
+}

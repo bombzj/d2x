@@ -8,6 +8,30 @@
 #include <vector>
 
 namespace d2x::server::companions {
+void System::registerPlayer(EntityId actor,uint64_t tick) {
+    // Player::sub_6FC7B7A0, then PlrModes::sub_6FC81B90 every 30 frames.
+    ports_.frameEvents.insertPrepared({{},{FrameEventUnit::Player,actor},FrameEventType::DelayedPortal,tick+250});
+}
+DomainResult<> System::synchronizePets(const FrameEvent &event,uint64_t tick) {
+    const auto *owner=ports_.players.findActor(event.owner.unit);
+    if(!owner) return {DomainStatus::InvalidActor,{}};
+    std::map<EntityId,monsters::Actor> actors;std::vector<EntityId> order;
+    for(const auto id:ports_.monsters.pets(owner->player,true)) {
+        const auto *body=ports_.monsters.find(id);
+        // PlayerPets::sub_6FC7E640 unlinks dead non-hireling nodes, without
+        // killing or removing the corpse and without touching hireling 7.
+        if(!body || body->rule.petType==7 || body->alive()) continue;
+        if(body->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        auto candidate=*body;candidate.petUnregistered=true;++candidate.revision;
+        actors.emplace(id,std::move(candidate));order.push_back(id);
+    }
+    auto publication=ports_.monsters.prepareActorPublication(std::move(actors),0);
+    publication.publicationOrder=std::move(order);
+    auto next=ports_.frameEvents.prepareInsertion({{},event.owner,FrameEventType::DelayedPortal,tick+30});
+    if(!ports_.monsters.validateActors(publication)) return {DomainStatus::Stale,{}};
+    ports_.monsters.publishActors(publication);ports_.frameEvents.publish(std::move(next));
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::ownerDied(const ActorContext &actor) {
     const auto *player = ports_.players.find(actor.player);
     const auto *area = ports_.areas.find(actor.area);

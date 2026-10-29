@@ -56,7 +56,7 @@ PD2远端差异：Arctic Blast的CltDo111使用独立喷流程序；Fire Claws�
 
 来源：[docs/gameplay/skills/BARBARIAN.md](../gameplay/skills/BARBARIAN.md)。
 
-PD2远端Double Throw走替换CltDo98，按两手真实Items.MissileType选择A／B／C及两次动画释放；Split Throw走118及原整数扇形，连锁次数与半径由当前公式／弹体输入准备。本人跳跃在服务器省略4C时消费最新skill_move状态结束飞行、进入落地动画；未确认预测沿既有15秒预算回收，新技能可替换失效预测。104中Find Potion／Find Item已接原38／40的尸体血迹，本地原服确认搜索后corpse_noselect及原血迹飞弹；原版模式的Find Potion也已核对。CltDo97已恢复本人经skill_move确认的飞行：按当前AuraRangeCalc准备落点、Calc2*41+2560取速度，原序列第5帧起飞，复用原整数路径步进及距离重力。移动状态提前撤出时仍完成已确认弧线，避免画面停在最终坐标之前。本地原服核对Leap／Leap Attack二十子格位移、落地及随后正常走路；其他玩家／怪物的97、全部碰撞及装备速度组合仍待覆盖。依据与范围见[核心分析](../resources/PD2_CN_DLL_ANALYSIS.md#角色技能树与客户端程序)。
+PD2远端Double Throw走替换CltDo98，按两手真实Items.MissileType选择A／B／C及两次动画释放；Split Throw走118及原整数扇形，连锁次数与半径由当前公式／弹体输入准备。本人跳跃在服务器省略4C时消费最新skill_move状态结束飞行、进入落地动画；未确认预测沿既有15秒预算回收，新技能可替换失效预测。104中Find Potion／Find Item已接原38／40的尸体血迹，本地原服确认搜索后corpse_noselect及原血迹飞弹；原版模式的Find Potion也已核对。CltDo97已恢复本人经skill_move确认的飞行：按当前AuraRangeCalc准备落点、Calc2*41+2560取速度，原序列第5帧起飞，复用原整数路径步进及距离重力。移动状态提前撤出时仍完成已确认弧线，避免画面停在最终坐标之前。本地原服核对Leap／Leap Attack二十子格位移、落地及随后正常走路；其他玩家／怪物的97、全部碰撞及装备速度组合仍待覆盖。当前消费者已与零售43／44归到共用玩家飞行与图形积分路径，97保留独立Calc2*41+2560速度，不套用零售RunVelocity；该次共用调整已构建，行为仍待实测，旧实测不扩大为本次通过。依据与范围见[核心分析](../resources/PD2_CN_DLL_ANALYSIS.md#角色技能树与客户端程序)。
 
 <a id="职业技能刺客渐进与陷阱表现"></a>
 
@@ -121,3 +121,5 @@ PD2骷髅战士攻击后的`Skeleton Splash`（当前Skills ID393、srvdofunc163
 来源：[docs/gameplay/skills/NECROMANCER.md](../gameplay/skills/NECROMANCER.md)。
 
 PD2骷髅、法师和弓箭手由各自表行进入同一SelectProc2，不写死原版技能ID。
+
+零售新增Clt30／Clt32／Clt45／Clt46／Clt54／Clt57／Clt68与原Hit37／51客户端消费者仅在Original规则分支启用；当前PD2核心对应程序／不同字段来源未在此批核对，保持PD2不套用这些新零售回调。共同路径头坐标语义为DynamicPath.tTargetCoord，不能将PATH_GetFirstPoint误当队列头；此次不据此改写PD2专用程序。新增零售路径已构建，行为仍待实测。

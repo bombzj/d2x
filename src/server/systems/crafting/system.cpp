@@ -25,6 +25,22 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (!p || !p->entered || p->actor != actor.actor || p->area != actor.area ||
         !area || area->generation != actor.areaGeneration || p->persistent.player.hp <= 0)
         return {DomainStatus::InvalidActor, {}};
+    const auto *transmogrify=std::get_if<TransmogrifyItem>(&request.intent);
+    if(transmogrify) {
+        const ItemInstance *item=nullptr;const ItemDefinition *definition=nullptr;
+        if(transmogrify->source) {
+            const auto found=p->persistent.inventory.items.find(transmogrify->source->id);
+            if(found==p->persistent.inventory.items.end() || found->second.revision!=transmogrify->source->revision) return {DomainStatus::Stale,{}};
+            item=&found->second;definition=ports_.definitions?ports_.definitions->find(item->definition):nullptr;
+            if(!definition) return {DomainStatus::Unavailable,{}};
+        }
+        const auto *stored=item?std::get_if<ContainerLocation>(&item->location):nullptr;
+        const bool inStorage=stored && (stored->container==p->persistent.containers.backpack || stored->container==p->persistent.containers.cube || stored->container==p->persistent.containers.stash);
+        if(!item || !definition->transmogrify || !inStorage) {
+            const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{ItemTargetingFact{{},-1,-1}}});
+            return {sent.status,sent?std::optional{std::monostate{}}:std::nullopt};
+        }
+    }
     uint64_t conversation=0;
     auto normalized=request;
     const auto *sacrifice=std::get_if<Pd2SacrificeItem>(&request.intent);
@@ -32,7 +48,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if(!sacrifice->input.id) return ports_.maps.closeSacrifice(actor,sacrifice->altar);
         if(!ports_.maps.sacrificeAccess(actor,sacrifice->altar,sacrifice->input)) return {DomainStatus::InvalidRequest,{}};
     }
-    if (!sacrifice && !std::holds_alternative<TransmuteCube>(request.intent) && !std::holds_alternative<SocketItem>(request.intent)) {
+    if (!transmogrify && !sacrifice && !std::holds_alternative<TransmuteCube>(request.intent) && !std::holds_alternative<SocketItem>(request.intent)) {
         const auto target=serviceNpc(request.intent);
         const auto access=ports_.npc.service(actor,target);
         if(!access) return {DomainStatus::InvalidRequest,{}};
@@ -49,7 +65,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (state_.pending.contains(actor.player)) return {DomainStatus::Conflict, {}};
     if (state_.pending.size() >= 8 || state_.next == UINT64_MAX) return {DomainStatus::Capacity, {}};
     auto random = ports_.random;
-    state_.pending.emplace(actor.player, Pending{actor, normalized, state_.next,sacrifice?random:initialRandom(rollRandom(random)),p->inventoryRevision,p->characterRevision,conversation});
+    state_.pending.emplace(actor.player, Pending{actor, normalized, state_.next,transmogrify?0:sacrifice?random:initialRandom(rollRandom(random)),p->inventoryRevision,p->characterRevision,conversation});
     ++state_.next; ports_.random = random;
     return {DomainStatus::Applied, std::monostate{}};
 }
@@ -66,6 +82,7 @@ std::vector<Preparation> System::pending() const {
             if(ports_.maps.read().instance) source.pd2BossDifficulty=ports_.maps.read().instance->bossDifficulty;
         }
         if (const auto *p = ports_.players.find(id)) {
+            source.unitRandom=p->combatRandom;
             source.character = p->persistent; source.classCode = p->definition.code;
             source.inventoryRevision = pending.inventoryRevision;
             // The character snapshot is read now, after this frame's resource
@@ -100,6 +117,10 @@ DomainResult<> System::install(Prepared prepared) {
             const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{NpcServiceFact{sacrifice->altar,7}}});
             if(!sent) return {sent.status,{}};
         }
+        if(std::holds_alternative<TransmogrifyItem>(source.pending.request.intent)) {
+            const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{ItemTargetingFact{{},-1,-1}}});
+            if(!sent) return {sent.status,{}};
+        }
         if(source.pending.conversation) {
             const auto npc=serviceNpc(source.pending.request.intent);
             const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{NpcServiceFact{npc,7}}});
@@ -118,6 +139,12 @@ DomainResult<> System::install(Prepared prepared) {
     }
     if (p->inventoryRevision != source.inventoryRevision || p->characterRevision != source.characterRevision ||
         source.storage != ports_.inventory.storageAccess(actor.player) || source.cube!=ports_.inventory.cubeAccess(actor.player)) return fail(DomainStatus::Stale);
+    if(prepared.retailPortalNoop) {
+        if(!std::holds_alternative<TransmuteCube>(source.pending.request.intent) || !source.cube ||
+            !p->rules.skills || p->rules.skills->pd2) return fail(DomainStatus::InvalidRequest);
+        state_.retained.erase(actor.player);state_.pending.erase(queued);state_.deferred.clear();
+        return {DomainStatus::Applied,std::monostate{}};
+    }
     if (!prepared.deferred.empty()) { state_.deferred = std::move(prepared.deferred); return fail(DomainStatus::Unavailable); }
     if(prepared.pd2Random && ports_.pd2Random!=source.pd2Random) return fail(DomainStatus::Stale);
     const auto *sacrifice=std::get_if<Pd2SacrificeItem>(&source.pending.request.intent);
@@ -172,7 +199,7 @@ DomainResult<> System::install(Prepared prepared) {
         if (!draft.fits(id, desired)) {
             const auto space = draft.space(id, output.container);
             if (!space) {
-                if(!source.pending.conversation && !sacrifice) return fail(DomainStatus::Conflict);
+                if(!source.pending.conversation && !sacrifice && !std::holds_alternative<TransmogrifyItem>(source.pending.request.intent)) return fail(DomainStatus::Conflict);
                 draft.edit.spilled.push_back(item);draft.edit.inventory.items.erase(id);continue;
             }
             desired = *space;
@@ -200,6 +227,11 @@ DomainResult<> System::install(Prepared prepared) {
         edit.character=std::move(prepared.character);
         edit.facts.emplace_back(ports_.quests.projection(actor.player,*edit.character,actor.area,false));
         if(source.pending.conversation) edit.facts.emplace_back(NpcServiceFact{serviceNpc(source.pending.request.intent),6});
+    }
+    if(std::holds_alternative<TransmogrifyItem>(source.pending.request.intent)) {
+        edit.random=prepared.unitRandom;
+        edit.facts.emplace_back(SoundFact{p->actor,0,p->area,4});
+        edit.facts.emplace_back(ItemTargetingFact{{},-1,-1});
     }
     if(std::holds_alternative<TransmuteCube>(source.pending.request.intent)) edit.facts.emplace_back(SoundFact{p->actor,0,p->area,4});
     auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return isDeferred(plan.status)?DomainResult<>{plan.status,{}}:fail(plan.status);

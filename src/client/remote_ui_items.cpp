@@ -616,6 +616,7 @@ void RemoteUiClients::Impl::projectInventory() {
             def.shield=definition->equipment.isType("shld"); def.quiver=!definition->equipment.quiver.empty();
             def.socketFiller=definition->equipment.isType("sock"); def.identifySource=data.isIdentifyScroll(native.code)||data.isIdentifyScroll(def.bookScroll);
             def.usable=data.tables.at(definition->base.sourceTable).number(definition->base.sourceRow,"useable").value_or(0)!=0;
+            def.readableQuestClue=session.read().protocolProfile=="lod113c" && native.code=="bkd";
             for(size_t slot=0;slot<def.slots.size();++slot) def.slots[slot]=definition->equipment.fits(EquipmentSlot(slot));
             v.definitions.emplace(native.code,std::move(def));
             auto projection=projectItem(native,di,location);
@@ -648,6 +649,7 @@ void RemoteUiClients::Impl::projectInventory() {
                 }
             }
         }
+        v.targetingCursor=w.itemTargetingCursor;
         v.targetingReady=!w.itemTargetingSource;
         if(w.itemTargetingSource) {
             const auto source=v.items.find(itemId(*w.itemTargetingSource));

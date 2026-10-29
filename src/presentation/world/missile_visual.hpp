@@ -24,6 +24,7 @@ struct ClientMissileInitialization {
     std::optional<int> animationRate,pixelHeight,ballisticHeight;
     std::optional<ClientMissileGraphics> graphics;
     bool distanceLimited{};
+    bool blessedHammerPath{}; // Explicit native path type14, independent of the skill/table.
     std::optional<std::array<int,3>> bounce; // count, restitution %, native initial arc frames.
     std::optional<std::array<int32_t,2>> parameters;
     std::optional<int> streamMissile,streamRange,streamPeriod;
@@ -34,6 +35,7 @@ struct ClientMissileInitialization {
     std::optional<int> chainHits,chainRadius;
     std::optional<int32_t> velocityRaw; // Native flag0x10, before slow and 75% scaling.
     std::optional<bool> suppressLight; // Native creation flag0x4000; absent when pairing a plain 73.
+    std::optional<std::array<int,3>> roomAttachment; // level, global tile X/Y; room-owned local effects.
 };
 // MPQ client programs only. No damage, chance-to-hit or status application.
 struct ClientMissileProgram {
@@ -85,6 +87,7 @@ struct ClientMissileVisual {
     int nativeTotalFrames{}, nativeCurrentFrames{},nativeSequenceFrame{};
     std::optional<int> animationRate;
     bool suppressLight{};
+    std::optional<std::array<int,3>> roomAttachment;
     bool initialHidden{};
     std::optional<int> hiddenUntilCurrentFrame;
     std::optional<int> activateAtCurrentFrame;
@@ -120,6 +123,16 @@ struct ClientMissileTarget {
     int retaliation{-1},retaliationRank{1};
     bool undead{},monster{},large{};
     EntityId target; // Observed path target; used by the native owner's-target fallback.
+    std::optional<Vec> targetPoint{};
+    std::optional<uint8_t> direction{};
+};
+// Related-unit lookups also see objects and dead players. These anchors never
+// become contact/damage candidates merely because a client program uses them.
+struct ClientMissileAnchor {
+    EntityId id;
+    Vec position;
+    uint32_t nativeId{};
+    uint8_t type{};
 };
 // Prepared from imported skill data by SceneAssets; no damage or cast rules.
 struct BlizzardVisual {

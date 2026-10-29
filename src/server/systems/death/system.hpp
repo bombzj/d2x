@@ -14,7 +14,18 @@ namespace d2x::server::death {
 // Death occurrences, resurrection and corpse recovery; no duplicated persistent corpse items.
 enum class Action { Resurrect, RecoverCorpse };
 struct Request { Action action; std::optional<UnitTarget> corpse; };
-struct Transition { uint64_t occurrence{}; EntityId victim; bool finalized{}; uint64_t ready{}; bool reviving{}; bool companionsSettled{}; PlayerMessageFact message; std::optional<PointTarget> revival{}; bool penaltySettled{};uint64_t recoverableExperience{}; };
+struct Transition {
+    uint64_t occurrence{}; EntityId victim; bool finalized{}; uint64_t ready{}; bool reviving{}; bool companionsSettled{};
+    PlayerMessageFact message; std::optional<PointTarget> revival{}; bool penaltySettled{};uint64_t recoverableExperience{};
+    struct EarDrop {GroundLocation location;ItemEarIdentity identity;bool named{},queued{};};
+    std::optional<EarDrop> ear;
+    struct GoldDrop {
+        unsigned amount{},level{};std::string code;
+        std::optional<GroundLocation> location;bool selected{},queued{},finished{},created{};
+    };
+    std::optional<GoldDrop> penaltyGold,corpseGold;
+    EntityId corpseId,corpseItems;
+};
 struct ExperienceShare {PlayerId player;EntityId actor;uint64_t amount{};};
 enum class RewardPhase { Restore, HirelingExperience, Loot, PlayerExperience };
 struct Reward { PlayerId player; EntityId actor; uint64_t amount{}; int life{},mana{}; CharacterRecord lootClaimant; std::optional<companions::HirelingExperienceAward> hireling{}; std::vector<ExperienceShare> shares{};size_t awarded{}; RewardPhase phase = RewardPhase::Restore; };
@@ -27,6 +38,8 @@ class System {
   StepStatus advanceRewards(TickContext);
   const PlayerState *corpseOwner(const ActorContext &, EntityId) const;
     DomainResult<> begin(const ActorContext &);
+    DomainResult<> dropEar(const ActorContext &);
+    DomainResult<unsigned> dropGold(const ActorContext &,unsigned,bool corpse,const InventoryState *ground=nullptr);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

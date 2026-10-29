@@ -145,6 +145,11 @@ const CubeRecipe *cube(const ClassicData &data, Prepared &result,uint64_t &rando
         const bool preserve=output.kind==CubeOutputKind::UseItem || output.copy;
         if(output.kind==CubeOutputKind::CowPortal || output.kind==CubeOutputKind::UberPortal || output.kind==CubeOutputKind::UberFinale) {
             require(matched->outputs.size()==1,"Mixed portal outputs are not an original supported recipe");
+            // Retail 1.13c Cube output table FA5E8 entries 2/3 are
+            // xor eax,eax;ret (70180/70170), unlike D2MOO's later extension.
+            if(!data.pd2Host && output.kind!=CubeOutputKind::CowPortal) {
+                result.retailPortalNoop=true;result.consumed.clear();result.outputs.clear();return matched;
+            }
             result.portal=output.kind==CubeOutputKind::CowPortal?server::travel::SpecialPortalKind::Cow:output.kind==CubeOutputKind::UberPortal?server::travel::SpecialPortalKind::Pandemonium:server::travel::SpecialPortalKind::Finale;continue;
         }
         std::string code = output.kind==CubeOutputKind::UseType || output.kind==CubeOutputKind::UseItem ? original.definition : output.code;
@@ -271,9 +276,34 @@ void questService(const ClassicData &data,Prepared &result) {
     item.id=handle.id;item.location=ContainerLocation{s.character.containers.backpack,{}};
     result.consumed.push_back(handle);result.outputs.push_back({std::move(item),{},s.character.containers.backpack});result.character=std::move(record);
 }
+void transmogrify(const ClassicData &data,Prepared &result,const TransmogrifyItem &request) {
+    require(request.source.has_value(),"Missing transmogrify source");
+    auto original=resolve(result.source,*request.source);const auto *base=data.items.find(original.definition);
+    require(base && base->transmogrify,"Item has no native transformation");
+    const auto *target=data.items.find(base->transmogrifyType);
+    require(target,"MPQ transmogrify target is unavailable");
+    auto random=initialRandom(original.nativeSeed);
+    require(original.nativeUnitSeed && *original.nativeUnitSeed && original.nativeSeed,
+        "Native transmogrify constructor seeds are unavailable; source retained");
+    ItemGeneration generation;generation.seeds=ItemSeeds{*original.nativeUnitSeed,original.nativeSeed};
+    generation.propertyRandom=initialRandom(original.nativeSeed);
+    auto item=prepareItem(data,{target->code,1,{},original.level,generation},random,result.source.difficulty,result.source.character.player.level);
+    auto unitRandom=result.source.unitRandom;unsigned quantity=0;
+    if(base->transmogrifyMin && base->transmogrifyMax) {
+        require(base->transmogrifyMax>=base->transmogrifyMin,"Invalid MPQ transmogrify quantity range");
+        quantity=base->transmogrifyMin+limitedRandom(unitRandom,base->transmogrifyMax-base->transmogrifyMin);
+    }
+    if(target->maxStack>1) {require(quantity>0 && quantity<=target->maxStack,"Invalid native transmogrify quantity");item.quantity=quantity;}
+    const auto *where=std::get_if<ContainerLocation>(&original.location);require(where,"Transmogrify source is not stored");
+    item.id=original.id;item.location=ContainerLocation{result.source.character.containers.backpack,where->cell};
+    result.consumed.push_back(*request.source);
+    result.outputs.push_back({std::move(item),{},result.source.character.containers.backpack});
+    result.unitRandom=server::transactions::UnitRandomEdit{result.source.unitRandom,unitRandom};
+}
 Prepared prepare(const ClassicData &data, Preparation source) {
     Prepared result; result.source=std::move(source);
-    if (const auto *socket=std::get_if<SocketItem>(&result.source.pending.request.intent)) sockets(data,result,*socket);
+    if(const auto *conversion=std::get_if<TransmogrifyItem>(&result.source.pending.request.intent)) transmogrify(data,result,*conversion);
+    else if (const auto *socket=std::get_if<SocketItem>(&result.source.pending.request.intent)) sockets(data,result,*socket);
     else if(std::holds_alternative<TransmuteCube>(result.source.pending.request.intent)) {
         if(data.pd2Host) preparePd2Cube(data,result,[&](Prepared &stage,uint64_t &random,bool optional){return cube(data,stage,random,optional);});
         else {auto random=result.source.pending.seed;cube(data,result,random);}

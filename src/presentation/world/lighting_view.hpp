@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -39,6 +40,8 @@ class LightingView {
     std::array<Environment, 5> environments_{};
     float frameRemainder_ = 0;
     bool eclipse_ = false;
+    std::optional<int> denIntensity_;
+    std::optional<int> sanctumIntensity_;
     int cloakLevel_{-1},cloakFrame_{},cloakRise_{},cloakTotal_{},cloakAngle_{};
     float cloakFactor_{1};
     Vec origin_{};
@@ -57,6 +60,8 @@ class LightingView {
     int overlayRadius(uint64_t owner, int overlay, float startedAt, int initial, int target);
     void finishSources();
     void setEclipse(bool active);
+    void setDenIntensity(std::optional<int> intensity) { denIntensity_=intensity; }
+    void setSanctumIntensity(std::optional<int> intensity) { sanctumIntensity_=intensity; }
     void beginCloak(int duration,int level);
     void prepare(const Grid &grid, const LevelRecord &level, Vec player, int radius, Color playerColor,
                  std::span<const SceneLight> lights, std::span<const SceneLightRegion> regions);

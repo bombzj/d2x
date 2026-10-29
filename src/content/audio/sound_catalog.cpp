@@ -57,12 +57,34 @@ SoundCatalog::SoundCatalog(Archives &archives) : sounds_(archives.read("data/glo
         if (voice.empty()) monsters_.emplace(id, MonsterSoundDefinition{}); // Intentional silent actor.
         else if (const auto found = profiles.find(voice); found != profiles.end()) monsters_.emplace(id, found->second);
     }
+    // Retail 9CAD0/9CCE0 mode 2: program aliases; resource rows remain MPQ-owned.
+    const std::map<std::string,std::string,std::less<>> greetingNames{
+        {"cain1","cain_greeting_1"},{"cain2","cain_greeting_1"},{"cain3","cain_greeting_1"},
+        {"cain4","cain_greeting_1"},{"cain5","cain_greeting_1"},{"cain6","cain_greeting_1"},
+        {"warriv1","warriv_greeting_return"},{"warriv2","warriv_greeting_return"},
+        {"meshif1","meshif_greeting_return"},
+        {"tyrael1","tyrael_greeting_1"},{"tyrael3","tyrael_greeting_1"},
+        {"halbu","halbu_greeting_1"},{"jamella","jamella_old_greeting_1"},
+        {"drehya","anya_greeting_return"},{"qual-kehk","qualkehk_greeting_return"},
+        {"elzix","elzix_greeting_1"}};
+    for(size_t row=0;row<monsters.rows().size();++row) {
+        if(monsters.value(row,"hcIdx").empty() || !monsters.number(row,"interact").value_or(0)) continue;
+        const auto name=monsters.value(row,"Id");const auto special=greetingNames.find(name);
+        const std::string sound=special!=greetingNames.end()?special->second:std::string(name)+"_greeting_return";
+        if(soundRows_.contains(sound)) npcReturnGreetings_.emplace(compiledMonsterIndex(monsters,row),SoundRule{sound});
+    }
     const DataTable characters(archives.read("data/global/excel/charstats.txt"));
     int identity = 0;
     for (const auto &character : loadCharacterDefinitions(characters)) {
         const auto name = lower(std::string(characters.value(character.sourceRow,"class")));
-        players_.emplace(identity++, PlayerSoundDefinition{SoundRule{name + "_hit_1"},
-            SoundRule{name + "_death_1"}, SoundRule{name + "_needkey_1"}});
+        PlayerSoundDefinition profile;
+        profile.hit.sound=name+"_hit_1";profile.death.sound=name+"_death_1";profile.needKey.sound=name+"_needkey_1";
+        // Retail 232A9..232CE: attached event 35 uses speech-base + 2.
+        profile.denComplete.sound=name+"_act1_complete_den";
+        profile.nihlathakComplete.sound=name+"_act5_defeat_nihlathak";
+        for(size_t slot=0;slot<profile.chat.size();++slot)
+            profile.chat[slot].sound=name+"_chat_"+char('a'+slot)+"_1";
+        players_.emplace(identity++,std::move(profile));
     }
     const DataTable skills(archives.read("data/global/excel/skills.txt"));
     for (size_t row = 0; row < skills.rows().size(); ++row)
@@ -143,6 +165,10 @@ SoundCatalog::SoundCatalog(Archives &archives) : sounds_(archives.read("data/glo
         for (size_t row = 0; row < table.rows().size(); ++row)
             target->emplace(int(row),itemSound(table,row));
     }
+}
+const SoundRule *SoundCatalog::npcReturnGreeting(int identity) const {
+    const auto found=npcReturnGreetings_.find(identity);
+    return found==npcReturnGreetings_.end()?nullptr:&found->second;
 }
 std::optional<size_t> SoundCatalog::soundRow(std::string_view id) const {
     const auto found = soundRows_.find(id);

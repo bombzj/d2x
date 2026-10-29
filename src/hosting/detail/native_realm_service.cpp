@@ -5,7 +5,9 @@
 #include "persistence/save_codec.hpp"
 #include "resources/atomic_file.hpp"
 #include <algorithm>
+#include <iostream>
 #include <random>
+#include <syncstream>
 #include <utility>
 
 namespace d2x::hosting {
@@ -138,7 +140,8 @@ void NativeRealmService::recoverTcpIpSave() {
     const auto path = directory / ("character-" + std::to_string(stamp) + ".d2s");
     writeFileAtomically(path, *tcpIpRecoverySave, false);
     tcpIpRecoveryWritten=true;
-    counters.lastFailure = "TCP/IP disconnected; host recovery save: " + path.string();
+    const auto recovery = "TCP/IP disconnected; host recovery save: " + path.string();
+    counters.lastFailure = failure.empty() ? recovery : failure + "; " + recovery;
 }
 void NativeRealmService::resetRealm() {
     if (binding) close();
@@ -153,6 +156,9 @@ void NativeRealmService::connectGame(bool announce) {
     if (announce) sendGame({0xAF, 0});
 }
 void NativeRealmService::failGame() {
+    if (peer.phase != GamePhase::Closed && !failure.empty())
+        std::osyncstream(std::cerr) << "[game-close] connection=" << diagnosticConnection
+            << " phase=" << int(peer.phase) << " reason=" << failure << '\n';
     peer.phase = GamePhase::Closed;
     ticket = false;
     if (binding) host.enter(*binding, false);

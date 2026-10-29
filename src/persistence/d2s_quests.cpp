@@ -156,6 +156,7 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
         player.quests[difficulty][questIndex(QuestId::Summoner)].stage = summonerFlags & 1 ? 3 : summonerFlags & 2 ? 2 : summonerFlags & 4 ? 1 : 0;
         const auto tombsFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::SevenTombs).nativeSlot * 2);
         player.quests[difficulty][questIndex(QuestId::SevenTombs)].stage = tombsFlags & 1 ? 5 : tombsFlags & 0x10 ? 4 : tombsFlags & 8 ? 3 : tombsFlags & 0x20 ? 2 : tombsFlags & 4 ? 1 : 0;
+        std::copy_n(sections.introductions.begin()+0x1C+difficulty*8,8,player.npcVoiceFlags[difficulty].begin());
         for (const auto &[bit, key] : dialogues.introductionKeys)
             if (sections.introductions[questIntroductionOffset + difficulty * 8 + bit / 8] & (1u << (bit % 8)))
                 player.npcIntroductions[difficulty].insert(key);
@@ -292,6 +293,7 @@ void exportD2sQuests(const CharacterRecord &player, D2sFixedSections &sections, 
         const auto tombsOffset = 10 + difficulty * 96 + questDefinition(QuestId::SevenTombs).nativeSlot * 2;
         putWord(sections.quests, tombsOffset, (word(sections.quests, tombsOffset) & ~0x203Du) |
             (tombs >= 5 ? 0x2001 : tombs == 4 ? 0x2010 : tombs == 3 ? 0x2008 : tombs == 2 ? 0x20 : tombs == 1 ? 4 : 0));
+        std::copy(player.npcVoiceFlags[difficulty].begin(),player.npcVoiceFlags[difficulty].end(),sections.introductions.begin()+0x1C+difficulty*8);
         for (const auto &[bit, key] : dialogues.introductionKeys)
             if (player.npcIntroductions[difficulty].contains(key)) {
                 sections.introductions[questIntroductionOffset + difficulty * 8 + bit / 8] |= uint8_t(1u << (bit % 8));

@@ -46,6 +46,7 @@ void prepareQuestWorld(Archives &archives,const ClassicData &data,PreparedWorldA
             server::AreaDefinition::NativePresetMonster source;
             source.definition=record->index;source.position=object.position;source.rank=MonsterRank::Boss;
             source.retry=true;source.retryAttempts=5;source.finalRetryAttempts=10;
+            source.nativeResurrected=true;
             area.nativeQuestMonsters.try_emplace("diablo",std::move(source));
         }
     }

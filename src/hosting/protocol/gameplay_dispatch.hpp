@@ -4,7 +4,7 @@
 #include "hosting/native_identity.hpp"
 
 namespace d2x::hosting {
-enum class RequestStatus { Queued, NotImplemented, Rejected };
+enum class RequestStatus { Queued, NotImplemented, Rejected, Completed };
 struct RequestResult {
     RequestStatus status = RequestStatus::NotImplemented;
     CommandStatus command = CommandStatus::Stale;
@@ -28,6 +28,25 @@ struct GameplayContext {
 RequestResult dispatchGameplay(std::span<const uint8_t>, GameplayContext &);
 RequestResult submitGameplay(GameplayContext &, server::CommandPayload);
 namespace handlers {
+RequestResult LegacySkillEnd(GameplayContext &, net::protocol::Reader &);
+RequestResult UnstackItem(GameplayContext &, net::protocol::Reader &);
+RequestResult LegacyPlayerDeath(GameplayContext &, net::protocol::Reader &);
+RequestResult LegacyUnknown2E(GameplayContext &, net::protocol::Reader &);
+RequestResult PurchaseLife(GameplayContext &, net::protocol::Reader &);
+RequestResult UseQuestClue(GameplayContext &, net::protocol::Reader &);
+RequestResult PlayVoice(GameplayContext &, net::protocol::Reader &);
+RequestResult LegacyPortal42(GameplayContext &, net::protocol::Reader &);
+RequestResult LegacyPortal43(GameplayContext &, net::protocol::Reader &);
+RequestResult ChangePortalDestination(GameplayContext &, net::protocol::Reader &);
+RequestResult MercenaryInteract(GameplayContext &, net::protocol::Reader &);
+RequestResult MercenaryMove(GameplayContext &, net::protocol::Reader &);
+RequestResult ClearBusy(GameplayContext &, net::protocol::Reader &);
+RequestResult RefreshEntity(GameplayContext &, net::protocol::Reader &);
+RequestResult TransmogrifyItem(GameplayContext &, net::protocol::Reader &);
+RequestResult ConfirmNpcVoice(GameplayContext &, net::protocol::Reader &);
+RequestResult LegacySkill52(GameplayContext &, net::protocol::Reader &);
+RequestResult StartRunning(GameplayContext &, net::protocol::Reader &);
+RequestResult StopRunning(GameplayContext &, net::protocol::Reader &);
 // Multiplexed native messages are decoded once, then routed to their domain.
 RequestResult CancelTrade(GameplayContext &, uint32_t amount);
 RequestResult AcceptTrade(GameplayContext &, uint32_t amount);
@@ -93,6 +112,7 @@ RequestResult NpcService(GameplayContext &, net::protocol::Reader &);
 RequestResult SpendAttribute(GameplayContext &, net::protocol::Reader &);
 RequestResult LearnSkill(GameplayContext &, net::protocol::Reader &);
 RequestResult SelectSkill(GameplayContext &, net::protocol::Reader &);
+RequestResult HighlightDoor(GameplayContext &, net::protocol::Reader &);
 RequestResult RequestQuests(GameplayContext &, net::protocol::Reader &);
 RequestResult Resurrect(GameplayContext &, net::protocol::Reader &);
 RequestResult Waypoint(GameplayContext &, net::protocol::Reader &);

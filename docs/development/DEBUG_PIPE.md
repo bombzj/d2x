@@ -37,6 +37,21 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。管道由独立重叠I/O线程收发有界文本，主线程每轮最多领取一个命令；线程不读取玩法、MPQ或GPU。响应不再按渲染帧限制每帧4 KiB，调用脚本按字节块写入MemoryStream而非逐字节PowerShell循环，仍保留16 KiB请求／4 MiB响应上限、当前用户ACL及断开后的代次复验；quit等待本次响应交付或连接截止。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](PVPGN_SERVER.md#本机部署与验证入口)。
 
+## 客户端自主行走
+
+`debug-walk`启动异步调试输入，`debug-walk-status`只读进度，`debug-walk-cancel`取消后沿客户端Stop提交停止请求。目标`goal=waypoint`（默认）自动寻找本区已指派传送点并用正常交互打开；`goal=exit`选择本区出口，可给`level`筛目的地，默认只走到附近；没有可点击warp的步行连接只从客户端已重建房间的真实共边选择本层内侧落点，可用于城镇门口，不自动跨区；`goal=point`需要全局subtile的`x/y`；`goal=unit`需要实际`unitId`，`unitType`默认2。`interact`默认在waypoint／unit目标启用，其他目标关闭；`run`默认true，`timeoutSeconds`为5–300，默认120。没有使用服务端管理旅行、坐标写入、私有包或鼠标模拟。
+
+导航只读取RemoteTown已重建的地形／碰撞与当前mapTargets；目标尚未出现时探索当前层可达的已重建房间，普通行走带来新的原房间／单位消息，再选择真实目标。规划复用Grid.path，逐段调用与UI相同的RemoteControl.move／interact，沿规划路线向前选取最多18子格路径长度的目标，避免逐个点击短转角并保留原50子格请求、原生资格／限流／服务端碰撞裁决。目标尚未指派且暂时没有可达探索房间时继续等待正常客户端更新；搜索房间的接近路线无进展时放弃该探索点并改查其他已重建房间，显式目标仍明确失败；无路、目标撤出、15秒未观察到位置进展或总期限到达会明确失败；缺地图／资源不穿墙或补造目标，不自动战斗／喝药／复活／解锁任务／传送点。当前不实现跨层寻路任务，换区、重入、离局或死亡终止旧意图；出口交互的submitted仍须另核对服务器旅行结果。
+
+显式导航期间调试输入持有后台客户端焦点，窗口未最小化时单机可正常推进；客户端菜单／表现暂停会阻止操作，最小化不执行输入；显式server-pause仍由宿主独立持有，导航不读取宿主暂停真值，无位置进展将按期限失败。人工点击／按键及其他修改客户端状态的调试请求取消导航，让位正常操作。返回`navigation`含state、reason、gameGeneration／areaGeneration、target／unit／segment、moveRequests／interactionRequests／searchRooms（前两项为客户端入口受理次数，同目标合并时不等于发包数）；`completed`对传送点表示已收到服务器菜单，其他交互只表示已提交正常请求，不表示奖励或旅行成功。源码入口为[auto_walk.cpp](../../src/app/debug/auto_walk.cpp)，没有新增测试脚本／专用测试程序；构建与实际覆盖见[原版缺口](ORIGINAL_GAPS.md)。
+
+```powershell
+.\scripts\Send-D2XCommand.ps1 -Command debug-walk -Arguments @{goal='waypoint'}
+.\scripts\Send-D2XCommand.ps1 -Command debug-walk-status
+.\scripts\Send-D2XCommand.ps1 -Command debug-walk -Arguments @{goal='exit';level=2;interact=$false}
+.\scripts\Send-D2XCommand.ps1 -Command debug-walk-cancel
+```
+
 ## 原服收包记录
 
 `online-status`和`server-status`另返回`performance`：最近120个已完成呈现帧的`milliseconds`按host、network、client、debug、scene、present、other和total记录mean／p95／max，`completedFrames`及`over100ms`为本进程累计计数。present包含垂直同步／限帧等待，host包含嵌入宿主工作，scene包含场景及UI更新／绘制；这是实际墙钟耗时，不是25 Hz权威帧。统计有界保存且不逐帧写磁盘；查询看到上一完整帧为止的样本，暂停或切换场景后须等待窗口刷新再比较。
@@ -85,7 +100,7 @@ JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／Pla
 | `grant-experience` | amount为正的有符号整数；宿主progression授予、封顶／升级／余点事务，原包更新同一客户端；暂停时可用，原服拒绝 |
 | `grant-gold` | amount为1至UINT32_MAX的正整数；通过人物事务授予金币，复验钱包上限 |
 | `set-players` | amount为1–8；设置当前本地实例虚拟人数，与游戏内/players共用类型化宿主入口。仅已入局的本机宿主角色可用，客人及账号Realm拒绝；不写D2S，人数规则见[命令分流](../modules/NETWORK.md#游戏内命令分流) |
-| `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的怪物准入／数值／动作准备，再交population／monsters；返回entityId。rank默认normal，可选champion／unique／boss／superunique；superunique须提供当前SuperUniques精确身份superUnique，且code必须匹配原Class。仆从只由自然领队人口生成，不提供无领队调试替身。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
+| `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的怪物准入／数值／动作准备，再交population／monsters；返回entityId。rank默认normal，可选champion／unique／boss／superunique；superunique须提供当前SuperUniques精确身份superUnique，且code必须匹配原Class。仆从只由自然领队人口生成，不提供无领队调试替身。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝。预先附魔的调试准入还要求当前区域已有未附魔基础原型，缺少时在准入前拒绝，避免后续压缩无法恢复；此为管理准备边界，不改变原版自然生成资格 |
 | `item-spawn` | code必填、level可选及世界x/y；quality默认normal，可选magic／rare／unique／set／superior／inferior按当前MPQ生成，sockets可选0..6并校验原上限；`ethereal:true`按原无形规则设置标志并应用防御／耐久效果，不适用的基底或品质明确拒绝；durability可显式指定0..实际最大耐久。seed可选0..UINT32_MAX；affixes可指定magic／rare原表词缀及范围内rolls，详见下文。仅item-spawn接受这些项，缺生成规则明确拒绝；走统一地面安装入口 |
 | `player-damage` | amount为非负整数生命点，转换为原固定点后走人物伤害事务及正常死亡结算 |
 | `grant-shrine` | code，level可选；在当前位置附近生成当前MPQ祭坛，效果仍须正常交互领取 |
@@ -342,6 +357,8 @@ P5 server-snapshot增加chargedSkills（item／revision／skill／rank／charges
 诊断使用已有宿主管理准备与online-*原包，不新增客户端状态旁路。怪物准入／规则快照只提供当时状态，完整普通攻击、AI和原版逐随机行为仍须独立核对。
 
 server-snapshot的怪物identity包含rank／superUnique／spawnKey／ownerSpawnKey；enchantment包含词缀、nameSeed、等级、增伤／命中／速度／抗性及光环参数；home／skillPositions保留原出生点和DS1技能节点。这些为宿主管理观察，不是新增游戏消息；身份、原版依据与缺口见[第一幕怪物](../gameplay/monsters/ACT1.md)，管理准备不能作为真实首领战斗依据。
+
+世界生命周期观察仍使用server-snapshot：world列出整层检查帧、退役帧／游标，以及各层的玩法／地形代次、卸载等待、活动房间数、碰撞数组capacity字节和驻留准备输入数。ds1／dt1是当前进程中的共享源地址，只能在同一进程比较是否共用，不能跨次运行比较或据此推算总堆内存。generationRandom.rooms补充引用状态、实际单位链及已加载房间的静态碰撞摘要；摘要不包含动态占位。nativeIdentities列六类下一GUID及实体映射；inactiveUnits／inactiveMonsters／inactiveItems.records列实际休眠节点、压缩帧、保存HP／死亡模式及JM期限／摘要。明细受limit截断，不把截断列表当作所有引用根；所有观察均只读，不推进时钟、分配身份或持有资源引用。
 
 ### 女巫战斗诊断
 

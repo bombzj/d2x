@@ -16,6 +16,7 @@ struct PlayerState {
     TransientAttributes transient;
     PreparedRules rules; // Per-character properties and class growth; immutable after admission.
     bool entered{};
+    bool nativeBusy{}; // Original PlayerData.bBusy; cinematic/act flow, not NPC interaction.
     bool collisionActive{true}; // Admission reserves a footprint before client entry.
     uint8_t targetNodeIndex{11}; // First free native player target group, runtime only.
     Vec position, look{0, 1};

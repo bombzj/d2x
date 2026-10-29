@@ -118,7 +118,7 @@ void System::removeTransient(EntityId id) {
     if(found!=state_.missiles.end() && found->second.nativeDamage &&
        found->second.nativeDamage->rule.damageFormulas->missiles.at(found->second.definition).number("collision"))
         ports_.areas.setMissileMask(found->second.area,found->second.position,found->second.collision.size,false);
-    ports_.areas.removeRoomUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Missile,id});state_.missiles.erase(id);
+    ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Missile,id});state_.missiles.erase(id);
 }
 System::Advance System::advance(const Missile &sourceMissile,TickContext tick) const {
     auto original=sourceMissile;original.executionTick=tick.tick;

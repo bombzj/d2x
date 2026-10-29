@@ -1,6 +1,8 @@
 #include "chat_view.hpp"
 #include "content/string_table.hpp"
 #include "core/text.hpp"
+#include "core/utf8.hpp"
+#include "network/chat_text.hpp"
 #include "hud_layout.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include <algorithm>
@@ -21,6 +23,7 @@ ChatView::ChatView(Archives &archives)
     : graphics_(archives, "data/global/palette/sky/pal.dat") {
     try {
         fontDirectory_ = archives.languageFontDirectory;
+        language_=archives.languageGameLocale;
         palette_ = archives.read("data/global/palette/sky/pal.pl2");
         if (palette_.size() < fontShifts + 13 * 256)
             throw std::runtime_error("Original chat font color transforms are missing");
@@ -121,7 +124,7 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
     for(const auto &message:account.chat) transcript.emplace_back(&message,true);
     for (const auto &[source,battleNet] : transcript) {
         const auto &message = *source;
-        if (message.language != 0 || (message.type != 1 && message.type != 2 && message.type != 3 && message.type != 4 && message.type != 6) ||
+        if ((battleNet && message.language != 0) || (message.type != 1 && message.type != 2 && message.type != 3 && message.type != 4 && message.type != 6) ||
             message.messageColor >= 13 ||
             !std::all_of(message.name.begin(), message.name.end(), [](auto c) { return c >= 32 && c < 127; })) {
             ++unavailable_; continue;
@@ -136,8 +139,11 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
         if(battleNet && message.type==4) glyphs=plain("[Battle.net] ",4);
         uint8_t color = message.messageColor;
         bool decoded = true;
-        const auto raw = std::string_view(reinterpret_cast<const char *>(message.text.data()), message.text.size());
-        for (size_t index = 0; index < message.text.size();) {
+        const auto bytes=std::string_view(reinterpret_cast<const char *>(message.text.data()),message.text.size());
+        const auto native=battleNet?std::optional{std::string(bytes)}:net::decodeChatText(bytes,message.language,language_);
+        if(!native) {++unavailable_;continue;}
+        const auto raw=std::string_view(*native);
+        for (size_t index = 0; index < raw.size();) {
             // Native text color escapes (raw 0xFF or TBL UTF-8 ÿ), also used by local d2bs Print evidence.
             int escapeColor = -2;
             if (const size_t used = d2ColorEscape(raw, index, escapeColor)) {
@@ -145,7 +151,7 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
                 index += used;
                 continue;
             }
-            const auto character = uint8_t(message.text[index]);
+            const auto character = uint8_t(raw[index]);
             if (character == '\r') { ++index; continue; }
             size_t length = 1;
             uint32_t code = character;
@@ -153,9 +159,9 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
             else if (character >= 0xE0) { length = 3; code = character & 0x0F; }
             else if (character >= 0xC0) { length = 2; code = character & 0x1F; }
             if (length > 1) {
-                if (index + length > message.text.size()) { decoded = false; break; }
+                if (index + length > raw.size()) { decoded = false; break; }
                 for (size_t k = 1; k < length; ++k) {
-                    const auto next = uint8_t(message.text[index + k]);
+                    const auto next = uint8_t(raw[index + k]);
                     if ((next & 0xC0) != 0x80) { decoded = false; break; }
                     code = (code << 6) | (next & 0x3F);
                 }
@@ -271,20 +277,33 @@ ChatIntent ChatView::handle(const FrameInput &input, bool canOpen) {
     const bool owned = inputOpen_ || logOpen_;
     if (!input.focused) { dragging_ = false; return {owned, {}}; }
     if (inputOpen_) {
-        if (input.escape) { inputOpen_ = false; draft_.clear(); caret_ = 0; return {true, {}}; }
-        if (input.entryUnsupported)
-            return {true, {}, "Only printable ASCII chat is supported; native text encoding is not yet verified."};
-        if (input.backspace && caret_) draft_.erase(--caret_, 1);
-        if (input.entryDelete && caret_ < draft_.size()) draft_.erase(caret_, 1);
-        if (input.entryHome) caret_ = 0;
-        if (input.entryEnd) caret_ = draft_.size();
-        caret_ = size_t(std::clamp(int(caret_) + input.entryStep, 0, int(draft_.size())));
-        if (draft_.size() + input.entryText.size() <= 255) {
-            draft_.insert(caret_, input.entryText); caret_ += input.entryText.size();
-        } else return {true, {}, "Chat is limited to 255 bytes."};
-        if (input.enter && std::any_of(draft_.begin(), draft_.end(), [](char c) { return c != ' '; }))
+        const bool editing=!input.entryComposing && !input.entryCompositionCommitted;
+        if (editing && input.escape) { inputOpen_ = false; draft_.clear(); caret_ = 0; return {true, {}}; }
+        std::string entered=input.entryText;
+        if(!input.entryUnicode.empty()) {
+            entered.clear();
+            for(const auto code:input.entryUnicode) {
+                if(code>0xffff || (code>=0xd800 && code<=0xdfff)) return {true,{},"Native chat uses UCS-2 characters."};
+                appendUtf8(entered,code);
+            }
+        } else if(input.entryUnsupported) return {true,{},"The character could not be entered."};
+        if (editing && input.backspace && caret_) {const auto previous=previousUtf8(draft_,caret_);draft_.erase(previous,caret_-previous);caret_=previous;}
+        if (editing && input.entryDelete && caret_ < draft_.size()) draft_.erase(caret_,nextUtf8(draft_,caret_)-caret_);
+        if (editing && input.entryHome) caret_ = 0;
+        if (editing && input.entryEnd) caret_ = draft_.size();
+        if(editing && input.entryStep<0) caret_=previousUtf8(draft_,caret_);
+        else if(editing && input.entryStep>0) caret_=nextUtf8(draft_,caret_);
+        if(!entered.empty()) {
+            auto candidate=draft_;candidate.insert(caret_,entered);
+            const auto encoded=net::encodeChatText(candidate);
+            if(!encoded || encoded->size()>255) return {true,{},"Chat is limited to 255 native text bytes."};
+            draft_=std::move(candidate);caret_+=entered.size();
+        }
+        const bool compositionCommit=!editing ||
+            std::any_of(input.entryUnicode.begin(),input.entryUnicode.end(),[](char32_t code){return code>=128;});
+        if (input.enter && !compositionCommit && std::any_of(draft_.begin(), draft_.end(), [](char c) { return c != ' '; }))
             return {true, draft_};
-        if (input.enter) { inputOpen_ = false; draft_.clear(); caret_ = 0; }
+        if (input.enter && !compositionCommit) { inputOpen_ = false; draft_.clear(); caret_ = 0; }
         return {true, {}};
     }
     if (logOpen_) {

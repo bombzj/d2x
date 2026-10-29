@@ -158,6 +158,8 @@ void LightingView::resetEnvironment() {
     environments_ = {};
     frameRemainder_ = 0;
     eclipse_ = false;
+    denIntensity_.reset();
+    sanctumIntensity_.reset();
     cloakLevel_=-1;cloakFactor_=1;
 }
 void LightingView::resetSources() { *sources_ = {}; }
@@ -274,6 +276,12 @@ void LightingView::prepare(const Grid &grid, const LevelRecord &level, Vec playe
                     uint8_t(std::clamp(source.lightIntensity, 0, 255))}
             : Color{environment.color.r, environment.color.g, environment.color.b,
                     uint8_t(std::clamp(environment.intensity, 0, 255))};
+        // A9A9A -> 524D0: Den overrides room-table light before the
+        // normal fallback. Completion removes this override, not unit lights.
+        if(source.id==8 && denIntensity_)
+            result={255,64,48,uint8_t(std::clamp(*denIntensity_,0,255))};
+        if((source.id==107 || source.id==108) && sanctumIntensity_)
+            result={255,64,48,uint8_t(std::clamp(*sanctumIntensity_,0,255))};
         result.a = uint8_t(float(result.a) * cloakFactor_);
         return result;
     };

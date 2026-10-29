@@ -34,8 +34,7 @@ Bytes game_position_pd2_cn(uint16_t x, uint16_t y);
 Bytes game_bh_report_pd2_cn(uint32_t fileCrc32);
 enum class AutomapReportPd2Cn : uint32_t { Initial = 2, ExcessiveCalls = 0 };
 Bytes automap_report_pd2_cn(AutomapReportPd2Cn);
-// Broadcast/whisper/overhead, printable ASCII / native language 0 until
-// localized chat encoding is verified. D2Net requires an
+// Broadcast/whisper/overhead with already encoded native ANSI payload. D2Net requires an
 // additional zero extension-length byte after the two terminated strings.
-Bytes game_chat(std::string_view text, std::string_view receiver = {}, bool overhead = false);
+Bytes game_chat(std::string_view text, std::string_view receiver = {}, bool overhead = false,uint8_t language=0);
 } // namespace d2x::net::protocol

@@ -41,8 +41,13 @@ struct InputState {
 };
 struct Access { EntityId source; ContainerKind kind; uint64_t revision{}; RegionId area{}; std::optional<int> remoteRange{}; EntityId parentStash{}; };
 struct Pickup { ActorContext actor; GroundTransfer request; uint64_t locomotion{}, groundGeneration{}; };
-struct State { std::map<PlayerId, Access> storage; std::map<PlayerId, Pickup> pickups; };
-struct Ports { const PlayerStore &players; items::System &items; transactions::System &transactions; const ItemCatalog *definitions; MovementSystem &movement; effects::System &effects; const AreaStore &areas; EventOutbox &events; travel::System &travel; trade::System &trade; const quests::System &quests; const social::System &social; };
+struct GoldDrop {
+    ActorContext actor;unsigned amount{},level{};std::string code;
+    std::optional<GroundLocation> location;
+    bool selected{},queued{},finished{},created{};
+};
+struct State { std::map<PlayerId, Access> storage; std::map<PlayerId, Pickup> pickups; std::map<PlayerId,GoldDrop> goldDrops; };
+struct Ports { const PlayerStore &players; items::System &items; transactions::System &transactions; const ItemCatalog *definitions; MovementSystem &movement; effects::System &effects; const AreaStore &areas; EventOutbox &events; travel::System &travel; trade::System &trade; const quests::System &quests; const social::System &social; loot::System &loot; };
 class System {
     State state_;
     const Ports ports_;
@@ -76,5 +81,6 @@ class System {
     DomainResult<> useSkill(const ActorContext &, int);
     DomainResult<> beginIdentify(const ActorContext &, ItemHandle);
     DomainResult<> dropGold(const ActorContext &, unsigned amount);
+    bool pendingGoldCommand(PlayerId,uint64_t sequence=0) const;
 };
 }

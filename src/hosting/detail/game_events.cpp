@@ -135,6 +135,25 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             if(!visibleActor(hint->actor,1)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::MonsterClassHint,[&](auto &out){out.u16(hint->nativeClass);}));
         }
+        else if(const auto *refresh=std::get_if<server::UnitRefreshFact>(&fact)) {
+            if(!visibleActor(refresh->actor,refresh->type)) continue;
+            const auto origin=shared.terrain.at(binding->game).at(refresh->area).origin;
+            const auto point=refresh->position+origin;
+            delta.push_back(encodeServerPacket(ServerMessage::Reposition,[&](auto &out){out.u8(refresh->type);out.u32(wireId(refresh->actor));out.u16(uint16_t(point.x));out.u16(uint16_t(point.y));out.u8(1);}));
+            if(refresh->type==0) {
+                if(refresh->actor==host.read(*binding)->actor.id) {peer.lastMotion.clear();peer.sentRevision=0;}
+                for(auto &[player,entry]:peer.visible) {(void)player;if(entry.actor==refresh->actor) entry.motion.clear();}
+            } else if(auto entry=peer.monsters.find(refresh->actor);entry!=peer.monsters.end() &&
+                !entry->second.motion.empty() && (entry->second.motion.front()==0x67 || entry->second.motion.front()==0x68))
+                entry->second.motion.clear();
+        }
+        else if(const auto *alert=std::get_if<server::QuestAlertFact>(&fact)) {
+            if(!visibleActor(alert->actor,alert->type)) continue;
+            delta.push_back(encodeServerPacket(ServerMessage::QuestAlert,[&](auto &out){out.u8(alert->type);out.u32(wireId(alert->actor));}));
+        }
+        else if(const auto *clue=std::get_if<server::QuestClueFact>(&fact)) {
+            delta.push_back(encodeServerPacket(ServerMessage::QuestPayload,[&](auto &out){out.u16(clue->quest);for(auto value:clue->payload) out.u16(value);}));
+        }
         else if(const auto *sound=std::get_if<server::SoundFact>(&fact)) {
             if(!sound->directSound && !visibleActor(sound->actor,sound->type)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::UnitSound,[&](auto &out){out.u8(uint8_t(sound->type+(sound->directSound?0xf0:0)));out.u32(wireId(sound->actor));out.u16(sound->sound);}));

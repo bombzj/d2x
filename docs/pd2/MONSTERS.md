@@ -12,6 +12,8 @@
 
 UMod26沿原D2MOO `MONSTERUNIQUE_UMod26_Teleport`独立登记MonTeleport及模式4，不要求存在普通A1伤害。PD2的FetishShaman等只有A1技能标记的家族，词缀准备沿`hosting/pd2/monster_actions::prepareNativeClock`读取真实动作时钟；不能因`rule.attacks`没有4拒绝暗金准备并阻塞人口续办。原有A1攻击家族仍沿其已准备时钟，缺真实动作资源继续拒绝。
 
+公共任务出生消费者新增nativeResurrected准备标记，经原Admission.resurrected进入怪物的压缩资格；基础Diablo脚本出生准备沿-1／5／10尝试设置该标记。A4Q2公共源码另改为任务tick十次计数、真实Init55落点和整轮失败重试，清场沿实际房间／单位链及scriptDeath继续点，不以开封印玩家全HP伤害代替ModeDeath。此次依据是D2MOO及本机零售1.13c，尚未定点核实当前PD2核心同名分支，不能将公共消费者改变直接标记为PD2等价通过；零售新增Clt16／37–41／59／62／63、FX环境和任务音乐入口均未向PD2显示规则开启。新增源码已构建，行为仍待实测。
+
 ## MonStats与预设身份
 
 已确认：目标`monstats.bin`有1283条、每条424字节，名称链接采用编译记录顺序；TXT的hcIdx不是该表的编译字段。row1198的BIN首WORD ID为1198，同名fallen1Nakrul的TXT hcIdx为1199；末row1282的BIN ID为1282，TXT hcIdx为1284。

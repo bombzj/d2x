@@ -142,28 +142,9 @@ std::optional<size_t> RemoteScene::Impl::pd2DoomKnightMissile(size_t skillRow,co
     return result==missileRows.end()?std::nullopt:std::optional{result->second};
 }
 
-std::optional<std::pair<int,int>> RemoteScene::Impl::findPd2LeapLanding(
-    const OnlineUnit &u,Vec start,Vec target,int range,const Map &map,Vec origin) const {
-    const int x=int(std::floor(start.x)),y=int(std::floor(start.y));
-    int tx=int(std::floor(target.x)),ty=int(std::floor(target.y));
-    const int distance=std::max(1,unitCoordinateDistance(x,y,tx,ty));
-    if(distance>range) {tx=x+nativeMultiply(tx-x,range)/distance;ty=y+nativeMultiply(ty-y,range)/distance;}
-    const int dx=std::clamp(ty-y,-2,2),dy=std::clamp(x-tx,-2,2);
-    const auto collision=navigationCollision(map.grid,origin,u.key);
-    const auto clear=[&](int column,int line) {
-        // Linked collision rooms already return FFFF for unavailable cells.
-        return collision.walkable(Vec{float(column),float(line)}-origin,{0x1c09,unitSize(u)});
-    };
-    for(const auto &[cx,cy]:{std::pair{tx,ty},std::pair{tx+dx,ty+dy},std::pair{tx-dx,ty-dy}}) {
-        const auto free=nativeSpawnCoordinate(cx,cy,50,clear);
-        if(free && unitCoordinateDistance(x,y,free->first,free->second)<=range &&
-           map.grid.collisionSegment(Vec{float(x),float(y)}-origin,Vec{float(free->first),float(free->second)}-origin,0x804)) return free;
-    }
-    return {};
-}
 bool RemoteScene::Impl::displayPd2MonsterCharge(const OnlineUnit &u,Motion &m,const Map &map,Vec origin) {
     if(!combatBinding || !u.actionSkill || onlineMonsterCorpse(u)) {m.scriptedSequence.reset();return false;}
-    if(m.pd2InvalidatedMovement==u.actionRevision) return false;
+    if(m.invalidatedSkillMovement==u.actionRevision) return false;
     const auto skill=skillRows.find(*u.actionSkill),monster=monsterRows.find(unitClass(u).value_or(UINT16_MAX));
     if(skill==skillRows.end() || monster==monsterRows.end()) return false;
     const auto pose=monsterSkillMode(monster->second,*u.actionSkill);
@@ -295,7 +276,7 @@ bool RemoteScene::Impl::displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,con
     // Near-target CltSt57 falls back to the ordinary melee action instead.
     if(!travelling && !m.pd2PlayerCharge && (!local || std::isfinite(localCast->duration))) return false;
     const auto revision=local?localCast->revision:u.actionRevision;
-    if(m.pd2InvalidatedMovement==revision) return false;
+    if(m.invalidatedSkillMovement==revision) return false;
     const auto target=local?localCast->command.target:u.destinationUnit;
     const auto victim=target?world().units.find(*target):world().units.end();
     const auto coordinates=local?localCast->command.point:u.destination;
@@ -378,94 +359,6 @@ bool RemoteScene::Impl::displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,con
         if(step.reached) m.route.pop_front();
     }
     m.pathMoving=true;return true;
-}
-
-bool RemoteScene::Impl::displayPd2PlayerLeap(const OnlineUnit &u,Motion &m,const Map &map,Vec origin) {
-    const bool controlled=u.key.id==playerId;
-    const bool local=controlled && localCast && localCast->started>=0;
-    const auto skill=local?std::optional<int>{localCast->command.skill}:
-        !controlled && u.actionSkill?std::optional<int>{*u.actionSkill}:
-        !controlled && m.pd2PlayerLeap && m.pd2PlayerLeap->revision==u.actionRevision?
-            std::optional<int>{m.pd2PlayerLeap->skill}:std::nullopt;
-    const auto row=skill?skillRows.find(*skill):skillRows.end();
-    if(u.key.type!=0 || !skill ||
-       row==skillRows.end() || skills.number(row->second,"cltdofunc")!=97 || playerDead(u)) {
-        m.pd2PlayerLeap.reset();return false;
-    }
-    const auto revision=local?localCast->revision:!u.actionSkill && m.pd2PlayerLeap?m.pd2PlayerLeap->revision:u.actionRevision;
-    if(m.pd2InvalidatedMovement==revision) return false;
-    const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
-    const float age=u.actionReceivedMilliseconds && now>=u.actionReceivedMilliseconds?float(now-u.actionReceivedMilliseconds)/1000.f:0.f;
-    const float started=local?localCast->started:m.pd2PlayerLeap && m.pd2PlayerLeap->revision==revision?m.pd2PlayerLeap->started:time-age;
-    const auto snapshot=combatBinding->states().find(u.key);
-    if(snapshot==combatBinding->states().end() || !snapshot->second.decoded || snapshot->second.sequence!=u.stateSequence)
-        return false;
-    bool flying=false;
-    for(const auto &[id,list]:snapshot->second.states) {
-        (void)list;const auto state=stateRows.find(id);
-        if(state!=stateRows.end() && states.value(state->second,"state")=="skill_move") flying=true;
-    }
-    // The server's movement-state removal can precede the final position
-    // packet. A confirmed flight still owns its native arc/landing.
-    if(!flying && !m.pd2PlayerLeap) return false;
-    if(m.leapRevision==revision && m.leapLanding>=0) return false;
-    const auto sequence=playerCastSequence(skills.number(row->second,"seqnum").value_or(-1));
-    if(!sequence || sequence->fixedSpeed<=0 ||
-       time<started+float(playerCastSequenceTiming(*sequence,sequence->fixedSpeed).impact)/25.f)
-        return false;
-    if(!m.pd2PlayerLeap || m.pd2PlayerLeap->revision!=revision) {
-        auto destination=local?localCast->command.point:u.destination;
-        const auto target=local?localCast->command.target:u.destinationUnit;
-        if(target) destination=targetPosition(*target);
-        int rank=u.actionSkillLevel.value_or(0);
-        if(local) {
-            const auto *known=uiClients->character().read().skill(*skill,localCast->command.owner);
-            if(!known || !known->effectiveRankKnown) return false;
-            rank=known->effectiveRank;
-        }
-        if(!destination || rank<1) return false;
-        const auto range=skillCalculation(*skill,rank,"aurarangecalc",u.key);
-        const auto speed=skillCalculation(*skill,rank,"calc2",u.key);
-        if(!range || !speed || *range<1) {
-            effectLimitations.insert("PD2 leap range or velocity unresolved");return false;
-        }
-        // Retail CltSt29/C66A0 uses the range formula, then three rotated
-        // candidates with the original free-coordinate search and 804 ray.
-        const int x=int(std::floor(m.position.x)),y=int(std::floor(m.position.y));
-        const auto landing=findPd2LeapLanding(u,m.position,Vec{float(destination->x),float(destination->y)},*range,map,origin);
-        if(!landing) {effectLimitations.insert("PD2 leap landing unavailable");return false;}
-        // CN CltDo97: Calc2*41+2560, with the native minimum of 2560.
-        const int velocity=std::max(2560,nativeAdd(nativeMultiply(*speed,41),2560));
-        const int travel=std::max(1,unitCoordinateDistance(x,y,landing->first,landing->second));
-        int frames=travel*16/(velocity>>8);if(frames>1) --frames;frames=std::max(1,frames);
-        Motion::Pd2PlayerLeap run;run.revision=revision;run.position=m.position;run.skill=*skill;run.started=started;
-        run.destination={float(landing->first),float(landing->second)};
-        run.velocity=float(velocity)*25.f/4096.f;run.nextTick=time+NativePathStep::seconds;
-        // Retail C65B0/C7C80: distance-dependent gravity and zero initial
-        // height; flight ticks use the common native graphics accumulator.
-        const int gravity=std::max(500,travel<27?8462-270*travel:1224-72*travel);
-        run.graphics.flags=2;run.graphics.remaining=frames;run.graphics.acceleration[2]=-gravity;
-        run.graphics.velocity[2]=nativeDivide(nativeMultiply(nativeMultiply(frames,frames),gravity)/2,frames);
-        m.pd2PlayerLeap=std::move(run);m.leapRevision=revision;m.leapFlying=true;m.leapLanding=-1;
-        m.route.clear();m.goal.reset();m.correction={};m.correctionLeft=0;m.pathStep.reset();
-    }
-    auto &run=*m.pd2PlayerLeap;
-    while(run.nextTick<=time) {
-        const Vec center{.5f,.5f};
-        const auto step=run.path.advance(map.grid,run.position+center,run.destination+center,
-            run.velocity*NativePathStep::seconds,{0,unitSize(u)},origin);
-        m.look=run.destination-run.position;run.position=step.position-center;
-        run.graphics.step();run.nextTick+=NativePathStep::seconds;
-        if(step.reached || (run.graphics.position[2]>>11)<=0) {
-            m.position=run.destination;m.pathMoving=false;m.leapLanding=time;m.pd2PlayerLeap.reset();
-            return true;
-        }
-        if(step.blocked) {
-            effectLimitations.insert("PD2 leap flight path unavailable");m.pd2PlayerLeap.reset();return false;
-        }
-    }
-    m.position=run.position;m.pathMoving=true;
-    return true;
 }
 
 void RemoteScene::Impl::emitPd2Stream(Channel &channel,OnlineUnitKey owner,Vec start,Vec target,

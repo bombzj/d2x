@@ -233,6 +233,21 @@ void System::queueGoal(QuestId quest,Goal goal) {
     // for an earlier shared stage to commit under output backpressure.
     state_.goals.emplace(quest,std::move(goal));
 }
+DomainResult<> System::publishCompletion(const QuestCompletion &completion,uint8_t effect,std::optional<uint16_t> sound,TickContext tick) {
+    std::vector<EventBatch> batches;size_t count=0;
+    for(const auto &[id,actor]:completion.recipients) {
+        const auto *player=ports_.players.find(id);
+        if(!player || !player->entered || player->actor!=actor) continue;
+        EventBatch batch{0,tick.tick,{}, {AudienceKind::Player,id,player->area},{}};
+        // pUpdateUnit is self; the FX has its separately frozen client set.
+        if(sound && completion.soundRecipients.contains(id)) batch.facts.emplace_back(SoundFact{actor,0,player->area,*sound});
+        batch.facts.emplace_back(QuestEffectFact{effect});count+=batch.facts.size();batches.push_back(std::move(batch));
+    }
+    if(batches.empty()) return {DomainStatus::Applied,std::monostate{}};
+    if(!ports_.events.hasCapacity(count,batches.size())) return {DomainStatus::Capacity,{}};
+    const auto result=ports_.events.publishGroup(std::move(batches));
+    return result?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{result.status,{}};
+}
 StepStatus System::flushGoals(TickContext tick) {
     bool blocked=false;
     for(auto it=state_.goals.begin();it!=state_.goals.end();) {
@@ -245,8 +260,8 @@ StepStatus System::flushGoals(TickContext tick) {
             auto &quest=record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(it->first));
             const bool trading=std::any_of(p->persistent.inventory.containers.begin(),p->persistent.inventory.containers.end(),
                 [](const auto &entry){return entry.second.spec.kind==ContainerKind::Trade;});
-            const bool consumeItems=it->second.consumeForgeItems || (it->second.consumeKhalimItems && !trading);
             const bool alreadyApplied=quest.stage>=it->second.stage;
+            const bool consumeItems=it->second.consumeForgeItems || (it->second.consumeKhalimItems && (!trading || alreadyApplied));
             if(alreadyApplied && (quest.flags&it->second.flags)==it->second.flags && !consumeItems) {member=it->second.eligible.erase(member);continue;}
             if(!alreadyApplied) {
                 quest.stage=it->second.stage;
@@ -287,10 +302,20 @@ StepStatus System::flushGoals(TickContext tick) {
                 inventory::detail::Draft draft(*p,*p->rules.items,*rules,*p->rules.character);
                 const auto &codes=p->rules.character->laterQuests;
                 bool valid=true;
+                std::set<EntityId> consumed;
+                if(it->second.consumeKhalimItems) {
+                    // QUESTS_DeleteItem calls ITEMS_FindQuestItem once per
+                    // code, excluding the trade page and hireling inventory.
+                    const auto consume=[&](std::string_view code) {
+                        if(const auto *item=detail::actTwoCarried(*p,code,ports_.settings.difficulty)) consumed.insert(item->id);
+                    };
+                    for(const auto &code:codes.khalimParts) consume(code);
+                    consume(codes.khalimWill);
+                }
                 for(auto item=draft.edit.inventory.items.begin();item!=draft.edit.inventory.items.end();) {
                     const auto &value=item->second;
                     const bool consume=it->second.consumeForgeItems?(value.definition==codes.soulstone || value.definition==codes.hammer):
-                        value.definition==codes.khalimWill || std::find(codes.khalimParts.begin(),codes.khalimParts.end(),value.definition)!=codes.khalimParts.end();
+                        consumed.contains(value.id);
                     if(!consume || !std::holds_alternative<ContainerLocation>(value.location) ||
                        value.nativeQuestDifficulty<unsigned(ports_.settings.difficulty)) {++item;continue;}
                     if(value.revision==UINT64_MAX) {valid=false;break;}
@@ -311,6 +336,13 @@ StepStatus System::flushGoals(TickContext tick) {
         }
         if(it->second.eligible.empty()) it=state_.goals.erase(it);else ++it;
     }
+    const auto completionEffects=[&](std::optional<QuestCompletion> &pending,QuestId quest,uint8_t effect,uint16_t sound) {
+        if(!pending || state_.goals.contains(quest)) return;
+        if(!publishCompletion(*pending,effect,sound,tick)) blocked=true;
+        else pending.reset();
+    };
+    completionEffects(state_.actOne.denCompletion,QuestId::DenOfEvil,0,35);
+    completionEffects(state_.actFive.nihlathakCompletion,QuestId::BetrayalOfHarrogath,17,82);
     return blocked?StepStatus::Blocked:StepStatus::Complete;
 }
 std::set<PlayerId> System::progressRecipients(QuestId quest) const {
@@ -334,7 +366,25 @@ DomainResult<> System::startQuest(const ActorContext &actor,CharacterRecord reco
     return result;
 }
 void System::queueStatus(QuestId quest,uint8_t status,std::optional<EntityId> npc) {
-    state_.statusNotices.insert_or_assign(quest,StatusNotice{status,npc});
+    StatusNotice notice;notice.status=status;notice.deactivateNpc=npc;
+    if(!npc) prepareStatusNotice(quest,notice);
+    state_.statusNotices.emplace_back(quest,std::move(notice));
+}
+void System::prepareStatusNotice(QuestId id,StatusNotice &notice) const {
+    const auto &definition=questDefinition(id);
+    notice.counter=id==QuestId::DenOfEvil?uint16_t(state_.actOne.denRemaining):
+        id==QuestId::RescueOnMountArreat?uint16_t(state_.actFive.rescueRemaining):uint16_t(0);
+    for(const auto &[key,player]:ports_.players.all()) {
+        const auto *area=ports_.areas.find(player.area);
+        if(!player.entered || !area || area->definition.act!=int(definition.act)) continue;
+        const auto &record=player.persistent.player;
+        const auto &quest=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(id)];
+        const bool missed=state_.objectives[questIndex(id)] && unavailable(key,record,id);
+        if((quest.stage>=definition.completedStage || (state_.initialFlags[definition.nativeSlot]&0x8000)) &&
+            !credited(key,id) && !missed) continue;
+        notice.recipients.push_back({key,player.actor,player.area,missed?uint8_t(12):notice.status});
+    }
+    notice.prepared=true;
 }
 void System::npcDeactivated(EntityId npc) {
     const auto *unit=ports_.monsters.find(npc);
@@ -344,32 +394,28 @@ void System::npcDeactivated(EntityId npc) {
     if(unit && unit->identity.monster=="alkor" && state_.npcStory.alkorDelivery) {
         state_.npcStory.alkorDelivery=false;state_.npcStory.alkorAnimate=true;
     }
-    for(auto &[quest,notice]:state_.statusNotices) {
-        (void)quest;if(notice.deactivateNpc==npc) notice.deactivateNpc.reset();
+    std::deque<std::pair<QuestId,StatusNotice>> released;
+    for(auto it=state_.statusNotices.begin();it!=state_.statusNotices.end();) {
+        if(it->second.deactivateNpc!=npc) {++it;continue;}
+        it->second.deactivateNpc.reset();prepareStatusNotice(it->first,it->second);
+        released.push_back(std::move(*it));it=state_.statusNotices.erase(it);
     }
+    for(auto &notice:released) state_.statusNotices.push_back(std::move(notice));
 }
 StepStatus System::flushStatuses(TickContext tick) {
-    bool blocked=false;
     for(auto it=state_.statusNotices.begin();it!=state_.statusNotices.end();) {
         if(it->second.deactivateNpc || state_.goals.contains(it->first)) {++it;continue;}
-        const auto &definition=questDefinition(it->first);
+        if(!it->second.prepared) prepareStatusNotice(it->first,it->second);
         std::vector<EventBatch> batches;
-        for(const auto &[id,player]:ports_.players.all()) {
-            const auto *area=ports_.areas.find(player.area);
-            if(!player.entered || !area || area->definition.act!=int(definition.act)) continue;
-            const auto &record=player.persistent.player;
-            const auto &quest=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(it->first)];
-            const bool missed=state_.objectives[questIndex(it->first)] && unavailable(id,record,it->first);
-            if((quest.stage>=definition.completedStage || (state_.initialFlags[definition.nativeSlot]&0x8000)) &&
-                !credited(id,it->first) && !missed) continue;
-            const auto counter=it->first==QuestId::DenOfEvil?uint16_t(state_.actOne.denRemaining):
-                it->first==QuestId::RescueOnMountArreat?uint16_t(15-std::min(state_.actFive.rescued,15u)):uint16_t(0);
-            batches.push_back({0,tick.tick,{}, {AudienceKind::Player,id,player.area},
-                {QuestStatusFact{it->first,missed?uint8_t(12):it->second.status,counter}}});
+        for(const auto &recipient:it->second.recipients) {
+            const auto *player=ports_.players.find(recipient.player);
+            if(!player || !player->entered || player->actor!=recipient.actor) continue;
+            batches.push_back({0,tick.tick,{}, {AudienceKind::Player,recipient.player,recipient.area},
+                {QuestStatusFact{it->first,recipient.status,it->second.counter}}});
         }
-        if(!batches.empty() && !ports_.events.publishGroup(std::move(batches))) {blocked=true;++it;continue;}
+        if(!batches.empty() && !ports_.events.publishGroup(std::move(batches))) return StepStatus::Blocked;
         it=state_.statusNotices.erase(it);
     }
-    return blocked?StepStatus::Blocked:StepStatus::Complete;
+    return StepStatus::Complete;
 }
 }

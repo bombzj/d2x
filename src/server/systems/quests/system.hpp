@@ -7,9 +7,13 @@
 #include "preparation.hpp"
 #include "state.hpp"
 #include "npc_story.hpp"
+#include "prisoner_death.hpp"
+#include <deque>
+#include <span>
 namespace d2x::server::reactions { class ItemTriggers; }
+namespace d2x::server::monsters {struct Actor;}
 namespace d2x::server::quests {
-enum class Action { Refresh, ViewLog, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal, ReadAncientAltar };
+enum class Action { Refresh, ViewLog, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal, ReadAncientAltar, ReadClue };
 struct Request { Action action; QuestId quest; std::optional<EntityId> npc; std::optional<uint32_t> message; std::optional<EntityId> item{}; };
 struct State {
     NpcStoryState npcStory;
@@ -24,7 +28,7 @@ struct State {
     std::map<PlayerId,std::set<QuestId>> credited;
     std::map<PlayerId,EntityId> creditedActors;
     std::multimap<QuestId,Goal> goals;
-    std::map<QuestId,StatusNotice> statusNotices;
+    std::deque<std::pair<QuestId,StatusNotice>> statusNotices;
     std::set<QuestId> started;
     std::map<PlayerId,Preparation> pending;
     uint64_t next=1;
@@ -36,6 +40,17 @@ struct Ports { const PlayerStore &players; AreaStore &areas; population::System 
 struct Dialogue {QuestId quest; NpcMessage message;};
 class System {
     State state_; const Ports ports_;
+    struct FlagPublication {
+        struct Recipient {EntityId actor;QuestFact fact;};
+        std::array<uint16_t,48> flags{};
+        std::vector<Recipient> recipients;
+        size_t next{};
+    };
+    std::deque<FlagPublication> flagPublications_;
+    size_t stepCursor_{};
+    bool stepResuming_{},stepBlocked_{};
+    bool completionPending() const {return state_.actOne.denCompletion.has_value() || state_.actFive.nihlathakCompletion.has_value() || state_.actFive.anyaCompletion.has_value() || state_.actFour.sanctumCompletion.has_value() || state_.actFour.sanctumSweep.has_value() || state_.actFour.diabloBirthPending;}
+    DomainResult<> publishCompletion(const QuestCompletion &,uint8_t effect,std::optional<uint16_t> sound,TickContext);
     DomainResult<> commit(const ActorContext &,CharacterRecord,bool levelUp=false,std::optional<QuestId> primaryGoal={},bool notifyQuest=true);
     QuestFact fact(PlayerId,const CharacterRecord &,RegionId) const;
     DomainResult<> prepareReward(const ActorContext &,EntityId,RewardKind,bool conversation,std::optional<Vec> dropPosition = {});
@@ -46,6 +61,9 @@ class System {
     StepStatus orbStep(TickContext);
     StepStatus actFourStep(TickContext);
     StepStatus actFiveStep(TickContext);
+    void updatePrisonerCounters() noexcept;
+    void resolvePrisoners(std::optional<PlayerId>);
+    unsigned resolvedPrisoners(const ActFiveState::RescuePortal &) const;
     StepStatus ancientsStep(TickContext);
     StepStatus baalStep(TickContext);
     StepStatus flushGoals(TickContext);
@@ -56,6 +74,9 @@ class System {
     std::set<PlayerId> progressRecipients(QuestId) const;
     DomainResult<> startQuest(const ActorContext &,CharacterRecord,QuestId,EntityId,uint32_t flags=0);
     void queueStatus(QuestId,uint8_t,std::optional<EntityId> deactivateNpc={});
+    void prepareStatusNotice(QuestId,StatusNotice &) const;
+    DomainResult<bool> spawnNpcBluePortal(bool anya,bool town,RegionId,Vec observer,Vec global,uint64_t);
+    DomainResult<> returnNpcToTown(bool anya,uint64_t,bool portal,uint64_t invocation=0);
     void queueGoal(QuestId,Goal);
     std::set<PlayerId> eligibleParty(QuestId,uint32_t,RegionId,std::optional<Vec>,std::optional<PlayerId>) const;
     std::set<PlayerId> eligibleDelivery(QuestId,uint32_t,PlayerId,bool allInAct=false) const;
@@ -104,11 +125,27 @@ class System {
     void initializeControl();
     DomainResult<> initializeZoo(RegionId,uint64_t tick);
     const State &read() const { return state_; }
+    bool nativeCallbackPending() const {return stepResuming_ || completionPending();}
     void initialize(const CharacterRecord &);
     void nativeEliteBorn(EntityId,bool eligible);
     DomainResult<> activateSiegeBoss(EntityId,uint64_t tick);
     DomainResult<> activateIzual(uint64_t tick);
+    uint64_t forgeRewardDue(EntityId) const;
+    uint64_t forgeAnimationEnd(EntityId) const;
+    DomainResult<> forgeRewardEvent(EntityId,uint64_t tick);
     DomainResult<> activateNihlathak(uint64_t tick);
+    uint64_t prisonerPortalDue(EntityId) const;
+    uint64_t npcPortalDue(EntityId) const;
+    DomainResult<> npcPortalEvent(EntityId,uint64_t);
+    struct PrisonerPortalView {EntityId object;RegionId area;Vec position;bool anyResolved{};};
+    std::optional<PrisonerPortalView> prisonerPortal(EntityId) const;
+    DomainResult<bool> activatePrisoner(EntityId,PlayerId,uint64_t tick);
+    DomainResult<> finishPrisonerEscape(EntityId);
+    void prisonerActivated();
+    std::optional<PrisonerDeathPublication> preparePrisonerDeath(const monsters::Actor &,const std::map<EntityId,monsters::Actor> &,
+        std::span<const EntityId>) const;
+    void publishPrisonerDeath(PrisonerDeathPublication &) noexcept;
+    DomainResult<> prisonerPortalEvent(EntityId,uint64_t tick);
     void rebindObject(EntityId previous,EntityId current);
     void registerCainObject(EntityId,int definition,int initialization,RegionId,Vec);
     void registerTownCain(EntityId);

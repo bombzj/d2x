@@ -1,10 +1,11 @@
 #include "scene_audio.hpp"
+#include "scene_streams.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 
 namespace d2x {
-SceneAudio::SceneAudio(Archives &archives, const SoundCatalog &catalog, SoundBank &bank)
-    : archives_(archives), catalog_(catalog), bank_(bank) {
+SceneAudio::SceneAudio(Archives &archives, const SoundCatalog &catalog, SoundBank &bank,SceneStreams &streams)
+    : archives_(archives), catalog_(catalog), bank_(bank),streams_(streams) {
     // Stable UI semantics select original Sounds identities, never loose WAVs.
     for (const auto &[key, sound] : {std::pair{"drink","item_potion_drink"},
         std::pair{"belt","item_belt"}, std::pair{"quest_done","cursor_questdone"},
@@ -40,11 +41,21 @@ bool SceneAudio::play(std::string_view sound, uint64_t frame, float volume) {
     if (!registerSound(sound,key)) return false;
     bank_.play(key,frame,volume); return true;
 }
+bool SceneAudio::playNativeSound(int row,uint64_t frame) {
+    if(row<=0 || size_t(row)>=catalog_.sounds().rows().size()) return false;
+    return play(catalog_.sounds().value(size_t(row),"Sound"),frame);
+}
 void SceneAudio::enqueue(const SoundRule &rule, const SoundActorView &source, float age, float extraDelay) {
     if (rule.sound.empty() || rule.volume == 0 || rule.probability <= 0) return;
     if (rule.probability < 100 && limitedRandom(random_,100) >= unsigned(rule.probability)) return;
     pending_.push_back({rule,source.id,rule.interruptible ? source.actionRevision : 0,clock_ + rule.delay + extraDelay - age});
     while (pending_.size() > 256) pending_.pop_front();
+}
+bool SceneAudio::npcReturnGreeting(int identity) {
+    const auto *rule=catalog_.npcReturnGreeting(identity);
+    if(!rule) return false;
+    play(rule->sound,uint64_t(std::max(0.f,clock_)*25.f));
+    return true; // Missing WAV is reported by registerSound; the native greeting is still acknowledged.
 }
 bool SceneAudio::itemDrop(const ItemDropSoundEvent &event) {
     if (event.kind == ItemDropSoundEvent::Kind::Flip) {
@@ -107,6 +118,11 @@ void SceneAudio::update(float clock, std::span<const SoundActorView> actors, std
                 if (event.kind == Kind::Hit) submit(profile->hit);
                 else if (event.kind == Kind::Death) submit(profile->death);
                 else if (event.kind == Kind::NeedKey) submit(profile->needKey);
+                else if (event.kind == Kind::DenComplete)
+                    streams_.questCue("music_quest_den",0,300,profile->denComplete.sound,250,1);
+                else if (event.kind == Kind::NihlathakComplete)
+                    streams_.questCue("music_quest_nihlathak",0,550,profile->nihlathakComplete.sound,400,1);
+                else if (event.kind == Kind::Voice && event.mode>=25 && event.mode<=32) submit(profile->chat[size_t(event.mode-25)]);
             }
         } else if (const auto *profile = catalog_.monster(source->identity)) {
             if (event.kind == Kind::Attack1 || event.kind == Kind::Attack2) {

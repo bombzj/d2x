@@ -98,6 +98,29 @@ DomainResult<> System::walked(const ActorContext &actor) {
     return {DomainStatus::Applied, std::monostate{}};
 }
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
+    if(request.kind==Kind::ClearBusy) {
+        const auto found=ports_.players.players_.find(actor.player);
+        if(found==ports_.players.players_.end() || !found->second.entered || found->second.actor!=actor.actor || found->second.area!=actor.area || found->second.persistent.player.hp<=0)
+            return {DomainStatus::InvalidActor,{}};
+        if(!found->second.nativeBusy) return {DomainStatus::Conflict,{}};
+        found->second.nativeBusy=false;return {DomainStatus::Applied,std::monostate{}};
+    }
+    if(request.kind==Kind::RefreshUnit) {
+        const auto *player=ports_.players.find(actor.player);
+        const auto target=ports_.spatial.locate(request.source.id,request.source.type);
+        if(!player || !player->entered || player->actor!=actor.actor || player->area!=actor.area || player->persistent.player.hp<=0 || !target) return {DomainStatus::InvalidActor,{}};
+        const auto *area=ports_.areas.find(target->first);if(!area) return {DomainStatus::Stale,{}};
+        const auto *room=area->definition.activation.room(target->second);if(!room) return {DomainStatus::Stale,{}};
+        const RoomView targetRoom{target->first,(int(area->definition.origin.x)+room->x)/5,(int(area->definition.origin.y)+room->y)/5};
+        const auto visible=ports_.world.visibleRooms(actor.player);
+        if(std::find(visible.begin(),visible.end(),targetRoom)==visible.end()) return {DomainStatus::InvalidRequest,{}};
+        // RefreshUnit links the unit's existing update. TELEPORTED is consumed
+        // by player/monster projection; other types gain no invented action.
+        if(request.source.type>1) return {DomainStatus::NotImplemented,{}};
+        const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},target->first},
+            {UnitRefreshFact{request.source.id,request.source.type,target->first,target->second}}});
+        return {sent.status,sent?std::optional{std::monostate{}}:std::nullopt};
+    }
     if (request.kind != Kind::Exit) return useSpecial(actor,request);
     const auto *player = ports_.players.find(actor.player);
     const auto *area = ports_.areas.find(actor.area);

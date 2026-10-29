@@ -14,6 +14,8 @@
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
+#include "server/systems/ai/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <cmath>
@@ -129,6 +131,28 @@ DomainResult<> System::install(PreparedHirelingList prepared) {
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
+    if(request.action==Action::CommandInteract || request.action==Action::CommandMove) {
+        const auto *player=ports_.players.find(actor.player);const auto companion=state_.companions.find(request.npc);
+        const auto *body=ports_.monsters.find(request.npc);
+        if(!player || !player->entered || player->actor!=actor.actor || player->area!=actor.area || player->persistent.player.hp<=0 || !body || !body->alive() ||
+            companion==state_.companions.end() || companion->second.owner!=actor.player || companion->second.kind!=Kind::Hireling)
+            return {DomainStatus::InvalidActor,{}};
+        const auto *area=ports_.areas.find(actor.area);if(!area || area->generation!=actor.areaGeneration) return {DomainStatus::Stale,{}};
+        if(request.action==Action::CommandMove) {
+            if(!request.destination || std::abs(int(request.destination->x)-int(player->position.x))>50 ||
+                std::abs(int(request.destination->y)-int(player->position.y))>50) return {DomainStatus::InvalidRequest,{}};
+            return ports_.ai.replacePetCommand(body->id,13,{},*request.destination+area->definition.origin,actor.tick);
+        }
+        bool ownedItem=request.target.type==4 && player->persistent.inventory.items.contains(request.target.id);
+        const auto at=ports_.spatial.locate(request.target.id,request.target.type);
+        if(!at) return {DomainStatus::Stale,{}};
+        if(!ownedItem) {
+            const auto *other=ports_.areas.find(at->first);if(!other || other->definition.act!=area->definition.act) return {DomainStatus::InvalidRequest,{}};
+            const auto delta=at->second+other->definition.origin-player->position-area->definition.origin;
+            if(std::abs(int(delta.x))>50 || std::abs(int(delta.y))>50) return {DomainStatus::InvalidRequest,{}};
+        }
+        return ports_.ai.replacePetCommand(body->id,12,request.target,{},actor.tick);
+    }
     if(request.action==Action::Potion) return request.item?drink(actor,*request.item,request.belt):DomainResult<>{DomainStatus::InvalidRequest,{}};
     if(request.action==Action::Equipment) return request.offer?equipHireling(actor,*request.offer):DomainResult<>{DomainStatus::InvalidRequest,{}};
     const auto *player = ports_.players.find(actor.player);
@@ -169,6 +193,8 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     auto record = player->persistent.player;
     std::shared_ptr<effects::AuraUnitPublication> revivedUnits;
     std::optional<EntityId> revivedActor;
+    std::vector<EntityId> relocatedPets;
+    std::vector<EntityId> retiredPets;
     unsigned price = 0;
     if (request.action == Action::Hire) {
         const auto &quest = record.quests.at(size_t(player->persistent.difficulty)).at(questIndex(QuestId::SistersBurialGrounds));
@@ -217,12 +243,12 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             if(!ports_.areas.at(actor.area).definition.activation.room(restored)) return {DomainStatus::Unavailable,{}};
             candidate.area=actor.area;candidate.position=candidate.home=restored;candidate.roomless=false;
             candidate.revivalPosition=PointTarget{actor.area,actor.areaGeneration,restored};
-            candidate.life=candidate.maximumLife;candidate.inactivePet=false;
+            candidate.life=candidate.maximumLife;candidate.inactivePet=candidate.petUnregistered=false;
             candidate.aiPose=candidate.nativeMode=1;candidate.holdPose=false;candidate.modeAlive=false;candidate.deathMode=false;
             candidate.busyUntil=candidate.poseUntil=candidate.riseUntil=candidate.reactionUntil=0;
             candidate.neutralAt.reset();candidate.delayedDeathSource.reset();candidate.corpse={};
             candidate.frozenUntil=0;candidate.shatterActive=false;
-            candidate.route.clear();candidate.moving=candidate.running=false;candidate.movementTarget={};
+            candidate.route.clear();candidate.pathStep={};candidate.moving=candidate.running=false;candidate.movementTarget={};
             candidate.skillMotion.reset();candidate.nativeActionUntil=0;candidate.modeFrame.reset();
             candidate.killer={};candidate.knockedUntil=0;candidate.knockbackGoal.reset();++candidate.revision;
             effects::UnitDamageStates states;states.source=id;
@@ -233,6 +259,48 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             revivedActor=id;break;
         }
         if(!revivedActor) return {DomainStatus::PendingContent,{}};
+        if(!player->rules.skills) return {DomainStatus::Unavailable,{}};
+        // SUnitNpc::sub_6FCC84D0 -> PlayerPets::sub_6FC7E310 also
+        // relocates the owner's living warp-enabled pets to this coordinate.
+        auto actors=revivedUnits->actors->actors;
+        std::vector<EntityId> order{*revivedActor};
+        for(const auto id:ports_.monsters.pets(actor.player,true)) {
+            if(id==*revivedActor) continue;
+            const auto *live=ports_.monsters.find(id);
+            if(!live || live->rule.petType<=0) continue;
+            if(!player->rules.skills->petTypeBaseLimits.contains(live->rule.petType)) return {DomainStatus::Unavailable,{}};
+            const bool warp=player->rules.skills->warpPetTypes.contains(live->rule.petType);
+            const bool range=player->rules.skills->rangePetTypes.contains(live->rule.petType);
+            // Native flags gate only the warp/range branches. A type with
+            // neither flag loses its entire list, including inactive corpses.
+            if((live->inactivePet || !live->alive()) && (warp || range)) continue;
+            if(!warp && !range) {
+                if(live->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+                auto candidate=*live;candidate.petUnregistered=true;++candidate.revision;
+                actors.emplace(id,std::move(candidate));retiredPets.push_back(id);order.push_back(id);continue;
+            }
+            if(!warp) {
+                const auto from=live->position+ports_.areas.at(live->area).definition.origin;
+                const auto to=player->position+ports_.areas.at(actor.area).definition.origin;
+                const int64_t x=int64_t(std::floor(from.x))-int64_t(std::floor(to.x));
+                const int64_t y=int64_t(std::floor(from.y))-int64_t(std::floor(to.y));
+                // PlayerPets: range-only types survive within squared 1600;
+                // types with neither flag leave the active list unconditionally.
+                if(x*x+y*y>1600) {retiredPets.push_back(id);order.push_back(id);}
+                continue;
+            }
+            if(live->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+            auto candidate=*live;
+            candidate.area=actor.area;candidate.position={std::floor(player->position.x)+.5f,std::floor(player->position.y)+.5f};
+            candidate.revivalPosition=PointTarget{actor.area,actor.areaGeneration,candidate.position};
+            candidate.route.clear();candidate.pathStep={};candidate.moving=candidate.running=false;++candidate.revision;
+            actors.emplace(id,std::move(candidate));
+            relocatedPets.push_back(id);order.push_back(id);
+        }
+        revivedUnits->actors=std::make_shared<monsters::ActorPublication>(ports_.monsters.prepareActorPublication(std::move(actors),0));
+        const auto retired=ports_.monsters.stageRetirements(*revivedUnits,retiredPets,actor.tick);if(!retired) return retired;
+        for(const auto id:retiredPets) revivedUnits->actors->actors.at(id).petUnregistered=true;
+        revivedUnits->actors->publicationOrder=std::move(order);
     } else return {DomainStatus::NotImplemented,{}};
     if (uint64_t(record.gold)+record.bankGold < price) return reject(12);
     const auto wallet=std::min(record.gold,price);record.gold-=wallet;record.bankGold-=price-wallet;
@@ -250,9 +318,21 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     if(!plan) return {plan.status,{}};
     const auto committed=ports_.transactions.commit(std::move(*plan.value));if(!committed) return committed;
+    for(const auto id:relocatedPets) {
+        const auto found=state_.companions.find(id);if(found==state_.companions.end()) continue;
+        auto &pet=found->second;pet.ownerTeleport=player->teleportRevision;pet.nativePetMoving=false;
+    }
+    for(const auto id:retiredPets) {
+        const auto found=state_.companions.find(id);const auto *body=ports_.monsters.find(id);
+        if(found==state_.companions.end() || !body) continue;
+        auto &pet=found->second;
+        pet.removeAt=actor.tick+uint64_t(body->rule.deathTicks);pet.release=0;
+        pet.pendingAction.reset();pet.pendingAura.reset();
+    }
     if(revivedActor) {
         auto &pet=state_.companions.at(*revivedActor);
         pet.pendingAction.reset();pet.pendingAura.reset();pet.target={};pet.release=pet.removeAt=0;
+        pet.pendingHirelingUseSkill=pet.cancelAi=false;
         pet.nextDecision=actor.tick+1;pet.ownerTeleport=player->teleportRevision;
         return committed;
     }

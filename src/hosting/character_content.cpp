@@ -57,6 +57,11 @@ void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data
     rules.itemSave=data.nativeItemSave;
     rules.potions = std::make_shared<const server::PotionRules>(data.potions);
     auto character = std::make_shared<server::CharacterRules>();
+    character->nativeNpcIntroductionBits=data.npcDialogues.nativeIntroductionBits;
+    for(size_t row=0;row<data.tables.at("monstats").rows().size();++row)
+        if(const auto id=data.tables.at("monstats").number(row,"hcIdx");id && *id>=0)
+            character->nativeMonsterCount=std::max(character->nativeMonsterCount,unsigned(*id)+1);
+
     if(data.pd2Host) character->maps=pd2::prepareMapCatalog(data);
     character->stats=data.nativeStats;
     character->states=data.nativeStates;
@@ -135,7 +140,8 @@ void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data
     character->actTwo.scroll=data.staffRecipe.scroll;
     character->laterQuests={data.goldenBird.figurine,data.goldenBird.bird,data.goldenBird.potion,
         data.gidbinnCode,data.lamTomeCode,data.soulstoneCode,data.hellforge.hammer,
-        data.prisonOfIce.potion,data.prisonOfIce.scroll,data.khalimRecipe.inputs,data.khalimRecipe.output};
+        data.prisonOfIce.potion,data.prisonOfIce.scroll,data.khalimRecipe.inputs,data.khalimRecipe.output,
+        std::make_shared<ForgeRewardRules>(ForgeRewardRules{data.hellforge.gems,data.hellforge.runes})};
     character->actTwo.shaft=data.staffRecipe.inputs[0];
     character->actTwo.amulet=data.staffRecipe.inputs[1];
     character->actTwo.staff=data.staffRecipe.output;

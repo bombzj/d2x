@@ -44,6 +44,8 @@ struct WorldDrawView {
     uint32_t observerLightColor{}; // Native item_lightcolor, 0 selects white.
     float time = 0, elapsed = 0;
     std::optional<bool> eclipse;
+    std::optional<int> denIntensity; // Retail level-8 ambient override; absence uses Levels/environment.
+    std::optional<int> sanctumIntensity; // Retail 107/108 ambient override after FX12.
     std::optional<int> cloakDuration;
     std::optional<size_t> selectedExit;
     EntityId groundHighlight;

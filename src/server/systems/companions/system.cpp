@@ -40,6 +40,11 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
     } else if(pet.pendingAction) {
         const auto accepted=ports_.skills.requestCast(*pet.pendingAction);
         if(isDeferred(accepted.status)) return accepted;
+        if(!accepted && pet.kind==Kind::Hireling) {
+            if(pet.pendingHirelingUseSkill) {ports_.monsters.neutralMode(id);pet.nextDecision=tick.tick+10;}
+            else pet.cancelAi=true;
+        }
+        pet.pendingHirelingUseSkill=false;
         pet.pendingAction.reset();
     } else if(const auto *body=ports_.monsters.find(id);body && body->alive() && tick.tick<pet.nextDecision && tick.tick<=pet.expires && !pet.removeAt) {
         ports_.monsters.scheduleAi(id,pet.nextDecision);return {DomainStatus::Applied,std::monostate{}};
@@ -47,6 +52,10 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
     found=state_.companions.find(id);
     if(found==state_.companions.end()) return {DomainStatus::Applied,std::monostate{}};
     if(found->second.pendingAction || found->second.pendingAura) return {DomainStatus::Capacity,{}};
+    if(found->second.cancelAi) {
+        ports_.monsters.cancelAi(id);found->second.cancelAi=false;
+        return {DomainStatus::Applied,std::monostate{}};
+    }
     const auto *body=ports_.monsters.find(id);
     if(body) {
         auto due=std::max(tick.tick+1,found->second.nextDecision);

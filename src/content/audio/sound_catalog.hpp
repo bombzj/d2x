@@ -21,7 +21,7 @@ struct MonsterSoundDefinition {
     int footstepCount = 0, footstepOffset = 0;
     float neutralInterval = 0;
 };
-struct PlayerSoundDefinition { SoundRule hit, death, needKey; };
+struct PlayerSoundDefinition { SoundRule hit, death, needKey,denComplete,nihlathakComplete; std::array<SoundRule,8> chat; };
 struct SkillSoundDefinition { SoundRule start, active; };
 struct ItemSoundDefinition { std::string code, drop; int dropFrame = -1; };
 // The only MPQ configuration loader for sound choices and timing.
@@ -32,6 +32,7 @@ class SoundCatalog {
     std::map<int, MonsterSoundDefinition> monsters_;
     std::map<int, PlayerSoundDefinition> players_;
     std::map<int, SkillSoundDefinition> skills_;
+    std::map<int, SoundRule> npcReturnGreetings_;
     std::map<std::pair<int, int>, SoundRule> objects_;
     std::map<std::string, ItemSoundDefinition, std::less<>> items_;
     std::map<int, ItemSoundDefinition> uniqueItems_, setItems_;
@@ -41,6 +42,7 @@ class SoundCatalog {
     std::optional<size_t> soundRow(std::string_view) const;
     const MonsterSoundDefinition *monster(int identity) const;
     const PlayerSoundDefinition *player(int identity) const;
+    const SoundRule *npcReturnGreeting(int identity) const;
     const SkillSoundDefinition *skill(int identity) const;
     const SoundRule *object(int identity, int mode) const;
     std::optional<ItemSoundDefinition> item(std::string_view code, ItemQuality, int specialRow = -1) const;

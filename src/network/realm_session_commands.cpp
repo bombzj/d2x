@@ -271,6 +271,58 @@ bool RealmSession::interact_npc(uint32_t serverUnitId, std::optional<OnlineInten
         p.fail(OnlineErrorKind::Transport, "NPC interaction could not be queued"); return false;
     }
 }
+bool RealmSession::cancel_item_targeting(std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);impl_->snapshotDirty=true;auto &p=*impl_;
+    if(p.compatibility.profile!=ClientProfile::Lod113c || !p.view.world.itemTargetingSource) return false;
+    if(!p.require_intent(context.value_or(onlineIntentContext(snapshot_)),true)) return false;
+    try {Writer out;out.u8(0x4C);out.u32(UINT32_MAX);p.sent(p.gs,out.release());return true;}
+    catch(const std::exception &) {p.fail(OnlineErrorKind::Transport,"Item targeting cancellation could not be queued");return false;}
+}
+bool RealmSession::play_voice(uint16_t sound,std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);impl_->snapshotDirty=true;auto &p=*impl_;
+    if(p.compatibility.profile!=ClientProfile::Lod113c) return false;
+    if(!p.require_intent(context.value_or(onlineIntentContext(snapshot_)),true) || onlinePlayerDead(p.view.world) || sound<25 || sound>32) return false;
+    try {Writer out;out.u8(0x3F);out.u16(sound);p.sent(p.gs,out.release());return true;}
+    catch(const std::exception &) {p.fail(OnlineErrorKind::Transport,"Voice request could not be queued");return false;}
+}
+bool RealmSession::highlight_door(uint32_t object,std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);impl_->snapshotDirty=true;auto &p=*impl_;
+    if(p.compatibility.profile!=ClientProfile::Lod113c) return false;
+    if(!p.require_navigation(context.value_or(onlineIntentContext(snapshot_))) || onlinePlayerDead(p.view.world)) return false;
+    const auto found=p.view.world.units.find({2,object});
+    if(found==p.view.world.units.end() || !found->second.position || found->second.mode==4) return false;
+    // Retail D2Client 519BA-51A1C: per-object GetTickCount delta must exceed 500 ms.
+    const auto now=Clock::now();
+    std::erase_if(p.doorHighlights,[&](const auto &entry) {return !p.view.world.units.contains({2,entry.first});});
+    if(const auto last=p.doorHighlights.find(object);last!=p.doorHighlights.end() &&
+       now-last->second<=std::chrono::milliseconds(500)) return false;
+    try {Writer out;out.u8(0x3D);out.u32(object);p.sent(p.gs,out.release());p.doorHighlights[object]=now;return true;}
+    catch(const std::exception &) {p.fail(OnlineErrorKind::Transport,"Door highlight could not be queued");return false;}
+}
+bool RealmSession::set_running_animation(bool run,std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);impl_->snapshotDirty=true;auto &p=*impl_;
+    if(p.compatibility.profile!=ClientProfile::Lod113c) return false;
+    if(!p.require_navigation(context.value_or(onlineIntentContext(snapshot_))) || !p.view.load.playerUnitId) return false;
+    const auto unit=p.view.world.units.find({0,*p.view.load.playerUnitId});
+    if(unit==p.view.world.units.end() || (run?unit->second.mode!=2:unit->second.mode!=3)) return false;
+    try {Writer out;out.u8(run?0x53:0x54);p.sent(p.gs,out.release());return true;}
+    catch(const std::exception &) {p.fail(OnlineErrorKind::Transport,"Run-state request could not be queued");return false;}
+}
+bool RealmSession::confirm_npc_voice(uint16_t nativeClass,std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);impl_->snapshotDirty=true;auto &p=*impl_;
+    if(p.compatibility.profile!=ClientProfile::Lod113c) return false;
+    if(!p.require_intent(context.value_or(onlineIntentContext(snapshot_)),true) || onlinePlayerDead(p.view.world)) return false;
+    const auto &conversation=p.view.world.npcConversation;if(!conversation) return false;
+    const auto unit=p.view.world.units.find({1,conversation->source});
+    if(unit==p.view.world.units.end() || unit->second.classId!=nativeClass ||
+       !p.view.world.quests.npcReturnGreetings.contains(nativeClass)) return false;
+    try {
+        Writer out;out.u8(0x4D);out.u16(nativeClass);p.sent(p.gs,out.release());
+        p.view.world.quests.npcReturnGreetings.erase(nativeClass);
+        ++p.view.world.quests.revision;p.changed();return true;
+    }
+    catch(const std::exception &) {p.fail(OnlineErrorKind::Transport,"NPC voice confirmation could not be queued");return false;}
+}
 bool RealmSession::close_npc(std::optional<OnlineIntentContext> context) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
@@ -698,6 +750,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         case OnlineItemAction::Unequip: out.u8(0x1C); out.u16(command.body); break;
         case OnlineItemAction::Swap: pair(0x1F); out.u32(command.x); out.u32(command.y); break;
         case OnlineItemAction::Use:
+            if(command.questClue) {out.u8(0x3E);out.u32(command.item);break;}
             out.u8(mode == 2 ? 0x26 : 0x20); out.u32(command.item);
             if (mode == 2) { out.u32(command.mercenary); out.u32(0); }
             else { out.u32(point.x); out.u32(point.y); }
@@ -832,7 +885,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             p.stashPageDeadline = Clock::now() + p.options.timeout;
         }
         world.itemRequest = OnlineItemRequest{++p.itemSequence, command,
-            command.reusableUse ? OnlineItemRequest::State::SentNoAck : OnlineItemRequest::State::Pending};
+            (command.reusableUse || command.questClue) ? OnlineItemRequest::State::SentNoAck : OnlineItemRequest::State::Pending};
         if (command.action == OnlineItemAction::GoldDeposit || command.action == OnlineItemAction::GoldWithdraw ||
             command.action == OnlineItemAction::GoldDrop) {
             if (const auto before = world.playerAttributes.find(14); before != world.playerAttributes.end())
@@ -863,7 +916,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         if (command.action == OnlineItemAction::Pickup) {
             world.movementRequest = OnlineMovementRequest{{}, OnlineUnitKey{4, command.item}, true, world.revision + 1, true};
         }
-        p.itemDeadline = command.reusableUse ? Clock::time_point{} : Clock::now() + p.options.timeout;
+        p.itemDeadline = (command.reusableUse || command.questClue) ? Clock::time_point{} : Clock::now() + p.options.timeout;
         p.nextItem = Clock::now() + std::chrono::milliseconds(100);
         ++world.revision; p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {

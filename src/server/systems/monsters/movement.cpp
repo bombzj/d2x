@@ -18,6 +18,7 @@
 #include "server/systems/effects/system.hpp"
 #include "server/systems/loot/system.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "server/systems/objects/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include <algorithm>
 #include <cmath>
@@ -53,7 +54,16 @@ std::optional<std::pair<Vec,int>> System::nativeTargetPosition(EntityId id,Regio
         if(target && target->definition.act==area->definition.act)
             return std::pair{unit->position+target->definition.origin-area->definition.origin,unit->rule.size};
     }
+    if(const auto found=ports_.objects.read().objects.find(id);found!=ports_.objects.read().objects.end()) {
+        const auto &object=found->second;const auto *target=ports_.areas.find(object.area);
+        if(target && target->definition.act==area->definition.act)
+            return std::pair{object.position+target->definition.origin-area->definition.origin,object.rule.width};
+    }
     return {};
+}
+std::optional<MotionTarget> System::nativeTargetIdentity(EntityId id,RegionId region) const {
+    if(!nativeTargetPosition(id,region)) return {};
+    return MotionTarget{id,uint8_t(ports_.players.findActor(id)?0:find(id)?1:2)};
 }
 bool System::recacheHirelingRoom(Actor &actor) {
     if(!actor.hireling) return true;
@@ -255,7 +265,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             actor.knockbackGoal.reset();actor.knockedUntil=0;
         }
         if(actor.holyFreezeUntil && actor.holyFreezeUntil<=tick.tick) actor.holyFreezeUntil=0;
-        if(!actor.nativeAi()) continue; // Scripted native NPC AI owns its path; quest escapes use npc::System.
+        if(!actor.nativeAi()) continue;
         if(actor.skillMotion && (actor.skillMotion->eventDriven || advanceSkillMotion(actor,tick.tick))) continue;
         if (frozen(id,tick.tick) || actor.stunnedUntil>tick.tick) continue;
         if (!actor.alive() || tick.tick < actor.busyUntil) continue;

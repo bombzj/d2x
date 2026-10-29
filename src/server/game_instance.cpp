@@ -49,7 +49,7 @@ bool GameInstance::clientLoadReady(PlayerId id) const {
     return systems_.world.clientRoomsReady(id);
 }
 void GameInstance::collectNativeIdentities(std::set<EntityId> retained) {
-    if(simulationPending_ || !events_.pending().empty() || systems_.itemTriggers.pending()) return;
+    if(simulationPending_ || !events_.pending().empty() || events_.hasStagedSounds() || systems_.itemTriggers.pending()) return;
     const auto item=[&](auto &&self,const ItemInstance &value)->void {
         retained.insert(value.id);
         for(const auto &child:value.socketedItems) self(self,child);
@@ -120,6 +120,9 @@ void GameInstance::collectNativeIdentities(std::set<EntityId> retained) {
     systems_.skills.collectEntityReferences(retained);
     systems_.missiles.collectEntityReferences(retained);
     systems_.objects.collectEntityReferences(retained);
+    for(const auto &[actor,transition]:systems_.death.read().transitions) {
+        retained.insert(actor);retained.insert(transition.corpseId);retained.insert(transition.corpseItems);
+    }
     for(const auto &[source,pending]:systems_.loot.read().pending) {
         retained.insert(source);
         for(const auto &seeds:pending.itemSeeds) retained.insert(seeds.allocation);
@@ -145,17 +148,19 @@ PlayerId GameInstance::admit(GameDefinition definition) {
     nativeEntities_.publish(identities);
     if(!systems_.transactions.initializeItemAuras(id,tick_)) {
         PlayerStore::publishCorpseCollision(areas_,players_.find(id)->persistent.corpses,{});
-        areas_.removeRoomUnit(players_.find(id)->actor);
+        events_.discardUnitSound(players_.find(id)->actor);areas_.removeRoomUnit(players_.find(id)->actor);
         players_.players_.erase(id);
         throw std::runtime_error("Unable to initialize admitted item auras");
     }
     systems_.effects.registerPlayer(players_.find(id)->actor,tick_);
+    systems_.companions.registerPlayer(players_.find(id)->actor,tick_);
     ++nextPlayer_; ++revision_;
     return id;
 }
 bool GameInstance::enter(PlayerId id, bool active) {
     auto found = players_.players_.find(id);
     if (found == players_.players_.end()) return false;
+    if(!active && systems_.inventory.pendingGoldCommand(id)) return false;
     if(found->second.entered==active && found->second.collisionActive==active) return true;
     std::optional<world::QuestPosition> arrival;
     if(active && !found->second.collisionActive) {
@@ -189,12 +194,14 @@ bool GameInstance::enter(PlayerId id, bool active) {
 }
 bool GameInstance::remove(PlayerId id) {
     if (!players_.find(id)) return false;
+    if(systems_.inventory.pendingGoldCommand(id)) return false;
     if (!systems_.trade.cancelFor(id,tick_)) return false;
     if (!systems_.social.disconnect(id,tick_)) return false;
     std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
     systems_.travel.cancel(id); systems_.skills.cancel(id, players_.find(id)->actor);
     systems_.frameEvents.cancelOwner({FrameEventUnit::Player,players_.find(id)->actor});
     if(players_.find(id)->collisionActive) PlayerStore::publishCorpseCollision(areas_,players_.find(id)->persistent.corpses,{});
+    events_.discardUnitSound(players_.find(id)->actor);
     areas_.removeRoomUnit(players_.find(id)->actor);players_.players_.erase(id); ++revision_;
     return true;
 }
@@ -294,6 +301,7 @@ void GameInstance::step() {
     if(!simulationPending_) {
     if (systems_.trade.step({tick_})==StepStatus::Blocked) return;
     size_t processedCommands=0;
+    bool inventoryWaiting=false;
     for (const auto &pending : commands_) {
         auto &player = players_.players_.at(pending.player);
         const auto &command = pending.command;
@@ -340,6 +348,11 @@ void GameInstance::step() {
                         }
             }
         }
+        // A native gold constructor is synchronous in retail. Content/output
+        // waits retain this command and stop later commands and frame phases.
+        if(systems_.inventory.pendingGoldCommand(pending.player,command.sequence)) {
+            inventoryWaiting=true;break;
+        }
         player.result = {command.sequence, result};
         observeCommand(pending.player, command.sequence, result);
         if (commandSystem(command.payload) == SystemId::Movement)
@@ -348,7 +361,7 @@ void GameInstance::step() {
         if(systems_.monsters.pendingModifiers()) break;
     }
     commands_.erase(commands_.begin(),commands_.begin()+processedCommands);
-    if(systems_.monsters.pendingModifiers()) return;
+    if(inventoryWaiting || systems_.monsters.pendingModifiers()) return;
     simulationPending_=true;
     }
     if(!simulation_.step({tick_},systems_)) return;
@@ -357,13 +370,16 @@ void GameInstance::step() {
 }
 void GameInstance::suspend() {
     for (const auto &pending : commands_) {
+        if(systems_.inventory.pendingGoldCommand(pending.player,pending.command.sequence)) continue;
         auto &player = players_.players_.at(pending.player);
         player.result = {pending.command.sequence, CommandStatus::Paused};
         observeCommand(pending.player, pending.command.sequence, CommandStatus::Paused);
         if (commandSystem(pending.command.payload) == SystemId::Movement)
             player.movementSequence = pending.command.sequence;
     }
-    commands_.clear();
+    std::erase_if(commands_,[&](const auto &pending) {
+        return !systems_.inventory.pendingGoldCommand(pending.player,pending.command.sequence);
+    });
     for (const auto &[id, player] : players_.all()) { systems_.travel.cancel(id); systems_.skills.cancel(id, player.actor); }
     systems_.movement.suspend();
     ++revision_;

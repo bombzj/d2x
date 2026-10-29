@@ -8,7 +8,7 @@
 #include <span>
 #include <utility>
 namespace d2x::server::npc {
-using Intent = std::variant<TalkToNpc, EndNpcConversation>;
+using Intent = std::variant<TalkToNpc, EndNpcConversation,ConfirmNpcVoice>;
 struct Request { Intent intent; };
 struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::map<uint16_t,QuestId> pendingQuests; EntityId actor{}; uint64_t areaGeneration{}; std::optional<uint16_t> pendingIntroduction{}; bool refresh{}; };
 struct ServiceAccess { const AreaNpc *npc; const Conversation *conversation; };
@@ -40,6 +40,7 @@ class System {
     DomainResult<> execute(const ActorContext &, const Request &);
     DomainResult<> close(PlayerId);
     DomainResult<> escape(RegionId,EntityId,Vec);
+    DomainResult<> finishEscape(EntityId);
     StepStatus step(TickContext, FrameFacts &);
 };
 }

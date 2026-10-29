@@ -703,7 +703,9 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             return reject("Swap requires the cursor item and a fitting backpack destination");
         break;
     case OnlineItemAction::Use:
-        if (!owned(wire) || view_.cursor || !(accessible(wire) || wire.mode == 2) || !baseNumber(wire, "useable"))
+        command.questClue=!pd2Items && !command.mercenary && wire.code=="bkd";
+        if (!owned(wire) || view_.cursor || !(accessible(wire) || wire.mode == 2) ||
+            (!command.questClue && !baseNumber(wire, "useable")))
             return reject("Use requires a usable item in an accessible owned container or belt");
         if (command.mercenary && wire.mode != 2) return reject("Native mercenary item use requires a belt item");
         if (baseNumber(wire, "pSpell") == 7)

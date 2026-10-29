@@ -54,6 +54,10 @@ FrameInput pollInput(const Viewport &viewport, const ControlBindings &bindings) 
     }
     if (IsWindowFocused()) {
         input.focused = true;
+        static bool composing=false;
+        input.entryComposing=nativeImeComposing(GetWindowHandle());
+        input.entryCompositionCommitted=composing && !input.entryComposing;
+        composing=input.entryComposing;
         input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
         input.alt = IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT);
         input.shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
@@ -68,6 +72,7 @@ FrameInput pollInput(const Viewport &viewport, const ControlBindings &bindings) 
         input.pageDelta = int(IsKeyPressed(KEY_PAGE_DOWN)) - int(IsKeyPressed(KEY_PAGE_UP));
         input.quantityDelta = int(input.wheel) + int(IsKeyPressed(KEY_UP)) - int(IsKeyPressed(KEY_DOWN));
         for (int character = GetCharPressed(); character; character = GetCharPressed()) {
+            if(character>=32) input.entryUnicode+=char32_t(character);
             if (character >= 32 && character < 127) {
                 input.entryText += char(character);
                 if (character >= '0' && character <= '9') input.text += char(character);
@@ -147,6 +152,8 @@ FrameInput pollInput(const Viewport &viewport, const ControlBindings &bindings) 
         input.party = active(ControlAction::Party);
         input.messageLog = active(ControlAction::MessageLog);
         input.run = active(ControlAction::RunLock);
+        for(size_t slot=0;slot<8;++slot)
+            if(active(ControlAction(size_t(ControlAction::Say0)+slot))) input.voice=int(slot);
         input.holdRun = active(ControlAction::Run, true);
         input.standStill = active(ControlAction::StandStill, true);
         input.expandBelt = active(ControlAction::Belt);

@@ -99,6 +99,16 @@ CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementC
     if (!player.entered || player.persistent.player.hp <= 0) return CommandStatus::Unavailable;
     if (player.actor != actor.actor || player.area != actor.area || area.generation != actor.areaGeneration)
         return CommandStatus::Stale;
+    if(command.action==MovementAction::StartRunning || command.action==MovementAction::StopRunning) {
+        // Native 53/54 affect an existing walk/run, not the player's toggle.
+        if(player.moving) {
+            const bool run=command.action==MovementAction::StartRunning;
+            if(!run || player.persistent.player.stamina.raw()>0) {
+                player.routeRunning=run;player.runningNow=run;++player.movementSequence;
+            }
+        }
+        return CommandStatus::Applied;
+    }
     if(ports.effects.recovering(player.actor,actor.tick) && command.action!=MovementAction::Stop && command.action!=MovementAction::ToggleRunning)
         return CommandStatus::Unavailable;
     skillSteps_.erase(actor.player);

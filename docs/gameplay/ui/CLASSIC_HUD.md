@@ -8,15 +8,15 @@
 
 生命／法力球悬停数值使用当前MPQ panelhealth／panelmana格式与font16原字形，保留原灰白像素，不乘parchment黄色，不缩到12；字距按原TBL字宽。字形保持原像素大小（hudTextScale=1），不再乘W/800的hudScale；球体布局、命中及文字锚点仍随HUD适配，外层视口统一缩放最终画布。原800坐标下生命文字中心x=65、法力中心x=宽度−80，基线y=高度−95；DC6底部原点转换到字形上沿，不以球体矩形中心或固定20像素偏移定位。原1.13c D2Client RVA 0x276B5／0x27767读取两条TBL，0x276EE–0x27703／0x277AC–0x277C2确认颜色0与锚点；font16资源依据本地OpenDiablo2 globeWidget及当前MPQ。聊天font8正文／font16输入和日志标题采用同一文字尺度，换行、光标及行距同步；原边框与面板布局保留。原服数值与未知值投影沿用，不修改资源值。完整窗口尺寸及球体悬停仍缺原版对照。
 
-底栏只加载原联机minipanel，八个按钮绘制／命中统一；P／Party Screen打开原图组队名册，Invite／Cancel／Accept／Leave共用原服0x5E请求，结果读取名册回包。同队行显示绿色名字、职业、等级、队伍状态和原区域名，按原38像素行距分组／分隔；左上角队友用MPQ七职业头像、原TRANS50混色及0x7F生命条。入口及限制见[联网模块](../../modules/NETWORK.md#组队邀请客户端)。当前MPQ的minipanelbtn帧对依次是人物、背包、技能、组队、自动地图、消息日志、任务、菜单；hudMiniActions统一真实帧与语义动作，提示读取minipanel系列TBL并显示当前实际绑定。消息日志的物理M、滚轮、PageUp／PageDown、Home／End已接入FrameInput；底栏按钮也走同一ChatView入口并报告缺资源原因。普通ASCII聊天用Enter输入／发送，顶部最多15条、每条独立10秒、新消息在下，随左侧面板边界右移；原版资源依据及限制见联网模块。面板存在不代表对应服务完成；佣兵、赌博及任务特殊服务保持明确限制。
+底栏只加载原联机minipanel，八个按钮绘制／命中统一；P／Party Screen打开原图组队名册，Invite／Cancel／Accept／Leave共用原服0x5E请求，结果读取名册回包。同队行显示绿色名字、职业、等级、队伍状态和原区域名，按原38像素行距分组／分隔；左上角队友用MPQ七职业头像、原TRANS50混色及0x7F生命条。入口及限制见[联网模块](../../modules/NETWORK.md#组队邀请客户端)。当前MPQ的minipanelbtn帧对依次是人物、背包、技能、组队、自动地图、消息日志、任务、菜单；hudMiniActions统一真实帧与语义动作，提示读取minipanel系列TBL并显示当前实际绑定。消息日志的物理M、滚轮、PageUp／PageDown、Home／End已接入FrameInput；底栏按钮也走同一ChatView入口并报告缺资源原因。局内聊天用Enter输入／发送，顶部最多15条、每条独立10秒、新消息在下，随左侧面板边界右移；原版资源依据及限制见联网模块。面板存在不代表对应服务完成；佣兵、赌博及任务特殊服务保持明确限制。
 
 ## 聊天与消息日志
 
 聊天界面依据与源码：用户提供原版底部输入、左上回显及M消息日志三张截图，历史最新消息在上、真实角色名深金色／普通文字白色、标题Message Log、底部Close、右侧滚动条。OpenDiablo2 `d2game/d2player/key_map.go`核对Enter／M，`d2common/d2resource/resource_paths.go`及`d2core/d2gui/box.go`／`layout_scrollbar.go`核对boxpieces／textslid原帧用途。当前MPQ：boxpieces为22帧14×15，textslid为17帧12×13；TBL的strMsgLog／strClose存在；对照截图字形和尺寸选font8消息、font16输入／标题，字宽沿原TBL。`presentation/hud/chat_view.*`独立维护只读消息、编辑草稿、光标及滚动；边框步距从原帧尺寸读取，位置按截图800像素基准适配当前HUD尺度。Sky原PL2十三种字体索引变换按需上传，白色保留原索引；messageColor控制正文，姓名色独立于等级字段，支持原FF c0–c9颜色串（本地d2bs Print用例补证）。标题／Close动态读当前MPQ。
 
-Enter打开底部输入，再次Enter提交普通广播；空白Enter关闭，Esc丢弃草稿。Backspace／Delete、左右／Home／End编辑光标，255字节限制，非ASCII输入明确提示；提交拒绝保留草稿。M／底栏Message Log打开历史，M／Esc／Close关闭；滚轮、上下、PageUp／PageDown、Home／End及原箭头／滚动条拖拽翻阅，新消息到达时保留正在查看的旧行锚点。输入／日志占用整个开启、编辑和关闭帧，隔离走跑、自动地图、背包／技能、药剂／换装及鼠标玩法输入；持有按钮需重新释放，服务器／网络不暂停。关闭与新局不重放消息或玩法意图，换区保留本局历史。
+Enter打开底部输入，再次Enter提交普通广播；空白Enter关闭，Esc丢弃草稿。Backspace／Delete、左右／Home／End按完整Unicode字符编辑光标，正文沿原UCS-2边界（不支持非BMP字符），转换为系统原生代码页后限制255字节；提交拒绝保留草稿。Windows使用已有GLFW的WM_CHAR提交字符及系统IME候选窗口；app层读取组合态，组合中的方向／退格／Esc不修改已提交草稿，候选确认／组合结束同帧不同时发送聊天，已提交的片段仍进入草稿。M／底栏Message Log打开历史，M／Esc／Close关闭；滚轮、上下、PageUp／PageDown、Home／End及原箭头／滚动条拖拽翻阅，新消息到达时保留正在查看的旧行锚点。输入／日志占用整个开启、编辑和关闭帧，隔离走跑、自动地图、背包／技能、药剂／换装及鼠标玩法输入；持有按钮需重新释放，服务器／网络不暂停。关闭与新局不重放消息或玩法意图，换区保留本局历史。
 
-当前显示限language=0的普通type1／私聊type2和6／server type3／noname type4及ASCII正文，其余真实原包保留但计chatUi.unavailableMessages，不猜表情／线索格式。用户补充原版实测：每条显示10秒、新消息在下、最多15条，左侧角色等面板打开时右移。顶部源码取最新15条可显示消息，按收到顺序向下排列，以原消息receivedMilliseconds的单调时钟独立过期；新消息、打开／关闭日志及面板不重置寿命。绘制使用SceneView::worldViewport的左边界和可用宽度，重新换行并裁剪在世界区域内；过期只隐藏顶部消息，不清除本局最多256条历史，M日志继续沿截图最新在上。font8正文／font16输入及标题保留原像素大小，字宽、换行、光标和行距同步。中文原编码／输入法、频道、头顶气泡绘制及全部窗口／字体精确一致性仍暂缓。
+当前显示普通type1／私聊type2和6／server type3／noname type4；局内正文按原7B4F0转换，语言6／7／9／12使用系统ANSI代码页，其余按原win2Unicode单字节展开，再由原MPQ Unicode字体表绘制。原版只允许相同多字节语言或7／12互通，其他语言组合仅显示转换后的ASCII；不满足资格的真实原包保留并计chatUi.unavailableMessages，不自行猜代码页或格式。用户补充原版实测：每条显示10秒、新消息在下、最多15条，左侧角色等面板打开时右移。顶部源码取最新15条可显示消息，按收到顺序向下排列，以原消息receivedMilliseconds的单调时钟独立过期；新消息、打开／关闭日志及面板不重置寿命。绘制使用SceneView::worldViewport的左边界和可用宽度，重新换行并裁剪在世界区域内；过期只隐藏顶部消息，不清除本局最多256条历史，M日志继续沿截图最新在上。font8正文／font16输入及标题保留原像素大小，字宽、换行、光标和行距同步。正文Unicode编辑／局内原生编码与Windows IME提交已有新源码；字体仍要求当前MPQ实际提供，系统代码页也必须具备对应字符；Windows保留原ACP转换的默认替代／best-fit，代码页不匹配不能保证无损中文，不改成UTF-8私有线路。Linux沿环境LC_CTYPE编码通过iconv转换，不改变进程全局locale；字符不可转换明确不可用。IME预编辑窗／候选窗位置、切换输入法和所有窗口／字体的原版像素一致性仍待验收；BNCS频道及其本地化命令不在本次局内编码范围。type5头顶消息已有独立场景绘制源码，读取当前MPQ FontInGameChat，按180像素字宽换行、15像素行距、原20像素横向留白及最多10行绘制，使用PL2的DrawBox mode1半透明底板；保持单位实际显示位置，接收时间与原125+8×长度（最多254字节）寿命及76清除共同控制显示。缺该原字体不替换为普通字体；头顶消息与普通局内正文共用原语言／多字节转换，以Unicode字宽换行，寿命仍取原字节长度。依据本机1.13c D2Client RVA7DC00→7CA40→7B240、D2Common #10454（18280）、D2Win字体名表1C588的第13项及10150（12FA0）；新增源码已构建，行为仍待实测，多气泡遮叠、面板、暂停／换区与逐像素／时钟对照仍待验收。
 
 聊天发送、原包字段、队列与服务器公告依据见[多人只读副本](../../modules/NETWORK.md#多人只读副本)；本节只维护界面，不生成本地成功消息或授予玩法权限。
 
@@ -86,7 +86,7 @@ ESC先关闭面板／对白，无面板时打开游戏菜单。`hud/escape_menu`
 
 按键页直接读取英文TBL和Latin FontInGameChat的DC6／TBL，原表62行含56功能及6个分隔空行，每屏15行、行距18；保留620×369原边框、三列、原textslid滚动条、底部三个按钮。点击功能／主键列编辑主键，点击副键列编辑副键；键盘上下逐项选择并滚动入视野，首尾停止，左右在两个槽间选择、不循环；Enter进入捕获，鼠标悬停不改变键盘选中行。滚轮、PageUp／PageDown、Home／End及拖动滚动条浏览。捕获时Esc只取消捕获，重复绑定清除全表原槽为None，不设Delete／Backspace清空捷径。Default只重置草稿；Cancel及非捕获时Esc丢弃，Accept应用并保存；捕获优先消费按键，失焦取消捕获。具体格式与失败处理见[客户端偏好](../../modules/SAVES.md#客户端偏好凭据与探索)。
 
-字体颜色全部来自Sky PL2原索引变换，不猜RGB：按钮未悬停4（金），Cancel悬停1（红）、Default 3（蓝）、Accept 2（绿）；选中键位3，未选中已绑定4，空槽5（灰），双槽空1（红），普通功能标签0（白）。取证为同份1.13c D2Client按钮表RVA F8B98（三条26字节记录、色号偏移6）、绘制12CE0–12D26、绑定绘制127D0–12A58及槽存在判定398C0；用户原版实测确认按钮颜色、选中蓝色／捕获蓝色闪烁、Esc取消捕获、冲突清除及不循环键盘导航。当前捕获按时间闪烁，原版按帧计数，精确节奏未认证。上一／下一技能及8条角色语音功能无已核实消费者，保留原行并灰显，不接受编辑；普通键盘、中键／侧键及滚轮已接编码，但全部设备与原版完整允许键集合仍待实测。
+字体颜色全部来自Sky PL2原索引变换，不猜RGB：按钮未悬停4（金），Cancel悬停1（红）、Default 3（蓝）、Accept 2（绿）；选中键位3，未选中已绑定4，空槽5（灰），双槽空1（红），普通功能标签0（白）。取证为同份1.13c D2Client按钮表RVA F8B98（三条26字节记录、色号偏移6）、绘制12CE0–12D26、绑定绘制127D0–12A58及槽存在判定398C0；用户原版实测确认按钮颜色、选中蓝色／捕获蓝色闪烁、Esc取消捕获、冲突清除及不循环键盘导航。当前捕获按时间闪烁，原版按帧计数，精确节奏未认证。上一／下一技能已接16槽右手快捷键；8条角色语音键已接原版3F请求和2C声音消费，允许编辑；普通键盘、中键／侧键及滚轮已接编码，但全部设备与原版完整允许键集合仍待实测。
 
 声音／画面页保留原标签、档位、滑条和骷髅滑块；无后端控件按原菜单记录初值灰显，不能把该初值当成后端已生效。缺原图报错，不生成替代图形。按键编辑仍缺专项实机回归，不能据代码接入或数值场景入局认定真实画面、实体键盘及重启保存已验证。
 
@@ -101,6 +101,8 @@ Video Options的Lighting Quality沿原图位置显示On／Off并默认On；鼠�
 自动地图五项沿用当前已支持状态与偏好保存；大小切换、Fade四档与小图跳过Center保持原规则，支持鼠标／Enter及左右方向键。普通菜单上下导航环绕并跳过禁用行；设置页ESC关闭菜单，按键页ESC返回Options。Save and Exit提交原保存退局，确认后返服务器选角，超时保存未知；不在UI写D2S；单机／联机的暂停由app/frontend既有宿主及表现策略负责。
 
 布局与内容静态依据为本机1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）：菜单表RVA E2AC0／E3AC8／E5570／EA550／EEFE0，绘制65230–65574、命中64080、左右切换64D20／64E00及导航64EE0／64F50；按键表F8928（62条10字节记录）、布局11410、绘制12570–12DB8及按钮表F8B98。D2Win的字体名表RVA1C588第13项确认FontInGameChat。原DLL／资源仅只读，导出物不提交。当前仅静态核对，尚未进行原版实机交互或逐像素画面对照；全部菜单状态与扩展窗口仍需实际确认。
+
+技能循环依据本机1.13c D2Client RVA3A8C0／3A8E0、3D6D0、3D110与3D5B0：从上次选中的快捷槽按方向环绕16槽，只选择右手且仍存在的技能／来源，耗尽聚气跳过；普通攻击可以参与，不因缺少法力而跳过。手动选快捷槽更新游标，直接点选技能不更新；默认滚轮上／下，新游戏游标从0开始，换区不重置。UI只提交已有SelectMouseSkill，不施法或改服务端状态。新增分支已通过Release构建，尚未实机验证，组合测试见[剩余工作](../../development/ORIGINAL_GAPS.md)。
 
 ## 证据与限制
 
@@ -118,8 +120,8 @@ Video Options的Lighting Quality沿原图位置显示On／Off并默认On；鼠�
 | 任务日志 | questbackground／expquesttabs／questsockets／任务原动画；quest_panel、quest_controller | 完整任务动画／文字／重播节奏及所有幕状态 |
 | 佣兵／雇用、组队 | 原hireling／party面板、inventory原槽位／原字体；hireling_view、commerce_controller、party_view | 全职业／雇用列表与多人关系组合、完整按压及像素对照 |
 | 传送点 | waygatebackground／expwaygatetabs／waygateicons；waypoint_view | 原版逐像素布局及全幕／不可达状态组合 |
-| 消息日志／聊天 | boxpieces／textslid、strMsgLog／strClose、原字体；chat_view、app/input | 实体键盘人工操作、全部窗口尺寸、精确原版布局及中文输入未完成 |
-| ESC／设置 | 按所选语言的菜单原图、缺图回退英文／Latin FontInGameChat／PL2；escape_menu、hud、controller | 自动地图、声音、Lighting及双键编辑已接；3D音效／其余画面／技能循环和角色语音键灰显；实机按压、导航、重启保存与逐像素对照未执行 |
+| 消息日志／聊天 | boxpieces／textslid、strMsgLog／strClose、原字体；chat_view、app/input | 新增局内中文编码／Unicode编辑／Windows IME路径已构建，行为仍待实测；实体键盘、输入法切换／候选窗口及精确原版布局仍待验收 |
+| ESC／设置 | 按所选语言的菜单原图、缺图回退英文／Latin FontInGameChat／PL2；escape_menu、hud、controller | 自动地图、声音、Lighting及双键编辑已接；技能循环已接16槽右手快捷键；3D音效／其余画面设置灰显，原版角色语音键已接；实机按压、导航、重启保存与逐像素对照未执行 |
 
 直接读取五个当前MPQ，确认minipanelbtn的真实帧身份、dialogbackground的210×158尺寸及inventory原表。金币文案／菜单参数另定点核对同快照D2Client RVA C31A8–C320D、C3212–C322F、C32CC–C32FC及C341B–C348F；保持原图与DLL只读。这些静态依据只裁定图集／原表及原版菜单参数，完整职业／窗口尺寸、多人／原服、音频、Linux及逐像素矩阵仍待核对。
 
@@ -132,3 +134,7 @@ Video Options的Lighting Quality沿原图位置显示On／Off并默认On；鼠�
 `src/presentation/remote/remote_scene.cpp::localCastBlocksMovement`对MPQ `anim=SC`且已开始、尚未结束的本人施法使用完整动画时钟，不以释放帧作为结束。`remote_scene_draw.cpp`据此提供移动输入资格，`presentation/controller.cpp`只在仍按住左键时保留待发送移动；提前松开则撤销这次手势。`remote_scene_effects.cpp`和`remote_scene_movement.cpp`还对其他入口已提交的移动请求延后中断／预测，保留施法原点及尚未到释放帧的Clt飞弹。动作正常完成当帧的移动走正常结束清理，不取消该帧稍后推进时刚到释放时点的飞弹。移动请求不是服务端已接受的模式切换；客户端副本、权威施放和扣费不由这个显示门槛改写。
 
 真实受击／击退／死亡及换区仍沿原有动作中断清理；已发射的飞弹继续拥有自己的寿命，取消待释放飞弹只作用于尚未出生的显示请求。此修正共用于原版与PD2普通SC施法，喷流和各专用序列保留原执行路径，不据此宣称其他模式、全部FCR／变形、延迟和多人交错已逐帧对齐。
+
+角色语音Say0–Say7按原回调发送25–32，依次取当前MPQ人物声音chat_a至chat_h组；返程问候依据91待问候NPC，在菜单开启时播放原Sounds并发4D，普通Gossip不发4D。新增路径目前只做原版静态核对，完整声音占用／打断、语音资源缺失及原版实机表现边界见[消息速查](../../modules/MESSAGES.md#d2x客户端对应入口与消费)。
+
+任务声音与音乐新增沿本机D2Client45570／45660–4595E的单槽消费者，归SceneStreams持有：Den的music_quest_den为0／300帧起止、250帧人物声，Nihlathak为0／550帧起止、400帧人物声，入槽保存当前环境曲Block1；熔炉music_quest_forge为0／350帧起止、从环境曲0点恢复，另在原物件播放Sounds35的quest_hellforge_smash。新槽覆盖旧槽和未播人物声，按世界表现25Hz时钟推进，跨区域保留、新游戏清除；人物声到期时本地玩家死亡则消费并跳过，不在复活后补播。资源、音量、Loop、Fade In／Out继续读当前Sounds；三条任务曲当前Music Vol=0，受Sound Volume控制，不因Music Volume=0误静音。缺曲／语音资源明确记录，不以其他音频代替。45570的第1参数是Sounds行号，不是字幕TBL；不据此添加字幕。完整原混音、设备／暂停、任务曲重入、环境切换／Block恢复和同泵原交错仍需验收，新源码已构建，行为仍待实测。

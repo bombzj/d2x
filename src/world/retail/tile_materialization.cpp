@@ -650,7 +650,9 @@ void RetailTileMaterializer::forgetLevel(int level) {
 void RetailTileMaterializer::restoreRoom(size_t index,const RetailRoom &source,std::shared_ptr<RetailTileSelector> libraries) {
     auto &room=rooms_.at(index);
     if(room.loaded || room.libraries || !libraries) throw std::logic_error("Room inputs are not awaiting restoration");
+    const auto linkedFlags=room.room.flags&0x00800000u;
     room.room=source;room.libraries=std::move(libraries);
+    room.room.flags|=linkedFlags;
 }
 
 void sortRetailNearRooms(std::vector<size_t> &near, const std::deque<RetailTileRoom> &rooms) {

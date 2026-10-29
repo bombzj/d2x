@@ -79,6 +79,27 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"pendingReleases", s.pendingReleases}, {"spellImpacts", s.spellImpacts}, {"spellTargets", s.spellTargets},
         {"path", Json::array()}};
     result["effects"] = Json::array();
+    result["world"]={{"levelCheckTick",s.world.levelCheckTick?Json(*s.world.levelCheckTick):Json(nullptr)},
+        {"retirementTick",s.world.retirementTick?Json(*s.world.retirementTick):Json(nullptr)},
+        {"retirementNext",s.world.retirementNext},{"retirementUnits",s.world.retirementUnits},{"levels",Json::array()}};
+    for(const auto &level:s.world.levels) result["world"]["levels"].push_back({{"area",int(level.area)},
+        {"generation",level.generation},{"terrainGeneration",level.terrainGeneration},{"unloadDelay",level.unloadDelay},
+        {"rooms",level.rooms},{"loadedRooms",level.loadedRooms},{"collisionBytes",level.collisionBytes},
+        {"roomInputs",level.resources.roomInputs},{"selectors",level.resources.selectors},
+        {"ds1",level.resources.ds1},{"dt1",level.resources.dt1}});
+    result["nativeIdentities"]={{"count",s.nativeIdCount},{"next",s.nextNativeIds},{"entries",Json::array()}};
+    for(const auto &[entity,native]:s.nativeIds) result["nativeIdentities"]["entries"].push_back({{"entity",entity.value},
+        {"type",unsigned(native.type)},{"guid",native.guid}});
+    result["inactiveUnits"]=Json::array();
+    for(const auto &entry:s.inactiveUnits) result["inactiveUnits"].push_back({{"area",int(entry.area)},{"room",entry.room},
+        {"monsters",entry.monsters},{"objects",entry.objects},{"items",entry.items}});
+    result["inactiveMonsters"]=Json::array();
+    for(const auto &entry:s.inactiveMonsters) result["inactiveMonsters"].push_back({{"id",entry.id.value},{"area",int(entry.area)},
+        {"room",entry.room},{"frame",entry.frame},{"lifeRaw",entry.life},{"maximumLifeRaw",entry.maximumLife},
+        {"dead",entry.dead},{"selfResurrections",entry.selfResurrections},{"code",entry.code}});
+    result["inactiveItems"]["records"]=Json::array();
+    for(const auto &entry:s.inactiveItems) result["inactiveItems"]["records"].push_back({{"area",int(entry.area)},{"room",entry.room},
+        {"index",entry.index},{"expires",entry.expires},{"bytesHash",entry.bytesHash},{"bytes",entry.bytes}});
     if(s.pd2Map) {
         const auto &map=*s.pd2Map;
         result["pd2Map"]={{"controller",map.controller},{"phase",map.phase},{"eventProgress",map.eventProgress},
@@ -102,9 +123,12 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     for(const auto &[region,random]:s.levelRandom)
         result["generationRandom"]["levels"].push_back({{"area",int(region)},{"seed",seed(random)}});
     result["generationRandom"]["rooms"]=Json::array();
-    for(const auto &room:s.roomRandom)
+    for(const auto &room:s.roomRandom) {
         result["generationRandom"]["rooms"].push_back({{"area",int(room.area)},{"room",room.room},{"loaded",room.loaded},
-            {"revision",room.revision},{"creationOrder",room.creationOrder},{"seed",room.random?seed(*room.random):Json(nullptr)}});
+            {"revision",room.revision},{"creationOrder",room.creationOrder},{"seed",room.random?seed(*room.random):Json(nullptr)},
+            {"status",room.status},{"references",room.references},{"collisionHash",room.collisionHash},{"units",Json::array()}});
+        for(const auto id:room.units) result["generationRandom"]["rooms"].back()["units"].push_back(id.value);
+    }
     result["objectPopulation"]=Json::array();
     result["hirelingRosters"]=Json::array();
     for(const auto &slot:s.hirelingRosters)
@@ -152,7 +176,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     result["virtualPlayers"]=s.virtualPlayers;
     result["loot"] = {{"pending", s.lootPending}, {"deferred", s.lootDeferred}};
     result["itemTriggers"]={{"pending",s.itemTriggersPending},{"deferred",s.itemTriggersDeferred}};
-    result["inactiveItems"]={{"deferred",s.inactiveItemsDeferred}};
+    result["inactiveItems"]["deferred"]=s.inactiveItemsDeferred;
     result["chargedSkills"]=Json::array();
     for(const auto &charge:s.chargedSkills) result["chargedSkills"].push_back({{"item",charge.item.id.value},{"revision",charge.item.revision},{"skill",charge.skill},{"rank",charge.rank},{"charges",charge.charges},{"maximum",charge.maximum}});
     result["itemAuras"]=auraTimers(s.itemAuras);
@@ -284,7 +308,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     }
     // Variant names are maintained beside the domain fact catalog.
     constexpr std::array names{"mana", "reposition", "life", "attack", "hit", "death", "item", "inventory", "character",
-        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop", "npc-service", "ground-remove", "item-skill", "ground-restored", "hireling-list", "trade", "trade-items", "player-message", "chat-relation", "party-notice", "environment", "resources", "skill-end", "quest-status", "quest-effect", "monster-class-hint", "pd2-map-attributes", "inventory-reset"};
+        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop", "npc-service", "ground-remove", "item-skill", "ground-restored", "hireling-list", "trade", "trade-items", "player-message", "chat-relation", "party-notice", "environment", "resources", "skill-end", "quest-status", "quest-effect", "monster-class-hint", "pd2-map-attributes", "inventory-reset", "quest-alert", "unit-refresh", "quest-clue"};
     static_assert(names.size() == std::variant_size_v<server::DomainFact>);
     result["corpses"]=Json::array();
     for(const auto &corpse:s.corpses) result["corpses"].push_back({{"id",corpse.id.value},{"owner",corpse.owner.value},{"area",int(corpse.region)},{"localPosition",point(corpse.position)},{"container",corpse.items.value},{"recoverableExperience",corpse.recoverableExperience}});
@@ -307,7 +331,18 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     const auto &a3=s.actThree;const auto &a4=s.actFour;const auto &a5=s.actFive;
     result["questExecution"]["actThree"]={{"figurineSource",a3.figurineSource.value},{"figurineDropped",a3.figurineDropped},{"gidbinnSpawned",a3.gidbinnSpawned},{"gidbinnDropped",a3.gidbinnDropped},{"orbSmashed",a3.orbSmashed},{"orbHits",a3.orbHits},{"mephistoSlain",a3.mephistoSlain}};
     result["questExecution"]["actFour"]={{"izualSlain",a4.izualSlain},{"ghostSpawned",a4.ghostSpawned},{"forgePlaced",a4.forgePlaced},{"forgeSmashed",a4.forgeSmashed},{"forgeHits",a4.forgeHits},{"seals",a4.seals},{"diabloSpawned",a4.diabloSpawned},{"diabloSlain",a4.diabloSlain}};
-    result["questExecution"]["actFive"]={{"rescued",a5.rescued},{"anyaThawed",a5.anyaThawed},{"anyaSpawned",a5.anyaSpawned},{"ancientsActive",a5.ancientsActive},{"ancientsDefeated",a5.ancientsDefeated},{"throneDeparted",a5.throneDeparted},{"baalSlain",a5.baalSlain},{"tyraelSpawned",a5.tyraelSpawned}};
+    result["questExecution"]["actFour"]["forgeRewards"]={{"object",a4.forgeObject.value},{"openAt",a4.forgeOpenAt},
+        {"due",a4.forgeDue},{"players",a4.forgePlayers},{"tier",a4.forgeTier},{"dropIndex",a4.forgeDropIndex},
+        {"successful",a4.forgeSuccessful},{"awaiting",a4.forgeAwaiting},{"code",a4.forgeCode}};
+    result["questExecution"]["actFive"]={{"rescued",a5.rescued},{"rescueSpawned",a5.rescueSpawned},
+        {"rescueKilled",a5.rescueKilled},{"rescueRemaining",a5.rescueRemaining},{"rescueGroupsComplete",a5.rescueGroupsComplete},
+        {"anyaThawed",a5.anyaThawed},{"anyaSpawned",a5.anyaSpawned},{"ancientsActive",a5.ancientsActive},{"ancientsDefeated",a5.ancientsDefeated},{"throneDeparted",a5.throneDeparted},{"baalSlain",a5.baalSlain},{"tyraelSpawned",a5.tyraelSpawned}};
+    result["questExecution"]["actFive"]["rescuePortals"]=Json::array();
+    for(const auto &portal:a5.rescuePortals) {
+        Json prisoners=Json::array();for(const auto id:portal.prisoners) prisoners.push_back(id.value);
+        result["questExecution"]["actFive"]["rescuePortals"].push_back({{"object",portal.object.value},
+            {"group",point(portal.group)},{"due",portal.due},{"closingUpdates",portal.closingUpdates},{"prisoners",std::move(prisoners)}});
+    }
     result["den"]={{"remaining",s.denRemaining},{"cleared",s.denCleared},{"stages",Json::array()}};
     for(const auto &book:s.record.quests) result["den"]["stages"].push_back(book.at(questIndex(QuestId::DenOfEvil)).stage);
     result["quests"]=Json::array();

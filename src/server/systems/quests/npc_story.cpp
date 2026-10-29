@@ -23,6 +23,93 @@ int coordinateDistance(Vec from,Vec to) {
     return unitCoordinateDistance(int(std::floor(from.x)),int(std::floor(from.y)),int(std::floor(to.x)),int(std::floor(to.y)));
 }
 }
+uint64_t System::npcPortalDue(EntityId id) const {
+    for(const auto &portal:state_.npcStory.bluePortals) if(portal.object==id) return portal.due;
+    return 0;
+}
+DomainResult<> System::npcPortalEvent(EntityId id,uint64_t tick) {
+    const auto object=ports_.objects.read().objects.find(id);
+    if(object==ports_.objects.read().objects.end()) return {DomainStatus::Stale,{}};
+    auto &story=state_.npcStory;
+    for(auto &portal:story.bluePortals) if(portal.object==id) {
+        int mode=object->second.mode;auto updates=portal.anya?story.anyaPortalUpdates:story.cainPortalUpdates;
+        if(mode==1) mode=2;
+        else if(mode==2) {
+            const bool close=portal.town?(++updates>5 || (!portal.anya && story.cainTownActivated)):
+                portal.anya?story.anyaDeparted:story.cainDeparted;
+            if(close) mode=3;
+        } else if(mode==3) mode=4;
+        if(mode!=object->second.mode) {const auto changed=ports_.objects.setNativeMode(id,mode,tick);if(!changed) return changed;}
+        if(portal.town) {if(portal.anya) story.anyaPortalUpdates=updates;else story.cainPortalUpdates=updates;}
+        portal.updates=updates;portal.due=tick+25;
+        return {DomainStatus::Applied,std::monostate{}};
+    }
+    return {DomainStatus::Stale,{}};
+}
+DomainResult<bool> System::spawnNpcBluePortal(bool anya,bool town,RegionId region,Vec observer,Vec global,uint64_t tick) {
+    auto &portals=state_.npcStory.bluePortals;
+    if((anya || !town) && std::any_of(portals.begin(),portals.end(),[&](const auto &portal){return portal.anya==anya && portal.town==town;}))
+        return {DomainStatus::Applied,true};
+    const auto room=ports_.areas.roomAtPosition(region,observer,int(global.x),int(global.y));
+    if(!room) return {DomainStatus::Applied,false};
+    if(!ports_.areas.at(room->area).definition.objectRules.contains(189)) return {DomainStatus::NotImplemented,{}};
+    const auto point=global-ports_.areas.at(room->area).definition.origin;
+    const auto born=ports_.objects.admit({189,room->area,point,{},{},1,tick,*room});
+    if(!born) return isDeferred(born.status)?DomainResult<bool>{born.status,{}}:DomainResult<bool>{DomainStatus::Applied,false};
+    portals.push_back({*born.value,room->area,global,anya,town,tick+25,0});
+    const auto scheduled=ports_.objects.setNativeMode(*born.value,1,tick);if(!scheduled) return {scheduled.status,{}};
+    return {DomainStatus::Applied,true};
+}
+DomainResult<> System::returnNpcToTown(bool anya,uint64_t tick,bool portal,uint64_t invocation) {
+    auto &story=state_.npcStory;auto &next=story.returns[anya?1:0];
+    const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
+    const auto markerId=anya?story.anyaTownObject:state_.actOne.cainStartObject;
+    const auto marker=ports_.objects.read().objects.find(markerId);
+    if(marker==ports_.objects.read().objects.end()) return done();
+    const auto &area=ports_.areas.at(marker->second.area).definition;
+    if(next.marker!=markerId) {next={markerId,{},0,portal,invocation};}
+    if(!anya && portal && next.phase==3 && next.invocation!=invocation) {
+        next.invocation=invocation;next.actor=state_.actOne.cainTownActor;next.phase=1;next.portal=true;
+    }
+    if(next.phase==3) return done();
+    if(next.phase==0) {
+        if(anya) {
+            if(state_.actFive.anyaSpawned) {next.phase=3;return done();}
+            const auto spawned=spawnStoryNpc(marker->second.area,"drehya",marker->second.position,tick,true);
+            if(!spawned) {
+                if(spawned.status!=DomainStatus::Unavailable && spawned.status!=DomainStatus::Stale) return {spawned.status,{}};
+                next.phase=3;return done();
+            }
+            next.actor=*spawned.value;state_.actFive.anyaSpawned=true;next.phase=1;
+        } else {
+            if(!state_.actOne.cainTownActor) {
+                const auto source=std::find_if(area.objects.begin(),area.objects.end(),[&](const auto &object) {
+                    return object.rule.initialization==54 && object.position.x==marker->second.position.x && object.position.y==marker->second.position.y;
+                });
+                const auto *bounds=area.activation.room(marker->second.position);
+                if(source==area.objects.end() || !bounds) return done();
+                const auto status=ports_.objects.populatePresets(marker->second.area,size_t(bounds-area.activation.rooms().data()),{tick},source->id);
+                if(status!=StepStatus::Complete) return {status==StepStatus::Blocked?DomainStatus::Capacity:DomainStatus::NotImplemented,{}};
+            }
+            next.actor=state_.actOne.cainTownActor;next.phase=1;
+        }
+    }
+    if(next.phase==1) {
+        if(const auto *unit=ports_.monsters.find(next.actor);unit && unit->alive()) {
+            const auto bound=bindNpcMapAi(next.actor);if(!bound) return bound;
+            next.phase=2;
+        } else {next.phase=3;return done();}
+    }
+    if(next.phase==2) {
+        if(next.portal) if(const auto *unit=ports_.monsters.find(next.actor)) {
+            const auto point=unit->position+ports_.areas.at(unit->area).definition.origin;
+            const auto born=spawnNpcBluePortal(anya,true,unit->area,unit->position,point,tick);
+            if(!born) return {born.status,{}};
+        }
+        next.phase=3;
+    }
+    return done();
+}
 bool System::npcInteracting(EntityId id) const {
     for(const auto &[player,conversation]:ports_.npc.read().conversations)
         if(conversation.npc==id && ports_.npc.conversation(player)) return true;
@@ -36,6 +123,7 @@ void System::registerNpcStoryObject(EntityId id,RegionId region,int definition,i
     if(int(region)==40 && initialization==30) {story.blockerId=id;story.blocker=position+area.origin;}
     if(int(region)==75 && initialization==39) story.ormusAltar=id;
     if(int(region)==114 && definition==460) story.anyaOutsidePosition=position+area.origin;
+    if(int(region)==109 && initialization==66) story.anyaTownObject=id;
     for(const auto &input:area.npcMapAi) if(input.objectClass==definition && input.position.x==position.x && input.position.y==position.y) {
         auto &buffer=story.mapAi[input.npc];
         if(!buffer.consumed) buffer.nodes=input.nodes;
@@ -246,11 +334,6 @@ DomainResult<NpcAiResult> System::npcThink(EntityId id,uint64_t tick) {
         }
         return done({true,true,false,1,{}});
     };
-    const auto retire=[&]() -> DomainResult<NpcAiResult> {
-        const auto result=ports_.monsters.retireQuestNpc(id);
-        if(!result) return {result.status,{}};
-        story.retired.insert(id);return done({true,false,true,1,{}});
-    };
     const auto pose=[&](uint8_t mode) -> DomainResult<NpcAiResult> {
         const auto clock=unit->rule.aiPoseTicks.find(mode);
         if(clock==unit->rule.aiPoseTicks.end()) return {DomainStatus::NotImplemented,{}};
@@ -357,45 +440,52 @@ DomainResult<NpcAiResult> System::npcThink(EntityId id,uint64_t tick) {
         if((anya && !state_.actFive.anyaThawed) || (!anya && !state_.actOne.cainRescued)) return idle(40);
         auto [entry,fresh]=story.escapes.try_emplace(id);
         auto &escape=entry->second;
-        if(fresh) {escape.start=global+Vec{3,3};escape.portal=global;escape.phase=1;return idle(1);}
+        if(fresh || escape.admissionRevision!=unit->admissionRevision) {
+            escape={global+Vec{3,3},global,1,0,unit->admissionRevision};
+            if(!anya && story.cainPortalCoordsInitialized) escape.phase=8;
+            else {if(!anya) story.cainPortalCoordsInitialized=true;return idle(1);}
+        }
+        const auto finish=[&]() -> DomainResult<NpcAiResult> {
+            if(anya) story.anyaDeparted=true;else story.cainDeparted=true;
+            const auto returned=returnNpcToTown(anya,tick,true,escape.admissionRevision);if(!returned) return {returned.status,{}};
+            const auto departed=ports_.monsters.departQuestNpc(id,tick);if(!departed) return {departed.status,{}};
+            story.retired.insert(id);return done({true,false,true,1,{}});
+        };
+        if(escape.phase>=8) return finish();
         if(npcInteracting(id)) return idle(40);
         if(!unit->route.empty()) return done({true,true,false,1,{}});
         if(escape.phase<2) {
             if(coordinateDistance(global,escape.start)>1 && escape.attempts<=5) {
                 auto result=walk(escape.start);if(result) ++escape.attempts;return result;
             }
-            bool exists=false;
-            for(const auto &[portalId,portal]:ports_.travel.read().specialPortals) {
-                (void)portalId;if(portal.field==unit->area && int(portal.town)==(anya?109:1)) {escape.portal=portal.fieldPosition+area.origin;exists=true;break;}
+            const bool existing=std::any_of(story.bluePortals.begin(),story.bluePortals.end(),[&](const auto &value){return value.anya==anya && !value.town;});
+            DomainResult<bool> born{DomainStatus::Applied,existing};
+            if(!existing) {
+                const auto room=ports_.areas.roomAtPosition(unit->area,unit->position,int(escape.portal.x),int(escape.portal.y));
+                if(!room) escape.portal=escape.portal+Vec{3,3};
+                else born=spawnNpcBluePortal(anya,false,unit->area,unit->position,escape.portal,tick);
             }
-            if(!exists) {
-                const PlayerState *player=nullptr;
-                for(const auto &[playerId,candidate]:ports_.players.all()) {
-                    (void)playerId;if(candidate.entered && candidate.area==unit->area && candidate.persistent.player.hp>0) {player=&candidate;break;}
-                }
-                if(!player) return idle(20);
-                const auto portal=ports_.travel.prepareSpecialPortal({player->player,player->actor,unit->area,ports_.areas.at(unit->area).generation,0,tick},
-                    anya?travel::SpecialPortalKind::AnyaRescue:travel::SpecialPortalKind::CainRescue,0,escape.portal-area.origin);
-                if(!portal) {if(isDeferred(portal.status)) return {portal.status,{}};return idle(20);}
-                for(const auto &[portalId,prepared]:portal.value->next) {
-                    (void)portalId;if(prepared.field==unit->area && int(prepared.town)==(anya?109:1)) {escape.portal=prepared.fieldPosition+area.origin;break;}
-                }
-                ports_.travel.commitSpecialPortal(*portal.value);
-            }
+            if(!born) return {born.status,{}};
+            // Cain returns success even on native allocation failure. Anya
+            // retries command3 phase1, with its own 20-frame wait.
+            if(anya && !*born.value) {escape.phase=1;escape.attempts=1;return idle(20);}
             escape.phase=2;return idle(20);
         }
-        if(escape.phase+1<8 && coordinateDistance(global,escape.portal)>0) {
-            auto result=walk(escape.portal);if(result) ++escape.phase;return result;
+        const auto portal=std::find_if(story.bluePortals.begin(),story.bluePortals.end(),[&](const auto &value){return value.anya==anya && !value.town;});
+        const auto point=portal==story.bluePortals.end()?global:escape.portal;
+        const auto next=escape.phase+1;
+        if(next<8 && coordinateDistance(global,point)>0) {
+            auto result=walk(point);if(result) escape.phase=next;return result;
         }
-        const auto result=retire();
-        if(result) {if(anya) story.anyaDeparted=true;else story.cainDeparted=true;}
-        return result;
+        escape.phase=next;return finish();
     }
     if(code=="cain5" && int(unit->area)==1 && state_.actOne.cainRescued && !story.cainTownActivated) {
-        for(const auto &[portalId,portal]:ports_.travel.read().specialPortals) {
-            (void)portalId;if(int(portal.field)!=38 || int(portal.town)!=1) continue;
-            const auto point=portal.townPosition+area.origin;
-            if(coordinateDistance(global,point)>2) return walk(point);
+        for(auto it=story.bluePortals.rbegin();it!=story.bluePortals.rend();++it) {
+            const auto &portal=*it;
+            if(portal.anya || !portal.town) continue;
+            const auto object=ports_.objects.read().objects.find(portal.object);
+            if(object==ports_.objects.read().objects.end() || object->second.mode>=3) continue;
+            if(coordinateDistance(global,portal.position)>2) return walk(portal.position);
             story.cainTownActivated=true;break;
         }
     }
@@ -438,7 +528,10 @@ StepStatus System::npcStoryStep(TickContext tick) {
                 const auto result=ports_.monsters.retireQuestNpc(npc.id);
                 if(result) story.retired.insert(npc.id);else {removed=false;blocked|=isDeferred(result.status);}
             }
-        if(removed) {story.anyaDeparted=true;story.anyaIceOpened=true;story.anyaOutsideSpawned=true;story.anyaThawAt=0;}
+        if(removed) {
+            story.anyaDeparted=true;story.anyaIceOpened=true;story.anyaOutsideSpawned=true;story.anyaThawAt=0;
+            const auto returned=returnNpcToTown(true,tick.tick,true);if(!returned) blocked|=isDeferred(returned.status);
+        }
     }
     if(story.palaceOpen && story.blockerId) {
         const auto object=ports_.objects.read().objects.find(story.blockerId);
@@ -493,6 +586,10 @@ StepStatus System::npcStoryStep(TickContext tick) {
     if(story.anyaOutsideSpawned && ports_.objects.read().objects.contains(story.anyaFrozenObject)) {
         const auto removed=ports_.objects.removeNative(story.anyaFrozenObject);if(!removed) blocked|=isDeferred(removed.status);
     }
+    // Init54/66 can run after the outside callback. A late marker creates its
+    // town actor independently; it does not synthesize the absent blue end.
+    if(story.cainDeparted) {const auto returned=returnNpcToTown(false,tick.tick,false);if(!returned) blocked|=isDeferred(returned.status);}
+    if(story.anyaDeparted) {const auto returned=returnNpcToTown(true,tick.tick,false);if(!returned) blocked|=isDeferred(returned.status);}
     std::vector<EntityId> townBindings;
     for(const auto &[id,unit]:ports_.monsters.read().actors) {
         if(!unit.questNpc || !unit.alive() || !ports_.areas.at(unit.area).definition.town) continue;

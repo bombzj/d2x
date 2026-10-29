@@ -353,7 +353,7 @@ void System::retireCompressedObject(RoomCompression &plan,EntityId id) noexcept 
     const auto found=state_.objects.find(id);
     if(found==state_.objects.end() || found->second.revision!=expected->second) std::terminate();
     ports_.frameEvents.cancelOwner({FrameEventUnit::Object,id});
-    ports_.areas.removeRoomUnit(id);
+    ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);
     std::erase_if(approaches_,[&](const auto &entry){return entry.second.request.target.id==id;});
     state_.objects.erase(found);
     ports_.world.objectCollision(plan.area,std::move(plan.collisionSteps.at(id)));

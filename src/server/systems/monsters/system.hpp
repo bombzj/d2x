@@ -30,6 +30,7 @@
 #include "gameplay/combat/stats.hpp"
 #include "life_change.hpp"
 #include "damage_status.hpp"
+#include "server/systems/quests/prisoner_death.hpp"
 #include <array>
 #include <span>
 #include <stdexcept>
@@ -130,6 +131,7 @@ struct Actor {
     bool hireling{};
     uint64_t petRegistrationOrder{}; // PlayerPets appends to each type's list.
     bool inactivePet{}; // PlayerPets nFlags & 1; kept independently of GUID.
+    bool petUnregistered{}; // Pet node removed; the dying/corpse unit can remain.
     struct Conversion {
         int state{-1},alignment{-1},stat{-1};uint64_t until{};
         std::optional<ConversionResourceSave> savedResources;
@@ -233,7 +235,7 @@ struct Actor {
         return owner || conversion?UnitAlignment::Good:UnitAlignment(rule.alignment);
     }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
-    bool nativeAi() const { return !questNpc || townNpcAi(rule.ai.kind) || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter || rule.ai.kind==MonsterAiKind::NpcBarb || rule.ai.kind==MonsterAiKind::ScriptedNpc || (rule.environmentController && rule.ai.kind==MonsterAiKind::Overseer); }
+    bool nativeAi() const { return !questNpc || townNpcAi(rule.ai.kind) || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter || rule.ai.kind==MonsterAiKind::NpcBarb || rule.ai.kind==MonsterAiKind::CagedWussie || rule.ai.kind==MonsterAiKind::ScriptedNpc || (rule.environmentController && rule.ai.kind==MonsterAiKind::Overseer); }
     bool damageable() const { return !roomless && !restorationPending && !burrowed && !targetFlagsDisabled && !hatching && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
     bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || bool(druidPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
@@ -251,6 +253,8 @@ struct ActorPublication {
     std::map<EntityId,uint64_t> removals;
     std::set<EntityId> restoredIdentities,presetIdentities;
     std::optional<std::set<size_t>> uniquesExpected,uniquesNext;
+    std::vector<EntityId> publicationOrder; // Explicit native callback order; other staged actors follow.
+    std::map<EntityId,quests::PrisonerDeathPublication> prisonerDeaths;
 };
 using ComponentPaletteState=std::map<RegionId,std::map<int,MonsterComponentPalette>>;
 struct NativeBirthBatch {
@@ -294,7 +298,7 @@ struct State {
     // Scoped to the actual instance/area/class, including dynamically born units.
     ComponentPaletteState componentPalettes;
 };
-struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; std::shared_ptr<const SkillRules> skillPrograms; loot::System &loot; const spatial::System &spatial; reactions::ItemTriggers &itemTriggers; const travel::System &travel; const maps::System &maps; };
+struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; std::shared_ptr<const SkillRules> skillPrograms; loot::System &loot; const spatial::System &spatial; reactions::ItemTriggers &itemTriggers; const travel::System &travel; const maps::System &maps; const objects::System &objects; quests::System &quests; };
 class System {
     friend class NativeBirthPublication;
     State state_;
@@ -389,6 +393,7 @@ class System {
     const GameSettings &gameSettings() const noexcept {return ports_.settings;}
     ActorPublication prepareActorPublication(std::map<EntityId,Actor>,size_t allocatedIds,std::span<const EntityId> restored={},
         std::shared_ptr<EntityIds::Publication> identities={},std::span<const EntityId> retired={},std::span<const EntityId> presets={}) const;
+    void preparePrisonerDeaths(ActorPublication &) const;
     bool validateActors(const ActorPublication &) const;
     void publishActors(ActorPublication &) noexcept;
     const Actor *find(EntityId id) const { auto it = state_.actors.find(id); return it == state_.actors.end() ? nullptr : &it->second; }
@@ -403,8 +408,9 @@ class System {
     DomainResult<> setNpcHomeCommand(EntityId,Vec global);
     DomainResult<> rebindNpcMapAi(EntityId,const std::vector<MonsterRule::MapAiNode> &);
     DomainResult<> retireQuestNpc(EntityId);
+    DomainResult<> departQuestNpc(EntityId,uint64_t tick);
     void resetAiFunctionMemory(EntityId);
-    std::vector<EntityId> pets(PlayerId) const;
+    std::vector<EntityId> pets(PlayerId,bool includeInactive=false) const;
     bool canRegisterSpecialTargets(size_t count) const noexcept {return count<=UINT64_MAX-state_.nextSpecialTargetOrder;}
     DomainResult<> beginAttack(EntityId, uint64_t until, bool returnToNeutral = false, EntityId target = {},std::optional<NativeUnitStats> modeStats = {},uint8_t mode=4);
     DomainResult<> extendAttack(EntityId,uint64_t until);
@@ -549,6 +555,7 @@ class System {
     DomainResult<> warpPet(EntityId,const ActorContext &,Vec);
     std::optional<std::pair<Vec,int>> targetPosition(EntityId,RegionId) const;
     std::optional<std::pair<Vec,int>> nativeTargetPosition(EntityId,RegionId) const;
+    std::optional<MotionTarget> nativeTargetIdentity(EntityId,RegionId) const;
 };
 int movementPercent(const Actor &actor, uint64_t tick);
 }

@@ -1,3 +1,4 @@
+#include "client/actor_client.hpp"
 #include "presentation/controller.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
@@ -328,6 +329,8 @@ bool SceneController::handleInventory(const FrameInput &input) {
             return true;
         }
         if (input.rightPressed) {
+            ActorControlIntent intent; intent.action = ActorControlIntent::Action::CancelTargeting;
+            actorClient_.control(intent);
             inventoryRight_ = true;
             ui.identify.reset();
             return true;
@@ -440,7 +443,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
     }
     auto useItem = [&](const InventoryItemView &item) {
         const auto &definition = *inventory.definition(item.definition);
-        if (!definition.usable) return true;
+        if (!definition.usable && !definition.readableQuestClue) return true;
         if (definition.opensCube) {
             if (view_.ui().shopOpen) {
                 const auto npc = view_.ui().dialogueObject;

@@ -262,6 +262,7 @@ void RealmSession::Impl::return_to_realm() {
 }
 
 void RealmSession::Impl::reset_area(bool preserveInitialPosition) {
+    doorHighlights.clear();
     auto &world = view.world;
     ++world.interactionGeneration;
     world.playerTrade = {}; playerTradeDeadline = {};

@@ -4,6 +4,7 @@
 #include "server/area_store.hpp"
 #include "server/movement.hpp"
 #include "server/systems/items/system.hpp"
+#include "server/systems/loot/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/social/system.hpp"
 #include <algorithm>
@@ -83,33 +84,64 @@ DomainStatus canReceiveQuestItem(const PlayerState &player, const ItemDefinition
     }
     return DomainStatus::Applied;
 }
+bool System::pendingGoldCommand(PlayerId player,uint64_t sequence) const {
+    const auto pending=state_.goldDrops.find(player);
+    return pending!=state_.goldDrops.end() && (!sequence || pending->second.actor.sequence==sequence);
+}
 DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
-    const auto &player = *ports_.players.find(actor.player);
-    if (player.persistent.player.hp <= 0 || !amount || amount > player.persistent.player.gold) return {DomainStatus::InvalidRequest, {}};
-    auto world = ports_.items.read();
-    const ItemDefinition *definition = nullptr;
-    for (const auto &[code, item] : ports_.definitions->entries()) { (void)code; if (item.equipment.isType("gold")) { definition = &item; break; } }
-    if (!definition || !definition->maxStack) return {DomainStatus::Unavailable, {}};
-    std::vector<DomainFact> drops;
-    unsigned remaining = amount;
-    while (remaining) {
-        if (world.world.items.size() >= 4096 || world.revision == UINT64_MAX) return {DomainStatus::Capacity, {}};
-        const auto position = ports_.items.placement({actor.area, player.position}, world.world);
-        if (!position) return {DomainStatus::Conflict, {}};
-        if(!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity,{}};
-        ItemInstance item; item.id = ports_.items.reserveIdentity(); item.definition = definition->code;
-        item.quantity = std::min(remaining, definition->maxStack); item.location = *position;
-        item.nativeSeed = uint32_t(item.id.value);
-        EquipmentValues values; values.levels.resize(player.rules.character->experience.size());
-        drops.emplace_back(GroundDropFact{item});
-        remaining -= item.quantity; world.goldOwners.emplace(item.id,actor.player); world.equipment.items.emplace(item.id, std::move(values)); world.world.items.emplace(item.id, std::move(item));
+    const auto *player=ports_.players.find(actor.player);
+    if(!player || player->actor!=actor.actor) return {DomainStatus::InvalidActor,{}};
+    auto pending=state_.goldDrops.find(actor.player);
+    if(pending==state_.goldDrops.end()) {
+        if(player->persistent.player.hp<=0 || amount>player->persistent.player.gold ||
+            uint64_t(amount)>uint64_t(player->persistent.player.level)*10000) return {DomainStatus::InvalidRequest,{}};
+        if(!amount) return {DomainStatus::Applied,std::monostate{}};
+        GoldDrop drop{};drop.actor=actor;drop.amount=amount;
+        pending=state_.goldDrops.emplace(actor.player,std::move(drop)).first;
     }
-    auto record = player.persistent.player; record.gold -= amount;
-    transactions::InventoryEdit edit{actor, player.inventoryRevision, player.characterRevision, player.persistent.inventory, {}, record.weaponSet};
-    edit.character = std::move(record); edit.world = transactions::WorldEdit{world.revision, std::move(world)};
-    edit.publicFacts = std::move(drops);
-    auto plan = ports_.transactions.prepare(std::move(edit));
-    return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};
+    auto &drop=pending->second;
+    if(drop.actor.sequence!=actor.sequence || drop.actor.actor!=actor.actor || drop.amount!=amount)
+        return {DomainStatus::Stale,{}};
+    const auto finish=[&] {state_.goldDrops.erase(pending);return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
+    if(!drop.selected) {
+        const auto choice=ports_.items.selectPlayerGold(actor.area,player->position);
+        if(!choice) {
+            if(isDeferred(choice.status)) return {choice.status,{}};
+            if(choice.status==DomainStatus::NotImplemented) {
+                state_.goldDrops.erase(pending);return {choice.status,{}};
+            }
+            return finish(); // The native helper accepts a failed item creation without charging gold.
+        }
+        drop.code=choice.value->code;drop.level=choice.value->level;
+        drop.location=ports_.items.placement({actor.area,player->position},ports_.items.read().world);
+        drop.selected=true;if(!drop.location) drop.finished=true;
+    }
+    if(!drop.finished && drop.queued) {
+        const auto completion=ports_.loot.takeCompletionDetail(actor.actor);
+        if(!completion) return {DomainStatus::PendingContent,{}};
+        drop.finished=true;drop.created=completion->accepted && completion->created!=0;
+    }
+    if(drop.finished) {
+        if(!drop.created) return finish();
+        auto record=player->persistent.player;
+        if(record.gold<amount) return {DomainStatus::Stale,{}};
+        record.gold-=amount;
+        transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
+        auto plan=ports_.transactions.prepare(std::move(edit));
+        if(!plan) return {plan.status,{}};
+        const auto committed=ports_.transactions.commit(std::move(*plan.value));
+        if(!committed) return committed;
+        return finish();
+    }
+    loot::Request request;request.occurrence=actor.sequence;
+    request.source.source=actor.actor;request.source.region=drop.location->region;
+    request.source.difficulty=int(player->persistent.difficulty);request.position=drop.location->position;
+    request.environment=request.reportCompletion=true;
+    loot::NativeDrop native;native.code=drop.code;native.level=int(drop.level);native.exactPosition=true;
+    native.unforcedCreation=true;native.quantityOverride=std::min(amount,2000000000u);native.goldOwner=actor.player;native.flip=false;
+    request.nativeDrops.push_back(std::move(native));
+    const auto queued=ports_.loot.queue(request);if(!queued) return {queued.status,{}};
+    drop.queued=true;return {DomainStatus::PendingContent,{}};
 }
 DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &request, std::optional<SkillCastSpec> telekinesis) {
     const auto *player = ports_.players.find(actor.player);

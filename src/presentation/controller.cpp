@@ -518,7 +518,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         inventoryClick_ |= input.leftPressed;
         inventoryRight_ |= input.rightPressed;
     }
-    temporaryRun_ = input.holdRun && !input.showLoot;
+    if(input.escape) {ActorControlIntent intent;intent.action=ActorControlIntent::Action::CancelTargeting;actorClient_.control(intent);}
+    const bool heldRun=input.holdRun && !input.showLoot;
+    if(temporaryRun_!=heldRun) {ActorControlIntent intent;intent.action=ActorControlIntent::Action::RunningMode;intent.forceRun=heldRun;actorClient_.control(intent);}
+    temporaryRun_=heldRun;
     if (ui.inventory.playerTradeOpen) {
         if (ui.playerTradeEditable) handleInventory(input);
         else ui.inventory.cancelGesture();
@@ -529,7 +532,11 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         closeTravel();
         return true;
     }
-    if (input.run) actorClient_.toggleRun();
+    if(input.voice>=0 && input.voice<8) {
+        ActorControlIntent intent;intent.action=ActorControlIntent::Action::Voice;
+        intent.voice=uint16_t(25+input.voice);actorClient_.control(intent);
+    }
+    if (input.run) toggleRunning();
     if (input.weaponSwap && !ui.blocksInput() && !ui.inventory.drag) inventoryClient_.submit(SwitchWeaponSet{});
     // Belt keys are also active during a merchant conversation.
     const bool beltInput = (!ui.blocksInput() || (ui.shopOpen && !ui.shopConfirm && !ui.shopSalePending)) &&
@@ -562,6 +569,11 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     return true;
 }
 
+void SceneController::toggleRunning() {
+    actorClient_.toggleRun();
+    ActorControlIntent intent;intent.action=ActorControlIntent::Action::RunningMode;intent.forceRun=temporaryRun_;
+    actorClient_.control(intent);
+}
 void SceneController::resetInput() {
     worldBlocked_ = true;
     pickupClick_ = inventoryClick_ = inventoryRight_ = false;
@@ -622,6 +634,7 @@ void SceneController::cancelWorldGesture() {
 void SceneController::handleWorld(const FrameInput &input, const WorldInputView &world, float elapsed) {
     inputTime_ += std::clamp(elapsed, 0.f, .25f);
     if (gameGeneration_ != world.gameGeneration || areaGeneration_ != world.areaGeneration) {
+        if (gameGeneration_ != world.gameGeneration) lastSkillHotkey_ = 0;
         gameGeneration_ = world.gameGeneration;
         areaGeneration_ = world.areaGeneration;
         repeated_ = false; // A previous world's cast cannot stop a new world's actor.
@@ -642,6 +655,10 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
         // Target/skill changes terminate this press rather than acquiring another target.
     }
     if (!enabled) return;
+    if(world.doorHighlight) {
+        ActorControlIntent intent;intent.action=ActorControlIntent::Action::HighlightDoor;intent.target=world.doorHighlight;
+        actorClient_.control(intent);
+    }
     if ((input.rightPressed || input.leftPressed) && world.available && input.insideViewport) {
         cancelWorldGesture();
         if (input.rightPressed || (!world.pickup && world.combat) || input.standStill) {

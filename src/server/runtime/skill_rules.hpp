@@ -46,6 +46,8 @@ struct SkillRules {
     int poisonState{-1};
     std::set<int> dismissibleSummons;
     std::map<int,int> petTypeBaseLimits,skillPetTypes;
+    std::set<int> warpPetTypes;
+    std::set<int> rangePetTypes;
     std::map<int,MonsterRule> amazonPetRules;
     std::set<int> slowableMissiles, pierceableMissiles, alwaysExplodingMissiles;
     std::map<int,std::pair<int,int>> missileVelocities;

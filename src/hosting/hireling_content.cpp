@@ -52,6 +52,9 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                 if(candidate->id==identity && candidate->level<=source.record.level && candidate->level>row->level) row=candidate;
             const MonsterRecord *monster=nullptr;for(const auto &[id,m]:cache.monsters->monsters()) {(void)id;if(m.index==row->classId) {monster=&m;break;}}
             if(!monster || !monster->walkVelocity) throw std::runtime_error("Missing original Rogue MonStats");
+            const auto *probe=cache.monsters->find("necroskeleton");
+            if(!probe) throw std::runtime_error("Missing native hireling PetMove probe monster");
+            result.warpProbeClass=probe->index;result.warpProbeCollision=probe->spawnRule();
             const auto stats=deriveHirelingStats(*row,source.record.level);
             result.strength=stats.strength;result.dexterity=stats.dexterity;result.weaponType=row->weaponType1;result.weaponType2=row->weaponType2;result.act=row->act;
             constexpr EquipmentSlot slots[]{EquipmentSlot::Head,EquipmentSlot::Torso,EquipmentSlot::RightHand,
@@ -66,6 +69,9 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             rule.states=data.nativeStates;
             rule.stateTarget=monster->stateTarget;rule.noAura=monster->noAura;
             result.code=monster->id;rule.nativeClass=monster->index;rule.level=source.record.level;rule.difficulty=source.difficulty;
+            // PlayerPets' engine PETTYPE_HIREABLE identity, independent of
+            // the current TXT row layout and the monster's class identity.
+            rule.petType=7;
             const auto birthLevel=data.tables.at("monstats").number(monster->sourceRow,"Level");
             if(!birthLevel || *birthLevel<0) throw std::runtime_error("Missing native hireling birth level");
             result.birthLevel=*birthLevel;
@@ -85,6 +91,8 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             // Fn061 chooses a target only at distance <25. Hireable's empty
             // aidist is not an omitted table value or a reason to invent Sight.
             const auto &monstats=data.tables.at("monstats");result.vision=25;
+            const std::string aiSuffix=source.difficulty==0?"":source.difficulty==1?"(N)":"(H)";
+            result.meleeAi=monstats.number(monster->sourceRow,"aip1"+aiSuffix).value_or(0)!=0;
             rule.damageRegen=monstats.number(monster->sourceRow,"DamageRegen").value_or(0);
             rule.hirelingBossDamagePercent=data.hirelingBossDamagePercent.at(size_t(source.difficulty));
             rule.hirelingRegeneration=stats.life*256/2000;
@@ -193,6 +201,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             while(defaultRow<skills.rows().size() && skills.value(defaultRow,"skill")!=defaultName) ++defaultRow;
             const int defaultId=row->act==1?(defaultRow==skills.rows().size()?throw std::runtime_error("Missing original RogueMissile"):skills.number(defaultRow,"Id").value()):0;
             rule.skillIds[0]=uint16_t(defaultId);rule.skillActions.emplace(uint16_t(defaultId),prepareSkill(defaultId,1));
+            if(row->act==1) result.defaultMode=nativeMonsterMode(monstats.value(monster->sourceRow,"Sk1mode"));
             for(const auto &s:row->skills) {
                 if(!ranks.contains(s.id) || ranks.at(s.id)<=0) continue;
                 const int rank=gear.skillRanks.at(s.id);
@@ -202,7 +211,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                 else {
                     auto attack=prepareSkill(s.id,rank);
                     if(entry && entry->spell && entry->spell->state.id>=0) action.state=entry->spell->state.id;
-                    if(entry && entry->spell && entry->spell->effect==SkillBehavior::Inferno) action.maximumRange=rank/2+6;
+                    if(entry && entry->spell && entry->spell->effect==SkillBehavior::Inferno) action.maximumRange=rank/2+4;
                     rule.skillActions.emplace(uint16_t(s.id),std::move(attack));
                 }
                 result.actions.push_back(std::move(action));

@@ -11,6 +11,7 @@
 #include "app/client_preferences.hpp"
 #include "app/debug/debug_pipe.hpp"
 #include "app/debug/online_commands.hpp"
+#include "app/debug/auto_walk.hpp"
 #include "app/debug/server_commands.hpp"
 #include "client/remote_town.hpp"
 #include "client/remote_control.hpp"
@@ -222,6 +223,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     };
     auto hostFrame = std::chrono::steady_clock::now();
     RemoteControl control(town, session);
+    DebugAutoWalk debugWalk;
     RemoteInventory inventory(archives, options.protocolProfile);
     if (options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020)
         session.configure_stash(inventory.stashLayout());
@@ -458,7 +460,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             flushAutomap(); automapStore.reset();
         }
         const auto hostNow = std::chrono::steady_clock::now();
-        const bool hostFocused = !minimized && (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused);
+        const bool hostFocused = !minimized && (debugWalk.active() || (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused));
         if (embedded) embedded->pump(std::chrono::duration<double>(hostNow - hostFrame).count(),
             !quit && (!hostFocused || presentationPaused || (sharedUi && sharedUi->ui().gameMenuOpen)));
         hostFrame = hostNow;
@@ -547,13 +549,14 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 std::cerr<<notice<<'\n'; automapStore.reset();
             }
         }
-        const bool focused = !minimized && (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused);
+        const bool focused = !minimized && (debugWalk.active() || (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused));
         const bool escape = debugInputs.empty() ? IsKeyPressed(KEY_ESCAPE) : debugInputs.front().escape;
         if (focused && escape) control.cancelMovement();
         if (!focused || presentationPaused || (sharedUi && sharedUi->ui().blocksInput()))
             control.cancelMovement();
         control.tick(!minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
+        debugWalk.tick(session,town,control,minimized || presentationPaused || (sharedUi && sharedUi->ui().blocksInput()));
         if (renderedArea != town.read().area) {
             // Walking into an adjacent level changes the binding, not the
             // actor's path. RemoteScene refreshes palette/origin each frame;
@@ -597,6 +600,14 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     inventory.update(session.read());
                     return sharedClients->itemQuote(item, action);
                 }, submitChatInput, [&](const nlohmann::json &command) {
+                    if(auto navigation=debugWalk.command(command,session,town,control,combat)) return navigation;
+                    const auto name=command.at("command").get<std::string>();
+                    if(debugWalk.active() && (name=="ui-input" || name=="quit" || name=="pause" ||
+                        name=="travel" || name=="load" ||
+                        (name.starts_with("online-") && name!="online-status" && name!="online-world" &&
+                         name!="online-items" && name!="online-ground" && name!="online-social" &&
+                         name!="online-combat" && name!="online-skills" && name!="online-item-quote")))
+                        debugWalk.manualInput(control);
                     return serverDebugCommand(command, localConnection || lanListening ? embedded.get() : nullptr, administerLocal);
                 }, prepareGame);
             if (presentationPaused != wasPaused) {
@@ -1022,6 +1033,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         input = std::move(debugInputs.front());
                         debugInputs.pop_front();
                     }
+                    if(debugWalk.active()) {
+                        if(input.leftPressed || input.rightPressed || input.escape || input.controlKeyPressed || input.enter || input.mouseWheel)
+                            debugWalk.manualInput(control);
+                        else input.focused=true; // Explicit debug input owns the client while navigating in background.
+                    }
                     captureRequested = input.screenshot && !panels.capturesWorldInput();
                     if (localConnection && input.focused && !panels.gameMenuOpen && (input.save || input.load)) {
                         try {
@@ -1069,6 +1085,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             if (!showScene) {
                 auto input = pollInput(viewport, sharedUi ? sharedUi->ui().controls : preferences.controls);
                 if (!debugInputs.empty()) { input = std::move(debugInputs.front()); debugInputs.pop_front(); }
+                if(debugWalk.active()) {
+                    if(input.leftPressed || input.rightPressed || input.escape || input.controlKeyPressed || input.enter || input.mouseWheel)
+                        debugWalk.manualInput(control);
+                    else input.focused=true;
+                }
                 captureRequested = input.screenshot && (!sharedUi || !sharedUi->ui().capturesWorldInput());
                 ClearBackground(BLACK);
                 if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {

@@ -6,6 +6,7 @@
 #include "gameplay/skills/rank_sources.hpp"
 #include "preparation.hpp"
 #include "server/systems/actions/requests.hpp"
+#include "gameplay/events/frame_queue.hpp"
 
 #include <map>
 #include <set>
@@ -18,8 +19,8 @@ namespace d2x::server { struct RoomRandomLoan; }
 namespace d2x::server::companions {
 // Ownership and control for hirelings/summons; live actors belong to Monsters.
 enum class Kind { Hireling, Summon, IronGolem };
-enum class Action { Hire, Resurrect, Dismiss, List, Equipment, Potion };
-struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; std::optional<ItemHandle> item{}; bool belt{}; };
+enum class Action { Hire, Resurrect, Dismiss, List, Equipment, Potion, CommandInteract, CommandMove };
+struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; std::optional<ItemHandle> item{}; bool belt{}; UnitTarget target{}; std::optional<Vec> destination{}; };
 struct ShadowDecision;struct DruidDecision;struct Pd2ShadowFollow;
 struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint16_t> sourceSkill;
     int rank{}, attackSkill{}; uint64_t expires{}, nextDecision{}, release{}, removeAt{}; EntityId target{};
@@ -35,11 +36,12 @@ struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint
     std::shared_ptr<DruidDecision> druidDecision{};
     std::optional<actions::MonsterCastRequest> pendingAction{};
     std::optional<AuraDefinition> pendingAura{};
+    bool pendingHirelingUseSkill{},cancelAi{};
     uint64_t observedAiThinkRevision{};
     std::vector<std::pair<NativeSkillSlot,int>> druidSkillRanks{};
 };
 struct State { std::map<EntityId, Companion> companions; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; const spatial::System &spatial; ai::System &ai; items::System &items; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; const spatial::System &spatial; ai::System &ai; items::System &items; FrameEventQueue &frameEvents; };
 class System {
     State state_;
     const Ports ports_;
@@ -106,6 +108,8 @@ class System {
     bool canDismiss(const ActorContext &, EntityId) const;
     DomainResult<> dismiss(const ActorContext &, EntityId);
     DomainResult<> ownerDied(const ActorContext &);
+    void registerPlayer(EntityId,uint64_t);
+    DomainResult<> synchronizePets(const FrameEvent &,uint64_t);
     std::optional<HirelingExperienceAward> experience(PlayerId,const monsters::Actor &) const;
     DomainResult<> awardExperience(const ActorContext &,const HirelingExperienceAward &);
     StepStatus step(TickContext, FrameFacts &);

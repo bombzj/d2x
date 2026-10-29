@@ -136,9 +136,13 @@ DomainStatus System::activateLeap(Release &pending,const ActorContext &actor,Vec
         state_.commitTimeline(std::move(prepared));
         return DomainStatus::Applied;
     }
-    const int radius=pending.skill.leap->knockbackRadius;
-    for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.alive() && m.life>0 && m.area==actor.area && missileDistance(landing,m.position)<=radius)
-        ports_.monsters.knockback(id,landing,actor.tick);
+    effects::NativeAreaSpec spec;spec.source=actor.actor;spec.area=actor.area;spec.center=landing;
+    spec.radius=pending.skill.leap->knockbackRadius;spec.skill=pending.skill.sourceId;spec.rank=pending.skill.rank;
+    // SrvDo077 -> sub_6FD10200: zero damage, SUCCESSFULHIT|KNOCKBACK,
+    // and the native default finder, including hostile players/pets.
+    spec.filter=0x8583;spec.resultFlags=9;
+    const auto knocked=ports_.effects.nativeArea(spec,actor.tick,pending.directSkill);
+    if(!knocked) return knocked.status;
     pending.landed=true;state_.casts.at(actor.actor).until=actor.tick+1;
     return DomainStatus::Applied;
 }

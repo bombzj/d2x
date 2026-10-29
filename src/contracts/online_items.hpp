@@ -185,6 +185,7 @@ struct OnlineItemCommand {
     uint64_t oppositeRevision{};
     bool toCursor{}, mercenary{};
     bool gamble{}, multibuy{};
+    bool questClue{}; // Original 3E; no inventory mutation acknowledgement.
     bool reusableUse{}; // Prepared CN program13: source is not consumed; no generic use ACK.
     std::optional<OnlineIntentContext> context;
 };

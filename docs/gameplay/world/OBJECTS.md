@@ -6,6 +6,8 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 
 ## 碰撞与靠近
 
+原版悬停门时发送C2S `3D`（5字节，u32对象GUID）。宿主共用分帧及物件领域请求处理，检查绑定玩家、对象同幕及原整数坐标每轴10格限制；不会移动玩家或操作关门。仅当对象当前mode为OPENED(2)／SPECIAL3(5)时，以原SizeX／SizeY矩形读取PLAYER／MONSTER／CORPSE碰撞（0x8180），占用时设5、空闲时设2；改变模式才递增revision并更新对象碰撞，由既有0E投影同步。依据D2MOO `PlrMsg::Rcv0x3D_HighlightADoor`、`ObjMode::sub_6FC78BB0`及`D2Collision::COLLISION_CreateBoundingBox`。D2X客户端也已接Door悬停发送3D，按原1.13c D2Client RVA 519BA–51A1C排除mode4并逐对象以大于500ms间隔发送，换区清时钟；宿主与客户端均待原版运行复验；未知、跨幕及超距对象通过普通拒绝返回，不把合法悬停当未知协议而断线。完整复验见消息对比缺陷J4。
+
 共同Grid保留DT1地形层及独立对象层，按真实SizeX／Y、HasCollision0–7、BlocksLight0–7、BlockMissile等模式字段更新；不按画面石头类别猜阻挡，不覆盖重叠物体／原墙。已核实的静默ENDANIM衔接也更新对象层，后续原服模式仍优先。
 
 交互几何核对D2MOO UNITS_IsObjectInInteractRange／D2Common_10399：原整数子格、对象矩形及外侧条带，OperateRange不当中心圆半径。接近点查询完整行走体积与原射线；范围预览不能证明原服操作成功。
@@ -98,7 +100,7 @@ Init11／12按原关卡分支准备目的地字节，普通物件休眠保留并
 
 Init59按Objects::VileDogAfterglow及Quests::ObjectEvents接入：仅中立对象进入OPERATING，分别安装FrameCnt1+1的ENDANIM和27帧MONUMOD事件。蜘蛛森林使用当前MPQ的vilechild1，沿原普通出生接口尝试一次，不执行邪恶瓮的随机寻位、精英升级或额外重试。封印OperateFn54–56先按原偏移、大小3、半径13／14／15及0x3f11放置掩码寻位，再创建真实class131；27帧回调用实际余光坐标请求对应固定首领，放置失败每10帧重试。出生背压保留当前事件和随机游标，不提前标记完成。动态对象准入先验证真实房间，在候选中分配GUID及初始化随机，成功后发布ID／随机状态，并由碰撞发布同步安装事件。封印自身按原OperateFn52进入OPERATING，FrameCnt1×2结束；余光创建设置原HASPORTAL保留语义，ToggleHasPortalFlag(0)设置、(1)清除。跨区域寻位、完整失败／休眠恢复及原事件队列交错仍有缺口。
 
-塔楼不再运行GUID种子奖励计时器：Init47登记最多八只箱子，女伯爵死亡请求真实trap-firebolt死亡模式控制器，再按登记顺序创建towerchestspawner。Do18通过有序提交执行无玩家开箱、飞弹流坐标抽签、GetFreeSpaceEx和createNativeGold，Hit33释放房间保留；掉落准备期间暂停同帧。三次魔法TC与四瓶药水复用专用箱子分支，金币不借玩家资格、MF／GF或二次落点搜索。完整原任务资格、控制怪物初始化及队列交错仍有缺口。
+塔楼不再运行GUID种子奖励计时器：Init47登记最多八只箱子，女伯爵死亡请求真实trap-firebolt死亡模式控制器，再按登记顺序创建towerchestspawner。Do18通过有序提交执行无玩家开箱、飞弹流坐标抽签、GetFreeSpaceEx和createNativeGold，Hit33释放房间保留；掉落准备期间暂停同帧。三次魔法TC与四瓶药水复用专用箱子分支，金币不借玩家资格、MF／GF或二次落点搜索。客户端现补CltDo30的精确elapsed开启、周期和父种子双偏移抽签及原mist子项；晚到73不补已错过的开启。完整原任务资格、控制怪物初始化及队列交错仍有缺口；该新增客户端路径已构建，行为仍待实测。
 
 2026-10-10源码对照master单机的session_objects／session_shrines、本地D2MOO及当前MPQ补全野外路径。hosting从Objects／Shrines／MonStats／MonLvl／Missiles／Skills、MonSeq与AnimData准备规则；server的objects、monsters、missiles、combat、effects和loot只消费准备值。客户端继续接收原物件、状态、怪物与弹体包，界面不结算伤害。
 

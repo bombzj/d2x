@@ -2,11 +2,19 @@
 #include "remote_scene_impl.hpp"
 
 namespace d2x {
+bool RemoteScene::Impl::hasVisualState(OnlineUnitKey key,std::string_view name) const {
+    if(!combatBinding) return false;
+    const auto unit=combatBinding->states().find(key);if(unit==combatBinding->states().end()) return false;
+    return std::any_of(unit->second.states.begin(),unit->second.states.end(),[&](const auto &entry) {
+        const auto row=stateRows.find(entry.first);
+        return row!=stateRows.end() && states.value(row->second,"state")==name;
+    });
+}
 
 const RemoteScene::Impl::Art *RemoteScene::Impl::character(const OnlineUnit &u, bool moving, bool town, SceneView &shared) {
     // PlrMsg::sub_6FC81C00 uses wire 19 for correction, not PLRMODE_DEAD.
     const bool death = playerDead(u);
-    const auto parts = portraits.decode(u, world(), death);
+    const auto parts = portraits.decode(u, world(), death,{},hasVisualState(u.key,"holyshield"));
     if (!parts) {
         effectLimitations.insert("Original character equipment components unavailable for unit " + std::to_string(u.key.id));
         return nullptr;
@@ -313,7 +321,7 @@ const RemoteScene::Impl::Art *RemoteScene::Impl::monster(const OnlineUnit &u, bo
             (void)entry;const auto row=stateRows.find(state);
             if(row==stateRows.end() || states.number(row->second,"gfxtype")!=2) continue;
             const auto cls=states.number(row->second,"gfxclass");if(!cls || *cls<0 || *cls>6) return nullptr;
-            const auto parts=portraits.decode(u,world(),false,uint8_t(*cls));if(!parts) return nullptr;
+            const auto parts=portraits.decode(u,world(),false,uint8_t(*cls),hasVisualState(u.key,"holyshield"));if(!parts) return nullptr;
             constexpr std::array modes{"dt","nu","wl","gh","a1","a2","bl","sc","s1","s2","s3","s4","dd","kb","sq","rn"};
             const auto mode=u.mode.value_or(1);if(mode>=modes.size()) return nullptr;
             ActorAnimationRequest request;request.category="chars";request.appearance=*parts;request.shadow=true;

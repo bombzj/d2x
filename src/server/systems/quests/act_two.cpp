@@ -18,6 +18,7 @@ namespace d2x::server::quests {
 QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId region) const {
     QuestFact result{player,record,ports_.settings.difficulty,state_.actOne.denRemaining,state_.actOne.stones};
     result.gameFlags=gameFlags();
+    result.denEffect=state_.actOne.denCleared && !(state_.initialFlags[questDefinition(QuestId::DenOfEvil).nativeSlot]&0x8000);
     for(const auto &definition:questDefinitions) {
         const auto index=questIndex(definition.id);
         result.credited[index]=credited(player,definition.id);

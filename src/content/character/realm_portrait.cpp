@@ -113,7 +113,7 @@ RealmPortraitCatalog::RealmPortraitCatalog(Archives &a) {
     }
 }
 std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit &u,
-                                                               const OnlineWorldView &w, bool unequipped,std::optional<uint8_t> disguise) const {
+                                                               const OnlineWorldView &w, bool unequipped,std::optional<uint8_t> disguise,bool holyShield) const {
     const auto characterClass=disguise?std::optional<uint16_t>(*disguise):u.classId;
     if ((!disguise && u.key.type != 0) || !characterClass || *characterClass >= 7 || (!unequipped && !u.equipmentObserved))
         return {};
@@ -131,7 +131,7 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
             }
         return false;
     };
-    bool equipmentEffectsKnown = true;
+    bool equipmentEffectsKnown = true,shield=false;
     for (const auto &[id, item] : w.equipment) {
         (void)id;
         if (unequipped || item.ownerType!=u.key.type || item.owner != u.key.id || item.bodyLocation >= 11)
@@ -144,6 +144,7 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
         if (found == items_.end())
             return {};
         const auto &visual = found->second;
+        if((item.bodyLocation==4 || item.bodyLocation==5) && isType(visual.appearance.type,"shld")) shield=true;
         if (visual.component == 16)
             continue; // No visible body component.
         // Live equipment identity and the MPQ body components are authoritative
@@ -165,7 +166,12 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
         }
     }
     auto parts = decode(preview);
-    if (parts) parts->equipmentEffectsKnown = equipmentEffectsKnown;
+    if(parts) {
+        parts->equipmentEffectsKnown=equipmentEffectsKnown;
+        // Retail D2Client 6E1E0 / 6E289: SH + HolyShield + an actually
+        // equippable shield uses the original hsh component code.
+        if(holyShield && shield) parts->components[7]="hsh";
+    }
     return parts;
 }
 std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineCharacter &c) const {

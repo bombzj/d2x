@@ -198,6 +198,9 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     // distinct original messages, even in a one-player game.
     emit(ServerMessage::Environment,[&](auto &out) {out.u32(uint32_t(environment.cycle));out.u32(uint32_t(environment.ticks));out.u8(environment.eclipse?1:0);});
     for(auto &packet:nativeQuestUpdate(data,quests)) result.push_back(std::move(packet));
+    // Quests::SendCurrentFlags' admission wrapper emits FX0 for an active
+    // game whose Den state reached 4, independently of this player's reward.
+    if(quests.denEffect) emit(ServerMessage::QuestEffect,[](auto &out){out.u8(0);});
     // Objects are assigned by publishObjects after the authority's original
     // init callback. Admission must not invent neutral-mode object baselines.
     // Warps use publishAreas' actual room visibility, like other world units.

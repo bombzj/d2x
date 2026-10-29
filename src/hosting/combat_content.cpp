@@ -101,7 +101,9 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if(record) identity.nativeClass=record->index;
     if(record) if(auto environment=prepareEnvironmentMonster(archives,data,request,identity,position)) return environment;
     if (!record || (!record->hostile() && record->ai!="GoodNpcRanged") || !record->aiProfiles.at(size_t(request.difficulty))) return {};
-    const auto implementation=monsterImplementation(record->id).kind;
+    const bool retailEmpty=!data.pd2Host && record->aiProfiles.at(size_t(request.difficulty))->kind==MonsterAiKind::RetailEmpty;
+    const auto implementation=retailEmpty?(record->ai=="UberBaal"?MonsterKind::Baal:
+        record->ai=="UberMephisto"?MonsterKind::Mephisto:MonsterKind::Diablo):monsterImplementation(record->id).kind;
     const bool staticCombatant=implementation==MonsterKind::PrisonDoor || implementation==MonsterKind::Window || implementation==MonsterKind::EvilHole;
     stage("combat profile/basic motion");
     auto profile = loadMonsterCombatProfile(data.tables.at("monstats"), record->sourceRow, data.tables.at("monlvl"),
@@ -212,14 +214,14 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     }
     const bool requiresSecondAttack=record->hostile()?bool(profile->damage.attack2Damage) && (!data.pd2Host || (hosting::pd2::usesSecondaryAttack(*record) && hosting::pd2::hasAttackMode(data,*record,2) && (record->attack2Projectile || data.tables.at("monstats").number(record->sourceRow,std::string("A2MinD")+suffix)))):
         record->attack2Projectile.has_value() || data.tables.at("monstats").number(record->sourceRow,std::string("A2MinD")+suffix).has_value();
-    if (!(data.pd2Host && hosting::pd2::sceneController(*record)) && record->ai!="EvilHole" && record->ai!="Catapult" && record->ai!="Idle" && record->ai!="TrappedSoul" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="OblivionKnight" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
+    if (!retailEmpty && !(data.pd2Host && hosting::pd2::sceneController(*record)) && record->ai!="EvilHole" && record->ai!="Catapult" && record->ai!="Idle" && record->ai!="TrappedSoul" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="OblivionKnight" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
     if(monsterImplementation(record->id).kind==MonsterKind::BonePrison) {
         const auto birth=loadMonsterMotionTiming(animations,record->token,"s1",monsterModeWeapon(archives,record->token,"s1",record->baseWeapon));
         if(!birth) return {};
         rule.spawnTicks=monsterAnimationTicks({birth->frames,birth->speed});
     }
     stage("skill actions");
-    if(!prepareMonsterSpecialActions(archives,data,animations,*record,rule,deferredReason)) return {};
+    if(!retailEmpty && !prepareMonsterSpecialActions(archives,data,animations,*record,rule,deferredReason)) return {};
     stage("spawn dependencies");
     if(record->ai=="FetishShaman") {
         const auto &stats=data.tables.at("monstats");
@@ -317,7 +319,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         choices->candidates[1]=prepareMonsterModifierChoices(data,*record,request.difficulty,true);
         rule.modifierChoices=std::move(choices);
     }
-    return server::PreparedMonster{std::move(identity), monsterImplementation(record->id).kind, position, std::move(rule)};
+    return server::PreparedMonster{std::move(identity), implementation, position, std::move(rule)};
 }
 }
 std::optional<server::PreparedMonster> prepareCombatMonster(Archives &archives, const ClassicData &data,
@@ -764,6 +766,15 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         if(registered!=regionRules->classes.end() && registered->second.code=="nihlathakboss")
             source.extras.push_back({familyClass("minion1"),20,20,10,true,false});
         for(const auto &extra:source.extras) required.push_back(extra.definition);
+    }
+    if(!data.pd2Host) {
+        // The retail water search can return an adjacent room belonging to a
+        // different level. Allocation still uses the requested global class,
+        // with that destination level's stats, even if its roster omits it.
+        // Prepare rules only; this never adds entries to the population roster.
+        for(const auto &[definition,record]:catalog.nativeClasses())
+            if(record.spawnCollision==1 && definition!=153 && !(definition>=258 && definition<=263))
+                required.push_back(definition);
     }
     std::set<int> preparedClasses;
     for(size_t index=0;index<required.size();++index) {

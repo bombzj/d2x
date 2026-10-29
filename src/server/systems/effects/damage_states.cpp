@@ -33,6 +33,7 @@ void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candida
                 plan.actors->actors.merge(additional.actors);plan.actors->expected.merge(additional.expected);
             }
         }
+        if(plan.actors) ports_.monsters.preparePrisonerDeaths(*plan.actors);
         return;
     }
     UnitEffect unit;
@@ -143,5 +144,6 @@ void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candida
         unit.nativeStats[entry.spec.state.id]=values;
     }
     prepareUnitEffects(plan,id,unit,std::move(life),tick);
+    ports_.monsters.preparePrisonerDeaths(*plan.actors);
 }
 }

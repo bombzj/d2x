@@ -34,6 +34,7 @@ struct ObjectRule {
     std::array<bool, 8> collision{}, light{};
     std::array<bool, 8> selectable{};
     uint64_t openingTicks{},closingTicks{};
+    std::array<uint64_t,8> frameTicks{}; // Objects.FrameCnt, independent of animation playback.
     int trap{};
     std::array<int, 8> parameters{};
     bool door{}, stash{};

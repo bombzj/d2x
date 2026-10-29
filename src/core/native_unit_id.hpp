@@ -22,6 +22,8 @@ class NativeUnitIds {
     std::map<EntityId,NativeUnitId> forward_;
     std::map<NativeUnitId,EntityId> reverse_;
   public:
+    const auto &entries() const {return forward_;}
+    const auto &next() const {return next_;}
     struct Request {EntityId entity;NativeUnitType type;};
     class Publication {
         friend class NativeUnitIds;

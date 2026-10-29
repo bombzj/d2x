@@ -151,7 +151,7 @@ DomainResult<> System::compressUnit(RegionId region,size_t index,uint64_t tick,E
         if(!state_.actors.contains(id)) throw std::logic_error("Compressed monster disappeared before publication");
         if(const auto removal=removals.find(id);removal!=removals.end()) ports_.effects.publishAuraUnits(removal->second);
         ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});
-        ports_.areas.removeRoomUnit(id);state_.actors.erase(id);
+        ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);state_.actors.erase(id);
     }
     if(state_.inactive.at({region,index}).empty()) state_.inactive.erase({region,index});
     return {DomainStatus::Applied,std::monostate{}};

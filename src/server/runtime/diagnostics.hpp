@@ -14,6 +14,8 @@
 #include "gameplay/combat/alignment.hpp"
 #include "server/systems/monsters/curse_control.hpp"
 #include "gameplay/events/frame_queue.hpp"
+#include "server/systems/world/system.hpp"
+#include "core/native_unit_id.hpp"
 
 namespace d2x::server {
 // Scheduler-thread diagnostic values. Never used as client replication or saved.
@@ -103,11 +105,23 @@ struct DiagnosticWander {
 };
 struct DiagnosticRoomRandom {
     RegionId area;size_t room{};bool loaded{};uint64_t revision{},creationOrder{};std::optional<uint64_t> random;
+    uint8_t status{};std::array<uint16_t,4> references{};uint64_t collisionHash{};
+    std::vector<EntityId> units;
 };
 struct DiagnosticHirelingSlot {
     int seller{};uint64_t revision{};uint16_t name{};uint32_t seed{};bool available{},hired{};
 };
 struct DiagnosticSnapshot {
+    world::Observation world;
+    std::array<uint64_t,6> nextNativeIds{};
+    size_t nativeIdCount{};
+    std::vector<std::pair<EntityId,NativeUnitId>> nativeIds;
+    struct InactiveUnits {RegionId area;size_t room{},monsters{},objects{},items{};};
+    std::vector<InactiveUnits> inactiveUnits;
+    struct InactiveMonster {EntityId id;RegionId area;size_t room{};uint64_t frame{};int64_t life{},maximumLife{};bool dead{};unsigned selfResurrections{};std::string code;};
+    std::vector<InactiveMonster> inactiveMonsters;
+    struct InactiveItem {RegionId area;size_t room{},index{};uint64_t expires{},bytesHash{};size_t bytes{};};
+    std::vector<InactiveItem> inactiveItems;
     struct Pd2Map {
         int controller{},phase{};uint32_t eventProgress{};
         bool sceneOpening{};unsigned sceneParticipants{};std::vector<PlayerId> sceneEntrants;

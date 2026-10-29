@@ -34,6 +34,10 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     if (found == assets_.clientMissilePrograms.end()) return false;
     const auto &program = found->second;
     if (program.function>=69 && program.rules!=ClientMissileProgram::Rules::Pd2Cn) return false;
+    if(program.function>=38 && program.function<=41 && program.rules!=ClientMissileProgram::Rules::Original) return false;
+    if((program.function==30 || program.function==37 || program.function==46) && program.rules!=ClientMissileProgram::Rules::Original) return false;
+    if((program.function==16 || program.function==59 || program.function==62 || program.function==63) && program.rules!=ClientMissileProgram::Rules::Original) return false;
+    if((program.function==32 || program.function==45 || program.function==54 || program.function==57 || program.function==68) && program.rules!=ClientMissileProgram::Rules::Original) return false;
     // CN replaces these contact programs. Do not display the retail
     // fallback while their target/path inputs are still unsupported.
     if (program.rules==ClientMissileProgram::Rules::Pd2Cn &&
@@ -48,7 +52,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         for (const int child:program.children) if (child>=0 && !assets_.ensureProjectile(child)) return false;
     if(program.function==21 || program.function==22 || program.function==29)
         for(const int child:program.children) if(child>=0 && !assets_.ensureProjectile(child)) return false;
-    if (program.function == 4 && (program.children[0] < 0 || program.parameters[0] < 0 ||
+    if ((program.function == 4 || program.function==45) && (program.children[0] < 0 || program.parameters[0] < 0 ||
         program.parameters[1] < 0 || program.parameters[1] > 256 || program.parameters[2] < 0 ||
         program.parameters[2] > 32767 || !assets_.ensureProjectile(program.children[0]))) return false;
     if (program.function==9 && program.hitFunction==18)
@@ -158,6 +162,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     effect.impactCount=initialization.impactCount;
     if(initialization.pixelHeight) effect.pixelOffset.y=-float(*initialization.pixelHeight);
     effect.graphics=initialization.graphics;
+    effect.roomAttachment=initialization.roomAttachment;
     if(initialization.ballisticHeight) {
         effect.graphics=ClientMissileGraphics::arc(effect.nativeCurrentFrames,*initialization.ballisticHeight);
         effect.graphics->step(); // Native creation flag0x100 performs the first Gfx update.
@@ -182,7 +187,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         const auto path = chargedBoltPath(start, target, pathIndex, int(effect.duration * 25.f + .5f));
         effect.path.assign(path.begin(), path.end());
     }
-    if(program.blessedHammer) {
+    if(program.blessedHammer || initialization.blessedHammerPath) {
         const auto path=blessedHammerPath(start);effect.path.assign(path.begin(),path.end());
     }
     if(initialization.path!=ClientMissileInitialization::Path::None) {
@@ -229,7 +234,7 @@ Vec SceneView::clientMissilePosition(const ClientMissile &effect, const Grid &gr
     return next;
 }
 void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
-                                    std::span<const ClientMissileTarget> targets) {
+                                    std::span<const ClientMissileTarget> targets,std::span<const ClientMissileAnchor> anchors) {
     if (dt < 0 || !std::isfinite(dt)) return;
     const auto &grid = map.grid;
     const auto townAt = [&](Vec position) -> std::optional<bool> {
@@ -245,6 +250,16 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
     clientMissiles_.clear();
     for (auto &effect : pending) effect.age += dt;
     size_t processed = 0;
+    const auto relatedOwner=[&](const ClientMissile &effect) {
+        return std::any_of(anchors.begin(),anchors.end(),[&](const auto &anchor){return anchor.id==effect.owner;});
+    };
+    const auto forgeObject=[&](const ClientMissile &effect) -> const ClientMissileAnchor * {
+        if(!effect.nativeParameters) return nullptr;
+        const auto found=std::find_if(anchors.begin(),anchors.end(),[&](const auto &anchor) {
+            return anchor.type==2 && anchor.nativeId==uint32_t((*effect.nativeParameters)[0]);
+        });
+        return found==anchors.end()?nullptr:&*found;
+    };
     auto emit = [&](int id, Vec position, Vec direction, const ClientMissile &parent, float age,int poisonVelocity=-1,int loops=0,int frames=-1,ClientMissileInitialization initialization={}) -> ClientMissile * {
         const auto source = parent.deathProgram ? ClientMissileSource::Death : parent.creationSources ? ClientMissileSource::Cast : ClientMissileSource::Program;
         if (source == ClientMissileSource::Cast)
@@ -269,6 +284,69 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
         return &pending.back();
     };
     auto impact = [&](ClientMissile &effect, const ClientMissileProgram &program, float overshoot,bool unitContact=false,bool largeMonster=false,std::optional<Vec> unitPosition={}) {
+        if(program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==37) {
+            if(unitContact) return false;
+            // B49F0 reinitializes the hand's seed from the parent's saved
+            // CurrentFrame, then emits TargetX holy bolts. A zero ray retries.
+            const auto parameters=effect.nativeParameters.value_or(std::array<int32_t,2>{});
+            effect.random=initialRandom(uint32_t(parameters[1]));
+            const Vec at{std::floor(effect.pos.x)+.5f,std::floor(effect.pos.y)+.5f};
+            for(int index=0;index<parameters[0];) {
+                const int x=int(rollRandom(effect.random)%20)-10,y=int(rollRandom(effect.random)%20)-10;
+                if(!x && !y) continue;
+                ++index;
+                ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                initialization.path=ClientMissileInitialization::Path::Charged;
+                initialization.seed=uint32_t(int(std::floor(effect.pos.x))+x);
+                emit(349,at,{float(x),float(y)},effect,overshoot,-1,0,-1,initialization);
+            }
+            assets_.sceneAudio.playRegistered("missile-hit:"+std::to_string(effect.missileId),uint64_t(view_.animationTime*25.f));
+            return true;
+        }
+        if(program.rules==ClientMissileProgram::Rules::Original && (program.hitFunction==42 || program.hitFunction==43)) {
+            // Retail B5300 / B51C0: the first shard becomes class 375; the
+            // second becomes class 376 with hfcontrol's Range, not its own.
+            if(relatedOwner(effect)) {
+                const int childId=program.hitFunction==42?375:376;
+                ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                initialization.parameters=std::array<int32_t,2>{effect.nativeParameters?(*effect.nativeParameters)[0]:0,0};
+                if(program.hitFunction==43) {
+                    const auto control=assets_.clientMissilePrograms.find(373);
+                    if(control==assets_.clientMissilePrograms.end()) return true;
+                    initialization.totalFrames=control->second.frames;
+                    initialization.velocityRaw=0;
+                }
+                if(auto *child=emit(childId,effect.pos,{},effect,overshoot,-1,0,-1,initialization))
+                    if(program.hitFunction==43) (*child->nativeParameters)[1]=int(rollRandom(effect.random)%35)+10;
+            }
+            return true;
+        }
+        if(program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==60) {
+            // B5770 inherits the source skill/rank and puts only child two
+            // at cHitPar1's Q11 height. Child identities remain MPQ references.
+            ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+            emit(program.hitChildren[0],effect.pos,{},effect,overshoot,-1,0,-1,initialization);
+            ClientMissileGraphics graphics;graphics.position[2]=nativeShiftLeft(program.hitParameters[0],11);
+            initialization.graphics=graphics;
+            emit(program.hitChildren[1],effect.pos,{},effect,overshoot,-1,0,-1,initialization);
+            return true;
+        }
+        if(program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==51) {
+            const int count=program.hitParameters[0];
+            if(program.hitChildren[0]<0 || count<=0 || (count-1)/5>7) return true;
+            // BA9A0 uses the same A25C0 direction ordering as the existing
+            // charged-bolt burst. cHitPar2 alone installs the charged-path init.
+            for(const auto direction:missileChargedBurstDirections(count)) {
+                ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                if(program.hitParameters[1]) {
+                    initialization.path=ClientMissileInitialization::Path::Charged;
+                    initialization.seed=uint32_t(int(std::floor(effect.pos.x))+int(direction.x));
+                }
+                emit(program.hitChildren[0],effect.pos,direction,effect,overshoot,-1,0,-1,initialization);
+            }
+            assets_.sceneAudio.playRegistered("missile-hit:"+std::to_string(effect.missileId),uint64_t(view_.animationTime*25.f));
+            return true;
+        }
         if(program.rules==ClientMissileProgram::Rules::Pd2Cn && program.hitFunction==66) {
             // CN 3A2250 returns success without searching when the child is
             // absent (current Holy Light BIN stores FFFF). Valid-child paths
@@ -598,13 +676,29 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                 return value + (value < 0 ? -radius : radius);
             };
             const Vec anchor{std::floor(effect.pos.x) + .5f, std::floor(effect.pos.y) + .5f};
-            for (int i = 0; i < program.parameters[1]; ++i)
-                emit(program.children[0], anchor, {float(offset()), float(offset())}, effect, age);
+            for (int i = 0; i < program.parameters[1]; ++i) {
+                ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                emit(program.children[0], anchor, {float(offset()), float(offset())}, effect, age,-1,0,-1,initialization);
+            }
         };
         while (effect.frame < lastFrame && !finished) {
             const int frame = effect.frame;
             const int elapsedFrames=effect.elapsedFrames();
             const float childAge = std::max(0.f, effect.age - float(frame) / 25.f);
+            if(program.function==59) {
+                // B1CC0: signed Q11 height, inclusive [-TargetX,TargetY].
+                const int height=effect.graphics?effect.graphics->position[2]>>11:0;
+                const auto limits=effect.nativeParameters.value_or(std::array<int32_t,2>{});
+                if(height<nativeSubtract(0,limits[0]) || height>limits[1]) {finished=true;break;}
+            }
+            if(program.function==16 && (program.children[0]<0 || !relatedOwner(effect))) {finished=true;break;}
+            if(program.function==30 && program.children[0]<0) {finished=true;break;}
+            if(program.function==46 && program.children[0]<0) {finished=true;break;}
+            if(program.function==57 && (program.children[0]<0 ||
+                std::none_of(targets.begin(),targets.end(),[&](const auto &target){return target.id==effect.owner;}))) {finished=true;break;}
+            // B77A0 tests zero, unlike callbacks which reject negative ids.
+            // A blank (-1) submissile still attempts creation and keeps Do1.
+            if(program.function==68 && program.children[0]==0) {finished=true;break;}
             bool lightningTrail=true;
             if (program.rules==ClientMissileProgram::Rules::Pd2Cn && program.function==8) {
                 const int base=program.parameters[1]<1?100:std::min(program.parameters[1],100);
@@ -613,6 +707,243 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
             }
             if (!frame) assets_.sceneAudio.playRegistered("missile-release:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
             switch (program.function) {
+            case 57: {
+                // B6F60 first follows the live owner (B2890), then A1340
+                // reads that owner's target unit, path target, or facing fallback.
+                const auto owner=std::find_if(targets.begin(),targets.end(),[&](const auto &target){return target.id==effect.owner;});
+                effect.pos=owner->position;
+                auto aim=owner->targetPoint;
+                if(owner->target) if(const auto target=std::find_if(anchors.begin(),anchors.end(),[&](const auto &anchor){return anchor.id==owner->target;});target!=anchors.end())
+                    aim=target->position;
+                if(!aim || !int(std::floor(aim->x)) || !int(std::floor(aim->y))) {
+                    if(!owner->direction) break; // Unobserved facing is not a guessed native input.
+                    constexpr std::array<int,8> x{0,-1,-2,-1,0,1,2,1},y{2,1,0,-1,-2,-1,0,1};
+                    const size_t direction=(*owner->direction&63)>>3;
+                    aim=Vec{std::floor(owner->position.x)+float(x[direction])+.5f,std::floor(owner->position.y)+float(y[direction])+.5f};
+                }
+                if(!effect.nativeParameters) effect.nativeParameters=std::array<int32_t,2>{};
+                auto &parameters=*effect.nativeParameters;
+                if(parameters[1]<parameters[0]) parameters[1]=nativeAdd(parameters[1],1);
+                ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;initialization.blessedHammerPath=true;
+                emit(program.children[0],effect.pos,*aim-effect.pos,effect,childAge,-1,0,-1,initialization);
+                parameters[1]=0;
+                break;
+            }
+            case 32: {
+                // B2340 / D3688: descending CurrentFrame bands, not elapsed.
+                constexpr std::array<std::array<int,3>,6> bands{{
+                    {300,25,1},{250,10,3},{100,8,4},{75,6,4},{30,4,3},{0,100,0}}};
+                size_t band=0;
+                while(band+1<bands.size() && effect.nativeCurrentFrames<=bands[band][0]) ++band;
+                if(effect.nativeCurrentFrames%bands[band][1]==0 && relatedOwner(effect)) {
+                    ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                    initialization.parameters=std::array<int32_t,2>{bands[band][2],effect.nativeCurrentFrames};
+                    emit(348,{std::floor(effect.pos.x)+.5f,std::floor(effect.pos.y)+.5f},{},effect,childAge,-1,0,-1,initialization);
+                }
+                break;
+            }
+            case 68:
+                // B77A0: old path changed-cell bit; flag9 copies the origin's
+                // precise position and supplies CltParam1 as the child loop count.
+                if(effect.movedCell) {
+                    ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                    if(const auto child=assets_.clientMissilePrograms.find(program.children[0]);child!=assets_.clientMissilePrograms.end())
+                        initialization.totalFrames=nativeAdd(nativeAdd(child->second.frames,nativeMultiply(effect.level,child->second.framesPerLevel)),
+                            nativeMultiply(child->second.loopFrames,program.parameters[0]));
+                    emit(program.children[0],effect.pos,{},effect,childAge,-1,0,-1,initialization);
+                }
+                break;
+            case 54: {
+                // B9C10: the invisible Anya controller has no table children.
+                const Vec at{std::floor(effect.pos.x)+.5f,std::floor(effect.pos.y)+.5f};
+                if(elapsedFrames<110 && relatedOwner(effect)) {
+                    ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                    if(!elapsedFrames) emit(532,at,{},effect,childAge,-1,0,-1,initialization);
+                    const int count=elapsedFrames<50?8:elapsedFrames<80?5:1;
+                    for(int index=0;index<count;++index) {
+                        if(auto *child=emit(597,at+Vec{2,2},{},effect,childAge,-1,0,-1,initialization)) {
+                            // Only successful allocation consumes these three rolls.
+                            const int x=50-int(rollRandom(effect.random)%100),y=50-int(rollRandom(effect.random)%100);
+                            const int z=int(rollRandom(effect.random)&7)+2;
+                            // Every native constructor allocates a Gfx record
+                            // and sets bit8 (C7B00/C7BF0), even for zero motion.
+                            if(!child->graphics) {child->graphics.emplace();child->graphics->flags=8;}
+                            child->graphics->velocity={nativeShiftLeft(x,11),nativeShiftLeft(y,11),0};
+                            child->graphics->acceleration={0,0,nativeShiftLeft(z,11)};
+                        }
+                    }
+                }
+                if(elapsedFrames==5) shakeScreen(3,15,100,75,-childAge);
+                if(elapsedFrames<200 && elapsedFrames%7==0 && relatedOwner(effect)) {
+                    // B39E0 makes at most four probes. Preserve the original's
+                    // asymmetric rejection (no upper comparison on Y).
+                    for(int attempt=0;attempt<4;++attempt) {
+                        const int x=17-int(rollRandom(effect.random)%34),y=17-int(rollRandom(effect.random)%34);
+                        if(x>=-1 && x<=1 && y>=-1) continue;
+                        const Vec point=at+Vec{float(x),float(y)},local=point-origin;
+                        if(grid.nativeMovementMask(int(std::floor(local.x)),int(std::floor(local.y)))&4) continue;
+                        ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                        emit(615,point,{},effect,childAge,-1,0,-1,initialization);
+                        emit(616,point,{},effect,childAge,-1,0,-1,initialization);
+                        break;
+                    }
+                }
+                break;
+            }
+            case 46: {
+                // B7880 caches the perpendicular to the first path point
+                // during elapsed 0/1, before testing the old changed-cell bit.
+                if(!effect.nativeParameters) effect.nativeParameters=std::array<int32_t,2>{};
+                if(elapsedFrames<2) {
+                    const auto first=effect.pathTarget; // Common getters read tTargetCoord, not the queued path front.
+                    (*effect.nativeParameters)[0]=nativeSubtract(int(std::floor(effect.pos.y)),int(std::floor(first.y)));
+                    (*effect.nativeParameters)[1]=nativeSubtract(int(std::floor(first.x)),int(std::floor(effect.pos.x)));
+                }
+                if(effect.movedCell) {
+                    const auto child=assets_.clientMissilePrograms.find(program.children[0]);
+                    if(child!=assets_.clientMissilePrograms.end()) {
+                        const auto &row=child->second;
+                        int frames=nativeAdd(row.frames,nativeMultiply(effect.level,row.framesPerLevel));
+                        if(row.animation.subLoop) frames=nativeAdd(frames,nativeMultiply(nativeSubtract(row.animation.subStop,row.animation.subStart),program.parameters[0]));
+                        const Vec direction{float((*effect.nativeParameters)[0]),float((*effect.nativeParameters)[1])};
+                        const Vec at{std::floor(effect.pos.x)+.5f,std::floor(effect.pos.y)+.5f};
+                        ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;initialization.totalFrames=frames;
+                        emit(program.children[0],at,direction,effect,childAge,-1,0,-1,initialization);
+                        emit(program.children[0],at,direction*-1.f,effect,childAge,-1,0,-1,initialization);
+                    }
+                }
+                break;
+            }
+            case 30: {
+                // B79F0: latch exactly at CltParam1, then emit on elapsed
+                // modulo CltParam2. A late 73 must not invent the missed latch.
+                if(!effect.nativeParameters) effect.nativeParameters=std::array<int32_t,2>{};
+                if(elapsedFrames==program.parameters[0]) (*effect.nativeParameters)[1]=1;
+                if((*effect.nativeParameters)[1] && elapsedFrames%std::max(program.parameters[1],1)==0) {
+                    const int radius=program.parameters[2],span=nativeAdd(nativeMultiply(radius,2),1);
+                    const auto offset=[&] {return nativeSubtract(span>0?int(limitedRandom(effect.random,uint32_t(span))):0,radius);};
+                    const int x=offset(),y=offset();
+                    const Vec at{std::floor(effect.pos.x)+.5f,std::floor(effect.pos.y)+.5f};
+                    ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                    emit(program.children[0],at,{float(x),float(y)},effect,childAge,-1,0,-1,initialization);
+                }
+                break;
+            }
+            case 37:
+                // B2500 reads CurrentFrame, not elapsed, and its sound call
+                // has no unit source. Both operations run before common Do1.
+                if(effect.nativeCurrentFrames==150) shakeScreen(25,0,100,0,-childAge);
+                else if(effect.nativeCurrentFrames==50)
+                    assets_.sceneAudio.playNativeSound(4638,uint64_t(view_.animationTime*25.f));
+                break;
+            case 62:
+                if(relatedOwner(effect)) {
+                    // BA4A0 -> B3D60 twice per callback. Every attempt draws
+                    // height, cardinal offset, then variant, before allocation.
+                    constexpr std::array<Vec,4> cross{Vec{1,0},Vec{0,1},Vec{-1,0},Vec{0,-1}};
+                    const Vec center{std::floor(effect.pos.x)+.5f,std::floor(effect.pos.y)+.5f};
+                    for(int index=0;index<2;++index) {
+                        const int height=int(rollRandom(effect.random)%125);
+                        const auto offset=cross[rollRandom(effect.random)&3];
+                        const auto variant=rollRandom(effect.random)%30;
+                        const int id=variant<=3?608+int(variant):607;
+                        ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                        initialization.parameters=std::array<int32_t,2>{int32_t(std::floor(effect.pos.x)),int32_t(std::floor(effect.pos.y))};
+                        ClientMissileGraphics graphics;graphics.position[2]=nativeShiftLeft(height,11);initialization.graphics=graphics;
+                        emit(id,center+offset,{offset.y,-offset.x},effect,childAge,-1,0,-1,initialization);
+                    }
+                    if(elapsedFrames>60 && elapsedFrames%20==0) {
+                        // B3C40: both zero offsets alone consume a third roll.
+                        int x=20-int(rollRandom(effect.random)%40),y=20-int(rollRandom(effect.random)%40);
+                        if(!x && !y) x=int(rollRandom(effect.random)%19)+1;
+                        ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                        initialization.parameters=std::array<int32_t,2>{x,y};
+                        ClientMissileGraphics graphics;graphics.position[2]=-20480;initialization.graphics=graphics;
+                        emit(285,center,{float(x),float(y)},effect,childAge,-1,0,-1,initialization);
+                    }
+                    if(elapsedFrames==25) {
+                        ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                        emit(618,center+Vec{2,2},{},effect,childAge,-1,0,-1,initialization);
+                        emit(617,center+Vec{2,2},{},effect,childAge,-1,0,-1,initialization);
+                    }
+                }
+                break;
+            case 16:
+                // B8AA0 reads the preceding path update's changed-cell bit.
+                // Three of four emitted walls suppress their own light.
+                if(effect.movedCell) {
+                    ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                    initialization.suppressLight=limitedRandom(effect.random,4)!=0;
+                    const Vec at{std::floor(effect.pos.x)+.5f,std::floor(effect.pos.y)+.5f};
+                    emit(program.children[0],at,{},effect,childAge,-1,0,-1,initialization);
+                }
+                break;
+            case 63: {
+                // B1F20 rotates the first path point around TargetX/Y and
+                // repaths every callback, unlike Clt60's even-frame gate.
+                const auto center=effect.nativeParameters.value_or(std::array<int32_t,2>{});
+                const int x=int(std::floor(effect.pos.x)),y=int(std::floor(effect.pos.y));
+                effect.turnTarget={float(nativeSubtract(y,center[1])),float(nativeSubtract(center[0],x))};
+                effect.pathTarget=Vec{float(x)+.5f,float(y)+.5f}+effect.turnTarget;
+                effect.path.clear();
+                effect.velocity=effect.turnTarget.unit()*(float(effect.velocityFixed)*25.f/4096.f);
+                break;
+            }
+            case 38: {
+                // Retail BA7E0 -> B4FB0: fourteen fixed directions, once at
+                // elapsed 10. These are engine offsets, not a replacement MPQ.
+                if(elapsedFrames!=10 || !forgeObject(effect) || !relatedOwner(effect)) break;
+                constexpr std::array<int,14> x{-4,2,4,-3,-2,3,5,-3,-5,5,-6,-1,0,6};
+                constexpr std::array<int,14> y{6,4,-4,-2,1,7,0,3,-4,-3,4,-5,5,-3};
+                const auto shard=assets_.clientMissilePrograms.find(374);if(shard==assets_.clientMissilePrograms.end()) break;
+                for(size_t index=0;index<x.size();++index) {
+                    const int distance=(x[index]>=y[index]?std::abs(x[index])+2*std::abs(y[index]):std::abs(y[index])+2*std::abs(x[index]))>>1;
+                    const int frames=nativeMultiply(shard->second.frames,distance)/6;
+                    ClientMissileInitialization initialization;initialization.totalFrames=frames;initialization.sourceSkill=effect.sourceSkill;
+                    initialization.parameters=std::array<int32_t,2>{(*effect.nativeParameters)[0],0};
+                    auto graphics=ClientMissileGraphics::arc(frames,0);graphics.step();initialization.graphics=graphics;
+                    if(auto *child=emit(374,effect.pos,{float(x[index]),float(y[index])},effect,childAge,-1,0,-1,initialization))
+                        (*child->nativeParameters)[1]=int(rollRandom(effect.random)%35)+10;
+                }
+                shakeScreen(4,2,2,10,-childAge);
+                break;
+            }
+            case 39:
+                // B2480 freezes the precise frame before the common update.
+                if(relatedOwner(effect)) effect.nativeSequenceFrame=0;
+                break;
+            case 40:
+                if(relatedOwner(effect)) {
+                    if(!effect.nativeParameters) effect.nativeParameters=std::array<int32_t,2>{};
+                    auto &countdown=(*effect.nativeParameters)[1];
+                    if(!countdown) {
+                        if(const auto *object=forgeObject(effect)) {
+                            ClientMissileInitialization initialization;initialization.sourceSkill=effect.sourceSkill;
+                            initialization.parameters=std::array<int32_t,2>{int32_t(std::floor(effect.pos.x)-std::floor(object->position.x)),int32_t(std::floor(effect.pos.y)-std::floor(object->position.y))};
+                            ClientMissileGraphics graphics;graphics.velocity[2]=4096;initialization.graphics=graphics;
+                            emit(377,effect.pos,{},effect,childAge,-1,0,-1,initialization);
+                        }
+                        countdown=int(rollRandom(effect.random)%35)+10;
+                    }
+                    countdown=nativeSubtract(countdown,1);
+                }
+                break;
+            case 41:
+                if(elapsedFrames==8) {
+                    if(effect.graphics) effect.graphics->acceleration={0,0,256};
+                    effect.animationRate=int16_t(uint16_t(effect.animationRate.value_or(program.animation.rate/4)))>>1;
+                } else if(elapsedFrames==35)
+                    effect.animationRate=int16_t(uint16_t(nativeShiftLeft(int16_t(uint16_t(effect.animationRate.value_or(program.animation.rate/4))),1)));
+                break;
+            case 23:
+                // Retail B2980 / Common #10737, #10970: keep Den light
+                // alive by resetting the remaining counter, not its age or RNG.
+                if(effect.nativeCurrentFrames<100) {
+                    effect.setCurrentFrame(500);
+                    effect.duration=float(effect.frame+500)/25.f;
+                    lastFrame=int(std::min(effect.age,effect.duration)*25.f+.00001f);
+                }
+                break;
             case 10: {
                 // Retail BBD40 -> B8DF0: choose the class before the period
                 // gate, then initialize the parent's SEED only for emission.
@@ -926,8 +1257,8 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                 }
                 break;
             }
-            case 4:
-                if (!program.childServerSent &&
+            case 4: case 45:
+                if ((!program.childServerSent || program.function==45) &&
                     (!program.parameters[0] || limitedRandom(effect.random, uint32_t(program.parameters[0])) == 0)) {
                 // Retail CltDo04 / RVA BBE00 -> B9470: chance per native tick,
                 // MPQ count and radius; smoke starts at the parent and drifts
@@ -1117,14 +1448,14 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
         }
         if (!finished && effect.age + .00001f >= effect.duration) {
             // CltDo04 bypasses its chance gate when native CurrentFrame is zero.
-            if (program.function == 4 && !program.childServerSent)
+            if ((program.function == 4 && !program.childServerSent) || program.function==45)
                 poisonSmoke(std::max(0.f, effect.age - effect.duration));
             if (program.function == 19 && program.hitParameters[0] > 0) {
                 const Vec anchor{std::floor(effect.pos.x) + .5f, std::floor(effect.pos.y) + .5f};
                 for (const auto direction : missileRingBurst(program.hitParameters[0]))
                     emit(program.hitChildren[0], anchor, direction, effect,
                         std::max(0.f, effect.age - effect.duration));
-            } else if (program.explodeOnExpiry || program.hitFunction==52 || program.hitFunction==53 || program.hitFunction==56 || program.hitFunction==54 || program.hitFunction==55 || program.hitFunction==25 || program.hitFunction==26 || (program.function==9 && program.hitFunction==18))
+            } else if (program.explodeOnExpiry || (program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==37) || program.hitFunction==52 || program.hitFunction==53 || program.hitFunction==56 || program.hitFunction==54 || program.hitFunction==55 || program.hitFunction==25 || program.hitFunction==26 || (program.function==9 && program.hitFunction==18))
                 impact(effect, program, std::max(0.f, effect.age - effect.duration));
             finished = true;
         }

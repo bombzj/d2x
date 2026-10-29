@@ -50,6 +50,13 @@ void RemoteUiClients::Impl::Npc::submit(NpcIntent c) {
                     if(!o.session.hireling_service(OnlineHirelingAction::Resurrect,{},o.context)) o.notice="Hireling resurrection is unavailable or pending.";
                     return;
                 }
+                else if constexpr (std::is_same_v<T, AcknowledgeNpcGreeting>) {
+                    const auto raw=v.npc.value?v.npc.value-1:0;
+                    const auto unit=o.session.read().world.units.find({1,uint32_t(raw)});
+                    if(unit!=o.session.read().world.units.end() && unit->second.classId)
+                        o.session.confirm_npc_voice(uint16_t(*unit->second.classId),o.context);
+                    return;
+                }
                 else if constexpr (std::is_same_v<T, TalkToNpc>) {
                     if (v.action == TalkToNpc::Action::Acknowledge && v.message && *v.message <= UINT16_MAX) {
                         const auto &conversation = o.session.read().world.npcConversation;
@@ -144,6 +151,12 @@ void RemoteUiClients::Impl::projectInteractions() {
             };
             // Native servers send quest/intro text in 27; ordinary gossip is
             // local MPQ presentation and must not generate a quest ACK (31).
+            if(d.type==1 && online.protocolProfile=="lod113c") {
+                const auto unit=w.units.find({1,d.source});
+                if(unit!=w.units.end() && unit->second.classId &&
+                   w.quests.npcReturnGreetings.contains(*unit->second.classId))
+                    npcView.returnGreetingClass=uint16_t(*unit->second.classId);
+            }
             if(d.type==1) for(size_t turn=0;;++turn) {
                 const auto *speech=gossipSpeech(data.npcDialogues,d.speaker,turn,mapView.act);
                 if(!speech || speech->text.empty()) break;

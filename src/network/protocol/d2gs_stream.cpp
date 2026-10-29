@@ -136,16 +136,16 @@ Bytes game_bh_report_pd2_cn(uint32_t fileCrc32) {
     Writer out; out.u8(0x15); out.u8(0xFF); out.u8(0xFF);
     out.string(text, 12); out.u8(0); out.u8(0); return out.release();
 }
-Bytes game_chat(std::string_view text,std::string_view receiver,bool overhead) {
+Bytes game_chat(std::string_view text,std::string_view receiver,bool overhead,uint8_t language) {
     if (text.empty() || text.size() > 255 ||
-        !std::all_of(text.begin(), text.end(), [](unsigned char c) { return c >= 32 && c < 127; }))
-        throw ProtocolError("Chat requires 1-255 printable ASCII bytes");
+        !std::all_of(text.begin(), text.end(), [](unsigned char c) { return c >= 32 && c != 127; }))
+        throw ProtocolError("Chat requires 1-255 native text bytes");
     // D2MOO D2PacketDef::Clt15 and D2Net::SERVER_GetClientPacketSize:
     // ID, message type, language, message\0, receiver\0, extension length.
     Writer out;
     if(receiver.size()>15 || (overhead && !receiver.empty()) ||
         !std::all_of(receiver.begin(),receiver.end(),[](unsigned char c){return c>=32 && c<127;})) throw ProtocolError("Invalid chat recipient");
-    out.u8(overhead?0x14:0x15); out.u8(overhead?0:receiver.empty()?1:2); out.u8(0);
+    out.u8(overhead?0x14:0x15); out.u8(overhead?0:receiver.empty()?1:2); out.u8(language);
     out.string(text, 255); out.string(receiver, 15); out.u8(0);
     return out.release();
 }

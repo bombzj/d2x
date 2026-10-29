@@ -4,6 +4,8 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/items/system.hpp"
 #include "server/systems/travel/system.hpp"
+#include "server/systems/objects/system.hpp"
+#include "server/systems/missiles/system.hpp"
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -38,6 +40,30 @@ struct CollisionQuery {
         ~Scope() {query.leave();}
     };
 };
+}
+std::optional<std::pair<RegionId,Vec>> System::locate(EntityId id,uint8_t type) const {
+    if(!id || type>=6) return {};
+    if(type==0) for(const auto &[key,p]:ports_.players.all()) {
+        (void)key;if(p.entered && p.actor==id) return std::pair{p.area,p.position};
+        for(const auto &corpse:p.persistent.corpses) if(corpse.id==id) return std::pair{corpse.region,corpse.position};
+    }
+    if(type==1) if(const auto *unit=ports_.monsters.find(id)) return std::pair{unit->area,unit->position};
+    if(type==2) {
+        if(const auto found=ports_.objects.read().objects.find(id);found!=ports_.objects.read().objects.end()) return std::pair{found->second.area,found->second.position};
+        const auto find=[&](const auto &portals)->std::optional<std::pair<RegionId,Vec>> {
+            for(const auto &[key,p]:portals) {(void)key;if(p.fieldId==id)return std::pair{p.field,p.fieldPosition};if(p.townId==id)return std::pair{p.town,p.townPosition};}return {};
+        };
+        if(auto at=find(ports_.travel.read().portals)) return at;
+        if(auto at=find(ports_.travel.read().specialPortals)) return at;
+    }
+    if(type==3) if(const auto found=ports_.missiles.read().missiles.find(id);found!=ports_.missiles.read().missiles.end()) return std::pair{found->second.area,found->second.position};
+    if(type==4) {
+        if(const auto found=ports_.items.read().world.items.find(id);found!=ports_.items.read().world.items.end())
+            if(const auto *at=std::get_if<GroundLocation>(&found->second.location)) return std::pair{at->region,at->position};
+        for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.persistent.inventory.items.contains(id)) return std::pair{p.area,p.position};}
+    }
+    if(type==5) for(const auto &[region,area]:ports_.areas.all()) for(const auto &exit:area.definition.exits) if(exit.id==id) return std::pair{region,exit.position};
+    return {};
 }
 std::optional<NativeFootprint> System::targetFootprint(EntityId target) const {
     if(!target) return {};

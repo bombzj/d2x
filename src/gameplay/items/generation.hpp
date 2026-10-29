@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay/items/quality.hpp"
+#include "gameplay/items/native_identity.hpp"
 #include "core/random.hpp"
 #include "core/entity_id.hpp"
 #include <cstdint>
@@ -43,5 +44,7 @@ struct ItemGeneration {
     std::optional<uint64_t> unitRandom;
     std::vector<std::vector<int32_t>> operationRolls;
     bool etherealDropFlag{}; // Native ALWAYSETH; ignored for ineligible bases/qualities.
+    std::optional<ItemEarIdentity> ear;
+    bool namedEar{};
 };
 } // namespace d2x

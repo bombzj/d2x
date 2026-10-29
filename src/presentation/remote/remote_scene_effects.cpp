@@ -6,6 +6,182 @@ namespace d2x {
 EntityId RemoteScene::Impl::effectOwner(OnlineUnitKey key) {
     return {(uint64_t(key.type) << 32) + key.id + 1};
 }
+const OnlineUnit *RemoteScene::Impl::questNearbyUnit(const OnlineView &view,const Map &map,int type,int identity) const {
+    if(!sceneBinding || !sceneBinding->origin || !view.load.playerUnitId) return nullptr;
+    const auto player=view.world.units.find({0,*view.load.playerUnitId});
+    if(player==view.world.units.end() || !player->second.position) return nullptr;
+    const auto origin=*sceneBinding->origin;
+    const Vec local{float(player->second.position->x-origin.x),float(player->second.position->y-origin.y)};
+    const auto room=std::find_if(map.terrain.rooms.begin(),map.terrain.rooms.end(),[&](const auto &room) {
+        return local.x>=room.x*5 && local.y>=room.y*5 && local.x<(room.x+room.width)*5 && local.y<(room.y+room.height)*5;
+    });
+    if(room==map.terrain.rooms.end()) return nullptr;
+    // Retail Common #10754 walks near rooms, then each unit chain. Current
+    // assignment order projects the head order; native interleaving is unverified.
+    const OnlineUnit *found=nullptr;
+    for(const auto near:room->near) {
+        if(near>=map.terrain.rooms.size()) continue;
+        const auto &bounds=map.terrain.rooms[near];
+        for(const auto &[key,unit]:view.world.units) {
+            if(key.type!=type || unitClass(unit)!=identity || !unit.position) continue;
+            const int x=int(unit.position->x)-origin.x,y=int(unit.position->y)-origin.y;
+            if(x>=bounds.x*5 && y>=bounds.y*5 && x<(bounds.x+bounds.width)*5 && y<(bounds.y+bounds.height)*5 &&
+               (!found || unit.assignmentRevision>found->assignmentRevision)) found=&unit;
+        }
+        if(found) break;
+    }
+    return found;
+}
+void RemoteScene::Impl::observeQuestMissileEffects(const OnlineView &view,const Map &map,SceneView &shared,float elapsed) {
+    if(pd2) return;
+    auto &quest=mapDisplay.questEffects;
+    const auto sanctum=view.world.questEffectOccurrences[12];
+    if(quest.sanctumOccurrence!=sanctum) {
+        const auto count=sanctum>=quest.sanctumOccurrence?sanctum-quest.sanctumOccurrence:sanctum;
+        quest.sanctumOccurrence=sanctum;quest.sanctumLight=true;
+        // 533F0 always sets the game flag. Only a local player currently
+        // in 108 creates the class-372 appearance controller.
+        if(sceneBinding && sceneBinding->area==108 && view.load.playerUnitId) {
+            const auto player=view.world.units.find({0,*view.load.playerUnitId});
+            if(player!=view.world.units.end() && player->second.position) {
+                const Vec at{float(player->second.position->x)+.5f,float(player->second.position->y)+.5f};
+                ClientMissileInitialization initialization;initialization.sourceSkill=0;
+                for(uint64_t index=0;index<count;++index)
+                    if(!shared.launchClientMissile(372,at,at,1,0,{},-1,effectOwner(player->first),false,0,
+                        ClientMissileSource::Program,0,{},0,initialization))
+                        effectLimitations.insert("Diablo appearance: original client missile resource unavailable");
+            }
+        }
+    }
+    if(quest.sanctumEndOccurrence!=view.world.questEffectOccurrences[13]) {
+        quest.sanctumEndOccurrence=view.world.questEffectOccurrences[13];quest.sanctumEndFrames=0;
+    }
+    if(quest.sanctumLight && quest.sanctumEndFrames>=0) {
+        quest.sanctumEndFrames+=std::max(0.f,elapsed)*25.f;
+        if(quest.sanctumEndFrames>=30) {quest.sanctumLight=false;quest.sanctumEndFrames=-1;}
+    }
+    std::erase_if(quest.hiddenUnits,[&](const auto &entry) {
+        const auto unit=view.world.units.find(entry.first);
+        return unit==view.world.units.end() || unit->second.assignmentRevision!=entry.second;
+    });
+    const auto start=[&](uint8_t effect,uint64_t &observed,int type,int identity,int missile) {
+        const auto occurrence=view.world.questEffectOccurrences[effect];
+        if(observed==occurrence) return;
+        const auto count=occurrence>=observed?occurrence-observed:occurrence;observed=occurrence;
+        if(!view.load.playerUnitId) return;
+        const auto player=view.world.units.find({0,*view.load.playerUnitId});
+        const auto *target=questNearbyUnit(view,map,type,identity);
+        if(player==view.world.units.end() || !target) return;
+        if(effect==17) quest.hiddenUnits.insert_or_assign(target->key,target->assignmentRevision);
+        const Vec at{float(target->position->x)+.5f,float(target->position->y)+.5f};
+        ClientMissileInitialization initialization;initialization.sourceSkill=0;
+        bool resources=true;
+        if(effect==14) {
+            initialization.parameters=std::array<int32_t,2>{int32_t(target->key.id),0};
+            for(const int id:{373,374,375,376,377}) if(!missileRows.contains(id) || !shared.projectileVisual(id)) {
+                effectLimitations.insert("Hellforge: original client missile resource unavailable");resources=false;
+            }
+        } else if(effect==16) {
+            initialization.parameters=std::array<int32_t,2>{25,0};
+            for(const int id:{528,532,597,615,616}) if(!missileRows.contains(id) || !shared.projectileVisual(id)) {
+                effectLimitations.insert("Anya thaw: original client missile resource unavailable");resources=false;
+            }
+        } else for(const int id:{603,606,607,608,609,610,611,617,618})
+            if(!missileRows.contains(id) || !shared.projectileVisual(id)) {
+                effectLimitations.insert("Nihlathak: original client missile resource unavailable");resources=false;
+            }
+        if(effect==17) for(const auto *field:{"CltHitSubMissile1","CltHitSubMissile2"}) {
+            const auto child=missileNames.find(missiles.value(missileRows.at(603),field));
+            if(child!=missileNames.end()) if(const auto id=missiles.number(child->second,"Id")) shared.projectileVisual(*id);
+        }
+        for(uint64_t index=0;index<count;++index) {
+            if(effect==14) {
+                shared.questMusic("music_quest_forge",350,0);
+                // 53268..53271 plays Sounds35 at the forge, separately from
+                // the 45570 music slot. It is not attached-unit event 35.
+                emitSound(PresentationSoundEvent::Kind::Original,*target,0,-1,-1,{},-1,35);
+            }
+            if(!resources) continue;
+            shared.launchClientMissile(missile,at,at,1,0,{},-1,effectOwner(player->first),false,0,
+                ClientMissileSource::Program,0,{},0,initialization);
+            if(effect==17) shared.launchClientMissile(603,at,at,1,0,{},-1,effectOwner(player->first),false,0,
+                ClientMissileSource::Program,0,{},0,initialization);
+        }
+    };
+    start(14,quest.forgeOccurrence,2,376,373);
+    start(16,quest.anyaOccurrence,2,460,528);
+    start(17,quest.nihlathakOccurrence,1,526,606);
+}
+void RemoteScene::Impl::observeDenLights(const OnlineView &view,const Map &map,SceneView &shared,float elapsed) {
+    if(pd2 || !sceneBinding || !sceneBinding->area || !sceneBinding->origin || !view.load.playerUnitId) return;
+    const auto occurrence=view.world.questEffectOccurrences[0];
+    auto &quest=mapDisplay.questEffects;
+    if(quest.gameGeneration!=view.gameGeneration) {quest={};quest.gameGeneration=view.gameGeneration;}
+    if(quest.denOccurrence!=occurrence) {
+        quest.denOccurrence=occurrence;quest.denFrames=0;
+    }
+    quest.seconds+=std::max(0.f,elapsed);
+    std::erase_if(quest.denRooms,[&](const auto &entry) {
+        const auto &[level,x,y]=entry.first;
+        const auto assigned=view.world.roomAssignmentRevisions.find({uint8_t(level),uint16_t(x),uint16_t(y)});
+        return assigned==view.world.roomAssignmentRevisions.end() || assigned->second!=entry.second.revision;
+    });
+    // 52440 starts a 30-frame counter. 53720..53756 only completes it
+    // once; another packet after completion does not create another burst.
+    if(!quest.denComplete && quest.denFrames>=0) {
+        quest.denFrames+=std::max(0.f,elapsed)*25.f;
+        if(quest.denFrames>=30) quest.denComplete=true;
+    }
+    if(*sceneBinding->area!=8) {
+        for(const auto &[room,revision]:denLightRooms) {(void)revision;shared.retireClientMissileRoom(room);}
+        denLightRooms.clear();return;
+    }
+    struct Room {std::array<int,3> key;uint64_t revision;const RoomBounds *bounds;};
+    std::vector<Room> rooms;
+    const auto origin=*sceneBinding->origin;
+    for(const auto &[key,revision]:view.world.roomAssignmentRevisions) {
+        const auto [level,x,y]=key;if(level!=8) continue;
+        const auto bounds=std::find_if(map.rooms.begin(),map.rooms.end(),[&](const auto &room) {
+            return room.x+int(origin.x)==int(x)*5 && room.y+int(origin.y)==int(y)*5;
+        });
+        if(bounds!=map.rooms.end()) rooms.push_back({{level,x,y},revision,&*bounds});
+    }
+    std::erase_if(denLightRooms,[&](const auto &entry) {
+        if(std::any_of(rooms.begin(),rooms.end(),[&](const auto &room){return room.key==entry.first && room.revision==entry.second;})) return false;
+        shared.retireClientMissileRoom(entry.first);return true;
+    });
+    if(!quest.denComplete) return;
+    // Retail 53550 creates class 287; it is an engine identity, while its art,
+    // lifetime, animation and light remain current MPQ data.
+    if(!missileRows.contains(287) || !shared.projectileVisual(287)) {
+        effectLimitations.insert("Den light: original missile 287 resource unavailable");return;
+    }
+    // The current replica provides ordered room assignments. Full DRLG callback
+    // interleaving with packet89 still requires original-client comparison.
+    std::sort(rooms.begin(),rooms.end(),[](const auto &left,const auto &right){return left.revision>right.revision;});
+    const OnlineUnitKey player{0,*view.load.playerUnitId};
+    auto &random=pd2VisualSeeds.try_emplace(player,Pd2VisualSeed{initialRandom(player.id),0}).first->second.random;
+    for(const auto &room:rooms) {
+        if(!denLightRooms.contains(room.key)) {
+            auto [plan,inserted]=quest.denRooms.try_emplace(room.key,RemoteMapDisplayState::QuestEffects::DenRoom{room.revision,quest.seconds,{}});
+            if(inserted) {
+                for(int attempt=0;attempt<25 && plan->second.positions.size()<3;++attempt) {
+                    const int x=room.bounds->x+int(limitedRandom(random,uint32_t(room.bounds->width)));
+                    const int y=room.bounds->y+int(limitedRandom(random,uint32_t(room.bounds->height)));
+                    if(map.grid.nativeMovementMask(x,y)&5) continue;
+                    plan->second.positions.push_back({float(x)+float(origin.x)+.5f,float(y)+float(origin.y)+.5f});
+                }
+            }
+            const float age=std::max(0.f,quest.seconds-plan->second.born);
+            for(const auto position:plan->second.positions) {
+                ClientMissileInitialization initialization;initialization.roomAttachment=room.key;initialization.sourceSkill=0;
+                shared.launchClientMissile(287,position,position,1,-age,{},-1,effectOwner(player),false,0,
+                    ClientMissileSource::Program,0,{},0,initialization);
+            }
+        }
+        denLightRooms.insert_or_assign(room.key,room.revision);
+    }
+}
 
 const RemoteScene::Impl::BoneArmorVisual &RemoteScene::Impl::boneArmorVisual(
         const OnlineUnit &unit,const OnlineCombatStateView &state,size_t stateRow,SceneView &shared) {
@@ -1349,7 +1525,13 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             if (source != v.world.units.end() && age <= .25f) {
                 using Kind = PresentationSoundEvent::Kind;
                 // Original 1.13c attached sound event dispatch, not Sounds.Index.
-                if (event.source.type == 0 && event.auxiliary == 22)
+                if (event.source.type == 0 && event.auxiliary>=25 && event.auxiliary<=32)
+                    emitSound(Kind::Voice,source->second,age,-1,-1,{},int(event.auxiliary));
+                else if (!pd2 && event.source.type == 0 && event.auxiliary==35)
+                    emitSound(Kind::DenComplete,source->second,age);
+                else if (!pd2 && event.source.type == 0 && event.auxiliary==82)
+                    emitSound(Kind::NihlathakComplete,source->second,age);
+                else if (event.source.type == 0 && event.auxiliary == 22)
                     emitSound(Kind::NeedKey,source->second,age);
                 else if (event.source.type == 0 && event.auxiliary == 11)
                     emitSound(Kind::Original,source->second,age,-1,-1,"item_key_used");

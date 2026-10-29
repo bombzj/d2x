@@ -40,6 +40,7 @@ class System {
     System(const System &) = delete;
     System &operator=(const System &) = delete;
     const State &read() const { return state_; }
+    std::optional<std::pair<RegionId,Vec>> locate(EntityId,uint8_t type) const;
     void profileFootprints(bool enabled) { ports_.areas.profileFootprints(enabled); }
     const FootprintMetrics &footprintMetrics() const { return ports_.areas.footprintMetrics(); }
     DomainResult<std::vector<UnitRef>> query(const Query &) const;

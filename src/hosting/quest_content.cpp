@@ -55,10 +55,7 @@ void prepareQuests(GameHost &host,GameHandle game,Archives &archives,const Class
                 add(code,unsigned(level),std::move(roll.generation));break;
             }
             case RewardKind::ForgeHammer: add(data.hellforge.hammer,unsigned(source.character.player.level),questUnique(data.hellforge.hammer));break;
-            case RewardKind::SmashSoulstone:
-                for(const unsigned tier:{0u,1u,1u,2u}) for(unsigned count=0;count<source.quantity;++count)
-                    add(data.hellforge.gems[tier][limitedRandom(random,7)],50);
-                add(data.hellforge.runes.at(size_t(source.difficulty))[limitedRandom(random,11)],50);break;
+            case RewardKind::SmashSoulstone: break; // A4Q3 QUESTFN drops each item later.
             case RewardKind::KhalimEye: case RewardKind::KhalimBrain: case RewardKind::KhalimHeart: case RewardKind::KhalimFlail:
             case RewardKind::CouncilCube: case RewardKind::LamTome: case RewardKind::Soulstone: {
                 std::string code;

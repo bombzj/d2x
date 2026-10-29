@@ -28,6 +28,14 @@ DomainResult<EntityId> GameInstance::spawnObject(PlayerId id,const objects::Admi
 DomainResult<EntityId> GameInstance::spawnMonster(PlayerId id, const PreparedMonster &monster) {
     const auto *player = players_.find(id);
     if (!player || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
+    // Pre-enchanted debug admissions need the same unmodified class profile
+    // as native population when rebuilding an inactive unit. Do not admit an
+    // out-of-roster profile that would strand a later room retirement.
+    if(monster.rule.enchantment) {
+        const auto &classes=areas_.at(player->area).definition.nativeMonsterClasses;
+        const auto base=classes.find(monster.rule.nativeClass);
+        if(base==classes.end() || base->second.rule.enchantment) return {DomainStatus::NotImplemented,{}};
+    }
     return systems_.monsters.admit({monster.identity, monster.implementation, player->area, monster.position, true, monster.rule,monster.skillPositions,tick_});
 }
 DomainResult<> GameInstance::relocate(PlayerId id,RegionId area,std::optional<Vec> position) {
@@ -54,7 +62,7 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     DiagnosticSnapshot result;
     const auto &map=systems_.maps.read();
     if(map.instance) {
-        result.pd2Map.emplace();auto &view=*result.pd2Map;
+        result.pd2Map=DiagnosticSnapshot::Pd2Map{};auto &view=*result.pd2Map;
         view.controller=map.instance->controller;view.phase=map.phase;view.eventProgress=map.eventProgress;
         const auto &travel=systems_.travel.read();
         view.sceneOpening=travel.pd2SceneOpening;view.sceneParticipants=travel.pd2SceneParticipants;
@@ -110,6 +118,11 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     result.actThree=systems_.quests.read().actThree;result.actFour=systems_.quests.read().actFour;result.actFive=systems_.quests.read().actFive;
     result.hirelingDeferred=systems_.companions.hirelingDeferred(id);
     result.gameRandom=random_;
+    result.world=systems_.world.observe();result.nextNativeIds=nativeEntities_.next();result.nativeIdCount=nativeEntities_.entries().size();
+    for(const auto &entry:nativeEntities_.entries()) {
+        if(result.nativeIds.size()>=limit*8) break;
+        result.nativeIds.push_back(entry);
+    }
     result.objectControlRandom=systems_.objects.read().controlRandom;
     result.monsterRegionRandom=systems_.population.read().regionRandom;
     result.npcControlRandom=systems_.npc.read().controlRandom;
@@ -120,9 +133,39 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         result.levelRandom.emplace(region,area.levelRandom.value_or(area.definition.initialLevelRandom));
         for(size_t index=0;index<area.rooms.size();++index) {
             const auto &room=area.rooms[index];
-            result.roomRandom.push_back({region,index,room.loaded,room.randomRevision,room.creationOrder,room.random});
+            DiagnosticRoomRandom observation{};observation.area=region;observation.room=index;observation.loaded=room.loaded;
+            observation.revision=room.randomRevision;observation.creationOrder=room.creationOrder;observation.random=room.random;
+            observation.status=room.status;observation.references=room.references;
+            const auto &bounds=area.definition.activation.rooms().at(index);
+            const RoomView view{region,(int(area.definition.origin.x)+bounds.x)/5,(int(area.definition.origin.y)+bounds.y)/5};
+            observation.units=areas_.roomUnitOrder(view);
+            if(room.loaded) {
+                observation.collisionHash=14695981039346656037ull;
+                const auto &grid=area.definition.collision;
+                for(int y=bounds.y;y<bounds.y+bounds.height;++y) for(int x=bounds.x;x<bounds.x+bounds.width;++x) {
+                    observation.collisionHash^=grid.fullTerrainCollision.at(size_t(y)*grid.width+x);
+                    observation.collisionHash*=1099511628211ull;
+                }
+            }
+            result.roomRandom.push_back(std::move(observation));
         }
     }
+    std::map<std::pair<RegionId,size_t>,DiagnosticSnapshot::InactiveUnits> inactive;
+    for(const auto &[room,units]:systems_.monsters.read().inactive) {
+        auto &entry=inactive[room];entry.area=room.first;entry.room=room.second;entry.monsters=units.size();
+        for(const auto &unit:units) if(result.inactiveMonsters.size()<limit*8)
+            result.inactiveMonsters.push_back({unit.id,room.first,room.second,unit.frame,unit.life,unit.maximumLife,unit.dead,unit.selfResurrections,unit.identity.monster});
+    }
+    for(const auto &[room,units]:systems_.objects.inactiveRooms()) {auto &entry=inactive[room];entry.area=room.first;entry.room=room.second;entry.objects=units.size();}
+    for(const auto &[room,units]:systems_.items.inactiveRooms()) {
+        auto &entry=inactive[room];entry.area=room.first;entry.room=room.second;entry.items=units.size();
+        for(size_t index=0;index<units.size() && result.inactiveItems.size()<limit*8;++index) {
+            const auto &unit=units[index];uint64_t hash=14695981039346656037ull;
+            for(const auto byte:unit.bitstream) {hash^=byte;hash*=1099511628211ull;}
+            result.inactiveItems.push_back({room.first,room.second,index,unit.expires,hash,unit.bitstream.size()});
+        }
+    }
+    for(const auto &[room,entry]:inactive) {(void)room;result.inactiveUnits.push_back(entry);}
     result.objectPopulation=systems_.objects.population();
     result.modifiersPending=systems_.monsters.modifiersPending();result.modifierFailure=systems_.monsters.modifierFailure();
     result.monsterEquipmentPending=systems_.monsters.equipmentPending();result.monsterEquipmentFailure=systems_.monsters.equipmentFailure();

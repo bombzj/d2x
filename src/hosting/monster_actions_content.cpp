@@ -595,13 +595,14 @@ bool prepareMonsterLifecycle(Archives &archives,const ClassicData &data,const An
 }
 
 
-namespace {
-uint8_t nativeMode(std::string_view mode) {
+uint8_t nativeMonsterMode(std::string_view mode) {
     constexpr std::array modes{"DT","NU","WL","GH","A1","A2","BL","SC","S1","S2","S3","S4","DD","KB","SQ","RN"};
     const auto found=std::ranges::find(modes,mode);
     if(found==modes.end()) throw std::runtime_error("Unsupported original monster skill mode");
     return uint8_t(found-modes.begin());
 }
+namespace {
+uint8_t nativeMode(std::string_view mode) {return nativeMonsterMode(mode);}
 // MonSeq.frame is a displayed frame, not a monotonically increasing clock.
 // Duriel Jab mixes A1/A2; maggot down and lay reverse/repeat S1 frames.
 bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTable &sequences,

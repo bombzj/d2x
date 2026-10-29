@@ -98,26 +98,33 @@ void System::advanceRecovery(TickContext tick) {
     }
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
-    bool blocked = false;
     for (const auto &[id, player] : ports_.players.all()) {
         if (!player.entered || player.persistent.player.hp > 0) continue;
         if (!state_.transitions.contains(player.actor)) {
             ports_.skills.cancel(id, player.actor);
             const auto duration = player.rules.character ? player.rules.character->deathTicks : 0;
-            state_.transitions.emplace(player.actor, Transition{tick.tick + 1, player.actor, false, tick.tick + uint64_t(duration), false, false, ports_.effects.deathMessage(player.actor)});
+            Transition transition{};
+            transition.occurrence=tick.tick+1;transition.victim=player.actor;
+            transition.ready=tick.tick+uint64_t(duration);transition.message=ports_.effects.deathMessage(player.actor);
+            state_.transitions.emplace(player.actor,std::move(transition));
         }
         const ActorContext actor{id, player.actor, player.area, ports_.areas.at(player.area).generation, 0, tick.tick};
         auto &transition = state_.transitions.at(player.actor);
         if (!transition.penaltySettled) {
-            const auto result=begin(actor);transition.penaltySettled=bool(result);blocked|=!result;
+            const auto result=begin(actor);if(!result) return StepStatus::Blocked;
+            transition.penaltySettled=true;
         }
-        if (transition.penaltySettled && tick.tick>=transition.ready && !transition.finalized) {
-            const auto result = settle(actor); transition.finalized = bool(result); blocked |= !result;
+        if(transition.penaltySettled && transition.ear) {
+            const auto result=dropEar(actor);if(!result) return StepStatus::Blocked;
+        }
+        if (transition.penaltySettled && !transition.ear && tick.tick>=transition.ready && !transition.finalized) {
+            const auto result = settle(actor);if(!result) return StepStatus::Blocked;
+            transition.finalized=true;
         }
         if (transition.finalized && tick.tick >= transition.ready && !transition.companionsSettled) {
             const auto result = ports_.companions.ownerDied(actor);
-            transition.companionsSettled = bool(result);
-            blocked |= !result;
+            if(!result) return StepStatus::Blocked;
+            transition.companionsSettled=true;
         }
         if (transition.reviving) execute(actor, {Action::Resurrect, {}});
     }
@@ -126,6 +133,6 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         for (const auto &[id, player] : ports_.players.all()) { (void)id; if (player.actor == entry.first) return false; }
         return true;
     });
-    return advanceRewards(tick) == StepStatus::Blocked || blocked ? StepStatus::Blocked : StepStatus::Complete;
+    return advanceRewards(tick);
 }
 }

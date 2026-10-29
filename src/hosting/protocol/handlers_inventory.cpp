@@ -1,6 +1,20 @@
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting::handlers {
+RequestResult TransmogrifyItem(GameplayContext &context, net::protocol::Reader &in) {
+    const auto guid=in.u32();std::optional<ItemHandle> item;
+    if(guid!=UINT32_MAX) {
+        const auto input=context.host.inventoryInput(context.player);const auto id=context.entity(guid,4);
+        if(!input || !input->items.contains(id)) return {RequestStatus::Rejected};
+        item=input->items.at(id).handle;
+    }
+    return submitGameplay(context,server::crafting::Request{server::crafting::TransmogrifyItem{item}});
+}
+RequestResult UnstackItem(GameplayContext &, net::protocol::Reader &in) {
+    // Retail CD4F0 returns an error even for an owned item: the old
+    // unstack operation is disabled. It must not split a stack here.
+    in.u32();return {RequestStatus::Rejected};
+}
 RequestResult CloseStash(GameplayContext &context, uint32_t amount) {
     if(amount) return {RequestStatus::Rejected};
     return submitGameplay(context,server::inventory::Request{CloseStorage{}});

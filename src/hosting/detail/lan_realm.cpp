@@ -1,5 +1,7 @@
 #include "lan_realm.hpp"
 #include <algorithm>
+#include <iostream>
+#include <syncstream>
 #include <thread>
 namespace d2x::hosting {
 namespace {
@@ -96,6 +98,10 @@ void LanRealm::poll() {
                     if (peer.service->peer.phase == GamePhase::Closed) break;
                 }
             } else {
+                std::osyncstream(std::cerr) << "[tcpip-close] connection=" << peer.service->diagnosticConnection
+                    << " phase=" << int(peer.service->peer.phase)
+                    << " event=" << (event.stream.kind == net::StreamEventKind::Error ? "error" : "closed")
+                    << " reason=" << event.stream.error << '\n';
                 peer.closed = true; peer.service->failGame(); retire(peer);
             }
         } catch (const std::exception &error) {

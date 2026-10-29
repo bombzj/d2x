@@ -28,6 +28,7 @@ class SceneController {
     bool inventoryRight_ = false;
     bool releaseAfterLoad_ = false;
     bool skillGesture_ = false;
+    size_t lastSkillHotkey_{};
     enum class Gesture { None, Move, Interact, LeftCast, RightCast };
     Gesture gesture_ = Gesture::None;
     EntityId lockedTarget_;
@@ -38,6 +39,7 @@ class SceneController {
     std::optional<Vec> gesturePoint_;
     uint64_t gameGeneration_ = ~uint64_t{}, areaGeneration_ = ~uint64_t{};
     void cancelWorldGesture();
+    void toggleRunning();
     bool temporaryRun_ = false;
     void closeTravel();
     bool handleTravel(const FrameInput &input);

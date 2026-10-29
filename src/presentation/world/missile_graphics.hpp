@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <optional>
 namespace d2x {
 // Retail 1.13c Gfx update 6FB77FB0 and D2Common #10132. These
 // coordinates have 11 fractional bits; X/Y require the native projection.
@@ -12,6 +13,19 @@ struct ClientMissileGraphics {
     std::array<int32_t,3> position{},velocity{},acceleration{};
     uint32_t flags{};
     int remaining{},bounces{},restitution{};
+    static std::optional<ClientMissileGraphics> leap(int distance,int fixedVelocity) {
+        const int speed=fixedVelocity>>8;if(speed<=0) return {};
+        distance=std::max(1,distance);
+        int frames=nativeDivide(nativeShiftLeft(distance,16),nativeShiftLeft(speed,12));
+        if(frames>1) --frames;
+        frames=std::max(1,frames);
+        // Retail C65B0 / table D5F54, then C7C80's signed setup.
+        const int gravity=std::max(500,distance<27?nativeSubtract(8462,nativeMultiply(270,distance)):
+            nativeSubtract(1224,nativeMultiply(72,distance)));
+        ClientMissileGraphics value;value.flags=2;value.remaining=frames;value.acceleration[2]=-gravity;
+        value.velocity[2]=nativeDivide(nativeSubtract(0,nativeMultiply(nativeMultiply(frames,frames),value.acceleration[2])/2),frames);
+        return value;
+    }
     static ClientMissileGraphics arc(int frames,int height) {
         ClientMissileGraphics value;frames=std::max(frames,1);
         value.flags=2;value.remaining=frames;value.position[2]=nativeShiftLeft(height,11);

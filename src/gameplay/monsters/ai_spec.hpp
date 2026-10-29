@@ -11,7 +11,7 @@ enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatma
                            SandRaider, SandMaggot, SandMaggotQueen, MaggotEgg, MaggotLarva,
                            ClawViper, SandLeaper, Swarm, Scarab, GreaterMummy, Mummy,
                            PantherWoman, PantherJavelin, Baboon, Vulture, BatDemon, PinHead,
-                           Summoner, Duriel, Sarcophagus, ArcaneTower, GoodNpcRanged, ThornHulk, FetishBlowgun, FetishShaman, Mosquito, FrogDemon, ClawViperEx, Willowisp, ZakarumZealot, ZakarumPriest, HighPriest, Hydra, VileMother, VileDog, FingerMage, Regurgitator, DoomKnight, AbyssKnight, OblivionKnight, Megademon, ReanimatedHorde, FrozenHorror, BloodLord, DeathMauler, BaalMinion, PutridDefiler, SiegeBeast, Imp, GenericSpawner, Minion, SuicideMinion, Overseer, MinionSpawner, Succubus, SuccubusWitch, Izual, UberIzual, Mephisto, Idle, Diablo, Nihlathak, AncientMadawc, AncientTalic, AncientKorlic, BaalTentacle, Baal, BaalClone, BaalToStairs, BaalThrone, BaalTaunt, HellMeteor, TrappedSoul, Catapult, CatapultSpotter, Tentacle, TentacleHead, EvilHole, NpcBarb, ScriptedNpc, Npc, Towner, NpcStationary, JarJar, NpcOutOfTown };
+                           Summoner, Duriel, Sarcophagus, ArcaneTower, GoodNpcRanged, ThornHulk, FetishBlowgun, FetishShaman, Mosquito, FrogDemon, ClawViperEx, Willowisp, ZakarumZealot, ZakarumPriest, HighPriest, Hydra, VileMother, VileDog, FingerMage, Regurgitator, DoomKnight, AbyssKnight, OblivionKnight, Megademon, ReanimatedHorde, FrozenHorror, BloodLord, DeathMauler, BaalMinion, PutridDefiler, SiegeBeast, Imp, GenericSpawner, Minion, SuicideMinion, Overseer, MinionSpawner, Succubus, SuccubusWitch, Izual, UberIzual, Mephisto, Idle, Diablo, Nihlathak, AncientMadawc, AncientTalic, AncientKorlic, BaalTentacle, Baal, BaalClone, BaalToStairs, BaalThrone, BaalTaunt, HellMeteor, TrappedSoul, Catapult, CatapultSpotter, Tentacle, TentacleHead, EvilHole, NpcBarb, ScriptedNpc, Npc, Towner, NpcStationary, JarJar, NpcOutOfTown, RetailEmpty, CagedWussie };
 constexpr bool townNpcAi(MonsterAiKind kind) {
     return kind==MonsterAiKind::Npc || kind==MonsterAiKind::Towner || kind==MonsterAiKind::NpcStationary || kind==MonsterAiKind::JarJar || kind==MonsterAiKind::NpcOutOfTown;
 }
@@ -34,5 +34,6 @@ struct MonsterAiProfile {
     int meleeRange = 0; // Resolved MonStats2.MeleeRng, including the 255 weapon-class sentinel.
     int retreatVelocityBonus = 0;
     int searchDistance = 35; // AiUtil::sub_6FCF2110: zero AiDist uses 35.
+    bool preserveHomeOnAiSwitch{};
 };
 } // namespace d2x

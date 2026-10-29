@@ -3,46 +3,49 @@
 #include "server/area_store.hpp"
 #include "server/systems/inventory/planning.hpp"
 #include "server/systems/items/system.hpp"
+#include "server/systems/loot/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <array>
 #include <string_view>
 namespace d2x::server::death {
-namespace {
-Vec deathDropOrigin(const AreaStore &areas,const PlayerState &player,RegionId area) {
-    auto origin=player.position;
-    const auto global=origin+areas.at(area).definition.origin;
-    // 1.13c Items RVA 11D3F uses x+2/y+3; D2MOO's gold helper
-    // transcription uses y for both coordinates, unlike its ear helper.
-    if(areas.roomAtPosition(area,origin+Vec{.5f,.5f},int(global.x)+2,int(global.y)+3)) origin=origin+Vec{2,3};
-    return origin;
-}
-DomainStatus dropGold(items::System &itemSystem,const AreaStore &areas,const PlayerState &player,const ActorContext &actor,
-    items::State &world,unsigned &remaining,std::vector<DomainFact> &facts) {
-    for(const auto &[code,definition]:player.rules.items->entries()) {
-        if(!definition.equipment.isType("gold")) continue;
-        while(remaining) {
-            const auto position=itemSystem.placement({actor.area,deathDropOrigin(areas,player,actor.area)},world.world);
-            if(!position || !definition.maxStack || world.world.items.size()>=4096) break;
-            if(!itemSystem.identityCapacity(1)) return DomainStatus::Capacity;
-            ItemInstance item;item.id=itemSystem.reserveIdentity();item.definition=code;
-            item.quantity=std::min(remaining,definition.maxStack);item.location=*position;
-            item.nativeSeed=uint32_t(item.id.value);
-            if(player.rules.skills && player.rules.skills->pd2) item.nativeFormat=104;
-            // Items' unforced constructor sets INSTORE even on death gold.
-            item.nativeProperties=true;item.nativeFlags=0x2000;
-            EquipmentValues values;values.levels.resize(player.rules.character->experience.size());
-            remaining-=item.quantity;world.goldOwners.emplace(item.id,actor.player);
-            world.equipment.items.emplace(item.id,std::move(values));
-            world.world.items.emplace(item.id,item);
-            // Player's death gold is ADDTOGROUND, not an item flip.
-            facts.emplace_back(GroundDropFact{std::move(item),false});
+DomainResult<unsigned> System::dropGold(const ActorContext &actor,unsigned amount,bool corpse,const InventoryState *ground) {
+    if(!amount) return {DomainStatus::Applied,0u};
+    const auto *player=ports_.players.find(actor.player);if(!player) return {DomainStatus::InvalidActor,{}};
+    auto &transition=state_.transitions.at(actor.actor);
+    auto &slot=corpse?transition.corpseGold:transition.penaltyGold;
+    if(!slot) {slot=Transition::GoldDrop{};slot->amount=amount;}
+    auto &drop=*slot;
+    if(drop.amount!=amount) return {DomainStatus::Stale,{}};
+    const auto remaining=[&] {return corpse || drop.created?0u:amount;};
+    if(!drop.selected) {
+        if((!corpse && uint64_t(amount)>uint64_t(player->persistent.player.level)*10000) ||
+            (corpse && amount>unsigned(INT32_MAX))) {
+            drop.selected=drop.finished=true;return {DomainStatus::Applied,remaining()};
         }
-        break;
+        const auto choice=ports_.items.selectPlayerGold(actor.area,player->position);
+        if(!choice) return {choice.status,{}};
+        drop.code=choice.value->code;drop.level=choice.value->level;
+        drop.location=ports_.items.placement({actor.area,player->position},ground?*ground:ports_.items.read().world);
+        drop.selected=true;if(!drop.location) drop.finished=true;
     }
-    return DomainStatus::Applied;
-}
+    if(drop.finished) return {DomainStatus::Applied,remaining()};
+    if(drop.queued) {
+        const auto completion=ports_.loot.takeCompletionDetail(actor.actor);
+        if(!completion) return {DomainStatus::PendingContent,{}};
+        drop.finished=true;drop.created=completion->accepted && completion->created!=0;
+        return {DomainStatus::Applied,remaining()};
+    }
+    loot::Request request;request.occurrence=transition.occurrence;
+    request.source.source=actor.actor;request.source.region=drop.location->region;
+    request.source.difficulty=ports_.settings.difficulty;request.position=drop.location->position;
+    request.environment=request.reportCompletion=true;
+    loot::NativeDrop native;native.code=drop.code;native.level=int(drop.level);native.exactPosition=true;
+    native.unforcedCreation=true;native.quantityOverride=corpse?amount:std::min(amount,2000000000u);native.goldOwner=actor.player;native.flip=false;
+    request.nativeDrops.push_back(std::move(native));
+    const auto queued=ports_.loot.queue(request);if(!queued) return {queued.status,{}};
+    drop.queued=true;return {DomainStatus::PendingContent,{}};
 }
 DomainResult<> System::begin(const ActorContext &actor) {
     const auto *player=ports_.players.find(actor.player);
@@ -62,6 +65,7 @@ DomainResult<> System::begin(const ActorContext &actor) {
         penalty=std::min<uint64_t>(record.gold,std::min(penalty,total>protectedGold?total-protectedGold:0));
     }
     std::vector<DomainFact> drops;
+    std::optional<Transition::EarDrop> ear;
     if(pvp) {
         // Fixed engine class identities in the ear payload, not CharStats row
         // indices (which may include the Expansion separator).
@@ -69,26 +73,18 @@ DomainResult<> System::begin(const ActorContext &actor) {
         const auto nativeClass=std::find(classes.begin(),classes.end(),player->definition.code);
         if(nativeClass==classes.end()) return {DomainStatus::InvalidRequest,{}};
         if(penalty>record.gold) {record.bankGold-=unsigned(penalty-record.gold);record.gold=unsigned(penalty);}
-        unsigned remaining=unsigned(penalty);
-        const auto status=dropGold(ports_.items,ports_.areas,*player,actor,world,remaining,drops);
-        if(status!=DomainStatus::Applied) return {status,{}};
-        record.gold-=unsigned(penalty)-remaining;
+        const auto gold=dropGold(actor,unsigned(penalty),false);if(!gold) return {gold.status,{}};
+        record.gold-=unsigned(penalty)-*gold.value;
+        world=ports_.items.read();
         // ITEMS_DropPlayerEar uses the prepared player class and the actual
         // victim identity, independent of the killer's continued connection.
         for(const auto &[code,definition]:player->rules.items->entries()) {
-            if(!definition.equipment.isType("play")) continue;
-            const auto origin=deathDropOrigin(ports_.areas,*player,actor.area);
-            const auto position=ports_.items.placement({actor.area,origin},world.world);
+            // ITEMS_DropPlayerEar resolves the exact 'ear' code. Other
+            // player-body-part records are not substitutes in modified MPQs.
+            if(code!="ear" || !definition.equipment.isType("play")) continue;
+            const auto position=ports_.items.placement({actor.area,player->position},world.world);
             if(!position || world.world.items.size()>=4096) break;
-            if(!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity,{}};
-            ItemInstance item;item.id=ports_.items.reserveIdentity();item.definition=code;item.level=unsigned(record.level);
-            if(player->rules.skills && player->rules.skills->pd2) item.nativeFormat=104;
-            item.nativeSeed=uint32_t(item.id.value);item.nativeProperties=true;
-            item.nativeFlags=0x2000u|0x10000u|(record.hardcore?0x8000u:0);
-            item.ear=ItemEarIdentity{unsigned(nativeClass-classes.begin()),unsigned(record.level),record.name};item.location=*position;
-            EquipmentValues values;values.levels.resize(player->rules.character->experience.size());
-            world.equipment.items.emplace(item.id,std::move(values));world.world.items.emplace(item.id,item);
-            drops.emplace_back(GroundDropFact{std::move(item),false});
+            ear=Transition::EarDrop{*position,{unsigned(nativeClass-classes.begin()),unsigned(record.level),record.name},record.hardcore};
             break;
         }
     } else if(penalty>record.gold) {
@@ -97,10 +93,8 @@ DomainResult<> System::begin(const ActorContext &actor) {
     if(!pvp) {
         // ApplyDeathPenalty drops the post-penalty PvE wallet at DT start;
         // only PvP leaves a carried remainder for the later corpse stage.
-        unsigned remaining=record.gold;
-        const auto status=dropGold(ports_.items,ports_.areas,*player,actor,world,remaining,drops);
-        if(status!=DomainStatus::Applied) return {status,{}};
-        record.gold=remaining;
+        const auto gold=dropGold(actor,record.gold,false);if(!gold) return {gold.status,{}};
+        record.gold=*gold.value;world=ports_.items.read();
     }
     uint64_t recoverableExperience=0;
     const auto &thresholds=player->rules.character->experience;
@@ -120,8 +114,30 @@ DomainResult<> System::begin(const ActorContext &actor) {
     auto plan=ports_.transactions.prepare(std::move(edit));
     if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value));
-    if(result) transition->second.recoverableExperience=recoverableExperience;
+    if(result) {
+        transition->second.recoverableExperience=recoverableExperience;
+        transition->second.ear=std::move(ear);
+        transition->second.penaltyGold.reset();
+    }
     return result;
+}
+DomainResult<> System::dropEar(const ActorContext &actor) {
+    auto &transition=state_.transitions.at(actor.actor);
+    if(!transition.ear) return {DomainStatus::Applied,std::monostate{}};
+    auto &ear=*transition.ear;
+    if(ear.queued) {
+        if(!ports_.loot.takeCompletionDetail(actor.actor)) return {DomainStatus::PendingContent,{}};
+        transition.ear.reset();return {DomainStatus::Applied,std::monostate{}};
+    }
+    loot::Request request;request.occurrence=transition.occurrence;
+    request.source.source=actor.actor;request.source.region=ear.location.region;
+    request.source.difficulty=ports_.settings.difficulty;
+    request.position=ear.location.position;request.environment=request.reportCompletion=true;
+    loot::NativeDrop drop;drop.code="ear";drop.level=int(ear.identity.level);drop.quality=ItemQuality::Normal;
+    drop.exactPosition=true;drop.ear=ear.identity;drop.namedEar=ear.named;drop.flip=false;
+    request.nativeDrops.push_back(std::move(drop));
+    const auto queued=ports_.loot.queue(request);if(!queued) return queued;
+    ear.queued=true;return {DomainStatus::PendingContent,{}};
 }
 DomainResult<> System::settle(const ActorContext &actor) {
     const auto *player = ports_.players.find(actor.player);
@@ -138,8 +154,12 @@ DomainResult<> System::settle(const ActorContext &actor) {
         return {DomainStatus::Conflict,{}};
     corpse.recoverableExperience=transition->second.recoverableExperience;
     if (corpses.size() < 16) {
-        if (!ports_.items.identityCapacity(2)) return {DomainStatus::Capacity, {}};
-        corpse.id = ports_.items.reserveIdentity(NativeUnitType::Player); corpse.items = ports_.items.reserveIdentity(std::nullopt);
+        if(!transition->second.corpseId) {
+            if (!ports_.items.identityCapacity(2)) return {DomainStatus::Capacity, {}};
+            transition->second.corpseId=ports_.items.reserveIdentity(NativeUnitType::Player);
+            transition->second.corpseItems=ports_.items.reserveIdentity(std::nullopt);
+        }
+        corpse.id=transition->second.corpseId;corpse.items=transition->second.corpseItems;
         draft.edit.inventory.containers.emplace(corpse.items, ContainerState{corpse.items, {actor.actor, ContainerKind::Corpse, int(EquipmentSlot::Count) + 1, 1}});
     }
     const auto drop = [&](EntityId id) -> bool {
@@ -171,10 +191,16 @@ DomainResult<> System::settle(const ActorContext &actor) {
     // PLRMODE_StartXY_Dead / CORPSE_Handler drops the carried remainder
     // after the DT penalty stage, including the remainder of a PvP wallet.
     auto record=player->persistent.player;
-    unsigned remaining=record.gold;
-    const auto goldStatus=dropGold(ports_.items,ports_.areas,*player,actor,world,remaining,drops);
-    if(goldStatus!=DomainStatus::Applied) return {goldStatus,{}};
-    record.gold=remaining; // Preserve an undeliverable pile on capacity failure.
+    const auto gold=dropGold(actor,record.gold,true,&world.world);if(!gold) return {gold.status,{}};
+    record.gold=*gold.value; // Retail CORPSE_Handler clears the wallet even if creation fails.
+    // Native gold was published through Loot before this equipment transaction.
+    // Keep any overflow equipment drops staged in this candidate as well.
+    auto refreshed=ports_.items.read();
+    for(const auto &fact:drops) if(const auto *drop=std::get_if<GroundDropFact>(&fact)) {
+        refreshed.world.items.emplace(drop->item.id,drop->item);
+        refreshed.equipment.items.emplace(drop->item.id,world.equipment.items.at(drop->item.id));
+    }
+    world=std::move(refreshed);
     if (corpse.id) corpses.push_back(corpse);
     world.equipment.includeSets(*equipment);
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,

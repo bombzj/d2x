@@ -75,6 +75,7 @@ struct ItemInstance {
     std::vector<SavedStat> runewordStats;
     std::string personalizedName;
     ItemLocation location;
+    std::optional<uint32_t> nativeUnitSeed; // Live constructor identity seed; not serialized in D2S.
     std::optional<uint64_t> nativePropertyRandom; // Live constructor/property stream; absent from D2S.
     ItemHandle handle() const { return {id, revision}; }
 };

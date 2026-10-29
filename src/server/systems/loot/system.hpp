@@ -28,6 +28,12 @@ struct NativeDrop {
     Adjustment adjustment{};
     bool exactPosition{},placementValid{true};
     int preferredPrefix{},preferredSuffix{};
+    std::optional<ItemEarIdentity> ear;
+    bool namedEar{};
+    bool flip{true};
+    bool unforcedCreation{};
+    std::optional<unsigned> quantityOverride;
+    std::optional<PlayerId> goldOwner;
     bool operator==(const NativeDrop &) const = default;
 };
 struct NativeTreasure {std::string name;int level{};bool operator==(const NativeTreasure &) const=default;};

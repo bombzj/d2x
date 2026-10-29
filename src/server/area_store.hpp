@@ -115,6 +115,7 @@ struct AreaDefinition : AreaMetadata {
         bool ignoreSpawnCollision{};
         int pd2SceneMarker{-1};
         bool nativeFreePlacement{};
+        bool nativeResurrected{}; // Original UNITFLAG_ISRESURRECT on successful scripted birth.
     };
     std::vector<NativePresetMonster> nativePresetMonsters;
     std::map<std::string,NativePresetMonster,std::less<>> nativeQuestMonsters;
@@ -278,6 +279,11 @@ class AreaStore {
     void publishRoomUnit(RoomUnitRegistration &) noexcept;
     bool validateRoomUnit(const RoomUnitRegistration &,EntityId) const;
     bool hasRoomUnit(EntityId id) const noexcept {return roomUnits_.contains(id);}
+    std::optional<RegionId> roomUnitRegion(EntityId id,uint8_t kind) const noexcept {
+        const auto unit=roomUnits_.find(id);
+        return unit!=roomUnits_.end() && unit->second.kind==kind && unit->second.room?
+            std::optional{unit->second.room->first}:std::nullopt;
+    }
     void moveRoomUnit(EntityId,RegionId,Vec) noexcept;
     void removeRoomUnit(EntityId) noexcept;
     void setMissileMask(RegionId,Vec,int size,bool occupied) noexcept;

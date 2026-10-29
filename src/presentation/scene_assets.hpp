@@ -29,6 +29,9 @@ struct TownAutomapCell {
 // GPU and audio handles belong to the view, never to saveable game state.
 class SceneAssets {
     Archives &archives_;
+    ClassicFont overheadFont_;
+    bool overheadFontAttempted_{};
+    std::string overheadFontFailure_;
     Table objectDefinitions_;
     std::unique_ptr<DataTable> missileDefinitions_;
     SoundCatalog soundCatalog_;
@@ -62,8 +65,8 @@ class SceneAssets {
   public:
     ~SceneAssets();
     SoundBank audio;
-    SceneAudio sceneAudio;
     SceneStreams streams;
+    SceneAudio sceneAudio;
     EscapeMenu escapeMenu;
     ClassicFont font, speechFont, skillGreenFont, characterLabelFont, characterPointFont,
         characterCompactFont, characterRedFont, hirelingBlueFont, hirelingRedFont, skillLevelBlueFont, skillLevelCompactFont,
@@ -162,6 +165,8 @@ class SceneAssets {
     } npcAlert;
     SceneAssets(Archives &archives, const ClassicData &content);
     const ProjectileVisual *ensureProjectile(int id);
+    const ClassicFont *ensureOverheadFont();
+    const std::string &overheadFontFailure() const {return overheadFontFailure_;}
     const SkillOverlayVisual *ensureOverlay(int id);
     void loadInventoryArt(const InventoryView &inventory, int palette);
     const GpuAnimation *groundItemAnimation(const InventoryItemView &) const;

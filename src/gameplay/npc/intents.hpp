@@ -7,6 +7,8 @@
 namespace d2x {
 struct IdentifyWithCain { EntityId target; };
 struct EndNpcConversation { EntityId target; };
+struct ConfirmNpcVoice { unsigned nativeClass{}; };
+struct AcknowledgeNpcGreeting { EntityId npc; };
 struct TalkToNpc {
     EntityId target;
     enum class Action { Talk, Acknowledge, Trade, Initialize } action = Action::Talk;
@@ -28,5 +30,5 @@ struct SellVendorItem { EntityId vendor; ItemHandle item; };
 using NpcIntent = std::variant<IdentifyWithCain, EndNpcConversation, TalkToNpc,
     ClaimAkaraRespec, ImbueItem, CompleteActOne, CompleteActTwo, OpenGamble,
     OpenHirelingList, HireMercenary, ResurrectHireling, RepairVendorItem,
-    BuyVendorItem, SellVendorItem, SocketQuestItem, PersonalizeQuestItem>;
+    BuyVendorItem, SellVendorItem, SocketQuestItem, PersonalizeQuestItem, AcknowledgeNpcGreeting>;
 } // namespace d2x

@@ -148,7 +148,8 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
         auto motion = [&] {
             if(monster.movementTarget) {
                 const auto target=*monster.movementTarget;
-                const bool known=target.type==0?(recipient && recipient->actor.id==target.id) || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &p){return p.second.actor==target.id;}):peer.monsters.contains(target.id);
+                const bool known=target.type==0?(recipient && recipient->actor.id==target.id) || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &p){return p.second.actor==target.id;}):
+                    target.type==2?peer.objects.contains(target.id):peer.monsters.contains(target.id);
                 if(!known) {
                     auto projected=monster;projected.movementTarget.reset();
                     return nativeMonsterMotion(projected, origin);

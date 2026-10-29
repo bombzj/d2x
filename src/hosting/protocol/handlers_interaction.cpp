@@ -1,6 +1,45 @@
 #include "gameplay_dispatch.hpp"
+#include "server/systems/objects/system.hpp"
 
 namespace d2x::hosting::handlers {
+RequestResult MercenaryMove(GameplayContext &context, net::protocol::Reader &in) {
+    const auto merc=context.entity(in.u32(),1);const auto x=in.u32(),y=in.u32();
+    server::companions::Request request{server::companions::Action::CommandMove,merc,{}};
+    request.destination=Vec{float(uint16_t(x)),float(uint16_t(y))}-context.origin;
+    return submitGameplay(context,std::move(request));
+}
+RequestResult MercenaryInteract(GameplayContext &context, net::protocol::Reader &in) {
+    const auto merc=context.entity(in.u32(),1);const auto guid=in.u32(),type=in.u32();if(type>=6) return {RequestStatus::Rejected};
+    server::companions::Request request{server::companions::Action::CommandInteract,merc,{}};
+    request.target={context.entity(guid,type),0,uint8_t(type)};
+    return submitGameplay(context,std::move(request));
+}
+RequestResult RefreshEntity(GameplayContext &context, net::protocol::Reader &in) {
+    const auto type=in.u32(),guid=in.u32();if(type>=6) return {RequestStatus::Rejected};
+    const auto target=context.entity(guid,type);if(!target) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::travel::Request{server::travel::Kind::RefreshUnit,{target,0,uint8_t(type)},{}});
+}
+RequestResult UseQuestClue(GameplayContext &context, net::protocol::Reader &in) {
+    const auto item=context.entity(in.u32(),4);
+    return submitGameplay(context,server::quests::Request{server::quests::Action::ReadClue,QuestId::SearchForCain,{},{},item});
+}
+RequestResult ClearBusy(GameplayContext &context, net::protocol::Reader &) {
+    return submitGameplay(context,server::travel::Request{server::travel::Kind::ClearBusy,{},{}});
+}
+RequestResult ConfirmNpcVoice(GameplayContext &context, net::protocol::Reader &in) {
+    return submitGameplay(context,server::npc::Request{d2x::ConfirmNpcVoice{in.u16()}});
+}
+RequestResult LegacyPlayerDeath(GameplayContext &, net::protocol::Reader &) { return {RequestStatus::Rejected}; }
+RequestResult LegacyUnknown2E(GameplayContext &, net::protocol::Reader &in) { in.u16(); return {RequestStatus::Completed}; }
+RequestResult LegacyPortal42(GameplayContext &, net::protocol::Reader &) { return {RequestStatus::Completed}; }
+RequestResult LegacyPortal43(GameplayContext &, net::protocol::Reader &) { return {RequestStatus::Completed}; }
+RequestResult PurchaseLife(GameplayContext &, net::protocol::Reader &in) { in.u32(); return {RequestStatus::Rejected}; }
+RequestResult ChangePortalDestination(GameplayContext &, net::protocol::Reader &in) { in.u32(); in.u32(); return {RequestStatus::Rejected}; }
+RequestResult HighlightDoor(GameplayContext &context, net::protocol::Reader &in) {
+    const auto target=context.entity(in.u32(),2); in.finish();
+    if(!target) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::objects::Request{{target,0,2},server::objects::Action::HighlightDoor});
+}
 RequestResult HireMercenary(GameplayContext &context, net::protocol::Reader &in) {
     const auto npc=in.u32(),name=in.u32(); in.finish();
     if(name>UINT16_MAX) return {RequestStatus::Rejected};

@@ -3,6 +3,7 @@
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
 #include "server/area_store.hpp"
+#include "world/room_terrain.hpp"
 
 #include <map>
 #include <memory>
@@ -20,6 +21,16 @@ struct PreparedArea { uint64_t request{}; AreaDefinition definition; };
 struct EnvironmentNotice {EnvironmentFact value;uint64_t revision{};};
 struct QuestPosition {RegionId area;Vec position;std::optional<RoomView> room{};};
 struct State { std::map<RegionId, AreaLease> residency; std::vector<PrepareArea> preparation; };
+struct LevelObservation {
+    RegionId area;uint64_t generation{},terrainGeneration{};
+    unsigned unloadDelay{};size_t rooms{},loadedRooms{},collisionBytes{};
+    RoomTerrainResources resources;
+};
+struct Observation {
+    std::optional<uint64_t> levelCheckTick,retirementTick;
+    size_t retirementNext{},retirementUnits{};
+    std::vector<LevelObservation> levels;
+};
 struct Ports {
     AreaStore &areas; const PlayerStore &players; const GameSettings &settings; EntityIds &ids;
     const travel::System &travel; monsters::System &monsters; const missiles::System &missiles;
@@ -60,8 +71,10 @@ class System {
     explicit System(Ports ports);
     ~System();
     const State &read() const { return state_; }
+    Observation observe() const;
     bool retiringRoom() const;
     bool awaitingRoomInputs() const;
+    std::vector<PlayerId> nativeRoomClients(RoomView) const;
     DomainResult<uint64_t> requestWaypoint(const ActorContext &,RegionId);
     DomainResult<uint64_t> requestTown(const ActorContext &);
     DomainResult<uint64_t> requestArea(const ActorContext &, RegionId);

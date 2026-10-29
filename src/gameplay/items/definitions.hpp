@@ -36,6 +36,9 @@ struct ItemDefinition {
     unsigned maxStack = 1, maxDurability = 0;
     bool beltAllowed = false, usable = false;
     bool opensCube = false;
+    bool transmogrify = false;
+    std::string transmogrifyType;
+    unsigned transmogrifyMin{},transmogrifyMax{};
     int questTag = 0; // Original base table quest identity, not a gameplay QuestId.
     std::vector<std::string> questCarryConflicts; // Native mutually exclusive quest forms.
     int targetCursor = -1; // Misc.spellicon or Books.SpellIcon; frame in cursor/spells.dc6.

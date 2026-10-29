@@ -1,4 +1,5 @@
 #include "chat_command.hpp"
+#include "chat_text.hpp"
 #include <algorithm>
 #include <charconv>
 
@@ -18,8 +19,9 @@ std::string lower(std::string_view text) {
 ChatCommand parseChatCommand(std::string_view input) {
     ChatCommand result;
     const auto invalid=[&](std::string error) { result.route=ChatRoute::Invalid;result.error=std::move(error);return result; };
-    if(input.size()>255 || !std::all_of(input.begin(),input.end(),[](unsigned char c){return c>=32 && c<127;}))
-        return invalid("Chat requires at most 255 printable ASCII bytes.");
+    const auto encoded=encodeChatText(input);
+    if(!encoded || encoded->size()>255)
+        return invalid("Chat requires at most 255 native text bytes.");
     input=trim(input);
     if(input.empty()) return invalid("Enter a message or command.");
     const auto space=input.find(' ');

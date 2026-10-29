@@ -116,7 +116,7 @@ DomainResult<> System::revive(const ActorContext &actor,const SkillCastSpec &ski
     body.nativeStats=attributes::prepareReviveStatSources(body,*skill.summon,actor.tick,ports_.effects.unitStatSources(id,actor.tick));
     body.owner=actor.player;body.necroSummon=true;body.necroPet=skill.summon->necro;body.hostile=false;++body.allegianceRevision;++body.revision;
     body.rule.noTreasure=body.rule.noExperience=true;body.rule.corpseSelectable=false;body.rule.petType=skill.summon->petType;
-    body.petRegistrationOrder=0;body.inactivePet=false;
+    body.petRegistrationOrder=0;body.inactivePet=body.petUnregistered=false;
     body.collisionPattern=nativeUnitCollisionPattern(body.rule.size,!body.rule.curseAiInteract);
     body.petStats.attributes.maxLifeFixed=Fixed8::fromRaw(nativeStatValue(body.nativeStats->values,*body.rule.stats,"maxhp"));
     body.petStats.attributes.maxLife=std::max(1,body.petStats.attributes.maxLifeFixed.raw()>>8);

@@ -14,6 +14,11 @@ bool EventOutbox::hasCapacity(size_t count, size_t batches) const {
 }
 DomainResult<uint64_t> EventOutbox::publish(EventBatch batch) {
     if (batch.facts.empty()) return {DomainStatus::InvalidRequest, std::nullopt};
+    if(std::any_of(batch.facts.begin(),batch.facts.end(),[](const auto &fact) {
+        const auto *sound=std::get_if<SoundFact>(&fact);return sound && !sound->directSound;
+    })) {
+        std::vector<EventBatch> group;group.push_back(std::move(batch));return publishGroup(std::move(group));
+    }
     if (!hasCapacity(batch.facts.size())) return {DomainStatus::Capacity, std::nullopt};
     const auto sequence = next_;
     batch.sequence = sequence;
@@ -24,6 +29,35 @@ DomainResult<uint64_t> EventOutbox::publish(EventBatch batch) {
     return {DomainStatus::Applied, sequence};
 }
 DomainResult<uint64_t> EventOutbox::publishGroup(std::vector<EventBatch> group) {
+    const bool attached=std::any_of(group.begin(),group.end(),[](const auto &batch) {
+        return std::any_of(batch.facts.begin(),batch.facts.end(),[](const auto &fact) {
+            const auto *sound=std::get_if<SoundFact>(&fact);return sound && !sound->directSound;
+        });
+    });
+    if(!attached) return publishReadyGroup(std::move(group));
+    auto sounds=unitSounds_;auto nextOrder=nextSoundOrder_;
+    for(auto &batch:group) {
+        if(batch.facts.empty()) return {DomainStatus::InvalidRequest,{}};
+        std::erase_if(batch.facts,[&](const auto &fact) {
+            const auto *sound=std::get_if<SoundFact>(&fact);if(!sound || sound->directSound) return false;
+            auto found=sounds.find(sound->actor);
+            if(found==sounds.end()) {
+                if(nextOrder==UINT64_MAX) return false;
+                found=sounds.emplace(sound->actor,UnitSound{{},nextOrder++}).first;
+            }
+            found->second.batch={0,batch.tick,batch.transaction,batch.audience,{*sound}};return true;
+        });
+        // An exhausted order must reject the entire originating operation.
+        if(std::any_of(batch.facts.begin(),batch.facts.end(),[](const auto &fact) {
+            const auto *sound=std::get_if<SoundFact>(&fact);return sound && !sound->directSound;
+        })) return {DomainStatus::Capacity,{}};
+    }
+    std::erase_if(group,[](const auto &batch){return batch.facts.empty();});
+    const auto sent=group.empty()?DomainResult<uint64_t>{DomainStatus::Applied,0}:publishReadyGroup(std::move(group));
+    if(sent) {unitSounds_.swap(sounds);nextSoundOrder_=nextOrder;}
+    return sent;
+}
+DomainResult<uint64_t> EventOutbox::publishReadyGroup(std::vector<EventBatch> group) {
     size_t count = 0;
     for (const auto &batch : group) {
         if (batch.facts.empty() || batch.facts.size() > 4096 - count) return {DomainStatus::InvalidRequest, {}};
@@ -44,6 +78,26 @@ DomainResult<uint64_t> EventOutbox::publishGroup(std::vector<EventBatch> group) 
     next_ += group.size(); facts_ += count;
     for (size_t i = previous; i < batches_.size(); ++i) observe(batches_[i]);
     return {DomainStatus::Applied, first};
+}
+bool EventOutbox::hasPendingSound(EntityId actor) const {
+    return unitSounds_.contains(actor);
+}
+DomainResult<uint64_t> EventOutbox::flushUnitSounds(uint64_t tick,const std::function<std::optional<RegionId>(const SoundFact &)> &region) {
+    std::vector<const UnitSound *> ordered;ordered.reserve(unitSounds_.size());
+    for(const auto &[actor,sound]:unitSounds_) {(void)actor;ordered.push_back(&sound);}
+    std::sort(ordered.begin(),ordered.end(),[](const auto *left,const auto *right){return left->order<right->order;});
+    uint64_t sequence=0;
+    for(const auto *entry:ordered) {
+        auto batch=entry->batch;auto &sound=std::get<SoundFact>(batch.facts.front());
+        const auto actor=sound.actor;
+        const auto area=region(sound);if(!area) {unitSounds_.erase(actor);continue;}
+        sound.area=*area;batch.tick=tick;
+        if(batch.audience.kind==AudienceKind::Area) batch.audience.area=*area;
+        std::vector<EventBatch> group;group.push_back(std::move(batch));
+        const auto sent=publishReadyGroup(std::move(group));if(!sent) return sent;
+        sequence=*sent.value;unitSounds_.erase(actor);
+    }
+    nextSoundOrder_=1;return {DomainStatus::Applied,sequence};
 }
 bool EventOutbox::acknowledge(uint64_t sequence) {
     if (sequence == acknowledged_) return true;
@@ -71,12 +125,15 @@ void EventOutbox::observe(const EventBatch &batch) noexcept {
             else if constexpr (std::is_same_v<T, ManaFact>) { event.actor = value.actor; event.value = int64_t(value.mana.raw()); }
             else if constexpr (std::is_same_v<T, ResourcesFact>) {event.actor=value.actor;event.value=value.after.life.raw();event.secondary=value.after.mana.raw();}
             else if constexpr (std::is_same_v<T, ObjectFact>) {event.actor=value.actor;event.target=value.object;event.area=value.area;event.value=value.mode;event.secondary=value.shrine.value_or(-1);event.position=value.position;}
+            else if constexpr (std::is_same_v<T, UnitRefreshFact>) {event.actor=value.actor;event.area=value.area;event.position=value.position;event.value=value.type;}
+            else if constexpr (std::is_same_v<T, QuestClueFact>) {event.value=value.quest;}
             else if constexpr (std::is_same_v<T, SoundFact>) {event.actor=value.actor;event.value=value.sound;}
             else if constexpr (std::is_same_v<T, ItemTargetingFact>) {event.actor=value.source;event.value=value.cursor;event.secondary=value.skill;}
             else if constexpr (std::is_same_v<T, OverlayFact>) {event.actor=value.actor;event.value=value.overlay;}
             else if constexpr (std::is_same_v<T, QuestStatusFact>) {event.value=int(value.quest);event.secondary=value.status;}
             else if constexpr (std::is_same_v<T, QuestEffectFact>) event.value=value.effect;
             else if constexpr (std::is_same_v<T, MonsterClassHintFact>) {event.actor=value.actor;event.value=value.nativeClass;}
+            else if constexpr (std::is_same_v<T, QuestAlertFact>) {event.actor=value.actor;event.value=value.type;}
             else if constexpr (std::is_same_v<T, StateFact>) { event.actor = value.actor; event.value = value.state; event.secondary = value.enabled; }
             else if constexpr (std::is_same_v<T, SkillPulseFact>) { event.actor=value.owner; event.target=value.target; event.value=value.skill; event.secondary=value.rank; event.position=value.position; }
             else if constexpr (std::is_same_v<T, SkillEndFact>) {event.actor=value.actor;event.value=value.skill;}

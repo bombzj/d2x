@@ -396,7 +396,7 @@ void SceneView::drawUi(Vec mouse) const {
             const auto *item = inventoryView_.item(targeting->id);
             const auto *definition = item ? inventoryView_.definition(item->definition) : nullptr;
             if (definition && item->revision == targeting->revision && definition->targetCursor >= 0) {
-                pointer = assets_.targetingCursors.frame(0, definition->targetCursor);
+                pointer = assets_.targetingCursors.frame(0, inventoryView_.targetingCursor>=0?inventoryView_.targetingCursor:definition->targetCursor);
                 // spells.dc6 points from its top-left; it does not use ohand's origin.
                 hotspot = {};
             }

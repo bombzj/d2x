@@ -15,6 +15,7 @@
 #include "server/runtime/skill_rules.hpp"
 #include "server/systems/attributes/pd2/map_values.hpp"
 #include "server/systems/travel/system.hpp"
+#include "server/systems/quests/system.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <map>
 #include <vector>
@@ -297,8 +298,16 @@ ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors
             attributes::preparePd2MapMonster(candidate,*area->definition.pd2Map,ports_.frameEvents.currentFrame(),!candidate.alive(),ports_.travel.read().pd2SceneParticipants,area->definition.pd2RuntimeGlobal);
     auto birthEffects=ports_.effects.prepareBirthEffects(result.actors);
     if(!birthEffects.units.empty()) result.birthEffects=std::make_shared<effects::BirthEffectsPublication>(std::move(birthEffects));
+    preparePrisonerDeaths(result);
     if(!validateActors(result)) throw std::invalid_argument("Invalid staged actor publication");
     return result;
+}
+void System::preparePrisonerDeaths(ActorPublication &plan) const {
+    std::map<EntityId,quests::PrisonerDeathPublication> callbacks;
+    for(const auto &[id,candidate]:plan.actors)
+        if(auto callback=ports_.quests.preparePrisonerDeath(candidate,plan.actors,plan.publicationOrder))
+            callbacks.emplace(id,std::move(*callback));
+    plan.prisonerDeaths.swap(callbacks);
 }
 bool System::validateActors(const ActorPublication &plan) const {
     if(plan.birthEffects && !ports_.effects.validateBirthEffects(*plan.birthEffects)) return false;
@@ -307,6 +316,12 @@ bool System::validateActors(const ActorPublication &plan) const {
     if(plan.identities && (!ports_.ids.validate(*plan.identities) || plan.identities->first()!=plan.cursor ||
         plan.identities->next()-plan.cursor!=plan.allocatedIds)) return false;
     if(plan.allocatedIds && !plan.identities) return false;
+    for(auto it=plan.publicationOrder.begin();it!=plan.publicationOrder.end();++it)
+        if(!plan.actors.contains(*it) || std::find(plan.publicationOrder.begin(),it,*it)!=it) return false;
+    for(const auto &[id,callback]:plan.prisonerDeaths) {
+        const auto candidate=plan.actors.find(id);const auto *live=find(id);
+        if(callback.unit!=id || candidate==plan.actors.end() || candidate->second.alive() || !live || !live->alive()) return false;
+    }
     for(const auto &[id,revision]:plan.removals) {
         const auto *live=find(id);
         if(!live || live->revision!=revision || plan.actors.contains(id) || !canRemove(id)) return false;
@@ -314,7 +329,7 @@ bool System::validateActors(const ActorPublication &plan) const {
     size_t additions=0,registrations=0,wanderRegistrations=0;
     for(const auto &[id,candidate]:plan.actors) {
         if(candidate.id!=id || !ports_.areas.find(candidate.area) || (candidate.roomless && (!candidate.hireling || candidate.alive()))) return false;
-        if(candidate.owner && !candidate.conversion && candidate.rule.petType>0 && !candidate.petRegistrationOrder) ++registrations;
+        if(candidate.owner && !candidate.conversion && candidate.rule.petType>0 && !candidate.petRegistrationOrder && !candidate.petUnregistered) ++registrations;
         const auto expected=plan.expected.find(id);const auto *live=find(id);
         if(expected!=plan.expected.end()) {
             if(!live || live->revision!=expected->second || expected->second==UINT64_MAX || candidate.revision<=expected->second) return false;
@@ -322,7 +337,10 @@ bool System::validateActors(const ActorPublication &plan) const {
                 const auto &placement=*candidate.revivalPosition;
                 const auto *owner=candidate.owner?ports_.players.find(*candidate.owner):nullptr;
                 const auto *area=ports_.areas.find(placement.area);
-                if(!live->hireling || live->alive() || !candidate.hireling || !candidate.alive() || candidate.roomless ||
+                const bool resurrection=live->hireling && !live->alive() && candidate.hireling && live->owner==candidate.owner;
+                const bool following=live->alive() && live->owner==candidate.owner && live->rule.petType==candidate.rule.petType &&
+                    owner && owner->rules.skills && (candidate.hireling || owner->rules.skills->warpPetTypes.contains(candidate.rule.petType));
+                if((!resurrection && !following) || !candidate.alive() || candidate.roomless ||
                     !owner || !owner->entered || !area || area->generation!=placement.generation ||
                     candidate.area!=owner->area || placement.area!=candidate.area ||
                     placement.position.x!=candidate.position.x || placement.position.y!=candidate.position.y ||
@@ -356,8 +374,10 @@ void System::publishActors(ActorPublication &plan) noexcept {
     if(!validateActors(plan)) std::terminate();
     if(plan.identities) ports_.ids.publish(*plan.identities);
     for(const auto &[id,revision]:plan.removals) {(void)revision;if(!remove(id)) std::terminate();}
+    size_t order=0;
     while(!plan.actors.empty()) {
-        auto node=plan.actors.extract(plan.actors.begin());registerPet(node.mapped());const auto live=state_.actors.find(node.key());
+        const auto next=order<plan.publicationOrder.size()?plan.actors.find(plan.publicationOrder[order++]):plan.actors.begin();
+        auto node=plan.actors.extract(next);const auto id=node.key();registerPet(node.mapped());const auto live=state_.actors.find(id);
         if(live==state_.actors.end() && node.mapped().wanderTargetOrder) node.mapped().wanderTargetOrder=state_.nextWanderTargetOrder++;
         node.mapped().birthUniquesExpected.reset();node.mapped().birthLimitedUniques.clear();
         node.mapped().initialEffects.reset();
@@ -365,7 +385,8 @@ void System::publishActors(ActorPublication &plan) noexcept {
         if(!node.mapped().alive() && (!node.mapped().owner || node.mapped().conversion))
             ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,node.key()},FrameEventType::AiThink,0);
         if(live!=state_.actors.end()) {
-            if(live->second.alive() && !node.mapped().alive()) ports_.areas.recordMonsterDeath(node.key());
+            if(live->second.alive() && !node.mapped().alive() && !(node.mapped().questNpc && node.mapped().nativeMode==12))
+                ports_.areas.recordMonsterDeath(node.key());
             if(node.mapped().revivalPosition) {
                 ports_.areas.setUnitCollision(node.key(),{});
                 ports_.areas.moveRoomUnit(node.key(),node.mapped().area,node.mapped().position);
@@ -375,6 +396,8 @@ void System::publishActors(ActorPublication &plan) noexcept {
             refreshCollision(live->second);
         }
         else {ports_.areas.publishRoomUnit(*node.mapped().roomAdmission);const auto inserted=state_.actors.insert(std::move(node));refreshCollision(inserted.position->second);}
+        if(const auto callback=plan.prisonerDeaths.find(id);callback!=plan.prisonerDeaths.end())
+            ports_.quests.publishPrisonerDeath(callback->second);
     }
     if(plan.birthEffects) ports_.effects.publishBirthEffects(*plan.birthEffects);
     std::erase_if(birthEquipment_,[&](const auto &entry){return state_.actors.contains(entry.second.first.actor);});
@@ -457,7 +480,10 @@ DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec positio
     auto &pet=found->second;if(!area->definition.collision.walkable(position,pet.rule.collision)) return {DomainStatus::Unavailable,{}};
     for(const auto &[other,body]:state_.actors) if(other!=id && body.alive() && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }
-    stop(id);pet.area=owner.area;pet.position=position;ports_.areas.moveRoomUnit(id,pet.area,pet.position);refreshCollision(pet);pet.busyUntil=owner.tick;pet.neutralAt.reset();pet.frozenUntil=pet.chilledUntil=0;++pet.revision;return {DomainStatus::Applied,std::monostate{}};
+    const bool stopping=!pet.route.empty() || pet.moving || pet.running;
+    if(pet.revision==UINT64_MAX || (stopping && pet.revision==UINT64_MAX-1)) return {DomainStatus::Capacity,{}};
+    // SUnit::sub_6FCBDFE0 relocates the dynamic path, not the state lists.
+    stop(id);pet.pathStep={};pet.area=owner.area;pet.position=position;ports_.areas.moveRoomUnit(id,pet.area,pet.position);refreshCollision(pet);pet.busyUntil=owner.tick;pet.neutralAt.reset();++pet.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::stageRetirements(effects::AuraUnitPublication &publication,std::span<const EntityId> ids,uint64_t tick) const {
     for(const auto id:ids) {

@@ -222,8 +222,7 @@ DomainResult<> System::block(EntityId id,uint64_t tick) {
         const int reactionTicks=recoveryTicks(actor,ports_.effects,tick,true);
         const uint8_t percent=monsterLifeRatio(actor.life,actor.maximumLife);
         HitFact hit{id,1,actor.area,percent,false,actor.position,0,6};
-        if(actor.movementTarget && nativePathTarget(ports_.players,*this,actor.movementTarget,actor.area))
-            hit.actionTarget=MotionTarget{actor.movementTarget,uint8_t(ports_.players.findActor(actor.movementTarget)?0:1)};
+        if(actor.movementTarget) hit.actionTarget=nativeTargetIdentity(actor.movementTarget,actor.area);
         auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{hit}});
         if(!result) return {result.status,{}};
         stop(id);recordNativeMode(actor,6);++actor.interruption;actor.reactionMode=6;actor.reactionUntil=tick+std::min<uint64_t>(reactionTicks,UINT64_MAX-tick);actor.busyUntil=actor.reactionUntil;actor.neutralAt=actor.reactionUntil;++actor.revision;
@@ -296,6 +295,6 @@ DomainResult<> System::remove(EntityId id) {
     if(!canRemove(id)) return {DomainStatus::Unavailable,{}};
     const auto it=state_.actors.find(id);
     stopScriptedMotion(id);
-    ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});ports_.areas.removeRoomUnit(id);state_.actors.erase(it);return {DomainStatus::Applied,std::monostate{}};
+    ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);state_.actors.erase(it);return {DomainStatus::Applied,std::monostate{}};
 }
 } // namespace d2x::server::monsters

@@ -17,7 +17,7 @@ struct SoundActorView {
     float movementCycle = 0;
 };
 struct PresentationSoundEvent {
-    enum class Kind { Attack1, Attack2, Skill1, Skill2, Skill3, Skill4, Hit, Death, Cast, LevelUp, NeedKey, Original, ObjectMode };
+    enum class Kind { Attack1, Attack2, Skill1, Skill2, Skill3, Skill4, Hit, Death, Cast, LevelUp, NeedKey, Original, ObjectMode, Voice, DenComplete, NihlathakComplete };
     Kind kind = Kind::Cast;
     EntityId source;
     uint64_t actionRevision = 0;

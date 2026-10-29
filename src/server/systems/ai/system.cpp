@@ -18,6 +18,16 @@
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 namespace d2x::server::ai {
+DomainResult<> System::replacePetCommand(EntityId id,uint8_t code,UnitTarget target,std::optional<Vec> destination,uint64_t tick) {
+    const auto found=state_.controllers.find(id);const auto *unit=ports_.monsters.find(id);
+    if(found==state_.controllers.end() || !unit || !unit->alive() || (code!=12 && code!=13)) return {DomainStatus::InvalidRequest,{}};
+    std::deque<Controller::Command> next{{code,target,0,destination}};
+    const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},unit->area},{SoundFact{id,1,unit->area,15}}});
+    if(!sent) return {sent.status,{}};
+    found->second.commands.swap(next);
+    return {DomainStatus::Applied,std::monostate{}};
+}
+
 DomainResult<> System::perform(Controller &controller,std::function<DomainResult<>()> operation) {
     if(!controller.randomPublished) {
         const auto consumed=ports_.monsters.consumeRandom(controller.actor,controller.randomExpected,controller.random);
@@ -82,7 +92,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             controller.pending.pop_front();
             if(!result) {controller.pending.clear();break;}
         }
-        if(controller.pd2CancelAi) {ports_.monsters.cancelAi(id);controller.pd2CancelAi=false;}
+        if(controller.cancelAi || controller.pd2CancelAi) {ports_.monsters.cancelAi(id);controller.cancelAi=controller.pd2CancelAi=false;}
         else ports_.monsters.scheduleAi(id,controller.nextDecision);
         return StepStatus::Complete;
     }
@@ -111,7 +121,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             // commands on an actual function switch; selector-only Confuse
             // and Attract do not reset the family controller.
             const auto function=monster.curseControl.ai==CurseAi::DimVision || monster.curseControl.ai==CurseAi::Terror || monster.curseControl.ai==CurseAi::Taunt?monster.curseControl.ai:CurseAi::None;
-            const bool hasAlternative=monster.rule.ai.kind==MonsterAiKind::SandMaggot || monster.rule.ai.kind==MonsterAiKind::BatDemon ||
+            const bool hasAlternative=monster.rule.ai.preserveHomeOnAiSwitch || monster.rule.ai.kind==MonsterAiKind::SandMaggot || monster.rule.ai.kind==MonsterAiKind::BatDemon ||
                 (monster.rule.ai.kind==MonsterAiKind::FrogDemon && function==CurseAi::Taunt && controller.phase>=2);
             const bool defer=!controller.alternateAi && controller.function==CurseAi::None && function!=CurseAi::None && hasAlternative;
             controller.observedAiFunctionRevision=monster.aiFunctionRevision;controller.function=function;controller.alternateAi=defer;
@@ -148,6 +158,19 @@ StepStatus System::think(EntityId id,TickContext tick) {
         const auto *room=area.definition.activation.room(monster.position);
         const bool requireSight=room && !room->checkLosDraw && !controller.acquiredTarget;
         if(controller.alternateAi) {
+            if(monster.rule.ai.preserveHomeOnAiSwitch) {
+                // Retail 145/147 retain the nonempty Baal/Diablo switch
+                // callback: clear INFERNO, preserve command10, then NU1.
+                const int inferno=monster.rule.formulas?monster.rule.formulas->infernoState:-1;
+                if(inferno>=0 && ports_.effects.unitStates(id,tick.tick).contains(inferno)) {
+                    const auto cleared=ports_.monsters.toggleAiState(id,inferno,false,tick.tick);
+                    if(!cleared) return isDeferred(cleared.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+                }
+                if(monster.aiHomeCommand && monster.aiHomeCommand->x!=0 && monster.aiHomeCommand->y!=0)
+                    controller.homeCommand=monster.aiHomeCommand;
+                else {controller.homeCommand.reset();ports_.monsters.resetAiFunctionMemory(id);}
+                controller.commands.clear();ports_.monsters.neutralMode(id);
+            }
             if(monster.rule.ai.kind==MonsterAiKind::FrogDemon && controller.phase>=2) {
                 const auto skill=uint16_t(monster.rule.skillIds[0]);const auto &definition=monster.rule.skillActions.at(skill);
                 const auto cast=requestAction(controller,{id,skill,UnitTarget{id,0,1},tick.tick,definition.nativeMode});
@@ -257,7 +280,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
         if(!blind && !rescheduled && !timedMovement && !monster.burrowed && !monster.airborne &&
            controller.pursuing && !monster.route.empty()) {
             if(monster.movementTarget && tick.tick>=controller.nextPath) {
-                const auto destination=ports_.monsters.targetPosition(monster.movementTarget,monster.area);
+                const auto destination=ports_.monsters.nativeTargetPosition(monster.movementTarget,monster.area);
                 if(!destination) {ports_.monsters.stop(id);controller.pursuing=false;}
                 else if(destination->first.x!=monster.movementGoal.x || destination->first.y!=monster.movementGoal.y) {
                     const auto moved=ports_.monsters.requestMove({id,{monster.area,area.generation,destination->first},
@@ -296,6 +319,9 @@ StepStatus System::think(EntityId id,TickContext tick) {
             } else {ports_.monsters.stop(id);controller.nextDecision=tick.tick+10;}
             continue;
         }
+        if(monster.rule.ai.kind==MonsterAiKind::CagedWussie) {
+            blocked|=cagedWussieFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
         if(monster.rule.ai.kind==MonsterAiKind::NpcBarb) {
             blocked|=npcBarbFamily(id,tick,controller)==StepStatus::Blocked;continue;
         }
@@ -322,6 +348,11 @@ StepStatus System::think(EntityId id,TickContext tick) {
         }
         if(monster.rule.ai.kind==MonsterAiKind::BaalToStairs) {
             blocked|=baalToStairsFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::RetailEmpty) {
+            // A native empty callback installs no replacement AITHINK event.
+            // Keep shared mode/damage/curse handling outside this AI branch.
+            ports_.monsters.cancelAi(id);return StepStatus::Complete;
         }
         if(monster.rule.ai.kind==MonsterAiKind::Idle) {
             ports_.monsters.neutralMode(id);controller.pursuing=false;controller.nextDecision=tick.tick+200;continue;
@@ -545,7 +576,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             controller.randomPublished=true;
         }
         if(!controller.pending.empty()) return StepStatus::Blocked;
-        if(controller.pd2CancelAi) {ports_.monsters.cancelAi(id);controller.pd2CancelAi=false;return StepStatus::Complete;}
+        if(controller.cancelAi || controller.pd2CancelAi) {ports_.monsters.cancelAi(id);controller.cancelAi=controller.pd2CancelAi=false;return StepStatus::Complete;}
         ports_.monsters.scheduleAi(id,controller.nextDecision,
             std::max({live->busyUntil,live->frozenUntil,live->stunnedUntil,live->knockedUntil}));
     }

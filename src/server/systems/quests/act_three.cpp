@@ -200,7 +200,7 @@ DomainResult<> System::operateActThree(const ActorContext &actor,EntityId source
         return prepareReward(actor,source,RewardKind::LamTome,false);
     }
     if(operation==53 && int(actor.area)==83) {
-        if(state_.actThree.orbSmashed || !detail::equippedQuestWeapon(*p,items.khalimWill,ports_.settings.difficulty)) return {DomainStatus::Conflict,{}};
+        if(state_.actThree.orbSmashed || !detail::equippedQuestWeapon(*p,items.khalimWill)) return {DomainStatus::Conflict,{}};
         if(!state_.actThree.orbHits) {state_.actThree.orbHits=1;return {DomainStatus::Applied,std::monostate{}};}
         return prepareReward(actor,source,RewardKind::SmashOrb,false,position);
     }
@@ -211,6 +211,10 @@ DomainResult<> System::operateActThree(const ActorContext &actor,EntityId source
 std::optional<int> System::objectMode(RegionId region,EntityId id,int definition,int operation,uint64_t tick) const {
     const auto *area=ports_.areas.find(region);if(!area) return {};
     if(int(region)==40 && definition==318) return state_.npcStory.palaceOpen?2:0;
+    if(id==state_.actFour.forgeObject && operation==49) {
+        if(state_.actFour.forgeSmashed) return state_.actFour.forgeStarted?4:3;
+        if(state_.actFour.forgePlaced) return tick<state_.actFour.forgeOpenAt?1:2;
+    }
     if(id==state_.npcStory.ormusAltar && state_.npcStory.ormusActivated) {
         const auto object=ports_.objects.read().objects.find(id);
         if(object!=ports_.objects.read().objects.end() && object->second.until>tick) return {};

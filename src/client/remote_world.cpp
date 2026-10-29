@@ -867,7 +867,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     case 0x3F: {
         const auto cursor = r.u8(); const auto source = r.u32(); r.u16(); r.finish();
-        ++w.itemTargetingRevision;
+        ++w.itemTargetingRevision;w.itemTargetingCursor=cursor==255?-1:int(cursor);
         if (cursor == 255) w.itemTargetingSource.reset();
         else w.itemTargetingSource = source;
         break;
@@ -939,6 +939,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             ++w.ignoredPackets; ++v.gameProtocol.unconsumed[p.id]; break;
         }
         w.quests.npcIntroductionReports[act] = introductions;
+        for (const auto npc : introductions) if (npc != UINT16_MAX) w.quests.npcReturnGreetings.insert(npc);
         w.quests.revision = w.revision;
         break;
     }
@@ -964,6 +965,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         if (id == 1) {
             w.quests.denRemaining = payload[0]; w.quests.staffTombOffset = payload[1];
             w.quests.rescuedBarbsRemaining = payload[2]; w.quests.revision = w.revision;
+        } else if(id==13) {
+            if(payload[0]>=7) throw net::protocol::ProtocolError("Invalid native staff tomb offset");
+            w.quests.staffTombOffset=payload[0];w.quests.revision=w.revision;
         } else if(id==4) {
             std::array<int,5> stones{};unsigned seen=0;
             for(size_t index=0;index<stones.size();++index) {
@@ -1222,7 +1226,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     case 0x89: {
         const auto effect=r.u8();r.finish();
-        if(effect<20) w.questEffects|=uint32_t{1}<<effect;
+        if(effect<20) {
+            w.questEffects|=uint32_t{1}<<effect;
+            if(w.questEffectOccurrences[effect]==UINT64_MAX) throw ProtocolError("Quest effect sequence exhausted");
+            ++w.questEffectOccurrences[effect];
+        }
         // Retail effect18 only sets this bit; its immediate callback is null.
         break;
     }
