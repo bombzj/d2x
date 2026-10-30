@@ -100,10 +100,12 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     };
     if(program.smite && !p.totals.equipment.shield) return {DomainStatus::Unavailable,{}};
     if(p.persistent.player.mana<skill.manaCost && (program.frenzy || (program.spear && program.spear->attackWithoutMana) || skill.effect==SkillBehavior::PoisonDagger)) return attack(actor,request,0);
-    const auto *weapon=program.commonAttack?commonAttackWeapon(p.totals.equipment,program.thrown,program.leftHand):std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
+    // Use data() instead of begin() to match commonAttackWeapon's pointer return type.
+    // MSVC 19.44 array iterators are not pointers: mixing them causes C2679, then C3536/C2446.
+    const auto *weapon=program.commonAttack?commonAttackWeapon(p.totals.equipment,program.thrown,program.leftHand):std::find_if(p.totals.equipment.weapons.data(),p.totals.equipment.weapons.data()+p.totals.equipment.weaponCount,
         [&](const auto &w){return !w.leftHand && (program.smite ||
             matchesWeapon(w));});
-    if(!weapon || weapon==p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount || weapon->fasterAttack<=-120 ||
+    if(!weapon || weapon==p.totals.equipment.weapons.data()+p.totals.equipment.weaponCount || weapon->fasterAttack<=-120 ||
         (program.thrown && !weapon->throwable) || p.persistent.player.mana<skill.manaCost) return {DomainStatus::Unavailable,{}};
     if((program.commonAttack || program.dualWield) && (weapon->ranged || program.thrown)) {
         if(!weapon->projectile) return {DomainStatus::Unavailable,{}};

@@ -34,6 +34,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 原版与PD2／CN版本选择、发行方式、初始化及资源／协议差异 | [版本选择与兼容设计](architecture/PD2_COMPATIBILITY.md#版本选择与发布方式)、[CN样本DLL／位流取证](resources/PD2_CN_DLL_ANALYSIS.md)、[ProjectDiablo完整函数目录与概览](resources/pd2-core/README.md) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[调试任务AI](development/DEBUG_AI.md)、[崩溃记录](development/CRASH_REPORTS.md) |
 | 代码结构优化候选、取样依据与重新评估条件 | [代码待优化](development/CODE_OPTIMIZATION_TODO.md)，不替代功能优先级，也不表示已实施 |
+| 头文件依赖收缩、属性结果／规则分离与增量构建验收 | [编译依赖收缩设计](development/BUILD_DEPENDENCY_OPTIMIZATION.md)，设计待审核，源码未实施 |
 | 单机同线程、TCP/IP 独立宿主线程、战网多游戏线程 | [宿主线程改造简明方案](architecture/HOST_RUNTIME_RECONSTRUCTION.md)，含原版核对、实施范围和未验证边界 |
 | 原版人物数值对照的存档装配、已采范围、覆盖矩阵与截图数据契约 | [对照存档](development/CHARACTER_REFERENCE_FIXTURES.md) |
 | 主／副键设置、16个技能快捷槽与全角色共享偏好 | [ESC按键设置](gameplay/ui/CLASSIC_HUD.md#esc-菜单)、[偏好格式与保存](modules/SAVES.md#客户端偏好凭据与探索) |

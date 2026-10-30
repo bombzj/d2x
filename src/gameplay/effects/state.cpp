@@ -13,7 +13,9 @@ void CombatEffectSet::collectEntityReferences(std::set<EntityId> &entities) cons
     for(const auto &event:storage_->skillEvents) if(event.source.entity) entities.insert(event.source.entity);
 }
 void CombatEffectSet::detach() {
-    if(!storage_.unique()) storage_=std::make_shared<Storage>(*storage_);
+    // Use use_count()!=1 instead of !unique() to detach shared snapshots before mutation.
+    // unique() was removed in C++20; MSVC 19.44 reports C2039.
+    if(storage_.use_count()!=1) storage_=std::make_shared<Storage>(*storage_);
 }
 void CombatEffectSet::scheduleExpiration(EffectFrame now,int32_t frame) {
     storage_->expirationEvents.insert({},FrameEventType::RemoveState,frame,now);

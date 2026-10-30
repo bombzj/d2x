@@ -24,6 +24,23 @@
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
+#if defined(_MSC_VER) && _MSC_VER == 1944
+namespace d2x {
+// Provide noexcept ADL swaps so the is_nothrow_swappable_v assertion below passes.
+// MSVC 19.44 STL map moves can allocate, making the original assertion fail with C2607.
+// Existing std::swap calls are unchanged; these adapters terminate if their underlying swap throws.
+void swap(PersistentCharacter &lhs, PersistentCharacter &rhs) noexcept {
+    std::swap(lhs, rhs);
+}
+void swap(server::attributes::Totals &lhs, server::attributes::Totals &rhs) noexcept {
+    std::swap(lhs, rhs);
+}
+}
+namespace d2x::server::attributes {
+using d2x::swap;
+}
+#endif
 namespace d2x::server::transactions {
 static_assert(std::is_nothrow_swappable_v<PersistentCharacter> && std::is_nothrow_swappable_v<attributes::Totals>);
 namespace {
