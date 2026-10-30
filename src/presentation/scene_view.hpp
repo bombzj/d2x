@@ -284,6 +284,8 @@ class SceneView {
 
   public:
     Rectangle worldViewport() const;
+    // Half of the actual world viewport, in projected native subtile axes.
+    Vec worldObservationExtent() const;
     Rectangle gameMenuItemBounds(int index) const;
     int gameMenuAt(Vec mouse) const;
     int gameMenuItemCount() const;

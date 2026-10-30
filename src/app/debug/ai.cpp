@@ -109,6 +109,10 @@ std::vector<DebugAi::Impl::Goal> DebugAi::Impl::parse(const Json &request) {
             // journal. Journal order is not the order of these dependencies.
             for(const auto quest:{"radaments-lair","tainted-sun","arcane-sanctuary","summoner","horadric-staff","seven-tombs"})
                 list.push_back({{"action","quest"},{"quest",quest}});
+        } else if(scenario=="act3") {
+            list=Json::array();
+            for(const auto quest:{"golden-bird","blade-of-the-old-religion","lam-esens-tome","khalims-will","blackened-temple","guardian"})
+                list.push_back({{"action","quest"},{"quest",quest}});
         } else if(scenario=="tools-of-the-trade") {
             definitions->malusSource();
             // D2MOO A1Q3: Malus is created by Objects Operate21, not a Smith drop.
@@ -169,6 +173,14 @@ std::vector<DebugAi::Impl::Goal> DebugAi::Impl::parse(const Json &request) {
 DebugAi::Impl::CombatPolicy DebugAi::Impl::parseCombat(const Json &j) const {
     CombatPolicy p;if(!j.is_object()) throw std::invalid_argument("combat must be an object");
     p.enabled=j.value("enabled",true);if(j.contains("skill")) p.skill=definitions->skill(j.at("skill"));
+    if(j.contains("fallbackSkills")) {
+        const auto &list=j.at("fallbackSkills");
+        if(!list.is_array() || list.size()>8) throw std::invalid_argument("combat.fallbackSkills must contain at most eight known active skills");
+        for(const auto &value:list) {
+            const auto id=definitions->skill(value);
+            if(id!=p.skill && std::find(p.fallbackSkills.begin(),p.fallbackSkills.end(),id)==p.fallbackSkills.end()) p.fallbackSkills.push_back(id);
+        }
+    }
     p.scope=j.value("scope",std::string("defensive"));
     if(p.scope!="defensive" && p.scope!="clear" && p.scope!="objective") throw std::invalid_argument("combat.scope must be defensive, clear or objective");
     if(j.contains("aura")) {
@@ -179,14 +191,18 @@ DebugAi::Impl::CombatPolicy DebugAi::Impl::parseCombat(const Json &j) const {
     }
     p.range=integer(j,"range",16,2,30);p.radius=integer(j,"crowdRadius",6,2,16);
     p.crowd=integer(j,"crowdCount",4,2,20);p.retreat=integer(j,"retreatDistance",8,3,20);
-    p.engage=integer(j,"engageRadius",18,4,30);return p;
+    p.engage=integer(j,"engageRadius",18,4,30);
+    p.noProgressSeconds=integer(j,"noProgressSeconds",6,3,30);
+    p.stallTimeoutSeconds=integer(j,"stallTimeoutSeconds",90,15,300);
+    if(p.stallTimeoutSeconds<p.noProgressSeconds*2) throw std::invalid_argument("combat.stallTimeoutSeconds must allow at least two observation windows");
+    p.retreatLifePercent=integer(j,"retreatLifePercent",45,5,90);p.lifeDropPercent=integer(j,"lifeDropPercent",10,1,80);return p;
 }
 DebugAi::Impl::MobilityPolicy DebugAi::Impl::parseMobility(const Json &j) const {
     if(!j.is_object()) throw std::invalid_argument("mobility must be an object");
     MobilityPolicy p;p.mode=j.value("mode",std::string("auto"));p.vigor=j.value("vigor",true);
     if(p.mode!="auto" && p.mode!="walk" && p.mode!="teleport" && p.mode!="charge")
         throw std::invalid_argument("mobility.mode must be auto, walk, teleport or charge");
-    p.distance=integer(j,"distance",24,8,30);return p;
+    p.distance=integer(j,"distance",24,8,50);return p;
 }
 void DebugAi::Impl::note(std::string event,std::string detail) {
     history.push_back({{"sequence",++sequence},{"goal",cursor},{"event",std::move(event)},{"detail",std::move(detail)}});
@@ -202,11 +218,25 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"superunique",g.target->superUnique?Json(*g.target->superUnique):Json(nullptr)}};
         plan.push_back(std::move(v));
     }
+    Json attempts=Json::array();
+    for(const auto &[point,attempt]:frontierAttempts) attempts.push_back({
+        {"point",{point.first,point.second}},{"position",{attempt.position.x,attempt.position.y}},
+        {"geometryRevision",attempt.geometryRevision},{"outcome",attempt.outcome},{"reason",attempt.reason},
+        {"reached",attempt.reached},{"retryInMs",std::max<int64_t>(0,std::chrono::duration_cast<std::chrono::milliseconds>(attempt.retryAt-Clock::now()).count())}});
+    Json localLinks=Json::array();
+    for(const auto &[key,record]:padObservations) localLinks.push_back({{"area",std::get<0>(key)},{"identity",std::get<1>(key)},
+        {"source",{std::get<2>(key),std::get<3>(key)}},{"destination",{record.destination.x,record.destination.y}},{"visits",record.visits}});
     return {{"state",state},{"active",active()},{"phase",phase},{"reason",reason},{"goalIndex",cursor},{"goals",std::move(plan)},
         {"gameGeneration",game},{"area",area?Json(*area):Json(nullptr)},{"decisionIntervalMs",debugDecisionInterval.count()},{"decisions",decisions},
         {"combatTarget",combatTarget?Json{{"type",combatTarget->type},{"id",combatTarget->id}}:Json(nullptr)},
         {"target",target?Json{{"type",target->type},{"id",target->id},{"assignment",targetAssignment}}:Json(nullptr)},
+        {"walkIntent",walkIntent},{"travel",{{"phase",unsigned(travelPhase)},
+            {"destination",travelDestination?Json(*travelDestination):Json(nullptr)},
+            {"leg",legDestination?Json(*legDestination):Json(nullptr)},
+            {"unit",legUnit?Json{{"type",legUnit->type},{"id",legUnit->id}}:Json(nullptr)}}},
         {"combatPolicy",{{"enabled",policy.enabled},{"skill",policy.skill?Json(*policy.skill):Json("Attack")},{"range",policy.range},
+            {"fallbackSkills",policy.fallbackSkills},{"noProgressSeconds",policy.noProgressSeconds},
+            {"stallTimeoutSeconds",policy.stallTimeoutSeconds},{"retreatLifePercent",policy.retreatLifePercent},{"lifeDropPercent",policy.lifeDropPercent},
             {"scope",policy.scope},
             {"aura",policy.aura?Json(*policy.aura):Json("auto")},
             {"engageRadius",policy.engage},{"crowdRadius",policy.radius},{"crowdCount",policy.crowd},{"retreatDistance",policy.retreat}}},
@@ -223,16 +253,26 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"drinksConfirmed",drinks},{"purchasesConfirmed",purchases},{"vitals",supplyVitals},{"lastPotion",lastPotion}}},
         {"questProgress",cursor<goals.size() && goals[cursor].kind==Kind::Quest?Json{
             {"quest",goals[cursor].quest},{"step",questRun.step},{"steps",goals[cursor].steps.size()},
-            {"action",questRun.step<goals[cursor].steps.size()?Json(std::array{"talk","clear","hunt","acquire","read-scroll","stones","operate","portal","return-town","imbue","act-travel","travel","use-item","combine","submit-staff"}[size_t(goals[cursor].steps[questRun.step].action)]):Json(nullptr)},
+            {"mode",goals[cursor].requirements.empty()?"steps":"conditions"},
+            {"condition",questRun.step<goals[cursor].requirements.size()?Json(goals[cursor].requirements[questRun.step].name):Json(nullptr)},
+            {"action",questRun.step<goals[cursor].steps.size()?Json(std::array{"talk","clear","hunt","acquire","read-scroll","stones","operate","portal","return-town","imbue","act-travel","travel","use-item","combine","submit-staff","search-drop","equip-weapon","smash-orb"}[size_t(goals[cursor].steps[questRun.step].action)]):Json(nullptr)},
             {"pending",questRun.pending?Json{{"action",unsigned(questRun.pending->action)},{"item",questRun.pending->item},
                 {"sequence",questRun.pending->sequence},{"unit",questRun.pending->unit?Json(questRun.pending->unit->id):Json(nullptr)}}:Json(nullptr)},
             {"clearSweeps",questRun.sweeps},{"materialPhase",questRun.materialPhase}}:Json(nullptr)},
-        {"exploration",{{"visitedRooms",visited.size()},{"observedFrontiers",exploredFrontiers.size()},
+        {"exploration",{{"visitedRooms",visited.size()},{"frontierAttempts",std::move(attempts)},
             {"knownExploredRooms",knownExploredRooms},
             {"mapCacheBuilds",mapCacheBuilds},{"pathSearches",pathSearches},{"unavailableRooms",unavailableRooms.size()},
             {"room",exploring?Json::array({std::get<0>(*exploring),std::get<1>(*exploring),std::get<2>(*exploring)}):Json(nullptr)},
             {"target",interest?Json{{"x",interest->x},{"y",interest->y}}:Json(nullptr)}}},
         {"pickupApproachesTried",pickupApproaches.size()},
+        {"goalExecutionRemainingMs",std::max<int64_t>(0,std::chrono::duration_cast<std::chrono::milliseconds>(goalDeadline-Clock::now()).count())},
+        {"combatFeedback",combatDiagnostics},
+        {"localTravel",{{"links",std::move(localLinks)},{"transfersWithoutDiscovery",padTransfersWithoutDiscovery},
+            {"pending",localPad?Json{{"unit",localPad->unit.id},{"area",localPad->area},{"waiting",localPad->waiting},
+                {"source",{localPad->source.x,localPad->source.y}},{"discontinuityBefore",localPad->discontinuity},
+                {"requestRevision",localPad->requestRevision}}:Json(nullptr)}}},
+        {"questPlan",questPlanDiagnostics},
+        {"actions",actionDiagnostics},{"navigationDiagnostics",{{"search",searchDiagnostics},{"approach",approachDiagnostics},{"mobility",mobilityDiagnostics},{"travel",travelDiagnostics}}},
         {"castRequests",castRequests},{"navigationGoals",moveGoals},{"interactions",interactions},{"history",history}};
 }
 void DebugAi::Impl::stop(DebugAutoWalk &walk,RemoteControl &control,RemoteCombat &combat) {
@@ -240,24 +280,34 @@ void DebugAi::Impl::stop(DebugAutoWalk &walk,RemoteControl &control,RemoteCombat
     OnlineCombatCommand command;command.action=OnlineCombatCommand::Action::Stop;
     try {if(!combat.submit(command)) note("stop-unavailable",combat.reason());}
     catch(const std::exception &e) {note("stop-unavailable",e.what());}
-    combatOwned=false;mobilityHold=false;mobilityTarget.reset();
+    combatOwned=false;combatRun.repeating=false;mobilityHold=false;mobilityTarget.reset();
 }
 void DebugAi::Impl::cancelWalk(Context &c) {c.walk.manualInput(c.control);c.control.cancelMovement();walkIntent=nullptr;}
 void DebugAi::Impl::finish(std::string value,std::string detail,Context &c) {
     stop(c.walk,c.control,c.combat);state=std::move(value);reason=std::move(detail);phase.clear();note(state,reason);
 }
 void DebugAi::Impl::resetStep() {
-    phase.clear();reason.clear();target.reset();targetAssignment=0;visited.clear();exploredFrontiers.clear();checkedHints.clear();unavailableRooms.clear();exploring.reset();interest.reset();searchPosition.reset();searchRetry={};
-    walkIntent=nullptr;approachHint.reset();approachFrontier.reset();operatedDoors.clear();pendingDoor.reset();doorDeadline={};
+    localPad.reset();
+    backtrackAttempts.clear();
+    observedRoomPassages.clear();
+    viewpointAttempts.clear();
+    searchDiagnostics=nullptr;approachDiagnostics=nullptr;mobilityDiagnostics=nullptr;travelDiagnostics=nullptr;
+    combatRun={};combatDiagnostics=nullptr;
+    phase.clear();reason.clear();target.reset();targetAssignment=0;visited.clear();frontierAttempts.clear();checkedHints.clear();unavailableRooms.clear();exploring.reset();interest.reset();searchPosition.reset();searchRetry={};
+    walkIntent=nullptr;approachHint.reset();approachFrontier.reset();approachDetour.reset();operatedDoors.clear();pendingDoor.reset();doorDeadline={};
+    pendingWaypoint.reset();closeWaypoint.reset();waypointDeadline={};
     travelDestination.reset();travelPhase=TravelPhase::Route;legDestination.reset();legUnit.reset();waypointDestination.reset();
+    warpRetryUsed=false;
     objectIssued=pickupIssued=portalIssued=portalAttempted=portalUsed=greetingIssued=false;
-    pickupId.reset();pickupApproaches.clear();oldPortals.clear();actionDeadline={};exitRetryAt={};npcOpenRetries=0;
-    mobilityTrials.clear();mobilityGoal.reset();mobilityProgressAt={};
+    pickupId.reset();pickupApproaches.clear();oldPortals.clear();actionDeadline={};actionWaitSubmitted=false;exitRetryAt={};npcOpenRetries=0;
+    mobilityTrials.clear();mobilityGoal.reset();mobilityRoute.clear();mobilityRouteProgress=mobilityPendingProgress=mobilityRouteLength=0;
 }
 void DebugAi::Impl::advance(Context &c,std::string evidence) {
+    releaseCombat(c);
+    questPlanDiagnostics=nullptr;
     if(c.session.read().world.npcRequested) c.session.close_npc();
     if(c.session.read().world.waypointSource) c.session.use_waypoint(0);
-    cancelWalk(c);note("goal-completed",std::move(evidence));++cursor;resetStep();questRun={};
+    cancelWalk(c);note("goal-completed",std::move(evidence));++cursor;resetStep();questRun={};padTransfersWithoutDiscovery=0;
     if(cursor==goals.size()) {finish("completed","All goal postconditions observed",c);return;}
     goalDeadline=Clock::now()+std::chrono::seconds(goals[cursor].timeout);note("goal-started");
 }
@@ -271,7 +321,7 @@ bool DebugAi::controlsInventory() const {
     if(!s.active() || s.cursor>=s.goals.size() || s.goals[s.cursor].kind!=Impl::Kind::Quest ||
         s.questRun.step>=s.goals[s.cursor].steps.size()) return false;
     const auto action=s.goals[s.cursor].steps[s.questRun.step].action;
-    return action==Impl::QuestAction::Combine || action==Impl::QuestAction::SubmitStaff || action==Impl::QuestAction::Imbue;
+    return action==Impl::QuestAction::Combine || action==Impl::QuestAction::SubmitStaff || action==Impl::QuestAction::Imbue || action==Impl::QuestAction::EquipWeapon;
 }
 void DebugAi::manualInput(net::RealmSession &,DebugAutoWalk &walk,RemoteControl &control,RemoteCombat &combat) {
     if(!impl_->live()) return;
@@ -297,15 +347,8 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &j,net::RealmSe
         if(s.game!=session.read().gameGeneration) throw std::invalid_argument("AI plan belongs to a previous game");
         if(s.areaGeneration!=session.read().world.areaGeneration || s.area!=town.read().area)
             throw std::invalid_argument("Paused AI area changed; cancel and start a new high-level plan");
-        const auto duration=now-s.pausedAt;s.goalDeadline+=duration;
-        if(s.actionDeadline!=Impl::Clock::time_point{}) s.actionDeadline+=duration;
-        if(s.doorDeadline!=Impl::Clock::time_point{}) s.doorDeadline+=duration;
-        if(s.mobilityProgressAt!=Impl::Clock::time_point{}) s.mobilityProgressAt+=duration;
-        if(s.potionRequest) s.potionRequest->deadline+=duration;
-        if(s.questRun.pending) s.questRun.pending->deadline+=duration;
-        if(s.shopDeadline!=Impl::Clock::time_point{}) s.shopDeadline+=duration;
-        if(s.supplyStage!=Impl::SupplyStage::None) {s.supplyStarted+=duration;s.supplyDeadline+=duration;}
-        if(s.supplyPortalUsed) s.supplyPortalDeadline+=duration;
+        // Tick accounts only suspended execution budgets. Native requests
+        // and their real-time deadlines keep running during an explicit pause.
         s.next=now;s.state="running";s.note("resumed");
     } else if(name=="debug-ai-start" || name=="debug-ai-append") {
         const auto &view=session.read();
@@ -338,6 +381,13 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &j,net::RealmSe
             combat.update();
             if(std::none_of(combat.skills().begin(),combat.skills().end(),[&](const auto &v){return v.id==policy.skill && (v.level || v.innate) && !v.passive;}))
                 throw std::invalid_argument("Configured skill is not currently a known active character skill");
+            for(const auto id:policy.fallbackSkills) {
+                if(std::none_of(combat.skills().begin(),combat.skills().end(),[&](const auto &v){return v.id==id && (v.level || v.innate) && !v.passive;}))
+                    throw std::invalid_argument("Fallback combat skill is not a known active skill: "+std::to_string(id));
+                for(size_t row=0;row<s.definitions->skills.rows().size();++row)
+                    if(s.definitions->skills.number(row,"Id")==id && s.definitions->skills.number(row,"aura").value_or(0))
+                        throw std::invalid_argument("A fallback attack cannot be an aura");
+            }
         }
         if(name=="debug-ai-start" && policy.aura) {
             combat.update();
@@ -353,6 +403,9 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &j,net::RealmSe
             const auto attack=policy.skill.value_or(s.definitions->skill("Attack"));
             if(aura && std::none_of(combat.skills().begin(),combat.skills().end(),[&](const auto &v){return v.id==attack && v.left && (v.level || v.innate) && !v.passive;}))
                 throw std::invalid_argument("A battle aura requires an available left-hand attack skill");
+            if(aura) for(const auto id:policy.fallbackSkills)
+                if(std::none_of(combat.skills().begin(),combat.skills().end(),[&](const auto &v){return v.id==id && v.left && (v.level || v.innate) && !v.passive;}))
+                    throw std::invalid_argument("A battle aura requires left-hand compatible fallback attacks");
         }
         const bool malus=std::any_of(plan.begin(),plan.end(),[](const auto &g){return (g.kind==Impl::Kind::Quest && g.questId==QuestId::ToolsOfTheTrade) ||
             (g.kind==Impl::Kind::Acquire && g.item=="hdm");});
@@ -379,13 +432,21 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &j,net::RealmSe
             if(view.world.npcRequested) session.close_npc();
             if(view.world.waypointSource) session.use_waypoint(0);
             s.policy=policy;s.mobilityPolicy=mobility;s.supplyPolicy=supplies;s.goals=std::move(plan);s.cursor=0;s.resetStep();s.history.clear();s.sequence=s.decisions=0;
+            s.activatedWaypointAreas.clear();
+            s.padTransfersWithoutDiscovery=0;
+            if(s.game!=view.gameGeneration) {
+                s.journalReadGame.reset();s.padObservations.clear();s.padArrival.reset();s.questWeaponRestore.reset();
+                s.padProgressCells=s.padProgressTargets=s.padTransfersWithoutDiscovery=0;
+            }
             s.castRequests=s.moveGoals=s.interactions=0;s.game=view.gameGeneration;s.areaGeneration=view.world.areaGeneration;s.area=town.read().area;
             s.combatTarget.reset();s.retreatPoint.reset();s.combatOwned=false;
+            s.combatLifeSamples.clear();s.combatMaxLife.reset();
             s.lastAttack={};s.retreatUntil={};s.retreatReady={};
             s.mobilityTarget.reset();s.mobilityHold=false;s.nextMobility={};s.lastSelection={};
             s.supplyStage=Impl::SupplyStage::None;s.supplyOrigin.reset();s.supplyPortalUsed=false;
-            s.questRun={};s.tombSymbol.reset();s.bypassedThreats.clear();s.combatLife.reset();s.combatProgress={};
-            s.potionRequest.reset();s.nextPotion={};s.shopIssued=false;s.supplyNpc.reset();s.shopDeadline={};s.drinks=s.purchases=0;s.lastPotion=nullptr;s.supplyVitals=nullptr;
+            s.questRun={};s.questPlanDiagnostics=nullptr;s.tombSymbol.reset();s.bypassedThreats.clear();
+            s.potionRequest.reset();s.nextPotion={};s.shopIssued=false;s.shelfObserved=false;s.supplyNpc.reset();s.shopDeadline={};s.drinks=s.purchases=0;s.lastPotion=nullptr;s.supplyVitals=nullptr;
+            s.executionClock.reset(now);s.inputBlocked=false;s.actionDiagnostics=nullptr;
             s.goalDeadline=now+std::chrono::seconds(s.goals.front().timeout);s.next=now;s.state="running";s.note("plan-started");
         }
     } else throw std::invalid_argument("Unknown debug AI command");
@@ -393,16 +454,64 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &j,net::RealmSe
 }
 void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &walk,RemoteControl &control,
         RemoteCombat &combat,RemoteInventory &inventory,const SuppliesView &supplies,bool blocked,std::optional<Vec> position,bool moving) {
-    auto &s=*impl_;if(!s.active()) return;
+    auto &s=*impl_;if(!s.live()) return;
     const auto now=Impl::Clock::now();const auto &view=session.read();
+    s.inputBlocked=blocked || !s.active() || !position || !town.read().nativeMapReady || !town.read().area || view.stage!=OnlineStage::ProtocolReady;
+    const auto suspended=s.executionClock.sample(now,s.inputBlocked);
+    if(s.supplyStage==Impl::SupplyStage::None) s.goalDeadline+=suspended;
+    else s.supplyDeadline+=suspended;
+    const Vec observed=position.value_or(view.world.playerPosition?Vec{float(view.world.playerPosition->x),float(view.world.playerPosition->y)}:Vec{});
+    Impl::Context c{session,town,walk,control,combat,inventory,observed,moving,&supplies};
+    if(s.questRun.pending && s.questWaitRequiresInput(c)) s.questRun.pending->deadline+=suspended;
+    if(!s.actionWaitSubmitted && s.actionDeadline!=Impl::Clock::time_point{}) s.actionDeadline+=suspended;
+    if(s.localPad && !s.localPad->waiting) s.localPad->deadline+=suspended;
+    if(s.combatTarget) {
+        s.combatRun.progressAt+=suspended;s.combatRun.strategyAt+=suspended;
+        if(s.combatRun.suspendedAt!=Impl::Clock::time_point{}) s.combatRun.suspendedAt+=suspended;
+        if(s.combatRun.approachUntil!=Impl::Clock::time_point{}) s.combatRun.approachUntil+=suspended;
+    }
+    if(s.shelfObserved) s.shopDeadline+=suspended;
     if(now<s.next) return;
     s.next=now+debugDecisionInterval;++s.decisions;
-    Impl::Context c{session,town,walk,control,combat,inventory,position.value_or(Vec{}),moving,&supplies};
     try {
         if(view.gameGeneration!=s.game) {
             s.finish("cancelled","Game changed",c);return;
         }
-        if(s.supplyStage==Impl::SupplyStage::None && now>=s.goalDeadline) {s.finish("failed","Current high-level goal exceeded its deadline",c);return;}
+        if(view.stage!=OnlineStage::ProtocolReady) {
+            if(view.error && view.error->kind!=OnlineErrorKind::Input) s.finish("failed",view.error->message,c);
+            else s.wait("loading","Waiting for the normal protocol/map transition");
+            return;
+        }
+        if(onlinePlayerDead(view.world)) {s.finish("failed","Player died; AI never fabricates resurrection",c);return;}
+        if(view.world.playerTrade.active()) {s.finish("cancelled","Player trade took control",c);return;}
+        if(s.area!=town.read().area || s.areaGeneration!=view.world.areaGeneration) {
+            s.backtrackAttempts.clear();
+            s.viewpointAttempts.clear();
+            s.cancelWalk(c);s.area=town.read().area;s.areaGeneration=view.world.areaGeneration;s.visited.clear();s.frontierAttempts.clear();s.exploring.reset();
+            s.checkedHints.clear();s.unavailableRooms.clear();s.approachHint.reset();s.approachFrontier.reset();s.approachDetour.reset();
+            s.pickupApproaches.clear();
+            // Ordinary movement may cross back over a border. Its old exit
+            // belongs to the previous area; recompute from the observed one.
+            // Accepted warp/waypoint operations retain their result wait.
+            if(s.travelPhase!=Impl::TravelPhase::WaypointWait &&
+                !(s.travelPhase==Impl::TravelPhase::CrossWait && s.legUnit)) {
+                s.travelPhase=Impl::TravelPhase::Route;s.legDestination.reset();s.legUnit.reset();s.waypointDestination.reset();
+            }
+            s.combatTarget.reset();s.combatOwned=false;s.retreatPoint.reset();s.note("area-observed",std::to_string(*s.area));
+            s.combatRun={};
+            s.mobilityTarget.reset();s.mobilityHold=false;
+            s.mobilityGoal.reset();s.mobilityRoute.clear();
+            s.mobilityRouteProgress=s.mobilityPendingProgress=s.mobilityRouteLength=0;
+        }
+        if(s.cursor>=s.goals.size()) {s.finish("completed","All goal postconditions observed",c);return;}
+        inventory.update(view);combat.update();
+        s.supplyVitals={{"life",view.world.life?Impl::Json(*view.world.life):Impl::Json(nullptr)},
+            {"mana",view.world.mana?Impl::Json(*view.world.mana):Impl::Json(nullptr)},
+            {"displayMaxLife",supplies.maxLife?Impl::Json(*supplies.maxLife):Impl::Json(nullptr)},
+            {"displayMaxMana",supplies.maxMana?Impl::Json(*supplies.maxMana):Impl::Json(nullptr)}};
+        s.mobilityHold=false;
+        const auto &goal=s.goals[s.cursor];
+        s.observeActions(c);s.describeActions(c);
         if(view.error && view.error->kind!=OnlineErrorKind::Input) {
             const bool npcOpening=view.error->kind==OnlineErrorKind::Timeout &&
                 view.error->message=="NPC did not return a conversation before timeout" &&
@@ -410,6 +519,7 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
                 s.walkIntent.value("unitType",0)==1 && s.walkIntent.value("interact",false) &&
                 !s.questRun.pending && !s.potionRequest && !s.shopIssued;
             if(npcOpening && s.npcOpenRetries<2) {
+                if(s.inputBlocked) {s.wait("npc-recovery-input","The opening timed out; retry input waits until observation closes");return;}
                 ++s.npcOpenRetries;s.note("npc-open-retry","Opening only; no quest topic or item operation is replayed");
                 s.stop(walk,control,combat);s.walkIntent=nullptr;return;
             }
@@ -424,63 +534,34 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
             s.note("town-portal-unconfirmed",view.error->message);
             s.stop(walk,control,combat);s.walkIntent=nullptr;s.portalIssued=false;
         }
-        if(view.stage!=OnlineStage::ProtocolReady) {s.wait("loading","Waiting for the normal protocol/map transition");return;}
-        if(onlinePlayerDead(view.world)) {s.finish("failed","Player died; AI never fabricates resurrection",c);return;}
-        if(view.world.playerTrade.active()) {s.finish("cancelled","Player trade took control",c);return;}
-        if(blocked || !position || !town.read().nativeMapReady || !town.read().area) return;
-        if(!moving && view.world.playerPosition && town.read().origin) {
-            const auto confirmed=*view.world.playerPosition,origin=*town.read().origin;
-            const Vec at{float(confirmed.x),float(confirmed.y)},offset{float(origin.x),float(origin.y)};
-            const auto grid=town.navigationGrid(view);
-            if(grid.walkable(at-offset+Vec{.5f,.5f},playerMovement)) c.position=at;
-        }
-        if(s.area!=town.read().area || s.areaGeneration!=view.world.areaGeneration) {
-            s.cancelWalk(c);s.area=town.read().area;s.areaGeneration=view.world.areaGeneration;s.visited.clear();s.exploredFrontiers.clear();s.exploring.reset();
-            s.checkedHints.clear();s.unavailableRooms.clear();s.approachHint.reset();s.approachFrontier.reset();
-            s.pickupApproaches.clear();
-            // Ordinary movement may cross back over a border. Its old exit
-            // belongs to the previous area; recompute from the observed one.
-            // Accepted warp/waypoint operations retain their result wait.
-            if(s.travelPhase!=Impl::TravelPhase::WaypointWait &&
-                !(s.travelPhase==Impl::TravelPhase::CrossWait && s.legUnit)) {
-                s.travelPhase=Impl::TravelPhase::Route;s.legDestination.reset();s.legUnit.reset();s.waypointDestination.reset();
-            }
-            s.combatTarget.reset();s.combatOwned=false;s.retreatPoint.reset();s.note("area-observed",std::to_string(*s.area));
-            s.mobilityTarget.reset();s.mobilityHold=false;
-            s.mobilityGoal.reset();s.mobilityProgressAt={};
-        }
-        if(s.cursor>=s.goals.size()) {s.finish("completed","All goal postconditions observed",c);return;}
-        inventory.update(view);combat.update();
-        s.supplyVitals={{"life",view.world.life?Impl::Json(*view.world.life):Impl::Json(nullptr)},
-            {"mana",view.world.mana?Impl::Json(*view.world.mana):Impl::Json(nullptr)},
-            {"displayMaxLife",supplies.maxLife?Impl::Json(*supplies.maxLife):Impl::Json(nullptr)},
-            {"displayMaxMana",supplies.maxMana?Impl::Json(*supplies.maxMana):Impl::Json(nullptr)}};
-        s.mobilityHold=false;
-        const auto &goal=s.goals[s.cursor];
-        s.observeChild(c,s.questLeaf(goal));
-        if(s.observePotion(c) || s.drink(c)) return;
-        if(s.pendingDoor) {
-            const auto door=view.world.units.find(s.pendingDoor->first);
-            if(door==view.world.units.end() || door->second.assignmentRevision!=s.pendingDoor->second) {
-                s.note("door-assignment-withdrawn");s.pendingDoor.reset();
-            } else if(door->second.mode && *door->second.mode!=0) {
-                s.operatedDoors.insert(*s.pendingDoor);
-                s.note("door-mode-observed",std::to_string(s.pendingDoor->first.id));s.pendingDoor.reset();
-            } else {
-                if(now>=s.doorDeadline) throw std::runtime_error("Door interaction submitted but the assigned door stayed closed: "+std::to_string(s.pendingDoor->first.id));
-                s.wait("door-wait","Waiting for the actual door mode change; submission is not an open door");return;
-            }
-        }
-        if(s.mobilityTarget && s.mobility(c)) return;
+        if(s.inputBlocked) return;
         if(!s.prepareQuest(c,goal)) return;
+        if(!s.active()) return;
+        if(s.supplyStage==Impl::SupplyStage::None && now>=s.goalDeadline && !(goal.kind==Impl::Kind::Travel && goal.area==s.area)) {
+            s.finish("failed","Current high-level goal exceeded its execution budget",c);return;
+        }
+        using Owner=DebugActionOwner;
+        if(s.closeWaypoint && s.canInput(c,Owner::Waypoint,DebugMenu)) {
+            if(view.world.waypointSource==s.closeWaypoint) session.use_waypoint(0);
+            s.closeWaypoint.reset();s.describeActions(c);return;
+        }
+        if(s.canInput(c,Owner::Potion,DebugItem) && s.drink(c)) {s.describeActions(c);return;}
         const auto leaf=s.questLeaf(goal);
-        if(s.autoSupply(c,leaf)) return;
-        const bool transferPending=s.travelPhase==Impl::TravelPhase::WaypointWait ||
-            (s.travelPhase==Impl::TravelPhase::CrossWait && s.legUnit) || s.portalIssued || s.questBusy();
-        if(!transferPending && ((leaf.kind==Impl::Kind::ReturnTown || leaf.kind==Impl::Kind::Restock)?
-            s.supplyCombat(c,leaf):s.combat(c,leaf))) return;
-        s.execute(c,goal);
-        if(s.active() && !transferPending && !s.questBusy()) s.mobility(c);
+        if(s.canInput(c,Owner::Supply,DebugAllInputs) && s.autoSupply(c,leaf)) {s.describeActions(c);return;}
+        if(s.canInput(c,Owner::Combat,DebugMotion|DebugSkill) && ((leaf.kind==Impl::Kind::ReturnTown || leaf.kind==Impl::Kind::Restock)?
+            s.supplyCombat(c,leaf):s.combat(c,leaf))) {s.describeActions(c);return;}
+        if(!s.pendingWaypoint && !s.closeWaypoint && leaf.kind!=Impl::Kind::ReturnTown && leaf.kind!=Impl::Kind::Restock &&
+            s.canInput(c,Owner::Waypoint,DebugMotion|DebugInteraction|DebugMenu) && s.activateWaypoint(c)) {s.describeActions(c);return;}
+        unsigned inputs=DebugAllInputs;
+        if(leaf.kind==Impl::Kind::Travel || leaf.kind==Impl::Kind::Find) inputs=DebugMotion|DebugInteraction|DebugMenu;
+        else if(leaf.kind==Impl::Kind::Hunt) inputs=DebugMotion|DebugSkill;
+        const auto owner=goal.kind==Impl::Kind::Restock?Owner::Supply:Owner::Goal;
+        if(s.canInput(c,owner,inputs)) s.execute(c,goal);
+        if(s.canInput(c,Owner::Mobility,DebugMotion|DebugSkill)) s.mobility(c);
+        s.describeActions(c);
+    } catch(const DebugSearchPending &) {
+        s.next=Impl::Clock::now();s.wait("navigation-budget","Resuming deferred collision queries next frame");
+        s.describeActions(c);
     } catch(const std::exception &e) {s.finish("failed",e.what(),c);}
 }
 }

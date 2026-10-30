@@ -2,6 +2,7 @@
 #include "automap_cells.hpp"
 #include "contracts/automap_reveal.hpp"
 #include "contracts/map.hpp"
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -28,6 +29,7 @@ class AutomapReveal {
     std::shared_ptr<Result> current_;
     std::unique_ptr<Job> job_;
     AutomapRevealProgress progress_;
+    uint64_t revision_{};
     void refreshProgress();
   public:
     AutomapReveal(Archives &, const AutomapCatalog &, size_t cellCount);
@@ -38,6 +40,7 @@ class AutomapReveal {
     // One level allocation or one room export per call, independent of Tab.
     void update(AutomapRevealIdentity, int level, AutomapPresetCellSelector);
     const AutomapRevealProgress &progress() const { return progress_; }
+    uint64_t revision() const { return revision_; }
     void appendCells(int layer, AutomapCells &) const;
     void appendTowns(int layer, std::vector<AutomapDrawView::Town> &) const;
 };

@@ -46,10 +46,12 @@ std::optional<Dialogue> System::actThreeDialogue(const ActorContext &actor,const
     const auto &book=p->persistent.player.quests.at(size_t(ports_.settings.difficulty));
     const auto &khalim=book[questIndex(QuestId::KhalimsWill)];
     if(available(QuestId::KhalimsWill) && npc.code.starts_with("cain") && khalim.stage<4 && (q.stage>=5 || khalim.stage || int(actor.area)!=75)) {
+        // A3Q2_Callback00: introduction, cubed flail, base flail, eye,
+        // heart, brain. This order also applies with several carried parts.
+        if(!(khalim.flags&khalimAssigned)) return speech(npc,QuestId::KhalimsWill,"Init");
         if(detail::actTwoCarried(*p,items.khalimWill,ports_.settings.difficulty) && !(khalim.flags&khalimWillExplained)) return speech(npc,QuestId::KhalimsWill,"Successful");
         constexpr std::array names{"EarlyReturnEye","EarlyReturnBrain","EarlyReturnHeart","EarlyReturnFlail"};
-        for(int part=3;part>=0;--part) if(detail::actTwoCarried(*p,items.khalimParts[size_t(part)],ports_.settings.difficulty) && !(khalim.flags&(1u<<part))) return speech(npc,QuestId::KhalimsWill,names[size_t(part)]);
-        if(!(khalim.flags&khalimAssigned)) return speech(npc,QuestId::KhalimsWill,"Init");
+        for(const unsigned part:{3u,0u,2u,1u}) if(detail::actTwoCarried(*p,items.khalimParts[part],ports_.settings.difficulty) && !(khalim.flags&(1u<<part))) return speech(npc,QuestId::KhalimsWill,names[part]);
     }
     const auto &tome=book[questIndex(QuestId::LamEsensTome)];
     if(available(QuestId::LamEsensTome) && npc.code=="alkor" && tome.stage<4) {

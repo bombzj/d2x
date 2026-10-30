@@ -10,11 +10,6 @@
 namespace d2x {
 namespace {
 Vec position(OnlinePoint p) {return {float(p.x),float(p.y)};}
-OnlinePoint point(Vec p) {
-    if(!std::isfinite(p.x) || !std::isfinite(p.y) || p.x<0 || p.y<0 || p.x>65535 || p.y>65535)
-        throw std::runtime_error("AI input outside native coordinates");
-    return {uint16_t(std::floor(p.x)),uint16_t(std::floor(p.y))};
-}
 }
 std::optional<OnlineUnit> DebugAi::Impl::find(const Context &c,const Selector &selector,bool corpses) const {
     std::optional<OnlineUnit> best;float nearest=std::numeric_limits<float>::max();
@@ -38,136 +33,6 @@ bool DebugAi::Impl::owned(const Context &c,std::string_view code) const {
             (item.mode==0 || item.mode==1 || item.mode==2 || item.mode==4)) return true;
     }
     return false;
-}
-bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
-    const auto &view=c.session.read();
-    if(!policy.enabled || c.town.read().town || view.world.npcRequested || view.world.waypointSource) return false;
-    const auto now=Clock::now();
-    std::erase_if(bypassedThreats,[&](const auto &entry){return now>=entry.second;});
-    const auto clearLine=[&](const OnlineUnit &unit) {
-        const auto *map=c.town.map();const auto origin=c.town.read().origin;if(!map || !origin) return false;
-        const Vec offset{float(origin->x),float(origin->y)};
-        return map->grid.lightSegment(c.position-offset+Vec{.5f,.5f},position(*unit.position)-offset+Vec{.5f,.5f});
-    };
-    const auto objective=goal.kind==Kind::Hunt && goal.target?find(c,*goal.target):std::nullopt;
-    const bool nearObjective=objective && (position(*objective->position)-c.position).length()<=policy.engage;
-    std::vector<OnlineUnit> enemies;std::optional<OnlineUnit> chosen;float nearest=float(policy.engage);
-    for(const auto &[key,unit]:view.world.units) {
-        if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false) ||
-            bypassedThreats.contains({key,unit.assignmentRevision})) continue;
-        const float d=(position(*unit.position)-c.position).length();
-        const bool visible=clearLine(unit);
-        if(d<=policy.engage && visible) enemies.push_back(unit);
-        const bool clearing=goal.kind==Kind::Quest && goal.area==area && cursor<goals.size() && questRun.step<goals[cursor].steps.size() &&
-            goals[cursor].steps[questRun.step].action==QuestAction::Clear;
-        const bool relevant=policy.scope=="clear" || clearing || nearObjective || (policy.scope=="defensive" && d<=policy.radius);
-        if(relevant && visible && d<nearest) {nearest=d;chosen=unit;}
-    }
-    if(nearObjective && c.combat.hostile(*objective)) chosen=objective;
-    if(!chosen) {
-        if(combatTarget || combatOwned) {
-            stop(c.walk,c.control,c.combat);walkIntent=nullptr;combatTarget.reset();retreatPoint.reset();note("combat-clear");
-        }
-        return false;
-    }
-    if(combatTarget!=chosen->key) {
-        cancelWalk(c);combatTarget=chosen->key;note("combat-target",std::to_string(chosen->key.id));
-        combatLife=chosen->lifePercent;combatProgress=now;
-        if(travelPhase==TravelPhase::CrossWait && !legUnit) {
-            travelPhase=TravelPhase::Route;legDestination.reset();
-        }
-    }
-    if(combatLife!=chosen->lifePercent) {combatLife=chosen->lifePercent;combatProgress=now;}
-    const bool required=(goal.kind==Kind::Hunt && objective && chosen->key==objective->key) ||
-        (goal.kind==Kind::Quest && goal.area==area && cursor<goals.size() && questRun.step<goals[cursor].steps.size() &&
-         goals[cursor].steps[questRun.step].action==QuestAction::Clear);
-    if(!required && chosen->lifePercent && now-combatProgress>=std::chrono::seconds(6)) {
-        // A queued cast is not a hit. Do not let an incidental target with no
-        // observed life change indefinitely consume the high-level journey.
-        // This only resumes normal input; required kills/clear remain intact.
-        bypassedThreats[{chosen->key,chosen->assignmentRevision}]=now+std::chrono::seconds(10);
-        note("unproductive-threat-bypassed",std::to_string(chosen->key.id));
-        stop(c.walk,c.control,c.combat);walkIntent=nullptr;combatTarget.reset();retreatPoint.reset();return false;
-    }
-    if(retreatPoint) {
-        if(walkState(c)=="failed") {
-            note("retreat-unavailable",c.walk.snapshot().value("reason",std::string{}));
-        } else if(now<retreatUntil && (position(*retreatPoint)-c.position).length()>2) {
-            wait("retreat","Keeping distance from the observed close crowd");walkPoint(c,*retreatPoint);return true;
-        }
-        cancelWalk(c);retreatPoint.reset();
-    }
-    const auto close=std::count_if(enemies.begin(),enemies.end(),[&](const auto &u){return (position(*u.position)-c.position).length()<=policy.radius;});
-    if(close>=policy.crowd && now>=retreatReady) {
-        const auto *map=c.town.map();const auto origin=c.town.read().origin;
-        float best=0;std::optional<OnlinePoint> safe;
-        if(map && origin) {
-            const Vec offset{float(origin->x),float(origin->y)};
-            const auto safety=[&](Vec p) {
-                float minimum=100;for(const auto &enemy:enemies) minimum=std::min(minimum,(position(*enemy.position)-p).length());return minimum;
-            };
-            best=safety(c.position)+1;
-            for(int direction=0;direction<16;++direction) {
-                const float angle=float(direction)*6.28318530718f/16;
-                const Vec candidate=c.position+Vec{std::cos(angle),std::sin(angle)}*float(policy.retreat);
-                if(candidate.x<0 || candidate.y<0 || candidate.x>65535 || candidate.y>65535) continue;
-                const auto requested=point(candidate);const auto actual=position(requested);
-                const Vec local=actual-offset+Vec{.5f,.5f};
-                const auto path=map->grid.path(c.position-offset+Vec{.5f,.5f},local,false,playerMovement,true);
-                if(path.empty() || point(path.back()+offset)!=requested) continue;
-                const float score=safety(actual);if(score>best) {best=score;safe=requested;}
-            }
-        }
-        retreatReady=now+std::chrono::seconds(4);
-        if(safe) {
-            cancelWalk(c);OnlineCombatCommand stopSkill;stopSkill.action=OnlineCombatCommand::Action::Stop;c.combat.submit(stopSkill);
-            retreatPoint=safe;retreatUntil=now+std::chrono::seconds(2);wait("retreat","Crowd threshold reached; moving to a safer known point");
-            note("retreat-started",std::to_string(close));walkPoint(c,*safe);return true;
-        }
-    }
-    uint16_t skill=policy.skill.value_or(definitions->skill("Attack"));
-    auto entry=std::find_if(c.combat.skills().begin(),c.combat.skills().end(),[&](const auto &v){return v.id==skill && (v.level || v.innate) && !v.passive;});
-    if(entry==c.combat.skills().end()) {
-        if(policy.skill) throw std::runtime_error("Configured combat skill is not a known active skill for this character");
-        skill=definitions->skill("Attack");
-    }
-    const auto attack=definitions->skill("Attack");int range=skill==attack?3:policy.range;
-    for(size_t row=0;row<definitions->skills.rows().size();++row)
-        if(definitions->skills.number(row,"Id")==skill && definitions->skills.value(row,"range")=="h2h") range=3;
-    bool clear=true;
-    if(const auto *map=c.town.map();map && c.town.read().origin) {
-        const auto origin=*c.town.read().origin;const Vec offset{float(origin.x),float(origin.y)};
-        clear=map->grid.lightSegment(c.position-offset+Vec{.5f,.5f},position(*chosen->position)-offset+Vec{.5f,.5f});
-    }
-    if((position(*chosen->position)-c.position).length()>range || !clear) {
-        if(openDoor(c)) return true;
-        if(approachPoint(c,*chosen->position,"assigned hostile target",2)) {phase="combat-approach";return true;}
-        cancelWalk(c);combatTarget.reset();return false;
-    }
-    if(!c.combat.skillTargetEligible(*chosen,skill)) {
-        wait("combat-wait","Configured skill cannot currently target this observed monster");return true;
-    }
-    const auto aura=battleAura(c);const auto hand=aura?OnlineSkillHand::Left:OnlineSkillHand::Right;
-    if(aura) {
-        if(!knownSkill(c,*aura)) throw std::runtime_error("Battle aura is no longer available");
-        if(!knownSkill(c,skill,true)) throw std::runtime_error("A battle aura requires a left-hand attack skill");
-        if(!selectSkill(c,*aura,OnlineSkillHand::Right)) {
-            cancelWalk(c);wait("combat-aura","Switching from travel to the battle aura");return true;
-        }
-    }
-    if(!selectSkill(c,skill,hand)) {
-        cancelWalk(c);wait("combat-select","Waiting for normal attack skill selection");
-        return true;
-    }
-    wait("combat-cast","Fighting an observed hostile through the normal skill interface");
-    if(now-lastAttack<std::chrono::milliseconds(600)) return true;
-    if(view.world.combatRequest && view.world.combatRequest->state==OnlineCombatRequest::State::Pending) return true;
-    lastAttack=now;
-    cancelWalk(c);OnlineCombatCommand cast;cast.action=OnlineCombatCommand::Action::Cast;
-    cast.hand=hand;cast.target=chosen->key;cast.stationary=true;cast.repeat=false;
-    if(c.combat.submit(cast)) {combatOwned=true;++castRequests;}
-    else reason=c.combat.reason();
-    return true;
 }
 void DebugAi::Impl::acquire(Context &c,const Goal &goal) {
     if(acquireItem(c,goal)) advance(c,"Owned item observed: "+goal.item);
@@ -233,7 +98,7 @@ bool DebugAi::Impl::approachPickup(Context &c,const OnlineItem &item) {
         const bool flight=teleport && Clock::now()>=nextMobility && (world-c.position).length()>=1 &&
             (world-c.position).length()<=mobilityPolicy.distance &&
             (!mobilityTrials.contains(trial) || mobilityTrials.at(trial)<2);
-        ++pathSearches;const auto path=map->grid.path(c.position-offset+Vec{.5f,.5f},local,false,playerMovement,true);
+        ++pathSearches;const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},local,false,playerMovement,true);
         if(path.empty() && !flight) continue;
         wait("pickup-approach",flight?"Selecting a normal teleport landing at the item or its reachable side":"Walking around to another valid pickup position");
         walk(c,{{"goal","point"},{"x",p.x},{"y",p.y},{"interact",false},{"purpose","pickup-approach"},
@@ -271,7 +136,7 @@ bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
         if(!approachPickup(c,*ground)) return false;
         cancelWalk(c);OnlineItemCommand take;take.action=OnlineItemAction::Pickup;take.item=ground->id;take.itemRevision=ground->revision;
         if(c.inventory.submit(c.session,take)) {
-            pickupId=ground->id;pickupIssued=true;actionDeadline=now+std::chrono::seconds(12);note("pickup-submitted",goal.item);
+            pickupId=ground->id;pickupIssued=true;setActionDeadline(std::chrono::seconds(12));note("pickup-submitted",goal.item);
         } else wait("pickup-blocked",c.inventory.reason());
         return false;
     }
@@ -286,7 +151,7 @@ bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
             target=source->key;targetAssignment=source->assignmentRevision;
             wait("item-source","Operating the actual assigned item source");
             if(walk(c,{{"goal","unit"},{"unitType",source->key.type},{"unitId",source->key.id},{"interact",true}})) {
-                objectIssued=true;actionDeadline=now+std::chrono::seconds(12);++interactions;cancelWalk(c);note("item-source-submitted",goal.item);
+                objectIssued=true;setActionDeadline(std::chrono::seconds(12));++interactions;cancelWalk(c);note("item-source-submitted",goal.item);
             }
             return false;
         }
@@ -316,7 +181,7 @@ bool DebugAi::Impl::reachTown(Context &c) {
             wait("town-portal","Using the newly observed own town portal");
             if(walk(c,{{"goal","unit"},{"unitType",portal->unit.type},{"unitId",portal->unit.id},{"interact",true}})) {
                 // Request accepted is not a successful return. Keep observing the scene.
-                portalUsed=true;actionDeadline=now+std::chrono::seconds(15);
+                portalUsed=true;setActionDeadline(std::chrono::seconds(15));
                 phase="town-portal-wait";reason="Waiting for the native town scene";
             }
             return false;
@@ -332,7 +197,7 @@ bool DebugAi::Impl::reachTown(Context &c) {
         if(entry.interaction==OnlineMapInteraction::Portal && entry.destination==view.load.townArea) {
             const auto unit=view.world.units.find(entry.unit);
             if(unit!=view.world.units.end() && unit->second.portalOwner==view.load.playerUnitId) {
-                portalAttempted=portalIssued=true;oldPortals.clear();actionDeadline=now+std::chrono::seconds(12);
+                portalAttempted=portalIssued=true;oldPortals.clear();setActionDeadline(std::chrono::seconds(12));
                 note("existing-own-portal-observed");return false;
             }
         }
@@ -343,7 +208,7 @@ bool DebugAi::Impl::reachTown(Context &c) {
         oldPortals.clear();for(const auto &[key,unit]:view.world.units)
             if(key.type==2 && unit.portalOwner==view.load.playerUnitId) oldPortals.insert(key.id);
         cancelWalk(c);
-        if(c.control.townPortal()) {portalIssued=true;actionDeadline=now+std::chrono::seconds(12);note("town-portal-submitted");return false;}
+        if(c.control.townPortal()) {portalIssued=true;setActionDeadline(std::chrono::seconds(12));note("town-portal-submitted");return false;}
     }
     wait("return-walking","No usable town portal; using normal travel back to town");
     return travel(c,*view.load.townArea);
@@ -372,15 +237,16 @@ void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
         if((message.menu==0 || std::find(goal.topics.begin(),goal.topics.end(),message.stringId)!=goal.topics.end()) &&
             !conversation.acknowledged.contains(message.stringId)) {
             if(c.session.acknowledge_npc_message(message.stringId)) {
-                ++interactions;actionDeadline=now+std::chrono::seconds(12);note("npc-topic-acknowledged",std::to_string(message.stringId));
+                ++interactions;setActionDeadline(std::chrono::seconds(12));note("npc-topic-acknowledged",std::to_string(message.stringId));
             }
             return;
         }
     }
-    if(actionDeadline==Clock::time_point{}) actionDeadline=now+std::chrono::seconds(12);
+    if(actionDeadline==Clock::time_point{}) setActionDeadline(std::chrono::seconds(12),false);
     if(now>=actionDeadline) throw std::runtime_error("NPC did not confirm item consumption and reward readiness");
 }
 void DebugAi::Impl::execute(Context &c,const Goal &goal) {
+    if(localPad && localPad->waiting) {wait("local-pad-result","Waiting for the actual same-level relocation");return;}
     if(goal.kind==Kind::Quest) {quest(c,goal);return;}
     if(goal.kind==Kind::Acquire && owned(c,goal.item)) {advance(c,"Owned item already satisfies acquire: "+goal.item);return;}
     if(goal.area && (area!=goal.area || travelDestination) && !travel(c,*goal.area)) return;

@@ -47,6 +47,8 @@ class System {
         size_t next{};
     };
     std::deque<FlagPublication> flagPublications_;
+    struct FxPublication {uint8_t effect{};std::vector<std::pair<EntityId,QuestFact>> recipients;};
+    std::deque<FxPublication> fxPublications_;
     size_t stepCursor_{};
     bool stepResuming_{},stepBlocked_{};
     bool completionPending() const {return state_.actOne.denCompletion.has_value() || state_.actFive.nihlathakCompletion.has_value() || state_.actFive.anyaCompletion.has_value() || state_.actFour.sanctumCompletion.has_value() || state_.actFour.sanctumSweep.has_value() || state_.actFour.diabloBirthPending;}
@@ -68,6 +70,8 @@ class System {
     StepStatus baalStep(TickContext);
     StepStatus flushGoals(TickContext);
     StepStatus flushStatuses(TickContext);
+    StepStatus flushFx(TickContext);
+    void queueFx(uint8_t);
     void captureGoal(QuestId,uint32_t,RegionId,std::optional<Vec> = {},std::optional<PlayerId> = {});
     void captureGoal(QuestId,uint32_t,std::set<PlayerId>,bool attributeReward=false,bool consumeForgeItems=false);
     void shareProgress(QuestId,uint32_t,std::set<PlayerId>,bool notifyQuest=true,uint32_t flags=0);
@@ -123,6 +127,8 @@ class System {
     void finishAncientObjectAnimation(EntityId);
     explicit System(Ports ports) : ports_(ports) {}
     void initializeControl();
+    DomainResult<> activateRadament(uint64_t tick);
+    DomainResult<> activateSummoner(uint64_t tick);
     DomainResult<> initializeZoo(RegionId,uint64_t tick);
     const State &read() const { return state_; }
     bool nativeCallbackPending() const {return stepResuming_ || completionPending();}

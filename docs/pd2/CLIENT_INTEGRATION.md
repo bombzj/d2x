@@ -18,6 +18,8 @@ PD2使用PlayPD2及共用主菜单，启动时绑定本进程资源集合，兼�
 
 固定PD2 CN在网络物品解码和内容准备处选择版本，复用同一只读投影／界面；本人背包／Cursor／地面、装备及腰带的基础移物沿公共请求，扩展容器按[物品界面](ITEM_UI.md)的独立权限与确认规则开放，未支持操作仍拒绝。能力门控由online_items.hpp统一查询，UI、RemoteInventory与RealmSession各自复验；CN装备／腰带请求按最终模式、部位／格子和交换两侧状态确认，不把相关属性更新当作安置完成。边界见[PD2兼容](CLIENT_INTEGRATION.md#当前代码接入范围)。
 
+共用9D投影已区分普通卸装与`action8/ONCURSOR/IFLAG_QUANTITY`装备销毁，不将销毁回执误造为Cursor；当前实际包依据与运行复测来自零售1.13c破珠，未据此认证CN的全部销毁／扩展容器组合，见[装备](../gameplay/items/EQUIPMENT.md)。
+
 <a id="客户端接入人物加点"></a>
 
 ## 客户端接入：人物加点
@@ -53,6 +55,8 @@ PD2使用独立RemoteDisplay缓存，不准备原版宿主程序、装备派生�
 <a id="客户端接入技能来源初始化"></a>
 
 ## 客户端接入：技能来源初始化
+
+共用RemoteCombat入口接收普通UI的displayOrigin或正常本地路径坐标，用于本地施法射程和地图绑定；缺少同代次投影时才使用服务器位置样本。该输入提示不改写远端副本或编码来源，最终施法仍由对应profile和服务端裁决。原版第三幕单机已使用该入口；CN的稀疏采样、换区及连续战斗组合尚未复测。
 
 来源：[docs/modules/NETWORK.md](../modules/NETWORK.md)。
 

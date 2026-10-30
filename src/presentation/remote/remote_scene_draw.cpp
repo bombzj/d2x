@@ -756,6 +756,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             found->second.position - worldScene.terrainOrigin});
     }
     intent.visibleMapTiles = shared.drawWorld(worldScene);
+    intent.observationExtent = shared.worldObservationExtent();
     const auto hoverNow=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
     for(const auto &[id,message]:v.world.social.hover) {
         if(message.type!=5 || message.unitType!=0) continue;

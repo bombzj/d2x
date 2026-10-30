@@ -53,7 +53,11 @@ Json describeSave(const ClassicData &data, const PersistentCharacter &save) {
         {"items",Json::array()},{"containers",Json::object()},{"quests",Json::array()}};
     for(const auto &difficulty:player.quests) {
         Json quests=Json::array();
-        for(const auto &quest:difficulty) quests.push_back({{"stage",quest.stage},{"flags",quest.flags}});
+        for(const auto &quest:difficulty) {
+            Json entry{{"stage",quest.stage},{"flags",quest.flags}};
+            if(quest.nativeRecord) entry["nativeRecord"]=*quest.nativeRecord;
+            quests.push_back(std::move(entry));
+        }
         report["quests"].push_back(std::move(quests));
     }
     for(const auto &[id,container]:save.inventory.containers)

@@ -8,6 +8,7 @@
 #include "gameplay/units/distance.hpp"
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdlib>
 #include <optional>
 #include <stdexcept>
@@ -369,12 +370,16 @@ bool RemoteCombat::corpseTargetEligible(const OnlineUnit &unit,int selection) co
     default: return false;
     }
 }
-bool RemoteCombat::submit(OnlineCombatCommand command) {
+bool RemoteCombat::submit(OnlineCombatCommand command,std::optional<Vec> inputOrigin) {
     command.interaction.reset();
     if (!command.context) command.context = onlineIntentContext(session_.read());
     if (!onlineWorldMatches(*command.context, session_.read()))
         return reject("Combat intent belongs to a previous game or area");
-    scene_.update(session_.read());
+    if(!inputOrigin) inputOrigin=scene_.inputOrigin(session_.read());
+    if(inputOrigin && (!std::isfinite(inputOrigin->x) || !std::isfinite(inputOrigin->y) ||
+        inputOrigin->x<0 || inputOrigin->y<0 || inputOrigin->x>UINT16_MAX || inputOrigin->y>UINT16_MAX))
+        return reject("Invalid local combat input origin");
+    scene_.update(session_.read(),inputOrigin);
     update();
     const auto &world = session_.read().world;
     using Action = OnlineCombatCommand::Action;
@@ -440,6 +445,10 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
                     return reject("Skill is waiting for the active map: " + binding.nativeMapReason);
                 if (!binding.movementAvailable || !world.playerPosition)
                     return reject("Skill requires an active player position");
+                // Match the normal local DynamicPath input origin. A sparse
+                // resource sample is not the current pointer origin. This
+                // hint never updates the replica or the server's coordinates.
+                const auto player=inputOrigin?OnlinePoint{uint16_t(std::floor(inputOrigin->x+.5f)),uint16_t(std::floor(inputOrigin->y+.5f))}:*world.playerPosition;
                 if (!eligibility.usableNow)
                     return reject(facts.town ? "Skill cannot be cast in town" : "Skill is not currently usable");
                 if (command.point.has_value() == command.target.has_value()) return reject("Specify exactly one point or unit target");
@@ -470,7 +479,7 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
                     // SrvDo113 invokes pSpell at the player's position. A pointer
                     // over the map edge must not prevent a self item action.
                     command.target.reset();
-                    command.point = world.playerPosition;
+                    command.point = player;
                 }
                 auto point = command.point;
                 if (command.target && command.target->type == 4) {
@@ -495,7 +504,6 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
                         }
                     }
                 }
-                const auto player = *world.playerPosition;
                 if (std::abs(int(player.x) - point->x) > 50 || std::abs(int(player.y) - point->y) > 50)
                     return reject("Cast exceeds the native 50-subtile request range");
                 const bool teleport=tables_.at("skills").number(row->second,"srvdofunc")==27;

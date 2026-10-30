@@ -21,6 +21,8 @@ class DebugAi {
   public:
     struct SuppliesView {
         std::optional<int> maxLife,maxMana;
+        std::optional<bool> castInputBusy;
+        std::function<std::optional<bool>(uint16_t)> skillUsable;
         std::function<std::optional<unsigned>(uint32_t)> buyQuote;
     };
     explicit DebugAi(Archives &);

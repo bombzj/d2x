@@ -450,6 +450,15 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         }
         if (change.kind == ItemChangeKind::Removed) {
             const auto *before = change.before ? std::get_if<ContainerLocation>(&*change.before) : nullptr;
+            if(before && equipment(kind(state,change.before))) {
+                const auto old=std::find_if(fact.removedItems.begin(),fact.removedItems.end(),[&](const auto &item){return item.id==change.item;});
+                if(old==fact.removedItems.end()) throw std::logic_error("Missing removed equipped item projection");
+                auto item=*old;item.location=ContainerLocation{state.containers.cursor,{}};
+                // Same native deletion form as QUESTS_DeleteItemEx, including
+                // the original body address. This never assigns a real cursor.
+                emitItem(result,data,state,item,ItemAction::Unequip,0,uint32_t(state.player.id.value),{},change.before,itemQuantityFlag);
+                continue;
+            }
             if(before && kind(state,change.before)==ContainerKind::Trade) {
                 const auto old=std::find_if(fact.removedItems.begin(),fact.removedItems.end(),[&](const auto &item){return item.id==change.item;});
                 if(old==fact.removedItems.end()) throw std::logic_error("Missing settled trade item projection");

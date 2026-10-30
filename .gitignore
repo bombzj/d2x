@@ -43,3 +43,5 @@
 *.d2xmap
 *.d2xmap.bak
 *.d2xmap.lock
+*.d2xnav[0-3]
+*.d2xnav[0-3].*

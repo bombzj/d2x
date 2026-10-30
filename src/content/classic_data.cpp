@@ -460,7 +460,7 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
         }
         for (const auto &[key, value] : strings.entries())
             if ((key.size() >= 7 && key.starts_with("qstsa") && key[5] >= '1' && key[5] <= '5' && key[6] == 'q') || key.starts_with("qsta5q1") || key == "newquestlog" ||
-                key.starts_with("qsts") || key == "noactivequest")
+                key.starts_with("qsts") || key == "Qstsyouarenot8" || key == "noactivequest")
                 data.questStrings.emplace(key, value);
             else if (std::any_of(data.hirelings.begin(),data.hirelings.end(),[&](const auto &definition) {
                 const auto prefix=definition.nameFirst.find_last_not_of("0123456789")+1;

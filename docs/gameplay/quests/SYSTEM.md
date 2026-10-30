@@ -94,7 +94,9 @@
 
 标题、qstsa／qsta描述、完成文字、newquestlog及原图取当前MPQ。未知细分状态、真墓图案或剩余数保持未知，不从种子、公共字、地图人口或旧单机流程补答案。已完成条目仍可查看，固定显示完成帧24；私人完成记录未设置UPDATEQUESTLOG时才排队动画，包括旧档中完成但尚未看过日志的条目。已阅完成记录不因Q键关闭／重开或任务同步重播；动画按100毫秒帧间隔推进，结束或中途关闭／切幕发送原0x58。首次未知→已知不自行制造任务更新通知，也不吞掉服务端明确发布的未阅完成。私人PrimaryGoalDone未设置的完成条目使用MPQ的qstsprevious，区分本局完成文字。
 
-任务日志文字由quest_panel读取独立的当前MPQ FontFormal11，按原TBL字宽排版及DC6底部基线绘制，不再借用对白FontFormal12或TTF顶部定位。原1.13c D2Client RVA1E5E8选择字体8，配套D2Win字体名表RVA1C588第8项为FontFormal11；1E67A／1E6E6取原标题／正文基线248／270，正文左16、宽270、行距20。源码沿现有任务面板缩放统一换算标题、正文和真墓图案后续位置，图形／文本仍只读当前MPQ及任务投影。该文字定位修正未构建／运行，多语言长文本及各幕面板仍待原版画面对照。
+零售配置按本机1.13c D2Client的27项任务文字表映射状态到TBL键，不把状态号直接拼成文字键后缀；实际文字仍读取当前MPQ，缺字不显示自造的英文占位描述。原表RVA F8198..F8408指向F79FC..F80BC的状态／文字对。七座古墓状态6对应qstsa2q65（Talk to Meshif），不存在qstsa2q66；原1CF1D..1D046还按私人任务位选择真墓图案说明或杰海因／马席夫交谈阶段，真墓图案仅随图案说明显示，不在交谈阶段继续显示。PD2保持独立的既有映射，未据此认证其任务文字表。
+
+任务日志文字由quest_panel读取独立的当前MPQ FontFormal11，按原TBL字宽排版及DC6底部基线绘制，不再借用对白FontFormal12或TTF顶部定位。原1.13c D2Client RVA1F5E8选择字体8，配套D2Win字体名表RVA1C588第8项为FontFormal11；1F67A／1F6E6取原标题／正文基线248／270，正文左16、宽270、行距20。源码沿现有任务面板缩放统一换算标题、正文和真墓图案后续位置，图形／文本仍只读当前MPQ及任务投影。Windows Release已构建；连接原版Host，在实际待马席夫交谈阶段打开Q并选中七座古墓，已实见Talk to Meshif且无真墓图案。多语言长文本、其他状态与各幕面板的逐项原版画面对照仍待验收。
 
 原版依据：本地D2MOO `PlrMsg::D2GAME_PACKETCALLBACK_Rcv0x58_QuestCompleted_6FC883B0`检查3字节及MAX_QUEST_STATUS，只设置QFLAG_UPDATEQUESTLOG；`D2Constants.h`定义该位为bit12，`D2QuestRecord`读取重置不会清除此位。当前1.13c D2Client.dll（ImageBase `6FAB0000`，SHA256 `DD8BC6025DE921216A97C17F97CD1A50FBB85926E838EC60E13451448836D906`）RVA `1CE00`／`1D56D`按私人bit12选择动画或完成静帧，`1F27A`–`1F367`按100毫秒推进、到帧25设置bit12并发58，`1CA00`在关闭未播完的日志时设置同位并发送58。原D2Common ordinal10174（RVA `2D0F0`）为读取、ordinal10003（RVA `2D0B0`）为设置，不能沿D2MOO旧版ordinal机械定位。两端混合连接及全部任务的完成表现仍需实机核对。
 

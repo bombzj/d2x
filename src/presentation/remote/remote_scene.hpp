@@ -40,6 +40,7 @@ struct RemoteSceneFrame {
     WorldInputView input;
     EntityId hoveredMonster; // Display selection is independent of the selected skill.
     std::vector<size_t> visibleMapTiles;
+    Vec observationExtent;
 };
 // Original-resource presentation of a server replica. Returns hit/projection results; owns no input gestures.
 class RemoteScene {
@@ -56,6 +57,7 @@ class RemoteScene {
     int renderedUnits() const;
     int unavailableUnits() const;
     bool playerDisplayed() const;
+    bool castInputBusy() const;
     std::optional<Vec> playerDisplayPosition(const OnlineView &) const;
     std::optional<Vec> playerPathPosition(const OnlineView &) const;
     const std::vector<OnlinePlayerDisplay> &players() const;

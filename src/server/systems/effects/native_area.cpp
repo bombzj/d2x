@@ -6,6 +6,8 @@
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/combat/system.hpp"
 #include "server/systems/combat/participants.hpp"
+#include "server/systems/skills/native_caster.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include <stdexcept>
 namespace d2x::server::effects {
 DomainResult<> System::nativeArea(const NativeAreaSpec &spec,uint64_t tick,std::shared_ptr<NativeAreaPulse> &retained) {
@@ -53,7 +55,19 @@ DomainResult<> System::nativeArea(const NativeAreaSpec &spec,uint64_t tick,std::
                 impact.nativeSkill->directFunction=pulse.spec.directFunction;impact.nativeSkill->staticField=pulse.spec.staticField;
                 impact.areaDamage->rolled->value.reset();
             }
-            if(!impact.missileDamage) impact.missileDamage=std::make_shared<MissileDamageRollState>();
+            if(!impact.missileDamage) {
+                const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,source.id());
+                if(!caster || !caster->programs()) return {DomainStatus::Unavailable,{}};
+                const auto &programs=*caster->programs();
+                impact.missileDamage=std::make_shared<MissileDamageRollState>();
+                // Do107 and other direct area contacts still execute native
+                // missile drain. Carry its prepared MPQ metadata as a real
+                // missile does; inherited missile contacts retain their data.
+                impact.missileDamage->lifeStealDivisor=programs.lifeStealDivisor;
+                impact.missileDamage->manaStealDivisor=programs.manaStealDivisor;
+                impact.missileDamage->lifeStealOverlay=programs.lifeStealOverlay;
+                impact.missileDamage->manaStealOverlay=programs.manaStealOverlay;
+            }
             impact.missileDamage->statRules=rules;
             impact.missileDamage->formulas=formulas;
             impact.missileDamage->skill=pulse.spec.skill;impact.missileDamage->level=pulse.spec.rank;

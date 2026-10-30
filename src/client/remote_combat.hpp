@@ -57,7 +57,7 @@ class RemoteCombat {
     bool corpseTargetEligible(const OnlineUnit &, int selection) const;
   public:
     RemoteCombat(Archives &, RemoteTown &, net::RealmSession &, RemoteInventory &);
-    bool submit(OnlineCombatCommand);
+    bool submit(OnlineCombatCommand,std::optional<Vec> inputOrigin = {});
     void update();
     bool hostile(const OnlineUnit &) const;
     bool hostileSource(const OnlineUnit &) const;

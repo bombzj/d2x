@@ -569,14 +569,21 @@ add_executable(d2x
   src/app/debug/ui_input.cpp src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp
   src/app/debug/server_snapshot.cpp
   src/app/debug/auto_walk.cpp
+  src/app/debug/navigation_search.cpp
   src/app/debug/chat_command.cpp
   src/app/debug/ai.cpp
   src/app/debug/ai_navigation.cpp
+  src/app/debug/ai_local_travel.cpp
+  src/app/debug/ai_execution.cpp
+  src/app/debug/ai_combat.cpp
   src/app/debug/ai_actions.cpp
   src/app/debug/ai_mobility.cpp
   src/app/debug/ai_supplies.cpp
   src/app/debug/ai_quests.cpp
+  src/app/debug/ai_quest_graph.cpp
   src/app/debug/ai_act_two.cpp
+  src/app/debug/ai_act_three.cpp
+  src/app/debug/ai_quest_later_actions.cpp
   src/app/debug/ai_quest_items.cpp
   src/app/debug/ai_quest_actions.cpp
 )

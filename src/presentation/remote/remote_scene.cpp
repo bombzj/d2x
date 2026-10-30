@@ -164,6 +164,12 @@ bool RemoteScene::Impl::channelSkill(int id) const {
         (skills.number(row->second,"cltdofunc")==6 && skills.value(row->second,"charclass")=="ass"));
 }
 
+bool RemoteScene::castInputBusy() const {
+    const auto &s=*impl_;
+    return s.localCast && !s.channelSkill(s.localCast->command.skill) &&
+        (s.localCast->started<0 || s.time<s.localCast->started+s.localCast->duration);
+}
+
 bool RemoteScene::Impl::localCastBlocksMovement() const {
     if(!localCast || localCast->started<0 || time>=localCast->started+localCast->duration) return false;
     const auto row=skillRows.find(localCast->command.skill);

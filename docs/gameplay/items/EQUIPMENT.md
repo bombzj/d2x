@@ -64,6 +64,8 @@ TCP/IP已经分配人物单位但客户端尚未完成EnterGame时，单位与�
 
 依据本地D2MOO `Items::ITEMS_Is1Or2Handed`、`Inventory::INVENTORY_GetWieldType`、`ItemMode::sub_6FC43280`及当前MPQ；原D2S v96仍保存既有body位置／武器组，没有新增握持字段或私有段，重入从原装备位置推导。没有存档格式迁移；完整握持、动作与保存组合仍待核对。
 
+原版销毁已装备物品使用`9D/action8`、ONCURSOR模式、原体位及`IFLAG_QUANTITY(0x20)`，并不向人物分配真实Cursor，也不再保证后续0A。依据D2MOO `QUESTS_DeleteItemEx → ItemMode::sub_6FC45B30(bSetQuantityFlag=1)`及原版1.13c破珠实际包；普通卸装没有该移除标志，仍须保留Cursor。客户端共用物品投影按这三个字段识别销毁，自研私有装备移除回执从事务冻结的旧物品及体位编码同一路径，不补造库存结果；对应Will销毁包的完整flags原版为`00802030`、自研为`00800030`，残余`INSTORE(0x2000)`来源及存储回调仍待对齐；不能把移除语义修正当作全字段一致。其他容器与销毁来源的完整包序仍待分别核对。
+
 ## 入口与边界
 
 [equipment_loadout](../../../src/gameplay/items/equipment_loadout.cpp)、[contributions](../../../src/gameplay/items/equipment_contributions.cpp)、[activation](../../../src/gameplay/items/equipment_activation.cpp)、[requirements](../../../src/gameplay/items/equipment_requirements.cpp)提供纯计算，server/attributes与inventory/equipment规划总值及位置，transactions提交；内容只由hosting准备。武器手位／类型与六通道伤害不在本页再实现。

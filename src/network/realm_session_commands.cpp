@@ -359,6 +359,17 @@ bool RealmSession::acknowledge_npc_message(uint16_t stringId, std::optional<Onli
         p.fail(OnlineErrorKind::Transport, "NPC message could not be queued"); return false;
     }
 }
+bool RealmSession::request_quests(uint64_t gameGeneration) {
+    std::lock_guard lock(impl_->mutex);impl_->snapshotDirty=true;auto &p=*impl_;
+    if(!p.require(OnlineStage::ProtocolReady) || !p.view.load.playerUnitId ||
+        snapshot_.connectionGeneration!=p.view.connectionGeneration || snapshot_.gameGeneration!=p.view.gameGeneration ||
+        gameGeneration!=p.view.gameGeneration) return false;
+    try {
+        p.sent(p.gs,{0x40});p.view.error.reset();p.changed();return true;
+    } catch(const std::exception &) {
+        p.fail(OnlineErrorKind::Transport,"Quest status query could not be queued");return false;
+    }
+}
 bool RealmSession::acknowledge_quest_log(uint16_t nativeSlot, uint64_t gameGeneration) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;

@@ -17,13 +17,31 @@ bool DebugAi::Impl::questUseItem(Context &c,const QuestStep &step) {
     const auto points=world.playerAttributes.find(5);
     const uint32_t available=points==world.playerAttributes.end()?0:points->second;
     if(questRun.pending) {
-        if(!owned(c,step.item) && questRun.skillPointsBefore && uint64_t(available)>=uint64_t(*questRun.skillPointsBefore)+1) {
+        if(step.item=="xyz" && !owned(c,step.item)) {
+            const auto flags=questFlags(c,QuestId::GoldenBird);
+            if(!questRun.pending->statusRequested) {
+                if(!c.session.request_quests(c.session.read().gameGeneration)) return false;
+                questRun.pending->statusRequested=true;
+            }
+            if(flags && (*flags&1) && !(*flags&0x20)) {
+                note("quest-life-potion-consumed","Actual item removal and cleared native use-pending flag");return true;
+            }
+        }
+        if(step.item=="ass" && !owned(c,step.item) && questRun.skillPointsBefore && uint64_t(available)>=uint64_t(*questRun.skillPointsBefore)+1) {
+            // The native skill point/item results can precede the next28.
+            // Keep this observed irreversible postcondition in the graph and
+            // refresh the private record, never acquire/use another book.
+            if(step.item=="ass" && !questRun.pending->statusRequested) {
+                if(!c.session.request_quests(c.session.read().gameGeneration)) return false;
+                questRun.pending->statusRequested=true;
+                note("quest-status-requested","Confirmed skill-book consumption; refreshing its private record");
+            }
             note("quest-skill-book-consumed","Actual item removed and permanent skill point increment observed");return true;
         }
         wait("quest-use-result","Waiting for actual quest-item consumption and its permanent reward");checkQuestPending(c);return false;
     }
     const auto item=accessibleItem(c,step.item);
-    if(!item || item->mode!=0 || item->page!=1) throw std::runtime_error("Quest skill book must be in the actual backpack before use");
+    if(!item || item->mode!=0 || item->page!=1) throw std::runtime_error("Quest consumable must be in the actual backpack before use");
     questRun.skillPointsBefore=available;
     OnlineItemCommand use;use.action=OnlineItemAction::Use;use.item=item->id;use.itemRevision=item->revision;
     questItemRequest(c,use,QuestPending::Action::Use,"quest-item-use-submitted");return false;
@@ -32,6 +50,9 @@ bool DebugAi::Impl::questCombine(Context &c,const QuestStep &step) {
     const auto &view=c.session.read();const auto &world=view.world;
     const auto output=accessibleItem(c,step.item);
     const auto cube=accessibleItem(c,step.produced);
+    const std::vector<std::string> ingredients=step.ingredients.empty()?std::vector<std::string>{"msf","vip"}:step.ingredients;
+    if(!questRun.pending && owned(c,step.item) && !output)
+        throw std::runtime_error("Assembled quest item exists outside accessible backpack/cube/Cursor; no duplicate ingredients are acquired");
     if(questRun.pending) {
         const auto &p=*questRun.pending;
         const auto wire=world.items.find(p.item);
@@ -42,7 +63,7 @@ bool DebugAi::Impl::questCombine(Context &c,const QuestStep &step) {
         case QuestPending::Action::Take:observed=wire!=world.items.end() && wire->second.mode==4;break;
         case QuestPending::Action::StoreCube:observed=wire!=world.items.end() && wire->second.mode==0 && wire->second.page==4;break;
         case QuestPending::Action::Place:observed=wire!=world.items.end() && wire->second.mode==0 && wire->second.page==1;break;
-        case QuestPending::Action::Transmute:observed=output && !owned(c,"msf") && !owned(c,"vip");break;
+        case QuestPending::Action::Transmute:observed=output && std::none_of(ingredients.begin(),ingredients.end(),[&](const auto &code){return owned(c,code);});break;
         default:break;
         }
         if(!observed) {wait("quest-cube-result","Waiting for the actual cube/item operation; no replay");checkQuestPending(c);return false;}
@@ -72,10 +93,11 @@ bool DebugAi::Impl::questCombine(Context &c,const QuestStep &step) {
     // the player's possessions. Recipe validity and output remain MPQ/host-owned.
     for(const auto &[id,item]:world.items) {
         (void)id;
-        if(onlineItemOwnedBy(item,view.load.playerUnitId) && item.mode==0 && item.page==4 && item.code!="msf" && item.code!="vip")
+        if(onlineItemOwnedBy(item,view.load.playerUnitId) && item.mode==0 && item.page==4 &&
+            std::find(ingredients.begin(),ingredients.end(),item.code)==ingredients.end())
             throw std::runtime_error("Quest cube contains unrelated items; clear it before running this recipe");
     }
-    for(const auto code:{"msf","vip"}) {
+    for(const auto &code:ingredients) {
         const auto item=accessibleItem(c,code);
         if(!item) throw std::runtime_error("Quest transmutation lacks the actual ingredient: "+std::string(code));
         if(item->mode==0 && item->page==4) continue;

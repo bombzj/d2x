@@ -17,7 +17,7 @@ param(
         'online-cancel', 'online-logout',
         'online-register', 'online-create-character', 'online-delete-character',
         'online-return-realms', 'online-cancel-list',
-        'online-world', 'online-move', 'online-use-exit', 'online-interact',
+        'online-world', 'online-quest-refresh', 'online-move', 'online-use-exit', 'online-interact',
         'online-waypoint-travel', 'online-waypoint-close', 'online-automap',
         'online-move-to-unit', 'online-town-portal', 'online-npc-interact',
         'debug-walk', 'debug-walk-status', 'debug-walk-cancel',

@@ -61,7 +61,7 @@ bool RemoteUiClients::Impl::Actor::control(ActorControlIntent intent) {
                 intent.point.x >= 0 && intent.point.y >= 0 && intent.point.x <= UINT16_MAX && intent.point.y <= UINT16_MAX)
                 request.point = OnlinePoint{uint16_t(intent.point.x), uint16_t(intent.point.y)};
             else return false;
-            const bool accepted = o.combat.submit(request);
+            const bool accepted = o.combat.submit(request,intent.displayOrigin);
             if (!accepted) o.notice = o.combat.reason();
             return accepted;
         }

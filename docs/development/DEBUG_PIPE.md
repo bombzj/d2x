@@ -39,7 +39,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 客户端自主行走
 
-批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方，源码含scenario=act1／act2的各六任务编排及单项quest，仍由下面的行走驱动执行接近。Windows Release已构建并入局检查；实际覆盖和剩余组合以该专题为准，不把单目标行走结果当作整条任务验收。新增聊天入口可用`/debug-ai-start act1`、`/debug-ai-start quest search-for-cain`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和未构建／运行边界见该专题。
+批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方，源码含scenario=act1／act2／act3的各六任务编排及单项quest，仍由下面的行走驱动执行接近。Windows Release已构建并入局检查；实际覆盖和剩余组合以该专题为准，不把单目标行走结果当作整条任务验收。聊天入口可用`/debug-ai-start act3`、`/debug-ai-start quest search-for-cain`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和运行边界见该专题。
 
 新增第一幕六任务配方与200毫秒决策，以及`supplies`整计划药剂策略和`goals:[{action:'restock'}]`补给目标，支持低血／低法力饮药、正常货架购买和安全的缺药回城往返；这批源码已通过Windows Release构建并执行实机回归，实际奖励、药剂和补给覆盖见该专题。其他任务／五幕首领的前置覆盖限制见同一专题，不能把通用hunt视为所有任务已完成。
 
@@ -48,6 +48,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 导航只读取RemoteTown已重建的地形／碰撞、逻辑步行连接与当前mapTargets，不额外生成或激活房间。出口目标先按目的层及真实共边选定连接，再找已知通行开口；输入不足时只沿该连接方向接近当前可达地形前沿，缺连接不回退为任意房间巡游。传送点未指派时仍可探索当前层可达房间；缺地图／资源不穿墙或补造目标，不自动战斗／喝药／复活／解锁任务／传送点。当前不实现跨层导航任务，换区、重入、离局或死亡终止旧意图。
 
 移动衔接使用正常RemoteScene.playerPathPosition（客户端DynamicPath位置，不含绘制校正），每0.2秒判断并重新规划，包括行走过程中；方向改变、原段受阻或接近段尾时沿同一RemoteControl.move／interact入口更新输入，同方向仍有效时保留当前请求，并传递同一客户端操作原点；不等待稀疏0x96服务器位置才发下一次输入。规划复用Grid.path，只在首条碰撞核实的直线段内前视最多18子格，量化到实际整数点击目标后复核同一碰撞射线，不跨尚未走过的转角，保留原50子格请求、资格／限流及服务端碰撞裁决。客户端预测不写OnlineView或权威位置；服务器采样另保留供诊断。无路、目标撤出、无进展及总期限明确失败；传送点以服务器菜单确认，其他交互的submitted仍须另核对服务器结果。
+
+父AI与独立debug-walk共用执行预算计时：观察面板、表现暂停或地图输入不可用期间不消耗导航总预算和移动无进展时间，恢复不因面板停留触发15秒卡住；不延长已经提交给正常客户端的请求现实期限。导航状态另含executionBlocked、executionRemainingMs和suspendedExecutionMs。AI动作的输入占用、结果观察及恢复契约见[动作调度](DEBUG_AI.md)。
 
 显式导航期间调试输入持有后台客户端焦点，窗口未最小化时单机可正常推进；客户端菜单／表现暂停会阻止操作，最小化不执行输入；显式server-pause仍由宿主独立持有，导航不读取宿主暂停真值，无位置进展将按期限失败。人工点击／按键及其他修改客户端状态的调试请求取消导航，让位正常操作。返回`navigation`含state、reason、gameGeneration／areaGeneration、target／unit／segment、clientPosition／serverPosition、targetSource、exitLevel与boundaryStart／boundaryEnd、decisionIntervalMs／decisions／clientMoving，以及moveRequests／interactionRequests／searchRooms（位置为最近一次导航决策采样，停止后实时位置见online-status；前两项为客户端入口受理次数，同目标合并时不等于发包数）；`completed`对传送点表示已收到服务器菜单，其他交互只表示已提交正常请求，不表示奖励或旅行成功。源码入口为[auto_walk.cpp](../../src/app/debug/auto_walk.cpp)，没有新增测试脚本／专用测试程序；构建与实际覆盖见[原版缺口](ORIGINAL_GAPS.md)。
 
@@ -60,7 +62,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 原服收包记录
 
-`online-status`和`server-status`另返回`performance`：最近120个已完成呈现帧的`milliseconds`按host、network、client、debug、scene、present、other和total记录mean／p95／max，`completedFrames`及`over100ms`为本进程累计计数。present包含垂直同步／限帧等待，host包含嵌入宿主工作，scene包含场景及UI更新／绘制；这是实际墙钟耗时，不是25 Hz权威帧。统计有界保存且不逐帧写磁盘；查询看到上一完整帧为止的样本，暂停或切换场景后须等待窗口刷新再比较。
+`online-status`和`server-status`另返回`performance`：最近120个已完成呈现帧的`milliseconds`按host、network、client、ai、navigation、debug、scene、present、other和total记录mean／p95／max，`completedFrames`及`over100ms`为本进程累计计数。ai／navigation分别为调试父AI／子行走调度，包含其碰撞和候选处理；present包含垂直同步／限帧等待，host包含嵌入宿主工作，scene包含场景及UI更新／绘制；这是实际墙钟耗时，不是25 Hz权威帧。`performance.navigationSearch`另列父／子共享的新求路数、缓存／可达证明命中、预算让出、移动段复用与实际求路微秒；预算范围及单次公共求路仍为同步调用的边界见[共享寻路预算](DEBUG_AI.md#共享寻路预算)。统计有界保存且不逐帧写磁盘；查询看到上一完整帧为止的帧样本和当前求路计数，暂停或切换场景后须等待窗口刷新再比较。本轮计时拆分和共享预算尚未构建／运行，无实测性能结论。
 
 需要核对原服实际消息时，可在启动客户端时指定`--game-packet-log <新.jsonl>`，记录D2X客户端成功入发送队列的C2S和完成分帧、消费之前的S2C；`--host-packet-log <另一新.jsonl>`记录嵌入／TCP/IP宿主完成分帧、校验分派之前的C2S，以及成功入输出队列的S2C（批量输出拆成原包）。两者独立按JSONL记录sequence、相对启动微秒、endpoint、direction、包号、含包头长度和十六进制字节；客户端用gameGeneration区分入局，宿主用connection区分每次游戏字节连接，包含内存房主和TCP客人。握手和离局同样记录；入发送队列不表示对方已执行，收到C2S也不表示事务提交成功。
 
@@ -82,7 +84,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 当前源码的`server-snapshot`增加`combatMetrics`与`spatial`。`combatMetrics.queueDepth`为完整近战等待数，`targetAttempts`为本步进入目标处理的次数（包括资格拒绝，不等于命中数）；`stages`按系统名输出本步`nanoseconds`、实例累计`calls`／`blocked`，覆盖空间、伙伴、AI、技能、怪物、弹体、效果和战斗。空间在帧事件前、Actor阶段和移动后同步，其耗时相加。`spatial`给出索引tick／generation、活单位数、本步查询数／被精筛候选数／返回数。快照查询不推进随机和玩法，计时仅观察，不参与调度；范围只含已接索引路径。后续同负载采样才能计算p50／p95／p99，不将单步耗时当作性能提升证明。
 
-`online-world.scene.monsters`返回当前已解析怪物的原classId、实际姓名／词缀和最终transform／randomTransform，复用显示姓名与调色路径；不是服务端真值或准入列表。跨进程探索保存只在本地单机／TCP/IP角色入口工作，规则与侧文件边界见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。
+`online-world.scene.monsters`返回当前已解析怪物的原classId、实际姓名／词缀和最终transform／randomTransform，复用显示姓名与调色路径；不是服务端真值或准入列表。online.navigationMemory只读返回observedCells／targets／connections／waypoints／restored；这是观察与位置提示缓存计数，不表示解锁或真实单位指派。跨进程探索保存覆盖本地角色及Realm路径，规则与侧文件边界见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。
 
 `scene.automap.reveal`只读内部开图进度：enabled、state（disabled／running／complete／partial）、reason、rootLevel、roomsCompleted／roomsTotal、borrowed／released、activeRooms及逐level的layer／房间／图元／预设／已匹配出口数。范围是当前连续步行区域；完成后专用生成器销毁，activeRooms归零，借还数应平衡。逐level的complete表示房间遍历完毕，最终状态还要检查是否导出可显示图元；全部零图元返回partial及原因。`automap.revealedCells`仍只统计自然探索，既有`nativeCells`字段统计最终显示图元，含启用时的独立开图叠层；关闭后撤去，不能把该显示数当真实房间引用或存档内容。开图不提供服务端管理命令，普通PD2模式使用BH面板开关；原版无自动调用。细节见[内部开图](../architecture/BH_CODE_ISOLATION.md#内部实现与bh调用边界)。
 
@@ -211,7 +213,7 @@ $spec.preview=$false
 | `online-chat-relation` | unitId为当前名册另一玩家GUID，action为ignore／squelch／loot／hostile，enabled布尔值；原5D/action2／3／1／4。真实关系等75／8C；忽略者阻止自己的话到达目标，squelch者屏蔽目标发来的消息，沿原PlrMsg方向条件；loot只接受存活HC，用于授予／撤销本人尸体许可；hostile仍受原等级／城镇规则约束，队伍使用online-party-action |
 | `online-trade-respond` | accept布尔值、revision为当前world.playerTrade.revision；true接受邀请（button3），false拒绝／取消（button2）。accepted仅表示发送；真实身份等0x78，完成等0x77/13。 |
 | `online-trade-offer` | action为agree／revoke／gold，revision绑定当前交易，gold另需amount 0–INT32_MAX；原button4／7／8。world.playerTrade返回ownGold／peerGold、ownAgreed（请求已发）／peerAgreed、agreementLocked及response；最终交换只由服务端确认，自研权威边界见[玩家交易](../gameplay/items/PLAYER_TRADE.md)。 |
-| `online-world` | 可选fromX／fromY／x／y及radius（0–24）只读当前客户端原生路径和碰撞窗口，返回navigation；不移动角色或改碰撞。只读同一快照：world.units／rooms／equipment／attributes、本人全局 subtile 坐标与当前生命／法力／体力；scene 含原 DS1、原点、候选／地标、碰撞／显示／移动可用性、本人是否绘制与缺外观数量；当前源码units增加nativeMode、direction、actionSkill／actionSkillLevel，区分实际模式、原路径面对方向及当前技能动作 |
+| `online-world` | 可选fromX／fromY／x／y及radius（0–24）只读当前客户端原生路径和碰撞窗口，返回navigation；scene.walkingBoundaries列出当前已重建步行连接的destination／side／plane／start／end；不移动角色或改碰撞。只读同一快照：world.units／rooms／equipment／attributes、本人全局 subtile 坐标与当前生命／法力／体力；scene 含原 DS1、原点、候选／地标、碰撞／显示／移动可用性、本人是否绘制与缺外观数量；当前源码units增加nativeMode、direction、actionSkill／actionSkillLevel，区分实际模式、原路径面对方向及当前技能动作 |
 | `online-resurrect` | 无参数；要求原服报告死亡。等待DEAD后发送原0x41，重复请求去重；world.respawnRequest记录WaitingForDeath／Sent／Confirmed／TimedOut及sent，确认前不恢复本地资源。Hardcore执行退局 |
 | `online-recover-corpse` | unitId为world.corpses及scene.mapTargets中本人或已授权HC的真实可见尸体GUID，自动type0；先按共同路径靠近，再原0x13请求取回。以服务端库存／装备与尸体回包确认，accepted不表示回收完成 |
 | `online-items` / `online-ground` | 只读同一完整快照；online.inventory.items含地面和各所有者物品，依mode／owner筛选，不请求服务器刷新；尺寸、数量、耐久、词缀、孔内所有者、decoded／reason及revision见下文 |
@@ -237,7 +239,7 @@ $spec.preview=$false
 | `online-staff-update` | cancel布尔（默认false）；要求已收到原0x58的插杖来源，提交时只使用实际本人Cursor物品GUID，发送原0x44 state3；cancel发送state2。入队不代表材料消耗或古墓开墙，应核对库存、0x58结果和权威机关 |
 | `online-npc-respec` | 无参数；要求原slot41 pending且Akara菜单有原重置选项；发送原0x38 action0、NPC、parameter0，随后核对属性／技能／热键与存档 |
 | `online-waypoint-travel` / `online-waypoint-close` | travel的level为原区域ID1–136，必须有当前服务端0x63菜单且目的地已解锁；close无参数，可取消当前待确认请求或关闭已确认菜单。发送原0x49，level=0为关闭，不解锁任务或传送点 |
-| `online-automap` | 可选visible／large布尔值，visible省略时开关、large省略时保留；只改变显示。scene.automap返回大小／显示、stamps／towns数量及当前连续层revealedCells |
+| `online-automap` | 可选visible／large布尔值，visible省略时开关、large省略时保留；只改变显示，保留当前AI计划。scene.automap返回大小／显示、stamps／towns数量及当前连续层revealedCells |
 | `online-login` | 必填 account、password；原版文件／认证模式／端口读取 `--online-config` 私有配置，只在 Idle／Failed／Cancelled 接受；自动选择配置中的 Realm |
 | `online-register` | account、password（各2–15）；配置和允许阶段同登录，注册成功自动登录；服务端拒绝码在 error 中 |
 | `online-create-character` | name（1–15个ASCII字母／数字／连字符／下划线；最终资格由服务端判断，自研暂不接受下划线）、classId（0–6，默认0）、hardcore（默认false，旗标0x04）、ladder（默认false，旗标0x40）；CharacterSelection 接受，资料片固定0x20，专家级／天梯按请求提交，服务器生成初始数据后刷新列表；自研服务端只接受0x20／0x24，含0x40的请求被拒绝 |
@@ -252,6 +254,7 @@ $spec.preview=$false
 | `online-game-info` | name；Lobby／ListingGames 发原 MCP 0x06，online.gameInfo 返回 Pending／Ready／TimedOut、真实难度标志、人数上限、等级限制、说明与角色。独立请求编号／超时，迟到回复不替换新选择；无回复不推断房间已删除 |
 | `online-join-game` | name、可选 password；Lobby／ListingGames 接受，复验输入后退役未完成列表并调用原 MCP 取票接口；UI 同一入口，可按名字直接加入 |
 | `online-leave-game` | 创建／加入／连接游戏／握手阶段取消并重新取服务器角色列表；LoadingGame／ProtocolReady 请求原0x69保存退局；LeavingGame重复请求不重发，退局超时标记保存结果未知 |
+| `online-quest-refresh` | 已入局且本人已指派时发送原C2S0x40任务数据查询；绑定当前游戏代次，不取消调试AI。受理不代表已收回包，实际私人任务位、状态及有资格的真墓线索见后续0x28／0x50／0x52与`online-status.online.world.quests` |
 | `online-return-characters` | Lobby 返回服务器选角，重新取票 |
 | `online-cancel` / `online-logout` | 关闭连接；前者进入 Cancelled，后者清空会话回主菜单 |
 | `screenshot` / `quit` | 联网截图使用 path 参数；quit 立即返回 accepted，应用在 LoadingGame／ProtocolReady 先正常退局，等响应／关闭或期限后注销退出；不是保存成功回执 |

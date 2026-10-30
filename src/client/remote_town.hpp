@@ -9,7 +9,12 @@
 #include "content/string_table.hpp"
 #include "client/automap_exploration.hpp"
 #include "client/automap_reveal.hpp"
+#include <cstdint>
+#include <optional>
+#include <set>
 #include <span>
+#include <tuple>
+#include <vector>
 
 namespace d2x {
 // MPQ-backed scene binding, separate from the server replica and local authority.
@@ -34,13 +39,32 @@ class RemoteTown {
     ClassicStrings strings_;
     using Discovery = std::tuple<uint32_t, int, int, int, int>;
     AutomapExploration explored_;
+    AutomapExploration navigationObserved_;
+    Vec observationExtent_;
+    std::string navigationProfile_;
+    uint32_t navigationObjectSeed_{};
+    bool navigationRestored_{};
     std::map<int,uint32_t> actSeeds_;
     std::map<Discovery, std::set<int>> discoveredCels_;
     using NativeCells = AutomapCells;
     std::map<std::tuple<uint32_t, uint32_t, uint32_t>, NativeCells> nativeAutomapCells_;
     size_t nativeAutomapCelCount_{};
     AutomapReveal revealed_;
-    void rememberTile(const OnlineView &, int level, int x, int y, int type, bool wallArray, const MapCell &);
+    uint64_t automapDataRevision_{},automapTerrainRevision_{};
+    struct AutomapProjectionKey {
+        uint64_t terrain{},exploration{},data{},overlay{};
+        uint32_t seed{};
+        std::optional<uint32_t> objectSeed;
+        int act{},area{};
+        bool operator==(const AutomapProjectionKey &) const = default;
+    };
+    std::optional<AutomapProjectionKey> automapProjection_;
+    std::set<int> automapComponent_;
+    // Indices are valid only for the current terrain snapshot and seed pair.
+    std::vector<uint8_t> automapVisitedTiles_;
+    std::optional<std::pair<uint32_t,std::optional<uint32_t>>> automapVisitedSeeds_;
+    bool automapViewportPrepared_{};
+    void rememberTile(const OnlineView &, int level, int x, int y, int type, bool wallArray, std::span<const int> cels);
     std::map<std::tuple<uint32_t, int, int>, OnlineAutomapTown> discoveredTowns_;
     std::set<std::tuple<uint32_t, int, int>> preparedTownAutomaps_;
     std::shared_ptr<const WorldCatalog> catalog_;
@@ -63,12 +87,15 @@ class RemoteTown {
     // a unit/room leaves the current interest set; never a live GUID guarantee.
     std::map<std::tuple<uint16_t,uint8_t,uint16_t>,OnlinePoint> knownTargetPositions_;
     std::map<std::pair<uint16_t,uint16_t>,OnlinePoint> knownConnections_;
+    std::optional<std::pair<uint16_t,OnlinePoint>> walkingObservation_;
+    void rememberWalkingConnection(const OnlineView &);
     std::map<uint16_t,OnlinePoint> knownWaypoints_;
     mutable std::vector<NavigationRoom> navigationRooms_;
     mutable std::map<int,std::vector<int>> navigationConnections_;
     mutable std::map<uint16_t,size_t> navigationSeen_;
     mutable std::tuple<uint64_t,uint64_t,uint64_t> navigationKey_{};
     mutable bool navigationCached_{};
+    mutable uint64_t navigationObservedRevision_{};
     mutable uint64_t navigationCacheBuilds_{};
     void refreshNavigationCache() const;
     void updateUnitRooms(const OnlineView &);
@@ -86,11 +113,13 @@ class RemoteTown {
     void prepareTownAutomap(const OnlineView &);
     MapSceneView automapScene(const OnlineView &) const;
     void updateAutomapView(const OnlineView &);
+    void updateAutomapBase(const OnlineView &);
 
   public:
     explicit RemoteTown(Archives &a, bool reportAutomapRoomsPd2 = false);
     void update(const OnlineView &, std::optional<Vec> displayPosition = {});
     const OnlineSceneView &read() const { return view_; }
+    std::optional<Vec> inputOrigin(const OnlineView &) const;
     Grid navigationGrid(const OnlineView &,std::optional<OnlineUnitKey> ignored = {}) const;
     const Map *map() const { return map_; }
     // Already reconstructed logical walking links, including an adjoining room
@@ -98,11 +127,19 @@ class RemoteTown {
     struct WalkingBoundary {uint16_t destination{};int side{},plane{},start{},end{};};
     std::vector<WalkingBoundary> walkingBoundaries() const;
     const std::vector<NavigationRoom> &navigationRooms() const;
+    struct NavigationObservation {
+        int tileX{},tileY{},width{},height{};
+        std::span<const uint8_t> seen;
+        Vec halfExtent; // x-y and x+y axes, from the rendered world viewport.
+    };
+    std::optional<NavigationObservation> navigationObservation() const;
     std::optional<OnlinePoint> knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const;
     std::optional<OnlinePoint> knownConnectionPosition(uint16_t from,uint16_t to) const;
     std::optional<OnlinePoint> knownWaypointPosition(uint16_t area) const;
     uint64_t navigationRevision() const;
     uint64_t navigationCacheBuilds() const {return navigationCacheBuilds_;}
+    struct NavigationMemory {size_t observedCells{},targets{},connections{},waypoints{};bool restored{};};
+    NavigationMemory navigationMemory() const;
     // The layout's resolved Vis slots override the table's static slots.
     const std::map<int,std::vector<int>> &navigationConnections() const;
     bool permits(const OnlineView &, OnlinePoint target) const;
@@ -110,7 +147,7 @@ class RemoteTown {
     std::vector<OnlineUnitKey> nearbyUnits(const OnlineView &, OnlinePoint center, int radius) const;
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
     bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}, bool approaching = false) const;
-    void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices);
+    void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices,Vec observationExtent={});
     // Observer-only overlay; does not enter discovery, navigation or live DRLG.
     void updateAutomapReveal(const OnlineView &, bool enabled, AutomapPresetCellSelector);
     std::vector<uint32_t> take_automap_room_reveals_pd2();

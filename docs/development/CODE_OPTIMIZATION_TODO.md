@@ -68,7 +68,21 @@ P1为优先评估的结构改进，P2为后续或高风险改进，P3为先取�
 
 - [ ] **C12 完整解码算法不因体积拆散**。DCC已有位流、帧／方向头和两阶段解码入口。先确认哪些类型确需对外可见、哪些阶段经常独立修改，再决定是否抽私有helper；若无维护或性能证据，保留当前文件。后续任何优化须保持像素、透明、方向／帧索引与无效输入拒绝语义；不能仅凭解码函数较长就换算法或增加缓存。
 
-- [ ] **C13 性能优化建立测量前提**。本轮未测量运行耗时、分配或编译成本，不能宣称上述文件是性能热点。获授权后先复用已有`FrontendTimings`的host／network／client／debug／scene／present分段及p95／max观察，判断瓶颈在何阶段；进一步工具选择按具体热点决定，不为本待办新增测试程序。仅在证据支持时评估重复表查询、快照复制、分配或空间查询，并记录配置、负载和冷／热条件。任何缓存必须有唯一数据源、身份／代次、失效时点和稳定遍历顺序。
+- [ ] **C13 性能优化建立测量前提**。尚无同条件的运行耗时、分配或CPU占用对比，不能把静态候选称为已测热点。获授权后先复用已有`FrontendTimings`的host／network／client／debug／scene／present／other分段及p95／max观察，判断瓶颈在何阶段；进一步工具选择按具体热点决定，不为本待办新增测试程序。仅在证据支持时评估重复表查询、快照复制、分配或空间查询，并记录配置、负载和冷／热条件。任何缓存必须有唯一数据源、身份／代次、失效时点和稳定遍历顺序。
+
+  城镇前台静止场景的静态优先候选如下。顺序按明确重复工作、作用范围与修改风险安排，不是实测耗时排名；客户端候选也适用于连接原服，宿主候选仅适用于D2X权威来源。
+
+  | 优先候选／入口 | 当前重复工作 | 优化边界 |
+  | --- | --- | --- |
+  | 自动地图派生投影：`app/frontend.cpp` → `RemoteTown::revealVisibleTiles／updateAutomapBase／updateAutomapView` | 已在源码中加入快照局部瓦片处理标记、增量揭示计数和静态投影修订缓存；稳定视口不再重复选cel／插图元，城镇不再重复全填，静态输出只在源变化时重建。单位标记仍独立刷新 | 尚未构建／运行，不能据此确认CPU降幅。恢复、seed／object seed、层／区域、地形快照及额外揭示取消的失效边界和原版依据见[自动地图](../gameplay/world/AUTOMAP.md#揭示与生命周期)。此帧尾工作计入`other`，不能只观察`scene`；后续仍需按实际计量评估变化时的图元集合合并及输出向量成本 |
+  | 宿主可见状态发布：`NativeRealmHost::advance` → `publishPlayers／publishMonsters／publishObjects／publishPortals` | 即使本次pump没有完成新逻辑帧，仍准备各类可见投影、集合和比较基线；`visibleMonsters`扫描活动Actor并复制状态／装备，`publishPlayers`把共享只读快照再复制到值map，同次发布中物件查询也重复 | 首先共享同一发布边界的不可变投影，再按真实领域变更维护邻室／单位变更集合。不能仅用tick或本人快照指针作唯一缓存键：同帧内容交接、背压继续点、事实发布、加入退出及兴趣变化仍可改变输出；不得跳过必须的原包或改变发布顺序 |
+  | 照明与墙体可见性：`LightingView::prepare`、`TileVisibility::update` | 每显示帧重算光源遮挡、光场、角点均值并上传纹理；墙体遍历重新构造Key、查map、搜索邻室及Pops，即使人物与地形未变 | 缓存静态遮挡／Pops归属和稳定光场输入；环境量化值、光源位置／半径／颜色、门碰撞及视口变化准确失效，原500ms渐变继续按原时钟计算。先保持原整数取样及叠加次序，不以降低光照频率或简化算法替代 |
+  | 技能目录：`RemoteCombat::update` | 每显示帧清空目录并遍历全部Skills候选；循环中重复`classCode()`查询会话及职业表，`innateSkill()`再查一次。单位外观／状态解码已有各自修订门控，不能把整段都当作重复解码 | 单次更新先复用职业与固有技能查询；目录按人物身份、技能等级、物品技能数量等真实来源变化重建。外观、状态消息、变身持久身份清理仍独立消费，不能整体早退 |
+  | 多单位移动碰撞：`RemoteScene::Impl::navigationCollision／advanceRoute` | 每个实际推进的单位重新遍历公开单位并排序、合并脚印；多单位同时移动时形成约`移动单位数 × 全部单位数 log 全部单位数`的准备成本 | 这是移动／战斗扩展候选，普通静止单位的空route分支不会调用它。复用按客户端步进顺序维护的脚印索引，查询时按原规则排除自身／有效目标；不能用一张帧初冻结脚印代替前一单位推进后的真实状态 |
+
+  原版对照以本地D2MOO为限：`D2Game/GAME/Game.cpp::GAME_UpdateProgress`按游戏帧推进事件与客户端更新，房间处理受`bHasPendingRoomsUpdates`约束；`GAME/Level.cpp::LEVEL_UpdateUnitsInAdjacentRooms`先检查`bHasPendingUnitListUpdates`，只遍历邻室`pUnitUpdate／pChangeNextUnit`，`LEVEL_UpdateQueuedUnitsInAllActs`在消费后清队列。这里支持的是“按真实变更消费邻室单位”的方向，不等同于允许D2X每帧结束后丢弃尚未交付的事实。`GAME/Event.cpp::EVENT_IterateEvents`消费当前64槽事件桶及无限事件链；D2X的AI主执行已接原生帧事件，不能误称为每显示帧全量执行AI。`D2Common/Drlg/DrlgPreset.cpp::DRLGPRESET_UpdatePops`按当前预设和邻室处理Pops，可用于核对归属索引；不能借缓存跳过原渐变。该本地转录包含1.10f等版本标注，不据此覆盖既有1.13c差异；D2Client自动地图循环不在本地D2MOO中，上述自动地图候选依据是当前D2X调用链，不宣称已证明原客户端的完整调度。
+
+  RGBA背景复制／逆调色及逐图元刷新还需单独分辨CPU提交与GPU耗时：`PaletteBlendView::drawWall`的透明墙／阴影路径逐图元flush并复制背景，`drawLit`的Screen路径同样如此；不能把这些调用直接称为CPU读回。D2MOO `D2Gfx/CmnSubtile.cpp`保留直接索引缓冲／调色表路径，但更换D2X目标格式或混色后端属于高风险独立工作，沿[渲染设计](../architecture/DIABLO2_GLIDE_RENDERING.md#95-精确软件索引目标是独立工作)核对像素与顺序后再决定，不以普通alpha混色换取未经证明的提速。
 
 - [ ] **C14 编译依赖单独取证**。文件规模不等于重编译影响。对实际频繁修改的公共头核对直接包含、使用者和CMake目标，只有不需完整定义的借用才采用前置声明；纯私有实现移到cpp。保持C++20和Windows／Linux路径，不把Win32或GPU依赖传入玩法；不得为所有类增加PImpl，也不创建聚合头隐藏缺失包含。编译收益需获授权后实际测量，本轮没有头文件依赖扇出结论。
 

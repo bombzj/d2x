@@ -6,6 +6,7 @@
 #include "gameplay/combat/life.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/units/resources.hpp"
+#include "gameplay/quest/acts/act_two_state.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/inventory/eligibility.hpp"
@@ -324,6 +325,13 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
     } else { next.persistent.player = std::get<CharacterEdit>(change).player;
         if(characterEdit->waypoints) next.persistent.waypoints=*characterEdit->waypoints;
         if(characterEdit->ironGolem) next.persistent.ironGolem=*characterEdit->ironGolem;
+    }
+    synchronizeActTwoRecords(player->persistent.player.quests,next.persistent.player.quests);
+    if(admission) for(auto &difficulty:next.persistent.player.quests) for(const auto id:actTwoQuests) {
+        auto &q=difficulty[questIndex(id)];
+        // QUESTRECORD_CopyBufferToRecord(reset): clear this game's result
+        // bits in every difficulty and remember an earlier pending reward.
+        if(q.nativeRecord) *q.nativeRecord=uint16_t((*q.nativeRecord&~0x6000u)|(*q.nativeRecord&2?0x8000u:0u));
     }
     if (next.persistent.player.id != player->actor) return {DomainStatus::InvalidActor, {}};
     if (next.persistent.player.hardcore != player->persistent.player.hardcore ||

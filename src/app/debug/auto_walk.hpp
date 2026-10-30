@@ -1,5 +1,7 @@
 #pragma once
 #include "contracts/online_scene.hpp"
+#include "action_state.hpp"
+#include "navigation_search.hpp"
 #include <chrono>
 #include <nlohmann/json_fwd.hpp>
 #include <optional>
@@ -7,6 +9,8 @@
 #include <string>
 
 namespace d2x {
+struct Grid;
+bool debugUnknownFrontier(const Grid &,Vec endpoint);
 inline constexpr auto debugDecisionInterval=std::chrono::milliseconds(200);
 class RemoteTown;
 class RemoteControl;
@@ -21,16 +25,23 @@ class DebugAutoWalk {
     std::optional<uint16_t> level_;
     std::optional<uint16_t> destination_;
     std::optional<OnlinePoint> point_,segment_,previous_,client_,server_,edgeStart_,edgeEnd_;
-    std::optional<OnlinePoint> lastFrom_,lastRequest_;
+    std::optional<OnlinePoint> lastFrom_,lastRequest_,lastTarget_;
+    std::optional<OnlinePoint> observedBacktrack_;
+    unsigned observedBacktracks_{};
+    uint64_t interactionRevision_{},interactionDiscontinuity_{};
+    std::optional<OnlinePoint> interactionFrom_;
     std::optional<uint16_t> exitLevel_;
     std::optional<OnlineUnitKey> unit_;
     std::set<std::pair<int,int>> visited_;
     Clock::time_point deadline_,progressAt_,next_,submittedAt_;
+    DebugExecutionClock executionClock_;
     unsigned moves_{},interactions_{},searches_{},decisions_{};
     bool run_=true,interact_{},landmark_{},clientMoving_{};
+    DebugNavigationSearch search_;
     void finish(std::string,std::string,RemoteControl &);
     nlohmann::json status() const;
   public:
+    DebugNavigationSearch &navigationSearch() {return search_;}
     bool active() const;
     nlohmann::json snapshot() const;
     std::optional<std::string> command(const nlohmann::json &,net::RealmSession &,RemoteTown &,RemoteControl &,RemoteCombat &);

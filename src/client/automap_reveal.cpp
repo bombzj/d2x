@@ -39,11 +39,13 @@ AutomapReveal::AutomapReveal(Archives &a, const AutomapCatalog &catalog, size_t 
     : archives_(a), automap_(catalog), cellCount_(count) {}
 AutomapReveal::~AutomapReveal() = default;
 void AutomapReveal::reset() {
+    if(current_) ++revision_;
     job_.reset(); current_.reset(); completed_.clear(); identity_.reset(); progress_ = {};
 }
 void AutomapReveal::disable() {
     // A cancelled partial job restarts from native generation on re-enable;
     // only fully exported components are reusable without their room session.
+    if(current_) ++revision_;
     job_.reset(); current_.reset(); progress_ = {};
 }
 void AutomapReveal::refreshProgress() {
@@ -68,15 +70,20 @@ void AutomapReveal::refreshProgress() {
 void AutomapReveal::update(AutomapRevealIdentity identity, int root, AutomapPresetCellSelector selector) {
     if (identity_ != identity) { reset(); identity_ = identity; }
     if (const auto found = completed_.find(root); found != completed_.end()) {
+        if(current_!=found->second) ++revision_;
         job_.reset(); current_ = found->second; refreshProgress(); return;
     }
     if (!current_ || (!current_->levels.contains(root) && current_->root != root)) {
         job_.reset();
         current_ = std::make_shared<Result>(); current_->root = root;
+        ++revision_;
         try { job_ = std::make_unique<Job>(archives_, identity, root, selector); }
         catch (const std::exception &e) { current_->failed = true; current_->reason = e.what(); }
     }
     if (!job_ || current_->failed) { refreshProgress(); return; }
+    // A room export may append cells before failing; invalidate consumers
+    // before either successful or partial output can become visible.
+    ++revision_;
     try {
         auto &job = *job_;
         auto &generator = *job.generator;

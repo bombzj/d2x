@@ -117,7 +117,7 @@ bool DebugAi::Impl::observePotion(Context &c) {
         throw std::runtime_error("Potion operation did not confirm its actual inventory result; it will not be repeated");
     if(now>=request.deadline) throw std::runtime_error(request.buying?
         "Purchase result/owned potion not observed; no blind purchase retry":"Potion consumption not observed; no blind use retry");
-    mobilityHold=true;wait("potion-wait",request.buying?"Waiting for native transaction result and an owned potion":"Waiting for actual potion consumption");return true;
+    wait("potion-wait",request.buying?"Waiting for native transaction result and an owned potion":"Waiting for actual potion consumption");return true;
 }
 bool DebugAi::Impl::drink(Context &c) {
     if(!supplyPolicy.enabled || potionRequest || !c.supplies || Clock::now()<nextPotion) return false;
@@ -171,13 +171,13 @@ bool DebugAi::Impl::restock(Context &c) {
     const bool mana=potionCount(c,PotionKind::Mana)<unsigned(supplyPolicy.manaCount);
     if(!life && !mana) {
         if(world.npcRequested && supplyNpc && world.npcRequested==supplyNpc->id) c.session.close_npc();
-        shopIssued=false;supplyNpc.reset();return true;
+        shopIssued=false;shelfObserved=false;supplyNpc.reset();return true;
     }
     if(!view.load.act || !c.town.read().town) throw std::runtime_error("Potion restock requires the current act's native town");
     const auto supplier=definitions->supplier(*view.load.act);const auto npc=find(c,supplier);
     if(!npc) {if(!approachKnown(c,supplier)) explore(c,"potion supplier "+supplier.name);return false;}
     supplyNpc=npc->key;
-    if(shopIssued && shopGeneration!=world.interactionGeneration) {shopIssued=false;shopDeadline={};}
+    if(shopIssued && shopGeneration!=world.interactionGeneration) {shopIssued=false;shelfObserved=false;shopDeadline={};}
     if(world.npcRequested && world.npcRequested!=npc->key.id) {c.session.close_npc();return false;}
     if(!world.npcConversation || world.npcConversation->type!=1 || world.npcConversation->source!=npc->key.id) {
         wait("supply-approach","Finding and opening the normal potion merchant conversation");
@@ -186,7 +186,7 @@ bool DebugAi::Impl::restock(Context &c) {
     if(!shopIssued) {
         OnlineItemCommand open;open.action=OnlineItemAction::TradeOpen;open.npc=npc->key.id;
         if(c.inventory.submit(c.session,open)) {
-            shopIssued=true;shopGeneration=c.session.read().world.interactionGeneration;
+            shopIssued=true;shelfObserved=false;shopGeneration=c.session.read().world.interactionGeneration;
             shopDeadline=Clock::now()+std::chrono::seconds(12);cancelWalk(c);note("potion-shop-submitted");
         }
         else wait("supply-shop",c.inventory.reason());
@@ -232,7 +232,7 @@ bool DebugAi::Impl::restock(Context &c) {
 bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
     if(!supplyPolicy.enabled || !supplyPolicy.buy || goal.kind==Kind::Restock) return false;
     if(supplyStage!=SupplyStage::None) return supplyDetour(c,goal);
-    if(questBusy()) return false;
+    if(questTransaction(c)) return false;
     const auto &world=c.session.read().world;
     if(potionRequest || objectIssued || pickupIssued || portalAttempted || portalIssued || pendingDoor || mobilityTarget ||
         world.npcRequested || world.waypointSource || world.waypointRequested || world.townPortalPending ||
@@ -258,7 +258,7 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
     supplyStarted=Clock::now();supplyDeadline=supplyStarted+std::chrono::seconds(600);
     stop(c.walk,c.control,c.combat);resetStep();combatTarget.reset();retreatPoint.reset();
     supplyStage=c.town.read().town?SupplyStage::Shop:SupplyStage::ToTown;
-    shopIssued=false;supplyNpc.reset();supplyPortalUsed=false;note("supply-detour-started");return true;
+    shopIssued=false;shelfObserved=false;supplyNpc.reset();supplyPortalUsed=false;note("supply-detour-started");return true;
 }
 bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
     const auto now=Clock::now();
@@ -268,7 +268,7 @@ bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
         (travelPhase==TravelPhase::CrossWait && legUnit);
     if(!transfer && supplyCombat(c,movement)) return true;
     if(supplyStage==SupplyStage::ToTown) {
-        if(reachTown(c)) {resetStep();supplyStage=SupplyStage::Shop;shopIssued=false;supplyNpc.reset();}
+        if(reachTown(c)) {resetStep();supplyStage=SupplyStage::Shop;shopIssued=false;shelfObserved=false;supplyNpc.reset();}
     } else if(supplyStage==SupplyStage::Shop) {
         if(restock(c)) {resetStep();supplyStage=SupplyStage::Return;}
     } else if(supplyStage==SupplyStage::Return) {

@@ -74,6 +74,7 @@ PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留
 | gameplay/character/persistent_character | 纯角色持久值；不带路径、表现、网络或整局运行态 |
 | persistence | 沿用master支持范围的D2S v96编码／校验；CharacterSaveData为上述值的别名 |
 | app/frontend | 连接选择、Single Player自动建房、窗口／输入／宿主调度与开发管理；不读写D2S，不另设世界循环 |
+| app/debug/navigation_search | 调试父AI／子行走共享求路配额、候选续算缓存及计时；只持有路径值，公共Grid搜索与真实客户端移动裁决不变 |
 | asset_tool | 独立MPQ／地图／存档只读诊断 |
 
 ## 依赖方向
@@ -117,6 +118,8 @@ flowchart TD
 单机嵌入宿主由应用线程泵入字节并调用GameHost.advance；TCP/IP Host启用独立宿主线程，按自身单调时钟收包、推进和输出，不由窗口帧驱动。EmbeddedRealm公开接口由同一调用线程使用，LAN期间经有界队列同步取得宿主操作结果／只读值，内存字节传输沿用有锁队列；性能观察在调用方pump／shutdown交付。宿主拥有独立MPQ句柄和可变缓存，保留同一挂载配置／语言／松散文件映射，不继承UI加载回调。关闭先保存再停止线程，切回单机先join，首个同步pump不重复累计后台时间。内核命令继续校验实例／区域代次和内部序号；独立GS多房间线程见下段及[线程方案](HOST_RUNTIME_RECONSTRUCTION.md)。
 
 最小化时应用继续事件、协议、存档回传和地图CPU消费，跳过场景创建、纹理上传与绘制／交换缓冲。单机世界仍按暂停策略停步，退局待结算不受普通失焦暂停阻塞；LAN世界不因房主窗口状态暂停。恢复清理旧输入并重建场景表现。原版混合客户端及Linux上的线程／最小化行为仍待验证。
+
+前端保留独立的只读帧快照，仅在会话修订或连接／游戏代次变化时复制，自动前端命令后沿同一入口刷新；不在每个显示帧重复复制完整世界。raylib通过CMake关闭完整及末尾忙等，60 FPS目标和垂直同步提示保留，等待交给系统休眠；实际唤醒精度受平台调度影响。该空闲开销修正尚未构建／运行，不能据源码推算CPU降幅。
 
 独立GS主线程处理TCP／D2CS及路由；固定gameThreads游戏线程分别独占NativeRealmHost、资源句柄、缓存和连接投影，按房间数分配新局且不迁移，同局保持串行25Hz。专用PvpgnStorage线程负责文件与DBS串行事务，游戏线程以externalCheckpoint提交并等待异步确认，不等待网络或磁盘。admitExternal接受已校验票据与角色值，不创建本地CharacterStore租约。连接ID不复用，保存完成另匹配请求序号；故障／关闭及容量限制见[部署页](../development/PVPGN_SERVER.md)。多房间实际吞吐、完整后端故障组合及Linux行为仍未认证。
 

@@ -10,9 +10,14 @@ void DebugAi::Impl::refreshQuestNpc(Context &c) {
     checkQuestPending(c);
     if(!pending.refreshIssued) {
         if(c.session.read().world.npcRequested) c.session.close_npc();
-        cancelWalk(c);pending.refreshIssued=true;note("quest-flag-refresh","Reward effect observed; querying the NPC without replaying its topic");return;
+        cancelWalk(c);pending.refreshIssued=true;note("quest-flag-refresh","Querying the private NPC record without replaying the submitted topic");return;
     }
-    if(c.session.read().world.npcRequested==source.id) return;
+    if(c.session.read().world.npcRequested==source.id) {
+        if(!pending.statusRequested) {
+            pending.statusRequested=true;pending.deadline=Clock::now()+std::chrono::seconds(20);
+        }
+        return;
+    }
     walk(c,{{"goal","unit"},{"unitType",source.type},{"unitId",source.id},{"interact",true}});
 }
 std::optional<OnlineItem> DebugAi::Impl::accessibleItem(const Context &c,std::string_view code) const {
@@ -60,8 +65,11 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
     const auto flags=questFlags(c,stateQuest);
     bool done=flags && step.flags && (*flags&step.flags)==step.flags && !(*flags&step.clearFlags);
     if(step.produced=="bkd") done=owned(c,"bkd") && !owned(c,"bks");
+    else if(!step.produced.empty() && step.produced!="rin")
+        done=owned(c,step.produced) && (step.item.empty() || !owned(c,step.item));
     else if(!step.item.empty() && step.produced.empty()) done=done && !owned(c,step.item);
-    if(step.optional && questRun.pending && world.quests.revision>questRun.pending->beforeRevision &&
+    if(step.optional && questRun.pending && questRun.pending->action==QuestPending::Action::Topic &&
+        world.quests.revision>questRun.pending->beforeRevision &&
         world.quests.statuses[slot] && *world.quests.statuses[slot]>0) done=true;
     if(done) {
         if(goal.questId==QuestId::DenOfEvil && step.flags==1 && questRun.skillPointsBefore) {
@@ -73,8 +81,8 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         if(goal.questId==QuestId::SistersBurialGrounds && step.flags==1 && questRun.rewardTracked && !world.hireling && !world.deadHirelingName) {
             wait("quest-reward","Waiting for the normal Rogue assignment/preserved mercenary record");checkQuestPending(c);return false;
         }
-        if(step.produced=="bkd") {
-            const auto scroll=accessibleItem(c,"bkd");
+        if(!step.produced.empty() && step.produced!="rin") {
+            const auto scroll=accessibleItem(c,step.produced);
             if(!scroll) throw std::runtime_error("Translated scroll is owned outside accessible inventory; put it in the backpack");
             if(scroll->mode==4) {
                 if(questRun.pending && questRun.pending->action==QuestPending::Action::Topic) questRun.pending.reset();
@@ -104,6 +112,11 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         if(questRun.pending->action==QuestPending::Action::Introduction) {
             checkQuestPending(c);
             if(world.quests.revision<=questRun.pending->beforeRevision) {
+                if(!questRun.pending->statusRequested && c.session.request_quests(view.gameGeneration)) {
+                    questRun.pending->statusRequested=true;
+                    questRun.pending->deadline=Clock::now()+std::chrono::seconds(20);
+                    note("quest-status-requested","Querying the actual prerequisite greeting result without replaying its topic");
+                }
                 wait("quest-introduction-result","Waiting for the actually offered prerequisite greeting to commit");return false;
             }
             if(world.npcRequested) c.session.close_npc();
@@ -119,17 +132,12 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
             note("quest-introduction-closed","Waiting for the native post-conversation quest update");
             checkQuestPending(c);return false;
         }
-        bool committed=false;
-        const auto points=world.playerAttributes.find(5);
-        if(goal.questId==QuestId::DenOfEvil && step.flags==1 && questRun.skillPointsBefore && points!=world.playerAttributes.end())
-            committed=uint64_t(points->second)>=uint64_t(*questRun.skillPointsBefore)+1;
-        if(goal.questId==QuestId::ToolsOfTheTrade && !step.item.empty()) committed=!owned(c,step.item);
-        if(goal.questId==QuestId::SearchForCain && step.produced=="rin" && questRun.rewardTracked)
-            for(const auto &[id,item]:world.items) if(item.code=="rin" && !questRun.rewardBefore.contains(id) &&
-                (onlineItemOwnedBy(item,view.load.playerUnitId) || (item.mode==3 && item.positionKnown &&
-                (Vec{float(item.groundX),float(item.groundY)}-c.position).length()<16))) committed=true;
-        if(world.quests.revision>questRun.pending->beforeRevision && world.quests.statuses[slot]==13) committed=true;
-        if(committed) refreshQuestNpc(c);
+        // Retail ScrollMessage callbacks (notably Cain's A2Q2 335..338)
+        // change private flags without immediately sending another 0x28.
+        // Close/listen again once to request the actual private record. This
+        // is an ordinary NPC query, never a replay of the accepted topic or
+        // evidence of completion; the checks above still require its result.
+        if(questRun.pending->action==QuestPending::Action::Topic) refreshQuestNpc(c);
         wait("quest-dialogue-result","Waiting for actual quest/item state after the offered topic");checkQuestPending(c);return false;
     }
     const auto npc=find(c,*step.target);
@@ -149,7 +157,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
     // listening input, never permission to send an absent story message.
     for(const auto topic:step.topics) for(const auto &message:conversation.messages) {
         if(message.stringId!=topic || conversation.acknowledged.contains(topic)) continue;
-        if(goal.questId==QuestId::SearchForCain && topic==118) {
+        if(step.produced=="rin") {
             questRun.rewardBefore.clear();for(const auto &[id,item]:world.items) if(item.code=="rin") questRun.rewardBefore.insert(id);
             questRun.rewardTracked=true;
         }
@@ -178,7 +186,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         return false;
     }
     if(step.optional) {note("optional-quest-introduction-unavailable","Original objective may be done without this introduction");return true;}
-    if(actionDeadline==Clock::time_point{}) actionDeadline=Clock::now()+std::chrono::seconds(20);
+    if(actionDeadline==Clock::time_point{}) setActionDeadline(std::chrono::seconds(20),false);
     if(Clock::now()>=actionDeadline) throw std::runtime_error("Quest NPC did not offer the required native topic");
     wait("quest-topic-wait","Waiting for the actual offered quest topic");return false;
 }
@@ -198,6 +206,37 @@ bool DebugAi::Impl::questReadScroll(Context &c,const QuestStep &step) {
 }
 bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
     const auto &world=c.session.read().world;const auto flags=questFlags(c,step.stateQuest.value_or(goals[cursor].questId));
+    bool modeCompletes=false;
+    if(step.action==QuestAction::Operate && step.target && !step.flags && !step.witness && step.topics.empty()) {
+        for(size_t row=0;row<definitions->objects.rows().size();++row) if(definitions->objects.number(row,"Id")==step.target->identity) {
+            const auto operation=definitions->objects.number(row,"OperateFn");
+            // ObjMode31 and45 accept neutral only. An actual non-neutral
+            // assignment also resumes an activation done by another player;
+            // item/drop/travel postconditions remain separate graph nodes.
+            modeCompletes=operation==31 || operation==45;break;
+        }
+        if(modeCompletes) if(const auto object=find(c,*step.target,true);object && object->mode && *object->mode!=0) {
+            note("quest-one-time-object-observed",std::to_string(object->key.id));return true;
+        }
+    }
+    if(step.refreshFlags && !questRun.pending && step.target && !(flags && (*flags&step.flags)==step.flags)) {
+        const auto object=find(c,*step.target,true);
+        if(object && object->mode && *object->mode!=0) {
+            // A shared open object is not personal eligibility. Query the
+            // private record once; do not replay an altar operation merely
+            // because its earlier inventory result arrived before packet28.
+            QuestPending p;p.action=QuestPending::Action::Object;p.unit=object->key;p.assignment=object->assignmentRevision;
+            p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;
+            note("quest-open-object-private-query");
+        }
+    }
+    if(step.refreshFlags && questRun.pending && !questRun.pending->statusRequested) {
+        if(c.session.request_quests(c.session.read().gameGeneration)) {
+            questRun.pending->statusRequested=true;questRun.pending->deadline=Clock::now()+std::chrono::seconds(20);
+            note("quest-status-requested","Private object eligibility, without replaying its operation");
+        }
+        return false;
+    }
     if(step.publishesTombSymbol && !questRun.rewardTracked) {
         // Retail grants the journal flags while opening it; this payload can
         // precede the reading acknowledgement that creates its canyon portal.
@@ -219,6 +258,16 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
             }
     }
     if(step.publishesTombSymbol && questRun.pending && questRun.pending->refreshIssued &&
+        !questRun.pending->statusRequested) {
+        // Original QUESTS_StatusCallback (C2S40) publishes the private flags
+        // and the combined 50/id1 tomb clue after the journal callback.
+        if(c.session.request_quests(c.session.read().gameGeneration)) {
+            questRun.pending->statusRequested=true;note("quest-status-requested","Horazon journal: original 0x40 query");
+            questRun.pending->deadline=Clock::now()+std::chrono::seconds(30);
+        }
+        return false;
+    }
+    if(step.publishesTombSymbol && questRun.pending && questRun.pending->refreshIssued &&
         world.quests.staffTombRevision>questRun.pending->beforeRevision && world.quests.staffTombOffset &&
         *world.quests.staffTombOffset<7 && flags && (*flags&1)) {
         tombSymbol=world.quests.staffTombOffset;note("quest-tomb-symbol-observed",std::to_string(*tombSymbol));return true;
@@ -231,6 +280,7 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
         const auto unit=questRun.pending->unit?world.units.find(*questRun.pending->unit):world.units.end();
         if(!step.publishesTombSymbol && !step.flags && unit!=world.units.end() && unit->second.assignmentRevision==questRun.pending->assignment && unit->second.mode && *unit->second.mode!=0) {
             note("quest-object-mode-observed",std::to_string(unit->first.id));questRun.pending.reset();
+            if(modeCompletes) return true;
         } else {wait("quest-object-result","Waiting for the actual object mode/quest flag");checkQuestPending(c);return false;}
     }
     std::optional<Selector> selector=step.target;
@@ -259,18 +309,79 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
 }
 bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
     if(c.town.read().area==step.area) return true;
-    if(questRun.pending) {wait("quest-portal-result","Waiting for the actual quest destination scene");checkQuestPending(c);return false;}
+    if(travelDestination && (travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit))) {
+        travel(c,*travelDestination);return false;
+    }
+    if(!questRun.pending && step.preferWaypoint && step.area && c.session.read().world.waypointHistory &&
+        std::any_of(c.town.read().waypoints.begin(),c.town.read().waypoints.end(),[&](const auto &entry){return entry.level==step.area && entry.unlocked;}))
+        return travel(c,*step.area);
+    if(questRun.pending && step.witness && questRun.pending->action==QuestPending::Action::Object) {
+        const auto entrance=step.target?find(c,*step.target,true):std::nullopt;
+        if(entrance && c.town.permitsInteraction(c.session.read(),entrance->key)) {questRun.pending.reset();cancelWalk(c);}
+        else {
+            wait("quest-entrance-opening","Waiting at the observed orifice for the real selectable tomb entrance");
+            checkQuestPending(c);return false;
+        }
+    }
+    if(questRun.pending) {
+        const auto &pending=*questRun.pending;
+        if(pending.action==QuestPending::Action::Object && pending.unit) {
+            const auto unit=c.session.read().world.units.find(*pending.unit);
+            if(unit!=c.session.read().world.units.end() && unit->second.assignmentRevision==pending.assignment &&
+                unit->second.mode && *unit->second.mode!=0 &&
+                std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &target) {
+                    return target.unit==*pending.unit && target.interaction==OnlineMapInteraction::Portal;
+                })) {
+                note("quest-portal-activation-observed",std::to_string(pending.unit->id));
+                questRun.pending.reset();cancelWalk(c);return false;
+            }
+            wait("quest-portal-activation","Waiting for the activated portal's normal selectable mode");
+        } else wait("quest-portal-result","Waiting for the actual quest destination scene");
+        checkQuestPending(c);return false;
+    }
     for(const auto &target:c.town.read().mapTargets) if(target.interaction==OnlineMapInteraction::Portal &&
         (target.destination==step.area || (step.target && target.unit.type==step.target->type && [&] {
             const auto u=c.session.read().world.units.find(target.unit);
             return u!=c.session.read().world.units.end() && u->second.classId==step.target->identity;
         }()))) {
         wait("quest-portal","Using the actually assigned quest portal");
-        const Json intent{{"goal","unit"},{"unitType",target.unit.type},{"unitId",target.unit.id},{"interact",true},{"purpose","quest-portal"}};
+        bool activation=false;
+        const auto unit=c.session.read().world.units.find(target.unit);
+        if(target.unit.type==2 && unit!=c.session.read().world.units.end() && unit->second.classId && unit->second.mode==0)
+            for(size_t row=0;row<definitions->objects.rows().size();++row)
+                if(definitions->objects.number(row,"Id")==*unit->second.classId && definitions->objects.number(row,"OperateFn")==34)
+                    activation=true;
+        const Json intent{{"goal","unit"},{"unitType",target.unit.type},{"unitId",target.unit.id},{"interact",true},
+            {"purpose","quest-portal"},{"activation",activation}};
         if(walk(c,intent)) observeQuestInteraction(c,intent);
         return false;
     }
     if(step.target && approachKnown(c,*step.target)) return false;
+    if(area && step.area) if(const auto hint=c.town.knownConnectionPosition(*area,*step.area)) {
+        if(approachPoint(c,*hint,"previously observed quest portal")) return false;
+        if((c.position-Vec{float(hint->x),float(hint->y)}).length()<=8) {
+            wait("quest-portal-reassignment","Waiting for the real portal assignment at its observed position");return false;
+        }
+    }
+    if(step.sourceArea && c.town.read().area!=step.sourceArea) {
+        travel(c,*step.sourceArea);return false;
+    }
+    if(step.witness && area) {
+        const auto marker=c.town.knownTargetPosition(*area,step.witness->type,step.witness->identity);
+        if(marker && marker->x>=13 && marker->y<=65532) {
+            // A2Q6_Timer_UpdateObjects creates the real entrance at the
+            // observed orifice (-13,+3). Approach its room normally; never
+            // resume unrelated tomb exploration after staff consumption.
+            const OnlinePoint birth{uint16_t(marker->x-13),uint16_t(marker->y+3)};
+            if(approachPoint(c,birth,"entrance beside the observed Horadric orifice",3)) return false;
+            if((c.position-Vec{float(birth.x),float(birth.y)}).length()<=8) {
+                cancelWalk(c);QuestPending pending;pending.action=QuestPending::Action::Object;
+                pending.deadline=Clock::now()+std::chrono::seconds(30);questRun.pending=pending;
+                wait("quest-entrance-opening","Waiting for the actual timed selectable entrance assignment");return false;
+            }
+        }
+        if(approachKnown(c,*step.witness)) return false;
+    }
     explore(c,"the actual assigned quest portal");return false;
 }
 bool DebugAi::Impl::questImbue(Context &c,const Goal &goal,const QuestStep &step) {
@@ -372,7 +483,7 @@ bool DebugAi::Impl::questActTravel(Context &c,const Goal &goal,const QuestStep &
     }
     const auto &conversation=c.town.read().npcConversation;
     if(!conversation || !conversation->travelDestination || conversation->travelDestination!=step.area) {
-        if(actionDeadline==Clock::time_point{}) actionDeadline=Clock::now()+std::chrono::seconds(20);
+        if(actionDeadline==Clock::time_point{}) setActionDeadline(std::chrono::seconds(20),false);
         if(Clock::now()>=actionDeadline) throw std::runtime_error("NPC did not offer the actual act travel service");
         wait("quest-act-service","Waiting for the eligible act travel service");return false;
     }

@@ -4,6 +4,10 @@ PD2专项内容：[城镇服务](../../pd2/TOWN_CLIENT.md)。本页保留原版�
 
 Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸、模式／动画、名称、AutoMap及灯光。静态地形物件与原服可交互GUID分开；操作、开门、井水、神坛、宝箱锁／陷阱、掉落和任务效果由所连接的服务端执行；自研实际范围见下文，不把原服支持当作自研已实现。
 
+## 同层传送台边界
+
+客户端将当前Objects.OperateFn=27的真实指派物件识别为TeleportPad，经普通交互请求操作。D2MOO的ObjMode::OBJECTS_OperateFunction27_TeleportPad按本房间单位链、再按相邻房间原序寻找同类对端，以size=3／mask=0x1C09寻位，实际搬移后发送07房间及本人位置通知；配对不能按最近距离或隐藏预设猜测。调试AI只学习实际收到的同层本人跳转。自研objects::System::operate尚无Operate27分支，不能把原版Host可用视作自研宿主已支持；对端顺序、寻位、07及背压提交仍待补齐和对照。
+
 ## 世界悬停与点击选取
 
 世界选取共用`graphics/primitives.hpp::spriteHit`与`remote_scene_draw.cpp`的单位分支；地面掉落的名称显现、发亮与本体点击也使用该帧几何。范围来自当前MPQ的COF、DCC／DC6及表字段，不裁到不透明像素包围框，不使用统一大小的自造交互框。可选模式、技能SelectProc、尸体／阵营资格仍由原有客户端副本入口筛选；鼠标命中不代表服务端允许操作。
@@ -44,6 +48,8 @@ OperateFn16活板门按D2MOO `OBJECTS_OperateFunction16_TrapDoor`处理：NEUTRA
 客户端02／04不设置movementRequest.interaction；物件路径仍按实际范围／碰撞停步，RemoteControl到达后提交13，只有该操作请求才进入本人木桶KK预测。type2靠近若标成操作，会在远处提前预测KK并以施放衔接中止本地路径。原1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）RVA29E80／2AE30先核对物件范围及0x804交互碰撞，2AA40发送02／04并登记待交互；2B090复验后续行。2AC10的type2分支在2ACB3查隐藏技能1，2AD83尝试本地动作，2AD96才构造13。该依据区分靠近与操作，不代表当前所有物件动作及逐帧表现已认证。
 
 ## 原服适配
+
+原Operate44楼梯通过`D2GAME_WarpPlayerToTile`遍历物件当前Room1的Tile单位完成传送。RemoteTown仅在同房间存在唯一已指派Tile出口时，给真实可选楼梯补其目的地，供普通物件交互使用；保留MPQ的HasCollision2，不要求角色先走进被楼梯矩形挡住的Tile中心。第三幕杠杆与楼梯分别观察，调试AI等待楼梯实际mode2后再提交Operate44。原Operate46的Hell Gate允许所有非零模式，自研物件入口已按该条件受理，普通楼梯44仍要求mode2；Mephisto红门全部模式与重建组合仍需原版对照。
 
 普通物件按当前Objects.Selectable模式投影交互资格，蓝色回城门同时要求已收到目的地区域；ObjMode15在服务端检查主人、队伍及任务资格。不能把0x0E的字节7当成所有物件的UNITFLAG_TARGETABLE掩码：本机1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）RVA AE560把该字节作为参数，经29750／24CE0分派，249F0对非IsDoor物件读取Selectable[mode]；IsDoor分支24040在24120–24136按参数是否非零更新可选位。原版Host的中立艾尼弗斯树实际发送参数1，按位2判断会错误隐藏。客户端保留布尔参数诊断，只有IsDoor物件消费该参数；没有改写宿主物件模式或任务资格。D2MOO `ObjMode::sub_6FC752A0`提供调用链，但其直接发送UNITFLAG掩码的旧版转录不能覆盖本机参数语义。
 

@@ -267,6 +267,12 @@ void itemPacket(OnlineView &v, const Packet &p, bool pd2) {
     const auto packed = r.take(r.remaining()); item.packed.assign(packed.begin(), packed.end());
     BitReader bits(packed);
     item.flags = bits.read(32); bits.read(10); item.mode = uint8_t(bits.read(3));
+    // QUESTS_DeleteItemEx -> ItemMode::sub_6FC45B30(bSetQuantityFlag=1)
+    // removes equipped items without assigning the server cursor. InvMode
+    // sends UNEQUIP/ONCURSOR with IFLAG_QUANTITY, not a later RemoveUnit.
+    if(p.id==0x9D && item.action==8 && item.mode==4 && (item.flags&0x20)) {
+        removeItem(v.world,item.id);return;
+    }
     if (p.id == 0x9D && item.action == 8 && item.ownerType == 0 && item.owner != v.load.playerUnitId) {
         const auto previous = v.world.items.find(item.id);
         if (previous != v.world.items.end() && previous->second.mode == 1 &&

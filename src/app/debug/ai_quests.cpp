@@ -6,17 +6,21 @@
 
 namespace d2x {
 void DebugAi::Impl::configureQuest(Goal &goal) const {
-    static constexpr std::array<std::pair<std::string_view,QuestId>,12> quests{{
+    static constexpr std::array<std::pair<std::string_view,QuestId>,18> quests{{
         {"den-of-evil",QuestId::DenOfEvil},{"sisters-burial-grounds",QuestId::SistersBurialGrounds},
         {"search-for-cain",QuestId::SearchForCain},{"forgotten-tower",QuestId::ForgottenTower},
         {"tools-of-the-trade",QuestId::ToolsOfTheTrade},{"sisters-to-the-slaughter",QuestId::SistersToTheSlaughter},
         {"radaments-lair",QuestId::RadamentsLair},{"horadric-staff",QuestId::HoradricStaff},
         {"tainted-sun",QuestId::TaintedSun},{"arcane-sanctuary",QuestId::ArcaneSanctuary},
-        {"summoner",QuestId::Summoner},{"seven-tombs",QuestId::SevenTombs}}};
+        {"summoner",QuestId::Summoner},{"seven-tombs",QuestId::SevenTombs},
+        {"golden-bird",QuestId::GoldenBird},{"blade-of-the-old-religion",QuestId::BladeOfTheOldReligion},
+        {"lam-esens-tome",QuestId::LamEsensTome},{"khalims-will",QuestId::KhalimsWill},
+        {"blackened-temple",QuestId::BlackenedTemple},{"guardian",QuestId::Guardian}}};
     const auto found=std::find_if(quests.begin(),quests.end(),[&](const auto &v){return v.first==goal.quest;});
     if(found==quests.end()) throw std::invalid_argument("No verified quest recipe: "+goal.quest);
     goal.questId=found->second;goal.questSlot=questDefinition(goal.questId).nativeSlot;
     if(questDefinition(goal.questId).act==1) {configureActTwoQuest(goal,goal.questId);return;}
+    if(questDefinition(goal.questId).act==2) {configureActThreeQuest(goal,goal.questId);return;}
     const auto town=definitions->area("Act 1 - Town");
     const auto object=[&](std::string_view name,int operation) {
         const auto id=definitions->object(std::string(name));
@@ -94,24 +98,46 @@ bool DebugAi::Impl::questFinished(const Context &c,const Goal &goal) const {
     if(!flags || !(*flags&1)) return false;
     if(goal.questId==QuestId::RadamentsLair && (*flags&0x20)) return false;
     if(goal.questId==QuestId::ArcaneSanctuary && (*flags&2)) return false;
+    if(goal.questId==QuestId::GoldenBird && ((*flags&0x20) || owned(c,"xyz"))) return false;
+    if(questWeaponRestore && (goal.questId==QuestId::KhalimsWill || goal.questId==QuestId::BlackenedTemple || goal.questId==QuestId::Guardian)) {
+        const auto original=c.session.read().world.items.find(*questWeaponRestore);
+        if(original==c.session.read().world.items.end() || original->second.mode!=1 || original->second.body!=4 ||
+            !onlineItemOwnedBy(original->second,c.session.read().load.playerUnitId)) return false;
+    }
+    if(goal.questId==QuestId::Guardian)
+        return c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[23]&1);
     if(goal.questId==QuestId::SevenTombs)
         return c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[15]&1);
     // Native Act-I change record (slot 7) is separate from Andariel's reward.
     return goal.questId!=QuestId::SistersToTheSlaughter ||
         (c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[7]&1));
 }
-bool DebugAi::Impl::questBusy() const {
+bool DebugAi::Impl::questTransaction(const Context &c) const {
     if(cursor>=goals.size() || goals[cursor].kind!=Kind::Quest || supplyStage!=SupplyStage::None) return false;
-    if(questRun.pending) return true;
+    if(questRun.pending && questRun.pending->sequence) return true;
     if(questRun.step>=goals[cursor].steps.size()) return false;
     const auto action=goals[cursor].steps[questRun.step].action;
-    return action==QuestAction::Imbue || action==QuestAction::Combine ||
-        (action==QuestAction::SubmitStaff && questRun.materialNpc) || action==QuestAction::UseItem;
+    const auto &world=c.session.read().world;
+    return (action==QuestAction::Imbue && questRun.materialPhase>0) ||
+        (action==QuestAction::EquipWeapon && questRun.materialPhase>0) ||
+        (action==QuestAction::Combine && (world.storage.kind==OnlineStorageKind::Cube || world.storage.requested==OnlineStorageKind::Cube)) ||
+        (action==QuestAction::SubmitStaff && questRun.materialNpc && world.staffSource==questRun.materialNpc->id);
 }
 void DebugAi::Impl::questStepDone(Context &c,std::string evidence) {
+    if(cursor<goals.size() && questRun.step<goals[cursor].steps.size() &&
+        goals[cursor].steps[questRun.step].publishesTombSymbol && questRun.pending &&
+        questRun.pending->refreshIssued && questRun.pending->statusRequested && tombSymbol && *tombSymbol<7)
+        journalReadGame=c.session.read().gameGeneration;
+    releaseCombat(c);
     if(c.session.read().world.npcRequested) c.session.close_npc();
     if(c.session.read().world.waypointSource) c.session.use_waypoint(0);
     cancelWalk(c);note("quest-step-completed",std::move(evidence));
+    if(cursor<goals.size() && !goals[cursor].requirements.empty()) {
+        auto observations=std::move(questRun.observations);
+        if(goals[cursor].requirements.at(questRun.step).retainObservation) observations.insert(questRun.step);
+        const auto completed=questRun.step;questRun={};questRun.initialized=true;questRun.step=completed;
+        questRun.observations=std::move(observations);resetStep();return;
+    }
     const auto step=questRun.step+1;questRun={};questRun.initialized=true;questRun.step=step;resetStep();
 }
 bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
@@ -120,6 +146,14 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
     const auto flags=questFlags(c,goal.questId);
     if(!flags) {wait("quest-state","Waiting for actual native character quest flags");return false;}
     if(!questRun.initialized) {
+        const auto &clue=c.session.read().world.quests;
+        const auto arcane=questFlags(c,QuestId::ArcaneSanctuary);
+        // StatusCallback includes the real tomb offset for an already-read
+        // journal. The zero field sent for unrelated progress is insufficient.
+        if(!tombSymbol && arcane && (*arcane&0x2001) && clue.staffTombRevision &&
+            clue.staffTombOffset && *clue.staffTombOffset<7) {
+            tombSymbol=clue.staffTombOffset;note("quest-initial-tomb-symbol-observed",std::to_string(*tombSymbol));
+        }
         if(questFinished(c,goal)) {advance(c,"Already completed native quest: "+goal.quest);return false;}
         if(goal.questId==QuestId::SearchForCain && (*flags&0x8000) && !(*flags&3))
             throw std::runtime_error("Cain was rescued by rogues in this save; use a fresh quest baseline for the full rescue");
@@ -128,6 +162,7 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
             throw std::runtime_error("Unfinished quest needs its normal act scene: "+goal.quest);
         questRun.initialized=true;note("quest-started",goal.quest);
     }
+    if(!goal.requirements.empty()) return selectQuestRequirement(c,goal);
     while(questRun.step<goal.steps.size() && goal.steps[questRun.step].skipPending && (*flags&3))
         questStepDone(c,"Native reward/pending flag already satisfies the field objective");
     if(questRun.step>=goal.steps.size()) {
@@ -140,6 +175,10 @@ DebugAi::Impl::Goal DebugAi::Impl::questLeaf(const Goal &goal) const {
     if(goal.kind!=Kind::Quest || questRun.step>=goal.steps.size() || supplyStage!=SupplyStage::None) return goal;
     const auto &step=goal.steps[questRun.step];Goal leaf;
     leaf.area=step.area;leaf.target=step.target;leaf.item=step.item;leaf.sourceObject=step.source;
+    if(goal.questTown && step.area==goal.questTown && area!=goal.questTown &&
+        step.action!=QuestAction::Portal && step.action!=QuestAction::ActTravel) {
+        leaf.kind=Kind::ReturnTown;return leaf;
+    }
     switch(step.action) {
     case QuestAction::Hunt:leaf.kind=Kind::Hunt;break;
     case QuestAction::Acquire:leaf.kind=Kind::Acquire;break;
@@ -151,16 +190,123 @@ DebugAi::Impl::Goal DebugAi::Impl::questLeaf(const Goal &goal) const {
 void DebugAi::Impl::checkQuestPending(const Context &c) const {
     if(!questRun.pending) return;
     const auto &p=*questRun.pending;const auto &request=c.session.read().world.itemRequest;
+    if(p.resultObserved) return;
     if(p.sequence && request) {
         if(p.sequence!=request->sequence) throw std::runtime_error("Quest item operation was replaced before its result was observed");
         if(request->state==OnlineItemRequest::State::Rejected || request->state==OnlineItemRequest::State::TimedOut || request->state==OnlineItemRequest::State::Interrupted)
             throw std::runtime_error("Quest item operation did not confirm its actual result; no blind retry");
     }
-    if(Clock::now()>=p.deadline) throw std::runtime_error("Quest operation's actual result was not observed: "+phase);
+    if(!questWaitRequiresInput(c) && Clock::now()>=p.deadline) throw std::runtime_error("Quest operation's actual result was not observed: "+phase);
+}
+void DebugAi::Impl::observeQuestResult(Context &c) {
+    if(!questRun.pending || cursor>=goals.size() || goals[cursor].kind!=Kind::Quest || questRun.step>=goals[cursor].steps.size()) return;
+    auto &pending=*questRun.pending;if(pending.resultObserved) return;
+    const auto &goal=goals[cursor];const auto &step=goal.steps[questRun.step];const auto &world=c.session.read().world;
+    const auto flags=questFlags(c,step.stateQuest.value_or(goal.questId));
+    const auto item=world.items.find(pending.item);
+    const bool ours=item!=world.items.end() && onlineItemOwnedBy(item->second,c.session.read().load.playerUnitId);
+    const auto unit=pending.unit?world.units.find(*pending.unit):world.units.end();
+    bool observed=false;
+    switch(pending.action) {
+    case QuestPending::Action::Take:observed=ours && item->second.mode==4;break;
+    case QuestPending::Action::Place:observed=ours && item->second.mode==0 && item->second.page==1;break;
+    case QuestPending::Action::StoreCube:observed=ours && item->second.mode==0 && item->second.page==4;break;
+    case QuestPending::Action::Pickup:observed=ours && item->second.mode!=3;break;
+    case QuestPending::Action::OpenCube:observed=world.storage.kind==OnlineStorageKind::Cube && world.storage.source==pending.item;break;
+    case QuestPending::Action::CloseCube:observed=world.storage.kind==OnlineStorageKind::None && world.storage.requested==OnlineStorageKind::None;break;
+    case QuestPending::Action::Transmute:
+        observed=accessibleItem(c,step.item).has_value() && (step.ingredients.empty()? !owned(c,"msf") && !owned(c,"vip"):
+            std::none_of(step.ingredients.begin(),step.ingredients.end(),[&](const auto &code){return owned(c,code);}));break;
+    case QuestPending::Action::Use: {
+        if(step.item=="xyz") {observed=!owned(c,step.item) && flags && (*flags&1) && !(*flags&0x20);break;}
+        const auto points=world.playerAttributes.find(5);
+        observed=!owned(c,step.item) && questRun.skillPointsBefore && points!=world.playerAttributes.end() &&
+            uint64_t(points->second)>=uint64_t(*questRun.skillPointsBefore)+1;break;
+    }
+    case QuestPending::Action::Scroll:observed=world.quests.cainStones && world.quests.cainStonesRevision>pending.beforeRevision;break;
+    case QuestPending::Action::Travel:observed=step.area && c.town.read().area==step.area && questFinished(c,goal);break;
+    case QuestPending::Action::Portal:observed=step.area && c.town.read().area==step.area;break;
+    case QuestPending::Action::SubmitStaff:
+        if(world.staffRevision>pending.beforeRevision && world.staffResult==4) throw std::runtime_error("The original orifice rejected this staff");
+        {const auto staff=questFlags(c,QuestId::HoradricStaff);observed=staff && (*staff&1) && !owned(c,step.item);}break;
+    case QuestPending::Action::Introduction:observed=world.quests.revision>pending.beforeRevision;break;
+    case QuestPending::Action::Topic:
+        observed=flags && step.flags && (*flags&step.flags)==step.flags && !(*flags&step.clearFlags);
+        if(step.optional) observed|=world.quests.revision>pending.beforeRevision && world.quests.statuses[questDefinition(step.stateQuest.value_or(goal.questId)).nativeSlot].value_or(0)>0;
+        if(!step.item.empty() && step.produced.empty()) observed=observed && !owned(c,step.item);
+        if(!step.produced.empty()) observed=observed && owned(c,step.produced);
+        if(!step.produced.empty() && step.produced!="rin")
+            observed=owned(c,step.produced) && (step.item.empty() || !owned(c,step.item));
+        if(step.produced=="rin" && questRun.rewardTracked) {
+            const bool reward=std::any_of(world.items.begin(),world.items.end(),[&](const auto &entry) {
+                const auto &[id,ring]=entry;return ring.code=="rin" && !questRun.rewardBefore.contains(id) &&
+                    (onlineItemOwnedBy(ring,c.session.read().load.playerUnitId) || ring.mode==3);
+            });
+            observed=observed && reward;
+        }
+        if(goal.questId==QuestId::DenOfEvil && step.flags==1 && questRun.skillPointsBefore) {
+            const auto points=world.playerAttributes.find(5);
+            observed=observed && points!=world.playerAttributes.end() && uint64_t(points->second)>=uint64_t(*questRun.skillPointsBefore)+1;
+        }
+        if(goal.questId==QuestId::SistersBurialGrounds && step.flags==1 && questRun.rewardTracked)
+            observed=observed && (world.hireling || world.deadHirelingName);
+        break;
+    case QuestPending::Action::Object:
+        if(!goal.requirements.empty() && std::any_of(goal.requirements.at(questRun.step).alternatives.begin(),goal.requirements.at(questRun.step).alternatives.end(),[](const auto &all) {
+            return std::any_of(all.begin(),all.end(),[](const auto &fact){return fact.kind==QuestFact::Kind::ObjectOpened;});
+        })) {observed=questRequirementSatisfied(c,goal,questRun.step);break;}
+        if(step.action==QuestAction::SubmitStaff) observed=pending.unit && world.staffSource==pending.unit->id;
+        else if(step.action==QuestAction::Portal) {
+            if(step.witness) {
+                const auto entrance=step.target?find(c,*step.target,true):std::nullopt;
+                observed=entrance && c.town.permitsInteraction(c.session.read(),entrance->key);
+            } else observed=unit!=world.units.end() && unit->second.assignmentRevision==pending.assignment &&
+                unit->second.mode && *unit->second.mode!=0 &&
+                std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &target) {
+                    return target.unit==unit->first && target.interaction==OnlineMapInteraction::Portal;
+                });
+        }
+        else if(step.publishesTombSymbol) observed=pending.refreshIssued && flags && (*flags&1) &&
+            world.quests.staffTombRevision>pending.beforeRevision && world.quests.staffTombOffset && *world.quests.staffTombOffset<7;
+        else if(step.action==QuestAction::SmashOrb) observed=flags && (*flags&1) && !owned(c,step.item);
+        else if(step.flags) observed=flags && (*flags&step.flags)==step.flags;
+        else observed=unit!=world.units.end() && unit->second.assignmentRevision==pending.assignment && unit->second.mode && *unit->second.mode!=0;
+        if(step.witness && step.action!=QuestAction::Portal) observed|=find(c,*step.witness).has_value();
+        if(step.optional) observed|=world.quests.statuses[goal.questSlot].value_or(0)>0;
+        break;
+    case QuestPending::Action::Imbue:
+        observed=questRun.materialPhase==4 && flags && (*flags&1);
+        if(!observed && questRun.materialPhase==2 && world.itemRequest && world.itemRequest->sequence==pending.sequence &&
+            world.itemRequest->state==OnlineItemRequest::State::Updated)
+            for(const auto &[id,entry]:c.inventory.read().items) {
+                const auto wire=world.items.find(id);
+                if(wire!=world.items.end() && wire->second.code==step.item &&
+                    (questRun.material==id || !questRun.materialBefore.contains(id)) && entry.decoded && entry.quality==6 &&
+                    onlineItemOwnedBy(wire->second,c.session.read().load.playerUnitId)) {observed=true;break;}
+            }
+        break;
+    }
+    if(observed) {pending.resultObserved=true;note("quest-pending-result-observed");}
+    else checkQuestPending(c);
 }
 void DebugAi::Impl::observeQuestInteraction(Context &c,const Json &intent) {
     if(questRun.pending || cursor>=goals.size() || goals[cursor].kind!=Kind::Quest) return;
+    if(intent.value("purpose",std::string{})=="quest-orb") {
+        if(questRun.step>=goals[cursor].steps.size() || goals[cursor].steps[questRun.step].action!=QuestAction::SmashOrb ||
+            questRun.materialPhase>=2) throw std::runtime_error("Unexpected extra Compelling Orb operation");
+        const auto now=Clock::now();++questRun.materialPhase;++interactions;
+        questRun.sweepReady=now+std::chrono::milliseconds(600);
+        if(questRun.materialPhase==2) {
+            QuestPending pending;pending.action=QuestPending::Action::Object;
+            pending.unit=OnlineUnitKey{intent.at("unitType").get<uint8_t>(),intent.at("unitId").get<uint32_t>()};
+            const auto unit=c.session.read().world.units.find(*pending.unit);
+            if(unit!=c.session.read().world.units.end()) pending.assignment=unit->second.assignmentRevision;
+            pending.deadline=now+std::chrono::seconds(20);questRun.pending=pending;
+        }
+        note("quest-orb-operation-submitted",std::to_string(questRun.materialPhase));cancelWalk(c);return;
+    }
     QuestPending p;p.action=intent.value("purpose",std::string{})=="quest-portal"?QuestPending::Action::Portal:QuestPending::Action::Object;
+    if(intent.value("activation",false)) p.action=QuestPending::Action::Object;
     p.unit=OnlineUnitKey{intent.at("unitType").get<uint8_t>(),intent.at("unitId").get<uint32_t>()};
     const auto unit=c.session.read().world.units.find(*p.unit);
     if(unit!=c.session.read().world.units.end()) p.assignment=unit->second.assignmentRevision;
@@ -174,6 +320,9 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
     const auto state=questFlags(c,stateQuest);
     const auto parentState=questFlags(c,goal.questId);
     const auto tombOffset=tombSymbol;
+    if(step.skipGranted) if(const auto prerequisite=questFlags(c,*step.skipGranted);prerequisite && (*prerequisite&1)) {
+        questStepDone(c,"Actually granted prerequisite skips its old material/introductory steps");return;
+    }
     if(step.item=="ass" && !questRun.pending && !questRun.skillPointsBefore && state &&
         (*state&0x2003) && !(*state&0x20) && !owned(c,"ass")) {
         questStepDone(c,"Actual Radament flags confirm the skill book was already used");return;
@@ -205,14 +354,19 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
     if(step.action==QuestAction::Acquire && (owned(c,step.item) || (!step.produced.empty() && owned(c,step.produced)))) {
         questStepDone(c,"Already-owned quest item satisfies acquisition: "+step.item);return;
     }
-    if(step.action!=QuestAction::Portal && step.action!=QuestAction::ActTravel && step.area &&
-        (area!=step.area || travelDestination) && !travel(c,*step.area)) return;
+    if(step.action!=QuestAction::Portal && step.action!=QuestAction::ActTravel && step.area && (area!=step.area || travelDestination)) {
+        const bool arrived=goal.questTown && step.area==goal.questTown?reachTown(c):travel(c,*step.area);
+        if(!arrived) return;
+    }
     bool done=false;
     switch(step.action) {
     case QuestAction::Travel:done=true;break;
     case QuestAction::UseItem:done=questUseItem(c,step);break;
     case QuestAction::Combine:done=questCombine(c,step);break;
     case QuestAction::SubmitStaff:done=questSubmitStaff(c,step);break;
+    case QuestAction::SearchDrop:done=questSearchDrop(c,step);break;
+    case QuestAction::EquipWeapon:done=questEquipWeapon(c,step);break;
+    case QuestAction::SmashOrb:done=questSmashOrb(c,step);break;
     case QuestAction::Talk:done=questTalk(c,goal,step);break;
     case QuestAction::ReturnTown:done=reachTown(c);break;
     case QuestAction::Acquire:
@@ -239,7 +393,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
         }
         explore(c,"all Den of Evil hostiles, including reconstructed rooms outside the screen");
         if(phase=="explore-wait" && !c.walk.active() && Clock::now()>=questRun.sweepReady) {
-            visited.clear();exploredFrontiers.clear();checkedHints.clear();unavailableRooms.clear();++questRun.sweeps;
+            visited.clear();frontierAttempts.clear();checkedHints.clear();unavailableRooms.clear();++questRun.sweeps;
             questRun.sweepReady=Clock::now()+std::chrono::seconds(2);note("den-resweep",std::to_string(questRun.sweeps));
         }
         break;
@@ -260,6 +414,21 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
         if(!approachPoint(c,*unit->position,"quest hunt target",2)) explore(c,"reachable quest target");
         break;
     }
+    }
+    if(done && !goal.requirements.empty()) {
+        const auto &node=goal.requirements.at(questRun.step);
+        const bool linkedObject=std::any_of(node.alternatives.begin(),node.alternatives.end(),[](const auto &all) {
+            return std::any_of(all.begin(),all.end(),[](const auto &fact){return fact.kind==QuestFact::Kind::ObjectOpened;});
+        });
+        if(linkedObject && !questRequirementSatisfied(c,goal,questRun.step)) {
+            if(!questRun.pending) {
+                QuestPending pending;pending.action=QuestPending::Action::Object;pending.deadline=Clock::now()+std::chrono::seconds(20);
+                if(step.target) if(const auto source=find(c,*step.target,true)) {pending.unit=source->key;pending.assignment=source->assignmentRevision;}
+                questRun.pending=pending;
+            }
+            wait("quest-linked-object","Waiting for the linked quest object's actual opened mode: "+node.name);
+            checkQuestPending(c);return;
+        }
     }
     if(done) questStepDone(c,goal.quest+" step "+std::to_string(questRun.step));
 }

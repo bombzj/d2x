@@ -129,7 +129,7 @@ void SceneView::drawQuests(Vec) const {
         const auto id = questView_.displayed(view_.questAct, size_t(index));
         const auto &record = questView_.entry(id);
         const auto &heading = record.title;
-        // Retail 1E5E8 selects font 8 (FontFormal11); 1E67A/1E6E6
+        // Retail RVA 1F5E8 selects font 8 (FontFormal11); 1F67A/1F6E6
         // supply title/description baselines 248/270, not glyph tops.
         const auto &font = assets_.questFont;
         const float scale = inventoryScale();

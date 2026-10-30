@@ -140,7 +140,7 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
             guardianFlags & 0x800 ? guardianSpeechPending : 0u};
         const auto radamentFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::RadamentsLair).nativeSlot * 2);
         auto &radament = player.quests[difficulty][questIndex(QuestId::RadamentsLair)];
-        radament.stage = radamentFlags & 1 ? 4 : radamentFlags & 2 ? 3 : radamentFlags & 8 ? 2 : radamentFlags & 4 ? 1 : 0;
+        radament.stage = radamentFlags & 1 ? 4 : radamentFlags & 2 ? 3 : radamentFlags & 0x18 ? 2 : radamentFlags & 4 ? 1 : 0;
         radament.flags = radamentFlags & 0x20 ? radamentBookPending
             : radament.stage >= uint32_t(RadamentStage::Slain) ? radamentBookUsed : 0;
         const auto staffFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::HoradricStaff).nativeSlot * 2);
@@ -160,6 +160,8 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
         player.quests[difficulty][questIndex(QuestId::Summoner)].stage = summonerFlags & 1 ? 3 : summonerFlags & 2 ? 2 : summonerFlags & 4 ? 1 : 0;
         const auto tombsFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::SevenTombs).nativeSlot * 2);
         player.quests[difficulty][questIndex(QuestId::SevenTombs)].stage = tombsFlags & 1 ? 5 : tombsFlags & 0x10 ? 4 : tombsFlags & 8 ? 3 : tombsFlags & 0x20 ? 2 : tombsFlags & 4 ? 1 : 0;
+        for(const auto id:actTwoQuests) player.quests[difficulty][questIndex(id)].nativeRecord=
+            word(sections.quests,10+difficulty*96+questDefinition(id).nativeSlot*2);
         std::copy_n(sections.introductions.begin()+0x1C+difficulty*8,8,player.npcVoiceFlags[difficulty].begin());
         for (const auto &[bit, key] : dialogues.introductionKeys)
             if (sections.introductions[questIntroductionOffset + difficulty * 8 + bit / 8] & (1u << (bit % 8)))
@@ -297,6 +299,10 @@ void exportD2sQuests(const CharacterRecord &player, D2sFixedSections &sections, 
         const auto tombsOffset = 10 + difficulty * 96 + questDefinition(QuestId::SevenTombs).nativeSlot * 2;
         putWord(sections.quests, tombsOffset, (word(sections.quests, tombsOffset) & ~0x203Du) |
             (tombs >= 5 ? 0x2001 : tombs == 4 ? 0x2010 : tombs == 3 ? 0x2008 : tombs == 2 ? 0x20 : tombs == 1 ? 4 : 0));
+        for(const auto id:actTwoQuests) if(const auto bits=player.quests[difficulty][questIndex(id)].nativeRecord) {
+            const auto slot=questDefinition(id).nativeSlot;
+            putWord(sections.quests,10+difficulty*96+slot*2,(*bits&~0x1000u)|(player.questLogViewed[difficulty][slot]?0x1000u:0u));
+        }
         std::copy(player.npcVoiceFlags[difficulty].begin(),player.npcVoiceFlags[difficulty].end(),sections.introductions.begin()+0x1C+difficulty*8);
         for (const auto &[bit, key] : dialogues.introductionKeys)
             if (player.npcIntroductions[difficulty].contains(key)) {

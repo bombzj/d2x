@@ -2,6 +2,7 @@
 #include "server/runtime/contracts.hpp"
 #include "server/area_store.hpp"
 #include "gameplay/quest/id.hpp"
+#include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/forge_rewards.hpp"
 #include <memory>
 #include <optional>
@@ -54,6 +55,8 @@ struct ActTwoState {
     std::map<PlayerId,ActorContext> journalReads;
     std::set<PlayerId> radamentBooks;
     std::set<EntityId> radamentFxStarted;
+    bool radamentActivated{},summonerActivated{};
+    std::array<ActTwoQuestRuntime,6> runtime{};
 };
 struct Goal {
     uint32_t stage{};
@@ -62,6 +65,7 @@ struct Goal {
     std::map<PlayerId,EntityId> actors;
     std::map<PlayerId,uint64_t> experience;
     bool attributeReward{}, consumeForgeItems{}, consumeKhalimItems{}, primaryGoal=true, notifyQuest=true;
+    uint16_t nativeSet{},nativeClear{};
 };
 struct StatusNotice {
     uint8_t status{};std::optional<EntityId> deactivateNpc{};

@@ -24,6 +24,7 @@
 #include "client/remote_ui_clients.hpp"
 #include "presentation/scene_view.hpp"
 #include "presentation/controller.hpp"
+#include "presentation/hud/classic_panel.hpp"
 #include "content/string_table.hpp"
 #include "content/classic_data.hpp"
 #include "content/language.hpp"
@@ -43,21 +44,26 @@
 #include <chrono>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <nlohmann/json.hpp>
 #include <rlgl.h>
 
 namespace d2x {
 namespace {
-bool debugInputTakesControl(const FrameInput &input,bool chatting=false) {
+bool debugInputTakesControl(const FrameInput &input,bool chatting=false,bool questInspection=false) {
     // Observation keys (especially Tab/automap panning) do not replace a
     // gameplay intention. Inspecting a character must not cancel a task.
-    if(chatting || input.chat || input.messageLog) return false;
+    if(chatting || input.chat || input.messageLog || questInspection) return false;
     return input.leftPressed || input.rightPressed || input.escape || input.enter || input.mouseWheel ||
         input.run || input.weaponSwap || input.previousSkill || input.nextSkill || input.skillPicker || input.voice>=0 ||
         input.save || input.load || input.reload || input.debugQuit ||
         std::ranges::any_of(input.skills,[](bool pressed){return pressed;}) ||
         std::ranges::any_of(input.belt,[](bool pressed){return pressed;});
+}
+bool debugQuestInspectionInput(const FrameInput &input,const ViewState *ui) {
+    return ui && ui->questOpen && (input.escape || ((input.leftPressed || input.rightPressed) &&
+        CheckCollisionPointRec(rv(input.mouse),classicSideBounds(false))));
 }
 bool debugInspectionOpen(const ViewState &ui,bool inventoryOwned) {
     return (ui.inventory.open && !inventoryOwned) || ui.characterOpen || ui.skillTreeOpen || ui.questOpen || ui.hirelingOpen || ui.partyOpen ||
@@ -66,7 +72,7 @@ bool debugInspectionOpen(const ViewState &ui,bool inventoryOwned) {
 // Bounded diagnostics of completed presentation frames, independent of game time.
 class FrontendTimings {
   public:
-    enum Stage { Host, Network, Client, Debug, Scene, Present, Other, Count };
+    enum Stage { Host, Network, Client, Ai, Navigation, Debug, Scene, Present, Other, Count };
     class Frame {
         FrontendTimings &owner_;
         std::chrono::steady_clock::time_point previous_=std::chrono::steady_clock::now();
@@ -81,7 +87,7 @@ class FrontendTimings {
         ~Frame() {mark(Other);owner_.record(values_);}
     };
     nlohmann::json summary() const {
-        constexpr std::array names{"host","network","client","debug","scene","present","other","total"};
+        constexpr std::array names{"host","network","client","ai","navigation","debug","scene","present","other","total"};
         nlohmann::json result={{"windowFrames",size_},{"completedFrames",completed_},{"over100ms",slow_}};
         for(size_t stage=0;stage<names.size();++stage) {
             std::array<double,120> values{};double sum=0;
@@ -484,6 +490,15 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     }
     profile.mark("frontend-ready");
     FrontendTimings frameTimings;
+    std::optional<OnlineView> frontendView;
+    const auto refreshFrontendView = [&]() -> const OnlineView & {
+        const auto &current = session.read();
+        if (!frontendView || frontendView->revision != current.revision ||
+            frontendView->connectionGeneration != current.connectionGeneration ||
+            frontendView->gameGeneration != current.gameGeneration)
+            frontendView = current;
+        return *frontendView;
+    };
     bool wasMinimized = false;
     auto clientFrame = std::chrono::steady_clock::now();
     while (true) {
@@ -605,12 +620,20 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         const bool escape = debugInputs.empty() ? IsKeyPressed(KEY_ESCAPE) : debugInputs.front().escape;
         if (focused && escape) control.cancelMovement();
         if (!focused || presentationPaused || (sharedUi && (sharedUi->ui().blocksInput() ||
-            (debugAi.active() && debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory())))))
+            ((debugAi.hasPlan() || debugWalk.active()) && debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory())))))
             control.cancelMovement();
         control.tick(!minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
         DebugAi::SuppliesView aiSupplies;
         if(debugAi.active() && sharedClients) {
+            if(scene) aiSupplies.castInputBusy=scene->castInputBusy();
+            aiSupplies.skillUsable=[&](uint16_t skill)->std::optional<bool> {
+                const auto &player=sharedClients->character().read();
+                if(!session.read().load.playerUnitId || player.actor.value!=uint64_t(*session.read().load.playerUnitId)+1) return {};
+                const auto *entry=player.skill(skill);
+                if(!entry || !entry->effectiveRankKnown) return {};
+                return entry->available && entry->usableNow;
+            };
             const auto &player=sharedClients->character().read();
             // Shared UI identities encode a native GUID as GUID+1.
             if(session.read().load.playerUnitId && player.actor.value==uint64_t(*session.read().load.playerUnitId)+1) {
@@ -619,14 +642,18 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             }
             aiSupplies.buyQuote=[&](uint32_t item){return sharedClients->itemQuote(item,OnlineItemAction::Buy);};
         }
+        frameTiming.mark(FrontendTimings::Client);
+        debugWalk.navigationSearch().beginFrame(session.read().gameGeneration,session.read().world.areaGeneration,town.navigationRevision());
         debugAi.tick(session,town,debugWalk,control,combat,inventory,aiSupplies,
             minimized || presentationPaused || (sharedUi && (sharedUi->ui().gameMenuOpen || debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory()))),
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
             scene && std::ranges::any_of(scene->players(),[](const auto &player){return player.local && player.moving;}));
+        frameTiming.mark(FrontendTimings::Ai);
         debugWalk.tick(session,town,control,debugAi.controlsMovement() || minimized || presentationPaused ||
-            (sharedUi && (sharedUi->ui().blocksInput() || (debugAi.active() && debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory())))),
+            (sharedUi && (sharedUi->ui().blocksInput() || ((debugAi.hasPlan() || debugWalk.active()) && debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory())))),
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
             scene && std::ranges::any_of(scene->players(),[](const auto &player){return player.local && player.moving;}));
+        frameTiming.mark(FrontendTimings::Navigation);
         if (renderedArea != town.read().area) {
             // Walking into an adjacent level changes the binding, not the
             // actor's path. RemoteScene refreshes palette/origin each frame;
@@ -676,11 +703,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     const auto name=command.at("command").get<std::string>();
                     if(auto navigation=debugNavigationCommand(command)) return navigation;
                     const bool inputTakeover=name=="ui-input" && std::ranges::any_of(parseDebugInput(command),
-                        [&](const auto &input){return debugInputTakesControl(input,debugChatOwnsInput());});
+                        [&](const auto &input){return debugInputTakesControl(input,debugChatOwnsInput(),debugQuestInspectionInput(input,sharedUi?&sharedUi->ui():nullptr));});
                     if((debugAi.hasPlan() || debugWalk.active()) && (inputTakeover || name=="quit" || name=="pause" ||
                         name=="travel" || name=="load" ||
-                        (name.starts_with("online-") && name!="online-status" && name!="online-world" &&
-                         name!="online-items" && name!="online-ground" && name!="online-social" &&
+                        (name.starts_with("online-") && name!="online-status" && name!="online-world" && name!="online-quest-refresh" &&
+                         name!="online-items" && name!="online-ground" && name!="online-social" && name!="online-automap" &&
                          name!="online-combat" && name!="online-skills" && name!="online-item-quote" && name!="online-chat-input")))
                     {
                         debugAi.manualInput(session,debugWalk,control,combat);
@@ -743,8 +770,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     {"chests", panels.bhShowChests}, {"automapOnJoin", panels.bhAutomapOnJoin},
                     {"lkChestLines", panels.bhShowLkChestLines}};
             }
-            if(request.find("online-status")!=std::string::npos || request.find("server-status")!=std::string::npos)
+            if(request.find("online-status")!=std::string::npos || request.find("server-status")!=std::string::npos) {
                 reply["performance"]=frameTimings.summary();
+                reply["performance"]["navigationSearch"]=debugWalk.navigationSearch().snapshot();
+            }
             if (sharedClients && request.find("online-status") != std::string::npos) {
                 const auto &player = sharedClients->character().read();
                 const auto &merc = sharedClients->npc().hireling();
@@ -825,7 +854,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             }
             if (quit) continue;
         }
-        auto view = session.read();
+        // Keep this frame's value stable across commands/read() calls without
+        // copying every world unit and item again on unchanged display frames.
+        const auto &view = refreshFrontendView();
         if (localConnection && !reloadCharacter.empty() && view.stage == OnlineStage::CharacterSelection) {
             enterLocalGame = session.select_character(std::exchange(reloadCharacter, {}));
         }
@@ -889,7 +920,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             if (!accepted) notice = preparationError.empty() ? "Quick-entry game request was rejected; use the lobby to inspect or retry." : preparationError;
         }
         // Automatic commands above can change the stage in this same frame.
-        view = session.read();
+        refreshFrontendView();
         if (enterLocalGame && view.error && view.stage == OnlineStage::CharacterSelection)
             enterLocalGame = false;
         if (view.stage != OnlineStage::ProtocolReady && presentationPaused) {
@@ -1158,7 +1189,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         debugInputs.pop_front();
                     }
                     if(debugAi.hasPlan() || debugWalk.active()) {
-                        if(debugInputTakesControl(input,debugChatOwnsInput()))
+                        if(debugInputTakesControl(input,debugChatOwnsInput(),debugQuestInspectionInput(input,sharedUi?&sharedUi->ui():nullptr)))
                         {
                             debugAi.manualInput(session,debugWalk,control,combat);
                             debugWalk.manualInput(control);
@@ -1214,7 +1245,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     sharedUi && sharedUi->ui().chatInputOpen);
                 if (!debugInputs.empty()) { input = std::move(debugInputs.front()); debugInputs.pop_front(); }
                 if(debugAi.hasPlan() || debugWalk.active()) {
-                    if(debugInputTakesControl(input,debugChatOwnsInput()))
+                    if(debugInputTakesControl(input,debugChatOwnsInput(),debugQuestInspectionInput(input,sharedUi?&sharedUi->ui():nullptr)))
                     {
                         debugAi.manualInput(session,debugWalk,control,combat);
                         debugWalk.manualInput(control);
@@ -1279,7 +1310,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         if (captureRequested) saveFrontendScreenshot(target, "artifacts/d2x-capture.png");
         if (quit || presentationPaused)
             continue;
-        town.revealVisibleTiles(session.read(), worldFrame.visibleMapTiles);
+        town.revealVisibleTiles(session.read(), worldFrame.visibleMapTiles, worldFrame.observationExtent);
         if (debugMapReveal && (session.read().stage != OnlineStage::ProtocolReady ||
             debugMapRevealGame != session.read().gameGeneration)) debugMapReveal.reset();
         if (pd2Resources)

@@ -256,16 +256,25 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         return result;
     }
     if(area->definition.act==2 && (rule.operation==28 || rule.operation==31 || rule.operation==44 || rule.operation==45 || rule.operation==46 || rule.operation==53 || (rule.operation>=57 && rule.operation<=59))) {
-        const bool travel=rule.operation==44 || rule.operation==46;
-        if(travel?object.mode!=2:object.mode!=0) return {DomainStatus::Conflict,{}};
+        // ObjMode44 requires opened stairs; ObjMode46 accepts any non-neutral
+        // Hell Gate mode, including the live operating mode set by A3Q6.
+        const bool allowed=rule.operation==44?object.mode==2:rule.operation==46?object.mode!=0:object.mode==0;
+        if(!allowed) return {DomainStatus::Conflict,{}};
         const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
         if(result) for(const auto &[player,pending]:ports_.quests.read().pending) {(void)player;if(pending.source==object.id && !pending.conversation) object.pending=true;}
         return result;
     }
     if(area->definition.act==1 && (rule.operation==24 || rule.operation==25 || rule.operation==34 || (rule.operation>=39 && rule.operation<=43))) {
+        // ObjMode34: the neutral portal's first click only starts ENDANIM.
+        // A later click in any non-neutral mode performs the actual warp.
+        if(rule.operation==34 && object.mode==0) {
+            object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);
+            ++object.revision;collision(actor.area);return {DomainStatus::Applied,std::monostate{}};
+        }
         const bool reusable=rule.operation==25 || rule.operation==34 || rule.operation==42 || rule.operation==43;
         if(!reusable && object.mode) return {DomainStatus::Conflict,{}};
-        if(rule.operation==43 && object.mode!=2) return {DomainStatus::Conflict,{}};
+        // Original Operate43 has no animation-mode gate. The actual assigned
+        // entrance is usable while operating; travel still validates its area.
         const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
         if(result && !reusable) object.pending=true;
         if(result && rule.operation==42 && !object.mode) {object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);++object.revision;schedule(object);}

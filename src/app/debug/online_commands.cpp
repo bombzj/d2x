@@ -590,6 +590,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             command == "online-characters" || command == "online-games" || command == "online-world" ||
             command == "online-items" || command == "online-ground" || command == "online-combat" || command == "online-skills" ||
             command == "online-social" || command == "online-chat") {
+        } else if (command == "online-quest-refresh") {
+            accepted=session.request_quests(session.read().gameGeneration);
         } else if (command == "online-chat-input") {
             const auto error=chatInput(text("message",255));
             if(!error.empty()) return Json{{"ok",false},{"error",error}}.dump();
@@ -669,7 +671,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                         return Json{{"ok", false}, {"error", "Select the MPQ Attack skill on the left hand first"}}.dump();
                 }
             }
-            accepted = combat.submit(action);
+            accepted = combat.submit(action,sceneSnapshot().playerDisplayPosition);
             if (!accepted) return Json{{"ok", false}, {"accepted", false}, {"error", combat.reason()}}.dump();
             if (action.action == Action::Cast) control.cancelMovement();
             else control.cancelApproach();
@@ -975,6 +977,14 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
         combat.update();
         Json response{{"ok", accepted}, {"presentationPaused", presentationPaused},
             {"online", snapshot(session.read(), sceneSnapshot(), inventory.read())}};
+        const auto memory=town.navigationMemory();
+        response["online"]["navigationMemory"]={{"observedCells",memory.observedCells},{"targets",memory.targets},
+            {"connections",memory.connections},{"waypoints",memory.waypoints},{"restored",memory.restored}};
+        if(command=="online-world") {
+            auto &boundaries=response["online"]["scene"]["walkingBoundaries"];boundaries=Json::array();
+            for(const auto &edge:town.walkingBoundaries()) boundaries.push_back({{"destination",edge.destination},
+                {"side",edge.side},{"plane",edge.plane},{"start",edge.start},{"end",edge.end}});
+        }
         if (command == "online-world" && request.contains("fromX") && request.contains("fromY") &&
             request.contains("x") && request.contains("y")) {
             const auto *map = town.map(); const auto &display = town.read();

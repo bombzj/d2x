@@ -13,12 +13,18 @@ struct ObjectPresentation {
 // it never changes the server replica or executes an operate function.
 inline std::optional<float> objectEndAnimation(const DataTable &objects, size_t row, int mode) {
     if (mode != 1 || !objects.number(row, "Mode2").value_or(0)) return {};
+    if(objects.number(row,"InitFn").value_or(0)==38) {
+        // A2Q6_Callback08_MonsterKilled: Tyrael's door uses the original
+        // FrameCnt1 ENDANIM (without +1), even though its OperateFn is zero.
+        const auto frames=objects.number(row,"FrameCnt1");
+        return frames && *frames>0?std::optional<float>{float(*frames)/25.f}:std::nullopt;
+    }
     switch (objects.number(row, "OperateFn").value_or(0)) {
     case 2:
         if (objects.number(row, "CycleAnim1").value_or(0)) return {};
         break;
     case 1: case 3: case 4: case 5: case 7: case 14: case 15: case 18: case 23:
-    case 30: case 48: case 51: case 68:
+    case 30: case 34: case 48: case 51: case 68:
         break;
     default:
         // In particular, spike traps (11) reset through their own server event.

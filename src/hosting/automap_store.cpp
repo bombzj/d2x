@@ -6,12 +6,14 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <nlohmann/json.hpp>
 
 namespace d2x::hosting {
 namespace {
 constexpr size_t maxBytes = 16 * 1024 * 1024;
 using Bytes = std::vector<uint8_t>;
 using Index = std::array<uint32_t, 6>;
+using Json=nlohmann::json;
 void require(bool valid) {
     if (!valid) throw std::runtime_error("Invalid native automap cache; file preserved");
 }
@@ -128,6 +130,71 @@ Bytes encode(const std::vector<NativeAutomapLayer> &layers) {
     }
     return bytes;
 }
+std::filesystem::path navigationPath(std::filesystem::path path,size_t slot) {
+    path.replace_extension(".d2xnav"+std::to_string(slot));return path;
+}
+template<size_t N> std::vector<std::array<uint16_t,N>> hints(const Json &rows) {
+    require(rows.is_array() && rows.size()<=65536);
+    std::vector<std::array<uint16_t,N>> result;
+    for(const auto &row:rows) {
+        require(row.is_array() && row.size()==N);std::array<uint16_t,N> value{};
+        for(size_t i=0;i<N;++i) {
+            require(row[i].is_number_integer() && row[i].get<int64_t>()>=0 && row[i].get<uint64_t>()<=UINT16_MAX);
+            value[i]=row[i].get<uint16_t>();
+        }
+        result.push_back(value);
+    }
+    return result;
+}
+std::optional<NavigationDiscovery> decodeNavigation(const Bytes &bytes,uint32_t seed,uint32_t objectSeed) {
+    if(bytes.empty()) return {};
+    const auto json=Json::parse(bytes);require(json.is_object() && json.at("version")==1);
+    if(json.at("seed")!=seed || json.at("objectSeed")!=objectSeed) return {};
+    NavigationDiscovery nav;nav.seed=seed;nav.objectSeed=objectSeed;nav.profile=json.at("profile").get<std::string>();
+    require(!nav.profile.empty() && nav.profile.size()<=32);
+    const auto &acts=json.at("actSeeds");require(acts.is_array() && acts.size()<=5);
+    for(const auto &entry:acts) {
+        require(entry.is_array() && entry.size()==2 && entry[0].is_number_integer() && entry[1].is_number_integer());
+        const auto act=entry[0].get<int64_t>(),value=entry[1].get<int64_t>();
+        require(act>=0 && act<5 && value>=0 && uint64_t(value)<=UINT32_MAX && !nav.actSeeds.contains(int(act)));
+        nav.actSeeds.emplace(int(act),uint32_t(value));
+    }
+    const auto &layers=json.at("observed");require(layers.is_array() && layers.size()<=1024);
+    size_t cells=0;
+    for(const auto &entry:layers) {
+        const auto area=entry.at("area").get<int64_t>(),width=entry.at("width").get<int64_t>(),height=entry.at("height").get<int64_t>();
+        require(area>0 && area<=UINT16_MAX && width>0 && width<=8192 && height>0 && height<=8192);
+        const auto count=uint64_t(width)*uint64_t(height);require(count<=maxBytes-cells);cells+=size_t(count);
+        AutomapLayer layer{int(width),int(height),entry.at("fingerprint").get<uint64_t>(),std::vector<uint8_t>(size_t(count))};
+        const auto &runs=entry.at("runs");require(runs.is_array() && runs.size()<=count);size_t end=0;
+        for(const auto &run:runs) {
+            require(run.is_array() && run.size()==2 && run[0].is_number_integer() && run[1].is_number_integer());
+            const auto start=run[0].get<int64_t>(),length=run[1].get<int64_t>();
+            require(start>=0 && uint64_t(start)>=end && uint64_t(start)<=count && length>0 && uint64_t(length)<=count-uint64_t(start));
+            end=size_t(start+length);std::fill(layer.seen.begin()+start,layer.seen.begin()+std::ptrdiff_t(end),uint8_t{1});
+        }
+        require(nav.observed.emplace(RegionId(area),std::move(layer)).second);
+    }
+    nav.targets=hints<5>(json.at("targets"));nav.connections=hints<4>(json.at("connections"));nav.waypoints=hints<3>(json.at("waypoints"));
+    return nav;
+}
+Bytes encodeNavigation(const NavigationDiscovery &nav) {
+    Json json{{"version",1},{"profile",nav.profile},{"seed",nav.seed},{"objectSeed",nav.objectSeed},
+        {"actSeeds",Json::array()},{"observed",Json::array()},{"targets",nav.targets},{"connections",nav.connections},{"waypoints",nav.waypoints}};
+    for(const auto &[act,seed]:nav.actSeeds) json["actSeeds"].push_back({act,seed});
+    for(const auto &[area,layer]:nav.observed) {
+        require(layer.width>0 && layer.height>0 && uint64_t(layer.width)*layer.height==layer.seen.size());
+        Json runs=Json::array();
+        for(size_t i=0;i<layer.seen.size();) {
+            require(layer.seen[i]<=1);if(!layer.seen[i]) {++i;continue;}
+            const size_t begin=i;while(i<layer.seen.size() && layer.seen[i]==1) ++i;runs.push_back({begin,i-begin});
+        }
+        json["observed"].push_back({{"area",uint16_t(area)},{"width",layer.width},{"height",layer.height},
+            {"fingerprint",layer.layoutFingerprint},{"runs",std::move(runs)}});
+    }
+    const auto text=json.dump();require(text.size()<=maxBytes);Bytes bytes(text.begin(),text.end());
+    (void)decodeNavigation(bytes,nav.seed,nav.objectSeed);return bytes;
+}
 void component(std::string_view name) {
     require(!name.empty() && name != "." && name != ".." && name.back() != '.' && name.back() != ' ');
     require(name.find_first_of("/\\:<>\"|?*") == std::string_view::npos);
@@ -151,12 +218,12 @@ std::optional<AutomapDiscovery> AutomapStore::load(uint32_t seed, uint32_t objec
     for (auto &layer:result.nativeLayers) if (layer.objectSeed!=objectSeed) {
         layer.cells[2].clear(); layer.objectSeed=objectSeed;
     }
+    result.navigation=decodeNavigation(read(navigationPath(path_,slot)),seed,objectSeed);
     return result;
 }
 void AutomapStore::save(const AutomapDiscovery &discovery) const {
     std::map<uint32_t,std::vector<NativeAutomapLayer>> worlds;
     for (const auto &layer:discovery.nativeLayers) worlds[layer.seed].push_back(layer);
-    if (worlds.empty()) return;
     for (const auto &[seed,layers]:worlds) {
         const size_t slot=selectSlot(path_,seed);
         auto target=slotPath(path_,slot);
@@ -176,6 +243,13 @@ void AutomapStore::save(const AutomapDiscovery &discovery) const {
         }
         const auto data=encode(saved);
         writeFileAtomically(target,data,hadCells);
+    }
+    if(discovery.navigation) {
+        const auto &nav=*discovery.navigation;const auto slot=selectSlot(path_,nav.seed);
+        const auto target=navigationPath(path_,slot);const auto original=read(target);
+        // Reject unknown versions instead of silently migrating an old cache.
+        (void)decodeNavigation(original,nav.seed,nav.objectSeed);
+        const auto bytes=encodeNavigation(nav);writeFileAtomically(target,bytes,!original.empty());
     }
 }
 } // namespace d2x::hosting

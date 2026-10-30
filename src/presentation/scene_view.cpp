@@ -181,6 +181,10 @@ Rectangle SceneView::worldViewport() const {
     const float end = right ? classicSideBounds(true).x : W;
     return {begin, 0, end - begin, float(H - HUD)};
 }
+Vec SceneView::worldObservationExtent() const {
+    const auto viewport=worldViewport();
+    return {viewport.width/(32*view_.zoom),viewport.height/(16*view_.zoom)};
+}
 Vec SceneView::screen(Vec p) const {
     const auto viewport = worldViewport();
     const float centerX = viewport.x + viewport.width * .5f;

@@ -1,6 +1,11 @@
 include(FetchContent)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+# Keep raylib's normal frame control, but let the OS sleep for the entire
+# frame wait instead of spending its tail polling the clock on the CPU.
+set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
+set(SUPPORT_BUSY_WAIT_LOOP OFF CACHE BOOL "" FORCE)
+set(SUPPORT_PARTIALBUSY_WAIT_LOOP OFF CACHE BOOL "" FORCE)
 set(STORM_USE_BUNDLED_LIBRARIES ON CACHE BOOL "" FORCE)
 set(STORM_SKIP_INSTALL ON CACHE BOOL "" FORCE)
 foreach(dep IN ITEMS raylib stormlib)
