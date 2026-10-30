@@ -26,11 +26,13 @@ struct DebugAi::Impl {
     enum class PotionKind {Life,Mana,Rejuvenation};
     struct Potion {PotionKind kind{};int strength{};std::optional<uint8_t> state;};
     struct Selector {uint8_t type{};uint16_t identity{};std::string name;std::optional<uint16_t> superUnique{};};
-    enum class QuestAction {Talk,Clear,Hunt,Acquire,ReadScroll,Stones,Operate,Portal,ReturnTown,Imbue,ActTravel};
+    enum class QuestAction {Talk,Clear,Hunt,Acquire,ReadScroll,Stones,Operate,Portal,ReturnTown,Imbue,ActTravel,Travel,UseItem,Combine,SubmitStaff};
     struct QuestStep {
         QuestAction action{};std::optional<uint16_t> area;std::optional<Selector> target,witness;
         std::string item,produced;std::optional<uint16_t> source;
-        std::vector<uint16_t> topics,objects;uint16_t flags{};bool optional{},skipPending=true;
+        std::vector<uint16_t> topics,objects,skipAreas;uint16_t flags{};bool optional{},skipPending=true;
+        std::optional<QuestId> stateQuest;
+        uint16_t skipAny{},parentSkipAny{},clearFlags{};bool trueTomb{},skipTombKnown{},publishesTombSymbol{};
     };
     struct Goal {
         Kind kind{};std::optional<uint16_t> area;std::optional<Selector> target;
@@ -70,6 +72,7 @@ struct DebugAi::Impl {
     std::vector<Goal> goals;size_t cursor{};std::string state="idle",phase,reason;
     std::deque<Json> history;uint64_t decisions{},sequence{},game{},areaGeneration{};
     std::optional<uint16_t> area;std::optional<OnlineUnitKey> target;
+    std::optional<uint16_t> tombSymbol; // Learned only from this plan's real journal acknowledgement.
     uint64_t targetAssignment{};
     std::set<std::tuple<int,int,int>> visited;std::optional<std::tuple<int,int,int>> exploring;
     std::set<std::pair<uint16_t,uint16_t>> exploredFrontiers;
@@ -92,6 +95,7 @@ struct DebugAi::Impl {
     std::map<std::pair<OnlineUnitKey,uint64_t>,Clock::time_point> bypassedThreats;
     bool combatOwned{},objectIssued{},pickupIssued{},portalIssued{},portalAttempted{},portalUsed{},greetingIssued{};
     std::optional<uint32_t> pickupId;std::set<uint32_t> oldPortals;
+    std::set<std::tuple<uint32_t,uint16_t,uint16_t,uint16_t,uint16_t>> pickupApproaches;
     unsigned castRequests{},moveGoals{},interactions{};
     unsigned npcOpenRetries{};
     bool mobilityHold{},mobilityTeleport{};uint64_t mobilityDiscontinuity{};
@@ -113,7 +117,7 @@ struct DebugAi::Impl {
     unsigned drinks{},purchases{};
     Json lastPotion,supplyVitals;
     struct QuestPending {
-        enum class Action {Object,Portal,Scroll,Topic,Take,Imbue,Place,Travel,Pickup} action{};
+        enum class Action {Object,Portal,Scroll,Topic,Take,Imbue,Place,Travel,Pickup,Use,OpenCube,StoreCube,Transmute,SubmitStaff,Introduction,CloseCube} action{};
         std::optional<OnlineUnitKey> unit;uint64_t assignment{},sequence{},beforeRevision{};
         uint32_t item{};Clock::time_point deadline{};
         bool refreshIssued{};
@@ -125,7 +129,7 @@ struct DebugAi::Impl {
         std::optional<OnlineUnitKey> materialNpc;
         std::set<uint32_t> rewardBefore;
         std::set<uint32_t> materialBefore;std::optional<uint32_t> skillPointsBefore;
-        bool rewardTracked{};
+        bool rewardTracked{};uint64_t clueBefore{};
     } questRun;
 
     explicit Impl(Archives &a):archives(a) {}
@@ -147,6 +151,7 @@ struct DebugAi::Impl {
     bool supplyCombat(Context &,const Goal &);
     bool reachTown(Context &);
     void configureQuest(Goal &) const;
+    void configureActTwoQuest(Goal &,QuestId) const;
     bool prepareQuest(Context &,const Goal &);
     Goal questLeaf(const Goal &) const;
     bool questBusy() const;
@@ -158,6 +163,10 @@ struct DebugAi::Impl {
     bool questImbue(Context &,const Goal &,const QuestStep &);
     bool questActTravel(Context &,const Goal &,const QuestStep &);
     bool questReadScroll(Context &,const QuestStep &);
+    bool questUseItem(Context &,const QuestStep &);
+    bool questCombine(Context &,const QuestStep &);
+    bool questSubmitStaff(Context &,const QuestStep &);
+    bool questItemRequest(Context &,OnlineItemCommand,QuestPending::Action,std::string);
     bool questStoreCursor(Context &,uint32_t);
     void checkQuestPending(const Context &) const;
     void refreshQuestNpc(Context &);
@@ -166,7 +175,10 @@ struct DebugAi::Impl {
     void observeQuestInteraction(Context &,const Json &);
     std::optional<OnlineItem> accessibleItem(const Context &,std::string_view) const;
     bool acquireItem(Context &,const Goal &);
+    bool approachPickup(Context &,const OnlineItem &);
+    bool settleItemInput(Context &);
     bool knownSkill(const Context &,uint16_t,bool left=false) const;
+    bool teleportAvailable(const Context &) const;
     bool selectSkill(Context &,uint16_t,OnlineSkillHand);
     std::optional<uint16_t> battleAura(const Context &) const;
     bool mobility(Context &);

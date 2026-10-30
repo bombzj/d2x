@@ -13,6 +13,7 @@
 #include "app/debug/online_commands.hpp"
 #include "app/debug/auto_walk.hpp"
 #include "app/debug/ai.hpp"
+#include "app/debug/chat_command.hpp"
 #include "app/debug/ui_input.hpp"
 #include "app/debug/server_commands.hpp"
 #include "client/remote_town.hpp"
@@ -48,17 +49,18 @@
 
 namespace d2x {
 namespace {
-bool debugInputTakesControl(const FrameInput &input) {
+bool debugInputTakesControl(const FrameInput &input,bool chatting=false) {
     // Observation keys (especially Tab/automap panning) do not replace a
     // gameplay intention. Inspecting a character must not cancel a task.
-    return input.leftPressed || input.rightPressed || input.escape || input.enter || input.chat || input.mouseWheel ||
+    if(chatting || input.chat || input.messageLog) return false;
+    return input.leftPressed || input.rightPressed || input.escape || input.enter || input.mouseWheel ||
         input.run || input.weaponSwap || input.previousSkill || input.nextSkill || input.skillPicker || input.voice>=0 ||
         input.save || input.load || input.reload || input.debugQuit ||
         std::ranges::any_of(input.skills,[](bool pressed){return pressed;}) ||
         std::ranges::any_of(input.belt,[](bool pressed){return pressed;});
 }
-bool debugInspectionOpen(const ViewState &ui) {
-    return ui.inventory.open || ui.characterOpen || ui.skillTreeOpen || ui.questOpen || ui.hirelingOpen || ui.partyOpen ||
+bool debugInspectionOpen(const ViewState &ui,bool inventoryOwned) {
+    return (ui.inventory.open && !inventoryOwned) || ui.characterOpen || ui.skillTreeOpen || ui.questOpen || ui.hirelingOpen || ui.partyOpen ||
         ui.help || ui.messageLogOpen || ui.chatInputOpen || ui.bhSettingsOpen;
 }
 // Bounded diagnostics of completed presentation frames, independent of game time.
@@ -287,6 +289,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     uint64_t inputAreaGeneration = ~uint64_t{};
     bool noPickup=false;
     bool minimized = false;
+    bool aiInventoryOpened = false;
     auto sceneStatus = [&] {
         town.update(session.read(), !minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
         auto status = town.read();
@@ -313,8 +316,38 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     bool quitAwaitingLeave = false;
     int frames = 0;
     std::deque<FrameInput> debugInputs;
+    auto debugNavigationCommand=[&](const nlohmann::json &command) -> std::optional<std::string> {
+        const auto name=command.at("command").get<std::string>();
+        if(auto ai=debugAi.command(command,session,town,debugWalk,control,combat,inventory)) return ai;
+        if(name=="debug-walk" || name=="debug-walk-cancel") debugAi.manualInput(session,debugWalk,control,combat);
+        return debugWalk.command(command,session,town,control,combat);
+    };
+    auto debugChatOwnsInput=[&] {
+        return sharedUi && (sharedUi->ui().chatInputOpen || sharedUi->ui().messageLogOpen);
+    };
     auto submitChatInput=[&](const std::string &text) -> std::string {
         if(session.read().stage!=OnlineStage::ProtocolReady) return "Enter a game before submitting a command.";
+        try {
+            if(const auto request=parseDebugChatCommand(text)) {
+                if(request->at("command")=="debug-help") {
+                    if(sharedUi) {
+                        sharedUi->debugChatMessage("/debug-ai-start <scenario> [JSON options]; /debug-ai-start quest <quest-name>");
+                        sharedUi->debugChatMessage("/debug-ai-append <scenario> or {\"goals\":[...]}; /debug-ai-status");
+                        sharedUi->debugChatMessage("/debug-ai-pause; /debug-ai-resume; /debug-ai-cancel");
+                        sharedUi->debugChatMessage("/debug-walk [waypoint|exit|JSON options]; /debug-walk-status; /debug-walk-cancel");
+                    }
+                    return {};
+                }
+                const auto response=debugNavigationCommand(*request);
+                if(!response) throw std::invalid_argument("Unsupported local debug command.");
+                const auto reply=nlohmann::json::parse(*response);
+                if(sharedUi) for(const auto &line:debugChatSummary(reply)) sharedUi->debugChatMessage(line);
+                return {};
+            }
+        } catch(const std::exception &e) {
+            if(sharedUi) sharedUi->debugChatMessage(e.what(),true);
+            return e.what();
+        }
         if (sharedClients && sharedClients->inventory().read().personalItemActionsOnly &&
             (text == "/rp" || text.starts_with("/rp "))) {
             return "Stash rename is unavailable on the current CN service; no request was sent.";
@@ -572,7 +605,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         const bool escape = debugInputs.empty() ? IsKeyPressed(KEY_ESCAPE) : debugInputs.front().escape;
         if (focused && escape) control.cancelMovement();
         if (!focused || presentationPaused || (sharedUi && (sharedUi->ui().blocksInput() ||
-            (debugAi.active() && debugInspectionOpen(sharedUi->ui())))))
+            (debugAi.active() && debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory())))))
             control.cancelMovement();
         control.tick(!minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
@@ -587,11 +620,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             aiSupplies.buyQuote=[&](uint32_t item){return sharedClients->itemQuote(item,OnlineItemAction::Buy);};
         }
         debugAi.tick(session,town,debugWalk,control,combat,inventory,aiSupplies,
-            minimized || presentationPaused || (sharedUi && (sharedUi->ui().gameMenuOpen || debugInspectionOpen(sharedUi->ui()))),
+            minimized || presentationPaused || (sharedUi && (sharedUi->ui().gameMenuOpen || debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory()))),
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
             scene && std::ranges::any_of(scene->players(),[](const auto &player){return player.local && player.moving;}));
         debugWalk.tick(session,town,control,debugAi.controlsMovement() || minimized || presentationPaused ||
-            (sharedUi && (sharedUi->ui().blocksInput() || (debugAi.active() && debugInspectionOpen(sharedUi->ui())))),
+            (sharedUi && (sharedUi->ui().blocksInput() || (debugAi.active() && debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory())))),
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
             scene && std::ranges::any_of(scene->players(),[](const auto &player){return player.local && player.moving;}));
         if (renderedArea != town.read().area) {
@@ -641,15 +674,14 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     return sharedClients->itemQuote(item, action);
                 }, submitChatInput, [&](const nlohmann::json &command) {
                     const auto name=command.at("command").get<std::string>();
-                    if(auto ai=debugAi.command(command,session,town,debugWalk,control,combat,inventory)) return ai;
-                    if(name=="debug-walk" || name=="debug-walk-cancel") debugAi.manualInput(session,debugWalk,control,combat);
-                    if(auto navigation=debugWalk.command(command,session,town,control,combat)) return navigation;
-                    const bool inputTakeover=name=="ui-input" && std::ranges::any_of(parseDebugInput(command),debugInputTakesControl);
+                    if(auto navigation=debugNavigationCommand(command)) return navigation;
+                    const bool inputTakeover=name=="ui-input" && std::ranges::any_of(parseDebugInput(command),
+                        [&](const auto &input){return debugInputTakesControl(input,debugChatOwnsInput());});
                     if((debugAi.hasPlan() || debugWalk.active()) && (inputTakeover || name=="quit" || name=="pause" ||
                         name=="travel" || name=="load" ||
                         (name.starts_with("online-") && name!="online-status" && name!="online-world" &&
                          name!="online-items" && name!="online-ground" && name!="online-social" &&
-                         name!="online-combat" && name!="online-skills" && name!="online-item-quote")))
+                         name!="online-combat" && name!="online-skills" && name!="online-item-quote" && name!="online-chat-input")))
                     {
                         debugAi.manualInput(session,debugWalk,control,combat);
                         debugWalk.manualInput(control);
@@ -1050,9 +1082,12 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         sharedController->resetInput();
                     }
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
+                    const bool inventoryWasOpen=sharedUi->ui().inventory.open;
                     sharedUi->refreshUi(frameSeconds);
                     auto &panels = sharedUi->ui();
                     const auto &native = view.world;
+                    if(debugAi.controlsInventory() && !inventoryWasOpen &&
+                        (native.storage.kind==OnlineStorageKind::Cube || native.staffSource)) aiInventoryOpened=true;
                     if (!sharedClients->busy()) { panels.inventory.pending = {}; panels.shopSalePending.reset(); }
                     if (native.storage.kind != OnlineStorageKind::Stash) panels.inventory.storage = {};
                     if (native.storage.kind != OnlineStorageKind::Cube) panels.inventory.cubeOpen = false;
@@ -1060,7 +1095,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         panels.inventory.storage = sharedUi->inventoryView().containers.stash; panels.inventory.open = true;
                         panels.partyOpen = panels.characterOpen = panels.questOpen = panels.hirelingOpen = false;
                     }
-                    if (native.storage.kind == OnlineStorageKind::Cube) { panels.partyOpen = false; panels.inventory.cubeOpen = true; panels.inventory.open = true; }
+                    if (native.storage.kind == OnlineStorageKind::Cube) {
+                        panels.partyOpen = false; panels.inventory.cubeOpen = true; panels.inventory.open = true;
+                    } else if(aiInventoryOpened && !native.staffSource) {
+                        panels.inventory.open=false;aiInventoryOpened=false;
+                    }
                     if (native.waypointSource.has_value() != displayedWaypointKnown ||
                         (native.waypointSource && displayedWaypointKnown &&
                          *native.waypointSource != displayedWaypoint)) {
@@ -1077,6 +1116,13 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                             displayedNpc = dialog.source;
                             sharedUi->openNpcMenu(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,false);
                         }
+                        // The AI submits the same acknowledgement without a
+                        // physical dialogue click. Mirror the controller's
+                        // local dismissal once that actual topic is acknowledged.
+                        if(debugAi.active() && panels.dialogueTextTopic &&
+                            std::ranges::any_of(dialog.messages,[&](const auto &message) {
+                                return message.stringId==*panels.dialogueTextTopic && message.acknowledged;
+                            })) sharedUi->cancelNpcDialogue();
                         {
                             // 1.13c selects type 0 for automatic speech; type 2 is a
                             // selectable topic and must leave the service menu open.
@@ -1093,7 +1139,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         displayedNpc.reset(); sharedUi->cancelNpcDialogue();
                         panels.shopOpen = panels.hireListOpen = false;
                     }
-                    auto input = pollInput(viewport, panels.controls);
+                    auto input = pollInput(viewport, panels.controls, panels.chatInputOpen);
                     const auto inputNow = std::chrono::steady_clock::now();
                     const bool inputWait = inputNow - lastInputTime > std::chrono::milliseconds(250);
                     lastInputTime = inputNow;
@@ -1112,7 +1158,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         debugInputs.pop_front();
                     }
                     if(debugAi.hasPlan() || debugWalk.active()) {
-                        if(debugInputTakesControl(input))
+                        if(debugInputTakesControl(input,debugChatOwnsInput()))
                         {
                             debugAi.manualInput(session,debugWalk,control,combat);
                             debugWalk.manualInput(control);
@@ -1164,10 +1210,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 }
             }
             if (!showScene) {
-                auto input = pollInput(viewport, sharedUi ? sharedUi->ui().controls : preferences.controls);
+                auto input = pollInput(viewport, sharedUi ? sharedUi->ui().controls : preferences.controls,
+                    sharedUi && sharedUi->ui().chatInputOpen);
                 if (!debugInputs.empty()) { input = std::move(debugInputs.front()); debugInputs.pop_front(); }
                 if(debugAi.hasPlan() || debugWalk.active()) {
-                    if(debugInputTakesControl(input))
+                    if(debugInputTakesControl(input,debugChatOwnsInput()))
                     {
                         debugAi.manualInput(session,debugWalk,control,combat);
                         debugWalk.manualInput(control);

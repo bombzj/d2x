@@ -238,7 +238,7 @@ bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorp
     if(targetCorpse) return corpseSelectable(unit);
     if(const auto snapshot=unitStates_.find(unit.key);snapshot!=unitStates_.end() && snapshot->second.decoded)
         for(const auto &[id,state]:snapshot->second.states) {(void)id;if(state.name=="attached") return false;}
-    if(unit.nativeMode && unit.mode==8 && !unit.actionSkill) {
+    if((unit.nativeMode || session_.read().protocolProfile=="lod113c") && unit.mode==8 && !unit.actionSkill) {
         const auto found=monsters_.find(monsterClass(unit).value_or(UINT16_MAX));
         if(found!=monsters_.end()) {
             const auto ai=tables_.at("monstats").value(found->second,"AI");

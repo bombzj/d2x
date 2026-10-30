@@ -108,8 +108,19 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     if(!pathPosition) {reason_="Waiting for the normal client path position";return;}
     // Use the same local DynamicPath position as ordinary pointer input. The
     // server's sparse 96 samples are observations, not the client's input clock.
-    const auto player=point(*pathPosition);client_=player;
+    // The local path exposes drawing feet with the half-cell removed, like
+    // nativeUnitDistance. Quantize its native subtile, not the drawing floor:
+    // otherwise 5089.999 remains one cell behind an authoritative 5090 and
+    // repeatedly sends an already-reached 5090 leg instead of progressing.
+    client_=point(*pathPosition+Vec{.5f,.5f});
     const auto origin=*scene.origin;const auto &map=*town.map();
+    const auto pathGrid=town.navigationGrid(view,unit_);
+    if(!pathMoving && server_) {
+        const Vec confirmed{float(server_->x),float(server_->y)},offset{float(origin.x),float(origin.y)};
+        if(pathGrid.walkable(confirmed-offset+Vec{.5f,.5f},playerMovement))
+            pathPosition=confirmed; // Input origin only; never changes the local path or server replica.
+    }
+    const auto player=point(*pathPosition+Vec{.5f,.5f});
     const Vec offset{float(origin.x),float(origin.y)},from=*pathPosition-offset+Vec{.5f,.5f};
     if(previous_!=player) {previous_=player;progressAt_=now;}
     const auto abandonSearchRoom=[&]() {
@@ -160,12 +171,19 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             const auto approach=edgePoint(*edge,along,3),lip=edgePoint(*edge,along,1);
             const Vec a{float(int(approach.x)-origin.x)+.5f,float(int(approach.y)-origin.y)+.5f};
             const Vec b{float(int(lip.x)-origin.x)+.5f,float(int(lip.y)-origin.y)+.5f};
-            if(inLevel(approach) && map.grid.nativeMovementSegment(a,b,playerMovement)) candidates.push_back(approach);
+            const auto crossing=edgePoint(*edge,along,-3);
+            const Vec beyond{float(int(crossing.x)-origin.x)+.5f,float(int(crossing.y)-origin.y)+.5f};
+            // A clear lip on this side can still face the next level's wall
+            // corner. Check the ordinary crossing too when its collision is
+            // already reconstructed; unknown rooms remain observation targets.
+            const bool crossingKnown=pathGrid.movementMask(int(beyond.x),int(beyond.y))!=0xffff;
+            if(inLevel(approach) && pathGrid.nativeMovementSegment(a,b,playerMovement) &&
+                (!crossingKnown || pathGrid.nativeMovementSegment(a,beyond,playerMovement))) candidates.push_back(approach);
         }
         std::stable_sort(candidates.begin(),candidates.end(),[&](auto a,auto b){return distance(player,a)<distance(player,b);});
         for(const auto candidate:candidates) {
             const Vec local{float(int(candidate.x)-origin.x)+.5f,float(int(candidate.y)-origin.y)+.5f};
-            if(!map.grid.path(from,local,false,playerMovement,true).empty()) {
+            if(!pathGrid.path(from,local,false,playerMovement,true).empty()) {
                 point_=candidate;landmark_=true;source_="walking-connection-opening";reason_.clear();break;
             }
         }
@@ -175,9 +193,9 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             int frontierScore=INT32_MAX;
             for(int along=edge->start+1;along<edge->end-1;along+=8) {
                 const auto goal=edgePoint(*edge,along,3);
-                const Vec local{std::clamp(float(int(goal.x)-origin.x)+.5f,.5f,float(map.grid.width)-.5f),
-                    std::clamp(float(int(goal.y)-origin.y)+.5f,.5f,float(map.grid.height)-.5f)};
-                const auto path=map.grid.path(from,local,true,playerMovement,true);if(path.empty()) continue;
+                const Vec local{std::clamp(float(int(goal.x)-origin.x)+.5f,.5f,float(pathGrid.width)-.5f),
+                    std::clamp(float(int(goal.y)-origin.y)+.5f,.5f,float(pathGrid.height)-.5f)};
+                const auto path=pathGrid.path(from,local,true,playerMovement,true);if(path.empty()) continue;
                 const auto frontier=point(path.back()+offset);
                 if(distance(player,frontier)<=2 || distance(frontier,goal)>=distance(player,goal)) continue;
                 if(std::any_of(visited_.begin(),visited_.end(),[&](auto p){return distance(frontier,{uint16_t(p.first),uint16_t(p.second)})<8;})) continue;
@@ -202,13 +220,21 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             // (PlrMsg::sub_6FC828D0), while the local path can already be near.
             // This debug input strategy waits for its ordinary approach to
             // settle; it neither changes native eligibility nor retries 13.
-            if(unit_->type==1 && (pathMoving || now-progressAt_<debugDecisionInterval || !town.interactionReady(view,*unit_))) {
-                reason_="Waiting for the local NPC approach and native position confirmation";return;
+            if((unit_->type==1 || unit_->type==2) &&
+                (pathMoving || now-progressAt_<debugDecisionInterval || !town.interactionReady(view,*unit_))) {
+                reason_="Waiting for the local approach and native interaction position confirmation";return;
             }
             if(state_=="interacting" && control.approaching()) return;
             if(interactions_ && now-progressAt_<std::chrono::seconds(1)) return;
             if(interactions_>=3) {finish("failed","Server did not open the requested interaction",control);return;}
-            if(!control.interact(*unit_,run_,{},pathPosition)) {finish("failed",control.reason(),control);return;}
+            if(!control.interact(*unit_,run_,{},pathPosition)) {
+                reason_=control.reason();
+                // A different nearby door can finish before the shared input
+                // throttle expires. This request was not queued; retain the
+                // target and the existing progress/total deadlines to retry.
+                if(reason_=="Interaction is rate limited") return;
+                finish("failed",reason_,control);return;
+            }
             ++interactions_;progressAt_=now;state_="interacting";
             if(goal_!=Goal::Waypoint) finish("completed","Interaction submitted; verify the server result separately",control);
             return;
@@ -225,12 +251,12 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         // server rooms; their unit assignments can then reveal the actual target.
         std::optional<OnlinePoint> candidate;int best=INT32_MAX;
         for(const auto &room:map.terrain.rooms) if(scene.area==room.level) {
-            const auto cell=map.grid.nativeSpawn({float((room.x*5)+(room.width*5)/2)+.5f,float((room.y*5)+(room.height*5)/2)+.5f},6,playerMovement);
+            const auto cell=pathGrid.nativeSpawn({float((room.x*5)+(room.width*5)/2)+.5f,float((room.y*5)+(room.height*5)/2)+.5f},6,playerMovement);
             if(!cell) continue;
             const auto world=point(*cell+offset);
             if(visited_.contains({world.x,world.y})) continue;
             if(distance(player,world)<3) {visited_.emplace(world.x,world.y);continue;}
-            const auto path=map.grid.path(from,*cell,false,playerMovement,true);
+            const auto path=pathGrid.path(from,*cell,false,playerMovement,true);
             if(!path.empty() && distance(player,world)<best) {candidate=world;best=distance(player,world);}
         }
         // Room reconstruction and unit assignment arrive independently. Keep
@@ -240,14 +266,46 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         point_=candidate;++searches_;state_="searching";source_="waypoint-room-search";
     }
     const bool searching=!unit_ && !landmark_ && (goal_==Goal::Waypoint || goal_==Goal::Exit);
-    if(distance(player,*point_)<=(unit_ || landmark_?4:1)) {
+    // A walking boundary is a checked opening, not an interaction rectangle.
+    // Reaching another cell within four subtiles can aim the crossing ray
+    // through its wall corner. Reach the selected native cell before crossing.
+    const int arrival=goal_==Goal::Exit && landmark_ && !unit_?0:unit_ || landmark_?4:1;
+    if(distance(player,*point_)<=arrival) {
         if(searching) {visited_.emplace(point_->x,point_->y);point_.reset();segment_.reset();return;}
         if(!interact_) {finish("completed","Reached target vicinity through client movement",control);return;}
     }
     const Vec target{float(int(point_->x)-origin.x)+.5f,float(int(point_->y)-origin.y)+.5f};
-    const auto path=map.grid.path(from,target,unit_.has_value(),playerMovement,true);
-    if(path.empty() || (!searching && (path.back()-target).length()>6)) {
+    auto path=pathGrid.path(from,target,unit_.has_value(),playerMovement,true);
+    if(unit_ && unit_->type==2 && interact_ && (path.empty() ||
+        !town.interactionReady(view,*unit_,path.back()+offset-Vec{.5f,.5f}))) {
+        // Clipping a path to an object's center can stop at a rectangle's
+        // excluded corner. Search actual interaction positions around it;
+        // never treat closeness to that clipped endpoint as an operation.
+        const auto entry=std::find_if(scene.mapTargets.begin(),scene.mapTargets.end(),[&](const auto &t){return t.unit==*unit_;});
+        std::vector<OnlinePoint> approaches;
+        if(entry!=scene.mapTargets.end()) {
+            const int width=std::clamp(entry->collisionWidth/2+4,4,16),height=std::clamp(entry->collisionHeight/2+4,4,16);
+            for(int y=std::max(0,int(point_->y)-height);y<=std::min(65535,int(point_->y)+height);++y)
+                for(int x=std::max(0,int(point_->x)-width);x<=std::min(65535,int(point_->x)+width);++x) {
+                    const Vec at{float(x),float(y)},local=at-offset+Vec{.5f,.5f};
+                    if(pathGrid.nativeMovementSegment(local,local,playerMovement) && town.interactionReady(view,*unit_,at))
+                        approaches.push_back({uint16_t(x),uint16_t(y)});
+                }
+        }
+        std::stable_sort(approaches.begin(),approaches.end(),[&](auto a,auto b){return distance(player,a)<distance(player,b);});
+        for(const auto candidate:approaches) {
+            const Vec at{float(candidate.x)-offset.x+.5f,float(candidate.y)-offset.y+.5f};
+            auto alternative=pathGrid.path(from,at,false,playerMovement,true);
+            if(!alternative.empty()) {path=std::move(alternative);break;}
+        }
+    }
+    const bool interactionApproach=unit_ && interact_ && !path.empty() &&
+        town.interactionReady(view,*unit_,path.back()+offset-Vec{.5f,.5f});
+    if(path.empty() || (!searching && !interactionApproach && (path.back()-target).length()>6)) {
         if(pathMoving) {reason_="Keeping the moving native path until a safe new leg is available";return;}
+        if(!map.grid.path(from,target,true,playerMovement,true).empty()) {
+            reason_="Waiting for a temporarily occupied client route";return;
+        }
         finish("failed","No client collision path to target",control);return;
     }
     // Replan every decision, including while moving, but never cut across an
@@ -264,7 +322,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         const auto candidate=point(from+delta*(reach/span)+offset);
         if(candidate==player) continue;
         const Vec local{float(int(candidate.x)-origin.x)+.5f,float(int(candidate.y)-origin.y)+.5f};
-        if(map.grid.segment(from,local,{},playerMovement) && map.grid.nativeMovementSegment(from,local,playerMovement)) {
+        if(pathGrid.segment(from,local,{},playerMovement) && pathGrid.nativeMovementSegment(from,local,playerMovement)) {
             planned=candidate;break;
         }
     }
@@ -286,7 +344,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         // Keep a still-valid straight leg until near its end. A changed
         // direction or obstruction may replace it immediately while moving.
         if(distance(player,*segment_)>6 && lengths>0 && dot>.98f*lengths &&
-            map.grid.segment(from,oldLocal,{},playerMovement) && map.grid.nativeMovementSegment(from,oldLocal,playerMovement)) return;
+            pathGrid.segment(from,oldLocal,{},playerMovement) && pathGrid.nativeMovementSegment(from,oldLocal,playerMovement)) return;
     }
     // Newly hired/following units and moving NPCs can briefly block a normal
     // path. Keep the existing 15-second progress bound rather than declaring

@@ -12,8 +12,8 @@ struct ChatIntent {
     std::optional<std::string> message;
     std::string error{};
 };
-// Original-resource, read-only message presentation. Only the application sends
-// the returned intent; an accepted send never creates a local transcript entry.
+// Original-resource message presentation. Only the application sends the
+// returned intent; local diagnostics are separate from the server transcript.
 class ChatView {
     mutable Graphics graphics_;
     std::array<ClassicFont, 2> fonts_{};
@@ -37,6 +37,9 @@ class ChatView {
         std::vector<Line> lines;
     };
     std::vector<Message> messages_;
+    std::vector<Message> diagnostics_;
+    uint64_t diagnosticSequence_{};
+    bool diagnosticsDirty_{};
     std::vector<Line> rows_;
     const ClassicFont &font(int kind, int color) const;
     float width(int kind, const Line &) const;
@@ -57,6 +60,7 @@ class ChatView {
   public:
     explicit ChatView(Archives &);
     void update(const OnlineSocialView &, const OnlineSocialView &account);
+    void diagnostic(std::string_view text, bool error = false);
     ChatIntent handle(const FrameInput &, bool canOpen);
     void setLogOpen(bool);
     void sent(bool accepted);

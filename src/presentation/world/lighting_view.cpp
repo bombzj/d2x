@@ -141,9 +141,17 @@ struct LightingView::Sources {
         update = frames > 0;
     }
 };
-LightingView::LightingView() : lightPixels_(maskSide * maskSide), cornerPixels_(lightPixels_.size()),
-    sources_(std::make_unique<Sources>()) {
-    Image image = GenImageColor(maskSide, maskSide, BLACK);
+LightingView::LightingView() : sources_(std::make_unique<Sources>()) {}
+void LightingView::resizeMask(int width, int height) {
+    // Keep capacity when panels close/open or fractional camera positions
+    // change the required span by one sample; do not recreate it every frame.
+    width = std::max(width, maskWidth_); height = std::max(height, maskHeight_);
+    if (width == maskWidth_ && height == maskHeight_) return;
+    if (lightMap_.id) UnloadTexture(lightMap_);
+    maskWidth_ = width; maskHeight_ = height;
+    lightPixels_.resize(size_t(width) * height);
+    cornerPixels_.resize(lightPixels_.size());
+    Image image = GenImageColor(width, height, BLACK);
     lightMap_ = LoadTextureFromImage(image);
     UnloadImage(image);
     if (lightMap_.id) {
@@ -259,10 +267,16 @@ void LightingView::advance(float dt, const LevelRecord &level) {
 }
 void LightingView::prepare(const Grid &grid, const LevelRecord &level, Vec player, int radius,
                           Color playerColor, std::span<const SceneLight> lights,
-                          std::span<const SceneLightRegion> regions) {
+                          std::span<const SceneLightRegion> regions, Rectangle worldBounds) {
+    // Cover the inverse-projected viewport, including the neighbours used by
+    // corner averaging and bilinear sampling. The old fixed 61x61 field cut
+    // across expanded viewports and abruptly fell back to ambient light.
+    const int originX = int(std::floor(worldBounds.x)) - 2;
+    const int originY = int(std::floor(worldBounds.y)) - 2;
+    const int endX = int(std::ceil(worldBounds.x + worldBounds.width)) + 2;
+    const int endY = int(std::ceil(worldBounds.y + worldBounds.height)) + 2;
+    resizeMask(endX - originX + 1, endY - originY + 1);
     if (!lightMap_.id) return;
-    const int originX = int(std::floor(player.x)) - maskRadius;
-    const int originY = int(std::floor(player.y)) - maskRadius;
     origin_ = {float(originX), float(originY)};
     // A9A20: a nonzero room RGB selects the table, including intensity zero.
     // A cloak's cached ambient applies to the near rooms too; unit lights
@@ -293,11 +307,11 @@ void LightingView::prepare(const Grid &grid, const LevelRecord &level, Vec playe
     for (const auto &region : regions) {
         const Color roomLight = roomAmbient(*region.level);
         const int left = std::max(0, region.x - originX), top = std::max(0, region.y - originY);
-        const int right = std::min(maskSide, region.x + region.width - originX);
-        const int bottom = std::min(maskSide, region.y + region.height - originY);
+        const int right = std::min(maskWidth_, region.x + region.width - originX);
+        const int bottom = std::min(maskHeight_, region.y + region.height - originY);
         for (int y = top; y < bottom; ++y)
             for (int x = left; x < right; ++x)
-                lightPixels_[size_t(y) * maskSide + x] = roomLight;
+                lightPixels_[size_t(y) * maskWidth_ + x] = roomLight;
     }
     auto add = [&](const SceneLight &source) {
         if (source.radius <= 0) return;
@@ -306,8 +320,8 @@ void LightingView::prepare(const Grid &grid, const LevelRecord &level, Vec playe
         const int cellX = sourceX >> 3, cellY = sourceY >> 3;
         const int left = std::max(0, cellX - sourceRadius - originX);
         const int top = std::max(0, cellY - sourceRadius - originY);
-        const int right = std::min(maskSide, cellX + sourceRadius - originX + 1);
-        const int bottom = std::min(maskSide, cellY + sourceRadius - originY + 1);
+        const int right = std::min(maskWidth_, cellX + sourceRadius - originX + 1);
+        const int bottom = std::min(maskHeight_, cellY + sourceRadius - originY + 1);
         if (left >= right || top >= bottom) return;
         std::optional<LightOcclusion> occlusion;
         if (source.occlusion == SceneLight::Occlusion::Propagated)
@@ -316,7 +330,7 @@ void LightingView::prepare(const Grid &grid, const LevelRecord &level, Vec playe
         const int falloff = (255 << 16) / fixedRadius;
         for (int y = top; y < bottom; ++y)
             for (int x = left; x < right; ++x) {
-                const size_t index = size_t(y) * maskSide + x;
+                const size_t index = size_t(y) * maskWidth_ + x;
                 const int gx = originX + x, gy = originY + y;
                 const int distance = lightDistance(sourceX - gx * lightPrecision, sourceY - gy * lightPrecision);
                 if (distance >= fixedRadius) continue;
@@ -338,14 +352,14 @@ void LightingView::prepare(const Grid &grid, const LevelRecord &level, Vec playe
     // Gouraud interpolation. Keep that neighbourhood averaging in this
     // view adapter too; raw radial samples expose sharp contour boundaries.
     const auto sample = [&](int x, int y) {
-        return x >= 0 && y >= 0 && x < maskSide && y < maskSide
-            ? lightPixels_[size_t(y) * maskSide + x] : ambient;
+        return x >= 0 && y >= 0 && x < maskWidth_ && y < maskHeight_
+            ? lightPixels_[size_t(y) * maskWidth_ + x] : ambient;
     };
-    for (int y = 0; y < maskSide; ++y)
-        for (int x = 0; x < maskSide; ++x) {
+    for (int y = 0; y < maskHeight_; ++y)
+        for (int x = 0; x < maskWidth_; ++x) {
             const auto a = sample(x - 1, y - 1), b = sample(x, y - 1);
             const auto c = sample(x - 1, y), d = sample(x, y);
-            cornerPixels_[size_t(y) * maskSide + x] = {
+            cornerPixels_[size_t(y) * maskWidth_ + x] = {
                 uint8_t((int(a.r) + b.r + c.r + d.r) >> 2),
                 uint8_t((int(a.g) + b.g + c.g + d.g) >> 2),
                 uint8_t((int(a.b) + b.b + c.b + d.b) >> 2),
@@ -356,9 +370,10 @@ void LightingView::prepare(const Grid &grid, const LevelRecord &level, Vec playe
 Color LightingView::sample(Vec position) const {
     // D2Client A8230: a unit/wall sample truncates the eighth-subtile input
     // and clamps to the light field. It does not sample at the sprite's top.
-    const int x = std::clamp(int(std::floor(position.x - origin_.x)), 0, maskSide - 1);
-    const int y = std::clamp(int(std::floor(position.y - origin_.y)), 0, maskSide - 1);
-    return lightPixels_[size_t(y) * maskSide + x];
+    if (lightPixels_.empty()) return ambient_;
+    const int x = std::clamp(int(std::floor(position.x - origin_.x)), 0, maskWidth_ - 1);
+    const int y = std::clamp(int(std::floor(position.y - origin_.y)), 0, maskHeight_ - 1);
+    return lightPixels_[size_t(y) * maskWidth_ + x];
 }
 void LightingView::bind(PaletteBlendView &palette, Vec player, Vec playerScreen, float zoom, bool enabled) const {
     palette.setLighting(lightMap_, player, playerScreen, origin_, zoom, ambient_, !enabled);

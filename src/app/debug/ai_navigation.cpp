@@ -55,6 +55,13 @@ bool DebugAi::Impl::walk(Context &c,Json intent) {
         for(const auto &entry:c.town.read().mapTargets) if(entry.unit==key)
             nearbyInteraction=intent.value("interact",false) &&
                 distance(c.position,{float(entry.position.x),float(entry.position.y)})<=6;
+        const auto assigned=std::find_if(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &entry){return entry.unit==key;});
+        if(assigned!=c.town.read().mapTargets.end() && assigned->interaction!=OnlineMapInteraction::Door &&
+            assigned->interaction!=OnlineMapInteraction::Npc &&
+            intent.value("interact",false) && distance(c.position,{float(assigned->position.x),float(assigned->position.y)})>8) {
+            if(!approachPoint(c,assigned->position,"assigned interaction target",6)) explore(c,"reachable approach to assigned interaction target");
+            return false;
+        }
         if(std::none_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &t){return t.unit==key;})) {
             const auto unit=c.session.read().world.units.find(key);
             if(unit!=c.session.read().world.units.end() && unit->second.position &&
@@ -130,15 +137,37 @@ bool DebugAi::Impl::openDoor(Context &c) {
     std::optional<OnlineMapTarget> best;float nearest=std::numeric_limits<float>::max();
     const auto *map=c.town.map();const auto origin=c.town.read().origin;if(!map || !origin) return false;
     const Vec offset{float(origin->x),float(origin->y)};
+    const auto grid=c.town.navigationGrid(c.session.read());
     for(const auto &entry:c.town.read().mapTargets) if(entry.interaction==OnlineMapInteraction::Door) {
         const auto unit=c.session.read().world.units.find(entry.unit);
         if(unit==c.session.read().world.units.end() || unit->second.mode!=0 || operatedDoors.contains({entry.unit,unit->second.assignmentRevision})) continue;
         const float d=distance(c.position,{float(entry.position.x),float(entry.position.y)});
         if(d>=nearest) continue;
+        if(c.town.interactionReady(c.session.read(),entry.unit,c.position)) {
+            nearest=d;best=entry;continue;
+        }
         const Vec wanted{float(entry.position.x),float(entry.position.y)};
-        const auto path=map->grid.path(c.position-offset+Vec{.5f,.5f},wanted-offset+Vec{.5f,.5f},true,playerMovement,true);
-        if(path.empty() || distance(path.back()+offset-Vec{.5f,.5f},wanted)>6) continue;
-        if(!c.town.interactionReady(c.session.read(),entry.unit,path.back()+offset-Vec{.5f,.5f})) continue;
+        const auto path=grid.path(c.position-offset+Vec{.5f,.5f},wanted-offset+Vec{.5f,.5f},true,playerMovement,true);
+        bool reachable=!path.empty() &&
+            c.town.interactionReady(c.session.read(),entry.unit,path.back()+offset-Vec{.5f,.5f});
+        if(!reachable) {
+            // A long slime door can clip a center path against its blocked
+            // corner, although another real point on its perimeter is usable.
+            // Use the same normal interaction geometry as the child walker.
+            std::vector<Vec> approaches;
+            const int width=std::clamp(entry.collisionWidth/2+4,4,16),height=std::clamp(entry.collisionHeight/2+4,4,16);
+            for(int y=int(entry.position.y)-height;y<=int(entry.position.y)+height;++y)
+                for(int x=int(entry.position.x)-width;x<=int(entry.position.x)+width;++x) {
+                    const Vec at{float(x),float(y)},local=at-offset+Vec{.5f,.5f};
+                    if(grid.nativeMovementSegment(local,local,playerMovement) &&
+                        c.town.interactionReady(c.session.read(),entry.unit,at)) approaches.push_back(local);
+                }
+            std::stable_sort(approaches.begin(),approaches.end(),[&](Vec a,Vec b){return distance(c.position,a+offset)<distance(c.position,b+offset);});
+            for(const auto at:approaches) if(!grid.path(c.position-offset+Vec{.5f,.5f},at,false,playerMovement,true).empty()) {
+                reachable=true;break;
+            }
+        }
+        if(!reachable) continue;
         nearest=d;best=entry;
     }
     if(!best) return false;
@@ -154,6 +183,7 @@ bool DebugAi::Impl::openDoor(Context &c) {
 bool DebugAi::Impl::explore(Context &c,std::string purpose) {
     const auto *map=c.town.map();const auto origin=c.town.read().origin;if(!map || !origin || !area) return false;
     const Vec offset{float(origin->x),float(origin->y)},from=c.position-offset+Vec{.5f,.5f};
+    const auto grid=c.town.navigationGrid(c.session.read());
     const auto &rooms=c.town.navigationRooms();mapCacheBuilds=c.town.navigationCacheBuilds();
     const auto revision=c.town.navigationRevision();
     // Partial native paths depend on the current starting point. A failed
@@ -163,6 +193,12 @@ bool DebugAi::Impl::explore(Context &c,std::string purpose) {
         searchGeometryRevision=revision;searchPosition=c.position;unavailableRooms.clear();searchRetry=Clock::now()+std::chrono::seconds(5);
     }
     knownExploredRooms=size_t(std::count_if(rooms.begin(),rooms.end(),[](const auto &room){return room.exploredTiles!=0;}));
+    if(walkIntent.is_object() && walkIntent.value("purpose",std::string{})=="exploration-backtrack") {
+        if(c.walk.active()) {wait("explore-backtrack","Returning through reconstructed rooms to another frontier");return false;}
+        if(walkState(c)=="completed")
+            exploredFrontiers.emplace(walkIntent.at("x").get<uint16_t>(),walkIntent.at("y").get<uint16_t>());
+        note("exploration-backtrack-finished",walkState(c));cancelWalk(c);
+    }
     const bool clearing=supplyStage==SupplyStage::None && cursor<goals.size() && goals[cursor].kind==Kind::Quest &&
         questRun.step<goals[cursor].steps.size() && goals[cursor].steps[questRun.step].action==QuestAction::Clear &&
         goals[cursor].steps[questRun.step].area==area;
@@ -175,7 +211,9 @@ bool DebugAi::Impl::explore(Context &c,std::string purpose) {
         const Vec center{float(room.x)+float(room.width)/2,float(room.y)+float(room.height)/2};
         // Nearby reconstructed rooms are already observed. Do not visit every
         // wall/corner merely to stand on each room's exact center.
-        if(distance(c.position,center)<(precise?6.f:30.f)) visited.emplace(room.level,room.x,room.y);
+        const bool entered=c.position.x>=room.x && c.position.x<room.x+room.width &&
+            c.position.y>=room.y && c.position.y<room.y+room.height;
+        if(entered || distance(c.position,center)<(precise?6.f:30.f)) visited.emplace(room.level,room.x,room.y);
     }
     const bool ownApproach=exploring && interest && walkIntent.is_object() && walkIntent.value("goal",std::string{})=="point" &&
         walkIntent.value("x",0)==interest->x && walkIntent.value("y",0)==interest->y;
@@ -222,9 +260,26 @@ bool DebugAi::Impl::explore(Context &c,std::string purpose) {
         const auto &room=*candidate;const auto key=std::tuple{room.level,room.x,room.y};
         const Vec center{float(room.x)+float(room.width)/2,float(room.y)+float(room.height)/2};
         const Vec wanted=center-offset+Vec{.5f,.5f};
-        Vec goal{std::clamp(wanted.x,.5f,float(map->grid.width)-.5f),std::clamp(wanted.y,.5f,float(map->grid.height)-.5f)};
-        if(room.loaded) if(const auto open=map->grid.nativeSpawn(goal,8,playerMovement)) goal=*open;
-        ++pathSearches;const auto path=map->grid.path(from,goal,true,playerMovement,true);
+        Vec goal{std::clamp(wanted.x,.5f,float(grid.width)-.5f),std::clamp(wanted.y,.5f,float(grid.height)-.5f)};
+        if(room.loaded) {
+            if(const auto open=grid.nativeSpawn(goal,8,playerMovement)) goal=*open;
+            else {
+                // Arcane rooms can have a void center and a real platform at
+                // an edge. Inspect their already reconstructed cells instead
+                // of repeatedly backtracking toward the same unusable center.
+                std::optional<Vec> floor;float weight=std::numeric_limits<float>::max();bool complete=true;
+                for(int y=room.y;y<room.y+room.height;++y) for(int x=room.x;x<room.x+room.width;++x) {
+                    const Vec local{float(x)-offset.x+.5f,float(y)-offset.y+.5f};
+                    if(grid.movementMask(int(local.x),int(local.y))==0xffff) {complete=false;continue;}
+                    if(!grid.nativeMovementSegment(local,local,playerMovement)) continue;
+                    const float score=distance({float(x),float(y)},center);
+                    if(score<weight) {weight=score;floor=local;}
+                }
+                if(floor) goal=*floor;
+                else {if(complete) visited.insert(key);unavailableRooms.insert(key);continue;}
+            }
+        }
+        ++pathSearches;const auto path=grid.path(from,goal,true,playerMovement,true);
         if(path.empty()) {unavailableRooms.insert(key);continue;}
         const auto endpoint=nativePoint(path.back()+offset);
         const Vec to{float(endpoint.x),float(endpoint.y)};const auto progress=distance(c.position,to);
@@ -235,6 +290,66 @@ bool DebugAi::Impl::explore(Context &c,std::string purpose) {
         if(score<best) {best=score;chosen={room.level,room.x,room.y};point=endpoint;}
     }
     if(!point) {
+        // A native client only retains collision for its active rooms. A
+        // distant unexplored branch cannot always be reached by clipping its
+        // center to that local rectangle: a wall can require backtracking
+        // through a previously visited junction. Use the existing RoomEx near
+        // graph for guidance, without activating rooms or assuming open edges.
+        size_t root=rooms.size();
+        for(size_t i=0;i<rooms.size();++i) {
+            const auto &r=rooms[i];
+            if(r.level==*area && r.loaded && c.position.x>=r.x && c.position.x<r.x+r.width &&
+                c.position.y>=r.y && c.position.y<r.y+r.height) {root=i;break;}
+        }
+        std::vector<size_t> previous(rooms.size(),rooms.size()),depth(rooms.size());
+        std::queue<size_t> pending;
+        if(root<rooms.size()) {previous[root]=root;pending.push(root);}
+        while(!pending.empty()) {
+            const auto index=pending.front();pending.pop();
+            for(const auto next:rooms[index].near) if(next<rooms.size() && rooms[next].level==*area && previous[next]==rooms.size()) {
+                previous[next]=index;depth[next]=depth[index]+1;pending.push(next);
+            }
+        }
+        std::map<size_t,size_t> junctions;
+        for(size_t i=0;i<rooms.size();++i) {
+            const auto &destination=rooms[i];
+            if(i==root || previous[i]==rooms.size() || visited.contains({destination.level,destination.x,destination.y})) continue;
+            size_t next=i;
+            while(next!=root && !rooms[next].loaded) next=previous[next];
+            const auto found=junctions.find(next);
+            if(found==junctions.end() || depth[i]<depth[found->second]) junctions[next]=i;
+        }
+        for(const auto &[next,destination]:junctions) {
+            const auto &r=rooms[next];
+            const auto &other=rooms[destination];
+            const Vec onward{float(other.x)+float(other.width)/2,float(other.y)+float(other.height)/2};
+            // River banks and walls can cover a room center while a side is
+            // open. Probe its quarters, including our own room when moving
+            // toward its unrevealed neighbor needs a closer observation point.
+            for(const float y:{.25f,.5f,.75f}) for(const float x:{.25f,.5f,.75f}) {
+                const Vec sample{float(r.x)+float(r.width)*x,float(r.y)+float(r.height)*y};
+                const auto open=grid.nativeSpawn(sample-offset+Vec{.5f,.5f},8,playerMovement);
+                if(!open) continue;
+                ++pathSearches;const auto path=grid.path(from,*open,true,playerMovement,true);
+                if(path.empty()) continue;
+                const auto endpoint=nativePoint(path.back()+offset);
+                const Vec to{float(endpoint.x),float(endpoint.y)};
+                if(distance(to,sample)>10 || distance(c.position,to)<=3 ||
+                    (next==root && distance(to,onward)+2>=distance(c.position,onward))) continue;
+                if(std::any_of(exploredFrontiers.begin(),exploredFrontiers.end(),[&](auto p) {
+                    return distance(to,{float(p.first),float(p.second)})<3;
+                })) continue;
+                const float score=float(depth[destination])*40+distance(to,onward)+.25f*distance(c.position,to);
+                if(score<best) {best=score;point=endpoint;}
+            }
+        }
+        if(point) {
+            exploring.reset();interest.reset();
+            note("exploration-backtrack",std::to_string(point->x)+","+std::to_string(point->y));
+            wait("explore-backtrack","Returning through reconstructed rooms to another frontier");
+            walk(c,{{"goal","point"},{"x",point->x},{"y",point->y},{"interact",false},{"purpose","exploration-backtrack"}});
+            return false;
+        }
         wait("explore-wait","No reachable unvisited reconstructed room for "+purpose+"; awaiting normal room updates");return false;
     }
     exploring=chosen;interest=point;wait("explore",std::move(purpose));walkPoint(c,*point);return false;
@@ -273,7 +388,8 @@ bool DebugAi::Impl::approachPoint(Context &c,OnlinePoint hint,std::string purpos
     if(openDoor(c)) return true;
     const Vec offset{float(origin->x),float(origin->y)},local=wanted-offset+Vec{.5f,.5f};
     const Vec goal{std::clamp(local.x,.5f,float(map->grid.width)-.5f),std::clamp(local.y,.5f,float(map->grid.height)-.5f)};
-    const auto path=map->grid.path(c.position-offset+Vec{.5f,.5f},goal,true,playerMovement,true);
+    const auto grid=c.town.navigationGrid(c.session.read());
+    const auto path=grid.path(c.position-offset+Vec{.5f,.5f},goal,true,playerMovement,true);
     if(path.empty() || distance(c.position,path.back()+offset)<std::min(4.f,vicinity)) return false;
     const auto endpoint=nativePoint(path.back()+offset);
     const bool partial=distance({float(endpoint.x),float(endpoint.y)},wanted)>vicinity;
@@ -282,8 +398,12 @@ bool DebugAi::Impl::approachPoint(Context &c,OnlinePoint hint,std::string purpos
     })) return false;
     if(walkIntent.is_object() && walkState(c)=="failed") {cancelWalk(c);return false;}
     wait("known-target-approach","Approaching the last client-observed position: "+purpose);
+    // Keep a submitted approach even when its endpoint reaches the target.
+    // Assignment can appear/disappear while moving between active rooms;
+    // recomputing that path every tick must not alternate it with exploration.
+    exploring.reset();interest.reset();
     walkPoint(c,endpoint);
-    if(partial) {approachHint=hint;approachFrontier=endpoint;}
+    approachHint=hint;approachFrontier=endpoint;
     return true;
 }
 bool DebugAi::Impl::travel(Context &c,uint16_t destination,bool allowWaypoint) {
@@ -309,6 +429,14 @@ bool DebugAi::Impl::travel(Context &c,uint16_t destination,bool allowWaypoint) {
         return best;
     };
     if(travelPhase==TravelPhase::WaypointWait || travelPhase==TravelPhase::CrossWait) {
+        if(travelPhase==TravelPhase::CrossWait && !legUnit && !c.moving &&
+            now+std::chrono::seconds(12)>=actionDeadline) {
+            // A walking pointer can stop at a newly occupied seam. It has no
+            // irreversible service result to replay: choose a fresh ordinary
+            // approach from current client collision instead of waiting forever.
+            cancelWalk(c);travelPhase=TravelPhase::Route;legDestination.reset();exitRetryAt=now+std::chrono::seconds(1);
+            note("walking-crossing-stopped","Replanning the ordinary boundary approach from observed occupancy");return false;
+        }
         wait("travel-wait","Waiting for the destination's native scene assignment");
         if(now>=actionDeadline) throw std::runtime_error("Travel was submitted but the destination was not observed");
         return false;
@@ -365,6 +493,16 @@ bool DebugAi::Impl::travel(Context &c,uint16_t destination,bool allowWaypoint) {
             if(a.at("x")==b.at("x")) {const int plane=a.at("x");x=plane+(x<plane?3:-3);}
             else {const int plane=a.at("y");y=plane+(y<plane?3:-3);}
             if(x<0 || y<0 || x>65535 || y>65535) throw std::runtime_error("Exit crossing outside native coordinates");
+            const auto origin=c.town.read().origin;
+            if(origin) {
+                const Vec offset{float(origin->x),float(origin->y)};
+                const auto grid=c.town.navigationGrid(c.session.read());
+                const Vec crossing=Vec{float(x),float(y)}-offset+Vec{.5f,.5f};
+                const bool known=grid.movementMask(int(crossing.x),int(crossing.y))!=0xffff;
+                if(known && !grid.nativeMovementSegment(c.position-offset+Vec{.5f,.5f},crossing,playerMovement)) {
+                    note("walking-crossing-occupied","Selecting another opening after new client unit/terrain updates");return false;
+                }
+            }
             // The ordinary move is still subject to client-map and server gates.
             if(!c.control.move({uint16_t(x),uint16_t(y)},true,{},c.position))
                 throw std::runtime_error("Exit crossing: "+c.control.reason());

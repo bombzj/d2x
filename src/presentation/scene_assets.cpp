@@ -166,6 +166,7 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
         characterLabels.emplace(key, value);
     }
     loadClassicFont(uiGraphics_, archives, speechFont, "fontformal12");
+    loadClassicFont(uiGraphics_, archives, questFont, "fontformal11");
     globeTextFormats = {content.itemStrings.at("panelhealth"), content.itemStrings.at("panelmana")};
     for (const auto &format : globeTextFormats) {
         const auto first = format.find("%d");

@@ -1,5 +1,6 @@
 #include "presentation/scene_view.hpp"
 #include "quest_panel.hpp"
+#include "core/text.hpp"
 #include <algorithm>
 #include <array>
 
@@ -128,34 +129,55 @@ void SceneView::drawQuests(Vec) const {
         const auto id = questView_.displayed(view_.questAct, size_t(index));
         const auto &record = questView_.entry(id);
         const auto &heading = record.title;
-        const auto titleBounds = questArtRect(10, 233, 300, 21);
-        const int textSize = int(12 * inventoryScale());
-        speechPainter_.inBox(heading, titleBounds, textSize, WHITE);
+        // Retail 1E5E8 selects font 8 (FontFormal11); 1E67A/1E6E6
+        // supply title/description baselines 248/270, not glyph tops.
+        const auto &font = assets_.questFont;
+        const float scale = inventoryScale();
+        const auto measure = [&](const std::string &text) {
+            int width = 0;
+            for (const auto code : utf8Decode(text)) width += font.widthOf(code);
+            return width * scale;
+        };
+        const auto text = [&](const std::string &value, float x, float baseline) {
+            for (const auto code : utf8Decode(value)) {
+                if (const auto *glyph = font.glyphOf(code); glyph && code != ' ')
+                    DrawTexturePro(glyph->texture, {0,0,float(glyph->texture.width),float(glyph->texture.height)},
+                        {x+glyph->x*scale,baseline+(glyph->y-glyph->texture.height)*scale,
+                         glyph->texture.width*scale,glyph->texture.height*scale},{},0,WHITE);
+                x += font.widthOf(code)*scale;
+            }
+        };
+        const auto title = questArtRect(160,248,0,0);
+        text(heading,title.x-measure(heading)/2,title.y);
         if (record.description) {
             const auto &value = *record.description;
             std::string line;
-            int y = int(questArtRect(10, 253, 300, 0).y);
-            const int left = int(questArtRect(10, 0, 0, 0).x);
-            const int width = int(questArtRect(0, 0, 300, 0).width);
+            float y = questArtRect(16,270,0,0).y;
+            const float left = questArtRect(16,0,0,0).x;
+            const float width = 270*scale;
             const int lastLine = int(questArtRect(0, 373, 0, 0).y);
             auto flush = [&] {
                 if (!line.empty()) {
                     if (y <= lastLine)
-                        speechPainter_.label(line, left, y, textSize, WHITE);
-                    y += int(20 * inventoryScale());
+                        text(line,left,y);
+                    y += 20*scale;
                     line.clear();
                 }
             };
             size_t at = 0;
             while (at < value.size() && y <= lastLine) {
-                if (value[at] == '\n') { flush(); y += 7; ++at; continue; }
+                if (value[at] == '\n') {
+                    if (line.empty()) y += 20*scale;
+                    else flush();
+                    ++at; continue;
+                }
                 while (at < value.size() && value[at] == ' ') ++at;
                 size_t end = value.find_first_of(" \n", at);
                 if (end == std::string::npos) end = value.size();
                 if (end == at) { ++at; continue; }
                 auto word = value.substr(at, end - at);
                 auto candidate = line.empty() ? word : line + " " + word;
-                if (!line.empty() && speechPainter_.measure(candidate, textSize) > width) flush();
+                if (!line.empty() && measure(candidate) > width) flush();
                 line += line.empty() ? word : " " + word;
                 at = end;
             }

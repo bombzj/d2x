@@ -713,7 +713,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         auto &u = unit(w, key(r));
         const bool wasNeutral=u.mode && *u.mode==0;
         const auto changes = r.u8(), flags = r.u8();
-        if (u.key.type == 2 && changes == 3) u.objectTargetable = (flags & 2) != 0;
+        // 1.13c Rcv0E passes byte 7 as a boolean selection argument to the
+        // object mode handler, not as the server's UNITFLAG_TARGETABLE mask.
+        if (u.key.type == 2 && changes == 3) u.objectTargetable = flags != 0;
         const auto mode = r.u32();
         const bool restart = u.key.type != 2 || !u.mode || *u.mode != mode;
         if (mode <= 255)
@@ -964,10 +966,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         std::array<uint16_t, 6> payload; for (auto &value : payload) value = r.u16(); r.finish();
         if (id == 1) {
             w.quests.denRemaining = payload[0]; w.quests.staffTombOffset = payload[1];
+            w.quests.staffTombRevision=w.revision;
             w.quests.rescuedBarbsRemaining = payload[2]; w.quests.revision = w.revision;
         } else if(id==13) {
             if(payload[0]>=7) throw net::protocol::ProtocolError("Invalid native staff tomb offset");
-            w.quests.staffTombOffset=payload[0];w.quests.revision=w.revision;
+            w.quests.staffTombOffset=payload[0];w.quests.staffTombRevision=w.revision;w.quests.revision=w.revision;
         } else if(id==4) {
             std::array<int,5> stones{};unsigned seen=0;
             for(size_t index=0;index<stones.size();++index) {

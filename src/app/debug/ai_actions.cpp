@@ -1,5 +1,6 @@
 #include "ai_impl.hpp"
 #include "gameplay/quest/catalog.hpp"
+#include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -171,6 +172,85 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
 void DebugAi::Impl::acquire(Context &c,const Goal &goal) {
     if(acquireItem(c,goal)) advance(c,"Owned item observed: "+goal.item);
 }
+bool DebugAi::Impl::settleItemInput(Context &c) {
+    // A released missile/teleport is not the end of the player's skill mode.
+    // This is debug input pacing, not a change to ItemMode's busy rules. Keep
+    // judging every 200 ms and wait for a quiet interval before sending one
+    // inventory request; never use a rejected/unknown request as a retry loop.
+    const auto cast=std::max(lastAttack,mobilityDeadline-std::chrono::seconds(3));
+    if(Clock::now()-cast>=std::chrono::milliseconds(1500)) return true;
+    cancelWalk(c);wait("item-input-settle","Waiting for the last normal skill input to finish before inventory input");return false;
+}
+bool DebugAi::Impl::approachPickup(Context &c,const OnlineItem &item) {
+    const auto *map=c.town.map();const auto origin=c.town.read().origin;
+    if(!map || !origin) {wait("pickup-map","Waiting for the current client collision");return false;}
+    const Vec offset{float(origin->x),float(origin->y)},at{float(item.groundX),float(item.groundY)};
+    const auto key=[&](OnlinePoint p) {return std::tuple{item.id,item.groundX,item.groundY,p.x,p.y};};
+    const bool own=walkIntent.is_object() && walkIntent.value("purpose",std::string{})=="pickup-approach" &&
+        walkIntent.value("itemId",0u)==item.id && walkIntent.value("groundX",0)==item.groundX &&
+        walkIntent.value("groundY",0)==item.groundY;
+    if(nativePickupReach(map->grid,c.position-offset,at-offset,{})) {
+        if(own) cancelWalk(c);
+        return settleItemInput(c);
+    }
+    if(own) {
+        if(c.walk.active()) {wait("pickup-approach","Continuing the selected pickup position");return false;}
+        const auto state=walkState(c);
+        if(state=="completed" || state=="failed") {
+            pickupApproaches.insert(key({walkIntent.at("x").get<uint16_t>(),walkIntent.at("y").get<uint16_t>()}));
+            note("pickup-approach-unavailable",c.walk.snapshot().value("reason",std::string{}));cancelWalk(c);
+        }
+    }
+    const auto attempts=std::count_if(pickupApproaches.begin(),pickupApproaches.end(),[&](const auto &p) {
+        return std::get<0>(p)==item.id && std::get<1>(p)==item.groundX && std::get<2>(p)==item.groundY;
+    });
+    if(attempts>=8) throw std::runtime_error("No usable pickup position after eight different approaches; item ownership was not assumed");
+    if(openDoor(c)) return false;
+    const bool teleport=teleportAvailable(c);
+    std::vector<OnlinePoint> candidates;
+    // This is an AI search budget around the assigned item, not an expanded
+    // pickup radius. Every candidate must pass the ordinary reach/ray test.
+    for(int y=std::max(0,int(item.groundY)-6);y<=std::min(65535,int(item.groundY)+6);++y)
+        for(int x=std::max(0,int(item.groundX)-6);x<=std::min(65535,int(item.groundX)+6);++x) {
+            const OnlinePoint p{uint16_t(x),uint16_t(y)};const Vec world{float(x),float(y)},local=world-offset;
+            const bool tried=std::any_of(pickupApproaches.begin(),pickupApproaches.end(),[&](const auto &old) {
+                return std::get<0>(old)==item.id && std::get<1>(old)==item.groundX && std::get<2>(old)==item.groundY &&
+                    std::abs(int(std::get<3>(old))-x)<=2 && std::abs(int(std::get<4>(old))-y)<=2;
+            });
+            if(tried || !map->grid.nativeMovementSegment(local+Vec{.5f,.5f},local+Vec{.5f,.5f},playerMovement) ||
+                !nativePickupReach(map->grid,local,at-offset,{})) continue;
+            candidates.push_back(p);
+        }
+    const auto score=[&](OnlinePoint p) {
+        const Vec world{float(p.x),float(p.y)};
+        return teleport && (world-c.position).length()<=mobilityPolicy.distance?
+            (world-at).length():(world-c.position).length()+.25f*(world-at).length();
+    };
+    std::stable_sort(candidates.begin(),candidates.end(),[&](auto a,auto b){return score(a)<score(b);});
+    for(const auto p:candidates) {
+        const Vec world{float(p.x),float(p.y)},local=world-offset+Vec{.5f,.5f};
+        const auto trial=std::tuple{area.value_or(0),p.x,p.y,p.x,p.y};
+        const bool flight=teleport && Clock::now()>=nextMobility && (world-c.position).length()>=1 &&
+            (world-c.position).length()<=mobilityPolicy.distance &&
+            (!mobilityTrials.contains(trial) || mobilityTrials.at(trial)<2);
+        ++pathSearches;const auto path=map->grid.path(c.position-offset+Vec{.5f,.5f},local,false,playerMovement,true);
+        if(path.empty() && !flight) continue;
+        wait("pickup-approach",flight?"Selecting a normal teleport landing at the item or its reachable side":"Walking around to another valid pickup position");
+        walk(c,{{"goal","point"},{"x",p.x},{"y",p.y},{"interact",false},{"purpose","pickup-approach"},
+            {"itemId",item.id},{"groundX",item.groundX},{"groundY",item.groundY}});
+        // Quest reward topics can still own the parent's pending snapshot in
+        // this decision. Prepare normal teleport input before the child tries
+        // an impossible walking path; no coordinates are changed here.
+        if(path.empty()) mobility(c);
+        return false;
+    }
+    if((at-c.position).length()>12) {
+        if(!approachPoint(c,{item.groundX,item.groundY},"assigned ground item",8))
+            explore(c,"reachable approach to the assigned ground item");
+        return false;
+    }
+    wait("pickup-approach-wait","No current legal pickup approach; waiting for normal collision or skill availability");return false;
+}
 bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
     if(owned(c,goal.item)) return true;
     const auto now=Clock::now();const auto &world=c.session.read().world;
@@ -188,10 +268,7 @@ bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
         const float d=(Vec{float(item.groundX),float(item.groundY)}-c.position).length();if(d<nearest) {nearest=d;ground=item;}
     }
     if(ground) {
-        if(nearest>3) {
-            if(openDoor(c)) return false;
-            wait("pickup-approach","Approaching the assigned ground item");walkPoint(c,{ground->groundX,ground->groundY});return false;
-        }
+        if(!approachPickup(c,*ground)) return false;
         cancelWalk(c);OnlineItemCommand take;take.action=OnlineItemAction::Pickup;take.item=ground->id;take.itemRevision=ground->revision;
         if(c.inventory.submit(c.session,take)) {
             pickupId=ground->id;pickupIssued=true;actionDeadline=now+std::chrono::seconds(12);note("pickup-submitted",goal.item);

@@ -7,6 +7,6 @@ struct Viewport {
     Vec offset;
 };
 Viewport currentViewport();
-FrameInput pollInput(const Viewport &viewport, const ControlBindings &);
+FrameInput pollInput(const Viewport &viewport, const ControlBindings &, bool chatInputOpen = false);
 bool nativeImeComposing(void *window);
 } // namespace d2x

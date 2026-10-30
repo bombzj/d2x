@@ -68,7 +68,7 @@ class SceneAssets {
     SceneStreams streams;
     SceneAudio sceneAudio;
     EscapeMenu escapeMenu;
-    ClassicFont font, speechFont, skillGreenFont, characterLabelFont, characterPointFont,
+    ClassicFont font, speechFont, questFont, skillGreenFont, characterLabelFont, characterPointFont,
         characterCompactFont, characterRedFont, hirelingBlueFont, hirelingRedFont, skillLevelBlueFont, skillLevelCompactFont,
         skillLevelCompactBlueFont, skillLevelCompactRedFont;
     ClassicFont automapPartyFont, automapNpcFont, automapOtherFont, deathFont;

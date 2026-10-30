@@ -175,6 +175,16 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if(!introduction && pending==current->second.pendingQuests.end()) return {DomainStatus::Stale,{}};
         if(!introduction) {
             auto result=ports_.quests.execute(actor,{quests::Action::Acknowledge,pending->second,npc->id,talk.message});
+            if(isDeferred(result.status)) {
+                // Native callbacks wait synchronously for content/output. Keep
+                // one accepted acknowledgement per player while those inputs
+                // arrive; the normal approach continuation revalidates the
+                // conversation, actor, area and locomotion before resuming it.
+                const auto queued=approaches_.find(actor.player);
+                const bool continuing=queued!=approaches_.end() && queued->second.actor.sequence==actor.sequence;
+                approaches_.insert_or_assign(actor.player,Approach{actor,request,player.locomotionSequence});
+                return continuing?result:DomainResult<>{DomainStatus::Applied,std::monostate{}};
+            }
             if(result) {
                 std::map<uint16_t,QuestId> next;
                 for(const auto &message:ports_.quests.dialogues(actor,npc->rule)) next.emplace(message.message.text,message.quest);

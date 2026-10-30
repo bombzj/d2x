@@ -26,8 +26,7 @@ struct SceneLightRegion {
 };
 // View-only light mask. DT1 and object-mode flags supply visibility; no lighting state is saved.
 class LightingView {
-    static constexpr int maskRadius = 30;
-    static constexpr int maskSide = maskRadius * 2 + 1;
+    int maskWidth_ = 0, maskHeight_ = 0;
     Texture2D lightMap_{};
     // RGB is the native normalized color; alpha carries independent intensity.
     std::vector<Color> lightPixels_;
@@ -48,6 +47,7 @@ class LightingView {
     Color ambient_{};
     struct Sources;
     std::unique_ptr<Sources> sources_;
+    void resizeMask(int width, int height);
 
   public:
     LightingView();
@@ -64,7 +64,8 @@ class LightingView {
     void setSanctumIntensity(std::optional<int> intensity) { sanctumIntensity_=intensity; }
     void beginCloak(int duration,int level);
     void prepare(const Grid &grid, const LevelRecord &level, Vec player, int radius, Color playerColor,
-                 std::span<const SceneLight> lights, std::span<const SceneLightRegion> regions);
+                 std::span<const SceneLight> lights, std::span<const SceneLightRegion> regions,
+                 Rectangle worldBounds);
     Color sample(Vec position) const;
     void bind(PaletteBlendView &, Vec player, Vec playerScreen, float zoom, bool enabled = true) const;
 };

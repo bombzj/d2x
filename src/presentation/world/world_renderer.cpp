@@ -9,6 +9,7 @@
 #include "presentation/scene_view.hpp"
 #include "presentation/world/warp_visibility.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <stdexcept>
 #include <optional>
@@ -213,7 +214,35 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         draw.push_back({sceneOrder(item.position, item.orderFlag == 1 ? 0 : 1, item.orderFlag == 2, layer),
             item.image, at, WHITE, &item});
     }
-    auto &palette = prepareWorldLighting(scene, items);
+    Vec minimum = world({viewport.x, viewport.y}), maximum = minimum;
+    const auto includeLightPoint = [&](Vec point) {
+        minimum.x = std::min(minimum.x, point.x); minimum.y = std::min(minimum.y, point.y);
+        maximum.x = std::max(maximum.x, point.x); maximum.y = std::max(maximum.y, point.y);
+    };
+    for (const auto corner : std::array<Vec,3>{{
+            {viewport.x + viewport.width, viewport.y},
+            {viewport.x, viewport.y + viewport.height},
+            {viewport.x + viewport.width, viewport.y + viewport.height}}})
+        includeLightPoint(world(corner));
+    // Visible tall sprites can have their ground anchors outside the viewport.
+    // Include those anchors and the full +/-5 native wall sample offsets, so
+    // a smaller viewport does not clamp their lighting to an unrelated edge.
+    const auto includeEntryLights = [&](const auto &entries) {
+        for (const auto &entry : entries) {
+            if (entry.item) {
+                // Image-less effects have not been sprite-culled here. Their
+                // off-screen anchors must not expand the field across a map.
+                if (entry.image) includeLightPoint(entry.item->position);
+            }
+            else if (entry.lightDirection >= 0) {
+                includeLightPoint(entry.feet - Vec{5,5});
+                includeLightPoint(entry.feet + Vec{5,5});
+            }
+        }
+    };
+    includeEntryLights(draw); includeEntryLights(roofs);
+    auto &palette = prepareWorldLighting(scene, items,
+        {minimum.x, minimum.y, maximum.x - minimum.x, maximum.y - minimum.y});
     const PaletteBlendView::TargetScope targetScope(palette);
     auto paint = [&](auto &entries) {
         std::stable_sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b) { return a.order < b.order; });
@@ -255,7 +284,8 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     EndScissorMode();
     return visibleCells;
 }
-PaletteBlendView &SceneView::prepareWorldLighting(const WorldDrawView &scene, std::span<const WorldDrawItem> items) {
+PaletteBlendView &SceneView::prepareWorldLighting(const WorldDrawView &scene, std::span<const WorldDrawItem> items,
+                                                 Rectangle worldBounds) {
     const auto &level = assets_.worldLevel(scene.level);
     std::vector<SceneLightRegion> regions;
     const auto &terrain = scene.map->terrain;
@@ -311,7 +341,7 @@ PaletteBlendView &SceneView::prepareWorldLighting(const WorldDrawView &scene, st
         ? std::max(actorClient_.controlledActor().lightRadius, 18)
         : actorClient_.controlledActor().lightRadius;
     lighting_->prepare(scene.map->grid, level, scene.observer, lightRadius,
-        sceneLightColor(scene.observerLightColor), lights, regions);
+        sceneLightColor(scene.observerLightColor), lights, regions, worldBounds);
     auto &palette = level.palette == 0 ? *paletteBlend_ : *actPaletteBlends_.at(size_t(level.palette));
     lighting_->bind(palette, scene.observer, screen(scene.observer), view_.zoom, view_.lighting);
     return palette;

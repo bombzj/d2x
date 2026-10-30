@@ -44,6 +44,7 @@ struct OnlineQuestState {
     std::array<std::optional<uint8_t>, 41> statuses;
     std::map<uint8_t, std::array<uint16_t, 3>> updates; // Quest number -> flags, status, progress (0x5D).
     std::optional<uint16_t> denRemaining, rescuedBarbsRemaining, staffTombOffset;
+    uint64_t staffTombRevision{}; // Actual 0x50 payload receipt, not flag/status updates.
     std::optional<std::array<int,5>> cainStones; // Original 0x50 classes 17..21.
     uint64_t cainStonesRevision{}; // Changes only on the actual 0x50/id4 clue response.
     std::optional<uint16_t> zooMonster;
@@ -371,6 +372,7 @@ struct OnlineWorldView {
         quests.denRemaining.reset();
         quests.rescuedBarbsRemaining.reset();
         quests.staffTombOffset.reset();
+        quests.staffTombRevision=0;
         quests.revision = 0;
         questAlerts.clear();
         combatSequence = 0;

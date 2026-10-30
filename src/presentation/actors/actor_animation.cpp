@@ -423,8 +423,10 @@ const ActorAnimation *ActorAnimationCatalog::object(Graphics &graphics, int pale
     result.frameCount = std::max(0, result.animation.count - result.start);
     if (declared > 0) result.frameCount = std::min(result.frameCount, declared);
     result.cycle = objects_.number(row->second, "CycleAnim" + suffix).value_or(0) != 0;
+    // Retail 6A91C: object cells draw eight pixels below the static path
+    // projection, before applying Objects.Xoffset/Yoffset.
     result.offset = {float(objects_.number(row->second, "Xoffset").value_or(0)),
-                     float(objects_.number(row->second, "Yoffset").value_or(0))};
+                     8.f + float(objects_.number(row->second, "Yoffset").value_or(0))};
     result.order = objects_.number(row->second, "DrawUnder").value_or(0) ? 1
         : objects_.number(row->second, "OrderFlag" + suffix).value_or(0);
     const auto entry = animations_.emplace(key, std::move(result)).first;

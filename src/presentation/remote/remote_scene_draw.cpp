@@ -527,6 +527,10 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if (player) { player->visible = true; player->reason.clear(); }
         const bool unitHit = !surface && [&] {
             bool multiPiece = key.type == 0;
+            // Retail 510F0 converts the pointer to native world coordinates
+            // with Y-8. A68E0/A6730's raw path rectangles therefore acquire
+            // +8 when expressed in this renderer's screen coordinates.
+            const auto ground = screen(feet) + (key.type == 2 ? Vec{0,8} : Vec{});
             if (key.type == 2) {
                 const auto row = objectRows.find(*unitClass(u));
                 if (row == objectRows.end()) return false;
@@ -539,7 +543,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                     float(objects.number(row->second,"Left").value_or(0)),
                     float(objects.number(row->second,"Top").value_or(0)),
                     float(objects.number(row->second,"Width").value_or(0)),
-                    float(objects.number(row->second,"Height").value_or(0))},screen(feet),mouse);
+                    float(objects.number(row->second,"Height").value_or(0))},ground,mouse);
                 multiPiece = objects.number(row->second,"TotalPieces").value_or(0) > 1;
             } else if (key.type == 1) {
                 const auto row = monsterRows.find(*unitClass(u));
@@ -560,7 +564,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             }
             // The COF broad phase and table rectangles follow the ground
             // anchor; only component frames follow graphics/height offsets.
-            return spriteHit(image,p,mouse,multiPiece,screen(feet));
+            return spriteHit(image,p,mouse,multiPiece,ground);
         }();
         if (player && !player->local && !player->dead && !surface && !waypointOpen &&
             !binding.npcConversation && unitHit) {
@@ -635,7 +639,11 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if (const auto owner = std::find_if(draw.begin(),draw.end(),
                 [&](const auto &item) { return item.image && item.unit == effectOwner(key); }); owner != draw.end()) {
             entry.pixelOffset = owner->pixelOffset;
-            if (objectUnit) entry.orderFlag = owner->orderFlag;
+            if (objectUnit) {
+                // drawSpellOverlay already supplies the native +8 baseline.
+                entry.pixelOffset = entry.pixelOffset - Vec{0,8};
+                entry.orderFlag = owner->orderFlag;
+            }
         }
         if (key.type == 1 && unitClass(actor->second)) {
             const auto row = monsterRows.find(*unitClass(actor->second));

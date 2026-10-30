@@ -41,8 +41,11 @@ class System {
     };
     std::map<PlayerId,PortalCreation> portalCreations_;
     std::map<EntityId,NativeLinkPosition> nativeLinks_;
-    struct Pd2PortalLanding {NativeLinkPosition anchor;std::optional<NativeLinkPosition> landing;};
-    std::map<std::tuple<int,int,int,int,int>,Pd2PortalLanding> pd2PortalLandings_;
+    struct NativePortalLanding {
+        NativeLinkPosition anchor;std::optional<NativeLinkPosition> landing;
+        std::optional<std::array<EntityId,2>> identities{};
+    };
+    std::map<std::tuple<int,int,int,int,int>,NativePortalLanding> nativePortalLandings_;
     std::optional<Portal> pd2OpeningPortal_;
     bool pd2Cancelling_{};
     const AreaObject *waypointAccess(const ActorContext &,EntityId,std::optional<uint64_t> revision = {}) const;

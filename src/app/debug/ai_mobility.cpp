@@ -27,6 +27,14 @@ std::optional<uint16_t> DebugAi::Impl::battleAura(const Context &c) const {
     }
     return {};
 }
+bool DebugAi::Impl::teleportAvailable(const Context &c) const {
+    if(c.town.read().town || (mobilityPolicy.mode!="auto" && mobilityPolicy.mode!="teleport") ||
+        !knownSkill(c,definitions->skill("Teleport"))) return false;
+    for(size_t row=0;row<definitions->levels.rows().size();++row)
+        if(definitions->levels.number(row,"Id")==area)
+            return definitions->levels.number(row,"Teleport").value_or(0)!=0;
+    return false;
+}
 bool DebugAi::Impl::mobility(Context &c) {
     const auto now=Clock::now();const auto &world=c.session.read().world;
     if(mobilityTarget) {
@@ -52,13 +60,11 @@ bool DebugAi::Impl::mobility(Context &c) {
     if(target.is_null()) return false;
     const Vec wanted{target.at("x").get<float>(),target.at("y").get<float>()};
     Vec delta=wanted-c.position;float distance=delta.length();
-    if(distance<8) return false; // Doors, items and NPCs retain normal close approach.
+    const bool pickup=walkIntent.is_object() && walkIntent.value("purpose",std::string{})=="pickup-approach";
+    if(distance<1 || (distance<8 && !pickup)) return false;
     const auto teleport=definitions->skill("Teleport"),charge=definitions->skill("Charge"),vigor=definitions->skill("Vigor");
-    bool teleportPermitted=false;
-    for(size_t row=0;row<definitions->levels.rows().size();++row)
-        if(definitions->levels.number(row,"Id")==area) teleportPermitted=definitions->levels.number(row,"Teleport").value_or(0)!=0;
-    const bool canTeleport=teleportPermitted && !c.town.read().town && knownSkill(c,teleport) &&
-        (mobilityPolicy.mode=="auto" || mobilityPolicy.mode=="teleport");
+    const bool canTeleport=teleportAvailable(c);
+    if(distance<8 && !canTeleport) return false;
     const bool canCharge=!canTeleport && !c.town.read().town && knownSkill(c,charge,true) &&
         (mobilityPolicy.mode=="auto" || mobilityPolicy.mode=="charge");
     const bool useVigor=mobilityPolicy.vigor && !canTeleport && knownSkill(c,vigor);
@@ -77,6 +83,7 @@ bool DebugAi::Impl::mobility(Context &c) {
         // ordinary native walking can follow its route around the obstruction.
         nextMobility=now+std::chrono::seconds(15);mobilityGoal.reset();
         if(child.value("interactionRequests",0u)==0 && walkIntent.is_object()) {
+            c.walk.manualInput(c.control);
             c.walk.command(walkIntent,c.session,c.town,c.control,c.combat);++moveGoals;
         }
         note("mobility-route-stalled","No closer approach for 8 seconds; allowing 15 seconds of ordinary walking");return false;
@@ -85,9 +92,11 @@ bool DebugAi::Impl::mobility(Context &c) {
     const Vec offset{float(origin->x),float(origin->y)};
     const Vec localGoal=wanted-offset+Vec{.5f,.5f};
     const Vec clipped{std::clamp(localGoal.x,.5f,float(map->grid.width)-.5f),std::clamp(localGoal.y,.5f,float(map->grid.height)-.5f)};
+    const bool directPickup=pickup && canTeleport && distance<=mobilityPolicy.distance;
     ++pathSearches;const auto path=map->grid.path(c.position-offset+Vec{.5f,.5f},clipped,true,playerMovement,true);
     Vec previous=c.position;std::optional<Vec> routeTarget;float travelled=0,bestProgress=0;
-    for(const auto node:path) {
+    if(directPickup) routeTarget=wanted;
+    if(!directPickup) for(const auto node:path) {
         const Vec endpoint=node+offset-Vec{.5f,.5f};const Vec leg=endpoint-previous;const float length=leg.length();
         if(length>0) for(float t=std::min(4.f,length);;t=std::min(t+4.f,length)) {
             const Vec sample=previous+leg*(t/length);const auto local=sample-offset+Vec{.5f,.5f};
@@ -108,7 +117,16 @@ bool DebugAi::Impl::mobility(Context &c) {
     delta=*routeTarget-c.position;distance=delta.length();
     const Vec direction=delta*(1/distance),side{-direction.y,direction.x};
     std::optional<Vec> landing;float best=-1e9f;
-    for(int back:{0,4,8}) for(int lateral:{0,-4,4,-8,8}) {
+    if(directPickup) {
+        const auto trial=std::tuple{area.value_or(0),uint16_t(wanted.x),uint16_t(wanted.y),uint16_t(wanted.x),uint16_t(wanted.y)};
+        if(!map->grid.nativeMovementSegment(localGoal,localGoal,playerMovement) ||
+            (mobilityTrials.contains(trial) && mobilityTrials.at(trial)>=2)) return false;
+        // The pickup planner already checked the landing's normal pickup
+        // geometry. Keep that exact integer cell instead of a lateral landing
+        // that could put the item behind the same obstruction again.
+        landing=wanted;
+    }
+    if(!directPickup) for(int back:{0,4,8}) for(int lateral:{0,-4,4,-8,8}) {
         const Vec candidate=c.position+direction*(std::min(distance,float(mobilityPolicy.distance))-float(back))+side*float(lateral);
         const auto cell=map->grid.nativeSpawn(candidate-offset+Vec{.5f,.5f},2,playerMovement);
         if(!cell) continue; // Only already materialized client collision is consulted.

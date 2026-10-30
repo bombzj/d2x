@@ -16,7 +16,12 @@ namespace d2x {
 // All five acts reconstruct the same native room core used by offline maps.
 class RemoteTown {
   public:
-    struct NavigationRoom {int level{},x{},y{},width{},height{};bool loaded{};size_t exploredTiles{};};
+    struct NavigationRoom {
+        int level{},x{},y{},width{},height{};bool loaded{};size_t exploredTiles{};
+        // Indices into this navigation snapshot, from the reconstructed RoomEx
+        // near list. Adjacency guides exploration; collision still gates input.
+        std::vector<size_t> near;
+    };
   private:
     Archives &archives_;
     TileLibraryCache libraries_;
@@ -86,6 +91,7 @@ class RemoteTown {
     explicit RemoteTown(Archives &a, bool reportAutomapRoomsPd2 = false);
     void update(const OnlineView &, std::optional<Vec> displayPosition = {});
     const OnlineSceneView &read() const { return view_; }
+    Grid navigationGrid(const OnlineView &,std::optional<OnlineUnitKey> ignored = {}) const;
     const Map *map() const { return map_; }
     // Already reconstructed logical walking links, including an adjoining room
     // before it becomes active. Global subtile coordinates; no room generation.

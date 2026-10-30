@@ -33,7 +33,7 @@ void System::writePortalCollision(const Portal &portal,bool occupied) noexcept {
 }
 void System::commitSpecialPortal(SpecialPortalPlan plan) noexcept {
     for(const auto &[id,portal]:plan.next) if(!state_.specialPortals.contains(id))
-        pd2PortalLandings_.erase({int(portal.field),int(portal.town),portal.rule.definition,
+        nativePortalLandings_.erase({int(portal.field),int(portal.town),portal.rule.definition,
             int(portal.fieldPosition.x),int(portal.fieldPosition.y)});
     publishPortalCollision(ports_.areas,state_.specialPortals,plan.next);state_.specialPortals.swap(plan.next);
 }
@@ -42,7 +42,7 @@ void System::closePlayerPortal(PlayerId id) {
     writePortalCollision(found->second,false);state_.portals.erase(found);
 }
 void System::closePortals(RegionId region) {
-    std::erase_if(pd2PortalLandings_,[&](const auto &entry){return std::get<0>(entry.first)==int(region) || std::get<1>(entry.first)==int(region);});
+    std::erase_if(nativePortalLandings_,[&](const auto &entry){return std::get<0>(entry.first)==int(region) || std::get<1>(entry.first)==int(region);});
     const auto close=[&](const auto &entry) {
         if(entry.second.field!=region && entry.second.town!=region) return false;
         writePortalCollision(entry.second,false);return true;
@@ -296,7 +296,6 @@ DomainResult<SpecialPortalPlan> System::prepareWorldPortal(RegionId region,int l
         }
         return {};
     };
-    if(!ports_.items.identityCapacity(2)) return {DomainStatus::Capacity,{}};
     auto arrival=exactSource?std::optional<Vec>{}:destination->definition.portalArrival;
     if(!arrival && destination->definition.town) arrival=destination->definition.spawn;
     if(!arrival && !exactSource && !durielOpening) return {DomainStatus::Unavailable,{}};
@@ -309,19 +308,24 @@ DomainResult<SpecialPortalPlan> System::prepareWorldPortal(RegionId region,int l
     }
     // Permanent native portals use the supplied subtile without a free-cell search.
     const auto from=exactSource?std::optional<Vec>{Vec{std::floor(source.x),std::floor(source.y)}}:freePoint(*origin,source);
+    if(!from) return {DomainStatus::Conflict,{}};
     if(exactSource && (!ports_.areas.roomAtPosition(region,*from,int(from->x+origin->definition.origin.x),int(from->y+origin->definition.origin.y)) ||
         origin->definition.act!=destination->definition.act)) return {DomainStatus::Unavailable,{}};
     std::optional<world::QuestPosition> nativeTo;
-    if(exactSource && origin->definition.pd2Map) {
+    NativePortalLanding *landingJob=nullptr;
+    if((exactSource && origin->definition.pd2Map) || durielOpening) {
         const auto key=std::tuple{int(region),level,rule.definition,int(from->x),int(from->y)};
-        auto job=pd2PortalLandings_.find(key);
-        if(job==pd2PortalLandings_.end()) {
+        auto job=nativePortalLandings_.find(key);
+        if(!ports_.items.identityCapacity(2) && (job==nativePortalLandings_.end() || !job->second.identities))
+            return {DomainStatus::Capacity,{}};
+        if(job==nativePortalLandings_.end()) {
             const auto anchor=ports_.world.nativeActSpawnLocation(RegionId(level),11);
             if(!anchor) return {DomainStatus::Unavailable,{}};
-            job=pd2PortalLandings_.emplace(key,Pd2PortalLanding{{RegionId(level),destination->generation,*anchor,{}},{}}).first;
+            job=nativePortalLandings_.emplace(key,NativePortalLanding{{RegionId(level),destination->generation,*anchor,{}},{}}).first;
         }
         auto &cursor=job->second;
-        if(cursor.anchor.generation!=destination->generation) {pd2PortalLandings_.erase(job);return {DomainStatus::Stale,{}};}
+        landingJob=&cursor;
+        if(cursor.anchor.generation!=destination->generation) {nativePortalLandings_.erase(job);return {DomainStatus::Stale,{}};}
         ports_.world.activate(cursor.anchor.area,cursor.anchor.position);
         if(!ports_.areas.loaded(cursor.anchor.area,cursor.anchor.position)) return {DomainStatus::PendingContent,{}};
         if(!cursor.landing) {
@@ -335,11 +339,19 @@ DomainResult<SpecialPortalPlan> System::prepareWorldPortal(RegionId region,int l
         ports_.world.activate(landing.area,landing.position);
         if(!ports_.areas.loaded(landing.area,landing.position)) return {DomainStatus::PendingContent,{}};
         nativeTo=world::QuestPosition{landing.area,landing.position,landing.room};
-    } else if(exactSource || durielOpening) nativeTo=ports_.world.nativeLinkPortalPosition(RegionId(level),durielOpening);
+    } else {
+        if(!ports_.items.identityCapacity(2)) return {DomainStatus::Capacity,{}};
+        if(exactSource) nativeTo=ports_.world.nativeLinkPortalPosition(RegionId(level));
+    }
     const auto to=exactSource || durielOpening?(nativeTo?std::optional<Vec>{nativeTo->position}:std::nullopt):freePoint(*destination,*arrival);
     if(!from || !to) return {DomainStatus::Conflict,{}};
+    auto identities=landingJob?landingJob->identities:std::nullopt;
+    if(!identities) {
+        identities=std::array{ports_.items.reserveIdentity(NativeUnitType::Object),ports_.items.reserveIdentity(NativeUnitType::Object)};
+        if(landingJob) landingJob->identities=identities;
+    }
     SpecialPortalPlan plan{state_.specialPortals};
-    Portal portal{{},{},ports_.items.reserveIdentity(NativeUnitType::Object),ports_.items.reserveIdentity(NativeUnitType::Object),{},region,nativeTo?nativeTo->area:RegionId(level),*from,*to,rule,tick,1,true,true};
+    Portal portal{{},{},(*identities)[0],(*identities)[1],{},region,nativeTo?nativeTo->area:RegionId(level),*from,*to,rule,tick,1,true,true};
     if(rule.openingTicks>0) {portal.opened=false;portal.ready=tick+uint64_t(rule.openingTicks);portal.linkedOpened=true;}
     if(nativeTo) portal.townRoom=nativeTo->room;
     plan.next.emplace(portal.fieldId,std::move(portal));return {DomainStatus::Applied,std::move(plan)};

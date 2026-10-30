@@ -6,13 +6,17 @@
 
 namespace d2x {
 void DebugAi::Impl::configureQuest(Goal &goal) const {
-    static constexpr std::array<std::pair<std::string_view,QuestId>,6> quests{{
+    static constexpr std::array<std::pair<std::string_view,QuestId>,12> quests{{
         {"den-of-evil",QuestId::DenOfEvil},{"sisters-burial-grounds",QuestId::SistersBurialGrounds},
         {"search-for-cain",QuestId::SearchForCain},{"forgotten-tower",QuestId::ForgottenTower},
-        {"tools-of-the-trade",QuestId::ToolsOfTheTrade},{"sisters-to-the-slaughter",QuestId::SistersToTheSlaughter}}};
+        {"tools-of-the-trade",QuestId::ToolsOfTheTrade},{"sisters-to-the-slaughter",QuestId::SistersToTheSlaughter},
+        {"radaments-lair",QuestId::RadamentsLair},{"horadric-staff",QuestId::HoradricStaff},
+        {"tainted-sun",QuestId::TaintedSun},{"arcane-sanctuary",QuestId::ArcaneSanctuary},
+        {"summoner",QuestId::Summoner},{"seven-tombs",QuestId::SevenTombs}}};
     const auto found=std::find_if(quests.begin(),quests.end(),[&](const auto &v){return v.first==goal.quest;});
-    if(found==quests.end()) throw std::invalid_argument("No verified Act I quest recipe: "+goal.quest);
+    if(found==quests.end()) throw std::invalid_argument("No verified quest recipe: "+goal.quest);
     goal.questId=found->second;goal.questSlot=questDefinition(goal.questId).nativeSlot;
+    if(questDefinition(goal.questId).act==1) {configureActTwoQuest(goal,goal.questId);return;}
     const auto town=definitions->area("Act 1 - Town");
     const auto object=[&](std::string_view name,int operation) {
         const auto id=definitions->object(std::string(name));
@@ -88,13 +92,21 @@ std::optional<uint16_t> DebugAi::Impl::questFlags(const Context &c,QuestId id) c
 bool DebugAi::Impl::questFinished(const Context &c,const Goal &goal) const {
     const auto flags=questFlags(c,goal.questId);
     if(!flags || !(*flags&1)) return false;
+    if(goal.questId==QuestId::RadamentsLair && (*flags&0x20)) return false;
+    if(goal.questId==QuestId::ArcaneSanctuary && (*flags&2)) return false;
+    if(goal.questId==QuestId::SevenTombs)
+        return c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[15]&1);
     // Native Act-I change record (slot 7) is separate from Andariel's reward.
     return goal.questId!=QuestId::SistersToTheSlaughter ||
         (c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[7]&1));
 }
 bool DebugAi::Impl::questBusy() const {
     if(cursor>=goals.size() || goals[cursor].kind!=Kind::Quest || supplyStage!=SupplyStage::None) return false;
-    return questRun.pending || (questRun.step<goals[cursor].steps.size() && goals[cursor].steps[questRun.step].action==QuestAction::Imbue);
+    if(questRun.pending) return true;
+    if(questRun.step>=goals[cursor].steps.size()) return false;
+    const auto action=goals[cursor].steps[questRun.step].action;
+    return action==QuestAction::Imbue || action==QuestAction::Combine ||
+        (action==QuestAction::SubmitStaff && questRun.materialNpc) || action==QuestAction::UseItem;
 }
 void DebugAi::Impl::questStepDone(Context &c,std::string evidence) {
     if(c.session.read().world.npcRequested) c.session.close_npc();
@@ -112,7 +124,8 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
         if(goal.questId==QuestId::SearchForCain && (*flags&0x8000) && !(*flags&3))
             throw std::runtime_error("Cain was rescued by rogues in this save; use a fresh quest baseline for the full rescue");
         if((*flags&0x4000) && !(*flags&0x2003)) throw std::runtime_error("Original quest is unavailable to this character in this game: "+goal.quest);
-        if(c.session.read().load.act!=0) throw std::runtime_error("Unfinished Act I quest needs a normal Act I scene");
+        if(c.session.read().load.act!=questDefinition(goal.questId).act)
+            throw std::runtime_error("Unfinished quest needs its normal act scene: "+goal.quest);
         questRun.initialized=true;note("quest-started",goal.quest);
     }
     while(questRun.step<goal.steps.size() && goal.steps[questRun.step].skipPending && (*flags&3))
@@ -156,12 +169,38 @@ void DebugAi::Impl::observeQuestInteraction(Context &c,const Json &intent) {
 }
 void DebugAi::Impl::quest(Context &c,const Goal &goal) {
     if(questRun.step>=goal.steps.size()) return;
-    const auto &step=goal.steps[questRun.step];
+    auto step=goal.steps[questRun.step];
+    const auto stateQuest=step.stateQuest.value_or(goal.questId);
+    const auto state=questFlags(c,stateQuest);
+    const auto parentState=questFlags(c,goal.questId);
+    const auto tombOffset=tombSymbol;
+    if(step.item=="ass" && !questRun.pending && !questRun.skillPointsBefore && state &&
+        (*state&0x2003) && !(*state&0x20) && !owned(c,"ass")) {
+        questStepDone(c,"Actual Radament flags confirm the skill book was already used");return;
+    }
+    if((step.skipAny && state && (*state&step.skipAny)) ||
+        (step.parentSkipAny && parentState && (*parentState&step.parentSkipAny)) ||
+        (step.skipTombKnown && tombOffset && *tombOffset<7) ||
+        (area && std::find(step.skipAreas.begin(),step.skipAreas.end(),*area)!=step.skipAreas.end())) {
+        questStepDone(c,"Actual prerequisite state already satisfies this step");return;
+    }
+    if(step.trueTomb) {
+        if(!tombOffset || *tombOffset>=7) {wait("quest-tomb-symbol","Waiting for Horazon's actual published tomb symbol");return;}
+        step.area=definitions->area("Act 2 - Tomb Tal "+std::to_string(*tombOffset+1));
+    }
     if(step.optional && step.flags) {
-        const auto flags=questFlags(c,goal.questId);
+        const auto flags=state;
         if(flags && (*flags&step.flags)==step.flags) {
             questStepDone(c,"Optional introduction already confirmed by native quest flags");return;
         }
+    }
+    if(step.action==QuestAction::Talk && step.flags && state && (*state&step.flags)==step.flags &&
+        !(*state&step.clearFlags) && step.item.empty() && step.produced.empty() && !questRun.pending &&
+        !questRun.rewardTracked && !questRun.skillPointsBefore) {
+        // Reused prerequisites can already be satisfied while we are in a
+        // special area with no static route back to that NPC. Test the same
+        // replicated dialogue postcondition before arranging needless travel.
+        questStepDone(c,"Actual dialogue prerequisite already confirmed");return;
     }
     if(step.action==QuestAction::Acquire && (owned(c,step.item) || (!step.produced.empty() && owned(c,step.produced)))) {
         questStepDone(c,"Already-owned quest item satisfies acquisition: "+step.item);return;
@@ -170,6 +209,10 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
         (area!=step.area || travelDestination) && !travel(c,*step.area)) return;
     bool done=false;
     switch(step.action) {
+    case QuestAction::Travel:done=true;break;
+    case QuestAction::UseItem:done=questUseItem(c,step);break;
+    case QuestAction::Combine:done=questCombine(c,step);break;
+    case QuestAction::SubmitStaff:done=questSubmitStaff(c,step);break;
     case QuestAction::Talk:done=questTalk(c,goal,step);break;
     case QuestAction::ReturnTown:done=reachTown(c);break;
     case QuestAction::Acquire:
@@ -180,7 +223,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
     case QuestAction::Imbue:done=questImbue(c,goal,step);break;
     case QuestAction::ActTravel:done=questActTravel(c,goal,step);break;
     case QuestAction::Clear: {
-        const auto flags=questFlags(c,goal.questId);
+        const auto flags=state;
         if((flags && (*flags&0x2002)) || (c.session.read().world.quests.denRemaining==0 &&
             c.session.read().world.quests.statuses[goal.questSlot]==5)) {done=true;break;}
         const auto remaining=c.session.read().world.quests.denRemaining;
@@ -202,7 +245,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
         break;
     }
     case QuestAction::Hunt: {
-        const auto flags=questFlags(c,goal.questId);
+        const auto flags=state;
         if(step.flags && flags && (*flags&step.flags)==step.flags) {done=true;break;}
         const auto unit=find(c,*step.target,true);
         if(unit && onlineMonsterCorpse(*unit)) {

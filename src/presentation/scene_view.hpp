@@ -207,7 +207,7 @@ class SceneView {
     void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
                               Color tint = WHITE, Vector2 highlight = {2.f, 1.f},
                               const PaletteBlendView *lighting = nullptr, Color light = WHITE) const;
-    PaletteBlendView &prepareWorldLighting(const WorldDrawView &, std::span<const WorldDrawItem>);
+    PaletteBlendView &prepareWorldLighting(const WorldDrawView &, std::span<const WorldDrawItem>, Rectangle worldBounds);
     void drawNpcAlert(EntityId npc, Vec at, bool back) const;
     void drawPanelFrame(bool right) const;
     void drawPanelTiles(const GpuAnimation &, bool right, size_t first = 0) const;
@@ -320,6 +320,7 @@ class SceneView {
     const std::string &partyReason() const { return party_.reason(); }
     ChatIntent handleChat(const FrameInput &input);
     void chatSent(bool accepted);
+    void debugChatMessage(std::string_view text, bool error = false) { chat_.diagnostic(text,error); }
     const ChatView &chat() const { return chat_; }
     void updatePlayerTrade(const OnlinePlayerTrade &trade);
     PlayerTradeIntent handlePlayerTrade(const FrameInput &input);

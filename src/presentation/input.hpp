@@ -22,7 +22,9 @@ struct FrameInput {
     int quantityDelta = 0, pageDelta = 0, menuDelta = 0;
     std::string text;
     std::string entryText;
+    std::string entryPasteText;
     std::u32string entryUnicode;
+    bool entryPaste{};
     bool entryComposing{},entryCompositionCommitted{};
     bool tab = false, chat = false, clear = false, end = false;
     float wheel = 0, mouseWheel = 0;

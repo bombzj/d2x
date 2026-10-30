@@ -39,7 +39,7 @@ Client 251AE／25572／25B0D依据 `BlocksLight[mode]` 清除或设置Unit+0xC4�
 
 每个样本保存独立的0–255强度和RGB；先填环境，再逐来源把贡献加到强度并封顶255。颜色按`min(255,((oldColor×oldIntensity+sourceColor×contribution)×floor(65536/totalIntensity))>>16)`逐通道处理，保留原除法、截断及封顶顺序。当前来源遍历仍沿场景列表，未恢复原创建链的完整交错；彩光逐次舍入不能据此认证所有来源顺序。
 
-当前显示网格仍为玩家周围61×61子格，以适配扩展视口。地面强度取四邻点整数平均后插值角点，RGB仍沿显示适配插值；这不认证原3D后端的颜色插值。纹理RGB保存颜色、A保存强度，整数角点对齐纹理像素中心并使用边缘钳制。`LightingView::prepare`先生成原始样本和地面角点，单位以自身坐标读取原始样本，屏幕像素仅用于地面插值，不再用高墙顶部／角色头顶的屏幕位置反推另一处地面光。网格、GPU资源、环境状态及来源不进入D2S。
+显示网格按`SceneView::worldViewport`四角反投影的子格范围动态准备，随分辨率、缩放、面板和镜头偏移变化；同时覆盖本帧可见精灵的地面锚点及墙体六点表的±5子格取光范围。整数边界向外取整并保留两格供四邻点平均和双线性插值，纹理容量只在不足时增长。原固定61×61网格不能覆盖扩展视口，越界后直接回退观察者底光会在屏幕角落形成明暗接缝，已改为上述范围；该修正尚未构建／运行。地面强度取四邻点整数平均后插值角点，RGB仍沿显示适配插值；这不认证原3D后端的颜色插值。纹理RGB保存颜色、A保存强度，整数角点对齐纹理像素中心并使用边缘钳制。`LightingView::prepare`先生成原始样本和地面角点，单位以自身坐标读取原始样本，屏幕像素仅用于地面插值，不再用高墙顶部／角色头顶的屏幕位置反推另一处地面光。网格、GPU资源、环境状态及来源不进入D2S。
 
 DT1头的`LightDirection`由`decodeDt1`读取并保留，与`orientation`分开。墙体按Client DED18／DEEF8六点表取原始网格样本，A8230使用整数格及边缘钳制；不能从墙顶的屏幕坐标反推地面。GDI／DirectDraw以DT1子块的水平位置右移5位选相邻两个样本，纵向共用，只消费独立强度字节，墙面使用PL2而不乘样本RGB。普通墙仅在两端原强度差≥10时进入高质量Gouraud；透明墙始终进入该路径。Gouraud先把两端强度右移3位，再以32像素定点表插值，不能先插值8位强度再量化。方向0–9的普通／备用表已接；更高数值会越过已核实表，明确拒绝，不把相邻内存数据当作额外方向规则。样本方向和原图均来自当前MPQ，不按区域、墙高或截图补亮，未知方向明确拒绝。
 
@@ -59,7 +59,7 @@ DT1头的`LightDirection`由`decodeDt1`读取并保留，与`orientation`分开�
 
 - 原创建链交错、物件缓存的原生命期、完整怪物装备／状态光源与光源生灭尚未接齐；Overlay已接上述实例及客户端门控，飞弹完整创建首帧仍暂缓。完整Flicker不自造调制。
 - 网格强度／颜色合成已按原DLL，世界图元选择软件PL2强度路径；3D后端最终彩光、Gamma及逐图元索引取色／混色仍未完整核实。
-- 当前采用原高质量遮挡路径；质量选项切换、原48×48视野裁剪及全场景帧间对照尚未接齐。邪恶洞窟任务完成光照、第四幕特殊事件、完整原服环境同步与天气仍有缺口。
+- 当前采用原高质量遮挡路径；原1.13c A8230将取光索引钳制到0–47，固定48×48网格属于其视口约束，D2X按扩展视口动态适配并保留取光／插值规则。质量选项切换及全场景帧间对照尚未接齐。邪恶洞窟任务完成光照、第四幕特殊事件、完整原服环境同步与天气仍有缺口。
 - 世界目标仍为RGBA，地形已直接按原索引取光；组合单位的RGBA来源和透明墙背景仍需在图元内反查，重复RGB使用首项，染色值取最近原色。完整索引合成、全部COF效果／自发光分支、原绘制桶的全部交错、屋顶专用逐子块光栅化、用户Gamma及3D硬件路径仍暂缓。已核实LightDirection表之外的方向拒绝加载，不能宣称所有修改版资源／遮挡状态都已覆盖。
 
 原版依据：基础13另由下方原DLL确认，属性映射来自当前Properties／ItemStatCost；最大18的客户端限幅见RVA A8C20／A8B60。环境计算见 [D2MOO D2Environment.cpp](https://github.com/ThePhrozenKeep/D2MOO/blob/5596f5cb6c5251a0a07c6637d26458b06099d516/source/D2Common/src/D2Environment.cpp)，推进入口见同快照 `D2Game/src/GAME/Game.cpp::GAME_UpdateEnvironment`。原 PL2 排列见 OpenD2 `Engine/Palette.hpp` 与 OpenDiablo2 `d2pl2`；行选择及 Gouraud 缓存见 [D2Gfx CmnSubtile.cpp](https://github.com/ThePhrozenKeep/D2MOO/blob/5596f5cb6c5251a0a07c6637d26458b06099d516/source/D2Gfx/src/CmnSubtile.cpp) 的 `sub_6FA71070`、`sub_6FA73130`、`DGFX_InitGouraudCache_6FA72570`；高质量四邻点平均见 `D2GFX_FloorTileDraw_6FA73410` 内 v44/v45/v46/v47，子块 Gouraud 见 `TILE_TileDrawLit_6FA729D0`。物件模式及怪物 Light 字段见 D2MOO ObjectsTbls／MonsterTbls 和 OpenDiablo2 对应记录。DT1 的位 2／32 分别为 LOS／BlockLight，仍与单位半高斜向阴影独立。

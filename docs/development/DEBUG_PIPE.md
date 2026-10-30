@@ -39,7 +39,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 客户端自主行走
 
-批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方，新增源码含scenario=act1的六任务整链及单项quest，仍由下面的行走驱动执行接近。Windows Release已构建并入局检查；实际覆盖和剩余组合以该专题为准，不把单目标行走结果当作整条任务验收。
+批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方，源码含scenario=act1／act2的各六任务编排及单项quest，仍由下面的行走驱动执行接近。Windows Release已构建并入局检查；实际覆盖和剩余组合以该专题为准，不把单目标行走结果当作整条任务验收。新增聊天入口可用`/debug-ai-start act1`、`/debug-ai-start quest search-for-cain`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和未构建／运行边界见该专题。
 
 新增第一幕六任务配方与200毫秒决策，以及`supplies`整计划药剂策略和`goals:[{action:'restock'}]`补给目标，支持低血／低法力饮药、正常货架购买和安全的缺药回城往返；这批源码已通过Windows Release构建并执行实机回归，实际奖励、药剂和补给覆盖见该专题。其他任务／五幕首领的前置覆盖限制见同一专题，不能把通用hunt视为所有任务已完成。
 
@@ -205,7 +205,7 @@ $spec.preview=$false
 | `pause` / `resume` | 只在显式调试管道启用；pause要求在线ProtocolReady，冻结画面和界面输入。回执presentationPaused／networkRunning=true；不暂停原服。Single Player在下一宿主调度帧应用权威暂停，以server-status.paused为准；恢复采用最新副本，旧动作不重放 |
 | `online-status` | 顶层presentationPaused；online.protocol按SID／MCP／game返回包ID、received／sent／unconsumed、逻辑字节数和lastReceived；只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟（首个pong前null）、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
 | `online-social` / `online-chat` | 同一完整只读快照的accountChat及world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；只读、不刷新。共享界面就绪后额外chatUi返回ready／inputOpen／logOpen／draft／scroll／rows／unavailableMessages／reason，只有表现和草稿，不是发送回执。scene.automap.markers只读标记类型／名称／位置／cel；当前范围、原服参考与缺口见[联网模块](../modules/NETWORK.md) |
-| `online-chat-input` | message经过与游戏UI相同的通用分流，支持/nopickup、/players、房间／头顶／私聊和BNCS命令。模式错误明确拒绝；accepted只代表本地执行或传输入队，远端结果查看accountChat及world.social。scene.noPickup显示本机开关；server-snapshot.virtualPlayers和怪物admittedPlayers／experienceBase提供人数观察 |
+| `online-chat-input` | message经过与游戏UI相同的通用分流，支持/debug-ai-*、/debug-walk*、/debug-help、/nopickup、/players、房间／头顶／私聊和BNCS命令；调试目标语法见DEBUG_AI。模式错误明确拒绝；accepted只代表本地执行或传输入队，远端结果查看accountChat及world.social，本地调试摘要另见界面[Debug]消息。scene.noPickup显示本机开关；server-snapshot.virtualPlayers和怪物admittedPlayers／experienceBase提供人数观察 |
 | `online-send-chat` | message为1–255字节可打印ASCII且不全为空格；可选receiver为15字节内角色名，发送原0x15私聊；可选overhead=true发送原0x14且receiver须为空。accepted只代表入队，消息取真实0x26及chatSequence，不插本地回显／自动重试。普通广播、私聊、头顶原包与屏蔽由共享服务端social执行；中文编码、表情与BNCS频道暂缓。头顶消息值为world.social.hover，图形气泡未新增 |
 | `online-party-action` | unitId为当前名册真实GUID，action为invite／cancel／accept／leave（leave目标为本人）；可选gameGeneration复验本局。与P界面共用RealmSession.party_action，只发送原5E；accepted不修改名册／队号，真实结果读取75／8B／8D。 |
 | `online-chat-relation` | unitId为当前名册另一玩家GUID，action为ignore／squelch／loot／hostile，enabled布尔值；原5D/action2／3／1／4。真实关系等75／8C；忽略者阻止自己的话到达目标，squelch者屏蔽目标发来的消息，沿原PlrMsg方向条件；loot只接受存活HC，用于授予／撤销本人尸体许可；hostile仍受原等级／城镇规则约束，队伍使用online-party-action |

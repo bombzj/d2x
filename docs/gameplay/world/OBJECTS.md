@@ -15,9 +15,11 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 | MonStats2.noGfxHitTest | 使用htLeft／htTop／htWidth／htHeight的有符号16位值，锚定动态单位地面位置，右／下边界不包含端点；不再依赖翅膀、烟雾等图像的透明裁边。当前原MPQ包含泰瑞尔、受困灵魂、衣卒尔灵魂、投石机与恶魔小屋等定义 |
 | 地面掉落与关卡出口 | 掉落本体使用当前flippy原帧及共同12像素／最小尺寸算法；名称点击仍共用已有名称布局。出口继续读取LvlWarp.SelectX／Y／DX／DY，矩形边界包含端点；世界输入被面板等遮挡时不悬停点亮出口 |
 
-COF外层矩形跟随单位地面锚点，普通组件框跟随当前绘图／高度偏移，并采用绘制时的整数像素锚点；保留分组件范围，不把多层之间的空隙合并成整张合成纹理。帧范围由原cell的`offsetX／offsetY／width／height`计算，顶部为`offsetY-height`；解码器独立保留cellOffsetY，不用DCC绘图顶部的`offsetY-height+1`或DC6的底部偏移代替选取顶部。资源缺失仍按现有原图不可用路径处理，不补造矩形或图形。
+COF外层矩形跟随单位地面锚点，普通组件框跟随当前绘图／高度偏移，并采用绘制时的整数像素锚点；静态物件的屏幕锚点另含原版统一Y+8，Objects.Xoffset／Yoffset只参与组件绘图／命中，不进入COF外层或固定表矩形。保留分组件范围，不把多层之间的空隙合并成整张合成纹理。帧范围由原cell的`offsetX／offsetY／width／height`计算，顶部为`offsetY-height`；解码器独立保留cellOffsetY，不用DCC绘图顶部的`offsetY-height+1`或DC6的底部偏移代替选取顶部。资源缺失仍按现有原图不可用路径处理，不补造矩形或图形。
 
-场景传送点沿该通用分支，当前MPQ的OperateFn23记录TotalPieces为2，使用各自当前模式COF的Selectable及原帧矩形，不按OperateRange／SizeX／SizeY另造点击框，也不涉及目的地菜单命中。营地wp的ON资源为TR／S1两层，二者Selectable均为1；原TR帧宽131、高27、offsetX=-71、offsetY=5，因此外扩后相对落点为x=-83..72、y=-34..17（包含端点），另合并当前S1层命中并受COF外层筛选。依据为当前MPQ的Objects、wponhth.cof及wptrlitonhth.dcc，和零售1.13c D2Client RVA A6730／A6C90／A6CE9；该帧偏移与单组件修正已通过Windows Release构建，运行对照仍待验收，不能沿用下述旧EXE结果认证新几何。
+场景传送点沿该通用分支，当前MPQ的OperateFn23记录TotalPieces为2，使用各自当前模式COF的Selectable及原帧矩形，不按OperateRange／SizeX／SizeY另造点击框，也不涉及目的地菜单命中。营地wp的ON资源为TR／S1两层，二者Selectable均为1；原TR帧宽131、高27、offsetX=-71、offsetY=5，因此原生路径坐标下外扩范围为x=-83..72、y=-34..17（包含端点）；换成屏幕落点投影须加Y+8，即y=-26..25，另合并当前S1层命中并受COF外层筛选。依据为当前MPQ的Objects、wponhth.cof及wptrlitonhth.dcc，和零售1.13c D2Client RVA A6730／A6C90／A6CE9；此前帧偏移与单组件修正已通过Windows Release构建；静态物件屏幕Y+8修正尚未构建／运行，不能沿用下述旧EXE结果认证新几何。
+
+静态物件的坐标换算另定点核对同一零售D2Client：RVA510F0的5115C–51169将屏幕鼠标Y加相机偏移再减8；A6A54／A6730及6A550使用原生路径坐标生成矩形，故屏幕表达需补回8。物件绘制6A91C–6A94E同样加8后再叠Objects偏移。当前ActorAnimation的物件偏移、RemoteScene的组件／COF外层／固定表矩形已按该链统一；地图排序及权威坐标不改，未连接GUID的静态装饰共用物件动画锚点。物件覆盖图已有原生+8基线，复制物件绘图偏移时扣除该公共项，避免祭坛标记重复下移。本项是静态源码对照，实际hover边界及全部物件仍待运行确认。
 
 依据：D2MOO `ObjectsTbls::D2ObjectsTxt`、`MonsterTbls::D2MonStats2Txt`及表编译器确认字段，`UNITS_GetClientCoordX／Y`与`UNITS_InitializeStaticPath`确认坐标；OpenD2 `Engine/COF.hpp`交叉核对COF布局。D2MOO缺D2Client，且旧实现将普通范围裁小，故定点核对零售1.13c D2Client.dll（SHA-256 `dd8bc6025de921216a97c17f97cd1a50fbb85926e838ec60e13451448836d906`）：RVA A68E0为选取分派，A6A77为noGfxHitTest，A6B15／A6BD5为物件条件，A5720／A57E0为表矩形，6A550为COF外层16像素，A6730为原帧外扩／最小尺寸，6E670→6D700读取COF层Selectable。此前EXE在原版MPQ、独立DebugSorceress的营地画面中，以ui-input实际点击恰西本体打开交谈、私人箱本体打开仓库，并丢下一张鉴定卷轴再点击地面原图拾回（同一物品ID恢复本人背包）。原包、完整快照及截图位于忽略目录artifacts/debug-ai-acceptance-20261029/ui-01，EXE SHA-256为DC89A302F380BB5C76309C52944B39B76A8FFA8164051DAD36D2CAB2962E53C3。仅认证这些具体操作；名称布局、遮挡及重叠目标优先级、全部动画／五幕物件与PD2运行时改写仍未逐项认证。PD2消费者边界见[城镇服务](../../pd2/TOWN_CLIENT.md#城镇服务物件交互)。
 
@@ -28,6 +30,8 @@ COF外层矩形跟随单位地面锚点，普通组件框跟随当前绘图／�
 共同Grid保留DT1地形层及独立对象层，按真实SizeX／Y、HasCollision0–7、BlocksLight0–7、BlockMissile等模式字段更新；不按画面石头类别猜阻挡，不覆盖重叠物体／原墙。已核实的静默ENDANIM衔接也更新对象层，后续原服模式仍优先。
 
 OperateFn18暗门依据D2MOO `ObjMode::OBJECTS_OperateFunction18_SecretDoor`：只在NEUTRAL进入OPERATING，清除可选标志并立即释放本体碰撞，以当前FrameCnt1+1安排ENDANIM，结束静默转OPENED，不执行普通门的再次关门。宿主复用原阻挡释放及事件继续点、ObjectFact发布；客户端共用原表的模式／碰撞及动画期限。当前MPQ对象129为1×5、IsDoor=0、仅Selectable0／HasCollision0开启、FrameCnt1=15；不能因界面将它列为门而套用可逆OperateFn8。地牢第三层实际开门回归见[调试AI](../../development/DEBUG_AI.md#实现入口与待验收范围)。
+
+OperateFn16活板门按D2MOO `OBJECTS_OperateFunction16_TrapDoor`处理：NEUTRAL首次操作立即转OPENED；已打开时寻找本房间第一个真实UNIT_TILE并走既有楼梯旅行。门模式／碰撞使用当前MPQ，楼梯目的地和出生点使用实际地图，不生成替代出口。对象发起的普通楼梯旅行也绑定本次移动序号，后续移动仍会使等待失效。此分支由第二幕单机AI遇到鲁高因TrappDoor保持关闭而补齐；已观察首次开门及实际楼梯旅行，已打开时再点活板门直接旅行的组合仍待验收。
 
 交互几何核对D2MOO UNITS_IsObjectInInteractRange／D2Common_10399：原整数子格、对象矩形及外侧条带，OperateRange不当中心圆半径。接近点查询完整行走体积与原射线；范围预览不能证明原服操作成功。
 
@@ -41,9 +45,9 @@ OperateFn18暗门依据D2MOO `ObjMode::OBJECTS_OperateFunction18_SecretDoor`：�
 
 ## 原服适配
 
-蓝色回城门按当前Objects.Selectable模式及已收到目的地区域开放交互。ObjMode15在服务端检查主人、队伍及任务资格；不能因为创建时中立模式留下的TARGETABLE清位而隐藏已经打开的门。此例外仅用于OperateFn15、原class59和mode1／2且目的地已知的蓝门，不放宽其他物件的目标资格。依据D2MOO `OBJECTS_InitObject`初始Selectable检查及`D2GAME_CreatePortalObject_6FD13DF0`／`OBJECTS_OperateFunction15_Portal`。
+普通物件按当前Objects.Selectable模式投影交互资格，蓝色回城门同时要求已收到目的地区域；ObjMode15在服务端检查主人、队伍及任务资格。不能把0x0E的字节7当成所有物件的UNITFLAG_TARGETABLE掩码：本机1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）RVA AE560把该字节作为参数，经29750／24CE0分派，249F0对非IsDoor物件读取Selectable[mode]；IsDoor分支24040在24120–24136按参数是否非零更新可选位。原版Host的中立艾尼弗斯树实际发送参数1，按位2判断会错误隐藏。客户端保留布尔参数诊断，只有IsDoor物件消费该参数；没有改写宿主物件模式或任务资格。D2MOO `ObjMode::sub_6FC752A0`提供调用链，但其直接发送UNITFLAG掩码的旧版转录不能覆盖本机参数语义。
 
-RemoteTown从真实物件／目标和原Selectable／TARGETABLE投影资格；SceneController提交靠近／0x13。神坛InteractType结合Shrines.Code与TBL ShrId显示真实名称，不本地授予效果。开箱状态取0x0E，掉落取真实物品通知，传送点取0x63及原服旅行位置；0x77属于玩家交易，不能当开箱回执。
+RemoteTown从真实物件／目标、原Selectable及上述门参数投影资格；SceneController提交靠近／0x13。神坛InteractType结合Shrines.Code与TBL ShrId显示真实名称，不本地授予效果。开箱状态取0x0E，掉落取真实物品通知，传送点取0x63及原服旅行位置；0x77属于玩家交易，不能当开箱回执。
 
 传送点OperateFn23在mode1／2保留点击例外，启动后衔接ON动画／灯光，详见[联网实现](../../modules/NETWORK.md#本批源码修正)；共用模式投影也更新原MPQ对象碰撞，不改副本模式或解锁。
 

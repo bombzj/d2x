@@ -12,6 +12,44 @@
 #include "content/world/object_mode.hpp"
 
 namespace d2x {
+Grid RemoteTown::navigationGrid(const OnlineView &online,std::optional<OnlineUnitKey> ignored) const {
+    Grid result;
+    if(!map_ || !view_.origin) return result;
+    const auto *terrain=&map_->grid;const auto origin=*view_.origin;
+    result.width=terrain->width;result.height=terrain->height;
+    auto presence=std::make_shared<std::map<std::pair<int,int>,uint16_t>>();
+    if(online.protocolProfile=="lod113c") for(const auto &[key,unit]:online.world.units) {
+        if(key==ignored || !unit.position || (key.type==0 && key.id==online.load.playerUnitId)) continue;
+        int size=0;uint16_t mask=0;
+        if(key.type==0 && !online.world.corpseOwners.contains(key.id) && unit.mode!=0 && unit.mode!=17) {
+            size=playerMovement.size;mask=0x80;
+        } else if(key.type==1 && unit.classId && !onlineMonsterCorpse(unit)) {
+            const auto row=monsterRows_.find(*unit.classId);
+            if(row==monsterRows_.end()) continue;
+            const auto ai=monsters_.value(row->second,"AI");
+            // The original idle S1 of these AIs is non-solid. Initial monster
+            // assignments also carry that mode, without a 0x0E nativeMode tag.
+            if(unit.mode==8 && !unit.actionSkill && (ai=="Vulture" || ai=="SandMaggot" || ai=="FrogDemon")) continue;
+            const auto shape=monsterSizeRows_.find(monsters_.value(row->second,"MonStatsEx"));
+            if(shape==monsterSizeRows_.end()) continue;
+            size=monsterSizes_.number(shape->second,"SizeX").value_or(0);mask=0x100;
+        }
+        const bool hireling=key.type==1 && online.world.hireling && online.world.hireling->id==key.id;
+        const auto pattern=nativeUnitCollisionPattern(size,hireling);
+        for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx) {
+            const auto bits=nativeCollisionFootprint(pattern,dx,dy,mask);
+            if(bits) (*presence)[{int(unit.position->x)-origin.x+dx,int(unit.position->y)-origin.y+dy}]|=bits;
+        }
+    }
+    // Ephemeral client query only: retain terrain/object authority, add the
+    // original cross/square sizes of already assigned living units/other players.
+    // No footprint is written into NativeMap or the replicated world.
+    result.collisionSample=[terrain,presence](int x,int y,EntityId target) {
+        const auto found=presence->find({x,y});
+        return uint16_t(terrain->nativeMovementMask(x,y,target)|(found==presence->end()?0:found->second));
+    };
+    return result;
+}
 RemoteTown::RemoteTown(Archives &a, bool reportAutomapRoomsPd2)
     : archives_(a), libraries_(a), objects_(a.read("data/global/excel/objects.txt")),
       monsters_(a.read("data/global/excel/monstats.txt")),
@@ -287,13 +325,11 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         const bool selectable=unit.mode && *unit.mode<8 &&
             (number("Selectable"+std::to_string(mode))!=0 ||
              (operation==23 && (mode==1 || mode==2)));
-        // Blue portals are created in neutral mode with TARGETABLE clear;
-        // opening them does not set that flag. Their current MPQ mode and
-        // destination identify the operation; ObjMode15 checks the owner,
-        // party and quest permission on the server.
-        const bool townPortal=operation==15 && *unit.classId==59 && unit.portalDestination &&
-            (mode==1 || mode==2);
-        if (!selectable || (operation!=23 && !townPortal && unit.objectTargetable==false)) continue;
+        // Retail D2Client 249F0 applies Selectable[mode] to ordinary objects.
+        // Only its IsDoor branch (24040) consumes the 0E boolean argument.
+        // Applying a server flag mask to every object hides an otherwise
+        // selectable Inifuss tree after its initial native 0E refresh.
+        if (!selectable || (number("IsDoor")!=0 && unit.objectTargetable==false)) continue;
         std::optional<OnlineMapInteraction> interaction;
         switch (operation) {
         case 8: case 16: case 18: case 29: case 61: case 66: case 71:
@@ -317,9 +353,20 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                 const auto shrine = strings_.find("ShrId" + std::to_string(*unit.objectInteractType));
                 if (!shrine.empty()) label = shrine;
             }
+            auto destination=unit.portalDestination?std::optional<uint16_t>{*unit.portalDestination}:std::nullopt;
+            // D2MOO Operate34: the authored palace portal does not need a
+            // dynamic portal-destination packet. Its original operator fixes
+            // the two levels; coordinates still come from this real assignment.
+            if(v.protocolProfile=="lod113c" && operation==34) {
+                const auto room=nativeMap_->clientRoom(unit.position->x,unit.position->y);
+                if(room) {
+                    const int level=nativeMap_->tiles().rooms().at(*room).level;
+                    if(level==54) destination=74;
+                    else if(level==74) destination=54;
+                }
+            }
             view_.mapTargets.push_back({key, *unit.position, *interaction,
-                std::string(label.empty() ? keyName : label), unit.portalDestination
-                    ? std::optional<uint16_t>{*unit.portalDestination} : std::nullopt,
+                std::string(label.empty() ? keyName : label), destination,
                 number("SizeX"), number("SizeY")});
         }
     }
@@ -327,7 +374,11 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
     for(const auto &entry:view_.mapTargets) {
         const auto room=nativeMap_->clientRoom(entry.position.x,entry.position.y);if(!room) continue;
         const auto level=uint16_t(nativeMap_->tiles().rooms().at(*room).level);
-        if(entry.interaction==OnlineMapInteraction::Exit && entry.destination)
+        const auto unit=v.world.units.find(entry.unit);
+        const auto object=unit!=v.world.units.end() && unit->second.classId?objectRows_.find(*unit->second.classId):objectRows_.end();
+        const bool fixedPortal=v.protocolProfile=="lod113c" && entry.interaction==OnlineMapInteraction::Portal &&
+            object!=objectRows_.end() && (unit->second.classId==60 || objects_.number(object->second,"OperateFn")==34);
+        if((entry.interaction==OnlineMapInteraction::Exit || fixedPortal) && entry.destination)
             knownConnections_[{level,*entry.destination}]=entry.position;
         if(entry.interaction==OnlineMapInteraction::Waypoint) knownWaypoints_[level]=entry.position;
     }
@@ -580,7 +631,7 @@ void RemoteTown::refreshNavigationCache() const {
                 for(int x=std::max(0,room.room.x-bounds.x);x<std::min(known.width,room.room.x+room.room.width-bounds.x);++x)
                     seen+=known.seen[size_t(y)*known.width+x]!=0;
         }
-        navigationRooms_.push_back({room.level,room.room.x*5,room.room.y*5,room.room.width*5,room.room.height*5,room.loaded,seen});
+        navigationRooms_.push_back({room.level,room.room.x*5,room.room.y*5,room.room.width*5,room.room.height*5,room.loaded,seen,room.near});
     }
     const int act=catalog_->level(*view_.area).act;
     for(const auto &[id,level]:catalog_->levels()) if(level.act==act) {
@@ -604,7 +655,15 @@ std::optional<OnlinePoint> RemoteTown::knownWaypointPosition(uint16_t area) cons
     const auto found=knownWaypoints_.find(area);return found==knownWaypoints_.end()?std::nullopt:std::optional{found->second};
 }
 const std::map<int,std::vector<int>> &RemoteTown::navigationConnections() const {
-    refreshNavigationCache();return navigationConnections_;
+    refreshNavigationCache();
+    // Remember only directions actually observed in this game. A remembered
+    // position guides reacquisition; it never authorizes an absent warp unit.
+    for(const auto &[edge,position]:knownConnections_) {
+        (void)position;
+        auto &destinations=navigationConnections_[edge.first];
+        if(std::find(destinations.begin(),destinations.end(),edge.second)==destinations.end()) destinations.push_back(edge.second);
+    }
+    return navigationConnections_;
 }
 uint64_t RemoteTown::navigationRevision() const {
     uint64_t revision=(gameGeneration_*0x100000001b3ULL+areaGeneration_)*0x100000001b3ULL;

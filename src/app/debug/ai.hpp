@@ -28,6 +28,7 @@ class DebugAi {
     bool active() const;
     bool hasPlan() const;
     bool controlsMovement() const;
+    bool controlsInventory() const;
     void manualInput(net::RealmSession &,DebugAutoWalk &,RemoteControl &,RemoteCombat &);
     std::optional<std::string> command(const nlohmann::json &,net::RealmSession &,RemoteTown &,
         DebugAutoWalk &,RemoteControl &,RemoteCombat &,RemoteInventory &);

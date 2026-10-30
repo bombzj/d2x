@@ -569,12 +569,15 @@ add_executable(d2x
   src/app/debug/ui_input.cpp src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp
   src/app/debug/server_snapshot.cpp
   src/app/debug/auto_walk.cpp
+  src/app/debug/chat_command.cpp
   src/app/debug/ai.cpp
   src/app/debug/ai_navigation.cpp
   src/app/debug/ai_actions.cpp
   src/app/debug/ai_mobility.cpp
   src/app/debug/ai_supplies.cpp
   src/app/debug/ai_quests.cpp
+  src/app/debug/ai_act_two.cpp
+  src/app/debug/ai_quest_items.cpp
   src/app/debug/ai_quest_actions.cpp
 )
 target_link_libraries(d2x PRIVATE d2x_presentation d2x_remote_client d2x_character_host d2x_hash nlohmann_json::nlohmann_json)

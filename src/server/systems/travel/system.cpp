@@ -140,6 +140,9 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (!prepared) return {prepared.status, {}};
     state_.transitions[actor.player] = {actor.area, found->destination, *prepared.value, area->generation, actor.sequence, found->id, found->position, {}};
     auto &mutablePlayer = ports_.players.players_.at(actor.player);
+    // Object operators such as TrapDoor16 also enter this ordinary tile warp.
+    // Bind their accepted command just like a direct Travel request.
+    mutablePlayer.locomotionSequence=actor.sequence;
     mutablePlayer.route = std::move(route); mutablePlayer.routeRunning = mutablePlayer.running;
     mutablePlayer.pathStep.reset();
     mutablePlayer.movementTarget.reset();mutablePlayer.movementArrival.reset();

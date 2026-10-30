@@ -293,6 +293,18 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         }
         return result;
     }
+    if(rule.operation==16) {
+        // D2MOO ObjMode::OperateFunction16_TrapDoor: first click opens
+        // immediately; a later click uses the first real tile in its room.
+        if(object.mode==0) return setNativeMode(object.id,2,actor.tick);
+        if(object.mode!=2) return {DomainStatus::Applied,std::monostate{}};
+        const auto *room=area->definition.activation.room(object.position);
+        if(!room) return {DomainStatus::Stale,{}};
+        for(const auto &exit:area->definition.exits)
+            if(area->definition.activation.room(exit.position)==room)
+                return ports_.travel.execute(actor,{travel::Kind::Exit,{exit.id,0,5},{}});
+        return {DomainStatus::Unavailable,{}};
+    }
     if(rule.operation==18) {
         // ObjMode::OBJECTS_OperateFunction18_SecretDoor only opens neutral
         // objects, clears TARGETABLE and frees collision before ENDANIM.

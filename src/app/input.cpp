@@ -29,7 +29,7 @@ uint16_t controlKey(int key) {
 Viewport currentViewport() {
     return {1.f, {0.f, 0.f}};
 }
-FrameInput pollInput(const Viewport &viewport, const ControlBindings &bindings) {
+FrameInput pollInput(const Viewport &viewport, const ControlBindings &bindings,bool chatInputOpen) {
     FrameInput input;
     const auto mouse = GetMousePosition();
     input.mouse = {mouse.x, mouse.y};
@@ -69,9 +69,15 @@ FrameInput pollInput(const Viewport &viewport, const ControlBindings &bindings) 
         input.entryDelete = IsKeyPressed(KEY_DELETE);
         input.entryStep = int(IsKeyPressed(KEY_RIGHT)) - int(IsKeyPressed(KEY_LEFT));
         input.entrySelectAll = input.control && IsKeyPressed(KEY_A);
+        input.entryPaste = chatInputOpen && input.control && !input.alt && IsKeyPressed(KEY_V) &&
+            !input.entryComposing && !input.entryCompositionCommitted;
+        if(input.entryPaste) {
+            if(const auto *clipboard=GetClipboardText()) input.entryPasteText=clipboard;
+        }
         input.pageDelta = int(IsKeyPressed(KEY_PAGE_DOWN)) - int(IsKeyPressed(KEY_PAGE_UP));
         input.quantityDelta = int(input.wheel) + int(IsKeyPressed(KEY_UP)) - int(IsKeyPressed(KEY_DOWN));
         for (int character = GetCharPressed(); character; character = GetCharPressed()) {
+            if(input.entryPaste) continue; // Drain the shortcut's character event without inserting a second 'v'.
             if(character>=32) input.entryUnicode+=char32_t(character);
             if (character >= 32 && character < 127) {
                 input.entryText += char(character);

@@ -113,7 +113,8 @@ std::vector<ChatView::Line> ChatView::wrap(const Line &glyphs, float available) 
     return result;
 }
 void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &account) {
-    if (!ready_ || (sequence_ == social.chatSequence && accountSequence_ == account.chatSequence)) return;
+    if (!ready_ || (!diagnosticsDirty_ && sequence_ == social.chatSequence && accountSequence_ == account.chatSequence)) return;
+    diagnosticsDirty_=false;
     sequence_ = social.chatSequence;
     accountSequence_ = account.chatSequence;
     const auto oldRows = rows_.size();
@@ -226,6 +227,10 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
         const auto glyphs=plain(message,notice.color);
         messages_.push_back({notice.sequence*2,notice.receivedMilliseconds,glyphs,wrap(glyphs,body().width)});
     }
+    for(const auto &message:diagnostics_) {
+        auto displayed=message;displayed.lines=wrap(displayed.glyphs,body().width);
+        messages_.push_back(std::move(displayed));
+    }
     std::sort(messages_.begin(),messages_.end(),[](const auto &a,const auto &b){
         return a.receivedMilliseconds!=b.receivedMilliseconds?a.receivedMilliseconds>b.receivedMilliseconds:a.sequence>b.sequence;
     });
@@ -241,6 +246,13 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
         scroll_ += added;
     }
     scroll_ = std::min(scroll_, maximumScroll());
+}
+void ChatView::diagnostic(std::string_view text,bool error) {
+    const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+    diagnostics_.push_back({(uint64_t{1}<<63)|++diagnosticSequence_,now,plain("[Debug] "+std::string(text),error?1:4),{}});
+    if(diagnostics_.size()>64) diagnostics_.erase(diagnostics_.begin());
+    diagnosticsDirty_=true;
 }
 Rectangle ChatView::bounds() const { return {8 * hudScale(), 30 * hudScale(), W - 16 * hudScale(), H - 124 * hudScale()}; }
 Rectangle ChatView::body() const {
@@ -279,6 +291,23 @@ ChatIntent ChatView::handle(const FrameInput &input, bool canOpen) {
     if (inputOpen_) {
         const bool editing=!input.entryComposing && !input.entryCompositionCommitted;
         if (editing && input.escape) { inputOpen_ = false; draft_.clear(); caret_ = 0; return {true, {}}; }
+        if(input.entryPaste) {
+            if(!editing) return {true,{}};
+            std::string pasted;
+            for(size_t index=0;index<input.entryPasteText.size();++index) {
+                const auto c=input.entryPasteText[index];
+                if(c=='\r' || c=='\n' || c=='\t') {
+                    pasted+=' ';
+                    if(c=='\r' && index+1<input.entryPasteText.size() && input.entryPasteText[index+1]=='\n') ++index;
+                } else pasted+=c;
+            }
+            auto candidate=draft_;candidate.insert(caret_,pasted);
+            const auto encoded=net::encodeChatText(candidate);
+            if(!encoded) return {true,{},"Clipboard text contains unsupported chat characters or exceeds the chat limit."};
+            if(encoded->size()>255) return {true,{},"Chat is limited to 255 native text bytes."};
+            draft_=std::move(candidate);caret_+=pasted.size();
+            return {true,{}}; // Pasting never submits, including a simultaneous Enter.
+        }
         std::string entered=input.entryText;
         if(!input.entryUnicode.empty()) {
             entered.clear();
