@@ -11,12 +11,13 @@
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 namespace d2x::server::travel {
 namespace {
 std::array<NativeFootprint,2> portalFootprints(const AreaStore &areas,const Portal &portal) {
     std::array<NativeFootprint,2> result{};
     if(portal.rule.collision[size_t(portal.isOpened(false)?2:1)]) result[0]=areas.rectangleFootprint(portal.field,portal.fieldPosition,portal.rule.width,portal.rule.height,portal.rule.collisionMask);
-    if(portal.rule.collision[size_t(portal.isOpened(true)?2:1)]) result[1]=areas.rectangleFootprint(portal.town,portal.townPosition,portal.rule.width,portal.rule.height,portal.rule.collisionMask);
+    if(portal.townId && portal.rule.collision[size_t(portal.isOpened(true)?2:1)]) result[1]=areas.rectangleFootprint(portal.town,portal.townPosition,portal.rule.width,portal.rule.height,portal.rule.collisionMask);
     return result;
 }
 template<class Key>
@@ -65,6 +66,7 @@ std::optional<std::pair<RegionId,Vec>> System::nativePortalPosition(EntityId id)
     return {};
 }
 std::optional<Vec> System::portalPosition(const ActorContext &actor,EntityId id) const {
+    if(!id) return {};
     for(const auto &[owner,portal]:state_.portals) { (void)owner;
         if(portal.field==actor.area && portal.fieldId==id) return portal.fieldPosition;
         if(portal.town==actor.area && portal.townId==id) return portal.townPosition;
@@ -227,6 +229,26 @@ DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext 
         else {const int first=int(limitedRandom(seed,3));for(int offset=0;offset<3;++offset) if(!exists(133+(first+offset)%3)) {level=133+(first+offset)%3;break;}}
     }
     if(!level || (kind!=SpecialPortalKind::Shrine && exists(level))) return {DomainStatus::Conflict,{}};
+    if(kind==SpecialPortalKind::ActFive && (!p->rules.skills || !p->rules.skills->pd2)) {
+        // A4Q2_Callback11 allocates only Objects566 beside the actual Tyrael.
+        // It neither loads Harrogath nor creates a return portal there.
+        std::optional<Vec> npcPosition;
+        for(const auto &npc:origin->definition.npcs) if(npc.rule.code=="tyrael2")
+            if(const auto unit=ports_.spatial.locate(npc.id,1);unit && unit->first==actor.area) {npcPosition=unit->second;break;}
+        if(!npcPosition) return {DomainStatus::Unavailable,{}};
+        const auto center=source.value_or(*npcPosition+Vec{5,0});const auto npcGlobal=*npcPosition+origin->definition.origin;
+        const auto global=center+origin->definition.origin;
+        const auto room=ports_.areas.roomAtPosition(actor.area,*npcPosition,int(npcGlobal.x),int(npcGlobal.y));
+        if(!room) return {DomainStatus::Unavailable,{}};
+        const auto free=ports_.areas.nativeQuestFreePosition(*room,int(global.x),int(global.y),2,0x400,12,ports_.spatial.nativeCollisionSample());
+        if(!free || free->room.area!=actor.area) return {DomainStatus::Unavailable,{}};
+        if(!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity,{}};
+        const auto id=ports_.items.reserveIdentity(NativeUnitType::Object);
+        SpecialPortalPlan plan{state_.specialPortals};
+        Portal portal{{},{},id,{},{},actor.area,RegionId(level),free->position,{},*rule,std::numeric_limits<uint64_t>::max(),1,false,true};
+        portal.fieldRoom=free->room;
+        plan.next.emplace(id,std::move(portal));return {DomainStatus::Applied,std::move(plan)};
+    }
     return prepareWorldPortal(actor.area,level,actor.tick,source.value_or(p->position),*rule,blue,false,kind==SpecialPortalKind::Tyrael);
 }
 DomainResult<SpecialPortalPlan> System::prepareNativePermanentPortal(RegionId region,Vec position,int destination,uint64_t tick,int definition) {
@@ -290,7 +312,7 @@ DomainResult<SpecialPortalPlan> System::prepareWorldPortal(RegionId region,int l
             const Vec point{std::floor(center.x)+float(x),std::floor(center.y)+float(y)};
             if(!area.definition.collision.walkable(point,playerMovement)) continue;
             bool occupied=false;
-            for(const auto &[level,portal]:state_.specialPortals) {(void)level;const auto at=portal.field==area.definition.id?std::optional{portal.fieldPosition}:portal.town==area.definition.id?std::optional{portal.townPosition}:std::nullopt;if(at && (*at-point).length()<2) occupied=true;}
+            for(const auto &[level,portal]:state_.specialPortals) {(void)level;const auto at=portal.field==area.definition.id?std::optional{portal.fieldPosition}:portal.townId && portal.town==area.definition.id?std::optional{portal.townPosition}:std::nullopt;if(at && (*at-point).length()<2) occupied=true;}
             for(const auto &[id,item]:ports_.items.read().world.items) {(void)id;if(const auto *ground=std::get_if<GroundLocation>(&item.location);ground && ground->region==area.definition.id && (ground->position-point).length()<1) occupied=true;}
             if(!occupied) return point;
         }

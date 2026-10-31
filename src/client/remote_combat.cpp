@@ -416,6 +416,7 @@ bool RemoteCombat::submit(OnlineCombatCommand command,std::optional<Vec> inputOr
         else if (world.playerBaseSkillsAssigned) facts.baseRank = 0;
         if (const auto rank = world.playerSkills.find(command.skill); rank != world.playerSkills.end())
             facts.effectiveRank = rank->second;
+        for(const auto &skill:catalog_) if(skill.id==command.skill) {facts.effectiveRank=skill.level;break;}
         if(command.owner!=UINT32_MAX) {
             inventory_.update(session_.read());const auto charges=nativeChargedSkills(session_.read(),inventory_.read(),tables_.at("setitems"));
             const auto source=std::find_if(charges.begin(),charges.end(),[&](const auto &c){return c.item.id.value==command.owner && c.skill==command.skill && c.charges>0;});
@@ -515,6 +516,13 @@ bool RemoteCombat::submit(OnlineCombatCommand command,std::optional<Vec> inputOr
     }
     if (!session_.submit_combat(command)) return reject(session_.read().error ? session_.read().error->message : "Combat request is unavailable");
     reason_.clear(); return true;
+}
+void RemoteCombat::applyObservedSkillRanks() {
+    if(session_.read().protocolProfile!="lod113c" || !skillRankResolver_) return;
+    const auto ranks=skillRankResolver_();if(!ranks) return;
+    for(auto &entry:catalog_) if(const auto rank=ranks->find(entry.id);rank!=ranks->end() && rank->second>=0 && rank->second<=UINT16_MAX) {
+        entry.level=uint16_t(rank->second);entry.bonus=uint16_t(std::max(0,rank->second-int(entry.base)));
+    }
 }
 void RemoteCombat::update() {
     const auto &view = session_.read();
@@ -636,5 +644,8 @@ void RemoteCombat::update() {
         if(key.type==1) if(const auto changed=monsterClass(unit);changed && changed!=unit.classId)
             changedClasses_.insert_or_assign(key,std::pair{unit.assignmentRevision,*changed});
     }
+    // Decode this replica's states before querying its equipment projection.
+    // The provider is read-only and never calls update() or submits input.
+    applyObservedSkillRanks();
 }
 }

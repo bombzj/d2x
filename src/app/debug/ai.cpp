@@ -40,7 +40,8 @@ DebugAi::Impl::Definitions::Definitions(Archives &a):
     skills(a.read("data/global/excel/skills.txt")),levels(a.read("data/global/excel/levels.txt")),
     misc(a.read("data/global/excel/misc.txt")),weapons(a.read("data/global/excel/weapons.txt")),armor(a.read("data/global/excel/armor.txt")),
     types(a.read("data/global/excel/itemtypes.txt")),states(a.read("data/global/excel/states.txt")),npcs(a.read("data/global/excel/npc.txt")),
-    superuniques(a.read("data/global/excel/superuniques.txt")) {loadPotions();}
+    superuniques(a.read("data/global/excel/superuniques.txt")),missiles(a.read("data/global/excel/missiles.txt")),
+    difficulties(a.read("data/global/excel/difficultylevels.txt")) {loadPotions();loadCombatObservations();}
 uint16_t DebugAi::Impl::Definitions::area(const Json &v) const {
     const auto id=tableId(levels,v,"Name","Id");
     if(id<1 || id>136) throw std::invalid_argument("AI travel currently supports ordinary retail areas 1-136");
@@ -113,6 +114,10 @@ std::vector<DebugAi::Impl::Goal> DebugAi::Impl::parse(const Json &request) {
             list=Json::array();
             for(const auto quest:{"golden-bird","blade-of-the-old-religion","lam-esens-tome","khalims-will","blackened-temple","guardian"})
                 list.push_back({{"action","quest"},{"quest",quest}});
+        } else if(scenario=="act4") {
+            list=Json::array();
+            for(const auto quest:{"fallen-angel","hells-forge","terrors-end"})
+                list.push_back({{"action","quest"},{"quest",quest}});
         } else if(scenario=="tools-of-the-trade") {
             definitions->malusSource();
             // D2MOO A1Q3: Malus is created by Objects Operate21, not a Smith drop.
@@ -182,6 +187,7 @@ DebugAi::Impl::CombatPolicy DebugAi::Impl::parseCombat(const Json &j) const {
         }
     }
     p.scope=j.value("scope",std::string("defensive"));
+    p.staticField=j.value("staticField",true);p.avoidHazards=j.value("avoidHazards",true);
     if(p.scope!="defensive" && p.scope!="clear" && p.scope!="objective") throw std::invalid_argument("combat.scope must be defensive, clear or objective");
     if(j.contains("aura")) {
         p.aura=definitions->skill(j.at("aura"));bool aura=false;
@@ -237,7 +243,7 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
         {"combatPolicy",{{"enabled",policy.enabled},{"skill",policy.skill?Json(*policy.skill):Json("Attack")},{"range",policy.range},
             {"fallbackSkills",policy.fallbackSkills},{"noProgressSeconds",policy.noProgressSeconds},
             {"stallTimeoutSeconds",policy.stallTimeoutSeconds},{"retreatLifePercent",policy.retreatLifePercent},{"lifeDropPercent",policy.lifeDropPercent},
-            {"scope",policy.scope},
+            {"scope",policy.scope},{"staticField",policy.staticField},{"avoidHazards",policy.avoidHazards},
             {"aura",policy.aura?Json(*policy.aura):Json("auto")},
             {"engageRadius",policy.engage},{"crowdRadius",policy.radius},{"crowdCount",policy.crowd},{"retreatDistance",policy.retreat}}},
         {"pending",{{"sourceInteraction",objectIssued},{"pickup",pickupIssued},{"portal",portalIssued},{"portalUsed",portalUsed}}},
@@ -245,7 +251,7 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"waitingForPosition",mobilityTarget.has_value()}}},
         {"supplies",{{"enabled",supplyPolicy.enabled},{"buy",supplyPolicy.buy},{"returnWhenEmpty",supplyPolicy.returnWhenEmpty},
             {"lifePercent",supplyPolicy.lifePercent},{"manaPercent",supplyPolicy.manaPercent},{"criticalLifePercent",supplyPolicy.criticalLifePercent},
-            {"healthCount",supplyPolicy.healthCount},{"manaCount",supplyPolicy.manaCount},{"intervalMs",supplyPolicy.intervalMs},
+            {"healthCount",supplyPolicy.healthCount},{"manaCount",supplyPolicy.manaCount},{"fillPortalBook",supplyPolicy.fillPortalBook},{"intervalMs",supplyPolicy.intervalMs},
             {"stage",std::array{"none","to-town","shop","return"}[size_t(supplyStage)]},
             {"returnArea",supplyOrigin?Json(*supplyOrigin):Json(nullptr)},
             {"pending",potionRequest?Json{{"item",potionRequest->item},{"code",potionRequest->code},{"buying",potionRequest->buying},
@@ -255,7 +261,7 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"quest",goals[cursor].quest},{"step",questRun.step},{"steps",goals[cursor].steps.size()},
             {"mode",goals[cursor].requirements.empty()?"steps":"conditions"},
             {"condition",questRun.step<goals[cursor].requirements.size()?Json(goals[cursor].requirements[questRun.step].name):Json(nullptr)},
-            {"action",questRun.step<goals[cursor].steps.size()?Json(std::array{"talk","clear","hunt","acquire","read-scroll","stones","operate","portal","return-town","imbue","act-travel","travel","use-item","combine","submit-staff","search-drop","equip-weapon","smash-orb"}[size_t(goals[cursor].steps[questRun.step].action)]):Json(nullptr)},
+            {"action",questRun.step<goals[cursor].steps.size()?Json(std::array{"talk","clear","hunt","acquire","read-scroll","stones","operate","portal","return-town","imbue","act-travel","travel","use-item","combine","submit-staff","search-drop","equip-weapon","smash-orb","smash-forge"}[size_t(goals[cursor].steps[questRun.step].action)]):Json(nullptr)},
             {"pending",questRun.pending?Json{{"action",unsigned(questRun.pending->action)},{"item",questRun.pending->item},
                 {"sequence",questRun.pending->sequence},{"unit",questRun.pending->unit?Json(questRun.pending->unit->id):Json(nullptr)}}:Json(nullptr)},
             {"clearSweeps",questRun.sweeps},{"materialPhase",questRun.materialPhase}}:Json(nullptr)},
@@ -266,7 +272,7 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"target",interest?Json{{"x",interest->x},{"y",interest->y}}:Json(nullptr)}}},
         {"pickupApproachesTried",pickupApproaches.size()},
         {"goalExecutionRemainingMs",std::max<int64_t>(0,std::chrono::duration_cast<std::chrono::milliseconds>(goalDeadline-Clock::now()).count())},
-        {"combatFeedback",combatDiagnostics},
+        {"combatFeedback",combatDiagnostics},{"hazardFeedback",hazardDiagnostics},
         {"localTravel",{{"links",std::move(localLinks)},{"transfersWithoutDiscovery",padTransfersWithoutDiscovery},
             {"pending",localPad?Json{{"unit",localPad->unit.id},{"area",localPad->area},{"waiting",localPad->waiting},
                 {"source",{localPad->source.x,localPad->source.y}},{"discontinuityBefore",localPad->discontinuity},
@@ -287,12 +293,13 @@ void DebugAi::Impl::finish(std::string value,std::string detail,Context &c) {
     stop(c.walk,c.control,c.combat);state=std::move(value);reason=std::move(detail);phase.clear();note(state,reason);
 }
 void DebugAi::Impl::resetStep() {
+    submissionWaits.clear();
     localPad.reset();
     backtrackAttempts.clear();
     observedRoomPassages.clear();
     viewpointAttempts.clear();
     searchDiagnostics=nullptr;approachDiagnostics=nullptr;mobilityDiagnostics=nullptr;travelDiagnostics=nullptr;
-    combatRun={};combatDiagnostics=nullptr;
+    combatRun={};combatDiagnostics=nullptr;hazardDodge.reset();hazardDiagnostics=nullptr;
     phase.clear();reason.clear();target.reset();targetAssignment=0;visited.clear();frontierAttempts.clear();checkedHints.clear();unavailableRooms.clear();exploring.reset();interest.reset();searchPosition.reset();searchRetry={};
     walkIntent=nullptr;approachHint.reset();approachFrontier.reset();approachDetour.reset();operatedDoors.clear();pendingDoor.reset();doorDeadline={};
     pendingWaypoint.reset();closeWaypoint.reset();waypointDeadline={};
@@ -458,6 +465,9 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
     const auto now=Impl::Clock::now();const auto &view=session.read();
     s.inputBlocked=blocked || !s.active() || !position || !town.read().nativeMapReady || !town.read().area || view.stage!=OnlineStage::ProtocolReady;
     const auto suspended=s.executionClock.sample(now,s.inputBlocked);
+    for(auto &[owner,pending]:s.submissionWaits) {
+        (void)owner;pending.deadline+=suspended;pending.retryAt+=suspended;
+    }
     if(s.supplyStage==Impl::SupplyStage::None) s.goalDeadline+=suspended;
     else s.supplyDeadline+=suspended;
     const Vec observed=position.value_or(view.world.playerPosition?Vec{float(view.world.playerPosition->x),float(view.world.playerPosition->y)}:Vec{});
@@ -485,6 +495,7 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
         if(onlinePlayerDead(view.world)) {s.finish("failed","Player died; AI never fabricates resurrection",c);return;}
         if(view.world.playerTrade.active()) {s.finish("cancelled","Player trade took control",c);return;}
         if(s.area!=town.read().area || s.areaGeneration!=view.world.areaGeneration) {
+            s.hazardDodge.reset();s.hazardDiagnostics=nullptr;
             s.backtrackAttempts.clear();
             s.viewpointAttempts.clear();
             s.cancelWalk(c);s.area=town.read().area;s.areaGeneration=view.world.areaGeneration;s.visited.clear();s.frontierAttempts.clear();s.exploring.reset();
@@ -509,6 +520,13 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
             {"mana",view.world.mana?Impl::Json(*view.world.mana):Impl::Json(nullptr)},
             {"displayMaxLife",supplies.maxLife?Impl::Json(*supplies.maxLife):Impl::Json(nullptr)},
             {"displayMaxMana",supplies.maxMana?Impl::Json(*supplies.maxMana):Impl::Json(nullptr)}};
+        if(s.supplyPolicy.enabled) {
+            const auto stock=s.portalStock(c);
+            s.supplyVitals["portalBooks"]=stock.books;s.supplyVitals["portalPages"]=stock.pages;
+            s.supplyVitals["portalCapacity"]=stock.capacity;s.supplyVitals["portalStockKnown"]=stock.known;
+            s.supplyVitals["healthPotions"]=s.potionCount(c,Impl::PotionKind::Life);
+            s.supplyVitals["manaPotions"]=s.potionCount(c,Impl::PotionKind::Mana);
+        }
         s.mobilityHold=false;
         const auto &goal=s.goals[s.cursor];
         s.observeActions(c);s.describeActions(c);
@@ -546,6 +564,7 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
             s.closeWaypoint.reset();s.describeActions(c);return;
         }
         if(s.canInput(c,Owner::Potion,DebugItem) && s.drink(c)) {s.describeActions(c);return;}
+        if(s.canInput(c,Owner::Combat,DebugMotion|DebugSkill) && s.avoidHazards(c)) {s.describeActions(c);return;}
         const auto leaf=s.questLeaf(goal);
         if(s.canInput(c,Owner::Supply,DebugAllInputs) && s.autoSupply(c,leaf)) {s.describeActions(c);return;}
         if(s.canInput(c,Owner::Combat,DebugMotion|DebugSkill) && ((leaf.kind==Impl::Kind::ReturnTown || leaf.kind==Impl::Kind::Restock)?

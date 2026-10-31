@@ -6,7 +6,7 @@ namespace d2x {
 bool DebugAi::Impl::questItemRequest(Context &c,OnlineItemCommand command,QuestPending::Action action,std::string event) {
     if(command.action!=OnlineItemAction::Use && !settleItemInput(c)) return false;
     const uint32_t item=command.item;
-    if(!c.inventory.submit(c.session,command)) {wait("quest-item-request",c.inventory.reason());return false;}
+    if(!submitItem(c,command,"quest-item-request")) return false;
     QuestPending p;p.action=action;p.item=item;
     if(c.session.read().world.itemRequest) p.sequence=c.session.read().world.itemRequest->sequence;
     p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;

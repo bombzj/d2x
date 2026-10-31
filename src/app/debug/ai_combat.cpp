@@ -53,7 +53,16 @@ void DebugAi::Impl::observeCombat(Context &c) {
 bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     const auto &view=c.session.read();const auto now=Clock::now();
     if(!policy.enabled || c.town.read().town || view.world.npcRequested || view.world.waypointSource) return false;
-    std::erase_if(bypassedThreats,[&](const auto &entry){return now>=entry.second;});
+    std::erase_if(bypassedThreats,[&](const auto &entry) {
+        const auto unit=view.world.units.find(entry.first.first);
+        if(unit==view.world.units.end() || unit->second.assignmentRevision!=entry.first.second || onlineMonsterCorpse(unit->second)) return true;
+        // Elapsed time alone cannot repair the same failed attack angle.
+        // Let navigation advance before another optional engagement, or retry
+        // when the actual assigned target has moved to a different position.
+        return now>=entry.second.retryAt && (((c.position-entry.second.observer).length()>=8 &&
+            (c.position-entry.second.target).length()>policy.engage+policy.retreat) ||
+            (unit->second.position && (position(*unit->second.position)-entry.second.target).length()>=4));
+    });
     const auto *map=c.town.map();const auto origin=c.town.read().origin;
     const Vec offset=origin?position(*origin):Vec{};
     const auto clearLine=[&](Vec from,Vec to) {
@@ -67,7 +76,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     std::vector<OnlineUnit> enemies;std::optional<OnlineUnit> chosen;float nearest=float(policy.engage);
     for(const auto &[key,unit]:view.world.units) {
         if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false) ||
-            bypassedThreats.contains({key,unit.assignmentRevision})) continue;
+            (!clearing && (!objective || objective->key!=key) && bypassedThreats.contains({key,unit.assignmentRevision}))) continue;
         const float distance=(position(*unit.position)-c.position).length();
         const bool visible=clearLine(c.position,position(*unit.position));
         if(distance<=policy.engage && (visible || distance<=policy.radius)) enemies.push_back(unit);
@@ -96,11 +105,30 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         return false;
     }
     const bool required=clearing || (goal.kind==Kind::Hunt && objective && chosen->key==objective->key);
+    bool boss=false;
+    if(const auto id=c.combat.monsterClass(*chosen))
+        if(const auto row=findCompiledMonsterRow(definitions->monsters,*id)) boss=definitions->monsters.number(*row,"boss").value_or(0)!=0;
+    unsigned staticRank=0;bool learnedStatic=false;
+    for(const auto &entry:c.combat.skills()) if(entry.id==definitions->staticFieldSkill) {
+        staticRank=entry.level;learnedStatic=entry.classSkill && entry.base>0;
+    }
+    const auto staticRange=definitions->staticRadius(staticRank);
+    std::optional<int> staticStop;
+    if(view.load.difficulty && *view.load.difficulty<definitions->difficulties.rows().size())
+        if(const auto floor=definitions->difficulties.number(*view.load.difficulty,"StaticFieldMin");floor && *floor>=0 && *floor<90)
+            staticStop=std::max(25,*floor+5);
     if(combatTarget!=chosen->key || combatRun.assignment!=chosen->assignmentRevision || combatRun.skills.empty()) {
         releaseCombat(c);cancelWalk(c);combatTarget=chosen->key;combatRun={};
         combatRun.assignment=chosen->assignmentRevision;combatRun.progressAt=combatRun.strategyAt=now;
         combatRun.bestLife=combatRun.lastLife=life(*chosen);combatRun.hitRevision=chosen->hitRevision;
-        combatRun.skills.push_back(policy.skill.value_or(definitions->skill("Attack")));
+        const auto primary=policy.skill.value_or(definitions->skill("Attack"));const auto health=life(*chosen);
+        if(policy.staticField && boss && learnedStatic && staticRank>=5 && staticRange && *staticRange>3 && staticStop && health &&
+            int(*health)*100/127>=std::max(60,*staticStop+10) && primary!=definitions->staticFieldSkill &&
+            knownSkill(c,definitions->staticFieldSkill)) {
+            combatRun.skills.push_back(definitions->staticFieldSkill);combatRun.staticOpening=true;
+            note("static-field-opening",std::to_string(staticRank)+" effective ranks / radius "+std::to_string(*staticRange));
+        }
+        combatRun.skills.push_back(primary);
         for(const auto skill:policy.fallbackSkills) if(std::find(combatRun.skills.begin(),combatRun.skills.end(),skill)==combatRun.skills.end())
             combatRun.skills.push_back(skill);
         if(travelPhase==TravelPhase::CrossWait && !legUnit) {travelPhase=TravelPhase::Route;legDestination.reset();}
@@ -124,9 +152,6 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         uint16_t peak=*view.world.life;for(const auto &sample:combatLifeSamples) peak=std::max(peak,sample.life);
         lossPercent=int(uint64_t(peak-*view.world.life)*100/unsigned(*combatMaxLife));
     }
-    bool boss=false;
-    if(const auto id=c.combat.monsterClass(*chosen))
-        if(const auto row=findCompiledMonsterRow(definitions->monsters,*id)) boss=definitions->monsters.number(*row,"boss").value_or(0)!=0;
     combatDiagnostics={{"target",{{"type",chosen->key.type},{"id",chosen->key.id},{"assignment",run.assignment},
         {"position",{chosen->position->x,chosen->position->y}},{"life",run.lastLife?Json(*run.lastLife):Json(nullptr)},
         {"bestLife",run.bestLife?Json(*run.bestLife):Json(nullptr)}}},
@@ -136,7 +161,9 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         {"mana",view.world.mana?Json(*view.world.mana):Json(nullptr)},{"healingPotions",healing},{"manaPotions",manaPotions},
         {"closeEnemies",close},{"bossFromTable",boss},{"skillIndex",run.skillIndex},{"skills",run.skills},
         {"casts",run.casts},{"noNetProgressMs",std::chrono::duration_cast<std::chrono::milliseconds>(now-run.progressAt).count()},
-        {"attempts",run.attempts},{"obstacle",run.obstacle},{"status","assess"}};
+        {"attempts",run.attempts},{"obstacle",run.obstacle},{"status","assess"},
+        {"staticFieldRank",staticRank},{"staticFieldRadius",staticRange?Json(*staticRange):Json(nullptr)},
+        {"staticFieldStopPercent",staticStop?Json(*staticStop):Json(nullptr)}};
     const auto obstruct=[&](std::string detail) {
         if(!run.lastLife) detail+="; target life feedback unavailable";
         combatDiagnostics["status"]="blocked";combatDiagnostics["obstacle"]=detail;combatDiagnostics["attempts"]=run.attempts;
@@ -145,7 +172,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         // observations and the actual scene; never skip a required kill.
         if(required) throw std::runtime_error("Combat blocked on assigned unit "+std::to_string(chosen->key.id)+": "+detail+
             "; obstruction, misses, recovery or insufficient feedback remain possible");
-        bypassedThreats[{chosen->key,chosen->assignmentRevision}]=now+std::chrono::seconds(10);
+        bypassedThreats[{chosen->key,chosen->assignmentRevision}]={now+std::chrono::seconds(10),c.position,targetPosition};
         note("unproductive-threat-bypassed",detail);combatTarget.reset();retreatPoint.reset();return false;
     };
     if(now-run.progressAt>=std::chrono::seconds(policy.stallTimeoutSeconds))
@@ -153,7 +180,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     if(retreatPoint) {
         if(walkState(c)!="failed" && now<retreatUntil && (position(*retreatPoint)-c.position).length()>2) {
             combatDiagnostics["status"]="retreat";wait("retreat","Following the known safe retreat while observing life and supplies");
-            walkPoint(c,*retreatPoint);return true;
+            walkPoint(c,*retreatPoint);mobility(c);return true;
         }
         if(walkState(c)=="failed") note("retreat-unavailable",c.walk.snapshot().value("reason",std::string{}));
         cancelWalk(c);retreatPoint.reset();
@@ -193,7 +220,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         if(safe) {
             releaseCombat(c);cancelWalk(c);run.reposition.reset();retreatPoint=safe;retreatUntil=now+std::chrono::seconds(2);
             combatDiagnostics["status"]="retreat";note("retreat-started",lowLife?"low life":falling?"observed life loss":scarce?"single threat and scarce healing":"crowd");
-            walkPoint(c,*safe);return true;
+            walkPoint(c,*safe);mobility(c);return true;
         }
         run.obstacle="survival pressure with no safe known retreat";combatDiagnostics["obstacle"]=run.obstacle;
         if(lifePercent>=0 && lifePercent<=supplyPolicy.criticalLifePercent && !healing) return obstruct(run.obstacle);
@@ -204,7 +231,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         const bool failed=!reached && (state=="failed" || state=="completed" || now>=run.approachUntil);
         if(!failed && !reached) {
             if(!c.walk.active()) walkPoint(c,*run.reposition);
-            combatDiagnostics["status"]="reposition";wait("combat-reposition","Changing an observed attack angle through a complete known path");return true;
+            combatDiagnostics["status"]="reposition";wait("combat-reposition","Changing an observed attack angle through a complete known path");mobility(c);return true;
         }
         run.obstacle=failed?"attack position was not reached":"new attack position reached; awaiting effect";
         run.reposition.reset();cancelWalk(c);run.strategyAt=failed?now-window:now;
@@ -217,13 +244,18 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         run.obstacle=std::move(cause);note("combat-strategy-next",run.obstacle);
         combatDiagnostics["skillIndex"]=run.skillIndex;combatDiagnostics["attempts"]=run.attempts;combatDiagnostics["obstacle"]=run.obstacle;
     };
+    if(run.staticOpening && run.skillIndex==0 && staticStop && run.lastLife && int(*run.lastLife)*100/127<=*staticStop) {
+        nextSkill("Static Field health threshold observed; continuing with the configured damage attacks");
+        run.skills.erase(run.skills.begin());--run.skillIndex;
+        run.staticOpening=false;run.triedPositions.clear();
+    }
     std::optional<size_t> skillRow;
     const auto qualification=[&](uint16_t skill) {
         std::string unavailable;
         skillRow.reset();for(size_t row=0;row<definitions->skills.rows().size();++row)
             if(definitions->skills.number(row,"Id")==skill) {skillRow=row;break;}
         if(!skillRow || !knownSkill(c,skill,bool(aura))) unavailable="skill rank / hand / original table unavailable";
-        else if(!c.combat.skillTargetEligible(*chosen,skill)) unavailable="native target eligibility currently rejects this skill";
+        else if(skill!=definitions->staticFieldSkill && !c.combat.skillTargetEligible(*chosen,skill)) unavailable="native target eligibility currently rejects this skill";
         else if(c.supplies && c.supplies->skillUsable) {
             if(const auto usable=c.supplies->skillUsable(skill);usable && !*usable) unavailable="normal character projection reports unusable skill (resource / equipment / state)";
         }
@@ -247,7 +279,8 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         wait("combat-resources","Rechecking actual skill qualification and resources before declaring this target blocked");return true;
     }
     const uint16_t skill=run.skills[run.skillIndex];const auto row=*skillRow;
-    const int range=skill==definitions->skill("Attack") || definitions->skills.value(row,"range")=="h2h"?3:policy.range;
+    const int range=skill==definitions->staticFieldSkill && staticRange?std::max(2,*staticRange-2):
+        skill==definitions->skill("Attack") || definitions->skills.value(row,"range")=="h2h"?3:policy.range;
     if(((pendingDoor || pendingWaypoint) && (!ray || (targetPosition-c.position).length()>range)) ||
         (view.world.combatRequest && view.world.combatRequest->state==OnlineCombatRequest::State::Pending)) {
         // A real opening/selection/animation wait has its own contract and
@@ -267,7 +300,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
             run.repositioned=true;
             if(at) {
                 run.triedPositions.emplace(at->x,at->y);run.reposition=at;run.approachUntil=now+std::chrono::seconds(8);
-                cancelWalk(c);walkPoint(c,*at);combatDiagnostics["status"]="reposition";note("combat-effect-reposition","No new low life value; reassessing line and attack angle");return true;
+                cancelWalk(c);walkPoint(c,*at);combatDiagnostics["status"]="reposition";note("combat-effect-reposition","No new low life value; reassessing line and attack angle");mobility(c);return true;
             }
             run.obstacle=ray?"no different reachable firing position":"blocked line and no reachable clear firing position";
         }
@@ -280,7 +313,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         if(!pendingDoor && !pendingWaypoint && openDoor(c)) return true;
         if(run.approachUntil==Clock::time_point{}) run.approachUntil=now+std::chrono::seconds(8);
         if(now<run.approachUntil && approachPoint(c,*chosen->position,"combat target: line / range reassessment",float(std::max(2,range-1)))) {
-            phase="combat-approach";combatDiagnostics["status"]="approach";return true;
+            phase="combat-approach";combatDiagnostics["status"]="approach";mobility(c);return true;
         }
         run.obstacle=ray?"no usable approach within attack range":"observed line blocked / no usable approach";
         run.strategyAt=now-window;return true;
@@ -302,10 +335,11 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         (view.world.combatRequest && view.world.combatRequest->state==OnlineCombatRequest::State::Pending)) return true;
     cancelWalk(c);OnlineCombatCommand cast;cast.action=OnlineCombatCommand::Action::Cast;
     cast.hand=hand;cast.target=chosen->key;cast.stationary=true;
+    if(skill==definitions->staticFieldSkill) {cast.target.reset();cast.point=point(c.position);}
     // Same held pointer as the ordinary controller. Skills with a known
     // positive native delay use separate clicks, not a synthetic channel.
     cast.repeat=run.repeating && ((delay && *delay<=0) || definitions->skills.value(row,"delay").empty());
-    if(c.combat.submit(cast,c.position)) {
+    if(submitCombat(c,cast,DebugActionOwner::Combat,"combat-cast",c.position)) {
         combatOwned=true;run.repeating=true;++run.casts;++castRequests;lastAttack=now;
         run.nextCast=now+(delay && *delay>0?std::chrono::milliseconds(int64_t(*delay)*40):debugDecisionInterval);
         wait("combat-cast","Observing actual life effect after a normal attack input");

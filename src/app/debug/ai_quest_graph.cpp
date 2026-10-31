@@ -1,4 +1,5 @@
 #include "ai_impl.hpp"
+#include "content/world/object_mode.hpp"
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -9,12 +10,27 @@ namespace d2x {
 bool DebugAi::Impl::questFactSatisfied(const Context &c,const Goal &goal,size_t node,const QuestFact &fact) const {
     using Kind=QuestFact::Kind;
     switch(fact.kind) {
+    case Kind::MonsterObserved:
+        return (!fact.area || c.town.read().area==fact.area) && find(c,Selector{1,fact.value,"observed quest monster"},true).has_value();
     case Kind::ObjectOpened:
-        if(goal.steps.at(node).area && c.town.read().area!=goal.steps.at(node).area) return false;
+        if(const auto level=fact.area?fact.area:goal.steps.at(node).area;level && c.town.read().area!=level) return false;
         return std::any_of(c.session.read().world.units.begin(),c.session.read().world.units.end(),[&](const auto &entry) {
-            return entry.first.type==2 && entry.second.classId==fact.value && entry.second.mode==2;
+            const auto &unit=entry.second;
+            if(entry.first.type!=2 || unit.classId!=fact.value || !unit.mode) return false;
+            if(fact.any) return *unit.mode!=0;
+            const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count());
+            const float age=unit.actionReceivedMilliseconds && now>=unit.actionReceivedMilliseconds?
+                float(now-unit.actionReceivedMilliseconds)/1000.f:0.f;
+            for(size_t row=0;row<definitions->objects.rows().size();++row)
+                if(definitions->objects.number(row,"Id")==fact.value)
+                    return objectDisplayMode(definitions->objects,row,*unit.mode,age)==2;
+            return *unit.mode==2;
         });
     case Kind::Item:return owned(c,fact.item);
+    case Kind::GroundItem:
+        return std::any_of(c.session.read().world.items.begin(),c.session.read().world.items.end(),[&](const auto &entry) {
+            return entry.second.code==fact.item && entry.second.mode==3 && entry.second.positionKnown;
+        });
     case Kind::Equipped:
         return std::any_of(c.session.read().world.items.begin(),c.session.read().world.items.end(),[&](const auto &entry) {
             const auto &item=entry.second;return item.code==fact.item && item.mode==1 && item.body==4 &&
@@ -135,6 +151,14 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
         // optional return. Once in town, finish ready native topics in the
         // verified Cain priority order before another field departure.
         float score=here?0.f:townAction && !c.town.read().town?10000.f:100.f;
+        if(here && !townAction && step.target) {
+            const auto assigned=find(c,*step.target,true);
+            const auto point=assigned?assigned->position:c.town.knownTargetPosition(*area,step.target->type,step.target->identity);
+            // Prefer an observed ready operation over searching the same
+            // level for another one. This is a debug travel estimate; it
+            // neither reveals a preset location nor proves reachability.
+            score+=point?std::min(31.f,(Vec{float(point->x),float(point->y)}-c.position).length()/16.f):32.f;
+        }
         if(townAction && c.town.read().town) score+=float(node.townOrder)*.01f;
         if(!here && !townAction && destination && area) {
             const auto path=route(c,*area,*destination);const float cost=routeCost(c,path);

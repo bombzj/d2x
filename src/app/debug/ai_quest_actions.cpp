@@ -55,7 +55,7 @@ bool DebugAi::Impl::questStoreCursor(Context &c,uint32_t id) {
     OnlineItemCommand place;place.action=OnlineItemAction::Place;place.item=id;place.itemRevision=wire->second.revision;
     place.page=0;place.x=uint8_t(cell->x);place.y=uint8_t(cell->y);
     if(!settleItemInput(c)) return false;
-    if(!c.inventory.submit(c.session,place)) {wait("quest-place",c.inventory.reason());return false;}
+    if(!submitItem(c,place,"quest-place")) return false;
     QuestPending p;p.action=QuestPending::Action::Place;p.item=id;p.sequence=c.session.read().world.itemRequest->sequence;
     p.deadline=Clock::now()+std::chrono::seconds(12);questRun.pending=p;note("quest-item-place-submitted",std::to_string(id));return false;
 }
@@ -64,6 +64,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
     const auto stateQuest=step.stateQuest.value_or(goal.questId);const auto slot=questDefinition(stateQuest).nativeSlot;
     const auto flags=questFlags(c,stateQuest);
     bool done=flags && step.flags && (*flags&step.flags)==step.flags && !(*flags&step.clearFlags);
+    if(step.witness) if(const auto witness=find(c,*step.witness,true);witness && witness->mode && *witness->mode!=0) done=true;
     if(step.produced=="bkd") done=owned(c,"bkd") && !owned(c,"bks");
     else if(!step.produced.empty() && step.produced!="rin")
         done=owned(c,step.produced) && (step.item.empty() || !owned(c,step.item));
@@ -72,9 +73,9 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         world.quests.revision>questRun.pending->beforeRevision &&
         world.quests.statuses[slot] && *world.quests.statuses[slot]>0) done=true;
     if(done) {
-        if(goal.questId==QuestId::DenOfEvil && step.flags==1 && questRun.skillPointsBefore) {
+        if((step.skillPointReward || goal.questId==QuestId::DenOfEvil) && step.flags==1 && questRun.skillPointsBefore) {
             const auto points=world.playerAttributes.find(5);
-            if(points==world.playerAttributes.end() || uint64_t(points->second)<uint64_t(*questRun.skillPointsBefore)+1) {
+            if(points==world.playerAttributes.end() || uint64_t(points->second)<uint64_t(*questRun.skillPointsBefore)+std::max(1u,step.skillPointReward)) {
                 wait("quest-reward","Reward flag arrived; waiting for the actual skill point");checkQuestPending(c);return false;
             }
         }
@@ -100,7 +101,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
                 if(world.npcRequested) {c.session.close_npc();cancelWalk(c);return false;}
                 if(!approachPickup(c,item)) return false;
                 const uint32_t reward=id;OnlineItemCommand pickup;pickup.action=OnlineItemAction::Pickup;pickup.item=reward;pickup.itemRevision=item.revision;
-                if(!c.inventory.submit(c.session,pickup)) {wait("quest-reward",c.inventory.reason());return false;}
+                if(!submitItem(c,pickup,"quest-reward")) return false;
                 QuestPending p;p.action=QuestPending::Action::Pickup;p.item=reward;p.sequence=c.session.read().world.itemRequest->sequence;
                 p.deadline=Clock::now()+std::chrono::seconds(12);questRun.pending=p;note("quest-reward-pickup-submitted",std::to_string(reward));return false;
             }
@@ -137,7 +138,13 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         // Close/listen again once to request the actual private record. This
         // is an ordinary NPC query, never a replay of the accepted topic or
         // evidence of completion; the checks above still require its result.
-        if(questRun.pending->action==QuestPending::Action::Topic) refreshQuestNpc(c);
+        if(questRun.pending->action==QuestPending::Action::Topic) {
+            if(step.witness) {
+                // A world-creating callback may still be preparing its actual
+                // result. Query flags without closing its live conversation.
+                if(!questRun.pending->statusRequested && c.session.request_quests(view.gameGeneration)) questRun.pending->statusRequested=true;
+            } else refreshQuestNpc(c);
+        }
         wait("quest-dialogue-result","Waiting for actual quest/item state after the offered topic");checkQuestPending(c);return false;
     }
     const auto npc=find(c,*step.target);
@@ -162,7 +169,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
             questRun.rewardTracked=true;
         }
         if(goal.questId==QuestId::SistersBurialGrounds && topic==92) questRun.rewardTracked=true;
-        if(goal.questId==QuestId::DenOfEvil && topic==76) {
+        if(step.skillPointReward || (goal.questId==QuestId::DenOfEvil && topic==76)) {
             // Retail omits zero-valued stats from its initial stat-list
             // replication. An absent newskills entry on this ready player is
             // zero, not a reason to miss the later actual +1 reward update.
@@ -199,7 +206,7 @@ bool DebugAi::Impl::questReadScroll(Context &c,const QuestStep &step) {
     const auto item=accessibleItem(c,step.item);
     if(!item || item->mode!=0 || item->page!=1) throw std::runtime_error("Deciphered scroll must be in the real backpack before reading");
     const auto before=world.quests.cainStonesRevision;OnlineItemCommand use;use.action=OnlineItemAction::Use;use.item=item->id;use.itemRevision=item->revision;
-    if(!c.inventory.submit(c.session,use)) {wait("quest-scroll",c.inventory.reason());return false;}
+    if(!submitItem(c,use,"quest-scroll")) return false;
     QuestPending p;p.action=QuestPending::Action::Scroll;p.item=item->id;p.beforeRevision=before;
     p.sequence=c.session.read().world.itemRequest->sequence;p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;
     note("quest-scroll-read-submitted",step.item);return false;
@@ -213,7 +220,8 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
             // ObjMode31 and45 accept neutral only. An actual non-neutral
             // assignment also resumes an activation done by another player;
             // item/drop/travel postconditions remain separate graph nodes.
-            modeCompletes=operation==31 || operation==45;break;
+            modeCompletes=operation==31 || operation==45 || operation==49 ||
+                (definitions->objects.value(row,"Name")=="Seal" && operation>=52 && operation<=56);break;
         }
         if(modeCompletes) if(const auto object=find(c,*step.target,true);object && object->mode && *object->mode!=0) {
             note("quest-one-time-object-observed",std::to_string(object->key.id));return true;
@@ -445,7 +453,7 @@ bool DebugAi::Impl::questImbue(Context &c,const Goal &goal,const QuestStep &step
         const auto item=world.items.find(*questRun.material);
         if(item==world.items.end() || item->second.mode!=0 || item->second.page!=1) throw std::runtime_error("Reserved imbue base changed before take");
         const uint32_t material=item->first;OnlineItemCommand take;take.action=OnlineItemAction::Take;take.item=material;take.itemRevision=item->second.revision;
-        if(!c.inventory.submit(c.session,take)) {wait("quest-imbue-take",c.inventory.reason());return false;}
+        if(!submitItem(c,take,"quest-imbue-take")) return false;
         questRun.materialNpc=npc->key;
         QuestPending p;p.action=QuestPending::Action::Take;p.item=material;p.sequence=c.session.read().world.itemRequest->sequence;
         p.deadline=Clock::now()+std::chrono::seconds(12);questRun.pending=p;questRun.materialPhase=1;cancelWalk(c);
@@ -461,7 +469,7 @@ bool DebugAi::Impl::questImbue(Context &c,const Goal &goal,const QuestStep &step
             throw std::runtime_error("Imbue NPC conversation ended with the reserved base on Cursor");
         const uint32_t material=item->first;questRun.pending.reset();OnlineItemCommand imbue;imbue.action=OnlineItemAction::QuestService;
         imbue.npc=questRun.materialNpc->id;imbue.item=material;imbue.itemRevision=item->second.revision;
-        if(!c.inventory.submit(c.session,imbue)) {wait("quest-imbue",c.inventory.reason());return false;}
+        if(!submitItem(c,imbue,"quest-imbue")) return false;
         QuestPending p;p.action=QuestPending::Action::Imbue;p.item=material;p.sequence=c.session.read().world.itemRequest->sequence;
         p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;questRun.materialPhase=2;
         note("imbue-service-submitted",std::to_string(material));return false;

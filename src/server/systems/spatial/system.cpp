@@ -51,7 +51,7 @@ std::optional<std::pair<RegionId,Vec>> System::locate(EntityId id,uint8_t type) 
     if(type==2) {
         if(const auto found=ports_.objects.read().objects.find(id);found!=ports_.objects.read().objects.end()) return std::pair{found->second.area,found->second.position};
         const auto find=[&](const auto &portals)->std::optional<std::pair<RegionId,Vec>> {
-            for(const auto &[key,p]:portals) {(void)key;if(p.fieldId==id)return std::pair{p.field,p.fieldPosition};if(p.townId==id)return std::pair{p.town,p.townPosition};}return {};
+            for(const auto &[key,p]:portals) {(void)key;if(p.fieldId==id)return std::pair{p.field,p.fieldPosition};if(p.townId && p.townId==id)return std::pair{p.town,p.townPosition};}return {};
         };
         if(auto at=find(ports_.travel.read().portals)) return at;
         if(auto at=find(ports_.travel.read().specialPortals)) return at;
@@ -75,7 +75,7 @@ std::optional<NativeFootprint> System::targetFootprint(EntityId target) const {
         return ports_.areas.rectangleFootprint(at->region,at->position,1,1,0x200);
     const auto portal=[&](const travel::Portal &value)->std::optional<NativeFootprint> {
         if(value.fieldId==target && value.rule.collision[size_t(value.isOpened(false)?2:1)]) return ports_.areas.rectangleFootprint(value.field,value.fieldPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
-        if(value.townId==target && value.rule.collision[size_t(value.isOpened(true)?2:1)]) return ports_.areas.rectangleFootprint(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
+        if(value.townId && value.townId==target && value.rule.collision[size_t(value.isOpened(true)?2:1)]) return ports_.areas.rectangleFootprint(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
         return {};
     };
     for(const auto &[id,value]:ports_.travel.read().portals) { (void)id;if(auto footprint=portal(value)) return footprint; }
@@ -127,7 +127,7 @@ void System::restoreRoomFootprints(RoomView room) const {
     }
     const auto portal=[&](const travel::Portal &value) {
         if(value.rule.collision[size_t(value.isOpened(false)?2:1)]) rectangle(value.field,value.fieldPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
-        if(value.rule.collision[size_t(value.isOpened(true)?2:1)]) rectangle(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
+        if(value.townId && value.rule.collision[size_t(value.isOpened(true)?2:1)]) rectangle(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
     };
     for(const auto &[id,value]:ports_.travel.read().portals) {(void)id;portal(value);}
     for(const auto &[id,value]:ports_.travel.read().specialPortals) {(void)id;portal(value);}

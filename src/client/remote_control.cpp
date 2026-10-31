@@ -153,10 +153,14 @@ bool RemoteControl::townPortal() {
     const auto &world = session_.read().world;
     if (!binding.nativeMapReady || !binding.movementAvailable || binding.town)
         return reject("Town portals require a live player in a loaded outdoor or dungeon area");
+    const bool knownQuantities=std::any_of(binding.townPortalSkills.begin(),binding.townPortalSkills.end(),
+        [&](uint16_t skill){return world.itemSkillQuantities.contains(skill);});
     for (uint16_t skill : binding.townPortalSkills) {
         const auto quantity = world.itemSkillQuantities.find(skill);
         const auto level = world.playerSkills.find(skill);
-        if (session_.read().protocolProfile == "pd2-cn-normal-20261020" &&
+        // Reported consumable quantities take precedence over old skill-list
+        // availability. A retained scroll skill must not hide a usable tome.
+        if ((knownQuantities || session_.read().protocolProfile == "pd2-cn-normal-20261020") &&
             (quantity == world.itemSkillQuantities.end() || !quantity->second)) continue;
         if (quantity != world.itemSkillQuantities.end() ? quantity->second != 0
             : level != world.playerSkills.end() && level->second != 0) {

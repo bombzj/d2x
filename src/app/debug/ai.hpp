@@ -3,6 +3,7 @@
 #include <memory>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <nlohmann/json_fwd.hpp>
 
@@ -24,6 +25,7 @@ class DebugAi {
         std::optional<bool> castInputBusy;
         std::function<std::optional<bool>(uint16_t)> skillUsable;
         std::function<std::optional<unsigned>(uint32_t)> buyQuote;
+        std::span<const OnlineSceneView::MissileDisplay> missiles;
     };
     explicit DebugAi(Archives &);
     ~DebugAi();

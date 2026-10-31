@@ -136,6 +136,7 @@ class System {
     void nativeEliteBorn(EntityId,bool eligible);
     DomainResult<> activateSiegeBoss(EntityId,uint64_t tick);
     DomainResult<> activateIzual(uint64_t tick);
+    void nativeMonsterDied(const monsters::Actor &) noexcept;
     uint64_t forgeRewardDue(EntityId) const;
     uint64_t forgeAnimationEnd(EntityId) const;
     DomainResult<> forgeRewardEvent(EntityId,uint64_t tick);

@@ -148,11 +148,11 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
     }
     if(request.kind!=Kind::Portal) return {};
     for(const auto &[destination,portal]:state_.specialPortals) {
-        const bool returning=portal.town==actor.area && portal.townId==request.source.id;
+        const bool returning=portal.townId && portal.town==actor.area && portal.townId==request.source.id;
         if(!returning && !(portal.field==actor.area && portal.fieldId==request.source.id)) continue;
         (void)destination;
         const auto operation=area->definition.objectRules.find(portal.rule.definition);
-        const bool nativePortal=operation!=area->definition.objectRules.end() && operation->second.operation==15;
+        const bool nativePortal=portal.rule.definition==566 || (operation!=area->definition.objectRules.end() && operation->second.operation==15);
         // ObjMode15 accepts an already linked portal while OPERATING too;
         // ENDANIM is a display/collision transition, not travel permission.
         if(!portal.isOpened(returning) && !nativePortal) return {DomainStatus::Unavailable,{}};

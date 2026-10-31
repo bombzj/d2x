@@ -42,8 +42,16 @@ bool DebugAi::Impl::settleItemInput(Context &c) {
     // This is debug input pacing, not a change to ItemMode's busy rules. Keep
     // judging every 200 ms and wait for a quiet interval before sending one
     // inventory request; never use a rejected/unknown request as a retry loop.
-    const auto cast=std::max(lastAttack,mobilityDeadline-std::chrono::seconds(3));
-    if(Clock::now()-cast>=std::chrono::milliseconds(1500)) return true;
+    const auto now=Clock::now();const auto cast=std::max(lastAttack,mobilityDeadline-std::chrono::seconds(3));
+    const auto &view=c.session.read();
+    const auto player=view.load.playerUnitId?view.world.units.find({0,*view.load.playerUnitId}):view.world.units.end();
+    const auto milliseconds=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+    // Hit recovery may start after our last cast. The normal action receipt
+    // must also settle before inventory input; this is conservative pacing,
+    // not a client-side claim that the server has ended an animation.
+    const bool quiet=player==view.world.units.end() || !player->second.actionReceivedMilliseconds ||
+        (milliseconds>=player->second.actionReceivedMilliseconds && milliseconds-player->second.actionReceivedMilliseconds>=600);
+    if(quiet && now-cast>=std::chrono::milliseconds(1500)) return true;
     cancelWalk(c);wait("item-input-settle","Waiting for the last normal skill input to finish before inventory input");return false;
 }
 bool DebugAi::Impl::approachPickup(Context &c,const OnlineItem &item) {
@@ -135,7 +143,7 @@ bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
     if(ground) {
         if(!approachPickup(c,*ground)) return false;
         cancelWalk(c);OnlineItemCommand take;take.action=OnlineItemAction::Pickup;take.item=ground->id;take.itemRevision=ground->revision;
-        if(c.inventory.submit(c.session,take)) {
+        if(submitItem(c,take,"item-pickup")) {
             pickupId=ground->id;pickupIssued=true;setActionDeadline(std::chrono::seconds(12));note("pickup-submitted",goal.item);
         } else wait("pickup-blocked",c.inventory.reason());
         return false;
@@ -204,11 +212,21 @@ bool DebugAi::Impl::reachTown(Context &c) {
     // A scroll/tome is a real resource. If none is available, use normal
     // walking/known unlocked waypoints rather than granting one.
     if(!portalAttempted && !c.town.read().townPortalSkills.empty()) {
-        portalAttempted=true;
         oldPortals.clear();for(const auto &[key,unit]:view.world.units)
             if(key.type==2 && unit.portalOwner==view.load.playerUnitId) oldPortals.insert(key.id);
         cancelWalk(c);
-        if(c.control.townPortal()) {portalIssued=true;setActionDeadline(std::chrono::seconds(12));note("town-portal-submitted");return false;}
+        const auto submitted=submitInput(c,DebugActionOwner::Goal,"town-portal-input",DebugMotion|DebugSkill,
+            [&]{return c.control.townPortal();},[&]{return c.control.reason();},std::chrono::seconds(2));
+        if(submitted==DebugSubmitResult::Accepted) {
+            portalAttempted=portalIssued=true;setActionDeadline(std::chrono::seconds(12));note("town-portal-submitted");return false;
+        }
+        // A rejected local input is not a submitted portal. Crossing a level
+        // can briefly retain the movement throttle; let it settle before
+        // permanently choosing the ordinary route. Accepted casts are never replayed.
+        if(submitted==DebugSubmitResult::Waiting) return false;
+        portalAttempted=true;
+        note("town-portal-input-unavailable",submissionWaits.at(DebugActionOwner::Goal).reason);
+        submissionWaits.erase(DebugActionOwner::Goal);
     }
     wait("return-walking","No usable town portal; using normal travel back to town");
     return travel(c,*view.load.townArea);

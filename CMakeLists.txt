@@ -576,6 +576,7 @@ add_executable(d2x
   src/app/debug/ai_local_travel.cpp
   src/app/debug/ai_execution.cpp
   src/app/debug/ai_combat.cpp
+  src/app/debug/ai_defense.cpp
   src/app/debug/ai_actions.cpp
   src/app/debug/ai_mobility.cpp
   src/app/debug/ai_supplies.cpp
@@ -583,6 +584,7 @@ add_executable(d2x
   src/app/debug/ai_quest_graph.cpp
   src/app/debug/ai_act_two.cpp
   src/app/debug/ai_act_three.cpp
+  src/app/debug/ai_act_four.cpp
   src/app/debug/ai_quest_later_actions.cpp
   src/app/debug/ai_quest_items.cpp
   src/app/debug/ai_quest_actions.cpp

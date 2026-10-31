@@ -6,7 +6,7 @@
 
 namespace d2x {
 void DebugAi::Impl::configureQuest(Goal &goal) const {
-    static constexpr std::array<std::pair<std::string_view,QuestId>,18> quests{{
+    static constexpr std::array<std::pair<std::string_view,QuestId>,21> quests{{
         {"den-of-evil",QuestId::DenOfEvil},{"sisters-burial-grounds",QuestId::SistersBurialGrounds},
         {"search-for-cain",QuestId::SearchForCain},{"forgotten-tower",QuestId::ForgottenTower},
         {"tools-of-the-trade",QuestId::ToolsOfTheTrade},{"sisters-to-the-slaughter",QuestId::SistersToTheSlaughter},
@@ -15,12 +15,14 @@ void DebugAi::Impl::configureQuest(Goal &goal) const {
         {"summoner",QuestId::Summoner},{"seven-tombs",QuestId::SevenTombs},
         {"golden-bird",QuestId::GoldenBird},{"blade-of-the-old-religion",QuestId::BladeOfTheOldReligion},
         {"lam-esens-tome",QuestId::LamEsensTome},{"khalims-will",QuestId::KhalimsWill},
-        {"blackened-temple",QuestId::BlackenedTemple},{"guardian",QuestId::Guardian}}};
+        {"blackened-temple",QuestId::BlackenedTemple},{"guardian",QuestId::Guardian},
+        {"fallen-angel",QuestId::FallenAngel},{"hells-forge",QuestId::HellsForge},{"terrors-end",QuestId::TerrorsEnd}}};
     const auto found=std::find_if(quests.begin(),quests.end(),[&](const auto &v){return v.first==goal.quest;});
     if(found==quests.end()) throw std::invalid_argument("No verified quest recipe: "+goal.quest);
     goal.questId=found->second;goal.questSlot=questDefinition(goal.questId).nativeSlot;
     if(questDefinition(goal.questId).act==1) {configureActTwoQuest(goal,goal.questId);return;}
     if(questDefinition(goal.questId).act==2) {configureActThreeQuest(goal,goal.questId);return;}
+    if(questDefinition(goal.questId).act==3) {configureActFourQuest(goal,goal.questId);return;}
     const auto town=definitions->area("Act 1 - Town");
     const auto object=[&](std::string_view name,int operation) {
         const auto id=definitions->object(std::string(name));
@@ -99,13 +101,15 @@ bool DebugAi::Impl::questFinished(const Context &c,const Goal &goal) const {
     if(goal.questId==QuestId::RadamentsLair && (*flags&0x20)) return false;
     if(goal.questId==QuestId::ArcaneSanctuary && (*flags&2)) return false;
     if(goal.questId==QuestId::GoldenBird && ((*flags&0x20) || owned(c,"xyz"))) return false;
-    if(questWeaponRestore && (goal.questId==QuestId::KhalimsWill || goal.questId==QuestId::BlackenedTemple || goal.questId==QuestId::Guardian)) {
+    if(questWeaponRestore && (goal.questId==QuestId::KhalimsWill || goal.questId==QuestId::BlackenedTemple || goal.questId==QuestId::Guardian || goal.questId==QuestId::HellsForge)) {
         const auto original=c.session.read().world.items.find(*questWeaponRestore);
         if(original==c.session.read().world.items.end() || original->second.mode!=1 || original->second.body!=4 ||
             !onlineItemOwnedBy(original->second,c.session.read().load.playerUnitId)) return false;
     }
     if(goal.questId==QuestId::Guardian)
         return c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[23]&1);
+    if(goal.questId==QuestId::TerrorsEnd)
+        return c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[28]&1);
     if(goal.questId==QuestId::SevenTombs)
         return c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[15]&1);
     // Native Act-I change record (slot 7) is separate from Andariel's reward.
@@ -146,6 +150,7 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
     const auto flags=questFlags(c,goal.questId);
     if(!flags) {wait("quest-state","Waiting for actual native character quest flags");return false;}
     if(!questRun.initialized) {
+        questSpawnAnchor.reset();
         const auto &clue=c.session.read().world.quests;
         const auto arcane=questFlags(c,QuestId::ArcaneSanctuary);
         // StatusCallback includes the real tomb offset for an already-read
@@ -162,6 +167,8 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
             throw std::runtime_error("Unfinished quest needs its normal act scene: "+goal.quest);
         questRun.initialized=true;note("quest-started",goal.quest);
     }
+    for(const auto &step:goal.steps) if(step.action==QuestAction::Hunt && step.witness && step.area==area)
+        if(const auto anchor=find(c,*step.witness,true);anchor && anchor->position) questSpawnAnchor=std::pair{*area,*anchor->position};
     if(!goal.requirements.empty()) return selectQuestRequirement(c,goal);
     while(questRun.step<goal.steps.size() && goal.steps[questRun.step].skipPending && (*flags&3))
         questStepDone(c,"Native reward/pending flag already satisfies the field objective");
@@ -244,12 +251,13 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
             });
             observed=observed && reward;
         }
-        if(goal.questId==QuestId::DenOfEvil && step.flags==1 && questRun.skillPointsBefore) {
+        if((step.skillPointReward || goal.questId==QuestId::DenOfEvil) && step.flags==1 && questRun.skillPointsBefore) {
             const auto points=world.playerAttributes.find(5);
-            observed=observed && points!=world.playerAttributes.end() && uint64_t(points->second)>=uint64_t(*questRun.skillPointsBefore)+1;
+            observed=observed && points!=world.playerAttributes.end() && uint64_t(points->second)>=uint64_t(*questRun.skillPointsBefore)+std::max(1u,step.skillPointReward);
         }
         if(goal.questId==QuestId::SistersBurialGrounds && step.flags==1 && questRun.rewardTracked)
             observed=observed && (world.hireling || world.deadHirelingName);
+        if(step.witness) if(const auto witness=find(c,*step.witness,true);witness && witness->mode && *witness->mode!=0) observed=true;
         break;
     case QuestPending::Action::Object:
         if(!goal.requirements.empty() && std::any_of(goal.requirements.at(questRun.step).alternatives.begin(),goal.requirements.at(questRun.step).alternatives.end(),[](const auto &all) {
@@ -269,6 +277,7 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
         else if(step.publishesTombSymbol) observed=pending.refreshIssued && flags && (*flags&1) &&
             world.quests.staffTombRevision>pending.beforeRevision && world.quests.staffTombOffset && *world.quests.staffTombOffset<7;
         else if(step.action==QuestAction::SmashOrb) observed=flags && (*flags&1) && !owned(c,step.item);
+        else if(step.action==QuestAction::SmashForge) observed=flags && (*flags&3) && !owned(c,step.item);
         else if(step.flags) observed=flags && (*flags&step.flags)==step.flags;
         else observed=unit!=world.units.end() && unit->second.assignmentRevision==pending.assignment && unit->second.mode && *unit->second.mode!=0;
         if(step.witness && step.action!=QuestAction::Portal) observed|=find(c,*step.witness).has_value();
@@ -291,19 +300,24 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
 }
 void DebugAi::Impl::observeQuestInteraction(Context &c,const Json &intent) {
     if(questRun.pending || cursor>=goals.size() || goals[cursor].kind!=Kind::Quest) return;
-    if(intent.value("purpose",std::string{})=="quest-orb") {
-        if(questRun.step>=goals[cursor].steps.size() || goals[cursor].steps[questRun.step].action!=QuestAction::SmashOrb ||
-            questRun.materialPhase>=2) throw std::runtime_error("Unexpected extra Compelling Orb operation");
+    if(intent.value("purpose",std::string{})=="quest-orb" || intent.value("purpose",std::string{})=="quest-forge") {
+        const bool forge=intent.value("purpose",std::string{})=="quest-forge";
+        const unsigned hits=forge?3:2;
+        if(questRun.step>=goals[cursor].steps.size() || goals[cursor].steps[questRun.step].action!=(forge?QuestAction::SmashForge:QuestAction::SmashOrb) ||
+            questRun.materialPhase>=hits) throw std::runtime_error("Unexpected extra quest weapon operation");
+        if(forge && !questRun.materialPhase) {
+            questRun.rewardBefore.clear();for(const auto &[id,item]:c.session.read().world.items) {(void)item;questRun.rewardBefore.insert(id);}
+        }
         const auto now=Clock::now();++questRun.materialPhase;++interactions;
         questRun.sweepReady=now+std::chrono::milliseconds(600);
-        if(questRun.materialPhase==2) {
+        if(questRun.materialPhase==hits) {
             QuestPending pending;pending.action=QuestPending::Action::Object;
             pending.unit=OnlineUnitKey{intent.at("unitType").get<uint8_t>(),intent.at("unitId").get<uint32_t>()};
             const auto unit=c.session.read().world.units.find(*pending.unit);
             if(unit!=c.session.read().world.units.end()) pending.assignment=unit->second.assignmentRevision;
-            pending.deadline=now+std::chrono::seconds(20);questRun.pending=pending;
+            pending.deadline=now+std::chrono::seconds(forge?40:20);questRun.pending=pending;
         }
-        note("quest-orb-operation-submitted",std::to_string(questRun.materialPhase));cancelWalk(c);return;
+        note(forge?"quest-forge-operation-submitted":"quest-orb-operation-submitted",std::to_string(questRun.materialPhase));cancelWalk(c);return;
     }
     QuestPending p;p.action=intent.value("purpose",std::string{})=="quest-portal"?QuestPending::Action::Portal:QuestPending::Action::Object;
     if(intent.value("activation",false)) p.action=QuestPending::Action::Object;
@@ -367,6 +381,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
     case QuestAction::SearchDrop:done=questSearchDrop(c,step);break;
     case QuestAction::EquipWeapon:done=questEquipWeapon(c,step);break;
     case QuestAction::SmashOrb:done=questSmashOrb(c,step);break;
+    case QuestAction::SmashForge:done=questSmashForge(c,step);break;
     case QuestAction::Talk:done=questTalk(c,goal,step);break;
     case QuestAction::ReturnTown:done=reachTown(c);break;
     case QuestAction::Acquire:
@@ -408,7 +423,20 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
             // quest never completes from a corpse alone.
             done=true;break;
         }
-        if(!unit) {if(!approachKnown(c,*step.target)) explore(c,step.target->name);break;}
+        if(!unit) {
+            if(step.witness && questSpawnAnchor && questSpawnAnchor->first==area) {
+                if(approachPoint(c,questSpawnAnchor->second,"observed quest birth anchor",8)) break;
+                const auto anchor=questSpawnAnchor->second;
+                if((Vec{float(anchor.x),float(anchor.y)}-c.position).length()>10) {
+                    explore(c,"reachable approach to the observed quest birth anchor");break;
+                }
+                if(questRun.sweepReady==Clock::time_point{}) questRun.sweepReady=Clock::now()+std::chrono::seconds(90);
+                if(Clock::now()>=questRun.sweepReady) throw std::runtime_error("Quest boss was not assigned at its observed birth anchor");
+                cancelWalk(c);wait("quest-boss-birth","Retaining the actually observed quest anchor during the native spawn timer");break;
+            }
+            if(!approachKnown(c,*step.target)) explore(c,step.target->name);
+            break;
+        }
         if(!c.combat.hostile(*unit)) throw std::runtime_error("Quest hunt target is not an actual hostile");
         target=unit->key;targetAssignment=unit->assignmentRevision;
         if(!approachPoint(c,*unit->position,"quest hunt target",2)) explore(c,"reachable quest target");

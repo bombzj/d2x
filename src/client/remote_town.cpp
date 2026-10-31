@@ -388,6 +388,9 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                 if (!shrine.empty()) label = shrine;
             }
             auto destination=unit.portalDestination?std::optional<uint16_t>{*unit.portalDestination}:std::nullopt;
+            // A4Q2 Operate73 changes act to Harrogath directly; Init78 does
+            // not require a fabricated destination/linked-portal packet.
+            if(v.protocolProfile=="lod113c" && operation==73) destination=109;
             // D2MOO Operate34: the authored palace portal does not need a
             // dynamic portal-destination packet. Its original operator fixes
             // the two levels; coordinates still come from this real assignment.
@@ -627,7 +630,9 @@ bool RemoteTown::updateNative(const OnlineView &v) {
 }
 void RemoteTown::rememberWalkingConnection(const OnlineView &v) {
     if(!nativeMap_ || !view_.area || !v.world.playerPosition) return;
-    const auto point=*v.world.playerPosition;
+    // This is a navigation hint, not transfer credit. The normal local path
+    // observes the seam even when a later sparse resource sample skips it.
+    const auto point=v.protocolProfile=="lod113c"?displayPlayerPosition_.value_or(*v.world.playerPosition):*v.world.playerPosition;
     const auto room=nativeMap_->clientRoom(point.x,point.y);
     if(!room || !nativeMap_->tiles().rooms().at(*room).loaded) return;
     const auto level=uint16_t(nativeMap_->tiles().rooms().at(*room).level);

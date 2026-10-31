@@ -103,7 +103,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         {"name",m.name},{"modifiers",m.modifiers},{"transform",m.transform},{"randomTransform",m.random},{"effectHidden",m.effectHidden}});
     for (const auto &missile : scene.clientMissiles)
         result["scene"]["clientMissiles"].push_back({{"id", missile.id}, {"age", missile.age}, {"remaining", missile.remaining},
-            {"position", {{"x", missile.position.x}, {"y", missile.position.y}}}});
+            {"position", {{"x", missile.position.x}, {"y", missile.position.y}}},
+            {"velocity",{{"x",missile.velocity.x},{"y",missile.velocity.y}}},{"hostile",missile.hostile}});
     for (const auto &player : scene.players)
         result["scene"]["players"].push_back({{"id", player.id}, {"name", player.name},
             {"classId", player.classId}, {"local", player.local}, {"visible", player.visible},

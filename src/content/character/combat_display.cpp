@@ -8,6 +8,8 @@
 #include "gameplay/items/native_equipment_stats.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/skills/passive.hpp"
+#include "gameplay/skills/rank_sources.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/barbarian_passive_spec.hpp"
 #include "gameplay/skills/amazon_passive_spec.hpp"
 #include <algorithm>
@@ -80,6 +82,7 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
     combat.minimumDamage+=baseMinimum;combat.maximumDamage+=baseMaximum;
     const int rating=baseRating+5*actor.dexterity+mods.attackRating;
     auto equipment=deriveEquipmentStats(loadout,actor,baseDefense+mods.defense,combat,rating);
+    std::map<int,int> skillRanks;
     if(data.profile=="lod-named-txt-v1" && !actor.hireling && data.nativeStats && data.nativeFormulas) {
         const auto &rules=*data.nativeStats;
         auto sources=prepareNativeEquipmentSources(data.items,rules,contributions,{},
@@ -115,6 +118,17 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
             hands.emplace(id,evaluateStatList(rules,*selected,handContext));
         };
         sample({});
+        // Initial 0x94 assigns base levels only. The original client derives
+        // bonuses from its private equipment/state lists, not a required 0x21.
+        for(const auto &[id,skill]:data.nativeFormulas->skills) {
+            const auto base=baseRanks.find(id),assigned=ranks.find(id);
+            if(base==baseRanks.end() && assigned==ranks.end()) continue;
+            const auto rank=resolveNativePlayerSkillRank({id,base==baseRanks.end()?0:base->second,
+                int(character->sourceRow),skill.page,skill.classId==int(character->sourceRow)},
+                hands.at({}),rules,skill.elementType,data.nativeFormulas->maximumSkillRank,false,
+                nativeShrineSkillBonus(*data.nativeFormulas,activeStates),assigned!=ranks.end() && assigned->second>0);
+            if(rank) skillRanks.emplace(id,*rank);
+        }
         for(int index=0;index<equipment.weaponCount;++index)
             if(equipment.weapons[index].item) sample(equipment.weapons[index].item);
         const auto native=deriveNativeEquipmentStats(loadout,actor,
@@ -129,6 +143,6 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
         weapon.minimum=int(int64_t(weapon.meleeBaseMinimum)*(100+percent)/100);
         weapon.maximum=int(int64_t(weapon.meleeBaseMaximum)*(100+percent)/100);
     }
-    return {std::move(mods),std::move(equipment),std::move(actor)};
+    return {std::move(mods),std::move(equipment),std::move(actor),0,std::move(skillRanks)};
 }
 } // namespace d2x

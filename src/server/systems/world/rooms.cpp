@@ -368,7 +368,7 @@ struct System::RoomRuntime {
                 return view->area==room.area && view->x==(int(source.origin.x)+room.bounds.x)/5 &&
                     view->y==(int(source.origin.y)+room.bounds.y)/5;
             };
-            return matches(value.fieldRoom,value.field,value.fieldPosition) || matches(value.townRoom,value.town,value.townPosition);
+            return matches(value.fieldRoom,value.field,value.fieldPosition) || (value.townId && matches(value.townRoom,value.town,value.townPosition));
         };
         for (const auto &[key, value] : ports.travel.read().portals) { (void)key; if (portal(value)) return true; }
         for (const auto &[key, value] : ports.travel.read().specialPortals) { (void)key; if (portal(value)) return true; }

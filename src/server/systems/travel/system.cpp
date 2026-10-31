@@ -244,7 +244,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (!destination) {
             const ActorContext actor{player.player, player.actor, player.area, source->generation, transition.sequence, tick.tick};
             const auto prepared = transition.kind == Kind::Waypoint ? ports_.world.requestWaypoint(actor, transition.to) :
-                (transition.kind == Kind::Npc || transition.kind==Kind::QuestObject) ? ports_.world.request(transition.to) : ports_.world.requestArea(actor, transition.to);
+                (transition.kind == Kind::Npc || transition.kind==Kind::QuestObject || transition.kind==Kind::SpecialPortal) ? ports_.world.request(transition.to) : ports_.world.requestArea(actor, transition.to);
             if (!prepared) { pending = state_.transitions.erase(pending); continue; }
             ++pending; continue;
         }
@@ -265,11 +265,14 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         // Warp/waypoint arrival must acquire the destination's real room before
         // free-coordinate and collision queries, including a previously retired room.
         const auto &targetDefinition = destination->definition;
+        const auto specialPortal=state_.specialPortals.find(transition.source);
+        const bool actFiveEntry=transition.kind==Kind::SpecialPortal && int(transition.from)==103 && int(transition.to)==109 &&
+            specialPortal!=state_.specialPortals.end() && specialPortal->second.rule.definition==566 && !specialPortal->second.townId;
         if(transition.arrivalGeneration && *transition.arrivalGeneration!=destination->generation) {pending=state_.transitions.erase(pending);continue;}
         if (transition.kind == Kind::Waypoint) {
             if(transition.arrivalGeneration) ports_.world.activate(transition.to,transition.arrival);
         }
-        else if (transition.kind == Kind::Npc) ports_.world.activate(transition.to, targetDefinition.spawn);
+        else if (transition.kind == Kind::Npc || actFiveEntry) ports_.world.activate(transition.to, targetDefinition.spawn);
         else if (transition.kind == Kind::Exit) {
             for (const auto &exit : targetDefinition.exits) if (exit.destination == transition.from)
                 ports_.world.activate(transition.to, exit.arrival);
@@ -308,6 +311,18 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             arrival=target->second.position;
         }
         if(transition.kind==Kind::SpecialPortal && (!ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to) || std::none_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.fieldId==transition.source || entry.second.townId==transition.source;}))) {pending=state_.transitions.erase(pending);continue;}
+        if(actFiveEntry) {
+            if(!transition.arrivalGeneration) {
+                const auto anchor=ports_.world.nativeActSpawnLocation(transition.to,5);
+                if(!anchor) {pending=state_.transitions.erase(pending);continue;}
+                transition.arrival=*anchor;transition.arrivalGeneration=destination->generation;
+            }
+            ports_.world.activate(transition.to,transition.arrival);
+            if(!ports_.areas.loaded(transition.to,transition.arrival)) {++pending;continue;}
+            const auto spawn=ports_.world.nativeActSpawnLocationExAt(transition.to,transition.arrival,2);
+            if(!spawn || spawn->area!=transition.to) {pending=state_.transitions.erase(pending);continue;}
+            arrival=spawn->position;
+        }
         if (transition.kind==Kind::Portal) {
             const auto portal=std::find_if(state_.portals.begin(),state_.portals.end(),[&](const auto &entry){
                 return (entry.second.fieldId==transition.source || entry.second.townId==transition.source) &&

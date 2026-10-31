@@ -20,6 +20,8 @@ PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留
 - transactions.CharacterEdit与InventoryEdit共同复验人物／库存revision，重算派生值并发布不可变CharacterFact／InventoryFact。升级补满存活人物生命／法力／耐力；体力／精力加点按CharStats四分之一单位增量增加对应资源；装备／状态造成的最大资源变化沿原回调按比例调整并限幅，不当作治疗；上限不变的普通事务不额外裁剪已存在的超上限生命／法力。入场恢复保存的生命／法力，耐力按原版补满，死亡语义沿已有规则。
 - hosting/native_character_wire共用入场／增量编码：ItemStatCost提供身份、ValShift和Signed，原1F发绝对属性，94发基础清单，21更新基础／额外技能等级（含装备来源撤销后的零等级）。增量仅发改变值，无私有成功ACK或模式分支。人物投影独立细节修复已获用户确认：按当前MPQ的item_poisonlengthresist（ID 110）／item_absorbfire_percent（ID 142）读取毒持续时间抗性／百分比火焰吸收。RemoteUiClients仍按原表Stat／ID／ValShift读取实际收到的属性；旧名在当前表中不存在，修正同时适用于原服，不是自研协议适配。
 
+零售客户端的94清单只表示基础等级，入场不保证另有21携带装备加成。完整已观察装备／护符／套装及状态沿`projectCombatEquipment`的原生属性列表与公共`resolveNativePlayerSkillRank`重建已指派技能等级，再供人物技能显示和RemoteCombat输入资格／debug策略读取；不改写原包副本、不与21额外等级重复相加。原缺陷是在新物品／状态修订到来时先清战斗目录，面板尚未更新便将有效等级短暂退回94基础等级；静电场因此可能在首次选定首领时被错误跳过。现RemoteCombat先解码当前状态，再经生命周期绑定的只读查询复用当前装备投影，不等待面板下一帧更新；装备投影缓存按游戏、物品／解码修订、状态序列、武器组、人物等级及原技能清单复验，未知装备不新增推测。CN继续沿既有投影，不据此认证其扩展技能来源。
+
 grant-experience已接GameHost → progression → transactions → 原包输出，暂停实例也可使用；原服拒绝宿主管理。D2S保存基础分配、经验／等级、余点、基础技能与当前资源；总值、有效等级、缓存及奖励发生标识不写盘。v96不变，保存与校验边界见[存档](SAVES.md)；未分配随机套装值／条件套装需求明确不可用，不重掷或静默忽略。全部装备组合、成长及存档往返仍需完整核对。攻击显示的实现与原版依据见[人物属性](../gameplay/characters/ATTRIBUTES.md#原数据与显示)，完整战斗由战斗及职业专题维护。
 
 Akara每难度免费重置使用原slot41资格及0x38 parameter0，与Token共用`gameplay/character/respec`纯退款函数；清基础分配／技能并退款，清选择与热键，不把装备加成退成人物点数。资格消费、属性和技能由同一CharacterEdit提交。来源、slot41保存及资格边界见[第一幕任务](../gameplay/quests/ACT1.md)。

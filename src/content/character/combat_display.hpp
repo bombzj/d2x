@@ -17,6 +17,7 @@ struct CombatDisplayEquipment {
     EquipmentStats equipment;
     EquipmentActor actor;
     int concentrationDamagePercent = 0;
+    std::map<int,int> skillRanks;
 };
 CombatDisplayEquipment projectCombatEquipment(const ClassicData &, EquipmentActor,
     std::span<const CombatDisplayItem>, std::span<const ItemInstance> charms,

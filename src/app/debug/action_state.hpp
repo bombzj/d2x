@@ -1,6 +1,7 @@
 #pragma once
 #include <chrono>
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 namespace d2x {
@@ -21,6 +22,13 @@ class DebugExecutionClock {
 enum class DebugActionOwner:uint8_t {Goal,Navigation,Door,Waypoint,Mobility,Potion,Supply,Combat};
 enum DebugActionInput:uint8_t {DebugMotion=1,DebugSkill=2,DebugItem=4,DebugInteraction=8,DebugMenu=16,DebugAllInputs=31};
 constexpr unsigned debugActionBit(DebugActionOwner owner) {return 1u<<unsigned(owner);}
+enum class DebugSubmitResult {Waiting,Accepted,Expired};
+// Pre-submission waits own no server request. Their budget pauses with AI
+// input; the domain starts a separate real-time result wait on acceptance.
+struct DebugSubmissionWait {
+    std::string action,reason;unsigned inputs{},attempts{};uint64_t decision{};
+    std::chrono::steady_clock::time_point deadline{},retryAt{};
+};
 struct DebugActionContract {
     DebugActionOwner owner;std::string_view action;unsigned inputs{},interruptors{};
     std::string_view waitingFor,recovery;

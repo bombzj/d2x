@@ -8,6 +8,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/progression/system.hpp"
 #include "server/systems/world/system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
@@ -285,7 +286,11 @@ StepStatus System::flushGoals(TickContext tick) {
                     if(it->first==QuestId::RadamentsLair && !(quest.flags&radamentBookUsed)) quest.flags|=radamentBookPending;
                     if(it->first==QuestId::ArcaneSanctuary) quest.flags|=arcaneCommentPending;
                     if(it->first==QuestId::Guardian) quest.flags|=guardianSpeechPending;
-                    if(it->first==QuestId::TerrorsEnd) quest.flags|=terrorTyraelPending|terrorCainPending;
+                    // A4Q2_SetPrimaryGoalDone adds CUSTOM2/3 only in classic.
+                    // Retail currently admits expansion saves only. Preserve
+                    // the existing PD2 path until its callbacks are verified.
+                    if(it->first==QuestId::TerrorsEnd && p->rules.skills && p->rules.skills->pd2)
+                        quest.flags|=terrorTyraelPending|terrorCainPending;
                     if(it->first==QuestId::RescueOnMountArreat) quest.flags=(quest.flags&~rescueCountMask)|state_.actFive.rescued;
                     if(it->first==QuestId::KhalimsWill) {
                         auto &temple=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::BlackenedTemple)];

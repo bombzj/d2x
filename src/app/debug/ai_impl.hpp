@@ -8,8 +8,10 @@
 #include "content/monsters/monster_identity.hpp"
 #include "resources/data_table.hpp"
 #include "gameplay/quest/catalog.hpp"
+#include "gameplay/rules/formula.hpp"
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -27,7 +29,7 @@ struct DebugAi::Impl {
     enum class PotionKind {Life,Mana,Rejuvenation};
     struct Potion {PotionKind kind{};int strength{};std::optional<uint8_t> state;};
     struct Selector {uint8_t type{};uint16_t identity{};std::string name;std::optional<uint16_t> superUnique{};};
-    enum class QuestAction {Talk,Clear,Hunt,Acquire,ReadScroll,Stones,Operate,Portal,ReturnTown,Imbue,ActTravel,Travel,UseItem,Combine,SubmitStaff,SearchDrop,EquipWeapon,SmashOrb};
+    enum class QuestAction {Talk,Clear,Hunt,Acquire,ReadScroll,Stones,Operate,Portal,ReturnTown,Imbue,ActTravel,Travel,UseItem,Combine,SubmitStaff,SearchDrop,EquipWeapon,SmashOrb,SmashForge};
     struct QuestStep {
         QuestAction action{};std::optional<uint16_t> area;std::optional<Selector> target,witness;
         std::string item,produced;std::optional<uint16_t> source;
@@ -38,10 +40,11 @@ struct DebugAi::Impl {
         std::optional<uint16_t> sourceArea;
         bool preferWaypoint{},refreshFlags{};
         bool clearCombat{};std::vector<std::string> ingredients;std::vector<uint16_t> searchAreas;
+        unsigned skillPointReward{};
     };
     struct QuestFact {
-        enum class Kind {Item,BackpackItem,Flags,Area,TrueTombArea,TombClue,Waypoint,Corpse,BookUsed,PortalObserved,JournalRead,ActChange,Equipped,EquipmentRestored,ObjectOpened} kind{};
-        QuestId quest{};uint16_t value{},clear{};bool any{};std::string item;
+        enum class Kind {Item,BackpackItem,Flags,Area,TrueTombArea,TombClue,Waypoint,Corpse,BookUsed,PortalObserved,JournalRead,ActChange,Equipped,EquipmentRestored,ObjectOpened,GroundItem,MonsterObserved} kind{};
+        QuestId quest{};uint16_t value{},clear{};bool any{};std::string item;std::optional<uint16_t> area;
     };
     struct QuestRequirement {
         std::string name;std::vector<size_t> needs;
@@ -59,10 +62,13 @@ struct DebugAi::Impl {
         std::vector<QuestRequirement> requirements;std::vector<size_t> roots;
     };
     struct Definitions {
-        DataTable monsters,objects,skills,levels,misc,weapons,armor,types,states,npcs,superuniques;
+        DataTable monsters,objects,skills,levels,misc,weapons,armor,types,states,npcs,superuniques,missiles,difficulties;
+        uint16_t staticFieldSkill{};size_t staticFieldRow{};RuleFormula staticFieldRange;
+        std::map<int,int> hazardSizes;
         std::map<std::string,Potion,std::less<>> potions;
         explicit Definitions(Archives &);
         void loadPotions();
+        void loadCombatObservations();
         uint16_t area(const Json &) const;
         uint16_t skill(const Json &) const;
         Selector selector(const Json &) const;
@@ -70,17 +76,19 @@ struct DebugAi::Impl {
         uint16_t malusSource() const;
         std::optional<uint16_t> hintArea(const Selector &) const;
         bool item(std::string_view) const;
-        Selector supplier(unsigned act) const;
+        bool itemHasType(std::string_view,std::string_view) const;
+        std::optional<int> staticRadius(unsigned) const;
+        Selector supplier(unsigned act,bool portal=false) const;
     };
     struct CombatPolicy {
-        bool enabled=true;std::string scope="defensive";std::optional<uint16_t> skill,aura;int range=16;
+        bool enabled=true,staticField=true,avoidHazards=true;std::string scope="defensive";std::optional<uint16_t> skill,aura;int range=16;
         int radius=6,crowd=4,retreat=8,engage=18;
         std::vector<uint16_t> fallbackSkills;
         int noProgressSeconds=6,stallTimeoutSeconds=90,retreatLifePercent=45,lifeDropPercent=10;
     } policy;
     struct MobilityPolicy {std::string mode="auto";bool vigor=true;int distance=24;} mobilityPolicy;
     struct SupplyPolicy {
-        bool enabled=true,buy=true,returnWhenEmpty=true;
+        bool enabled=true,buy=true,returnWhenEmpty=true,fillPortalBook=true;
         int lifePercent=60,manaPercent=35,criticalLifePercent=25,healthCount=4,manaCount=4,intervalMs=1500;
     } supplyPolicy;
     struct Context {
@@ -141,6 +149,12 @@ struct DebugAi::Impl {
     }
     DebugExecutionClock executionClock;
     Json actionDiagnostics;
+    std::map<DebugActionOwner,DebugSubmissionWait> submissionWaits;
+    DebugSubmitResult submitInput(Context &,DebugActionOwner,std::string,unsigned,
+        const std::function<bool()> &,const std::function<std::string()> &,
+        std::chrono::milliseconds budget=std::chrono::seconds(12));
+    bool submitItem(Context &,const OnlineItemCommand &,std::string,DebugActionOwner=DebugActionOwner::Goal);
+    bool submitCombat(Context &,const OnlineCombatCommand &,DebugActionOwner,std::string,std::optional<Vec> = {});
     bool inputBlocked{};std::optional<uint32_t> closeWaypoint;
     std::optional<OnlineUnitKey> combatTarget;std::optional<OnlinePoint> retreatPoint;
     struct CombatRun {
@@ -148,7 +162,7 @@ struct DebugAi::Impl {
         std::vector<uint16_t> skills;
         std::optional<uint8_t> bestLife,lastLife;
         Clock::time_point progressAt{},strategyAt{},approachUntil{},nextCast{},suspendedAt{};
-        bool repositioned{},repeating{},healingObserved{},qualificationWait{};unsigned casts{},hits{};
+        bool repositioned{},repeating{},healingObserved{},qualificationWait{},staticOpening{};unsigned casts{},hits{};
         uint64_t hitRevision{};std::string obstacle;
         std::optional<OnlinePoint> reposition;
         std::set<std::pair<uint16_t,uint16_t>> triedPositions;
@@ -158,7 +172,9 @@ struct DebugAi::Impl {
     std::deque<LifeSample> combatLifeSamples;
     std::optional<int> combatMaxLife;
     Json combatDiagnostics;
-    std::map<std::pair<OnlineUnitKey,uint64_t>,Clock::time_point> bypassedThreats;
+    std::optional<OnlinePoint> hazardDodge;Clock::time_point hazardDodgeUntil{};Json hazardDiagnostics;
+    struct BypassedThreat {Clock::time_point retryAt;Vec observer,target;};
+    std::map<std::pair<OnlineUnitKey,uint64_t>,BypassedThreat> bypassedThreats;
     bool combatOwned{},objectIssued{},pickupIssued{},portalIssued{},portalAttempted{},portalUsed{},greetingIssued{};
     std::optional<uint32_t> pickupId;std::set<uint32_t> oldPortals;
     std::set<std::tuple<uint32_t,uint16_t,uint16_t,uint16_t,uint16_t>> pickupApproaches;
@@ -171,7 +187,7 @@ struct DebugAi::Impl {
     Clock::time_point mobilityDeadline{},nextMobility{},lastSelection{},exitRetryAt{};
     std::map<std::tuple<uint16_t,uint16_t,uint16_t,uint16_t,uint16_t>,unsigned> mobilityTrials;
     struct PotionRequest {
-        bool buying{};uint32_t item{};uint64_t sequence{},tradeRevision{};std::string code;
+        bool buying{},portalSupply{};uint32_t item{};uint64_t sequence{},tradeRevision{};std::string code;
         PotionKind kind{};unsigned beforeCount{};std::optional<uint16_t> life,mana;
         Clock::time_point deadline{};
     };
@@ -182,6 +198,8 @@ struct DebugAi::Impl {
     std::optional<uint16_t> supplyOrigin;Clock::time_point supplyStarted{},supplyDeadline{};
     bool supplyPortalUsed{};Clock::time_point supplyPortalDeadline{};
     unsigned drinks{},purchases{};
+    struct PortalStock {unsigned books{},pages{},capacity{};bool known=true;};
+    PortalStock portalStock(const Context &) const;
     Json lastPotion,supplyVitals;
     struct QuestPending {
         enum class Action {Object,Portal,Scroll,Topic,Take,Imbue,Place,Travel,Pickup,Use,OpenCube,StoreCube,Transmute,SubmitStaff,Introduction,CloseCube} action{};
@@ -202,6 +220,7 @@ struct DebugAi::Impl {
     } questRun;
     Json questPlanDiagnostics;
     std::optional<uint32_t> questWeaponRestore;
+    std::optional<std::pair<uint16_t,OnlinePoint>> questSpawnAnchor;
 
     explicit Impl(Archives &a):archives(a) {}
     bool active() const {return state=="running";}
@@ -224,9 +243,11 @@ struct DebugAi::Impl {
     void configureQuest(Goal &) const;
     void configureActTwoQuest(Goal &,QuestId) const;
     void configureActThreeQuest(Goal &,QuestId) const;
+    void configureActFourQuest(Goal &,QuestId) const;
     bool questSearchDrop(Context &,const QuestStep &);
     bool questEquipWeapon(Context &,const QuestStep &);
     bool questSmashOrb(Context &,const QuestStep &);
+    bool questSmashForge(Context &,const QuestStep &);
     bool prepareQuest(Context &,const Goal &);
     bool selectQuestRequirement(Context &,const Goal &);
     bool questFactSatisfied(const Context &,const Goal &,size_t,const QuestFact &) const;
@@ -294,6 +315,7 @@ struct DebugAi::Impl {
     std::optional<OnlineUnit> find(const Context &,const Selector &,bool corpses=false) const;
     bool owned(const Context &,std::string_view) const;
     bool combat(Context &,const Goal &);
+    bool avoidHazards(Context &);
     void observeCombat(Context &);
     void releaseCombat(Context &);
     void execute(Context &,const Goal &);

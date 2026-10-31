@@ -9,6 +9,35 @@ std::string_view ownerName(DebugActionOwner owner) {
     return names[unsigned(owner)];
 }
 }
+DebugSubmitResult DebugAi::Impl::submitInput(Context &c,DebugActionOwner owner,std::string action,unsigned inputs,
+        const std::function<bool()> &submit,const std::function<std::string()> &rejected,std::chrono::milliseconds budget) {
+    const auto now=Clock::now();auto &pending=submissionWaits[owner];
+    if(pending.action!=action) pending={std::move(action),{},inputs,0,decisions,now+budget,{}};
+    pending.decision=decisions;
+    if(!canInput(c,owner,inputs)) {
+        pending.reason="Waiting for the current action's input ownership";
+    } else if(now>=pending.retryAt) {
+        ++pending.attempts;
+        if(submit()) {submissionWaits.erase(owner);return DebugSubmitResult::Accepted;}
+        pending.reason=rejected();
+        if(pending.reason.empty()) pending.reason="Normal client input is temporarily unavailable";
+        pending.retryAt=now+std::chrono::milliseconds(200);
+    }
+    if(now>=pending.deadline) return DebugSubmitResult::Expired;
+    wait(pending.action,pending.reason);return DebugSubmitResult::Waiting;
+}
+bool DebugAi::Impl::submitItem(Context &c,const OnlineItemCommand &command,std::string action,DebugActionOwner owner) {
+    const auto key=action+":"+std::to_string(unsigned(command.action))+":"+std::to_string(command.item)+":"+std::to_string(command.npc);
+    const auto result=submitInput(c,owner,key,DebugItem|DebugInteraction,
+        [&]{return c.inventory.submit(c.session,command);},[&]{return c.inventory.reason();});
+    if(result==DebugSubmitResult::Expired) throw std::runtime_error("Normal item input was not accepted: "+action+"; "+submissionWaits.at(owner).reason);
+    return result==DebugSubmitResult::Accepted;
+}
+bool DebugAi::Impl::submitCombat(Context &c,const OnlineCombatCommand &command,DebugActionOwner owner,std::string action,std::optional<Vec> at) {
+    const auto key=action+":"+std::to_string(command.skill)+":"+std::to_string(unsigned(command.hand));
+    return submitInput(c,owner,key,DebugSkill,[&]{return c.combat.submit(command,at);},
+        [&]{return c.combat.reason();})==DebugSubmitResult::Accepted;
+}
 bool DebugAi::Impl::questWaitRequiresInput(const Context &c) const {
     if(!questRun.pending) return false;
     const auto &pending=*questRun.pending;
@@ -40,7 +69,7 @@ std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c
     if(mobilityTarget) result.push_back({Owner::Mobility,"mobility",DebugMotion|DebugSkill,0,
         "normal skill displacement","fall back to ordinary walking",mobilityDeadline});
     if(potionRequest) result.push_back({Owner::Potion,"potion",DebugItem,0,
-        potionRequest->buying?"trade result and owned potion":"actual potion consumption","fail without repeating use / purchase",potionRequest->deadline});
+        potionRequest->buying?"trade result and actual owned stock":"actual potion consumption","fail without repeating use / purchase",potionRequest->deadline});
     if(localPad && localPad->waiting) result.push_back({Owner::Goal,"local-pad-transfer",
         DebugMotion|DebugSkill|DebugInteraction|DebugMenu,0,"new own-unit relocation in the same level",
         "fail without replaying the submitted pad",localPad->deadline});
@@ -71,7 +100,12 @@ bool DebugAi::Impl::canInput(const Context &c,DebugActionOwner owner,unsigned re
 }
 void DebugAi::Impl::describeActions(const Context &c) {
     actionDiagnostics={{"inputBlocked",inputBlocked},{"executionSuspendedMs",executionClock.suspendedMs()},
-        {"contracts",Json::array()},{"allowed",Json::object()}};
+        {"contracts",Json::array()},{"submissions",Json::array()},{"allowed",Json::object()}};
+    for(const auto &[owner,pending]:submissionWaits) if(pending.decision+1>=decisions)
+        actionDiagnostics["submissions"].push_back({{"owner",ownerName(owner)},{"action",pending.action},
+            {"requestedInputs",pending.inputs},{"submitted",false},{"attempts",pending.attempts},{"reason",pending.reason},
+            {"clock","execution"},{"waitRemainingMs",std::max<int64_t>(0,
+                std::chrono::duration_cast<std::chrono::milliseconds>(pending.deadline-Clock::now()).count())}});
     for(const auto &entry:actionContracts(c)) actionDiagnostics["contracts"].push_back({
         {"owner",ownerName(entry.owner)},{"action",entry.action},{"inputs",entry.inputs},{"interruptors",entry.interruptors},
         {"waitingFor",entry.waitingFor},{"recovery",entry.recovery},{"resultObserved",entry.resultObserved},

@@ -5,6 +5,9 @@
 #include <stdexcept>
 
 namespace d2x {
+namespace {
+Vec position(OnlinePoint p) {return {float(p.x),float(p.y)};}
+}
 void DebugAi::Impl::Definitions::loadPotions() {
     const auto isType=[&](std::string_view code,std::string_view wanted) {
         std::vector<std::string> pending{std::string(code)};std::set<std::string> seen;
@@ -34,12 +37,12 @@ void DebugAi::Impl::Definitions::loadPotions() {
         potions.emplace(std::string(misc.value(row,"code")),potion);
     }
 }
-DebugAi::Impl::Selector DebugAi::Impl::Definitions::supplier(unsigned act) const {
+DebugAi::Impl::Selector DebugAi::Impl::Definitions::supplier(unsigned act,bool portal) const {
     // D2MOO SUnitProxy's native NPC/act table. Names resolve to this MPQ's
     // compiled identities; the actual shelf, prices and positions remain live.
     static constexpr std::array names{"akara","lysander","ormus","jamella","malah"};
     if(act>=names.size()) throw std::runtime_error("No verified potion supplier for this act");
-    const std::string name=names[act];
+    const std::string name=portal && act==1?"drognan":names[act];
     bool vendor=false,life=false,mana=false;
     for(size_t row=0;row<npcs.rows().size();++row) vendor|=npcs.value(row,"npc")==name;
     for(size_t row=0;row<misc.rows().size();++row) {
@@ -47,7 +50,12 @@ DebugAi::Impl::Selector DebugAi::Impl::Definitions::supplier(unsigned act) const
         if(found==potions.end() || misc.number(row,name+"Max").value_or(0)<=0) continue;
         life|=found->second.kind==PotionKind::Life;mana|=found->second.kind==PotionKind::Mana;
     }
-    if(!vendor || !life || !mana) throw std::runtime_error("Current MPQ does not identify the expected potion vendor: "+name);
+    bool book=false,scroll=false;
+    for(size_t row=0;row<misc.rows().size();++row) if(misc.number(row,name+"Max").value_or(0)>0) {
+        book|=misc.value(row,"code")=="tbk";scroll|=misc.value(row,"code")=="tsc";
+    }
+    if(!vendor || (portal?(!book || !scroll):(!life || !mana)))
+        throw std::runtime_error("Current MPQ does not identify the expected supply vendor: "+name);
     return selector(Json{{"npc",name}});
 }
 DebugAi::Impl::SupplyPolicy DebugAi::Impl::parseSupplies(const Json &j) const {
@@ -59,10 +67,28 @@ DebugAi::Impl::SupplyPolicy DebugAi::Impl::parseSupplies(const Json &j) const {
         return int(n);
     };
     SupplyPolicy p;p.enabled=j.value("enabled",true);p.buy=j.value("buy",true);p.returnWhenEmpty=j.value("returnWhenEmpty",true);
+    p.fillPortalBook=j.value("fillPortalBook",true);
     p.lifePercent=integer("lifePercent",60,1,99);p.manaPercent=integer("manaPercent",35,1,99);
     p.criticalLifePercent=integer("criticalLifePercent",std::min(25,p.lifePercent),1,p.lifePercent);
     p.healthCount=integer("healthCount",4,0,16);p.manaCount=integer("manaCount",4,0,16);
     p.intervalMs=integer("intervalMs",1500,600,10000);return p;
+}
+DebugAi::Impl::PortalStock DebugAi::Impl::portalStock(const Context &c) const {
+    PortalStock stock;unsigned maximum=0;
+    for(size_t row=0;row<definitions->misc.rows().size();++row) if(definitions->misc.value(row,"code")=="tbk") {
+        maximum=unsigned(std::max(0,definitions->misc.number(row,"maxstack").value_or(0)));break;
+    }
+    if(!maximum) throw std::runtime_error("Current MPQ has no verified town portal tome capacity");
+    for(const auto &[id,item]:c.session.read().world.items) {
+        if(item.code!="tbk" || !onlineItemOwnedBy(item,c.session.read().load.playerUnitId)) continue;
+        if(!item.positionKnown) {stock.known=false;continue;}
+        if(item.mode!=0 || item.page!=1) continue; // Only usable backpack books, never stash/cube contents.
+        ++stock.books;stock.capacity+=maximum;
+        const auto decoded=c.inventory.read().items.find(id);
+        if(decoded==c.inventory.read().items.end() || !decoded->second.decoded || !decoded->second.quantity) stock.known=false;
+        else stock.pages+=*decoded->second.quantity;
+    }
+    return stock;
 }
 unsigned DebugAi::Impl::potionCount(const Context &c,PotionKind kind) const {
     unsigned count=0;
@@ -100,8 +126,10 @@ bool DebugAi::Impl::observePotion(Context &c) {
     if(request.buying) {
         const bool ack=world.tradeResult && world.tradeResult->revision>request.tradeRevision;
         if(ack && world.tradeResult->result>=7) throw std::runtime_error("Potion purchase rejected by the normal merchant service");
-        if(ack && potionCount(c,request.kind)>request.beforeCount) {
-            ++purchases;note("potion-purchase-confirmed",request.code);potionRequest.reset();shopDeadline=now+std::chrono::seconds(12);return false;
+        const auto stock=request.portalSupply?portalStock(c):PortalStock{};
+        const unsigned count=request.portalSupply?(request.code=="tbk"?stock.books:stock.pages):potionCount(c,request.kind);
+        if(ack && (!request.portalSupply || stock.known) && count>request.beforeCount) {
+            ++purchases;note("supply-purchase-confirmed",request.code);potionRequest.reset();shopDeadline=now+std::chrono::seconds(12);return false;
         }
     } else {
         const auto item=world.items.find(request.item);
@@ -159,7 +187,7 @@ bool DebugAi::Impl::drink(Context &c) {
     }
     if(!selected) return false;
     OnlineItemCommand use;use.action=OnlineItemAction::Use;use.item=selected->id;use.itemRevision=selected->revision;
-    if(!c.inventory.submit(c.session,use)) {nextPotion=Clock::now()+std::chrono::milliseconds(600);wait("potion-blocked",c.inventory.reason());return false;}
+    if(!submitItem(c,use,"potion-use",DebugActionOwner::Potion)) return false;
     PotionRequest pending;pending.item=selected->id;pending.code=selected->code;pending.kind=definitions->potions.at(selected->code).kind;
     pending.life=world.life;pending.mana=world.mana;pending.sequence=c.session.read().world.itemRequest->sequence;
     pending.deadline=Clock::now()+std::chrono::seconds(12);potionRequest=pending;
@@ -169,12 +197,22 @@ bool DebugAi::Impl::restock(Context &c) {
     const auto &view=c.session.read();const auto &world=view.world;
     const bool life=potionCount(c,PotionKind::Life)<unsigned(supplyPolicy.healthCount);
     const bool mana=potionCount(c,PotionKind::Mana)<unsigned(supplyPolicy.manaCount);
-    if(!life && !mana) {
+    const auto stock=portalStock(c);
+    if(supplyPolicy.fillPortalBook && !stock.known) {
+        if(shopDeadline==Clock::time_point{}) shopDeadline=Clock::now()+std::chrono::seconds(12);
+        if(Clock::now()>=shopDeadline) throw std::runtime_error("Owned town portal tome quantity remains unknown");
+        wait("supply-book-observation","Waiting for actual backpack tome quantities");return false;
+    }
+    const bool portal=supplyPolicy.fillPortalBook && (!stock.books || stock.pages<stock.capacity);
+    if(!life && !mana && !portal) {
         if(world.npcRequested && supplyNpc && world.npcRequested==supplyNpc->id) c.session.close_npc();
         shopIssued=false;shelfObserved=false;supplyNpc.reset();return true;
     }
     if(!view.load.act || !c.town.read().town) throw std::runtime_error("Potion restock requires the current act's native town");
-    const auto supplier=definitions->supplier(*view.load.act);const auto npc=find(c,supplier);
+    const auto supplier=definitions->supplier(*view.load.act,portal);const auto npc=find(c,supplier);
+    if(shopIssued && supplyNpc && (!npc || *supplyNpc!=npc->key)) {
+        c.session.close_npc();cancelWalk(c);shopIssued=false;shelfObserved=false;supplyNpc.reset();shopDeadline={};return false;
+    }
     if(!npc) {if(!approachKnown(c,supplier)) explore(c,"potion supplier "+supplier.name);return false;}
     supplyNpc=npc->key;
     if(shopIssued && shopGeneration!=world.interactionGeneration) {shopIssued=false;shelfObserved=false;shopDeadline={};}
@@ -185,11 +223,10 @@ bool DebugAi::Impl::restock(Context &c) {
     }
     if(!shopIssued) {
         OnlineItemCommand open;open.action=OnlineItemAction::TradeOpen;open.npc=npc->key.id;
-        if(c.inventory.submit(c.session,open)) {
+        if(submitItem(c,open,"supply-shop",DebugActionOwner::Supply)) {
             shopIssued=true;shelfObserved=false;shopGeneration=c.session.read().world.interactionGeneration;
             shopDeadline=Clock::now()+std::chrono::seconds(12);cancelWalk(c);note("potion-shop-submitted");
         }
-        else wait("supply-shop",c.inventory.reason());
         return false;
     }
     if(world.shopSource!=npc->key.id || world.shopGamble ||
@@ -206,14 +243,19 @@ bool DebugAi::Impl::restock(Context &c) {
         (bank!=world.playerAttributes.end()?uint64_t(bank->second):0);
     for(const auto &[id,item]:world.items) {
         if(item.action!=11 || item.mode!=0 || item.ownerType!=1 || item.owner!=npc->key.id) continue;
-        const auto p=definitions->potions.find(item.code);if(p==definitions->potions.end()) continue;
-        if((life && p->second.kind!=PotionKind::Life) || (!life && (!mana || p->second.kind!=PotionKind::Mana))) continue;
+        const auto p=definitions->potions.find(item.code);
+        if(portal) {if(item.code!=(stock.books?"tsc":"tbk")) continue;}
+        else {
+            if(p==definitions->potions.end()) continue;
+            if((life && p->second.kind!=PotionKind::Life) || (!life && (!mana || p->second.kind!=PotionKind::Mana))) continue;
+        }
         offered=true;const auto quote=c.supplies && c.supplies->buyQuote?c.supplies->buyQuote(id):std::nullopt;
         if(!quote) continue;
         quoted=true;if(funds && *funds<*quote) continue;
         affordable=true;const bool known=knownFunds>=*quote;
-        if(!best || (known && !knownAffordable) || (known==knownAffordable && p->second.strength>strength)) {
-            strength=p->second.strength;best=item;price=*quote;knownAffordable=known;
+        const int potency=portal?0:p->second.strength;
+        if(!best || (known && !knownAffordable) || (known==knownAffordable && potency>strength)) {
+            strength=potency;best=item;price=*quote;knownAffordable=known;
         }
     }
     if(!best) {
@@ -221,11 +263,13 @@ bool DebugAi::Impl::restock(Context &c) {
         throw std::runtime_error(!offered?"Potion merchant did not offer the required potion":!quoted?
             "Potion purchase price is unknown; no zero-price request is invented":!affordable?"Insufficient observed gold for a potion":"No usable potion offer");
     }
-    const auto kind=definitions->potions.at(best->code).kind;const auto before=potionCount(c,kind);
+    const auto kind=portal?PotionKind::Life:definitions->potions.at(best->code).kind;
+    const auto before=portal?(stock.books?stock.pages:stock.books):potionCount(c,kind);
     const auto trade=world.tradeResult?world.tradeResult->revision:0;
     OnlineItemCommand buy;buy.action=OnlineItemAction::Buy;buy.item=best->id;buy.itemRevision=best->revision;buy.npc=npc->key.id;buy.amount=price;
-    if(!c.inventory.submit(c.session,buy)) {wait("supply-buy",c.inventory.reason());return false;}
-    PotionRequest pending;pending.buying=true;pending.item=best->id;pending.code=best->code;pending.kind=kind;
+    buy.multibuy=portal && stock.books; // Native Shift-buy fills the actual owned tome; never invent a quantity.
+    if(!submitItem(c,buy,"supply-buy",DebugActionOwner::Supply)) return false;
+    PotionRequest pending;pending.buying=true;pending.portalSupply=portal;pending.item=best->id;pending.code=best->code;pending.kind=kind;
     pending.beforeCount=before;pending.tradeRevision=trade;pending.sequence=c.session.read().world.itemRequest->sequence;
     pending.deadline=Clock::now()+std::chrono::seconds(12);potionRequest=pending;note("potion-purchase-submitted",best->code);return false;
 }
@@ -241,7 +285,9 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
         (world.itemRequest && world.itemRequest->state==OnlineItemRequest::State::Pending) ||
         (world.combatRequest && world.combatRequest->state==OnlineCombatRequest::State::Pending) ||
         travelPhase==TravelPhase::WaypointWait || travelPhase==TravelPhase::CrossWait) return false;
-    const bool needs=potionCount(c,PotionKind::Life)<unsigned(supplyPolicy.healthCount) || potionCount(c,PotionKind::Mana)<unsigned(supplyPolicy.manaCount);
+    const auto stock=portalStock(c);
+    const bool needs=potionCount(c,PotionKind::Life)<unsigned(supplyPolicy.healthCount) || potionCount(c,PotionKind::Mana)<unsigned(supplyPolicy.manaCount) ||
+        (supplyPolicy.fillPortalBook && (!stock.known || !stock.books || stock.pages<stock.capacity));
     bool empty=false;
     if(c.supplies && supplyPolicy.returnWhenEmpty && !potionCount(c,PotionKind::Rejuvenation)) {
         empty=(supplyPolicy.healthCount && !potionCount(c,PotionKind::Life) && world.life && c.supplies->maxLife &&
@@ -249,6 +295,23 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
             (supplyPolicy.manaCount && !potionCount(c,PotionKind::Mana) && world.mana && c.supplies->maxMana &&
             *c.supplies->maxMana>0 && uint64_t(*world.mana)*100<uint64_t(*c.supplies->maxMana)*supplyPolicy.manaPercent);
     }
+    // An observed boss plus real damage/low life is evidence of pressure;
+    // the boss label alone is not enough to abandon an otherwise safe fight.
+    bool bossPressure=false;
+    if(supplyPolicy.healthCount && c.supplies && c.supplies->maxLife && *c.supplies->maxLife>0 && world.life &&
+        !potionCount(c,PotionKind::Life) && !potionCount(c,PotionKind::Rejuvenation)) {
+        uint16_t peak=*world.life;for(const auto &sample:combatLifeSamples) peak=std::max(peak,sample.life);
+        const bool hurt=uint64_t(*world.life)*100<uint64_t(*c.supplies->maxLife)*70 ||
+            uint64_t(peak-*world.life)*100>=uint64_t(*c.supplies->maxLife)*policy.lifeDropPercent;
+        if(hurt) for(const auto &[key,unit]:world.units) {
+            (void)key;
+            if(!unit.position || onlineMonsterCorpse(unit) || !c.combat.hostile(unit) ||
+                (position(*unit.position)-c.position).length()>policy.engage) continue;
+            if(const auto id=c.combat.monsterClass(unit)) if(const auto row=findCompiledMonsterRow(definitions->monsters,*id))
+                bossPressure|=definitions->monsters.number(*row,"boss").value_or(0)!=0;
+        }
+    }
+    empty|=supplyPolicy.returnWhenEmpty && bossPressure;
     if(!(c.town.read().town?needs:empty)) return false;
     supplyOrigin=c.town.read().area;
     // Do not return to the field only to execute an already queued trip to
@@ -258,7 +321,8 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
     supplyStarted=Clock::now();supplyDeadline=supplyStarted+std::chrono::seconds(600);
     stop(c.walk,c.control,c.combat);resetStep();combatTarget.reset();retreatPoint.reset();
     supplyStage=c.town.read().town?SupplyStage::Shop:SupplyStage::ToTown;
-    shopIssued=false;shelfObserved=false;supplyNpc.reset();supplyPortalUsed=false;note("supply-detour-started");return true;
+    shopIssued=false;shelfObserved=false;supplyNpc.reset();supplyPortalUsed=false;
+    note("supply-detour-started",bossPressure?"Observed boss pressure without healing; retaining the original goal":"Preparing normal travel reserves");return true;
 }
 bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
     const auto now=Clock::now();
@@ -266,7 +330,7 @@ bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
     Goal movement;movement.kind=Kind::Travel;
     const bool transfer=portalIssued || supplyPortalUsed || travelPhase==TravelPhase::WaypointWait ||
         (travelPhase==TravelPhase::CrossWait && legUnit);
-    if(!transfer && supplyCombat(c,movement)) return true;
+    if(!transfer && supplyStage!=SupplyStage::ToTown && supplyCombat(c,movement)) return true;
     if(supplyStage==SupplyStage::ToTown) {
         if(reachTown(c)) {resetStep();supplyStage=SupplyStage::Shop;shopIssued=false;shelfObserved=false;supplyNpc.reset();}
     } else if(supplyStage==SupplyStage::Shop) {

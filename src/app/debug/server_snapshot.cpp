@@ -330,7 +330,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     result["questExecution"]["actTwo"]={{"eclipse",s.eclipse},{"altarDestroyed",s.altarDestroyed},{"journalRead",s.journalRead},{"tombOpen",s.tombOpen},{"durielSlain",s.durielSlain},{"tombAt",s.tombAt},{"staffTombOffset",s.staffTombOffset?Json(*s.staffTombOffset):Json(nullptr)}};
     const auto &a3=s.actThree;const auto &a4=s.actFour;const auto &a5=s.actFive;
     result["questExecution"]["actThree"]={{"figurineSource",a3.figurineSource.value},{"figurineDropped",a3.figurineDropped},{"gidbinnSpawned",a3.gidbinnSpawned},{"gidbinnDropped",a3.gidbinnDropped},{"orbSmashed",a3.orbSmashed},{"orbHits",a3.orbHits},{"mephistoSlain",a3.mephistoSlain}};
-    result["questExecution"]["actFour"]={{"izualSlain",a4.izualSlain},{"ghostSpawned",a4.ghostSpawned},{"forgePlaced",a4.forgePlaced},{"forgeSmashed",a4.forgeSmashed},{"forgeHits",a4.forgeHits},{"seals",a4.seals},{"diabloSpawned",a4.diabloSpawned},{"diabloSlain",a4.diabloSlain}};
+    result["questExecution"]["actFour"]={{"izualSlain",a4.izualSlain},{"ghostSpawned",a4.ghostSpawned},{"forgePlaced",a4.forgePlaced},{"forgeSmashed",a4.forgeSmashed},{"forgeHits",a4.forgeHits},{"seals",a4.seals},{"sealBossDeathMask",a4.sealBossDeaths},{"diabloSpawned",a4.diabloSpawned},{"diabloSlain",a4.diabloSlain}};
     result["questExecution"]["actFour"]["forgeRewards"]={{"object",a4.forgeObject.value},{"openAt",a4.forgeOpenAt},
         {"due",a4.forgeDue},{"players",a4.forgePlayers},{"tier",a4.forgeTier},{"dropIndex",a4.forgeDropIndex},
         {"successful",a4.forgeSuccessful},{"awaiting",a4.forgeAwaiting},{"code",a4.forgeCode}};

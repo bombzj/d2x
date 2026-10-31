@@ -1,4 +1,5 @@
 #include "ai_impl.hpp"
+#include "content/world/object_mode.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -101,6 +102,55 @@ bool DebugAi::Impl::questSmashOrb(Context &c,const QuestStep &step) {
     if(!orb) {if(!approachKnown(c,*step.target)) explore(c,"the actual Compelling Orb");return false;}
     if(!settleItemInput(c)) return false;
     const Json intent{{"goal","unit"},{"unitType",orb->key.type},{"unitId",orb->key.id},{"interact",true},{"purpose","quest-orb"}};
+    if(walk(c,intent)) observeQuestInteraction(c,intent);
+    return false;
+}
+} // namespace d2x
+
+namespace d2x {
+bool DebugAi::Impl::Definitions::itemHasType(std::string_view code,std::string_view wanted) const {
+    std::vector<std::string> pending;std::set<std::string> visited;
+    for(const auto *table:{&misc,&weapons,&armor}) for(size_t row=0;row<table->rows().size();++row)
+        if(table->value(row,"code")==code) pending.push_back(std::string(table->value(row,"type")));
+    while(!pending.empty()) {
+        auto type=std::move(pending.back());pending.pop_back();
+        if(type==wanted) return true;
+        if(type.empty() || !visited.insert(type).second) continue;
+        for(size_t row=0;row<types.rows().size();++row) if(types.value(row,"Code")==type)
+            for(const auto field:{"Equiv1","Equiv2"}) if(!types.value(row,field).empty()) pending.push_back(std::string(types.value(row,field)));
+    }
+    return false;
+}
+bool DebugAi::Impl::questSmashForge(Context &c,const QuestStep &step) {
+    const auto now=Clock::now();const auto flags=questFlags(c,QuestId::HellsForge);
+    if(questRun.materialPhase>=3) {
+        if(!questRun.pending) throw std::runtime_error("Forge hit sequence lost its submitted-result contract");
+        unsigned gems=0,runes=0;
+        const auto object=step.target?find(c,*step.target,true):std::nullopt;
+        for(const auto &[id,item]:c.session.read().world.items) {
+            if(questRun.rewardBefore.contains(id) || item.mode!=3 || !item.positionKnown || !object || !object->position) continue;
+            if((Vec{float(item.groundX),float(item.groundY)}-Vec{float(object->position->x),float(object->position->y)}).length()>24) continue;
+            gems+=definitions->itemHasType(item.code,"gem");runes+=definitions->itemHasType(item.code,"rune");
+        }
+        if(flags && (*flags&3) && !owned(c,"hfh") && gems>=4 && runes>=1) {
+            note("quest-forge-drops-observed",std::to_string(gems)+" gems / "+std::to_string(runes)+" runes");return true;
+        }
+        if(now>=questRun.pending->deadline) throw std::runtime_error("Forge result incomplete: pending/reward flag, hammer removal and four gems / one rune were not all observed");
+        if(!questRun.pending->statusRequested && c.session.request_quests(c.session.read().gameGeneration)) questRun.pending->statusRequested=true;
+        wait("quest-forge-result","Observing actual hammer consumption and the native sequential reward drops");return false;
+    }
+    if(now<questRun.sweepReady) {wait("quest-forge-input","Waiting between native hammer operations");return false;}
+    const auto forge=step.target?find(c,*step.target,true):std::nullopt;
+    if(!forge) {if(!step.target || !approachKnown(c,*step.target)) explore(c,"actual Hellforge");return false;}
+    int mode=forge->mode.value_or(0);
+    const auto milliseconds=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+    const float age=forge->actionReceivedMilliseconds && milliseconds>=forge->actionReceivedMilliseconds?
+        float(milliseconds-forge->actionReceivedMilliseconds)/1000.f:0.f;
+    for(size_t row=0;row<definitions->objects.rows().size();++row)
+        if(definitions->objects.number(row,"Id")==forge->classId) {mode=objectDisplayMode(definitions->objects,row,mode,age);break;}
+    if(mode!=2) {wait("quest-forge-animation","Waiting for the original client ENDANIM before another hammer operation");return false;}
+    if(!settleItemInput(c)) return false;
+    const Json intent{{"goal","unit"},{"unitType",forge->key.type},{"unitId",forge->key.id},{"interact",true},{"purpose","quest-forge"}};
     if(walk(c,intent)) observeQuestInteraction(c,intent);
     return false;
 }

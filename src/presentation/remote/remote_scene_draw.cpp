@@ -170,7 +170,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         }
     clientMissiles.clear();
     for (const auto &missile : shared.clientMissiles())
-        clientMissiles.push_back({missile.missileId, missile.pos, missile.age, missile.duration - missile.age});
+        clientMissiles.push_back({missile.missileId, missile.pos, missile.age, missile.duration - missile.age,missile.velocity,missile.hostile});
     const bool waypointOpen = v.world.waypointSource.has_value();
     auto local = [&](OnlinePoint p) {
         return Vec{float(int(p.x) - origin.x), float(int(p.y) - origin.y)};

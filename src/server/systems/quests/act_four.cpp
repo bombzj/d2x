@@ -11,8 +11,17 @@
 #include "server/systems/loot/system.hpp"
 #include "gameplay/quest/acts/act_four_state.hpp"
 #include "core/random.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include <algorithm>
 namespace d2x::server::quests {
+void System::nativeMonsterDied(const monsters::Actor &unit) noexcept {
+    if(int(unit.area)!=108 || unit.identity.origin==SpawnOrigin::Debug || unit.identity.origin==SpawnOrigin::Summoned) return;
+    // A4Q2_Callback08 retains the seal-boss deaths in game quest state.
+    // Actor/corpse retirement must not erase an already committed kill.
+    if(unit.identity.superUnique=="Infector of Souls") state_.actFour.sealBossDeaths|=1;
+    else if(unit.identity.superUnique=="Lord De Seis") state_.actFour.sealBossDeaths|=2;
+    else if(unit.identity.superUnique=="Grand Vizier of Chaos") state_.actFour.sealBossDeaths|=4;
+}
 uint64_t System::forgeRewardDue(EntityId id) const {
     return state_.actFour.forgeObject==id?state_.actFour.forgeDue:0;
 }
@@ -105,7 +114,6 @@ std::optional<Dialogue> System::actFourDialogue(const ActorContext &actor,const 
 DomainResult<> System::acknowledgeActFour(const ActorContext &actor,const Request &request,const NpcRule &npc) {
     const auto *p=ports_.players.find(actor.player);if(!p) return {DomainStatus::InvalidActor,{}};
     auto record=p->persistent.player;auto &q=record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(request.quest));
-    std::optional<travel::SpecialPortalPlan> portal;
     if(request.quest==QuestId::FallenAngel) {
         if(npc.code=="tyrael2" && !q.stage) q.stage=1;
         else if(npc.code=="tyrael2" && q.stage==3) {
@@ -123,15 +131,26 @@ DomainResult<> System::acknowledgeActFour(const ActorContext &actor,const Reques
     if(request.quest==QuestId::TerrorsEnd) {
         if(!q.stage && npc.code=="tyrael2") q.stage=1;
         else if(q.stage==4 && npc.code=="tyrael2") {
-            const auto prepared=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::ActFive,0,p->position+Vec{5,0});
-            if(!prepared) return {prepared.status,{}};
-            portal=*prepared.value;
-            q.flags=(q.flags&~terrorTyraelPending)|terrorPortalOpened;
+            if(p->rules.skills && p->rules.skills->pd2) {
+                const auto prepared=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::ActFive,0,p->position+Vec{5,0});
+                if(!prepared) return {prepared.status,{}};
+                q.flags=(q.flags&~terrorTyraelPending)|terrorPortalOpened;
+                const auto result=commit(actor,std::move(record));
+                if(result) {ports_.travel.commitSpecialPortal(*prepared.value);state_.actFour.portalOpened=true;}
+                return result;
+            }
+            // A4Q2 topic20000 sets CUSTOM5 before attempting the source-only
+            // Objects566 allocation; it does not clear the other custom bits.
+            q.flags|=terrorPortalOpened;
+            const auto result=commit(actor,std::move(record));if(!result) return result;
+            if(!state_.actFour.portalOpened) {
+                const auto prepared=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::ActFive,0);
+                if(prepared) {ports_.travel.commitSpecialPortal(*prepared.value);state_.actFour.portalOpened=true;}
+            }
+            return result;
         } else if(q.stage==4 && npc.code.starts_with("cain")) q.flags&=~terrorCainPending;
     }
-    const auto result=commit(actor,std::move(record));
-    if(result && portal) {ports_.travel.commitSpecialPortal(std::move(*portal));state_.actFour.portalOpened=true;}
-    return result;
+    return commit(actor,std::move(record));
 }
 DomainResult<> System::operateActFour(const ActorContext &actor,EntityId source,int definition,int operation,Vec position) {
     const auto *p=ports_.players.find(actor.player);if(!p) return {DomainStatus::InvalidActor,{}};
@@ -259,12 +278,7 @@ StepStatus System::actFourStep(TickContext tick) {
         if(int(p.area)!=103) for(const auto quest:{QuestId::FallenAngel,QuestId::HellsForge,QuestId::TerrorsEnd}) if(!unavailable(id,record,quest) && book[questIndex(quest)].stage==1) book[questIndex(quest)].stage=2;
         if(int(p.area)==108) {
             auto &q=book[questIndex(QuestId::TerrorsEnd)];if(!unavailable(id,record,QuestId::TerrorsEnd) && q.stage<3) q.stage=3;
-            bool cleared=world.seals.size()==5;
-            for(const auto *name:{"Infector of Souls","Lord De Seis","Grand Vizier of Chaos"}) {
-                bool killed=false;
-                for(const auto &[monsterId,m]:ports_.monsters.read().actors) {(void)monsterId;if(m.area==p.area && m.identity.superUnique==name && m.identity.origin!=SpawnOrigin::Debug && !m.alive()) killed=true;}
-                cleared=cleared && killed;
-            }
+            const bool cleared=world.seals.size()==5 && world.sealBossDeaths==7;
             if(cleared && !world.diabloAt) {
                 if(!world.sanctumCleared) {
                     QuestCompletion completion;

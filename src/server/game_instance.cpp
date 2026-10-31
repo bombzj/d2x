@@ -101,7 +101,7 @@ void GameInstance::collectNativeIdentities(std::set<EntityId> retained) {
     }
     const auto portals=[&](const auto &values) {
         for(const auto &[id,portal]:values) {
-            (void)id;retained.insert(portal.fieldId);retained.insert(portal.townId);retained.insert(portal.owner);
+            (void)id;retained.insert(portal.fieldId);if(portal.townId) retained.insert(portal.townId);if(portal.owner) retained.insert(portal.owner);
         }
     };
     portals(systems_.travel.read().portals);portals(systems_.travel.read().specialPortals);
@@ -509,7 +509,7 @@ namespace d2x::server {
 std::vector<travel::Portal> GameInstance::visiblePortals(PlayerId player) const {
     std::vector<travel::Portal> result;
     for(const auto &[owner,portal]:systems_.travel.read().portals) { (void)owner; if(visiblePoint(player,portal.field,portal.fieldPosition) || visiblePoint(player,portal.town,portal.townPosition)) result.push_back(portal); }
-    for(const auto &[destination,portal]:systems_.travel.read().specialPortals) {(void)destination;if(visiblePoint(player,portal.field,portal.fieldPosition) || visiblePoint(player,portal.town,portal.townPosition)) result.push_back(portal);}
+    for(const auto &[destination,portal]:systems_.travel.read().specialPortals) {(void)destination;if(visiblePoint(player,portal.field,portal.fieldPosition) || (portal.townId && visiblePoint(player,portal.town,portal.townPosition))) result.push_back(portal);}
     return result;
 }
 }

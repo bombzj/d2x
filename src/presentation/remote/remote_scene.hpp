@@ -61,6 +61,7 @@ class RemoteScene {
     std::optional<Vec> playerDisplayPosition(const OnlineView &) const;
     std::optional<Vec> playerPathPosition(const OnlineView &) const;
     const std::vector<OnlinePlayerDisplay> &players() const;
+    const std::vector<OnlineSceneView::MissileDisplay> &missileObservations() const;
     std::vector<std::string> effectLimitations() const;
     void effectStatus(OnlineSceneView &) const;
 };

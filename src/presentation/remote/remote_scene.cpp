@@ -397,6 +397,7 @@ std::optional<Vec> RemoteScene::playerDisplayPosition(const OnlineView &view) co
     return found->second.position + found->second.correction;
 }
 const std::vector<OnlinePlayerDisplay> &RemoteScene::players() const { return impl_->players; }
+const std::vector<OnlineSceneView::MissileDisplay> &RemoteScene::missileObservations() const { return impl_->clientMissiles; }
 std::optional<Vec> RemoteScene::playerPathPosition(const OnlineView &view) const {
     // Reuse assignment/area/discontinuity checks, but exclude visual correction.
     if (!playerDisplayPosition(view)) return {};

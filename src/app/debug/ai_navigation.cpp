@@ -136,7 +136,7 @@ void DebugAi::Impl::observeChild(Context &c,const Goal &goal) {
         supplyPortalUsed=true;supplyPortalDeadline=now+std::chrono::seconds(15);cancelWalk(c);
         note("supply-return-submitted",std::to_string(unit.id));
     } else if(supplyStage==SupplyStage::None && (walkIntent.value("purpose",std::string{})=="quest-object" ||
-        walkIntent.value("purpose",std::string{})=="quest-portal" || walkIntent.value("purpose",std::string{})=="quest-orb")) {
+        walkIntent.value("purpose",std::string{})=="quest-portal" || walkIntent.value("purpose",std::string{})=="quest-orb" || walkIntent.value("purpose",std::string{})=="quest-forge")) {
         const auto intent=walkIntent;observeQuestInteraction(c,intent);
     } else if(supplyStage==SupplyStage::None && goal.kind==Kind::Acquire && goal.sourceObject && target==unit && !objectIssued) {
         objectIssued=true;setActionDeadline(std::chrono::seconds(12));++interactions;
@@ -1177,6 +1177,41 @@ bool DebugAi::Impl::travel(Context &c,uint16_t destination,bool allowWaypoint) {
     }
     if(approachKnown(c,Selector{5,*legDestination,"known connection to "+std::to_string(*legDestination)})) return false;
     const auto edges=c.town.walkingBoundaries();
+    // A normal Teleport can cross an observed outdoor wall even when no
+    // walking opening has been reconstructed. Only active native neighbors
+    // on this resolved walking connection supply candidate floor; no unseen
+    // rooms, portal prerequisites, or town Teleport restrictions are bypassed.
+    bool targetTeleport=false;
+    for(size_t row=0;row<definitions->levels.rows().size();++row)
+        if(definitions->levels.number(row,"Id")==legDestination)
+            targetTeleport=definitions->levels.number(row,"Teleport").value_or(0)!=0;
+    if(targetTeleport && teleportAvailable(c) && std::any_of(edges.begin(),edges.end(),[&](const auto &edge){return edge.destination==legDestination;})) {
+        const auto &rooms=c.town.navigationRooms();const auto *map=c.town.map();const auto origin=c.town.read().origin;
+        const auto inside=[](const auto &room,Vec at) {return at.x>=room.x && at.y>=room.y && at.x<room.x+room.width && at.y<room.y+room.height;};
+        const auto current=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.loaded && room.level==area && inside(room,c.position);});
+        std::optional<OnlinePoint> landing;float best=std::numeric_limits<float>::max();
+        if(current!=rooms.end() && map && origin) for(const auto next:current->near) {
+            if(next>=rooms.size()) continue;
+            const auto &room=rooms[next];if(!room.loaded || room.level!=legDestination) continue;
+            for(const float y:{.25f,.5f,.75f}) for(const float x:{.25f,.5f,.75f}) {
+                const Vec sample{room.x+room.width*x-origin->x+.5f,room.y+room.height*y-origin->y+.5f};
+                const auto open=map->grid.nativeSpawn(sample,8,playerMovement);if(!open) continue;
+                const auto point=nativePoint(*open+Vec{float(origin->x),float(origin->y)});const Vec at{float(point.x),float(point.y)};
+                const float span=distance(at,c.position);
+                const auto trial=std::tuple{area.value_or(0),point.x,point.y,point.x,point.y};
+                if(!inside(room,at) || span<2 || span>mobilityPolicy.distance ||
+                    (mobilityTrials.contains(trial) && mobilityTrials.at(trial)>=2)) continue;
+                if(span<best) {best=span;landing=point;}
+            }
+        }
+        if(landing) {
+            travelDiagnostics["result"]="observed-neighbor-teleport";
+            travelDiagnostics["landing"]={landing->x,landing->y};
+            wait("travel-teleport","Crossing to currently reconstructed adjacent-level floor with normal Teleport");
+            walk(c,{{"goal","point"},{"x",landing->x},{"y",landing->y},{"interact",false},{"purpose","known-target-teleport"}});
+            return false;
+        }
+    }
     if(exploring && c.walk.active()) {explore(c,"connection to level "+std::to_string(*legDestination));return false;}
     if(now>=exitRetryAt && std::any_of(edges.begin(),edges.end(),[&](const auto &v){return v.destination==legDestination;})) {
         travelPhase=TravelPhase::WalkExit;return false;

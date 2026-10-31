@@ -90,6 +90,7 @@ struct ActThreeState {
 };
 struct ActFourState {
     bool izualActivated{};
+    uint8_t sealBossDeaths{};
     bool izualSlain{},ghostSpawned{},hammerDropped{},forgePlaced{},forgeSmashed{},diabloSlain{},diabloSpawned{},portalOpened{};
     bool sanctumCleared{};
     std::optional<QuestCompletion> sanctumCompletion;

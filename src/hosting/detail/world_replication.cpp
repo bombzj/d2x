@@ -290,16 +290,17 @@ void NativeRealmService::publishPortals() {
         // 0x82 introduces both GUIDs, including the endpoint outside visibility.
         // Track those placeholders too so replacing/closing a pair removes both.
         next.emplace(portal.fieldId, 0);
-        next.emplace(portal.townId, 0);
+        if(portal.townId) next.emplace(portal.townId, 0);
         for(const bool town:{false,true}) {
+            if(town && !portal.townId) continue;
             const auto area=town?portal.town:portal.field;
             if (!host.visiblePoint(*binding, area, town ? portal.townPosition : portal.fieldPosition)) continue;
             const auto id=town?portal.townId:portal.fieldId; next.insert_or_assign(id,portal.revision);
             if(peer.portals.contains(id) && peer.portals.at(id)==portal.revision) continue;
             changed=true; const auto position=(town?portal.townPosition:portal.fieldPosition)+shared.terrain.at(binding->game).at(area).origin;
             if(std::none_of(objects.begin(),objects.end(),[&](const auto &object){return object.id==id;}))
-                packets.push_back(encodeServerPacket(ServerMessage::AssignObject,[&](auto &out){out.u8(2);out.u32(wireId(id));out.u16(uint16_t(portal.rule.definition));out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(portal.isOpened(town)?2:1);out.u8(uint8_t(town?portal.field:portal.town));}));
-            packets.push_back(encodeServerPacket(ServerMessage::PortalState,[&](auto &out){out.u8(0);out.u8(uint8_t(town?portal.field:portal.town));out.u32(wireId(id));}));
+                packets.push_back(encodeServerPacket(ServerMessage::AssignObject,[&](auto &out){out.u8(2);out.u32(wireId(id));out.u16(uint16_t(portal.rule.definition));out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(portal.isOpened(town)?2:1);out.u8(portal.townId?uint8_t(town?portal.field:portal.town):0);}));
+            if(portal.townId) packets.push_back(encodeServerPacket(ServerMessage::PortalState,[&](auto &out){out.u8(0);out.u8(uint8_t(town?portal.field:portal.town));out.u32(wireId(id));}));
         }
         if(changed && !portal.shared) packets.push_back(encodeServerPacket(ServerMessage::PortalOwner,[&](auto &out){out.u32(wireId(portal.owner));for(size_t i=0;i<16;++i) out.u8(i<portal.name.size()?uint8_t(portal.name[i]):0);out.u32(wireId(portal.fieldId));out.u32(wireId(portal.townId));}));
     }

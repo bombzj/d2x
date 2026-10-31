@@ -394,8 +394,10 @@ void System::publishActors(ActorPublication &plan) noexcept {
         if(!node.mapped().alive() && (!node.mapped().owner || node.mapped().conversion))
             ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,node.key()},FrameEventType::AiThink,0);
         if(live!=state_.actors.end()) {
-            if(live->second.alive() && !node.mapped().alive() && !(node.mapped().questNpc && node.mapped().nativeMode==12))
+            if(live->second.alive() && !node.mapped().alive() && !(node.mapped().questNpc && node.mapped().nativeMode==12)) {
                 ports_.areas.recordMonsterDeath(node.key());
+                ports_.quests.nativeMonsterDied(node.mapped());
+            }
             if(node.mapped().revivalPosition) {
                 ports_.areas.setUnitCollision(node.key(),{});
                 ports_.areas.moveRoomUnit(node.key(),node.mapped().area,node.mapped().position);

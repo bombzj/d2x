@@ -19,6 +19,18 @@ inline std::optional<float> objectEndAnimation(const DataTable &objects, size_t 
         const auto frames=objects.number(row,"FrameCnt1");
         return frames && *frames>0?std::optional<float>{float(*frames)/25.f}:std::nullopt;
     }
+    if(objects.number(row,"OperateFn").value_or(0)==49) {
+        // A4Q3 places the stone with ENDANIM at FrameCnt1, without +1.
+        const auto frames=objects.number(row,"FrameCnt1");
+        return frames && *frames>0?std::optional<float>{float(*frames)/25.f}:std::nullopt;
+    }
+    const auto operation=objects.number(row,"OperateFn").value_or(0);
+    if(operation==52 || operation==54 || operation==55 || operation==56) {
+        // A4Q2 Operate52 is shared by all five seals and uses FrameCnt1>>7,
+        // twice the TXT frame count, rather than the ordinary ENDANIM delay.
+        const auto frames=objects.number(row,"FrameCnt1");
+        return frames && *frames>0?std::optional<float>{2.f*float(*frames)/25.f}:std::nullopt;
+    }
     switch (objects.number(row, "OperateFn").value_or(0)) {
     case 2:
         if (objects.number(row, "CycleAnim1").value_or(0)) return {};

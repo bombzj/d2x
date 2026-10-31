@@ -626,7 +626,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
         DebugAi::SuppliesView aiSupplies;
         if(debugAi.active() && sharedClients) {
-            if(scene) aiSupplies.castInputBusy=scene->castInputBusy();
+            if(scene) {aiSupplies.castInputBusy=scene->castInputBusy();aiSupplies.missiles=scene->missileObservations();}
             aiSupplies.skillUsable=[&](uint16_t skill)->std::optional<bool> {
                 const auto &player=sharedClients->character().read();
                 if(!session.read().load.playerUnitId || player.actor.value!=uint64_t(*session.read().load.playerUnitId)+1) return {};

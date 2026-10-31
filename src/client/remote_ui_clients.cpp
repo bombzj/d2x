@@ -160,8 +160,10 @@ void RemoteUiClients::Impl::update(const OnlineSceneView &binding, std::optional
             inventoryView.revision = revision;
         }
     }
-RemoteUiClients::RemoteUiClients(Archives &a,net::RealmSession &s,RemoteInventory &i,RemoteCombat &c,RemoteControl &r,bool running):impl_(std::make_unique<Impl>(a,s,i,c,r)){impl_->run=running;}
-RemoteUiClients::~RemoteUiClients()=default;
+RemoteUiClients::RemoteUiClients(Archives &a,net::RealmSession &s,RemoteInventory &i,RemoteCombat &c,RemoteControl &r,bool running):impl_(std::make_unique<Impl>(a,s,i,c,r)){
+    impl_->run=running;c.setSkillRankResolver([state=impl_.get()]{return state->observedSkillRanks();});
+}
+RemoteUiClients::~RemoteUiClients(){impl_->combat.setSkillRankResolver({});}
 size_t RemoteUiClients::queuedItemCommands() const { return impl_->transactions.size(); }
 std::optional<uint64_t> RemoteUiClients::waitingItemRequest() const { return impl_->waiting; }
 std::optional<unsigned> RemoteUiClients::itemQuote(uint32_t item, OnlineItemAction action) const {

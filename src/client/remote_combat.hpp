@@ -7,6 +7,7 @@
 #include <array>
 #include <map>
 #include <vector>
+#include <functional>
 
 namespace d2x {
 class RemoteInventory;
@@ -44,6 +45,8 @@ class RemoteCombat {
     std::map<uint16_t, std::array<unsigned, 16>> componentBits_;
     uint64_t game_{~uint64_t{}}, area_{~uint64_t{}};
     std::string reason_;
+    std::function<std::optional<std::map<int,int>>()> skillRankResolver_;
+    void applyObservedSkillRanks();
     bool reject(std::string);
     std::string_view classCode() const;
     bool innateSkill(uint16_t) const;
@@ -59,6 +62,7 @@ class RemoteCombat {
     RemoteCombat(Archives &, RemoteTown &, net::RealmSession &, RemoteInventory &);
     bool submit(OnlineCombatCommand,std::optional<Vec> inputOrigin = {});
     void update();
+    void setSkillRankResolver(std::function<std::optional<std::map<int,int>>()> resolver) {skillRankResolver_=std::move(resolver);}
     bool hostile(const OnlineUnit &) const;
     bool hostileSource(const OnlineUnit &) const;
     bool pd2ChargeTargetEligible(const OnlineUnit &source,const OnlineUnit &target) const;

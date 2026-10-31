@@ -8,6 +8,8 @@
 #include "server/systems/loot/system.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/systems/objects/system.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "gameplay/stats/modifier_values.hpp"
 #include "server/systems/social/system.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
@@ -70,6 +72,15 @@ DomainResult<> System::prepareReward(const ActorContext &actor,EntityId source,R
     const auto seed=kind==RewardKind::Rogue || kind==RewardKind::IronWolf || kind==RewardKind::PlaceSoulstone ||
         kind==RewardKind::SmashSoulstone || kind==RewardKind::SmashOrb?uint64_t{}:childRandom(random);
     Preparation request{actor,state_.next,seed,p->inventoryRevision,p->characterRevision,conversation?lease->revision:0,source,kind,p->persistent,p->definition.code,ports_.settings.difficulty};
+    if(kind==RewardKind::ForgeHammer) {
+        const auto *monster=ports_.monsters.find(source);
+        if(!monster || monster->area!=actor.area || monster->alive() || monster->identity.origin==SpawnOrigin::Debug ||
+            monster->identity.superUnique!="The Feature Creep") return {DomainStatus::Stale,{}};
+        const int level=std::max(1,monster->nativeStats && monster->rule.stats?
+            logicalStatValue(monster->nativeStats->values,*monster->rule.stats,"level"):monster->rule.level);
+        if(level>131) return {DomainStatus::NotImplemented,{}};
+        request.sourceItemLevel=unsigned(level);
+    }
     request.hireling=hireling;
     request.dropPosition=dropPosition;
     if(kind==RewardKind::SmashSoulstone) {

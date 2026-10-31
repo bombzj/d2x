@@ -194,6 +194,7 @@ struct RemoteUiClients::Impl {
         const std::map<int,int> &ranks,int defense=0,int rating=0,int minimum=0,int maximum=0) const;
     std::optional<CombatDisplayEquipment> calculateCombatEquipment(OnlineUnitKey key,EquipmentActor actor,
         const std::map<int,int> &ranks,int defense,int rating,int minimum,int maximum) const;
+    std::optional<std::map<int,int>> observedSkillRanks() const;
     std::optional<unsigned> itemQuote(uint32_t id, OnlineItemAction action) const;
     InventoryItemView projectItem(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const;
     std::optional<unsigned> repairAllQuote() const;

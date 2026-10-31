@@ -17,7 +17,7 @@ bool DebugAi::Impl::selectSkill(Context &c,uint16_t skill,OnlineSkillHand hand) 
         now-lastSelection<std::chrono::milliseconds(600)) return false;
     lastSelection=now;OnlineCombatCommand request;request.action=OnlineCombatCommand::Action::SelectSkill;
     request.hand=hand;request.skill=skill;
-    if(!c.combat.submit(request)) reason=c.combat.reason();
+    submitCombat(c,request,DebugActionOwner::Combat,"skill-select");
     return false; // A queued selection is never a confirmed hand assignment.
 }
 std::optional<uint16_t> DebugAi::Impl::battleAura(const Context &c) const {
@@ -63,9 +63,11 @@ bool DebugAi::Impl::observeMobility(Context &c) {
 bool DebugAi::Impl::mobility(Context &c) {
     if(mobilityTarget) return observeMobility(c);
     const auto now=Clock::now();const auto &world=c.session.read().world;
-    if(combatTarget || !c.walk.active() || now<nextMobility || world.npcRequested || world.waypointSource ||
+    const bool combatMovement=!combatOwned && (retreatPoint || combatRun.reposition || phase=="combat-approach");
+    const bool combatActive=combatTarget && combatRun.suspendedAt==Clock::time_point{} && !combatMovement;
+    if(combatActive || !c.walk.active() || now<nextMobility || world.npcRequested || world.waypointSource ||
         portalUsed || travelPhase==TravelPhase::WaypointWait || travelPhase==TravelPhase::CrossWait) {
-        mobilityDiagnostics["skip"]={{"combat",bool(combatTarget)},{"childActive",c.walk.active()},
+        mobilityDiagnostics["skip"]={{"combat",combatActive},{"retainedCombat",bool(combatTarget)},{"childActive",c.walk.active()},
             {"cooldown",now<nextMobility},{"npc",bool(world.npcRequested)},{"waypoint",bool(world.waypointSource)},
             {"portalUsed",portalUsed},{"travelPhase",unsigned(travelPhase)}};
         return false;
@@ -75,7 +77,7 @@ bool DebugAi::Impl::mobility(Context &c) {
     const Vec wanted{target.at("x").get<float>(),target.at("y").get<float>()};
     Vec delta=wanted-c.position;float distance=delta.length();
     const bool pickup=walkIntent.is_object() && walkIntent.value("purpose",std::string{})=="pickup-approach";
-    const bool knownLanding=walkIntent.is_object() && (walkIntent.value("purpose",std::string{})=="known-target-teleport" ||
+    const bool knownLanding=walkIntent.is_object() && (walkIntent.value("purpose",std::string{})=="known-target-teleport" || walkIntent.value("purpose",std::string{})=="combat-evade" ||
         ((walkIntent.value("purpose",std::string{})=="exploration-boundary" ||
           walkIntent.value("purpose",std::string{})=="exploration-backtrack") && walkIntent.value("directTeleport",false)));
     if(distance<1 || (distance<8 && !pickup && !knownLanding)) return false;
@@ -218,7 +220,7 @@ bool DebugAi::Impl::mobility(Context &c) {
     c.control.cancelMovement();OnlineCombatCommand cast;cast.action=OnlineCombatCommand::Action::Cast;
     cast.hand=hand;cast.point=OnlinePoint{uint16_t(std::floor(landing->x)),uint16_t(std::floor(landing->y))};
     cast.stationary=true;cast.repeat=false;
-    if(!c.combat.submit(cast,c.position)) {
+    if(!submitCombat(c,cast,DebugActionOwner::Mobility,"mobility-cast",c.position)) {
         nextMobility=now+std::chrono::seconds(3);note("mobility-unavailable",c.combat.reason());return false;
     }
     ++castRequests;mobilityFrom=c.position;mobilityTarget=cast.point;

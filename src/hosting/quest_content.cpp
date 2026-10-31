@@ -21,11 +21,11 @@ void prepareQuests(GameHost &host,GameHandle game,Archives &archives,const Class
                 item.nativeQuestDifficulty=unsigned(source.difficulty);item.identified=true;
                 character.inventory.items.emplace(item.id,item);result.items.items.push_back(std::move(item));
             };
-            const auto questUnique=[&](const std::string &code) {
-                const auto unique=rollSpecialItem(data.uniqueItems,code,99,random);random=unique.randomState;
+            const auto questUnique=[&](const std::string &code,unsigned level=99) {
+                const auto unique=rollSpecialItem(data.uniqueItems,code,level,random);random=unique.randomState;
                 if(!unique.row) throw std::runtime_error("Missing original unique quest item: "+code);
                 const auto row=std::find_if(data.uniqueItems.begin(),data.uniqueItems.end(),[&](const auto &r){return r.row==*unique.row;});
-                const auto properties=rollItemProperties(data,row->properties,random,99);random=properties.randomState;
+                const auto properties=rollItemProperties(data,row->properties,random,level);random=properties.randomState;
                 ItemGeneration generation;generation.quality=ItemQuality::Unique;generation.specialRow=int32_t(row->row);
                 generation.requiredLevel=row->requiredLevel;generation.propertyRolls=properties.values;generation.operationRolls=properties.operations;return generation;
             };
@@ -54,7 +54,9 @@ void prepareQuests(GameHost &host,GameHandle game,Archives &archives,const Class
                 random=roll.randomState;
                 add(code,unsigned(level),std::move(roll.generation));break;
             }
-            case RewardKind::ForgeHammer: add(data.hellforge.hammer,unsigned(source.character.player.level),questUnique(data.hellforge.hammer));break;
+            case RewardKind::ForgeHammer:
+                if(!source.sourceItemLevel) throw std::runtime_error("Missing frozen Hellforge monster item level");
+                add(data.hellforge.hammer,*source.sourceItemLevel,questUnique(data.hellforge.hammer,*source.sourceItemLevel));break;
             case RewardKind::SmashSoulstone: break; // A4Q3 QUESTFN drops each item later.
             case RewardKind::KhalimEye: case RewardKind::KhalimBrain: case RewardKind::KhalimHeart: case RewardKind::KhalimFlail:
             case RewardKind::CouncilCube: case RewardKind::LamTome: case RewardKind::Soulstone: {

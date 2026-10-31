@@ -351,6 +351,23 @@ void RemoteUiClients::Impl::projectObservedAttributes(CharacterProjectionInput &
             input.stats.insert_or_assign(name,double(full.get({id,0}))/std::ldexp(1.,rules.definitions.at(id).valueShift));
         }
     }
+std::optional<std::map<int,int>> RemoteUiClients::Impl::observedSkillRanks() const {
+        const auto &online=session.read();const auto &world=online.world;
+        if(data.profile!="lod-named-txt-v1" || !online.load.playerUnitId || !world.playerBaseSkillsAssigned) return {};
+        const OnlineUnitKey key{0,*online.load.playerUnitId};const auto actor=world.units.find(key);
+        const auto level=stat("level"),strength=stat("strength"),dexterity=stat("dexterity");
+        if(actor==world.units.end() || !actor->second.classId || *actor->second.classId>=data.characters.size() ||
+            !level || !strength || !dexterity) return {};
+        const auto strBonus=knownSelfEquipmentStat("strength",int(*level)),dexBonus=knownSelfEquipmentStat("dexterity",int(*level));
+        if(!strBonus || !dexBonus) return {};
+        const auto &definition=data.characters[*actor->second.classId];
+        const std::map<int,int> ranks(world.playerSkills.begin(),world.playerSkills.end());
+        const auto equipment=observedCombatEquipment(key,
+            {definition.code,int(*strength)+*strBonus,int(*dexterity)+*dexBonus,int(*level),definition.blockFactor,std::min(world.weaponSet,1u)},
+            ranks,0,definition.toHitFactor-35);
+        if(!equipment) return {};
+        return equipment->skillRanks;
+    }
 void RemoteUiClients::Impl::projectCharacter() {
         const auto &online = session.read(); const auto &w = online.world;
         CharacterProjectionInput input;
@@ -456,6 +473,9 @@ void RemoteUiClients::Impl::projectCharacter() {
                 input.effectiveRanks,0,definition.toHitFactor-35);
             if(input.combatEquipment) {
                 const auto &equipment=*input.combatEquipment;
+                if(data.profile=="lod-named-txt-v1") {
+                    for(const auto &[id,rank]:equipment.skillRanks) input.effectiveRanks.insert_or_assign(id,rank);
+                }
                 const auto &weapon=equipment.equipment.weapons[0];
                 input.attackTiming=KnownAttackTiming{weapon.fasterAttack,weapon.baseSpeed,equipment.modifiers.combat.attackRate,weapon.itemBaseSpeed,weapon.itemAttackSpeed,bool(weapon.item)};
             }
