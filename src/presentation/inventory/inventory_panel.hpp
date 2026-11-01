@@ -40,6 +40,9 @@ struct InventoryUi {
     std::optional<GoldDialog> goldDialog;
     std::optional<unsigned> storagePressedButton;
     void syncCursor(const InventoryView &inventory, EntityId reserved = {});
+    int visibleBeltRows(int capacityRows) const {
+        return beltExpanded || beltHovered ? capacityRows : 1;
+    }
     bool hidesItem(const InventoryItemView &item) const {
         return (drag && drag->item.id==item.id) ||
             (pending && pendingPlacement && pendingPlacement->item==pending &&

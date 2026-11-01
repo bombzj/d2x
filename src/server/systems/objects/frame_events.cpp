@@ -13,7 +13,7 @@ namespace d2x::server::objects {
 StepStatus System::publishChanges(TickContext tick) {
     std::erase_if(publishedModes_,[&](const auto &entry){return !state_.objects.contains(entry.first);});
     for(const auto &[id,object]:state_.objects) {
-        if(!object.rule.chest && !object.rule.shrine && object.rule.operation!=18) continue;
+        if(!object.rule.chest && !object.rule.shrine && object.rule.operation!=18 && object.rule.operation!=66) continue;
         auto [previous,inserted]=publishedModes_.try_emplace(id,object.revision,object.mode);
         // Initialization seeds the baseline before any operation, including
         // operations in the birth frame. Unknown initial state is a snapshot.
@@ -69,7 +69,7 @@ void System::schedule(Object &object) {
         ports_.frameEvents.cancelHandler(owner,type,0);
         if(timer) ports_.frameEvents.publish(std::move(*timer));
     };
-    synchronize(FrameEventType::EndAnimation,!ports_.quests.prisonerPortalDue(object.id) && !ports_.quests.npcPortalDue(object.id) && !object.rule.door && object.rule.initialization!=22 &&
+    synchronize(FrameEventType::EndAnimation,!ports_.quests.prisonerPortalDue(object.id) && !ports_.quests.npcPortalDue(object.id) && (!object.rule.door || object.rule.operation==61) && object.rule.initialization!=22 &&
         object.rule.initialization!=24 && object.mode==1?object.until:0);
     synchronize(FrameEventType::ActiveState,object.reset);
     synchronize(hazardEvent(object),object.hazardAt);
@@ -99,7 +99,7 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
     if(event.type==FrameEventType::EndAnimation && object.until==event.payload) {
         ports_.quests.finishAncientObjectAnimation(object.id);
         if(object.mode==1) {object.mode=object.rule.operation==10 && int(object.area)==38?5:2;changed=true;}
-        object.until=0;
+        object.until=object.rule.operation==61?object.until+13-std::min(object.rule.openingTicks,object.until+13):0;
     } else if(event.type==FrameEventType::ActiveState && object.reset==event.payload) {
         object.mode=0;object.reset=0;object.operatorActor={};changed=true;
     } else if(event.type==FrameEventType::AiThink && object.rule.operation==22) {

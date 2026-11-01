@@ -38,6 +38,7 @@ struct ClassicFont {
     const Animation *source = nullptr; // decoded DC6 frames
     std::array<uint8_t, 256> transform{}; // optional PL2 index transform
     bool transformed = false;
+    bool originalGlyphs = false; // Resource-specific pages may require the native DC6 face.
     Color textColor = WHITE; // PL2 font color for the outline-font backend
     int framedLineHeight = 0, framedBaselineOffset = 0;
     std::vector<uint32_t> codes;  // sorted code points

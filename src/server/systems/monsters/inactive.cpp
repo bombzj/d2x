@@ -201,7 +201,7 @@ DomainResult<> System::finishRestoration(const InactiveMonster &source,uint64_t 
     candidate.whippedAi=!source.dead && source.whippedAi;
     candidate.uncounted=source.uncounted;
     candidate.identity=source.identity;
-    if(source.dead) {candidate.deathTick=tick;candidate.rewardComplete=true;}
+    if(source.dead) {candidate.deathTick=tick;candidate.rewardComplete=true;recordNativeMode(candidate,12);}
     if(source.admissionRule->sharedRandomComponents) {
         candidate.components[10]=uint8_t(source.componentParameter);
         if(source.admissionRule->sharedRandomComponents&(1u<<11)) candidate.components[11]=uint8_t(source.componentParameter);

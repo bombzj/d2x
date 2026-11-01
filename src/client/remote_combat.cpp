@@ -39,6 +39,7 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
     for (const auto &[id, row] : monsters_)
         for (size_t extra = 0; extra < extras.rows().size(); ++extra) {
             if (extras.value(extra, "Id") != monsters.value(row, "MonStatsEx")) continue;
+            monsterExtras_.emplace(id, extra);
             auto &widths = componentBits_[id];
             for (size_t part = 0; part < widths.size(); ++part) {
                 auto variants = std::string(extras.value(extra, std::string(componentCodes[part]) + "v"));
@@ -112,15 +113,26 @@ std::optional<uint16_t> RemoteCombat::superUnique(const OnlineUnit &unit) const 
 bool RemoteCombat::hostile(const OnlineUnit &unit) const {
     if (!hostileSource(unit)) return false;
     if(unit.key.type==0) return true;
-    const auto monster = monsters_.find(*monsterClass(unit));
-    return tables_.at("monstats").number(monster->second, "killable").value_or(0) != 0;
+    const auto identity = monsterClass(unit);
+    if (!identity) return false;
+    const auto monster = monsters_.find(*identity), extra = monsterExtras_.find(*identity);
+    // MONSTER_InitializeStatsAndSkills sets CANBEATTACKED from MonStats2.isAtt.
+    // killable alone includes Hydra: it expires through DT but is not a target.
+    return monster != monsters_.end() && extra != monsterExtras_.end() &&
+        tables_.at("monstats").number(monster->second, "killable").value_or(0) != 0 &&
+        tables_.at("monstats2").number(extra->second, "isAtt").value_or(0) != 0;
 }
 bool RemoteCombat::hostileSource(const OnlineUnit &unit) const {
+    return knownHostileSource(unit).value_or(false);
+}
+std::optional<bool> RemoteCombat::knownHostileSource(const OnlineUnit &unit) const {
     if(unit.key.type==0) {
         const auto self=session_.read().load.playerUnitId;
         return self && *self!=unit.key.id && hostilePlayers(*self,unit.key.id);
     }
-    return monsterDisposition(unit) == MonsterDisposition::Hostile;
+    const auto disposition=monsterDisposition(unit);
+    if(disposition==MonsterDisposition::Unknown) return {};
+    return disposition==MonsterDisposition::Hostile;
 }
 std::optional<UnitAlignment> RemoteCombat::alignment(const OnlineUnit &unit) const {
     if (unit.key.type > 1) return UnitAlignment::Good;
@@ -237,6 +249,14 @@ bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorp
     if(unit.key.type!=1) return false;
     // Corpse selectors do not consult live-unit alignment or killable.
     if(targetCorpse) return corpseSelectable(unit);
+    if(session_.read().protocolProfile=="lod113c" && unit.actionSkill) {
+        const auto skill=skills_.find(*unit.actionSkill);
+        // D2MOO St51 clears the target/attack flags until St52 Emerge.
+        // Native 4C/4D can report Submerge with monanim=xx, so an idle-S1
+        // check alone misses tentacle heads. A new native action replaces
+        // this used skill; Emerge is not excluded. Do not infer immunity.
+        if(skill!=skills_.end() && tables_.at("skills").number(skill->second,"srvstfunc")==51) return false;
+    }
     if(const auto snapshot=unitStates_.find(unit.key);snapshot!=unitStates_.end() && snapshot->second.decoded)
         for(const auto &[id,state]:snapshot->second.states) {(void)id;if(state.name=="attached") return false;}
     if((unit.nativeMode || session_.read().protocolProfile=="lod113c") && unit.mode==8 && !unit.actionSkill) {
@@ -528,7 +548,14 @@ void RemoteCombat::update() {
     const auto &view = session_.read();
     const auto &world = view.world;
     if (game_ != view.gameGeneration || area_ != world.areaGeneration) {
-        game_ = view.gameGeneration; area_ = world.areaGeneration; unitStates_.clear(); unitOwners_.clear();changedClasses_.clear();
+        // A native area change preserves the player's live stat lists. The
+        // bounded wire journal may no longer contain their original AA, so
+        // only a new game invalidates every decoded prefix. Removed units
+        // and replaced state streams are retired below; real gaps still fail.
+        if (game_ != view.gameGeneration) {
+            unitStates_.clear(); unitOwners_.clear(); changedClasses_.clear();
+        }
+        game_ = view.gameGeneration; area_ = world.areaGeneration;
     }
     catalog_.clear();
     const auto &skills = tables_.at("skills");
@@ -551,7 +578,11 @@ void RemoteCombat::update() {
         entry.inTown = metadata.allowedInTown; entry.classSkill = classSkill;
         catalog_.push_back(std::move(entry));
     }
-    std::erase_if(unitStates_, [&](const auto &entry) { return !world.units.contains(entry.first); });
+    std::erase_if(unitStates_, [&](const auto &entry) {
+        const auto unit=world.units.find(entry.first);
+        return unit==world.units.end() || entry.second.generation!=unit->second.stateGeneration ||
+            entry.second.sequence>unit->second.stateSequence;
+    });
     std::erase_if(changedClasses_,[&](const auto &entry){const auto unit=world.units.find(entry.first);return unit==world.units.end() || unit->second.assignmentRevision!=entry.second.first;});
     std::erase_if(unitOwners_, [&](const auto &entry) { return !world.units.contains(entry.first); });
     for (const auto &[key, unit] : world.units) {
@@ -594,6 +625,7 @@ void RemoteCombat::update() {
         }
         if (!unit.stateSequence) continue;
         auto &output = unitStates_[key];
+        output.generation = unit.stateGeneration;
         if (output.sequence == unit.stateSequence) continue;
         const auto previous = output.sequence;
         output.sequence = unit.stateSequence;
@@ -639,6 +671,9 @@ void RemoteCombat::update() {
                         if (!output.states.contains(message.state)) state(message.state, {});
                     } else { net::protocol::BitReader bits(message.packed); state(message.state, stats(bits)); }
                 }
+            }
+            if (expected != unit.stateSequence + 1) {
+                output.states.clear(); output.decoded=false; output.reason="Native state history tail is unavailable";
             }
         } catch (const std::exception &error) { output.states.clear(); output.decoded = false; output.reason = error.what(); }
         if(key.type==1) if(const auto changed=monsterClass(unit);changed && changed!=unit.classId)

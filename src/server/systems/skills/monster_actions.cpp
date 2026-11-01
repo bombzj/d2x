@@ -704,6 +704,9 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
             }
             missiles::NativeSpawn spawn{source->id,source->area,pending.generation,tick.tick,source->position,target->first,
                 pending.attack.missile->definition,pending.request.skill,pending.attack.rank};
+            // Skills::sub_6FD11710 sets constructor flag 0x400 for lob:
+            // CurrentFrame comes from target distance, not the table Range.
+            spawn.distanceCountdown=program.number("lob")!=0;
             if(function==148) {spawn.definition+=source->components[10];spawn.copyMonsterAttackBonus=true;}
             if(function==132) {spawn.definition+=source->rule.monsterChainOffset;spawn.copyMonsterAttackBonus=true;}
             if(function==0) spawn.copyMonsterAttackBonus=true;

@@ -1,5 +1,11 @@
 # Windows调试管道
 
+AI任务、策略、恢复与验收入口统一见[调试任务AI](DEBUG_AI.md)和[文档分工](../README.md#调试任务ai文档)。内部调试回复若不能解析为JSON，返回明确失败，并在程序错误输出记录长度、错误位置及附近上下文；不因读取诊断而退出游戏，也不把失败解释为操作成功。
+
+`online-status`的`world.cinematic`记录真实S2C61程序号与观察修订，`frontend.page`在61/7通关画面实际生效时为Victory。该状态不提供伪造通知或任务完成指令；最终出口须经正常客户端交互，由服务端决定旅行与通知。
+
+`debug-ai-start`可用`configFile`加载已有计划／策略JSON；`debug-ai-reload-config`在同一活动或暂停计划中验证并原子应用安全数值策略，省略文件名沿用最近成功配置，详细字段及不可热改范围见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。不重置现实请求期限，也不改服务端规则。
+
 PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版／公共规则及必要的版本边界。
 
 直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算；功能范围及缺口见[基线](../../BASELINE.md)，构建／运行方法见[开发指南](BUILD_AND_RUN.md)。
@@ -39,7 +45,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 客户端自主行走
 
-批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方，源码含scenario=act1／act2／act3的各六任务和act4三任务编排及单项quest，仍由下面的行走驱动执行接近。Windows Release已构建并入局检查；实际覆盖和剩余组合以该专题为准，不把单目标行走结果当作整条任务验收。聊天入口可用`/debug-ai-start act3`、`/debug-ai-start quest search-for-cain`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和运行边界见该专题。
+批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方，源码含scenario=act1／act2／act3／act5的各六任务和act4三任务编排及单项quest，仍由下面的行走驱动执行接近。Windows Release已构建并入局检查；实际覆盖和剩余组合以该专题为准，不把单目标行走结果当作整条任务验收。聊天入口可用`/debug-ai-start act3`、`/debug-ai-start quest search-for-cain`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和运行边界见该专题。
 
 新增第一幕六任务配方与200毫秒决策，以及`supplies`整计划药剂策略和`goals:[{action:'restock'}]`补给目标，支持低血／低法力饮药、正常货架购买和安全的缺药回城往返；这批源码已通过Windows Release构建并执行实机回归，实际奖励、药剂和补给覆盖见该专题。其他任务／五幕首领的前置覆盖限制见同一专题，不能把通用hunt视为所有任务已完成。
 
@@ -62,7 +68,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 原服收包记录
 
-`online-status`和`server-status`另返回`performance`：最近120个已完成呈现帧的`milliseconds`按host、network、client、ai、navigation、debug、scene、present、other和total记录mean／p95／max，`completedFrames`及`over100ms`为本进程累计计数。ai／navigation分别为调试父AI／子行走调度，包含其碰撞和候选处理；present包含垂直同步／限帧等待，host包含嵌入宿主工作，scene包含场景及UI更新／绘制；这是实际墙钟耗时，不是25 Hz权威帧。`performance.navigationSearch`另列父／子共享的新求路数、缓存／可达证明命中、预算让出、移动段复用与实际求路微秒；预算范围及单次公共求路仍为同步调用的边界见[共享寻路预算](DEBUG_AI.md#共享寻路预算)。统计有界保存且不逐帧写磁盘；查询看到上一完整帧为止的帧样本和当前求路计数，暂停或切换场景后须等待窗口刷新再比较。本轮计时拆分和共享预算尚未构建／运行，无实测性能结论。
+`online-status`和`server-status`另返回`performance`：最近120个已完成呈现帧的`milliseconds`按host、network、client、ai、navigation、debug、scene、present、other和total记录mean／p95／max，`completedFrames`及`over100ms`为本进程累计计数。ai／navigation分别为调试父AI／子行走调度，包含其碰撞和候选处理；present包含垂直同步／限帧等待，host包含嵌入宿主工作，scene包含场景及UI更新／绘制；这是实际墙钟耗时，不是25 Hz权威帧。`performance.navigationSearch`另列父／子共享的新求路数、缓存／可达证明命中、预算让出、移动段复用与实际求路微秒；预算范围及单次公共求路仍为同步调用的边界见[共享寻路预算](DEBUG_AI.md#共享寻路预算)。统计有界保存且不逐帧写磁盘；查询看到上一完整帧为止的帧样本和当前求路计数，暂停或切换场景后须等待窗口刷新再比较。计时拆分和共享预算已构建并观察到缓存命中／预算让出，实际证据见DEBUG_AI与ORIGINAL_GAPS；没有同条件前后提速结论。
 
 需要核对原服实际消息时，可在启动客户端时指定`--game-packet-log <新.jsonl>`，记录D2X客户端成功入发送队列的C2S和完成分帧、消费之前的S2C；`--host-packet-log <另一新.jsonl>`记录嵌入／TCP/IP宿主完成分帧、校验分派之前的C2S，以及成功入输出队列的S2C（批量输出拆成原包）。两者独立按JSONL记录sequence、相对启动微秒、endpoint、direction、包号、含包头长度和十六进制字节；客户端用gameGeneration区分入局，宿主用connection区分每次游戏字节连接，包含内存房主和TCP客人。握手和离局同样记录；入发送队列不表示对方已执行，收到C2S也不表示事务提交成功。
 

@@ -46,7 +46,7 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
                 "emin","emax","elen","mindam","maxdam","mindamage","maxdamage","hitshift",
                 "mana","lvlmana","manashift","minmana","tohit","levtohit","srcdam",
                 "noratio","hcidx","level","level(n)","level(h)","passive","aura","kick","immediate","periodic","seqnum","weapsel",
-                "intown","srvstfunc","srvdofunc","cltstfunc","usemanaondo","decquant","aurafilter","targetpet","targetally","pcltdofunc","pclthitfunc",
+                "intown","lob","srvstfunc","srvdofunc","cltstfunc","usemanaondo","decquant","aurafilter","targetpet","targetally","pcltdofunc","pclthitfunc",
                 "aitype","aibonus","attackrank","reqlevel","progressive","useattackrate","restrict","nocostinstate",
                 "srcdamage","srcmissdmg","holy","missileskill","half2hsrc","applymastery","explosion",
                 "alwaysexplode","collidekill","pierce","collidefriend","lastcollide","collidetype","collision","activate","town","srctown","psrvdofunc","psrvhitfunc","psrvdmgfunc","tohit","gethit","softhit","knockback","hitclass","nexthit","nextdelay","returnfire","candestroy","size","vel","vellev","accel","maxvel","canslow","clientsend","subloop","substart","substop","hitflags","resultflags"};
@@ -68,7 +68,7 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
                     result.numbers.emplace(key,reader.u16());
                 } else if (const auto value=table.number(row,column)) result.numbers.emplace(key,*value);
                 else if (table.value(row,column).empty()) result.numbers.emplace(key,0);
-            } else if ((missile && (key=="skill" || key=="progoverlay" || key.starts_with("submissile") || key.starts_with("hitsubmissile"))) || key=="etype" || key=="summon" || key=="submissile1" || key=="passivestate" || key.starts_with("srvmissile") ||
+            } else if ((missile && (key=="skill" || key=="progoverlay" || key.starts_with("submissile") || key.starts_with("hitsubmissile"))) || key=="etype" || key=="summon" || key=="summode" || key=="submissile1" || key=="passivestate" || key.starts_with("srvmissile") ||
                        key.starts_with("passivestat") || key.starts_with("aurastat") || key=="auratargetstate" || key.starts_with("sumskill") || key=="monanim" || key=="anim" || key=="state1" || key=="state2" || key=="state3" || key=="range" || key=="pettype" || key=="itypea1")
                 result.references.emplace(key,lower(table.value(row,column)));
         }

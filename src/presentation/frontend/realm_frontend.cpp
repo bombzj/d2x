@@ -89,11 +89,14 @@ struct RealmFrontend::Impl {
     Archives &archives;
     std::unique_ptr<RealmPortraitCatalog> portraitCatalog;
     std::unique_ptr<Graphics> characterGraphics;
+    std::unique_ptr<Graphics> victoryGraphics;
     std::map<Bytes, GpuAnimation, PortraitKeyLess> portraits;
     ClassicStrings strings;
     ClassicFont normal, buttonFont, inputFont, titleFont, lobbyFont, roomGoldFont, roomGrayFont, lanTitleFont, lanTipFont,
-        hardcoreRedFont;
+        hardcoreRedFont, victoryFont, victoryNameFont;
     UiPainter text, buttonText, inputText, title, lobbyText, roomGoldText, roomGrayText, lanTitle, lanTip, hardcoreRedText;
+    UiPainter victoryTitle{victoryFont};
+    UiPainter victoryName{victoryNameFont};
     std::map<std::string, GpuAnimation> art;
     std::vector<std::string> classes;
     std::vector<std::string> classNames;
@@ -1123,6 +1126,40 @@ struct RealmFrontend::Impl {
         mouse = at;
         clicked = input.leftPressed;
         intent = {};
+        if(current==FrontendPage::Victory) {
+            if(!victoryGraphics) {
+                auto graphics=std::make_unique<Graphics>(archives,"data/global/palette/endgame2/pal.dat");
+                auto background=graphics->single("data/global/ui/menu/endgame2.dc6");
+                auto ok=graphics->single("data/global/ui/menu/endgameok.dc6");
+                if(background.count!=12 || ok.count<2) throw std::runtime_error("Missing original expansion victory art");
+                victoryFont=font(units,archives,"font42",4);
+                victoryNameFont=font(units,archives,"font16",4);
+                victoryFont.originalGlyphs=victoryNameFont.originalGlyphs=true;
+                art.emplace("victory",std::move(background));art.emplace("victoryOk",std::move(ok));
+                victoryGraphics=std::move(graphics);
+            }
+            tiles("victory",0,0,4);
+            victoryTitle.inBox(s(5098),{0,58,800,42},16,WHITE);
+            victoryTitle.inBox(s(5100),{0,230,800,42},16,WHITE);
+            victoryTitle.inBox(v.selectedCharacter,{0,145,800,42},16,WHITE);
+            const auto character=std::find_if(v.characters.begin(),v.characters.end(),[&](const auto &entry){return entry.name==v.selectedCharacter;});
+            if(character!=v.characters.end() && character->characterClass && *character->characterClass<7 && v.load.difficulty && *v.load.difficulty<3) {
+                // Native D2Win 10205/BB50: expansion tiers 5/10/15 and the
+                // original female class table (Amazon, Sorceress, Assassin).
+                const auto klass=*character->characterClass;
+                const bool female=klass==0 || klass==1 || klass==6;
+                const auto tier=*v.load.difficulty;
+                const std::array soft{"Slayer", "Champion", female?"Matriarch":"Patriarch"};
+                const std::array hard{"Destroyer", "Conqueror", "Guardian"};
+                const auto rank=character->hardcore.value_or(false)?hard[tier]:soft[tier];
+                victoryTitle.inBox(std::string(rank)+" "+v.selectedCharacter,{0,315,800,42},16,WHITE);
+            }
+            enabled=true;
+            if(button("victoryOk",352,488,s(5102),true,1,0,&victoryName) || input.enter || input.escape) emit(FrontendCommand::LeaveGame);
+            const auto *cursor=art.at("cursor").frame(0,0);
+            cursorSprite(cursor,{mouse.x,mouse.y},handCursorHotspot(cursor));
+            return std::move(intent);
+        }
         if (current != previous) {
             focus = 0;
             deleteName.clear();

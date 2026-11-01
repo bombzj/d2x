@@ -53,7 +53,7 @@ struct InventoryFact {
     std::vector<ItemInstance> removedItems{};
 };
 enum class QuestPublication {Transition,Query,Private,Global};
-struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; std::optional<uint16_t> tombOffset{}; std::optional<bool> eclipse{}; std::optional<uint8_t> staffStatus{}; std::optional<uint8_t> khalimStatus{}; unsigned rescued{}; std::array<uint16_t,48> gameFlags{}; std::array<bool,size_t(QuestId::Count)> unavailable{}, credited{}, entitled{}; bool fullStatus{}; std::optional<uint16_t> zooMonster{}; bool zooOnly{}; bool denEffect{}; QuestPublication publication{};std::array<ActTwoQuestRuntime,6> actTwoRuntime{};bool nativeActTwo{}; };
+struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; std::optional<uint16_t> tombOffset{}; std::optional<bool> eclipse{}; std::optional<uint8_t> staffStatus{}; std::optional<uint8_t> khalimStatus{}; unsigned rescued{}; std::array<uint16_t,48> gameFlags{}; std::array<bool,size_t(QuestId::Count)> unavailable{}, credited{}, entitled{}; bool fullStatus{}; std::optional<uint16_t> zooMonster{}; bool zooOnly{}; bool denEffect{}; QuestPublication publication{};std::array<ActTwoQuestRuntime,6> actTwoRuntime{};bool nativeActTwo{};std::optional<uint8_t> iceStatus{},baalStatus{}; };
 struct AttributeFact { EntityId unit; uint64_t revision{}; };
 struct EnvironmentFact {int act{},cycle{},ticks{};bool eclipse{};};
 struct CharacterFact {
@@ -75,7 +75,10 @@ struct NpcMessage { uint8_t menu{}; uint16_t text{}; };
 struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; uint8_t type=1; bool activate=true; };
 struct MerchantFact { EntityId npc, item; uint8_t operation{}, result{}; uint32_t gold{}; bool refreshShop{}; };
 struct WaypointFact { EntityId source; std::vector<RegionId> unlocked; };
-struct UiFact { uint8_t action{}; };
+struct UiFact {
+    uint8_t action{};
+    enum class Kind { Action, Cinematic } kind{Kind::Action};
+};
 struct NpcServiceFact { EntityId npc; uint8_t result{}, state{}; };
 // Captured at the drop transaction; later visibility snapshots are not drops.
 struct GroundDropFact { ItemInstance item; bool flip=true; };

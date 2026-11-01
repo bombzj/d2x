@@ -1,4 +1,5 @@
 #include "ai_impl.hpp"
+#include "world/collision.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -30,7 +31,7 @@ void DebugAi::Impl::releaseCombat(Context &c) {
 void DebugAi::Impl::observeCombat(Context &c) {
     const auto now=Clock::now();const auto &world=c.session.read().world;
     if(c.supplies && c.supplies->maxLife) combatMaxLife=c.supplies->maxLife;
-    if(world.life && (combatLifeSamples.empty() || now-combatLifeSamples.back().at>=debugDecisionInterval))
+    if(world.life && (combatLifeSamples.empty() || now-combatLifeSamples.back().at>=debugInputRetryInterval))
         combatLifeSamples.push_back({now,*world.life});
     while(!combatLifeSamples.empty() && (combatLifeSamples.size()>32 || now-combatLifeSamples.front().at>std::chrono::seconds(4)))
         combatLifeSamples.pop_front();
@@ -65,30 +66,61 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     });
     const auto *map=c.town.map();const auto origin=c.town.read().origin;
     const Vec offset=origin?position(*origin):Vec{};
+    const auto attackMask=[&](uint16_t skill) {
+        const auto found=definitions->attackMasks.find(skill);
+        return found==definitions->attackMasks.end()?uint16_t(4):found->second;
+    };
+    auto lineMask=attackMask(combatRun.skillIndex<combatRun.skills.size()?combatRun.skills[combatRun.skillIndex]:
+        policy.skill.value_or(definitions->skill("Attack")));
     const auto clearLine=[&](Vec from,Vec to) {
-        return map && origin && map->grid.lightSegment(from-offset+Vec{.5f,.5f},to-offset+Vec{.5f,.5f});
+        // Walking WALL also marks ledges occupied by flying monsters. Retail
+        // projectile modes use MISSILE_BARRIER; only mode8 adds WALL.
+        return map && origin && map->grid.collisionSegment(from-offset+Vec{.5f,.5f},to-offset+Vec{.5f,.5f},lineMask);
     };
     const auto objective=goal.kind==Kind::Hunt && goal.target?find(c,*goal.target):std::nullopt;
     const bool nearObjective=objective && (position(*objective->position)-c.position).length()<=policy.engage;
-    const bool clearing=cursor<goals.size() && goals[cursor].kind==Kind::Quest && questRun.step<goals[cursor].steps.size() &&
-        (goals[cursor].steps[questRun.step].clearCombat ||
-         (goal.kind==Kind::Quest && goal.area==area && goals[cursor].steps[questRun.step].action==QuestAction::Clear));
-    std::vector<OnlineUnit> enemies;std::optional<OnlineUnit> chosen;float nearest=float(policy.engage);
+    const QuestStep *step=cursor<goals.size() && goals[cursor].kind==Kind::Quest && questRun.step<goals[cursor].steps.size()?
+        &goals[cursor].steps[questRun.step]:nullptr;
+    // Permission to fight for a drop is not a requirement to kill every
+    // nearby monster. Only real clear objectives and the active encounter
+    // make an unrelated enemy's defeat a necessary postcondition.
+    const bool clearing=step && goal.area==area && (step->action==QuestAction::Clear ||
+        (step->action==QuestAction::Encounter && step->clearCombat && questRun.encounterPosition &&
+         questRun.encounterArea==area && (position(*questRun.encounterPosition)-c.position).length()<=encounterMovementRadius()));
+    const auto mustClear=[&](const OnlineUnit &unit) {return clearing && (step->action==QuestAction::Clear || encounterEnemy(c,unit));};
+    const bool searchingDrop=step && step->action==QuestAction::SearchDrop && step->clearCombat && goal.area==area;
+    std::vector<OnlineUnit> enemies;std::optional<OnlineUnit> chosen,obstructed;
+    float nearest=clearing && step->action==QuestAction::Encounter && questRun.worldWait?
+        float(std::max(policy.engage,2*encounterMovementRadius())):float(policy.engage);
+    float nearestObstructed=nearest;
     for(const auto &[key,unit]:view.world.units) {
         if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false) ||
-            (!clearing && (!objective || objective->key!=key) && bypassedThreats.contains({key,unit.assignmentRevision}))) continue;
+            (!mustClear(unit) && (!objective || objective->key!=key) && bypassedThreats.contains({key,unit.assignmentRevision}))) continue;
         const float distance=(position(*unit.position)-c.position).length();
         const bool visible=clearLine(c.position,position(*unit.position));
+        if(mustClear(unit) && !visible && distance<nearestObstructed) {nearestObstructed=distance;obstructed=unit;}
         if(distance<=policy.engage && (visible || distance<=policy.radius)) enemies.push_back(unit);
-        const bool relevant=policy.scope=="clear" || clearing || nearObjective || (policy.scope=="defensive" && distance<=policy.radius);
-        if(relevant && visible && distance<nearest) {nearest=distance;chosen=unit;}
+        const bool byObjective=nearObjective && (key==objective->key ||
+            (position(*unit.position)-position(*objective->position)).length()<=policy.radius);
+        const bool relevant=policy.scope=="clear" || mustClear(unit) || searchingDrop || byObjective || (policy.scope=="defensive" && distance<=policy.radius);
+        if(relevant && (distance<=policy.engage || mustClear(unit)) && visible && distance<nearest) {nearest=distance;chosen=unit;}
     }
     // A stance change may leave the acquisition radius, and another enemy
     // may briefly be nearer. Finish the same valid engagement inside its
     // existing engage radius; the required objective still takes precedence.
     if(combatTarget) for(const auto &unit:enemies) if(unit.key==combatTarget &&
-        unit.assignmentRevision==combatRun.assignment && clearLine(c.position,position(*unit.position))) {chosen=unit;break;}
-    if(nearObjective && c.combat.hostile(*objective)) chosen=objective;
+        unit.assignmentRevision==combatRun.assignment && clearLine(c.position,position(*unit.position))) {
+        const bool byObjective=nearObjective && (unit.key==objective->key ||
+            (position(*unit.position)-position(*objective->position)).length()<=policy.radius);
+        if(policy.scope=="clear" || mustClear(unit) || searchingDrop || byObjective ||
+           (policy.scope=="defensive" && (position(*unit.position)-c.position).length()<=policy.radius)) chosen=unit;
+        break;
+    }
+    if(nearObjective && c.combat.monsterTargetEligible(*objective,false)) chosen=objective;
+    // A required clear may retain a real enemy behind a corner. Give the
+    // firing-position recovery the same opportunity as a named hunt target;
+    // navigating to its center alone can leave a ranged actor at the wall.
+    if(!chosen && obstructed) chosen=obstructed;
     if(!chosen) {
         if(combatTarget || combatOwned) {
             releaseCombat(c);retreatPoint.reset();
@@ -104,7 +136,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         }
         return false;
     }
-    const bool required=clearing || (goal.kind==Kind::Hunt && objective && chosen->key==objective->key);
+    const bool required=mustClear(*chosen) || (goal.kind==Kind::Hunt && objective && chosen->key==objective->key);
     bool boss=false;
     if(const auto id=c.combat.monsterClass(*chosen))
         if(const auto row=findCompiledMonsterRow(definitions->monsters,*id)) boss=definitions->monsters.number(*row,"boss").value_or(0)!=0;
@@ -120,20 +152,16 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     if(combatTarget!=chosen->key || combatRun.assignment!=chosen->assignmentRevision || combatRun.skills.empty()) {
         releaseCombat(c);cancelWalk(c);combatTarget=chosen->key;combatRun={};
         combatRun.assignment=chosen->assignmentRevision;combatRun.progressAt=combatRun.strategyAt=now;
-        combatRun.bestLife=combatRun.lastLife=life(*chosen);combatRun.hitRevision=chosen->hitRevision;
-        const auto primary=policy.skill.value_or(definitions->skill("Attack"));const auto health=life(*chosen);
-        if(policy.staticField && boss && learnedStatic && staticRank>=5 && staticRange && *staticRange>3 && staticStop && health &&
-            int(*health)*100/127>=std::max(60,*staticStop+10) && primary!=definitions->staticFieldSkill &&
-            knownSkill(c,definitions->staticFieldSkill)) {
-            combatRun.skills.push_back(definitions->staticFieldSkill);combatRun.staticOpening=true;
-            note("static-field-opening",std::to_string(staticRank)+" effective ranks / radius "+std::to_string(*staticRange));
-        }
+        combatRun.orbitDirection=(chosen->key.id&1)?1:-1;
+        combatRun.openingLife=combatRun.bestLife=combatRun.lastLife=life(*chosen);combatRun.hitRevision=chosen->hitRevision;
+        const auto primary=policy.skill.value_or(definitions->skill("Attack"));
         combatRun.skills.push_back(primary);
         for(const auto skill:policy.fallbackSkills) if(std::find(combatRun.skills.begin(),combatRun.skills.end(),skill)==combatRun.skills.end())
             combatRun.skills.push_back(skill);
         if(travelPhase==TravelPhase::CrossWait && !legUnit) {travelPhase=TravelPhase::Route;legDestination.reset();}
         note("combat-target",std::to_string(chosen->key.id));
     }
+    lineMask=attackMask(combatRun.skills[combatRun.skillIndex<combatRun.skills.size()?combatRun.skillIndex:0]);
     if(combatRun.suspendedAt!=Clock::time_point{}) {
         const auto suspended=now-combatRun.suspendedAt;
         combatRun.progressAt+=suspended;combatRun.strategyAt+=suspended;
@@ -142,7 +170,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     }
     observeCombat(c);
     auto &run=combatRun;const Vec targetPosition=position(*chosen->position);
-    const bool ray=clearLine(c.position,targetPosition);
+    bool ray=clearLine(c.position,targetPosition);
     const auto close=std::count_if(enemies.begin(),enemies.end(),[&](const auto &unit){return (position(*unit.position)-c.position).length()<=policy.radius;});
     const auto healing=potionCount(c,PotionKind::Life)+potionCount(c,PotionKind::Rejuvenation);
     const auto manaPotions=potionCount(c,PotionKind::Mana)+potionCount(c,PotionKind::Rejuvenation);
@@ -161,9 +189,11 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         {"mana",view.world.mana?Json(*view.world.mana):Json(nullptr)},{"healingPotions",healing},{"manaPotions",manaPotions},
         {"closeEnemies",close},{"bossFromTable",boss},{"skillIndex",run.skillIndex},{"skills",run.skills},
         {"casts",run.casts},{"noNetProgressMs",std::chrono::duration_cast<std::chrono::milliseconds>(now-run.progressAt).count()},
+        {"strategyCasts",run.strategyCasts},
         {"attempts",run.attempts},{"obstacle",run.obstacle},{"status","assess"},
         {"staticFieldRank",staticRank},{"staticFieldRadius",staticRange?Json(*staticRange):Json(nullptr)},
-        {"staticFieldStopPercent",staticStop?Json(*staticStop):Json(nullptr)}};
+        {"staticFieldStopPercent",staticStop?Json(std::max(50,*staticStop)):Json(nullptr)},
+        {"staticFieldAutomaticCasts",run.staticCasts},{"staticFieldBenefitProbed",run.staticTried}};
     const auto obstruct=[&](std::string detail) {
         if(!run.lastLife) detail+="; target life feedback unavailable";
         combatDiagnostics["status"]="blocked";combatDiagnostics["obstacle"]=detail;combatDiagnostics["attempts"]=run.attempts;
@@ -178,7 +208,8 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     if(now-run.progressAt>=std::chrono::seconds(policy.stallTimeoutSeconds))
         return obstruct("local combat execution budget exhausted; last obstacle: "+run.obstacle);
     if(retreatPoint) {
-        if(walkState(c)!="failed" && now<retreatUntil && (position(*retreatPoint)-c.position).length()>2) {
+        if(walkState(c)!="failed" && now<retreatUntil && (position(*retreatPoint)-c.position).length()>2 &&
+            tacticalPositionAllowed(c,position(*retreatPoint)) && threatClearance(visibleThreats(c),position(*retreatPoint))>=0) {
             combatDiagnostics["status"]="retreat";wait("retreat","Following the known safe retreat while observing life and supplies");
             walkPoint(c,*retreatPoint);mobility(c);return true;
         }
@@ -188,27 +219,97 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     const auto selectPosition=[&](bool retreat,int range)->std::optional<OnlinePoint> {
         if(!map || !origin) return {};
         if(!retreat && run.triedPositions.size()>=128) return {};
-        const auto grid=c.town.navigationGrid(view);std::optional<OnlinePoint> selected;
+        const auto grid=c.town.navigationGrid(view);const auto hazards=visibleThreats(c);
         const auto safety=[&](Vec at) {
             float nearestEnemy=(at-targetPosition).length();
             for(const auto &enemy:enemies) nearestEnemy=std::min(nearestEnemy,(at-position(*enemy.position)).length());
             return nearestEnemy;
         };
-        float best=retreat?safety(c.position)+1:-std::numeric_limits<float>::max();
-        for(int radius:retreat?std::vector<int>{policy.retreat}:std::vector<int>{4,8}) for(int direction=0;direction<16;++direction) {
+        struct Candidate {OnlinePoint point;float score;};std::vector<Candidate> candidates;
+        std::set<std::pair<uint16_t,uint16_t>> unique;
+        const float baseline=safety(c.position);
+        // Short radii are essential in corridors and small boss chambers.
+        for(int radius:retreat?std::vector<int>{2,std::max(2,policy.retreat/2),policy.retreat}:
+            std::vector<int>{2,4,8,std::max(2,range/2),std::max(2,range-2)}) for(int direction=0;direction<16;++direction) {
+            const float angle=float(direction)*6.28318530718f/16;
+            const Vec center=retreat?c.position:targetPosition;
+            const Vec at=center+Vec{std::cos(angle),std::sin(angle)}*float(radius);
+            if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535) continue;
+            const auto destination=point(at);const auto exact=position(destination);
+            if(!unique.emplace(destination.x,destination.y).second || !tacticalPositionAllowed(c,exact) ||
+                !grid.nativeMovementSegment(exact-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},playerMovement) ||
+                threatClearance(hazards,exact)<0) continue;
+            if(!retreat && (run.triedPositions.contains({destination.x,destination.y}) || !clearLine(exact,targetPosition))) continue;
+            const float targetDistance=(exact-targetPosition).length();
+            // Preferred firing range is a score, not a hard exclusion of
+            // the only legal close stance in a narrow chamber or corridor.
+            if(!retreat && (targetDistance>range || targetDistance<(range<=3?1.f:2.f))) continue;
+            if(retreat && safety(exact)<=baseline+1) continue;
+            const float score=(retreat?safety(exact):-std::abs(targetDistance-std::max(2.f,float(range)*.75f))+.1f*safety(exact))-
+                .05f*(exact-c.position).length();
+            candidates.push_back({destination,score});
+        }
+        std::stable_sort(candidates.begin(),candidates.end(),[](const auto &a,const auto &b){return a.score>b.score;});
+        // Cheap ranking precedes full paths. Budget yields preserve the
+        // search cache, and no failed candidate is retried ahead of a better one.
+        for(const auto &candidate:candidates) {
+            const auto destination=candidate.point;const auto exact=position(destination);
+            const auto path=c.walk.navigationSearch().path(grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
+            if(path.empty() || point(path.back()+offset)!=destination || !tacticalPathSafe(c,path,offset,hazards)) continue;
+            return destination;
+        }
+        return {};
+    };
+    const auto selectKitePosition=[&](int range)->std::optional<OnlinePoint> {
+        if(!map || !origin) return {};
+        const auto hazards=visibleThreats(c);const auto grid=c.town.navigationGrid(view);
+        const auto &rooms=c.town.navigationRooms();
+        const auto contains=[](const auto &room,Vec at) {return room.loaded && at.x>=room.x && at.y>=room.y && at.x<room.x+room.width && at.y<room.y+room.height;};
+        const auto source=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && contains(room,c.position);});
+        bool teleport=teleportAvailable(c);
+        if(teleport && c.supplies && c.supplies->skillUsable)
+            if(const auto usable=c.supplies->skillUsable(definitions->skill("Teleport"));usable && !*usable) teleport=false;
+        Vec center=targetPosition;unsigned count=1;
+        for(const auto &enemy:enemies) {center=center+position(*enemy.position);++count;}
+        center={center.x/count,center.y/count};
+        const Vec radial=c.position-center;const float length=radial.length();
+        const Vec tangent=length>0?Vec{-radial.y/length,radial.x/length}:Vec{1,0};
+        const auto clearance=[&](Vec at) {
+            float nearest=(at-targetPosition).length();
+            for(const auto &enemy:enemies) nearest=std::min(nearest,(at-position(*enemy.position)).length());
+            return nearest;
+        };
+        struct Candidate {OnlinePoint point;float score;};std::vector<Candidate> candidates;
+        const float minimum=std::min(float(policy.kiteMinDistance),float(range)*.65f);
+        for(const int radius:{policy.kiteDistance,std::max(3,policy.kiteDistance/2)}) for(int direction=0;direction<16;++direction) {
             const float angle=float(direction)*6.28318530718f/16;
             const Vec at=c.position+Vec{std::cos(angle),std::sin(angle)}*float(radius);
             if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535) continue;
-            const auto destination=point(at);const auto exact=position(destination);
-            if(!retreat && (run.triedPositions.contains({destination.x,destination.y}) || !clearLine(exact,targetPosition))) continue;
-            const float targetDistance=(exact-targetPosition).length();
-            if(!retreat && (targetDistance>range+2 || targetDistance<2)) continue;
-            const auto path=c.walk.navigationSearch().path(grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
-            if(path.empty() || point(path.back()+offset)!=destination) continue;
-            const float score=retreat?safety(exact):-std::abs(targetDistance-std::max(2.f,float(range)*.75f))+.1f*safety(exact);
-            if(score>best) {best=score;selected=destination;}
+            const auto destination=point(at);const Vec exact=position(destination),delta=exact-c.position;
+            const float distance=delta.length(),toTarget=(exact-targetPosition).length(),safe=clearance(exact);
+            if(distance<3 || toTarget>range || safe<minimum || !tacticalPositionAllowed(c,exact) || !clearLine(exact,targetPosition) || threatClearance(hazards,exact)<1 ||
+                !grid.nativeMovementSegment(exact-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},playerMovement)) continue;
+            const auto landing=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && contains(room,exact);});
+            if(landing==rooms.end() || (teleport && (source==rooms.end() || (landing!=source &&
+                std::find(source->near.begin(),source->near.end(),size_t(landing-rooms.begin()))==source->near.end())))) continue;
+            const float turn=(delta.x*tangent.x+delta.y*tangent.y)*run.orbitDirection;
+            candidates.push_back({destination,turn*.7f+std::min(safe,float(range))*.5f-
+                std::abs(toTarget-float(range)*.8f)+std::min(threatClearance(hazards,exact),8.f)*.1f-distance*.05f});
         }
-        return selected;
+        std::stable_sort(candidates.begin(),candidates.end(),[](const auto &first,const auto &second){return first.score>second.score;});
+        // Score cheap local observations first. At most four candidates may
+        // consume the shared full-path budget; Teleport validates known landings.
+        for(size_t i=0;i<std::min<size_t>(4,candidates.size());++i) {
+            const auto destination=candidates[i].point;const auto exact=position(destination);
+            if(teleport) return destination;
+            const auto path=c.walk.navigationSearch().path(grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
+            if(path.empty() || point(path.back()+offset)!=destination || path.size()>size_t(policy.kiteDistance*3+4) ||
+                !tacticalPathSafe(c,path,offset,hazards)) continue;
+            if(std::any_of(path.begin(),path.end(),[&](Vec p) {const Vec at=p+offset;return (at-c.position).length()>2 &&
+                (clearance(at)<std::min(4.f,minimum) || threatClearance(hazards,at)<0);})) continue;
+            return destination;
+        }
+        return {};
     };
     const bool singleThreat=(targetPosition-c.position).length()<=policy.engage && (ray || close>0 || lossPercent>=policy.lifeDropPercent);
     const bool lowLife=lifePercent>=0 && lifePercent<=policy.retreatLifePercent;
@@ -218,7 +319,8 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         const auto safe=selectPosition(true,policy.range);
         retreatReady=now+std::chrono::seconds(4);
         if(safe) {
-            releaseCombat(c);cancelWalk(c);run.reposition.reset();retreatPoint=safe;retreatUntil=now+std::chrono::seconds(2);
+            releaseCombat(c);cancelWalk(c);run.reposition.reset();run.kitePoint.reset();run.kiteAfterCast=false;
+            retreatPoint=safe;retreatUntil=now+std::chrono::seconds(2);
             combatDiagnostics["status"]="retreat";note("retreat-started",lowLife?"low life":falling?"observed life loss":scarce?"single threat and scarce healing":"crowd");
             walkPoint(c,*safe);mobility(c);return true;
         }
@@ -227,7 +329,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     }
     const auto window=std::chrono::seconds(policy.noProgressSeconds);
     if(run.reposition) {
-        const auto state=walkState(c);const bool reached=(position(*run.reposition)-c.position).length()<=3;
+        const auto state=walkState(c);const bool reached=(position(*run.reposition)-c.position).length()<=1;
         const bool failed=!reached && (state=="failed" || state=="completed" || now>=run.approachUntil);
         if(!failed && !reached) {
             if(!c.walk.active()) walkPoint(c,*run.reposition);
@@ -235,25 +337,74 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         }
         run.obstacle=failed?"attack position was not reached":"new attack position reached; awaiting effect";
         run.reposition.reset();cancelWalk(c);run.strategyAt=failed?now-window:now;
+        if(!failed) run.strategyCasts=0;
     }
-    const auto aura=battleAura(c);const auto hand=aura?OnlineSkillHand::Left:OnlineSkillHand::Right;
+    if(run.kitePoint) {
+        const bool reached=(position(*run.kitePoint)-c.position).length()<=2;
+        const auto field=visibleThreats(c);
+        const bool failed=!reached && (now>=run.kiteUntil || walkState(c)=="failed" || !tacticalPositionAllowed(c,position(*run.kitePoint)) ||
+            threatClearance(field,position(*run.kitePoint))<0);
+        if(!reached && !failed) {
+            if(!c.walk.active()) walk(c,{{"goal","point"},{"x",run.kitePoint->x},{"y",run.kitePoint->y},{"interact",false},{"purpose","combat-kite"}});
+            combatDiagnostics["status"]="kite";wait("combat-kite","Circling the observed group outside its close threats after the completed cast");mobility(c);return true;
+        }
+        cancelWalk(c);run.kitePoint.reset();
+        if(failed) run.orbitDirection=-run.orbitDirection;
+        note(failed?"combat-kite-replan":"combat-kite-arrived");
+        // Ordinary movement never resets the damage/effect recovery window.
+        return true;
+    }
+    if(c.supplies && c.supplies->castInputBusy.value_or(false)) {
+        combatDiagnostics["status"]="attack-animation";return true;
+    }
+    const auto aura=battleAura(c);
+    // The native client exposes a life ratio, not an authoritative maximum
+    // HP value. Judge the benefit from this encounter's actual primary hits:
+    // easy bosses die normally before Static Field is considered at all.
+    if(!run.staticTried && policy.staticField && boss && !aura && learnedStatic && staticRange && *staticRange>3 &&
+        staticStop && run.openingLife && run.lastLife && run.skillIndex==0 && run.strategyCasts>=2 && now>=run.nextCast &&
+        run.skills.front()!=definitions->staticFieldSkill && knownSkill(c,definitions->staticFieldSkill) &&
+        int(*run.lastLife)*100/127>=std::max(60,*staticStop+10) &&
+        (targetPosition-c.position).length()<=*staticRange-2) {
+        const unsigned drop=unsigned(std::max(0,int(*run.openingLife)-int(*run.lastLife)));
+        if(unsigned(*run.lastLife)*run.strategyCasts>=std::max(1u,drop)*6) {
+            releaseCombat(c);cancelWalk(c);run.primaryLifeDrop=drop/run.strategyCasts;
+            run.staticTried=run.staticOpening=true;run.staticCasts=0;run.staticCastLife.reset();
+            run.skills.insert(run.skills.begin(),definitions->staticFieldSkill);run.strategyCasts=0;
+            run.strategyAt=now;run.kiteAfterCast=false;run.kitePoint.reset();run.triedPositions.clear();
+            note("static-field-benefit-probe","Primary attacks leave substantial life; probing from the current safe range");
+        }
+    }
     const auto nextSkill=[&](std::string cause) {
         if(run.skillIndex<run.skills.size()) run.attempts.push_back({{"skill",run.skills[run.skillIndex]},{"reason",cause}});
+        if(run.staticOpening && run.skillIndex==0) run.staticOpening=false;
         if(run.attempts.size()>64) run.attempts.erase(run.attempts.begin());
-        releaseCombat(c);cancelWalk(c);++run.skillIndex;run.repositioned=false;run.strategyAt=now;run.approachUntil={};run.nextCast=now;
+        releaseCombat(c);cancelWalk(c);run.kitePoint.reset();run.kiteAfterCast=false;
+        ++run.skillIndex;run.repositioned=false;run.strategyAt=now;run.approachUntil={};run.nextCast=now;
+        run.strategyCasts=0;
+        run.triedPositions.clear();run.reposition.reset();
         run.obstacle=std::move(cause);note("combat-strategy-next",run.obstacle);
         combatDiagnostics["skillIndex"]=run.skillIndex;combatDiagnostics["attempts"]=run.attempts;combatDiagnostics["obstacle"]=run.obstacle;
     };
-    if(run.staticOpening && run.skillIndex==0 && staticStop && run.lastLife && int(*run.lastLife)*100/127<=*staticStop) {
-        nextSkill("Static Field health threshold observed; continuing with the configured damage attacks");
+    const bool staticSettled=run.staticOpening && run.staticCastLife && now>=run.nextCast &&
+        (!c.supplies || !c.supplies->castInputBusy.value_or(false));
+    const int staticDrop=run.staticCastLife && run.lastLife?int(*run.staticCastLife)-int(*run.lastLife):0;
+    const bool staticNotBeneficial=staticSettled &&
+        ((staticDrop>0 && unsigned(staticDrop)<=run.primaryLifeDrop) ||
+         (staticDrop<=0 && now-lastAttack>=std::chrono::milliseconds(600)));
+    if(staticSettled && staticDrop<=0 && now-lastAttack<std::chrono::milliseconds(600)) {
+        wait("static-field-effect","Observing the first real life effect before another Static Field cast");return true;
+    }
+    if(run.staticOpening && run.skillIndex==0 && ((staticStop && run.lastLife &&
+        int(*run.lastLife)*100/127<=std::max(50,*staticStop)) || run.staticCasts>=3 || staticNotBeneficial)) {
+        nextSkill("Static Field benefit ended / short burst completed; continuing with the configured damage attacks");
         run.skills.erase(run.skills.begin());--run.skillIndex;
         run.staticOpening=false;run.triedPositions.clear();
     }
     std::optional<size_t> skillRow;
     const auto qualification=[&](uint16_t skill) {
         std::string unavailable;
-        skillRow.reset();for(size_t row=0;row<definitions->skills.rows().size();++row)
-            if(definitions->skills.number(row,"Id")==skill) {skillRow=row;break;}
+        skillRow.reset();if(const auto found=definitions->skillRows.find(skill);found!=definitions->skillRows.end()) skillRow=found->second;
         if(!skillRow || !knownSkill(c,skill,bool(aura))) unavailable="skill rank / hand / original table unavailable";
         else if(skill!=definitions->staticFieldSkill && !c.combat.skillTargetEligible(*chosen,skill)) unavailable="native target eligibility currently rejects this skill";
         else if(c.supplies && c.supplies->skillUsable) {
@@ -279,6 +430,12 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         wait("combat-resources","Rechecking actual skill qualification and resources before declaring this target blocked");return true;
     }
     const uint16_t skill=run.skills[run.skillIndex];const auto row=*skillRow;
+    // Use the ordinary stationary left attack whenever the actual skill allows
+    // it, leaving the right hand available for movement or the active aura.
+    // Right-only attacks still use their permitted hand.
+    const auto hand=knownSkill(c,skill,true)?OnlineSkillHand::Left:OnlineSkillHand::Right;
+    lineMask=attackMask(skill);ray=clearLine(c.position,targetPosition);
+    combatDiagnostics["lineClear"]=ray;
     const int range=skill==definitions->staticFieldSkill && staticRange?std::max(2,*staticRange-2):
         skill==definitions->skill("Attack") || definitions->skills.value(row,"range")=="h2h"?3:policy.range;
     if(((pendingDoor || pendingWaypoint) && (!ray || (targetPosition-c.position).length()>range)) ||
@@ -288,13 +445,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         run.strategyAt=now;combatDiagnostics["status"]="normal-action-wait";
         wait("combat-action-wait","Observing the current native action before judging attack effectiveness");return true;
     }
-    if(c.supplies && c.supplies->castInputBusy.value_or(false)) {
-        // Do not interrupt an ordinary attack animation. Its elapsed time
-        // still belongs to the effect window, so repeated casts with no
-        // damage cannot continually reset the recovery timer.
-        combatDiagnostics["status"]="attack-animation";return true;
-    }
-    if(now-run.strategyAt>=window && now>=run.nextCast) {
+    if(now-run.strategyAt>=window && now>=run.nextCast && run.strategyCasts && ray && (targetPosition-c.position).length()<=range) {
         if(!run.repositioned) {
             releaseCombat(c);const auto at=selectPosition(false,range);
             run.repositioned=true;
@@ -311,14 +462,47 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     if((targetPosition-c.position).length()>range || !ray) {
         releaseCombat(c);
         if(!pendingDoor && !pendingWaypoint && openDoor(c)) return true;
-        if(run.approachUntil==Clock::time_point{}) run.approachUntil=now+std::chrono::seconds(8);
-        if(now<run.approachUntil && approachPoint(c,*chosen->position,"combat target: line / range reassessment",float(std::max(2,range-1)))) {
-            phase="combat-approach";combatDiagnostics["status"]="approach";mobility(c);return true;
+        if(const auto at=selectPosition(false,range)) {
+            run.triedPositions.emplace(at->x,at->y);
+            run.reposition=at;run.approachUntil=now+std::chrono::seconds(8);
+            cancelWalk(c);walkPoint(c,*at);phase="combat-approach";
+            combatDiagnostics["status"]="approach";note("combat-firing-position",std::to_string(at->x)+","+std::to_string(at->y));
+            mobility(c);return true;
         }
         run.obstacle=ray?"no usable approach within attack range":"observed line blocked / no usable approach";
-        run.strategyAt=now-window;return true;
+        // Range and line failures belong to navigation. A skill has no
+        // damage evidence until a cast was actually submitted.
+        if(map && origin) {
+            const auto grid=c.town.navigationGrid(view);
+            const auto path=c.walk.navigationSearch().path(grid,c.position-offset+Vec{.5f,.5f},
+                targetPosition-offset+Vec{.5f,.5f},true,playerMovement,true);
+            if(!path.empty() && tacticalPathSafe(c,path,offset,visibleThreats(c))) {
+                const auto next=point(path.back()+offset);
+                if((position(next)-c.position).length()>1 && run.triedPositions.emplace(next.x,next.y).second) {
+                    run.reposition=next;run.approachUntil=now+std::chrono::seconds(8);
+                    cancelWalk(c);walkPoint(c,next);mobility(c);return true;
+                }
+            }
+        }
+        wait("combat-approach","Waiting for a reachable shot or changed target position");
+        return true;
     }
     run.approachUntil={};
+    // Retail St11/Do19 owns the held Inferno / Arctic Blast sequence.
+    const bool channelled=definitions->skills.number(row,"srvstfunc")==11 && definitions->skills.number(row,"srvdofunc")==19;
+    const bool rangedKite=policy.rangedKite && range>3 && skill!=definitions->staticFieldSkill && !channelled;
+    if(rangedKite && run.kiteAfterCast && now>=run.nextKite) {
+        const auto destination=selectKitePosition(range);
+        run.kiteAfterCast=false;run.nextKite=now+std::chrono::milliseconds(policy.kiteIntervalMs);
+        if(destination) {
+            releaseCombat(c);cancelWalk(c);run.kitePoint=destination;run.kiteUntil=now+std::chrono::seconds(4);
+            combatDiagnostics["status"]="kite";combatDiagnostics["kiteDestination"]={destination->x,destination->y};
+            note("combat-kite-selected",std::to_string(destination->x)+","+std::to_string(destination->y));
+            walk(c,{{"goal","point"},{"x",destination->x},{"y",destination->y},{"interact",false},{"purpose","combat-kite"}});
+            mobility(c);return true;
+        }
+        run.orbitDirection=-run.orbitDirection;note("combat-kite-unavailable","No safe observed firing position; retain effect recovery and re-evaluate");
+    }
     if(aura && !selectSkill(c,*aura,OnlineSkillHand::Right)) {wait("combat-aura","Waiting for the normal battle aura selection");return true;}
     if(!selectSkill(c,skill,hand)) {wait("combat-select","Waiting for normal attack skill selection");return true;}
     const auto delay=definitions->skills.number(row,"delay");
@@ -329,7 +513,8 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
             if(const auto id=definitions->states.number(state,"Id");id && player!=c.combat.states().end() && player->second.decoded)
                 delayed=player->second.states.contains(uint8_t(*id));
     }
-    combatDiagnostics["skill"]=skill;combatDiagnostics["skillDelayFrames"]=delay?Json(*delay):Json(nullptr);
+    combatDiagnostics["skill"]=skill;combatDiagnostics["hand"]=hand==OnlineSkillHand::Left?"left":"right";
+    combatDiagnostics["skillDelayFrames"]=delay?Json(*delay):Json(nullptr);
     combatDiagnostics["status"]=delayed?"native-skill-delay":"attack";
     if(delayed || now<run.nextCast || (c.supplies && c.supplies->castInputBusy.value_or(false)) ||
         (view.world.combatRequest && view.world.combatRequest->state==OnlineCombatRequest::State::Pending)) return true;
@@ -338,14 +523,18 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     if(skill==definitions->staticFieldSkill) {cast.target.reset();cast.point=point(c.position);}
     // Same held pointer as the ordinary controller. Skills with a known
     // positive native delay use separate clicks, not a synthetic channel.
-    cast.repeat=run.repeating && ((delay && *delay<=0) || definitions->skills.value(row,"delay").empty());
+    cast.repeat=!run.staticOpening && !rangedKite && run.repeating && ((delay && *delay<=0) || definitions->skills.value(row,"delay").empty());
     if(submitCombat(c,cast,DebugActionOwner::Combat,"combat-cast",c.position)) {
+        if(!run.strategyCasts) run.strategyAt=now;
+        ++run.strategyCasts;
+        if(run.staticOpening && skill==definitions->staticFieldSkill) {++run.staticCasts;run.staticCastLife=run.lastLife;}
         combatOwned=true;run.repeating=true;++run.casts;++castRequests;lastAttack=now;
-        run.nextCast=now+(delay && *delay>0?std::chrono::milliseconds(int64_t(*delay)*40):debugDecisionInterval);
+        run.kiteAfterCast=rangedKite;
+        run.nextCast=now+(delay && *delay>0?std::chrono::milliseconds(int64_t(*delay)*40):debugInputRetryInterval);
         wait("combat-cast","Observing actual life effect after a normal attack input");
     } else {
         run.obstacle=c.combat.reason();combatDiagnostics["obstacle"]=run.obstacle;
-        run.nextCast=now+debugDecisionInterval;
+        run.nextCast=now+debugInputRetryInterval;
     }
     return true;
 }

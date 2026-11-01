@@ -74,6 +74,7 @@ class ActorAnimationCatalog {
     ActorAnimation composite(Graphics &,int palette,const ActorAnimationRequest &);
     ActorAnimation sequence(Graphics &, int palette, const ActorAnimationRequest &);
   public:
+    void clearAnimations() {animations_.clear();}
     explicit ActorAnimationCatalog(Archives &);
     const ActorAnimation *resolve(Graphics &, int palette, const ActorAnimationRequest &);
     const ActorAnimation *object(Graphics &, int palette, int identity, int mode);

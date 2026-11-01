@@ -187,6 +187,7 @@ struct OnlineItemCommand {
     bool gamble{}, multibuy{};
     bool questClue{}; // Original 3E; no inventory mutation acknowledgement.
     bool reusableUse{}; // Prepared CN program13: source is not consumed; no generic use ACK.
+    bool recoveryPotion{}; // MPQ adapter verified life/mana/rejuvenation use, independent of cast receipts.
     std::optional<OnlineIntentContext> context;
 };
 inline std::optional<uint32_t> onlineCnMaterialKey(std::string_view code);

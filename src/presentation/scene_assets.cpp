@@ -250,7 +250,7 @@ const Sprite &SceneAssets::worldTileSprite(size_t index) const {
         const auto key = std::pair{worldTilePalette_, tile};
         auto found = worldTileSprites_.find(key);
         if (found == worldTileSprites_.end())
-            found = worldTileSprites_.emplace(key, graphicsForAct(worldTilePalette_).upload(tile->image, true)).first;
+            found = worldTileSprites_.emplace(key, sceneGraphics(worldTilePalette_).upload(tile->image, true)).first;
         sprite = found->second;
     }
     return sprite;
@@ -503,6 +503,15 @@ const Sprite *SceneAssets::inventoryIcon(const std::string &art, std::array<int,
     return found->second.frame(0, int(frame));
 }
 
+Graphics &SceneAssets::sceneGraphics(int palette) const {
+    if(scenePalette_!=palette) {
+        if(actorAnimations_) actorAnimations_->clearAnimations();
+        worldTileSprites_.clear();
+        sceneGraphics_=std::make_unique<Graphics>(archives_,"data/global/palette/act"+std::to_string(palette+1)+"/pal.dat");
+        scenePalette_=palette;
+    }
+    return *sceneGraphics_;
+}
 Graphics &SceneAssets::graphicsForAct(int act) const {
     if (act == 0) return graphics_;
     auto &graphics = actGraphics_.at(size_t(act));
@@ -512,11 +521,11 @@ Graphics &SceneAssets::graphicsForAct(int act) const {
 }
 const ActorAnimation *SceneAssets::actorAnimation(const ActorAnimationRequest &request, int palette) const {
     if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
-    return actorAnimations_->resolve(graphicsForAct(palette), palette, request);
+    return actorAnimations_->resolve(sceneGraphics(palette), palette, request);
 }
 const ActorAnimation *SceneAssets::objectAnimation(int identity, int mode, int palette) const {
     if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
-    return actorAnimations_->object(graphicsForAct(palette), palette, identity, mode);
+    return actorAnimations_->object(sceneGraphics(palette), palette, identity, mode);
 }
 std::array<int, 2> SceneAssets::objectShrineOverlays(int identity, int code) const {
     if (shrineObjects_.contains(identity))

@@ -82,7 +82,8 @@ void monsterAction(OnlineWorldView &w, OnlineUnit &u, uint8_t action) {
     default: u.mode.reset(); break;
     }
 }
-void stateMessage(OnlineUnit &u, OnlineStateMessage message) {
+void stateMessage(OnlineUnit &u, OnlineStateMessage message, uint64_t revision) {
+    if (!u.stateSequence) u.stateGeneration = revision;
     message.sequence = ++u.stateSequence;
     if (message.kind == OnlineStateMessage::Kind::Snapshot) u.stateMessages.clear();
     u.stateMessages.push_back(std::move(message));
@@ -511,6 +512,8 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     Reader r(p.body);
     switch (p.id) {
+    case 0x61:
+        w.cinematic=r.u8();r.finish();w.cinematicRevision=w.revision;break;
     case 0x47:
     case 0x48: {
         // Retail D2Client RVA 0xAE2B0 / 0xAE260 both look up this unit
@@ -891,7 +894,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             OnlineStateMessage message;
             message.kind = OnlineStateMessage::Kind::Disable;
             message.state = 54;
-            stateMessage(found->second, std::move(message));
+            stateMessage(found->second, std::move(message), w.revision);
         }
         // Item stat lists have no unit-state projection here. Their quantity,
         // removal and targeting cursor still follow 22/9C/9D/3F respectively.
@@ -1270,7 +1273,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         auto &entry = unit(w, key(r));
         OnlineStateMessage message; message.kind = p.id == 0xA7 ? OnlineStateMessage::Kind::Enable
             : OnlineStateMessage::Kind::Disable;
-        message.state = r.u8(); r.finish(); stateMessage(entry, std::move(message));
+        message.state = r.u8(); r.finish(); stateMessage(entry, std::move(message), w.revision);
         break;
     }
     case 0xA8:
@@ -1281,7 +1284,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             : OnlineStateMessage::Kind::Enable;
         if (p.id == 0xA8) message.state = r.u8();
         const auto packed = r.take(r.remaining()); message.packed.assign(packed.begin(), packed.end());
-        stateMessage(entry, std::move(message));
+        stateMessage(entry, std::move(message), w.revision);
         break;
     }
     case 0x51: {
@@ -1368,6 +1371,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         r.finish();
         if (history[0] != 0x102) throw ProtocolError("Unsupported native waypoint history");
         w.waypointHistory = history;
+        w.waypointHistoryRevision = w.revision;
         const bool activated=w.waypointActivation && w.waypointActivation->source==source &&
             w.waypointActivation->generation==w.interactionGeneration;
         if ((w.waypointRequested == source || w.waypointSource == source || activated) &&

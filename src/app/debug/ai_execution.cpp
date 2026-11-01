@@ -3,6 +3,47 @@
 #include <stdexcept>
 
 namespace d2x {
+bool DebugAi::Impl::decisionDue(const Context &c,Clock::time_point now) {
+    const auto &view=c.session.read();const auto &world=view.world;
+    using Mode=DebugDecisionCadence::Mode;
+    const bool missiles=c.supplies && std::any_of(c.supplies->missiles.begin(),c.supplies->missiles.end(),[](const auto &m){return m.hostile && m.age>=0 && m.remaining>0;});
+    const bool closeThreat=!actionRecoveryBusy && !c.town.read().town && std::any_of(world.units.begin(),world.units.end(),[&](const auto &entry) {
+        const auto &unit=entry.second;
+        return entry.first.type==1 && unit.position && !onlineMonsterCorpse(unit) &&
+            (Vec{float(unit.position->x),float(unit.position->y)}-c.position).length()<=policy.radius && c.combat.hostileSource(unit);
+    });
+    const bool lostLife=decisionLife && world.life && *world.life<*decisionLife;
+    const bool urgent=lostLife || onlinePlayerDead(world) || game!=view.gameGeneration || areaGeneration!=world.areaGeneration;
+    auto mode=inputBlocked?Mode::Suspended:actionRecoveryBusy || missiles || hazardDodge?Mode::Reaction:
+        combatTarget || closeThreat?Mode::Combat:c.moving || c.walk.active()?Mode::Navigation:
+        questRun.pending || questRun.worldWait || potionRequest || mobilityTarget || pendingDoor || pendingWaypoint?Mode::Waiting:Mode::Idle;
+    std::array<uint64_t,24> signals{view.gameGeneration,world.areaGeneration,uint64_t(view.stage),uint64_t(inputBlocked),
+        uint64_t(world.life.value_or(0))|(uint64_t(world.mana.value_or(0))<<16),world.quests.revision,world.itemRevision,
+        world.combatRequest?world.combatRequest->revision:0,world.interactionGeneration,world.cinematicRevision,
+        world.units.size(),world.rooms.size(),0,0,
+        uint64_t(world.waypointSource.value_or(0))|(uint64_t(world.npcConversation?world.npcConversation->source:0)<<32),
+        uint64_t(c.moving)|(uint64_t(c.walk.active())<<1)|(uint64_t(actionRecoveryBusy)<<2)};
+    signals[16]=world.npcConversation?world.npcConversation->revision:0;
+    signals[17]=world.itemRequest?(world.itemRequest->sequence<<4)|uint64_t(world.itemRequest->state):0;
+    signals[18]=world.storage.revision;signals[19]=world.tradeResult?world.tradeResult->revision:0;
+    signals[20]=uint64_t(world.leftSkill?world.leftSkill->skill:UINT16_MAX)|(uint64_t(world.rightSkill?world.rightSkill->skill:UINT16_MAX)<<16);
+    if(pendingDoor) if(const auto door=world.units.find(pendingDoor->first);door!=world.units.end()) signals[21]=door->second.mode.value_or(0)+1;
+    signals[22]=world.staffRevision;signals[23]=uint64_t(bool(view.error))|(uint64_t(closeThreat)<<1)|(uint64_t(missiles)<<2);
+    if(const auto player=world.units.find({0,view.load.playerUnitId.value_or(0)});player!=world.units.end()) signals[12]=player->second.positionDiscontinuity;
+    if(combatTarget) if(const auto enemy=world.units.find(*combatTarget);enemy!=world.units.end())
+        signals[13]=uint64_t(enemy->second.mode.value_or(0))|(uint64_t(enemy->second.lifePercent.value_or(0))<<8)|(enemy->second.hitRevision<<16);
+    auto deadline=supplyStage==SupplyStage::None?goalDeadline:supplyDeadline;
+    const auto include=[&](Clock::time_point at) {if(at!=Clock::time_point{} && at>now && (deadline==Clock::time_point{} || at<deadline)) deadline=at;};
+    if(questRun.pending && !questRun.pending->resultObserved) include(questRun.pending->deadline);
+    if(questRun.worldWait) include(questRun.worldWait->deadline);
+    if(potionRequest) include(potionRequest->deadline);
+    if(mobilityTarget) include(mobilityDeadline);
+    if(pendingDoor) include(doorDeadline);
+    if(pendingWaypoint) include(waypointDeadline);
+    if(!inputBlocked) {include(combatRun.nextCast);include(nextPotion);}
+    if(!cadence.due(now,mode,signals,urgent,deadline)) return false;
+    decisionLife=world.life;return true;
+}
 namespace {
 std::string_view ownerName(DebugActionOwner owner) {
     static constexpr std::string_view names[]{"goal","navigation","door","waypoint","mobility","potion","supply","combat"};
@@ -14,6 +55,7 @@ DebugSubmitResult DebugAi::Impl::submitInput(Context &c,DebugActionOwner owner,s
     const auto now=Clock::now();auto &pending=submissionWaits[owner];
     if(pending.action!=action) pending={std::move(action),{},inputs,0,decisions,now+budget,{}};
     pending.decision=decisions;
+    if(now>=pending.deadline) return DebugSubmitResult::Expired;
     if(!canInput(c,owner,inputs)) {
         pending.reason="Waiting for the current action's input ownership";
     } else if(now>=pending.retryAt) {
@@ -28,7 +70,9 @@ DebugSubmitResult DebugAi::Impl::submitInput(Context &c,DebugActionOwner owner,s
 }
 bool DebugAi::Impl::submitItem(Context &c,const OnlineItemCommand &command,std::string action,DebugActionOwner owner) {
     const auto key=action+":"+std::to_string(unsigned(command.action))+":"+std::to_string(command.item)+":"+std::to_string(command.npc);
-    const auto result=submitInput(c,owner,key,DebugItem|DebugInteraction,
+    const unsigned inputs=owner==DebugActionOwner::Potion && command.action==OnlineItemAction::Use?
+        unsigned(DebugItem):unsigned(DebugItem|DebugInteraction);
+    const auto result=submitInput(c,owner,key,inputs,
         [&]{return c.inventory.submit(c.session,command);},[&]{return c.inventory.reason();});
     if(result==DebugSubmitResult::Expired) throw std::runtime_error("Normal item input was not accepted: "+action+"; "+submissionWaits.at(owner).reason);
     return result==DebugSubmitResult::Accepted;
@@ -42,7 +86,8 @@ bool DebugAi::Impl::questWaitRequiresInput(const Context &c) const {
     if(!questRun.pending) return false;
     const auto &pending=*questRun.pending;
     if(pending.action==QuestPending::Action::Object && cursor<goals.size() && questRun.step<goals[cursor].steps.size() &&
-        goals[cursor].steps[questRun.step].refreshFlags && !pending.statusRequested) return true;
+        goals[cursor].steps[questRun.step].refreshFlags && !pending.statusRequested &&
+        (goals[cursor].steps[questRun.step].topics.empty() || pending.refreshIssued)) return true;
     if(pending.action==QuestPending::Action::Introduction) return !pending.statusRequested;
     if(pending.action==QuestPending::Action::Object && pending.unit && cursor<goals.size() &&
         questRun.step<goals[cursor].steps.size() && c.session.read().world.npcConversation &&
@@ -52,7 +97,8 @@ bool DebugAi::Impl::questWaitRequiresInput(const Context &c) const {
             std::find(step.topics.begin(),step.topics.end(),message.stringId)!=step.topics.end()) return true;
     }
     if(pending.action==QuestPending::Action::Object && pending.refreshIssued) return !pending.statusRequested;
-    if(pending.action!=QuestPending::Action::Topic && !(pending.action==QuestPending::Action::Imbue && questRun.materialPhase==4)) return false;
+    if(pending.action!=QuestPending::Action::Topic && !((pending.action==QuestPending::Action::Imbue ||
+        pending.action==QuestPending::Action::Service) && questRun.materialPhase==4)) return false;
     if(!pending.refreshIssued) return true;
     if(cursor<goals.size() && questRun.step<goals[cursor].steps.size() && goals[cursor].steps[questRun.step].optional) return false;
     return pending.unit && (!pending.statusRequested || c.session.read().world.npcRequested!=pending.unit->id);
@@ -65,7 +111,7 @@ std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c
     if(pendingDoor) result.push_back({Owner::Door,"door",DebugMotion|DebugInteraction,defense,
         "same assignment's non-neutral mode","fail without replay",doorDeadline});
     if(pendingWaypoint || closeWaypoint) result.push_back({Owner::Waypoint,"waypoint",DebugMotion|DebugInteraction|DebugMenu,defense,
-        closeWaypoint?"close owned menu when input resumes":"mode / personal 63 unlock","fail without local unlock",waypointDeadline,bool(closeWaypoint)});
+        closeWaypoint?"close owned menu when input resumes":"mode / personal 63 unlock","defer optional activation without local unlock",waypointDeadline,bool(closeWaypoint)});
     if(mobilityTarget) result.push_back({Owner::Mobility,"mobility",DebugMotion|DebugSkill,0,
         "normal skill displacement","fall back to ordinary walking",mobilityDeadline});
     if(potionRequest) result.push_back({Owner::Potion,"potion",DebugItem,0,
@@ -83,23 +129,29 @@ std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c
             "observe result; query only at the registered continuation; never replay service",
             questRun.pending?questRun.pending->deadline:Clock::time_point{},questRun.pending && questRun.pending->resultObserved});
     }
-    if(travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit) || portalIssued || supplyPortalUsed)
+    if(questRun.worldWait) result.push_back({Owner::Goal,"world-result",0,0,
+        "relevant scene fact / encounter progress","retain scene; no interaction replay",questRun.worldWait->deadline});
+    if(travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit) ||
+        portalUsed || (portalIssued && c.session.read().world.townPortalPending) || supplyPortalUsed)
         result.push_back({supplyStage==SupplyStage::None?Owner::Goal:Owner::Supply,"area-transfer",
             DebugMotion|DebugSkill|DebugInteraction|DebugMenu,0,"actual destination scene","observe or fail; no blind transfer replay",
             supplyPortalUsed?supplyPortalDeadline:actionDeadline});
     if(shopIssued) result.push_back({Owner::Supply,"merchant",DebugItem|DebugInteraction|DebugMenu,0,
-        "same interaction's shelf / transaction","fail without repeating shop / purchase",shopDeadline});
+        "same interaction's shelf / transaction","reopen unconfirmed shelf once; never repeat a pending purchase",shopDeadline});
+    if(healingIssued) result.push_back({Owner::Supply,"town-healing",DebugMotion|DebugInteraction|DebugMenu,0,
+        "actual life restored by healer","fail without replaying conversation",shopDeadline,healingObserved});
     if(supplyStage!=SupplyStage::None) result.push_back({Owner::Supply,"supply-detour",0,0,
         "supplies and original area","retain the original goal",supplyDeadline});
     return result;
 }
 bool DebugAi::Impl::canInput(const Context &c,DebugActionOwner owner,unsigned requested) const {
     if(inputBlocked || !active()) return false;
+    if(actionRecoveryBusy && owner!=DebugActionOwner::Potion) return false;
     const auto contracts=actionContracts(c);
     return std::all_of(contracts.begin(),contracts.end(),[&](const auto &entry){return entry.permits(owner,requested);});
 }
 void DebugAi::Impl::describeActions(const Context &c) {
-    actionDiagnostics={{"inputBlocked",inputBlocked},{"executionSuspendedMs",executionClock.suspendedMs()},
+    actionDiagnostics={{"inputBlocked",inputBlocked},{"actionRecoveryBusy",actionRecoveryBusy},{"executionSuspendedMs",executionClock.suspendedMs()},
         {"contracts",Json::array()},{"submissions",Json::array()},{"allowed",Json::object()}};
     for(const auto &[owner,pending]:submissionWaits) if(pending.decision+1>=decisions)
         actionDiagnostics["submissions"].push_back({{"owner",ownerName(owner)},{"action",pending.action},
@@ -111,7 +163,7 @@ void DebugAi::Impl::describeActions(const Context &c) {
         {"waitingFor",entry.waitingFor},{"recovery",entry.recovery},{"resultObserved",entry.resultObserved},
         {"waitRemainingMs",entry.deadline==Clock::time_point{}?Json(nullptr):Json(std::max<int64_t>(0,
             std::chrono::duration_cast<std::chrono::milliseconds>(entry.deadline-Clock::now()).count()))},
-        {"clock",entry.action=="supply-detour" || (entry.action=="merchant" && shelfObserved) ||
+        {"clock",entry.action=="supply-detour" || entry.action=="world-result" || (entry.action=="merchant" && shelfObserved) ||
             (questWaitRequiresInput(c) && entry.owner==DebugActionOwner::Goal)?"execution":"real"}});
     for(const auto &[owner,inputs]:std::initializer_list<std::pair<DebugActionOwner,unsigned>>{
         {DebugActionOwner::Goal,DebugAllInputs},{DebugActionOwner::Combat,DebugMotion|DebugSkill},
@@ -131,6 +183,13 @@ void DebugAi::Impl::observeActions(Context &c) {
     // A potion or movement wait must not hide an already arrived door result.
     observe([&]{observePotion(c);});
     observe([&]{observeCombat(c);});
+    observeWaypointMemory(c);
+    observePopulation(c);
+    if(healingIssued && !healingObserved) {
+        if(view.world.life && c.supplies && c.supplies->maxLife && *view.world.life>=*c.supplies->maxLife) {
+            healingObserved=true;note("town-healing-result-observed");
+        } else if(now>=shopDeadline) failure="Town healer interaction did not restore observed life; no blind retry";
+    }
     if(pendingDoor) {
         const auto door=view.world.units.find(pendingDoor->first);
         if(door==view.world.units.end() || door->second.assignmentRevision!=pendingDoor->second) {
@@ -146,32 +205,53 @@ void DebugAi::Impl::observeActions(Context &c) {
             std::any_of(c.town.read().waypoints.begin(),c.town.read().waypoints.end(),[&](const auto &entry) {
                 return entry.level==pendingWaypoint->area && entry.unlocked;
             });
+        const bool activated=!pendingWaypoint->menu && view.world.waypointActivation &&
+            view.world.waypointActivation->source==pendingWaypoint->unit.id &&
+            view.world.waypointActivation->generation==view.world.interactionGeneration;
         if(waypoint==view.world.units.end() || waypoint->second.assignmentRevision!=pendingWaypoint->assignment) {
             note("waypoint-assignment-withdrawn");pendingWaypoint.reset();
-        } else if(menu || (!pendingWaypoint->menu && waypoint->second.mode && *waypoint->second.mode!=0)) {
-            activatedWaypointAreas.insert(pendingWaypoint->area);
+        } else if(menu || activated) {
+            knownWaypointAreas.insert(pendingWaypoint->area);
             if(view.world.waypointSource==pendingWaypoint->unit.id) closeWaypoint=pendingWaypoint->unit.id;
             note("waypoint-activation-observed",std::to_string(waypoint->first.id));pendingWaypoint.reset();
-        } else if(now>=waypointDeadline) failure="Waypoint activation submitted without its actual mode / unlock result";
+        } else if(now>=waypointDeadline) {
+            // This is an opportunistic activation, not a requested journey.
+            // A server-side approach may be interrupted by defensive input.
+            // Keep the missing result visible; never unlock locally or abort
+            // the unrelated quest. Retry only after time AND a new approach.
+            deferredWaypoint=WaypointDeferral{pendingWaypoint->unit,pendingWaypoint->assignment,
+                now+std::chrono::seconds(30),c.position};
+            if(view.world.waypointSource==pendingWaypoint->unit.id || view.world.waypointRequested==pendingWaypoint->unit.id)
+                closeWaypoint=pendingWaypoint->unit.id;
+            note("waypoint-activation-deferred","No actual mode / unlock result; require a new approach before another click");
+            pendingWaypoint.reset();
+        }
         else wait("waypoint-activation-wait","Waiting for actual waypoint mode / personal unlock");
     }
-    if(closeWaypoint && view.world.waypointSource!=closeWaypoint) closeWaypoint.reset();
+    if(closeWaypoint && view.world.waypointSource!=closeWaypoint && view.world.waypointRequested!=closeWaypoint) closeWaypoint.reset();
     observe([&]{observeMobility(c);});
+    observe([&]{observeQuestFacts(c);});
     observe([&]{observeQuestResult(c);});
+    observe([&]{observeWorldWait(c);});
     if(shopIssued && !potionRequest && !shelfObserved) {
         const bool ready=supplyNpc && view.world.shopSource==supplyNpc->id && !view.world.shopGamble &&
             (!view.world.itemRequest || view.world.itemRequest->state!=OnlineItemRequest::State::Pending);
         if(ready) {shelfObserved=true;shopDeadline=now+std::chrono::seconds(12);note("potion-shelf-observed");}
-        else if(now>=shopDeadline) failure="Potion vendor shelf was not observed; no shop replay";
+        // Restock owns bounded reopening once ordinary interaction input is available.
     }
     if(travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit)) {
         if(legDestination && c.town.read().area==legDestination) {
             travelPhase=TravelPhase::Route;legDestination.reset();waypointDestination.reset();legUnit.reset();cancelWalk(c);
             note("travel-result-observed");
-        } else if(now>=actionDeadline) failure="Submitted travel's destination was not observed";
+        } else if(now>=actionDeadline) {
+            if(travelPhase==TravelPhase::CrossWait && legUnit && recoverTravel(c)) travelPhase=TravelPhase::WarpExit;
+            else failure="Submitted travel's destination was not observed";
+        }
     }
-    if(supplyPortalUsed && supplyOrigin!=c.town.read().area && now>=supplyPortalDeadline)
-        failure="Return portal was used but the original supply area was not observed";
+    if(supplyPortalUsed && supplyOrigin!=c.town.read().area && now>=supplyPortalDeadline) {
+        if(recoverTravel(c)) supplyPortalUsed=false;
+        else failure="Return portal was used but the original supply area was not observed";
+    }
     if(!failure.empty()) throw std::runtime_error(failure);
 }
 } // namespace d2x

@@ -120,6 +120,7 @@ class RemoteTown {
     void update(const OnlineView &, std::optional<Vec> displayPosition = {});
     const OnlineSceneView &read() const { return view_; }
     std::optional<Vec> inputOrigin(const OnlineView &) const;
+    int monsterSizeX(uint16_t identity) const;
     Grid navigationGrid(const OnlineView &,std::optional<OnlineUnitKey> ignored = {}) const;
     const Map *map() const { return map_; }
     // Already reconstructed logical walking links, including an adjoining room
@@ -147,6 +148,7 @@ class RemoteTown {
     std::vector<OnlineUnitKey> nearbyUnits(const OnlineView &, OnlinePoint center, int radius) const;
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
     bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}, bool approaching = false) const;
+    std::optional<int> projectedObjectMode(const OnlineView &,OnlineUnitKey) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices,Vec observationExtent={});
     // Observer-only overlay; does not enter discovery, navigation or live DRLG.
     void updateAutomapReveal(const OnlineView &, bool enabled, AutomapPresetCellSelector);

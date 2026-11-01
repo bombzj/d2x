@@ -169,6 +169,11 @@ bool RemoteScene::castInputBusy() const {
     return s.localCast && !s.channelSkill(s.localCast->command.skill) &&
         (s.localCast->started<0 || s.time<s.localCast->started+s.localCast->duration);
 }
+std::optional<bool> RemoteScene::actionInputBusy() const {
+    // Channel updates remain input; only ordinary casts/actions defer the
+    // next independent AI command. Unknown art does not invent a duration.
+    return castInputBusy()?std::optional<bool>{true}:impl_->actionInputBusy;
+}
 
 bool RemoteScene::Impl::localCastBlocksMovement() const {
     if(!localCast || localCast->started<0 || time>=localCast->started+localCast->duration) return false;

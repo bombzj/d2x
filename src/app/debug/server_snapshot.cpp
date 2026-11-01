@@ -336,8 +336,14 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"successful",a4.forgeSuccessful},{"awaiting",a4.forgeAwaiting},{"code",a4.forgeCode}};
     result["questExecution"]["actFive"]={{"rescued",a5.rescued},{"rescueSpawned",a5.rescueSpawned},
         {"rescueKilled",a5.rescueKilled},{"rescueRemaining",a5.rescueRemaining},{"rescueGroupsComplete",a5.rescueGroupsComplete},
-        {"anyaThawed",a5.anyaThawed},{"anyaSpawned",a5.anyaSpawned},{"ancientsActive",a5.ancientsActive},{"ancientsDefeated",a5.ancientsDefeated},{"throneDeparted",a5.throneDeparted},{"baalSlain",a5.baalSlain},{"tyraelSpawned",a5.tyraelSpawned}};
+        {"anyaThawed",a5.anyaThawed},{"anyaRead",a5.anyaRead},{"anyaSpawned",a5.anyaSpawned},{"ancientsActive",a5.ancientsActive},{"ancientsDefeated",a5.ancientsDefeated},{"throneDeparted",a5.throneDeparted},{"baalSlain",a5.baalSlain},{"tyraelSpawned",a5.tyraelSpawned}};
     result["questExecution"]["actFive"]["rescuePortals"]=Json::array();
+    const auto unitIds=[](const auto &source) {auto values=Json::array();for(const auto id:source) values.push_back(id.value);return values;};
+    result["questExecution"]["actFive"]["freedUnits"]=unitIds(a5.rescueFreed);
+    result["questExecution"]["actFive"]["deadUnits"]=unitIds(a5.rescueDeaths);
+    result["questExecution"]["actFive"]["deadDoors"]=unitIds(a5.rescueDoors);
+    result["questExecution"]["actFive"]["doorCensus"]=Json::array();
+    for(const auto &[id,census]:a5.rescueCensus) result["questExecution"]["actFive"]["doorCensus"].push_back({{"door",id.value},{"observed",census}});
     for(const auto &portal:a5.rescuePortals) {
         Json prisoners=Json::array();for(const auto id:portal.prisoners) prisoners.push_back(id.value);
         result["questExecution"]["actFive"]["rescuePortals"].push_back({{"object",portal.object.value},

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "description": "Reusable full Act I debug preparation, original MPQ only. Fresh normal quests, legal level-99 budgets, cold skills and Teleport at rank 20, high mana and Warmth, actual purchase gold and a reserved unsocketed normal cap. Not natural progression/loot evidence.",
+  "description": "Reusable full Act I debug preparation, original MPQ only. Fresh normal quests, legal level-99 budgets, vitality-focused attributes, cold skills and Teleport at rank 20, Warmth, actual purchase gold and a reserved unsocketed normal cap. Not natural progression/loot evidence.",
   "characters": [
     {
       "id": "DebugActOne",
@@ -12,8 +12,8 @@
       "allocated": [
         70,
         50,
-        70,
-        300
+        350,
+        20
       ],
       "skills": {
         "Ice Bolt": 20,

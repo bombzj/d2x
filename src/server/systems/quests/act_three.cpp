@@ -241,7 +241,13 @@ std::optional<int> System::objectMode(RegionId region,EntityId id,int definition
             if(const auto mode=state_.objectModes.find(id);mode!=state_.objectModes.end()) return mode->second;
             return state_.actFive.ancientsDefeated?2:0;
         }
-        if(operation==66) return state_.actFive.ancientsDefeated?2:0;
+        if(operation==66) {
+            // Init73 opens it only for a game completed beforehand. A fresh
+            // victory permits Operate66's 0 -> 1 -> ENDANIM -> 2 sequence.
+            if(state_.initialFlags[questDefinition(QuestId::RiteOfPassage).nativeSlot]&1) return 2;
+            if(!state_.actFive.ancientsDefeated) return 0;
+            return {};
+        }
         if(operation==70) return int(region)==132 || state_.actFive.throneDeparted?2:0;
     }
     if(const auto mode=state_.objectModes.find(id);mode!=state_.objectModes.end()) return mode->second;

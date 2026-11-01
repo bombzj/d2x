@@ -58,6 +58,7 @@ class RemoteScene {
     int unavailableUnits() const;
     bool playerDisplayed() const;
     bool castInputBusy() const;
+    std::optional<bool> actionInputBusy() const;
     std::optional<Vec> playerDisplayPosition(const OnlineView &) const;
     std::optional<Vec> playerPathPosition(const OnlineView &) const;
     const std::vector<OnlinePlayerDisplay> &players() const;

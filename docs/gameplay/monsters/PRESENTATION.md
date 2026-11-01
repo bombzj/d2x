@@ -4,6 +4,12 @@
 
 所连接的服务端负责出生、AI、攻击／技能、命中、复活、召唤、经验／掉落和任务。当前客户端只消费真实单位与原动作／技能／状态。
 
+## 活体攻击目标与悬停
+
+`RemoteCombat::hostile`同时检查当前MonStats.killable与其MonStatsEx所链接MonStats2.isAtt；后者对应D2MOO `MONSTER_InitializeStatsAndSkills`设置的`UNITFLAG_CANBEATTACKED`。九头蛇三种记录虽有killable=1，isAtt为空，因此不可成为普通攻击目标；`monsterTargetEligible`及世界悬停／姓名、普通技能选取、调试AI沿用该公共资格，不按单位名称排除。这里不把isAtt当作全部isSel／alSel／noSel动态选择规则已经完成的证明。
+
+`hostileSource`仍按阵营／拥有者识别威胁来源：不可被攻击的九头蛇仍可发射敌对弹体。尸体选择沿独立corpseSel／SelectProc，不套活体isAtt。宿主九头蛇沿原Fn086到期进入死亡，不通过玩家击杀结束；本次修正客户端资格，未改其寿命或伤害规则。当前修正的构建与运行验收见[缺口文档](../../development/ORIGINAL_GAPS.md#第五幕自动任务)。
+
 ## 已接表现程序与边界
 
 | 表现族 | 当前消费／限制 |

@@ -251,6 +251,7 @@ struct RemoteScene::Impl {
     const RemoteUiClients *uiClients{};
     int rendered{}, unavailable{};
     bool playerDisplayed{};
+    std::optional<bool> actionInputBusy;
     std::vector<OnlinePlayerDisplay> players;
     std::vector<OnlineSceneView::MissileDisplay> clientMissiles;
     std::vector<OnlineSceneView::MonsterDisplay> monsters;

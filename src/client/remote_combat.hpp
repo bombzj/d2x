@@ -22,7 +22,7 @@ struct OnlineCombatStateView {
     std::vector<OnlineItemStat> stats;
 };
 struct OnlineCombatUnitStates {
-    uint64_t sequence{};
+    uint64_t sequence{}, generation{};
     bool decoded{};
     std::string reason;
     std::map<uint8_t, OnlineCombatStateView> states;
@@ -33,7 +33,7 @@ class RemoteCombat {
     RemoteInventory &inventory_;
     net::RealmSession &session_;
     std::map<std::string, DataTable, std::less<>> tables_;
-    std::map<uint16_t, size_t> skills_, stats_, monsters_;
+    std::map<uint16_t, size_t> skills_, stats_, monsters_, monsterExtras_;
     std::map<uint16_t, SkillMetadata> skillMetadata_;
     std::map<uint8_t, size_t> states_;
     std::map<std::string, std::set<uint16_t>, std::less<>> innateSkills_;
@@ -65,6 +65,7 @@ class RemoteCombat {
     void setSkillRankResolver(std::function<std::optional<std::map<int,int>>()> resolver) {skillRankResolver_=std::move(resolver);}
     bool hostile(const OnlineUnit &) const;
     bool hostileSource(const OnlineUnit &) const;
+    std::optional<bool> knownHostileSource(const OnlineUnit &) const;
     bool pd2ChargeTargetEligible(const OnlineUnit &source,const OnlineUnit &target) const;
     uint8_t ownershipTransform(const OnlineUnit &) const;
     std::optional<OnlineUnitKey> storedOwner(const OnlineUnit &) const;

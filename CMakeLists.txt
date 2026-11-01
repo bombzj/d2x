@@ -575,6 +575,7 @@ add_executable(d2x
   src/app/debug/ai_navigation.cpp
   src/app/debug/ai_local_travel.cpp
   src/app/debug/ai_execution.cpp
+  src/app/debug/ai_events.cpp
   src/app/debug/ai_combat.cpp
   src/app/debug/ai_defense.cpp
   src/app/debug/ai_actions.cpp
@@ -585,6 +586,8 @@ add_executable(d2x
   src/app/debug/ai_act_two.cpp
   src/app/debug/ai_act_three.cpp
   src/app/debug/ai_act_four.cpp
+  src/app/debug/ai_act_five.cpp
+  src/app/debug/ai_quest_encounters.cpp
   src/app/debug/ai_quest_later_actions.cpp
   src/app/debug/ai_quest_items.cpp
   src/app/debug/ai_quest_actions.cpp
@@ -593,6 +596,14 @@ target_link_libraries(d2x PRIVATE d2x_presentation d2x_remote_client d2x_charact
 if(WIN32)
   target_link_libraries(d2x PRIVATE advapi32 dbghelp imm32)
 endif()
+
+add_custom_command(TARGET d2x POST_BUILD
+  COMMAND ${CMAKE_COMMAND}
+    "-DD2X_CONFIG_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/config"
+    "-DD2X_CONFIG_DESTINATION=$<TARGET_FILE_DIR:d2x>"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyDebugAiConfigs.cmake"
+  VERBATIM
+)
 
 add_executable(d2x_assets src/asset_tool.cpp src/asset_save_recipe.cpp src/hosting/item_content.cpp)
 target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_persistence raylib nlohmann_json::nlohmann_json)

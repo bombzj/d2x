@@ -54,7 +54,6 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         visual.lightColor = {uint8_t(number("Red")), uint8_t(number("Green")), uint8_t(number("Blue")), 255};
         if (visual.lifetime <= 0 && number("Explosion") && !visual.loop && visual.fps > 0)
             visual.lifetime = float(visual.frames) / visual.fps;
-        if (visual.trans) translucentProjectiles.insert(id);
         projectileVisuals.emplace(id, visual);
         if (!content.missileCollisions.contains(id)) continue;
         ClientMissileProgram program;

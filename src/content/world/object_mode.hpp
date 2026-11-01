@@ -1,5 +1,6 @@
 #pragma once
 #include "resources/data_table.hpp"
+#include <cstdint>
 #include <optional>
 
 namespace d2x {
@@ -19,8 +20,8 @@ inline std::optional<float> objectEndAnimation(const DataTable &objects, size_t 
         const auto frames=objects.number(row,"FrameCnt1");
         return frames && *frames>0?std::optional<float>{float(*frames)/25.f}:std::nullopt;
     }
-    if(objects.number(row,"OperateFn").value_or(0)==49) {
-        // A4Q3 places the stone with ENDANIM at FrameCnt1, without +1.
+    if(objects.number(row,"OperateFn").value_or(0)==49 || objects.number(row,"OperateFn").value_or(0)==66) {
+        // A4Q3's stone and A5Q5's Ancients door use FrameCnt1 without +1.
         const auto frames=objects.number(row,"FrameCnt1");
         return frames && *frames>0?std::optional<float>{float(*frames)/25.f}:std::nullopt;
     }
@@ -51,7 +52,19 @@ inline int objectDisplayMode(const DataTable &objects, size_t row, int mode, flo
     return end && elapsed >= *end ? 2 : mode;
 }
 inline ObjectPresentation objectPresentation(const DataTable &objects, size_t row, int mode, float elapsed) {
-    const auto end = objectEndAnimation(objects, row, mode);
+    auto end = objectEndAnimation(objects, row, mode);
+    if(!end && mode==1 && !objects.number(row,"IsDoor").value_or(0) &&
+        !objects.number(row,"CycleAnim1").value_or(0) && objects.number(row,"Mode2").value_or(0)) {
+        // D2Client 1.13c RVA 25660: local OP -> ON at the last frame,
+        // independent of another server mode packet (including Init77).
+        const int frames=objects.number(row,"FrameCnt1").value_or(0);
+        const int speed=objects.number(row,"FrameDelta1").value_or(0);
+        const int start=objects.number(row,"Start1").value_or(0);
+        if(frames>1 && speed>0) {
+            const auto remaining=(int64_t(frames)-1-start)*256;
+            end=remaining>0?float((remaining+speed-1)/speed)/25.f:0.f;
+        }
+    }
     const bool opened = end && elapsed >= *end;
     return {opened ? 2 : mode, opened ? elapsed - *end : elapsed,
             objects.number(row, "Draw").value_or(0) != 0};

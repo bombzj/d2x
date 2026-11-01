@@ -78,10 +78,12 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
         case QuestId::TerrorsEnd: status=stage>=4?13:uint8_t(stage);break;
         case QuestId::SiegeOnHarrogath: status=stage>=5?0:uint8_t(stage);break;
         case QuestId::RescueOnMountArreat: status=stage>=4?13:stage==3?3:stage>=1?1:0;break;
-        case QuestId::PrisonOfIce: status=stage>=6?0:stage==5?uint8_t(!(state&iceRareGranted)?5:!(state&iceScrollGranted)?6:13):uint8_t(stage);break;
+        case QuestId::PrisonOfIce: status=fact.iceStatus.value_or(stage>=6?0:stage==5?uint8_t(!(state&iceRareGranted)?5:!(state&iceScrollGranted)?6:13):uint8_t(stage));break;
         case QuestId::BetrayalOfHarrogath: status=stage>=5?0:stage==4?5:stage==3?4:uint8_t(stage);break;
         case QuestId::RiteOfPassage: status=stage>=4?13:stage>=2?2:uint8_t(stage);break;
-        case QuestId::EveOfDestruction: status=stage>=5?13:stage>=3?3:stage?1:0;break;
+        // ChangedLevel emits2 in the throne; only the actual opening emits3.
+        // Callback08 emits4 after Baal's death, separately from saved reward bits.
+        case QuestId::EveOfDestruction: status=fact.baalStatus.value_or(stage>=5?4:stage>=3?2:stage?1:0);break;
         default: break;
         }
         // Quests.h chain number is distinct from the persisted filter slot.

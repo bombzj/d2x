@@ -1,0 +1,36 @@
+{
+  "combat": {
+    "engageRadius": 24,
+    "range": 18,
+    "crowdRadius": 8,
+    "crowdCount": 3,
+    "retreatDistance": 8,
+    "retreatLifePercent": 70,
+    "lifeDropPercent": 10,
+    "noProgressSeconds": 6,
+    "stallTimeoutSeconds": 90,
+    "rangedKite": true,
+    "kiteIntervalMs": 900,
+    "kiteDistance": 6,
+    "kiteMinDistance": 8,
+    "hazardLookaheadMs": 350,
+    "hazardPadding": 3
+  },
+  "events": {
+    "waitSeconds": 90,
+    "encounterRadius": 32,
+    "standoffMin": 8,
+    "standoffMax": 24
+  },
+  "mobility": {
+    "distance": 48
+  },
+  "supplies": {
+    "healthCount": 8,
+    "manaCount": 8,
+    "lifePercent": 60,
+    "manaPercent": 35,
+    "criticalLifePercent": 25,
+    "intervalMs": 1500
+  }
+}

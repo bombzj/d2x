@@ -7,7 +7,7 @@
 #include <raylib.h>
 
 namespace d2x {
-enum class FrontendPage { Main, Login, Register, Realms, Characters, CreateCharacter, Lobby, Loading, TcpIp, JoinHost, Difficulty };
+enum class FrontendPage { Main, Login, Register, Realms, Characters, CreateCharacter, Lobby, Loading, TcpIp, JoinHost, Difficulty, Victory };
 enum class FrontendCommand {
     None,
     Exit,

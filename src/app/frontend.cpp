@@ -529,7 +529,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         const auto hostNow = std::chrono::steady_clock::now();
         const bool hostFocused = !minimized && (debugAi.active() || debugWalk.active() || (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused));
         if (embedded) embedded->pump(std::chrono::duration<double>(hostNow - hostFrame).count(),
-            !quit && (!hostFocused || presentationPaused || (sharedUi && sharedUi->ui().gameMenuOpen)));
+            !quit && ((!hostFocused && !options.noPauseOnFocusLoss) || presentationPaused || (sharedUi && sharedUi->ui().gameMenuOpen)));
         hostFrame = hostNow;
         frameTiming.mark(FrontendTimings::Host);
         if (auto error = embedded ? embedded->takeError() : std::string{}; !error.empty()) {
@@ -623,10 +623,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             ((debugAi.hasPlan() || debugWalk.active()) && debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory())))))
             control.cancelMovement();
         control.tick(!minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
-            !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
+            !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
+            scene && scene->actionInputBusy().value_or(scene->castInputBusy()));
         DebugAi::SuppliesView aiSupplies;
-        if(debugAi.active() && sharedClients) {
-            if(scene) {aiSupplies.castInputBusy=scene->castInputBusy();aiSupplies.missiles=scene->missileObservations();}
+        if(debugAi.hasPlan() && sharedClients) {
+            if(scene) {aiSupplies.castInputBusy=scene->castInputBusy();aiSupplies.actionInputBusy=scene->actionInputBusy();aiSupplies.missiles=scene->missileObservations();}
             aiSupplies.skillUsable=[&](uint16_t skill)->std::optional<bool> {
                 const auto &player=sharedClients->character().read();
                 if(!session.read().load.playerUnitId || player.actor.value!=uint64_t(*session.read().load.playerUnitId)+1) return {};
@@ -718,7 +719,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             if (presentationPaused != wasPaused) {
                 debugInputs.clear();
                 if (sharedUi) sharedUi->pauseWorldPresentation(minimized || presentationPaused ||
-                    (localConnection && !lanConnection && (!hostFocused || sharedUi->ui().gameMenuOpen)));
+                    (localConnection && !lanConnection && ((!hostFocused && !options.noPauseOnFocusLoss) || sharedUi->ui().gameMenuOpen)));
                 if (sharedController) sharedController->resetInput();
                 if (!presentationPaused) {
                     scene.reset();
@@ -747,13 +748,25 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     page = FrontendPage::Main;
                 }
             }
-            auto reply = nlohmann::json::parse(response);
+            nlohmann::json reply;
+            try {
+                reply = nlohmann::json::parse(response);
+            } catch(const nlohmann::json::parse_error &error) {
+                // A diagnostic reply must not tear down the game and lose
+                // in-flight save traffic. Preserve the malformed boundary
+                // for diagnosis and return a failure, never an empty success.
+                const size_t at=std::min(response.size(),error.byte?error.byte-1:0);
+                const size_t begin=at>80?at-80:0;
+                std::cerr<<"Invalid internal debug reply ("<<response.size()<<" bytes): "<<error.what()
+                    <<"; context="<<response.substr(begin,std::min(size_t(176),response.size()-begin))<<'\n';
+                return nlohmann::json{{"ok",false},{"error","Internal debug reply is invalid; context recorded in program output"}}.dump();
+            }
             const auto waiting = sharedClients ? sharedClients->waitingItemRequest() : std::nullopt;
             reply["uiQueue"] = {{"inputFrames", debugInputs.size()},
                 {"itemCommands", sharedClients ? sharedClients->queuedItemCommands() : 0},
                 {"waitingItemRequest", waiting ? nlohmann::json(*waiting) : nlohmann::json(nullptr)}};
-            constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading", "TcpIp", "JoinHost", "Difficulty"};
-            reply["frontend"] = {{"page", pageNames.at(size_t(page))}, {"notice", notice}, {"minimized", minimized}};
+            constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading", "TcpIp", "JoinHost", "Difficulty", "Victory"};
+            reply["frontend"] = {{"page", session.read().stage==OnlineStage::ProtocolReady && session.read().world.cinematic==7?"Victory":pageNames.at(size_t(page))}, {"notice", notice}, {"minimized", minimized}};
             reply["frontend"]["debugRevealMap"] = debugMapReveal ? nlohmann::json(*debugMapReveal) : nlohmann::json(nullptr);
             if (sharedUi) {
                 const auto &panels = sharedUi->ui();
@@ -1033,6 +1046,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         RemoteSceneFrame worldFrame;
         bool leaveGame = false;
         const Vec worldMouse{raw.x, raw.y};
+        const bool finaleActive=view.stage==OnlineStage::ProtocolReady && view.world.cinematic==7;
         // The NPC trade screen keeps its original 800x600 art. Both its input
         // handling and its drawing run on a fixed 800x600 canvas stretched across
         // the window, so panel layout and hit testing share one coordinate space;
@@ -1067,6 +1081,14 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             sharedUi->drawUi(tradeCanvasMouse(windowMouse));
             rlPopMatrix();
             leaveTradeCanvas();
+        };
+        const auto drawVictory=[&](const FrameInput &input) {
+            if(!finaleActive) return;
+            enterTradeCanvas();
+            rlPushMatrix();rlScalef(uiScaleX,uiScaleY,1.f);
+            const auto pointer=tradeCanvasMouse(input.mouse);
+            action=ui.frame(FrontendPage::Victory,session.read(),gateway,{},rv(pointer),input,false);
+            rlPopMatrix();leaveTradeCanvas();
         };
         if (!presentationPaused) {
             frameTiming.mark(FrontendTimings::Client);
@@ -1145,7 +1167,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         const auto &dialog = *town.read().npcConversation;
                         if (displayedNpc != dialog.source) {
                             displayedNpc = dialog.source;
-                            sharedUi->openNpcMenu(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,false);
+                            // Books/objects publish speech too, but have no
+                            // NPC service menu. A fast AI acknowledgement may
+                            // precede this frame: do not leave an empty menu.
+                            if(dialog.type==1)
+                                sharedUi->openNpcMenu(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,false);
                         }
                         // The AI submits the same acknowledgement without a
                         // physical dialogue click. Mirror the controller's
@@ -1161,13 +1187,21 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                             // not necessarily the native conversation revision.
                             if (panels.dialogue.empty() && !panels.shopOpen && !panels.hireListOpen) for (const auto &message : dialog.messages)
                                 if (!message.acknowledged && message.menu == 0 && !message.text.empty()) {
-                                    sharedUi->openNpcDialogue(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,message.text,message.stringId);
+                                    sharedUi->openNpcDialogue(EntityId{(uint64_t{dialog.type} << 32) + dialog.source + 1},dialog.speaker,message.text,message.stringId);
                                     panels.dialogueTextTopic = message.stringId;
                                     break;
                                 }
                         }
+                        // Normal commands may originate from debug AI / pipe
+                        // as well as the menu controller. Render the actual
+                        // merchant shelf consistently for every input source.
+                        if(native.shopSource==dialog.source && !panels.shopOpen) {
+                            sharedUi->cancelNpcDialogue();panels.npcMenu=true;
+                            sharedUi->openNpcShop(native.shopGamble);
+                        }
                     } else if (displayedNpc && !native.npcRequested) {
                         displayedNpc.reset(); sharedUi->cancelNpcDialogue();
+                        if(panels.shopOpen) sharedUi->closeNpcShop();
                         panels.shopOpen = panels.hireListOpen = false;
                     }
                     auto input = pollInput(viewport, panels.controls, panels.chatInputOpen);
@@ -1187,6 +1221,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     if (!debugInputs.empty()) {
                         input = std::move(debugInputs.front());
                         debugInputs.pop_front();
+                    }
+                    const auto finaleInput=input;
+                    if(finaleActive) {
+                        input={};input.mouse=finaleInput.mouse;input.focused=finaleInput.focused;
+                        input.insideViewport=finaleInput.insideViewport;input.screenshot=finaleInput.screenshot;
                     }
                     if(debugAi.hasPlan() || debugWalk.active()) {
                         if(debugInputTakesControl(input,debugChatOwnsInput(),debugQuestInspectionInput(input,sharedUi?&sharedUi->ui():nullptr)))
@@ -1225,12 +1264,13 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     mapDisplay.right = panels.minimapRight; mapDisplay.offset = panels.automapOffset; mapDisplay.running = sharedClients->running();
                     worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,*sharedClients,
                         sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed,
-                        localConnection && !lanConnection && (!input.focused || panels.gameMenuOpen));
+                        localConnection && !lanConnection && ((!input.focused && !options.noPauseOnFocusLoss) || panels.gameMenuOpen));
                     if(noPickup && !input.showLoot) worldFrame.input.pickup.reset();
                     sharedController->handleWorld(input,worldFrame.input,frameSeconds);
                     scene->drawTargetInfo(view,worldFrame,*sharedUi,combat,sharedController->combatTarget());
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     drawGameUi(input.mouse);
+                    drawVictory(finaleInput);
                 } catch (const std::exception &e) {
                     // Resource construction can fail after creating the clients
                     // but before creating the view. Retire the whole group so
@@ -1244,6 +1284,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 auto input = pollInput(viewport, sharedUi ? sharedUi->ui().controls : preferences.controls,
                     sharedUi && sharedUi->ui().chatInputOpen);
                 if (!debugInputs.empty()) { input = std::move(debugInputs.front()); debugInputs.pop_front(); }
+                const auto finaleInput=input;
+                if(finaleActive) {
+                    input={};input.mouse=finaleInput.mouse;input.focused=finaleInput.focused;
+                    input.insideViewport=finaleInput.insideViewport;input.screenshot=finaleInput.screenshot;
+                }
                 if(debugAi.hasPlan() || debugWalk.active()) {
                     if(debugInputTakesControl(input,debugChatOwnsInput(),debugQuestInspectionInput(input,sharedUi?&sharedUi->ui():nullptr)))
                     {
@@ -1274,6 +1319,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     unavailable.areaGeneration = view.world.areaGeneration;
                     sharedController->handleWorld(input, unavailable, frameSeconds);
                     drawGameUi(worldMouse);
+                    drawVictory(finaleInput);
                 } else {
                     // Fullscreen frontend pages are original 800x600 art: lay them
                     // out in a fixed 800x600 canvas and stretch that canvas over
@@ -1287,7 +1333,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     uiScissor(0.f, 0.f, 800.f, 600.f);
                     rlPushMatrix();
                     rlScalef(sx, sy, 1.f);
-                    action = ui.frame(page, session.read(), gateway, notice, mouse, input,
+                    action = ui.frame(finaleActive?FrontendPage::Victory:page, session.read(), gateway, notice, mouse, finaleActive?finaleInput:input,
                                       !localConnection && !lanConnection, sceneStatus().reason);
                     rlPopMatrix();
                     EndScissorMode();

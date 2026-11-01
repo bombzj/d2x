@@ -48,7 +48,7 @@ void DebugAi::Impl::configureActFourQuest(Goal &goal,QuestId id) const {
     // corpse. A legitimately observed ground hammer already supplies it.
     auto groundHammer=item("hfh");groundHammer.kind=K::GroundItem;
     const auto hephasto=node("hellforge-hammer-source",s,{{item("hfh")},{groundHammer},{forgeDone},{fact(K::Corpse)}},{},true);
-    s={};s.action=QuestAction::Acquire;s.stateQuest=forge;s.area=river;s.item="hfh";s.clearCombat=true;
+    s={};s.action=QuestAction::Acquire;s.stateQuest=forge;s.area=river;s.item="hfh";
     const auto hammer=node("hellforge-hammer-owned",s,{{item("hfh")},{forgeDone}},{hephasto});
     s={};s.action=QuestAction::Operate;s.stateQuest=forge;s.area=river;s.target=altar;s.item="mss";
     const auto placed=node("soulstone-placed",s,{{opened},{forgeDone}},{stone},true);

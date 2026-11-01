@@ -488,7 +488,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     const bool canHoverBelt = input.focused && input.insideViewport && !ui.inventory.playerTradeOpen &&
         !ui.gameMenuOpen && (!ui.blocksInput() || ui.shopOpen) && !ui.skillPicker;
     ui.inventory.beltHovered = canHoverBelt && belt && CheckCollisionPointRec(rv(input.mouse),
-        beltBounds(ui.inventory.beltHovered || ui.inventory.beltExpanded || ui.inventory.open ? belt->rows : 1));
+        beltBounds(ui.inventory.visibleBeltRows(belt->rows)));
     ui.showLoot = input.focused && input.showLoot;
     if (!input.focused) {
         actorClient_.stopMoving();

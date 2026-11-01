@@ -33,7 +33,7 @@ bool System::waypointArrival(const Object &object) const {
     });
 }
 void System::publishInitialization(const Object &object) {
-    if(object.rule.chest || object.rule.shrine || object.rule.operation==18)
+    if(object.rule.chest || object.rule.shrine || object.rule.operation==18 || object.rule.operation==66)
         publishedModes_.insert_or_assign(object.id,std::pair{object.revision,object.mode});
     ports_.maps.bind(object.pd2Binding,object.id,object.area,object.position,true);
     if(ports_.maps.opensBlockerOnBirth(object.definition)) openNativeBlocker(object.id,ports_.frameEvents.currentFrame());
@@ -239,6 +239,19 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         return result;
     }
     if (rule.stash) return ports_.inventory.openStash(actor,object.id,remoteRange);
+    if(area->definition.act==4 && rule.operation==66) {
+        const auto &trial=ports_.quests.read();
+        if(!ports_.quests.allowsTravel(player->persistent.player,actor.area,RegionId(128)) ||
+            (!trial.actFive.ancientsDefeated && !(trial.initialFlags[questDefinition(QuestId::RiteOfPassage).nativeSlot]&1)))
+            return {DomainStatus::Conflict,{}};
+        if(object.mode==0) {
+            object.mode=1;object.until=actor.tick+(rule.openingTicks>1?rule.openingTicks-1:1);
+            object.operatorActor=actor.actor;++object.revision;collision(object.area);
+            return {DomainStatus::Applied,std::monostate{}};
+        }
+        if(object.mode!=2) return {DomainStatus::Applied,std::monostate{}};
+        return ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
+    }
     if(area->definition.act==4 && ((rule.operation>=62 && rule.operation<=67) || rule.operation==70 || rule.operation==72)) {
         if(rule.operation==65 && object.mode) return {DomainStatus::Conflict,{}};
         if((rule.operation==66 || rule.operation==70) && object.mode!=2) return {DomainStatus::Conflict,{}};
@@ -321,6 +334,15 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if(object.mode) return {DomainStatus::Applied,std::monostate{}};
         object.operatorActor=actor.actor;
         return openNativeBlocker(object.id,actor.tick);
+    }
+    if(rule.operation==61) {
+        // ObjMode61 frees collision at OPERATING, then ENDANIM opens it.
+        // The native 500ms click guard rounds up to 13 server frames.
+        if(object.until>actor.tick || (object.mode!=0 && object.mode!=2)) return {DomainStatus::Applied,std::monostate{}};
+        object.mode=object.mode==0?1:0;
+        object.until=actor.tick+(object.mode==1?std::max(uint64_t{1},rule.openingTicks):uint64_t{13});
+        ++object.revision;collision(object.area);
+        return {DomainStatus::Applied,std::monostate{}};
     }
     if (rule.door) {
         if (object.until > actor.tick) return {DomainStatus::Conflict, {}};

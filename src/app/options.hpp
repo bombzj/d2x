@@ -18,6 +18,7 @@ struct AppOptions {
     std::string hostLan, lan, hostSaves = "saves";
     uint16_t realmPort = 6113, gamePort = 4000;
     bool hidden = false, help = false;
+    bool noPauseOnFocusLoss = false;
     int frameLimit = 0;
     std::string language;
 };

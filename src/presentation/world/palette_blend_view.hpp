@@ -5,6 +5,7 @@
 #include <span>
 
 namespace d2x {
+enum class PaletteComposition { Normal, Screen, Burn };
 // Original PL2 screen/rectangle blending and 32 intensity transforms share the palette.
 // Destination capture stays on the GPU; see LIGHTING.md for spatial/color limits.
 class PaletteBlendView {
@@ -16,7 +17,7 @@ class PaletteBlendView {
     std::array<int,5> litBlendLocations_{};
     std::array<int,6> wallBlendLocations_{};
     Shader rectangleShader_{};
-    Texture2D palette_{}, screenTable_{}, lightTable_{}, paletteIndices_{};
+    Texture2D palette_{}, screenTable_{}, burnTable_{}, lightTable_{}, paletteIndices_{};
     Texture2D rectangleTable_{}, halfTable_{}, highlightTable_{}, socketTable_{}, quarterTable_{};
     std::array<Color, 256> colors_{};
     RenderTexture2D destination_{};
@@ -62,6 +63,7 @@ class PaletteBlendView {
     PaletteBlendView(const PaletteBlendView &) = delete;
     PaletteBlendView &operator=(const PaletteBlendView &) = delete;
     void draw(const Sprite *image, Vec position) const;
+    void drawBurn(const Sprite *image, Vec position) const;
     void drawHalf(const Sprite *image, Rectangle bounds) const;
     // CelDraw modes 0/1/2/5, selected per automap cell by D2Client.
     void drawAutomap(const Sprite *image, Vec position, int mode) const;
@@ -77,7 +79,7 @@ class PaletteBlendView {
     // Empty samples: floor Gouraud field; one: unit anchor; six: native DT1 wall columns.
     // Transform the source before alpha/additive composition, never the completed frame.
     void drawLit(const Sprite *, Vec position, std::span<const Color> samples, Color tint = WHITE,
-                 Vector2 highlight = {1, 1}, bool screenBlend = false) const;
+                 Vector2 highlight = {1, 1}, PaletteComposition = PaletteComposition::Normal) const;
     void drawWall(const Sprite *, Vec position, std::span<const Color> samples, uint8_t alpha) const;
 };
 } // namespace d2x

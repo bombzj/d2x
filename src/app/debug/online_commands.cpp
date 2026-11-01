@@ -343,6 +343,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         {"rescuedBarbsRemaining",optional(quests.rescuedBarbsRemaining)}, {"cainStones",optional(quests.cainStones)},
         {"cainStonesRevision",quests.cainStonesRevision}};
     result["world"]["eclipse"]=optional(v.world.eclipse);
+    result["world"]["cinematic"]={{"program",optional(v.world.cinematic)},{"revision",v.world.cinematicRevision}};
     result["world"]["playerPortalFlags"]=optional(v.world.playerPortalFlags);
     result["world"]["staffInteraction"]={{"source",optional(v.world.staffSource)},{"revision",v.world.staffRevision},{"result",v.world.staffResult}};
     Json roster = Json::array(), relations = Json::array(), chat = Json::array(), notices=Json::array();

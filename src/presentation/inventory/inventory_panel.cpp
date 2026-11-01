@@ -45,7 +45,7 @@ std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const 
     const auto &c = inventory.containers;
     std::vector<ContainerGrid> grids;
     if (const auto *container = inventory.container(c.belt)) {
-        const int rows = ui.open || ui.beltExpanded || ui.beltHovered ? container->rows : 1;
+        const int rows = ui.visibleBeltRows(container->rows);
         const auto belt = beltSlot({0, 0});
         grids.push_back({c.belt, {belt.x, belt.y}, {31 * hudScale(), -32 * hudScale()},
                          container->columns, rows, 29 * hudScale()});

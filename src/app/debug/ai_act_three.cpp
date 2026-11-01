@@ -31,7 +31,6 @@ void DebugAi::Impl::configureActThreeQuest(Goal &goal,QuestId id) const {
     };
     const auto acquire=[&](QuestId q,std::string level,std::string code,std::string_view source,int op) {
         QuestStep s;s.action=QuestAction::Acquire;s.stateQuest=q;s.area=definitions->area(level);s.item=std::move(code);
-        s.clearCombat=level=="Act 3 - Travincal" && op==0;
         if(op) s.source=object(source,op).identity;
         return s;
     };

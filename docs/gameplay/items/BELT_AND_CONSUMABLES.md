@@ -4,6 +4,8 @@
 
 容量、布局、类型、书页和原图来自当前MPQ Belts／Inventory／Misc／Books／CharStats。连接的服务端拥有自动入带、补位、消耗、回复、状态与持续时间；自研inventory／effects沿同一原协议执行，旧客户端本地执行器已删除。Shift商店购买按原multibuy位提交，服务器决定腰带／书本补满和费用。
 
+普通生命／法力／回复药剂的客户端使用能力由当前MPQ的pSpell与ItemTypes共同确认，经`recoveryPotion`传给会话；施法／回城技能回包等待不再笼统阻挡这类Use，仍复验存活、所有权、版本、Cursor与独立物品请求串行。AI喝药只占物品能力，不占移动／技能／交互能力；买药、卷轴与任务道具不借用此例外。原版依据为D2MOO PlrMsg的20／26、ItemMode的sub_6FC47D30／sub_6FC49220及SkillItem的pSpell03／05；恢复期实际组合待验收。
+
 ## 操作
 
 1–4只使用对应列最底格，不越过空底格寻找上层药水；鼠标悬停腰带自动展开、移出后收起，~切换固定展开，I／B打开背包时显示全部容量。右键可直接使用任意可见格，左键拿起后进入Cursor；拿起与消耗都会将该列剩余物品保持次序向下补齐，放入／交换不会压缩其他格。可手动混放不同种类的1×1原belt物品。
@@ -27,6 +29,8 @@ Shift+1–4将药水交给佣兵，仅接受生命、回复、解毒、解冻药
 自研`nativeInventoryDelta`按上述路径区分腰带移除、同带位置更新和Cursor交换；事务事实另存已删除原件的不可变值，编码不查询后续实时库存，也不把已删除物品放回权威状态。原版客户端Join D2X Host使用第四列蓝瓶时曾观察到服务端已消费、补位却误发9C/action16，随后原客户端持续请求丢弃补位GUID而宿主无对应Cursor；该兼容缺陷已按上述源码路径修正，修正后的原版联机表现仍待复验。
 
 ## 原规则与限制
+
+腰带展开独立于背包面板：仅展开键或腰带悬停决定可见行数，打开背包不自动展示上方各行。绘制、悬停、格命中和投放共用InventoryUi::visibleBeltRows，容量仍取当前MPQ。本机1.13c D2Client GetUIVar RVA BE400读取的UI数组中，背包是UI_INVENTORY=1，腰带开关是UI_BELTROWS=31；RVA26FEC／28E36的悬停与收起分支、RVA C3BA8的显式开关检查使用后者。D2MOO D2Constants.h提供对应UI枚举，不把两个面板状态合并。背包开关、悬停离开、展开键及手持药剂的运行组合仍待验证。
 
 原恢复量、长度、pSpell、cstate与stat／calc读取MPQ；职业倍率规则核对本地D2MOO Items::ITEMS_GetBonusLifeBasedOnClass／ManaBasedOnClass。SkillItem::pSpell03／09提供恢复合并与耐力／解毒／解冻原服规则证据，客户端不重新执行这些函数。
 

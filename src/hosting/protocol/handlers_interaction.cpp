@@ -95,6 +95,7 @@ RequestResult NpcMessage(GameplayContext &context, net::protocol::Reader &in) {
     if(reserved) return {RequestStatus::Rejected};
     if(text==396) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadJournal,QuestId::ArcaneSanctuary,context.entity(id,2),text});
     if(text==20002) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadAncientAltar,QuestId::RiteOfPassage,context.entity(id,2),text});
+    if(text==20131) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadFrozenAnya,QuestId::PrisonOfIce,context.entity(id,2),text});
     return submitGameplay(context,server::npc::Request{TalkToNpc{context.entity(id,1),TalkToNpc::Action::Acknowledge,text}});
 }
 RequestResult BuyItem(GameplayContext &context, net::protocol::Reader &in) {

@@ -40,6 +40,7 @@ void System::rebindObject(EntityId previous,EntityId current) {
     if(state_.actFour.forgeObject==previous) state_.actFour.forgeObject=current;
     for(auto &portal:state_.actFive.rescuePortals) if(portal.object==previous) portal.object=current;
     for(auto &[player,reader]:state_.actFive.ancientAltarReaders) {(void)player;if(reader.altar==previous) reader.altar=current;}
+    for(auto &[player,reader]:state_.actFive.frozenAnyaReaders) {(void)player;if(reader.object==previous) reader.object=current;}
     for(auto &ancient:state_.actFive.ancients) if(ancient.statue==previous) ancient.statue=current;
     if(state_.actOne.cairnPending && state_.actOne.cairnPending->owner==previous) state_.actOne.cairnPending->owner=current;
     if(state_.actOne.cainInvisibleObject==previous) state_.actOne.cainInvisibleObject=current;
@@ -195,6 +196,22 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         }
         if(result) state_.actTwo.journals.erase(source);
         return result;
+    }
+    if(request.action==Action::ReadFrozenAnya) {
+        if(!request.npc || request.message!=20131 || int(actor.area)!=114 || p->persistent.player.hp<=0) return {DomainStatus::InvalidRequest,{}};
+        auto &world=state_.actFive;
+        if(world.anyaThawed) {world.frozenAnyaReaders.erase(actor.player);return {DomainStatus::Applied,std::monostate{}};}
+        const auto reader=world.frozenAnyaReaders.find(actor.player);
+        if(reader==world.frozenAnyaReaders.end() || reader->second.object!=*request.npc ||
+            reader->second.actor!=actor.actor || reader->second.generation!=actor.areaGeneration) return {DomainStatus::Stale,{}};
+        auto record=p->persistent.player;
+        auto &q=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::PrisonOfIce)];
+        if(q.stage<3) q.stage=3;
+        const auto committed=commit(actor,std::move(record),false,{},false);
+        if(!committed) return committed;
+        if(!world.anyaRead) queueStatus(QuestId::PrisonOfIce,3);
+        world.anyaRead=true;world.frozenAnyaReaders.erase(reader);
+        return {DomainStatus::Applied,std::monostate{}};
     }
     if(request.action==Action::ReadAncientAltar) {
         if(!request.npc || request.message!=20002 || int(actor.area)!=120 || p->persistent.player.hp<=0) return {DomainStatus::InvalidRequest,{}};

@@ -216,12 +216,14 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
         p.error(OnlineErrorKind::Input, "The server map unit is not available");
         return false;
     }
+    const bool retry=intent==OnlineObjectIntent::Waypoint && p.view.world.waypointRequested==target.id;
+    if(retry && p.view.world.waypointSource) return false;
     if (Clock::now() < p.nextMovement) return false;
     try {
         // D2MOO PlrMsg Rcv0x13: packet byte, uint32 unit type, uint32 GUID.
         Writer out;
         out.u8(0x13); out.u32(target.type); out.u32(target.id);
-        p.close_interaction();
+        if(!retry) p.close_interaction();
         p.sent(p.gs, out.release());
         if (intent == OnlineObjectIntent::Stash) {
             p.view.world.storage.requested = OnlineStorageKind::Stash;
@@ -229,7 +231,7 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
             p.view.world.storage.requestedSource = target.id;
             p.storageDeadline = Clock::now() + p.options.timeout;
         }
-        if (intent == OnlineObjectIntent::Waypoint) {
+        if (intent == OnlineObjectIntent::Waypoint && !retry) {
             p.view.world.waypointRequested = target.id;
             ++p.view.world.interactionGeneration;
             p.waypointDeadline = Clock::now() + p.options.timeout;
@@ -254,16 +256,19 @@ bool RealmSession::interact_npc(uint32_t serverUnitId, std::optional<OnlineInten
         !found->second.position || !found->second.classId || found->second.mode == 0 || found->second.mode == 12) {
         p.error(OnlineErrorKind::Input, "The server NPC is unavailable"); return false;
     }
-    if (p.view.world.npcRequested == serverUnitId) return false;
+    const bool retry=p.view.world.npcRequested==serverUnitId;
+    if(retry && (p.view.world.npcConversation || p.view.world.npcPendingConversation)) return false;
     if (Clock::now() < p.nextMovement) return false;
     try {
-        p.close_interaction();
+        if(!retry) p.close_interaction();
         Writer out;
         out.u8(0x13); out.u32(1); out.u32(serverUnitId);
         p.sent(p.gs, out.release());
         p.view.world.npcRequested = serverUnitId;
-        ++p.view.world.interactionGeneration;
-        p.npcDeadline = Clock::now() + p.options.timeout;
+        if(!retry) {
+            ++p.view.world.interactionGeneration;
+            p.npcDeadline = Clock::now() + p.options.timeout;
+        }
         p.view.world.movementRequest.reset();
         p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.error.reset(); p.changed(); return true;
@@ -445,8 +450,14 @@ bool RealmSession::npc_travel(uint32_t parameter,std::optional<OnlineIntentConte
     try {
         Writer out;
         out.u8(0x38); out.u32(0); out.u32(conversation->source); out.u32(parameter);
+        // Retail 1.13c D2Client 4888C -> 48150 -> 47BC3 sends30 before
+        // travel38. After the act warp PlrMsg rejects a close for the old
+        // act's NPC, leaving its server interaction occupied. Parameter0 is
+        // the separate Akara respec service, which retains its conversation.
+        if(parameter) p.close_interaction();
         p.sent(p.gs, out.release());
-        p.close_interaction(); p.view.error.reset(); p.changed(); return true;
+        if(!parameter) p.close_interaction();
+        p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Transport, "NPC travel could not be queued"); return false;
     }
@@ -632,8 +643,10 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             p.error(OnlineErrorKind::Input, "Trade permits moving only your backpack, cursor and own offer; reset your agreement first"); return false;
         }
     }
+    const bool recoveryPotion = command.action == OnlineItemAction::Use && command.recoveryPotion;
     if (!p.view.load.serverLoadComplete || !p.view.load.playerUnitId || !world.playerPosition ||
-        onlinePlayerDead(world) || p.portalRequest || (world.combatRequest && world.combatRequest->state == OnlineCombatRequest::State::Pending) ||
+        onlinePlayerDead(world) || (!recoveryPotion && (p.portalRequest ||
+            (world.combatRequest && world.combatRequest->state == OnlineCombatRequest::State::Pending))) ||
         (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending &&
             command.action != OnlineItemAction::StorageClose)) {
         p.error(OnlineErrorKind::Input, "Server item operation is unavailable or pending"); return false;

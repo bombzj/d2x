@@ -13,6 +13,8 @@ RealmFrontend与所有游戏页面都读取RealmSession的原协议副本。输�
 IByteTransport提供原字节流，TcpStream与MemoryTransport实现相同connect／send／poll／close。内存队列有锁、有界，支持网络worker与宿主调度线程分离；重连清旧消息。客户端不引用GameHost、PersistentCharacter或存档路径，也不直接接收权威快照。自研宿主通过原1.13c包提供已实现行为，不新增客户端协议分支。
 InventoryView允许缺失尚未接入的容器；共用腰带绘制／输入／格区必须先查询存在性，缺失时不绘制或提供交互格，缺背包时明确拒绝打开库存面板。客户端不能为满足UI假设而伪造容器或库存状态。
 
+RemoteCombat将AA完整快照与A7／A8／A9增删解码为单位当前状态，64条原消息环只是有界历史，不能代替持续有效的状态表。换区不清空同一游戏、仍在副本中的单位解码前缀；新游戏、单位消失、状态流出生修订变化或状态序号倒退清理缓存；出生修订随同一单位跨幕保留，单位删除后GUID复用不会借用旧前缀。另复验消息尾部连续性，真正缺口继续保留Unknown直到完整快照，不补猜阵营或技能状态。依据为D2MOO SUnitMsg的AA／A8、SCmd的A9及STATLIST_GetUnitAlignment。原版 Host 的跨幕任务验收范围见[五幕结果](../development/AI_TEST_REC.md#分幕结果)。
+
 ## 既有基础批次客户端边界
 
 以`df6f6c9`为提交基线，库存／装备、人物成长、世界／多人和普通近战需求均由自研服务端输出原包完成，不以修改原服客户端消费者为前提。RemoteWorld／RemoteUiClients／RemoteCombat／RemoteInventory、D2GS解码、SceneController与原消息／输入链保持该基线；SceneView弹体纯计算提取是下表中用户另行授权的例外。本节为该基础批次差异范围；后续职业技能按原版证据授权的公共改造见文末。未执行原服运行回归，不能当作运行认证。
@@ -94,3 +96,7 @@ RemoteScene补CltDo18–22、ClientMissile补原尾迹／毒烟／引导及Hit12
 ## 通用十项原版修复
 
 原CltDo2补药瓶及左手的物品弹体映射，地面寿命计算与服务端共用纯函数；原3F准备鉴定光标，事件revision区分重复来源／入局代次并等待真实来源投影；Unsummon按原7A及PetType的本人归属／许可筛选。原服和自研仍消费同一原消息，不推算服务器扣费或伤害。普通木桶按原OperateFn5和已发送0x13预测本人隐藏KK，复用原动作渲染；破坏／掉落仍等服务端。依据与未认证边界见[通用技能](../gameplay/skills/GENERAL.md)。
+
+个人传送点63保留收到时的`waypointHistoryRevision`，随同一连接跨区保留，新游戏清空。它是原始协议快照，供正常菜单及最终旅行资格复验；AI另将新快照与本人实际激活／正常跨幕城镇事实归入唯一决策记忆，不回写原始位表。具体消费者与初次查询边界见[调试AI](../development/DEBUG_AI.md#全链路问题的共用恢复)。
+
+AI动态清场不再将房间／敌人线索放进QuestRun：统一按区域保留订阅修订、最后敌人位置与指派身份，并复验种子、死亡与重新订阅；NPC和入口仍消费RemoteTown现有导航坐标，不另建第二套位置权威。动态GUID不写入导航存档，详见[场景记忆归属](../development/DEBUG_AI.md#场景记忆的归属)。

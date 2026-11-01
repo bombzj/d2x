@@ -23,6 +23,7 @@ class System {
     struct Approach { ActorContext actor; Request request; uint64_t locomotion; };
     std::map<PlayerId,Approach> approaches_;
     Vec position(const ActorContext &, const AreaNpc &) const;
+    const AreaNpc *findSource(const ActorContext &,EntityId,bool conversation,bool travel) const;
     std::pair<Conversation,NpcMessagesFact> offer(const ActorContext &,const AreaNpc &,const CharacterRecord &) const;
     HirelingRoster prepareHirelings(std::span<const uint16_t>,uint64_t revision,uint64_t &random) const;
   public:
@@ -35,6 +36,7 @@ class System {
     DomainResult<VendorControlPublication> prepareHirelingHired(int seller,uint64_t revision,uint16_t name,uint32_t seed) const;
     const State &read() const { return state_; }
     const AreaNpc *find(const ActorContext &, EntityId, bool conversation = false) const;
+    const AreaNpc *travelSource(const ActorContext &,EntityId) const;
     const Conversation *conversation(PlayerId) const;
     std::optional<ServiceAccess> service(const ActorContext &, EntityId) const;
     DomainResult<> execute(const ActorContext &, const Request &);

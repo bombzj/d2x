@@ -23,6 +23,7 @@ class DebugAi {
     struct SuppliesView {
         std::optional<int> maxLife,maxMana;
         std::optional<bool> castInputBusy;
+        std::optional<bool> actionInputBusy;
         std::function<std::optional<bool>(uint16_t)> skillUsable;
         std::function<std::optional<unsigned>(uint32_t)> buyQuote;
         std::span<const OnlineSceneView::MissileDisplay> missiles;

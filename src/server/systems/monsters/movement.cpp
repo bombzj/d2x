@@ -245,6 +245,13 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             actor.moving = false; actor.route.clear(); actor.movementTarget = {};
             continue;
         }
+        // MonsterMode::sub_6FC641D0 / sub_6FC64280 enter DD at ENDANIM.
+        // Replication already projects DD after this same prepared duration;
+        // native AI and quest callbacks must observe that authoritative mode too.
+        if(!actor.alive() && actor.deathMode && actor.nativeMode==0 && tick.tick>=actor.busyUntil) {
+            if(actor.revision==UINT64_MAX) throw std::overflow_error("Monster death mode revision exhausted");
+            recordNativeMode(actor,12);++actor.revision;
+        }
         if(!actor.nativeAiResetTracked) {
             if(actor.curseControl.ai!=CurseAi::None && actor.curseControl.until<=tick.tick) actor.curseControl={};
             if(actor.attractionUntil<=tick.tick) actor.attractionTarget={};

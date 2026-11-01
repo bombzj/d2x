@@ -138,6 +138,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     std::array<bool, 16> castsShadow{};
     std::array<bool, 16> selectable{};
     std::array<bool, 16> softAdditive{};
+    std::array<bool, 16> dc6Component{};
     int omitted = 0;
     static const std::string codes[] = {"hd", "tr", "lg", "ra", "la", "rh", "lh", "sh",
                                         "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"};
@@ -160,8 +161,10 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             gear = (*equipment)[c];
         auto path = base + codes[c] + "/" + token + codes[c] + gear + mode + cof.weapons[i] + ".dcc";
         auto part = animation(path);
-        if (!part && !archives.contains(path))
+        if (!part && !archives.contains(path)) {
             part = animation(path.substr(0, path.size() - 4) + ".dc6");
+            dc6Component[size_t(c)]=part!=nullptr;
+        }
         // PW's native 1HT death COFs refer to S5 blood, but the current
         // MPQ only supplies its A1 pixels. Preserve the original body and
         // omit this absent decorative layer, without borrowing other art.
@@ -185,6 +188,12 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     }
     if (parts.empty())
         return {};
+    // DC6 stores a cell baseline, while DCC frames already carry a top edge.
+    // World components share the COF origin. Using the raw DC6 offset here
+    // puts Tyrael's 90px body below his wings, outside the COF bounds.
+    const auto componentY=[&](int component,const IndexedFrame &frame) {
+        return dc6Component[size_t(component)] && frame.cellOffsetY?*frame.cellOffsetY-frame.height:frame.y;
+    };
     GpuAnimation gpu;
     gpu.directions = cof.directions;
     gpu.count = cof.frames;
@@ -220,9 +229,9 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             for (auto [c, a] : parts) {
                 auto p = get(c);
                 left = std::min(left, p->x);
-                top = std::min(top, p->y);
+                top = std::min(top, componentY(c,*p));
                 right = std::max(right, p->x + p->width);
-                bottom = std::max(bottom, p->y + p->height);
+                bottom = std::max(bottom, componentY(c,*p) + p->height);
             }
             merged.width = right - left;
             merged.height = bottom - top;
@@ -242,7 +251,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                 if (!segmentHasPixels) return;
                 recolor(segment);
                 const auto uploaded = upload(segment);
-                layers.push_back({uploaded.texture, uploaded.x, uploaded.y, false});
+                layers.push_back({uploaded.texture, uploaded.x, uploaded.y, false, uploaded.indexedTexture});
                 std::fill(segment.pixels.begin(), segment.pixels.end(), 0);
                 segmentHasPixels = false;
             };
@@ -262,7 +271,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                     for (int x = 0; x < p->width; x++) {
                         auto index = p->pixels[y * p->width + x];
                         if (index) {
-                            const auto pixel = size_t(y + p->y - top) * merged.width + x + p->x - left;
+                            const auto pixel = size_t(y + componentY(component,*p) - top) * merged.width + x + p->x - left;
                             merged.pixels[pixel] = index;
                             if (splitLayers) {
                                 (additive ? additiveFrame : segment).pixels[pixel] = index;
@@ -275,7 +284,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                     recolor(additiveFrame);
                     const auto uploaded = upload(additiveFrame, true);
                     if (uploaded.texture.id)
-                        layers.push_back({uploaded.texture, uploaded.x, uploaded.y, true});
+                        layers.push_back({uploaded.texture, uploaded.x, uploaded.y, true, uploaded.indexedTexture});
                 }
             }
             if (splitLayers) flushSegment();

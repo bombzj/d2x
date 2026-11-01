@@ -17,6 +17,12 @@ bool DebugAi::Impl::questUseItem(Context &c,const QuestStep &step) {
     const auto points=world.playerAttributes.find(5);
     const uint32_t available=points==world.playerAttributes.end()?0:points->second;
     if(questRun.pending) {
+        if(step.item=="tr2" && !owned(c,step.item)) {
+            if(const auto flags=questFlags(c,QuestId::PrisonOfIce);flags && (*flags&0x80)) {
+                note("quest-resistance-scroll-consumed","Actual scroll removal and permanent resistance quest bit observed");return true;
+            }
+            if(!questRun.pending->statusRequested && c.session.request_quests(c.session.read().gameGeneration)) questRun.pending->statusRequested=true;
+        }
         if(step.item=="xyz" && !owned(c,step.item)) {
             const auto flags=questFlags(c,QuestId::GoldenBird);
             if(!questRun.pending->statusRequested) {

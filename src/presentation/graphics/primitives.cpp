@@ -262,7 +262,7 @@ void originalBox(const GpuAnimation &pieces, Rectangle bounds, float scale) {
     EndScissorMode();
 }
 int UiPainter::measure(const std::string &text, int size) const {
-    if (ttfTextReady())
+    if (!font.originalGlyphs && ttfTextReady())
         return int(ttfMeasure(text, float(size), float(glyphGap)).x + 0.5f);
     if (font.ready) {
         float width = 0;
@@ -331,7 +331,7 @@ void spriteShadow(const Sprite *s, Vec p) {
         DrawTexture(s->shadowTexture, int(p.x + s->shadowX), int(p.y + s->shadowY), {0, 0, 0, 191});
 }
 void UiPainter::label(const std::string &text, int x, int y, int size, Color c) const {
-    if (ttfTextReady()) {
+    if (!font.originalGlyphs && ttfTextReady()) {
         ttfDraw(text, float(x), float(y), float(size), float(glyphGap), ColorTint(c, font.textColor));
         return;
     }
@@ -354,7 +354,7 @@ void UiPainter::centered(const std::string &text, int y, int size, Color c) cons
     label(text, (W - measure(text, size)) / 2, y, size, c);
 }
 void UiPainter::inBox(const std::string &text, Rectangle bounds, int size, Color color) const {
-    if (ttfTextReady()) {
+    if (!font.originalGlyphs && ttfTextReady()) {
         label(text, int(bounds.x + (bounds.width - measure(text, size)) / 2),
               int(bounds.y + (bounds.height - size) / 2), size, color);
         return;

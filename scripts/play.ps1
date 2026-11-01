@@ -15,6 +15,7 @@
     [string]$HostPacketLog='',
     [switch]$Diagnostic,
     [switch]$Hidden,
+    [switch]$NoPauseOnFocusLoss,
     [string]$Lang='',
     [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName='d2x-debug',
     [switch]$NoDebugPipe
@@ -68,6 +69,7 @@ Push-Location $projectRoot
 try{
     $arguments=@()
     if($Hidden){$arguments+='--hidden'}
+    if($NoPauseOnFocusLoss){$arguments+='--no-pause-on-focus-loss'}
     if($ClientProfile){$arguments+=@('--client-profile',$ClientProfile)}
     if($Pd2Local){$arguments+='--pd2-local'}
     if($HostLan){$arguments+=@('--host-lan',$HostLan)}

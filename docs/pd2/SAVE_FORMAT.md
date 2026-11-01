@@ -12,6 +12,8 @@ JM编解码主体位于`gameplay/items/native_save`，内容层准备不可变�
 
 来源：[docs/modules/SAVES.md](../modules/SAVES.md)。
 
+公共任务codec已按LoD 1.13c原版Host补冰之囚原WORD历史保留，并明确拒绝旧D2X误写ENTERAREA（0x10）的记录，见[公共存档边界](../modules/SAVES.md)。此入口也被本地PD2消费；尚未以当前PD2核心核实第五幕部分进度、该位的拒绝边界及保存往返，不将LoD观察扩展为PD2认证。PD2原生字段若与此边界矛盾，须先定点核实，不能自动清位迁移。
+
 自有PD2城镇宿主沿用原生PD2 D2S：v96头、固定段、校验和、Skills最大职业行数及原JM／jf／kf结构，默认目录`saves/pd2`。不写D2X私有标记，也不把原生档转成私有格式；此前带`D2XPD2`头标记的试验档明确拒绝，须使用原生角色副本或重新建角，不静默迁移。原版与PD2目录、资源配置保持隔离，载入仍须通过完整内容与边界校验。
 
 完整物品逐件保留原format；format<102使用9位属性ID，102及以后使用10位，终止符分别为511／1023。format<103使用MPQ的S12列，103使用S13列，104及以后使用当前Save列；compact仍用当前列。新物品采用104，旧101与新104可以同档共存。磁盘读写、宿主网络投影与客户端读取共用`content/pd2/item_encoding.hpp`的格式选择；独立网络ItemStat增量仍为9位。职业库存／个人仓库／方块尺寸取当前Inventory表。公共death生成的死亡金币与PvP耳朵同样按固定PD2规则选择新format104；耳朵的真实死者身份、HC NAMED位及DT／DEAD阶段沿[玩家死亡](../gameplay/characters/PLAYER_DEATH.md#自研宿主pvp死亡)。导出时7位耳朵等级按Common写位饱和到127，不提前截断运行身份，也不扩展v96布局。该公共消费者已更新；当前运行对照只覆盖LoD 1.13c耳朵，PD2高等级／HC耳朵仍未实机认证，不能由format支持推断完整PD2 PvP等价。

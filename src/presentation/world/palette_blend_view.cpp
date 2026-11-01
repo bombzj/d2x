@@ -211,7 +211,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     // 256 RGBA entries, 49 one-index transforms, then three alpha tables.
     constexpr size_t screenOffset = 0x33500;
     const auto bytes = archives.read("data/global/palette/act" + std::to_string(act + 1) + "/pal.pl2");
-    if (bytes.size() < screenOffset + 256 * 256)
+    if (bytes.size() < screenOffset + 2 * 256 * 256)
         throw std::runtime_error("Original Act 1 PL2 screen table is truncated");
     std::array<Color, 256> colors{};
     for (size_t i = 0; i < colors.size(); ++i)
@@ -222,6 +222,10 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         blend[i] = colors[bytes[screenOffset + i]];
     palette_ = upload(colors.data(), 256, 1);
     screenTable_ = upload(blend.data(), 256, 256);
+    // PL2's following binary table is native CelDraw mode 4 (BURN).
+    for (size_t i = 0; i < blend.size(); ++i)
+        blend[i] = colors[bytes[screenOffset + 256 * 256 + i]];
+    burnTable_ = upload(blend.data(), 256, 256);
     // Original TRANS50, trans[1][destination][source], for party portraits.
     for (size_t source = 0; source < 256; ++source)
         for (size_t destination = 0; destination < 256; ++destination)
@@ -294,7 +298,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     tableLocation_ = GetShaderLocation(shader_, "screenTable");
     indicesLocation_ = GetShaderLocation(shader_, "paletteIndices");
     opaqueLocation_ = GetShaderLocation(shader_, "nativeOpaque");
-    if (!palette_.id || !screenTable_.id || !halfTable_.id || !socketTable_.id || !quarterTable_.id || !highlightTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
+    if (!palette_.id || !screenTable_.id || !burnTable_.id || !halfTable_.id || !socketTable_.id || !quarterTable_.id || !highlightTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
         destinationLocation_ < 0 || paletteLocation_ < 0 || tableLocation_ < 0 || indicesLocation_ < 0 || opaqueLocation_ < 0 ||
         std::ranges::any_of(lightingLocations_, [](int location) { return location < 0; }) ||
         std::ranges::any_of(litBlendLocations_, [](int location) { return location < 0; }) ||
@@ -309,6 +313,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         UnloadRenderTexture(destination_);
         UnloadTexture(paletteIndices_);
         UnloadTexture(screenTable_);
+        UnloadTexture(burnTable_);
         UnloadTexture(halfTable_);
         UnloadTexture(socketTable_);
         UnloadTexture(quarterTable_);
@@ -327,6 +332,7 @@ PaletteBlendView::~PaletteBlendView() {
     UnloadShader(shader_);
     UnloadRenderTexture(destination_);
     UnloadTexture(screenTable_);
+    UnloadTexture(burnTable_);
     UnloadTexture(halfTable_);
     UnloadTexture(socketTable_);
     UnloadTexture(quarterTable_);
@@ -433,7 +439,7 @@ void PaletteBlendView::drawWall(const Sprite *image, Vec position, std::span<con
     EndShaderMode();
 }
 void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<const Color> samples,
-                              Color tint, Vector2 highlight, bool screenBlend) const {
+                              Color tint, Vector2 highlight, PaletteComposition composition) const {
     if (!image || !image->texture.id) return;
     if (!samples.empty() && samples.size() != 1 && samples.size() != 6)
         throw std::invalid_argument("World light samples must be floor, unit, or six wall columns");
@@ -441,10 +447,20 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
     // Keep original source indices, highlighting, alpha and screen blending.
     const Color fullLight = WHITE;
     if (fullBright_) samples = {&fullLight, 1};
+    if(!image->layers.empty() && samples.size()==1) {
+        // Preserve COF component order and original indices for PL2 mode 3.
+        for(const auto &layer:image->layers) {
+            Sprite part;part.texture=layer.texture;part.indexedTexture=layer.indexedTexture;
+            part.x=layer.x;part.y=layer.y;
+            drawLit(&part,position,samples,tint,highlight,
+                composition==PaletteComposition::Normal && layer.softAdditive?PaletteComposition::Screen:composition);
+        }
+        return;
+    }
     const auto packed = [](Color color) {
         return std::array<float,4>{color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f};
     };
-    if (screenBlend) {
+    if (composition!=PaletteComposition::Normal) {
         finishTerrainLighting();
         if (!image->indexedTexture.id || samples.size() != 1) return;
         const Rectangle bounds{float(int(position.x + image->x)), float(int(position.y + image->y)),
@@ -464,7 +480,8 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
         SetShaderValue(litBlendShader_, litBlendLocations_[BlendLight], light.data(), SHADER_UNIFORM_VEC4);
         for (const auto &[uniform, texture] : std::array<std::pair<LitBlendUniform,Texture2D>,4>{{
                 {BlendDestination, destination_.texture}, {BlendPalette, palette_},
-                {BlendLightTable, lightTable_}, {BlendScreenTable, screenTable_}}})
+                {BlendLightTable, lightTable_}, {BlendScreenTable,
+                    composition==PaletteComposition::Burn?burnTable_:screenTable_}}})
             SetShaderValueTexture(litBlendShader_, litBlendLocations_[uniform], texture);
         DrawTexturePro(image->indexedTexture, {0,0,bounds.width,bounds.height}, bounds, {}, 0, WHITE);
         EndShaderMode();
@@ -540,6 +557,11 @@ void PaletteBlendView::draw(const Sprite *image, Vec position) const {
     if (!image) return;
     drawSprite(image, {float(int(position.x + image->x)), float(int(position.y + image->y)),
         float(image->texture.width), float(image->texture.height)}, screenTable_);
+}
+void PaletteBlendView::drawBurn(const Sprite *image, Vec position) const {
+    if (!image) return;
+    drawSprite(image, {float(int(position.x) + image->x), float(int(position.y) + image->y),
+        float(image->texture.width), float(image->texture.height)}, burnTable_);
 }
 void PaletteBlendView::drawHalf(const Sprite *image, Rectangle bounds) const {
     drawSprite(image, bounds, halfTable_);

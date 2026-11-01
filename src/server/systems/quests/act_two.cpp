@@ -6,6 +6,7 @@
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/world/system.hpp"
+#include "server/systems/social/system.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
@@ -18,6 +19,7 @@ namespace d2x::server::quests {
 QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId region) const {
     QuestFact result{player,record,ports_.settings.difficulty,state_.actOne.denRemaining,state_.actOne.stones};
     if(const auto *previous=ports_.players.find(player)) synchronizeActTwoRecords(previous->persistent.player.quests,result.record.quests);
+    if(const auto *previous=ports_.players.find(player)) synchronizeIceRecords(previous->persistent.player.quests,result.record.quests);
     result.gameFlags=gameFlags();
     result.denEffect=state_.actOne.denCleared && !(state_.initialFlags[questDefinition(QuestId::DenOfEvil).nativeSlot]&0x8000);
     for(const auto &definition:questDefinitions) {
@@ -29,6 +31,16 @@ QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId re
         result.unavailable[index]=state_.objectives[index] && unavailable(player,record,definition.id);
     }
     const auto *area=ports_.areas.find(region);
+    if(area && area->definition.act==4 && state_.actFive.throneDeparted &&
+        !(state_.initialFlags[questDefinition(QuestId::EveOfDestruction).nativeSlot]&0x8000) &&
+        record.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::EveOfDestruction)].stage<5) result.baalStatus=3;
+    if(area && area->definition.act==4 && !(state_.initialFlags[questDefinition(QuestId::PrisonOfIce).nativeSlot]&0x8000) &&
+        record.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::PrisonOfIce)].stage<5) {
+        bool potion=false;
+        for(const auto &[id,p]:ports_.players.all()) if(p.entered && (id==player || ports_.social.sameParty(id,player)))
+            potion|=detail::actTwoCarried(p,p.rules.character->laterQuests.defrostPotion,ports_.settings.difficulty)!=nullptr;
+        if(potion || state_.actFive.anyaRead) result.iceStatus=potion?4:3;
+    }
     result.rescued=state_.actFive.rescued;
     if(area && int(region)==109) result.zooMonster=state_.actFive.zooMonster.value_or(0);
     if(const auto *p=ports_.players.find(player);p && record.completedActs.at(size_t(ports_.settings.difficulty)).at(1)) {

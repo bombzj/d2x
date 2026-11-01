@@ -214,7 +214,9 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     }
     const bool requiresSecondAttack=record->hostile()?bool(profile->damage.attack2Damage) && (!data.pd2Host || (hosting::pd2::usesSecondaryAttack(*record) && hosting::pd2::hasAttackMode(data,*record,2) && (record->attack2Projectile || data.tables.at("monstats").number(record->sourceRow,std::string("A2MinD")+suffix)))):
         record->attack2Projectile.has_value() || data.tables.at("monstats").number(record->sourceRow,std::string("A2MinD")+suffix).has_value();
-    if (!retailEmpty && !(data.pd2Host && hosting::pd2::sceneController(*record)) && record->ai!="EvilHole" && record->ai!="Catapult" && record->ai!="Idle" && record->ai!="TrappedSoul" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="OblivionKnight" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
+    // Fn128 uses Nihlathak's skill slots: A1/A2 are Teleport/Whip, not
+    // ordinary damage attacks. Prepare those clocks in skill actions below.
+    if (!retailEmpty && !(data.pd2Host && hosting::pd2::sceneController(*record)) && record->ai!="EvilHole" && record->ai!="Catapult" && record->ai!="Idle" && record->ai!="TrappedSoul" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="OblivionKnight" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && record->ai!="Nihlathak" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
     if(monsterImplementation(record->id).kind==MonsterKind::BonePrison) {
         const auto birth=loadMonsterMotionTiming(animations,record->token,"s1",monsterModeWeapon(archives,record->token,"s1",record->baseWeapon));
         if(!birth) return {};
@@ -305,7 +307,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     bool complete = true;
     for (int playerLevel = 1; record->hostile() && playerLevel < 100; ++playerLevel) {
         auto xp = resolveMonsterExperience(data, catalog, world, {identity, RegionId(request.level), request.difficulty, playerLevel, monsterRewardModifiers(enchantment),request.ladderMonsterStats});
-        if (!xp.deferred.empty()) { complete = false; break; }
+        if (!xp.deferred.empty()) { if(deferredReason) *deferredReason="experience: "+xp.deferred;complete = false; break; }
         rule.experience[size_t(playerLevel)] = xp.amount;
         rule.experienceBase=xp.base;rule.experienceLevel=xp.monsterLevel;rule.experienceShift=xp.shift;
         rule.experienceRatios[size_t(playerLevel)]=xp.ratio;

@@ -10,6 +10,8 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 
 ## 世界悬停与点击选取
 
+物件显示另补原客户端的本地OP→ON衔接：本机1.13c D2Client RVA25660–25884对非门、非循环的OPERATING在末帧切OPENED并从Start2继续；最终565（Init77／Operate72）的mode1指派不会另收到开门完成包，ON读取CycleAnim2循环。`objectPresentation`用当前FrameCnt1／FrameDelta1／Start1推算缺少既有ENDANIM分支时的本地表现，保留原世界副本和`objectDisplayMode`碰撞判定，不能由画面开启代替服务端资格。当前新增显示衔接待构建和实看。
+
 世界选取共用`graphics/primitives.hpp::spriteHit`与`remote_scene_draw.cpp`的单位分支；地面掉落的名称显现、发亮与本体点击也使用该帧几何。范围来自当前MPQ的COF、DCC／DC6及表字段，不裁到不透明像素包围框，不使用统一大小的自造交互框。可选模式、技能SelectProc、尸体／阵营资格仍由原有客户端副本入口筛选；鼠标命中不代表服务端允许操作。
 
 | 单位／条件 | 原版几何与当前消费者 |

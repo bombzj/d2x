@@ -829,7 +829,9 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         }
         server::MonsterAttackRule action;int event=(record.ai=="Izual" || record.ai=="UberIzual" || record.ai=="BaalCrab" || record.ai=="BaalCrabClone")?1:2;
         if(name=="PrimeBolt" || name=="PrimePoisonNova" || name=="DiabCold" || name=="DiabWall" || name=="PrimeFirewall" || name=="VampireFirewall" || name=="Diablogeddon" || name=="DiabPrison" || name=="NihlathakCorpseExplosion" || name=="Shout" || name=="Baal Tentacle" || (record.ai=="Mephisto" && name=="Blizzard")) {
-            action.action=Action::NativeSpell;if(name=="DiabCold" || name=="NihlathakCorpseExplosion" || name=="Baal Tentacle") event=1;
+            // Madawc's 0FSCHTH Shout uses the native skill event1, not a
+            // missile event2 (current AnimData; Fn133's skill-mode cast).
+            action.action=Action::NativeSpell;if(name=="DiabCold" || name=="NihlathakCorpseExplosion" || name=="Baal Tentacle" || name=="Shout") event=1;
         }
         else if(name=="Baal Taunt" || name=="HellMeteor" || name=="Catapult Charged Ball" || name=="Catapult Spike Ball" || name=="CatapultBlizzard" || name=="CatapultPlague" || name=="CatapultMeteor") action.action=Action::NativeSpell;
         else if(name=="Baal Corpse Explode") {action.action=Action::NativeSpell;event=2;}

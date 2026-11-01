@@ -1,4 +1,6 @@
 #include "ai_impl.hpp"
+#include "content/npc/vendor_stock.hpp"
+#include "gameplay/items/belt_rules.hpp"
 #include <algorithm>
 #include <array>
 #include <limits>
@@ -7,6 +9,25 @@
 namespace d2x {
 namespace {
 Vec position(OnlinePoint p) {return {float(p.x),float(p.y)};}
+// GetFreeBeltSlot can use matching bottom-row columns, then unclaimed columns.
+// Count the maximum a Shift-click could buy before committing the single request.
+unsigned bulkBeltSpace(const OnlineView &view,int slots,std::string_view code) {
+    if(slots<4 || slots>16 || slots%4) return 0;
+    std::array<const OnlineItem *,16> belt{};
+    for(const auto &[id,item]:view.world.items) {
+        if(item.mode!=2 || !onlineItemOwnedBy(item,view.load.playerUnitId)) continue;
+        if(!item.positionKnown || item.x>=slots || belt[item.x]) return 0;
+        belt[item.x]=&item;
+    }
+    unsigned space=0;
+    const auto family=beltPotionFamily(code);
+    for(int column=0;column<4;++column) {
+        const auto *bottom=belt[column];
+        if(bottom && bottom->code!=code && (family.empty() || beltPotionFamily(bottom->code)!=family)) continue;
+        for(int slot=column;slot<slots;slot+=4) if(!belt[slot]) ++space;
+    }
+    return space;
+}
 }
 void DebugAi::Impl::Definitions::loadPotions() {
     const auto isType=[&](std::string_view code,std::string_view wanted) {
@@ -30,6 +51,7 @@ void DebugAi::Impl::Definitions::loadPotions() {
         else if(spell==3 && isType(type,"mpot")) potion.kind=PotionKind::Mana;
         else continue;
         // Selection hint only: never evaluate or apply recovery on the client.
+        potion.bulkBelt=misc.number(row,"autobelt").value_or(0) && misc.number(row,"PermStoreItem").value_or(0);
         potion.strength=misc.number(row,"calc1").value_or(misc.number(row,"cost").value_or(0));
         const auto state=misc.value(row,"state");
         if(!state.empty()) for(size_t s=0;s<states.rows().size();++s)
@@ -128,8 +150,8 @@ bool DebugAi::Impl::observePotion(Context &c) {
         if(ack && world.tradeResult->result>=7) throw std::runtime_error("Potion purchase rejected by the normal merchant service");
         const auto stock=request.portalSupply?portalStock(c):PortalStock{};
         const unsigned count=request.portalSupply?(request.code=="tbk"?stock.books:stock.pages):potionCount(c,request.kind);
-        if(ack && (!request.portalSupply || stock.known) && count>request.beforeCount) {
-            ++purchases;note("supply-purchase-confirmed",request.code);potionRequest.reset();shopDeadline=now+std::chrono::seconds(12);return false;
+        if(ack && (!request.portalSupply || stock.known) && count>=request.beforeCount+request.expectedGain) {
+            ++purchases;note("supply-purchase-confirmed",request.code+" +"+std::to_string(count-request.beforeCount));potionRequest.reset();shopDeadline=now+std::chrono::seconds(12);return false;
         }
     } else {
         const auto item=world.items.find(request.item);
@@ -149,6 +171,7 @@ bool DebugAi::Impl::observePotion(Context &c) {
 }
 bool DebugAi::Impl::drink(Context &c) {
     if(!supplyPolicy.enabled || potionRequest || !c.supplies || Clock::now()<nextPotion) return false;
+    if(c.town.read().town && supplyPolicy.buy) return false;
     if(questRun.pending && questRun.pending->sequence) return false;
     const auto &view=c.session.read();const auto &world=view.world;
     if(onlineHasCursorItem(world.items,view.load.playerUnitId)) return false;
@@ -167,8 +190,9 @@ bool DebugAi::Impl::drink(Context &c) {
     }
     const bool needsLife=lowLife && (!healing || critical),needsMana=lowMana && !recharging;
     if(!needsLife && !needsMana) return false;
-    if(world.townPortalPending || (world.itemRequest && world.itemRequest->state==OnlineItemRequest::State::Pending) ||
-        (world.combatRequest && world.combatRequest->state==OnlineCombatRequest::State::Pending)) return false;
+    // Native potion use is independent of a cast's action/receipt. Keep the
+    // inventory transaction serialized, not the movement/skill domain.
+    if(world.itemRequest && world.itemRequest->state==OnlineItemRequest::State::Pending) return false;
     std::optional<OnlineItem> selected;int best=std::numeric_limits<int>::min();
     for(const auto &[id,item]:world.items) {
         (void)id;
@@ -195,6 +219,41 @@ bool DebugAi::Impl::drink(Context &c) {
 }
 bool DebugAi::Impl::restock(Context &c) {
     const auto &view=c.session.read();const auto &world=view.world;
+    const bool injured=world.life && c.supplies && c.supplies->maxLife && *c.supplies->maxLife>0 &&
+        *world.life<*c.supplies->maxLife;
+    if(healingIssued) {
+        if(!healingObserved && (!world.life || !c.supplies || !c.supplies->maxLife || *world.life<*c.supplies->maxLife)) {
+            if(Clock::now()>=shopDeadline) throw std::runtime_error("Town healer interaction did not restore observed life; no blind retry");
+            wait("supply-heal-wait","Waiting for actual life recovery from the normal healer conversation");return false;
+        }
+        if(world.npcRequested) c.session.close_npc();
+        healingIssued=false;healingObserved=false;supplyNpc.reset();shopDeadline={};note("town-healing-observed");return false;
+    }
+    if(injured) {
+        if(!view.load.act || !c.town.read().town) throw std::runtime_error("Town recovery requires the native town");
+        std::optional<Selector> healer;
+        for(size_t row=0;row<definitions->monsters.rows().size();++row) {
+            const auto code=definitions->monsters.value(row,"Id");
+            if(!npcCanHeal(code)) continue;
+            const auto candidate=definitions->selector(Json{{"npc",code}});
+            // Prefer a currently assigned healer. Otherwise use the act's
+            // verified healer; Act II's potion supplier cannot heal.
+            if(find(c,candidate)) {healer=candidate;break;}
+        }
+        if(!healer) {
+            static constexpr std::array names{"akara","fara","ormus","jamella","malah"};
+            if(*view.load.act>=names.size()) throw std::runtime_error("No verified town healer for this act");
+            healer=definitions->selector(Json{{"npc",names[*view.load.act]}});
+        }
+        const auto npc=find(c,*healer);
+        if(!npc) {if(!approachKnown(c,*healer)) explore(c,"town healer");return false;}
+        if(world.npcRequested && world.npcRequested!=npc->key.id) {c.session.close_npc();return false;}
+        supplyNpc=npc->key;
+        if(walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true},{"purpose","supply-heal"}})) {
+            healingIssued=true;healingObserved=false;shopDeadline=Clock::now()+std::chrono::seconds(12);cancelWalk(c);
+        }
+        wait("supply-heal","Approaching the normal town healer before departure");return false;
+    }
     const bool life=potionCount(c,PotionKind::Life)<unsigned(supplyPolicy.healthCount);
     const bool mana=potionCount(c,PotionKind::Mana)<unsigned(supplyPolicy.manaCount);
     const auto stock=portalStock(c);
@@ -206,7 +265,7 @@ bool DebugAi::Impl::restock(Context &c) {
     const bool portal=supplyPolicy.fillPortalBook && (!stock.books || stock.pages<stock.capacity);
     if(!life && !mana && !portal) {
         if(world.npcRequested && supplyNpc && world.npcRequested==supplyNpc->id) c.session.close_npc();
-        shopIssued=false;shelfObserved=false;supplyNpc.reset();return true;
+        shelfReopens=0;shopIssued=false;shelfObserved=false;supplyNpc.reset();return true;
     }
     if(!view.load.act || !c.town.read().town) throw std::runtime_error("Potion restock requires the current act's native town");
     const auto supplier=definitions->supplier(*view.load.act,portal);const auto npc=find(c,supplier);
@@ -222,6 +281,17 @@ bool DebugAi::Impl::restock(Context &c) {
         walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true}});return false;
     }
     if(!shopIssued) {
+        // Dismiss actual automatic speech before selecting a service, just as
+        // the dialogue controller does. Buying must not bypass the greeting.
+        const auto &conversation=*world.npcConversation;
+        for(const auto &message:conversation.messages)
+            if(message.menu==0 && !conversation.acknowledged.contains(message.stringId)) {
+                if(submitInput(c,DebugActionOwner::Supply,"supply-dialogue",DebugInteraction|DebugMenu,
+                    [&]{return c.session.acknowledge_npc_message(message.stringId);},
+                    [&]{return c.session.read().error?c.session.read().error->message:std::string{};})==DebugSubmitResult::Expired)
+                    throw std::runtime_error("Merchant automatic dialogue could not be acknowledged");
+                wait("supply-dialogue","Dismissing the merchant's actual automatic speech before trade");return false;
+            }
         OnlineItemCommand open;open.action=OnlineItemAction::TradeOpen;open.npc=npc->key.id;
         if(submitItem(c,open,"supply-shop",DebugActionOwner::Supply)) {
             shopIssued=true;shelfObserved=false;shopGeneration=c.session.read().world.interactionGeneration;
@@ -231,7 +301,15 @@ bool DebugAi::Impl::restock(Context &c) {
     }
     if(world.shopSource!=npc->key.id || world.shopGamble ||
         (world.itemRequest && world.itemRequest->state==OnlineItemRequest::State::Pending)) {
-        if(Clock::now()>=shopDeadline) throw std::runtime_error("Potion vendor shelf was not observed; shop request is not repeated");
+        if(Clock::now()>=shopDeadline) {
+            if(shelfReopens || (world.itemRequest && world.itemRequest->state==OnlineItemRequest::State::Pending))
+                throw std::runtime_error("Potion vendor shelf unavailable after bounded shop observation");
+            if(c.session.close_npc()) {
+                ++shelfReopens;shopIssued=false;shelfObserved=false;shopDeadline={};cancelWalk(c);
+                note("merchant-reopen","No shelf or pending transaction; reopening the conversation once");
+            }
+            return false;
+        }
         wait("supply-shop","Waiting for the real merchant shelf");return false;
     }
     std::optional<OnlineItem> best;unsigned price{};int strength=std::numeric_limits<int>::min();
@@ -267,16 +345,24 @@ bool DebugAi::Impl::restock(Context &c) {
     const auto before=portal?(stock.books?stock.pages:stock.books):potionCount(c,kind);
     const auto trade=world.tradeResult?world.tradeResult->revision:0;
     OnlineItemCommand buy;buy.action=OnlineItemAction::Buy;buy.item=best->id;buy.itemRevision=best->revision;buy.npc=npc->key.id;buy.amount=price;
-    buy.multibuy=portal && stock.books; // Native Shift-buy fills the actual owned tome; never invent a quantity.
+    buy.multibuy=portal && stock.books;
+    unsigned expectedGain=1;
+    if(!portal && definitions->potions.at(best->code).bulkBelt) {
+        const auto room=bulkBeltSpace(view,c.inventory.read().beltSlots,best->code);
+        const unsigned target=life?supplyPolicy.healthCount:supplyPolicy.manaCount;
+        if(room>1 && before+room<=target && uint64_t(price)*room<=knownFunds) {
+            buy.multibuy=true;expectedGain=room;
+        }
+    }
     if(!submitItem(c,buy,"supply-buy",DebugActionOwner::Supply)) return false;
     PotionRequest pending;pending.buying=true;pending.portalSupply=portal;pending.item=best->id;pending.code=best->code;pending.kind=kind;
-    pending.beforeCount=before;pending.tradeRevision=trade;pending.sequence=c.session.read().world.itemRequest->sequence;
-    pending.deadline=Clock::now()+std::chrono::seconds(12);potionRequest=pending;note("potion-purchase-submitted",best->code);return false;
+    pending.beforeCount=before;pending.expectedGain=expectedGain;pending.tradeRevision=trade;pending.sequence=c.session.read().world.itemRequest->sequence;
+    pending.deadline=Clock::now()+std::chrono::seconds(12);potionRequest=pending;note(buy.multibuy?"supply-multibuy-submitted":"potion-purchase-submitted",best->code);return false;
 }
 bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
     if(!supplyPolicy.enabled || !supplyPolicy.buy || goal.kind==Kind::Restock) return false;
     if(supplyStage!=SupplyStage::None) return supplyDetour(c,goal);
-    if(questTransaction(c)) return false;
+    if(questTransaction(c) || questRun.pending) return false;
     const auto &world=c.session.read().world;
     if(potionRequest || objectIssued || pickupIssued || portalAttempted || portalIssued || pendingDoor || mobilityTarget ||
         world.npcRequested || world.waypointSource || world.waypointRequested || world.townPortalPending ||
@@ -286,8 +372,9 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
         (world.combatRequest && world.combatRequest->state==OnlineCombatRequest::State::Pending) ||
         travelPhase==TravelPhase::WaypointWait || travelPhase==TravelPhase::CrossWait) return false;
     const auto stock=portalStock(c);
-    const bool needs=potionCount(c,PotionKind::Life)<unsigned(supplyPolicy.healthCount) || potionCount(c,PotionKind::Mana)<unsigned(supplyPolicy.manaCount) ||
-        (supplyPolicy.fillPortalBook && (!stock.known || !stock.books || stock.pages<stock.capacity));
+    const bool needs=(world.life && c.supplies && c.supplies->maxLife && *world.life<*c.supplies->maxLife) ||
+        potionCount(c,PotionKind::Life)<unsigned(supplyPolicy.healthCount) || potionCount(c,PotionKind::Mana)<unsigned(supplyPolicy.manaCount) ||
+        (supplyPolicy.fillPortalBook && (!stock.known || !stock.books || stock.pages<=stock.capacity/2));
     bool empty=false;
     if(c.supplies && supplyPolicy.returnWhenEmpty && !potionCount(c,PotionKind::Rejuvenation)) {
         empty=(supplyPolicy.healthCount && !potionCount(c,PotionKind::Life) && world.life && c.supplies->maxLife &&
@@ -319,6 +406,9 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
     if(goal.kind==Kind::ReturnTown || (goal.area && goal.area==c.session.read().load.townArea))
         supplyOrigin=c.session.read().load.townArea;
     supplyStarted=Clock::now();supplyDeadline=supplyStarted+std::chrono::seconds(600);
+    // Passive scene observation can be re-established after returning;
+    // submitted quest operations above can never be abandoned this way.
+    questRun.worldWait.reset();
     stop(c.walk,c.control,c.combat);resetStep();combatTarget.reset();retreatPoint.reset();
     supplyStage=c.town.read().town?SupplyStage::Shop:SupplyStage::ToTown;
     shopIssued=false;shelfObserved=false;supplyNpc.reset();supplyPortalUsed=false;
@@ -350,13 +440,14 @@ bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
             if(entry.interaction!=OnlineMapInteraction::Portal || entry.destination!=supplyOrigin || u==view.world.units.end() || u->second.portalOwner!=view.load.playerUnitId) continue;
             wait("supply-return","Returning through the actually assigned own portal");
             if(walk(c,{{"goal","unit"},{"unitType",entry.unit.type},{"unitId",entry.unit.id},{"interact",true},{"purpose","supply-return"}})) {
+                rememberTravel(c,entry.unit);
                 supplyPortalUsed=true;supplyPortalDeadline=now+std::chrono::seconds(15);cancelWalk(c);
             }
             return true;
         }
         if(supplyOrigin) travel(c,*supplyOrigin);
     }
-    if(!portalIssued && !supplyPortalUsed) mobility(c);
+    if(!portalUsed && !supplyPortalUsed && canInput(c,DebugActionOwner::Mobility,DebugMotion|DebugSkill)) mobility(c);
     return true;
 }
 bool DebugAi::Impl::supplyCombat(Context &c,const Goal &goal) {

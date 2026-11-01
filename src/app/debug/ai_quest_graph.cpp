@@ -10,6 +10,8 @@ namespace d2x {
 bool DebugAi::Impl::questFactSatisfied(const Context &c,const Goal &goal,size_t node,const QuestFact &fact) const {
     using Kind=QuestFact::Kind;
     switch(fact.kind) {
+    case Kind::Status:
+        return c.session.read().world.quests.statuses[questDefinition(fact.quest).nativeSlot]==fact.value;
     case Kind::MonsterObserved:
         return (!fact.area || c.town.read().area==fact.area) && find(c,Selector{1,fact.value,"observed quest monster"},true).has_value();
     case Kind::ObjectOpened:
@@ -50,12 +52,13 @@ bool DebugAi::Impl::questFactSatisfied(const Context &c,const Goal &goal,size_t 
         return value && !(*value&fact.clear) && (fact.any?bool(*value&fact.value):(*value&fact.value)==fact.value);
     }
     case Kind::Area:return c.town.read().area==fact.value;
+    case Kind::Cinematic:return c.session.read().world.cinematic==fact.value;
+    case Kind::InitiallyRewarded:return goal.initiallyRewarded;
     case Kind::TrueTombArea:
         return tombSymbol && *tombSymbol<7 && c.town.read().area==definitions->area("Act 2 - Tomb Tal "+std::to_string(*tombSymbol+1));
     case Kind::TombClue:return tombSymbol && *tombSymbol<7;
     case Kind::Waypoint:
-        return c.session.read().world.waypointHistory && std::any_of(c.town.read().waypoints.begin(),c.town.read().waypoints.end(),
-            [&](const auto &entry){return entry.level==fact.value && entry.unlocked;});
+        return knownWaypointAreas.contains(fact.value);
     case Kind::PortalObserved:
         return std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &entry) {
             return entry.interaction==OnlineMapInteraction::Portal && entry.destination==fact.value &&
@@ -68,6 +71,7 @@ bool DebugAi::Impl::questFactSatisfied(const Context &c,const Goal &goal,size_t 
     }
     case Kind::Corpse: {
         const auto &step=goal.steps.at(node);if(!step.target) return false;
+        if(const auto level=fact.area?fact.area:step.area;level && c.town.read().area!=level) return false;
         const auto unit=find(c,*step.target,true);return unit && onlineMonsterCorpse(*unit);
     }
     case Kind::BookUsed: {
@@ -84,9 +88,22 @@ bool DebugAi::Impl::questRequirementSatisfied(const Context &c,const Goal &goal,
         return !all.empty() && std::all_of(all.begin(),all.end(),[&](const auto &fact){return questFactSatisfied(c,goal,index,fact);});
     });
 }
+void DebugAi::Impl::observeQuestFacts(const Context &c) {
+    if(cursor>=goals.size() || goals[cursor].kind!=Kind::Quest || !questRun.initialized) return;
+    const auto &goal=goals[cursor];
+    for(size_t index=0;index<goal.requirements.size();++index)
+        if(goal.requirements[index].retainObservation && questRequirementSatisfied(c,goal,index)) questRun.observations.insert(index);
+}
 bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
     if(goal.requirements.size()!=goal.steps.size() || goal.requirements.size()>64)
         throw std::runtime_error("Quest dependency graph has an invalid action boundary");
+    std::vector<uint8_t> satisfied(goal.requirements.size()),state(goal.requirements.size());
+    // Observe transient corpses/portals even while a different node owns an
+    // accepted request. Retaining that request must not discard new facts.
+    for(size_t i=0;i<goal.requirements.size();++i) {
+        satisfied[i]=questRequirementSatisfied(c,goal,i);
+        if(satisfied[i] && goal.requirements[i].retainObservation) questRun.observations.insert(i);
+    }
     // Never replace a submitted operation with a newly attractive branch.
     // Its own handler must first consume the actual result or report unknown.
     const bool waiting=questRun.pending || questTransaction(c) || objectIssued || pickupIssued || portalIssued || potionRequest ||
@@ -94,11 +111,6 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
         travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit);
     if(questRun.selected && waiting) {
         questPlanDiagnostics["decision"]="retain-submitted-action";return true;
-    }
-    std::vector<uint8_t> satisfied(goal.requirements.size()),state(goal.requirements.size());
-    for(size_t i=0;i<goal.requirements.size();++i) {
-        satisfied[i]=questRequirementSatisfied(c,goal,i);
-        if(satisfied[i] && goal.requirements[i].retainObservation) questRun.observations.insert(i);
     }
     std::vector<size_t> ready;
     std::function<void(size_t)> visit=[&](size_t index) {
@@ -131,6 +143,11 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
         return false;
     }
     if(ready.empty()) throw std::runtime_error("Unsatisfied quest conditions have no ready native action");
+    if(questRun.selected && questRun.worldWait && !satisfied[questRun.step]) {
+        questPlanDiagnostics["decision"]="retain-observed-event-scene";
+        questPlanDiagnostics["selected"]={{"index",questRun.step},{"name",goal.requirements[questRun.step].name}};
+        return true;
+    }
     const auto operationHere=[&](const QuestStep &step) {
         if(step.action==QuestAction::Portal && step.sourceArea==c.town.read().area) return true;
         if(step.trueTomb) return tombSymbol && *tombSymbol<7 &&

@@ -60,6 +60,8 @@ Nihlathak自然死亡的A5Q4新增原FX17与本人附着声音82：冻结当次�
 
 执行入口为`act_three.cpp`、`act_four.cpp`、`act_five.cpp`、`ancients.cpp`、`baal.cpp`；hosting的`quest_world_content.cpp`准备战斗组，`quest_content.cpp`准备奖励。原中立NPC只从已准备规则准入。囚犯逃离记账归npc、移动与时钟归monsters／ai，救援蓝门归objects及任务QUESTFN，玩家门户归travel；公共资格／事务／原协议与保存边界分别见[任务系统](SYSTEM.md)和[存档](../../modules/SAVES.md#任务槽与奖励语义)。
 
+第五幕本轮补缺依据：A5Q2囚犯距离使用原10397单位距离，保留整数坐标／房间链及`<15`；Fn134的286读取当前Skills.lob，经原构造flag0x400按距离设置CurrentFrame，不能把Missiles.Range60当作到点倒计时。A5Q6的20175先提交CUSTOM3，再由NPCDEACTIVATE按各玩家位置寻位生成单个565，普通回城蓝门不提交CUSTOM6；native-05最终出口另经正常13实见warp109及0x61/7。新源码在最终旅行提交中原子发布CUSTOM6、Travel及类型化Cinematic，复用PlayerData.nativeBusy；客户端记录真实61/7并显示原endgame2通关界面，电影播放器未接，single-34候选E16B32DA已实际收到6107、显示Slayer并正常OK保存退局（死后为取图暂停／恢复AI）。单机与原版Host六任务主线均已分段实见奖励、五波／巴尔死亡及幕末20175／565，原版的最终进门为单独操作采样，细节见[调试AI](../../development/DEBUG_AI.md#第五幕任务配方)。
+
 ## 恢复与投影例外
 
 新游戏依据个人任务位与实际材料恢复破珠／Mephisto、解冻安雅与古代人完成机关；五波、囚犯路径和死亡目标不恢复。巴尔结尾使用原565出口和最终任务位／头部progression，没有第五个跨幕完成字。第三幕没有第二幕完成资格时原日志状态不投影为可领取；这不等于客户端补推个人资格。

@@ -13,7 +13,7 @@
 namespace d2x::server::reactions { class ItemTriggers; }
 namespace d2x::server::monsters {struct Actor;}
 namespace d2x::server::quests {
-enum class Action { Refresh, ViewLog, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal, ReadAncientAltar, ReadClue };
+enum class Action { Refresh, ViewLog, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal, ReadAncientAltar, ReadClue, ReadFrozenAnya };
 struct Request { Action action; QuestId quest; std::optional<EntityId> npc; std::optional<uint32_t> message; std::optional<EntityId> item{}; };
 struct State {
     NpcStoryState npcStory;

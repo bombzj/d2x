@@ -86,7 +86,7 @@ bool System::npcVisible(const CharacterRecord &record,std::string_view code,Regi
                     if(npc.id==id && npc.rule.questInitFunction==49) return true;
         return !state_.npcStory.hratliDeparted;
     }
-    if(code=="nihlathak" && int(area)==109) return !state_.actFive.anyaThawed;
+    if(code=="nihlathak" && int(area)==109) return !state_.actFive.anyaRead && !state_.actFive.anyaThawed;
     if(code=="drehya" && int(area)==109) return state_.npcStory.anyaDeparted;
     if(code=="natalya" && int(area)==75) return !state_.actThree.mephistoSlain;
     if(code=="baalthrone" && int(area)==131) return !state_.actFive.throneDeparted;

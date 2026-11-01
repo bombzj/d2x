@@ -106,8 +106,9 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
         player.quests[difficulty][questIndex(QuestId::EveOfDestruction)] = {baalFlags & 1 ? 5u : baalFlags & 8 ? 2u : baalFlags & 4 ? 1u : 0u,
             baalFlags & 1 ? uint32_t(baalFlags >> 4 & 127u) : 0u};
         player.quests[difficulty][questIndex(QuestId::BetrayalOfHarrogath)] = {betrayalFlags & 1 ? 5u : betrayalFlags & 2 ? betrayalFlags & 0x10 ? 4u : 3u : betrayalFlags & 8 ? 2u : betrayalFlags & 4 ? 1u : 0u, 0};
-        player.quests[difficulty][questIndex(QuestId::PrisonOfIce)] = {iceFlags & 1 ? 6u : iceFlags & 2 ? 5u : iceFlags & 0x10 ? 3u : iceFlags & 8 ? 2u : iceFlags & 4 ? 1u : 0u,
-            (iceFlags & 0x181 ? iceScrollGranted : 0u) | (iceFlags & 0x80 ? iceScrollUsed : 0u) | (iceFlags & 0x601 ? iceRareGranted : 0u)};
+        if(iceFlags&0x10) throw std::runtime_error("Unsupported legacy Prison of Ice ENTERAREA bit; finish the quest with the previous build or restore an earlier save");
+        player.quests[difficulty][questIndex(QuestId::PrisonOfIce)] = {iceFlags & 1 ? 6u : iceFlags & 2 ? 5u : iceFlags & 8 ? 2u : iceFlags & 4 ? 1u : 0u,
+            (iceFlags & 0x181 ? iceScrollGranted : 0u) | (iceFlags & 0x80 ? iceScrollUsed : 0u) | (iceFlags & 0x601 ? iceRareGranted : 0u),iceFlags};
         player.quests[difficulty][questIndex(QuestId::RescueOnMountArreat)] = {rescueFlags & 1 ? 4u : rescueFlags & 2 ? 3u : rescueFlags & 8 ? 2u : rescueFlags & 4 ? 1u : 0u,
             rescueFlags & 0x20 ? 15u : rescueFlags & 0x40 ? 14u : rescueFlags & 0x80 ? 13u : rescueFlags & 3 ? 15u : 0u};
         player.quests[difficulty][questIndex(QuestId::SiegeOnHarrogath)] = {siegeFlags & 1 ? 5u : siegeFlags & 2 ? siegeFlags & 0x20 ? 4u : 3u : siegeFlags & 8 ? 2u : siegeFlags & 4 ? 1u : 0u, 0};
@@ -207,9 +208,7 @@ void exportD2sQuests(const CharacterRecord &player, D2sFixedSections &sections, 
         putWord(sections.quests, betrayalOffset, (word(sections.quests, betrayalOffset) & ~0x201Fu) |
             (betrayal.stage == 5 ? 0x2001 : betrayal.stage >= 3 ? 0x2002 | (betrayal.stage == 4 ? 0x10 : 0) : betrayal.stage == 2 ? 0xC : betrayal.stage == 1 ? 4 : 0));
         const auto iceOffset = 10 + difficulty * 96 + questDefinition(QuestId::PrisonOfIce).nativeSlot * 2;
-        putWord(sections.quests, iceOffset, (word(sections.quests, iceOffset) & ~0x279Fu) |
-            (ice.stage == 6 ? 0x2001 : ice.stage == 5 ? 0x2002 : ice.stage >= 3 ? 0x1C : ice.stage == 2 ? 0xC : ice.stage == 1 ? 4 : 0) |
-            (ice.flags & iceScrollGranted ? 0x100 : 0) | (ice.flags & iceScrollUsed ? 0x80 : 0) | (ice.flags & iceRareGranted ? 0x600 : 0));
+        putWord(sections.quests, iceOffset, iceNativeRecord(ice));
         const auto rescueOffset = 10 + difficulty * 96 + questDefinition(QuestId::RescueOnMountArreat).nativeSlot * 2;
         putWord(sections.quests, rescueOffset, (word(sections.quests, rescueOffset) & ~0x20EFu) |
             (rescue.stage == 4 ? 0x2001 : rescue.stage == 3 ? 0x2002 : rescue.stage == 2 ? 0xC : rescue.stage == 1 ? 4 : 0) |
@@ -353,7 +352,8 @@ int validateD2sQuestRecords(const QuestBook &book) {
         require(rescue.stage <= 4 && rescue.flags <= 15 && (rescue.stage < 3 || rescue.flags >= 12), "Rescue quest progress");
         const auto &ice = difficulty[questIndex(QuestId::PrisonOfIce)];
         require(ice.stage <= 6 && !(ice.flags & ~7u) && (!ice.flags || ice.stage >= 5) &&
-            (!(ice.flags & iceScrollUsed) || ice.flags & iceScrollGranted), "Prison of Ice quest progress");
+            (!(ice.flags & iceScrollUsed) || ice.flags & iceScrollGranted) &&
+            (!ice.nativeRecord || !(*ice.nativeRecord&0x10)), "Prison of Ice quest progress");
         const auto &betrayal = difficulty[questIndex(QuestId::BetrayalOfHarrogath)];
         require(betrayal.stage <= 5 && !betrayal.flags, "Betrayal quest progress");
         const auto &ancients = difficulty[questIndex(QuestId::RiteOfPassage)];

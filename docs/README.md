@@ -46,6 +46,18 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 
 目标设计按“合理承载全部内容”组织，不以当前代码迁移步骤为中心：[战斗领域与组合设计](architecture/COMBAT_DOMAIN_DESIGN.md)负责模块职责、所有权、依赖和跨内容协作；[公共规则与原版算法设计](architecture/COMBAT_SHARED_RULES.md)负责原函数参考、共享粒度、输入输出与精确性契约。两页由总纲统一导航，不另维护完成台账。
 
+## 调试任务AI文档
+
+| 需要了解的内容 | 负责入口 |
+| --- | --- |
+| 高层任务指令、可重载配置、五幕配方与部分进度恢复 | [调试任务AI](development/DEBUG_AI.md) |
+| AI测试条件、分段与五幕全链路结果、问题、角色基准与消息证据 | [AI测试记录](development/AI_TEST_REC.md)，集中保留实测范围与干预边界 |
+| 旅行／探索、动作等待与输入占用、战斗／职业移动及通用补给的实现入口 | [执行分层](development/DEBUG_AI.md#执行分层)、[公共操作](development/DEBUG_AI.md#公共操作与部分进度恢复)、[战斗策略](development/DEBUG_AI.md#战斗策略) |
+| 管道命令、状态与诊断字段、消息和现场采集 | [调试管道](development/DEBUG_PIPE.md)、[AI命令与组合](development/DEBUG_AI.md#输入与组合) |
+| 启动与失焦继续运行参数、构建和正常退出 | [构建运行](development/BUILD_AND_RUN.md) |
+| 已发现阻塞、单机／原版Host验收边界及剩余测试点 | [原版缺口](development/ORIGINAL_GAPS.md#待验收调试导航)、[AI实现与待验收范围](development/DEBUG_AI.md#实现入口与待验收范围) |
+| 客户端／服务端的实际任务规则、包与保存语义 | [任务系统](gameplay/quests/SYSTEM.md)、[第一幕](gameplay/quests/ACT1.md)、[第二幕](gameplay/quests/ACT2.md)、[后三幕](gameplay/quests/ACT3_5.md)；AI策略不替代权威规则 |
+
 ## 当前模块
 
 | 模块 | 内容 |

@@ -106,7 +106,7 @@ bool detour(const Grid &grid,MovementCollisionRule rule,Cell start,Cell target,C
 }
 std::deque<Vec> Grid::nativeWallFollowPath(Vec from,Vec to,uint8_t maxDistance,MovementCollisionRule rule) const {
     const CollisionQueryScope collisionScope{*this};
-    if(!walkable(from,rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
+    if(rule.size<0 || rule.size>3 || !navigationContains(from) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
        to.x<0 || to.y<0 || to.x>=width || to.y>=height) return {};
     const Cell start{int(std::floor(from.x)),int(std::floor(from.y))},target{int(std::floor(to.x)),int(std::floor(to.y))};
     const int dx=std::abs(target.x-start.x),dy=std::abs(target.y-start.y);

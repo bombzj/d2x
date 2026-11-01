@@ -252,7 +252,16 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             ports_.world.request(transition.to,destination->definition.pd2Map);
             ++pending;continue;
         }
-        if (transition.kind == Kind::Exit) {
+        if((transition.kind==Kind::Portal || transition.kind==Kind::SpecialPortal) &&
+            player.movementArrival && player.movementArrival->id==transition.source) {
+            // Retain the original object click through its normal approach.
+            // Recheck actual range/ray after movement, never predicted arrival.
+            if(!interactionClear(source->definition.collision,player.position,*player.movementArrival)) {
+                if(!player.route.empty()) {++pending;continue;}
+                pending=state_.transitions.erase(pending);continue;
+            }
+            player.route.clear();player.moving=false;
+        } else if (transition.kind == Kind::Exit) {
             if (nativeUnitDistance(player.position, 2, transition.approach, 1) > 4) {
                 if (!player.route.empty()) { ++pending; continue; }
                 pending = state_.transitions.erase(pending); continue;
@@ -281,11 +290,11 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         } else ports_.world.activate(transition.to, arrival);
         if(transition.kind==Kind::Npc) {
             const ActorContext actor{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick};
-            // The original client follows 0x38 travel with 0x30 close. The
-            // accepted travel retains its lease identity while content loads;
+            // The original client closes30 before travel38. An accepted
+            // travel retains its source/optional conversation while content loads;
             // a different conversation, movement, death or area invalidates it.
             const auto *conversation=ports_.npc.conversation(player.player);
-            const auto *npc=ports_.npc.find(actor,transition.source);
+            const auto *npc=ports_.npc.travelSource(actor,transition.source);
             const auto &book=player.persistent.player.quests.at(size_t(player.persistent.difficulty));
             if(!npc || (conversation && conversation->revision!=transition.npcConversation) ||
                 (npc->rule.code=="warriv1" && book.at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::PassageReady)) ||
@@ -342,8 +351,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             arrival=transition.arrival;
         }
         if(transition.kind==Kind::QuestObject) {
-            const auto object=std::find_if(source->definition.objects.begin(),source->definition.objects.end(),[&](const auto &o){return o.id==transition.source;});
-            if(object==source->definition.objects.end() || !ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to)) {pending=state_.transitions.erase(pending);continue;}
+            const auto found=ports_.objects.read().objects.find(transition.source);
+            if(found==ports_.objects.read().objects.end() || found->second.area!=transition.from ||
+                !ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to)) {pending=state_.transitions.erase(pending);continue;}
+            const auto *object=&found->second;
             if(object->rule.operation==34 || object->rule.operation==43) {
                 if(!transition.arrivalGeneration) {
                     const auto point=object->rule.operation==43?ports_.world.nativeDurielPortalPosition(transition.to):
@@ -400,7 +411,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(int(transition.to)==75 && int(transition.from)==40) edit.player.completedActs.at(size_t(player.persistent.difficulty)).at(1)=true;
             if(int(transition.to)==103 && int(transition.from)==102) edit.player.completedActs.at(size_t(player.persistent.difficulty)).at(2)=true;
             if(int(transition.to)==109 && int(transition.from)==103) edit.player.completedActs.at(size_t(player.persistent.difficulty)).at(3)=true;
-            if(int(transition.to)==109 && int(transition.from)==132) {
+            if(int(transition.to)==109 && int(transition.from)==132 && transition.kind==Kind::QuestObject) {
                 // Expansion has four inter-act completion words. Final Act V
                 // completion is Baal's original bit/progression, not a fifth word.
                 edit.player.quests.at(size_t(player.persistent.difficulty))[questIndex(QuestId::EveOfDestruction)].flags|=64;
@@ -413,6 +424,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
             edit.facts.emplace_back(ports_.quests.projection(player.player,edit.player,transition.to,false));
             edit.facts.emplace_back(TravelFact{player.player,player.actor,transition.from,transition.to,destination->generation,arrival,false});
+            if(int(transition.from)==132 && int(transition.to)==109 && transition.kind==Kind::QuestObject && !player.nativeBusy)
+                edit.facts.emplace_back(UiFact{7,UiFact::Kind::Cinematic});
             auto plan=ports_.transactions.prepare(std::move(edit));
             if(!plan || !ports_.transactions.commit(std::move(*plan.value))) {++pending;continue;}
         } else if (!ports_.events.publish(std::move(event))) { ++pending; continue; }
@@ -420,6 +433,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) {writePortalCollision(portal->second,false);state_.portals.erase(portal);} }
         if(transition.pd2SceneEntry) {state_.pd2SceneEntrants.insert(player.player);state_.pd2SceneEntryRooms.insert(free->room);}
         player.area = transition.to; player.position = arrival;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route = std::move(route);
+        if(int(transition.from)==132 && int(transition.to)==109 && transition.kind==Kind::QuestObject) player.nativeBusy=true;
         player.pathStep.reset();
         player.routeRunning = player.running; player.moving = !player.route.empty();
         player.movementTarget.reset();player.movementArrival.reset();

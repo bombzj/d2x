@@ -5,6 +5,7 @@
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/forge_rewards.hpp"
 #include <memory>
+#include <deque>
 #include <optional>
 #include <string>
 #include <array>
@@ -117,6 +118,9 @@ struct ActFourState {
     bool diabloBirthPending{};
 };
 struct ActFiveState {
+    bool anyaRead{};
+    struct FrozenAnyaReader {EntityId actor,object;uint64_t generation{};};
+    std::map<PlayerId,FrozenAnyaReader> frozenAnyaReaders;
     bool siegeBossActivated{};
     bool nihlathakActivated{};
     bool nihlathakSlain{};
@@ -128,6 +132,7 @@ struct ActFiveState {
     unsigned rescueRemaining{15};
     std::set<EntityId> rescueDeaths;
     std::set<EntityId> rescueFreed,rescueDoors;
+    std::map<EntityId,std::string> rescueCensus;
     bool rescueGroupsComplete{};
     uint8_t rescueLastStatus{};
     std::optional<PlayerId> rescuePlayer;
@@ -149,6 +154,8 @@ struct ActFiveState {
     Vec baalPosition;
     EntityId baalFxSource;
     bool baalFxStarted{};
+    struct FinalExit {RegionId area;uint64_t generation{};Vec position;};
+    std::deque<FinalExit> finalExits;
     std::optional<uint16_t> zooMonster;
 };
 }

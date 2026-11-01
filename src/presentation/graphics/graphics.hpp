@@ -11,6 +11,7 @@ struct SpriteLayer {
     Texture2D texture{};
     int x = 0, y = 0;
     bool softAdditive = false;
+    Texture2D indexedTexture{};
 };
 struct SpriteComponentBounds {
     Rectangle bounds{};

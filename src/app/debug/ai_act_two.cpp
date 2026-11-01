@@ -115,7 +115,8 @@ void DebugAi::Impl::configureActTwoQuest(Goal &goal,QuestId id) const {
         {{flags(QuestId::Summoner,1)}},{clue,summonerKill},false,90);
     auto comment=talk(QuestId::ArcaneSanctuary,"drognan",399,1);comment.clearFlags=2;
     const auto arcaneComment=node("journal-town-confirmation",comment,{{flags(QuestId::ArcaneSanctuary,1,false,2)}},{clue,summonerComment},false,100);
-    const auto canyon=node("canyon-arrival",portal(QuestId::ArcaneSanctuary,arcane,valley),
+    auto canyonPortal=portal(QuestId::ArcaneSanctuary,arcane,valley);canyonPortal.witness=journal.target;
+    const auto canyon=node("canyon-arrival",canyonPortal,
         {{in(valley)},{fact(Kind::TrueTombArea)},{in(lair)}},{clue,portalReading,staff,staffTalk});
     QuestStep tomb;tomb.action=QuestAction::Travel;tomb.stateQuest=QuestId::SevenTombs;tomb.trueTomb=true;
     const auto trueTomb=node("true-tomb-arrival",tomb,{{fact(Kind::TrueTombArea)}},{clue,canyon,staff,staffTalk});
@@ -125,6 +126,8 @@ void DebugAi::Impl::configureActTwoQuest(Goal &goal,QuestId id) const {
     auto entrance=portal(QuestId::SevenTombs,valley,lair);entrance.sourceArea.reset();entrance.preferWaypoint=false;
     entrance.target=Selector{2,object("Duriel's Lair",43),"opened tomb entrance"};
     entrance.witness=Selector{2,object("orifice",25),"Horadric orifice"};
+    // A2Q6_Timer_UpdateObjects: relative to the actually observed orifice.
+    entrance.witnessOffset=Vec{-13,3};entrance.resultWaitSeconds=30;
     const auto lairArrival=node("duriel-lair-arrival",entrance,{{in(lair)},{late}},{trueTomb,staffSubmitted});
     const auto duriel=node("duriel-death",hunt(QuestId::SevenTombs,"Act 2 - Duriel's Lair","duriel"),
         {{flags(QuestId::SevenTombs,0x2039,true)},{fact(Kind::Corpse)}},{lairArrival},true);

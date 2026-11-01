@@ -94,7 +94,7 @@ struct RemoteUiClients::Impl {
     std::optional<uint64_t> waiting;
     std::optional<OnlineIntentContext> waitingContext;
     std::chrono::steady_clock::time_point waitingUntil;
-    enum class EquipmentStatUnits { Display, Native };
+    enum class EquipmentStatUnits { Display, Native, NativeBase };
     using EquipmentStatKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,int,unsigned,bool,EquipmentStatUnits>;
     struct CachedEquipmentStat { EquipmentStatKey key; std::optional<int> value; };
     mutable std::map<std::pair<OnlineUnitKey,std::string>,CachedEquipmentStat> equipmentStats;

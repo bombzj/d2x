@@ -1,6 +1,8 @@
 #pragma once
 #include "core/id.hpp"
 #include <set>
+#include <map>
+#include <string>
 
 namespace d2x::server::quests {
 // Nodes are allocated while preparing a death. The accepted actor publication
@@ -9,5 +11,6 @@ struct PrisonerDeathPublication {
     EntityId unit;
     bool door{};
     std::set<EntityId> freed,deaths,doors;
+    std::map<EntityId,std::string> census;
 };
 }

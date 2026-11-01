@@ -1,6 +1,7 @@
 #pragma once
 #include "contracts/online_scene.hpp"
 #include "action_state.hpp"
+#include "decision_cadence.hpp"
 #include "navigation_search.hpp"
 #include <chrono>
 #include <nlohmann/json_fwd.hpp>
@@ -11,7 +12,6 @@
 namespace d2x {
 struct Grid;
 bool debugUnknownFrontier(const Grid &,Vec endpoint);
-inline constexpr auto debugDecisionInterval=std::chrono::milliseconds(200);
 class RemoteTown;
 class RemoteControl;
 class RemoteCombat;
@@ -26,15 +26,17 @@ class DebugAutoWalk {
     std::optional<uint16_t> destination_;
     std::optional<OnlinePoint> point_,segment_,previous_,client_,server_,edgeStart_,edgeEnd_;
     std::optional<OnlinePoint> lastFrom_,lastRequest_,lastTarget_;
-    std::optional<OnlinePoint> observedBacktrack_;
-    unsigned observedBacktracks_{};
+    bool closeApproach_{},forceApproach_{};
+    unsigned approachRetries_{};
+    Clock::time_point clickedAt_{};
     uint64_t interactionRevision_{},interactionDiscontinuity_{};
     std::optional<OnlinePoint> interactionFrom_;
     std::optional<uint16_t> exitLevel_;
     std::optional<OnlineUnitKey> unit_;
     std::set<std::pair<int,int>> visited_;
-    Clock::time_point deadline_,progressAt_,next_,submittedAt_;
+    Clock::time_point deadline_,progressAt_,submittedAt_;
     DebugExecutionClock executionClock_;
+    DebugDecisionCadence cadence_;
     unsigned moves_{},interactions_{},searches_{},decisions_{};
     bool run_=true,interact_{},landmark_{},clientMoving_{};
     DebugNavigationSearch search_;

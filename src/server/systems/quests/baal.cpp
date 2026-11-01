@@ -2,6 +2,7 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/objects/system.hpp"
 #include "server/systems/population/system.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/systems/travel/system.hpp"
@@ -40,6 +41,7 @@ DomainResult<> System::openWorldstoneChamber(EntityId source) {
     if(!unit || unit->rule.ai.kind!=MonsterAiKind::BaalToStairs) return {DomainStatus::InvalidActor,{}};
     const auto removed=ports_.monsters.remove(source);if(!removed) return removed;
     state_.actFive.throneDeparted=true;
+    queueStatus(QuestId::EveOfDestruction,3);
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::spawnBaalWave(RegionId region,Vec position,int mappedPreset,uint64_t tick) {
@@ -114,13 +116,14 @@ StepStatus System::baalStep(TickContext tick) {
             }
         } else world.baalFxStarted=true;
     }
-    for(const auto &[id,p]:ports_.players.all()) {
-        if(!p.entered || p.persistent.player.hp<=0) continue;
-        const auto &area=ports_.areas.at(p.area);const ActorContext actor{id,p.actor,p.area,area.generation,0,tick.tick};
-        if(int(p.area)==132 && !world.exitPortal && p.persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::EveOfDestruction)].flags&baalTyraelSpoken) {
-            const auto portal=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::BaalExit,0);
-            if(portal) {ports_.travel.commitSpecialPortal(*portal.value);world.exitPortal=true;}else blocked=true;
+    while(!world.finalExits.empty()) {
+        const auto &birth=world.finalExits.front();
+        if(const auto *area=ports_.areas.find(birth.area);area && area->generation==birth.generation) {
+            const auto result=ports_.objects.admit({565,birth.area,birth.position,{},{},1,tick.tick});
+            if(isDeferred(result.status)) {blocked=true;break;}
         }
+        ports_.world.retainControllerRoom(birth.area,birth.position,false);
+        world.finalExits.pop_front();
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;
 }

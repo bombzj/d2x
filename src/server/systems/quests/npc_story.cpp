@@ -276,7 +276,7 @@ DomainResult<std::optional<Vec>> System::npcSpawnPosition(const AreaNpc &npc,Reg
             if(candidate.rule.code==code && candidate.rule.questInitFunction==49 && ports_.monsters.find(candidate.id)) return allowed({});
     }
     if(int(region)==75 && code=="natalya" && state_.actThree.mephistoSlain) return allowed({});
-    if(int(region)==109 && code=="nihlathak" && state_.actFive.anyaThawed) return allowed({});
+    if(int(region)==109 && code=="nihlathak" && (state_.actFive.anyaRead || state_.actFive.anyaThawed)) return allowed({});
     if(int(region)==109 && code=="larzuk" && initialization==71) return freePosition(npc.spawnPosition,2,16);
     return allowed(npc.spawnPosition);
 }
@@ -551,7 +551,7 @@ StepStatus System::npcStoryStep(TickContext tick) {
             const auto *unit=ports_.monsters.find(npc.id);
             const bool remove=(npc.rule.code=="jerhyn" && npc.rule.questInitFunction==18 && story.palaceRequested) ||
                 (npc.rule.code=="hratli" && npc.rule.questInitFunction==49 && story.hratliDeparted && (!unit || !ports_.areas.active(region,unit->position))) ||
-                (npc.rule.code=="nihlathak" && state_.actFive.anyaThawed) || (npc.rule.code=="natalya" && state_.actThree.mephistoSlain);
+                (npc.rule.code=="nihlathak" && (state_.actFive.anyaRead || state_.actFive.anyaThawed)) || (npc.rule.code=="natalya" && state_.actThree.mephistoSlain);
             if(remove) {
                 if(npcInteracting(npc.id)) continue;
                 const auto result=ports_.monsters.retireQuestNpc(npc.id);

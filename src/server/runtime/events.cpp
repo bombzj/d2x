@@ -132,6 +132,7 @@ void EventOutbox::observe(const EventBatch &batch) noexcept {
             else if constexpr (std::is_same_v<T, OverlayFact>) {event.actor=value.actor;event.value=value.overlay;}
             else if constexpr (std::is_same_v<T, QuestStatusFact>) {event.value=int(value.quest);event.secondary=value.status;}
             else if constexpr (std::is_same_v<T, QuestEffectFact>) event.value=value.effect;
+            else if constexpr (std::is_same_v<T, UiFact>) {event.value=value.action;event.secondary=int(value.kind);}
             else if constexpr (std::is_same_v<T, MonsterClassHintFact>) {event.actor=value.actor;event.value=value.nativeClass;}
             else if constexpr (std::is_same_v<T, QuestAlertFact>) {event.actor=value.actor;event.value=value.type;}
             else if constexpr (std::is_same_v<T, StateFact>) { event.actor = value.actor; event.value = value.state; event.secondary = value.enabled; }

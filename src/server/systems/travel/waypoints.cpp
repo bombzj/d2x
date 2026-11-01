@@ -6,11 +6,15 @@
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/trade/system.hpp"
 #include "server/systems/social/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "gameplay/quest/sisters_to_slaughter.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "server/systems/quests/system.hpp"
+#include "server/systems/objects/system.hpp"
 #include "gameplay/areas/waypoint.hpp"
 #include "world/interaction_geometry.hpp"
+#include "world/navigation.hpp"
+#include "world/native_target_path.hpp"
 #include <algorithm>
 namespace d2x::server::travel {
 bool System::waypointBusy(PlayerId id) const {
@@ -94,8 +98,36 @@ DomainResult<> System::unlockWaypoints(const ActorContext &actor,std::optional<R
 DomainResult<> System::useSpecial(const ActorContext &actor,const Request &request,std::optional<int> remoteRange) {
     const auto *p=ports_.players.find(actor.player); const auto *area=ports_.areas.find(actor.area);
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !area || area->generation!=actor.areaGeneration) return {DomainStatus::InvalidActor,{}};
+    const auto enterPortal=[&](const Portal &portal,bool returning,Kind kind) -> DomainResult<> {
+        const auto at=returning?portal.townPosition:portal.fieldPosition;
+        const InteractionTarget access{request.source.id,at,at,portal.rule.width,portal.rule.height,float(portal.rule.range),true};
+        std::deque<Vec> route;
+        const bool remote=remoteRange && kind==Kind::Portal;
+        if(remote) {
+            const int x=int(at.x)-int(p->position.x),y=int(at.y)-int(p->position.y);
+            if(x*x+y*y>*remoteRange * *remoteRange) return {DomainStatus::InvalidRequest,{}};
+        } else if(!interactionClear(area->definition.collision,p->position,access)) {
+            // PlrMsg::sub_6FC828D0 UNIT_OBJECT retains the click and runs to
+            // interaction range, including portals represented by Travel.
+            if(nativeUnitDistance(p->position,2,at,portal.rule.width)>50) return {DomainStatus::InvalidRequest,{}};
+            const auto grid=ports_.spatial.navigationGrid(actor.area,actor.actor);
+            route=nativeTargetPath(grid,p->position,access,2);
+            if(route.empty() || !interactionClear(grid,route.back(),access)) return {DomainStatus::Unavailable,{}};
+        }
+        const auto approach=route.empty()?p->position:route.back();
+        Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,
+            request.source.id,approach,returning?portal.fieldPosition:portal.townPosition};next.kind=kind;
+        state_.transitions[actor.player]=next;
+        auto &player=ports_.players.players_.at(actor.player);
+        player.locomotionSequence=actor.sequence;player.route=std::move(route);player.routeRunning=player.running;
+        player.pathStep.reset();player.movementTarget.reset();player.movementArrival.reset();
+        if(!remote) {player.movementTarget=MotionTarget{request.source.id,2};player.movementArrival=access;}
+        player.routeDestination=at;player.routeObstacles=area->definition.collision.obstacleRevision;
+        if(player.route.empty()) player.moving=false;
+        return {DomainStatus::Applied,std::monostate{}};
+    };
     if(request.kind==Kind::Npc) {
-        const auto *npc=ports_.npc.find(actor,request.source.id,true);
+        const auto *npc=ports_.npc.travelSource(actor,request.source.id);
         if(!npc || !request.destination) return {DomainStatus::InvalidRequest,{}};
         const bool east=npc->rule.code=="warriv1" && int(actor.area)==1 && int(*request.destination)==40;
         const bool west=npc->rule.code=="warriv2" && int(actor.area)==40 && int(*request.destination)==1;
@@ -106,7 +138,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
             (sail && book.at(questIndex(QuestId::SevenTombs)).stage<uint32_t(TombsStage::PassageGranted)) || (returnSail && !p->persistent.player.completedActs.at(size_t(p->persistent.difficulty)).at(1))) return {DomainStatus::InvalidRequest,{}};
         const auto prepared=ports_.world.request(*request.destination);if(!prepared) return {prepared.status,{}};
         Transition next{actor.area,*request.destination,*prepared.value,actor.areaGeneration,actor.sequence,npc->id,p->position,{}};next.kind=Kind::Npc;
-        next.npcConversation=ports_.npc.conversation(actor.player)->revision;
+        if(const auto *conversation=ports_.npc.conversation(actor.player)) next.npcConversation=conversation->revision;
         state_.transitions[actor.player]=next;auto &player=ports_.players.players_.at(actor.player);player.route.clear();player.moving=false;
         return {DomainStatus::Applied,std::monostate{}};
     }
@@ -124,8 +156,9 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         return {DomainStatus::Applied,std::monostate{}};
     }
     if(request.kind==Kind::QuestObject) {
-        const auto object=std::find_if(area->definition.objects.begin(),area->definition.objects.end(),[&](const auto &o){return o.id==request.source.id;});
-        if(object==area->definition.objects.end()) return {DomainStatus::Stale,{}};
+        const auto found=ports_.objects.read().objects.find(request.source.id);
+        if(found==ports_.objects.read().objects.end() || found->second.area!=actor.area) return {DomainStatus::Stale,{}};
+        const auto *object=&found->second;
         int level=0;
         if(area->definition.act==2 && object->rule.operation==44 && int(actor.area)==92) level=93;
         if(area->definition.act==2 && object->rule.operation==46 && int(actor.area)==102) level=103;
@@ -159,11 +192,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         const auto target=returning?portal.field:portal.town;
         if(!ports_.quests.allowsTravel(p->persistent.player,actor.area,target)) return {DomainStatus::Conflict,{}};
         if(int(portal.town)==39 && p->persistent.player.cowKingKilled.at(size_t(p->persistent.difficulty))) return {DomainStatus::Unavailable,{}};
-        const auto at=returning?portal.townPosition:portal.fieldPosition;
-        const InteractionTarget access{request.source.id,at,at,portal.rule.width,portal.rule.height,float(portal.rule.range),true};
-        if(!interactionClear(area->definition.collision,p->position,access)) return {DomainStatus::InvalidRequest,{}};
-        Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,request.source.id,p->position,returning?portal.fieldPosition:portal.townPosition};next.kind=Kind::SpecialPortal;
-        state_.transitions[actor.player]=next;auto &player=ports_.players.players_.at(actor.player);player.locomotionSequence=actor.sequence;player.route.clear();player.moving=false;return {DomainStatus::Applied,std::monostate{}};
+        return enterPortal(portal,returning,Kind::SpecialPortal);
     }
     for(const auto &[owner,portal]:state_.portals) {
         const bool returning=portal.town==actor.area && portal.townId==request.source.id;
@@ -173,13 +202,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
             const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{SoundFact{actor.actor,0,actor.area,0x13}}});
             return sent?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{sent.status,{}};
         }
-        const auto at=returning?portal.townPosition:portal.fieldPosition;
-        const int x=int(at.x)-int(p->position.x),y=int(at.y)-int(p->position.y);
-        const InteractionTarget access{request.source.id,at,at,portal.rule.width,portal.rule.height,float(portal.rule.range),true};
-        if(remoteRange ? x*x+y*y>*remoteRange * *remoteRange : !interactionClear(area->definition.collision,p->position,access)) return {DomainStatus::InvalidRequest,{}};
-        Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,request.source.id,p->position,returning?portal.fieldPosition:portal.townPosition}; next.kind=Kind::Portal;
-        state_.transitions[actor.player]=next; auto &mutablePlayer=ports_.players.players_.at(actor.player); mutablePlayer.route.clear(); mutablePlayer.moving=false;
-        return {DomainStatus::Applied,std::monostate{}};
+        return enterPortal(portal,returning,Kind::Portal);
     }
     return {DomainStatus::Stale,{}};
 }

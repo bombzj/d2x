@@ -703,6 +703,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             return reject("Swap requires the cursor item and a fitting backpack destination");
         break;
     case OnlineItemAction::Use:
+        command.recoveryPotion = (baseNumber(wire, "pSpell") == 3 && (isType(wire, "hpot") || isType(wire, "mpot"))) ||
+            (baseNumber(wire, "pSpell") == 5 && isType(wire, "rpot"));
         command.questClue=!pd2Items && !command.mercenary && wire.code=="bkd";
         if (!owned(wire) || view_.cursor || !(accessible(wire) || wire.mode == 2) ||
             (!command.questClue && !baseNumber(wire, "useable")))

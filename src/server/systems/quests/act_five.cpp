@@ -14,7 +14,17 @@
 #include "gameplay/monsters/movement_math.hpp"
 #include "gameplay/units/distance.hpp"
 #include <algorithm>
+#include <cmath>
+#include <sstream>
 namespace d2x::server::quests {
+namespace {
+// A5Q2 uses UNITS_GetDistanceToOtherUnit (#10397), not the different
+// D2Common_10399 object-interaction distance. Restore native integer feet.
+int prisonerDistance(Vec first,int firstSize,Vec second,int secondSize) {
+    return unitDistanceWithSizes(int(std::floor(first.x+.5f)),int(std::floor(first.y+.5f)),firstSize,
+        int(std::floor(second.x+.5f)),int(std::floor(second.y+.5f)),secondSize);
+}
+}
 uint64_t System::prisonerPortalDue(EntityId id) const {
     for(const auto &portal:state_.actFive.rescuePortals) if(portal.object==id) return portal.due;
     return 0;
@@ -112,8 +122,8 @@ std::optional<Dialogue> System::actFiveDialogue(const ActorContext &actor,const 
     if(available(QuestId::RescueOnMountArreat) && npc.code=="qual-kehk" && (!rescue.stage || rescue.stage==3)) return speech(npc,QuestId::RescueOnMountArreat,rescue.stage==3?"Successful":"Init");
     const auto &ice=book[questIndex(QuestId::PrisonOfIce)];
     if(available(QuestId::PrisonOfIce) && npc.code=="malah") {
-        if(!ice.stage) return speech(npc,QuestId::PrisonOfIce,"Init");
-        if(ice.stage>=3 && ice.stage<5 && !detail::actTwoCarried(*p,items.defrostPotion,ports_.settings.difficulty)) return speech(npc,QuestId::PrisonOfIce,"FoundAnya");
+        if(!ice.stage && !state_.actFive.anyaRead) return speech(npc,QuestId::PrisonOfIce,"Init");
+        if(!state_.actFive.anyaThawed && (state_.actFive.anyaRead || ice.stage>=3) && ice.stage<5 && !detail::actTwoCarried(*p,items.defrostPotion,ports_.settings.difficulty)) return speech(npc,QuestId::PrisonOfIce,"FoundAnya");
         if(ice.stage>=5 && !(ice.flags&iceScrollUsed) && !detail::actTwoCarried(*p,items.resistanceScroll,ports_.settings.difficulty)) return speech(npc,QuestId::PrisonOfIce,"Successful");
     }
     if(npc.code=="drehya" && ice.stage>=5 && !(ice.flags&iceRareGranted)) return speech(npc,QuestId::PrisonOfIce,"Successful");
@@ -129,7 +139,6 @@ std::optional<Dialogue> System::actFiveDialogue(const ActorContext &actor,const 
 DomainResult<> System::acknowledgeActFive(const ActorContext &actor,const Request &request,const NpcRule &npc) {
     const auto *p=ports_.players.find(actor.player);if(!p) return {DomainStatus::InvalidActor,{}};
     auto record=p->persistent.player;auto &q=record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(request.quest));
-    std::optional<travel::SpecialPortalPlan> portal;
     switch(request.quest) {
     case QuestId::SiegeOnHarrogath: q.stage=q.stage==3?4:1;break;
     case QuestId::RescueOnMountArreat:
@@ -138,7 +147,7 @@ DomainResult<> System::acknowledgeActFive(const ActorContext &actor,const Reques
     case QuestId::PrisonOfIce:
         if(npc.code=="drehya") return prepareReward(actor,*request.npc,RewardKind::AnyaRare,true);
         if(q.stage>=5) return prepareReward(actor,*request.npc,RewardKind::ResistanceScroll,true);
-        if(q.stage>=3) return prepareReward(actor,*request.npc,RewardKind::DefrostPotion,true);
+        if(state_.actFive.anyaRead || q.stage>=3) return prepareReward(actor,*request.npc,RewardKind::DefrostPotion,true);
         q.stage=1;break;
     case QuestId::BetrayalOfHarrogath:
         if(q.stage==3) q.stage=4;
@@ -150,20 +159,11 @@ DomainResult<> System::acknowledgeActFive(const ActorContext &actor,const Reques
         if(q.stage==4) q.flags|=ancientNpcAcknowledgement(npc.code);else q.stage=1;break;
     case QuestId::EveOfDestruction:
         if(q.stage!=5) return {DomainStatus::Stale,{}};
-        if(npc.code=="tyrael3" && !state_.actFive.exitPortal) {
-            const auto prepared=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::BaalExit,0,p->position+Vec{5,0});
-            if(!prepared) return {prepared.status,{}};
-            portal=*prepared.value;
-        }
         q.flags|=baalNpcAcknowledgement(npc.code);break;
     default: return {DomainStatus::InvalidRequest,{}};
     }
     const auto result=commit(actor,std::move(record));
     if(result && request.quest==QuestId::BetrayalOfHarrogath && !state_.actFive.anyaPortal) state_.npcStory.anyaPortalPending=true;
-    if(result && portal) {
-        ports_.travel.commitSpecialPortal(std::move(*portal));
-        if(request.quest==QuestId::EveOfDestruction) state_.actFive.exitPortal=true;
-    }
     return result;
 }
 DomainResult<> System::operateActFive(const ActorContext &actor,EntityId source,int,int operation,Vec position) {
@@ -176,11 +176,11 @@ DomainResult<> System::operateActFive(const ActorContext &actor,EntityId source,
         if(detail::actTwoCarried(*p,p->rules.character->laterQuests.defrostPotion,ports_.settings.difficulty)) return prepareReward(actor,source,RewardKind::ThawAnya,false,position);
         const auto message=ports_.areas.at(actor.area).definition.questObjectMessages.find(operation);
         if(message==ports_.areas.at(actor.area).definition.questObjectMessages.end()) return {DomainStatus::Unavailable,{}};
-        q.stage=std::max(q.stage,3u);
-        transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,std::move(record)};
-        edit.facts.emplace_back(fact(actor.player,edit.player,actor.area));edit.facts.emplace_back(NpcMessagesFact{source,{{0,message->second}},2});
-        const auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
-        return ports_.transactions.commit(*plan.value);
+        const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
+            {NpcMessagesFact{source,{{0,message->second}},2}}});
+        if(sent) state_.actFive.frozenAnyaReaders.insert_or_assign(actor.player,
+            ActFiveState::FrozenAnyaReader{actor.actor,source,actor.areaGeneration});
+        return sent?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{sent.status,{}};
     }
     if(operation==65 && int(actor.area)==120) {
         auto &world=state_.actFive;
@@ -224,19 +224,25 @@ std::optional<PrisonerDeathPublication> System::preparePrisonerDeath(const monst
     const auto &area=ports_.areas.at(candidate.area);const auto *room=area.definition.activation.room(candidate.position);
     if(!room) return result;
     const auto index=size_t(room-area.definition.activation.rooms().data());
+    std::ostringstream census;
+    census<<"door="<<candidate.id.value<<" pos="<<candidate.position.x<<','<<candidate.position.y<<" active-prisoners=";
+    for(const auto &[id,unit]:ports_.monsters.read().actors) if(unit.area==candidate.area && unit.identity.monster=="act5pow")
+        census<<id.value<<'@'<<unit.position.x<<','<<unit.position.y<<"/mode"<<unsigned(unit.nativeMode)<<"/alive"<<unit.alive()<<"/distance"<<prisonerDistance(unit.position,unit.rule.size,candidate.position,candidate.rule.size)<<';';
     const auto rank=[&](EntityId id) {
         const auto it=std::find(order.begin(),order.end(),id);
         return std::pair{it==order.end(),it==order.end()?id.value:uint64_t(it-order.begin())};
     };
     for(const auto near:area.definition.roomNear.at(index)) for(const auto id:ports_.areas.roomUnitOrder(near)) {
+        census<<" room("<<near.x<<','<<near.y<<")="<<id.value;
         const auto *unit=ports_.monsters.find(id);if(!unit) continue;
         // Earlier publications are inputs to this door's callback; units later
         // in the native chain still have their live state at this point.
         if(const auto pending=staged.find(id);pending!=staged.end() && rank(id)<rank(candidate.id)) unit=&pending->second;
-        if(!unit->alive() || unit->identity.monster!="act5pow" || unit->identity.origin==SpawnOrigin::Debug) continue;
+        if(unit->nativeMode==0 || unit->nativeMode==12 || unit->identity.monster!="act5pow" || unit->identity.origin==SpawnOrigin::Debug) continue;
         const auto point=unit->position+ports_.areas.at(unit->area).definition.origin-area.definition.origin;
-        if(nativeUnitDistance(point,unit->rule.size,candidate.position,candidate.rule.size)<15) result.freed.insert(id);
+        if(prisonerDistance(point,unit->rule.size,candidate.position,candidate.rule.size)<15) result.freed.insert(id);
     }
+    result.census.emplace(candidate.id,census.str());
     return result;
 }
 void System::publishPrisonerDeath(PrisonerDeathPublication &plan) noexcept {
@@ -244,6 +250,7 @@ void System::publishPrisonerDeath(PrisonerDeathPublication &plan) noexcept {
     if(plan.door) {
         if(world.rescueDoors.contains(plan.unit)) return;
         world.rescueDoors.merge(plan.doors);world.rescueFreed.merge(plan.freed);
+        world.rescueCensus.merge(plan.census);
     } else world.rescueDeaths.merge(plan.deaths);
     updatePrisonerCounters();
 }
@@ -296,7 +303,7 @@ DomainResult<bool> System::activatePrisoner(EntityId id,PlayerId playerId,uint64
         if(!other || other->identity.monster!="prisondoor" || other->nativeMode!=12) continue;
         doorDead=true;
         const auto at=other->position+ports_.areas.at(other->area).definition.origin-area.definition.origin;
-        if(nativeUnitDistance(unit->position,unit->rule.size,at,other->rule.size)<15) {door=other;break;}
+        if(prisonerDistance(unit->position,unit->rule.size,at,other->rule.size)<15) {door=other;break;}
     }
     // IsPrisonDoorDead sees any DD door; UpdateQuestState separately requires
     // one within 15 and keeps the last matching adjacent room's first door.
@@ -347,6 +354,12 @@ StepStatus System::actFiveStep(TickContext tick) {
         state_.actFive.anyaCompletion.reset();
     }
     bool blocked=false;auto &world=state_.actFive;
+    std::erase_if(world.frozenAnyaReaders,[&](const auto &entry) {
+        const auto *player=ports_.players.find(entry.first);
+        return world.anyaThawed || !player || !player->entered || player->actor!=entry.second.actor ||
+            int(player->area)!=114 || player->persistent.player.hp<=0 ||
+            ports_.areas.at(player->area).generation!=entry.second.generation;
+    });
     updatePrisonerCounters();resolvePrisoners({});
     for(const auto &[monsterId,m]:ports_.monsters.read().actors) {
         (void)monsterId;if(m.alive() || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;

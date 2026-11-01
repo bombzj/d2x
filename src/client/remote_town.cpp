@@ -17,6 +17,12 @@ std::optional<Vec> RemoteTown::inputOrigin(const OnlineView &v) const {
     if(gameGeneration_!=v.gameGeneration || areaGeneration_!=v.world.areaGeneration || !displayPlayerPosition_) return {};
     return Vec{float(displayPlayerPosition_->x),float(displayPlayerPosition_->y)};
 }
+int RemoteTown::monsterSizeX(uint16_t identity) const {
+    const auto row=monsterRows_.find(identity);
+    if(row==monsterRows_.end()) return 0;
+    const auto shape=monsterSizeRows_.find(monsters_.value(row->second,"MonStatsEx"));
+    return shape==monsterSizeRows_.end()?0:monsterSizes_.number(shape->second,"SizeX").value_or(0);
+}
 Grid RemoteTown::navigationGrid(const OnlineView &online,std::optional<OnlineUnitKey> ignored) const {
     Grid result;
     if(!map_ || !view_.origin) return result;
@@ -25,7 +31,7 @@ Grid RemoteTown::navigationGrid(const OnlineView &online,std::optional<OnlineUni
     auto presence=std::make_shared<std::map<std::pair<int,int>,uint16_t>>();
     if(online.protocolProfile=="lod113c") for(const auto &[key,unit]:online.world.units) {
         if(key==ignored || !unit.position || (key.type==0 && key.id==online.load.playerUnitId)) continue;
-        int size=0;uint16_t mask=0;
+        int size=0;uint16_t mask=0;bool nonblockingPresence=false;
         if(key.type==0 && !online.world.corpseOwners.contains(key.id) && unit.mode!=0 && unit.mode!=17) {
             size=playerMovement.size;mask=0x80;
         } else if(key.type==1 && unit.classId && !onlineMonsterCorpse(unit)) {
@@ -35,12 +41,16 @@ Grid RemoteTown::navigationGrid(const OnlineView &online,std::optional<OnlineUni
             // The original idle S1 of these AIs is non-solid. Initial monster
             // assignments also carry that mode, without a 0x0E nativeMode tag.
             if(unit.mode==8 && !unit.actionSkill && (ai=="Vulture" || ai=="SandMaggot" || ai=="FrogDemon")) continue;
-            const auto shape=monsterSizeRows_.find(monsters_.value(row->second,"MonStatsEx"));
-            if(shape==monsterSizeRows_.end()) continue;
-            size=monsterSizes_.number(shape->second,"SizeX").value_or(0);mask=0x100;
+            size=monsterSizeX(*unit.classId);mask=0x100;
+            // D2Common_11281: town monsters without INTERACT use pet
+            // presence. Match the normal client's navigationCollision;
+            // their monster contact mask must not become PLAYER_PATH presence.
+            nonblockingPresence=(monsters_.number(row->second,"npc").value_or(0) ||
+                monsters_.number(row->second,"inTown").value_or(0)) &&
+                !monsters_.number(row->second,"interact").value_or(0);
         }
         const bool hireling=key.type==1 && online.world.hireling && online.world.hireling->id==key.id;
-        const auto pattern=nativeUnitCollisionPattern(size,hireling);
+        const auto pattern=nativeUnitCollisionPattern(size,hireling || nonblockingPresence);
         for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx) {
             const auto bits=nativeCollisionFootprint(pattern,dx,dy,mask);
             if(bits) (*presence)[{int(unit.position->x)-origin.x+dx,int(unit.position->y)-origin.y+dy}]|=bits;
@@ -810,6 +820,17 @@ bool RemoteTown::permitsInteraction(const OnlineView &v, OnlineUnitKey target) c
         v.stage == OnlineStage::ProtocolReady &&
         std::any_of(view_.mapTargets.begin(), view_.mapTargets.end(),
             [&](const auto &entry) { return entry.unit == target; });
+}
+std::optional<int> RemoteTown::projectedObjectMode(const OnlineView &v,OnlineUnitKey target) const {
+    const auto unit=v.world.units.find(target);
+    if(target.type!=2 || unit==v.world.units.end() || !unit->second.classId || !unit->second.mode) return {};
+    const auto row=objectRows_.find(*unit->second.classId);if(row==objectRows_.end()) return {};
+    const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+    const auto received=unit->second.actionReceivedMilliseconds;
+    const float age=received && now>=received?float(now-received)/1000.f:0.f;
+    // Shared silent ENDANIM projection, never a write to the server replica.
+    return objectDisplayMode(objects_,row->second,*unit->second.mode,age);
 }
 bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std::optional<Vec> displayOrigin, bool approaching) const {
     if (!permitsInteraction(v, target) || !v.world.playerPosition) return false;

@@ -67,6 +67,7 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
         const int64_t scale=int64_t{1}<<statRow->valueShift;
         const auto amount=[&](const ResolvedItemStat &value)->int64_t {
             if(units==EquipmentStatUnits::Display) return value.value;
+            if(units==EquipmentStatUnits::NativeBase) return int64_t(value.rawValue)*scale;
             return value.nativeValue?int64_t(*value.nativeValue):int64_t(value.value)*scale;
         };
         std::map<std::string, std::set<int32_t>, std::less<>> equippedSets;
@@ -85,7 +86,7 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
             const auto instance = completeItem(equipped, equipment->second, SocketLocation{{}, 0});
             if (!instance) return {};
             for (const auto &bonus : resolveItemStats(data, *instance, level))
-                if (bonus.effect == name && !bonus.layer) total += amount(bonus);
+                if ((units==EquipmentStatUnits::NativeBase?bonus.name:bonus.effect) == name && !bonus.layer) total += amount(bonus);
             if (equipped.mode == 1 && instance->identified && instance->quality == ItemQuality::Set) {
                 const auto record = std::find_if(data.setItems.begin(), data.setItems.end(),
                     [&](const auto &entry) { return int32_t(entry.row) == instance->specialRow; });
@@ -116,7 +117,7 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
                 bool assigned = false;
                 for (const auto &bonus : piece.savedSetStats[layer]) {
                     if (bonus.id != *statRow->id || bonus.parameter) continue;
-                    total += units==EquipmentStatUnits::Native?int64_t(bonus.value)*scale:bonus.value;
+                    total += units!=EquipmentStatUnits::Display?int64_t(bonus.value)*scale:bonus.value;
                     assigned = true;
                 }
                 if (!assigned && std::any_of(record->setBonuses.begin(), record->setBonuses.end(), [&](const auto &bonus) {
@@ -131,7 +132,7 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
                 const auto &property = bonus.property;
                 if (property.directRoll && property.minimum != property.maximum) return {};
                 for (const auto &value : resolvePropertyStats(data, property, property.minimum.value_or(0), level, int(piece.level)))
-                    if (value.effect == name && !value.layer) total += amount(value);
+                    if ((units==EquipmentStatUnits::NativeBase?value.name:value.effect) == name && !value.layer) total += amount(value);
             }
         }
         if (total<INT32_MIN || total>INT32_MAX) return {};
@@ -222,7 +223,7 @@ std::optional<int> RemoteUiClients::Impl::knownSelfEquipmentStat(std::string_vie
             for (const auto &[state,list]:states->second.states) {
                 (void)state;
                 for (const auto &entry:list.stats) if (entry.id==*id && !entry.parameter)
-                    value+=units==EquipmentStatUnits::Native?entry.value:entry.value/(int64_t{1}<<shift);
+                    value+=units!=EquipmentStatUnits::Display?entry.value:entry.value/(int64_t{1}<<shift);
             }
             if (value<INT32_MIN || value>INT32_MAX) return {};
             return int(value);
@@ -337,7 +338,10 @@ void RemoteUiClients::Impl::projectObservedAttributes(CharacterProjectionInput &
         auto observed=std::make_shared<StatList>();observed->extended=false;
         for(const auto id:dependencies) {
             const auto &rule=rules.definitions.at(id);
-            const auto value=knownSelfEquipmentStat(rule.name,level,EquipmentStatUnits::Native);
+            // Feed the original stat identities and coefficients into the
+            // native evaluator. Flattening item_mana_perlevel into maxmana
+            // here applies percentage operations to an already derived bonus.
+            const auto value=knownSelfEquipmentStat(rule.name,level,EquipmentStatUnits::NativeBase);
             if(!value) return;
             if(*value) observed->base.emplace(StatKey{id,0},*value);
         }

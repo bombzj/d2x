@@ -411,7 +411,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
     }
     const auto &containers = view_.inventoryView().containers;
     const auto *belt = inventory.container(containers.belt);
-    int rows = belt && (ui.open || ui.beltExpanded || ui.beltHovered) ? belt->rows : 1;
+    const int rows = belt ? ui.visibleBeltRows(belt->rows) : 1;
     auto grids = inventoryGrids(inventory, ui);
     const ContainerGrid *hitGrid = nullptr;
     std::optional<Cell> cell;

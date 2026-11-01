@@ -231,6 +231,14 @@ void RealmSession::Impl::handle_game(Packet packet) {
         fail(OnlineErrorKind::Protocol, error.what(), packet.id);
         return;
     }
+    // Non-final movies are currently skipped. Native D2Client 1.13c
+    // RVA 89E38 still sends 48 when its movie returns (including a skip).
+    // Without that receipt D2Game keeps PlayerData::bBusy set after an act
+    // change: movement works, but item pickup and NPC services silently fail.
+    // Program 7 has a real victory UI and must retain its own completion path.
+    if (compatibility.profile == ClientProfile::Lod113c && packet.id == 0x61 &&
+        view.world.cinematic && *view.world.cinematic >= 1 && *view.world.cinematic <= 6)
+        sent(gs, {0x48});
     send_game_options_pd2();
     if (compatibility.profile == ClientProfile::Pd2CnNormal20261020 && packet.id == 0x9C &&
         !packet.body.empty() && packet.body[0] >= 0x19) {

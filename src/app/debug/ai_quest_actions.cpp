@@ -64,7 +64,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
     const auto stateQuest=step.stateQuest.value_or(goal.questId);const auto slot=questDefinition(stateQuest).nativeSlot;
     const auto flags=questFlags(c,stateQuest);
     bool done=flags && step.flags && (*flags&step.flags)==step.flags && !(*flags&step.clearFlags);
-    if(step.witness) if(const auto witness=find(c,*step.witness,true);witness && witness->mode && *witness->mode!=0) done=true;
+    if(step.witness && !step.flags) if(const auto witness=find(c,*step.witness,true);witness && witness->mode && *witness->mode!=0) done=true;
     if(step.produced=="bkd") done=owned(c,"bkd") && !owned(c,"bks");
     else if(!step.produced.empty() && step.produced!="rin")
         done=owned(c,step.produced) && (step.item.empty() || !owned(c,step.item));
@@ -73,6 +73,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         world.quests.revision>questRun.pending->beforeRevision &&
         world.quests.statuses[slot] && *world.quests.statuses[slot]>0) done=true;
     if(done) {
+        if(questRun.rewardTracked && (step.rareReward || !step.rewardCodes.empty())) return questReceiveRewards(c,step);
         if((step.skillPointReward || goal.questId==QuestId::DenOfEvil) && step.flags==1 && questRun.skillPointsBefore) {
             const auto points=world.playerAttributes.find(5);
             if(points==world.playerAttributes.end() || uint64_t(points->second)<uint64_t(*questRun.skillPointsBefore)+std::max(1u,step.skillPointReward)) {
@@ -108,6 +109,12 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
             wait("quest-reward","Quest granted; waiting for the actual newly created reward ring");checkQuestPending(c);return false;
         }
         return true;
+    }
+    if(questRun.worldWait) {
+        if(find(c,*step.target)) questRun.worldWait.reset();
+        else {
+            waitForWorldResult(c,step,"Waiting for the encounter's actual NPC assignment; retaining this position");return false;
+        }
     }
     if(questRun.pending) {
         if(questRun.pending->action==QuestPending::Action::Introduction) {
@@ -149,6 +156,9 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
     }
     const auto npc=find(c,*step.target);
     if(!npc) {
+        if(step.resultWaitSeconds) {
+            waitForWorldResult(c,step,"Waiting for the encounter's actual NPC assignment; retaining this position");return false;
+        }
         if(approachKnown(c,*step.target)) return false;
         if(step.optional) {note("optional-quest-npc-not-exposed",step.target->name);return true;}
         explore(c,"quest NPC "+step.target->name);return false;
@@ -164,6 +174,10 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
     // listening input, never permission to send an absent story message.
     for(const auto topic:step.topics) for(const auto &message:conversation.messages) {
         if(message.stringId!=topic || conversation.acknowledged.contains(topic)) continue;
+        if(step.rareReward || !step.rewardCodes.empty()) {
+            questRun.rewardBefore.clear();for(const auto &[id,item]:world.items) {(void)item;questRun.rewardBefore.insert(id);}
+            questRun.rewardTracked=true;
+        }
         if(step.produced=="rin") {
             questRun.rewardBefore.clear();for(const auto &[id,item]:world.items) if(item.code=="rin") questRun.rewardBefore.insert(id);
             questRun.rewardTracked=true;
@@ -238,8 +252,11 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
             note("quest-open-object-private-query");
         }
     }
-    if(step.refreshFlags && questRun.pending && !questRun.pending->statusRequested) {
+    if(step.refreshFlags && questRun.pending && !questRun.pending->statusRequested &&
+        (step.topics.empty() || questRun.pending->refreshIssued)) {
+        const auto before=world.quests.revision;
         if(c.session.request_quests(c.session.read().gameGeneration)) {
+            if(step.status) questRun.pending->beforeRevision=before;
             questRun.pending->statusRequested=true;questRun.pending->deadline=Clock::now()+std::chrono::seconds(20);
             note("quest-status-requested","Private object eligibility, without replaying its operation");
         }
@@ -256,11 +273,11 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
         const auto unit=world.units.find({2,world.npcConversation->source});
         if(unit!=world.units.end() && unit->second.classId==step.target->identity) for(const auto &message:world.npcConversation->messages)
             if(std::find(step.topics.begin(),step.topics.end(),message.stringId)!=step.topics.end() && !world.npcConversation->acknowledged.contains(message.stringId)) {
-                if(c.session.acknowledge_npc_message(message.stringId) && step.publishesTombSymbol) {
+                if(c.session.acknowledge_npc_message(message.stringId)) {
                     QuestPending p;p.action=QuestPending::Action::Object;p.unit=unit->first;
                     p.assignment=unit->second.assignmentRevision;p.beforeRevision=questRun.clueBefore;p.refreshIssued=true;
                     p.deadline=Clock::now()+std::chrono::seconds(30);questRun.pending=p;
-                    note("quest-journal-read-submitted",std::to_string(message.stringId));
+                    note(step.publishesTombSymbol?"quest-journal-read-submitted":"quest-object-reading-submitted",std::to_string(message.stringId));
                 }
                 return false;
             }
@@ -280,11 +297,17 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
         *world.quests.staffTombOffset<7 && flags && (*flags&1)) {
         tombSymbol=world.quests.staffTombOffset;note("quest-tomb-symbol-observed",std::to_string(*tombSymbol));return true;
     }
+    if(step.status && questRun.pending && questRun.pending->refreshIssued && questRun.pending->statusRequested &&
+        world.quests.revision>questRun.pending->beforeRevision &&
+        world.quests.statuses[questDefinition(step.stateQuest.value_or(goals[cursor].questId)).nativeSlot]==step.status) return true;
     if(!step.publishesTombSymbol && step.flags && flags && (*flags&step.flags)==step.flags) return true;
     if(step.witness && find(c,*step.witness)) return true;
     if(step.optional && questRun.pending && world.quests.statuses[goals[cursor].questSlot] &&
         *world.quests.statuses[goals[cursor].questSlot]>0) return true;
     if(questRun.pending) {
+        if(!step.publishesTombSymbol && step.witness && questRun.pending->refreshIssued) {
+            wait("quest-object-callback","Waiting for the acknowledged reading's actual encounter witness");checkQuestPending(c);return false;
+        }
         const auto unit=questRun.pending->unit?world.units.find(*questRun.pending->unit):world.units.end();
         if(!step.publishesTombSymbol && !step.flags && unit!=world.units.end() && unit->second.assignmentRevision==questRun.pending->assignment && unit->second.mode && *unit->second.mode!=0) {
             note("quest-object-mode-observed",std::to_string(unit->first.id));questRun.pending.reset();
@@ -316,50 +339,66 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
     return false;
 }
 bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
-    if(c.town.read().area==step.area) return true;
+    if(step.cinematic && c.session.read().world.cinematic==step.cinematic) return true;
+    if(c.town.read().area==step.area) {
+        if(!step.cinematic) return true;
+        waitForWorldResult(c,step,"Destination observed; waiting for the original cinematic notification");return false;
+    }
     if(travelDestination && (travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit))) {
         travel(c,*travelDestination);return false;
     }
-    if(!questRun.pending && step.preferWaypoint && step.area && c.session.read().world.waypointHistory &&
-        std::any_of(c.town.read().waypoints.begin(),c.town.read().waypoints.end(),[&](const auto &entry){return entry.level==step.area && entry.unlocked;}))
+    if(!questRun.pending && step.preferWaypoint && step.area && knownWaypointAreas.contains(*step.area))
         return travel(c,*step.area);
-    if(questRun.pending && step.witness && questRun.pending->action==QuestPending::Action::Object) {
-        const auto entrance=step.target?find(c,*step.target,true):std::nullopt;
-        if(entrance && c.town.permitsInteraction(c.session.read(),entrance->key)) {questRun.pending.reset();cancelWalk(c);}
-        else {
-            wait("quest-entrance-opening","Waiting at the observed orifice for the real selectable tomb entrance");
-            checkQuestPending(c);return false;
-        }
-    }
     if(questRun.pending) {
         const auto &pending=*questRun.pending;
         if(pending.action==QuestPending::Action::Object && pending.unit) {
             const auto unit=c.session.read().world.units.find(*pending.unit);
             if(unit!=c.session.read().world.units.end() && unit->second.assignmentRevision==pending.assignment &&
-                unit->second.mode && *unit->second.mode!=0 &&
+                c.town.projectedObjectMode(c.session.read(),*pending.unit)==2 &&
                 std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &target) {
-                    return target.unit==*pending.unit && target.interaction==OnlineMapInteraction::Portal;
+                    return target.unit==*pending.unit && (target.interaction==OnlineMapInteraction::Portal ||
+                        (step.target && target.interaction==OnlineMapInteraction::Door && unit->second.classId==step.target->identity));
                 })) {
                 note("quest-portal-activation-observed",std::to_string(pending.unit->id));
                 questRun.pending.reset();cancelWalk(c);return false;
             }
-            wait("quest-portal-activation","Waiting for the activated portal's normal selectable mode");
+            wait("quest-portal-activation","Waiting for OPENED, including the MPQ silent ENDANIM deadline");
         } else wait("quest-portal-result","Waiting for the actual quest destination scene");
         checkQuestPending(c);return false;
     }
-    for(const auto &target:c.town.read().mapTargets) if(target.interaction==OnlineMapInteraction::Portal &&
+    if(questRun.worldWait && !worldResultReady(c,step)) {
+        const auto anchor=questRun.worldWait->anchor;
+        if((c.position-anchor).length()>8 && approachPoint(c,OnlinePoint{uint16_t(anchor.x),uint16_t(anchor.y)},"observed event location",3)) return false;
+        waitForWorldResult(c,step,questRun.worldWait->expected);return false;
+    }
+    for(const auto &target:c.town.read().mapTargets) if((target.interaction==OnlineMapInteraction::Portal ||
+        (step.target && (target.interaction==OnlineMapInteraction::Door || target.interaction==OnlineMapInteraction::Exit))) &&
         (target.destination==step.area || (step.target && target.unit.type==step.target->type && [&] {
             const auto u=c.session.read().world.units.find(target.unit);
             return u!=c.session.read().world.units.end() && u->second.classId==step.target->identity;
         }()))) {
         wait("quest-portal","Using the actually assigned quest portal");
         bool activation=false;
+        auto interactionUnit=target.unit;
         const auto unit=c.session.read().world.units.find(target.unit);
-        if(target.unit.type==2 && unit!=c.session.read().world.units.end() && unit->second.classId && unit->second.mode==0)
+        if(target.unit.type==2 && unit!=c.session.read().world.units.end() && unit->second.classId)
             for(size_t row=0;row<definitions->objects.rows().size();++row)
-                if(definitions->objects.number(row,"Id")==*unit->second.classId && definitions->objects.number(row,"OperateFn")==34)
-                    activation=true;
-        const Json intent{{"goal","unit"},{"unitType",target.unit.type},{"unitId",target.unit.id},{"interact",true},
+                if(definitions->objects.number(row,"Id")==*unit->second.classId &&
+                    (definitions->objects.number(row,"OperateFn")==34 || definitions->objects.number(row,"OperateFn")==66)) {
+                    const auto mode=c.town.projectedObjectMode(c.session.read(),target.unit);
+                    if(!mode || *mode==1) {
+                        wait("quest-portal-activation","The assigned entrance is still operating; waiting for its MPQ ENDANIM");return false;
+                    }
+                    activation=*mode==0;
+                    if(*mode==2 && definitions->objects.number(row,"OperateFn")==66) {
+                        for(const auto &exit:c.town.read().mapTargets)
+                            if(exit.unit.type==5 && exit.interaction==OnlineMapInteraction::Exit &&
+                                exit.destination==step.area && c.town.permitsInteraction(c.session.read(),exit.unit)) {
+                                interactionUnit=exit.unit;break;
+                            }
+                    }
+                }
+        const Json intent{{"goal","unit"},{"unitType",interactionUnit.type},{"unitId",interactionUnit.id},{"interact",true},
             {"purpose","quest-portal"},{"activation",activation}};
         if(walk(c,intent)) observeQuestInteraction(c,intent);
         return false;
@@ -368,27 +407,29 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
     if(area && step.area) if(const auto hint=c.town.knownConnectionPosition(*area,*step.area)) {
         if(approachPoint(c,*hint,"previously observed quest portal")) return false;
         if((c.position-Vec{float(hint->x),float(hint->y)}).length()<=8) {
-            wait("quest-portal-reassignment","Waiting for the real portal assignment at its observed position");return false;
+            waitForWorldResult(c,step,"Waiting for the real portal assignment at its observed position");return false;
         }
     }
     if(step.sourceArea && c.town.read().area!=step.sourceArea) {
         travel(c,*step.sourceArea);return false;
     }
     if(step.witness && area) {
-        const auto marker=c.town.knownTargetPosition(*area,step.witness->type,step.witness->identity);
-        if(marker && marker->x>=13 && marker->y<=65532) {
-            // A2Q6_Timer_UpdateObjects creates the real entrance at the
-            // observed orifice (-13,+3). Approach its room normally; never
-            // resume unrelated tomb exploration after staff consumption.
-            const OnlinePoint birth{uint16_t(marker->x-13),uint16_t(marker->y+3)};
-            if(approachPoint(c,birth,"entrance beside the observed Horadric orifice",3)) return false;
+        const auto witness=find(c,*step.witness,true);
+        const auto marker=witness?witness->position:c.town.knownTargetPosition(*area,step.witness->type,step.witness->identity);
+        if(marker) {
+            const Vec at=Vec{float(marker->x),float(marker->y)}+step.witnessOffset.value_or(Vec{});
+            if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535) throw std::runtime_error("Quest event anchor is outside native coordinates");
+            const OnlinePoint birth{uint16_t(at.x),uint16_t(at.y)};
             if((c.position-Vec{float(birth.x),float(birth.y)}).length()<=8) {
-                cancelWalk(c);QuestPending pending;pending.action=QuestPending::Action::Object;
-                pending.deadline=Clock::now()+std::chrono::seconds(30);questRun.pending=pending;
-                wait("quest-entrance-opening","Waiting for the actual timed selectable entrance assignment");return false;
+                waitForWorldResult(c,step,"Waiting for the actual selectable portal beside "+step.witness->name);return false;
             }
+            if(approachPoint(c,birth,"portal event beside "+step.witness->name,step.witnessOffset?3.f:8.f)) return false;
+            // A temporarily blocked approach is not a reason to abandon a
+            // known event scene and search unrelated corners of the level.
+            waitForWorldResult(c,step,"Waiting for a reachable approach to the observed portal event");
+            if(questRun.worldWait) questRun.worldWait->anchor=at;
+            return false;
         }
-        if(approachKnown(c,*step.witness)) return false;
     }
     explore(c,"the actual assigned quest portal");return false;
 }

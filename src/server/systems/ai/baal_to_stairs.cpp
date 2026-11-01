@@ -27,10 +27,10 @@ StepStatus System::baalToStairsFamily(EntityId id,TickContext tick,Controller &c
     const auto point=portal->position+ports_.areas.at(portal->area).definition.origin-area.origin;
     if(meleeDistance(unit.position,unit.rule.size,point,portal->rule.width)>=unit.rule.ai.params[0]) {
         controller.nextDecision=tick.tick+uint64_t(unit.rule.neutralDelayTicks);
-        const auto moved=perform(controller,[this,id,point] {
+        const auto moved=perform(controller,[this,id,point,target=portal->id] {
             const auto *actor=ports_.monsters.find(id);if(!actor || !actor->alive()) return DomainResult<>{DomainStatus::InvalidActor,{}};
             // AITACTICS_SetVelocity(1,0,0) chooses Toward path7 with base walk speed.
-            return ports_.monsters.requestMove({id,{actor->area,ports_.areas.at(actor->area).generation,point},{},0,75,false,1,0,0,7,5});
+            return ports_.monsters.requestMove({id,{actor->area,ports_.areas.at(actor->area).generation,point},target,0,75,false,1,0,0,7,5});
         });
         controller.pursuing=bool(moved);return isDeferred(moved.status)?StepStatus::Blocked:StepStatus::Complete;
     }

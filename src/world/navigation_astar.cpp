@@ -6,7 +6,7 @@
 namespace d2x {
 std::deque<Vec> Grid::nativeAStarPath(Vec from, Vec to, MovementCollisionRule rule, bool unitTarget) const {
     const CollisionQueryScope collisionScope{*this};
-    if (!walkable(from, rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
+    if (rule.size<0 || rule.size>3 || !navigationContains(from) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
         to.x < 0 || to.y < 0 || to.x >= width || to.y >= height) return {};
     // D2MOO Path/AStar.cpp (MIT, docs/licenses/D2MOO.txt): bounded 200-node
     // search, 2/3 costs, native neighbour/tie order and direction compression.

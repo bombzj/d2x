@@ -47,8 +47,8 @@ std::optional<nlohmann::json> parseDebugChatCommand(std::string_view text) {
             request[key]=value;
         }
     }
-    if(plan && !request.contains("scenario") && !request.contains("goals"))
-        throw std::invalid_argument("Usage: /"+name+" <scenario> [JSON options], quest <quest-name>, or {\"goals\":[...]}");
+    if(plan && !request.contains("scenario") && !request.contains("goals") && !request.contains("configFile"))
+        throw std::invalid_argument("Usage: /"+name+" <scenario> [JSON options], quest <quest-name>, {\"goals\":[...]}, or {\"configFile\":\"file.json\"}");
     request["command"]=name;return request;
 }
 std::vector<std::string> debugChatSummary(const nlohmann::json &reply) {

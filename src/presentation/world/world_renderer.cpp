@@ -364,7 +364,6 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
             visual.loopStart + (frame - visual.loopStart) % (visual.loopEnd - visual.loopStart);
     }
     else frame = visual.loop ? frame % frames : std::min(frame, frames - 1);
-    const bool translucent = assets_.translucentProjectiles.contains(id);
     const auto *image = animation.frame(direction(heading, animation.directions), frame);
     Vec at = screen(position)+pixelOffset;
     if (const auto program=assets_.clientMissilePrograms.find(id); program!=assets_.clientMissilePrograms.end() && program->second.function==9) {
@@ -378,18 +377,17 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
         const int elapsed = std::max(0, int(age * 25.f + .00001f));
         at.y -= float(std::max(0, fall->second.fallDistance - elapsed * fall->second.fallRate));
     }
-    if (visual.trans == 1) {
-        if (lighting) lighting->drawLit(image, at, {&light,1},WHITE,{1,1},true);
+    if (visual.trans == 1 || visual.trans == 2) {
+        // Retail D2Client RVA 6CF32: Missiles.Trans 1 -> CelDraw 3,
+        // 2 -> CelDraw 4. UnHolyBolt must darken, not screen-lighten.
+        const auto composition=visual.trans==2?PaletteComposition::Burn:PaletteComposition::Screen;
+        if (lighting) lighting->drawLit(image, at, {&light,1},WHITE,{1,1},composition);
+        else if(visual.trans==2) paletteBlend_->drawBurn(image, at);
         else paletteBlend_->draw(image, at);
         return;
     }
-    if (translucent) {
-        rlSetBlendFactors(0x0307, 1, 0x8006);
-        BeginBlendMode(BLEND_CUSTOM);
-    }
     if (lighting) lighting->drawLit(image, at, {&light,1});
     else sprite(image, at);
-    if (translucent) EndBlendMode();
 }
 void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop, int height,
                                 const PaletteBlendView *lighting, Color light,std::optional<int> preciseFrame,Vec pixelOffset) const {
@@ -401,7 +399,8 @@ void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop, int
     const int elapsed = preciseFrame.value_or(int(ticks*overlay.visual.fps/25.0));
     const int frame = loop ? elapsed % overlay.visual.frames : std::min(overlay.visual.frames - 1, elapsed);
     const Vec at = screen(position) + pixelOffset + overlayScreenOffset(overlay.visual.offset,overlay.visual.heights,height);
-    if (lighting) lighting->drawLit(overlay.animation.frame(0, frame), at, {&light,1}, WHITE,{1,1},overlay.visual.trans == 3);
+    if (lighting) lighting->drawLit(overlay.animation.frame(0, frame), at, {&light,1}, WHITE,{1,1},
+        overlay.visual.trans==3?PaletteComposition::Screen:PaletteComposition::Normal);
     else if (overlay.visual.trans == 3) paletteBlend_->draw(overlay.animation.frame(0, frame), at);
     else sprite(overlay.animation.frame(0, frame), at);
 }

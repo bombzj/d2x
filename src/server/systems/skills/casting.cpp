@@ -633,6 +633,7 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
                 const auto delta=destination-origin;origin=destination;destination=destination+delta;
             }
             missiles::NativeSpawn birth{actor.actor,actor.area,actor.areaGeneration,actor.tick,origin,destination,missile->second,skill.sourceId,skill.rank};
+            birth.distanceCountdown=row.number("lob")!=0;
             birth.copyMonsterAttackBonus=true;
             auto prepared=ports_.missiles.prepareNativeBirth(std::span{&birth,1});if(!prepared) return {prepared.status,{}};
             const auto result=ports_.missiles.commitNativeBirth(std::move(*prepared.value));

@@ -311,7 +311,10 @@ bool Grid::nativeMovementSegment(Vec a, Vec b, MovementCollisionRule rule) const
 }
 Vec Grid::nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule) const {
     const CollisionQueryScope collisionScope{*this};
-    if (!walkable(a, rule) || !std::isfinite(b.x) || !std::isfinite(b.y) ||
+    // PATH_RayTrace starts testing at the first entered cell. A moving
+    // actor can overlap our current pattern; that must not forbid an escape
+    // through clear cells. Keep unknown/out-of-bounds origins unavailable.
+    if (rule.size<0 || rule.size>3 || !navigationContains(a) || !std::isfinite(b.x) || !std::isfinite(b.y) ||
         b.x < 0 || b.y < 0 || b.x >= width || b.y >= height) return a;
     int x = int(std::floor(a.x)), y = int(std::floor(a.y));
     Vec last{float(x) + .5f, float(y) + .5f};
@@ -356,7 +359,7 @@ std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule r
         for (auto &point : route) point = point + origin;
         return route;
     }
-    if (!walkable(from, rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
+    if (rule.size<0 || rule.size>3 || !navigationContains(from) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
         to.x < 0 || to.y < 0 || to.x >= width || to.y >= height) return {};
     const auto target = preparedPlayerTarget(*this, from, to, rule);
     return target ? nativeUnitPath(from,*target,7,73,rule,targetType!=255,targetType==2 || targetType==4?2:1)
@@ -370,7 +373,7 @@ std::deque<Vec> Grid::nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t max
         for (auto &point : route) point = point + origin;
         return route;
     }
-    if (!walkable(from, rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
+    if (rule.size<0 || rule.size>3 || !navigationContains(from) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
         to.x < 0 || to.y < 0 || to.x >= width || to.y >= height) return {};
     if(type==1) return nativeAStarPath(from,to,rule,unitTarget);
     if(type==15) return nativeWallFollowPath(from,to,unitTarget?std::max(uint8_t(40),maxDistance):maxDistance,rule);

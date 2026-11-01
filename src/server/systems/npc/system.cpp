@@ -9,6 +9,7 @@
 #include "world/interaction_geometry.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 namespace d2x::server::npc {
 void System::initializeControl(uint64_t &gameRandom) {
@@ -78,6 +79,14 @@ Vec System::position(const ActorContext &actor, const AreaNpc &npc) const {
     return unit->position+ports_.areas.at(unit->area).definition.origin-ports_.areas.at(actor.area).definition.origin;
 }
 const AreaNpc *System::find(const ActorContext &actor, EntityId id, bool conversation) const {
+    return findSource(actor,id,conversation,false);
+}
+const AreaNpc *System::travelSource(const ActorContext &actor,EntityId id) const {
+    // PlrMsg38 checks a live NPC in the same act and per-axis range50.
+    // Retail closes30 before38, so an active conversation is not required.
+    return findSource(actor,id,false,true);
+}
+const AreaNpc *System::findSource(const ActorContext &actor,EntityId id,bool conversation,bool travel) const {
     const auto *player = ports_.players.find(actor.player); const auto *area = ports_.areas.find(actor.area);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0 || !area || area->generation != actor.areaGeneration) return nullptr;
     // PlrMsg::sub_6FC828D0 resolves the real GUID across active rooms. An
@@ -87,15 +96,19 @@ const AreaNpc *System::find(const ActorContext &actor, EntityId id, bool convers
     RegionId npcArea = actor.area;
     for (const auto &[region, candidate] : ports_.areas.all()) {
         if (candidate.definition.act != area->definition.act ||
-            std::none_of(navigation.navigationSources.begin(), navigation.navigationSources.end(),
-                [&](const auto &entry) { return entry.grid == &candidate.definition.collision; })) continue;
+            (!travel && std::none_of(navigation.navigationSources.begin(), navigation.navigationSources.end(),
+                [&](const auto &entry) { return entry.grid == &candidate.definition.collision; }))) continue;
         for (const auto &entry : candidate.definition.npcs) if (entry.id == id) { found = &entry; npcArea = region; break; }
         if (found) break;
     }
     const auto *unit=ports_.monsters.find(id);
     if (!found || !unit || !unit->questNpc || unit->area!=npcArea || !unit->alive() || !found->rule.interactable ||
-        !ports_.quests.npcVisible(player->persistent.player,found->rule.code,npcArea,found->rule.questInitFunction) ||
-        nativeUnitDistance(player->position,2,position(actor,*found),found->rule.size)>8) return nullptr;
+        !ports_.quests.npcVisible(player->persistent.player,found->rule.code,npcArea,found->rule.questInitFunction)) return nullptr;
+    const auto at=position(actor,*found);
+    const int dx=int(std::floor(at.x+.5f))-int(std::floor(player->position.x+.5f));
+    const int dy=int(std::floor(at.y+.5f))-int(std::floor(player->position.y+.5f));
+    if(travel?(std::abs(dx)>50 || std::abs(dy)>50):
+        nativeUnitDistance(player->position,2,at,found->rule.size)>8) return nullptr;
     if (conversation) { const auto current = state_.conversations.find(actor.player); if (current == state_.conversations.end() || current->second.npc != id || current->second.area != actor.area || current->second.actor != actor.actor || current->second.areaGeneration != actor.areaGeneration) return nullptr; }
     return found;
 }

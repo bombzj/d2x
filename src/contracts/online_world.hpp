@@ -127,7 +127,7 @@ struct OnlineUnit {
     std::optional<uint8_t> pathType, pathSteps, pathDistance;
     std::optional<int16_t> velocityPercent;
     // State stat widths belong to MPQ consumers; the transport retains ordered native messages.
-    uint64_t stateSequence{};
+    uint64_t stateSequence{}, stateGeneration{}; // First state receipt of this unit lifetime; survives area changes.
     std::deque<OnlineStateMessage> stateMessages;
     // Keep early skill packets by server GUID until 0x0B identifies the local player.
     std::map<uint16_t, uint16_t> skills;
@@ -228,6 +228,8 @@ struct OnlineWorldView {
     std::map<uint32_t, OnlinePet> pets; // Original 0x7A ownership, independent of unit visibility.
     std::map<uint32_t, uint32_t> corpseOwners; // Original 0x8E corpse GUID -> player GUID.
     uint64_t revision{}, areaGeneration{}, interactionGeneration{};
+    std::optional<uint8_t> cinematic;
+    uint64_t cinematicRevision{};
     std::map<OnlineUnitKey, OnlineUnit> units;
     // Room anchors are in tiles, unit coordinates in subtiles (five per tile).
     // The packet does not contain room extents.
@@ -294,6 +296,7 @@ struct OnlineWorldView {
     std::optional<OnlineCombatRequest> combatRequest;
     bool townPortalPending{}; // Enqueued command, not proof that a portal exists.
     std::optional<std::array<uint16_t, 8>> waypointHistory; // Native 0x102 header + 112 bits.
+    uint64_t waypointHistoryRevision{};
     std::optional<uint32_t> playerPortalFlags; // Native 5F session visitation, not quest completion.
     std::optional<uint32_t> waypointSource; // Only 0x63 authorizes an open menu.
     std::optional<uint32_t> waypointRequested; // Local 0x13 intent, never an open-menu confirmation.
@@ -380,6 +383,7 @@ struct OnlineWorldView {
         combatRequest.reset();
         townPortalPending = false;
         waypointHistory.reset();
+        waypointHistoryRevision = 0;
         waypointSource.reset();
         waypointRequested.reset();
         waypointActivation.reset();

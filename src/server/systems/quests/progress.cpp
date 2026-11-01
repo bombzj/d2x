@@ -133,6 +133,7 @@ void System::initialize(const CharacterRecord &creator) {
             detail::actTwoCarried(*player,items.bird,ports_.settings.difficulty)) state_.actThree.figurineEnabled=false;
     }
     state_.actFive.anyaThawed=book[questIndex(QuestId::PrisonOfIce)].stage>=5;
+    state_.actFive.anyaRead=book[questIndex(QuestId::PrisonOfIce)].stage==4;
     state_.actFive.ancientsDefeated=book[questIndex(QuestId::RiteOfPassage)].stage>=4;
     if(book[questIndex(QuestId::SearchForCain)].stage>=8) {
         state_.actOne.cainRescued=true;state_.actOne.restoreCairnStones=true;state_.actOne.activatedStones=5;
@@ -393,6 +394,19 @@ void System::prepareStatusNotice(QuestId id,StatusNotice &notice) const {
 }
 void System::npcDeactivated(EntityId npc) {
     const auto *unit=ports_.monsters.find(npc);
+    if(unit && unit->identity.monster=="tyrael3" && !state_.actFive.exitPortal) {
+        // A5Q6 Callback02: one LastPortal per player room in the chamber,
+        // after closing Tyrael. Scroll acknowledgement is independent.
+        for(const auto &[id,p]:ports_.players.all()) {
+            (void)id;
+            if(!p.entered || int(p.area)!=132) continue;
+            if(const auto free=ports_.world.questFreePosition(p.area,p.position,p.position+Vec{5,0},5,18)) {
+                state_.actFive.finalExits.push_back({free->area,ports_.areas.at(free->area).generation,free->position});
+                ports_.world.retainControllerRoom(free->area,free->position,true);
+            }
+        }
+        state_.actFive.exitPortal=true;
+    }
     if(unit && unit->identity.monster=="ormus" && state_.npcStory.ormusDelivery) {
         state_.npcStory.ormusDelivery=false;state_.npcStory.ormusActivate=true;
     }

@@ -193,7 +193,7 @@ DomainResult<> System::install(Prepared prepared) {
         q.stage=4;break;
     }
     case RewardKind::DefrostPotion: {
-        auto &q=book[questIndex(QuestId::PrisonOfIce)];if(q.stage<3 || q.stage>=5 || detail::actTwoCarried(*p,p->rules.character->laterQuests.defrostPotion,s.difficulty)) return fail(DomainStatus::Stale);
+        auto &q=book[questIndex(QuestId::PrisonOfIce)];if(state_.actFive.anyaThawed || (q.stage<3 && !state_.actFive.anyaRead) || q.stage>=5 || detail::actTwoCarried(*p,p->rules.character->laterQuests.defrostPotion,s.difficulty)) return fail(DomainStatus::Stale);
         q.stage=4;break;
     }
     case RewardKind::ThawAnya:

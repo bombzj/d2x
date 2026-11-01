@@ -41,6 +41,10 @@ void PlayerStore::admit(PlayerId id, CharacterDefinition definition,
     player.area = arrival.room.area;
     player.position = arrival.position;
     player.persistent = std::move(persistent);
+    // QUESTRECORD_CopyBufferToRecord(reset) belongs to every admission,
+    // including characters with no item aura initialization transaction.
+    for(auto &difficulty:player.persistent.player.quests) for(auto &quest:difficulty)
+        if(quest.nativeRecord) *quest.nativeRecord=uint16_t((*quest.nativeRecord&~0x6000u)|(*quest.nativeRecord&2?0x8000u:0u));
     // Clients::sub_6FC31EF0 -> Player::sub_6FC7BFC0 restores saved bodies
     // through size 2 / 0x9c19 / increment 4, including earlier restored bodies.
     const auto sample=spatial.nativeCollisionSample();

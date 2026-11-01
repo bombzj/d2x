@@ -9,6 +9,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     monsters.clear();
     rendered = unavailable = 0;
     playerDisplayed = false;
+    actionInputBusy.reset();
     soundEvents.clear();
     intent.input.gameGeneration = v.gameGeneration;
     intent.input.areaGeneration = v.world.areaGeneration;
@@ -477,6 +478,13 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             (u.mode == 6 || u.mode == 18 || u.mode == 20))) ||
             (key.type == 1 && u.mode && *u.mode >= 3 && *u.mode <= 11);
         const bool completedAction = m.scriptedSequence?m.scriptedSequence->ended:oneShot && visual->finished(m.animation.elapsed(time));
+        if(playerId && key==OnlineUnitKey{0,*playerId}) {
+            // Same MPQ animation and observed FHR/FBR/FCR clock used to draw
+            // this actor; damage alone is not proof of hit recovery. Do not
+            // extend a stale wire GH/BL/KB mode past its actual animation end.
+            const bool channel=u.actionSkill && channelSkill(*u.actionSkill);
+            actionInputBusy=oneShot && !channel && !completedAction;
+        }
         if (completedAction) {
             auto idle = u; idle.actionSkill.reset(); idle.nativeMode = false;
             idle.mode = key.type == 0 ? 7 : 1;

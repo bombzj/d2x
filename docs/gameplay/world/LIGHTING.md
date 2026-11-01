@@ -57,6 +57,12 @@ DT1头的`LightDirection`由`decodeDt1`读取并保留，与`orientation`分开�
 
 **当前仍不能宣称完整光照与原版一致。** 已移植上述网格规则，剩余边界如下：
 
+COF透明组件的mode3在世界单位单点取光路径保留原索引，逐层经过现有PL2 Screen程序，保持身体／两翼原COF顺序；不再对已转RGB的两翼使用硬件SoftAdditive。当前MPQ泰瑞尔TYNUHTH是三组件：TR普通mode5，LA／RA透明mode3。该修正已通过Windows Release构建，并在single-15幕末实看截图；与原客户端逐像素对照仍待完成，不等于全部COF DrawMode、染色及RGBA背景反查已完整核实。
+
+后续两处独立绘制差异已通过Windows Release全部目标构建；UnHolyBolt专项视觉仍待实看：Missiles.Trans=1映射原CelDraw3／PL2 Screen，Trans=2映射CelDraw4／PL2 Burn（0x43500乘法表），不再把所有非零Trans当硬件增亮。依据本机1.13c D2Client RVA6CF32–6CF4C与D2CMP RVA9FA0的逐通道乘法及原表查色；UnHolyBolt使用真实77–80弹体的UnholyBolt图形与Trans=2。普通、状态及其他COF模式不据此宣称已全部认证。
+
+世界COF合成中的DC6组件按cellOffsetY−height作为顶边，DCC仍用其已解码顶边；不更改菜单／字体等独立DC6绘制。当前TY的TR原图44×90、offsetY=-12，原COF纵界为[-152,-4]；旧合成误将-12当顶边，把身体画到两翼下方，正确顶边为-102，未缩放任何组件。合成、组件选取和阴影共用此位置；single-34候选E16B32DA幕末截图已实见修正后的身体／两翼位置，其他混合DC6／DCC组件及与原客户端逐像素对照仍待回归。
+
 - 原创建链交错、物件缓存的原生命期、完整怪物装备／状态光源与光源生灭尚未接齐；Overlay已接上述实例及客户端门控，飞弹完整创建首帧仍暂缓。完整Flicker不自造调制。
 - 网格强度／颜色合成已按原DLL，世界图元选择软件PL2强度路径；3D后端最终彩光、Gamma及逐图元索引取色／混色仍未完整核实。
 - 当前采用原高质量遮挡路径；原1.13c A8230将取光索引钳制到0–47，固定48×48网格属于其视口约束，D2X按扩展视口动态适配并保留取光／插值规则。质量选项切换及全场景帧间对照尚未接齐。邪恶洞窟任务完成光照、第四幕特殊事件、完整原服环境同步与天气仍有缺口。

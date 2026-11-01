@@ -88,6 +88,10 @@ REA属于开发期分析工具，不进入D2X构建或玩法依赖。上述快�
 
 ## 原版1.13c静态与开发对照证据
 
+城镇技能资格定点核对同快照D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）：RVA19350–193A9读取技能记录，19382经C1F0调用D2Common ordinal10331（UNITS_GetRoom），1938D–19395检查Skills的InTown位并经C208调用ordinal10057。该Common导出RVA3C390读取Room1的RoomEx／level后判城镇，与D2MOO `DUNGEON_IsRoomInTown`相符；没有在此分支读取独立“启用技能”网络位。服务端对应`SKILLS/Skills.cpp`的技能执行入口同样以实际单位房间和InTown拒绝城镇施法。实机出城包型与预测差异的范围见[调试导航缺口](../development/ORIGINAL_GAPS.md#调试导航)；这不认证全部输入／边界时序。
+
+第五幕终局与表现的定点依据：本机D2Client RVA6CF32–6CF4C将Missiles.Trans1／2分别映射CelDraw3／4，D2CMP RVA9FA0以RGB逐通道乘法和原最近色生成PL2的0x43500表；RVA25660–25884处理非门物件OP末帧到ON及Start2／CycleAnim循环。D2Client的S2C表RVA DDE60中0x61指向AF940并将程序号交给899A0；7是资料片终局，结束后使用43710／43A70的原endgame2背景与5098／5100文字；43E53先设字体3（D2MOO Font.h为Font42），经43710、42C70画正文／姓名／称号，43E67才切字体1供按钮使用，D2Win10205（BD00→BB50）按5／10／15进度、HC及原职业性别表选称号。正常原版Host红门72实见13→返109及6107，不能将仅观察565等同于操作完成。DC6／DCC的TY组件位置另可由原图与COF界限直接复核，详见[光照与合成](../gameplay/world/LIGHTING.md)。这些定点核对不代表电影播放器、全部终局通知及各语言／模式已完整复刻。
+
 动态碰撞另核对本地D2MOO `Path/Path.cpp::PATH_SetUnitDeadCollision`、`PLAYER/PlrModes.cpp::D2GAME_CORPSE_Handler_6FC7FBD0`及`PlrMsg.cpp::D2GAME_PACKETCALLBACK_Rcv0x41_Resurrect_6FC87480`：服务器死亡增加3×3 CORPSE，不把原活人路径掩码替换为CORPSE；独立尸体与复活玩家是不同GUID。复活撤旧活人轮廓时不得清掉保留尸体位。常驻格实现范围和未认证组合见[内核碰撞](../modules/SERVER_SYSTEMS.md#动态碰撞格的原版语义与迁移边界)。
 
 03／04加载边界只读核对本机1.13c：`D2Game.dll` MD5 `978f6f74cd031bce6ecee602cd5988cc`、ImageBase `0x6fc20000`；`D2Common.dll` MD5 `ee1238806ef6d6d9801d12a09d128fe1`、ImageBase `0x6fd50000`；`D2Client.dll` MD5 `f5860c629d309b8fc1f96174babcf633`、ImageBase `0x6fab0000`。D2Game RVA `2DA8B`／`2DAE6`经导入stub `B306`调用D2Common ordinal11047／RVA `3BE90`，后者在`3BEB7–3BEC3`比较活动近邻数与DRLG原近邻数，在`3BEE0–3BEED`逐个检查Room1+0x34的位1；门控通过后`2DAA1`／`2DB0B`写一个字节并经`8A3E0`发送，`2DA0A`确定该字节为4。对应本地D2MOO的`D2Common_10073`及Game初次／CHANGING_ACT分支，不能套用1.10f同号ordinal。
@@ -181,3 +185,5 @@ Clt30=B79F0：elapsed==cCltPar1置TargetY，非零后按elapsed%max(cCltPar2,1)�
 零售Clt57=B6F60先调用B2890随主人定位，再以主人为输入调用A1340；目标单位、DynamicPath.tTargetCoord及A0B30朝向后备各有明确原分支，朝向>>3的八偏移X=[0,-1,-2,-1,0,1,2,1]、Y=[2,1,0,-1,-2,-1,0,1]，任一坐标为0走后备。创建子项后Common PATH_SetType(14)并重新求路径；D2MOO Path.h确认为PATHTYPE_BLESSEDHAMMER。当前技能277引用553为srvmissilea，但D2MOO SrvSt28仅验证声明并安装状态、Do54不直接创建该飞弹，客户端函数为空，因此不从状态158自行补造根控制器；原实际创建来源仍须核实。新消费者只接零售，已构建，行为仍待实测。
 
 零售Clt45=BB500的有效定义分支与Clt4=BBE00均将CltParam1／2／3及CltSubMissile1传入B9470，再执行公共Do1；45仅在无效父定义时直接移除，4则继续公共Do1。B9470先验证子定义，CurrentFrame0跳过机会，否则Random(CltParam1)==0才生成；每个子项双Random(2*radius)减radius，再按符号向外偏radius。当前394的36／1／6及395资源保留原表，Clt44／实际生产者仍待补，不因Distraction名称关联亚马逊诱饵。
+
+原1.13c NPC跨幕菜单的顺序另定点核实：D2Client RVA4888C先调用48150，其中48199调用47B20，47BC3–47BD4发送30／type1／NPC GUID；随后488A0–488B9发送38／action0／同一NPC GUID／目的地75。D2MOO PlrMsg::Rcv0x30要求本人和NPC同幕，Rcv0x38只核对同幕来源与每轴50范围，再调用SUnitNpc::NPC_HandleDialogMessage；后者的Warriv／Meshif旅行不要求会话仍开启。源码据此修正公共客户端顺序及宿主旅行来源资格；原版与自研运行回归范围由缺口文档维护。

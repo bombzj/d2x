@@ -326,7 +326,8 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         } else if (const auto *service = std::get_if<server::NpcServiceFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::NpcServiceResult,[&](auto &out){out.u32(wireId(service->npc));out.u8(service->result);out.u8(service->state);}));
         } else if (const auto *ui = std::get_if<server::UiFact>(&fact)) {
-            delta.push_back(encodeServerPacket(ServerMessage::UiAction,[&](auto &out){out.u8(ui->action);}));
+            delta.push_back(encodeServerPacket(ui->kind==server::UiFact::Kind::Cinematic?ServerMessage::Cinematic:ServerMessage::UiAction,
+                [&](auto &out){out.u8(ui->action);}));
         } else throw std::logic_error("Native event encoder is not implemented for this fact");
         for (auto &packet : delta) packets.push_back(std::move(packet));
     }

@@ -40,7 +40,7 @@ void DebugAi::Impl::acquire(Context &c,const Goal &goal) {
 bool DebugAi::Impl::settleItemInput(Context &c) {
     // A released missile/teleport is not the end of the player's skill mode.
     // This is debug input pacing, not a change to ItemMode's busy rules. Keep
-    // judging every 200 ms and wait for a quiet interval before sending one
+    // observing the normal animation and wait for a quiet interval before sending one
     // inventory request; never use a rejected/unknown request as a retry loop.
     const auto now=Clock::now();const auto cast=std::max(lastAttack,mobilityDeadline-std::chrono::seconds(3));
     const auto &view=c.session.read();
@@ -51,7 +51,10 @@ bool DebugAi::Impl::settleItemInput(Context &c) {
     // not a client-side claim that the server has ended an animation.
     const bool quiet=player==view.world.units.end() || !player->second.actionReceivedMilliseconds ||
         (milliseconds>=player->second.actionReceivedMilliseconds && milliseconds-player->second.actionReceivedMilliseconds>=600);
-    if(quiet && now-cast>=std::chrono::milliseconds(1500)) return true;
+    const bool castFinished=c.supplies && c.supplies->castInputBusy?
+        !*c.supplies->castInputBusy:now-cast>=std::chrono::milliseconds(1500);
+    if(quiet && castFinished && !mobilityTarget &&
+        (!view.world.combatRequest || view.world.combatRequest->state!=OnlineCombatRequest::State::Pending)) return true;
     cancelWalk(c);wait("item-input-settle","Waiting for the last normal skill input to finish before inventory input");return false;
 }
 bool DebugAi::Impl::approachPickup(Context &c,const OnlineItem &item) {
@@ -177,7 +180,10 @@ bool DebugAi::Impl::reachTown(Context &c) {
     if(portalIssued) {
         if(portalUsed) {
             wait("town-portal-wait","Waiting for the native town scene");
-            if(now>=actionDeadline) throw std::runtime_error("Own portal was used but town was not observed");
+            if(now>=actionDeadline) {
+                if(recoverTravel(c)) portalUsed=false;
+                else throw std::runtime_error("Own portal was used but town was not observed");
+            }
             return false;
         }
         std::optional<OnlineMapTarget> portal;
@@ -189,6 +195,7 @@ bool DebugAi::Impl::reachTown(Context &c) {
             wait("town-portal","Using the newly observed own town portal");
             if(walk(c,{{"goal","unit"},{"unitType",portal->unit.type},{"unitId",portal->unit.id},{"interact",true}})) {
                 // Request accepted is not a successful return. Keep observing the scene.
+                rememberTravel(c,portal->unit);
                 portalUsed=true;setActionDeadline(std::chrono::seconds(15));
                 phase="town-portal-wait";reason="Waiting for the native town scene";
             }
@@ -286,12 +293,10 @@ void DebugAi::Impl::execute(Context &c,const Goal &goal) {
         if(onlineMonsterCorpse(*unit)) {advance(c,"Assigned target death mode observed: "+goal.target->name);return;}
         if(!c.combat.hostile(*unit)) throw std::runtime_error("Hunt target is not an eligible hostile monster");
         if(!policy.enabled) throw std::runtime_error("Hunt requires combat to be enabled");
+        if(!c.combat.monsterTargetEligible(*unit,false)) {
+            cancelWalk(c);wait("hunt-target-state","Waiting for the observed target's actual attack eligibility");return;
+        }
         if(!approachPoint(c,*unit->position,"hunt target",2)) explore(c,"reachable approach to "+goal.target->name);
-        return;
-    }
-    if((position(*unit->position)-c.position).length()>6) {
-        if(!approachPoint(c,*unit->position,"assigned find target",4))
-            explore(c,"reachable approach to "+goal.target->name);
         return;
     }
     if(goal.interact) {
@@ -300,6 +305,11 @@ void DebugAi::Impl::execute(Context &c,const Goal &goal) {
             advance(c,"Assigned NPC conversation observed");return;
         }
         walk(c,{{"goal","unit"},{"unitType",unit->key.type},{"unitId",unit->key.id},{"interact",true}});return;
+    }
+    if((position(*unit->position)-c.position).length()>6) {
+        if(!approachPoint(c,*unit->position,"assigned find target",4))
+            explore(c,"reachable approach to "+goal.target->name);
+        return;
     }
     advance(c,"Assigned target found and approached: "+goal.target->name);
 }

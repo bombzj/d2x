@@ -12,6 +12,8 @@ PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版�
 
 修复后沿用原目标与配置重新构建，确认涉及的编译单元实际重编译并检查完整输出；无工作可做的增量构建不能证明警告已消除。交付时说明实际构建范围与仍未验证的平台／配置。此要求不改变构建、运行和打包的授权边界。
 
+若共享结构布局在编译过程中发生改变，应等当前构建结束，再触发所有依赖单元重新编译并冻结产物。对象文件可能在头文件修改后才写完，却已读过旧声明；仅追加一次无工作可做的增量构建，不能证明这些单元的布局一致。
+
 ## Linux 支持状态
 
 核心代码使用 C++20、标准文件系统、raylib 和 StormLib。存档替换单独区分 Windows 的 MoveFileExW 与其他系统的 rename；玩法、数据和存档编码不依赖 Win32。两个依赖都有 Linux 构建支持，运行时读取 `assets/mpq2` 的原始 MPQ。CMake 只在 Windows 定义相关宏，只对 MinGW 使用 Windows 静态链接选项。
@@ -46,6 +48,8 @@ cmake --build build --parallel
 
 ## Windows 运行
 
+链接d2x后，构建规则会将config/debug-ai.json与config/debug-ai-campaign.json复制到EXE所在目录，仅补缺、不覆盖已有同名JSON。调试AI配置的相对路径优先从EXE目录解析，不存在再按工作目录查找；因此五幕配置可直接用`/debug-ai-start {"configFile":"debug-ai-campaign.json"}`。运行副本可自行编辑，加载／重载及实际路径诊断见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。此复制规则的源码已接入，尚未随本次路径修改构建／实机验收。
+
 构建已有EXE后，在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。显式 `--mpq <目录或文件>` 优先；未指定时，依次搜索工作目录本身、EXE 所在目录本身、工作目录的 `assets/mpq2`，再搜索 EXE 所在目录及最多四级父目录中的 `assets/mpq2`。自动定位以 `d2data.mpq`／`D2Data.mpq` 为入口，找到首个目录即停止，挂载该目录全部 MPQ，不递归搜索子目录。无论是否显式 `--mpq`，另在工作目录、EXE 所在目录及其最多五级父目录中查找 `assets/mpq`：其中的补充包最先挂载，优先级低于 `--mpq` 目录，原版成员始终优先，补充包只填补原版未提供的路径；两目录指向同一位置时不重复挂载。工作目录与 EXE 所在目录可以不同。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](../resources/THIRD_PARTY.md) 及 `docs/licenses/`。
 
 `--lang <eng|chi|deu|fra|esp|ita|jpn|kor|pol|rus 或 0-9>` 覆盖语言：字符串取自 `data/local/lng/<目录>/` 的原始 string／expansionstring／patchstring.tbl，缺失回退 `eng`；未指定时读 MPQ 的 `data/local/use`。字形取自 `data/local/font/<语言目录>/`（西语系共用 `latin`，中日韩各用 `chi`/`jpn`/`kor`）；所选语言只提供 `latin` 字体时回退 `latin`，此时该语言的非 ASCII 字符无字形可绘。原版五个基础 MPQ 只含 `latin` 字体，中日韩界面需资源包内含对应 `data/local/font/<chi|jpn|kor>/` 字体；`Play.cmd -Lang chi` 转发该参数。字形纹理按需上传：字体表可含上万码点（中日韩 font16 约 16651 帧），仅在实际绘制时上传对应 DC6 帧，避免启动时逐帧建纹理。散装数据目录可用 `d2x_assets <data目录> pack-dir <前缀> <新.mpq>` 打成 MPQ 后挂载（成员名为前缀加相对路径）；繁体中文优先取原版 MPQ 自带的 `data/local/lng/chi/` 文本，仅当原版缺 `expansionstring.tbl` 与 `data/local/font/chi/` 字形时才补入 `PD2/Data` 的对应内容，不使用 SOE 资源；该缺口由 `assets/mpq` 的补充包自动补齐（如 `pd2-chinese.mpq` 提供 chi 的 `expansionstring.tbl` 与 `data/local/font/chi/`），否则这些文案回退英文。PD2专项说明见[资源加载：启动覆盖顺序](../pd2/RESOURCE_LOADING.md#资源加载启动覆盖顺序)。ESC 菜单各级页面按所选语言取 `data/local/ui/<语言>/<名称>.dc6`，该语言缺图时回退 `data/local/ui/eng/` 原图（共用入口 `localUiArtPath`）；按键配置固定使用英文TBL和Latin FontInGameChat，保留原字号和坐标，不随所选语言或TTF字体替换。菜单范围与禁用项见[经典HUD](../gameplay/ui/CLASSIC_HUD.md#esc-菜单)。
@@ -70,6 +74,8 @@ ESC 优先关闭面板，无面板时打开游戏菜单；Save and Exit 请求�
 聊天操作与实现范围见[联网模块](../modules/NETWORK.md#多人只读副本)，本页不维护功能完成清单。
 
 启动脚本不隐式构建：缺EXE时要求显式执行scripts/build.ps1。
+
+`--no-pause-on-focus-loss`用于图形单机调试，也可用`Play.cmd -NoPauseOnFocusLoss`启动：失去焦点或最小化仍推进嵌入宿主，默认不启用；ESC菜单及显式调试暂停仍会暂停，失焦不接收普通用户输入。最小化仍停止绘制并阻止AI输入。TCP/IP世界原本持续推进，不由此参数改变；不能与headless入口混用。
 
 EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame` 开始的首次生命周期节点：MPQ 挂载、平台、菜单资产、首个显示帧、服务端世界、客户端内容、游戏 UI 及首个已绘制游戏帧。每个节点只记录一次并立即刷新；未指定不产生文件。`--frames <数量>` 可有限运行后正常退局，`--hidden` 仍建立 OpenGL 上下文但跳过音频设备初始化。测速需注明运行条件，文件首帧时间不包含操作系统创建进程之前的耗时，也不代表首次磁盘冷启动或后续每次入局耗时。
 
