@@ -20,6 +20,11 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     worldDifficulty=v.load.difficulty.value_or(0);
     pd2=v.protocolProfile!="lod113c";
     shared.beginWorldGame(v.gameGeneration);
+    auto &questEffects = mapDisplay.questEffects;
+    if (questEffects.gameGeneration != v.gameGeneration) {
+        questEffects = {};
+        questEffects.gameGeneration = v.gameGeneration;
+    }
     uiClients=&clients;
     artPalette = binding.palette.value_or(0);
     if(gameGeneration!=v.gameGeneration) {pd2VisualSeeds.clear();boneWallVisualRandom.clear();}
@@ -159,7 +164,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         emitWoundBlood(v,shared,combat,map.grid,{float(origin.x),float(origin.y)});
     std::vector<ClientMissileAnchor> missileAnchors;
     for(const auto &[key,unit]:v.world.units) if(unit.position && key.type<=2)
-        missileAnchors.push_back({effectOwner(key),{float(unit.position->x)+.5f,float(unit.position->y)+.5f},key.id,key.type});
+        missileAnchors.push_back({effectOwner(key),{float(unit.position->x)+.5f,float(unit.position->y)+.5f},key.id,key.type,unitClass(unit).value_or(UINT16_MAX)});
     shared.advanceClientMissiles(suspended ? 0.f : elapsed, map,
         {float(origin.x), float(origin.y)}, missileTargets,missileAnchors);
     for(const auto owner:shared.takeClientMissileHiddenOwners())
@@ -171,7 +176,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         }
     clientMissiles.clear();
     for (const auto &missile : shared.clientMissiles())
-        clientMissiles.push_back({missile.missileId, missile.pos, missile.age, missile.duration - missile.age,missile.velocity,missile.hostile});
+        clientMissiles.push_back({missile.missileId, missile.pos, missile.age, missile.duration - missile.age,missile.velocity,missile.hostile,
+            missile.owner ? std::optional{OnlineUnitKey{uint8_t((missile.owner.value-1)>>32),uint32_t(missile.owner.value-1)}} : std::nullopt});
     const bool waypointOpen = v.world.waypointSource.has_value();
     auto local = [&](OnlinePoint p) {
         return Vec{float(int(p.x) - origin.x), float(int(p.y) - origin.y)};
@@ -259,6 +265,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     std::map<OnlineUnitKey, size_t> soundActorsByKey;
     for (const auto &[key, unit] : v.world.units) {
         if (key.type > 2 || !unit.position || !unitClass(unit)) continue;
+        if (!pd2 && key.type == 2 && unitClass(unit) == 100 && (unit.mode == 1 || unit.mode == 2))
+            questEffects.openedTombEntrance = unit.position;
         SoundActorView source;
         source.id = effectOwner(key); source.identity = *unitClass(unit);
         source.kind = key.type == 0 ? SoundActorKind::Player :
@@ -422,7 +430,19 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             }
         }
         if (player) { player->moving = moving; player->position = feet + Vec{float(origin.x), float(origin.y)}; }
-        if (u.direction && !walking(u)) {
+        const auto npcClass=unitClass(u).value_or(UINT16_MAX);
+        // Retail 4BA48 -> A5600 turns an interact NPC toward the local player
+        // on conversation entry; the four fixed-facing Act-V actors are exempt.
+        const bool talkingNpc=key.type==1 && v.world.npcConversation &&
+            v.world.npcConversation->type==1 && v.world.npcConversation->source==key.id &&
+            npcClass!=537 && npcClass!=538 && npcClass!=539 && npcClass!=527;
+        if(talkingNpc && m.npcFacingRevision!=v.world.npcConversation->revision) {
+            if(playerId) if(const auto at=localUnitPosition({0,*playerId}))
+                m.look=*at-Vec{float(origin.x),float(origin.y)}-feet;
+            m.npcFacingRevision=v.world.npcConversation->revision;
+        }
+        if(!talkingNpc) m.npcFacingRevision=0;
+        if (u.direction && !walking(u) && !talkingNpc) {
             // Path/Step.cpp measures clockwise from +Y, with its eight-bin offset.
             const float angle = (float(*u.direction & 63) - 7.5f) * 2.f * pi / 64.f;
             m.look = {-std::sin(angle), std::cos(angle)};
@@ -463,7 +483,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         const Art *visual = key.type == 0   ? character(displayed, moving, binding.town, shared)
                       : key.type == 1 ? monster(displayed, moving, shared)
                                       : object(displayed, shared);
-        if (!visual || visual->animation.frames.empty()) {
+        if (!visual || !visual->animation.available()) {
             if (player) player->reason = "Original character components or animation unavailable";
             effectLimitations.insert("Original unit animation unavailable: type="+std::to_string(key.type)+
                 " class="+std::to_string(unitClass(u).value_or(UINT16_MAX))+" mode="+
@@ -490,7 +510,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             idle.mode = key.type == 0 ? 7 : 1;
             visual = key.type == 0 ? character(idle, moving, binding.town, shared) : monster(idle, moving, shared);
             movementMode=locomotionMode(idle,moving,binding.town);
-            if (!visual || visual->animation.frames.empty()) {
+            if (!visual || !visual->animation.available()) {
                 if (player) player->reason = "Original neutral animation unavailable";
                 ++unavailable; continue;
             }
@@ -522,14 +542,38 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             audio.audible = CheckCollisionPointRec(rv(screen(feet)),shared.worldViewport());
         }
         const float runClock=m.scriptedSequence?float(m.scriptedSequence->animation.frame)/256.f/25.f:0;
+        if (!pd2 && key.type == 2 && unitClass(u) == 152) {
+            // The live orifice can stay in OP even after submission. The
+            // entrance at the A2Q6 spawn offset distinguishes it from a lease.
+            const auto &entrance = questEffects.openedTombEntrance;
+            const bool opened = entrance && entrance->x == u.position->x - 13 && entrance->y == u.position->y + 3;
+            if (opened && std::none_of(shared.clientMissiles().begin(), shared.clientMissiles().end(),
+                [&](const auto &effect) {
+                    return effect.missileId == 338 && std::floor(effect.creationPosition.x) == u.position->x &&
+                        std::floor(effect.creationPosition.y) == u.position->y;
+                }) && shared.projectileVisual(338)) {
+                // HA's three MPQ modes all depict the empty base. Seat one
+                // still frame behind its lip after the actual FX3 body expires.
+                WorldDrawItem staff;
+                staff.position = feet;
+                staff.pixelOffset = visual->offset;
+                staff.orderFlag = visual->order;
+                staff.missile = 338;
+                staff.missileFrame = 0;
+                staff.behindUnit = true;
+                staff.suppressMissileLight = true;
+                draw.push_back(staff);
+            }
+        }
+        const auto p = screen(feet) + visual->offset+m.riderOffset+
+              (m.scriptedSequence && m.scriptedSequence->leapGraphics?m.scriptedSequence->leapGraphics->offset():Vec{})+
+              (m.playerLeap?m.playerLeap->graphics.offset():Vec{});
+        if (player) player->reason = "Outside viewport";
+        if (!visual->animation.intersects(p,{0,0,float(W),float(H-HUD)})) continue;
         const auto *image = key.type == 2 ? visual->sample(objectElapsed, objectElapsed, m.look)
             : m.scriptedSequence && !completedAction?visual->sample(runClock,runClock,m.look,
                 m.scriptedSequence->nativeFrame?std::optional{float(m.scriptedSequence->animation.frame)/256.f}:std::nullopt)
             : visual->sample(animationClock, animationElapsed, m.look,m.animationFrame());
-          const auto p = screen(feet) + visual->offset+m.riderOffset+
-              (m.scriptedSequence && m.scriptedSequence->leapGraphics?m.scriptedSequence->leapGraphics->offset():Vec{})+
-              (m.playerLeap?m.playerLeap->graphics.offset():Vec{});
-        if (player) player->reason = "Outside viewport";
         if (!image || !visible(*image, p))
             continue;
         if (player) { player->visible = true; player->reason.clear(); }
@@ -620,11 +664,12 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         unit.classId = uint16_t(decoration.id);
         unit.mode = 0;
         const auto *visual = object(unit, shared);
-        if (!visual || visual->animation.frames.empty()) continue;
-        const auto *image = visual->sampleFacing(time, time, 0);
+        if (!visual || !visual->animation.available()) continue;
         const Vec feet{float(decoration.x), float(decoration.y)};
         const auto position = screen(feet) + visual->offset;
         worldScene.objects.push_back({decoration.id, 0, feet});
+        if (!visual->animation.intersects(position,{0,0,float(W),float(H-HUD)})) continue;
+        const auto *image = visual->sampleFacing(time, time, 0);
         if (image && visible(*image, position)) {
             WorldDrawItem entry; entry.image = image; entry.position = feet; entry.pixelOffset = visual->offset;
             entry.shadow = visual->shadow; entry.orderFlag = visual->order; draw.push_back(entry);

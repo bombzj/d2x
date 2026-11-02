@@ -27,6 +27,7 @@ class RealmPortraitCatalog {
     std::string light_;
     bool isType(const std::string &, std::string_view, std::set<std::string> &) const;
     bool isType(const std::string &, std::string_view) const;
+    std::optional<RealmPortraitParts> decode(const OnlineCharacter &, std::optional<bool> oppositeOccupied) const;
 
   public:
     explicit RealmPortraitCatalog(Archives &);

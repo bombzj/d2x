@@ -151,7 +151,6 @@ class SceneView {
     mutable HirelingView hirelingView_;
     mutable HirelingListView hirelingListView_;
     SceneAssets assets_;
-    int itemGroundPalette_ = -1;
     std::unique_ptr<LightingView> lighting_;
     std::optional<uint64_t> questAudioGameGeneration_;
     std::unique_ptr<PaletteBlendView> paletteBlend_;

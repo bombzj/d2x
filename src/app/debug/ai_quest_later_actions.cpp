@@ -1,34 +1,55 @@
 #include "ai_impl.hpp"
 #include "content/world/object_mode.hpp"
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 
 namespace d2x {
+bool DebugAi::Impl::groundItemSeen(const Context &c,std::string_view code) const {
+    return observedDrop(c,code,true)!=nullptr;
+}
 bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
     if(owned(c,step.item)) return true;
-    const auto &world=c.session.read().world;const auto now=Clock::now();
-    const bool ground=std::any_of(world.items.begin(),world.items.end(),[&](const auto &entry) {
-        return entry.second.code==step.item && entry.second.mode==3 && entry.second.positionKnown;
-    });
+    const auto now=Clock::now();
     Goal leaf;leaf.kind=Kind::Acquire;leaf.item=step.item;
-    if(ground || pickupIssued) return acquireItem(c,leaf);
+    if(rememberedDrops.contains(step.item) || observedDrop(c,step.item) || pickupIssued) return acquireItem(c,leaf);
+    // A withdrawn opportunity cannot turn a different quest into a search.
+    if(goals[cursor].routeDrop==questRun.step && goals[cursor].questId!=step.stateQuest) return false;
     if(step.witness) {
+        if(step.target) if(const auto enemy=find(c,*step.target);enemy && c.combat.hostile(*enemy) &&
+            c.combat.monsterTargetEligible(*enemy,false)) {
+            approachPoint(c,*enemy->position,"assigned quest drop carrier",2);return false;
+        }
         const auto source=find(c,*step.witness,true);
         const auto point=source?source->position:area?c.town.knownTargetPosition(*area,step.witness->type,step.witness->identity):std::nullopt;
         if(!point) {explore(c,"the observed quest drop source");return false;}
         if((Vec{float(point->x),float(point->y)}-c.position).length()>12) {
             approachPoint(c,*point,"timed quest drop source",10);return false;
         }
-        if(questRun.sweepReady==Clock::time_point{}) questRun.sweepReady=now+std::chrono::seconds(90);
+        if(questRun.sweepReady==Clock::time_point{}) {cancelWalk(c);questRun.sweepReady=now+std::chrono::seconds(90);}
         if(now>=questRun.sweepReady) throw std::runtime_error("Timed quest source produced no observed drop; retaining source and scene");
-        cancelWalk(c);wait("quest-drop-spawn","Holding the actual altar's area while normal combat handles its timed monster");return false;
+        wait("quest-drop-spawn","Holding the actual altar's area while normal combat handles its timed monster");
+        guardOpening(c);return false;
     }
     if(step.searchAreas.empty()) throw std::runtime_error("Quest drop has no verified search areas");
     if(questRun.materialPhase>=step.searchAreas.size())
         throw std::runtime_error("No quest drop observed after the configured normal Act-III areas; no source or ownership fabricated");
     const auto destination=step.searchAreas[questRun.materialPhase];
     if(area!=destination) {travel(c,destination);return false;}
-    acquireItem(c,leaf);
+    // A pure search can approach an assigned leader outside attack range.
+    // On another quest only an on-route engagement or a real drop interrupts.
+    const OnlineUnit *candidate=nullptr;
+    float nearest=std::numeric_limits<float>::max();
+    if(policy.enabled) for(const auto &[key,unit]:c.session.read().world.units) {
+        if(!unit.position || !c.combat.jadeFigurineCandidate(unit) || !c.combat.hostile(unit) ||
+            !c.combat.monsterTargetEligible(unit,false) || bypassedThreats.contains({key,unit.assignmentRevision})) continue;
+        const auto distance=(Vec{float(unit.position->x),float(unit.position->y)}-c.position).length();
+        if(distance<nearest) {nearest=distance;candidate=&unit;}
+    }
+    if(candidate && approachPoint(c,*candidate->position,"observed figurine candidate",2)) {
+        questRun.sweepReady={};return false;
+    }
+    explore(c,"eligible elites for "+step.item);
     if(phase=="explore-wait" && !c.walk.active()) {
         if(questRun.sweepReady==Clock::time_point{}) questRun.sweepReady=now+std::chrono::seconds(5);
         if(now>=questRun.sweepReady) {

@@ -29,6 +29,7 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 - Join：首页TCP/IP Game → Join Game → 目标IP → 本地角色 → 游戏端口直连。默认IP为`127.0.0.1`；不同机器填宿主实际IPv4，不能填`0.0.0.0`。不展示宿主角色或MCP大厅。退局／失败重新打开本机选择器，不请求远端Realm票据。
 - `--host-lan <本机IPv4>`预先监听该接口；UI首次Host默认全部接口。`--lan <目标IPv4>`打开本机角色页。双方用`--host-saves <本机目录>`隔离角色，用`--game-port`覆盖游戏端口；`--realm-port`只保留内部MCP端点标识，不产生TCP监听。与原版互通使用4000；同机已有D2GS占用4000时必须选择空闲端口做D2X隔离验证，不停止已有服务。
 - 客户端收到AF后发送6A查询，B2游戏信息以FFFF结束；取得gameId后发送68。收到02后先上传本地v96存档（6C），再发送6B进入游戏。服务端B3回传完整存档，应用交给hosting的本地CharacterStore校验身份、校验和及文件版本后原子替换；network与UI不解码／写盘。传输严格限制小于8192字节，不新增私有包或存档段。
+- B3的`first=1`表示重新开始当前快照，允许替换未完成的旧分片；旧片段直接丢弃，只有新快照完整后才交给存档所有者。无首片、总长变化、越界及空片仍拒绝。2026-11-02原版Host最终门户实见1797字节快照收到1020字节时又发新首片；旧客户端错误断连，已修为上述重启语义。新房间已实见6107／Victory及正常完整回传退出，但未再次撞到半档替换时序，该特定交错仍待运行覆盖；证据见[五幕记录](../development/AI_TEST_REC.md)。依据为D2MOO的Game::sub_6FC37B10／CLIENT_SendSaveHeaderPart、Clients::D2GAME_SetSaveLoadComplete及A5Q6::OperateFunction72；D2MOO此分片包号为B2，本机1.13c为B3，不混用编号。
 - 自研宿主检查容量、同名角色、职业／姓名及难度资格。客人断线或正常关闭后宿主保留独立`tcpip-recovery/character-<时间标识>.d2s`恢复副本，不自动回写客户端角色。完整接收前不会替换本机D2S；本机写盘失败保留字节和租约，用户关闭错误提示后重试，不按帧反复写盘。
 
 共享房间按25Hz推进，TCP/IP Host由独立宿主线程收包／推进／发包，房主及客人失焦／ESC不暂停世界。Single Player仍在应用线程推进，一人内存实例保留暂停，暂停时协议与心跳继续服务；退局待结算解除普通暂停。最小化跳过绘制但继续协议、地图事件及B3回传消费；恢复清理旧输入。原版混合客户端及Linux上的线程和最小化行为仍待验证。独立PvPGN使用固定游戏线程分管房间，主线程处理TCP／D2CS，专用后端线程承担文件／DBS等待；继续使用原账号、票据和保存协议，不使用TCP/IP上传。部署与故障边界见[PvPGN服务端](../development/PVPGN_SERVER.md)。现有内容范围仍见[基线](../../BASELINE.md)。
@@ -357,7 +358,7 @@ MCP加入时levelDifference=0导致不同等级角色被拒绝，返回0x2C；�
 
 近距离交互：OnlineMovementRequest区分普通行走与交互靠近；RemoteScene在连续显示位置已合格时清除本帧行走路线，不伪造原服站立模式、位置或成功回执。依据D2MOO PlrMsg::sub_6FC828D0，物品使用D2Common_10399距离≤4并检查原0x0804交互射线；物件复用UNITS_IsObjectInInteractRange对应几何和射线，尺寸来自当前MPQ；本人尸体距离≤8、出口距离≤4。RemoteTown同步准备出口靠近资格。远处／有阻挡时保留靠近预测，普通移动不提前停止；库存、对白、旅行及回收仍只消费原服结果。
 
-NPC点击／靠近：D2MOO PlrMsg `sub_6FC828D0`只在距离≤6且玩家非busy时交谈，距离7／8执行靠近，距离≥9不会靠近或回复对白。当前客户端普通02／04单位路径与交互靠近共用原尺寸距离停止条件，按当前显示路径到达提交13，不等待稀疏96采样；显示位置只授权请求，菜单与奖励仍等原27／28确认。具体原版观察、请求取消和跨边界限制见[NPC交互](../gameplay/npc/INTERACTIONS.md)。
+LoD 1.13c 普通点击可交谈 NPC 时，以单位距离 2 区分直接发 13 和先发 02／04 靠近；兼有 MonStats.npc 标志时先发 59。走近途中保留的 13 按通用近战范围、目标移动加成及碰撞判断。宿主独立按距离 ≤6 开启交谈，7／8 安排靠近，9 以上不回菜单。菜单与奖励仍等原协议确认。调用链见[NPC交互](../gameplay/npc/INTERACTIONS.md)。
 
 传送点／怪物尸体消费：当前MPQ Objects的OperateFn=23条目均为Selectable1=0，但D2MOO `OBJECTS_OperateFunction23_Waypoint`接受mode=1／2开菜单。RemoteTown对这两个模式保留点击资格，普通物件继续核对Selectable及TARGETABLE；解锁历史、菜单和旅行仍等待原服。0x51物件分配记录动作接收时间；公共ActorAnimationCatalog按原FrameCnt1＋1个25Hz服务帧投影启动结束后的mode=2，复用原ON循环动画，并将同一显示模式交给公共光照。仅限Waypoint的表现衔接，不修改副本模式、碰撞或解锁位；缺少必要MPQ定义不推导完成状态。
 
@@ -369,7 +370,7 @@ MonsterMsg的0x69动作9使用当前坐标，RemoteWorld将它写入position／p
 
 掉落声音与数量反馈使用公共SoundCatalog／SceneAudio和原物品变化；参数与拒绝边界只维护在[物品表现](../gameplay/items/PRESENTATION.md)，完整音频时序仍待原版对照。
 
-世界角色装备：按D2MOO D2Inventory的INVENTORY_GetCompositItem和当前MPQ准备真实身体组件。例如qui绗缝甲四个主体组件ArmType为0、肩部为1，女巫对应原DCC及城镇COF存在。真实装备组件进入公共合成器，未知组件染色／无形透明只作诊断，不因品质或效果标志隐去人物；真实组件／动画缺失保持明确不可用，不替换裸装。选角肖像染色与全部世界组件组合仍有缺口。
+世界角色装备：按D2MOO D2Inventory的INVENTORY_GetCompositItem和当前MPQ准备真实身体组件。例如qui绗缝甲四个主体组件ArmType为0、肩部为1，女巫对应原DCC及城镇COF存在。真实装备组件进入公共合成器，未知组件染色／无形透明只作诊断，不因品质或效果标志隐去人物；未知组件身份或缺COF保持明确不可用；真实身份的组件图形缺文件按原版逐层省略并保留路径诊断，已有文件的解码失败仍不可用，不替换裸装。公共规则与DLL依据见[人物显示](CHARACTER.md#显示边界)。选角肖像染色与全部世界组件组合仍有缺口。
 
 <a id="最终依赖清理"></a>
 

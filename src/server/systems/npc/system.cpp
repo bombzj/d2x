@@ -86,7 +86,7 @@ const AreaNpc *System::travelSource(const ActorContext &actor,EntityId id) const
     // Retail closes30 before38, so an active conversation is not required.
     return findSource(actor,id,false,true);
 }
-const AreaNpc *System::findSource(const ActorContext &actor,EntityId id,bool conversation,bool travel) const {
+const AreaNpc *System::findSource(const ActorContext &actor,EntityId id,bool conversation,bool travel,int range) const {
     const auto *player = ports_.players.find(actor.player); const auto *area = ports_.areas.find(actor.area);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0 || !area || area->generation != actor.areaGeneration) return nullptr;
     // PlrMsg::sub_6FC828D0 resolves the real GUID across active rooms. An
@@ -108,7 +108,7 @@ const AreaNpc *System::findSource(const ActorContext &actor,EntityId id,bool con
     const int dx=int(std::floor(at.x+.5f))-int(std::floor(player->position.x+.5f));
     const int dy=int(std::floor(at.y+.5f))-int(std::floor(player->position.y+.5f));
     if(travel?(std::abs(dx)>50 || std::abs(dy)>50):
-        nativeUnitDistance(player->position,2,at,found->rule.size)>8) return nullptr;
+        nativeUnitDistance(player->position,2,at,found->rule.size)>range) return nullptr;
     if (conversation) { const auto current = state_.conversations.find(actor.player); if (current == state_.conversations.end() || current->second.npc != id || current->second.area != actor.area || current->second.actor != actor.actor || current->second.areaGeneration != actor.areaGeneration) return nullptr; }
     return found;
 }
@@ -163,16 +163,28 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if(current!=state_.conversations.end() && current->second.npc!=end->target) return {DomainStatus::Stale,{}};
         return close(actor.player);
     }
+    if (const auto *stop = std::get_if<StopForClick>(&request.intent)) {
+        if (!(stop->observed.x>=0 && stop->observed.x<=UINT16_MAX && stop->observed.y>=0 && stop->observed.y<=UINT16_MAX))
+            return {DomainStatus::InvalidRequest,{}};
+        const auto *npc = findSource(actor, stop->target, false, false, 50);
+        if (!npc || !ports_.monsters.find(npc->id)->rule.stateTarget.npc) return {DomainStatus::InvalidRequest,{}};
+        ports_.monsters.stopForNpcClick(npc->id, actor.tick, stop->observed);
+        return {DomainStatus::Applied,std::monostate{}};
+    }
     const auto &talk = std::get<TalkToNpc>(request.intent);
-    const auto *npc = find(actor,talk.target); if (!npc) return {DomainStatus::InvalidRequest,{}};
+    const auto *npc = findSource(actor,talk.target,false,false,talk.action==TalkToNpc::Action::Talk?50:8); if (!npc) return {DomainStatus::InvalidRequest,{}};
     const auto &player = *ports_.players.find(actor.player);
     if(talk.action==TalkToNpc::Action::Talk) {
-        if(nativeUnitDistance(player.position,2,position(actor,*npc),npc->rule.size)>6) {
+        if (ports_.monsters.find(npc->id)->rule.stateTarget.npc) ports_.monsters.stopForNpcClick(npc->id, actor.tick);
+        const int distance = nativeUnitDistance(player.position,2,position(actor,*npc),npc->rule.size);
+        if (distance > 8) return {DomainStatus::Applied,std::monostate{}};
+        if (distance > 6) {
             if(ports_.movement.execute(actor,{MovementAction::ApproachNpc,{},true,npc->id})!=CommandStatus::Applied)
                 return {DomainStatus::Unavailable,{}};
             approaches_.insert_or_assign(actor.player,Approach{actor,request,player.locomotionSequence});
             return {DomainStatus::Applied,std::monostate{}};
         }
+        if (conversation(actor.player)) return {DomainStatus::Applied,std::monostate{}};
         ports_.movement.execute(actor,{MovementAction::Stop,{},false});
     }
     // 2F confirms the conversation created by 13; do not resend 27/28 and

@@ -170,7 +170,14 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
             if(int(actor.area)==73 && area->definition.staffTomb) level=*area->definition.staffTomb;
             else if(ports_.quests.read().actTwo.tombOpen && ports_.quests.read().actTwo.tomb==actor.area) level=73;
         }
-        if(!level || !ports_.quests.allowsTravel(p->persistent.player,actor.area,RegionId(level))) return {DomainStatus::Conflict,{}};
+        if(!level) return {DomainStatus::Conflict,{}};
+        if(object->rule.operation==72) {
+            if(!ports_.quests.credited(actor.player,QuestId::EveOfDestruction)) {
+                const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
+                    {SoundFact{actor.actor,0,actor.area,19}}});
+                return sent?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{sent.status,{}};
+            }
+        } else if(!ports_.quests.allowsTravel(p->persistent.player,actor.area,RegionId(level))) return {DomainStatus::Conflict,{}};
         const auto prepared=ports_.world.request(RegionId(level));if(!prepared) return {prepared.status,{}};
         Transition next{actor.area,RegionId(level),*prepared.value,actor.areaGeneration,actor.sequence,object->id,p->position,{}};next.kind=Kind::QuestObject;
         state_.transitions.insert_or_assign(actor.player,next);auto &player=ports_.players.players_.at(actor.player);

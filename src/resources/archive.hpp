@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include <typeindex>
+#include <unordered_map>
 namespace d2x {
 Bytes readFile(const std::filesystem::path &path);
 void writeFile(const std::filesystem::path &path, std::span<const uint8_t> data);
@@ -22,7 +23,9 @@ class Archives {
     std::function<void()> loadingPulse;
     mutable bool listed_{};
     // Owned by this mounted resource set, not by a player, room or connection.
-    mutable std::map<std::type_index, std::shared_ptr<const void>> prepared_;
+    // Use type equality. Ordering local and external RTTI keys together is
+    // unreliable with the Windows MinGW runtime and can duplicate whole catalogs.
+    mutable std::unordered_map<std::type_index, std::shared_ptr<const void>> prepared_;
     mutable std::map<std::string, Bytes, std::less<>> readCache_;
     mutable size_t cacheBytes_{};
     // Loose members addressed as <prefix>/<path relative to root>, normalized.

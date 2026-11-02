@@ -2,6 +2,7 @@
 #include "client/remote_town.hpp"
 #include "network/realm_session.hpp"
 #include <chrono>
+#include <functional>
 
 namespace d2x {
 // MPQ eligibility and command sequencing. No local movement, NPC rules or D2S authority.
@@ -10,7 +11,7 @@ class RemoteControl {
     struct InteractionSubmission {
         OnlineUnitKey target;
         OnlineIntentContext context;
-        uint64_t revision{},discontinuity{};
+        uint64_t revision{},discontinuity{},combatSequence{};
         OnlinePoint position{};
     };
   private:
@@ -48,15 +49,25 @@ class RemoteControl {
     std::optional<Movement> movement_;
     uint64_t verificationGame_{}, verificationArea_{}, verificationRevision_{};
     std::string reason_;
+    std::function<std::optional<OnlinePoint>(OnlineUnitKey)> npcPathPosition_;
+    std::function<void(OnlineUnitKey)> stopNpcPath_;
+    std::function<std::optional<int>(OnlineUnitKey)> npcFollowRange_;
     bool reject(std::string reason);
-    bool submitSegment(Movement &);
-    bool submitInteraction(OnlineUnitKey, const OnlineIntentContext &);
+    bool submitSegment(Movement &, std::optional<OnlinePoint> stopNpc = {});
+    bool submitInteraction(OnlineUnitKey, const OnlineIntentContext &, std::optional<OnlinePoint> stopNpc = {});
     void observeOpening();
   public:
     RemoteControl(RemoteTown &scene, net::RealmSession &session) : scene_(scene), session_(session) {}
+    void bindNpcPath(std::function<std::optional<OnlinePoint>(OnlineUnitKey)> position,
+                     std::function<void(OnlineUnitKey)> stop,
+                     std::function<std::optional<int>(OnlineUnitKey)> followRange) {
+        npcPathPosition_ = std::move(position);
+        stopNpcPath_ = std::move(stop);
+        npcFollowRange_ = std::move(followRange);
+    }
     bool move(OnlinePoint, bool run, std::optional<OnlineIntentContext> context = {}, std::optional<Vec> requestOrigin = {});
     bool moveToUnit(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {},
-                    std::optional<Vec> displayOrigin = {});
+                    std::optional<Vec> displayOrigin = {}, std::optional<OnlinePoint> stopNpc = {});
     bool interact(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {},
                   std::optional<Vec> displayOrigin = {}, bool followUntilServerArrival = false);
     bool townPortal();

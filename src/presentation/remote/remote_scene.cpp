@@ -305,6 +305,28 @@ std::optional<Vec> RemoteScene::Impl::localUnitPosition(OnlineUnitKey key) const
     return Vec{float(unit->second.position->x), float(unit->second.position->y)};
 }
 
+std::pair<int, bool> RemoteScene::Impl::equippedWeaponReach(const OnlineUnit &actor) const {
+    int reach = 0;
+    bool ranged = false;
+    int selectedBody = 6;
+    for (const auto &[id, item] : world().items) {
+        (void)id;
+        if (item.ownerType != actor.key.type || item.owner != actor.key.id || item.mode != 1 ||
+            (item.body != 4 && item.body != 5) || item.body >= selectedBody || (item.flags & (0x100u | 0x4000u))) continue;
+        for (size_t weapon = 0; weapon < weapons.rows().size(); ++weapon) {
+            if (weapons.value(weapon, "code") != item.code) continue;
+            // UNITS_GetMeleeRange -> INVENTORY_GetEquippedWeapon chooses
+            // usable RARM before LARM, independently of the larger range.
+            selectedBody = item.body;
+            reach = weapons.number(weapon, "rangeadder").value_or(0);
+            const auto kind = weapons.value(weapon, "wclass");
+            ranged = kind == "bow" || kind == "xbw";
+            break;
+        }
+    }
+    return {reach, ranged};
+}
+
 std::optional<int> RemoteScene::Impl::castMeleeRange(const OnlineUnit &actor, const OnlineCombatCommand &command) const {
     if (command.stationary || !command.target) return {};
     const auto skill = skillRows.find(command.skill);
@@ -313,20 +335,18 @@ std::optional<int> RemoteScene::Impl::castMeleeRange(const OnlineUnit &actor, co
     // D2Common_11016 resolves both from the equipped weapon. PlrMsg
     // approaches only h2h targets; rng and none start at the current feet.
     if (range != "h2h" && range != "both") return {};
-    int reach = 0;
-    bool ranged = false;
-    for (const auto &[id, item] : world().items) {
-        (void)id;
-        if (item.ownerType != actor.key.type || item.owner != actor.key.id || item.mode != 1 ||
-            (item.body != 4 && item.body != 5)) continue;
-        for (size_t weapon = 0; weapon < weapons.rows().size(); ++weapon) {
-            if (weapons.value(weapon, "code") != item.code) continue;
-            reach = std::max(reach, weapons.number(weapon, "rangeadder").value_or(0));
-            const auto kind = weapons.value(weapon, "wclass");
-            ranged |= kind == "bow" || kind == "xbw";
-        }
+    const auto [reach, ranged] = equippedWeaponReach(actor);
+    if (range == "both" && ranged) {
+        // D2Common_11016 applies States.meleeonly after weapon classification.
+        bool meleeOnly = false;
+        if (combatBinding) if (const auto snapshot = combatBinding->states().find(actor.key);
+            snapshot != combatBinding->states().end() && snapshot->second.decoded)
+            meleeOnly = std::any_of(snapshot->second.states.begin(), snapshot->second.states.end(), [&](const auto &entry) {
+                const auto row = stateRows.find(entry.first);
+                return row != stateRows.end() && states.number(row->second, "meleeonly").value_or(0) != 0;
+            });
+        if (!meleeOnly) return {};
     }
-    if (range == "both" && ranged) return {};
     return reach;
 }
 
@@ -403,6 +423,32 @@ std::optional<Vec> RemoteScene::playerDisplayPosition(const OnlineView &view) co
 }
 const std::vector<OnlinePlayerDisplay> &RemoteScene::players() const { return impl_->players; }
 const std::vector<OnlineSceneView::MissileDisplay> &RemoteScene::missileObservations() const { return impl_->clientMissiles; }
+std::optional<OnlinePoint> RemoteScene::npcPathPosition(const OnlineView &view, OnlineUnitKey key) const {
+    if (key.type != 1 || impl_->gameGeneration != view.gameGeneration || impl_->areaGeneration != view.world.areaGeneration) return {};
+    const auto pose = impl_->motion.find(key);
+    const auto unit = view.world.units.find(key);
+    if (pose == impl_->motion.end() || unit == view.world.units.end() || !pose->second.last ||
+        pose->second.assignmentRevision != unit->second.assignmentRevision ||
+        pose->second.discontinuity != unit->second.positionDiscontinuity ||
+        pose->second.positionRevision != unit->second.positionRevision || pose->second.actionRevision != unit->second.actionRevision) return {};
+    const auto point = pose->second.position;
+    if (!(point.x >= 0 && point.x <= UINT16_MAX && point.y >= 0 && point.y <= UINT16_MAX)) return {};
+    return OnlinePoint{uint16_t(std::lround(point.x)), uint16_t(std::lround(point.y))};
+}
+std::optional<int> RemoteScene::npcFollowRange(const OnlineView &view, OnlineUnitKey key) const {
+    if (!npcPathPosition(view, key) || !playerPathPosition(view)) return {};
+    const auto actor = view.world.units.find({0, *view.load.playerUnitId});
+    if (actor == view.world.units.end()) return {};
+    const auto &target = impl_->motion.at(key);
+    // D2Client 2B090 -> 2AEA0 -> 29E80: retained 13 uses melee reach.
+    return impl_->equippedWeaponReach(actor->second).first + (target.pathMoving ? 1 : 0);
+}
+void RemoteScene::stopNpcPath(const OnlineView &view, OnlineUnitKey key) {
+    if (!npcPathPosition(view,key)) return;
+    auto &pose = impl_->motion.at(key);
+    pose.npcClickStopped = true;
+    pose.route.clear(); pose.goal.reset(); pose.pathMoving = false;
+}
 std::optional<Vec> RemoteScene::playerPathPosition(const OnlineView &view) const {
     // Reuse assignment/area/discontinuity checks, but exclude visual correction.
     if (!playerDisplayPosition(view)) return {};

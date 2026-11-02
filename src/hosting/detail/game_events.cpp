@@ -307,6 +307,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 const auto quests=host.questProjection(*binding);
                 if(!quests) throw std::logic_error("NPC interaction quest projection unavailable");
                 if(npc->activate) {
+                    peer.npcQuestAlerts.clear(); // NPC-context28 clears every old alert in the client.
                     for(auto &packet:nativeQuestUpdate(*content,*quests,EntityId{identities().guid(npc->npc,1)})) delta.push_back(std::move(packet));
                 } else delta.push_back(encodeServerPacket(ServerMessage::GameQuests,[&](auto &out) {
                     for(const auto word:quests->gameFlags) out.u16(word);

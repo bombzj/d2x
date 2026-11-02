@@ -36,7 +36,7 @@ void DebugAi::Impl::Definitions::loadCombatObservations() {
         for(size_t row=0;row<missiles.rows().size();++row) if(missiles.value(row,"Missile")==name) {
             const auto id=missiles.number(row,"Id"),size=missiles.number(row,"Size");
             if(!id || !size || *size<1 || *size>3) throw std::runtime_error("Unverified native hazard missile: "+std::string(name));
-            hazardSizes[*id]=*size;found=true;break;
+            hazardSizes[*id]=*size;dangerousMissiles.insert(*id);found=true;break;
         }
         if(!found) throw std::runtime_error("Missing native hazard missile: "+std::string(name));
     }
@@ -66,8 +66,14 @@ std::vector<DebugAi::Impl::VisualThreat> DebugAi::Impl::visibleThreats(const Con
         const auto size=definitions->hazardSizes.find(missile.id);
         if(!missile.hostile || missile.age<0 || missile.remaining<=0 || size==definitions->hazardSizes.end() ||
             (missile.position-c.position).length()>64) continue;
+        bool boss = false;
+        if (missile.source) if (const auto unit = c.session.read().world.units.find(*missile.source);
+            unit != c.session.read().world.units.end() && unit->first.type == 1) {
+            const auto row = findCompiledMonsterRow(definitions->monsters, c.combat.monsterClass(unit->second).value_or(UINT16_MAX));
+            boss = row && definitions->monsters.number(*row, "boss").value_or(0);
+        }
         hazards.push_back({missile.id,missile.position,missile.position+missile.velocity*
-            std::min(float(policy.hazardLookaheadMs)/1000.f,missile.remaining),float(size->second+policy.hazardPadding),false});
+            std::min(float(policy.hazardLookaheadMs)/1000.f,missile.remaining),float(size->second+policy.hazardPadding),false,boss || definitions->dangerousMissiles.contains(missile.id)});
     }
     for(const auto &[key,unit]:c.session.read().world.units) {
         if(key.type!=1 || !unit.position || onlineMonsterCorpse(unit) || !c.combat.hostileSource(unit) || c.combat.monsterTargetEligible(unit,false)) continue;
@@ -75,11 +81,23 @@ std::vector<DebugAi::Impl::VisualThreat> DebugAi::Impl::visibleThreats(const Con
         if(!row || !definitions->monsters.number(*row,"killable").value_or(0) ||
             definitions->monsters.number(*row,"npc").value_or(0) || definitions->monsters.number(*row,"interact").value_or(0)) continue;
         const Vec at{float(unit.position->x),float(unit.position->y)};
-        if((at-c.position).length()<=32) hazards.push_back({int(unit.classId.value_or(0)),at,at,float(policy.kiteMinDistance),true});
+        if((at-c.position).length()<=32) hazards.push_back({int(unit.classId.value_or(0)),at,at,float(policy.kiteMinDistance),true,true});
     }
+    const auto incoming = std::count_if(hazards.begin(), hazards.end(), [&](const auto &hazard) {
+        return !hazard.unitSource && threatClearance({&hazard, 1}, c.position) < 0;
+    });
+    const auto &world = c.session.read().world;
+    bool vulnerable = combatMaxLife && *combatMaxLife > 0 && world.life &&
+        uint64_t(*world.life) * 100 <= uint64_t(*combatMaxLife) * policy.retreatLifePercent;
+    if (combatMaxLife && *combatMaxLife > 0 && world.life)
+        for (const auto &sample : combatLifeSamples)
+            vulnerable |= sample.life > *world.life && uint64_t(sample.life - *world.life) * 100 >=
+                uint64_t(*combatMaxLife) * policy.lifeDropPercent;
+    if (incoming < 3 && !vulnerable)
+        std::erase_if(hazards, [](const auto &hazard) { return !hazard.dangerous; });
     return hazards;
 }
-float DebugAi::Impl::threatClearance(const std::vector<VisualThreat> &hazards,Vec at) {
+float DebugAi::Impl::threatClearance(std::span<const VisualThreat> hazards,Vec at) {
     const auto segmentDistance=[](Vec at,Vec from,Vec to) {
         const Vec delta=to-from;const float length=delta.x*delta.x+delta.y*delta.y;
         const Vec relative=at-from;
@@ -96,7 +114,7 @@ bool DebugAi::Impl::avoidHazards(Context &c) {
     const auto safety=[&](Vec at) {return threatClearance(hazards,at);};
     const float current=safety(c.position);
     const auto sources=std::count_if(hazards.begin(),hazards.end(),[](const auto &threat){return threat.unitSource;});
-    hazardDiagnostics={{"observedHostileMissiles",hazards.size()-size_t(sources)},{"unitThreatSources",sources},{"clearance",current},{"status","clear"}};
+    hazardDiagnostics={{"dangerousHostileMissiles",hazards.size()-size_t(sources)},{"unitThreatSources",sources},{"clearance",current},{"status","clear"}};
     if(hazardDodge) {
         const bool reached=(Vec{float(hazardDodge->x),float(hazardDodge->y)}-c.position).length()<=3;
         const Vec destination{float(hazardDodge->x),float(hazardDodge->y)};

@@ -909,6 +909,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         r.finish();
         if (p.id == 0x29) w.quests.gameFlags = flags;
         else if (kind == 6 || kind == 1) w.quests.playerFlags = flags; // Initialization or NPC's player-private record.
+        // Retail 4B955 calls 46770 for every NPC: clear old alert overlays
+        // when an assigned NPC opens a conversation; later 8A may rearm them.
+        if(p.id==0x28 && kind==1 && w.units.contains({1,source})) w.questAlerts.clear();
         if(p.id==0x28 && kind==1 && w.npcRequested==source && w.npcPendingConversation &&
             w.npcPendingConversation->source==source && w.units.contains({1,source})) {
             w.npcConversation=std::move(w.npcPendingConversation);
@@ -957,7 +960,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     case 0x5F:
         w.playerPortalFlags=r.u32(); r.finish(); break;
     case 0x52:
-        for (auto &status : w.quests.statuses) status = r.u8();
+        for (size_t i=0;i<w.quests.statuses.size();++i) {
+            const auto status=r.u8();
+            if(w.quests.statuses[i]!=status) w.quests.statusChanges[i]={};
+            w.quests.statuses[i]=status;
+        }
         r.finish(); w.quests.revision = w.revision; break;
     case 0x5D: {
         const auto id = r.u8(), flags = r.u8(), status = r.u8(); const auto progress = r.u16(); r.finish();
@@ -965,7 +972,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         // Quest numbers in 0x5D differ from the record/filter indices used by 0x52.
         const int slot = id <= 6 ? id : id >= 7 && id <= 13 ? id+1 : id >= 14 && id <= 20 ? id+2 :
             id >= 21 && id <= 24 ? id+3 : id >= 31 && id <= 36 ? id+4 : -1;
-        if (slot >= 0) w.quests.statuses[size_t(slot)] = status;
+        if (slot >= 0) {
+            if (w.quests.statuses[slot] != status)
+                w.quests.statusChanges[slot] = {w.areaGeneration, receivedMilliseconds()};
+            w.quests.statuses[slot] = status;
+        }
         if (id == 1) w.quests.denRemaining = progress;
         if (id == 32) w.quests.rescuedBarbsRemaining = progress;
         w.quests.revision = w.revision; break;
@@ -1070,7 +1081,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     case 0x8A: {
         const auto target = key(r); r.finish();
-        if (target.type == 1 && w.questAlerts.size() < 4096) w.questAlerts.insert(target);
+        if (target.type == 1 && w.questAlerts.size() < 4096 &&
+            !(w.npcConversation && w.npcConversation->type==1 && w.npcConversation->source==target.id))
+            w.questAlerts.insert(target); // Retail 479DA ignores the active conversation NPC.
         break;
     }
     case 0x2C: {

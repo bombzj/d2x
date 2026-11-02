@@ -847,7 +847,21 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             control.cancelApproach();
             accepted = session.read().world.npcRequested ? session.close_npc() : approaching;
             mutation = true;
-        } else if (command == "online-npc-message" || command == "online-npc-travel" || command=="online-npc-respec") {
+        } else if (command == "online-npc-message") {
+            // Quest objects also publish original 27/28 reading messages.
+            // Their activated mode may remove the clickable map target, so
+            // use the protocol conversation, as the quest AI already does.
+            const auto &conversation=session.read().world.npcConversation;
+            if(!conversation) return Json{{"ok",false},{"error","No current server NPC/object conversation is open"}}.dump();
+            if(request.contains("npcRevision") && request.at("npcRevision").get<uint64_t>()!=conversation->revision)
+                return Json{{"ok",false},{"error","Stale NPC message revision"}}.dump();
+            const auto &value=request.at("stringId");
+            if(!value.is_number_integer()) throw std::invalid_argument("NPC stringId must be an integer");
+            const auto id=value.get<int64_t>();
+            if(id<0 || id>UINT16_MAX) throw std::invalid_argument("NPC stringId is outside the native range");
+            accepted=session.acknowledge_npc_message(uint16_t(id));
+            control.cancelMovement();mutation=true;
+        } else if (command == "online-npc-travel" || command=="online-npc-respec") {
             const auto scene = sceneSnapshot();
             if (!scene.npcConversation)
                 return Json{{"ok", false}, {"error", "No current server NPC conversation is open"}}.dump();
@@ -858,15 +872,9 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                     return Json{{"ok", false}, {"error", "No verified server NPC travel option is available"}}.dump();
                 if(!scene.npcConversation->travelDestination) return Json{{"ok",false},{"error","NPC travel destination is unavailable"}}.dump();
                 accepted = session.npc_travel(*scene.npcConversation->travelDestination);
-            } else if(command=="online-npc-respec") {
+            } else {
                 if(scene.npcConversation->respecLabel.empty()) return Json{{"ok",false},{"error","No original Akara respec option is available"}}.dump();
                 accepted=session.npc_travel(0);
-            } else {
-                const auto &value = request.at("stringId");
-                if (!value.is_number_integer()) throw std::invalid_argument("NPC stringId must be an integer");
-                const auto id = value.get<int64_t>();
-                if (id < 0 || id > UINT16_MAX) throw std::invalid_argument("NPC stringId is outside the native range");
-                accepted = session.acknowledge_npc_message(uint16_t(id));
             }
             control.cancelMovement(); mutation = true;
         } else if (command == "online-waypoint-travel" || command == "online-waypoint-close") {

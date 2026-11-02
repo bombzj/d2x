@@ -108,6 +108,11 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
         client_.reset();server_=view.world.playerPosition;edgeStart_.reset();edgeEnd_.reset();exitLevel_.reset();
         lastFrom_.reset();lastRequest_.reset();lastTarget_.reset();closeApproach_=false;approachRetries_=0;clickedAt_={};decisions_=0;clientMoving_=false;
         forceApproach_=request.value("forceApproach",false);
+        waitQuestAlert_=kind==Goal::Unit && target->type==1 && request.value("waitQuestAlert",false);
+        waypointOpening_=kind==Goal::Waypoint || (kind==Goal::Unit && target->type==2 &&
+            request.value("purpose",std::string{})=="activate-waypoint");
+        waypointMenu_=kind==Goal::Waypoint || request.value("confirmMenu",false);
+        alertWaitSince_={};
         moves_=interactions_=searches_=0;interactionFrom_.reset();interactionRevision_=view.world.revision;interactionDiscontinuity_=0;
         progressAt_=Clock::now();deadline_=progressAt_+std::chrono::seconds(timeout);
         executionClock_.reset(progressAt_);
@@ -122,6 +127,8 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     const bool unavailable=blocked || !scene.movementAvailable || !scene.origin || !view.world.playerPosition || !town.map() || !pathPosition;
     const auto suspended=executionClock_.sample(now,unavailable);
     deadline_+=suspended;progressAt_+=suspended;
+    if(clickedAt_!=Clock::time_point{}) clickedAt_+=suspended;
+    if(alertWaitSince_!=Clock::time_point{}) alertWaitSince_+=suspended;
     if(view.gameGeneration!=game_ || view.world.areaGeneration!=area_ || view.stage!=OnlineStage::ProtocolReady ||
         (scene.area && scene.area!=level_)) {
         finish("cancelled","Game/area changed; start a new navigation intent",control);return;
@@ -132,34 +139,27 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     }
     const auto &submitted=control.interactionSubmission();
     if(unit_ && unit_->type==2 && source_=="native-unit-approach" && submitted && submitted->target==unit_ &&
-        onlineWorldMatches(submitted->context,view) && (submitted->revision>interactionRevision_ ||
-            (interactionFrom_ && submitted->revision==interactionRevision_))) {
+        onlineWorldMatches(submitted->context,view) && submitted->revision>interactionRevision_) {
         // Observe the actual 13 submission even when its resulting menu now
         // blocks movement. The parent owns the object's distinct postcondition.
         interactionFrom_=submitted->position;interactionRevision_=submitted->revision;
         interactionDiscontinuity_=submitted->discontinuity;
-        if(goal_==Goal::Waypoint && view.world.waypointSource!=unit_->id) {
-            // This goal explicitly needs a menu for travel / the initial
-            // history query. Neutral activation alone cannot complete it.
-            // Ordinary unit activation has no such second click.
-            if(!unavailable && view.world.waypointActivation &&
-                view.world.waypointActivation->source==unit_->id &&
-                view.world.waypointActivation->generation==view.world.interactionGeneration &&
-                !view.world.waypointRequested)
-                control.interact(*unit_,run_,{},pathPosition);
-            if(now>=deadline_) finish("failed","Waypoint click had no menu result before its deadline",control);
-            return;
-        }
-        finish("completed","Normal unit approach submitted the object interaction",control);return;
+        if(!waypointOpening_) {finish("completed","Normal unit approach submitted the object interaction",control);return;}
+        clickedAt_=now;
     }
-    if(unit_ && goal_==Goal::Waypoint && view.world.waypointSource==unit_->id) {
+    if(unit_ && waypointOpening_ && view.world.waypointSource==unit_->id) {
         finish("completed","Server waypoint menu opened",control);return;
     }
+    const bool activated=unit_ && waypointOpening_ && clickedAt_!=Clock::time_point{} && view.world.waypointActivation &&
+        view.world.waypointActivation->source==unit_->id && view.world.waypointActivation->generation==view.world.interactionGeneration;
+    if(activated && !waypointMenu_) {finish("completed","Server confirmed waypoint activation",control);return;}
     if(unavailable) return;
     const bool nearEnd=segment_ && pathPosition && (Vec{float(segment_->x),float(segment_->y)}-*pathPosition).length()<=6;
     std::array<uint64_t,24> signals{view.world.areaGeneration,town.navigationRevision(),uint64_t(pathMoving),uint64_t(nearEnd),
         view.world.interactionGeneration,view.world.waypointSource.value_or(0),view.world.rooms.size()};
     if(unit_) if(const auto found=view.world.units.find(*unit_);found!=view.world.units.end()) {
+        signals[10]=view.world.questAlerts.contains(*unit_);
+        signals[11]=view.world.waypointActivation?view.world.waypointActivation->generation:0;
         signals[7]=found->second.assignmentRevision;signals[8]=found->second.mode.value_or(0);
         if(found->second.position) signals[9]=uint64_t(found->second.position->x)|(uint64_t(found->second.position->y)<<16);
     }
@@ -212,26 +212,30 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             return point(at+Vec{.5f,.5f})==OnlinePoint{uint16_t(p.first),uint16_t(p.second)};
         });
     };
-    if(clickedAt_!=Clock::time_point{} && unit_ && (unit_->type==1 || unit_->type==5)) {
+    const auto settle=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*view.latencyMilliseconds.value_or(0)+200,600,2000));
+    if(clickedAt_!=Clock::time_point{} && unit_ && (unit_->type==1 || unit_->type==5 || waypointOpening_)) {
         // RemoteControl first supplements the opening at 100 ms intervals.
         // If that burst has no result, retain this target and choose a closer
         // collision-checked approach, never the old sparse server position.
-        const auto settle=std::chrono::milliseconds(std::max<uint64_t>(600,2*view.latencyMilliseconds.value_or(0)+200));
-        const bool approachInFlight=(unit_->type==1 && view.world.npcRequested==unit_->id) ||
-            (unit_->type==5 && view.world.movementRequest && view.world.movementRequest->unit==unit_ && view.world.movementRequest->interaction);
-        const auto receiptWindow=approachInFlight && !town.interactionReady(view,*unit_)?std::chrono::milliseconds(5000):settle;
-        // A locally stopped prediction can be ahead of an advancing host.
-        // Keep the click while the ordinary native approach makes progress;
-        // RemoteControl completes it on the actual position receipt.
-        const auto assigned=view.world.units.find(*unit_);
-        const bool refreshedOutside=unit_->type==1 && assigned!=view.world.units.end() &&
-            assigned->second.positionRevision>interactionRevision_ && !town.interactionReady(view,*unit_);
-        if((unit_->type==1 && view.world.npcRequested==unit_->id && !refreshedOutside) || view.world.npcPendingConversation ||
-            now-clickedAt_<settle || (approachInFlight && now-progressAt_<receiptWindow)) {
+        if(activated && !view.world.waypointRequested) {
+            // First use activated the pad. Travel needs a separate menu opening.
+            if(control.interact(*unit_,run_,{},pathPosition)) {
+                source_="native-unit-approach";clickedAt_={};++interactions_;progressAt_=now;return;
+            }
+        }
+        const bool waitingAtTarget=town.interactionReady(view,*unit_) && town.interactionReady(view,*unit_,*pathPosition) &&
+            ((unit_->type==1 && view.world.npcRequested==unit_->id) ||
+             (waypointOpening_ && view.world.waypointRequested==unit_->id));
+        if(waitingAtTarget && waypointOpening_ && goal_==Goal::Unit && now-clickedAt_>=3*settle) {
+            session.use_waypoint(0);finish("failed","Waypoint opening remained unanswered in range",control);return;
+        }
+        if(waitingAtTarget || (unit_->type==1 && view.world.npcPendingConversation && view.world.npcRequested==unit_->id) ||
+            now-clickedAt_<settle || now-progressAt_<settle) {
             reason_="Waiting for the actual opening after bounded quick clicks";return;
         }
-        if(approachRetries_>=2) {finish("failed","Interaction opening had no result after quick clicks and local approaches",control);return;}
         if(unit_->type==1 && view.world.npcRequested==unit_->id) session.close_npc();
+        if(waypointOpening_ && view.world.waypointRequested==unit_->id) session.use_waypoint(0);
+        if(approachRetries_>=2) {finish("failed","Interaction opening had no result after quick clicks and local approaches",control);return;}
         visited_.emplace(player.x,player.y);++approachRetries_;closeApproach_=true;
         forceApproach_=true;
         source_="unit-collision-detour";
@@ -351,6 +355,16 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         const auto target=std::find_if(scene.mapTargets.begin(),scene.mapTargets.end(),[&](const auto &entry){return entry.unit==*unit_;});
         if(target==scene.mapTargets.end()) {finish("failed","Target is no longer assigned in the client scene",control);return;}
         point_=target->position;
+        if(interact_ && !interactions_ && !forceApproach_ && unit_->type==1 && view.world.npcRequested==unit_->id) {
+            // A resumed plan may already have an opening in flight. Give it
+            // the same receipt and position checks as a newly submitted click.
+            clickedAt_=now;state_="interacting";reason_="Observing the NPC opening already in flight";return;
+        }
+        const bool awaitingAlert=waitQuestAlert_ && !interactions_ && !view.world.questAlerts.contains(*unit_);
+        if(awaitingAlert && ready(*pathPosition)) {
+            if(alertWaitSince_==Clock::time_point{}) alertWaitSince_=now;
+            if(now-alertWaitSince_<settle) {reason_="In talk range; allowing the NPC quest alert to arrive";return;}
+        } else alertWaitSince_={};
         if(interact_ && (unit_->type==1 || unit_->type==2 || unit_->type==5) && (!interactions_ || forceApproach_ || source_=="unit-opening-stance")) {
             // Stage around collision until a direct ordinary approach is
             // available, then click the real unit. NPCs, doors and entrances
@@ -392,7 +406,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             if(source_=="unit-opening-stance" && (pathMoving || now-submittedAt_<std::chrono::milliseconds(600))) return;
             // Leave room for sparse host positions at the native 50-cell
             // request boundary. This staging distance is AI policy only.
-            if(ready(*pathPosition) || (distance(player,*point_)<=32 &&
+            if(ready(*pathPosition) || (!awaitingAlert && distance(player,*point_)<=32 &&
                 pathGrid.nativeMovementSegment(from,targetPoint,playerMovement))) {
                 const bool follow=forceApproach_ || (ready(*pathPosition) && !town.interactionReady(view,*unit_));
                 if(!control.interact(*unit_,run_,{},pathPosition,follow)) {reason_=control.reason();return;}
@@ -409,19 +423,8 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                 clickedAt_=now;interactionFrom_=player;interactionRevision_=view.world.revision;
                 reason_="Normal unit approach submitted its opening click";return;
             }
-            if(pathMoving || now-progressAt_<std::chrono::milliseconds(600)) {
-                reason_="Waiting for the normal unit approach to finish";return;
-            }
-            if(control.approaching()==unit_ && control.awaitingServerArrival()) {
-                reason_="Following the assigned unit until the host confirms interaction range";return;
-            }
-            const Vec targetPoint{float(int(point_->x)-origin.x)+.5f,float(int(point_->y)-origin.y)+.5f};
-            if(control.approaching()==unit_ && now-progressAt_<std::chrono::seconds(5) &&
-                pathGrid.nativeMovementSegment(from,targetPoint,playerMovement)) {
-                // No observed collision explains the stop. Let the normal
-                // controller consume the host's path receipt and continue
-                // this click before replacing it with a detour.
-                reason_="Waiting for native unit approach progress or its arrival receipt";return;
+            if(now-progressAt_<(pathMoving?2*settle:settle)) {
+                reason_=control.awaitingServerArrival()?"Waiting for host interaction range":"Waiting for native unit approach progress";return;
             }
             // A stopped native approach needs an actual collision detour,
             // not a stale-position backtrack or an unbounded click loop.
@@ -465,7 +468,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                 }
                 interactionRevision_=submissionRevision;interactionDiscontinuity_=discontinuity;interactionFrom_=observedInteractionApproach?*server_:player;
                 ++interactions_;progressAt_=now;state_="interacting";
-                if(unit_->type==1 || unit_->type==5) clickedAt_=now;
+                if(unit_->type==1 || unit_->type==5 || waypointOpening_) clickedAt_=now;
                 else if(goal_!=Goal::Waypoint) finish("completed",observedInteractionApproach?
                     "Unit interaction submitted from the observed server approach; verify the server result separately":
                     "Interaction submitted; verify the server result separately",control);
@@ -502,10 +505,10 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                 if(distance(player,endpoint)>2 &&
                     (distance(endpoint,*remembered)<=6 || debugUnknownFrontier(pathGrid,path.back()))) candidate=endpoint;
             }
-            if(!candidate) {state_="searching";source_="remembered-waypoint-position";reason_="Waiting for a reachable approach or real assignment at the remembered waypoint";return;}
+            if(!candidate) {state_="searching";source_="remembered-waypoint-position";reason_="Reobserving actual rooms when the remembered waypoint has no current approach";}
         }
         const auto &knownRooms=town.navigationRooms();
-        if(!remembered) for(const auto &room:map.terrain.rooms) if(scene.area==room.level) {
+        if(!candidate) for(const auto &room:map.terrain.rooms) if(scene.area==room.level) {
             const auto known=std::find_if(knownRooms.begin(),knownRooms.end(),[&](const auto &entry) {
                 return entry.level==room.level && entry.x==(room.x+origin.x/5)*5 && entry.y==(room.y+origin.y/5)*5;
             });

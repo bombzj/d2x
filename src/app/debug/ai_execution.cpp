@@ -96,7 +96,9 @@ bool DebugAi::Impl::questWaitRequiresInput(const Context &c) const {
         for(const auto &message:conversation.messages) if(!conversation.acknowledged.contains(message.stringId) &&
             std::find(step.topics.begin(),step.topics.end(),message.stringId)!=step.topics.end()) return true;
     }
-    if(pending.action==QuestPending::Action::Object && pending.refreshIssued) return !pending.statusRequested;
+    if(pending.action==QuestPending::Action::Object && pending.refreshIssued)
+        return !pending.statusRequested && cursor<goals.size() && questRun.step<goals[cursor].steps.size() &&
+            goals[cursor].steps[questRun.step].publishesTombSymbol;
     if(pending.action!=QuestPending::Action::Topic && !((pending.action==QuestPending::Action::Imbue ||
         pending.action==QuestPending::Action::Service) && questRun.materialPhase==4)) return false;
     if(!pending.refreshIssued) return true;

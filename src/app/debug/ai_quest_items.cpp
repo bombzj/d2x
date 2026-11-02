@@ -3,6 +3,94 @@
 #include <stdexcept>
 
 namespace d2x {
+bool DebugAi::Impl::recoverQuestInventory(Context &c,const QuestStep *step) {
+    const auto &view=c.session.read();const auto &world=view.world;
+    if(questRun.pending) {
+        const auto action=questRun.pending->action;
+        const bool recovery=action==QuestPending::Action::RecoverOpen || action==QuestPending::Action::RecoverTake ||
+            action==QuestPending::Action::RecoverPlace || action==QuestPending::Action::RecoverClose;
+        if(!recovery) return true;
+        if(!questRun.pending->resultObserved) {
+            wait("quest-inventory-result","Waiting for the actual recovery operation; no item replay");checkQuestPending(c);return false;
+        }
+        questRun.pending.reset();
+    }
+    if(!questRun.recoveringItem) {
+        std::vector<std::string> codes;
+        if(step) {
+            if(step->action==QuestAction::Combine) {codes={step->produced,step->item};codes.insert(codes.end(),step->ingredients.begin(),step->ingredients.end());}
+            else if(step->action==QuestAction::Talk || step->action==QuestAction::UseItem || step->action==QuestAction::ReadScroll ||
+                step->action==QuestAction::SubmitStaff || step->action==QuestAction::EquipWeapon || step->action==QuestAction::Operate)
+                codes.push_back(step->item);
+        }
+        for(const auto &[id,item]:world.items) {
+            if(!onlineItemOwnedBy(item,view.load.playerUnitId)) continue;
+            // A new plan first stores its real Cursor. During a transaction
+            // the registered action retains the cursor and its own receipt.
+            if(item.mode==4 && !questRun.initialized) {questRun.recoveringItem=id;break;}
+            if(!step || item.code.empty() || std::find(codes.begin(),codes.end(),item.code)==codes.end()) continue;
+            const bool cubeHandled=step->action==QuestAction::Combine;
+            if(item.mode==0 && (item.page==5 || (item.page==4 && !cubeHandled))) {
+                questRun.recoveringItem=id;break;
+            }
+        }
+        if(!questRun.recoveringItem) {
+            if(questRun.initialInventory && (world.storage.kind!=OnlineStorageKind::None || world.storage.requested!=OnlineStorageKind::None)) {
+                OnlineItemCommand close;close.action=OnlineItemAction::StorageClose;
+                questItemRequest(c,close,QuestPending::Action::RecoverClose,"quest-initial-storage-close-submitted");return false;
+            }
+            questRun.initialInventory=false;return true;
+        }
+        // If the needed item is inside a cube that is itself in the stash,
+        // retrieve the cube first, then re-evaluate this same action's needs.
+        if(world.items.at(*questRun.recoveringItem).page==4)
+            for(const auto &[id,item]:world.items) if(item.code=="box" && item.mode==0 && item.page==5 && onlineItemOwnedBy(item,view.load.playerUnitId)) {
+                questRun.recoveringItem=id;break;
+            }
+        note("quest-inventory-recovery",std::to_string(*questRun.recoveringItem));
+    }
+    const auto found=world.items.find(*questRun.recoveringItem);
+    if(found==world.items.end() || !onlineItemOwnedBy(found->second,view.load.playerUnitId))
+        throw std::runtime_error("Quest recovery item ownership became unknown; no replacement or replay");
+    const auto &item=found->second;
+    if(item.mode==0 && item.page==1) {
+        if(world.storage.kind!=OnlineStorageKind::None || world.storage.requested!=OnlineStorageKind::None) {
+            OnlineItemCommand close;close.action=OnlineItemAction::StorageClose;
+            questItemRequest(c,close,QuestPending::Action::RecoverClose,"quest-recovery-close-submitted");return false;
+        }
+        note("quest-inventory-recovered",std::to_string(item.id));questRun.recoveringItem.reset();questRun.initialInventory=false;return true;
+    }
+    if(item.mode==4) {
+        if(!questStoreCursor(c,item.id) && questRun.pending && questRun.pending->action==QuestPending::Action::Place)
+            questRun.pending->action=QuestPending::Action::RecoverPlace;
+        return false;
+    }
+    if(item.mode!=0 || (item.page!=4 && item.page!=5))
+        throw std::runtime_error("Quest item is outside recoverable personal backpack/cube/stash/Cursor");
+    const auto required=item.page==5?OnlineStorageKind::Stash:OnlineStorageKind::Cube;
+    if(world.storage.kind!=required) {
+        if(world.storage.kind!=OnlineStorageKind::None || world.storage.requested!=OnlineStorageKind::None) {
+            OnlineItemCommand close;close.action=OnlineItemAction::StorageClose;
+            questItemRequest(c,close,QuestPending::Action::RecoverClose,"quest-recovery-close-submitted");return false;
+        }
+        if(required==OnlineStorageKind::Stash) {
+            if(!reachTown(c)) return false;
+            const auto stash=std::find_if(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),
+                [&](const auto &target){return target.interaction==OnlineMapInteraction::Stash && world.units.contains(target.unit);});
+            if(stash==c.town.read().mapTargets.end()) {explore(c,"actual personal stash for an owned quest item");return false;}
+            walk(c,{{"goal","unit"},{"unitType",stash->unit.type},{"unitId",stash->unit.id},{"interact",true},{"purpose","quest-recover-stash"}});
+        } else {
+            const auto cube=accessibleItem(c,"box");
+            if(!cube || cube->mode!=0 || cube->page!=1) throw std::runtime_error("Owned cube is not accessible for quest-item recovery");
+            OnlineItemCommand open;open.action=OnlineItemAction::CubeOpen;open.item=cube->id;open.itemRevision=cube->revision;
+            questItemRequest(c,open,QuestPending::Action::RecoverOpen,"quest-recovery-cube-submitted");
+        }
+        return false;
+    }
+    if(!settleItemInput(c)) return false;
+    OnlineItemCommand take;take.action=OnlineItemAction::Take;take.item=item.id;take.itemRevision=item.revision;
+    questItemRequest(c,take,QuestPending::Action::RecoverTake,"quest-recovery-take-submitted");return false;
+}
 bool DebugAi::Impl::questItemRequest(Context &c,OnlineItemCommand command,QuestPending::Action action,std::string event) {
     if(command.action!=OnlineItemAction::Use && !settleItemInput(c)) return false;
     const uint32_t item=command.item;

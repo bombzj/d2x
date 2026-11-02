@@ -30,6 +30,7 @@ struct WorldDrawItem {
     std::optional<int> missileFrame;
     std::optional<int> overlayFrame;
     bool suppressMissileLight{};
+    bool behindUnit{};
 };
 struct WorldDrawView {
     struct Alert { EntityId unit; Vec position; };

@@ -37,10 +37,11 @@ void DebugAi::Impl::configureActThreeQuest(Goal &goal,QuestId id) const {
     const auto bird=QuestId::GoldenBird,blade=QuestId::BladeOfTheOldReligion,khalim=QuestId::KhalimsWill;
     const auto temple=QuestId::BlackenedTemple,guardian=QuestId::Guardian,tome=QuestId::LamEsensTome;
     const auto birdGranted=flag(bird,3,true),orbDone=flag(khalim,1);
-    QuestStep search;search.action=QuestAction::SearchDrop;search.stateQuest=bird;search.item="j34";search.clearCombat=true;
-    for(const auto level:{"Act 3 - Jungle 1","Act 3 - Jungle 2","Act 3 - Jungle 3","Act 3 - Kurast 1","Act 3 - Kurast 2","Act 3 - Kurast 3","Act 3 - Travincal"})
+    QuestStep search;search.action=QuestAction::SearchDrop;search.stateQuest=bird;search.item="j34";search.dropNoticeStatus=1;
+    for(const auto level:{"Act 3 - Spider 2","Act 3 - Temple 1","Act 3 - Travincal","Act 3 - Jungle 1","Act 3 - Jungle 2","Act 3 - Jungle 3","Act 3 - Kurast 1","Act 3 - Kurast 2","Act 3 - Kurast 3"})
         search.searchAreas.push_back(definitions->area(level));
     const auto figurine=node("figurine-owned",search,{{item("j34")},{item("g34")},{item("xyz")},{birdGranted}});
+    goal.routeDrop=figurine;
     auto s=talk(bird,"cain3",527,4);
     const auto figurineTalk=node("figurine-explanation",s,{{flag(bird,4)},{item("g34")},{item("xyz")},{birdGranted}},{figurine},false,10);
     s=talk(bird,"meshif2",529,0);s.item="j34";s.produced="g34";
@@ -57,7 +58,9 @@ void DebugAi::Impl::configureActThreeQuest(Goal &goal,QuestId id) const {
     const auto bladeDone=flag(blade,1),bladeReturned=flag(blade,0x41,true);
     s={};s.action=QuestAction::Operate;s.stateQuest=blade;s.area=definitions->area("Act 3 - Jungle 3");s.target=object("gidbinn",31);
     const auto altar=node("gidbinn-altar-operated",s,{{item("g33")},{bladeReturned}},{},true);
-    s.action=QuestAction::SearchDrop;s.item="g33";s.witness=s.target;s.target.reset();s.clearCombat=true;
+    s.action=QuestAction::SearchDrop;s.item="g33";s.witness=s.target;
+    s.target=definitions->selector(Json{{"monster","fetish11"}});
+    s.target->eliteOnly=true;
     const auto gidbinn=node("gidbinn-owned",s,{{item("g33")},{bladeReturned}},{altar});
     s=talk(blade,"ormus",587,0x40);s.item="g33";
     const auto bladeBack=node("gidbinn-returned",s,{{bladeReturned}},{gidbinn},false,10);

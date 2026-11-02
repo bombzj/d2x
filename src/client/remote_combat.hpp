@@ -71,6 +71,8 @@ class RemoteCombat {
     std::optional<OnlineUnitKey> storedOwner(const OnlineUnit &) const;
     std::optional<uint16_t> monsterClass(const OnlineUnit &) const;
     std::optional<uint16_t> superUnique(const OnlineUnit &) const;
+    bool eliteMonster(const OnlineUnit &) const;
+    bool jadeFigurineCandidate(const OnlineUnit &) const;
     const std::vector<OnlineItemStat> *monsterPropertyStats(const OnlineUnit &) const;
     bool corpseSelectable(const OnlineUnit &) const;
     bool monsterTargetEligible(const OnlineUnit &, bool targetCorpse) const;

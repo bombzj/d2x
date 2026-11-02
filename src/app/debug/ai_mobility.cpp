@@ -28,10 +28,44 @@ std::optional<uint16_t> DebugAi::Impl::battleAura(const Context &c) const {
     }
     return {};
 }
-bool DebugAi::Impl::teleportAvailable(const Context &c) const {
+bool DebugAi::Impl::maintainArmor(Context &c) {
+    if (Clock::now() < nextArmorAttempt) return false;
+    const auto &view = c.session.read();
+    if (!view.load.playerUnitId || view.world.npcRequested || view.world.waypointSource) return false;
+    std::optional<uint16_t> selected;
+    for (const auto name : {"Shiver Armor", "Chilling Armor", "Frozen Armor"}) {
+        const auto skill = definitions->skill(name);
+        const auto row = definitions->skillRows.find(skill);
+        if (row == definitions->skillRows.end()) continue;
+        const auto stateName = definitions->skills.value(row->second, "aurastate");
+        for (size_t state = 0; state < definitions->states.rows().size(); ++state)
+            if (definitions->states.value(state, "state") == stateName) {
+                const auto id = definitions->states.number(state, "Id");
+                if (id && *id >= 0 && *id <= UINT8_MAX && recovering(c, uint8_t(*id))) return false;
+            }
+        if (!selected && knownSkill(c, skill) && !stateName.empty() && c.supplies && c.supplies->skillUsable &&
+            c.supplies->skillUsable(skill).value_or(false)) selected = skill;
+    }
+    if (!selected) return false;
+    if (!selectSkill(c, *selected, OnlineSkillHand::Right)) {
+        wait("armor-select", "Selecting the available defensive armor skill");
+        return true;
+    }
+    releaseCombat(c); cancelWalk(c);
+    OnlineCombatCommand cast; cast.action = OnlineCombatCommand::Action::Cast;
+    cast.hand = OnlineSkillHand::Right; cast.stationary = true;
+    cast.point = OnlinePoint{uint16_t(c.position.x), uint16_t(c.position.y)};
+    if (submitCombat(c, cast, DebugActionOwner::Combat, "armor-cast", c.position)) {
+        nextArmorAttempt = Clock::now() + std::chrono::seconds(3);
+        ++castRequests;
+        note("armor-cast", "Waiting for the normal server state assignment");
+    }
+    return true;
+}
+bool DebugAi::Impl::teleportAvailable(const Context &c,bool resourceReady) const {
     if(c.town.read().town || (mobilityPolicy.mode!="auto" && mobilityPolicy.mode!="teleport") ||
         !knownSkill(c,definitions->skill("Teleport"))) return false;
-    if(c.supplies && c.supplies->skillUsable)
+    if(resourceReady && c.supplies && c.supplies->skillUsable)
         if(const auto usable=c.supplies->skillUsable(definitions->skill("Teleport"));usable && !*usable) return false;
     for(size_t row=0;row<definitions->levels.rows().size();++row)
         if(definitions->levels.number(row,"Id")==area)
@@ -48,16 +82,24 @@ bool DebugAi::Impl::observeMobility(Context &c) {
         const bool progress=mobilityTeleport?player!=world.units.end() && player->second.positionDiscontinuity!=mobilityDiscontinuity:
             (c.position-target).length()<3 || (c.position-mobilityFrom).length()>3;
         if(progress) {
-            if((mobilityTeleport && world.playerPosition &&
-                (Vec{float(world.playerPosition->x),float(world.playerPosition->y)}-target).length()<=4) ||
-                (!mobilityTeleport && (c.position-target).length()<=4))
-            {
-                mobilityRouteProgress=std::max(mobilityRouteProgress,mobilityPendingProgress);
+            const auto at=mobilityTeleport && world.playerPosition?
+                Vec{float(world.playerPosition->x),float(world.playerPosition->y)}:c.position;
+            const float miss=(at-target).length();
+            const bool arrived=(!mobilityTeleport || world.playerPosition.has_value()) && miss<=4 &&
+                miss<(mobilityFrom-target).length();
+            if(arrived) {
+                // A near landing can be short of its requested route sample.
+                mobilityRouteProgress=std::max(mobilityRouteProgress,mobilityPendingProgress-miss);
                 // A confirmed arrival is not a failed landing attempt. A
                 // later legitimate return to this point keeps the same goal.
-                if(mobilityGoal) mobilityTrials.erase({mobilityArea,mobilityGoal->x,mobilityGoal->y,mobilityTarget->x,mobilityTarget->y});
+                if(mobilityGoal) {
+                    const Vec goal{float(mobilityGoal->x),float(mobilityGoal->y)};
+                    const float remaining=(at-goal).length();
+                    mobilityBestRemaining=std::min(mobilityBestRemaining.value_or(remaining),remaining);
+                    mobilityTrials.erase({mobilityArea,mobilityGoal->x,mobilityGoal->y,mobilityTarget->x,mobilityTarget->y});
+                }
             }
-            note("mobility-progress-observed");mobilityTarget.reset();nextMobility=now;
+            note(arrived?"mobility-progress-observed":"mobility-relocated-off-target");mobilityTarget.reset();nextMobility=now;
             return false;
         }
         if(now>=mobilityDeadline) {
@@ -190,13 +232,17 @@ bool DebugAi::Impl::mobility(Context &c) {
     }
     const Vec localGoal=wanted-offset+Vec{.5f,.5f};
     const OnlinePoint goal{uint16_t(wanted.x),uint16_t(wanted.y)};
+    if(mobilityGoal!=goal || mobilityArea!=area.value_or(0)) {
+        mobilityGoal=goal;mobilityArea=area.value_or(0);mobilityRoute.clear();mobilityBestRemaining.reset();
+        mobilityRouteProgress=mobilityPendingProgress=mobilityRouteLength=0;
+    }
     std::optional<Vec> stagedLanding;
     const bool occupiedGoal=crowdedLanding(wanted);
     const bool standingGoal=map->grid.nativeMovementSegment(localGoal,localGoal,playerMovement);
-    if(canTeleport && (knownLanding || pickup) && (distance>mobilityPolicy.distance || !nativeNeighbor(wanted) || occupiedGoal || !standingGoal)) {
+    if(canTeleport && mobilityRoute.empty() && (distance>mobilityPolicy.distance || !nativeNeighbor(wanted) || occupiedGoal || !standingGoal)) {
         // Only currently reconstructed legal floor is eligible. The distant
         // observed goal stays fixed while ordinary casts advance toward it.
-        float remaining=distance-3;const int radius=mobilityPolicy.distance;
+        float remaining=std::min(distance,mobilityBestRemaining.value_or(distance))-3;const int radius=mobilityPolicy.distance;
         for(int y=std::max(0,int(c.position.y)-radius);y<=std::min(65535,int(c.position.y)+radius);++y)
             for(int x=std::max(0,int(c.position.x)-radius);x<=std::min(65535,int(c.position.x)+radius);++x) {
                 const Vec at{float(x),float(y)},local=at-offset+Vec{.5f,.5f};
@@ -209,18 +255,14 @@ bool DebugAi::Impl::mobility(Context &c) {
                 remaining=left;stagedLanding=at;
             }
     }
-    const bool directLanding=bool(stagedLanding) || (canTeleport && standingGoal && distance<=mobilityPolicy.distance &&
-        nativeNeighbor(wanted) && (pickup || knownLanding));
-    if(mobilityGoal!=goal || mobilityArea!=area.value_or(0)) {
-        mobilityGoal=goal;mobilityArea=area.value_or(0);mobilityRoute.clear();
-        mobilityRouteProgress=mobilityPendingProgress=mobilityRouteLength=0;
-    }
+    const bool directLanding=bool(stagedLanding) || (canTeleport && standingGoal && !occupiedGoal && distance<=mobilityPolicy.distance &&
+        nativeNeighbor(wanted));
     if(!directLanding && mobilityRoute.empty()) {
         // Freeze a complete, already observed route for this child goal.
         // Re-solving AStar after each relocation can choose opposing detours
         // as active collision changes. Never accelerate a clipped wall target.
         ++pathSearches;const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},localGoal,false,playerMovement,true);
-        if(!path.empty()) {
+        if(!path.empty() && (path.back()-localGoal).length()<=1.f) {
             mobilityRoute.push_back(c.position);
             for(const auto node:path) {
                 const auto at=node+offset-Vec{.5f,.5f};
@@ -291,7 +333,22 @@ bool DebugAi::Impl::mobility(Context &c) {
         }
     }
     mobilityDiagnostics["candidateCount"]=candidates;
-    if(!landing) {mobilityDiagnostics["result"]="no-forward-known-route-sample";return false;}
+    if(!landing) {
+        mobilityDiagnostics["result"]="no-forward-known-route-sample";
+        // Ordinary walking can still get around a corner. If the current
+        // collision also rules out that route, let exploration pick a new
+        // viewpoint instead of keeping the same child until its timeout.
+        if(canTeleport && interest && *interest==goal && walkIntent.is_object() && walkIntent.value("purpose",std::string{})=="exploration-boundary") {
+            const auto grid=c.town.navigationGrid(c.session.read());
+            ++pathSearches;
+            const auto path=c.walk.navigationSearch().path(grid,c.position-offset+Vec{.5f,.5f},localGoal,false,playerMovement,true);
+            if(path.empty() || (path.back()-localGoal).length()>1.f) {
+                recordFrontierAttempt(c,goal,"unreachable","No forward landing or complete walk to this viewpoint");
+                cancelWalk(c);exploring.reset();interest.reset();
+            }
+        }
+        return false;
+    }
     mobilityDiagnostics["selected"]={landing->x,landing->y};
     mobilityDiagnostics["selectedRouteProgress"]=selectedProgress;
     const auto skill=canTeleport?teleport:charge;

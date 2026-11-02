@@ -51,9 +51,13 @@ RequestResult IdentifyGamble(GameplayContext &context, net::protocol::Reader &in
     if(!input || !input->items.contains(id)) return {RequestStatus::Rejected};
     return submitGameplay(context,server::merchant::Request{server::merchant::Action::IdentifyBought,{},input->items.at(id).handle});
 }
-RequestResult MoveNpc(GameplayContext &, net::protocol::Reader &in) {
-    in.u32(); in.u32(); in.u32(); in.u32(); in.finish();
-    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "MoveNpc"};
+RequestResult MoveNpc(GameplayContext &context, net::protocol::Reader &in) {
+    const auto type=in.u32(), guid=in.u32(), x=in.u32(), y=in.u32();
+    in.finish();
+    if (type!=1 || x>UINT16_MAX || y>UINT16_MAX) return {RequestStatus::Rejected};
+    const auto npc=context.entity(guid,1);
+    if (!npc) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::npc::Request{server::npc::StopForClick{npc,{float(x),float(y)}}});
 }
 RequestResult ResurrectMercenary(GameplayContext &context, net::protocol::Reader &in) {
     const auto npc=in.u32(); in.finish();

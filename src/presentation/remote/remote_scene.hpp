@@ -22,7 +22,8 @@ struct RemoteMapDisplayState {
     Vec offset;
     struct QuestEffects {
         uint64_t gameGeneration{},denOccurrence{};
-        uint64_t forgeOccurrence{};
+        uint64_t forgeOccurrence{},staffOccurrence{};
+        std::optional<OnlinePoint> openedTombEntrance;
         uint64_t nihlathakOccurrence{};
         uint64_t anyaOccurrence{};
         uint64_t sanctumOccurrence{},sanctumEndOccurrence{};
@@ -60,6 +61,9 @@ class RemoteScene {
     bool castInputBusy() const;
     std::optional<bool> actionInputBusy() const;
     std::optional<Vec> playerDisplayPosition(const OnlineView &) const;
+    std::optional<OnlinePoint> npcPathPosition(const OnlineView &, OnlineUnitKey) const;
+    std::optional<int> npcFollowRange(const OnlineView &, OnlineUnitKey) const;
+    void stopNpcPath(const OnlineView &, OnlineUnitKey);
     std::optional<Vec> playerPathPosition(const OnlineView &) const;
     const std::vector<OnlinePlayerDisplay> &players() const;
     const std::vector<OnlineSceneView::MissileDisplay> &missileObservations() const;

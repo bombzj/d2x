@@ -12,7 +12,6 @@
 namespace d2x {
 // Decoded DS1/DT1 and chosen variants. Shared DT1 libraries own the tile pointers.
 // Grid, object obstacles, room activation and arrivals belong to the live Map.
-// The authority may edit/restore walls for the existing staff opening operation.
 struct MapTerrain {
     MapData data;
     std::vector<std::shared_ptr<const std::vector<Tile>>> libraries;
@@ -32,7 +31,6 @@ struct MapTerrain {
         int speed{};
         size_t room{};
         bool wallArray{};
-        bool removed{}; // Quest tile replacement preserves stable room/warp indices.
         int renderTile(float seconds) const {
             if (frames.empty()) return tile;
             const auto ticks = uint64_t(std::max(0.f, seconds) * 25.f);

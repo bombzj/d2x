@@ -3,6 +3,8 @@
 #include "app/frontend_commands.hpp"
 #include "network/chat_command.hpp"
 #include "startup_profile.hpp"
+#include "frame_profile.hpp"
+#include "world/tile_library_usage.hpp"
 #include "hosting/embedded_realm.hpp"
 #include "hosting/automap_store.hpp"
 #include "network/tcp_stream.hpp"
@@ -32,6 +34,7 @@
 #include "network/realm_session.hpp"
 #include "presentation/frontend/realm_frontend.hpp"
 #include "presentation/graphics/primitives.hpp"
+#include "presentation/graphics/graphics_diagnostics.hpp"
 #include "presentation/remote/remote_scene.hpp"
 #include <algorithm>
 #include <rlgl.h>
@@ -73,6 +76,7 @@ bool debugInspectionOpen(const ViewState &ui,bool inventoryOwned) {
 class FrontendTimings {
   public:
     enum Stage { Host, Network, Client, Ai, Navigation, Debug, Scene, Present, Other, Count };
+    FrontendTimings(const std::string &path,std::function<nlohmann::json()> context):profile_(path,std::move(context)) {}
     class Frame {
         FrontendTimings &owner_;
         std::chrono::steady_clock::time_point previous_=std::chrono::steady_clock::now();
@@ -89,6 +93,7 @@ class FrontendTimings {
     nlohmann::json summary() const {
         constexpr std::array names{"host","network","client","ai","navigation","debug","scene","present","other","total"};
         nlohmann::json result={{"windowFrames",size_},{"completedFrames",completed_},{"over100ms",slow_}};
+        result["frameLog"]=profile_.summary();
         for(size_t stage=0;stage<names.size();++stage) {
             std::array<double,120> values{};double sum=0;
             for(size_t index=0;index<size_;++index) {
@@ -103,12 +108,15 @@ class FrontendTimings {
         return result;
     }
   private:
+    FrameProfile profile_;
     std::array<std::array<double,Count>,120> samples_{};
     size_t size_{},next_{};
     uint64_t completed_{},slow_{};
     void record(const std::array<double,Count> &values) {
         samples_[next_]=values;next_=(next_+1)%samples_.size();size_=std::min(size_+1,samples_.size());++completed_;
         double total=0;for(auto value:values) total+=value;if(total>100) ++slow_;
+        constexpr std::array<const char *,Count> names{"host","network","client","ai","navigation","debug","scene","present","other"};
+        profile_.record(completed_,values,names);
     }
 };
 void saveFrontendScreenshot(RenderTexture2D target, const std::string &path) {
@@ -288,6 +296,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     uint32_t displayedWaypoint{};
     bool displayedWaypointKnown{};
     std::unique_ptr<RemoteScene> scene;
+    control.bindNpcPath(
+        [&](OnlineUnitKey key) { return scene ? scene->npcPathPosition(session.read(), key) : std::nullopt; },
+        [&](OnlineUnitKey key) { if (scene) scene->stopNpcPath(session.read(), key); },
+        [&](OnlineUnitKey key) { return scene ? scene->npcFollowRange(session.read(), key) : std::nullopt; });
     std::optional<uint8_t> renderedAct;
     std::optional<uint16_t> renderedArea;
     std::string sceneError;
@@ -489,7 +501,21 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         } catch (const std::exception &e) { reloadCharacter.clear(); notice = e.what(); }
     }
     profile.mark("frontend-ready");
-    FrontendTimings frameTimings;
+    FrontendTimings frameTimings(options.frameProfile,[&] {
+        const auto &view=session.read();const auto &world=view.world;
+        const auto graphics=graphicsDiagnostics();
+        const auto dt1=tileLibraryUsage(archives);
+        return nlohmann::json{{"gameGeneration",view.gameGeneration},{"worldRevision",world.revision},
+            {"areaGeneration",world.areaGeneration},{"area",town.read().area?nlohmann::json(*town.read().area):nlohmann::json(nullptr)},
+            {"units",world.units.size()},{"items",world.items.size()},{"rooms",world.rooms.size()},
+            {"knownNavigationRooms",town.navigationRooms().size()},{"aiActive",debugAi.active()},
+            {"graphics",{{"textureCountsBySource",graphics.textureCounts},{"textureBytesBySource",graphics.textureBytes},{"owners",graphics.owners},{"textures",graphics.textures},{"logicalRgbaBytes",graphics.logicalRgbaBytes},
+                {"dt1Libraries",dt1.libraries},{"dt1PixelBytes",dt1.pixelBytes},{"atlasBytesByUse",graphics.atlasBytesByUse},{"atlasBytes",graphics.atlasBytes},{"atlasPages",graphics.atlasPages},{"atlasUploads",graphics.atlasUploads},
+                {"atlasUploadBytes",graphics.atlasUploadBytes},{"atlasEvictions",graphics.atlasEvictions},{"atlasOwnerPeaksBytes",graphics.atlasPeakBytes},
+                {"directionBytes",graphics.directionBytes},{"frameRecords",graphics.frameRecords},{"decodedAnimations",graphics.decodedAnimations},{"decodedFrames",graphics.decodedFrames},{"decodedPixelBytes",graphics.decodedPixelBytes}}},
+            {"minimized",minimized},{"presentationPaused",presentationPaused},
+            {"renderedUnits",scene?scene->renderedUnits():0},{"navigationSearch",debugWalk.navigationSearch().snapshot()}};
+    });
     std::optional<OnlineView> frontendView;
     const auto refreshFrontendView = [&]() -> const OnlineView & {
         const auto &current = session.read();
@@ -502,6 +528,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     bool wasMinimized = false;
     auto clientFrame = std::chrono::steady_clock::now();
     while (true) {
+        beginGraphicsFrame();
         FrontendTimings::Frame frameTiming(frameTimings);
         const auto clientNow = std::chrono::steady_clock::now();
         const float frameSeconds = std::clamp(std::chrono::duration<float>(clientNow - clientFrame).count(), 0.f, .1f);
@@ -1135,12 +1162,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         sharedController->resetInput();
                     }
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
-                    const bool inventoryWasOpen=sharedUi->ui().inventory.open;
                     sharedUi->refreshUi(frameSeconds);
                     auto &panels = sharedUi->ui();
                     const auto &native = view.world;
-                    if(debugAi.controlsInventory() && !inventoryWasOpen &&
-                        (native.storage.kind==OnlineStorageKind::Cube || native.staffSource)) aiInventoryOpened=true;
+                    if(debugAi.controlsInventory() &&
+                        (native.storage.kind!=OnlineStorageKind::None || native.staffSource)) aiInventoryOpened=true;
                     if (!sharedClients->busy()) { panels.inventory.pending = {}; panels.shopSalePending.reset(); }
                     if (native.storage.kind != OnlineStorageKind::Stash) panels.inventory.storage = {};
                     if (native.storage.kind != OnlineStorageKind::Cube) panels.inventory.cubeOpen = false;
@@ -1150,7 +1176,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     }
                     if (native.storage.kind == OnlineStorageKind::Cube) {
                         panels.partyOpen = false; panels.inventory.cubeOpen = true; panels.inventory.open = true;
-                    } else if(aiInventoryOpened && !native.staffSource) {
+                    } else if(aiInventoryOpened && native.storage.kind==OnlineStorageKind::None && !native.staffSource) {
                         panels.inventory.open=false;aiInventoryOpened=false;
                     }
                     if (native.waypointSource.has_value() != displayedWaypointKnown ||

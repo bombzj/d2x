@@ -47,7 +47,7 @@ std::string keyFor(int palette, const ActorAnimationRequest &request) {
 bool ActorAnimation::ready() const {
     return animation.directions > 0 && frameCount > 0 && start >= 0 &&
         start <= animation.count && frameCount <= animation.count - start &&
-        animation.frames.size() >= size_t(animation.directions) * size_t(animation.count);
+        animation.available();
 }
 float ActorAnimation::duration() const { return durationFrames ? float(*durationFrames)/25.f : fps > 0 ? frameCount / fps : 0; }
 bool ActorAnimation::finished(float elapsed) const {
@@ -75,12 +75,8 @@ void ActorAnimationState::observe(std::optional<uint8_t> currentMode, uint64_t a
     if (!frozen && frozenAt) { startedAt += now - *frozenAt; frozenAt.reset(); }
 }
 std::optional<Vec> ActorAnimation::riderAnchor(float clock,float elapsed,Vec look,std::optional<float> preciseFrame) const {
-    if(!ready() || animation.riderAnchors.size()!=animation.frames.size()) return {};
-    const double ticks=std::floor(std::max(0.0,double(cycle?clock:elapsed))*25.0+1e-5);
-    const double advance=preciseFrame?std::max(0.f,*preciseFrame):ticks*std::max(0.f,fps)/25.0;
-    const int frame=holdFrame>=0?int(std::min(advance,double(holdFrame))):cycle?int(std::fmod(advance,double(frameCount))):int(std::min(advance,double(frameCount-1)));
-    const int facing=direction(look,animation.directions);
-    return animation.riderAnchors[size_t(facing*animation.count+start+frame)];
+    const auto *sprite=sample(clock,elapsed,look,preciseFrame);
+    return sprite ? sprite->riderAnchor : std::nullopt;
 }
 float ActorAnimationState::elapsed(float now) const { return std::max(0.f, clock(now) - startedAt); }
 ActorAnimationCatalog::ActorAnimationCatalog(Archives &archives)
@@ -135,16 +131,22 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
     }
     const bool knockback=request.category=="chars" && request.mode=="kb";
     auto mode = knockback?std::string("gh"):request.mode;
+    auto weapon = parts.weapon;
+    // D2Common 1.13c RVA 44099-440CA (D2MOO COMPOSIT path builder):
+    // throwing uses HTH unless the equipped class has a native TH animation.
+    if (request.category == "chars" && mode == "th" && weapon != "1hs" && weapon != "1ht" &&
+        weapon != "1js" && weapon != "1jt" && weapon != "1ss" && weapon != "1st")
+        weapon = "hth";
     // The original corpse can lack a DD COF. Only its own DT final frame is allowed.
     bool finalFrame = request.finalFrame;
-    if (mode == "dd" && !archives_.contains(base + "cof/" + parts.token + mode + parts.weapon + ".cof")) {
+    if (mode == "dd" && !archives_.contains(base + "cof/" + parts.token + mode + weapon + ".cof")) {
         mode = "dt"; finalFrame = true;
     }
-    result.animation = graphics.composite(request.category, parts.token, mode, parts.weapon, &components,
+    result.animation = graphics.composite(request.category, parts.token, mode, weapon, &components,
         colors ? &*colors : nullptr);
     if (!result.animation.completeComposite) { result.animation = {}; return result; }
     result.shadow = request.shadow;
-    std::string timingKey = parts.token + mode + parts.weapon;
+    std::string timingKey = parts.token + mode + weapon;
     for (auto &ch : timingKey) ch = char(std::toupper(static_cast<unsigned char>(ch)));
     const auto *record=timing_.find(timingKey);
     if (record && record->speed > 0) {
@@ -176,7 +178,7 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
             const auto &known=*request.attackTiming;
             int action=0;
             for(size_t frame=0;frame<record->frameFlags.size();++frame) if(record->frameFlags[frame]==1 || record->frameFlags[frame]==2) {action=int(frame);break;}
-            const auto start=attackStartingFrame(parts.token=="am"?"ama":parts.token=="so"?"sor":"",parts.weapon,mode);
+            const auto start=attackStartingFrame(parts.token=="am"?"ama":parts.token=="so"?"sor":"",weapon,mode);
             int speed=effectiveAttackSpeed(record->speed,known.itemIAS,known.weaponSpeed,known.skillRate);
             if(request.shapeSource) {
                 auto key=request.shapeSource->token+"a1"+request.shapeSource->weapon;
@@ -204,8 +206,8 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
         int action=-1;for(size_t frame=0;frame<record->frameFlags.size();++frame) if(record->frameFlags[frame]==1 || record->frameFlags[frame]==2) {action=int(frame);break;}
         if(action<0) return {};
         const auto volley=weaponVolley({mode,result.animation.count,speed,action,result.start},request.repeatCount,request.rollbackPercent);
-        const auto original=result.animation;result.animation.frames.clear();result.animation.count=int(volley.frames.size());
-        for(int direction=0;direction<original.directions;++direction) for(int frame:volley.frames) result.animation.frames.push_back(*original.frame(direction,frame));
+        const auto original=result.animation;result.animation.clearFrames();result.animation.count=int(volley.frames.size());
+        for(int direction=0;direction<original.directions;++direction) for(int frame:volley.frames) result.animation.appendSample(original,direction,frame);
         result.start=0;result.frameCount=result.animation.count;result.fps=25.f;result.durationFrames=result.frameCount;result.releaseTimes.clear();
         for(int tick:volley.hits) result.releaseTimes.push_back(float(tick)/25.f);
         if(!result.releaseTimes.empty()) result.releaseTime=result.releaseTimes.front();
@@ -236,13 +238,13 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
             modes.emplace(sample.mode,animation);
         }
         const auto *first=modes.at(sequence.front().mode);result=*first;result.start=0;
-        result.animation.frames.clear();result.animation.count=int(sequence.size());result.frameCount=result.animation.count;
+        result.animation.clearFrames();result.animation.count=int(sequence.size());result.frameCount=result.animation.count;
         const auto speed=request.playerSequence==16 && request.attackTiming?
             effectiveAttackSpeed(256,request.attackTiming->itemIAS,request.attackTiming->weaponSpeed,request.attackTiming->skillRate-30):256;
         for(int facing=0;facing<first->animation.directions;++facing) for(const auto &sample:sequence) {
             const auto *animation=modes.at(sample.mode);
             if(animation->animation.directions!=first->animation.directions || sample.frame<0 || sample.frame>=animation->animation.count) return {};
-            result.animation.frames.push_back(*animation->animation.frame(facing,sample.frame));
+            result.animation.appendSample(animation->animation,facing,sample.frame);
         }
         result.fps=float(speed)*25.f/256.f;result.releaseTimes.clear();result.cycle=false;
         for(const auto tick:weaponSequenceHitTicks(sequence,speed)) result.releaseTimes.push_back(float(tick)/25.f);
@@ -251,8 +253,8 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
     }
     if(request.category=="chars" && request.playerSequence==10) {
         baseRequest.mode="a1";const auto *attack=resolve(graphics,palette,baseRequest);if(!attack || attack->animation.count<7) return {};
-        constexpr int frames[]{0,1,2,3,3,4,5,6};result=*attack;result.animation.frames.clear();result.animation.count=8;
-        for(int facing=0;facing<attack->animation.directions;++facing) for(const int frame:frames) result.animation.frames.push_back(*attack->animation.frame(facing,frame));
+        constexpr int frames[]{0,1,2,3,3,4,5,6};result=*attack;result.animation.clearFrames();result.animation.count=8;
+        for(int facing=0;facing<attack->animation.directions;++facing) for(const int frame:frames) result.animation.appendSample(attack->animation,facing,frame);
         result.start=0;result.frameCount=8;result.fps=25;result.cycle=true;result.holdFrame=-1;result.releaseTime=3.f/25.f;result.durationFrames.reset();return result;
     }
     if(request.category=="chars" && (request.playerSequence==11 || request.playerSequence==14 || request.playerSequence==15)) {
@@ -260,13 +262,13 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         baseRequest.mode=request.playerSequence==14?"s1":request.playerSequence==15?"th":"a1";const auto *first=resolve(graphics,palette,baseRequest);
         baseRequest.mode=request.playerSequence==14?"a1":"s3";const auto *second=resolve(graphics,palette,baseRequest);
         if(!first || !second || first->animation.directions!=second->animation.directions) return result;
-        result=*first;result.start=0;result.animation.frames.clear();result.animation.count=int(sequence.size());result.frameCount=result.animation.count;
+        result=*first;result.start=0;result.animation.clearFrames();result.animation.count=int(sequence.size());result.frameCount=result.animation.count;
         const int speed=request.attackTiming?effectiveAttackSpeed(256,request.attackTiming->itemIAS,request.attackTiming->weaponSpeed,request.attackTiming->skillRate+request.sequenceRateBonus-30):256;
         result.fps=float(speed)*25.f/256.f;result.releaseTimes.clear();result.cycle=false;
         for(int facing=0;facing<first->animation.directions;++facing) for(const auto &sample:sequence) {
             const auto *base=(request.playerSequence==14?sample.mode=="a1":sample.leftHand)?second:first;
             if(sample.frame>=base->animation.count) return {};
-            result.animation.frames.push_back(*base->animation.frame(facing,sample.frame));
+            result.animation.appendSample(base->animation,facing,sample.frame);
         }
         for(const int tick:weaponSequenceHitTicks(sequence,speed)) result.releaseTimes.push_back(float(tick)/25.f);
         result.releaseTime=result.releaseTimes.front();result.durationFrames=WeaponAttackTiming{"sq",int(sequence.size()),speed,0,0,true}.durationTicks();
@@ -281,9 +283,9 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         if(!attack || attack->animation.count<13) return {};
         constexpr int attackFrames[]{1,4,5,6,8,10,12};
         const int speed=request.animationRate.value_or(request.attackTiming?effectiveAttackSpeed(256,request.attackTiming->itemIAS,request.attackTiming->weaponSpeed,request.attackTiming->skillRate):256);
-        result=*attack;result.animation.frames.clear();result.animation.count=7;result.frameCount=7;result.start=0;result.fps=float(speed)*25.f/256.f;result.durationFrames=std::max(1,(7*256+speed-1)/speed);result.releaseTime=float(std::max(1,(3*256+speed-1)/speed))/25.f;result.cycle=false;
+        result=*attack;result.animation.clearFrames();result.animation.count=7;result.frameCount=7;result.start=0;result.fps=float(speed)*25.f/256.f;result.durationFrames=std::max(1,(7*256+speed-1)/speed);result.releaseTime=float(std::max(1,(3*256+speed-1)/speed))/25.f;result.cycle=false;
         for(int facing=0;facing<attack->animation.directions;++facing) {
-            for(const int frame:attackFrames) result.animation.frames.push_back(*attack->animation.frame(facing,frame));
+            for(const int frame:attackFrames) result.animation.appendSample(attack->animation,facing,frame);
         }
         return result;
     }
@@ -293,13 +295,13 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         baseRequest.mode="a1";const auto *first=resolve(graphics,palette,baseRequest);
         baseRequest.mode="a2";const auto *second=resolve(graphics,palette,baseRequest);
         if(!first || !second || first->animation.directions!=second->animation.directions) return result;
-        result=*first;result.start=0;result.animation.frames.clear();result.animation.count=int(sequence.frames.size());
+        result=*first;result.start=0;result.animation.clearFrames();result.animation.count=int(sequence.frames.size());
         const auto speed=request.attackTiming?effectiveAttackSpeed(256,request.attackTiming->itemIAS,request.attackTiming->weaponSpeed,request.attackTiming->skillRate-30):256;
         result.frameCount=result.animation.count;result.fps=float(speed)*25.f/256.f;result.releaseTimes.clear();result.cycle=false;
         for(int facing=0;facing<first->animation.directions;++facing) for(const auto &sample:sequence.frames) {
             const auto *base=sample.secondAttack?second:first;
             if(sample.frame<0 || sample.frame>=base->animation.count) return {};
-            result.animation.frames.push_back(*base->animation.frame(facing,sample.frame));
+            result.animation.appendSample(base->animation,facing,sample.frame);
         }
         for(const int tick:weaponSequenceHitTicks(sequence.frames,speed)) result.releaseTimes.push_back(float(tick)/25.f);
         result.releaseTime=result.releaseTimes.front();result.durationFrames=WeaponAttackTiming{"sq",int(sequence.frames.size()),speed,0,0,true}.durationTicks();return result;
@@ -309,9 +311,9 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         const auto *base = resolve(graphics, palette, baseRequest);
         if (!base || base->animation.count <= *std::max_element(sequence->frames.begin(),sequence->frames.end()) ||
             (!sequence->fixedSpeed && base->fps <= 0)) return result;
-        result = *base; result.start=0; result.animation.frames.clear(); result.animation.count = int(sequence->frames.size());
+        result = *base; result.start=0; result.animation.clearFrames(); result.animation.count = int(sequence->frames.size());
         for (int facing = 0; facing < base->animation.directions; ++facing)
-            for (const int frame : sequence->frames) result.animation.frames.push_back(*base->animation.frame(facing, frame));
+            for (const int frame : sequence->frames) result.animation.appendSample(base->animation,facing,frame);
         result.frameCount = result.animation.count; result.cycle = false;
         if (sequence->fixedSpeed) result.fps=float(sequence->fixedSpeed)*25.f/256.f;
         result.holdFrame=sequence->holdFrame;
@@ -346,7 +348,7 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         samples.emplace_back(base, *frame);
     }
     const auto *first = samples.front().first;
-    result = *first; result.start=0; result.animation.frames.clear(); result.animation.count = int(samples.size());
+    result = *first; result.start=0; result.animation.clearFrames(); result.animation.count = int(samples.size());
     result.frameCount = result.animation.count; result.cycle = false; result.releaseTime = -1; result.releaseTimes.clear();
     const int sequenceSpeed=request.sequenceUsesAttackRate && request.attackTiming?
         effectiveAttackSpeed(256,request.attackTiming->itemIAS,request.attackTiming->weaponSpeed,request.attackTiming->skillRate):256;
@@ -355,7 +357,7 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
     for (int facing = 0; facing < first->animation.directions; ++facing)
         for (const auto &[base, frame] : samples) {
             if (base->animation.directions != first->animation.directions) return {};
-            result.animation.frames.push_back(*base->animation.frame(facing, frame));
+            result.animation.appendSample(base->animation,facing,frame);
         }
     for (size_t index = 0; index < rows->second.size(); ++index) {
         const auto event = sequences_.number(rows->second[index], "event").value_or(0);
@@ -414,8 +416,8 @@ const ActorAnimation *ActorAnimationCatalog::object(Graphics &graphics, int pale
     if (archives_.contains(cof)) result = composite(graphics,palette,request);
     else {
         const auto path = base + "tr/" + request.appearance.token + "trlit" + request.mode + "hth";
-        if (archives_.contains(path + ".dcc")) result.animation = graphics.single(path + ".dcc");
-        else if (archives_.contains(path + ".dc6")) result.animation = graphics.single(path + ".dc6");
+        if (archives_.contains(path + ".dcc")) result.animation = graphics.worldSingle(path + ".dcc");
+        else if (archives_.contains(path + ".dc6")) result.animation = graphics.worldSingle(path + ".dc6");
     }
     result.fps = float(objects_.number(row->second, "FrameDelta" + suffix).value_or(0)) * 25.f / 256.f;
     result.start = std::max(0, objects_.number(row->second, "Start" + suffix).value_or(0));

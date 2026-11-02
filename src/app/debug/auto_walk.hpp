@@ -26,9 +26,9 @@ class DebugAutoWalk {
     std::optional<uint16_t> destination_;
     std::optional<OnlinePoint> point_,segment_,previous_,client_,server_,edgeStart_,edgeEnd_;
     std::optional<OnlinePoint> lastFrom_,lastRequest_,lastTarget_;
-    bool closeApproach_{},forceApproach_{};
+    bool closeApproach_{},forceApproach_{},waitQuestAlert_{},waypointOpening_{},waypointMenu_{};
     unsigned approachRetries_{};
-    Clock::time_point clickedAt_{};
+    Clock::time_point clickedAt_{},alertWaitSince_{};
     uint64_t interactionRevision_{},interactionDiscontinuity_{};
     std::optional<OnlinePoint> interactionFrom_;
     std::optional<uint16_t> exitLevel_;

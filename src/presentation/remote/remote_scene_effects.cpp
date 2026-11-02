@@ -35,6 +35,26 @@ const OnlineUnit *RemoteScene::Impl::questNearbyUnit(const OnlineView &view,cons
 void RemoteScene::Impl::observeQuestMissileEffects(const OnlineView &view,const Map &map,SceneView &shared,float elapsed) {
     if(pd2) return;
     auto &quest=mapDisplay.questEffects;
+    const auto staff=view.world.questEffectOccurrences[3];
+    if(quest.staffOccurrence!=staff) {
+        const auto count=staff>=quest.staffOccurrence?staff-quest.staffOccurrence:staff;quest.staffOccurrence=staff;
+        // Retail 53450: actual nearby orifice (152), missile338, rising Gfx.
+        const auto *orifice=questNearbyUnit(view,map,2,152);
+        if(orifice && view.load.playerUnitId) {
+            const Vec at{float(orifice->position->x)+.5f,float(orifice->position->y)+.5f};
+            ClientMissileInitialization init;init.sourceSkill=0;
+            ClientMissileGraphics graphics;graphics.flags=0x20;graphics.position[2]=40<<11;graphics.velocity[2]=0x200;graphics.acceleration[2]=70;
+            init.graphics=graphics;
+            for(uint64_t i=0;i<count;++i) {
+                shared.questMusic("music_quest_horadric",725,1);
+                if(const auto *overlay=shared.overlayVisual(181);overlay && overlay->fps>0)
+                    overlayVisuals.push_back({181,orifice->key,time,overlay->frames/overlay->fps});
+                if(!shared.launchClientMissile(338,at,at,1,0,{},-1,effectOwner({0,*view.load.playerUnitId}),false,0,
+                    ClientMissileSource::Program,0,{},0,init))
+                    effectLimitations.insert("Horadric staff: original client missile resource unavailable");
+            }
+        }
+    }
     const auto sanctum=view.world.questEffectOccurrences[12];
     if(quest.sanctumOccurrence!=sanctum) {
         const auto count=sanctum>=quest.sanctumOccurrence?sanctum-quest.sanctumOccurrence:sanctum;
@@ -116,7 +136,6 @@ void RemoteScene::Impl::observeDenLights(const OnlineView &view,const Map &map,S
     if(pd2 || !sceneBinding || !sceneBinding->area || !sceneBinding->origin || !view.load.playerUnitId) return;
     const auto occurrence=view.world.questEffectOccurrences[0];
     auto &quest=mapDisplay.questEffects;
-    if(quest.gameGeneration!=view.gameGeneration) {quest={};quest.gameGeneration=view.gameGeneration;}
     if(quest.denOccurrence!=occurrence) {
         quest.denOccurrence=occurrence;quest.denFrames=0;
     }
@@ -542,7 +561,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             if(playerId && event.source==OnlineUnitKey{0,*playerId} && !onlineMonsterCorpse(corpse->second)) return;
         }
 
-        if (!triggered && (!castAnimation || castAnimation->animation.frames.empty()))
+        if (!triggered && (!castAnimation || !castAnimation->animation.available()))
             effectLimitations.insert("Skill animation unavailable: " + std::string(skills.value(row->second, "skill")));
         if (actor.key.type == 1 && !triggered) {
             // MonsterMsg sends a skill notification instead of an action packet
@@ -1083,7 +1102,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         if (!target && event.target) target=targetPosition(*event.target);
         if (!target && (function == 25 || function==55 || pd2PoisonEgg)) target = actor.position; // Nova has no required target.
         if (!target) return;
-        if (releaseTime<0 || (!triggered && (!castAnimation || castAnimation->animation.frames.empty()))) return;
+        if (releaseTime<0 || (!triggered && (!castAnimation || !castAnimation->animation.available()))) return;
         if(!triggered) shared.cancelPendingClientMissiles(effectOwner(event.source));
         if(!triggered) missileCastRevisions[event.source] = source->second.actionRevision;
         Vec start = presentationOrigin.value_or(Vec{float(actor.position->x) + .5f, float(actor.position->y) + .5f});

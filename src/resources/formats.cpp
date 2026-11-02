@@ -1,3 +1,4 @@
+#include "animation_cells.hpp"
 #include "formats.hpp"
 #include "path.hpp"
 #include <algorithm>
@@ -11,7 +12,7 @@ Palette decodePalette(const Bytes &b) {
         p[i] = {b[i * 3 + 2], b[i * 3 + 1], b[i * 3], uint8_t(i ? 255 : 0)};
     return p;
 }
-Animation decodeDc6(const Bytes &b) {
+static Animation decodeDc6Range(const Bytes &b, int cell, bool metadata=false) {
     Reader r(b);
     if (r.u32() != 6)
         throw std::runtime_error("Unsupported DC6 version");
@@ -24,7 +25,11 @@ Animation decodeDc6(const Bytes &b) {
     // a normal animation.
     if (a.directions < 1 || a.directions > 32 || a.framesPerDirection < 1 || a.framesPerDirection > 65536)
         throw std::runtime_error("Invalid DC6 frames");
-    std::vector<uint32_t> offsets(a.directions * a.framesPerDirection);
+    const int total = a.directions * a.framesPerDirection;
+    if (cell >= total) throw std::runtime_error("Invalid DC6 cell");
+    r.need(size_t(total) * 4);
+    if (cell >= 0) r.skip(size_t(cell) * 4);
+    std::vector<uint32_t> offsets(cell >= 0 ? 1 : total);
     for (auto &o : offsets)
         o = r.u32();
     for (auto o : offsets) {
@@ -41,6 +46,7 @@ Animation decodeDc6(const Bytes &b) {
         if (f.width < 1 || f.height < 1 || f.width > 4096 || f.height > 4096)
             throw std::runtime_error("Invalid DC6 dimensions");
         r.need(len);
+        if (metadata) { a.frames.push_back(std::move(f)); continue; }
         auto end = r.pos + len;
         f.pixels.resize(size_t(f.width) * f.height);
         int x = 0, y = flip ? 0 : f.height - 1;
@@ -60,8 +66,12 @@ Animation decodeDc6(const Bytes &b) {
         }
         a.frames.push_back(std::move(f));
     }
+    if (cell >= 0) a.directions = a.framesPerDirection = 1;
     return a;
 }
+Animation decodeDc6(const Bytes &bytes) { return decodeDc6Range(bytes, -1); }
+Animation describeDc6(const Bytes &bytes) { return decodeDc6Range(bytes,-1,true); }
+Animation decodeDc6Cell(const Bytes &bytes, int cell) { return decodeDc6Range(bytes, cell); }
 Cof decodeCof(const Bytes &b) {
     Reader r(b);
     Cof c;

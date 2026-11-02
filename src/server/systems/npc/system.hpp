@@ -8,7 +8,8 @@
 #include <span>
 #include <utility>
 namespace d2x::server::npc {
-using Intent = std::variant<TalkToNpc, EndNpcConversation,ConfirmNpcVoice>;
+struct StopForClick { EntityId target; Vec observed; };
+using Intent = std::variant<TalkToNpc, EndNpcConversation,ConfirmNpcVoice,StopForClick>;
 struct Request { Intent intent; };
 struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::map<uint16_t,QuestId> pendingQuests; EntityId actor{}; uint64_t areaGeneration{}; std::optional<uint16_t> pendingIntroduction{}; bool refresh{}; };
 struct ServiceAccess { const AreaNpc *npc; const Conversation *conversation; };
@@ -17,13 +18,13 @@ struct HirelingSlot {uint16_t name{};uint32_t seed{};bool available{},hired{};};
 struct HirelingRoster {uint64_t revision{1};std::vector<HirelingSlot> slots;};
 struct VendorControlPublication {uint64_t expected{},next{};std::map<int,HirelingRoster> hirelings;};
 struct State { std::map<PlayerId, Conversation> conversations; uint64_t next = 1; std::map<EntityId,Escape> escapes; std::optional<uint64_t> controlRandom; std::map<int,HirelingRoster> hirelings; };
-struct Ports { const PlayerStore &players; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; quests::System &quests; effects::System &effects; world::System &world; MovementSystem &movement; const monsters::System &monsters; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; quests::System &quests; effects::System &effects; world::System &world; MovementSystem &movement; monsters::System &monsters; };
 class System {
     State state_; const Ports ports_;
     struct Approach { ActorContext actor; Request request; uint64_t locomotion; };
     std::map<PlayerId,Approach> approaches_;
     Vec position(const ActorContext &, const AreaNpc &) const;
-    const AreaNpc *findSource(const ActorContext &,EntityId,bool conversation,bool travel) const;
+    const AreaNpc *findSource(const ActorContext &,EntityId,bool conversation,bool travel,int range=8) const;
     std::pair<Conversation,NpcMessagesFact> offer(const ActorContext &,const AreaNpc &,const CharacterRecord &) const;
     HirelingRoster prepareHirelings(std::span<const uint16_t>,uint64_t revision,uint64_t &random) const;
   public:

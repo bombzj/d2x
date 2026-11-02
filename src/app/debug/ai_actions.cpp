@@ -18,6 +18,7 @@ std::optional<OnlineUnit> DebugAi::Impl::find(const Context &c,const Selector &s
         const auto identity=key.type==1?c.combat.monsterClass(unit):unit.classId;
         if(identity!=selector.identity || (key.type==1 && !corpses && onlineMonsterCorpse(unit))) continue;
         if(selector.superUnique && c.combat.superUnique(unit)!=selector.superUnique) continue;
+        if(selector.eliteOnly && !c.combat.eliteMonster(unit)) continue;
         float d=(position(*unit.position)-c.position).length();
         // Prefer a live target, but an actually assigned corpse is evidence of
         // the "target dead" postcondition, never evidence of personal kill credit.
@@ -127,6 +128,49 @@ bool DebugAi::Impl::approachPickup(Context &c,const OnlineItem &item) {
     }
     wait("pickup-approach-wait","No current legal pickup approach; waiting for normal collision or skill availability");return false;
 }
+const OnlineItem *DebugAi::Impl::observedDrop(const Context &c,std::string_view code,bool landedOnly) const {
+    const OnlineItem *best=nullptr;float nearest=std::numeric_limits<float>::max();
+    for(const auto &[id,item]:c.session.read().world.items) {
+        if(item.code!=code || !item.positionKnown || (item.mode!=3 && (landedOnly || item.mode!=5))) continue;
+        const float d=(Vec{float(item.groundX),float(item.groundY)}-c.position).length();
+        if(!best || (item.mode==3 && best->mode!=3) || (item.mode==best->mode && d<nearest)) {
+            best=&item;nearest=d;
+        }
+    }
+    return best;
+}
+void DebugAi::Impl::observeDrops(const Context &c,const Goal &goal) {
+    if(!area) return;
+    const auto &world=c.session.read().world;
+    std::erase_if(rememberedDrops,[&](const auto &entry) {
+        const auto item=world.items.find(entry.second.id);
+        return owned(c,entry.first) || (item!=world.items.end() && (item->second.code!=entry.first ||
+            (item->second.mode!=3 && item->second.mode!=5)));
+    });
+    const auto remember=[&](const std::string &code,std::optional<uint16_t> source) {
+        if(code.empty() || owned(c,code)) return;
+        const auto *item=observedDrop(c,code);
+        if(!item) return;
+        const OnlinePoint at{item->groundX,item->groundY};
+        const auto &rooms=c.town.navigationRooms();
+        const auto room=std::find_if(rooms.begin(),rooms.end(),[&](const auto &r) {
+            return r.loaded && at.x>=r.x && at.x<r.x+r.width && at.y>=r.y && at.y<r.y+r.height;
+        });
+        const auto level=room==rooms.end()?*area:uint16_t(room->level);
+        if(source && level!=source) return;
+        auto [entry,added]=rememberedDrops.try_emplace(code);
+        if(added || entry->second.id!=item->id)
+            note("quest-drop-remembered",code+" #"+std::to_string(item->id)+" in area "+std::to_string(level));
+        entry->second={item->id,level,at,{}};
+    };
+    if(goal.kind==Kind::Acquire) remember(goal.item,goal.area);
+    if(goal.kind!=Kind::Quest) return;
+    if(goal.routeDrop) remember(goal.steps.at(*goal.routeDrop).item,{});
+    if(questRun.step<goal.steps.size() && goal.routeDrop!=questRun.step) {
+        const auto &step=goal.steps[questRun.step];
+        if(step.action==QuestAction::Acquire || step.action==QuestAction::SearchDrop) remember(step.item,step.area);
+    }
+}
 bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
     if(owned(c,goal.item)) return true;
     const auto now=Clock::now();const auto &world=c.session.read().world;
@@ -138,17 +182,48 @@ bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
         if(now>=actionDeadline) throw std::runtime_error("Pickup ownership was not observed; request is not blindly repeated");
         return false;
     }
-    std::optional<OnlineItem> ground;float nearest=std::numeric_limits<float>::max();
-    for(const auto &[id,item]:world.items) {
-        (void)id;if(item.code!=goal.item || item.mode!=3 || !item.positionKnown) continue;
-        const float d=(Vec{float(item.groundX),float(item.groundY)}-c.position).length();if(d<nearest) {nearest=d;ground=item;}
-    }
-    if(ground) {
-        if(!approachPickup(c,*ground)) return false;
-        cancelWalk(c);OnlineItemCommand take;take.action=OnlineItemAction::Pickup;take.item=ground->id;take.itemRevision=ground->revision;
+    if(const auto *observed=observedDrop(c,goal.item)) {
+        const auto ground=*observed;
+        if(pickupId!=ground.id) {
+            pickupId=ground.id;
+            note(ground.groundAnimationRevision?"item-drop-observed":"ground-item-assigned",
+                goal.item+" #"+std::to_string(ground.id)+" at "+std::to_string(ground.groundX)+","+std::to_string(ground.groundY));
+        }
+        if(!approachPickup(c,ground)) return false;
+        cancelWalk(c);
+        if(ground.mode==5) {wait("pickup-landing","Drop observed; waiting for the assigned item to land");return false;}
+        OnlineItemCommand take;take.action=OnlineItemAction::Pickup;take.item=ground.id;take.itemRevision=ground.revision;
         if(submitItem(c,take,"item-pickup")) {
-            pickupId=ground->id;pickupIssued=true;setActionDeadline(std::chrono::seconds(12));note("pickup-submitted",goal.item);
+            pickupIssued=true;setActionDeadline(std::chrono::seconds(12));note("pickup-submitted",goal.item);
         } else wait("pickup-blocked",c.inventory.reason());
+        return false;
+    }
+    if(const auto found=rememberedDrops.find(goal.item);found!=rememberedDrops.end()) {
+        auto &drop=found->second;
+        if(area!=drop.area) {drop.inspectSince={};travel(c,drop.area);return false;}
+        if((position(drop.position)-c.position).length()>6) {
+            drop.inspectSince={};
+            if(!approachPoint(c,drop.position,"last observed quest drop",5))
+                explore(c,"reachable approach to the last observed quest drop");
+            return false;
+        }
+        const auto &rooms=c.town.navigationRooms();
+        const bool subscribed=std::any_of(rooms.begin(),rooms.end(),[&](const auto &r) {
+            return r.level==drop.area && r.loaded && drop.position.x>=r.x && drop.position.x<r.x+r.width &&
+                drop.position.y>=r.y && drop.position.y<r.y+r.height &&
+                world.rooms.contains({uint8_t(r.level),uint16_t(r.x/5),uint16_t(r.y/5)});
+        });
+        if(!subscribed) {
+            drop.inspectSince={};
+            if(!approachPoint(c,drop.position,"resubscribe to the recorded drop room",1))
+                wait("pickup-room","Waiting for the host to assign the recorded drop room");
+            return false;
+        }
+        if(drop.inspectSince==Clock::time_point{}) drop.inspectSince=now;
+        const auto grace=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*c.session.read().latencyMilliseconds.value_or(0)+500,1000,3000));
+        cancelWalk(c);
+        if(now-drop.inspectSince<grace) {wait("pickup-reobserve","Waiting at the recorded drop for a fresh ground assignment");return false;}
+        note("quest-drop-no-longer-present",goal.item+" #"+std::to_string(drop.id));rememberedDrops.erase(found);
         return false;
     }
     if(objectIssued) {
@@ -177,6 +252,21 @@ bool DebugAi::Impl::reachTown(Context &c) {
     if(c.town.read().town) return true;
     const auto &view=c.session.read();const auto now=Clock::now();
     if(!view.load.townArea) throw std::runtime_error("Current native act has no assigned town");
+    // An unlocked waypoint already within interaction approach is cheaper
+    // than casting a portal beside it. Continue a chosen return route across
+    // frames, but never replace a portal request that is already submitted.
+    const bool nearbyWaypoint=area && knownWaypointAreas.contains(*area) && area!=unavailableWaypointArea &&
+        std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &entry) {
+            if(entry.interaction!=OnlineMapInteraction::Waypoint || (position(entry.position)-c.position).length()>16) return false;
+            const auto unit=view.world.units.find(entry.unit);
+            return unit!=view.world.units.end() && !(deferredWaypoint && deferredWaypoint->unit==entry.unit &&
+                deferredWaypoint->assignment==unit->second.assignmentRevision && now<deferredWaypoint->retryAt);
+        });
+    if(!portalIssued && knownWaypointAreas.contains(*view.load.townArea) &&
+        (travelDestination==view.load.townArea || nearbyWaypoint)) {
+        wait("return-waypoint","Using the nearby unlocked waypoint or continuing the selected town return route");
+        return travel(c,*view.load.townArea);
+    }
     if(portalIssued) {
         if(portalUsed) {
             wait("town-portal-wait","Waiting for the native town scene");
@@ -271,12 +361,21 @@ void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
     if(now>=actionDeadline) throw std::runtime_error("NPC did not confirm item consumption and reward readiness");
 }
 void DebugAi::Impl::execute(Context &c,const Goal &goal) {
+    guardingOpening=false;
     if(localPad && localPad->waiting) {wait("local-pad-result","Waiting for the actual same-level relocation");return;}
     if(goal.kind==Kind::Quest) {quest(c,goal);return;}
+    if (goal.requiredWaypoint && goal.area && knownWaypointAreas.contains(*goal.area)) {
+        advance(c, "Personal waypoint activation observed"); return;
+    }
     if(goal.kind==Kind::Acquire && owned(c,goal.item)) {advance(c,"Owned item already satisfies acquire: "+goal.item);return;}
     if(goal.area && (area!=goal.area || travelDestination) && !travel(c,*goal.area)) return;
     switch(goal.kind) {
-    case Kind::Travel: advance(c,"Native target area observed");return;
+    case Kind::Travel:
+        if (goal.requiredWaypoint) {
+            if (!activateWaypoint(c)) explore(c, "required waypoint");
+            return;
+        }
+        advance(c,"Native target area observed");return;
     case Kind::ReturnTown: returnTown(c);return;
     case Kind::Acquire: acquire(c,goal);return;
     case Kind::Deliver: deliver(c,goal);return;

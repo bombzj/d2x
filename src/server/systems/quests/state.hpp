@@ -46,6 +46,7 @@ struct ActOneState {
 struct ActTwoState {
     bool sunScheduled{}, dark{}, altarDestroyed{}, journalRead{}, tombOpen{}, durielSlain{}, tyraelPortal{};
     uint64_t sunAt{}, tombAt{};
+    bool tombEffectPending{};
     RegionId tomb{};
     EntityId radament{};
     Vec bookPosition;
@@ -77,8 +78,6 @@ struct StatusNotice {
 };
 struct ActThreeState {
     EntityId figurineSource{};
-    RegionId figurineArea{};
-    Vec figurinePosition;
     bool figurineDropped{};
     bool figurineEnabled{true};
     EntityId gidbinnAltar{};

@@ -134,7 +134,8 @@ void System::initialize(const CharacterRecord &creator) {
     }
     state_.actFive.anyaThawed=book[questIndex(QuestId::PrisonOfIce)].stage>=5;
     state_.actFive.anyaRead=book[questIndex(QuestId::PrisonOfIce)].stage==4;
-    state_.actFive.ancientsDefeated=book[questIndex(QuestId::RiteOfPassage)].stage>=4;
+    // A5Q5 PlayerStartedGame records completed-before for Init73. Only
+    // the last Ancient killed in this game sets ancientsDefeated.
     if(book[questIndex(QuestId::SearchForCain)].stage>=8) {
         state_.actOne.cainRescued=true;state_.actOne.restoreCairnStones=true;state_.actOne.activatedStones=5;
     }
@@ -388,7 +389,10 @@ void System::prepareStatusNotice(QuestId id,StatusNotice &notice) const {
         const bool missed=state_.objectives[questIndex(id)] && unavailable(key,record,id);
         if((quest.stage>=definition.completedStage || (state_.initialFlags[definition.nativeSlot]&0x8000)) &&
             !credited(key,id) && !missed) continue;
-        notice.recipients.push_back({key,player.actor,player.area,missed?uint8_t(12):notice.status});
+        auto status=notice.status;
+        if(id==QuestId::GoldenBird)
+            status=record.completedActs.at(size_t(ports_.settings.difficulty)).at(1)?goldenBirdStatus(quest.stage,state_.actThree.figurineDropped):0;
+        notice.recipients.push_back({key,player.actor,player.area,missed?uint8_t(12):status});
     }
     notice.prepared=true;
 }

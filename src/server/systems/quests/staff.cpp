@@ -45,7 +45,7 @@ DomainResult<> System::submitStaff(const ActorContext &actor,EntityId source,Ent
     edit.facts.emplace_back(fact(actor.player,record,actor.area));edit.facts.emplace_back(NpcServiceFact{source,5,1});
     auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value));
-    if(result) {state_.actTwo.orifices.clear();state_.actTwo.tomb=actor.area;state_.actTwo.tombAt=(actor.tick/20)*20+area->definition.tombOpeningTicks;}
+    if(result) {state_.actTwo.tombEffectPending=true;state_.actTwo.orifices.clear();state_.actTwo.tomb=actor.area;state_.actTwo.tombAt=(actor.tick/20)*20+area->definition.tombOpeningTicks;}
     return result;
 }
 }

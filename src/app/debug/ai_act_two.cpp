@@ -115,11 +115,13 @@ void DebugAi::Impl::configureActTwoQuest(Goal &goal,QuestId id) const {
         {{flags(QuestId::Summoner,1)}},{clue,summonerKill},false,90);
     auto comment=talk(QuestId::ArcaneSanctuary,"drognan",399,1);comment.clearFlags=2;
     const auto arcaneComment=node("journal-town-confirmation",comment,{{flags(QuestId::ArcaneSanctuary,1,false,2)}},{clue,summonerComment},false,100);
-    auto canyonPortal=portal(QuestId::ArcaneSanctuary,arcane,valley);canyonPortal.witness=journal.target;
+    auto canyonPortal=portal(QuestId::ArcaneSanctuary,arcane,valley);canyonPortal.witness=journal.target;canyonPortal.preferWaypoint=false;
     const auto canyon=node("canyon-arrival",canyonPortal,
-        {{in(valley)},{fact(Kind::TrueTombArea)},{in(lair)}},{clue,portalReading,staff,staffTalk});
+        {{in(valley)},{wp(valley)},{fact(Kind::TrueTombArea)},{in(lair)}},{clue,portalReading});
+    QuestStep waypoint;waypoint.action=QuestAction::Travel;waypoint.area=valley;waypoint.activateWaypoint=true;
+    const auto canyonWaypoint=node("canyon-waypoint",waypoint,{{wp(valley)}},{canyon});
     QuestStep tomb;tomb.action=QuestAction::Travel;tomb.stateQuest=QuestId::SevenTombs;tomb.trueTomb=true;
-    const auto trueTomb=node("true-tomb-arrival",tomb,{{fact(Kind::TrueTombArea)}},{clue,canyon,staff,staffTalk});
+    const auto trueTomb=node("true-tomb-arrival",tomb,{{fact(Kind::TrueTombArea)}},{clue,canyonWaypoint,staff,staffTalk});
     QuestStep submit;submit.action=QuestAction::SubmitStaff;submit.stateQuest=QuestId::HoradricStaff;submit.trueTomb=true;submit.item="hst";
     submit.target=Selector{2,object("orifice",25),"Horadric orifice"};
     const auto staffSubmitted=node("personal-staff-submission",submit,{{submitted}},{staff,staffTalk,trueTomb});
@@ -161,8 +163,8 @@ void DebugAi::Impl::configureActTwoQuest(Goal &goal,QuestId id) const {
     switch(id) {
     case QuestId::RadamentsLair:goal.roots={bookUsed,radamentReward,scrollTalk};break;
     case QuestId::TaintedSun:goal.roots={amulet,sunReward};break;
-    case QuestId::ArcaneSanctuary:goal.roots={clue,summonerComment,arcaneComment};break;
-    case QuestId::Summoner:goal.roots={clue,summonerComment};break;
+    case QuestId::ArcaneSanctuary:goal.roots={canyonWaypoint,summonerComment,arcaneComment};break;
+    case QuestId::Summoner:goal.roots={canyonWaypoint,summonerComment};break;
     case QuestId::HoradricStaff:goal.roots={staffSubmitted};break;
     case QuestId::SevenTombs:goal.roots={actThree};break;
     default:throw std::invalid_argument("No verified Act-II condition graph");

@@ -4,7 +4,7 @@ AI任务、策略、恢复与验收入口统一见[调试任务AI](DEBUG_AI.md)�
 
 `online-status`的`world.cinematic`记录真实S2C61程序号与观察修订，`frontend.page`在61/7通关画面实际生效时为Victory。该状态不提供伪造通知或任务完成指令；最终出口须经正常客户端交互，由服务端决定旅行与通知。
 
-`debug-ai-start`可用`configFile`加载已有计划／策略JSON；`debug-ai-reload-config`在同一活动或暂停计划中验证并原子应用安全数值策略，省略文件名沿用最近成功配置，详细字段及不可热改范围见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。不重置现实请求期限，也不改服务端规则。
+`debug-ai-start`可用`configFile`加载已有计划／策略JSON；启动参数`"activateAllWaypoints":true`会添加全部传送点目标，安排在毁灭前夕之前（无此终局任务则追加到末尾）。`debug-ai-reload-config`在同一活动或暂停计划中验证并原子应用安全数值策略，省略文件名沿用最近成功配置，详细字段及不可热改范围见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。不重置现实请求期限，也不改服务端规则。
 
 PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版／公共规则及必要的版本边界。
 
@@ -69,6 +69,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 ## 原服收包记录
 
 `online-status`和`server-status`另返回`performance`：最近120个已完成呈现帧的`milliseconds`按host、network、client、ai、navigation、debug、scene、present、other和total记录mean／p95／max，`completedFrames`及`over100ms`为本进程累计计数。ai／navigation分别为调试父AI／子行走调度，包含其碰撞和候选处理；present包含垂直同步／限帧等待，host包含嵌入宿主工作，scene包含场景及UI更新／绘制；这是实际墙钟耗时，不是25 Hz权威帧。`performance.navigationSearch`另列父／子共享的新求路数、缓存／可达证明命中、预算让出、移动段复用与实际求路微秒；预算范围及单次公共求路仍为同步调用的边界见[共享寻路预算](DEBUG_AI.md#共享寻路预算)。统计有界保存且不逐帧写磁盘；查询看到上一完整帧为止的帧样本和当前求路计数，暂停或切换场景后须等待窗口刷新再比较。计时拆分和共享预算已构建并观察到缓存命中／预算让出，实际证据见DEBUG_AI与ORIGINAL_GAPS；没有同条件前后提速结论。
+
+需要捕捉可能被120帧窗口覆盖的停顿时，启动加`--frame-profile <新路径.jsonl>`；`performance.frameLog`提供路径、已写事件数、最大帧和错误。持久日志另含进程／系统内存、缺页／CPU累计、读写量、当前场景与Graphics资源计数，并单列采集耗时。用同EXE／同资源、无并行构建的原版Host客户端比较AI启停、换区／新单位加载与绘制等待；不能凭进程内存突增先归因AI，也不能把原版网络心跳持续误认为图形主循环没有卡帧。具体字段和限制见[长帧取证](BUILD_AND_RUN.md)。
 
 需要核对原服实际消息时，可在启动客户端时指定`--game-packet-log <新.jsonl>`，记录D2X客户端成功入发送队列的C2S和完成分帧、消费之前的S2C；`--host-packet-log <另一新.jsonl>`记录嵌入／TCP/IP宿主完成分帧、校验分派之前的C2S，以及成功入输出队列的S2C（批量输出拆成原包）。两者独立按JSONL记录sequence、相对启动微秒、endpoint、direction、包号、含包头长度和十六进制字节；客户端用gameGeneration区分入局，宿主用connection区分每次游戏字节连接，包含内存房主和TCP客人。握手和离局同样记录；入发送队列不表示对方已执行，收到C2S也不表示事务提交成功。
 
@@ -239,7 +241,7 @@ $spec.preview=$false
 | `online-interact` | unitId、unitType（默认2，支持1／2／5）、run（NPC靠近默认true）；目标必须在scene.mapTargets中。近处发原0x13；远处先按真实GUID发02／04，本地普通单位路径到达后才13，交互资格及菜单仍由服务端确认；accepted不代表已操作、交谈打开或换区 |
 | `online-town-portal` | 无参数；要求存活／原生地图可移动／非城镇及原服已报告可用卷轴或书技能、右技能。选原右技能并施放，后续world.townPortalPending及实际type2门户回包给出等待／分配状态；不发放卷轴 |
 | `online-npc-interact` | unitId、run（默认true）；online-interact的type1入口。只接MPQ允许交谈的实际NPC，远处先靠近；等待scene.npcConversation |
-| `online-npc-message` | stringId（0–65535）、可选npcRevision；必须为当前服务端对白列表且未确认，版本不符拒绝。发0x31，acknowledged只表示入队，不是任务成功回执 |
+| `online-npc-message` | stringId（0–65535）、可选npcRevision；读取当前原27／28的NPC或物件阅读消息，不依赖激活后可能消失的可点击目标。必须为服务端当前列表且未确认，版本不符拒绝。复用任务AI的RealmSession确认入口发0x31，acknowledged只表示入队，不是任务成功回执 |
 | `online-npc-close` | 无参数；取消尚在靠近的交谈意图，或发0x30关闭当前NPC。取消靠近意图不会传送角色或撤销已提交的服务端寻路 |
 | `online-npc-travel` | 无参数；要求当前scene.npcConversation.travelLabel与travelDestination来自瓦瑞夫／马席夫真实身份和任务资格；发原0x38 action=0、NPC、目的地并结束临时交谈，随后查询实际幕／位置 |
 | `online-staff-update` | cancel布尔（默认false）；要求已收到原0x58的插杖来源，提交时只使用实际本人Cursor物品GUID，发送原0x44 state3；cancel发送state2。入队不代表材料消耗或古墓开墙，应核对库存、0x58结果和权威机关 |

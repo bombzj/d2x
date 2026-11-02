@@ -403,7 +403,7 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
                 cursor.phase=DensityRoom::Phase::Trial;continue;
             }
             cursor.leader=id;cursor.spawned=true;cursor.phase=DensityRoom::Phase::LeaderSetup;
-            if(cursor.elite) ports_.quests.nativeEliteBorn(id,rules.classes.at(cursor.definition).figurineEligible);
+            if(cursor.elite) ports_.quests.nativeEliteBorn(id);
             if(preset && !preset->superUnique.empty()) state_.superUniques.insert(preset->uniqueIndex);
         } else if(cursor.phase==DensityRoom::Phase::LeaderSetup) {
             const auto id=cursor.leader;

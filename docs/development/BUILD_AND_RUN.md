@@ -48,7 +48,7 @@ cmake --build build --parallel
 
 ## Windows 运行
 
-链接d2x后，构建规则会将config/debug-ai.json与config/debug-ai-campaign.json复制到EXE所在目录，仅补缺、不覆盖已有同名JSON。调试AI配置的相对路径优先从EXE目录解析，不存在再按工作目录查找；因此五幕配置可直接用`/debug-ai-start {"configFile":"debug-ai-campaign.json"}`。运行副本可自行编辑，加载／重载及实际路径诊断见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。此复制规则的源码已接入，尚未随本次路径修改构建／实机验收。
+链接d2x后，构建规则会将config/debug-ai.json与config/debug-ai-campaign.json复制到EXE所在目录，仅补缺、不覆盖已有同名JSON。调试AI配置的相对路径优先从EXE目录解析，不存在再按工作目录查找；因此五幕配置可直接用`/debug-ai-start {"configFile":"debug-ai-campaign.json"}`。运行副本可自行编辑，加载／重载及实际路径诊断见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。
 
 构建已有EXE后，在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。显式 `--mpq <目录或文件>` 优先；未指定时，依次搜索工作目录本身、EXE 所在目录本身、工作目录的 `assets/mpq2`，再搜索 EXE 所在目录及最多四级父目录中的 `assets/mpq2`。自动定位以 `d2data.mpq`／`D2Data.mpq` 为入口，找到首个目录即停止，挂载该目录全部 MPQ，不递归搜索子目录。无论是否显式 `--mpq`，另在工作目录、EXE 所在目录及其最多五级父目录中查找 `assets/mpq`：其中的补充包最先挂载，优先级低于 `--mpq` 目录，原版成员始终优先，补充包只填补原版未提供的路径；两目录指向同一位置时不重复挂载。工作目录与 EXE 所在目录可以不同。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](../resources/THIRD_PARTY.md) 及 `docs/licenses/`。
 
@@ -78,6 +78,8 @@ ESC 优先关闭面板，无面板时打开游戏菜单；Save and Exit 请求�
 `--no-pause-on-focus-loss`用于图形单机调试，也可用`Play.cmd -NoPauseOnFocusLoss`启动：失去焦点或最小化仍推进嵌入宿主，默认不启用；ESC菜单及显式调试暂停仍会暂停，失焦不接收普通用户输入。最小化仍停止绘制并阻止AI输入。TCP/IP世界原本持续推进，不由此参数改变；不能与headless入口混用。
 
 EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame` 开始的首次生命周期节点：MPQ 挂载、平台、菜单资产、首个显示帧、服务端世界、客户端内容、游戏 UI 及首个已绘制游戏帧。每个节点只记录一次并立即刷新；未指定不产生文件。`--frames <数量>` 可有限运行后正常退局，`--hidden` 仍建立 OpenGL 上下文但跳过音频设备初始化。测速需注明运行条件，文件首帧时间不包含操作系统创建进程之前的耗时，也不代表首次磁盘冷启动或后续每次入局耗时。
+
+`--frame-profile <新路径.jsonl>`为图形客户端提供可选长帧取证，输出必须不存在。每个≥100ms的完整呈现帧记录host／network／client／ai／navigation／debug／scene／present／other的墙钟耗时，另约每秒采样进程内存、缺页／CPU累计、读写量、可用物理内存及Graphics已解码像素／逻辑RGBA纹理规模。记录含epochMs、单调elapsedMs、区域／世界修订和寻路计数，可与game-packet-log对齐；32MiB封顶，写入错误停止诊断而不改变游戏。diagnosticCollectionMs单列采集开销；textureCountsBySource／textureBytesBySource只计独立纹理的首次上传归属。世界图集另计 atlasBytes／atlasPages，atlasBytesByUse 依次为地形、角色（含阴影）、特效、物品。atlasUploadBytes／atlasEvictions 为当前所有者累计值，atlasOwnerPeaksBytes 为各当前所有者峰值之和。directionBytes 为按需解码缓存，dt1Libraries／dt1PixelBytes 为客户端挂载内仍存活的 DT1 库及索引像素容量；逻辑纹理字节不是驱动实占／显存结论，Windows缺页计数也不区分软硬缺页。日志在长帧结束后写入，永久死锁需另取线程栈。默认关闭，不逐帧写磁盘；原版Host测试使用直接debug pipe控制AI，不走聊天入口。
 
 启动测量在当次交付中说明程序版本、资源、启动参数及采样条件；临时测量文件可清理，不作为功能或原版一致性的长期依据。
 

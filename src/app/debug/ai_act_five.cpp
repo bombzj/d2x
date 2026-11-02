@@ -38,8 +38,11 @@ void DebugAi::Impl::configureActFiveQuest(Goal &goal,QuestId id) const {
     auto s=hunt(siege,definitions->area("Act 5 - Siege 1"),Json{{"superunique","Siege Boss"}});s.flags=2;
     const auto shenk=node("shenk-dead",s,{{flag(siege,0x2003,true)},{fact(K::Corpse)}},{intro(siege,"larzuk",20077)},true);
     const auto socketReady=node("larzuk-socket-entitlement",talk(siege,"larzuk",20090,0x22),{{flag(siege,0x22)},{flag(siege,1)}},{shenk});
-    s={};s.action=QuestAction::Service;s.stateQuest=siege;s.area=town;s.target=definitions->selector(Json{{"npc","larzuk"}});s.item="cap";
-    const auto socket=node("larzuk-socket-reward-used",s,{{flag(siege,1)}},{socketReady});
+    auto socket=socketReady;
+    if(goal.useServiceRewards) {
+        s={};s.action=QuestAction::Service;s.stateQuest=siege;s.area=town;s.target=definitions->selector(Json{{"npc","larzuk"}});s.item="cap";
+        socket=node("larzuk-socket-reward-used",s,{{flag(siege,1)}},{socketReady});
+    }
 
     s=hunt(rescue,definitions->area("Act 5 - Barricade 1"),Json{{"monster","prisondoor"}});s.action=QuestAction::Rescue;
     s.witness=definitions->selector(Json{{"monster","act5pow"}});
@@ -81,8 +84,11 @@ void DebugAi::Impl::configureActFiveQuest(Goal &goal,QuestId id) const {
     s=hunt(betrayal,definitions->area("Act 5 - Temple Boss"),Json{{"monster","nihlathakboss"}});s.flags=2;
     const auto nihlathak=node("nihlathak-dead",s,{{flag(betrayal,0x2003,true)},{fact(K::Corpse)}},{templeEntry},true);
     const auto nameReady=node("anya-personalization-entitlement",talk(betrayal,"drehya",20148,0x12),{{flag(betrayal,0x12)},{flag(betrayal,1)}},{nihlathak});
-    s={};s.action=QuestAction::Service;s.stateQuest=betrayal;s.area=town;s.target=definitions->selector(Json{{"npc","drehya"}});s.item="cap";
-    const auto personalized=node("anya-personalization-used",s,{{flag(betrayal,1)}},{nameReady});
+    auto personalized=nameReady;
+    if(goal.useServiceRewards) {
+        s={};s.action=QuestAction::Service;s.stateQuest=betrayal;s.area=town;s.target=definitions->selector(Json{{"npc","drehya"}});s.item="cap";
+        personalized=node("anya-personalization-used",s,{{flag(betrayal,1)}},{nameReady});
+    }
 
     const auto trialIntro=intro(trial,"qual-kehk",20153);
     const auto ancient=[&](std::string_view name) {
@@ -93,9 +99,9 @@ void DebugAi::Impl::configureActFiveQuest(Goal &goal,QuestId id) const {
         target.superUnique.reset();return target;
     };
     const auto altar=object("ancientsaltar",65);
-    s={};s.action=QuestAction::Operate;s.stateQuest=trial;s.area=summit;s.target=altar;s.topics={20002};s.flags=1;
+    s={};s.action=QuestAction::Operate;s.stateQuest=trial;s.area=summit;s.target=altar;s.topics={20002};s.flags=id==baal?0:1;
     s.witness=ancient("Ancient Barbarian 1");
-    Proof altarProof{{flag(trial,1)}};
+    Proof altarProof{{flag(trial,1),fact(K::SummitPassage)}};
     for(const auto name:{"Ancient Barbarian 1","Ancient Barbarian 2","Ancient Barbarian 3"}) {
         auto observed=fact(K::MonsterObserved);observed.value=definitions->selector(Json{{"superunique",name}}).identity;observed.area=summit;
         altarProof.push_back({observed});
@@ -106,7 +112,8 @@ void DebugAi::Impl::configureActFiveQuest(Goal &goal,QuestId id) const {
         s=hunt(trial,summit,Json{{"superunique",name}});
         s.target=ancient(name);
         // Never retain a corpse across an actual portal/leave reset.
-        ancients.push_back(node(std::string("ancient-dead-")+name,s,{{flag(trial,1)},{fact(K::Corpse)}},{awakened}));
+        auto passage=fact(K::SummitPassage);passage.value=s.target->identity;
+        ancients.push_back(node(std::string("ancient-dead-")+name,s,{{flag(trial,1),passage},{fact(K::Corpse)}},{awakened}));
     }
     s=hunt(trial,summit,Json{{"superunique","Ancient Barbarian 3"}});s.target=ancient("Ancient Barbarian 3");s.flags=1;
     const auto trialDone=node("ancients-personal-reward",s,{{flag(trial,1)}},ancients);
@@ -119,7 +126,8 @@ void DebugAi::Impl::configureActFiveQuest(Goal &goal,QuestId id) const {
     for(const auto level:{"Act 5 - Baal Temple 2","Act 5 - Baal Temple 3","Act 5 - Throne Room","Act 5 - World Stone"}) {
         auto entered=fact(K::Area);entered.value=definitions->area(level);keepProof.push_back({entered,flag(trial,1)});
     }
-    const auto keepEntry=node("worldstone-keep-entry",s,std::move(keepProof),{trialDone},true);
+    ancients.push_back(trialDone);
+    const auto keepEntry=node("worldstone-keep-entry",s,std::move(keepProof),ancients,true);
     s={};s.action=QuestAction::Encounter;s.stateQuest=baal;s.area=throne;s.target=object("The Worldstone Chamber",70);
     s.witness=definitions->selector(Json{{"monster","baalthrone"}});s.clearCombat=true;s.status=3;
     s.residualRange=64;s.stageSound=16; // BaalThrone Fn134 clearance and broadcast laugh.

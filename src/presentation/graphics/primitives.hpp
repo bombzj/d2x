@@ -44,8 +44,7 @@ struct ClassicFont {
     std::vector<uint32_t> codes;  // sorted code points
     std::vector<uint16_t> frames; // parallel DC6 frame
     std::vector<uint8_t> widths;  // parallel advance width
-    mutable std::vector<Sprite> sprites; // uploaded frames, indexed by DC6 frame
-    mutable std::vector<uint8_t> uploaded;
+    mutable std::map<uint16_t, Sprite> sprites; // Only glyphs used in this color variant.
     bool ready = false;
 
     int indexOf(uint32_t code) const {
@@ -78,10 +77,7 @@ Color pl2FontColor(const Bytes &palette, int color);
 // text layout so a TTF backend can supply glyphs without DC6 source frames.
 Sprite rasterizeGlyph(Graphics &graphics, const IndexedFrame &frame, const ClassicFont &font);
 // Shared TTF text backend. When a CJK outline font is available, text is drawn
-// from it instead of the upscaled DC6 glyph atlas. The atlas is built lazily
-// from the code points the DC6 font tables report, so only glyphs the game can
-// show are rasterized.
-void collectFontCodepoints(const std::vector<uint32_t> &codes);
+// from it. The atlas includes printable ASCII and the non-ASCII glyphs used by text.
 void setTtfSearchDirectory(std::string_view directory);
 bool ttfTextReady();
 Vector2 ttfMeasure(std::string_view text, float size, float spacing);

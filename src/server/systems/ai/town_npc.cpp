@@ -52,16 +52,16 @@ StepStatus System::townNpcFamily(EntityId id,TickContext tick,Controller &contro
         controller.pursuing=false;controller.nextDecision=tick.tick+uint64_t(frames);
         return perform(controller,[this,id,tick]{return ports_.monsters.aiPose(id,1,false,false,tick.tick);});
     };
-    const auto walk=[&](Vec point,int steps=0,bool circle=false) {
+    const auto walk=[&](Vec point,int steps=0,bool circle=false,uint8_t pathType=7) {
         controller.nextDecision=tick.tick+1;
-        const auto moved=perform(controller,[this,id,point,steps,circle] {
+        const auto moved=perform(controller,[this,id,point,steps,circle,pathType] {
             const auto *actor=ports_.monsters.find(id);
             if(!actor || !actor->alive() || actor->rule.nativeVelocity<=0) return DomainResult<>{DomainStatus::Unavailable,{}};
             const auto &destination=ports_.areas.at(actor->area);
             // SetVelocity(7,0,0): native Straight path with base walk speed.
             // Command4 occasionally uses native clockwise circle path5.
             return ports_.monsters.requestMove({id,{actor->area,destination.generation,point-destination.definition.origin},
-                {},0,75,false,steps,circle?1:0,circle?5:0,7,5});
+                {},0,75,false,steps,circle?1:0,circle?5:0,pathType,5});
         });
         controller.pursuing=bool(moved);return moved;
     };
@@ -72,6 +72,15 @@ StepStatus System::townNpcFamily(EntityId id,TickContext tick,Controller &contro
     bool interacting=false;
     for(const auto &[player,conversation]:ports_.npc.read().conversations)
         if(conversation.npc==id && ports_.npc.conversation(player)) {interacting=true;break;}
+    // LoD 1.13c D2Game RVA 19DF3: Fn032 uses the last observed global
+    // NPC position for its first four decisions, then idles eight frames.
+    if (unit.rule.ai.kind == MonsterAiKind::Npc && unit.npcClickDecisions > 0) {
+        if (controller.pursuing && !unit.route.empty()) {controller.nextDecision=tick.tick+1;return StepStatus::Complete;}
+        const auto observed = unit.npcClickPosition;
+        const bool recover = observed && unit.npcClickDecisions > 36 && distance(*observed) > 2;
+        ports_.monsters.advanceNpcClick(id);
+        return finish(recover ? walk(*observed) : idle(8));
+    }
     if(interacting) return finish(idle(stationary?10:8));
     // A walk re-enters the native callback only when its path ends. Keep
     // commands and random draws untouched while the shared mode advances it.
@@ -120,7 +129,7 @@ StepStatus System::townNpcFamily(EntityId id,TickContext tick,Controller &contro
             return finish(idle(10));
         }
         return finish(walk(monsterRadiusApproachPoint(global,unit.rule.size,targetPoint,
-            targetDistance<5?targetDistance-2:3,2),1));
+            targetDistance<5?targetDistance-2:3,2),1,false,1)); // Fn032 SetVelocity(1,0,0), not MapAI Straight7.
     }
     if(stationary) return finish(idle(20));
     if(unit.rule.ai.kind==MonsterAiKind::JarJar) return finish(idle(20));

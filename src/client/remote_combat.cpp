@@ -110,6 +110,20 @@ std::optional<uint16_t> RemoteCombat::superUnique(const OnlineUnit &unit) const 
     if(found==unitOwners_.end() || !found->second.decoded || found->second.revision!=unit.appearanceRevision) return {};
     return found->second.superUnique;
 }
+bool RemoteCombat::eliteMonster(const OnlineUnit &unit) const {
+    const auto appearance=unitOwners_.find(unit.key);
+    return unit.key.type==1 && appearance!=unitOwners_.end() && appearance->second.decoded &&
+        appearance->second.revision==unit.appearanceRevision && (appearance->second.rank&7u);
+}
+bool RemoteCombat::jadeFigurineCandidate(const OnlineUnit &unit) const {
+    if(!unit.classId || !eliteMonster(unit)) return false;
+    const auto row=monsters_.find(*unit.classId);
+    if(row==monsters_.end()) return false;
+    const auto &table=tables_.at("monstats");
+    // QUESTS_SetJadeFigurineBoss filters the spawned class. Its choice of
+    // individual leader is private; the assignment only identifies a candidate.
+    return table.value(row->second,"Id")!="fetish11" && !table.number(row->second,"flying").value_or(0);
+}
 bool RemoteCombat::hostile(const OnlineUnit &unit) const {
     if (!hostileSource(unit)) return false;
     if(unit.key.type==0) return true;

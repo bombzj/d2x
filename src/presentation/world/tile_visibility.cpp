@@ -60,7 +60,7 @@ void TileVisibility::update(const MapTerrain &terrain, Vec position, int originX
     }
     for (size_t i = 0; i < terrain.instances.size(); ++i) {
         const auto &tile = terrain.instances[i];
-        if (!tile.wallArray || tile.removed) continue;
+        if (!tile.wallArray) continue;
         const auto &room = terrain.rooms.at(tile.room);
         const auto *entry = terrain.tiles.at(size_t(tile.tile));
         const Key key{room.x + originX,room.y + originY,tile.x + originX,tile.y + originY,

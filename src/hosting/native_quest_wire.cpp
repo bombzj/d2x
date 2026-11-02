@@ -67,7 +67,7 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
         case QuestId::ArcaneSanctuary: status=stage>=4?13:uint8_t(stage);break;
         case QuestId::Summoner: status=stage>=3?13:stage==2?4:stage==1?2:0;break;
         case QuestId::SevenTombs: status=stage>=5?0:stage==4?6:stage==3?5:stage==2?4:uint8_t(stage);break;
-        case QuestId::GoldenBird: status=stage>=6?13:stage==5?5:uint8_t(stage);break;
+        case QuestId::GoldenBird: status=goldenBirdStatus(stage,fact.figurineDropped);break;
         case QuestId::BladeOfTheOldReligion: status=stage>=5?13:stage==4?uint8_t(state&gidbinnRingGranted?6:5):stage==3?4:uint8_t(stage);break;
         case QuestId::KhalimsWill: status=fact.khalimStatus.value_or(stage>=4?13:stage==3?6:stage?1:0);break;
         case QuestId::LamEsensTome: status=stage>=4?13:stage==3?2:stage?1:0;break;

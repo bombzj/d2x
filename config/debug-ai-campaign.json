@@ -93,10 +93,6 @@
     },
     {
       "action": "quest",
-      "quest": "golden-bird"
-    },
-    {
-      "action": "quest",
       "quest": "blade-of-the-old-religion"
     },
     {
@@ -110,6 +106,10 @@
     {
       "action": "quest",
       "quest": "blackened-temple"
+    },
+    {
+      "action": "quest",
+      "quest": "golden-bird"
     },
     {
       "action": "quest",

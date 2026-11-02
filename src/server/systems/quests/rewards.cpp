@@ -325,7 +325,9 @@ DomainResult<> System::install(Prepared prepared) {
     if(s.kind==RewardKind::LifePotion) questFact.credited[questIndex(QuestId::GoldenBird)]=true;
     if((s.kind==RewardKind::GidbinnRing || s.kind==RewardKind::IronWolf) && book[questIndex(QuestId::BladeOfTheOldReligion)].stage==5)
         questFact.credited[questIndex(QuestId::BladeOfTheOldReligion)]=true;
-    edit.facts.emplace_back(std::move(questFact));
+    // The ground figurine changes game status only. Publish its targeted
+    // status cycle after the drop commits, without resending every quest.
+    if(s.kind!=RewardKind::Figurine) edit.facts.emplace_back(std::move(questFact));
     std::optional<npc::VendorControlPublication> rosterPublication;
     if(s.hireling) {
         const auto &selection=*s.hireling;
@@ -400,7 +402,10 @@ DomainResult<> System::install(Prepared prepared) {
         }
         if(s.kind==RewardKind::LamTome || s.kind==RewardKind::KhalimEye || s.kind==RewardKind::KhalimBrain || s.kind==RewardKind::KhalimHeart) state_.objectModes[s.source]=2;
         if(s.kind==RewardKind::Soulstone && !s.conversation) state_.actThree.soulstoneDropped=true;
-        if(s.kind==RewardKind::Figurine) state_.actThree.figurineDropped=true;
+        if(s.kind==RewardKind::Figurine) {
+            state_.actThree.figurineDropped=true;
+            queueStatus(QuestId::GoldenBird,1);
+        }
         if(s.kind==RewardKind::Gidbinn) state_.actThree.gidbinnDropped=true;
         ports_.loot.commitUniques(std::move(uniques));
         if(s.kind==RewardKind::SkillBook) state_.actTwo.radamentBooks.erase(s.actor.player);

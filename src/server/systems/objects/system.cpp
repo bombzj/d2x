@@ -240,10 +240,11 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     if (rule.stash) return ports_.inventory.openStash(actor,object.id,remoteRange);
     if(area->definition.act==4 && rule.operation==66) {
-        const auto &trial=ports_.quests.read();
-        if(!ports_.quests.allowsTravel(player->persistent.player,actor.area,RegionId(128)) ||
-            (!trial.actFive.ancientsDefeated && !(trial.initialFlags[questDefinition(QuestId::RiteOfPassage).nativeSlot]&1)))
-            return {DomainStatus::Conflict,{}};
+        if(!ports_.quests.allowsTravel(player->persistent.player,actor.area,RegionId(128))) {
+            const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
+                {SoundFact{actor.actor,0,actor.area,19}}});
+            return sent?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{sent.status,{}};
+        }
         if(object.mode==0) {
             object.mode=1;object.until=actor.tick+(rule.openingTicks>1?rule.openingTicks-1:1);
             object.operatorActor=actor.actor;++object.revision;collision(object.area);
@@ -610,7 +611,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(object.rule.operation==25) {
             const auto &quest=ports_.quests.read().actTwo;
             const bool leased=std::any_of(quest.orifices.begin(),quest.orifices.end(),[&](const auto &entry){return entry.second==id;});
-            const int mode=quest.tombAt && quest.tomb==object.area?2:leased?1:0;
+            const int mode=(quest.tombAt && quest.tomb==object.area) || leased?1:0; // Native lease and submission both use OPERATING.
             if(object.mode!=mode) {object.mode=mode;object.until=0;++object.revision;changed.insert(object.area);}
         }
         if(object.definition==318 && int(object.area)==40) {

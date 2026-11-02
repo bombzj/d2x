@@ -105,13 +105,13 @@ class RealmSession {
     // Actual automap room callbacks, with low 32 bits of steady-clock milliseconds.
     // A consumed batch belongs to one published game/area; vanilla is a no-op.
     bool report_automap_rooms_pd2(std::span<const uint32_t>, const OnlineIntentContext &);
-    bool move_to_unit(OnlineUnitKey target, bool run = true, std::optional<OnlineIntentContext> context = {});
+    bool move_to_unit(OnlineUnitKey target, bool run = true, std::optional<OnlineIntentContext> context = {}, std::optional<OnlinePoint> stopNpc = {});
     // Uses an assigned server UNIT_TILE ID. Map warp classes/slots are not IDs.
     bool use_exit(uint32_t serverUnitId);
     bool interact_map_unit(OnlineUnitKey target, OnlineObjectIntent intent = OnlineObjectIntent::Operate,
                            std::optional<OnlineIntentContext> context = {});
     // Application validates MonStats.interact and native approach range first.
-    bool interact_npc(uint32_t serverUnitId, std::optional<OnlineIntentContext> context = {});
+    bool interact_npc(uint32_t serverUnitId, std::optional<OnlineIntentContext> context = {}, std::optional<OnlinePoint> stopNpc = {});
     bool close_npc(std::optional<OnlineIntentContext> context = {});
     bool cancel_item_targeting(std::optional<OnlineIntentContext> context = {});
     bool play_voice(uint16_t sound, std::optional<OnlineIntentContext> context = {});

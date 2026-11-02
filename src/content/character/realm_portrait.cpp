@@ -132,10 +132,15 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
         return false;
     };
     bool equipmentEffectsKnown = true,shield=false;
+    std::array<bool, 2> occupiedHands{};
     for (const auto &[id, item] : w.equipment) {
         (void)id;
         if (unequipped || item.ownerType!=u.key.type || item.owner != u.key.id || item.bodyLocation >= 11)
             continue;
+        // INVENTORY_GetWieldType reads occupied slots before checking whether
+        // their items can contribute visible components (BROKEN/NOEQUIP).
+        if (item.bodyLocation == 4 || item.bodyLocation == 5)
+            occupiedHands[item.bodyLocation - 4] = true;
         // ITEMS_CanBeEquipped excludes BROKEN and NOEQUIP from the native
         // composite. Repair/property packets rebuild this view with new flags.
         if (item.flags & (0x100u | 0x4000u))
@@ -159,13 +164,20 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
                 if (!set(components[part], visual.body[part]))
                     return {};
         } else {
-            const auto component = item.component;
+            // SCmd uses UNITS_GetItemComponentId for the packet header. For
+            // assassins/barbarians it can label the non-primary hand item LH,
+            // including a shield. INVENTORY_GetCompositItem only remaps these
+            // weapon classes; shields and other gear keep their MPQ component.
+            const auto &weaponClass = visual.appearance.weapon;
+            const bool handWeapon = isType(visual.appearance.type, "weap") &&
+                (weaponClass == "1hs" || weaponClass == "1ht" || weaponClass == "ht1");
+            const int component = handWeapon ? item.component : visual.component;
             if (component > 10 || (component != 0 && component < 5) ||
                 !set(component, visual.appearance.code))
                 return {};
         }
     }
-    auto parts = decode(preview);
+    auto parts = decode(preview, occupiedHands[0] && occupiedHands[1]);
     if(parts) {
         parts->equipmentEffectsKnown=equipmentEffectsKnown;
         // Retail D2Client 6E1E0 / 6E289: SH + HolyShield + an actually
@@ -175,6 +187,10 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
     return parts;
 }
 std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineCharacter &c) const {
+    return decode(c, {});
+}
+std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineCharacter &c,
+                                                              std::optional<bool> oppositeOccupied) const {
     if (!c.characterClass || *c.characterClass >= 7 || c.portrait.size() != 33 ||
         !(c.portrait[0] & 0x80) || !(c.portrait[1] & 0x80)) return {};
     const auto version = uint16_t((c.portrait[0] & 0x7F) | ((c.portrait[1] & 0x7F) << 7));
@@ -224,12 +240,20 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineChara
         EquipmentDefinition equipment;
         equipment.twoHanded = weapon->twoHanded;
         equipment.oneOrTwoHanded = weapon->oneOrTwoHanded;
-        const bool oppositeOccupied = p.components[right ? 6 : 5] != "nil" || p.components[7] != "nil";
-        const bool twoHands = usesTwoHandedWeapon(equipment, *c.characterClass == 4 ? "bar" : "", oppositeOccupied);
+        // Saved portraits only carry visible components. Live units also know
+        // whether an invisible/broken item occupies the opposite body slot.
+        const bool occupied = oppositeOccupied.value_or(p.components[right ? 6 : 5] != "nil" || p.components[7] != "nil");
+        const bool twoHands = usesTwoHandedWeapon(equipment, *c.characterClass == 4 ? "bar" : "", occupied);
         p.weapon = twoHands && !weapon->twoHandWeapon.empty() ? weapon->twoHandWeapon : weapon->weapon;
     }
     if (p.weapon.empty())
         return {};
+    if (p.weapon == "xbw") {
+        // INVENTORY_GetItemSaveGfxInfo/sub_6FD917B0 duplicates a crossbow's
+        // component into LH. Native XBW COFs draw separate RH and LH pixels.
+        const auto *weapon = right ? right : left;
+        p.components[5] = p.components[6] = weapon->code;
+    }
     return p;
 }
 } // namespace d2x

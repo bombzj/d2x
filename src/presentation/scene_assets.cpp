@@ -1,3 +1,4 @@
+#include "world/tile_library_usage.hpp"
 #include "content/monsters/monster_identity.hpp"
 #include "contracts/inventory.hpp"
 #include "gameplay/quest/catalog.hpp"
@@ -50,8 +51,8 @@ const SceneAssets::ProjectileVisual *SceneAssets::ensureProjectile(int id) {
         }
         if (file.empty() || file == "null" || !archives_.contains(path)) return nullptr;
         const int trans = table.number(row, "Trans").value_or(0);
-        auto animation = unitsGraphics_.single(path, trans != 0);
-        if (animation.frames.empty()) return nullptr;
+        auto animation = unitsGraphics_.worldSingle(path, trans ? WorldSingleArt::BlendedEffect : WorldSingleArt::Effect);
+        if (!animation.available()) return nullptr;
         projectileAnimations.emplace(id, std::move(animation));
         unavailableProjectiles.erase(id);
         return &projectileVisuals.at(id);
@@ -76,7 +77,7 @@ const SkillOverlayVisual *SceneAssets::ensureOverlay(int id) {
     const auto file = table.value(row, "Filename");
     visual.art = "data/global/overlays/" + std::string(file) + ".dcc";
     if (file.empty() || visual.frames <= 0 || visual.fps <= 0 || !archives_.contains(visual.art)) return nullptr;
-    auto animation = unitsGraphics_.single(visual.art, visual.trans == 3);
+    auto animation = unitsGraphics_.worldSingle(visual.art,visual.trans == 3 ? WorldSingleArt::BlendedEffect : WorldSingleArt::Effect);
     if (animation.count < visual.frames) return nullptr;
     visual.frames = animation.count;
     unavailableOverlays.erase(id);
@@ -239,19 +240,26 @@ void SceneAssets::prepareWorldTiles(const Map &map, int palette) const {
     if (worldTilePalette_ != palette || worldTileSources_ != map.terrain.tiles) {
         worldTileSources_ = map.terrain.tiles; worldTilePalette_ = palette;
         worldTiles_.clear(); worldTiles_.resize(worldTileSources_.size());
-        for (const auto &library : map.terrain.libraries)
-            worldTileLibraries_.try_emplace(library.get(), library);
+        if (worldTileLibraries_ != map.terrain.libraries) {
+            worldTileLibraries_ = map.terrain.libraries;
+            worldTileKeys_.clear();
+            for (const auto &library : worldTileLibraries_) {
+                const auto id = tileLibraryId(archives_, *library);
+                for (size_t i = 0; i < library->size(); ++i)
+                    worldTileKeys_.emplace(&(*library)[i], TileKey{id, i});
+            }
+        }
+        std::erase_if(worldTileSprites_, [](const auto &entry) {return entry.second.cell.stamp.expired();});
     }
 }
 const Sprite &SceneAssets::worldTileSprite(size_t index) const {
     auto &sprite = worldTiles_.at(index);
-    if (!sprite.texture.id) {
+    if (!sprite.texture.id || !sprite.touch()) {
         const auto *tile = worldTileSources_.at(index);
-        const auto key = std::pair{worldTilePalette_, tile};
-        auto found = worldTileSprites_.find(key);
-        if (found == worldTileSprites_.end())
-            found = worldTileSprites_.emplace(key, sceneGraphics(worldTilePalette_).upload(tile->image, true)).first;
-        sprite = found->second;
+        auto &graphics=sceneGraphics(worldTilePalette_);
+        auto &entry=worldTileSprites_[worldTileKeys_.at(tile)];
+        if (!entry.texture.id || !entry.touch()) entry=graphics.terrain(tile->image);
+        sprite=entry;
     }
     return sprite;
 }
@@ -432,95 +440,91 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
             throw std::runtime_error("Original MPQ skill tree background is missing: " + tree.classCode);
         skillTrees.emplace(tree.classCode, std::move(art));
     }
- }
-void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) {
-    auto &graphics = graphicsForAct(palette);
-    auto loadArt = [&](const std::string &art, std::array<int, 2> transform) -> GpuAnimation {
-        if (art.empty()) return {};
-        const auto *source = graphics.animation(art);
-        if (!source) return {};
-        const uint8_t *shift = nullptr;
-        if (transform[0] > 0 && transform[0] < 9 && transform[1] >= 0 && transform[1] < 21) {
-            // D2CMP 1.13c RVA 150D0: original transform group registration.
-            static constexpr const char *names[]{"", "grey", "grey2", "gold", "brown",
-                "greybrown", "invgrey", "invgrey2", "invgreybrown"};
-            auto found = itemTransforms_.find(transform[0]);
-            if (found == itemTransforms_.end()) {
-                auto bytes = archives_.read("data/global/items/palette/" + std::string(names[transform[0]]) + ".dat");
-                if (bytes.size() < 21 * 256) throw std::runtime_error("Original item palette transform is truncated");
-                found = itemTransforms_.emplace(transform[0], std::move(bytes)).first;
-            }
-            const size_t offset = size_t(transform[1]) * 256;
-            if (found->second.size() < offset + 256)
-                throw std::runtime_error("Selected item palette transform is truncated");
-            shift = found->second.data() + offset;
+}
+GpuAnimation SceneAssets::itemArt(const std::string &art, std::array<int, 2> transform, int palette,
+                                  bool ground) const {
+    if (art.empty())
+        return {};
+    const uint8_t *shift = nullptr;
+    if (transform[0] > 0 && transform[0] < 9 && transform[1] >= 0 && transform[1] < 21) {
+        // D2CMP 1.13c RVA 150D0: original transform group registration.
+        static constexpr const char *names[]{"",          "grey",    "grey2",    "gold",        "brown",
+                                             "greybrown", "invgrey", "invgrey2", "invgreybrown"};
+        auto found = itemTransforms_.find(transform[0]);
+        if (found == itemTransforms_.end()) {
+            auto bytes =
+                archives_.read("data/global/items/palette/" + std::string(names[transform[0]]) + ".dat");
+            if (bytes.size() < 21 * 256)
+                throw std::runtime_error("Original item palette transform is truncated");
+            found = itemTransforms_.emplace(transform[0], std::move(bytes)).first;
         }
-        GpuAnimation image;
-        image.directions = source->directions;
-        image.count = source->framesPerDirection;
-        for (const auto &frame : source->frames) {
-            auto pixels = frame;
-            if (shift) for (auto &pixel : pixels.pixels) if (pixel) pixel = shift[pixel];
-            image.frames.push_back(graphics.upload(pixels, true));
-        }
-        return image;
-    };
-    auto loadIcon = [&](const std::string &art, std::array<int, 2> transform) {
-        if (art.empty()) return;
-        const auto key = std::tuple{palette, art, transform[0], transform[1]};
-        if (itemIcons.contains(key)) return;
-        auto image = loadArt(art, transform);
-        if (!image.frames.empty()) itemIcons.emplace(key, std::move(image));
-    };
-    if (itemSockets.at(size_t(palette)).frames.empty())
-        itemSockets.at(size_t(palette)) = graphics.single("data/global/ui/panel/gemsocket.dc6", true);
-    for (const auto &[id, item] : inventory.items) {
-        loadIcon(item.artKey, item.colorTransform);
-        // Unshifted variant also serves undisclosed shop offers.
-        loadIcon(item.artKey, {});
-        for (const auto &socket : item.socketItems) loadIcon(socket.artKey, socket.colorTransform);
-        if (!std::holds_alternative<GroundLocation>(item.location) || item.groundArt.empty()) continue;
-        const auto key = std::tuple{item.groundArt, item.groundColorTransform[0], item.groundColorTransform[1]};
-        if (itemGround.contains(key)) continue;
-        auto image = loadArt(item.groundArt, item.groundColorTransform);
-        if (image.frames.empty()) continue;
-        for(auto &frame:image.frames) frame.y-=frame.texture.height;
-        itemGround.emplace(key,std::move(image));
+        const size_t offset = size_t(transform[1]) * 256;
+        if (found->second.size() < offset + 256)
+            throw std::runtime_error("Selected item palette transform is truncated");
+        shift = found->second.data() + offset;
     }
-    if (inventory.storageMaterialsOpen)
-        for (const auto &material : inventory.storageMaterials) loadIcon(material.artKey, {});
+    return sceneGraphics(palette).worldSingle(
+        art, ground ? WorldSingleArt::GroundItem : WorldSingleArt::ItemIcon, shift);
+}
+void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) {
+    if (itemSockets.at(size_t(palette)).frames.empty())
+        itemSockets.at(size_t(palette)) =
+            graphicsForAct(palette).single("data/global/ui/panel/gemsocket.dc6", true);
+    // Resolve the active owner before retaining any descriptors backed by it.
+    sceneGraphics(palette);
+    for (const auto &[id, item] : inventory.items) {
+        if (!std::holds_alternative<GroundLocation>(item.location) || item.groundArt.empty())
+            continue;
+        const auto key =
+            std::tuple{item.groundArt, item.groundColorTransform[0], item.groundColorTransform[1]};
+        if (!itemGround.contains(key))
+            itemGround.emplace(key, itemArt(item.groundArt, item.groundColorTransform, palette, true));
+    }
 }
 
 const GpuAnimation *SceneAssets::groundItemAnimation(const InventoryItemView &item) const {
-    const auto found = itemGround.find({item.groundArt, item.groundColorTransform[0], item.groundColorTransform[1]});
+    const auto found =
+        itemGround.find({item.groundArt, item.groundColorTransform[0], item.groundColorTransform[1]});
     return found == itemGround.end() ? nullptr : &found->second;
 }
 
-const Sprite *SceneAssets::inventoryIcon(const std::string &art, std::array<int, 2> transform,
-                                         int palette, unsigned frame) const {
-    const auto found = itemIcons.find({palette, art, transform[0], transform[1]});
-    if (found == itemIcons.end() || frame >= unsigned(found->second.count)) return nullptr;
+const Sprite *SceneAssets::inventoryIcon(const std::string &art, std::array<int, 2> transform, int palette,
+                                         unsigned frame) const {
+    sceneGraphics(palette);
+    const auto key = std::tuple{palette, art, transform[0], transform[1]};
+    auto found = itemIcons.find(key);
+    if (found == itemIcons.end())
+        found = itemIcons.emplace(key, itemArt(art, transform, palette, false)).first;
+    if (frame >= unsigned(found->second.count))
+        return nullptr;
     return found->second.frame(0, int(frame));
 }
 
 Graphics &SceneAssets::sceneGraphics(int palette) const {
-    if(scenePalette_!=palette) {
-        if(actorAnimations_) actorAnimations_->clearAnimations();
+    if (scenePalette_ != palette) {
+        if (actorAnimations_)
+            actorAnimations_->clearAnimations();
+        itemGround.clear();
+        itemIcons.clear();
         worldTileSprites_.clear();
-        sceneGraphics_=std::make_unique<Graphics>(archives_,"data/global/palette/act"+std::to_string(palette+1)+"/pal.dat");
-        scenePalette_=palette;
+        sceneGraphics_ = std::make_unique<Graphics>(archives_, "data/global/palette/act" +
+                                                                   std::to_string(palette + 1) + "/pal.dat");
+        scenePalette_ = palette;
     }
     return *sceneGraphics_;
 }
 Graphics &SceneAssets::graphicsForAct(int act) const {
-    if (act == 0) return graphics_;
+    if (act == 0)
+        return graphics_;
     auto &graphics = actGraphics_.at(size_t(act));
     if (!graphics)
-        graphics = std::make_unique<Graphics>(archives_, "data/global/palette/act" + std::to_string(act + 1) + "/pal.dat");
+        graphics = std::make_unique<Graphics>(archives_, "data/global/palette/act" + std::to_string(act + 1) +
+                                                             "/pal.dat");
     return *graphics;
 }
 const ActorAnimation *SceneAssets::actorAnimation(const ActorAnimationRequest &request, int palette) const {
-    if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
+    if (!actorAnimations_)
+        actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
     return actorAnimations_->resolve(sceneGraphics(palette), palette, request);
 }
 const ActorAnimation *SceneAssets::objectAnimation(int identity, int mode, int palette) const {

@@ -4,10 +4,11 @@
 #include <cmath>
 #include <cstring>
 #include <rlgl.h>
+#include <set>
 #include <stdexcept>
 namespace d2x {
 namespace {
-std::vector<uint32_t> &collectedCodepoints() { static std::vector<uint32_t> value; return value; }
+std::set<uint32_t> &collectedCodepoints() { static std::set<uint32_t> value; return value; }
 std::string &ttfSearchDirectory() { static std::string value; return value; }
 Font &sharedTtf() { static Font value{}; return value; }
 bool &sharedTtfBuilt() { static bool value = false; return value; }
@@ -62,23 +63,19 @@ Font *buildSharedTtf() {
     const int base = std::max(1, int(std::lround(16.f * uiScale)));
     if (sharedTtfBuilt() && !ttfDirty() && ttfBaseSize() == base)
         return sharedTtfFailed() ? nullptr : &sharedTtf();
-    if (sharedTtf().texture.id) UnloadFont(sharedTtf());
+    if (sharedTtf().texture.id) {
+        rlDrawRenderBatchActive();
+        UnloadFont(sharedTtf());
+    }
     sharedTtf() = Font{};
     sharedTtfBuilt() = true;
     sharedTtfFailed() = false;
     ttfDirty() = false;
     ttfBaseSize() = base;
-    std::vector<uint32_t> codes = collectedCodepoints();
-    for (uint32_t code = 32; code < 127; ++code) codes.push_back(code);
-    for (uint32_t code = 0x00A0; code <= 0x00FF; ++code) codes.push_back(code);
-    for (uint32_t code = 0x2000; code <= 0x206F; ++code) codes.push_back(code);
-    for (uint32_t code = 0x3000; code <= 0x303F; ++code) codes.push_back(code);
-    for (uint32_t code = 0x4E00; code <= 0x9FFF; ++code) codes.push_back(code);
-    for (uint32_t code = 0xFF00; code <= 0xFFEF; ++code) codes.push_back(code);
-    std::sort(codes.begin(), codes.end());
-    codes.erase(std::unique(codes.begin(), codes.end()), codes.end());
-    codes.erase(std::remove_if(codes.begin(), codes.end(), [](uint32_t c) { return c < 32; }), codes.end());
-    std::vector<int> points(codes.begin(), codes.end());
+    const auto &codes = collectedCodepoints();
+    std::vector<int> points;
+    for (int c = 32; c < 127; ++c) points.push_back(c);
+    points.insert(points.end(), codes.begin(), codes.end());
     for (const auto &path : ttfCandidates()) {
         int size = 0;
         auto *file = LoadFileData(path.c_str(), &size);
@@ -108,23 +105,30 @@ Font *buildSharedTtf() {
     sharedTtfFailed() = true;
     return nullptr;
 }
-}
 void collectFontCodepoints(const std::vector<uint32_t> &codes) {
     auto &dst = collectedCodepoints();
-    dst.insert(dst.end(), codes.begin(), codes.end());
-    ttfDirty() = true;
+    for (const auto code : codes)
+        if (code >= 127 && dst.insert(code).second) ttfDirty() = true;
+}
 }
 void setTtfSearchDirectory(std::string_view directory) {
-    if (!directory.empty()) ttfSearchDirectory().assign(directory.data(), directory.size());
+    if (!directory.empty() && directory != ttfSearchDirectory()) {
+        ttfSearchDirectory() = directory;
+        ttfDirty() = true;
+    }
 }
 bool ttfTextReady() { return buildSharedTtf() != nullptr; }
 Vector2 ttfMeasure(std::string_view text, float size, float spacing) {
+    if (std::any_of(text.begin(), text.end(), [](unsigned char c){ return c >= 127; }))
+        collectFontCodepoints(utf8Decode(text));
     Font *font = buildSharedTtf();
     if (!font) return {0, size};
     const std::string owned(text);
     return MeasureTextEx(*font, owned.c_str(), size, spacing);
 }
 void ttfDraw(std::string_view text, float x, float y, float size, float spacing, Color color) {
+    if (std::any_of(text.begin(), text.end(), [](unsigned char c){ return c >= 127; }))
+        collectFontCodepoints(utf8Decode(text));
     Font *font = buildSharedTtf();
     if (!font) return;
     const std::string owned(text);
@@ -153,7 +157,6 @@ bool parseClassicFontTable(std::string_view tbl, ClassicFont &font) {
     font.frames.clear();
     font.widths.clear();
     font.sprites.clear();
-    font.uploaded.clear();
     font.codes.reserve(count);
     font.frames.reserve(count);
     font.widths.reserve(count);
@@ -207,7 +210,7 @@ void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
     }
     font.framedLineHeight = lineHeight * tbl[10] / 10;
     font.framedBaselineOffset = baselineOffset * tbl[10] / 10;
-    collectFontCodepoints(font.codes);
+    // Outline glyphs are registered by the strings actually measured or drawn.
     font.ready = true;
 }
 Sprite rasterizeGlyph(Graphics &graphics, const IndexedFrame &frame, const ClassicFont &font) {
@@ -221,15 +224,10 @@ Sprite rasterizeGlyph(Graphics &graphics, const IndexedFrame &frame, const Class
 }
 const Sprite *ClassicFont::glyphFrame(uint16_t frame) const {
     if (!graphics || !source || frame >= source->frames.size()) return nullptr;
-    if (sprites.size() != source->frames.size()) {
-        sprites.resize(source->frames.size());
-        uploaded.assign(source->frames.size(), 0);
-    }
-    if (!uploaded[frame]) {
-        sprites[frame] = rasterizeGlyph(*graphics, source->frames[frame], *this);
-        uploaded[frame] = 1;
-    }
-    return &sprites[frame];
+    auto found = sprites.find(frame);
+    if (found == sprites.end())
+        found = sprites.emplace(frame, rasterizeGlyph(*graphics, source->frames[frame], *this)).first;
+    return &found->second;
 }
 void originalBox(const GpuAnimation &pieces, Rectangle bounds, float scale) {
     if (pieces.count < 22 || bounds.width <= 0 || bounds.height <= 0) return;
@@ -306,7 +304,8 @@ void sprite(const Sprite *s, Vec p, Color tint) {
         }
         return;
     }
-    DrawTexture(s->texture, int(p.x + s->x), int(p.y + s->y), tint);
+    if (s->colorCell.page.id) DrawTextureRec(s->colorCell.page,s->colorCell.rect,{float(int(p.x+s->x)),float(int(p.y+s->y))},tint);
+    else DrawTexture(s->texture, int(p.x + s->x), int(p.y + s->y), tint);
 }
 Vec handCursorHotspot(const Sprite *s) {
     if (!s) return {};
@@ -327,7 +326,9 @@ void softAdditiveSprite(const Sprite *s, Vec p, Color tint) {
     EndBlendMode();
 }
 void spriteShadow(const Sprite *s, Vec p) {
-    if (s && s->shadowTexture.id)
+    if (s && s->shadowCell.page.id)
+        DrawTextureRec(s->shadowCell.page,s->shadowCell.rect,{float(int(p.x+s->shadowX)),float(int(p.y+s->shadowY))},{0,0,0,191});
+    else if (s && s->shadowTexture.id)
         DrawTexture(s->shadowTexture, int(p.x + s->shadowX), int(p.y + s->shadowY), {0, 0, 0, 191});
 }
 void UiPainter::label(const std::string &text, int x, int y, int size, Color c) const {

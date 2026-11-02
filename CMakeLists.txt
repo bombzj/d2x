@@ -517,7 +517,7 @@ add_library(d2x_remote_scene
 target_link_libraries(d2x_remote_scene PUBLIC d2x_client d2x_world d2x_remote_client)
 
 add_library(d2x_presentation
-  src/presentation/graphics/graphics.cpp src/presentation/audio/audio.cpp
+  src/presentation/graphics/graphics.cpp src/presentation/graphics/world_art.cpp src/presentation/audio/audio.cpp
   src/presentation/graphics/primitives.cpp src/presentation/graphics/original_menu.cpp
   src/presentation/scene_assets.cpp src/presentation/actors/actor_animation.cpp
   src/presentation/scene_view.cpp src/presentation/hud/skill_assets.cpp
@@ -564,7 +564,7 @@ add_executable(d2x
   src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
   src/app/client_setup.cpp src/app/ime_input.cpp
   src/app/account_login.cpp
-  src/app/frontend.cpp src/app/frontend_commands.cpp src/app/online_login_memory.cpp
+  src/app/frontend.cpp src/app/frame_profile.cpp src/app/frontend_commands.cpp src/app/online_login_memory.cpp
   src/app/client_preferences.cpp src/app/crash_report.cpp src/app/debug/debug_pipe.cpp
   src/app/debug/ui_input.cpp src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp
   src/app/debug/server_snapshot.cpp

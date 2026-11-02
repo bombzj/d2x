@@ -1,3 +1,4 @@
+#include "animation_cells.hpp"
 // SPDX-License-Identifier: GPL-3.0-or-later
 // DCC decoder adapted from DGEngine (dgcor), based on Worldstone by Lectem.
 // D2X modifications: indexed-frame API, bounds checks, decode all directions once.
@@ -844,7 +845,7 @@ bool readDirection(const d2x::Bytes &fileData, const std::vector<uint32_t> &dire
 } // namespace
 
 namespace d2x {
-Animation decodeDcc(const Bytes &bytes) {
+static Animation decodeDccRange(const Bytes &bytes, int selected, bool metadata=false) {
     Reader r(bytes);
     if (r.u8() != 0x74 || r.u8() != 6)
         throw std::runtime_error("Invalid DCC signature/version");
@@ -861,9 +862,23 @@ Animation decodeDcc(const Bytes &bytes) {
     for (int i = 0; i < a.directions; i++)
         if (offsets[i] < r.pos || offsets[i] >= offsets[i + 1] || offsets[i + 1] > bytes.size())
             throw std::runtime_error("Invalid DCC offsets");
+    if (selected >= a.directions) throw std::runtime_error("Invalid DCC direction");
     for (int dir = 0; dir < a.directions; dir++) {
+        if (selected >= 0 && dir != selected) continue;
         DCCDirection d;
         SimpleImageProvider images;
+        if (metadata) {
+            BitStreamView stream(bytes.data()+offsets[dir], size_t(offsets[dir+1]-offsets[dir])*8);
+            if (!readDirHeader(d.header,stream) || !readFrameHeaders(a.framesPerDirection,d,stream))
+                throw std::runtime_error("Invalid DCC frame headers");
+            for (const auto &header:d.frameHeaders) {
+                IndexedFrame frame;
+                frame.width=int(header.width);frame.height=int(header.height);
+                frame.x=header.extents.xLower;frame.y=header.extents.yLower;frame.cellOffsetY=header.yOffset;
+                a.frames.push_back(std::move(frame));
+            }
+            continue;
+        }
         if (!readDirection(bytes, offsets, a.directions, a.framesPerDirection, d, dir, images))
             throw std::runtime_error("DCC direction decoding failed");
         for (int i = 0; i < a.framesPerDirection; i++) {
@@ -881,6 +896,10 @@ Animation decodeDcc(const Bytes &bytes) {
             a.frames.push_back(std::move(f));
         }
     }
+    if (selected >= 0) a.directions = 1;
     return a;
 }
+Animation decodeDcc(const Bytes &bytes) { return decodeDccRange(bytes, -1); }
+Animation describeDcc(const Bytes &bytes) { return decodeDccRange(bytes,-1,true); }
+Animation decodeDccDirection(const Bytes &bytes, int direction) { return decodeDccRange(bytes, direction); }
 } // namespace d2x

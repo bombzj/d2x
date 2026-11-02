@@ -21,6 +21,7 @@ QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId re
     if(const auto *previous=ports_.players.find(player)) synchronizeActTwoRecords(previous->persistent.player.quests,result.record.quests);
     if(const auto *previous=ports_.players.find(player)) synchronizeIceRecords(previous->persistent.player.quests,result.record.quests);
     result.gameFlags=gameFlags();
+    result.figurineDropped=state_.actThree.figurineDropped;
     result.denEffect=state_.actOne.denCleared && !(state_.initialFlags[questDefinition(QuestId::DenOfEvil).nativeSlot]&0x8000);
     for(const auto &definition:questDefinitions) {
         const auto index=questIndex(definition.id);
@@ -91,7 +92,12 @@ bool System::allowsTravel(const CharacterRecord &record,RegionId from,RegionId t
     if(int(to)==100) return state_.actThree.orbSmashed || book.at(questIndex(QuestId::KhalimsWill)).stage>=4;
     if(int(from)==102 && int(to)==103) return book.at(questIndex(QuestId::Guardian)).stage>=4;
     if(int(to)==113) return book.at(questIndex(QuestId::SiegeOnHarrogath)).stage>=3;
-    if(int(to)==128) return book.at(questIndex(QuestId::RiteOfPassage)).stage>=4;
+    if(int(to)==128) {
+        const auto trial=QuestId::RiteOfPassage;
+        const bool completedBefore=(state_.initialFlags[questDefinition(trial).nativeSlot]&0x8000)!=0;
+        return book.at(questIndex(trial)).stage>=4 && (int(from)!=120 || state_.actFive.ancientsDefeated ||
+            (completedBefore && !state_.actFive.ancientsActive));
+    }
     if(int(to)==132) return (int(from)!=131 || state_.actFive.throneDeparted) && book.at(questIndex(QuestId::RiteOfPassage)).stage>=4;
     if(int(from)==103 && int(to)==109) return book.at(questIndex(QuestId::TerrorsEnd)).stage>=4;
     if(int(from)==132 && int(to)==109) return book.at(questIndex(QuestId::EveOfDestruction)).stage>=5 && book.at(questIndex(QuestId::EveOfDestruction)).flags&baalTyraelSpoken;
@@ -100,6 +106,10 @@ bool System::allowsTravel(const CharacterRecord &record,RegionId from,RegionId t
 }
 StepStatus System::actTwoStep(TickContext tick) {
     bool blocked=false;
+    if(state_.actTwo.tombEffectPending) {
+        const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{3}}});
+        if(sent) state_.actTwo.tombEffectPending=false;else blocked=true;
+    }
     for(auto pending=state_.actTwo.journalReads.begin();pending!=state_.actTwo.journalReads.end();) {
         const auto *p=ports_.players.find(pending->first);
         const auto *area=p?ports_.areas.find(p->area):nullptr;

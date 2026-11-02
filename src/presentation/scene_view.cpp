@@ -79,7 +79,6 @@ SceneView::SceneView(Archives &archives, const ClassicData &content, const IActo
 void SceneView::refreshUi(float dt) {
     refreshInventory(); refreshCharacterView(); refreshInteractions();
     const int palette=mapView().palette;
-    if (itemGroundPalette_!=palette) { assets_.itemGround.clear(); itemGroundPalette_=palette; }
     assets_.loadInventoryArt(inventoryView_,palette);
     const auto &p = characterView_;
     view_.skillClass = p.classCode; view_.displayedWeaponSet = p.weaponSet;

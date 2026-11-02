@@ -134,6 +134,7 @@ struct ClientMissileAnchor {
     Vec position;
     uint32_t nativeId{};
     uint8_t type{};
+    int identity{-1};
 };
 // Prepared from imported skill data by SceneAssets; no damage or cast rules.
 struct BlizzardVisual {

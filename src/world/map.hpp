@@ -9,8 +9,6 @@
 namespace d2x {
 class TileLibraryCache {
     Archives &archives_;
-    std::map<std::string, std::shared_ptr<const std::vector<Tile>>> libraries_;
-    uint64_t mountIdentity_{};
 
   public:
     explicit TileLibraryCache(Archives &archives) : archives_(archives) {}
@@ -26,10 +24,8 @@ struct Map {
     std::vector<Vec> warpArrivals;
     struct TombWall {
       int x = 0, y = 0;
-      std::vector<MapCell> walls;
       std::array<uint8_t, 25> collision{};
       std::array<uint16_t,25> fullCollision{};
-      std::vector<size_t> instances;
     };
     std::vector<TombWall> tombWalls;
     bool openTombWall(Vec position);

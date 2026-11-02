@@ -51,9 +51,16 @@ void DebugAi::Impl::observeCombat(Context &c) {
     }
     if(unit->second.hitRevision>combatRun.hitRevision) {combatRun.hitRevision=unit->second.hitRevision;++combatRun.hits;}
 }
-bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
+void DebugAi::Impl::guardOpening(Context &c) {
+    guardingOpening=true;
+    if(canInput(c,DebugActionOwner::Combat,DebugMotion|DebugSkill))
+        combat(c,goals.at(cursor),true);
+}
+bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense) {
     const auto &view=c.session.read();const auto now=Clock::now();
     if(!policy.enabled || c.town.read().town || view.world.npcRequested || view.world.waypointSource) return false;
+    if(nearbyDefense && (view.world.npcConversation || view.world.waypointRequested || view.world.staffSource ||
+        view.world.townPortalPending || onlineHasCursorItem(view.world.items,view.load.playerUnitId))) return false;
     std::erase_if(bypassedThreats,[&](const auto &entry) {
         const auto unit=view.world.units.find(entry.first.first);
         if(unit==view.world.units.end() || unit->second.assignmentRevision!=entry.first.second || onlineMonsterCorpse(unit->second)) return true;
@@ -77,19 +84,33 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         // projectile modes use MISSILE_BARRIER; only mode8 adds WALL.
         return map && origin && map->grid.collisionSegment(from-offset+Vec{.5f,.5f},to-offset+Vec{.5f,.5f},lineMask);
     };
-    const auto objective=goal.kind==Kind::Hunt && goal.target?find(c,*goal.target):std::nullopt;
-    const bool nearObjective=objective && (position(*objective->position)-c.position).length()<=policy.engage;
     const QuestStep *step=cursor<goals.size() && goals[cursor].kind==Kind::Quest && questRun.step<goals[cursor].steps.size()?
         &goals[cursor].steps[questRun.step]:nullptr;
+    const bool targetedDrop=step && step->action==QuestAction::SearchDrop && step->target &&
+        goal.kind==Kind::Quest && step->area==area;
+    const auto objective=!nearbyDefense && (goal.kind==Kind::Hunt || targetedDrop) && goal.target?find(c,*goal.target):std::nullopt;
+    const bool nearObjective=objective && (position(*objective->position)-c.position).length()<=policy.engage;
     // Permission to fight for a drop is not a requirement to kill every
     // nearby monster. Only real clear objectives and the active encounter
     // make an unrelated enemy's defeat a necessary postcondition.
-    const bool clearing=step && goal.area==area && (step->action==QuestAction::Clear ||
+    const bool clearing=!nearbyDefense && step && goal.area==area && (step->action==QuestAction::Clear ||
         (step->action==QuestAction::Encounter && step->clearCombat && questRun.encounterPosition &&
          questRun.encounterArea==area && (position(*questRun.encounterPosition)-c.position).length()<=encounterMovementRadius()));
     const auto mustClear=[&](const OnlineUnit &unit) {return clearing && (step->action==QuestAction::Clear || encounterEnemy(c,unit));};
-    const bool searchingDrop=step && step->action==QuestAction::SearchDrop && step->clearCombat && goal.area==area;
-    std::vector<OnlineUnit> enemies;std::optional<OnlineUnit> chosen,obstructed;
+    const auto routeDrop=step?routeDropState(c,goals[cursor]):RouteDrop::None;
+    const bool collecting=step && step->action==QuestAction::SearchDrop && (pickupIssued || observedDrop(c,step->item));
+    const bool seekingElite=!nearbyDefense && routeDrop==RouteDrop::Seek && !clearing && !targetedDrop && !questRun.pending && !questRun.worldWait &&
+        !questTransaction(c) && !objectIssued && !pickupIssued && !portalIssued;
+    const bool teleportTravel=teleportAvailable(c,false) && !clearing && !nearObjective;
+    if (!nearbyDefense && (collecting || (teleportTravel && !seekingElite))) {
+        releaseCombat(c);
+        combatTarget.reset(); retreatPoint.reset(); combatRun = {};
+        combatDiagnostics = {{"status", collecting?"quest-drop-pickup":"travel-teleport"}};
+        return false;
+    }
+    std::vector<OnlineUnit> enemies;std::optional<OnlineUnit> chosen,obstructed,elite;
+    float eliteDistance=float(policy.engage);
+    const bool elitesOnly=!nearbyDefense && (teleportTravel || (step && goals[cursor].routeDrop==questRun.step));
     float nearest=clearing && step->action==QuestAction::Encounter && questRun.worldWait?
         float(std::max(policy.engage,2*encounterMovementRadius())):float(policy.engage);
     float nearestObstructed=nearest;
@@ -97,13 +118,18 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false) ||
             (!mustClear(unit) && (!objective || objective->key!=key) && bypassedThreats.contains({key,unit.assignmentRevision}))) continue;
         const float distance=(position(*unit.position)-c.position).length();
+        if(nearbyDefense && distance>policy.radius && key!=combatTarget &&
+            !(view.load.playerUnitId && unit.destinationUnit==OnlineUnitKey{0,*view.load.playerUnitId})) continue;
+        const bool candidate=seekingElite && distance<=policy.engage && c.combat.jadeFigurineCandidate(unit);
+        if(elitesOnly && !candidate && distance>policy.radius) continue;
         const bool visible=clearLine(c.position,position(*unit.position));
+        if(candidate && visible && (!elite || distance<eliteDistance)) {elite=unit;eliteDistance=distance;}
         if(mustClear(unit) && !visible && distance<nearestObstructed) {nearestObstructed=distance;obstructed=unit;}
         if(distance<=policy.engage && (visible || distance<=policy.radius)) enemies.push_back(unit);
         const bool byObjective=nearObjective && (key==objective->key ||
             (position(*unit.position)-position(*objective->position)).length()<=policy.radius);
-        const bool relevant=policy.scope=="clear" || mustClear(unit) || searchingDrop || byObjective || (policy.scope=="defensive" && distance<=policy.radius);
-        if(relevant && (distance<=policy.engage || mustClear(unit)) && visible && distance<nearest) {nearest=distance;chosen=unit;}
+        const bool relevant=nearbyDefense || policy.scope=="clear" || mustClear(unit) || byObjective || (policy.scope=="defensive" && distance<=policy.radius);
+        if(!elitesOnly && relevant && (distance<=policy.engage || mustClear(unit)) && visible && distance<nearest) {nearest=distance;chosen=unit;}
     }
     // A stance change may leave the acquisition radius, and another enemy
     // may briefly be nearer. Finish the same valid engagement inside its
@@ -112,10 +138,12 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         unit.assignmentRevision==combatRun.assignment && clearLine(c.position,position(*unit.position))) {
         const bool byObjective=nearObjective && (unit.key==objective->key ||
             (position(*unit.position)-position(*objective->position)).length()<=policy.radius);
-        if(policy.scope=="clear" || mustClear(unit) || searchingDrop || byObjective ||
-           (policy.scope=="defensive" && (position(*unit.position)-c.position).length()<=policy.radius)) chosen=unit;
+        if(!elitesOnly && (nearbyDefense || policy.scope=="clear" || mustClear(unit) || byObjective ||
+           (policy.scope=="defensive" && (position(*unit.position)-c.position).length()<=policy.radius))) chosen=unit;
+        if(seekingElite && c.combat.jadeFigurineCandidate(unit)) elite=unit;
         break;
     }
+    if(elite) chosen=elite;
     if(nearObjective && c.combat.monsterTargetEligible(*objective,false)) chosen=objective;
     // A required clear may retain a real enemy behind a corner. Give the
     // firing-position recovery the same opportunity as a named hunt target;
@@ -136,7 +164,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
         }
         return false;
     }
-    const bool required=mustClear(*chosen) || (goal.kind==Kind::Hunt && objective && chosen->key==objective->key);
+    const bool required=mustClear(*chosen) || (objective && chosen->key==objective->key);
     bool boss=false;
     if(const auto id=c.combat.monsterClass(*chosen))
         if(const auto row=findCompiledMonsterRow(definitions->monsters,*id)) boss=definitions->monsters.number(*row,"boss").value_or(0)!=0;
@@ -183,7 +211,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     combatDiagnostics={{"target",{{"type",chosen->key.type},{"id",chosen->key.id},{"assignment",run.assignment},
         {"position",{chosen->position->x,chosen->position->y}},{"life",run.lastLife?Json(*run.lastLife):Json(nullptr)},
         {"bestLife",run.bestLife?Json(*run.bestLife):Json(nullptr)}}},
-        {"required",required},{"lineClear",ray},{"lifeFeedbackKnown",run.lastLife.has_value()},
+        {"required",required},{"figurineCandidate",elite && elite->key==chosen->key},{"lineClear",ray},{"lifeFeedbackKnown",run.lastLife.has_value()},
         {"healingObserved",run.healingObserved},{"hitFeedbackCount",run.hits},
         {"playerLifePercent",lifePercent<0?Json(nullptr):Json(lifePercent)},{"recentLifeLossPercent",lossPercent},
         {"mana",view.world.mana?Json(*view.world.mana):Json(nullptr)},{"healingPotions",healing},{"manaPotions",manaPotions},
@@ -438,7 +466,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     combatDiagnostics["lineClear"]=ray;
     const int range=skill==definitions->staticFieldSkill && staticRange?std::max(2,*staticRange-2):
         skill==definitions->skill("Attack") || definitions->skills.value(row,"range")=="h2h"?3:policy.range;
-    if(((pendingDoor || pendingWaypoint) && (!ray || (targetPosition-c.position).length()>range)) ||
+    if(((pendingWaypoint || (pendingDoor && !nearbyDefense)) && (!ray || (targetPosition-c.position).length()>range)) ||
         (view.world.combatRequest && view.world.combatRequest->state==OnlineCombatRequest::State::Pending)) {
         // A real opening/selection/animation wait has its own contract and
         // deadline. It is not an unsuccessful damage observation window.
@@ -461,7 +489,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     }
     if((targetPosition-c.position).length()>range || !ray) {
         releaseCombat(c);
-        if(!pendingDoor && !pendingWaypoint && openDoor(c)) return true;
+        if(!nearbyDefense && !pendingDoor && !pendingWaypoint && openDoor(c)) return true;
         if(const auto at=selectPosition(false,range)) {
             run.triedPositions.emplace(at->x,at->y);
             run.reposition=at;run.approachUntil=now+std::chrono::seconds(8);
@@ -523,7 +551,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal) {
     if(skill==definitions->staticFieldSkill) {cast.target.reset();cast.point=point(c.position);}
     // Same held pointer as the ordinary controller. Skills with a known
     // positive native delay use separate clicks, not a synthetic channel.
-    cast.repeat=!run.staticOpening && !rangedKite && run.repeating && ((delay && *delay<=0) || definitions->skills.value(row,"delay").empty());
+    cast.repeat=!nearbyDefense && !run.staticOpening && !rangedKite && run.repeating && ((delay && *delay<=0) || definitions->skills.value(row,"delay").empty());
     if(submitCombat(c,cast,DebugActionOwner::Combat,"combat-cast",c.position)) {
         if(!run.strategyCasts) run.strategyAt=now;
         ++run.strategyCasts;

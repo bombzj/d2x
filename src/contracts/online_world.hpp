@@ -42,6 +42,8 @@ struct OnlineQuestState {
     std::array<std::optional<std::array<uint16_t,12>>,5> npcIntroductionReports;
     std::set<uint16_t> npcReturnGreetings;
     std::array<std::optional<uint8_t>, 41> statuses;
+    struct StatusNotice { uint64_t areaGeneration{},receivedMilliseconds{}; };
+    std::array<StatusNotice,41> statusChanges{}; // Only a changed, individual 0x5D status is an event.
     std::map<uint8_t, std::array<uint16_t, 3>> updates; // Quest number -> flags, status, progress (0x5D).
     std::optional<uint16_t> denRemaining, rescuedBarbsRemaining, staffTombOffset;
     uint64_t staffTombRevision{}; // Actual 0x50 payload receipt, not flag/status updates.

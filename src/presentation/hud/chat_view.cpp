@@ -62,7 +62,6 @@ const ClassicFont &ChatView::font(int kind, int color) const {
     if (!cache.ready) {
         cache = base;
         cache.sprites.clear();
-        cache.uploaded.clear();
         for (size_t i = 0; i < cache.transform.size(); ++i)
             cache.transform[i] = palette_[fontShifts + size_t(color) * 256 + i];
         cache.transformed = true;

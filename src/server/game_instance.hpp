@@ -73,7 +73,7 @@ class GameInstance {
     }
     std::optional<uint16_t> npcQuestAlert(PlayerId player,const NpcRule &npc,RegionId area) const {
         const auto *p=players_.find(player);const auto *a=areas_.find(area);
-        if(!p || !a || !systems_.quests.npcVisible(p->persistent.player,npc.code,area,npc.questInitFunction)) return {};
+        if(!p || !a || systems_.npc.conversation(player) || !systems_.quests.npcVisible(p->persistent.player,npc.code,area,npc.questInitFunction)) return {};
         const auto message=systems_.quests.dialogue({player,p->actor,area,a->generation,0,tick_},npc);
         return message && message->message.menu!=2?std::optional<uint16_t>{message->message.text}:std::nullopt;
     }

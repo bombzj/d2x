@@ -28,7 +28,7 @@ struct DebugAi::Impl {
     enum class Kind {Travel,Find,Hunt,Acquire,ReturnTown,Deliver,Restock,Quest};
     enum class PotionKind {Life,Mana,Rejuvenation};
     struct Potion {PotionKind kind{};int strength{};bool bulkBelt{};std::optional<uint8_t> state;};
-    struct Selector {uint8_t type{};uint16_t identity{};std::string name;std::optional<uint16_t> superUnique{};};
+    struct Selector {uint8_t type{};uint16_t identity{};std::string name;std::optional<uint16_t> superUnique{};bool eliteOnly{};};
     enum class QuestAction {Talk,Clear,Hunt,Acquire,ReadScroll,Stones,Operate,Portal,ReturnTown,Imbue,ActTravel,Travel,UseItem,Combine,SubmitStaff,SearchDrop,EquipWeapon,SmashOrb,SmashForge,Service,Rescue,Encounter};
     struct QuestStep {
         QuestAction action{};std::optional<uint16_t> area;std::optional<Selector> target,witness;
@@ -38,17 +38,17 @@ struct DebugAi::Impl {
         std::optional<QuestId> skipGranted;
         uint16_t skipAny{},parentSkipAny{},clearFlags{};bool trueTomb{},skipTombKnown{},publishesTombSymbol{};
         std::optional<uint16_t> sourceArea;
-        bool preferWaypoint{},refreshFlags{};
+        bool preferWaypoint{},refreshFlags{},activateWaypoint{};
         bool clearCombat{};std::vector<std::string> ingredients;std::vector<uint16_t> searchAreas;
         unsigned skillPointReward{};
         std::vector<std::string> rewardCodes;bool rareReward{};
-        std::optional<uint8_t> status;
+        std::optional<uint8_t> status,dropNoticeStatus;
         std::optional<uint8_t> cinematic;
         unsigned resultWaitSeconds{};int residualRange{};std::optional<uint8_t> stageSound;
         std::optional<Vec> witnessOffset;
     };
     struct QuestFact {
-        enum class Kind {Item,BackpackItem,Flags,Area,TrueTombArea,TombClue,Waypoint,Corpse,BookUsed,PortalObserved,JournalRead,ActChange,Equipped,EquipmentRestored,ObjectOpened,GroundItem,MonsterObserved,Status,Cinematic,InitiallyRewarded} kind{};
+        enum class Kind {Item,BackpackItem,Flags,Area,TrueTombArea,TombClue,Waypoint,Corpse,BookUsed,PortalObserved,JournalRead,ActChange,Equipped,EquipmentRestored,ObjectOpened,GroundItem,MonsterObserved,Status,Cinematic,InitiallyRewarded,CairnOrder,SummitPassage} kind{};
         QuestId quest{};uint16_t value{},clear{};bool any{};std::string item;std::optional<uint16_t> area;
     };
     struct QuestRequirement {
@@ -60,17 +60,19 @@ struct DebugAi::Impl {
     struct Goal {
         Kind kind{};std::optional<uint16_t> area;std::optional<Selector> target;
         std::string item;std::optional<uint16_t> sourceObject;
-        std::string quest;unsigned questSlot{};std::vector<uint16_t> topics;
-        bool interact{};int timeout=600;
-        bool initiallyRewarded{};
+        std::string quest,skipReason;unsigned questSlot{};std::vector<uint16_t> topics;
+        bool interact{}, requiredWaypoint{};int timeout=600;
+        bool initiallyRewarded{},useServiceRewards{};
         QuestId questId{};std::vector<QuestStep> steps;
         std::optional<uint16_t> questTown;
         std::vector<QuestRequirement> requirements;std::vector<size_t> roots;
+        std::optional<size_t> routeDrop; // Collect a requested quest drop while pursuing another root.
     };
     struct Definitions {
         DataTable monsters,objects,skills,levels,misc,weapons,armor,types,states,npcs,superuniques,missiles,difficulties;
         uint16_t staticFieldSkill{};size_t staticFieldRow{};RuleFormula staticFieldRange;
         std::map<int,int> hazardSizes;
+        std::set<int> dangerousMissiles;
         std::map<uint16_t,size_t> skillRows;
         std::map<uint16_t,uint16_t> attackMasks;
         std::map<std::string,Potion,std::less<>> potions;
@@ -106,16 +108,24 @@ struct DebugAi::Impl {
         net::RealmSession &session;RemoteTown &town;DebugAutoWalk &walk;RemoteControl &control;
         RemoteCombat &combat;RemoteInventory &inventory;Vec position;bool moving{};const SuppliesView *supplies{};
     };
-    struct VisualThreat {int id{};Vec from,to;float radius{};bool unitSource{};};
+    struct VisualThreat {int id{};Vec from,to;float radius{};bool unitSource{}, dangerous{};};
     std::vector<VisualThreat> visibleThreats(const Context &) const;
-    static float threatClearance(const std::vector<VisualThreat> &,Vec);
+    static float threatClearance(std::span<const VisualThreat>,Vec);
     Archives &archives;std::unique_ptr<Definitions> definitions;
     std::vector<Goal> goals;size_t cursor{};std::string state="idle",phase,reason,configurationFile;
     std::deque<Json> history;uint64_t decisions{},sequence{},game{},areaGeneration{};
     std::optional<uint16_t> area;std::optional<OnlineUnitKey> target;
     std::optional<uint16_t> tombSymbol; // Actual journal-qualified server payload, including valid initialization.
+    // Present only after the summit door refused this player during this visit.
+    std::optional<std::set<uint16_t>> summitTrialKills;
     std::optional<uint64_t> journalReadGame; // Confirmed reading in this process/game, never a saved portal/unlock fact.
     uint64_t targetAssignment{};
+    struct ExplorationReturn {
+        uint16_t area{};bool returning{};Clock::time_point deadline;
+        std::set<std::tuple<int,int,int>> visited;
+    };
+    std::optional<ExplorationReturn> explorationReturn;
+    bool resumeExplorationReturn(Context &);
     std::set<std::tuple<int,int,int>> visited;std::optional<std::tuple<int,int,int>> exploring;
     struct FrontierAttempt {
         Vec position;uint64_t geometryRevision{};Clock::time_point retryAt;
@@ -215,6 +225,11 @@ struct DebugAi::Impl {
     std::map<std::pair<OnlineUnitKey,uint64_t>,BypassedThreat> bypassedThreats;
     bool combatOwned{},objectIssued{},pickupIssued{},portalIssued{},portalAttempted{},portalUsed{},greetingIssued{};
     std::optional<uint32_t> pickupId;std::set<uint32_t> oldPortals;
+    struct RememberedDrop {uint32_t id{};uint16_t area{};OnlinePoint position{};Clock::time_point inspectSince{};};
+    std::map<std::string,RememberedDrop,std::less<>> rememberedDrops;
+    void observeDrops(const Context &,const Goal &);
+    bool guardingOpening{};
+    void guardOpening(Context &);
     std::set<std::tuple<uint32_t,uint16_t,uint16_t,uint16_t,uint16_t>> pickupApproaches;
     unsigned castRequests{},moveGoals{},interactions{};
     unsigned npcOpenRetries{};
@@ -229,6 +244,7 @@ struct DebugAi::Impl {
     bool mobilityHold{},mobilityTeleport{};uint64_t mobilityDiscontinuity{};
     std::optional<OnlinePoint> mobilityTarget;Vec mobilityFrom;
     std::optional<OnlinePoint> mobilityGoal;uint16_t mobilityArea{};
+    std::optional<float> mobilityBestRemaining;
     std::vector<Vec> mobilityRoute;float mobilityRouteProgress{},mobilityPendingProgress{},mobilityRouteLength{};
     Clock::time_point mobilityDeadline{},nextMobility{},lastSelection{},exitRetryAt{};
     std::optional<uint16_t> townExitArea;Clock::time_point townExitObserveUntil{};
@@ -250,7 +266,7 @@ struct DebugAi::Impl {
     PortalStock portalStock(const Context &) const;
     Json lastPotion,supplyVitals;
     struct QuestPending {
-        enum class Action {Object,Portal,Scroll,Topic,Take,Imbue,Place,Travel,Pickup,Use,OpenCube,StoreCube,Transmute,SubmitStaff,Introduction,CloseCube,Service} action{};
+        enum class Action {Object,Portal,Scroll,Topic,Take,Imbue,Place,Travel,Pickup,Use,OpenCube,StoreCube,Transmute,SubmitStaff,Introduction,CloseCube,Service,RecoverOpen,RecoverTake,RecoverPlace,RecoverClose} action{};
         std::optional<OnlineUnitKey> unit;uint64_t assignment{},sequence{},beforeRevision{};
         uint32_t item{};Clock::time_point deadline{};
         bool refreshIssued{},statusRequested{},resultObserved{};
@@ -265,14 +281,15 @@ struct DebugAi::Impl {
         std::map<std::pair<OnlineUnitKey,uint64_t>,Enemy> enemies;
     };
     struct QuestRun {
-        bool initialized{};size_t step{};std::optional<QuestPending> pending;
+        bool initialized{},initialInventory{};size_t step{};std::optional<QuestPending> pending;
+        std::optional<uint32_t> recoveringItem;
         std::optional<WorldWait> worldWait;
         std::optional<uint16_t> denRemaining;Clock::time_point sweepReady{};
         unsigned sweeps{},materialPhase{};std::optional<uint32_t> material;
         std::optional<OnlineUnitKey> materialNpc;
         std::set<uint32_t> rewardBefore;
         std::set<uint32_t> materialBefore;std::optional<uint32_t> skillPointsBefore;
-        bool rewardTracked{};uint64_t clueBefore{};
+        bool rewardTracked{},retriedMissingTopic{};Clock::time_point missingTopicSince{};uint64_t clueBefore{};
         std::set<size_t> observations;
         bool selected{};
         std::optional<std::pair<OnlineUnitKey,uint64_t>> encounterWitness;
@@ -320,9 +337,14 @@ struct DebugAi::Impl {
     bool questSmashOrb(Context &,const QuestStep &);
     bool questSmashForge(Context &,const QuestStep &);
     bool prepareQuest(Context &,const Goal &);
+    bool recoverQuestInventory(Context &,const QuestStep * = nullptr);
     bool selectQuestRequirement(Context &,const Goal &);
     void observeQuestFacts(const Context &);
     bool questFactSatisfied(const Context &,const Goal &,size_t,const QuestFact &) const;
+    enum class RouteDrop { None, Seek, Notice, Observed };
+    RouteDrop routeDropState(const Context &,const Goal &) const;
+    bool groundItemSeen(const Context &,std::string_view) const;
+    const OnlineItem *observedDrop(const Context &,std::string_view,bool landedOnly=false) const;
     bool questRequirementSatisfied(const Context &,const Goal &,size_t) const;
     Goal questLeaf(const Goal &) const;
     bool questTransaction(const Context &) const;
@@ -356,14 +378,16 @@ struct DebugAi::Impl {
     bool acquireItem(Context &,const Goal &);
     bool approachPickup(Context &,const OnlineItem &);
     bool settleItemInput(Context &);
+    Clock::time_point nextArmorAttempt{};
+    bool maintainArmor(Context &);
     bool knownSkill(const Context &,uint16_t,bool left=false) const;
-    bool teleportAvailable(const Context &) const;
+    bool teleportAvailable(const Context &,bool resourceReady=true) const;
     bool selectSkill(Context &,uint16_t,OnlineSkillHand);
     std::optional<uint16_t> battleAura(const Context &) const;
     bool mobility(Context &);
     void stop(DebugAutoWalk &,RemoteControl &,RemoteCombat &);
     void finish(std::string,std::string,Context &);
-    void advance(Context &,std::string);
+    void advance(Context &,std::string,bool skipped=false);
     void resetStep();
     void cancelWalk(Context &);
     bool walk(Context &,Json);
@@ -398,7 +422,7 @@ struct DebugAi::Impl {
     void observePopulation(const Context &);
     std::optional<OnlineUnit> find(const Context &,const Selector &,bool corpses=false) const;
     bool owned(const Context &,std::string_view) const;
-    bool combat(Context &,const Goal &);
+    bool combat(Context &,const Goal &,bool nearbyDefense=false);
     bool avoidHazards(Context &);
     void observeCombat(Context &);
     void releaseCombat(Context &);

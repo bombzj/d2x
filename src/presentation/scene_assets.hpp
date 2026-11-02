@@ -50,10 +50,10 @@ class SceneAssets {
     std::unique_ptr<WorldCatalog> worldDefinitions_;
     mutable std::vector<const Tile *> worldTileSources_;
     mutable std::vector<Sprite> worldTiles_;
-    mutable std::map<std::pair<int, const Tile *>, Sprite> worldTileSprites_;
-    // Keep pointer keys alive until reset; a later map must not reuse an old
-    // DT1 address for a different image.
-    mutable std::map<const std::vector<Tile> *, std::shared_ptr<const std::vector<Tile>>> worldTileLibraries_;
+    using TileKey = std::pair<uint64_t, size_t>; // mount-local DT1 identity and original tile index
+    mutable std::map<TileKey, Sprite> worldTileSprites_;
+    mutable std::map<const Tile *, TileKey> worldTileKeys_;
+    mutable std::vector<std::shared_ptr<const std::vector<Tile>>> worldTileLibraries_;
     mutable int worldTilePalette_ = -1;
     void loadWorldLightDefinitions();
     mutable std::unique_ptr<ActorAnimationCatalog> actorAnimations_;
@@ -62,7 +62,8 @@ class SceneAssets {
     void loadUi(Archives &, const ClassicData &);
     void loadNpcAlert(const DataTable &);
     void loadIceShatter();
-    std::map<int, Bytes> itemTransforms_;
+    mutable std::map<int, Bytes> itemTransforms_;
+    GpuAnimation itemArt(const std::string &, std::array<int,2>, int palette, bool ground) const;
     void loadSkillIcons(Archives &archives, const ClassicData &content);
 
   public:
@@ -140,8 +141,8 @@ class SceneAssets {
     std::map<int, MonsterLight> monsterLights;
     std::map<std::string, GpuAnimation> petPortraits;
     std::string hirelingPotionHint, hirelingInventoryHint;
-    std::map<std::tuple<std::string, int, int>, GpuAnimation> itemGround;
-    std::map<std::tuple<int, std::string, int, int>, GpuAnimation> itemIcons;
+    mutable std::map<std::tuple<std::string, int, int>, GpuAnimation> itemGround;
+    mutable std::map<std::tuple<int, std::string, int, int>, GpuAnimation> itemIcons;
     std::array<GpuAnimation, 5> itemSockets;
     GpuAnimation panel, miniPanel, miniPanelButtons, miniPanelToggle,
         cursor, targetingCursors, inventoryPanel, attributeButtons,
@@ -189,7 +190,7 @@ class SceneAssets {
     const Sprite &worldTileSprite(size_t index) const;
     void resetWorldTiles() {
         worldTileSources_.clear(); worldTiles_.clear(); worldTilePalette_ = -1;
-        worldTileSprites_.clear(); worldTileLibraries_.clear();
+        worldTileKeys_.clear(); worldTileLibraries_.clear();
     }
 };
 } // namespace d2x

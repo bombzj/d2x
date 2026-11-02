@@ -3,6 +3,7 @@
 #include "server/area_store.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "server/systems/effects/system.hpp"
+#include "server/systems/quests/system.hpp"
 #include "server/systems/reactions/item_triggers.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/effects/queries.hpp"
@@ -151,6 +152,7 @@ DomainResult<> System::compressUnit(RegionId region,size_t index,uint64_t tick,E
         if(!state_.actors.contains(id)) throw std::logic_error("Compressed monster disappeared before publication");
         if(const auto removal=removals.find(id);removal!=removals.end()) ports_.effects.publishAuraUnits(removal->second);
         ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});
+        ports_.quests.releaseFigurineSource(id);
         ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);state_.actors.erase(id);
     }
     if(state_.inactive.at({region,index}).empty()) state_.inactive.erase({region,index});
@@ -259,6 +261,8 @@ StepStatus System::advanceRestoration(uint64_t tick) {
         const auto finished=finishRestoration(source,tick);
         if(!finished) return isDeferred(finished.status)?StepStatus::Blocked:StepStatus::NotImplemented;
     }
+    if(!source.dead && (source.identity.rank==MonsterRank::Unique || source.identity.rank==MonsterRank::SuperUnique ||
+        source.identity.rank==MonsterRank::Champion)) ports_.quests.nativeEliteBorn(source.id);
     found->second.erase(found->second.begin());
     if(found->second.empty()) state_.inactive.erase(found);
     restoring_.reset();

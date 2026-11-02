@@ -130,7 +130,6 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     if (map.terrain.preparedRooms) {
         for (size_t index = 0; index < map.terrain.instances.size(); ++index) {
             const auto &tile = map.terrain.instances[index];
-            if(tile.removed) continue;
             if (warps[index] == 1 || (warps[index] != 0 && (tile.flags & 8) && !(tile.flags & 0x200))) continue;
             const bool floor = tile.type == 0, shadow = tile.type == 13;
             const bool lower = tile.type >= 16 && tile.type <= 19;
@@ -173,6 +172,8 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     for (const auto &[id, item] : inventoryView_.items) {
         const auto *ground = std::get_if<GroundLocation>(&item.location);
         if (!ground || ground->region != scene.region) continue;
+        const auto *art=assets_.groundItemAnimation(item);
+        if (!art || !art->intersects(screen(staticUnitPosition(ground->position)),viewport)) continue;
         WorldDrawItem entry; entry.image = groundItemSprite(item);
         if (!entry.image) continue;
         entry.position = staticUnitPosition(ground->position); entry.ground = &item;
@@ -205,7 +206,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     for (const auto &item : items) {
         const auto at = screen(item.position) + item.pixelOffset;
         if (item.image && !visible(*item.image, at)) continue;
-        int layer = item.ground ? 1 : item.missile >= 0 ? 3 : 2;
+        int layer = item.ground || item.behindUnit ? 1 : item.missile >= 0 ? 3 : 2;
         if (item.overlay >= 0) {
             const auto visual = assets_.spellOverlays.find(item.overlay);
             if (visual == assets_.spellOverlays.end()) continue;
@@ -364,7 +365,6 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
             visual.loopStart + (frame - visual.loopStart) % (visual.loopEnd - visual.loopStart);
     }
     else frame = visual.loop ? frame % frames : std::min(frame, frames - 1);
-    const auto *image = animation.frame(direction(heading, animation.directions), frame);
     Vec at = screen(position)+pixelOffset;
     if (const auto program=assets_.clientMissilePrograms.find(id); program!=assets_.clientMissilePrograms.end() && program->second.function==9) {
         const auto &p=program->second;
@@ -377,6 +377,8 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
         const int elapsed = std::max(0, int(age * 25.f + .00001f));
         at.y -= float(std::max(0, fall->second.fallDistance - elapsed * fall->second.fallRate));
     }
+    if (!animation.intersects(at,worldViewport())) return;
+    const auto *image = animation.frame(direction(heading, animation.directions), frame);
     if (visual.trans == 1 || visual.trans == 2) {
         // Retail D2Client RVA 6CF32: Missiles.Trans 1 -> CelDraw 3,
         // 2 -> CelDraw 4. UnHolyBolt must darken, not screen-lighten.
@@ -399,6 +401,7 @@ void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop, int
     const int elapsed = preciseFrame.value_or(int(ticks*overlay.visual.fps/25.0));
     const int frame = loop ? elapsed % overlay.visual.frames : std::min(overlay.visual.frames - 1, elapsed);
     const Vec at = screen(position) + pixelOffset + overlayScreenOffset(overlay.visual.offset,overlay.visual.heights,height);
+    if (!overlay.animation.intersects(at,worldViewport())) return;
     if (lighting) lighting->drawLit(overlay.animation.frame(0, frame), at, {&light,1}, WHITE,{1,1},
         overlay.visual.trans==3?PaletteComposition::Screen:PaletteComposition::Normal);
     else if (overlay.visual.trans == 3) paletteBlend_->draw(overlay.animation.frame(0, frame), at);

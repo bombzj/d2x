@@ -51,7 +51,9 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     if (!capabilities || (program.function == 2 && !program.localBlood)) return false;
     if (program.function==9)
         for (const int child:program.children) if (child>=0 && !assets_.ensureProjectile(child)) return false;
-    if(program.function==21 || program.function==22 || program.function==29)
+    if((program.function==24 || program.function==31) && program.rules!=ClientMissileProgram::Rules::Original) return false;
+    if(program.function==31) for(const int child:{150,339,340}) if(!assets_.ensureProjectile(child)) return false;
+    if(program.function==21 || program.function==22 || program.function==24 || program.function==29)
         for(const int child:program.children) if(child>=0 && !assets_.ensureProjectile(child)) return false;
     if ((program.function == 4 || program.function==45) && (program.children[0] < 0 || program.parameters[0] < 0 ||
         program.parameters[1] < 0 || program.parameters[1] > 256 || program.parameters[2] < 0 ||
@@ -797,6 +799,74 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                     }
                     if(auto *child=emit(index==1?42:364,at,{},effect,childAge,-1,0,-1,initialization))
                         child->nativeDirection=uint8_t(limitedRandom(child->random,64));
+                }
+                break;
+            }
+            case 24: {
+                // LoD BB8F0: sky strikes, then room-local stone-to-stone arcs.
+                const int current=effect.nativeCurrentFrames,margin=program.parameters[0];
+                const auto bolt=[&](Vec at) {
+                    const auto child=assets_.clientMissilePrograms.find(program.children[0]);
+                    if(child==assets_.clientMissilePrograms.end()) return;
+                    ClientMissileInitialization init;init.sourceSkill=effect.sourceSkill;
+                    const auto &params=child->second.parameters;
+                    if(params[1]>0) {
+                        ClientMissileGraphics gfx;gfx.position[2]=nativeShiftLeft(params[0],11);
+                        gfx.velocity[2]=-nativeShiftLeft(params[1],11);init.graphics=gfx;init.totalFrames=params[0]/params[1];
+                    }
+                    emit(program.children[0],at,{},effect,childAge,-1,0,-1,init);
+                };
+                if(current<program.frames-margin && current>margin && program.parameters[1]>0 &&
+                    elapsedFrames%program.parameters[1]==0) {
+                    const auto at=effect.pos+blizzardOffset(uint32_t(std::floor(effect.pos.x)),elapsedFrames,
+                        program.parameters[2],true,effect.random);
+                    if(grid.missileSegment(at-origin,at-origin,{4,1})) bolt(at);
+                }
+                if(current>=margin+125 || current<=margin) break;
+                const auto room=std::find_if(map.terrain.rooms.begin(),map.terrain.rooms.end(),[&](const auto &r) {
+                    const auto p=effect.pos-origin;return p.x>=r.x*5 && p.y>=r.y*5 && p.x<(r.x+r.width)*5 && p.y<(r.y+r.height)*5;
+                });
+                if(room==map.terrain.rooms.end()) break;
+                if(!effect.nativeParameters) effect.nativeParameters=std::array<int32_t,2>{};
+                for(const auto &stone:anchors) {
+                    const auto p=stone.position-origin;
+                    if(stone.type!=2 || stone.identity<17 || stone.identity>=22 || p.x<room->x*5 || p.y<room->y*5 ||
+                        p.x>=(room->x+room->width)*5 || p.y>=(room->y+room->height)*5) continue;
+                    bolt(stone.position);
+                    if(current%8 || program.children[1]<0) continue;
+                    const auto previous=std::find_if(anchors.begin(),anchors.end(),[&](const auto &a) {
+                        return a.type==2 && a.nativeId==uint32_t((*effect.nativeParameters)[0]);
+                    });
+                    if(previous==anchors.end()) {(*effect.nativeParameters)[0]=int32_t(stone.nativeId);continue;}
+                    ClientMissileInitialization init;init.sourceSkill=effect.sourceSkill;
+                    emit(program.children[1],stone.position,previous->position-stone.position,effect,childAge,-1,0,-1,init);
+                    if(limitedRandom(effect.random,4)==0) (*effect.nativeParameters)[0]=int32_t(stone.nativeId);
+                }
+                break;
+            }
+            case 31: {
+                // LoD B4B80 / D36D0: seven timed beams, then the wall strike.
+                const int current=effect.nativeCurrentFrames;
+                if(current==150) shakeScreen(25,0,4000,0,-childAge);
+                constexpr std::array<std::array<int,3>,7> beams{{{3,-2,4},{1,-3,58},{3,1,13},
+                    {-2,-3,49},{1,3,22},{-3,0,40},{-2,2,31}}};
+                for(size_t i=0;i<beams.size();++i) if(current==325-int(i)*25) {
+                    ClientMissileInitialization init;init.sourceSkill=effect.sourceSkill;init.totalFrames=current;
+                    if(auto *child=emit(340,effect.pos+Vec{float(beams[i][0]),float(beams[i][1])},{},effect,childAge,-1,0,-1,init))
+                        child->nativeDirection=uint8_t(beams[i][2]);
+                }
+                const auto opening=effect.pos+Vec{-13,3};
+                if(current<165 && current%2==0) {
+                    ClientMissileInitialization init;init.sourceSkill=effect.sourceSkill;
+                    ClientMissileGraphics gfx;gfx.position[2]=0x23000;gfx.velocity[2]=-0x800;init.graphics=gfx;
+                    if(auto *child=emit(339,effect.pos,opening-effect.pos,effect,childAge,-1,0,-1,init)) {
+                        child->nativeDirection=21;child->velocity={};child->velocityFixed=0;
+                    }
+                }
+                if(current<150) {
+                    const Vec ray{float(limitedRandom(effect.random,5)+1),float(int(limitedRandom(effect.random,10))-5)};
+                    ClientMissileInitialization init;init.sourceSkill=effect.sourceSkill;
+                    if(auto *child=emit(150,opening,ray,effect,childAge,-1,0,-1,init)) child->animationRate=64;
                 }
                 break;
             }

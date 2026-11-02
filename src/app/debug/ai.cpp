@@ -57,9 +57,13 @@ uint16_t tableId(const DataTable &table,const nlohmann::json &value,std::string_
     if(!numeric && !value.is_string()) throw std::invalid_argument("AI identity must be an MPQ name or integer ID");
     const int64_t number=numeric?value.get<int64_t>():-1;const auto name=numeric?std::string{}:lower(value.get<std::string>());
     std::optional<uint16_t> result;
+    int monsterIndex=0;
     for(size_t row=0;row<table.rows().size();++row) {
+        // Compiled MonStats identities count records with hcIdx, not source rows.
+        // Advance once per record instead of rescanning every preceding row.
+        if(monster && table.value(row,"hcIdx").empty()) continue;
+        const auto id=monster?std::optional{monsterIndex++}:table.number(row,idColumn);
         if(monster && table.value(row,"Id")=="Expansion") continue;
-        const auto id=monster?std::optional{compiledMonsterIndex(table,row)}:table.number(row,idColumn);
         if(!id || *id<0 || *id>UINT16_MAX) continue;
         const auto label=lower(std::string(table.value(row,column)));
         const bool matches=numeric?number==*id:label==name || (column=="Name" && label.ends_with(" - "+name));
@@ -148,7 +152,7 @@ std::vector<DebugAi::Impl::Goal> DebugAi::Impl::parse(const Json &request) {
                 list.push_back({{"action","quest"},{"quest",quest}});
         } else if(scenario=="act3") {
             list=Json::array();
-            for(const auto quest:{"golden-bird","blade-of-the-old-religion","lam-esens-tome","khalims-will","blackened-temple","guardian"})
+            for(const auto quest:{"blade-of-the-old-religion","lam-esens-tome","khalims-will","blackened-temple","golden-bird","guardian"})
                 list.push_back({{"action","quest"},{"quest",quest}});
         } else if(scenario=="act4") {
             list=Json::array();
@@ -176,6 +180,7 @@ std::vector<DebugAi::Impl::Goal> DebugAi::Impl::parse(const Json &request) {
     for(const auto &entry:list) {
         if(!entry.is_object()) throw std::invalid_argument("AI goals must be objects");
         Goal goal;const auto action=entry.at("action").get<std::string>();
+        goal.useServiceRewards=entry.value("useServiceRewards",request.value("useServiceRewards",false));
         goal.timeout=integer(entry,"timeoutSeconds",integer(request,"goalTimeoutSeconds",action=="quest"?1800:600,10,3600),10,3600);
         if(entry.contains("area")) goal.area=definitions->area(entry.at("area"));
         if(action=="quest") {
@@ -212,6 +217,11 @@ std::vector<DebugAi::Impl::Goal> DebugAi::Impl::parse(const Json &request) {
             goal.topics={163};
         } else throw std::invalid_argument("Unknown high-level AI action: "+action);
         result.push_back(std::move(goal));
+    }
+    bool birdRequested=false;
+    for(auto it=result.rbegin();it!=result.rend();++it) {
+        if(it->kind==Kind::Quest && it->questId==QuestId::GoldenBird) birdRequested=true;
+        if(!birdRequested) it->routeDrop.reset();
     }
     return result;
 }
@@ -275,12 +285,18 @@ void DebugAi::Impl::note(std::string event,std::string detail) {
     while(history.size()>128) history.pop_front();
 }
 DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
+    Json drops=Json::array();
+    for(const auto &[code,drop]:rememberedDrops)
+        drops.push_back({{"code",code},{"id",drop.id},{"area",drop.area},{"x",drop.position.x},{"y",drop.position.y}});
     const auto population=area?populationMemory.find(*area):populationMemory.end();
     Json plan=Json::array();static constexpr const char *names[]{"travel","find","hunt","acquire","return-town","deliver","restock","quest"};
     for(size_t i=0;i<goals.size();++i) {
-        const auto &g=goals[i];Json v{{"index",i},{"action",names[size_t(g.kind)]},{"state",i<cursor?"completed":i==cursor?state:"queued"},
+        const auto &g=goals[i];Json v{{"index",i},{"action",names[size_t(g.kind)]},{"state",!g.skipReason.empty()?"skipped":i<cursor?"completed":i==cursor?state:"queued"},
             {"timeoutSeconds",g.timeout},{"item",g.item},{"quest",g.quest}};
+        if(!g.skipReason.empty()) v["reason"]=g.skipReason;
+        if(g.kind==Kind::Quest) v["useServiceRewards"]=g.useServiceRewards;
         if(g.area) v["area"]=*g.area;
+        if(g.requiredWaypoint) v["requireWaypoint"]=true;
         if(g.target) v["target"]={{"type",g.target->type},{"identity",g.target->identity},{"name",g.target->name},
             {"superunique",g.target->superUnique?Json(*g.target->superUnique):Json(nullptr)}};
         plan.push_back(std::move(v));
@@ -361,7 +377,7 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"pending",localPad?Json{{"unit",localPad->unit.id},{"area",localPad->area},{"waiting",localPad->waiting},
                 {"source",{localPad->source.x,localPad->source.y}},{"discontinuityBefore",localPad->discontinuity},
                 {"requestRevision",localPad->requestRevision}}:Json(nullptr)}}},
-        {"questPlan",questPlanDiagnostics},
+        {"questPlan",questPlanDiagnostics},{"rememberedDrops",drops},
         {"actions",actionDiagnostics},{"navigationDiagnostics",{{"search",searchDiagnostics},{"approach",approachDiagnostics},{"mobility",mobilityDiagnostics},{"travel",travelDiagnostics}}},
         {"castRequests",castRequests},{"navigationGoals",moveGoals},{"interactions",interactions},{"history",history}};
 }
@@ -374,16 +390,24 @@ void DebugAi::Impl::stop(DebugAutoWalk &walk,RemoteControl &control,RemoteCombat
 }
 void DebugAi::Impl::cancelWalk(Context &c) {c.walk.manualInput(c.control);c.control.cancelMovement();walkIntent=nullptr;}
 void DebugAi::Impl::finish(std::string value,std::string detail,Context &c) {
-    stop(c.walk,c.control,c.combat);state=std::move(value);reason=std::move(detail);phase.clear();note(state,reason);
+    if(c.session.read().stage==OnlineStage::ProtocolReady && c.session.read().gameGeneration==game)
+        stop(c.walk,c.control,c.combat);
+    else {
+        // The old game's stop must neither affect a new game nor replace a
+        // transport/protocol failure with an unrelated input-stage error.
+        cancelWalk(c);combatOwned=false;combatRun.repeating=false;mobilityHold=false;mobilityTarget.reset();
+    }
+    state=std::move(value);reason=std::move(detail);phase.clear();note(state,reason);
 }
 void DebugAi::Impl::resetStep() {
+    explorationReturn.reset();
     submissionWaits.clear();
     localPad.reset();
     backtrackAttempts.clear();
     observedRoomPassages.clear();
     viewpointAttempts.clear();
     searchDiagnostics=nullptr;approachDiagnostics=nullptr;mobilityDiagnostics=nullptr;travelDiagnostics=nullptr;
-    combatRun={};combatDiagnostics=nullptr;hazardDodge.reset();hazardDiagnostics=nullptr;
+    combatRun={};combatDiagnostics=nullptr;hazardDodge.reset();hazardDiagnostics=nullptr;guardingOpening=false;
     phase.clear();reason.clear();target.reset();targetAssignment=0;visited.clear();frontierAttempts.clear();checkedHints.clear();unavailableRooms.clear();exploring.reset();interest.reset();searchPosition.reset();searchRetry={};
     walkIntent=nullptr;approachHint.reset();approachFrontier.reset();approachDetour.reset();operatedDoors.clear();pendingDoor.reset();doorDeadline={};
     pendingWaypoint.reset();closeWaypoint.reset();waypointDeadline={};
@@ -394,13 +418,17 @@ void DebugAi::Impl::resetStep() {
     submittedTravel.reset();travelRetries.clear();
     mobilityTrials.clear();mobilityGoal.reset();mobilityRoute.clear();mobilityRouteProgress=mobilityPendingProgress=mobilityRouteLength=0;
 }
-void DebugAi::Impl::advance(Context &c,std::string evidence) {
+void DebugAi::Impl::advance(Context &c,std::string evidence,bool skipped) {
     releaseCombat(c);
     questPlanDiagnostics=nullptr;
     if(c.session.read().world.npcRequested) c.session.close_npc();
     if(c.session.read().world.waypointSource) c.session.use_waypoint(0);
-    cancelWalk(c);note("goal-completed",std::move(evidence));++cursor;resetStep();questRun={};padTransfersWithoutDiscovery=0;
-    if(cursor==goals.size()) {finish("completed","All goal postconditions observed",c);return;}
+    if(skipped) goals.at(cursor).skipReason=evidence;
+    cancelWalk(c);note(skipped?"goal-skipped":"goal-completed",std::move(evidence));++cursor;resetStep();questRun={};padTransfersWithoutDiscovery=0;
+    if(cursor==goals.size()) {
+        const auto count=std::count_if(goals.begin(),goals.end(),[](const auto &g){return !g.skipReason.empty();});
+        finish("completed",count?"Plan resolved; "+std::to_string(count)+" unavailable quests skipped":"All goal postconditions observed",c);return;
+    }
     goalDeadline=Clock::now()+std::chrono::seconds(goals[cursor].timeout);note("goal-started");
 }
 DebugAi::DebugAi(Archives &a):impl_(std::make_unique<Impl>(a)) {}
@@ -415,7 +443,7 @@ bool DebugAi::controlsInventory() const {
     if(!s.active() || s.cursor>=s.goals.size() || s.goals[s.cursor].kind!=Impl::Kind::Quest ||
         s.questRun.step>=s.goals[s.cursor].steps.size()) return false;
     const auto action=s.goals[s.cursor].steps[s.questRun.step].action;
-    return action==Impl::QuestAction::Combine || action==Impl::QuestAction::SubmitStaff || action==Impl::QuestAction::Imbue || action==Impl::QuestAction::EquipWeapon;
+    return s.questRun.initialInventory || s.questRun.recoveringItem || action==Impl::QuestAction::Combine || action==Impl::QuestAction::SubmitStaff || action==Impl::QuestAction::Imbue || action==Impl::QuestAction::EquipWeapon;
 }
 void DebugAi::manualInput(net::RealmSession &,DebugAutoWalk &walk,RemoteControl &control,RemoteCombat &combat) {
     if(!impl_->live()) return;
@@ -487,10 +515,36 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             throw std::invalid_argument("Debug task recipes currently support the retail 1.13c profile only");
         if(view.stage!=OnlineStage::ProtocolReady || onlinePlayerDead(view.world) || !town.read().nativeMapReady)
             throw std::invalid_argument("AI requires a live player in a ready native map");
-        if(onlineHasCursorItem(view.world.items,view.load.playerUnitId) || view.world.playerTrade.active())
-            throw std::invalid_argument("Finish the cursor item or player trade before starting AI");
+        if(view.world.playerTrade.active()) throw std::invalid_argument("Finish the player trade before starting AI");
         if(!s.definitions) s.definitions=std::make_unique<Impl::Definitions>(s.archives);
         auto plan=s.parse(j);auto policy=s.parseCombat(j.value("combat",Impl::Json::object()));
+        if (j.value("activateAllWaypoints", false)) {
+            if (name != "debug-ai-start") throw std::invalid_argument("activateAllWaypoints belongs to the initial plan");
+            std::map<int, uint16_t> waypoints;
+            for (size_t row = 0; row < s.definitions->levels.rows().size(); ++row) {
+                const auto id = s.definitions->levels.number(row, "Id");
+                const auto number = s.definitions->levels.number(row, "Waypoint");
+                const auto act = s.definitions->levels.number(row, "Act");
+                if (id && *id > 0 && *id <= 136 && number && *number >= 0 && *number < 112 && act && *act >= 0 && *act < 5)
+                    waypoints.try_emplace(*number, uint16_t(*id));
+            }
+            std::vector<Impl::Goal> required;
+            for (const auto &[number, level] : waypoints) {
+                (void)number;
+                Impl::Goal goal; goal.kind = Impl::Kind::Travel; goal.area = level; goal.requiredWaypoint = true;
+                goal.timeout = integer(j, "goalTimeoutSeconds", 600, 10, 3600);
+                required.push_back(std::move(goal));
+            }
+            // Finish the sweep before the expansion victory screen. Earlier
+            // campaign quests supply the normal act and summit prerequisites.
+            const auto finale = std::find_if(plan.begin(), plan.end(), [](const auto &goal) {
+                return goal.kind == Impl::Kind::Quest && goal.questId == QuestId::EveOfDestruction;
+            });
+            plan.insert(finale, required.begin(), required.end());
+        }
+        if(onlineHasCursorItem(view.world.items,view.load.playerUnitId) &&
+            std::any_of(plan.begin(),plan.end(),[](const auto &g){return g.kind!=Impl::Kind::Quest;}))
+            throw std::invalid_argument("Cursor recovery requires a quest-only plan; store it before other goals");
         for(auto &goal:plan) if(goal.kind==Impl::Kind::Quest && goal.questId==QuestId::EveOfDestruction && view.world.quests.playerFlags)
             goal.initiallyRewarded=((*view.world.quests.playerFlags)[questDefinition(goal.questId).nativeSlot]&1)!=0;
         const auto mobility=s.parseMobility(j.value("mobility",Impl::Json::object()));
@@ -541,20 +595,20 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
                 if(std::none_of(combat.skills().begin(),combat.skills().end(),[&](const auto &v){return v.id==id && v.left && (v.level || v.innate) && !v.passive;}))
                     throw std::invalid_argument("A battle aura requires left-hand compatible fallback attacks");
         }
-        const bool malus=std::any_of(plan.begin(),plan.end(),[](const auto &g){return (g.kind==Impl::Kind::Quest && g.questId==QuestId::ToolsOfTheTrade) ||
-            (g.kind==Impl::Kind::Acquire && g.item=="hdm");});
+        const bool malus=std::any_of(plan.begin(),plan.end(),[&](const auto &g){
+            if(g.kind==Impl::Kind::Acquire && g.item=="hdm") return true;
+            if(g.kind!=Impl::Kind::Quest || g.questId!=QuestId::ToolsOfTheTrade) return false;
+            return !view.world.quests.playerFlags || !((*view.world.quests.playerFlags)[questDefinition(QuestId::ToolsOfTheTrade).nativeSlot]&3);
+        });
         if(malus) {
             const auto level=view.world.playerAttributes.find(12);
             if(level!=view.world.playerAttributes.end() && level->second<8)
                 throw std::invalid_argument("Original Malus pickup requires character level 8");
         }
-        if(j.value("scenario",std::string{})=="tools-of-the-trade" && view.world.quests.playerFlags &&
-            ((*view.world.quests.playerFlags)[questDefinition(QuestId::ToolsOfTheTrade).nativeSlot]&3))
-            throw std::invalid_argument("Tools of the Trade already has its reward or pending imbue; no new Malus can be obtained");
         if(name=="debug-ai-append") {
             if(j.contains("combat") || j.contains("mobility") || j.contains("supplies") || j.contains("events")) throw std::invalid_argument("Append inherits the current plan's combat, mobility, supplies and event policies");
             if(!s.live() || s.game!=view.gameGeneration) throw std::invalid_argument("No live AI plan to append to");
-            if(s.goals.size()+plan.size()>32) throw std::invalid_argument("AI queue exceeds 32 goals");
+            if(s.goals.size()+plan.size()>128) throw std::invalid_argument("AI queue exceeds 128 goals including required waypoints");
             s.goals.insert(s.goals.end(),plan.begin(),plan.end());s.note("goals-appended");
         } else {
             if(s.live()) throw std::invalid_argument("Cancel the current AI plan before replacing it");
@@ -567,6 +621,8 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             if(view.world.waypointSource) session.use_waypoint(0);
             s.policy=policy;s.mobilityPolicy=mobility;s.supplyPolicy=supplies;s.goals=std::move(plan);s.cursor=0;s.resetStep();s.history.clear();s.sequence=s.decisions=0;
             s.eventPolicy=events;
+            s.rememberedDrops.clear();
+            s.summitTrialKills.reset();
             s.deferredWaypoint.reset();
             s.padTransfersWithoutDiscovery=0;
             if(s.game!=view.gameGeneration) {
@@ -577,10 +633,13 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             s.combatTarget.reset();s.retreatPoint.reset();s.combatOwned=false;
             s.combatLifeSamples.clear();s.combatMaxLife.reset();
             s.lastAttack={};s.retreatUntil={};s.retreatReady={};
-            s.mobilityTarget.reset();s.mobilityHold=false;s.nextMobility={};s.lastSelection={};
+            s.mobilityTarget.reset();s.mobilityHold=false;s.nextMobility={};s.lastSelection={};s.nextArmorAttempt={};
             s.townExitArea.reset();s.townExitObserveUntil={};
             s.supplyStage=Impl::SupplyStage::None;s.supplyOrigin.reset();s.supplyPortalUsed=false;
             s.questRun={};s.questPlanDiagnostics=nullptr;s.tombSymbol.reset();s.bypassedThreats.clear();
+            s.questRun.initialInventory=s.goals.front().kind==Impl::Kind::Quest &&
+                (onlineHasCursorItem(view.world.items,view.load.playerUnitId) || view.world.storage.kind!=OnlineStorageKind::None ||
+                 view.world.storage.requested!=OnlineStorageKind::None);
             s.potionRequest.reset();s.nextPotion={};s.shelfReopens=0;s.shopIssued=false;s.shelfObserved=false;s.healingIssued=false;s.healingObserved=false;s.supplyNpc.reset();s.shopDeadline={};s.drinks=s.purchases=0;s.lastPotion=nullptr;s.supplyVitals=nullptr;
             s.executionClock.reset(now);s.inputBlocked=false;s.actionDiagnostics=nullptr;
             s.cadence.reset();s.decisionLife.reset();
@@ -614,6 +673,7 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
     if(s.questRun.pending && s.questWaitRequiresInput(c)) s.questRun.pending->deadline+=suspended;
     if(s.questRun.worldWait) s.questRun.worldWait->deadline+=suspended;
     if(s.questRun.witnessUntil!=Impl::Clock::time_point{}) s.questRun.witnessUntil+=suspended;
+    if(s.questRun.missingTopicSince!=Impl::Clock::time_point{}) s.questRun.missingTopicSince+=suspended;
     if(!s.actionWaitSubmitted && s.actionDeadline!=Impl::Clock::time_point{}) s.actionDeadline+=suspended;
     if(s.localPad && !s.localPad->waiting) s.localPad->deadline+=suspended;
     if(s.combatTarget) {
@@ -642,12 +702,14 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
                 s.townExitArea=town.read().area;s.townExitObserveUntil=now+std::chrono::milliseconds(1500);
             } else s.townExitArea.reset();
             s.deferredWaypoint.reset();
+            s.summitTrialKills.reset();
             s.hazardDodge.reset();s.hazardDiagnostics=nullptr;
             s.backtrackAttempts.clear();
             s.viewpointAttempts.clear();
             s.cancelWalk(c);s.area=town.read().area;s.areaGeneration=view.world.areaGeneration;s.visited.clear();s.frontierAttempts.clear();s.exploring.reset();
             s.checkedHints.clear();s.unavailableRooms.clear();s.approachHint.reset();s.approachFrontier.reset();s.approachDetour.reset();
             s.pickupApproaches.clear();
+            s.guardingOpening=false;
             // Ordinary movement may cross back over a border. Its old exit
             // belongs to the previous area; recompute from the observed one.
             // Accepted warp/waypoint operations retain their result wait.
@@ -676,6 +738,7 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
         }
         s.mobilityHold=false;
         const auto &goal=s.goals[s.cursor];
+        s.observeDrops(c,goal);
         s.observeActions(c);s.describeActions(c);
         if(s.actionRecoveryBusy && s.canInput(c,DebugActionOwner::Potion,DebugItem) && s.drink(c)) {
             s.describeActions(c);return;
@@ -688,14 +751,15 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
             item && item->state==OnlineItemRequest::State::TimedOut && item->command.action==OnlineItemAction::TradeOpen &&
             item->command.npc==s.supplyNpc->id && s.shopGeneration==view.world.interactionGeneration;
         if(view.error && view.error->kind!=OnlineErrorKind::Input && !shelfTimeout) {
+            const auto purpose=s.walkIntent.is_object()?s.walkIntent.value("purpose",std::string{}):std::string{};
+            const bool optionalWaypoint=purpose=="initial-waypoint-memory" || purpose=="activate-waypoint";
             const bool waypointOpening=view.error->kind==OnlineErrorKind::Timeout &&
                 view.error->message=="No original waypoint menu confirmation arrived" &&
                 ((s.travelPhase==Impl::TravelPhase::WaypointOpen && s.travelRoute.size()>1) ||
-                 (s.walkIntent.is_object() && s.walkIntent.value("purpose",std::string{})=="initial-waypoint-memory") ||
+                 optionalWaypoint ||
                  (s.deferredWaypoint && now<s.deferredWaypoint->retryAt));
             if(waypointOpening) {
-                if(s.travelPhase==Impl::TravelPhase::WaypointOpen ||
-                    (s.walkIntent.is_object() && s.walkIntent.value("purpose",std::string{})=="initial-waypoint-memory")) {
+                if(s.travelPhase==Impl::TravelPhase::WaypointOpen || optionalWaypoint) {
                     const auto child=walk.snapshot();const auto &source=child.at("unit");
                     if(!source.is_object()) {s.finish("failed",view.error->message,c);return;}
                     const OnlineUnitKey key{source.at("type").get<uint8_t>(),source.at("id").get<uint32_t>()};
@@ -704,7 +768,8 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
                         now+std::chrono::seconds(30),c.position};
                     s.note("waypoint-query-deferred","Opening had no menu result; continuing the retained ordinary route");
                     if(view.world.waypointRequested || view.world.waypointSource) session.use_waypoint(0);
-                    s.cancelWalk(c);s.travelPhase=Impl::TravelPhase::Route;s.waypointDestination.reset();s.legDestination.reset();
+                    s.cancelWalk(c);
+                    if(!optionalWaypoint) {s.travelPhase=Impl::TravelPhase::Route;s.waypointDestination.reset();s.legDestination.reset();}
                 }
                 // The first subsequent ordinary input clears the session's
                 // timeout. Until then retain the diagnostic, not a fake menu.
@@ -746,6 +811,12 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
             s.wait("action-recovery","Observing the normal action animation; potion use and result observation remain active");
             s.describeActions(c);return;
         }
+        if(s.explorationReturn) {
+            if(s.canInput(c,DebugActionOwner::Potion,DebugItem) && s.drink(c)) {s.describeActions(c);return;}
+            if(s.canInput(c,DebugActionOwner::Goal,DebugAllInputs)) s.resumeExplorationReturn(c);
+            if(s.canInput(c,DebugActionOwner::Mobility,DebugMotion|DebugSkill)) s.mobility(c);
+            s.describeActions(c);return;
+        }
         const auto preparedGoal=s.cursor;
         const bool prepared=s.prepareQuest(c,goal);
         if(!s.active() || s.cursor!=preparedGoal) return;
@@ -759,9 +830,11 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
         }
         if(s.canInput(c,Owner::Potion,DebugItem) && s.drink(c)) {s.describeActions(c);return;}
         if(s.canInput(c,Owner::Combat,DebugMotion|DebugSkill) && s.avoidHazards(c)) {s.describeActions(c);return;}
+        if(s.canInput(c,Owner::Combat,DebugMotion|DebugSkill) && s.maintainArmor(c)) {s.describeActions(c);return;}
+        if(s.pendingDoor) {s.guardOpening(c);s.describeActions(c);return;}
         if(!prepared) {
             Impl::Goal defense;defense.kind=Impl::Kind::Travel;
-            if(s.canInput(c,Owner::Combat,DebugMotion|DebugSkill)) s.combat(c,defense);
+            if(s.phase!="quest-drop-notice" && s.canInput(c,Owner::Combat,DebugMotion|DebugSkill)) s.combat(c,defense);
             s.describeActions(c);return;
         }
         if(goal.kind==Impl::Kind::Quest && s.questRun.pending && s.questWaitRequiresInput(c) &&
@@ -771,12 +844,27 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
             s.execute(c,goal);s.describeActions(c);return;
         }
         const auto leaf=s.questLeaf(goal);
+        const auto *step=goal.kind==Impl::Kind::Quest && s.questRun.step<goal.steps.size()?&goal.steps[s.questRun.step]:nullptr;
+        const bool collecting=leaf.kind==Impl::Kind::Acquire || (step && step->action==Impl::QuestAction::SearchDrop);
+        if(s.supplyStage==Impl::SupplyStage::None && collecting && (s.pickupIssued || s.rememberedDrops.contains(leaf.item)) &&
+            s.canInput(c,Owner::Goal,DebugAllInputs)) {
+            if(!s.pickupIssued && s.canInput(c,Owner::Combat,DebugMotion|DebugSkill) && s.combat(c,leaf,true)) {
+                s.describeActions(c);return;
+            }
+            s.releaseCombat(c);s.execute(c,goal);
+            if(!s.pickupIssued && s.canInput(c,Owner::Mobility,DebugMotion|DebugSkill)) s.mobility(c);
+            s.describeActions(c);return;
+        }
+        if(s.guardingOpening && s.supplyStage==Impl::SupplyStage::None && s.canInput(c,Owner::Goal,DebugAllInputs)) {
+            // Recheck the door / event before another defensive cast.
+            s.execute(c,goal);s.describeActions(c);return;
+        }
         if(s.canInput(c,Owner::Supply,DebugAllInputs) && s.autoSupply(c,leaf)) {s.describeActions(c);return;}
-        if(s.canInput(c,Owner::Combat,DebugMotion|DebugSkill) && ((leaf.kind==Impl::Kind::ReturnTown || leaf.kind==Impl::Kind::Restock)?
-            s.supplyCombat(c,leaf):s.combat(c,leaf))) {s.describeActions(c);return;}
         if(!s.pendingWaypoint && !s.closeWaypoint && !s.questRun.worldWait && !s.questRun.encounterAnchored &&
             leaf.kind!=Impl::Kind::ReturnTown && leaf.kind!=Impl::Kind::Restock &&
             s.canInput(c,Owner::Waypoint,DebugMotion|DebugInteraction|DebugMenu) && s.activateWaypoint(c)) {s.describeActions(c);return;}
+        if(s.canInput(c,Owner::Combat,DebugMotion|DebugSkill) && ((leaf.kind==Impl::Kind::ReturnTown || leaf.kind==Impl::Kind::Restock)?
+            s.supplyCombat(c,leaf):s.combat(c,leaf))) {s.describeActions(c);return;}
         unsigned inputs=DebugAllInputs;
         if(leaf.kind==Impl::Kind::Travel || leaf.kind==Impl::Kind::Find) inputs=DebugMotion|DebugInteraction|DebugMenu;
         else if(leaf.kind==Impl::Kind::Hunt) inputs=DebugMotion|DebugSkill;

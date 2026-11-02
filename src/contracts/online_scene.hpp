@@ -13,6 +13,7 @@ struct OnlineMapTarget {
     std::string name;
     std::optional<uint16_t> destination;
     int collisionWidth{}, collisionHeight{};
+    bool stopNpcOnClick{};
 };
 struct OnlineWaypointDestination {
     uint16_t level{};
@@ -60,7 +61,7 @@ struct OnlineSceneView {
     int width{}, height{}, candidates{}, landmarks{};
     int renderedUnits{}, unavailableUnits{};
     std::vector<std::string> effectLimitations;
-    struct MissileDisplay { int id{}; Vec position; float age{}, remaining{}; Vec velocity; bool hostile{}; };
+    struct MissileDisplay { int id{}; Vec position; float age{}, remaining{}; Vec velocity; bool hostile{}; std::optional<OnlineUnitKey> source; };
     std::vector<MissileDisplay> clientMissiles;
     std::optional<uint16_t> localCastSkill;
     float localCastAge = -1;

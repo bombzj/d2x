@@ -6,11 +6,13 @@
 
 NPC是所连接服务端的真实type1单位，位置／模式、对白、任务提示和服务资格均由该服务端提供。中立单位不使用敌对替身；组件／原图由公共ActorAnimation／Graphics解析。
 
+原版 LoD 1.13c `D2Client 4B955→46770` 在确认交谈时清除旧 NPC 提示；`479DA` 忽略正在交谈 NPC 的新 8A。客户端已同步这两个条件，后续提醒仍由新 8A 决定。`4BA48→A5600` 的交谈朝向已补入显示层，保留原类537／538／539／527的固定朝向例外；不修改服务端位置或交互距离。本批待用户运行验收。
+
 ## 宿主NPC移动与地图动作
 
 `hosting/npc_content.cpp`按当前MPQ的MonStats.AI区分Npc、Towner、NpcStationary、JarJar和NpcOutOfTown，准备Velocity、aidel、MonStats2.mS1／mS2及原AnimData时钟；DS1单位预设的MapAI节点连同动作号完整传入该出生点的MonsterRule，使用全局子格坐标。节点不按自定义半径、当前碰撞或动作号预先删减，不为缺路径的NPC合成随机闲逛。NPC的AI／模式事件和碰撞移动由同一个monsters::Actor执行，城镇门控允许这些非战斗AI；原协议仍由公共monster_replication发布；S1／S2显式朝向经Actor→MonsterSnapshot→原6B／6C动作包传递，不再统一写0。
 
-权威入口为`server/systems/ai/town_npc.cpp`，对照本地D2MOO `AiThink.cpp::AITHINK_Fn032_Npc/Fn041_Towner/Fn054_NpcStationary`、`AITHINK_ExecuteMapAiAction`、`sub_6FCE61E0/6270/6340/64D0/69A0`及AiTactics移动辅助。Npc／Towner首次记录command10原地坐标并等待20帧；MapAI先掷66%再从全部节点抽一个，1／3为走位，2保留20次等待，4／5保留走位、command4等待及command7的S1／S2动作；缺少该模式时沿原NU50分支。动作支持来自当前MPQ，不伪造S1／S2资源。已有路线在结束前继续执行，交谈暂停，NpcStationary保持原位。Npc的任务提醒对象查询在近房间单位顺序中取首个满足FullUnitSize距离15和现有任务提醒资格的玩家，保留接近、问候18、60次冷却及command10距离16分支；Towner不执行该玩家接近分支。休眠保留MapAI及NPC的command10原点，临时command4／7及问候计数在重建AI时重新开始，不写角色档。
+权威入口为`server/systems/ai/town_npc.cpp`，对照本地D2MOO `AiThink.cpp::AITHINK_Fn032_Npc/Fn041_Towner/Fn054_NpcStationary`、`AITHINK_ExecuteMapAiAction`、`sub_6FCE61E0/6270/6340/64D0/69A0`及AiTactics移动辅助。Npc／Towner首次记录command10原地坐标并等待20帧；MapAI先掷66%再从全部节点抽一个，1／3为走位，2保留20次等待，4／5保留走位、command4等待及command7的S1／S2动作；缺少该模式时沿原NU50分支。动作支持来自当前MPQ，不伪造S1／S2资源。已有路线在结束前继续执行，交谈暂停，NpcStationary保持原位。Fn032提醒接近使用原SetVelocity路径类型1，MapAI普通走位使用类型7；不能共用直线路径。Npc的任务提醒对象查询在近房间单位顺序中取首个满足FullUnitSize距离15和现有任务提醒资格的玩家，保留接近、问候18、60次冷却及command10距离16分支；Towner不执行该玩家接近分支。休眠保留MapAI及NPC的command10原点，临时command4／7及问候计数在重建AI时重新开始，不写角色档。
 
 定点只读核对本机1.13c D2Game.dll，MD5 `978f6f74cd031bce6ecee602cd5988cc`、ImageBase `6FC20000`：AI表第32／41／54项分别为RVA `1DB40/1BC60/19880`，MapAI选择为`1BBC0`。Npc的交互辅助`19C20`在`19C62–19C67`要求交互结构非空；本地D2MOO `sub_6FCE5EE0`的该判空方向有转录错误，不能照搬为“有交互结构就跳过”。`16A30`读取全局绕行计数，不能照搬D2MOO局部零变量；执行器在实例内保留该计数。预设传递及休眠依据为D2MOO `SUNIT_SpawnPresetUnit`、`SUNITINACTIVE_*`与`DRLGPRESET_CreateCopyOfMapAI/ChangeMapAI`。
 
@@ -29,6 +31,24 @@ MapAI三类分派另定点核对上述1.13c DLL的RVA `35E50`（目标`59E10/59D
 
 剩余边界包括完整ActiveFilter／PLAYER_IsBusy组合、原房间客户端列表顺序、返城门户两端及标记／NPC加载顺序的运行对照、直接DD的协议／表现与状态回调、完整休眠AI命令恢复及全部多人／逐随机轨迹。普通MapAI和上述专用分支已接入，原版完整演出及上述边界仍待逐项对照。救援囚犯独立逃离程序的限制见[后三幕任务](../quests/ACT3_5.md)。
 
+## 世界点击的公共边界
+
+| 目标 | 原版判断与当前入口 |
+| --- | --- |
+| NPC | LoD 首击单位距离 2，npc＋interact 先发 59；保留交谈动作在走近途中按通用近战范围判断。服务端 13 独立检查距离 6／7–8。见下文 |
+| 门、箱子、可破坏物、祭坛、可操作机关 | type2 共用物件矩形范围及 0x0804 射线遮挡，随后按 MPQ 模式和 OperateFn 分派。RemoteTown → interactionClear → objects；OperateRange 不作统一中心半径 |
+| 陷阱 | 先按真实类型区分可操作物件、箱子触发效果和可攻击怪物；沿相应公共入口，不另设“陷阱点击距离” |
+| 地面物品 | type4 单位距离 ≤4 且无 0x0804 遮挡。nativePickupReach 与服务端拾取校验共用几何 |
+| 地图出口 | type5 单位距离 ≤4，再由服务端决定旅行 |
+| 玩家尸体／交易 | type0 首击距离 8，服务端核验尸体权限或交易资格 |
+| 敌对单位 | 按 Skills.range 分 melee／ranged／both／none；近战用武器范围、目标尺寸、移动加成和碰撞。原 INVENTORY_GetEquippedWeapon 优先可用右手、再左手，排除 BROKEN／NOEQUIP；客户端接近预测已按此选择 |
+
+物件与拾取依据为零售 D2Client RVA `1AB50–1AC83／1AC9C–1AD7A`，出口为 `1AED0`，服务端依据为 D2MOO PlrMsg。近战依据为 D2MOO Units::UNITS_IsInMeleeRange、D2Inventory::INVENTORY_GetEquippedWeapon、D2Skills::D2Common_11016。公共入口的源码核对不代表每种机关操作、技能、双持或变形组合均已实测。精确物件接近路径、触手近战特例和变形武器分类仍须独立核对。
+
+Windows Release 客户端与宿主已构建。本轮图形客户端鼠标验证覆盖 D2X 宿主的交谈、门、箱子、祭坛、近战、远程攻击、拾取和出口，以及原版宿主的艾柯交谈、传送点、木桶和门。另以当前 MPQ 的 Objects 139 准备 trap=2 箱子，普通点击开启后宿主生成 trap-firebolt，客户端收到对应单位与动作包。最终版本的本机艾柯样本中，13 到 28 确认为原版宿主约 31 ms、D2X 宿主约 65 ms。其他陷阱效果及全部技能组合尚未逐项实测。
+
+原版宿主上的隔桥 NPC、隔花坛木桶远点接近仍有停步样本，近处操作成功。尚无同条件原版客户端操作对照，不能据此判定寻路缺陷；原版本身允许寻路失败，应核对搜索范围、部分路径和保留动作的续走条件。历史 AI 艾柯失败仍保留为待复验案例。
+
 ## 交谈与对白
 
 SceneController统一悬停、高亮、姓名、点击／目标锁定和释放；RemoteControl按真实GUID靠近后0x13交谈，原0x27对白列表→0x29公共标志→带NPC身份的0x28交互确认→0x2F准备及公共对白UI继续消费。D2X先保存27待确认列表，收到匹配的28才打开会话并发送2F；2F确认已有权威会话，不重发27／28。一般私人任务刷新使用28/type6，不把玩家GUID编码成NPC身份。0x31确认实际原stringId，已确认话题不重复提交；0x30关闭，旅行0x38 action=0等原幕／位置结果。
@@ -41,7 +61,11 @@ NPC服务／Talk菜单与交易邀请共用[OriginalMenu](../../../src/presentat
 
 普通02／04单位靠近与交互靠近共用Path.cpp初始化的nStepNum=0及PathMisc::sub_6FD5DB70停止判据，使用当前MPQ双方原始SizeX和D2Common_10399，逐步停止预测路径；距离尺寸与碰撞pattern分开，不用小单位统一cross的size2替代真实size1。服务端普通敌对单位／其他玩家的04目标也保留同一距离0到达条件。这个单位距离0包含足迹大小，并非中心重合。13菜单资格仍为≤6，7–8由服务端走近后重试；不把6当作普通04路径终点。
 
-客户端在自己的当前路径到达后提交13，直接点击已有交谈范围也用当前显示位置判定请求；不等稀疏18／95／96位置采样。显示位置只授权发送意图，服务端按真实位置／资格决定27／28、菜单与奖励。请求绑定、目标GUID和新移动revision仍用于取消旧靠近；没有显示路径位置的调用使用已有协议采样。移除requirePositionUpdate历史等待状态，收到匹配28才打开会话的流程不变。
+原版 LoD 1.13c 普通点击以 D2Client.dll 的友善单位分支为准。RVA `1AFEA–1B00F` 对 MonStats.interact 目标取单位距离 2，`1B0E9–1B0FA` 调 D2Common #10407 计入双方尺寸。首击 ≤2 直接发 13，>2 先按 GUID 走／跑并保留交谈意图；这个判定没有读取武器。兼有 npc 标志时，`1B080–1B0BC` 先停目标的本地路径，再发送 59（类型、GUID、目标 X／Y）。服务端的开菜单距离 6 是独立校验。
+
+保留的 13 经 D2Client RVA `2B090 → 2AEA0 → 29E80` 调用 `UNITS_IsInMeleeRange`，使用可用装备的 rangeadder、目标移动加成及碰撞；未到达时继续单位移动。D2X 已让这一阶段复用近战几何与装备选择，首击仍为距离 2。普通单位路径本身的停止距离 0、保留动作的执行条件和服务端菜单资格各自独立。
+
+D2X 的普通点击和调试交互共用上述首击距离及 59 → 02／04 或 13 发包顺序。宿主按实际单位、标志及距离 ≤50 接受 59，停止 NPC 路径并把 AI 决策排在下一帧。Fn032 读计数 40 和所报坐标，前四次决策可寻路纠正超过 2 的位置差，此后按 8 帧间隔待机；剧情回调仍先执行。依据为 D2MOO PlrMsg 的 59／13 分支与零售 D2Game RVA `19DF3–19E65`。59 本身不创建会话，仍由匹配的 27／28 确认。
 
 悬停和小地图共用当前MPQ NameStr→TBL名称；Flavie的NameStr键为navi，不能直接把键作为悬停姓名。NameStr指向TBL占位键（dummy／Dummy／not used／unused／Not used）的行视为无名：悬停标签、小地图姓名与交互标签均不绘制，服务端对白speaker匹配仍用原始键不受影响；唯一暗金仍按SuperUniques.Name显示。NPC悬停名称在remote_scene_draw→object_hint::drawNpcLabel读取MonStats→MonStatsEx→MonStats2.pixHeight，以显示位置的地面锚点定位，不跟随组件绘图偏移；原版框底为地面屏幕Y加10减pixHeight。font16的原TBL高度／逐字宽度、所选语言行高与基线、DC6底部偏移、8像素总横向留白及PL2 TRANS75底板共同决定名称布局，不再共用固定70像素／24像素高标签或TTF替换。依据为零售1.13c D2Client RVA C0D30→C0850（C0CA0读取pixHeight）→D2Win ordinal10085，以及D2MOO D2WinFont::FONT／DrawFramedText／10124；已通过Windows Release构建，运行对照仍待验收。宿主查NPC GUID时允许同幕、已准备且步行相连的邻区，距离计算先转换为本人区域坐标，仍保持交谈6、走近7–8、9以上不回复的门槛，不通过放宽距离补偿跨区错误。
 

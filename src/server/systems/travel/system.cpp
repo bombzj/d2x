@@ -353,7 +353,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(transition.kind==Kind::QuestObject) {
             const auto found=ports_.objects.read().objects.find(transition.source);
             if(found==ports_.objects.read().objects.end() || found->second.area!=transition.from ||
-                !ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to)) {pending=state_.transitions.erase(pending);continue;}
+                !(found->second.rule.operation==72?ports_.quests.credited(player.player,QuestId::EveOfDestruction):
+                    ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to))) {pending=state_.transitions.erase(pending);continue;}
             const auto *object=&found->second;
             if(object->rule.operation==34 || object->rule.operation==43) {
                 if(!transition.arrivalGeneration) {

@@ -7,7 +7,7 @@ struct AppOptions {
     std::string mpq = "assets/mpq2";
     std::string mpqSupplement; // assets/mpq packs mounted below the original archives
     std::string screenshot, pack, debugPipe, startupProfile;
-    std::string gamePacketLog, hostPacketLog;
+    std::string gamePacketLog, hostPacketLog, frameProfile;
     std::string headlessProfile;
     std::string clientProfile, clientProfileDigest, pd2Directory;
     net::protocol::ClientProfile protocolProfile{net::protocol::ClientProfile::Lod113c};

@@ -151,6 +151,19 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     actor.movementRevision=actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
+void System::stopForNpcClick(EntityId id, uint64_t tick, std::optional<Vec> observed) {
+    auto &unit = state_.actors.at(id);
+    stop(id);
+    if (observed) unit.npcClickPosition = observed;
+    unit.npcClickDecisions = 40;
+    unit.aiThinkAt = tick + 1;
+    ++unit.aiThinkRevision;
+    scheduleAi(id, unit.aiThinkAt);
+}
+void System::advanceNpcClick(EntityId id) {
+    auto &remaining = state_.actors.at(id).npcClickDecisions;
+    if (remaining > 0) --remaining;
+}
 void System::stop(EntityId id) {
     if (auto it = state_.actors.find(id); it != state_.actors.end()) {
         auto &actor = it->second;

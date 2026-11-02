@@ -90,6 +90,8 @@ class RemoteTown {
     std::optional<std::pair<uint16_t,OnlinePoint>> walkingObservation_;
     void rememberWalkingConnection(const OnlineView &);
     std::map<uint16_t,OnlinePoint> knownWaypoints_;
+    mutable std::optional<uint32_t> canyonHintSeed_;
+    mutable std::map<int,OnlinePoint> canyonHints_;
     mutable std::vector<NavigationRoom> navigationRooms_;
     mutable std::map<int,std::vector<int>> navigationConnections_;
     mutable std::map<uint16_t,size_t> navigationSeen_;
@@ -137,6 +139,8 @@ class RemoteTown {
     std::optional<OnlinePoint> knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const;
     std::optional<OnlinePoint> knownConnectionPosition(uint16_t from,uint16_t to) const;
     std::optional<OnlinePoint> knownWaypointPosition(uint16_t area) const;
+    // Fixed authored canyon entrances only; never chooses the true tomb.
+    std::optional<OnlinePoint> fixedCanyonTombPosition(uint16_t destination) const;
     uint64_t navigationRevision() const;
     uint64_t navigationCacheBuilds() const {return navigationCacheBuilds_;}
     struct NavigationMemory {size_t observedCells{},targets{},connections{},waypoints{};bool restored{};};
@@ -147,7 +151,8 @@ class RemoteTown {
     // Native player-room / active-neighbor order, then room-unit prepend order.
     std::vector<OnlineUnitKey> nearbyUnits(const OnlineView &, OnlinePoint center, int radius) const;
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
-    bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}, bool approaching = false) const;
+    bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}, bool approaching = false,
+                          std::optional<OnlinePoint> targetPath = {}, std::optional<int> followRange = {}) const;
     std::optional<int> projectedObjectMode(const OnlineView &,OnlineUnitKey) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices,Vec observationExtent={});
     // Observer-only overlay; does not enter discovery, navigation or live DRLG.

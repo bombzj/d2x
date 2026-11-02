@@ -129,7 +129,6 @@ void loadWaypointFonts(Graphics &graphics, Archives &archives, const ClassicFont
         // all zeroes, so applying it would make every glyph transparent.
         if (colors[index] == 0) continue;
         font.sprites.clear();
-        font.uploaded.clear();
         for (size_t i = 0; i < font.transform.size(); ++i)
             font.transform[i] = palette[shifts + colors[index] * 256 + i];
         font.transformed = true;

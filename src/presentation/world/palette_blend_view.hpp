@@ -13,9 +13,9 @@ class PaletteBlendView {
     Shader lightingShader_{};
     Shader litBlendShader_{};
     Shader wallBlendShader_{};
-    std::array<int,14> lightingLocations_{};
-    std::array<int,5> litBlendLocations_{};
-    std::array<int,6> wallBlendLocations_{};
+    std::array<int,16> lightingLocations_{};
+    std::array<int,6> litBlendLocations_{};
+    std::array<int,7> wallBlendLocations_{};
     Shader rectangleShader_{};
     Texture2D palette_{}, screenTable_{}, burnTable_{}, lightTable_{}, paletteIndices_{};
     Texture2D rectangleTable_{}, halfTable_{}, highlightTable_{}, socketTable_{}, quarterTable_{};
@@ -27,10 +27,14 @@ class PaletteBlendView {
     Color lightAmbient_{};
     bool fullBright_ = false;
     mutable bool terrainBatch_{}, terrainShaderActive_{};
-    mutable int terrainSampleCount_{}, terrainIndexed_{};
+    mutable int terrainSampleCount_{}, terrainIndexed_{}, terrainCellX_{}, terrainTranslation_{};
     mutable Vector2 terrainHighlight_{};
     mutable std::array<std::array<float,4>,6> terrainSamples_{};
     mutable std::optional<unsigned int> targetFramebuffer_;
+    using Translation = std::array<uint8_t, 256>;
+    mutable std::array<std::shared_ptr<const Translation>, 16> translations_{};
+    mutable size_t nextTranslation_{};
+    int translationRow(const std::shared_ptr<const Translation> &) const;
     void finishTerrainLighting() const;
     unsigned int targetFramebuffer() const;
     int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1, opaqueLocation_ = -1;

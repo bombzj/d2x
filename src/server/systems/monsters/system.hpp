@@ -108,6 +108,8 @@ struct Actor {
     bool detachedMinion{}; // Runtime OwnerGUIDEx; spawn identity stays intact.
     uint64_t aiFunctionRevision{};
     std::optional<NativeSkillSlot> rightSkill; // Native right selection, separate from used/action skill.
+    std::optional<Vec> npcClickPosition;
+    int npcClickDecisions{};
     uint64_t aiThinkAt{};
     uint64_t aiThinkRevision{};
     uint64_t hydraExpires{}; // Fn086 parameter 0; independent of owner survival.
@@ -539,6 +541,8 @@ class System {
     DomainResult<> reduceShrineLife(EntityId,int64_t amount);
     DomainResult<> requestMove(const MoveRequest &);
     void stop(EntityId);
+    void stopForNpcClick(EntityId, uint64_t tick, std::optional<Vec> observed = {});
+    void advanceNpcClick(EntityId);
     DomainResult<> toggleAiState(EntityId,int state,bool active,uint64_t tick);
     DomainResult<> pd2PhasePresence(EntityId,bool active);
     void hitDelay(EntityId id, uint64_t until);

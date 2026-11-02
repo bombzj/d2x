@@ -84,7 +84,6 @@ class System {
     void queueGoal(QuestId,Goal);
     std::set<PlayerId> eligibleParty(QuestId,uint32_t,RegionId,std::optional<Vec>,std::optional<PlayerId>) const;
     std::set<PlayerId> eligibleDelivery(QuestId,uint32_t,PlayerId,bool allInAct=false) const;
-    bool credited(PlayerId,QuestId) const;
     void creditPlayer(PlayerId,QuestId);
     bool rewardPending(const CharacterRecord &,QuestId) const;
     bool entitled(PlayerId,const CharacterRecord &,QuestId) const;
@@ -133,7 +132,8 @@ class System {
     const State &read() const { return state_; }
     bool nativeCallbackPending() const {return stepResuming_ || completionPending();}
     void initialize(const CharacterRecord &);
-    void nativeEliteBorn(EntityId,bool eligible);
+    void nativeEliteBorn(EntityId);
+    void releaseFigurineSource(EntityId);
     DomainResult<> activateSiegeBoss(EntityId,uint64_t tick);
     DomainResult<> activateIzual(uint64_t tick);
     void nativeMonsterDied(const monsters::Actor &) noexcept;
@@ -170,6 +170,7 @@ class System {
     bool npcVisible(const CharacterRecord &,std::string_view code,RegionId,int initFunction=0) const;
     DomainResult<> execute(const ActorContext &,const Request &);
     void npcDeactivated(EntityId);
+    bool credited(PlayerId,QuestId) const;
     bool allowsTravel(const CharacterRecord &,RegionId,RegionId) const;
     std::optional<int> objectMode(RegionId,EntityId,int definition,int operation,uint64_t tick) const;
     void onTownPortal(RegionId region) {if(int(region)==120) resetAncients();}

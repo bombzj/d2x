@@ -5,10 +5,13 @@
 
 namespace d2x::net::protocol {
 std::optional<Bytes> TcpIpSaveTransfer::append(uint32_t total, std::span<const uint8_t> part, bool first) {
-    if (!total || total >= tcpIpSaveLimit || part.empty() || part.size() > 255)
+    if (!total || total >= tcpIpSaveLimit || part.empty() || part.size() > 255 || part.size() > total)
         throw ProtocolError("Invalid native TCP/IP character size");
     if (first) {
-        if (total_) throw ProtocolError("Interrupted native TCP/IP character transfer");
+        // Native saves can replace an in-flight snapshot (including the
+        // A5Q6 final portal's save-all). bFirstPart restarts the transfer;
+        // incomplete old bytes must never be combined with or saved as new.
+        bytes_.clear();
         total_ = total;
         bytes_.reserve(total);
     }

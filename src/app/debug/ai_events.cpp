@@ -97,8 +97,8 @@ bool DebugAi::Impl::worldResultReady(const Context &c,const QuestStep &step) con
     }
 }
 void DebugAi::Impl::waitForWorldResult(Context &c,const QuestStep &step,std::string_view expected) {
-    cancelWalk(c);
     if(!questRun.worldWait) {
+        cancelWalk(c);
         if(!c.town.read().area) return;
         WorldWait pending;pending.area=*c.town.read().area;pending.anchor=c.position;
         if(questRun.encounterArea==pending.area && questRun.encounterPosition)
@@ -113,6 +113,7 @@ void DebugAi::Impl::waitForWorldResult(Context &c,const QuestStep &step,std::str
         questRun.worldWait=std::move(pending);note("world-wait-started",std::string(expected));
     }
     wait("quest-world-result",std::string(expected));
+    if(!step.clearCombat) guardOpening(c);
 }
 void DebugAi::Impl::observeWorldWait(Context &c) {
     if(!questRun.worldWait || cursor>=goals.size() || questRun.step>=goals[cursor].steps.size()) return;

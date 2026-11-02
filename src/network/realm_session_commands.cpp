@@ -3,6 +3,13 @@
 
 namespace d2x {
 namespace net {
+namespace {
+Bytes npcStopPacket(uint32_t id, OnlinePoint observed) {
+    Writer out;
+    out.u8(0x59); out.u32(1); out.u32(id); out.u32(observed.x); out.u32(observed.y);
+    return out.release();
+}
+}
 bool RealmSession::resurrect(std::optional<OnlineIntentContext> context) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
@@ -164,7 +171,7 @@ bool RealmSession::move_to(OnlinePoint target, bool run, std::optional<OnlineInt
 bool RealmSession::use_exit(uint32_t serverUnitId) {
     return interact_map_unit({5, serverUnitId});
 }
-bool RealmSession::move_to_unit(OnlineUnitKey target, bool run, std::optional<OnlineIntentContext> context) {
+bool RealmSession::move_to_unit(OnlineUnitKey target, bool run, std::optional<OnlineIntentContext> context, std::optional<OnlinePoint> stopNpc) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
@@ -184,6 +191,7 @@ bool RealmSession::move_to_unit(OnlineUnitKey target, bool run, std::optional<On
     if (Clock::now() < p.nextMovement) return false;
     try {
         p.close_interaction();
+        if (stopNpc && target.type == 1) p.sent(p.gs, npcStopPacket(target.id, *stopNpc));
         Writer out;
         out.u8(run ? 0x04 : 0x02); out.u32(target.type); out.u32(target.id);
         p.sent(p.gs, out.release());
@@ -245,7 +253,7 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
         return false;
     }
 }
-bool RealmSession::interact_npc(uint32_t serverUnitId, std::optional<OnlineIntentContext> context) {
+bool RealmSession::interact_npc(uint32_t serverUnitId, std::optional<OnlineIntentContext> context, std::optional<OnlinePoint> stopNpc) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
@@ -261,6 +269,7 @@ bool RealmSession::interact_npc(uint32_t serverUnitId, std::optional<OnlineInten
     if (Clock::now() < p.nextMovement) return false;
     try {
         if(!retry) p.close_interaction();
+        if (stopNpc && !retry) p.sent(p.gs, npcStopPacket(serverUnitId, *stopNpc));
         Writer out;
         out.u8(0x13); out.u32(1); out.u32(serverUnitId);
         p.sent(p.gs, out.release());

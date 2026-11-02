@@ -1,4 +1,5 @@
 #include "map.hpp"
+#include "tile_library_usage.hpp"
 #include "map_assembly.hpp"
 #include "native_map.hpp"
 #include "core/random.hpp"
@@ -11,27 +12,33 @@ bool Map::openTombWall(Vec position) {
     const int column = int(std::floor(position.x / 5));
     const int row = int(std::floor(position.y / 5));
     if (column < 1 || row < 1 || column >= terrain.data.width - 1 || row >= terrain.data.height - 1) return false;
+    const auto portalWall = [](const MapCell &cell) {
+        const auto main = (cell.value >> 20) & 63;
+        const auto sub = (cell.value >> 8) & 255;
+        return cell.occupied() && main == 8 && sub <= 1 && cell.orientation >= 1 && cell.orientation <= 7;
+    };
+    const auto eastPortalWall = [](const MapCell &cell) {
+        const auto sub = (cell.value >> 8) & 255;
+        return cell.occupied() && cell.orientation == 1 && ((cell.value >> 20) & 63) == 6 &&
+            (sub == 8 || sub == 9);
+    };
     std::vector<std::pair<int, int>> opening;
     for (int vertical = row - 1; vertical <= row + 1; ++vertical)
         for (int horizontal = column - 1; horizontal <= column + 1; ++horizontal)
             if (std::any_of(terrain.data.walls.begin(), terrain.data.walls.end(), [&](const auto &layer) {
                 const auto &cell = layer[size_t(vertical) * terrain.data.width + horizontal];
-                return cell.occupied() && cell.orientation >= 1 && cell.orientation <= 7 &&
-                    ((cell.value >> 20) & 63) == 8 && ((cell.value >> 8) & 255) <= 1;
+                return portalWall(cell);
             })) opening.emplace_back(horizontal, vertical);
     if (opening.empty()) {
         const size_t entrance = size_t(row) * terrain.data.width + column;
         const bool eastWall = std::any_of(terrain.data.walls.begin(), terrain.data.walls.end(), [&](const auto &layer) {
-            const auto &cell = layer[entrance];
-            return cell.occupied() && cell.orientation == 1 && ((cell.value >> 20) & 63) == 6 &&
-                (((cell.value >> 8) & 255) == 8 || ((cell.value >> 8) & 255) == 9);
+            return eastPortalWall(layer[entrance]);
         });
         if (eastWall)
             for (int vertical = row - 1; vertical <= row; ++vertical)
                 if (std::any_of(terrain.data.walls.begin(), terrain.data.walls.end(), [&](const auto &layer) {
                     const auto &cell = layer[size_t(vertical) * terrain.data.width + column];
-                    return cell.occupied() && cell.orientation == 1 && ((cell.value >> 20) & 63) == 6 &&
-                        (((cell.value >> 8) & 255) == 8 || ((cell.value >> 8) & 255) == 9);
+                    return eastPortalWall(cell);
                 })) opening.emplace_back(column, vertical);
     }
     if (opening.empty()) return false;
@@ -40,20 +47,8 @@ bool Map::openTombWall(Vec position) {
         TombWall saved;
         saved.x = wallColumn;
         saved.y = wallRow;
-        for(size_t i=0;i<terrain.instances.size();++i) {
-            auto &instance=terrain.instances[i];
-            if(instance.x!=wallColumn || instance.y!=wallRow || instance.removed || instance.tile<0) continue;
-            const auto *tile=terrain.tiles.at(size_t(instance.tile));
-            if((tile->main==8 && tile->sub<=1 && instance.type>=1 && instance.type<=7) || (tile->main==6 && (tile->sub==8 || tile->sub==9) && instance.type==1)) {saved.instances.push_back(i);instance.removed=true;}
-        }
-        for (auto &layer : terrain.data.walls) {
-            auto &cell = layer[cellIndex];
-            saved.walls.push_back(cell);
-            const auto main = (cell.value >> 20) & 63;
-            const auto sub = (cell.value >> 8) & 255;
-            if ((main == 8 && sub <= 1 && cell.orientation >= 1 && cell.orientation <= 7) ||
-                (main == 6 && (sub == 8 || sub == 9) && cell.orientation == 1)) cell = {};
-        }
+        // Class 100 paints the mouth and rubble over the authored wall. Only
+        // exclude the opening's wall contributions when rebuilding collision.
         for (int vertical = 0; vertical < 5; ++vertical)
             for (int horizontal = 0; horizontal < 5; ++horizontal) {
                 const size_t index = size_t(wallRow * 5 + vertical) * grid.width + wallColumn * 5 + horizontal;
@@ -77,7 +72,10 @@ bool Map::openTombWall(Vec position) {
                     if ((cell.value & (1u << 28)) || (cell.orientation >= 8 && cell.orientation <= 11)) flags |= 0x10;
                 };
                 for (const auto &layer : terrain.data.floors) merge(layer[cellIndex]);
-                for (const auto &layer : terrain.data.walls) merge(layer[cellIndex]);
+                for (const auto &layer : terrain.data.walls) {
+                    const auto &wall = layer[cellIndex];
+                    if (!portalWall(wall) && !eastPortalWall(wall)) merge(wall);
+                }
                 grid.terrainCollision[index] = flags;
                 if(!grid.fullTerrainCollision.empty()) grid.fullTerrainCollision[index]=uint16_t((grid.fullTerrainCollision[index]&~uint16_t(0xff))|flags);
                 grid.blocked[index] = (flags & 0x09) != 0;
@@ -91,9 +89,6 @@ bool Map::openTombWall(Vec position) {
 void Map::restoreTombWall() {
     if (tombWalls.empty()) return;
     for (const auto &saved : tombWalls) {
-        for(const auto index:saved.instances) terrain.instances.at(index).removed=false;
-        const size_t cellIndex = size_t(saved.y) * terrain.data.width + saved.x;
-        for (size_t layer = 0; layer < terrain.data.walls.size(); ++layer) terrain.data.walls[layer][cellIndex] = saved.walls[layer];
         for (int vertical = 0; vertical < 5; ++vertical)
             for (int horizontal = 0; horizontal < 5; ++horizontal) {
                 const size_t index = size_t(saved.y * 5 + vertical) * grid.width + saved.x * 5 + horizontal;
@@ -127,27 +122,44 @@ Vec Map::actSpawn() const {
 int Map::tileIndex(const MapCell &c, int x, int y) const {
     return terrain.tileIndex(c, x, y);
 }
-std::shared_ptr<const std::vector<Tile>> TileLibraryCache::load(const std::string &path) {
-    if (mountIdentity_ != archives_.mountIdentity()) {
-        libraries_.clear(); mountIdentity_ = archives_.mountIdentity();
+namespace {
+struct LibraryEntry {
+    std::weak_ptr<const std::vector<Tile>> tiles;
+    uint64_t pixelBytes{}, id{};
+};
+struct SharedLibraries {
+    mutable std::map<std::string, LibraryEntry> entries;
+};
+}
+uint64_t tileLibraryId(const Archives &archives, const std::vector<Tile> &library) {
+    const auto shared = archives.prepared<SharedLibraries>([] { return SharedLibraries{}; });
+    for (const auto &[path, entry] : shared->entries)
+        if (entry.tiles.lock().get() == &library) return entry.id;
+    throw std::logic_error("DT1 library does not belong to the active mount");
+}
+TileLibraryUsage tileLibraryUsage(const Archives &archives) {
+    TileLibraryUsage usage;
+    const auto shared = archives.prepared<SharedLibraries>([] { return SharedLibraries{}; });
+    for (const auto &[path, entry] : shared->entries) {
+        if (entry.tiles.expired()) continue;
+        ++usage.libraries;
+        usage.pixelBytes += entry.pixelBytes;
     }
-    // Separate host/client generators share immutable decoded DT1s. Weak
-    // entries allow unused libraries to die with their maps/local caches.
-    struct SharedLibraries {
-        mutable std::map<std::string, std::weak_ptr<const std::vector<Tile>>> entries;
-    };
+    return usage;
+}
+std::shared_ptr<const std::vector<Tile>> TileLibraryCache::load(const std::string &path) {
+    // Only active maps and selectors own decoded DT1 images.
     auto key = normalize(path);
-    auto found = libraries_.find(key);
-    if (found != libraries_.end())
-        return found->second;
     const auto shared = archives_.prepared<SharedLibraries>([] { return SharedLibraries{}; });
     auto &entry = shared->entries[key];
-    auto decoded = entry.lock();
+    auto decoded = entry.tiles.lock();
     if (!decoded) {
         decoded = std::make_shared<const std::vector<Tile>>(decodeDt1(archives_.read(key)));
-        entry = decoded;
+        if (!entry.id) entry.id = shared->entries.size();
+        entry.tiles = decoded;
+        entry.pixelBytes = 0;
+        for (const auto &tile : *decoded) entry.pixelBytes += tile.image.pixels.capacity();
     }
-    libraries_.emplace(key, decoded);
     return decoded;
 }
 void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, uint32_t seed) {

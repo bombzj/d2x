@@ -46,7 +46,7 @@ void SceneView::drawItemArt(const std::string &key, Rectangle bounds) const {
     const auto *icon = assets_.inventoryIcon(key, {}, mapView().palette);
     if (icon && icon->texture.id) {
         DrawTexturePro(
-            icon->texture, {0, 0, float(icon->texture.width), float(icon->texture.height)},
+            icon->colorCell.page, icon->colorCell.rect,
             {bounds.x + icon->x * inventoryScale(), bounds.y + icon->y * inventoryScale(),
              icon->texture.width * inventoryScale(), icon->texture.height * inventoryScale()},
             {0, 0}, 0, WHITE);
@@ -80,7 +80,7 @@ void SceneView::drawItemIcon(const InventoryItemView &item, Rectangle bounds, bo
         if (flags & 0x400000u) {
             if (blend) blend->drawHalf(icon, pixels);
         } else
-            DrawTexturePro(icon->texture, {0, 0, float(icon->texture.width), float(icon->texture.height)}, pixels, {}, 0, WHITE);
+            DrawTexturePro(icon->colorCell.page, icon->colorCell.rect, pixels, {}, 0, WHITE);
     };
     draw(item.artKey, item.colorTransform, item.nativeFlags, origin, item.artFrame);
     if (!showSockets || !item.identified || !item.socketContentsKnown || !(item.nativeFlags & 0x800u) ||

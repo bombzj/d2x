@@ -10,12 +10,21 @@
 #include "gameplay/quest/catalog.hpp"
 #include <algorithm>
 namespace d2x::server::quests {
-void System::nativeEliteBorn(EntityId id,bool eligible) {
+void System::nativeEliteBorn(EntityId id) {
     auto &world=state_.actThree;
-    if(!eligible || !world.figurineEnabled || world.figurineSource || world.figurineDropped) return;
-    const auto *unit=ports_.monsters.find(id);if(!unit || unit->identity.spawnKey=="quest.gidbinn") return;
+    if(!world.figurineEnabled || world.figurineSource || world.figurineDropped) return;
+    const auto *unit=ports_.monsters.find(id);
+    if(!unit || !unit->alive() || unit->identity.origin==SpawnOrigin::Debug || unit->identity.spawnKey=="quest.gidbinn") return;
     const auto *area=ports_.areas.find(unit->area);if(!area || area->definition.act!=2) return;
-    world.figurineSource=id;world.figurineArea=unit->area;world.figurinePosition=unit->position;
+    const auto &classes=area->definition.populationRules.classes;
+    const auto type=classes.find(unit->identity.nativeClass);
+    if(type!=classes.end() && type->second.figurineEligible) world.figurineSource=id;
+}
+void System::releaseFigurineSource(EntityId id) {
+    // SUNITINACTIVE / QUESTS_SetGoldenBirdSpawn rearms the selection when
+    // the designated monster leaves the active rooms before the drop.
+    auto &world=state_.actThree;
+    if(world.figurineSource==id && !world.figurineDropped) world.figurineSource={};
 }
 std::optional<Dialogue> System::speech(const NpcRule &npc,QuestId quest,std::string_view state,uint8_t menu) const {
     const auto found=npc.questSpeeches.find({quest,std::string(state)});
@@ -244,7 +253,7 @@ std::optional<int> System::objectMode(RegionId region,EntityId id,int definition
         if(operation==66) {
             // Init73 opens it only for a game completed beforehand. A fresh
             // victory permits Operate66's 0 -> 1 -> ENDANIM -> 2 sequence.
-            if(state_.initialFlags[questDefinition(QuestId::RiteOfPassage).nativeSlot]&1) return 2;
+            if(state_.initialFlags[questDefinition(QuestId::RiteOfPassage).nativeSlot]&0x8000) return 2;
             if(!state_.actFive.ancientsDefeated) return 0;
             return {};
         }

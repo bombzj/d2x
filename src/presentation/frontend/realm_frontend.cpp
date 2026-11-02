@@ -384,7 +384,7 @@ struct RealmFrontend::Impl {
                 for (size_t i = 0; i < 16; ++i)
                     equipment[i] = parts->components[i].c_str();
                 animation =
-                    characterGraphics->composite("chars", parts->token, "tn", parts->weapon, &equipment);
+                    characterGraphics->composite("chars", parts->token, "tn", parts->weapon, &equipment, nullptr, true);
                 if (!animation.completeComposite)
                     animation = {};
             }

@@ -1,5 +1,6 @@
 #include "content/monsters/monster_identity.hpp"
 #include "remote_town.hpp"
+#include "world/retail/desert.hpp"
 #include <algorithm>
 #include <cmath>
 #include <chrono>
@@ -9,7 +10,9 @@
 #include <tuple>
 #include <utility>
 #include "world/interaction_geometry.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include "core/fingerprint.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include "content/world/object_mode.hpp"
 
 namespace d2x {
@@ -320,7 +323,7 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             // name; only a genuinely missing key falls back to the raw key.
             view_.mapTargets.push_back({key, *unit.position, OnlineMapInteraction::Npc,
                 strings_.isPlaceholder(name) ? std::string{} : std::string(name.empty() ? nameKey : name),
-                {}, width, height});
+                {}, width, height, v.protocolProfile == "lod113c" && monsters_.number(record->second, "npc").value_or(0) != 0});
             continue;
         }
         if (key.type == 5) {
@@ -404,12 +407,27 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             // D2MOO Operate34: the authored palace portal does not need a
             // dynamic portal-destination packet. Its original operator fixes
             // the two levels; coordinates still come from this real assignment.
-            if(v.protocolProfile=="lod113c" && operation==34) {
+            if(v.protocolProfile=="lod113c" && (operation==34 || operation==70 || operation==72)) {
                 const auto room=nativeMap_->clientRoom(unit.position->x,unit.position->y);
                 if(room) {
                     const int level=nativeMap_->tiles().rooms().at(*room).level;
-                    if(level==54) destination=74;
-                    else if(level==74) destination=54;
+                    if(operation==34) {
+                        if(level==54) destination=74;
+                        else if(level==74) destination=54;
+                    } else {
+                        const auto slot=questDefinition(QuestId::EveOfDestruction).nativeSlot;
+                        const auto status=v.world.quests.statuses[slot];
+                        const auto flags=v.world.quests.playerFlags?(*v.world.quests.playerFlags)[slot]:0;
+                        destination.reset();
+                        // Operate70 returns freely from the chamber. In the throne room
+                        // status 3 announces departure; a rewarded rejoin can instead
+                        // observe status 12 and the reopened portal. Arrival is server-owned.
+                        if(operation==70 && level==132) destination=131;
+                        if(operation==70 && level==131 && (status==3 || (unit.mode==2 && ((flags&0x2000) || (status==12 && (flags&1))))))
+                            destination=132;
+                        // Operate72 requires this game's PRIMARYGOALDONE on an open exit.
+                        if(operation==72 && level==132 && mode==2 && (flags&0x2000)) destination=109;
+                    }
                 }
             }
             view_.mapTargets.push_back({key, *unit.position, *interaction,
@@ -438,7 +456,7 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         const auto unit=v.world.units.find(entry.unit);
         const auto object=unit!=v.world.units.end() && unit->second.classId?objectRows_.find(*unit->second.classId):objectRows_.end();
         const bool fixedPortal=v.protocolProfile=="lod113c" && entry.interaction==OnlineMapInteraction::Portal &&
-            object!=objectRows_.end() && (unit->second.classId==60 || objects_.number(object->second,"OperateFn")==34);
+            object!=objectRows_.end() && (unit->second.classId==60 || objects_.number(object->second,"OperateFn")==34 || objects_.number(object->second,"OperateFn")==70);
         if((entry.interaction==OnlineMapInteraction::Exit || fixedPortal) && entry.destination)
             knownConnections_[{level,*entry.destination}]=entry.position;
         if(entry.interaction==OnlineMapInteraction::Waypoint) knownWaypoints_[level]=entry.position;
@@ -775,6 +793,37 @@ std::optional<OnlinePoint> RemoteTown::knownTargetPosition(uint16_t area,uint8_t
 std::optional<OnlinePoint> RemoteTown::knownConnectionPosition(uint16_t from,uint16_t to) const {
     const auto found=knownConnections_.find({from,to});return found==knownConnections_.end()?std::nullopt:std::optional{found->second};
 }
+std::optional<OnlinePoint> RemoteTown::fixedCanyonTombPosition(uint16_t destination) const {
+    if(view_.area!=46 || destination<66 || destination>72 || !layout_ || !catalog_ || !layout_->levels.contains(46)) return {};
+    if(canyonHintSeed_!=layout_->startSeed) {
+        canyonHints_.clear();canyonHintSeed_=layout_->startSeed;
+        const auto &level=layout_->levels.at(46);
+        const auto slots=layout_->connections.contains(46)?layout_->connections.at(46):
+            NativeActLayout::ConnectionSlots{catalog_->level(46).visible,catalog_->level(46).warps};
+        for(const auto &placement:retailCanyonEntrances) {
+            const auto preset=catalog_->presets().find(placement.id);if(preset==catalog_->presets().end()) continue;
+            const auto &file=preset->second.variants.at(size_t(placement.file));if(file.empty() || file=="0") continue;
+            const auto pattern=decodeDs1(archives_.read(file),file);
+            for(const auto &wall:pattern.walls) for(size_t index=0;index<wall.size();++index) {
+                const auto &cell=wall[index];const auto slot=(cell.value>>20)&63;
+                if(!cell.occupied() || (cell.orientation!=10 && cell.orientation!=11) || slot>=8 ||
+                    slots.visible[slot]<66 || slots.visible[slot]>72) continue;
+                const auto warps=catalog_->warps().find(slots.warps[slot]);if(warps==catalog_->warps().end()) continue;
+                const char facing=cell.orientation==11?'r':'l';
+                const auto warp=std::find_if(warps->second.begin(),warps->second.end(),[&](const auto &w) {
+                    return !w.direction.empty() && (w.direction.front()=='b' || w.direction.front()==facing);
+                });
+                if(warp==warps->second.end()) continue;
+                const int x=(level.x+placement.x*8+int(index%pattern.width))*5+warp->offsetX;
+                const int y=(level.y+placement.y*8+int(index/pattern.width))*5+warp->offsetY;
+                if(x>=0 && y>=0 && x<=UINT16_MAX && y<=UINT16_MAX)
+                    canyonHints_.try_emplace(slots.visible[slot],OnlinePoint{uint16_t(x),uint16_t(y)});
+            }
+        }
+    }
+    const auto found=canyonHints_.find(destination);
+    return found==canyonHints_.end()?std::nullopt:std::optional{found->second};
+}
 std::optional<OnlinePoint> RemoteTown::knownWaypointPosition(uint16_t area) const {
     const auto found=knownWaypoints_.find(area);return found==knownWaypoints_.end()?std::nullopt:std::optional{found->second};
 }
@@ -832,7 +881,7 @@ std::optional<int> RemoteTown::projectedObjectMode(const OnlineView &v,OnlineUni
     // Shared silent ENDANIM projection, never a write to the server replica.
     return objectDisplayMode(objects_,row->second,*unit->second.mode,age);
 }
-bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std::optional<Vec> displayOrigin, bool approaching) const {
+bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std::optional<Vec> displayOrigin, bool approaching, std::optional<OnlinePoint> targetPath, std::optional<int> followRange) const {
     if (!permitsInteraction(v, target) || !v.world.playerPosition) return false;
     const auto found = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
         [&](const auto &entry) { return entry.unit == target; });
@@ -849,8 +898,15 @@ bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std
     }
     if (target.type == 5) return nativeUnitDistance(observer, 2, {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= 4;
     if (found->interaction != OnlineMapInteraction::Npc && !corpse && !tradePeer) return true;
-    return nativeUnitDistance(observer, 2,
-        {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= (approaching ? 0 : corpse || tradePeer ? 8 : 6);
+    const auto point = targetPath.value_or(found->position);
+    if (followRange && found->interaction == OnlineMapInteraction::Npc) {
+        if (!map_ || !view_.origin) return false;
+        const Vec origin{float(view_.origin->x), float(view_.origin->y)};
+        return playerMeleeReach(map_->grid, observer - origin,
+            Vec{float(point.x), float(point.y)} - origin, found->collisionWidth, *followRange);
+    }
+    const int clickRange = corpse || tradePeer ? 8 : v.protocolProfile == "lod113c" ? 2 : 6;
+    return nativeUnitDistance(observer, 2, {float(point.x), float(point.y)}, found->collisionWidth) <= (approaching ? 0 : clickRange);
 }
 void RemoteTown::prepareTownAutomap(const OnlineView &v) {
     if (!view_.nativeMapReady || !view_.area || !v.load.mapSeed || !v.load.act) return;

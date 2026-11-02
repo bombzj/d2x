@@ -3,15 +3,26 @@
 #include "resources/formats.hpp"
 #include "core/math.hpp"
 #include <optional>
+#include <functional>
+#include <memory>
 #include <raylib.h>
 #include <unordered_map>
 #include <vector>
 namespace d2x {
+class WorldArt;
+// The page owns the GPU allocation. A recycled page invalidates its previous stamp.
+struct AtlasCell {
+    Texture2D page{};
+    Rectangle rect{};
+    std::weak_ptr<uint64_t> stamp;
+    bool touch() const;
+};
 struct SpriteLayer {
     Texture2D texture{};
     int x = 0, y = 0;
     bool softAdditive = false;
     Texture2D indexedTexture{};
+    AtlasCell cell;
 };
 struct SpriteComponentBounds {
     Rectangle bounds{};
@@ -32,24 +43,43 @@ struct Sprite {
     std::optional<Rectangle> selectionFrameBounds;
     std::optional<Rectangle> selectionCoarseBounds;
     std::vector<SpriteComponentBounds> componentBounds;
+    AtlasCell cell, colorCell, shadowCell;
+    std::shared_ptr<const std::array<uint8_t, 256>> translation;
+    std::optional<Vec> riderAnchor;
+    bool touch() const;
 };
 struct GpuAnimation {
     int directions = 0, count = 0;
     std::vector<Sprite> frames;
     bool completeComposite = false;
-    std::vector<std::optional<Vec>> riderAnchors; // Original S7 component frame offsets.
-    const Sprite *frame(int direction, int index) const {
-        if (frames.empty() || directions <= 0 || count <= 0 || direction < 0 || index < 0)
-            return nullptr;
-        return &frames[(direction % directions) * count + (index % count)];
-    }
+    struct Source {
+        std::function<const Sprite *(size_t)> resolve;
+    };
+    struct Sample { std::shared_ptr<const Source> source; size_t offset; };
+    std::shared_ptr<const Source> source;
+    std::vector<Sample> sequence;
+    std::optional<Rectangle> bounds;
+    bool intersects(Vec position, Rectangle viewport) const;
+    bool available() const { return source || !sequence.empty() || !frames.empty(); }
+    void clearFrames() { frames.clear(); sequence.clear(); source.reset(); bounds.reset(); }
+    void appendSample(const GpuAnimation &from, int facing, int index);
+    const Sprite *frame(int direction, int index) const;
+
 };
+enum class WorldSingleArt { Object, Effect, BlendedEffect, ItemIcon, GroundItem };
 class Graphics {
+    enum class AssetKind { Direct, Single, Composite };
+    std::array<uint64_t, 3> textureCounts{}, textureBytes{};
+    Sprite uploadAsset(const IndexedFrame &frame, bool translucent, AssetKind kind);
     Palette palette;
     std::vector<Texture2D> textures;
     std::unordered_map<uint64_t, Sprite> textureCache;
-    std::map<std::string, Animation> decoded;
+    std::map<std::string, std::shared_ptr<const Animation>> decoded;
+    std::vector<std::weak_ptr<const Animation>> decodedSources;
+    std::shared_ptr<const Animation> animationSource(const std::string &path);
     Archives &archives;
+    std::unique_ptr<WorldArt> world_;
+    WorldArt &worldArt();
 
   public:
     explicit Graphics(Archives &archives,
@@ -60,10 +90,12 @@ class Graphics {
     Sprite upload(const IndexedFrame &frame, bool translucent = false);
     const Animation *animation(const std::string &path);
     GpuAnimation single(const std::string &path, bool translucent = false);
+    Sprite terrain(const IndexedFrame &);
+    GpuAnimation worldSingle(const std::string &path, WorldSingleArt kind = WorldSingleArt::Object, const uint8_t *itemShift = nullptr);
     GpuAnimation composite(const std::string &type, const std::string &token, const std::string &mode,
                            const std::string &weapon,
                            const std::array<const char *, 16> *equipment = nullptr,
-                           const std::array<uint8_t, 256> *colorMap = nullptr);
+                           const std::array<uint8_t, 256> *colorMap = nullptr, bool menuPortrait = false);
     void releaseDecoded() { decoded.clear(); }
 };
 } // namespace d2x

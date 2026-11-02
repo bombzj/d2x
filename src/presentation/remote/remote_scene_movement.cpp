@@ -479,6 +479,8 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     const float elapsed = m.updatedAt < 0 ? 0 : std::clamp(time - m.updatedAt, 0.f, .1f);
     m.updatedAt = time;
     const bool own = u.key.type == 0 && u.key.id == playerId;
+    if (m.npcClickStopped && (m.actionRevision != u.actionRevision || m.positionRevision != u.positionRevision ||
+        m.discontinuity != u.positionDiscontinuity)) m.npcClickStopped = false;
     auto request = own ? world().movementRequest : std::nullopt;
     // An intent is not an accepted mode change. Preserve the cast's precise
     // origin and pending Clt missiles until its input lock ends, including
@@ -626,7 +628,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         // nor reposition its owner. D2Client 1.13c RVA 2A1B0 sends 5F on
         // excessive drift and leaves precise movement to the local path.
         m.running = request->run && (!world().stamina || *world().stamina != 0);
-    } else if (alive && walking(u) && !m.castHandoff && !(own && request &&
+    } else if (alive && walking(u) && !m.npcClickStopped && !m.castHandoff && !(own && request &&
                request->revision <= m.invalidatedRequest && u.actionRevision < request->revision)) {
         if (u.destination) goal = Vec{float(u.destination->x), float(u.destination->y)};
         else goal = pointForUnit(u.destinationUnit);

@@ -17,7 +17,7 @@ bool nativeProgress(std::optional<OnlinePoint> &previous, OnlinePoint player, On
 }
 }
 bool RemoteControl::reject(std::string reason) { reason_ = std::move(reason); return false; }
-bool RemoteControl::submitSegment(Movement &movement) {
+bool RemoteControl::submitSegment(Movement &movement, std::optional<OnlinePoint> stopNpc) {
     const auto &view = session_.read();
     const auto &binding = scene_.read();
     const auto *map = scene_.map();
@@ -40,7 +40,7 @@ bool RemoteControl::submitSegment(Movement &movement) {
     // Splitting from a delayed position makes dragging send a waypoint
     // behind the moving server player and waits for samples between legs.
     if (movement.unit) {
-        if (!session_.move_to_unit(*movement.unit, movement.run, movement.context))
+        if (!session_.move_to_unit(*movement.unit, movement.run, movement.context, stopNpc))
             return reject(view.error ? view.error->message : "Unit movement is rate limited");
         movement.finalUnit = true;
     } else {
@@ -85,7 +85,7 @@ bool RemoteControl::move(OnlinePoint point, bool run, std::optional<OnlineIntent
     movement_ = std::move(movement); approach_.reset(); reason_.clear(); return true;
 }
 bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run, std::optional<OnlineIntentContext> context,
-                               std::optional<Vec> displayOrigin) {
+                               std::optional<Vec> displayOrigin, std::optional<OnlinePoint> stopNpc) {
     if (!context) context = onlineIntentContext(session_.read());
     if (!onlineInteractionMatches(*context, session_.read())) return reject("Unit movement intent belongs to a previous game, area or interaction");
     scene_.update(session_.read(), displayOrigin);
@@ -102,7 +102,7 @@ bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run, std::optional<Onl
     movement.context = *context;
     movement.game = session_.read().gameGeneration; movement.area = session_.read().world.areaGeneration;
     movement.deadline = now + std::chrono::seconds(onlineMovementProgressTimeoutSeconds);
-    if (!submitSegment(movement)) return false;
+    if (!submitSegment(movement, stopNpc)) return false;
     if (movement.finalUnit) movement_.reset();
     else movement_ = std::move(movement);
     approach_.reset(); reason_.clear(); return true;
@@ -126,22 +126,29 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<Onlin
         return reject("Unit interaction is already pending or open");
     // The current local path position authorizes only the original request.
     // PlrMsg validates eligibility before the server opens a conversation.
-    if (!followUntilServerArrival && scene_.interactionReady(world, target, displayOrigin)) {
-        if (!submitInteraction(target, *context)) return false;
+    const auto &targets = scene_.read().mapTargets;
+    std::optional<OnlinePoint> stopNpc;
+    if (std::any_of(targets.begin(), targets.end(), [&](const auto &entry) { return entry.unit == target && entry.stopNpcOnClick; }))
+        stopNpc = npcPathPosition_ ? npcPathPosition_(target).value_or(point) : point;
+    if (!followUntilServerArrival && scene_.interactionReady(world, target, displayOrigin, false, stopNpc)) {
+        if (!submitInteraction(target, *context, stopNpc)) return false;
+        if (stopNpc && stopNpcPath_) stopNpcPath_(target);
         cancelMovement(); reason_.clear(); return true;
     }
-    if (!moveToUnit(target, run, context, displayOrigin)) return false;
+    if (!moveToUnit(target, run, context, displayOrigin, stopNpc)) return false;
+    if (stopNpc && stopNpcPath_) stopNpcPath_(target);
     approach_ = Approach{target, world.gameGeneration, world.world.areaGeneration,
         world.world.movementRequest ? world.world.movementRequest->revision : 0,
         std::chrono::steady_clock::now() + unitApproachTimeout, onlineIntentContext(session_.read()), player,
         followUntilServerArrival};
     return true;
 }
-bool RemoteControl::submitInteraction(OnlineUnitKey target, const OnlineIntentContext &context) {
+bool RemoteControl::submitInteraction(OnlineUnitKey target, const OnlineIntentContext &context, std::optional<OnlinePoint> stopNpc) {
     const auto &before=session_.read();
     const auto player=before.world.playerPosition.value_or(OnlinePoint{});
     const auto origin=scene_.inputOrigin(before).value_or(Vec{float(player.x),float(player.y)});
     InteractionSubmission submitted;submitted.target=target;submitted.context=onlineIntentContext(before);
+    submitted.combatSequence=before.world.combatSequence;
     submitted.position={uint16_t(std::clamp(std::lround(origin.x),0l,long(UINT16_MAX))),
         uint16_t(std::clamp(std::lround(origin.y),0l,long(UINT16_MAX)))};
     if(const auto actor=before.world.units.find({0,before.load.playerUnitId.value_or(0)});actor!=before.world.units.end())
@@ -150,7 +157,7 @@ bool RemoteControl::submitInteraction(OnlineUnitKey target, const OnlineIntentCo
         submitted.revision=session_.read().world.revision;interactionSubmission_=submitted;
     };
     if (target.type == 1) {
-        if (!session_.interact_npc(target.id, context)) return reject(session_.read().error ? session_.read().error->message : "Interaction is rate limited");
+        if (!session_.interact_npc(target.id, context, stopNpc)) return reject(session_.read().error ? session_.read().error->message : "Interaction is rate limited");
         remember();
         const auto now=std::chrono::steady_clock::now();
         opening_=Opening{target,onlineIntentContext(session_.read()),0,0,
@@ -348,16 +355,15 @@ void RemoteControl::tick(std::optional<Vec> displayOrigin, std::optional<Vec> pa
         2*view.latencyMilliseconds.value_or(0)+200,600,2000));
     const bool settledFollow=approach_->awaitServerRange && now>=approach_->deadline-unitApproachTimeout+grace;
     if(approach_->awaitServerRange && !settledFollow && !scene_.interactionReady(view,approach_->target)) return;
-    // PathMisc::sub_6FD5DB70 stops an ordinary unit path at nStepNum=0.
-    // The original client submits 13 on local arrival, before a sparse 96.
-    // PlrMsg independently validates its <=6 menu / 7-8 approach distances;
-    // this only authorizes the request, never a local conversation or reward.
-    // A clipped unit path need not reach body contact to open an NPC menu.
-    // When both the native sample and local position satisfy PlrMsg's menu
-    // range, complete the original click instead of waiting for overlap.
-    const bool observedMenuRange=approach_->target.type==1 && (settledFollow || scene_.interactionReady(view,approach_->target)) &&
-        scene_.interactionReady(view,approach_->target,displayOrigin);
-    if (observedMenuRange || scene_.interactionReady(view, approach_->target, displayOrigin, true)) {
+    // The retained LoD NPC click uses UNITS_IsInMeleeRange, independently
+    // of the first-click distance 2 and the server's menu distance 6.
+    const auto targetPath = npcPathPosition_ ? npcPathPosition_(approach_->target) : std::nullopt;
+    const auto followRange = view.protocolProfile == "lod113c" && npcFollowRange_
+        ? npcFollowRange_(approach_->target) : std::nullopt;
+    const bool observedMenuRange = !followRange && approach_->target.type == 1 &&
+        (settledFollow || scene_.interactionReady(view, approach_->target)) &&
+        scene_.interactionReady(view, approach_->target, displayOrigin, false, targetPath);
+    if (observedMenuRange || scene_.interactionReady(view, approach_->target, displayOrigin, true, targetPath, followRange)) {
         const bool sent = submitInteraction(approach_->target, approach_->context);
         if (sent) { cancelMovement(); reason_.clear(); }
     }

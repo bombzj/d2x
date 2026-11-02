@@ -83,10 +83,13 @@ void DebugAi::Impl::configureQuest(Goal &goal) const {
         QuestStep malus;malus.action=QuestAction::Acquire;malus.area=definitions->area("Act 1 - Barracks");
         malus.item="hdm";malus.source=definitions->malusSource();goal.steps.push_back(malus);
         home();talk("charsi",163,2,false,"hdm");
-        QuestStep imbue;imbue.action=QuestAction::Imbue;imbue.area=town;imbue.target=definitions->selector(Json{{"npc","charsi"}});
-        imbue.item="cap";imbue.skipPending=false;
-        if(!definitions->item(imbue.item)) throw std::invalid_argument("MPQ has no normal cap for the reserved debug imbue material");
-        goal.steps.push_back(imbue);break;
+        if(goal.useServiceRewards) {
+            QuestStep imbue;imbue.action=QuestAction::Imbue;imbue.area=town;imbue.target=definitions->selector(Json{{"npc","charsi"}});
+            imbue.item="cap";imbue.skipPending=false;
+            if(!definitions->item(imbue.item)) throw std::invalid_argument("MPQ has no normal cap for the requested debug imbue material");
+            goal.steps.push_back(imbue);
+        }
+        break;
     }
     case QuestId::SistersToTheSlaughter: {
         talk("cain5",166,4,true);hunt("Act 1 - Catacombs 4",{{"monster","andariel"}},2);home();
@@ -98,6 +101,60 @@ void DebugAi::Impl::configureQuest(Goal &goal) const {
     }
     default:throw std::invalid_argument("Quest recipe is outside Act I");
     }
+    // The same fact graph used by later acts also resumes A1. A return to
+    // town is a consequence of a still-needed NPC action, never a separate
+    // unconditional trip. Original topics/operations above remain unchanged.
+    using F=QuestFact;using K=F::Kind;using Proof=std::vector<std::vector<F>>;
+    auto steps=std::move(goal.steps);goal.questTown=town;
+    const auto flag=[&](uint16_t mask,bool any=false) {F f;f.kind=K::Flags;f.quest=goal.questId;f.value=mask;f.any=any;return f;};
+    const auto item=[](std::string code) {F f;f.kind=K::Item;f.item=std::move(code);return f;};
+    const auto fact=[](K kind,uint16_t value=0) {F f;f.kind=kind;f.value=value;return f;};
+    const auto node=[&](std::string name,size_t source,Proof proof,std::vector<size_t> needs={},bool retain=false) {
+        const auto index=goal.steps.size();auto step=steps.at(source);step.skipPending=false;
+        goal.steps.push_back(std::move(step));goal.requirements.push_back({std::move(name),std::move(needs),std::move(proof),retain,0});return index;
+    };
+    const auto done=flag(1),fieldDone=flag(0x2003,true);
+    switch(goal.questId) {
+    case QuestId::DenOfEvil:case QuestId::SistersBurialGrounds:case QuestId::SistersToTheSlaughter: {
+        const auto intro=node("optional-assignment",0,{{flag(0x2007,true)}},{},true);
+        const auto killed=node("field-objective",1,{{fieldDone}}, {intro},true);
+        const auto reward=node("personal-reward",3,{{done}},{killed});
+        if(goal.questId==QuestId::SistersToTheSlaughter)
+            goal.roots={node("act-two-arrival",4,{{fact(K::ActChange,7)}},{reward})};
+        else goal.roots={reward};
+        break;
+    }
+    case QuestId::ForgottenTower: {
+        const auto intro=node("optional-tower-tome",0,{{flag(0x2007,true)}},{},true);
+        goal.roots={node("countess-personal-result",1,{{done}},{intro},true)};break;
+    }
+    case QuestId::ToolsOfTheTrade: {
+        const auto intro=node("optional-charsi-assignment",0,{{flag(7,true)}},{},true);
+        const auto smith=node("smith-or-owned-malus",1,{{item("hdm")},{flag(3,true)},{fact(K::Corpse)}},{intro},true);
+        const auto malus=node("malus-owned",2,{{item("hdm")},{flag(3,true)}},{smith});
+        const auto returned=node("malus-returned",4,{{flag(3,true)}},{malus});
+        goal.roots={goal.useServiceRewards?node("charsi-imbue-used",5,{{done}},{returned}):returned};break;
+    }
+    case QuestId::SearchForCain: {
+        const auto intro=node("optional-cain-assignment",0,{{flag(0x2007,true)}},{},true);
+        const auto scroll=node("inifuss-scroll-owned",1,{{item("bks")},{item("bkd")},{fieldDone}},{intro});
+        // Open the return route while already visiting Inifuss. Reuse the
+        // normal waypoint interaction and require its actual unlock result.
+        QuestStep waypoint;waypoint.action=QuestAction::Travel;waypoint.area=steps.at(1).area;waypoint.activateWaypoint=true;
+        const auto waypointSource=steps.size();steps.push_back(waypoint);
+        const auto woodWaypoint=node("dark-wood-waypoint",waypointSource,{{fact(K::Waypoint,*waypoint.area)},{fieldDone}},{scroll});
+        // A waypoint may already have been opened on the way to the tree;
+        // satisfying it must not erase the independent scroll requirement.
+        const auto decoded=node("inifuss-scroll-decoded",3,{{item("bkd")},{fieldDone}},{scroll,woodWaypoint});
+        const auto read=node("current-game-cairn-order",4,{{fact(K::CairnOrder)},{fieldDone}},{decoded});
+        const auto tristram=*steps.at(6).area;
+        const auto stones=node("cairn-portal-observed",5,{{fact(K::PortalObserved,tristram)},{fact(K::Area,tristram)},{fieldDone}},{read},true);
+        const auto arrived=node("tristram-arrival",6,{{fact(K::Area,tristram)},{fieldDone}},{stones});
+        const auto rescue=node("cain-rescued",7,{{fieldDone}},{arrived},true);
+        goal.roots={node("cain-personal-reward",9,{{done}},{rescue})};break;
+    }
+    default:break;
+    }
 }
 std::optional<uint16_t> DebugAi::Impl::questFlags(const Context &c,QuestId id) const {
     const auto &flags=c.session.read().world.quests.playerFlags;
@@ -105,7 +162,18 @@ std::optional<uint16_t> DebugAi::Impl::questFlags(const Context &c,QuestId id) c
 }
 bool DebugAi::Impl::questFinished(const Context &c,const Goal &goal) const {
     const auto flags=questFlags(c,goal.questId);
-    if(!flags || !(*flags&1)) return false;
+    if(!flags) return false;
+    if(!(*flags&1)) {
+        if(goal.useServiceRewards) return false;
+        // These native quests retain REWARDPENDING until the optional item
+        // service is used. A5 also requires its final NPC acknowledgement.
+        switch(goal.questId) {
+        case QuestId::ToolsOfTheTrade:return (*flags&2)!=0;
+        case QuestId::SiegeOnHarrogath:return (*flags&0x22)==0x22;
+        case QuestId::BetrayalOfHarrogath:return (*flags&0x12)==0x12;
+        default:return false;
+        }
+    }
     if(goal.questId==QuestId::RadamentsLair && (*flags&0x20)) return false;
     if(goal.questId==QuestId::ArcaneSanctuary && (*flags&2)) return false;
     if(goal.questId==QuestId::GoldenBird && ((*flags&0x20) || owned(c,"xyz"))) return false;
@@ -128,6 +196,8 @@ bool DebugAi::Impl::questFinished(const Context &c,const Goal &goal) const {
 bool DebugAi::Impl::questTransaction(const Context &c) const {
     if(cursor>=goals.size() || goals[cursor].kind!=Kind::Quest || supplyStage!=SupplyStage::None) return false;
     if(questRun.pending && questRun.pending->sequence) return true;
+    if(questRun.recoveringItem && (onlineHasCursorItem(c.session.read().world.items,c.session.read().load.playerUnitId) ||
+        c.session.read().world.storage.kind!=OnlineStorageKind::None)) return true;
     if(questRun.step>=goals[cursor].steps.size()) return false;
     const auto action=goals[cursor].steps[questRun.step].action;
     const auto &world=c.session.read().world;
@@ -159,6 +229,24 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
     if(supplyStage!=SupplyStage::None) return true;
     const auto flags=questFlags(c,goal.questId);
     if(!flags) {wait("quest-state","Waiting for actual native character quest flags");return false;}
+    if(questRun.initialInventory || questRun.recoveringItem || (!questRun.initialized && onlineHasCursorItem(c.session.read().world.items,c.session.read().load.playerUnitId)))
+        if(!canInput(c,DebugActionOwner::Goal,DebugAllInputs) || !recoverQuestInventory(c)) return false;
+    if(!questRun.pending && !questTransaction(c)) {
+        // D2MOO D2C_OriginalQuestFlags: COMPLETEDNOW means this player
+        // cannot obtain this game's result. Reward/pending/primary evidence
+        // takes precedence: never discard an earned but unclaimed reward.
+        // QUESTS_RefreshStatus also reports status 12 for a game whose
+        // objective finished without this player's PRIMARYGOALDONE. A late
+        // join need not have been present for SetCompletionFlag's 0x4000.
+        const auto status=c.session.read().world.quests.statuses[goal.questSlot];
+        if(((*flags&0x4000) || status==12) && !(*flags&0x2003)) {
+            advance(c,std::string(status==12?"Native quest status 12 excludes this character in this game: ":
+                "Native COMPLETEDNOW excludes this character in this game: ")+goal.quest,true);return false;
+        }
+        if(goal.questId==QuestId::SearchForCain && (*flags&0x8000) && !(*flags&3)) {
+            advance(c,"Cain rescue is already unavailable in this save (COMPLETEDBEFORE)",true);return false;
+        }
+    }
     if(!questRun.initialized) {
         questSpawnAnchor.reset();
         const auto &clue=c.session.read().world.quests;
@@ -169,12 +257,19 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
             clue.staffTombOffset && *clue.staffTombOffset<7) {
             tombSymbol=clue.staffTombOffset;note("quest-initial-tomb-symbol-observed",std::to_string(*tombSymbol));
         }
-        if(questFinished(c,goal)) {advance(c,"Already completed native quest: "+goal.quest);return false;}
-        if(goal.questId==QuestId::SearchForCain && (*flags&0x8000) && !(*flags&3))
-            throw std::runtime_error("Cain was rescued by rogues in this save; use a fresh quest baseline for the full rescue");
-        if((*flags&0x4000) && !(*flags&0x2003)) throw std::runtime_error("Original quest is unavailable to this character in this game: "+goal.quest);
-        if(c.session.read().load.act!=questDefinition(goal.questId).act)
-            throw std::runtime_error("Unfinished quest needs its normal act scene: "+goal.quest);
+        if(questFinished(c,goal)) {
+            advance(c,std::string((*flags&1)?"Already completed native quest: ":
+                "Quest objectives completed; unused service reward retained: ")+goal.quest);return false;
+        }
+        if(c.session.read().load.act!=questDefinition(goal.questId).act) {
+            if(!goal.questTown) throw std::runtime_error("Quest recipe has no verified native town");
+            if(!canInput(c,DebugActionOwner::Goal,DebugAllInputs)) return false;
+            if(!waypointMemoryRevision && knownWaypointAreas.empty()) {
+                if(!reachTown(c)) return false;
+                activateWaypoint(c);wait("quest-act-waypoint","Observing the normal town waypoint menu before cross-act recovery");return false;
+            }
+            travel(c,*goal.questTown);return false;
+        }
         questRun.initialized=true;note("quest-started",goal.quest);
     }
     for(const auto &step:goal.steps) if(step.action==QuestAction::Hunt && step.witness && step.area==area)
@@ -200,6 +295,11 @@ DebugAi::Impl::Goal DebugAi::Impl::questLeaf(const Goal &goal) const {
     case QuestAction::Hunt:case QuestAction::Rescue:leaf.kind=Kind::Hunt;break;
     case QuestAction::Acquire:leaf.kind=Kind::Acquire;break;
     case QuestAction::ReturnTown:leaf.kind=Kind::ReturnTown;break;
+    case QuestAction::SearchDrop:
+        leaf.kind=Kind::Quest;
+        if(!leaf.area && questRun.materialPhase<step.searchAreas.size())
+            leaf.area=step.searchAreas[questRun.materialPhase];
+        break;
     default:leaf.kind=Kind::Quest;break;
     }
     return leaf;
@@ -223,8 +323,33 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
     const auto item=world.items.find(pending.item);
     const bool ours=item!=world.items.end() && onlineItemOwnedBy(item->second,c.session.read().load.playerUnitId);
     const auto unit=pending.unit?world.units.find(*pending.unit):world.units.end();
+    // Operate66 sends private sound 19 for a denied neutral door. Correlate
+    // it with this exact submission, even if the reply preceded this AI tick.
+    if(pending.action==QuestPending::Action::Object && step.action==QuestAction::Portal &&
+        goal.questId==QuestId::EveOfDestruction && area==step.sourceArea &&
+        unit!=world.units.end() && unit->second.classId==547 && unit->second.mode==0 &&
+        unit->second.assignmentRevision==pending.assignment && pending.unit) {
+        const auto player=c.session.read().load.playerUnitId;
+        if(player && std::any_of(world.combatEvents.begin(),world.combatEvents.end(),[&](const auto &event) {
+            return event.sequence>pending.beforeRevision && event.packet==0x2c && event.source==OnlineUnitKey{0,*player} && event.auxiliary==19;
+        })) {
+            const auto personal=questFlags(c,QuestId::RiteOfPassage);
+            if(!personal || !(*personal&1) || summitTrialKills)
+                throw std::runtime_error("Summit passage refused after checking the current trial and personal entitlement");
+            summitTrialKills.emplace();
+            questRun.pending.reset();
+            note("summit-trial-required","The door refused personal passage in this game; returning to the altar");
+            return;
+        }
+    }
     bool observed=false;
     switch(pending.action) {
+    case QuestPending::Action::RecoverTake:observed=ours && item->second.mode==4;break;
+    case QuestPending::Action::RecoverPlace:observed=ours && item->second.mode==0 && item->second.page==1;break;
+    case QuestPending::Action::RecoverOpen:
+        observed=world.storage.kind!=OnlineStorageKind::None && world.storage.source==pending.item;break;
+    case QuestPending::Action::RecoverClose:
+        observed=world.storage.kind==OnlineStorageKind::None && world.storage.requested==OnlineStorageKind::None;break;
     case QuestPending::Action::Take:observed=ours && item->second.mode==4;break;
     case QuestPending::Action::Place:observed=ours && item->second.mode==0 && item->second.page==1;break;
     case QuestPending::Action::StoreCube:observed=ours && item->second.mode==0 && item->second.page==4;break;
@@ -295,6 +420,7 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
             (pending.refreshIssued && pending.statusRequested && world.quests.revision>pending.beforeRevision &&
              world.quests.statuses[questDefinition(step.stateQuest.value_or(goal.questId)).nativeSlot]==step.status);
         else if(step.flags) observed=flags && (*flags&step.flags)==step.flags;
+        else if(step.witness && !step.topics.empty()) observed=false; // A reading completes on its witness below.
         else observed=unit!=world.units.end() && unit->second.assignmentRevision==pending.assignment && unit->second.mode && *unit->second.mode!=0;
         if(step.witness && step.action!=QuestAction::Portal) observed|=find(c,*step.witness).has_value();
         if(step.optional) observed|=world.quests.statuses[goal.questSlot].value_or(0)>0;
@@ -345,6 +471,10 @@ void DebugAi::Impl::observeQuestInteraction(Context &c,const Json &intent) {
     QuestPending p;p.action=intent.value("purpose",std::string{})=="quest-portal"?QuestPending::Action::Portal:QuestPending::Action::Object;
     if(intent.value("activation",false)) p.action=QuestPending::Action::Object;
     p.unit=OnlineUnitKey{intent.at("unitType").get<uint8_t>(),intent.at("unitId").get<uint32_t>()};
+    if(intent.value("activation",false)) {
+        const auto &sent=c.control.interactionSubmission();
+        p.beforeRevision=sent && sent->target==*p.unit?sent->combatSequence:UINT64_MAX;
+    }
     if(p.action==QuestPending::Action::Portal) rememberTravel(c,*p.unit);
     const auto unit=c.session.read().world.units.find(*p.unit);
     if(unit!=c.session.read().world.units.end()) p.assignment=unit->second.assignmentRevision;
@@ -354,6 +484,7 @@ void DebugAi::Impl::observeQuestInteraction(Context &c,const Json &intent) {
 void DebugAi::Impl::quest(Context &c,const Goal &goal) {
     if(questRun.step>=goal.steps.size()) return;
     auto step=goal.steps[questRun.step];
+    if(!recoverQuestInventory(c,&step)) return;
     const auto stateQuest=step.stateQuest.value_or(goal.questId);
     const auto state=questFlags(c,stateQuest);
     const auto parentState=questFlags(c,goal.questId);
@@ -398,7 +529,10 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
     }
     bool done=false;
     switch(step.action) {
-    case QuestAction::Travel:done=true;break;
+    case QuestAction::Travel:
+        done=!step.activateWaypoint || (area && knownWaypointAreas.contains(*area));
+        if(!done && !activateWaypoint(c)) explore(c,"required quest-route waypoint");
+        break;
     case QuestAction::UseItem:done=questUseItem(c,step);break;
     case QuestAction::Combine:done=questCombine(c,step);break;
     case QuestAction::SubmitStaff:done=questSubmitStaff(c,step);break;

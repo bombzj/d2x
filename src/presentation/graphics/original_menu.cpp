@@ -36,7 +36,6 @@ OriginalMenu::OriginalMenu(Archives &archives, const ClassicFont &font)
             target->graphics = &graphics_;
             target->source = art;
             target->sprites.clear();
-            target->uploaded.clear();
             for (size_t i = 0; i < target->transform.size(); ++i)
                 target->transform[i] = palette[shifts+size_t(color)*256+i];
             target->transformed = true;

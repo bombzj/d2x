@@ -150,6 +150,8 @@ struct RemoteScene::Impl {
         uint64_t requestRevision{}, invalidatedRequest{}, actionRevision{};
         uint64_t castRevision{};
         std::optional<CastHandoff> castHandoff;
+        bool npcClickStopped{};
+        uint64_t npcFacingRevision{};
         bool running{};
         std::optional<int> objectSoundMode;
         int lightRadius{13};
@@ -282,6 +284,7 @@ struct RemoteScene::Impl {
     std::optional<uint16_t> unitClass(const OnlineUnit &unit) const;
     std::optional<OnlinePoint> targetPosition(OnlineUnitKey key) const;
     std::optional<Vec> localUnitPosition(OnlineUnitKey key) const;
+    std::pair<int, bool> equippedWeaponReach(const OnlineUnit &) const;
     std::optional<int> castMeleeRange(const OnlineUnit &actor, const OnlineCombatCommand &command) const;
     static EntityId effectOwner(OnlineUnitKey key);
     void emitSound(PresentationSoundEvent::Kind kind, const OnlineUnit &source, float age = 0,

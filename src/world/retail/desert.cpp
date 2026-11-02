@@ -34,10 +34,9 @@ void cliffs(const WorldCatalog &catalog, RetailOutdoorGrid &grid) {
     for (const auto &p : rows[grid.random().next() & 7]) grid.place(catalog, p.id, p.x, p.y, p.file);
 }
 void canyon(const WorldCatalog &catalog, RetailOutdoorGrid &grid) {
-    static constexpr Placement entries[]{
-        {384,0,8,0},{383,2,6,0},{383,1,4,0},{383,0,2,0},{387,0,0,0},
-        {385,0,0,2},{385,1,0,4},{385,2,0,6},{386,0,0,8}};
-    for (const auto &p : entries) grid.place(catalog, p.id, p.x, p.y, p.file);
+    grid.place(catalog,384,8,0,0);
+    for (const auto &p : retailCanyonEntrances) grid.place(catalog, p.id, p.x, p.y, p.file);
+    grid.place(catalog,386,0,8,0);
     grid.place(catalog, 394, 4, 4);
 }
 void canyonFills(const WorldCatalog &catalog, RetailOutdoorGrid &grid) {

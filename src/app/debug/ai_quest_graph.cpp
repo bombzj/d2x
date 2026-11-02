@@ -30,9 +30,7 @@ bool DebugAi::Impl::questFactSatisfied(const Context &c,const Goal &goal,size_t 
         });
     case Kind::Item:return owned(c,fact.item);
     case Kind::GroundItem:
-        return std::any_of(c.session.read().world.items.begin(),c.session.read().world.items.end(),[&](const auto &entry) {
-            return entry.second.code==fact.item && entry.second.mode==3 && entry.second.positionKnown;
-        });
+        return groundItemSeen(c,fact.item);
     case Kind::Equipped:
         return std::any_of(c.session.read().world.items.begin(),c.session.read().world.items.end(),[&](const auto &entry) {
             const auto &item=entry.second;return item.code==fact.item && item.mode==1 && item.body==4 &&
@@ -53,6 +51,10 @@ bool DebugAi::Impl::questFactSatisfied(const Context &c,const Goal &goal,size_t 
     }
     case Kind::Area:return c.town.read().area==fact.value;
     case Kind::Cinematic:return c.session.read().world.cinematic==fact.value;
+    case Kind::SummitPassage:
+        if(!summitTrialKills) return true;
+        // Once a death was observed, the altar already produced this trial.
+        return fact.value?summitTrialKills->contains(fact.value):!summitTrialKills->empty();
     case Kind::InitiallyRewarded:return goal.initiallyRewarded;
     case Kind::TrueTombArea:
         return tombSymbol && *tombSymbol<7 && c.town.read().area==definitions->area("Act 2 - Tomb Tal "+std::to_string(*tombSymbol+1));
@@ -65,6 +67,7 @@ bool DebugAi::Impl::questFactSatisfied(const Context &c,const Goal &goal,size_t 
                 c.session.read().world.units.contains(entry.unit);
         });
     case Kind::JournalRead:return journalReadGame==c.session.read().gameGeneration;
+    case Kind::CairnOrder:return c.session.read().world.quests.cainStones.has_value();
     case Kind::ActChange: {
         const auto &words=c.session.read().world.quests.playerFlags;
         return words && fact.value<words->size() && ((*words)[fact.value]&1);
@@ -88,9 +91,42 @@ bool DebugAi::Impl::questRequirementSatisfied(const Context &c,const Goal &goal,
         return !all.empty() && std::all_of(all.begin(),all.end(),[&](const auto &fact){return questFactSatisfied(c,goal,index,fact);});
     });
 }
+DebugAi::Impl::RouteDrop DebugAi::Impl::routeDropState(const Context &c,const Goal &goal) const {
+    if(!goal.routeDrop || c.town.read().town || supplyStage!=SupplyStage::None || !questRun.initialized) return RouteDrop::None;
+    const auto index=*goal.routeDrop;
+    const auto &step=goal.steps.at(index);
+    const auto &quest=questDefinition(step.stateQuest.value());
+    const auto flags=questFlags(c,*step.stateQuest);
+    const auto &view=c.session.read();
+    if(view.load.act!=quest.act || !flags || (*flags&0x4000) || view.world.quests.statuses[quest.nativeSlot]==12 ||
+        questRequirementSatisfied(c,goal,index)) return RouteDrop::None;
+    if(rememberedDrops.contains(step.item) || observedDrop(c,step.item)) return RouteDrop::Observed;
+    const auto &notice=view.world.quests.statusChanges[quest.nativeSlot];
+    if(step.dropNoticeStatus && view.world.quests.statuses[quest.nativeSlot]==step.dropNoticeStatus &&
+        notice.receivedMilliseconds && notice.areaGeneration==view.world.areaGeneration) {
+        const auto now=std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
+        const auto grace=std::clamp<uint64_t>(2ULL*view.latencyMilliseconds.value_or(0)+300,600,1600);
+        if(uint64_t(now)-notice.receivedMilliseconds<grace) return RouteDrop::Notice;
+    }
+    return RouteDrop::Seek;
+}
 void DebugAi::Impl::observeQuestFacts(const Context &c) {
     if(cursor>=goals.size() || goals[cursor].kind!=Kind::Quest || !questRun.initialized) return;
     const auto &goal=goals[cursor];
+    if(summitTrialKills) {
+        for(const auto &step:goal.steps) {
+            if(step.stateQuest!=QuestId::RiteOfPassage || !step.target || area!=step.area) continue;
+            if(step.action!=QuestAction::Operate && step.action!=QuestAction::Hunt) continue;
+            const auto unit=find(c,*step.target,true);
+            if(!unit) continue;
+            if(step.action==QuestAction::Operate) {
+                // A portal can reset the trial while the player stays in 120.
+                // A5Q5 returns the altar to NEUTRAL and removes its guardians.
+                if(unit->mode==0) {summitTrialKills->clear();break;}
+            } else if(onlineMonsterCorpse(*unit)) summitTrialKills->insert(step.target->identity);
+            else summitTrialKills->erase(step.target->identity);
+        }
+    }
     for(size_t index=0;index<goal.requirements.size();++index)
         if(goal.requirements[index].retainObservation && questRequirementSatisfied(c,goal,index)) questRun.observations.insert(index);
 }
@@ -106,7 +142,7 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
     }
     // Never replace a submitted operation with a newly attractive branch.
     // Its own handler must first consume the actual result or report unknown.
-    const bool waiting=questRun.pending || questTransaction(c) || objectIssued || pickupIssued || portalIssued || potionRequest ||
+    const bool waiting=questRun.pending || questRun.recoveringItem || questTransaction(c) || objectIssued || pickupIssued || portalIssued || potionRequest ||
         pendingDoor || pendingWaypoint || closeWaypoint || mobilityTarget || (localPad && localPad->waiting) ||
         travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit);
     if(questRun.selected && waiting) {
@@ -130,6 +166,18 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
         if(root>=satisfied.size()) throw std::runtime_error("Quest graph has an invalid root");
         complete=complete && satisfied[root];visit(root);
     }
+    // An observed drop may interrupt an approach. Submitted operations were
+    // retained above, and a timed encounter must keep its scene and deadline.
+    const bool finishSequence=questRun.selected &&
+        ((questRun.materialPhase && goal.steps.at(questRun.step).action!=QuestAction::SearchDrop) ||
+         (goal.steps.at(questRun.step).witness && questRun.sweepReady!=Clock::time_point{}));
+    const auto drop=finishSequence || questRun.worldWait || questRun.encounterAnchored?RouteDrop::None:routeDropState(c,goal);
+    if(drop==RouteDrop::Notice && !waiting && !c.session.read().world.npcRequested && !c.session.read().world.waypointRequested) {
+        releaseCombat(c);cancelWalk(c);wait("quest-drop-notice","Quest update received; briefly observing for an assigned drop");
+        return false;
+    }
+    const bool collectDrop=drop==RouteDrop::Observed;
+    if(collectDrop) {visit(*goal.routeDrop);complete=false;}
     questPlanDiagnostics={{"decision","evaluate-missing-conditions"},{"nodes",Json::array()},
         {"roots",goal.roots},{"ready",Json::array()},{"selected",nullptr}};
     for(size_t i=0;i<satisfied.size();++i) questPlanDiagnostics["nodes"].push_back({
@@ -186,7 +234,8 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
             {"area",destination?Json(*destination):Json(nullptr)},{"townOperation",townAction}});
         if(score<best) {best=score;chosen=index;}
     }
-    if(retainWalk) {chosen=questRun.step;questPlanDiagnostics["decision"]="retain-active-condition-approach";}
+    if(collectDrop) {chosen=*goal.routeDrop;questPlanDiagnostics["decision"]="collect-observed-route-drop";}
+    else if(retainWalk) {chosen=questRun.step;questPlanDiagnostics["decision"]="retain-active-condition-approach";}
     questPlanDiagnostics["selected"]={{"index",chosen},{"name",goal.requirements[chosen].name}};
     if(!questRun.selected || questRun.step!=chosen) {
         releaseCombat(c);cancelWalk(c);

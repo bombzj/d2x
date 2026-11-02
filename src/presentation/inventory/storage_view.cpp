@@ -58,7 +58,7 @@ void SceneView::drawStorage(Vec mouse) const {
         const auto *icon = assets_.inventoryIcon(material.artKey, {}, mapView().palette);
         if (icon && icon->texture.id) {
             const float scale = inventoryScale();
-            DrawTexturePro(icon->texture, {0, 0, float(icon->texture.width), float(icon->texture.height)},
+            DrawTexturePro(icon->colorCell.page, icon->colorCell.rect,
                 {bounds.x + icon->x * scale, bounds.y + icon->y * scale,
                  icon->texture.width * scale, icon->texture.height * scale}, {}, 0,
                 material.quantity ? WHITE : Color{70,70,70,255});
