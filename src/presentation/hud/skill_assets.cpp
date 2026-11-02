@@ -64,6 +64,10 @@ void SceneAssets::loadSkillIcons(Archives &archives, const ClassicData &content)
         if (!cell || *cell < 0 || size_t(*cell) >= frames.size())
             throw std::runtime_error("Missing original Attack icon frame");
         attackIcon = frames[*cell];
+        if (auto attack = content.skills.find(0); attack) {
+            attackName = attack->name;
+            attackDescription = attack->shortDescription;
+        }
         const auto *original = uiGraphics_.animation("data/global/ui/spells/skillicon.dc6");
         if (!original) throw std::runtime_error("Missing original common skill icon color source");
         attackUnavailableIcon = transformed(*original, *cell, 1);

@@ -220,9 +220,11 @@ void SceneView::drawSkillControls(Vec mouse) const {
     if (hovered) {
         auto choice = *hovered;
         const auto *entry = choice ? characterView_.skill(*choice,hoveredOwner) : nullptr;
-        auto name = entry ? entry->name : "Attack";
+        auto name = entry ? entry->name : assets_.attackName;
         auto lines = std::vector<std::string>{name};
-        const auto details = entry ? entry->pickerTooltip : std::vector<std::string>{"Normal weapon attack"};
+        const auto details = entry ? entry->pickerTooltip
+            : (assets_.attackDescription.empty() ? std::vector<std::string>{"Normal weapon attack"}
+                                                  : std::vector<std::string>{assets_.attackDescription});
         lines.insert(lines.end(), details.begin(), details.end());
         drawSkillTooltip(UiPainter(entry && entry->pickerTooltipUnavailable ? assets_.characterRedFont : assets_.font, 0), lines, tooltipAnchor);
     }

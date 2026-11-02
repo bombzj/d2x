@@ -132,6 +132,7 @@ class SceneAssets {
     std::map<int, SpellOverlay> spellOverlays;
     std::map<std::string, GpuAnimation> skillTrees;
     Sprite attackIcon, attackUnavailableIcon;
+    std::string attackName, attackDescription;
     // Legacy map metadata; GPU terrain and actor art use the shared caches.
     // 0: original maximaps.dc6, 1: original maximap.dc6.
     mutable std::array<std::map<int, Sprite>, 2> automapCels;
