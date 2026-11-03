@@ -126,6 +126,7 @@ class GameInstance {
     bool acknowledgeEvents(uint64_t sequence) { return events_.acknowledge(sequence); }
     const std::vector<world::PrepareArea> &pendingAreas() const { return systems_.world.read().preparation; }
     DomainResult<> installArea(world::PreparedArea);
+    DomainResult<uint64_t> requestAdmissionTown(RegionId town) { return systems_.world.requestAdmissionTown(town); }
     void failArea(uint64_t request) { systems_.world.fail(request); }
     DomainResult<> grantExperience(PlayerId, uint64_t amount);
     DomainResult<> grantHireling(PlayerId,HirelingRecord);

@@ -98,6 +98,7 @@ struct ViewState {
     float animationTime = 0;
     std::string dialogue, dialogueSpeaker, dialogueStatus;
     std::optional<uint32_t> dialogueTextTopic;
+    bool dialogueFromMenu{};
     EntityId dialogueObject;
     EntityId inventoryQuestNpc;
     EntityId orificeObject;
@@ -158,7 +159,6 @@ class SceneView {
     Shader highlightShader_{};
     int highlightTransform_ = -1;
     UiPainter painter_;
-    UiPainter speechPainter_;
     ViewState view_;
     struct ScreenShake {double startMilliseconds{};int magnitude{},buildMilliseconds{},holdMilliseconds{},fadeMilliseconds{};};
     std::optional<ScreenShake> screenShake_;
@@ -436,7 +436,7 @@ class SceneView {
     bool npcShopRepairAllAt(Vec mouse) const;
     void closeNpcShop();
     bool npcShopDropAt(Vec mouse) const;
-    NpcMenuSelection clickNpcMenu(Vec mouse);
+    std::optional<NpcMenuSelection> clickNpcMenu(Vec mouse) const; // Empty only outside the menu box.
     void scrollNpcDialogue(int amount);
     bool closeNpcDialogue();
     std::optional<uint32_t> clickNpcShop(Vec mouse, bool directBuy = false);

@@ -38,7 +38,6 @@
 #include "core/random.hpp"
 #include "content/world/automap_data.hpp"
 #include "content/string_table.hpp"
-#include "presentation/hud/waypoint_panel.hpp"
 #include "presentation/npc/npc_menu.hpp"
 #include "presentation/hud/classic_panel.hpp"
 #include <algorithm>

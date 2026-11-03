@@ -25,7 +25,8 @@ class SceneStreams {
     std::optional<std::string> advanceQuestCue(float dt,bool playerAlive);
     void resetQuestCue();
     void speak(std::string_view text, std::optional<uint32_t> stringId = {});
+    unsigned speechScrollRate() const;
     void stopSpeech();
-    bool speechFinished() const;
+    std::optional<bool> speechFinished() const; // No value when this line has no audio stream.
 };
 } // namespace d2x

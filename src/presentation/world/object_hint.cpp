@@ -1,17 +1,15 @@
 #include "presentation/world/palette_blend_view.hpp"
+#include "presentation/graphics/framed_text.hpp"
 #include "presentation/scene_view.hpp"
 #include "core/text.hpp"
 #include "core/utf8.hpp"
 #include <algorithm>
 
 namespace d2x {
-namespace {
-void drawFramedName(const ClassicFont &font, const PaletteBlendView &blend, const std::string &label,
-                    Vec anchor, Color fillColor = BLACK, int life = 0) {
+void drawFramedText(const ClassicFont &font, const PaletteBlendView &blend, std::string_view label,
+                    Vec anchor, Color fillColor, int life) {
     if (label.empty() || !font.ready || font.framedLineHeight <= 0) return;
-    const auto text = utf8Decode(label);
-    int width = 0;
-    for (const auto c : text) width += font.widthOf(c);
+    const int width = font.textWidth(label);
     const int boxWidth = width + 8;
     if (boxWidth > W) return;
     const int left = std::clamp(int(anchor.x) - boxWidth / 2, 0, W - boxWidth);
@@ -23,21 +21,14 @@ void drawFramedName(const ClassicFont &font, const PaletteBlendView &blend, cons
     if (fillWidth < boxWidth)
         blend.drawRectangle({float(left+fillWidth),float(bottom-font.framedLineHeight),
             float(boxWidth-fillWidth),float(font.framedLineHeight)},BLACK);
-    int x = left + (boxWidth - width) / 2;
-    const int baseline = bottom - font.framedBaselineOffset;
-    for (const auto c : text) {
-        if (const auto *glyph = font.glyphOf(c); glyph && c != ' ')
-            sprite(glyph, {float(x), float(baseline - glyph->texture.height)});
-        x += font.widthOf(c);
-    }
-}
+    font.drawBaseline(label, {float(left+(boxWidth-width)/2), float(bottom-font.framedBaselineOffset)}, 1);
 }
 void SceneView::drawCorpseLabel(const std::string &label, Vec ground) const {
     // C0450 gives player corpses red text and no life fill; C0D30 keeps
     // the same ground+8-72 anchor as living player names.
     const int palette = std::clamp(mapView().palette, 0, 4);
     const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
-    if (blend) drawFramedName(assets_.characterRedFont,*blend,label,ground + Vec{0,8-72});
+    if (blend) drawFramedText(assets_.characterRedFont,*blend,label,ground + Vec{0,8-72});
 }
 void SceneView::drawInteractionLabel(const std::string &label, Vec p, int offset) const {
     // Nameless placeholder NPCs carry no label text; skip the backdrop too.
@@ -51,7 +42,7 @@ void SceneView::drawNpcLabel(const std::string &label, Vec ground, int pixelHeig
     // receives +8, then MonStats2.pixHeight; the frame ends two pixels below.
     const int palette = std::clamp(mapView().palette, 0, 4);
     const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
-    if (blend) drawFramedName(assets_.font,*blend,label,ground + Vec{0,float(8-pixelHeight)});
+    if (blend) drawFramedText(assets_.font,*blend,label,ground + Vec{0,float(8-pixelHeight)});
 }
 void SceneView::drawInteractionDetails(const std::vector<std::string> &lines,Vec p) const {
     if(lines.empty()) return;
@@ -70,7 +61,7 @@ void SceneView::drawPlayerLabel(const std::string &label, Vec ground, bool hosti
     const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
     // C0D30's player branch supplies ground+8-72 to DrawFramedTextEx.
     // The known life portion uses RGB(80,0,0)/TRANS50; the rest is TRANS75.
-    if (blend) drawFramedName(hostile ? assets_.characterRedFont : assets_.font,*blend,label,
+    if (blend) drawFramedText(hostile ? assets_.characterRedFont : assets_.font,*blend,label,
         ground + Vec{0,8-72},assets_.playerNameBackground,life);
 }
 void SceneView::drawOverheadText(const std::string &text,Vec p) {

@@ -62,7 +62,7 @@ void NativeRealmService::uploadCharacter(net::protocol::Reader &in) {
     const bool first = !tcpIpUpload.incomplete();
     if (auto bytes = tcpIpUpload.append(total, part, first)) {
         PersistentCharacter saved;
-        try {saved=decodeSave(*bytes,*content);} catch(const std::exception &error) {
+        try {saved=decodeSave(*bytes,*content,int(gameDifficulty));} catch(const std::exception &error) {
             const auto reason="Invalid uploaded native character: "+std::string(error.what());
             throw AdmissionFailure(14,reason.c_str());
         }

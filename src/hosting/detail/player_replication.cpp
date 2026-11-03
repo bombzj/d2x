@@ -11,6 +11,17 @@
 #include <cmath>
 #include <algorithm>
 namespace d2x::hosting {
+namespace {
+bool samePlayerMotion(const Bytes &previous, const Bytes &current) {
+    if (current.empty() || previous.size() != current.size()) return false;
+    // PlrMsg sends a walk/run order on a mode update. In 0F and 10 the
+    // trailing XY is the origin sample, not another order at every crossed cell.
+    const bool locomotion = current.front() == uint8_t(ServerMessage::MovePoint) ||
+                            current.front() == uint8_t(ServerMessage::MoveUnit);
+    const auto end = locomotion ? current.end() - 4 : current.end();
+    return std::equal(current.begin(), end, previous.begin());
+}
+} // namespace
 void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const EntityId> inventoryResets,
     std::span<const std::pair<EntityId,EntityId>> relationUpdates) {
     const auto participants = host.participants(binding->game);
@@ -178,7 +189,10 @@ void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const 
         }();
         auto motion = nativePlayerMotion(*view, area.origin,targetVisible);
         if (motion.empty()) sent.motion.clear();
-        else if (fresh || motion != sent.motion) { packets.push_back(motion); sent.motion = std::move(motion); }
+        else if (fresh || !samePlayerMotion(sent.motion, motion)) {
+            packets.push_back(motion);
+            sent.motion = std::move(motion);
+        }
     }
     auto statePlayers = visible; statePlayers.push_back(binding->player);
     std::set<EntityId> stateActors;

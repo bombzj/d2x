@@ -273,13 +273,13 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
             const auto light = lighting_->sample(item.position);
             const auto alert = std::find_if(scene.alerts.begin(), scene.alerts.end(),
                 [&](const auto &value) { return item.unit && value.unit == item.unit; });
-            if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(item.position) + item.pixelOffset, true);
+            if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, entry.at - unitScreenOffset, true);
             if (item.shadow) spriteShadow(entry.image, entry.at);
             if (item.missile >= 0) drawMissile(item.missile, item.position, item.heading, item.age, item.remaining,item.pixelOffset,item.missileFrame,&palette,light);
             else if (item.overlay >= 0) drawSpellOverlay(item.overlay, item.position, item.age, item.loop, item.height,&palette,light,item.overlayFrame,item.pixelOffset);
             else if (item.ground) drawGroundItem(*item.ground, item.highlighted,&palette,light);
             else drawSelectableSprite(entry.image, entry.at, item.highlighted,WHITE,{2,1},&palette,light);
-            if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(item.position) + item.pixelOffset, false);
+            if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, entry.at - unitScreenOffset, false);
         }
     };
     uiScissor(viewport.x, viewport.y, viewport.width, viewport.height);

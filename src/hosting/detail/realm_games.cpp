@@ -4,6 +4,7 @@
 #include "server/area_store.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/native_game_wire.hpp"
+#include "content/world/world_catalog.hpp"
 #include <random>
 #include <cctype>
 namespace d2x::hosting {
@@ -26,6 +27,25 @@ void issueTicket(NativeRealmService &peer) {
     peer.ticket = true;
 }
 }
+NativeRealmService::PreparedGame NativeRealmService::prepareGuest(PersistentCharacter saved, const HostedGame &room) {
+    if (host.participants(room.handle).size() >= room.capacity) throw AdmissionFailure(15, "Game is full");
+    const auto town = saved.lastRegion;
+    const auto catalog = sharedWorldCatalog(archives, room.settings.difficulty);
+    const auto &level = catalog->level(int(town));
+    if (!level.town) throw ProtocolError("Joining character lacks a native entry town");
+    const auto request = host.requestAdmissionTown(room.handle, town);
+    if (!request) throw ProtocolError("Unable to request the joining character's town");
+    if (*request.value) {
+        auto prepared = prepareWorldArea(archives, *content, {room.settings.mapSeed, level.act, level.id,
+            room.settings.difficulty, room.settings.ladderMonsterStats()});
+        shared.installPreparedArea(room.handle, *request.value, std::move(prepared));
+    }
+    // Installing a new town allocates world IDs. Remap the incoming D2S afterwards.
+    auto definition = prepareGameCharacter(*content, std::move(saved), room.settings, host.nextEntity(room.handle), shared.items);
+    const auto staged = host.admit(room.handle, std::move(definition));
+    try { return prepareAdmission(staged, shared.terrain.at(room.handle).at(town)); }
+    catch (...) { host.remove(staged); throw; }
+}
 void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &room, uint32_t ticketHash, uint16_t gameId) {
     if (binding || (!externalSave && !externalCheckpoint) || !gameId) throw ProtocolError("Invalid external admission");
     if (saved.player.hardcoreDead) throw AdmissionFailure(21,"Hardcore character is dead");
@@ -34,26 +54,9 @@ void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &ro
     selected = saved;
     gameDifficulty = unsigned(room.settings.difficulty);
     gameName = room.name; gamePassword = room.password;
-    if (!room.handle.generation) {
-        saved.difficulty = room.settings.difficulty;
-        saved.mapSeed = room.settings.mapSeed;
-        auto prepared = prepareGame(std::move(saved),room.settings);
-        room.handle = prepared.binding.game; room.town = RegionId(prepared.terrain.request.level);
-        binding = prepared.binding; terrain = std::move(prepared.terrain); admission = std::move(prepared.admission);
-    } else {
-        if (host.participants(room.handle).size() >= room.capacity) throw AdmissionFailure(15,"External game is full");
-        const auto &area = shared.terrain.at(room.handle).at(room.town);
-        auto definition = prepareJoiningCharacter(*content, std::move(saved), room.settings, room.town, host.nextEntity(room.handle), shared.items);
-        const auto state = host.area(room.handle, room.town);
-        if (!state) throw ProtocolError("External game area is unavailable");
-        for (auto &corpse : definition.persistent.corpses) { corpse.region = room.town; corpse.position = state->definition.spawn; }
-        const auto staged = host.admit(room.handle, std::move(definition));
-        try {
-            admission = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged),host.environment(staged.game,room.town).value(),host.objectSeed(staged.game).value(),NativeIdentityView{host,staged.game});
-            for (const auto &packet : admission) validateServerPacket(packet);
-            terrain = area; binding = staged;
-        } catch (...) { host.remove(staged); throw; }
-    }
+    auto prepared = room.handle.generation ? prepareGuest(std::move(saved), room) : prepareGame(std::move(saved), room.settings);
+    room.handle = prepared.binding.game;
+    binding = prepared.binding; terrain = std::move(prepared.terrain); admission = std::move(prepared.admission);
     multiplayerEndpoint = true;
     hash = ticketHash; token = gameId; ticket = true;
     host.pause(binding->game, false);
@@ -87,9 +90,9 @@ void NativeRealmService::createGame(net::protocol::Reader &in) {
             if (players != 1 || reload->name != selectedName || reload->difficulty != gameDifficulty || reload->expectedFile != lease->expected)
                 throw std::runtime_error("Prepared reload no longer matches this admission");
             prepared = std::move(reload->game); reload.reset();
-        } else { auto saved = *selected; saved.difficulty = int(gameDifficulty); prepared = prepareGame(std::move(saved), room.settings); }
+        } else { prepared = prepareGame(store->load(*lease, room.settings.difficulty), room.settings); }
         stagedBinding = prepared.binding;
-        room.handle = prepared.binding.game; room.town = RegionId(prepared.terrain.request.level); room.index = shared.nextGameIndex;
+        room.handle = prepared.binding.game; room.index = shared.nextGameIndex;
         room.tcpIpOwner = prepared.binding.player;
         try { shared.games.emplace(key, room); }
         catch (...) { shared.terrain.erase(room.handle); host.destroy(room.handle); throw; }
@@ -115,18 +118,9 @@ void NativeRealmService::joinGame(net::protocol::Reader &in) {
         if (binding) {
             if (!ticket || binding->game != room.handle) throw std::runtime_error("Character already admitted elsewhere");
         } else {
-            if (host.participants(room.handle).size() >= room.capacity) throw std::runtime_error("Room is full");
-            const auto &area = shared.terrain.at(room.handle).at(room.town);
-            auto definition = prepareJoiningCharacter(*content, *selected, room.settings, room.town, host.nextEntity(room.handle), shared.items);
-            const auto state = host.area(room.handle, room.town);
-            for (auto &corpse : definition.persistent.corpses) { corpse.region = room.town; corpse.position = state->definition.spawn; }
-            const auto staged = host.admit(room.handle, std::move(definition));
-            stagedBinding = staged;
-            try {
-                auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged),host.environment(staged.game,room.town).value(),host.objectSeed(staged.game).value(),NativeIdentityView{host,staged.game});
-                for (const auto &packet : packets) validateServerPacket(packet);
-                terrain = area; admission = std::move(packets); binding = staged;
-            } catch (...) { host.remove(staged); throw; }
+            auto prepared = prepareGuest(store->load(*lease, room.settings.difficulty), room);
+            stagedBinding = prepared.binding; binding = prepared.binding;
+            terrain = std::move(prepared.terrain); admission = std::move(prepared.admission);
             gameDifficulty = unsigned(room.settings.difficulty); gameName = room.name; gamePassword = room.password;
             issueTicket(*this);
         }

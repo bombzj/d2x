@@ -1,4 +1,5 @@
 #include "ai_impl.hpp"
+#include "client/inventory_actions.hpp"
 #include "content/npc/vendor_stock.hpp"
 #include "gameplay/items/belt_rules.hpp"
 #include <algorithm>
@@ -210,8 +211,10 @@ bool DebugAi::Impl::drink(Context &c) {
         if(score>best) {best=score;selected=item;}
     }
     if(!selected) return false;
-    OnlineItemCommand use;use.action=OnlineItemAction::Use;use.item=selected->id;use.itemRevision=selected->revision;
-    if(!submitItem(c,use,"potion-use",DebugActionOwner::Potion)) return false;
+    const auto use = selected->mode == 2 && selected->x < 4 ? useBeltColumnCommand(view, selected->x) :
+        std::optional{useItemCommand(selected->id, selected->revision)};
+    if (!use || use->item != selected->id || use->itemRevision != selected->revision) return false;
+    if(!submitItem(c,*use,"potion-use",DebugActionOwner::Potion)) return false;
     PotionRequest pending;pending.item=selected->id;pending.code=selected->code;pending.kind=definitions->potions.at(selected->code).kind;
     pending.life=world.life;pending.mana=world.mana;pending.sequence=c.session.read().world.itemRequest->sequence;
     pending.deadline=Clock::now()+std::chrono::seconds(12);potionRequest=pending;
@@ -247,7 +250,6 @@ bool DebugAi::Impl::restock(Context &c) {
         }
         const auto npc=find(c,*healer);
         if(!npc) {if(!approachKnown(c,*healer)) explore(c,"town healer");return false;}
-        if(world.npcRequested && world.npcRequested!=npc->key.id) {c.session.close_npc();return false;}
         supplyNpc=npc->key;
         if(walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true},{"purpose","supply-heal"}})) {
             healingIssued=true;healingObserved=false;shopDeadline=Clock::now()+std::chrono::seconds(12);cancelWalk(c);
@@ -275,23 +277,8 @@ bool DebugAi::Impl::restock(Context &c) {
     if(!npc) {if(!approachKnown(c,supplier)) explore(c,"potion supplier "+supplier.name);return false;}
     supplyNpc=npc->key;
     if(shopIssued && shopGeneration!=world.interactionGeneration) {shopIssued=false;shelfObserved=false;shopDeadline={};}
-    if(world.npcRequested && world.npcRequested!=npc->key.id) {c.session.close_npc();return false;}
-    if(!world.npcConversation || world.npcConversation->type!=1 || world.npcConversation->source!=npc->key.id) {
-        wait("supply-approach","Finding and opening the normal potion merchant conversation");
-        walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true}});return false;
-    }
     if(!shopIssued) {
-        // Dismiss actual automatic speech before selecting a service, just as
-        // the dialogue controller does. Buying must not bypass the greeting.
-        const auto &conversation=*world.npcConversation;
-        for(const auto &message:conversation.messages)
-            if(message.menu==0 && !conversation.acknowledged.contains(message.stringId)) {
-                if(submitInput(c,DebugActionOwner::Supply,"supply-dialogue",DebugInteraction|DebugMenu,
-                    [&]{return c.session.acknowledge_npc_message(message.stringId);},
-                    [&]{return c.session.read().error?c.session.read().error->message:std::string{};})==DebugSubmitResult::Expired)
-                    throw std::runtime_error("Merchant automatic dialogue could not be acknowledged");
-                wait("supply-dialogue","Dismissing the merchant's actual automatic speech before trade");return false;
-            }
+        if (!prepareNpcService(c, npc->key, DebugActionOwner::Supply)) return false;
         OnlineItemCommand open;open.action=OnlineItemAction::TradeOpen;open.npc=npc->key.id;
         if(submitItem(c,open,"supply-shop",DebugActionOwner::Supply)) {
             shopIssued=true;shelfObserved=false;shopGeneration=c.session.read().world.interactionGeneration;

@@ -67,7 +67,7 @@ SceneView::SceneView(Archives &archives, const ClassicData &content, const IActo
     : archives_(archives), actorClient_(actor), inventoryClient_(inventory), characterClient_(character), questClient_(quests),
       npcClient_(npc), mapClient_(map), assets_(archives, content), lighting_(std::make_unique<LightingView>()),
       paletteBlend_(std::make_unique<PaletteBlendView>(archives)),
-      painter_(assets_.font), speechPainter_(assets_.speechFont), chat_(archives),
+      painter_(assets_.font), chat_(archives),
       originalMenu_(archives, assets_.font), tradeInvite_(archives, assets_.font, originalMenu_), party_(archives) {
     applyAudioSettings(audio);
     highlightShader_=LoadShaderFromMemory(nullptr,highlightFragment);

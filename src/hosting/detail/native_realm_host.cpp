@@ -39,6 +39,19 @@ void NativeRealmHost::retire(PlayerBinding binding) {
     });
     std::erase_if(games, [&](const auto &entry) { return entry.second.handle == binding.game; });
 }
+void NativeRealmHost::installPreparedArea(GameHandle game, uint64_t request, PreparedWorldArea prepared) {
+    auto &areas = terrain.at(game);
+    const auto [projection, inserted] = areas.try_emplace(prepared.authority.id);
+    // Preserve the existing projection until authority accepts the ticket, including residency reloads.
+    try {
+        if (!host.installArea(game, {request, std::move(prepared.authority)}))
+            throw std::runtime_error("Prepared area handoff expired");
+    } catch (...) {
+        if (inserted) areas.erase(projection);
+        throw;
+    }
+    projection->second = std::move(prepared.terrain);
+}
 void NativeRealmHost::advance(double seconds) {
     using Clock=std::chrono::steady_clock;
     const auto started=performanceObserver?Clock::now():Clock::time_point{};
@@ -82,21 +95,7 @@ void NativeRealmHost::advance(double seconds) {
                 if (!result) break;
                 areaPreparations.erase(found);
                 if (!result->error.empty()) throw std::runtime_error(result->error);
-                auto prepared = std::move(result->area.value());
-                // An existing level may only be restoring released inputs.
-                // Authority validates the ticket/DRLG identity before the host
-                // replaces its lightweight protocol projection.
-                // Allocate a host slot before committing authority. Existing
-                // projections remain intact if the incoming ticket is stale.
-                const auto [projection,inserted]=areas.try_emplace(request.destination);
-                try {
-                    if (!host.installArea(game, {request.request, std::move(prepared.authority)}))
-                        throw std::runtime_error("Prepared area handoff expired");
-                } catch (...) {
-                    if(inserted) areas.erase(projection);
-                    throw;
-                }
-                projection->second=std::move(prepared.terrain);
+                installPreparedArea(game, request.request, std::move(result->area.value()));
                 break;
             } catch (const std::exception &error) {
                 if (const auto found = areaPreparations.find(key); found != areaPreparations.end()) {

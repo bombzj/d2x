@@ -1,4 +1,5 @@
 #include "client/actor_client.hpp"
+#include "client/npc_client.hpp"
 #include "content/classic_data.hpp"
 #include "controller.hpp"
 #include "scene_view.hpp"
@@ -510,6 +511,14 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (!input.leftHeld && !input.leftPressed) pickupClick_ = false;
     prepareTravelInput(input);
     if (handleBhSettings(input)) return true;
+    // A ground press dismisses the NPC menu before pointer capture. The same
+    // press then follows ordinary world hit testing and held-movement rules.
+    if (ui.npcMenu && !input.escape && input.leftPressed && input.insideViewport &&
+        !hudSurface(input.mouse) && CheckCollisionPointRec(rv(input.mouse), view_.worldViewport()) &&
+        !view_.clickNpcMenu(input.mouse)) {
+        npcClient_.submit(EndNpcConversation{ui.dialogueObject});
+        ui.npcMenu = ui.npcTopics = false;
+    }
     // Capture before handlers close panels or shift the world viewport.
     if ((input.leftPressed || input.rightPressed) &&
         (ui.blocksInput() || ui.skillPicker || ui.inventory.drag ||

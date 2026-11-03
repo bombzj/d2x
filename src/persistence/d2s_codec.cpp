@@ -169,7 +169,8 @@ void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &conte
                 : 50000u * (unsigned(player.level) / 2u + 1u)), "gold limit");
 }
 } // namespace
-CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &content) {
+CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &content, std::optional<int> gameDifficulty) {
+    require(!gameDifficulty || (*gameDifficulty >= 0 && *gameDifficulty < 3), "invalid game difficulty");
     require(bytes.size() <= maxSaveBytes, "file too large");
     auto header = readD2sHeader(bytes);
     rejectPrivatePd2Save(bytes);
@@ -190,6 +191,7 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
         header.flags &= ~1u;
         writeD2sHeader(initialized, header);
         snapshot.player.nativeSaveSections.assign(reinterpret_cast<const char *>(initialized.data()), fixedEnd);
+        snapshot.difficulty = gameDifficulty.value_or(0);
         return snapshot;
     }
     auto sections = readD2sFixedSections(bytes);
@@ -203,12 +205,14 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     player.hardcoreDead = player.hardcore && (header.flags & 8) != 0;
     player.nativeSaveSections.assign(reinterpret_cast<const char *>(bytes.data()), fixedEnd);
     snapshot.mapSeed = header.mapSeed;
-    snapshot.difficulty = header.difficulty;
-    for (unsigned difficulty = 0; difficulty < 3; ++difficulty)
-        if (header.towns[difficulty] & 0x80) snapshot.difficulty = int(difficulty);
-    const auto act = header.towns[size_t(snapshot.difficulty)] & 7;
-    require(unsigned(act) < actTownLevels.size(), "last act is not supported");
-    snapshot.lastRegion = RegionId(actTownLevels[act]);
+    snapshot.difficulty = gameDifficulty.value_or(header.difficulty);
+    if (!gameDifficulty) {
+        for (size_t difficulty = 0; difficulty < header.towns.size(); ++difficulty)
+            if (header.towns[difficulty] & 0x80) snapshot.difficulty = int(difficulty);
+    }
+    // PLRSAVE2 reads nTown[game difficulty]. The high bit is separate from the act.
+    const unsigned act = header.towns[size_t(snapshot.difficulty)] & 0x7F;
+    snapshot.lastRegion = RegionId(actTownLevels[act < actTownLevels.size() ? act : 0]);
     size_t cursor = fixedEnd;
     const auto stats = readD2sStats(bytes.subspan(cursor), content.tables.at("itemstatcost"));
     cursor += stats.bytesRead;
@@ -365,16 +369,19 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     header.mapSeed = snapshot.mapSeed; header.difficulty = uint8_t(snapshot.difficulty);
     header.saved = uint32_t(std::time(nullptr)); if (!header.created) header.created = header.saved;
     for (auto &town : header.towns) town &= 0x7F;
-    unsigned currentAct = 0;
+    std::optional<int> currentAct;
     const auto &levels = content.tables.at("levels");
+    require(levels.has("Act") && int(snapshot.lastRegion) > 0, "unknown saved act");
     for (size_t row = 0; row < levels.rows().size(); ++row)
         if (levels.number(row, "Id") == int(snapshot.lastRegion)) {
-            currentAct = unsigned(levels.number(row, "Act").value_or(0));
+            // Levels.txt compiles an empty numeric cell to zero. PD2 uses
+            // that spelling for Act I. A missing level still has no act.
+            currentAct = levels.number(row, "Act").value_or(0);
             break;
         }
-    require(currentAct < actTownLevels.size(), "unknown saved act");
-    header.towns[header.difficulty] = uint8_t(0x80 | currentAct);
-    header.lastLevel = unsigned(snapshot.lastRegion); header.lastTown = unsigned(actTownLevels[currentAct]);
+    require(currentAct && unsigned(*currentAct) < actTownLevels.size(), "unknown saved act");
+    header.towns[header.difficulty] = uint8_t(0x80 | *currentAct);
+    header.lastLevel = unsigned(snapshot.lastRegion); header.lastTown = unsigned(actTownLevels[*currentAct]);
     // CLIENTS_UpdateCharacterProgression: five acts per expansion difficulty.
     // Keep any existing higher native progression rather than downgrading it.
     unsigned progression = (header.flags >> 8) & 31u;

@@ -1,6 +1,7 @@
 #include "gameplay/items/quality_rules.hpp"
 #include "content/monsters/monster_identity.hpp"
 #include "remote_inventory.hpp"
+#include "client/inventory_actions.hpp"
 #include "content/pd2_stash.hpp"
 #include "content/pd2/item_encoding.hpp"
 #include "content/pd2_core_counters.hpp"
@@ -15,6 +16,31 @@
 
 namespace d2x {
 using net::protocol::BitReader;
+std::optional<OnlinePoint> firstBackpackSpace(const OnlineView &view, const OnlineInventoryView &inventory, uint32_t movingItem) {
+    const auto moving = inventory.items.find(movingItem);
+    if (moving == inventory.items.end() || !moving->second.decoded) return {};
+    const int width = moving->second.width, height = moving->second.height;
+    if (width < 1 || height < 1 || inventory.columns < width || inventory.rows < height ||
+        inventory.columns > 256 || inventory.rows > 256) return {};
+    std::vector<bool> occupied(size_t(inventory.columns) * inventory.rows);
+    for (const auto &[id, item] : view.world.items) {
+        if (id == movingItem || !onlineItemOwnedBy(item, view.load.playerUnitId) || item.mode != 0 || item.page != 1) continue;
+        const auto other = inventory.items.find(id);
+        if (!item.positionKnown || other == inventory.items.end() || !other->second.decoded) return {};
+        const auto &shape = other->second;
+        if (shape.width < 1 || shape.height < 1 || item.x + shape.width > inventory.columns || item.y + shape.height > inventory.rows) return {};
+        for (int y = item.y; y < item.y + shape.height; ++y)
+            for (int x = item.x; x < item.x + shape.width; ++x) occupied[size_t(y) * inventory.columns + x] = true;
+    }
+    for (int y = 0; y + height <= inventory.rows; ++y) for (int x = 0; x + width <= inventory.columns; ++x) {
+        bool free = true;
+        for (int row = y; free && row < y + height; ++row)
+            for (int col = x; col < x + width; ++col)
+                if (occupied[size_t(row) * inventory.columns + col]) { free = false; break; }
+        if (free) return OnlinePoint{uint16_t(x), uint16_t(y)};
+    }
+    return {};
+}
 RemoteInventory::RemoteInventory(Archives &archives, net::protocol::ClientProfile profile) : profile_(profile), strings_(archives) {
     for (const char *name : {"weapons", "armor", "misc", "itemtypes", "itemstatcost", "inventory", "belts", "books", "charstats", "bodylocs", "npc", "monstats", "hireling"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));

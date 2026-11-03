@@ -72,7 +72,7 @@ class SceneAssets {
     SceneStreams streams;
     SceneAudio sceneAudio;
     EscapeMenu escapeMenu;
-    ClassicFont font, speechFont, questFont, skillGreenFont, characterLabelFont, characterPointFont,
+    ClassicFont font, questFont, skillGreenFont, characterLabelFont, characterPointFont,
         characterCompactFont, characterRedFont, hirelingBlueFont, hirelingRedFont, skillLevelBlueFont, skillLevelCompactFont,
         skillLevelCompactBlueFont, skillLevelCompactRedFont;
     ClassicFont automapPartyFont, automapNpcFont, automapOtherFont, deathFont;
@@ -152,9 +152,8 @@ class SceneAssets {
         vendorButtons, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, storageNavigation, storageMaterialUpgrade, cubePanel, cubeTransmuteButton, orificePanel, desecratePanel, orificeButtons, beltPanel, beltSocket, orbs, hostileIcon,
         globeOverlap, runButton, button, durabilityIcons;
-    std::string waypointTitle;
+    std::string waypointTitle, waypointNoDestinationsTitle, waypointCloseHint;
     std::string questNoticeLabel;
-    std::array<ClassicFont, 3> waypointFonts; // Native PL2 white, blue and dark grey.
     std::array<GpuAnimation, size_t(QuestId::Count)> questIcons;
     std::array<Rectangle, size_t(QuestId::Count)> questFaces{};
     std::array<GpuAnimation, 7> tombSymbols;

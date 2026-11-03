@@ -122,5 +122,13 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
     }
     if(map.observerVisible) unitMark(map.observer, {0,0,255,255});
     EndScissorMode();
+    // D2Client 1.13c RVA 62680 draws these in screen space using font16, color 4.
+    const auto &font = assets_.itemTextFonts[4];
+    int baseline = 24;
+    for (const auto &line : map.infoLines) {
+        if (line.empty()) continue;
+        font.drawBaseline(line, {float(W - 16 - font.textWidth(line)), float(baseline)}, 1.f);
+        baseline += 16;
+    }
 }
 } // namespace d2x

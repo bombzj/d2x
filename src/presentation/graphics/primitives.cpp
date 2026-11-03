@@ -146,6 +146,7 @@ bool parseClassicFontTable(std::string_view tbl, ClassicFont &font) {
     std::vector<Record> records;
     records.reserve(count);
     const auto *bytes = reinterpret_cast<const uint8_t *>(tbl.data());
+    font.textHeight = bytes[10];
     for (size_t i = 0; i < count; ++i) {
         const uint8_t *r = bytes + 12 + i * 14;
         records.push_back({uint32_t(r[0]) | (uint32_t(r[1]) << 8),
@@ -208,8 +209,8 @@ void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
     case 8: lineHeight = 13; break;
     default: break;
     }
-    font.framedLineHeight = lineHeight * tbl[10] / 10;
-    font.framedBaselineOffset = baselineOffset * tbl[10] / 10;
+    font.framedLineHeight = lineHeight * font.textHeight / 10;
+    font.framedBaselineOffset = baselineOffset * font.textHeight / 10;
     // Outline glyphs are registered by the strings actually measured or drawn.
     font.ready = true;
 }
@@ -221,6 +222,24 @@ Sprite rasterizeGlyph(Graphics &graphics, const IndexedFrame &frame, const Class
         return graphics.upload(glyph);
     }
     return graphics.upload(frame);
+}
+int ClassicFont::textWidth(std::string_view line) const {
+    int width = 0;
+    for (const auto code : utf8Decode(line)) width += widthOf(code);
+    return width;
+}
+void ClassicFont::drawBaseline(std::string_view line, Vec at, float scale, Color tint) const {
+    for (const auto code : utf8Decode(line)) {
+        if (code != ' ') {
+            if (const auto *glyph = glyphOf(code)) {
+                const auto &texture = glyph->texture;
+                DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
+                    {at.x + glyph->x * scale, at.y + (glyph->y - texture.height) * scale,
+                     texture.width * scale, texture.height * scale}, {}, 0, tint);
+            }
+        }
+        at.x += widthOf(code) * scale;
+    }
 }
 const Sprite *ClassicFont::glyphFrame(uint16_t frame) const {
     if (!graphics || !source || frame >= source->frames.size()) return nullptr;

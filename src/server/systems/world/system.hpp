@@ -79,6 +79,7 @@ class System {
     DomainResult<uint64_t> requestWaypoint(const ActorContext &,RegionId);
     DomainResult<uint64_t> requestTown(const ActorContext &);
     DomainResult<uint64_t> requestArea(const ActorContext &, RegionId);
+    DomainResult<uint64_t> requestAdmissionTown(RegionId); // Zero means the town's room inputs are resident.
     DomainResult<uint64_t> requestMapArea(RegionId,const std::shared_ptr<const pd2::MapInstance> &);
     DomainResult<> appendPd2MapGlobal(const std::shared_ptr<const pd2::MapInstance> &,StatValue);
     DomainResult<> install(PreparedArea);

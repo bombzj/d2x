@@ -8,9 +8,8 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
     if (ui.npcMenu) {
         NpcMenuSelection selection{};
         if (input.escape) selection.action = NpcMenuAction::Cancel;
-        else if (input.insideViewport && input.leftPressed) selection = view_.clickNpcMenu(input.mouse);
-        if (input.insideViewport && input.leftPressed && selection.action == NpcMenuAction::None)
-            selection.action = NpcMenuAction::Cancel;
+        else if (input.insideViewport && input.leftPressed)
+            selection = view_.clickNpcMenu(input.mouse).value_or(NpcMenuSelection{NpcMenuAction::Cancel});
         const auto action = selection.action;
         const auto quest = selection.quest;
         if (action == NpcMenuAction::Talk) {
@@ -69,10 +68,11 @@ bool SceneController::handleNpcDialogue(const FrameInput &input) {
     if (!ui.dialogue.empty()) {
         const bool finished = view_.npcSpeechFinished();
         if (ui.dialogueTextTopic && (finished || input.escape || (input.insideViewport && input.leftPressed))) {
+            const bool returnToMenu = ui.dialogueFromMenu;
             npcClient_.submit(TalkToNpc{ui.dialogueObject, TalkToNpc::Action::Acknowledge, ui.dialogueTextTopic});
             view_.cancelNpcDialogue();
             const auto &conversation = npcClient_.read(ui.dialogueObject);
-            if (conversation.valid && !conversation.scrollMessage) view_.openNpcMenu(ui.dialogueObject, conversation.speaker, false);
+            if (returnToMenu && conversation.valid) view_.openNpcMenu(ui.dialogueObject, conversation.speaker, false);
             return true;
         }
         if (input.escape || finished) {

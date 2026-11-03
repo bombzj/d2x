@@ -1,12 +1,9 @@
 #include "presentation/scene_view.hpp"
 #include "classic_panel.hpp"
-#include "waypoint_panel.hpp"
 
 namespace d2x {
 void SceneView::drawPanelFrame(bool right) const {
-    drawClassicPanelFrame(assets_.waypointBorder, right);
-}
-void drawClassicPanelFrame(const GpuAnimation &border, bool right) {
+    const auto &border = assets_.waypointBorder;
     const auto side = classicSideBounds(right);
     // Native DC6 pieces are not a rectangular tile sheet; the middle consists
     // only of the outer vertical border. See OpenDiablo2 d2ui/frame.go.

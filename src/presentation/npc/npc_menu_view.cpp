@@ -6,8 +6,18 @@
 namespace d2x {
 Rectangle npcMenuBounds(const OriginalMenu &menu, Vec point, Rectangle viewport,
     std::string_view speaker, std::span<const std::string> options) {
-    return menu.bounds({point.x, point.y-menu.size(speaker,options).y-43},
-        viewport,speaker,options);
+    // D2Client 46880 -> A3580: position the service list around the
+    // projected unit, then reserve the original top/left margin.
+    const float anchor = std::max(viewport.y+20, point.y-150);
+    const float top = anchor - int(menu.size(speaker, options).y)/3;
+    auto box = menu.bounds({point.x, top}, viewport, speaker, options);
+    if (box.x + box.width > viewport.x + viewport.width - 10)
+        box.x = viewport.x + viewport.width - box.width;
+    if (box.y + box.height > viewport.y + viewport.height - 10)
+        box.y = viewport.y + viewport.height - box.height;
+    box.x = std::max(viewport.x+10, box.x);
+    box.y = std::max(viewport.y+10, box.y);
+    return box;
 }
 namespace {
 std::vector<std::string> labels(const std::vector<NpcMenuEntry> &options) {
@@ -63,24 +73,21 @@ bool SceneView::startNpcTextTopic(uint32_t topic) {
     if (!view_.npcMenu || found==npcView_.textTopics.end()) return false;
     openNpcDialogue(view_.dialogueObject,view_.dialogueSpeaker,found->second,topic);
     view_.dialogueTextTopic = topic;
+    view_.dialogueFromMenu = true;
     return true;
 }
-NpcMenuSelection SceneView::clickNpcMenu(Vec mouse) {
+std::optional<NpcMenuSelection> SceneView::clickNpcMenu(Vec mouse) const {
     const auto &options = view_.npcTopics ? npcView_.talkEntries : npcView_.services;
-    const auto row = npcMenuHit(originalMenu_,npcView_.valid ? screen(npcView_.position) : Vec{W/2.f,H/2.f},
-        worldViewport(),view_.dialogueSpeaker,labels(options),mouse);
-    if (row) return options[*row].selection;
-    return {};
+    const auto box = npcMenuBounds(originalMenu_, npcView_.valid ? screen(npcView_.position) : Vec{W/2.f,H/2.f},
+        worldViewport(), view_.dialogueSpeaker, labels(options));
+    if (!CheckCollisionPointRec(rv(mouse), box)) return {};
+    const int row = originalMenu_.hit(box, !view_.dialogueSpeaker.empty(), options.size(), mouse);
+    return row < 0 ? NpcMenuSelection{} : options[size_t(row)].selection;
 }
 void SceneView::drawNpcMenu(Vec mouse) const {
     const auto &options = view_.npcTopics ? npcView_.talkEntries : npcView_.services;
     d2x::drawNpcMenu(originalMenu_, npcView_.valid ? screen(npcView_.position) : Vec{W / 2.f, H / 2.f},
         worldViewport(),view_.dialogueSpeaker, labels(options), mouse, view_.dialogueStatus);
-}
-std::optional<size_t> npcMenuHit(const OriginalMenu &menu, Vec point, Rectangle viewport,
-    std::string_view speaker, std::span<const std::string> options, Vec mouse) {
-    const auto row = menu.hit(npcMenuBounds(menu,point,viewport,speaker,options),!speaker.empty(),options.size(),mouse);
-    return row < 0 ? std::nullopt : std::optional<size_t>{size_t(row)};
 }
 void drawNpcMenu(const OriginalMenu &menu, Vec point, Rectangle viewport, std::string_view name,
     std::span<const std::string> options, Vec mouse, std::string_view status) {

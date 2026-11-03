@@ -122,6 +122,13 @@ DomainResult<uint64_t> System::request(RegionId destination,std::shared_ptr<cons
     ++nextRequest_;
     return {DomainStatus::Applied, id};
 }
+DomainResult<uint64_t> System::requestAdmissionTown(RegionId town) {
+    if (const auto *area = ports_.areas.find(town)) {
+        if (!area->definition.town) return {DomainStatus::InvalidRequest, {}};
+        if (roomInputsReady(town)) return {DomainStatus::Applied, 0};
+    }
+    return request(town);
+}
 DomainResult<uint64_t> System::requestArea(const ActorContext &actor, RegionId destination) {
     const auto *player = ports_.players.find(actor.player);
     const auto *source = ports_.areas.find(actor.area);

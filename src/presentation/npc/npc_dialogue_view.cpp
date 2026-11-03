@@ -1,32 +1,15 @@
 #include "presentation/scene_view.hpp"
+#include "presentation/world/palette_blend_view.hpp"
 #include <algorithm>
 
 namespace d2x {
 namespace {
-constexpr int visibleLines = 5;
-inline int lineHeight() { return int(20 * classicPanelScale()); }
-inline float initialOffset() { return float(lineHeight()); }
-Rectangle speechBounds() { return {(W - 400 * classicPanelScale()) / 2, 0,
-                                   400 * classicPanelScale(), 120 * classicPanelScale()}; }
-int textWidth() { return int(speechBounds().width) - 32; }
-float maxOffset(size_t lines) {
-    return speechBounds().height - 24 + std::max(0, int(lines) - visibleLines) * lineHeight();
-}
-
-std::string fontText(std::string text) {
-    // The original Latin DC6 font is byte-indexed. Keep MPQ text intact in content;
-    // normalize only punctuation that this renderer cannot address as UTF-8.
-    for (auto [from, to] : {std::pair{"\xe2\x80\x99", "'"}, {"\xe2\x80\x98", "'"},
-                            {"\xe2\x80\x9c", "\""}, {"\xe2\x80\x9d", "\""},
-                            {"\xe2\x80\xa6", "..."}, {"\xe2\x80\x94", "--"},
-                            {"\xe2\x80\x93", "-"}}) {
-        size_t at = 0;
-        while ((at = text.find(from, at)) != std::string::npos) {
-            text.replace(at, std::char_traits<char>::length(from), to);
-            at += std::char_traits<char>::length(to);
-        }
-    }
-    return text;
+// D2Client 7D200 / 7BB40, in native UI pixels.
+constexpr int lineHeight = 18;
+constexpr int firstBaseline = 124;
+Rectangle speechBounds() { return {float((W-325)/2), 7, 325, 122}; }
+float endOfScroll(size_t lines) {
+    return 113.f + std::max(1, int(lines)-1) * lineHeight;
 }
 } // namespace
 
@@ -40,9 +23,10 @@ void SceneView::cancelNpcDialogue() {
     assets_.streams.stopSpeech();
     view_.dialogue.clear();
     view_.dialogueTextTopic.reset();
+    view_.dialogueFromMenu = false;
     view_.dialogueLines.clear();
     view_.dialogueStatus.clear();
-    view_.dialogueOffset = initialOffset();
+    view_.dialogueOffset = 0.f;
     view_.dialogueManualScroll = false;
     view_.npcMenu = false;
     view_.npcTopics = false;
@@ -59,60 +43,31 @@ void SceneView::displayNpcDialogue(EntityId object, std::string speaker, std::st
     view_.dialogueSpeaker = std::move(speaker);
     view_.dialogue = std::move(text);
     view_.dialogueStatus.clear();
-    // Show the first line immediately, then continue the bottom-to-top crawl.
-    view_.dialogueOffset = initialOffset();
+    view_.dialogueOffset = 0.f;
     view_.dialogueManualScroll = false;
     view_.dialogueLines.clear();
-    auto rendered = fontText(view_.dialogue);
-    size_t start = 0;
-    while (start <= rendered.size()) {
-        size_t end = rendered.find('\n', start);
-        if (end == std::string::npos)
-            end = rendered.size();
-        auto paragraph = rendered.substr(start, end - start);
-        if (paragraph.empty())
-            view_.dialogueLines.emplace_back();
-        else {
-            std::string line;
-            size_t wordAt = 0;
-            while (wordAt < paragraph.size()) {
-                while (wordAt < paragraph.size() && paragraph[wordAt] == ' ')
-                    ++wordAt;
-                if (wordAt == paragraph.size())
-                    break;
-                size_t wordEnd = paragraph.find(' ', wordAt);
-                if (wordEnd == std::string::npos)
-                    wordEnd = paragraph.size();
-                auto word = paragraph.substr(wordAt, wordEnd - wordAt);
-                auto candidate = line.empty() ? word : line + ' ' + word;
-                if (!line.empty() && speechPainter_.measure(candidate, int(12*classicPanelScale())) > textWidth()) {
-                    view_.dialogueLines.push_back(std::move(line));
-                    line = std::move(word);
-                } else
-                    line = std::move(candidate);
-                wordAt = wordEnd + 1;
-            }
-            if (!line.empty())
-                view_.dialogueLines.push_back(std::move(line));
-        }
-        if (end == rendered.size())
-            break;
-        start = end + 1;
+    std::string_view remaining = view_.dialogue;
+    while (!remaining.empty()) {
+        const auto end = remaining.find('\n');
+        auto line = remaining.substr(0, end);
+        if (line.ends_with('\r')) line.remove_suffix(1);
+        view_.dialogueLines.emplace_back(line);
+        if (end == std::string_view::npos) break;
+        remaining.remove_prefix(end+1);
     }
 }
 
 void SceneView::scrollNpcDialogue(int amount) {
     view_.dialogueManualScroll = true;
-    view_.dialogueOffset = std::clamp(view_.dialogueOffset + amount * lineHeight(),
-                                      initialOffset(), maxOffset(view_.dialogueLines.size()));
+    view_.dialogueOffset = std::clamp(view_.dialogueOffset + amount * lineHeight,
+                                      0.f, endOfScroll(view_.dialogueLines.size())-lineHeight);
 }
 
 void SceneView::advanceNpcDialogue(float dt) {
     if (view_.dialogue.empty() || view_.dialogueManualScroll) return;
-    // Keep the existing text-only cadence until speech timing is available,
-    // but scroll continuously from the bottom of the original-style window.
-    view_.dialogueOffset = std::min(maxOffset(view_.dialogueLines.size()),
-        view_.dialogueOffset + dt * lineHeight() / 2.2f);
+    // (elapsed milliseconds >> 2) * TBL rate, in 1/1024 pixel units.
+    view_.dialogueOffset = std::min(endOfScroll(view_.dialogueLines.size()),
+        view_.dialogueOffset + dt * (250.f/1024.f) * assets_.streams.speechScrollRate());
 }
 
 bool SceneView::closeNpcDialogue() {
@@ -133,21 +88,23 @@ bool SceneView::showNextNpcGossip() {
 
 void SceneView::drawNpcDialogue() const {
     if (view_.audio.speech == NpcSpeechMode::AudioOnly) return;
-    auto bounds = speechBounds();
-    DrawRectangleRec(bounds, {0, 0, 0, 200});
-    DrawRectangleLinesEx(bounds, 1, gold);
-    uiScissor(bounds.x + 14, bounds.y + 8,
-              float(textWidth() + 4), bounds.height - 16);
-    const float firstY = bounds.y + bounds.height - 16 - view_.dialogueOffset;
+    const auto box = speechBounds();
+    const int palette = std::clamp(mapView().palette, 0, 4);
+    const auto *blend = palette ? actPaletteBlends_[size_t(palette)].get() : paletteBlend_.get();
+    if (blend) blend->drawRectangle(box, BLACK, true);
+    originalMenu_.drawBorder({box.x-1, box.y-1, box.width+2, box.height+2});
+    uiScissor(box.x, 12, box.width, 112);
     for (size_t index = 0; index < view_.dialogueLines.size(); ++index) {
-        const float y = firstY + float(index) * lineHeight();
-        if (y + lineHeight() < bounds.y + 8) continue;
-        if (y > bounds.y + bounds.height - 8) break;
-        speechPainter_.label(view_.dialogueLines[index], int(bounds.x) + 16, int(y), int(12*classicPanelScale()), WHITE);
+        const float y = firstBaseline - int(view_.dialogueOffset) + float(index)*lineHeight;
+        if (y < 12) continue;
+        if (y > firstBaseline + lineHeight) break;
+        assets_.questFont.drawBaseline(view_.dialogueLines[index], {box.x+16, y}, 1);
     }
     EndScissorMode();
 }
 bool SceneView::npcSpeechFinished() const {
-    return view_.audio.speech == NpcSpeechMode::AudioOnly && assets_.streams.speechFinished();
+    if (view_.audio.speech == NpcSpeechMode::AudioOnly)
+        return assets_.streams.speechFinished().value_or(true);
+    return !view_.dialogueManualScroll && view_.dialogueOffset >= endOfScroll(view_.dialogueLines.size());
 }
 } // namespace d2x

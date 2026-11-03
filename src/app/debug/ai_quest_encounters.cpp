@@ -88,10 +88,7 @@ bool DebugAi::Impl::questService(Context &c,const QuestStep &step) {
     if(!questRun.materialPhase) {
         const auto npc=find(c,*step.target);
         if(!npc) {if(!approachKnown(c,*step.target)) explore(c,step.target->name);return false;}
-        if(world.npcRequested && world.npcRequested!=npc->key.id) {c.session.close_npc();return false;}
-        if(!world.npcConversation || world.npcConversation->type!=1 || world.npcConversation->source!=npc->key.id) {
-            walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true}});return false;
-        }
+        if (!prepareNpcService(c, npc->key, DebugActionOwner::Goal)) return false;
         const auto &item=world.items.at(*questRun.material);OnlineItemCommand take;
         take.action=OnlineItemAction::Take;take.item=item.id;take.itemRevision=item.revision;
         if(!questItemRequest(c,take,QuestPending::Action::Take,"quest-service-take-submitted")) return false;

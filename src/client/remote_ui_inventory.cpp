@@ -1,4 +1,5 @@
 #include "remote_ui_clients_impl.hpp"
+#include "client/inventory_actions.hpp"
 #include "content/pd2_stash.hpp"
 
 namespace d2x {
@@ -370,6 +371,11 @@ std::optional<Cell> RemoteUiClients::Impl::Inventory::beltSpace(std::string_view
             return {};
         }
 std::optional<Cell> RemoteUiClients::Impl::freeCell(EntityId target, const InventoryItemView &item) const {
+        if (target == inventoryView.containers.backpack) {
+            const auto cell = firstBackpackSpace(session.read(), items.read(), guid(item.id));
+            if (!cell) return {};
+            return Cell{cell->x, cell->y};
+        }
         const auto *grid = inventoryView.container(target);
         const auto *def = inventoryView.definition(item.definition);
         if (!grid || !def) return {};
@@ -499,7 +505,7 @@ void RemoteUiClients::Impl::inventoryCommand(InventoryIntent intent) {
                         }
                     }
                 }
-                c.action = OnlineItemAction::Use; c.item = guid(v.item.id); c.itemRevision = v.item.revision;
+                c = useItemCommand(guid(v.item.id), v.item.revision);
                 if constexpr (std::is_same_v<T, UseHirelingPotion>) {
                     if (inventory.preview(v)!=InventoryError::None) {notice="Item cannot be used on this hireling.";return;}
                     c.mercenary=true;
@@ -511,11 +517,11 @@ void RemoteUiClients::Impl::inventoryCommand(InventoryIntent intent) {
                     }
                 }
             } else if constexpr (std::is_same_v<T, UseBeltColumn>) {
-                if (const auto *item = inventoryView.item(inventoryView.itemAt(owned.belt,{v.column,0}))) {
-                    if (v.hireling && inventory.preview(UseHirelingPotion{item->handle()})!=InventoryError::None) return;
-                    c.action = OnlineItemAction::Use; c.item = guid(item->id); c.itemRevision = item->revision; c.mercenary = v.hireling;
-                }
-                if (c.action != OnlineItemAction::Use) return;
+                const auto use = useBeltColumnCommand(session.read(), v.column, v.hireling);
+                const auto *item = inventoryView.item(inventoryView.itemAt(owned.belt,{v.column,0}));
+                if (!use || !item || use->item != guid(item->id) || use->itemRevision != item->revision) return;
+                if (v.hireling && inventory.preview(UseHirelingPotion{item->handle()})!=InventoryError::None) return;
+                c = *use;
             } else if constexpr (std::is_same_v<T, SwapItems>) {
                 c.item = guid(v.first.id); c.itemRevision = v.first.revision; c.target = guid(v.second.id); c.targetRevision = v.second.revision;
                 const auto *target = inventoryView.item(v.second.id);

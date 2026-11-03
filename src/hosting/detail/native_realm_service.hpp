@@ -174,6 +174,8 @@ struct NativeRealmService {
     bool checkpoint();
     void prepareReload();
     PreparedGame prepareGame(PersistentCharacter,std::optional<server::GameSettings> settings={});
+    PreparedGame prepareGuest(PersistentCharacter, const HostedGame &);
+    PreparedGame prepareAdmission(PlayerBinding, const GeneratedArea &);
     void admitExternal(PersistentCharacter, HostedGame &, uint32_t ticketHash, uint16_t gameId);
     void discardReload();
     void close(bool save = true, bool keepReload = false);

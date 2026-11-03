@@ -4,6 +4,7 @@
 #include "resources/atomic_file.hpp"
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string_view>
 
 namespace d2x {
@@ -26,7 +27,7 @@ class CharacterStore {
     void create(std::string name, unsigned characterClass, uint32_t seed, bool hardcore = false);
     void erase(uint64_t revision, uint64_t id);
     std::unique_ptr<Lease> acquire(uint64_t revision, uint64_t id);
-    PersistentCharacter load(Lease &);
+    PersistentCharacter load(Lease &, std::optional<int> gameDifficulty = {});
     void save(Lease &, const PersistentCharacter &);
     void saveBytes(Lease &, Bytes); // Validated native TCP/IP return; preserve original bytes.
   private:

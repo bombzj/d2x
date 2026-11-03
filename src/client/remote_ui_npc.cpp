@@ -37,7 +37,10 @@ void RemoteUiClients::Impl::Npc::submit(NpcIntent c) {
                 using T = std::decay_t<decltype(v)>;
                 OnlineItemCommand request;
                 request.npc = o.context.npc.value_or(0);
-                if constexpr (std::is_same_v<T, EndNpcConversation>) { o.session.close_npc(o.context); return; }
+                if constexpr (std::is_same_v<T, EndNpcConversation>) {
+                    if (o.session.close_npc(o.context)) o.context = onlineIntentContext(o.session.read());
+                    return;
+                }
                 else if constexpr (std::is_same_v<T, OpenHirelingList>) {
                     if(!o.session.hireling_service(OnlineHirelingAction::List,{},o.context)) o.notice="Hireling list request is unavailable or pending.";
                     return;
@@ -60,8 +63,9 @@ void RemoteUiClients::Impl::Npc::submit(NpcIntent c) {
                 else if constexpr (std::is_same_v<T, TalkToNpc>) {
                     if (v.action == TalkToNpc::Action::Acknowledge && v.message && *v.message <= UINT16_MAX) {
                         const auto &conversation = o.session.read().world.npcConversation;
-                        if (conversation && !conversation->acknowledged.contains(uint16_t(*v.message)))
-                            o.session.acknowledge_npc_message(uint16_t(*v.message), o.context);
+                        const auto topic = uint16_t(*v.message);
+                        if (!conversation || conversation->acknowledged.contains(topic)) return;
+                        o.session.acknowledge_npc_message(topic, o.context);
                     } else if (v.action == TalkToNpc::Action::Trade) {
                         request.action = OnlineItemAction::TradeOpen; o.enqueue(request);
                     }

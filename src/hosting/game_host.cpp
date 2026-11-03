@@ -287,6 +287,11 @@ std::optional<std::vector<server::world::PrepareArea>> GameHost::pendingAreas(Ga
     if (!slot) return {};
     return slot->game->pendingAreas();
 }
+server::DomainResult<uint64_t> GameHost::requestAdmissionTown(GameHandle handle, RegionId town) {
+    auto *slot = find(handle);
+    if (!slot) return {server::DomainStatus::Stale, {}};
+    return slot->game->requestAdmissionTown(town);
+}
 server::DomainResult<> GameHost::installArea(GameHandle handle, server::world::PreparedArea area) {
     auto *slot = find(handle);
     if (!slot) return {server::DomainStatus::Stale, std::nullopt};

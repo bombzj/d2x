@@ -36,7 +36,9 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 
 依据：本地D2MOO的CCmd系统消息、Game的JOINLIST／OPENCHAR／保存回传及D2PacketDef布局用于解释流程；包号／长度以当前1.13c DLL为准：D2Client RVA 0x14630发6A，0x14D90发6C（partSize+7，含忽略的尾字节）；D2Game RVA 0x2BA73发B2／53字节，0x2D1E2发B3／partSize+7，0x8C4B0发B4／5字节入局错误，0x2E3CE同样回送角色加载错误。D2Net长度表0xA900的B4项为5，当前目录补齐该项；RealmSession立即停止入局并保留u32原错误码，TCP/IP预检码6／15／16分别指游戏／姓名资格、满员、版本不符（D2Game RVA 0xCAD60实际检查版本13）。D2Net的实际端口为4000。参考代码不加入源码或替代MPQ内容规则。
 
-局前资源仍为当前MPQ的TCPIPscreen、3WideButtonBlank、PopUpOkCancel2、CancelButtonBlank和textbox2，文字TBL 5116–5124；难度选择复用PopUpLarge、MediumButton及TBL 5156–5154，不声称该弹窗布局已逐像素对照原版。七职业／资料片角色沿原存档支持范围，支持普通／HC并隔离房间，死亡HC及Ladder仍拒绝入场；原版互通的观察条件及缺口见下节。
+局前资源仍为当前MPQ的TCPIPscreen、3WideButtonBlank、PopUpOkCancel2、CancelButtonBlank和textbox2，文字TBL 5116–5124。七职业／资料片角色沿原存档支持范围，支持普通／HC并隔离房间，死亡HC及Ladder仍拒绝入场；原版互通的观察条件及缺口见下节。
+
+单机与TCP/IP Host共用选角后的难度弹窗。本机1.13c D2Launch RVA 0xA700创建控件，描述表位于RVA 0x22EA0–0x22F90。按800×600画布，CharSelect/DifficultyLevels底图位于(237,200)，当前MPQ两片合计326×200。三个FrontEnd/WideButtonBlank按钮各272×35，从(264,262)起向下间隔43像素。标题读取patchstring 10019、font24及PL2文字色7，按钮读取10018／10017／10016。资料片进度5开放噩梦、10开放地狱。鼠标和原快捷键R／N／H共用此资格，Esc返回选角。D2Win在底层控件之后绘制透明度127的黑色遮罩，再绘制弹窗；前端难度选择、输入主机地址及公共消息／确认框共用此绘制顺序。新布局、禁用亮度与多语言排版待客户端实机对照。
 
 ## TCP/IP原版互通参考与缺口
 
@@ -96,15 +98,15 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 
 肖像绘制已保存 native 1.13c 且原 COF／DCC 完整的外观；组件染色字节与游戏内单位预览同样不套调色板、按基础组件图绘制，染色外观不呈现但仍出图。肖像动画取屏幕正南朝向（DCC方向表 8／16／32 均映射到方向 4，方向 0 为左下）。legacy 新角（非已知版本）或未核实组件编号组合保留真实身份，肖像暂不绘制。建角使用当前 MPQ 七职业前端动画。
 
-选角产品页只走RealmFrontend；旧app/character_frontend未编译／调用，保留作功能参考，不维护第二条本地选角执行链。沿旧选择器和OpenDiablo2 character_select核对双击同一角色1.25秒进入、滚轮／PageUp／PageDown翻页和两列四行布局；卡片步距读取当前MPQ charselectbox的两段总宽及原高度（当前272×92），标签及肖像位置对齐原布局。翻页使用既有MPQ numberarrows及页码；完整原Scrollbar仍未还原。Realm空白底图的标题／名称没有烘焙文字；Current Realm、Realm名称及Change Realm按钮统一使用已有原font16。字体字宽来自当前MPQ，角色列表、选择、创建和删除仍由MCP原协议驱动；Ladder／经典角色转换仍不可用。槽位角色名颜色经原D2Launch CharSel反汇编认证：名字经D2Win!10022写入，颜色参数=hardcore?1:4，绘制路径把4归一化为0，死亡位不参与颜色且原版该字段无灰色；RealmFrontend据此用当前MPQ font16的PL2文字色1渲染HC名字、其余白色，可选性仍由既有playable门控（realm_frontend.cpp）。死亡位另经原D2Launch认证写入肖像格子控件flags的0x10位（hardcore写0x20，经D2Win!10194），原版据此把死亡HC角色肖像画成半透明幽灵；RealmFrontend在portrait里对dead角色以半透明alpha绘制该槽位肖像（realm_frontend.cpp:407），颜色与幽灵都不进可选性判定。选中角色大名字与槽位同规则（hardcore红、死亡位不参与），仅无权限的Ladder等其他不可选状态显示灰色；Ladder／描述行颜色及其余文字效果仍待原版对照。
+选角产品页只走RealmFrontend；旧app/character_frontend未编译／调用，保留作功能参考，不维护第二条本地选角执行链。沿旧选择器和OpenDiablo2 character_select核对双击同一角色1.25秒进入、滚轮／PageUp／PageDown翻页和两列四行布局；卡片步距读取当前 MPQ charselectbox 的两段总宽和高度（272×93）。翻页使用 MPQ numberarrows 及页码，完整原 Scrollbar 仍未还原。Realm 名称与角色创建、删除等操作仍走 MCP。1.13c D2Launch 的八个角色文本框从 RVA 0x227E0 起，左缩进 76、上缩进 3。称号、姓名、等级职业、资料片与天梯逐行使用本地化 Font16，字形、字宽和字高来自 MPQ 的 DC6/TBL。普通称号与姓名用 PL2 色 4，专家级用 1，等级职业用 0，资料片用 2，天梯用 4。该文本框标志为 0x20，不触发可选列表高亮行的换色。顶部姓名控件（RVA 0x22C60）另用居中的 Font42 和文字色 0。死亡位控制肖像的半透明效果，可选性仍按 playable 判断。
 
 创建／加入／握手超时同样重新获取服务器角色列表，不自动重发建房或加入。加载超时先请求原保存退局；退局等待超时后关闭旧游戏连接并重新取角色列表，错误明确标记保存结果未知。协议损坏、账号连接失败等仍结束会话，失败提示关闭后回登录页。创建／加入／握手取消和其余恢复分支尚未逐项核对原服行为。
 
 游戏传输失败源码保留目标IP／端口及底层TCP原因，在原MPQ错误文案后显示；不修改MCP加入回包的保留字段。2026-10-08本机D2GS在22:07:49启动时记录`QSNTInit failed on bind() - err=10013`，D2CS随后可成功建房／发加入票据，但D2GS未监听4000，客户端入局失败；绑定失败的外部诱因尚未确定。旧进程22:18:38被watchdog退出；按用户授权仅重新启动D2GS后，22:20恢复`0.0.0.0:4000`监听并经D2CS认证启用8个槽位，未启动客户端或建房复验。该环境恢复不作为客户端回归通过。
 
-大厅按钮底纹：当前原Create Game帧大量使用251–254号索引，Units全为黑色，Act1保留原色阶。项目MPQ与原1.13c安装的按钮及Act1表哈希一致；原CelFileNormalize仅处理指针／缓存，不转换像素索引。当前六类大厅控件独立以Act1原表上传，背景及其它UI不改变；原Create Game帧有烘焙文字，不额外叠字。大厅按D2Win BUTTON_Draw高度规则使用高按钮Exocet10、紧凑按钮Ridiculous，动态文案黑字，禁用状态保留原控件底图处理。原版精确亮度、所有状态及窗口尺寸仍未对齐。800×600原生像素居中、局内画布及8人／默认关闭等级限制不变。
+大厅按钮底纹：当前原Create Game帧大量使用251–254号索引，Units全为黑色，Act1保留原色阶。项目MPQ与原1.13c安装的按钮及Act1表哈希一致；原CelFileNormalize仅处理指针／缓存，不转换像素索引。当前六类大厅控件独立以Act1原表上传，背景及其它UI不改变；动态按钮文案走共用的 D2Win 字形混合路径，禁用时优先取原控件禁用帧。原版精确亮度、所有状态及窗口尺寸仍未对齐。800×600原生像素居中、局内画布及8人／默认关闭等级限制不变。
 
-EXIT按钮：当前MPQ MediumButtonBlank原帧为128×35，按本地D2MOO D2WinButton::BUTTON_Draw高度规则仍使用Exocet10。原Exocet10的EXIT字形使用15–32号灰阶索引，含亮灰像素；公共UiPainter在原字形可用时不追加描边，POINT采样也不额外插值。当前动态按钮文案按原非透明字形遮罩统一BLACK，保留笔画轮廓、不扩张／侵蚀字形；默认字体的高度分支用于共用入口，≥35使用Exocet10、其余使用Ridiculous，Realm显式font16保留。具体视觉效果仍待原版对照。
+前端共用按钮按 1.13c D2Win RVA 0xFC60 的控件高度选字。高度至少 35 用 FontExocet10，其余用 FontRidiculous。单／双行基线取原 TBL 高度，按下时左移 2、下移 2。RVA 0xF8D0 的文字绘制传入模式 4（BURN）和文字色 0。动态铭文按字形与底图的原始索引查 PL2 BURN 表，合成结果按控件、状态和文案缓存。原生字库缺字时沿用本地化文字后备路径。首页 Credits、Cinematics 使用 CharSelect/ShortButtonBlank（135×25）；选角页 Exit 使用 MediumButtonBlank（128×35）。
 
 Join双击复用现有选角的1.25秒窗口，绑定房间名称／MCP索引及连接／游戏代次；改输入、滚轮、点击其他位置、切页／刷新、模态及失焦清理点击记录。第二击沿原Join／密码提交链路，不重复查询、不要求详情Ready。右侧布局依据用户原版Join截图和当前joingamebckg.dc6，font8／Units PL2金色4与灰色5，字宽沿原TBL。MCP 0x06提供uptimeSeconds、creatorLevel／levelDifference、玩家姓名／等级／职业；时间显示服务器查询时的快照，等级范围取PvPGN game.cpp原限制与当前experience.txt MaxLvl（现表99）的可玩范围交集，职业读charstats.txt，缺等级依据显示未知。Elapsed Time及连接词to在当前三份英文TBL未找到，显示文案取用户原版截图，Level格式沿TBL 5017。三个可见玩家槽各显示姓名及等级／职业两行，其余用滚轮翻阅。
 
@@ -315,7 +317,7 @@ NoDrop分布、同队光环／随从动态标记、八人竞争与背压、跨�
 
 当前MPQ的trade.dc6四帧、buysellbtn.dc6第16／17勾选帧及第10／11取消帧、800borderframe、font16／Sky、TBL用于完整左右面板；第12–15帧是左右箭头，不用于灰色勾选。绿色勾选保留原勾与边框，内区按当前Sky PL2绿色变换生成，原版专用变换尚未认证。用户提供接受后及放入手套／绿勾截图作为布局依据：左侧上方对方报价，下方本人报价，右侧本人库存；格子坐标／容量读取inventory.txt的Trade Page 1-2／2-2。点击本人Gold字段用原dialogbackground和strTradeGoldHowMuch打开数字报价，Enter提交／Esc取消编辑；该弹窗布局参考本地OpenDiablo2 MoveGoldPanel，尚未与原版交易金币弹窗截图认证。物品格底色及全部像素配对仍未认证。
 
-NPC服务／Talk菜单和发起／接收交易邀请共用OriginalMenu（presentation/graphics/original_menu.*）：当前MPQ boxpieces、font16／原TBL字宽及Sky PL2金色／蓝色变换；按用户Warriv／Akara／等待交易截图统一金色NPC标题、白色居中选项、蓝色悬停。收到交易邀请时使用当前MPQ的strTradeAgreeTo作为标题，确认行读取TBL的ok（英文显示OK），取消行读取strUiMenu1，与用户原版交易邀请截图一致；标题和选项共同参与菜单尺寸及布局，发起方等待菜单不显示该标题。无悬停时邀请选项保持白色，键盘导航可显示选中项。菜单边框与文字／命中区域共用，业务动作及资格由调用方处理；没有另画NPC边框或按字符数猜宽度。boxpieces底边帧的墨迹位于顶端，拼接按当前原图的九像素差与侧边偏移修正，消息日志也复用该边框入口。精确菜单锚点及原版完整状态仍待对照。
+NPC服务／Talk菜单和发起／接收交易邀请共用OriginalMenu（presentation/graphics/original_menu.*）：当前MPQ boxpieces、font16／原TBL字宽及Sky PL2金色／蓝色变换；按用户Warriv／Akara／等待交易截图统一金色NPC标题、白色居中选项、蓝色悬停。收到交易邀请时使用当前MPQ的strTradeAgreeTo作为标题，确认行读取TBL的ok（英文显示OK），取消行读取strUiMenu1，与用户原版交易邀请截图一致；标题和选项共同参与菜单尺寸及布局，发起方等待菜单不显示该标题。无悬停时邀请选项保持白色，键盘导航可显示选中项。菜单边框与文字／命中区域共用，业务动作及资格由调用方处理；没有另画NPC边框或按字符数猜宽度。boxpieces底边帧的墨迹位于顶端，拼接按当前原图的九像素差与侧边偏移修正，消息日志也复用该边框入口。NPC 服务菜单锚点与行距见[交谈与对白](../gameplay/npc/INTERACTIONS.md#交谈与对白)。
 
 服务器实际本人报价为原INVPAGE_TRADE=2（位流page3）；对方报价是原服复制到本人库存的INVPAGE_EQUIP=1（位流page2）临时副本，独立只读容器，不能取出／交换／装备。原服action5／mode4／page2撤销临时副本时直接清理，不将副本当作真实Cursor（D2MOO PlrTrade::sub_6FC931D0与ItemMode::sub_6FC446B0）。本人背包↔报价使用既有Take／Place／Swap和原0x19／18／1F；拖拽、Shift快捷放入／取回及悬停共用库存投影。发送前核对游戏／区域／交互、物品revision与原格子尺寸／占用；同意另外绑定交易revision，物品增删／属性更新及金币回包使旧意图失效。待处理库存队列、光标物品、本人已勾选及未齐响应阻止再次同意或编辑。关闭只消费原服实际回包，不本地交换或修改保存格式。
 

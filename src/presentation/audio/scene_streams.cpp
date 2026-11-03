@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <charconv>
 #include <iostream>
 #include <map>
 #include <optional>
@@ -33,7 +34,7 @@ struct Stream {
         UpdateMusicStream(music);
     }
 };
-struct Speech { std::string sound; };
+struct Speech { std::string sound; unsigned rate; };
 }
 struct SceneStreams::Impl {
     Archives &archives;
@@ -42,6 +43,7 @@ struct SceneStreams::Impl {
     std::map<int, int> songs, checkpoints;
     std::map<std::string, Speech, std::less<>> speeches;
     std::map<uint32_t, Speech> speechIds;
+    unsigned scrollRate = 8;
     std::unique_ptr<Stream> song, speech;
     std::unique_ptr<Stream> questSong;
     struct QuestCue {std::string music,voice;double frames{};int start{},end{},voiceAt{};bool musicPending{true},voicePending{};};
@@ -51,7 +53,6 @@ struct SceneStreams::Impl {
     std::optional<int> requestedSong;
     int environmentSong{};
     float songAge = 0, checkpointAge = 0;
-    bool speechStarted = false;
     Impl(Archives &archives, const ClassicData &content, const SoundCatalog &catalog)
         : archives(archives), catalog(catalog) {
         const DataTable levels(archives.read("data/global/excel/levels.txt"));
@@ -68,14 +69,16 @@ struct SceneStreams::Impl {
         const ClassicStrings strings(archives);
         for (const auto &[group, entries] : content.npcDialogues)
             for (const auto &entry : entries) {
-                if (entry.soundId.empty()) continue;
+                const auto raw = strings.find(entry.stringKey);
+                const auto text = raw.empty() ? std::string_view(entry.text) : npcTblSpeech(raw);
+                unsigned rate = entry.speed > 0 ? unsigned(entry.speed) : 8;
+                if (text.size() < raw.size()) std::from_chars(raw.data(), raw.data()+raw.size(), rate);
+                const Speech line{entry.soundId, rate};
                 const int stringId = strings.index(entry.stringKey);
-                if (stringId >= 0) speechIds.try_emplace(uint32_t(stringId), Speech{entry.soundId});
-                const auto text = entry.stringKey.empty() ? std::string_view(entry.text)
-                    : npcTblSpeech(strings.find(entry.stringKey));
+                if (stringId >= 0) speechIds.try_emplace(uint32_t(stringId), line);
                 const auto key = npcSpeechText(text);
                 if (key.empty()) continue;
-                auto [found, inserted] = speeches.try_emplace(key, Speech{entry.soundId});
+                auto [found, inserted] = speeches.try_emplace(key, line);
                 // Ambiguous text is never assigned another NPC's voice.
                 if (!inserted && found->second.sound != entry.soundId) found->second.sound.clear();
             }
@@ -232,25 +235,29 @@ void SceneStreams::resetQuestCue() {
 void SceneStreams::speak(std::string_view text, std::optional<uint32_t> stringId) {
     stopSpeech();
     auto &state = *impl_;
-    if (state.audio.speech == NpcSpeechMode::TextOnly) return;
-    std::string sound;
+    const Speech *line = nullptr;
     if (stringId) {
         const auto found = state.speechIds.find(*stringId);
-        if (found != state.speechIds.end()) sound = found->second.sound;
-    } else {
-        const auto found = state.speeches.find(npcSpeechText(text));
-        if (found != state.speeches.end()) sound = found->second.sound;
+        if (found != state.speechIds.end()) line = &found->second;
     }
-    if (sound.empty()) {
+    if (!line) {
+        const auto found = state.speeches.find(npcSpeechText(text));
+        if (found != state.speeches.end()) line = &found->second;
+    }
+    state.scrollRate = line && line->rate ? line->rate : 8;
+    if (state.audio.speech == NpcSpeechMode::TextOnly) return;
+    if (!line || line->sound.empty()) {
         state.unavailable("unresolved NPC speech identity"); return;
     }
+    const auto &sound = line->sound;
     const auto row = state.catalog.soundRow(sound);
     if (!row) { state.unavailable(sound); return; }
     state.speech = state.load(*row, "data/local/sfx/");
-    state.speechStarted = bool(state.speech);
 }
-void SceneStreams::stopSpeech() { impl_->speech.reset(); impl_->speechStarted = false; }
-bool SceneStreams::speechFinished() const {
-    return impl_->speechStarted && impl_->speech && !IsMusicStreamPlaying(impl_->speech->music);
+unsigned SceneStreams::speechScrollRate() const { return impl_->scrollRate; }
+void SceneStreams::stopSpeech() { impl_->speech.reset(); }
+std::optional<bool> SceneStreams::speechFinished() const {
+    if (!impl_->speech) return {};
+    return !IsMusicStreamPlaying(impl_->speech->music);
 }
 } // namespace d2x

@@ -40,6 +40,7 @@ struct ClassicFont {
     bool transformed = false;
     bool originalGlyphs = false; // Resource-specific pages may require the native DC6 face.
     Color textColor = WHITE; // PL2 font color for the outline-font backend
+    int textHeight = 0; // Woo! header metric used by D2Win control baselines.
     int framedLineHeight = 0, framedBaselineOffset = 0;
     std::vector<uint32_t> codes;  // sorted code points
     std::vector<uint16_t> frames; // parallel DC6 frame
@@ -55,6 +56,8 @@ struct ClassicFont {
         const int i = indexOf(code);
         return i < 0 ? 0 : widths[size_t(i)];
     }
+    int textWidth(std::string_view line) const;
+    void drawBaseline(std::string_view line, Vec at, float scale, Color tint = WHITE) const;
     const Sprite *glyphFrame(uint16_t frame) const;
     const Sprite *glyphOf(uint32_t code) const {
         const int i = indexOf(code);

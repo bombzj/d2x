@@ -236,8 +236,7 @@ void NativeRealmService::prepareReload() {
     }
     if (const auto *room = shared.find(binding->game); room && room->capacity != 1)
         throw std::runtime_error("Reload is available only in a private one-player instance");
-    auto saved = store->load(*lease);
-    saved.difficulty = int(gameDifficulty);
+    auto saved = store->load(*lease, int(gameDifficulty));
     // Allocate the version/name metadata before acquiring a staged host slot.
     ReloadCandidate candidate{};
     candidate.expectedFile=lease->expected;
@@ -250,12 +249,24 @@ NativeRealmService::PreparedGame NativeRealmService::prepareGame(PersistentChara
     auto prepared = prepareWalkingGame(archives, *content, std::move(saved), shared.items,std::move(settings));
     const auto staged = host.create(std::move(prepared.authority));
     try {
-        auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged), host.area(staged.game, RegionId(prepared.terrain.request.level))->definition, *host.questProjection(staged),host.environment(staged.game,RegionId(prepared.terrain.request.level)).value(),host.objectSeed(staged.game).value(),NativeIdentityView{host,staged.game});
-        for (const auto &packet : packets) validateServerPacket(packet,content->pd2Host?net::protocol::ClientProfile::Pd2Local:net::protocol::ClientProfile::Lod113c);
+        auto entry = prepareAdmission(staged, prepared.terrain);
         host.pause(staged.game, true);
-        shared.terrain[staged.game].emplace(RegionId(prepared.terrain.request.level), prepared.terrain);
-        return {staged, std::move(prepared.terrain), std::move(packets)};
+        shared.terrain[staged.game].emplace(RegionId(prepared.terrain.request.level), std::move(prepared.terrain));
+        return entry;
     } catch (...) { shared.terrain.erase(staged.game); host.destroy(staged.game); throw; }
+}
+NativeRealmService::PreparedGame NativeRealmService::prepareAdmission(PlayerBinding staged, const GeneratedArea &area) {
+    const auto view = host.read(staged);
+    const auto town = RegionId(area.request.level);
+    const auto *metadata = host.areaMetadata(staged.game, town);
+    if (!view || view->actor.region != town || !metadata || !metadata->town)
+        throw std::runtime_error("Admission terrain does not match the player's town");
+    auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *view, *metadata,
+        *host.questProjection(staged), host.environment(staged.game, town).value(), host.objectSeed(staged.game).value(),
+        NativeIdentityView{host, staged.game});
+    for (const auto &packet : packets)
+        validateServerPacket(packet, content->pd2Host ? net::protocol::ClientProfile::Pd2Local : net::protocol::ClientProfile::Lod113c);
+    return {staged, area, std::move(packets)};
 }
 std::string NativeRealmService::prepareStartup(const std::string &load, const std::string &save, const std::string &characterClass) {
     auto &o = *this;

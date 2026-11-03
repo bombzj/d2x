@@ -1,4 +1,5 @@
 #include "ai_impl.hpp"
+#include "contracts/online_npc_speech.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -77,6 +78,20 @@ bool DebugAi::Impl::submitItem(Context &c,const OnlineItemCommand &command,std::
         [&]{return c.inventory.submit(c.session,command);},[&]{return c.inventory.reason();});
     if(result==DebugSubmitResult::Expired) throw std::runtime_error("Normal item input was not accepted: "+action+"; "+submissionWaits.at(owner).reason);
     return result==DebugSubmitResult::Accepted;
+}
+bool DebugAi::Impl::prepareNpcService(Context &c, OnlineUnitKey npc, DebugActionOwner owner) {
+    const auto &conversation = c.session.read().world.npcConversation;
+    if (!conversation || conversation->type != npc.type || conversation->source != npc.id) {
+        walk(c,{{"goal","unit"},{"unitType",npc.type},{"unitId",npc.id},{"interact",true}});
+        return false;
+    }
+    const auto automatic = nextAutomaticNpcSpeech(*conversation);
+    if (!automatic) return true;
+    const auto result = submitInput(c, owner, "npc-service-speech", DebugInteraction | DebugMenu,
+        [&]{return c.session.acknowledge_npc_message(*automatic);},
+        [&]{return c.session.read().error ? c.session.read().error->message : std::string{};});
+    if (result == DebugSubmitResult::Expired) throw std::runtime_error("Unable to finish the NPC's automatic speech");
+    return false;
 }
 bool DebugAi::Impl::submitCombat(Context &c,const OnlineCombatCommand &command,DebugActionOwner owner,std::string action,std::optional<Vec> at) {
     const auto key=action+":"+std::to_string(command.skill)+":"+std::to_string(unsigned(command.hand));

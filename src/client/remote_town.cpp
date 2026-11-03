@@ -489,7 +489,7 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             dialog.source = conversation.source;
             dialog.revision = conversation.revision;
             dialog.position = target->position;
-            dialog.speaker = strings_.find(target->name);
+            dialog.speaker = target->name; // NPC and object targets already carry their display names.
             dialog.type=conversation.type;
             for (const auto &message : conversation.messages)
                 dialog.messages.push_back({message.stringId, message.menu,
@@ -1184,6 +1184,27 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
         return;
     }
     updateAutomapBase(v);
+    auto &[areaName, version, difficulty, expansion] = view_.automap.infoLines;
+    const bool retail = v.protocolProfile == "lod113c";
+    if (retail && *view_.area == 8) {
+        // D2Client BE240 selects the Den's name using byte 1 of the 0x5E quest data.
+        const auto &quests = v.world.quests.availability;
+        areaName = quests ? strings_.find((*quests)[1] ? 5048 : 5047) : std::string_view{};
+    } else {
+        areaName = strings_.find(catalog_->level(*view_.area).name);
+    }
+    version = retail ? "v 1.13" : "";
+    difficulty.clear();
+    if (v.load.difficulty == 1 || v.load.difficulty == 2) {
+        const auto label = strings_.find(*v.load.difficulty == 1 ? 5155 : 5154);
+        const auto format = strings_.find(4183);
+        const auto slot = format.find("%s");
+        if (!label.empty() && slot != std::string_view::npos) {
+            difficulty = format;
+            difficulty.replace(slot, 2, label);
+        }
+    }
+    expansion = v.load.expansion ? strings_.find(22730) : std::string_view{};
     const auto &component=automapComponent_;
     view_.automap.markers.clear();view_.automap.pathLines.clear();
     view_.automap.observer=v.world.playerPosition?Vec{float(v.world.playerPosition->x),float(v.world.playerPosition->y)}:Vec{};
@@ -1241,10 +1262,7 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
             [&](const auto &entry) { return entry.unit == key; });
         const bool showName = target != view_.mapTargets.end() &&
             (target->interaction == OnlineMapInteraction::Npc || target->interaction == OnlineMapInteraction::Stash);
-        if (showName) {
-            const auto translated = strings_.find(target->name);
-            name = translated.empty() ? target->name : std::string(translated);
-        }
+        if (showName) name = target->name;
         auto mark = key.type == 1 && showName ? Mark::Npc : Mark::None;
         if(key.type==1) {
             // Native automap excludes the three non-public NPC identities.

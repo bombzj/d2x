@@ -176,6 +176,7 @@ void RealmSession::Impl::handle_game(Packet packet) {
         }
         if (view.remoteLobbyOnly && (!selected || !selected->ladder || *selected->ladder != bool(ladder)))
             throw ProtocolError("Game Ladder flag differs from the selected Realm character");
+        view.load.expansion = bool(expansion);
         changed();
     } else if (packet.id == 0x02 && !environmentSent) {
         if (directTcpIp && !tcpIpUploaded) {

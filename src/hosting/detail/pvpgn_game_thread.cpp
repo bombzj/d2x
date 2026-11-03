@@ -121,6 +121,9 @@ struct PvpgnGameThread::Impl {
         event.connection = connection; event.bytes = std::move(bytes); emit(std::move(event));
     }
     PersistentCharacter decode(const RealmCharacter &identity) {
+        const auto room = rooms.find(identity.game);
+        if (room == rooms.end()) throw ProtocolError("D2CS game expired during load");
+        const auto &definition = host.games.at(room->second);
         if (identity.portrait.size() != 192) throw ProtocolError("Unsupported D2DBS charinfo length");
         net::protocol::Reader info(identity.portrait);
         if (info.u32() != 0x12345678 || info.u32() != 0x10000 ||
@@ -144,7 +147,7 @@ struct PvpgnGameThread::Impl {
             character = createCharacter(*host.content,name,characterClass,uint32_t(std::random_device{}()),(status & 4) != 0);
             bytes = encodeSave(character,*host.content);
         } else {
-            try { character = decodeSave(bytes,*host.content); }
+            try { character = decodeSave(bytes,*host.content,definition.settings.difficulty); }
             catch (const std::exception &) { throw AdmissionFailure(14,"Invalid D2DBS character save"); }
         }
         const auto header = readD2sHeader(bytes);
@@ -152,9 +155,6 @@ struct PvpgnGameThread::Impl {
             throw ProtocolError("D2DBS character identity mismatch");
         if (!(header.flags & 0x20)) throw AdmissionFailure(23,"Expansion character required");
         if ((header.flags & 0x0C) == 0x0C) throw AdmissionFailure(21,"Hardcore character is dead");
-        const auto room = rooms.find(identity.game);
-        if (room == rooms.end()) throw ProtocolError("D2CS game expired during load");
-        const auto &definition = host.games.at(room->second);
         if (character.player.hardcore != definition.hardcore)
             throw AdmissionFailure(definition.hardcore ? 19 : 20,"Character hardcore mode does not match game");
         const auto progression = (header.flags >> 8) & 31;

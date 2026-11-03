@@ -14,7 +14,6 @@ struct NativeRealmService;
 struct HostedGame {
     GameHandle handle;
     server::GameSettings settings;
-    RegionId town;
     uint32_t index{}, flags{};
     uint8_t capacity{}, levelDifference{}, creatorLevel{};
     bool hardcore{};
@@ -46,6 +45,7 @@ struct NativeRealmHost {
     explicit NativeRealmHost(Archives &a, std::filesystem::path directory, ContentPreparation mode = ContentPreparation::OriginalRules)
         : archives(a), root(std::move(directory)), preparation(mode) {}
     void initialize();
+    void installPreparedArea(GameHandle, uint64_t request, PreparedWorldArea);
     void advance(double seconds);
     void publishEvents(GameHandle);
     void retire(PlayerBinding);

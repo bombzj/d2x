@@ -424,6 +424,7 @@ struct DebugAi::Impl {
     void resetStep();
     void cancelWalk(Context &);
     bool walk(Context &,Json);
+    bool prepareNpcService(Context &, OnlineUnitKey, DebugActionOwner);
     bool walkPoint(Context &,OnlinePoint,bool exploration=false);
     void observeChild(Context &,const Goal &);
     void rememberTravel(Context &,OnlineUnitKey);

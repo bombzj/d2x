@@ -10,7 +10,6 @@
 #include "world/maze.hpp"
 #include "content/world/world_catalog.hpp"
 #include "scene_assets.hpp"
-#include "presentation/hud/waypoint_panel.hpp"
 #include "resources/data_table.hpp"
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
@@ -151,7 +150,7 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     loadClassicFont(uiGraphics_, archives, skillLevelCompactFont, "fontformal10");
     loadClassicFont(uiGraphics_, archives, skillLevelCompactBlueFont, "fontformal10", 3);
     loadClassicFont(uiGraphics_, archives, skillLevelCompactRedFont, "fontformal10", 1);
-    const ClassicStrings characterStrings(archives);
+    const ClassicStrings uiStrings(archives);
     for (const auto *key : {"strchrlvl", "strchrexp", "strchrnxtlvl", "strchrstr", "strchrdex",
             "strchrvit", "strchreng", "strchrskm", "strchrrat", "strchrdef", "strchrstm",
             "strchrlif", "strchrman", "strchrfir", "strchrcol", "strchrlit", "strchrpos",
@@ -159,14 +158,14 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
             "Level", "StrSkill42", "cost", "ItemDesc1s", "NPCRepairItems", "Cost", "stash", "Sell",
             "VerifyTransaction1", "VerifyTransaction2", "VerifyTransaction3", "VerifyTransaction5",
             "strDropGoldHowMuch", "strBankGoldDeposit", "strBankGoldWithdraw", "GoldMax",
-            "minipanelchar", "minipanelinv", "minipaneltree", "minipanelautomap",
+            "strlvlup", "strnewskl", "panelstamina", "panelexp", "panelmini", "panelcmini",
+            "RunOn", "RunOff", "minipanelspecial", "minipanelchar", "minipanelinv", "minipaneltree", "minipanelautomap",
             "minipanelparty", "minipanelquest", "minipanelmenubtn", "minipanelmessage",
             "Deathmessage", "Deathmessnight", "Harddeathmessage"}) {
-        const auto value = characterStrings.find(key);
+        const auto value = uiStrings.find(key);
         if (value.empty()) throw std::runtime_error(std::string("Original character label is missing: ") + key);
         characterLabels.emplace(key, value);
     }
-    loadClassicFont(uiGraphics_, archives, speechFont, "fontformal12");
     loadClassicFont(uiGraphics_, archives, questFont, "fontformal11");
     globeTextFormats = {content.itemStrings.at("panelhealth"), content.itemStrings.at("panelmana")};
     for (const auto &format : globeTextFormats) {
@@ -387,11 +386,15 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     if (waypointBorder.frames.size() < 10 || waypointPanel.frames.size() < 4 ||
         waypointTabs.frames.size() < 10 || waypointIcons.frames.size() < 4)
         throw std::runtime_error("Original waypoint menu artwork is missing");
-    const auto title = content.itemStrings.find("waypointsheader");
-    if (title == content.itemStrings.end() || title->second.empty())
-        throw std::runtime_error("Original waypoint menu title is missing");
-    waypointTitle = title->second;
-    loadWaypointFonts(uiGraphics_, archives, font, waypointFonts);
+    const ClassicStrings waypointStrings(archives);
+    const auto waypointString = [&](int id) {
+        const auto value = waypointStrings.find(id);
+        if (value.empty()) throw std::runtime_error("Missing original waypoint string: " + std::to_string(id));
+        return value;
+    };
+    waypointTitle = waypointString(3990);
+    waypointNoDestinationsTitle = waypointString(3991);
+    waypointCloseHint = waypointString(4130);
     storagePanel = uiGraphics_.single("data/global/ui/panel/tradestash.dc6");
     if (content.profile == "remote-display-txt-v1") {
         const std::string upgradeArt = "data/global/ui/panel/stashmats_transmute_btn.dc6";

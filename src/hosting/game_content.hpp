@@ -7,7 +7,7 @@ struct ClassicData;
 struct PreparedWorldArea { server::AreaDefinition authority; GeneratedArea terrain; };
 PreparedWorldArea prepareWorldArea(Archives &, const ClassicData &, AreaGenerationRequest);
 PreparedWorldArea prepareWorldAreaContent(Archives &, const ClassicData &, GeneratedArea);
-server::GameDefinition prepareJoiningCharacter(const ClassicData &, PersistentCharacter, server::GameSettings, RegionId town, uint64_t nextEntity, std::shared_ptr<const ItemCatalog>);
+server::GameDefinition prepareGameCharacter(const ClassicData &, PersistentCharacter, server::GameSettings, uint64_t nextEntity, std::shared_ptr<const ItemCatalog>);
 struct WalkingGameContent {
     server::GameDefinition authority;
     GeneratedArea terrain;

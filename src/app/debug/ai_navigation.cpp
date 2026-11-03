@@ -657,7 +657,7 @@ void DebugAi::Impl::observeWaypointMemory(const Context &c) {
 }
 bool DebugAi::Impl::activateWaypoint(Context &c,bool required) {
     const auto &world=c.session.read().world;
-    if(!area || world.npcRequested || pendingWaypoint || closeWaypoint) return false;
+    if(!area || (!required && world.npcRequested) || pendingWaypoint || closeWaypoint) return false;
     const auto purpose=walkIntent.is_object()?walkIntent.value("purpose",std::string{}):std::string{};
     const bool initial=purpose=="initial-waypoint-memory";
     if(c.town.read().town && (initial || !waypointMemoryRevision)) {
@@ -727,7 +727,6 @@ bool DebugAi::Impl::waypointBeforeDeparture(Context &c) {
         waypointDepartureArea=area;note("waypoint-required-before-departure",std::to_string(*area));
     }
     if(pendingWaypoint || closeWaypoint) return true;
-    if(c.session.read().world.npcRequested) {c.session.close_npc();return true;}
     if(c.session.read().world.waypointSource) {closeWaypoint=c.session.read().world.waypointSource;return true;}
     if(!activateWaypoint(c,true)) {
         explore(c,"required waypoint before leaving this area");

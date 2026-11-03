@@ -368,7 +368,7 @@ d2x_assets <MPQ目录> save-info <file.d2s>
 - Win32 管道只在 app 模块，处理非阻塞；JSON 使用 nlohmann/json 3.11.3。命令入口和呈现在客户端线程；RealmSession 的后台 worker 持锁消费原服回包并更新权威副本，界面只读取客户端快照。
 - 该脚本是通用调用入口，未加入专用测试脚本／测试程序。调试接口由用户授权新增。
 
-局前 `ui-input` 与游戏内共用帧输入契约；`entryText` 为至多255个可打印ASCII字节，`tab` 切换字段，`wheel` 为有限滚轮增量。`key=1–4`复用腰带列快捷键，`key=belt`／`expand-belt`／`~`切换腰带展开，`f1–f8`选择已绑定技能或绑定选择器悬停项；原 `text` 仍只用于数字输入。局前坐标同样使用逻辑视口，应用转换到800×600原图布局；回执 `frontend.page/notice/minimized` 提供页面、提示和最小化状态，不包含字段内容或密码。测试暂停或窗口最小化时拒绝所有 UI 输入，最小化切换清理已排队输入。
+局前 `ui-input` 与游戏内共用帧输入契约；`entryText` 为至多255个可打印ASCII字节，`tab` 切换字段，`wheel` 为有限滚轮增量。`key=1–4`复用腰带列快捷键，`key=belt`／`expand-belt`／`~`切换腰带展开，`f1–f8`选择已绑定技能或绑定选择器悬停项；原 `text` 仍只用于数字输入。局前坐标同样使用逻辑视口，应用转换到800×600原图布局；回执 `frontend.page/notice/minimized` 提供页面、提示和最小化状态，不包含字段内容或密码。测试暂停或窗口最小化时拒绝所有 UI 输入，最小化切换清理已排队输入。恢复窗口或解除表现暂停时保留当前场景的单位朝向，游戏、区域和角色重新分配仍按各自代次重置。
 
 地图诊断输入另支持`key=automap-side`／`automap-center`（或home）／`automap-names`／`automap-party`／`automap-fade`及方向键，均进入普通SceneController；`bh-settings`或`z`加`control:true`复用BH面板入口，原版模式拒绝开启。BH面板占有Enter／Esc，打开时不先送给聊天处理。共享游戏界面就绪时，回执另含只读`frontend.automap`（visible／large／right／fade／names／party／offset）及`frontend.bh`（enabled／settingsOpen／selected及主要偏好开关）。right是用户选边，侧栏临时强制的有效边仍应结合实际画面检查；enabled是会话能力，偏好为true不代表原版启用BH。这些字段不读取宿主隐藏状态，不证明绘制／揭示完成；批量输入须等`uiQueue.inputFrames=0`后再核对结果。
 

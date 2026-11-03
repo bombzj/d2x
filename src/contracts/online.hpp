@@ -83,6 +83,7 @@ struct OnlineLoadInfo {
     std::optional<uint16_t> townArea; // LOADACT metadata, not the player's current region.
     std::optional<uint32_t> mapSeed, secondarySeed, playerUnitId;
     bool serverLoadComplete{};
+    bool expansion{};
 };
 struct OnlineProtocolCounters {
     std::array<uint64_t, 256> received{}, sent{}, unconsumed{};

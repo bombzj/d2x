@@ -218,6 +218,7 @@ class GameHost {
     // may prepare values but must not retain a mutable game/area reference.
     std::optional<std::vector<server::world::PrepareArea>> pendingAreas(GameHandle) const;
     server::DomainResult<> installArea(GameHandle, server::world::PreparedArea);
+    server::DomainResult<uint64_t> requestAdmissionTown(GameHandle, RegionId);
     void failArea(GameHandle, uint64_t request);
 };
 } // namespace d2x

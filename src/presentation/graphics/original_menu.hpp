@@ -18,6 +18,7 @@ class OriginalMenu {
     OriginalMenu(Archives &, const ClassicFont &);
     bool ready() const { return ready_; }
     const std::string &reason() const { return reason_; }
+    void drawBorder(Rectangle bounds) const { originalBox(border_, bounds, 1); }
     float measure(std::string_view) const;
     Vec size(std::string_view title, std::span<const std::string> options) const;
     Rectangle bounds(Vec topCentre, Rectangle viewport, std::string_view title,

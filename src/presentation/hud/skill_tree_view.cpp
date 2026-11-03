@@ -138,10 +138,9 @@ void SceneView::drawSkillTree(Vec mouse) const {
             lines.insert(lines.end(), skill.treeBonusTooltip.begin(), skill.treeBonusTooltip.end());
         }
         const auto bounds = skillTreeNode(skill.row, skill.column);
-        const UiPainter green(assets_.skillGreenFont, 0);
-        const UiPainter body(skill.treeTooltipUnavailable ? assets_.characterRedFont : assets_.font, 0);
+        const auto &body = skill.treeTooltipUnavailable ? assets_.characterRedFont : assets_.font;
         drawSkillTooltip(body, lines, {bounds.x + bounds.width / 2, bounds.y + bounds.height},
-                         &green, headings, true, bounds.height);
+                         &assets_.skillGreenFont, headings, true, bounds.height);
     }
 }
 } // namespace d2x

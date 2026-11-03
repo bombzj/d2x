@@ -193,14 +193,15 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
         << " content_ms=" << std::chrono::duration<double, std::milli>(completed - started).count() << '\n';
     return result;
 }
-server::GameDefinition prepareJoiningCharacter(const ClassicData &content, PersistentCharacter saved,
-    server::GameSettings settings, RegionId town, uint64_t nextEntity, std::shared_ptr<const ItemCatalog> items) {
+server::GameDefinition prepareGameCharacter(const ClassicData &content, PersistentCharacter saved,
+    server::GameSettings settings, uint64_t nextEntity, std::shared_ptr<const ItemCatalog> items) {
     server::GameDefinition result;
     if (saved.player.hardcoreDead || (saved.player.hardcore && saved.player.hp <= 0)) throw std::runtime_error("Hardcore character is dead");
     if (saved.player.hardcore != settings.hardcore) throw std::runtime_error("Character hardcore mode does not match game");
     const auto character = std::find_if(content.characters.begin(), content.characters.end(), [&](const auto &entry) { return entry.name == saved.player.characterClass; });
     if (character == content.characters.end()) throw std::runtime_error("MPQ lacks the selected character");
-    saved.difficulty = settings.difficulty; saved.mapSeed = settings.mapSeed; saved.lastRegion = town;
+    if (saved.difficulty != settings.difficulty) throw std::runtime_error("Save was loaded for a different game difficulty");
+    saved.mapSeed = settings.mapSeed;
     saved.player.hp = std::max(Fixed8(1), saved.player.hp);
     result.settings = settings; result.character = *character;
     result.persistent = server::admitCharacter(std::move(saved), nextEntity);
@@ -210,28 +211,19 @@ server::GameDefinition prepareJoiningCharacter(const ClassicData &content, Persi
 }
 WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &content, PersistentCharacter saved, std::shared_ptr<const ItemCatalog> items,std::optional<server::GameSettings> settings) {
     WalkingGameContent result;
-    if (saved.player.hardcoreDead || (saved.player.hardcore && saved.player.hp <= 0)) throw std::runtime_error("Hardcore character is dead");
-    if (settings && settings->hardcore != saved.player.hardcore) throw std::runtime_error("Character hardcore mode does not match game");
-    const auto character = std::find_if(content.characters.begin(), content.characters.end(),
-        [&](const auto &entry) { return entry.name == saved.player.characterClass; });
-    if (character == content.characters.end()) throw std::runtime_error("MPQ lacks the selected character");
     const auto worldSource = sharedWorldCatalog(archives, saved.difficulty); const auto &world = *worldSource;
     const auto &previous = world.levels().at(int(saved.lastRegion));
     const auto &town = world.levels().at(actTownLevels.at(size_t(previous.act)));
     if (!town.town) throw std::runtime_error("Saved act lacks an original town");
     saved.lastRegion = RegionId(town.id);
-    saved.player.hp = std::max(Fixed8(1), saved.player.hp);
-    result.authority.settings = settings.value_or(server::GameSettings{saved.mapSeed,saved.difficulty});
-    result.authority.settings.hardcore = saved.player.hardcore;
-    result.authority.character = *character;
-    result.authority.persistent = server::admitCharacter(std::move(saved));
-    result.authority.rules.items = std::move(items);
-    prepareCharacterRules(result.authority.rules, content, result.authority.persistent);
+    if (!settings) {
+        settings = server::GameSettings{saved.mapSeed, saved.difficulty};
+        settings->hardcore = saved.player.hardcore;
+    }
+    result.authority = prepareGameCharacter(content, std::move(saved), *settings, 1, std::move(items));
     result.authority.rules.monsterRegions=prepareMonsterRegionRules(archives,content);
     auto prepared = prepareWorldArea(archives, content, {result.authority.settings.mapSeed, town.act, town.id, result.authority.settings.difficulty,result.authority.settings.ladderMonsterStats()});
     result.terrain = std::move(prepared.terrain); result.authority.area = std::move(prepared.authority);
-    const auto &area = result.authority.area;
-    for (auto &corpse : result.authority.persistent.corpses) { corpse.region = area.id; corpse.position = area.spawn; }
     return result;
 }
 } // namespace d2x

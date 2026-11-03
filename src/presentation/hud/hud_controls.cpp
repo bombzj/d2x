@@ -1,7 +1,7 @@
 #include "presentation/world/palette_blend_view.hpp"
 #include "hud_layout.hpp"
 #include "classic_hud.hpp"
-#include "core/text.hpp"
+#include "presentation/graphics/framed_text.hpp"
 #include "classic_panel.hpp"
 #include "skill_tooltip.hpp"
 #include "presentation/scene_view.hpp"
@@ -230,7 +230,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
             : (assets_.attackDescription.empty() ? std::vector<std::string>{"Normal weapon attack"}
                                                   : std::vector<std::string>{assets_.attackDescription});
         lines.insert(lines.end(), details.begin(), details.end());
-        drawSkillTooltip(UiPainter(entry && entry->pickerTooltipUnavailable ? assets_.characterRedFont : assets_.font, 0), lines, tooltipAnchor);
+        drawSkillTooltip(entry && entry->pickerTooltipUnavailable ? assets_.characterRedFont : assets_.font, lines, tooltipAnchor);
     }
     for (bool mana : {false, true}) {
         if (!CheckCollisionPointRec(rv(mouse), hudGlobe(mana)))
@@ -248,51 +248,65 @@ void SceneView::drawSkillControls(Vec mouse) const {
         // D2Client 1.13c RVA 0x276EE/0x277AC: white color 0, baseline H-95,
         // centers 65 (Life) and W-80 (Mana). Anchors follow the HUD artwork;
         // glyphs keep their original size rather than the widened HUD scale.
-        const UiPainter nativeFont(assets_.font, 0);
         const float center = mana ? W - 80 * hudScale() : 65 * hudScale();
-        const float baseline = H - 95 * hudScale();
-        float x = center - nativeFont.measure(text, 16) * hudTextScale() / 2;
-        for (uint32_t character : utf8Decode(text)) {
-            const auto *glyph = assets_.font.glyphOf(character);
-            if (glyph && character != ' ')
-                DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
-                    {x + glyph->x * hudTextScale(), baseline + (glyph->y - glyph->texture.height) * hudTextScale(),
-                     glyph->texture.width * hudTextScale(), glyph->texture.height * hudTextScale()}, {}, 0, WHITE);
-            x += assets_.font.widthOf(character) * hudTextScale();
-        }
+        assets_.font.drawBaseline(text, {center-assets_.font.textWidth(text)/2, H-95*hudScale()}, 1);
     }
     std::string hint;
+    Vec anchor{};
+    auto setHint = [&](std::string text, float x, float fromBottom) {
+        hint = std::move(text);
+        anchor = {x * hudScale(), H-fromBottom * hudScale()};
+    };
+    const auto &labels = assets_.characterLabels;
     const auto shortcut = [&](ControlAction action) {
         const auto keys = assets_.escapeMenu.bindingName(view_.controls, action);
-        return keys.empty() ? std::string{} : " [" + keys + "]";
+        auto format = labels.at("minipanelspecial");
+        const auto at = format.find("%s");
+        if (keys.empty() || at == std::string::npos) return std::string{};
+        return format.replace(at, 2, keys);
     };
     if (CheckCollisionPointRec(rv(mouse), hudRunButton()))
-        hint = "Walk / Run" + shortcut(ControlAction::RunLock);
+        setHint(labels.at(characterView_.running ? "RunOff" : "RunOn") + shortcut(ControlAction::RunLock), 255, 23);
     if (CheckCollisionPointRec(rv(mouse), hudMenuButton()))
-        hint = view_.miniPanelOpen ? "Close mini panel" : "Open mini panel";
+        setHint(labels.at(view_.miniPanelOpen ? "panelcmini" : "panelmini"), 399, 39);
     if (auto button = miniPanelAt(mouse); button && *button >= 0) {
         constexpr const char *keys[]{"minipanelchar", "minipanelinv", "minipaneltree", "minipanelautomap",
             "minipanelparty", "minipanelquest", "minipanelmenubtn", "minipanelmessage"};
         constexpr ControlAction actions[]{ControlAction::Character, ControlAction::Inventory, ControlAction::SkillTree,
             ControlAction::Automap, ControlAction::Party, ControlAction::QuestLog, ControlAction::Count, ControlAction::MessageLog};
-        hint = assets_.characterLabels.at(keys[*button]) + shortcut(actions[*button]);
+        const auto index = int(std::find(hudMiniActions.begin(), hudMiniActions.end(), *button) - hudMiniActions.begin());
+        if (const auto *icon = assets_.miniPanelButtons.frame(0, index*2)) {
+            const auto rect = hudMiniButton(*icon, index);
+            hint = labels.at(keys[*button]) + shortcut(actions[*button]);
+            anchor = {rect.x + rect.width/2, rect.y};
+        }
     }
+    const auto values = [&](const char *key, std::string_view token, const std::string &current, const std::string &maximum) {
+        auto text = labels.at(key);
+        size_t start = 0;
+        for (const auto *number : {&current, &maximum}) {
+            const auto at = text.find(token, start);
+            if (at == std::string::npos) break;
+            text.replace(at, token.size(), *number);
+            start = at + number->size();
+        }
+        return text;
+    };
     if (CheckCollisionPointRec(rv(mouse), hudStamina()))
-        hint = "Stamina: " + characterView_.number("stamina", int(characterView_.stamina)) + " / " +
-               characterView_.number("maxstamina", characterView_.maxStamina);
-    if (characterView_.unspentAttributes > 0 &&
-        CheckCollisionPointRec(rv(mouse), hudCharacterButton())) {
-        hint = "New attribute points" + shortcut(ControlAction::Character);
+        setHint(values("panelstamina", "%d", characterView_.number("stamina", int(characterView_.stamina)),
+                       characterView_.number("maxstamina", characterView_.maxStamina)), 324, 52);
+    if (CheckCollisionPointRec(rv(mouse), hudCharacterButton()))
+        setHint(labels.at("strlvlup"), 221, 50);
+    if (CheckCollisionPointRec(rv(mouse), hudSkillTreeButton()))
+        setHint(labels.at("strnewskl"), 578, 50);
+    if (CheckCollisionPointRec(rv(mouse), hudExperience()))
+        setHint(values("panelexp", "%u", characterView_.number("experience", characterView_.experience),
+                       !characterView_.nextLevelKnown ? "?" : characterView_.nextLevelExperience ?
+                           std::to_string(*characterView_.nextLevelExperience) : "MAX"), 254, 51);
+    if (!hint.empty()) {
+        const int palette = std::clamp(mapView().palette, 0, 4);
+        const auto *blend = palette ? actPaletteBlends_[size_t(palette)].get() : paletteBlend_.get();
+        if (blend) drawFramedText(assets_.font, *blend, hint, anchor);
     }
-    if (characterView_.unspentSkills > 0 &&
-        CheckCollisionPointRec(rv(mouse), hudSkillTreeButton())) {
-        hint = "New skill points" + shortcut(ControlAction::SkillTree);
-    }
-    if (CheckCollisionPointRec(rv(mouse), hudExperience())) {
-        hint = "Experience: " + characterView_.number("experience", characterView_.experience) + " / " +
-               (!characterView_.nextLevelKnown ? "?" : characterView_.nextLevelExperience ? std::to_string(*characterView_.nextLevelExperience) : "MAX");
-    }
-    if (!hint.empty())
-        painter_.centered(hint, H - HUD - 24, 12, parchment);
 }
 } // namespace d2x

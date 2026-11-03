@@ -1,4 +1,5 @@
 #include "ai_impl.hpp"
+#include "contracts/online_npc_speech.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
@@ -332,14 +333,15 @@ void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
     if(!npc) {if(!approachKnown(c,*goal.target)) explore(c,"delivery NPC "+goal.target->name);return;}
     const auto now=Clock::now();
     if(!view.world.npcConversation || view.world.npcConversation->type!=1 || view.world.npcConversation->source!=npc->key.id) {
-        if(view.world.npcRequested && view.world.npcRequested!=npc->key.id) {c.session.close_npc();return;}
         wait("delivery-approach","Opening the actual delivery NPC conversation");
         walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true}});return;
     }
     wait("delivery-dialogue","Acknowledging only actually offered automatic text or the verified Malus topic");
     if(!greetingIssued && npc->classId) {greetingIssued=c.session.confirm_npc_voice(*npc->classId);if(greetingIssued)return;}
     const auto conversation=*view.world.npcConversation;
+    const auto automatic = nextAutomaticNpcSpeech(conversation);
     for(const auto &message:conversation.messages) {
+        if (automatic && *automatic != message.stringId) continue;
         // D2MOO A1Q3 ScrollMessage 163 deletes hdm and sets REWARDPENDING.
         // It is acknowledged only when the real NPC offered it to this client.
         if((message.menu==0 || std::find(goal.topics.begin(),goal.topics.end(),message.stringId)!=goal.topics.end()) &&

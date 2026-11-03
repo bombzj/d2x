@@ -769,7 +769,9 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
                 const Vec center{.5f, .5f};
                 const auto step = m.pathStep.advance(movementGrid, m.position + center,
                     next + center, remaining, rule, origin);
-                m.look = delta; m.position = step.position - center;
+                // Consuming an already reached path point supplies no new facing.
+                if (delta.x != 0 || delta.y != 0) m.look = delta;
+                m.position = step.position - center;
                 if (step.blocked) { m.route.clear(); obstructed = true; break; }
                 if (monsterPathArrived(m.position)) {m.route.clear();m.goal.reset();break;}
                 if (!step.reached) break;
@@ -781,7 +783,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
             const Vec center{.5f,.5f};
             const bool clear = movementGrid.segment(m.position-origin+center,step-origin+center,{},rule);
             if (!clear) { m.route.clear(); break; }
-            m.look = delta;
+            if (distance > 0) m.look = delta;
             m.position = step;
             if (distance > remaining) break;
             remaining -= distance; m.route.pop_front();

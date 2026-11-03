@@ -37,6 +37,7 @@ struct AutomapDrawView {
     struct PathLine { Vec position; uint8_t kind; };
     std::vector<PathLine> pathLines;
     std::vector<Vec> lkChestLines; // Lower Kurast preset #160 superchests (BH).
+    std::array<std::string, 4> infoLines; // Area, version, difficulty, expansion. Empty rows collapse.
 };
 struct MapRect { int x = 0, y = 0, width = 0, height = 0; };
 struct MapMarkerView {

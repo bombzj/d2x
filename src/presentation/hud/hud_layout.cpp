@@ -34,11 +34,13 @@ Rectangle hudBeltSlot(int column, int row) {
 }
 
 Rectangle hudCharacterButton() {
-    return hudRect(206, 39, 30, 30);
+    // D2Client 4FF10 tests the strict interior of (206,H-42)..(240,H-8).
+    return hudRect(207, 41, 33, 33);
 }
 
 Rectangle hudSkillTreeButton() {
-    return hudRect(563, 39, 30, 30);
+    // D2Client 4FE70 uses the same hit area around the right button.
+    return hudRect(564, 41, 33, 33);
 }
 
 Rectangle hudMenuButton() {

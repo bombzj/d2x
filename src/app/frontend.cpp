@@ -294,7 +294,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             sharedUi->notice("Client settings could not be saved. Changes are active; saving will be retried.", true);
         preferencesRetryAt = GetTime() + 2;
     };
-    std::optional<uint32_t> displayedNpc;
+    std::optional<std::pair<uint64_t, uint32_t>> displayedNpc;
     uint32_t displayedWaypoint{};
     bool displayedWaypointKnown{};
     std::unique_ptr<RemoteScene> scene;
@@ -546,7 +546,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 sharedUi->pauseWorldPresentation(minimized || presentationPaused);
                 sharedUi->clearClientMissiles();
             }
-            if (!minimized) scene.reset();
+            // RemoteScene reconciles the next frame against the current replica.
+            // A restored window is still observing the same actors and facings.
             wasMinimized = minimized;
         }
         if (options.frameLimit > 0 && ++frames > options.frameLimit) quit = true;
@@ -750,10 +751,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 if (sharedUi) sharedUi->pauseWorldPresentation(minimized || presentationPaused ||
                     (localConnection && !lanConnection && ((!hostFocused && !options.noPauseOnFocusLoss) || sharedUi->ui().gameMenuOpen)));
                 if (sharedController) sharedController->resetInput();
-                if (!presentationPaused) {
-                    scene.reset();
-                    if (sharedUi) sharedUi->clearClientMissiles();
-                }
+                if (!presentationPaused && sharedUi) sharedUi->clearClientMissiles();
             }
             if (session.read().revision != before) {
                 quickCharacter = quickGame = false;
@@ -1193,20 +1191,15 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     }
                     if (town.read().npcConversation) {
                         const auto &dialog = *town.read().npcConversation;
-                        if (displayedNpc != dialog.source) {
-                            displayedNpc = dialog.source;
-                            // Books/objects publish speech too, but have no
-                            // NPC service menu. A fast AI acknowledgement may
-                            // precede this frame: do not leave an empty menu.
-                            if(dialog.type==1)
-                                sharedUi->openNpcMenu(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,false);
-                        }
-                        // The AI submits the same acknowledgement without a
-                        // physical dialogue click. Mirror the controller's
-                        // local dismissal once that actual topic is acknowledged.
-                        if(debugAi.active() && panels.dialogueTextTopic &&
-                            std::ranges::any_of(dialog.messages,[&](const auto &message) {
-                                return message.stringId==*panels.dialogueTextTopic && message.acknowledged;
+                        const auto interaction = std::pair<uint64_t, uint32_t>{native.interactionGeneration, dialog.source};
+                        const bool newConversation = displayedNpc != interaction;
+                        if (displayedNpc && newConversation) sharedUi->cancelNpcDialogue();
+                        displayedNpc = interaction;
+                        // Retire an automatic subtitle once the shared session
+                        // acknowledges it, regardless of who issued the command.
+                        if (!panels.dialogueFromMenu && panels.dialogueTextTopic &&
+                            std::ranges::any_of(dialog.messages, [&](const auto &message) {
+                                return message.menu == 0 && message.stringId == *panels.dialogueTextTopic && message.acknowledged;
                             })) sharedUi->cancelNpcDialogue();
                         {
                             // 1.13c selects type 0 for automatic speech; type 2 is a
@@ -1223,6 +1216,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         // Normal commands may originate from debug AI / pipe
                         // as well as the menu controller. Render the actual
                         // merchant shelf consistently for every input source.
+                        if (newConversation && dialog.type == 1 && panels.dialogue.empty() && !native.shopSource)
+                            sharedUi->openNpcMenu(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,false);
                         if(native.shopSource==dialog.source && !panels.shopOpen) {
                             sharedUi->cancelNpcDialogue();panels.npcMenu=true;
                             sharedUi->openNpcShop(native.shopGamble);
@@ -1281,7 +1276,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         input.mouse = tradeCanvasMouse(windowMouse);
                     }
                     chatInput(input);
+                    const bool hadNpcMenu = panels.npcMenu;
                     const bool keepGame = sharedController->handle(input,frameSeconds);
+                    if (hadNpcMenu && !panels.npcMenu && !sharedController->uiConsumed())
+                        refreshFrontendView(); // World hit testing sees our successful 0x30 this frame.
                     if (tradeCanvas) {
                         input.mouse = windowMouse;
                         leaveTradeCanvas();

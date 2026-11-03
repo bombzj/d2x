@@ -1,6 +1,7 @@
 #include "realm_frontend.hpp"
 #include "content/character/realm_portrait.hpp"
 #include "content/string_table.hpp"
+#include "core/text.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include "resources/data_table.hpp"
 #include <algorithm>
@@ -13,10 +14,82 @@
 #include <sstream>
 #include <stdexcept>
 #include <limits>
+#include <tuple>
 #include <utility>
 
 namespace d2x {
 namespace {
+// D2Win positions control text by TBL advances and the DC6 bottom baseline.
+void centeredControlText(const ClassicFont &font, const std::string &line, int x, int width, int baseline, Color tint) {
+    const auto codes = utf8Decode(line);
+    int textWidth = 0;
+    for (const auto code : codes) {
+        if (font.indexOf(code) < 0 && !font.originalGlyphs && ttfTextReady()) {
+            // Keep localized captions readable with mounts that only supply Latin glyphs.
+            UiPainter(font, 0).inBox(line, {float(x), float(baseline - font.textHeight), float(width),
+                                            float(font.textHeight)}, 16, tint);
+            return;
+        }
+        textWidth += font.widthOf(code);
+    }
+    x += std::max(0, (width - textWidth) / 2);
+    font.drawBaseline(line, {float(x), float(baseline)}, 1, tint);
+}
+struct ButtonPalette {
+    Palette colors;
+    Bytes burn;
+};
+
+// Keep the background indices until the inscription is blended. A black tint
+// on the glyph texture would turn its anti-aliased edges into solid ink.
+Texture2D composeButton(std::span<const IndexedFrame> tiles, const ButtonPalette &palette,
+                        const ClassicFont &font, const std::string &label, int width, int height, bool pressed) {
+    Bytes indices(size_t(width) * height);
+    int left = 0;
+    for (const auto &tile : tiles) {
+        for (int y = 0; y < std::min(height, tile.height); ++y)
+            std::copy_n(tile.pixels.data() + y * tile.width, tile.width, indices.data() + y * width + left);
+        left += tile.width;
+    }
+    std::vector<Color> pixels(indices.size());
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        const auto c = palette.colors[indices[i]];
+        pixels[i] = {c.r, c.g, c.b, c.a};
+    }
+    const int offset = height >= 35 ? 4 : height == 32 ? 3 : height > 20 ? 2 : 1;
+    const int count = 1 + int(std::count(label.begin(), label.end(), '\n'));
+    int remaining = count;
+    std::istringstream lines(label);
+    for (std::string line; std::getline(lines, line); --remaining) {
+        int x = std::max(0, (width - font.textWidth(line)) / 2) - (pressed ? 2 : 0);
+        const int baseline = height + offset - remaining * ((height - font.textHeight) / (count + 1))
+                             + (pressed ? 2 : 0);
+        for (const auto code : utf8Decode(line)) {
+            const int record = font.indexOf(code);
+            if (record < 0 || font.frames[record] >= font.source->frames.size()) return {};
+            const auto &glyph = font.source->frames[font.frames[record]];
+            const int gx = x + glyph.x, gy = baseline + glyph.y - glyph.height;
+            x += font.widths[record];
+            if (code == ' ') continue;
+            for (int row = std::max(0, -gy); row < std::min(glyph.height, height - gy); ++row) {
+                for (int col = std::max(0, -gx); col < std::min(glyph.width, width - gx); ++col) {
+                    const int source = glyph.pixels[row * glyph.width + col];
+                    if (!source) continue;
+                    const int dest = (gy + row) * width + gx + col;
+                    const auto result = palette.burn[source * 256 + indices[dest]];
+                    indices[dest] = result;
+                    const auto c = palette.colors[result];
+                    pixels[dest] = {c.r, c.g, c.b, 255};
+                }
+            }
+        }
+    }
+    Image image{pixels.data(), width, height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
+    return LoadTextureFromImage(image);
+}
+void dimModalBackground() {
+    DrawRectangle(0, 0, 800, 600, {0, 0, 0, 127});
+}
 void wipe(std::string &s) {
     for (size_t i = 0; i < s.size(); ++i)
         reinterpret_cast<volatile char *>(s.data())[i] = 0;
@@ -28,6 +101,21 @@ ClassicFont font(Graphics &g, Archives &a, const std::string &name, int color = 
     // outline-font backend tints with; a second one would drop the colour.
     loadClassicFont(g, a, f, name, color);
     return f;
+}
+// D2Win #10205 supplies the first textbox row even when the rank is empty.
+std::string characterRank(const OnlineCharacter &c) {
+    if (!c.characterClass || !c.progression || !c.expansion || !c.hardcore) return {};
+    const int tier = std::min<int>(3, *c.progression / (*c.expansion ? 5 : 4));
+    if (!tier) return {};
+    const bool female = *c.characterClass == 0 || *c.characterClass == 1 || *c.characterClass == 6;
+    if (*c.expansion) {
+        const std::array soft{"Slayer", "Champion", female ? "Matriarch" : "Patriarch"};
+        const std::array hard{"Destroyer", "Conqueror", "Guardian"};
+        return (*c.hardcore ? hard : soft)[tier - 1];
+    }
+    const std::array soft{female ? "Dame" : "Sir", female ? "Lady" : "Lord", female ? "Baroness" : "Baron"};
+    const std::array hard{female ? "Countess" : "Count", female ? "Duchess" : "Duke", female ? "Queen" : "King"};
+    return (*c.hardcore ? hard : soft)[tier - 1];
 }
 bool playable(const OnlineCharacter &c, bool allowLadder) {
     return c.characterClass && c.expansion.value_or(false) && c.ladder.has_value() &&
@@ -93,10 +181,14 @@ struct RealmFrontend::Impl {
     std::map<Bytes, GpuAnimation, PortraitKeyLess> portraits;
     ClassicStrings strings;
     ClassicFont normal, buttonFont, inputFont, titleFont, lobbyFont, roomGoldFont, roomGrayFont, lanTitleFont, lanTipFont,
-        hardcoreRedFont, victoryFont, victoryNameFont;
-    UiPainter text, buttonText, inputText, title, lobbyText, roomGoldText, roomGrayText, lanTitle, lanTip, hardcoreRedText;
+        hardcoreRedFont, rosterGold, rosterGreen, rosterHeading, victoryFont, difficultyTitleFont;
+    UiPainter text, inputText, title, lobbyText, roomGoldText, roomGrayText, lanTitle, lanTip;
     UiPainter victoryTitle{victoryFont};
-    UiPainter victoryName{victoryNameFont};
+    struct ControlArt { const Animation *source; std::string palette; };
+    std::map<std::string, ControlArt> controlArt;
+    std::map<std::string, ButtonPalette> buttonPalettes;
+    struct Caption { std::string label; Texture2D texture{}; };
+    std::map<std::tuple<std::string, int, int, int>, Caption> captions;
     std::map<std::string, GpuAnimation> art;
     std::vector<std::string> classes;
     std::vector<std::string> classNames;
@@ -130,18 +222,12 @@ struct RealmFrontend::Impl {
           lobbyFont(font(units, a, "fontridiculous")),
           roomGoldFont(font(units, a, "font8", 4)), roomGrayFont(font(units, a, "font8", 5)),
           hardcoreRedFont(font(units, a, "font16", 1)),
-          text(normal),
-          buttonText(buttonFont), inputText(inputFont), title(titleFont), lobbyText(lobbyFont),
-          roomGoldText(roomGoldFont, 0), roomGrayText(roomGrayFont, 0), lanTitle(lanTitleFont), lanTip(lanTipFont),
-          hardcoreRedText(hardcoreRedFont) {
+          rosterGold(font(units, a, "font16", 4)), rosterGreen(font(units, a, "font16", 2)),
+          rosterHeading(font(units, a, "font42")), text(normal),
+          inputText(inputFont), title(titleFont), lobbyText(lobbyFont),
+          roomGoldText(roomGoldFont, 0), roomGrayText(roomGrayFont, 0), lanTitle(lanTitleFont), lanTip(lanTipFont) {
         if(portraitSupport == RealmPortraitSupport::Original113c)
             portraitCatalog=std::make_unique<RealmPortraitCatalog>(a);
-        auto load = [&](Graphics &g, const char *id, const char *path) {
-            auto value = g.single(std::string("data/global/ui/") + path + ".dc6");
-            if (value.frames.empty())
-                throw std::runtime_error(std::string("Missing original frontend art: ") + path);
-            art.emplace(id, std::move(value));
-        };
         load(sky, "main", "FrontEnd/gameselectscreenEXP");
         load(sky, "characters", "CharSelect/characterselectscreenEXP");
         load(sky, "highlight", "CharSelect/charselectbox");
@@ -157,6 +243,7 @@ struct RealmFrontend::Impl {
                                 {"thin", "FrontEnd/NarrowButtonBlank"},
                                 {"medium", "FrontEnd/MediumButtonBlank"},
                                 {"tall", "CharSelect/TallButtonBlank"},
+                                {"short", "CharSelect/ShortButtonBlank"},
                                 {"textbox", "FrontEnd/textbox2"},
                                 {"realm", "CharSelect/realmselect"},
                                 {"realmButton", "CharSelect/realmselectbuttonthin"},
@@ -217,9 +304,21 @@ struct RealmFrontend::Impl {
         }
     }
     ~Impl() {
+        for (const auto &[key, caption] : captions)
+            if (caption.texture.id) UnloadTexture(caption.texture);
         wipe(password);
         wipe(verifyPassword);
         wipe(gamePassword);
+    }
+    void load(Graphics &graphics, const char *id, const char *path) {
+        const auto member = std::string("data/global/ui/") + path + ".dc6";
+        auto value = graphics.single(member);
+        if (value.frames.empty())
+            throw std::runtime_error(std::string("Missing original frontend art: ") + path);
+        controlArt.insert_or_assign(id, ControlArt{graphics.animation(member),
+            &graphics == &units ? "units" : &graphics == &sky ? "sky" :
+            &graphics == &lobbyControls ? "act1" : "fechar"});
+        art.insert_or_assign(id, std::move(value));
     }
     std::string s(int id) const {
         const auto value = strings.find(id);
@@ -282,37 +381,55 @@ struct RealmFrontend::Impl {
         if (intent.command == FrontendCommand::None)
             intent.command = command;
     }
+    const ButtonPalette &buttonPalette(const std::string &name) {
+        if (const auto found = buttonPalettes.find(name); found != buttonPalettes.end()) return found->second;
+        // Units has a DAT but no PL2. Frontend controls use the Sky blend table.
+        const auto folder = std::string("data/global/palette/");
+        auto colors = decodePalette(archives.read(folder + name + "/pal.dat"));
+        const auto pl2 = archives.read(folder + (name == "units" ? "sky" : name) + "/pal.pl2");
+        constexpr size_t burn = 0x43500, length = 256 * 256;
+        if (pl2.size() < burn + length) throw std::runtime_error("Truncated frontend PL2 burn table");
+        return buttonPalettes.emplace(name, ButtonPalette{colors, Bytes(pl2.begin() + burn,
+                                                                      pl2.begin() + burn + length)}).first->second;
+    }
     bool button(const char *id, int x, int y, std::string label, bool active = true, int segments = 1,
-                int base = 0, const UiPainter *caption = nullptr) {
+                int base = 0) {
         const auto &a = art.at(id);
         int width = 0;
         for (int i = 0; i < segments; ++i)
             width += a.frame(0, base + i)->texture.width;
         Rectangle r{float(x), float(y), float(width), float(a.frame(0, base)->texture.height)};
-        active = active && enabled;
-        bool down = active && CheckCollisionPointRec(mouse, r) && input.leftHeld;
+        const bool interactive = enabled && active && CheckCollisionPointRec(mouse, r);
+        const bool down = interactive && input.leftHeld;
         int first = base + (down ? segments : 0);
-        Color tint = active ? WHITE : GRAY;
+        Color tint = active ? WHITE : Color{255, 255, 255, 128};
         if (!active && base + segments * 3 <= a.count) {
             first = base + segments * 2;
             tint = WHITE;
         }
-        tiles(id, x, y, segments, first, segments, tint);
-        std::istringstream lines(label);
-        std::string line;
-        int count = 1 + int(std::count(label.begin(), label.end(), '\n')),
-            top = y + (int(r.height) - count * 16) / 2;
-        // Keep the original glyph mask, but render button captions in solid
-        // black so the grayscale glyph pixels do not form a bright rim.
-        const UiPainter &painter = caption && caption != &lobbyText ? *caption :
-            r.height >= 35 ? buttonText : lobbyText;
-        while (std::getline(lines, line)) {
-            painter.inBox(
-                line, {float(x + (down ? 1 : 0)), float(top + (down ? 1 : 0)), r.width, 16}, 16,
-                BLACK);
-            top += 16;
+        const int height = int(r.height);
+        const auto &face = height >= 35 ? buttonFont : lobbyFont;
+        auto &caption = captions[{id, x, y, first}];
+        if (caption.label != label) {
+            if (caption.texture.id) UnloadTexture(caption.texture);
+            const auto &artwork = controlArt.at(id);
+            const auto frames = std::span(artwork.source->frames).subspan(first, segments);
+            caption.texture = composeButton(frames, buttonPalette(artwork.palette), face, label, width, height, down);
+            caption.label = label;
         }
-        return active && clicked && CheckCollisionPointRec(mouse, r);
+        if (caption.texture.id) {
+            DrawTexture(caption.texture, x, y, tint);
+        } else {
+            tiles(id, x, y, segments, first, segments, tint);
+            // Some localized mounts provide translations beyond their bitmap font.
+            std::istringstream lines(label);
+            const int count = 1 + int(std::count(label.begin(), label.end(), '\n'));
+            int row = 0;
+            for (std::string line; std::getline(lines, line); ++row)
+                UiPainter(face, 0).inBox(line, {float(x - (down ? 2 : 0)), float(y + row * height / count +
+                    (down ? 2 : 0)), float(width), float(height / count)}, 16, BLACK);
+        }
+        return interactive && clicked;
     }
     void label(const std::string &v, int x, int y, Color c = parchment) { text.label(v, x, y, 16, c); }
     void centered(const std::string &v, int y) { label(v, (800 - text.measure(v, 16)) / 2, y); }
@@ -418,8 +535,8 @@ struct RealmFrontend::Impl {
         button("thin", 265, 366, gatewayLabel, false, 2);
         if (button("wide", 265, 400, s(5116), true, 2))
             emit(FrontendCommand::TcpIp);
-        button("medium", 265, 495, s(5110), false);
-        button("medium", 410, 495, s(5111), false);
+        button("short", 264, 503, s(5110), false);
+        button("short", 402, 503, s(5111), false);
         if (button("wide", 265, 535, s(5109), true, 2))
             emit(FrontendCommand::Exit);
         label("D2X", 30, 565, WHITE);
@@ -429,12 +546,6 @@ struct RealmFrontend::Impl {
         // LAN-only assets must not become prerequisites for the original-server UI.
         lanTitleFont = font(units, archives, "font42");
         lanTipFont = font(units, archives, "fontformal12");
-        auto load = [&](Graphics &graphics, const char *id, const char *path) {
-            auto value = graphics.single(std::string("data/global/ui/") + path + ".dc6");
-            if (value.frames.empty())
-                throw std::runtime_error(std::string("Missing original TCP/IP art: ") + path);
-            art.insert_or_assign(id, std::move(value));
-        };
         load(units, "tcpip", "FrontEnd/TCPIPscreen");
         load(units, "joinHostPopup", "FrontEnd/PopUpOkCancel2");
         load(lobbyControls, "joinHostButton", "FrontEnd/CancelButtonBlank");
@@ -460,6 +571,7 @@ struct RealmFrontend::Impl {
         }
         // Original 264 x 176 panel and 96 x 32 buttons. The textbox extends
         // its original middle pixels; borders and glyphs retain native size.
+        dimModalBackground();
         tiles("joinHostPopup", 268, 160, 2);
         wrap(s(5120), 303, 182, 194, true, 224);
         const auto &box = art.at("textbox").frame(0, 0)->texture;
@@ -714,7 +826,7 @@ struct RealmFrontend::Impl {
             image("realm", 608, 8);
             text.inBox(s(11058), {608, 10, 182, 22}, 16, parchment);
             text.inBox(v.selectedRealm, {608, 42, 182, 27}, 16, parchment);
-            if (button("realmButton", 608, 81, s(11057), true, 1, 0, &text))
+            if (button("realmButton", 608, 81, s(11057)))
                 emit(FrontendCommand::ChangeRealm);
         }
         std::vector<std::string> names;
@@ -758,10 +870,10 @@ struct RealmFrontend::Impl {
                 const int first = direction < 0 ? 0 : 2;
                 const auto *cel = art.at("arrows").frame(0, first);
                 const Rectangle bounds{float(x), float(y), float(cel->texture.width), float(cel->texture.height)};
-                const bool active = enabled && (direction < 0 ? page > 0 : (page + 1) * 8 < int(v.characters.size()));
-                const bool down = active && input.leftHeld && CheckCollisionPointRec(mouse, bounds);
+                const bool active = direction < 0 ? page > 0 : (page + 1) * 8 < int(v.characters.size());
+                const bool down = enabled && active && input.leftHeld && CheckCollisionPointRec(mouse, bounds);
                 image("arrows", x, y, first + int(down), active ? WHITE : GRAY);
-                if (active && clicked && CheckCollisionPointRec(mouse, bounds)) changePage(direction);
+                if (enabled && active && clicked && CheckCollisionPointRec(mouse, bounds)) changePage(direction);
                 y += cel->texture.height;
             }
         }
@@ -780,40 +892,36 @@ struct RealmFrontend::Impl {
             if (selected == i)
                 tiles(c.hardcore.value_or(false) && c.dead.value_or(false) ? "deadHighlight" : "highlight", x, y, 2);
             portrait(c, x + 36, y + 82);
-            // D2Launch CharSel sets the slot name color to D2Win PL2 text color
-            // hardcore ? 1 : 4 (4 draws as 0); the dead flag does not affect it.
-            if (c.hardcore.value_or(false))
-                hardcoreRedText.label(c.name, x + 76, y + 14, 16, WHITE);
-            else
-                label(c.name, x + 76, y + 14, WHITE);
-            if (c.characterClass && *c.characterClass < classes.size() && c.level) {
-                auto line = s(5017);
-                auto replace = [&](const char *token, const std::string &value) {
-                    const auto pos = line.find(token);
-                    if (pos != std::string::npos)
-                        line.replace(pos, 2, value);
-                };
-                replace("%d", std::to_string(*c.level));
-                line += " " + classNames[*c.characterClass];
-                label(line, x + 76, y + 28, WHITE);
+            const auto &nameFont = c.hardcore.value_or(false) ? hardcoreRedFont : rosterGold;
+            const int glyphHeight = normal.textHeight;
+            int baseline = y + 3 + glyphHeight;
+            int gap = 4;
+            switch (archives.languageGameLocale) {
+            case 6: case 10: gap = 0; break; // Compact Japanese and Polish textbox spacing.
+            case 7: gap = glyphHeight > 13 ? 8 : 6 + int(glyphHeight > 7); break;
+            case 9: gap = 3; break;
             }
-            if (c.expansion.value_or(false))
-                label(s(22731), x + 76, y + 42, GREEN);
-            if (c.ladder.value_or(false))
-                label(s(5315), x + 76, y + 56, GRAY);
-            if (c.hardcore.value_or(false))
-                label(s(5016), x + 76, y + 70, RED);
+            auto row = [&](const ClassicFont &face, const std::string &value) {
+                const auto codes = utf8Decode(value);
+                if (std::any_of(codes.begin(), codes.end(), [&](auto ch) { return face.indexOf(ch) < 0; }) &&
+                    ttfTextReady())
+                    UiPainter(face, 0).label(value, x + 76, baseline - glyphHeight, 16, WHITE);
+                else
+                    face.drawBaseline(value, {float(x + 76), float(baseline)}, 1);
+                baseline += glyphHeight + gap;
+            };
+            row(nameFont, characterRank(c));
+            row(nameFont, c.name);
+            if (c.characterClass && *c.characterClass < classes.size() && c.level)
+                row(normal, s(4057) + " " + std::to_string(*c.level) + " " + classNames[*c.characterClass]);
+            if (c.expansion.value_or(false)) row(rosterGreen, s(22731));
+            if (c.ladder.value_or(false)) row(rosterGold, s(10927));
         }
         if (enabled && clicked && !clickedCharacter) lastClickedCharacter = -1;
         if (!v.characters.empty()) {
             const auto &chosen = v.characters[size_t(selected)];
-            // Death does not tint a name: the headline follows the certified slot
-            // rule (hardcore ? red : parchment). Only other unselectable states,
-            // such as a ladder character without permission, stay grey.
-            const bool deadHardcore = chosen.hardcore.value_or(false) && chosen.dead.value_or(false);
-            title.inBox(chosen.name, {34, 20, 564, 47}, 16,
-                !deadHardcore && !playable(chosen, v.allowLadderSelection) ? GRAY :
-                chosen.hardcore.value_or(false) ? RED : parchment);
+            // D2Launch descriptor 0x22C60 is a centered Font42 textbox.
+            centeredControlText(rosterHeading, chosen.name, 85, 466, 78 - 42 + rosterHeading.textHeight, WHITE);
         }
         if (v.characters.size() > 8) {
             const auto indicator = std::to_string(page + 1) + "/" + std::to_string((v.characters.size() + 7) / 8);
@@ -851,17 +959,29 @@ struct RealmFrontend::Impl {
                 value = std::max(low, value - 1);
         }
     }
-    void localDifficulty(const OnlineView &v, bool available) {
-        characters(v, false);
-        tiles("popup", 230, 130, 2);
-        const auto chosen = std::find_if(v.characters.begin(), v.characters.end(), [&](const auto &c) { return c.name == v.selectedCharacter; });
+    void localDifficulty(const OnlineView &v) {
+        if (!difficultyTitleFont.ready) {
+            load(sky, "difficultyPanel", "CharSelect/DifficultyLevels");
+            load(sky, "difficultyButton", "FrontEnd/WideButtonBlank");
+            difficultyTitleFont = font(sky, archives, "font24", 7);
+        }
+        dimModalBackground();
+        tiles("difficultyPanel", 237, 200, 2);
+        centeredControlText(difficultyTitleFont, s(10019), 264, 272, 225 + difficultyTitleFont.textHeight, WHITE);
+        const auto chosen = std::find_if(v.characters.begin(), v.characters.end(),
+            [&](const auto &c) { return c.name == v.selectedCharacter; });
         const auto progression = chosen != v.characters.end() ? chosen->progression.value_or(0) : 0;
         const int unlocked = progression >= 10 ? 2 : progression >= 5 ? 1 : 0;
-        enabled = available;
-        for (int i = 0; i < 3; ++i) if (button("medium", 330, 205 + i * 55, s(5156 - i), i <= unlocked)) {
-            emit(FrontendCommand::SelectDifficulty); intent.difficulty = uint8_t(i);
+        constexpr std::array keys{'R', 'N', 'H'};
+        for (int i = 0; i < 3; ++i) {
+            const bool active = chosen != v.characters.end() && i <= unlocked;
+            const bool pressed = button("difficultyButton", 264, 262 + i * 43, s(10018 - i), active, 2);
+            if (intent.command == FrontendCommand::None &&
+                (pressed || (enabled && active && input.controlKeyPressed == keys[i]))) {
+                emit(FrontendCommand::SelectDifficulty);
+                intent.difficulty = uint8_t(i);
+            }
         }
-        if (button("medium", 330, 411, s(5103))) emit(FrontendCommand::Back);
     }
     void lobby(const OnlineView &v) {
         tiles("lobby", 0, 0, 4);
@@ -969,13 +1089,13 @@ struct RealmFrontend::Impl {
             if (!v.gameListComplete)
                 inputText.label(listing ? "Retrieving room list..." : "Incomplete list. Join by name or refresh.",
                      428, 165, 16, parchment);
-            if (button("cancel", 434, 404, s(5103), true, 1, 0, &lobbyText)) {
+            if (button("cancel", 434, 404, s(5103))) {
                 lastClickedGame.clear();
                 lobbyPanel = LobbyPanel::Notice;
                 if (listing) emit(FrontendCommand::CancelList);
                 wipe(gamePassword);
             }
-            if (button("gameButton", 599, 404, s(5151), v.gameEntryAvailable && !gameName.empty(), 1, 0, &lobbyText) ||
+            if (button("gameButton", 599, 404, s(5151), v.gameEntryAvailable && !gameName.empty()) ||
                 (enabled && v.gameEntryAvailable && !gameName.empty() && (input.enter || doubleClickGame))) {
                 lastClickedGame.clear();
                 emit(FrontendCommand::JoinGame);
@@ -1033,7 +1153,7 @@ struct RealmFrontend::Impl {
                     CheckCollisionPointRec(mouse, {float(x), 366, 130, 22}))
                     difficulty = i;
             }
-            if (button("cancel", 434, 404, s(5103), true, 1, 0, &lobbyText)) {
+            if (button("cancel", 434, 404, s(5103))) {
                 lobbyPanel = LobbyPanel::Notice;
                 gameName.clear();
                 wipe(gamePassword);
@@ -1076,22 +1196,22 @@ struct RealmFrontend::Impl {
                 if (!line.empty()) drawLine();
             }
         }
-        if (button("tabs", 534, 449, s(5312), v.gameEntryAvailable, 1, 0, &lobbyText)) {
+        if (button("tabs", 534, 449, s(5312), v.gameEntryAvailable)) {
             lastClickedGame.clear();
             lobbyPanel = LobbyPanel::Create;
             if (listing) emit(FrontendCommand::CancelList);
             focus = 0;
         }
-        if (button("tabs", 654, 449, s(5313), true, 1, 0, &lobbyText)) {
+        if (button("tabs", 654, 449, s(5313))) {
             lastClickedGame.clear();
             lobbyPanel = LobbyPanel::Join;
             gameOffset = 0;
             focus = 0;
             emit(FrontendCommand::ListGames);
         }
-        button("chatButton", 534, 469, s(5254), false, 1, 0, &lobbyText);
-        button("chatButton", 614, 469, s(5315), false, 1, 0, &lobbyText);
-        if (button("chatButton", 694, 469, s(5316), true, 1, 0, &lobbyText))
+        button("chatButton", 534, 469, s(5254), false);
+        button("chatButton", 614, 469, s(5315), false);
+        if (button("chatButton", 694, 469, s(5316)))
             emit(FrontendCommand::Back);
         tiles("leftButton", 19, 461, 3, 0, 3, GRAY);
         lobbyText.inBox(s(11126), {19, 461, 120, 20}, 16, BLACK);
@@ -1133,8 +1253,8 @@ struct RealmFrontend::Impl {
                 auto ok=graphics->single("data/global/ui/menu/endgameok.dc6");
                 if(background.count!=12 || ok.count<2) throw std::runtime_error("Missing original expansion victory art");
                 victoryFont=font(units,archives,"font42",4);
-                victoryNameFont=font(units,archives,"font16",4);
-                victoryFont.originalGlyphs=victoryNameFont.originalGlyphs=true;
+                victoryFont.originalGlyphs=true;
+                controlArt.emplace("victoryOk", ControlArt{graphics->animation("data/global/ui/menu/endgameok.dc6"), "endgame2"});
                 art.emplace("victory",std::move(background));art.emplace("victoryOk",std::move(ok));
                 victoryGraphics=std::move(graphics);
             }
@@ -1155,7 +1275,7 @@ struct RealmFrontend::Impl {
                 victoryTitle.inBox(std::string(rank)+" "+v.selectedCharacter,{0,315,800,42},16,WHITE);
             }
             enabled=true;
-            if(button("victoryOk",352,488,s(5102),true,1,0,&victoryName) || input.enter || input.escape) emit(FrontendCommand::LeaveGame);
+            if(button("victoryOk",352,488,s(5102)) || input.enter || input.escape) emit(FrontendCommand::LeaveGame);
             const auto *cursor=art.at("cursor").frame(0,0);
             cursorSprite(cursor,{mouse.x,mouse.y},handCursorHotspot(cursor));
             return std::move(intent);
@@ -1215,8 +1335,10 @@ struct RealmFrontend::Impl {
         else if (current == FrontendPage::Characters)
             characters(v, allowRealmSelection);
         else if (current == FrontendPage::Difficulty) {
-            const bool available = enabled;
-            enabled = false; localDifficulty(v, available);
+            enabled = false;
+            characters(v, false);
+            enabled = !modal;
+            localDifficulty(v);
         }
         else if (current == FrontendPage::Lobby)
             lobby(v);
@@ -1238,6 +1360,7 @@ struct RealmFrontend::Impl {
             }
         }
         if (modal) {
+            dimModalBackground();
             tiles("popup", 230, 130, 2);
             std::string message = !notice.empty()       ? std::string(notice)
                                   : !deleteName.empty() ? s(5163) + "\n" + deleteName

@@ -74,7 +74,7 @@ void SceneView::drawHirelingPortrait(Vec mouse) const {
         if (entry.showCount) portraitText(assets_.characterLabelFont,std::to_string(entry.count),x+8,55,46,false);
         const float baseline=column%2?62:72;
         if (!entry.name.empty()) portraitText(assets_.characterLabelFont,entry.name,x,baseline,66,true);
-        if (hint) drawSkillTooltip(UiPainter(assets_.font,0),{assets_.hirelingPotionHint,assets_.hirelingInventoryHint},
+        if (hint) drawSkillTooltip(assets_.font,{assets_.hirelingPotionHint,assets_.hirelingInventoryHint},
             {x*classicPanelScale(),(baseline+36)*classicPanelScale()},nullptr,{},true);
         x+=56;
         ++column;

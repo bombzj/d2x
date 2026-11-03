@@ -1,4 +1,5 @@
 #include "realm_session_impl.hpp"
+#include "contracts/online_npc_speech.hpp"
 #include "gameplay/quest/catalog.hpp"
 
 namespace d2x {
@@ -358,6 +359,10 @@ bool RealmSession::acknowledge_npc_message(uint16_t stringId, std::optional<Onli
     auto &p = *impl_;
     if (!p.require_intent(context.value_or(onlineIntentContext(snapshot_)), true)) return false;
     auto &conversation = p.view.world.npcConversation;
+    const auto automatic = conversation && conversation->type == 1 ? nextAutomaticNpcSpeech(*conversation) : std::nullopt;
+    if (automatic && *automatic != stringId) {
+        p.error(OnlineErrorKind::Input, "Finish the current NPC speech before selecting another topic"); return false;
+    }
     if (!conversation || !p.view.world.playerPosition || onlinePlayerDead(p.view.world) ||
         !std::any_of(conversation->messages.begin(), conversation->messages.end(),
             [&](const auto &message) { return message.stringId == stringId; }) ||
@@ -369,6 +374,9 @@ bool RealmSession::acknowledge_npc_message(uint16_t stringId, std::optional<Onli
         out.u8(0x31); out.u32(conversation->source); out.u16(stringId); out.u16(0);
         p.sent(p.gs, out.release());
         conversation->acknowledged.insert(stringId);
+        // D2Client 48290 -> 48150 -> 47B20. The last automatic line sends
+        // its acknowledgement and ends this NPC interaction, in wire order.
+        if (automatic && !nextAutomaticNpcSpeech(*conversation)) p.close_interaction();
         ++p.view.world.revision; p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Transport, "NPC message could not be queued"); return false;

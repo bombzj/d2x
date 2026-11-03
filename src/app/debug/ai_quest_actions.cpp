@@ -1,4 +1,6 @@
 #include "ai_impl.hpp"
+#include "client/inventory_actions.hpp"
+#include "contracts/online_npc_speech.hpp"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -30,28 +32,14 @@ std::optional<OnlineItem> DebugAi::Impl::accessibleItem(const Context &c,std::st
     return {};
 }
 bool DebugAi::Impl::questStoreCursor(Context &c,uint32_t id) {
-    const auto &world=c.session.read().world;const auto wire=world.items.find(id);
-    if(wire==world.items.end() || !onlineItemOwnedBy(wire->second,c.session.read().load.playerUnitId))
+    const auto &view=c.session.read();const auto &world=view.world;const auto wire=world.items.find(id);
+    if(wire==world.items.end() || !onlineItemOwnedBy(wire->second,view.load.playerUnitId))
         throw std::runtime_error("Quest reward/source item is no longer owned");
     if(wire->second.mode==0 && (wire->second.page==1 || wire->second.page==5)) return true;
     if(wire->second.mode!=4) return wire->second.mode==1 || wire->second.mode==2;
     if(questRun.pending && questRun.pending->action==QuestPending::Action::Place) {checkQuestPending(c);return false;}
-    const auto &inventory=c.inventory.read();const auto decoded=inventory.items.find(id);
-    if(decoded==inventory.items.end() || !decoded->second.decoded || decoded->second.width<1 || decoded->second.height<1)
-        throw std::runtime_error("Quest cursor item shape is unknown");
-    const auto &shape=decoded->second;std::optional<OnlinePoint> cell;
-    for(int y=0;y+shape.height<=inventory.rows && !cell;++y) for(int x=0;x+shape.width<=inventory.columns && !cell;++x) {
-        bool free=true;
-        for(const auto &[otherId,item]:world.items) {
-            if(otherId==id || !onlineItemOwnedBy(item,c.session.read().load.playerUnitId) || item.mode!=0 || item.page!=1) continue;
-            const auto other=inventory.items.find(otherId);
-            if(!item.positionKnown || other==inventory.items.end() || !other->second.decoded || other->second.width<1 || other->second.height<1)
-                throw std::runtime_error("Backpack placement is unknown; no guessed quest-item placement");
-            if(x<int(item.x)+other->second.width && x+shape.width>item.x && y<int(item.y)+other->second.height && y+shape.height>item.y) {free=false;break;}
-        }
-        if(free) cell=OnlinePoint{uint16_t(x),uint16_t(y)};
-    }
-    if(!cell) throw std::runtime_error("Backpack has no real free space for the quest item/reward");
+    const auto cell = firstBackpackSpace(view, c.inventory.read(), id);
+    if(!cell) throw std::runtime_error("No verified backpack space for the quest item/reward");
     OnlineItemCommand place;place.action=OnlineItemAction::Place;place.item=id;place.itemRevision=wire->second.revision;
     place.page=0;place.x=uint8_t(cell->x);place.y=uint8_t(cell->y);
     if(!settleItemInput(c)) return false;
@@ -127,9 +115,8 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
                 }
                 wait("quest-introduction-result","Waiting for the actually offered prerequisite greeting to commit");return false;
             }
-            if(world.npcRequested) c.session.close_npc();
             cancelWalk(c);questRun.pending.reset();greetingIssued=false;
-            note("quest-prerequisite-greeting-observed","Reopening for the next actually offered topic");return false;
+            note("quest-prerequisite-greeting-observed","Continuing with the next actually offered topic");return false;
         }
         if(step.optional && questRun.pending->action==QuestPending::Action::Topic && !questRun.pending->refreshIssued) {
             // A1Q1/A1Q2 queue their introduction status until NPCDEACTIVATE.
@@ -163,17 +150,17 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         if(step.optional) {note("optional-quest-npc-not-exposed",step.target->name);return true;}
         explore(c,"quest NPC "+step.target->name);return false;
     }
-    if(world.npcRequested && world.npcRequested!=npc->key.id) {c.session.close_npc();return false;}
     if(!world.npcConversation || world.npcConversation->type!=1 || world.npcConversation->source!=npc->key.id) {
         wait("quest-dialogue","Opening the actual quest NPC conversation");
         walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true},{"waitQuestAlert",true}});return false;
     }
     if(!greetingIssued && npc->classId) {greetingIssued=c.session.confirm_npc_voice(*npc->classId);if(greetingIssued) return false;}
     const auto conversation=*world.npcConversation;
-    // Prefer the registered quest topic; automatic greetings remain normal
-    // listening input, never permission to send an absent story message.
+    const auto automatic = nextAutomaticNpcSpeech(conversation);
+    // A goal can finish a required automatic line, or select an offered topic
+    // once the automatic chain is over. Other greetings must be heard first.
     for(const auto topic:step.topics) for(const auto &message:conversation.messages) {
-        if(message.stringId!=topic || conversation.acknowledged.contains(topic)) continue;
+        if(message.stringId!=topic || conversation.acknowledged.contains(topic) || (automatic && *automatic!=topic)) continue;
         if(step.rareReward || !step.rewardCodes.empty()) {
             questRun.rewardBefore.clear();for(const auto &[id,item]:world.items) {(void)item;questRun.rewardBefore.insert(id);}
             questRun.rewardTracked=true;
@@ -197,12 +184,12 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         }
         return false;
     }
-    for(const auto &message:conversation.messages) if(message.menu==0 && !conversation.acknowledged.contains(message.stringId)) {
+    if(automatic) {
         const auto before=world.quests.revision;
-        if(c.session.acknowledge_npc_message(message.stringId)) {
+        if(c.session.acknowledge_npc_message(*automatic)) {
             QuestPending p;p.action=QuestPending::Action::Introduction;p.unit=npc->key;p.beforeRevision=before;
             p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;
-            note("quest-prerequisite-greeting-submitted",std::to_string(message.stringId));
+            note("quest-prerequisite-greeting-submitted",std::to_string(*automatic));
         }
         return false;
     }
@@ -512,10 +499,7 @@ bool DebugAi::Impl::questImbue(Context &c,const Goal &goal,const QuestStep &step
     if(questRun.materialPhase==0) {
         const auto npc=find(c,*step.target);
         if(!npc) {if(!approachKnown(c,*step.target)) explore(c,"Charsi's original imbue service");return false;}
-        if(world.npcRequested && world.npcRequested!=npc->key.id) {c.session.close_npc();return false;}
-        if(!world.npcConversation || world.npcConversation->type!=1 || world.npcConversation->source!=npc->key.id) {
-            walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true}});return false;
-        }
+        if (!prepareNpcService(c, npc->key, DebugActionOwner::Goal)) return false;
         const auto item=world.items.find(*questRun.material);
         if(item==world.items.end() || item->second.mode!=0 || item->second.page!=1) throw std::runtime_error("Reserved imbue base changed before take");
         const uint32_t material=item->first;OnlineItemCommand take;take.action=OnlineItemAction::Take;take.item=material;take.itemRevision=item->second.revision;
@@ -551,11 +535,7 @@ bool DebugAi::Impl::questActTravel(Context &c,const Goal &goal,const QuestStep &
     if(waypointBeforeDeparture(c)) return false;
     const auto npc=find(c,*step.target);
     if(!npc) {if(!approachKnown(c,*step.target)) explore(c,"the actual NPC act travel service");return false;}
-    const auto &world=c.session.read().world;
-    if(world.npcRequested && world.npcRequested!=npc->key.id) {c.session.close_npc();return false;}
-    if(!world.npcConversation || world.npcConversation->type!=1 || world.npcConversation->source!=npc->key.id) {
-        walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true}});return false;
-    }
+    if (!prepareNpcService(c, npc->key, DebugActionOwner::Goal)) return false;
     const auto &conversation=c.town.read().npcConversation;
     if(!conversation || !conversation->travelDestination || conversation->travelDestination!=step.area) {
         if(actionDeadline==Clock::time_point{}) setActionDeadline(std::chrono::seconds(20),false);

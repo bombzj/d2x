@@ -1,5 +1,6 @@
 #include "remote_scene_impl.hpp"
 #include "network/chat_text.hpp"
+#include "presentation/world/overlay_geometry.hpp"
 
 namespace d2x {
 RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, const OnlineSceneView &binding,
@@ -572,7 +573,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 // still frame behind its lip after the actual FX3 body expires.
                 WorldDrawItem staff;
                 staff.position = feet;
-                staff.pixelOffset = visual->offset;
+                staff.pixelOffset = unitScreenOffset + visual->offset;
                 staff.orderFlag = visual->order;
                 staff.missile = 338;
                 staff.missileFrame = 0;
@@ -581,7 +582,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 draw.push_back(staff);
             }
         }
-        const auto p = screen(feet) + visual->offset+m.riderOffset+
+        const auto ground = screen(feet) + unitScreenOffset;
+        const auto p = ground + visual->offset+m.riderOffset+
               (m.scriptedSequence && m.scriptedSequence->leapGraphics?m.scriptedSequence->leapGraphics->offset():Vec{})+
               (m.playerLeap?m.playerLeap->graphics.offset():Vec{});
         if (player) player->reason = "Outside viewport";
@@ -598,7 +600,6 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             // Retail 510F0 converts the pointer to native world coordinates
             // with Y-8. A68E0/A6730's raw path rectangles therefore acquire
             // +8 when expressed in this renderer's screen coordinates.
-            const auto ground = screen(feet) + (key.type == 2 ? Vec{0,8} : Vec{});
             if (key.type == 2) {
                 const auto row = objectRows.find(*unitClass(u));
                 if (row == objectRows.end()) return false;
@@ -624,7 +625,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                     const auto value = [&](const char *field) {
                         return float(int16_t(monstats2.number(extra->second,field).value_or(0)));
                     };
-                    const auto point = mouse - screen(feet);
+                    const auto point = mouse - ground;
                     return CheckCollisionPointRec(rv(point),
                         {value("htLeft"),value("htTop"),value("htWidth"),value("htHeight")});
                 }
@@ -635,11 +636,11 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             return spriteHit(image,p,mouse,multiPiece,ground);
         }();
         if (player && !player->local && !player->dead && !surface && !waypointOpen &&
-            !binding.npcConversation && unitHit) {
+            !v.world.npcConversation && unitHit) {
             const float distance = (p - mouse).length();
             if (distance < playerDistance) { playerDistance = distance; hoveredPlayer = key; }
         }
-        if (!selectedExit && !surface && !waypointOpen && !binding.npcConversation &&
+        if (!selectedExit && !surface && !waypointOpen && !v.world.npcConversation &&
             (key.type == 0 || key.type == 1 || key.type == 2) && unitHit &&
             std::any_of(binding.mapTargets.begin(), binding.mapTargets.end(),
                 [&](const auto &target) { return target.unit == key; })) {
@@ -682,12 +683,13 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         const auto *visual = object(unit, shared);
         if (!visual || !visual->animation.available()) continue;
         const Vec feet{float(decoration.x), float(decoration.y)};
-        const auto position = screen(feet) + visual->offset;
+        const auto pixelOffset = unitScreenOffset + visual->offset;
+        const auto position = screen(feet) + pixelOffset;
         worldScene.objects.push_back({decoration.id, 0, feet});
         if (!visual->animation.intersects(position,{0,0,float(W),float(H-HUD)})) continue;
         const auto *image = visual->sampleFacing(time, time, 0);
         if (image && visible(*image, position)) {
-            WorldDrawItem entry; entry.image = image; entry.position = feet; entry.pixelOffset = visual->offset;
+            WorldDrawItem entry; entry.image = image; entry.position = feet; entry.pixelOffset = pixelOffset;
             entry.shadow = visual->shadow; entry.orderFlag = visual->order; draw.push_back(entry);
         }
     }
@@ -707,12 +709,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         entry.height = objectUnit ? 0 : 1;
         if (const auto owner = std::find_if(draw.begin(),draw.end(),
                 [&](const auto &item) { return item.image && item.unit == effectOwner(key); }); owner != draw.end()) {
-            entry.pixelOffset = owner->pixelOffset;
-            if (objectUnit) {
-                // drawSpellOverlay already supplies the native +8 baseline.
-                entry.pixelOffset = entry.pixelOffset - Vec{0,8};
-                entry.orderFlag = owner->orderFlag;
-            }
+            // The overlay supplies its own unit screen origin.
+            entry.pixelOffset = owner->pixelOffset - unitScreenOffset;
+            if (objectUnit) entry.orderFlag = owner->orderFlag;
         }
         if (key.type == 1 && unitClass(actor->second)) {
             const auto row = monsterRows.find(*unitClass(actor->second));

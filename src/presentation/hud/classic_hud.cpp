@@ -47,8 +47,8 @@ void drawClassicHud(const ClassicHudArt &art, const ClassicHudValues &value) {
         bounds.height = 2 * hudScale(); DrawRectangleRec(bounds, WHITE);
     }
     imageAt(art.run.frame(0, value.running ? 2 : 0), hudRunButton());
-    imageAt(art.points.frame(0, value.attributePoints ? (value.pressedPoint == false ? 1 : 0) : 2), hudCharacterButton());
-    imageAt(art.points.frame(0, value.skillPoints ? (value.pressedPoint == true ? 1 : 0) : 2), hudSkillTreeButton());
+    imageAt(art.points.frame(0, value.attributePoints ? (value.pressedPoint == false ? 1 : 0) : 2), hudRect(206, 38, 30, 30));
+    imageAt(art.points.frame(0, value.skillPoints ? (value.pressedPoint == true ? 1 : 0) : 2), hudRect(563, 38, 30, 30));
     imageAt(art.menu.frame(0, value.miniPanel ? 2 : 0), hudMenuButton());
 }
 } // namespace d2x

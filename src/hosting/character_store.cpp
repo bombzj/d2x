@@ -110,10 +110,10 @@ std::unique_ptr<CharacterStore::Lease> CharacterStore::acquire(uint64_t revision
         throw std::runtime_error("Character file changed since listing; refresh before selecting or deleting");
     return lease;
 }
-PersistentCharacter CharacterStore::load(Lease &lease) {
+PersistentCharacter CharacterStore::load(Lease &lease, std::optional<int> gameDifficulty) {
     const auto bytes = readBytes(lease.path);
     if (bytes != lease.expected) throw std::runtime_error("Character save changed outside this host; reload was refused");
-    return decodeSave(bytes, content_);
+    return decodeSave(bytes, content_, gameDifficulty);
 }
 void CharacterStore::save(Lease &lease, const PersistentCharacter &character) {
     const auto original = decodeSave(lease.expected, content_);
