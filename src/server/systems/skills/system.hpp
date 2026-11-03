@@ -1,4 +1,5 @@
 #pragma once
+#include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
@@ -17,9 +18,6 @@
 namespace d2x { struct SkillCastSpec; enum class SkillBehavior; }
 namespace d2x::server::reactions { class ItemTriggers; }
 namespace d2x::server::skills {
-// Skill selection and cast/channel lifecycle; formulas use prepared pure skill definitions.
-enum class Action { Select, Cast, Stop, Bind };
-struct Request { Action action; uint16_t skill{}; bool right{}, repeat{}, stationary{}; std::optional<ActionTarget> target; std::optional<unsigned> hotkey; uint32_t owner=UINT32_MAX; };
 // Internal AI/companion action, not a player identity supplied over the wire.
 using CastRequest = actions::MonsterCastRequest;
 using Cast = actions::SkillAction;

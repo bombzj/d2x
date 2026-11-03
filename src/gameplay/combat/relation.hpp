@@ -1,6 +1,6 @@
 #pragma once
 #include "alignment.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 
 namespace d2x {
 enum class CombatRelation { Unknown, Self, Allied, Neutral, Hostile };

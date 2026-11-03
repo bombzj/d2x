@@ -4,7 +4,7 @@ AI任务、策略、恢复与验收入口统一见[调试任务AI](DEBUG_AI.md)�
 
 `online-status`的`world.cinematic`记录真实S2C61程序号与观察修订，`frontend.page`在61/7通关画面实际生效时为Victory。该状态不提供伪造通知或任务完成指令；最终出口须经正常客户端交互，由服务端决定旅行与通知。
 
-`debug-ai-start`可用`configFile`加载已有计划／策略JSON；启动参数`"activateAllWaypoints":true`会添加全部传送点目标，安排在毁灭前夕之前（无此终局任务则追加到末尾）。`debug-ai-reload-config`在同一活动或暂停计划中验证并原子应用安全数值策略，省略文件名沿用最近成功配置，详细字段及不可热改范围见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。不重置现实请求期限，也不改服务端规则。
+`debug-ai-start`可用`configFile`加载已有计划／策略JSON；启动参数`"activateAllWaypoints":true`要求离区前先确认本区传送点已开，完整五幕计划分幕补齐未途经的点。`debug-ai-reload-config`在同一活动或暂停计划中验证并原子应用安全数值策略，省略文件名沿用最近成功配置，详细字段及不可热改范围见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。不重置现实请求期限，也不改服务端规则。
 
 PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版／公共规则及必要的版本边界。
 
@@ -235,7 +235,7 @@ $spec.preview=$false
 | `online-stop-skill` | 发原0x12停止地狱火状态；停止重复提交Hold请求由调用方负责。这不是全部技能的通用撤销包 |
 | `online-learn-skill` | skillId；检查职业、已学前置、等级、属性、MPQ最大等级和原服可用点。原0x3B；CN编码见[成长请求](../pd2/CLIENT_INTEGRATION.md#客户端接入成长请求编码)；等待基础技能等级增加和余点减少，允许两类回包按不同顺序到达；原服无通用失败包，超时结果未知，不自动重试 |
 | `online-spend-attribute` | statId：0力量／1精力／2敏捷／3体力；count：1–100，默认1，需有足够原服属性点。原0x3A打包count-1于高字节，等待对应绝对属性增加和余点减少；CN边界见[成长请求](../pd2/CLIENT_INTEGRATION.md#客户端接入成长请求编码) |
-| `online-move` | x、y为服务端全局subtile整数（0–65535），run默认true；ProtocolReady、角色存活、目标属于已加载原地图且各轴距本人采样≤50时接受。直接发原0x01／0x03目标，至少间隔100ms，不切18格短段等待回包；可达点／障碍由原服处理。accepted表示命令已发送，不表示已到达；鼠标使用同帧显示坐标作投影范围提示，原服仍按真实位置校验50格范围 |
+| `online-move` | x、y为服务端全局subtile整数（0–65535），run默认true；ProtocolReady、角色存活、目标属于已加载原地图且各轴距本人采样≤50时接受。直接发原0x01／0x03目标。改变目的地可立即提交，200ms内紧邻且内容完全相同的移动包才会被过滤。可达点与障碍由原服处理。accepted表示命令已发送，不表示已到达；鼠标使用同帧显示坐标作投影范围提示，原服仍按真实位置校验50格范围 |
 | `online-move-to-unit` | unitId、unitType（默认2，支持1／2／5）、run（默认true）；限定当前scene.mapTargets真实单位及各轴50-subtile范围，直接发原0x02／0x04跟随真实GUID，不发交谈 |
 | `online-use-exit` | unitId为online-world返回的真实type5单位ID，要求原生地图可用／角色存活；发送0x13交互，不接受用LvlWarp类型编号替代单位ID |
 | `online-interact` | unitId、unitType（默认2，支持1／2／5）、run（NPC靠近默认true）；目标必须在scene.mapTargets中。近处发原0x13；远处先按真实GUID发02／04，本地普通单位路径到达后才13，交互资格及菜单仍由服务端确认；accepted不代表已操作、交谈打开或换区 |

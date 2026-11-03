@@ -1,3 +1,4 @@
+#include "network/protocol/message_schema_detail.hpp"
 #include "message_catalog.hpp"
 #include "network/protocol/d2gs_stream.hpp"
 #include <iterator>
@@ -16,9 +17,9 @@ constexpr MessageDescriptor serverImplementations[]{
 #undef D2X_MESSAGE
 };
 constexpr auto servers = [] {
-    std::array<MessageDescriptor, std::size(net::protocol::serverWireMessages)> result{};
+    std::array<MessageDescriptor, std::size(net::protocol::detail::serverWireMessages)> result{};
     size_t index = 0;
-    for (const auto &wire : net::protocol::serverWireMessages) {
+    for (const auto &wire : net::protocol::detail::serverWireMessages) {
         MessageDescriptor entry{uint8_t(wire.message), wire.name, MessageDomain::Reserved, MessageSupport::Stub, wire.fixedSize};
         for (const auto &implementation : serverImplementations) {
             if (implementation.id != entry.id) continue;
@@ -41,13 +42,13 @@ static_assert(validCatalog(clients));
 static_assert(validCatalog(servers));
 static_assert(validCatalog(serverImplementations));
 static_assert([] {
-    if (std::size(clients) != std::size(net::protocol::clientWireMessages)) return false;
+    if (std::size(clients) != std::size(net::protocol::detail::clientWireMessages)) return false;
     for (const auto &entry : clients) {
-        const auto *wire = net::protocol::findClientWireMessage(entry.id);
+        const auto *wire = net::protocol::detail::findClientWireMessage(entry.id);
         if (!wire || wire->name != entry.name || wire->fixedSize != entry.fixedSize) return false;
     }
     for (const auto &entry : serverImplementations) {
-        const auto *wire = net::protocol::findServerWireMessage(entry.id);
+        const auto *wire = net::protocol::detail::findServerWireMessage(entry.id);
         if (!wire || wire->name != entry.name) return false;
         if (entry.support != MessageSupport::Stub && wire->framing == net::protocol::WireFraming::Unsupported) return false;
     }

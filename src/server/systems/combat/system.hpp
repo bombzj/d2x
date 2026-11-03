@@ -5,7 +5,6 @@
 #include "server/runtime/combat_rules.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
 #include "gameplay/combat/damage_type.hpp"
 #include "gameplay/monsters/damage.hpp"
 #include "gameplay/skills/weapon_damage.hpp"

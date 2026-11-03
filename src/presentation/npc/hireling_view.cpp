@@ -6,6 +6,8 @@
 #include <sstream>
 
 namespace d2x {
+constexpr std::array<EquipmentSlot, 7> hirelingEquipmentOrder{EquipmentSlot::Head, EquipmentSlot::Torso,
+    EquipmentSlot::RightHand, EquipmentSlot::LeftHand, EquipmentSlot::Belt, EquipmentSlot::Feet, EquipmentSlot::Gloves};
 namespace {
 enum class HirelingTextAlign { Left, Center, Right };
 void hirelingText(const ClassicFont &font,const std::string &value,float left,float baseline,float right,HirelingTextAlign align) {

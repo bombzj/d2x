@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "server/player_identity.hpp"
 
 namespace d2x {class GameHost;}

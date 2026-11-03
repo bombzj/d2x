@@ -1,3 +1,4 @@
+#include "server/runtime/diagnostics.hpp"
 #include "combat_content.hpp"
 #include "content/pd2/corpse_data.hpp"
 #include "gameplay/maps/pd2/definition.hpp"

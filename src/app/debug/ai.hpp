@@ -2,6 +2,7 @@
 #include "contracts/online_scene.hpp"
 #include <memory>
 #include <functional>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
@@ -28,7 +29,7 @@ class DebugAi {
         std::function<std::optional<unsigned>(uint32_t)> buyQuote;
         std::span<const OnlineSceneView::MissileDisplay> missiles;
     };
-    explicit DebugAi(Archives &);
+    explicit DebugAi(Archives &,std::filesystem::path logDirectory="logs");
     ~DebugAi();
     bool active() const;
     bool hasPlan() const;
@@ -38,6 +39,9 @@ class DebugAi {
     std::optional<std::string> command(const nlohmann::json &,net::RealmSession &,RemoteTown &,
         DebugAutoWalk &,RemoteControl &,RemoteCombat &,RemoteInventory &);
     void tick(net::RealmSession &,RemoteTown &,DebugAutoWalk &,RemoteControl &,RemoteCombat &,
+        RemoteInventory &,const SuppliesView &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
+  private:
+    void tickPlan(net::RealmSession &,RemoteTown &,DebugAutoWalk &,RemoteControl &,RemoteCombat &,
         RemoteInventory &,const SuppliesView &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
 };
 }

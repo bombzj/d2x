@@ -1,4 +1,5 @@
 #pragma once
+#include "core/native_unit_ids.hpp"
 #include "player_state.hpp"
 #include <cstdint>
 #include <map>

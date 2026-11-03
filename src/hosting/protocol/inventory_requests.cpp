@@ -1,3 +1,5 @@
+#include "server/systems/inventory/system.hpp"
+#include "hosting/game_host.hpp"
 #include "gameplay_dispatch.hpp"
 #include <optional>
 

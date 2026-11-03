@@ -1,3 +1,5 @@
+#include "core/native_unit_ids.hpp"
+#include "server/systems/transactions/system.hpp"
 #include "system.hpp"
 #include "server/systems/combat/system.hpp"
 #include "server/systems/reactions/item_triggers.hpp"

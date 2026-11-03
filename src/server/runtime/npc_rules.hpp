@@ -1,5 +1,6 @@
 #pragma once
-#include "core/id.hpp"
+#include <utility>
+#include "core/entity_id.hpp"
 #include "core/math.hpp"
 #include "gameplay/quest/id.hpp"
 #include "world/collision.hpp"

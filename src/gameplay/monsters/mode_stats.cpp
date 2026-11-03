@@ -1,3 +1,4 @@
+#include <string_view>
 #include "mode_stats.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"

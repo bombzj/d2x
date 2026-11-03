@@ -1,3 +1,8 @@
+#include "server/systems/travel/system.hpp"
+#include "server/systems/inventory/system.hpp"
+#include "server/game_messages.hpp"
+#include "server/area_store.hpp"
+#include "hosting/game_host.hpp"
 #include "gameplay_dispatch.hpp"
 #include "server/systems/objects/system.hpp"
 

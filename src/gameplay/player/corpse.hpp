@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/model/definitions.hpp"
 #include <cstdint>
 #include <vector>

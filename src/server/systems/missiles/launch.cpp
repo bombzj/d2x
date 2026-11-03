@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "system.hpp"
 #include "server/systems/combat/system.hpp"
 #include "server/systems/transactions/system.hpp"

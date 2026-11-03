@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "animation_timing.hpp"
 #include "core/math.hpp"
 #include <array>

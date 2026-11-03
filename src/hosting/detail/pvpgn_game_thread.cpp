@@ -1,3 +1,4 @@
+#include "gameplay/character/persistent_character.hpp"
 #include "pvpgn_game_thread.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/character_creation.hpp"

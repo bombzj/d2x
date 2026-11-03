@@ -1,3 +1,4 @@
+#include <utility>
 #include "character_attributes.hpp"
 #include <algorithm>
 #include <iterator>

@@ -1,4 +1,5 @@
 #pragma once
+#include "server/area_store.hpp"
 #include "hosting/character_store.hpp"
 #include "native_realm_host.hpp"
 #include "hosting/game_host.hpp"
@@ -19,6 +20,7 @@
 #include <span>
 #include <vector>
 
+namespace d2x::server { struct EventBatch; struct TravelFact; }
 namespace d2x::hosting {
 // One peer protocol/session binding, independent of byte transport and UI.
 // Protocol handlers orchestrate storage/admission; gameplay goes to domain handlers.

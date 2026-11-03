@@ -149,16 +149,15 @@ bool RealmSession::move_to(OnlinePoint target, bool run, std::optional<OnlineInt
         p.error(OnlineErrorKind::Input, "The server player is not available to move");
         return false;
     }
-    if (Clock::now() < p.nextMovement)
-        return false;
     try {
         Writer out;
         out.u8(run ? 0x03 : 0x01);
         out.u16(target.x);
         out.u16(target.y);
+        auto packet=out.release();
+        if(p.duplicateNavigation(packet)) return false;
         p.close_interaction();
-        p.sent(p.gs, out.release());
-        p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
+        p.sent(p.gs,std::move(packet));
         p.view.world.movementRequest = OnlineMovementRequest{target, {}, run, ++p.view.world.revision};
         p.view.error.reset();
         p.changed();
@@ -188,17 +187,18 @@ bool RealmSession::move_to_unit(OnlineUnitKey target, bool run, std::optional<On
         (target.type != 1 && target.type != 2 && target.type != 5 && !corpse && !tradePeer)) {
         p.error(OnlineErrorKind::Input, "The server movement target is unavailable"); return false;
     }
-    if (Clock::now() < p.nextMovement) return false;
     try {
-        p.close_interaction();
-        if (stopNpc && target.type == 1) p.sent(p.gs, npcStopPacket(target.id, *stopNpc));
         Writer out;
         out.u8(run ? 0x04 : 0x02); out.u32(target.type); out.u32(target.id);
-        p.sent(p.gs, out.release());
+        auto packet=out.release();
+        const bool sendStop=stopNpc && target.type==1;
+        if(!sendStop && p.duplicateNavigation(packet)) return false;
+        p.close_interaction();
+        if(sendStop) p.sent(p.gs,npcStopPacket(target.id,*stopNpc));
+        p.sent(p.gs,std::move(packet));
         // D2Client 1.13c keeps 02/04 as approach only. Marking an object
         // as operated here starts the owner's predicted Kick before arrival.
         p.view.world.movementRequest = OnlineMovementRequest{{}, target, run, ++p.view.world.revision};
-        p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Transport, "Unit movement request could not be queued"); return false;
@@ -226,13 +226,14 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
     }
     const bool retry=intent==OnlineObjectIntent::Waypoint && p.view.world.waypointRequested==target.id;
     if(retry && p.view.world.waypointSource) return false;
-    if (Clock::now() < p.nextMovement) return false;
     try {
         // D2MOO PlrMsg Rcv0x13: packet byte, uint32 unit type, uint32 GUID.
         Writer out;
         out.u8(0x13); out.u32(target.type); out.u32(target.id);
+        auto packet=out.release();
+        if(p.duplicateNavigation(packet)) return false;
         if(!retry) p.close_interaction();
-        p.sent(p.gs, out.release());
+        p.sent(p.gs,std::move(packet));
         if (intent == OnlineObjectIntent::Stash) {
             p.view.world.storage.requested = OnlineStorageKind::Stash;
             ++p.view.world.interactionGeneration;
@@ -245,7 +246,6 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
             p.waypointDeadline = Clock::now() + p.options.timeout;
         }
         p.view.world.movementRequest = OnlineMovementRequest{{}, target, true, ++p.view.world.revision, true};
-        p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.error.reset(); p.changed();
         return true;
     } catch (const std::exception &) {
@@ -266,20 +266,21 @@ bool RealmSession::interact_npc(uint32_t serverUnitId, std::optional<OnlineInten
     }
     const bool retry=p.view.world.npcRequested==serverUnitId;
     if(retry && (p.view.world.npcConversation || p.view.world.npcPendingConversation)) return false;
-    if (Clock::now() < p.nextMovement) return false;
     try {
-        if(!retry) p.close_interaction();
-        if (stopNpc && !retry) p.sent(p.gs, npcStopPacket(serverUnitId, *stopNpc));
         Writer out;
         out.u8(0x13); out.u32(1); out.u32(serverUnitId);
-        p.sent(p.gs, out.release());
+        auto packet=out.release();
+        const bool sendStop=stopNpc && !retry;
+        if(!sendStop && p.duplicateNavigation(packet)) return false;
+        if(!retry) p.close_interaction();
+        if(sendStop) p.sent(p.gs,npcStopPacket(serverUnitId,*stopNpc));
+        p.sent(p.gs,std::move(packet));
         p.view.world.npcRequested = serverUnitId;
         if(!retry) {
             ++p.view.world.interactionGeneration;
             p.npcDeadline = Clock::now() + p.options.timeout;
         }
         p.view.world.movementRequest.reset();
-        p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Transport, "NPC interaction could not be queued"); return false;
@@ -489,7 +490,6 @@ bool RealmSession::create_town_portal(uint16_t skillId, std::optional<OnlineInte
             : skill == world.playerSkills.end() || !skill->second)) {
         p.error(OnlineErrorKind::Input, "A server town-portal item skill is unavailable or already pending"); return false;
     }
-    if (Clock::now() < p.nextMovement) return false;
     try {
         Impl::PortalRequest request{world.rightSkill, {}, Clock::now() + p.options.timeout};
         if (request.previous && request.previous->skill == skillId) request.previous.reset();
@@ -516,7 +516,6 @@ bool RealmSession::create_town_portal(uint16_t skillId, std::optional<OnlineInte
         p.portalRequest = std::move(request);
         p.view.world.townPortalPending = true;
         p.view.world.movementRequest.reset();
-        p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Transport, "Town portal could not be queued"); return false;
@@ -1096,15 +1095,14 @@ bool RealmSession::use_waypoint(uint16_t destination, uint8_t waypointNumber, st
         p.error(OnlineErrorKind::Input, "Waypoint source or unlocked destination is unavailable");
         return false;
     }
-    if (destination && Clock::now() < p.nextMovement) return false;
     try {
-        // Closing must work even immediately after operate; only travel is rate limited.
         // D2MOO PlrMsg Rcv0x49: object GUID + level ID, both original DWORDs.
         Writer out;
         out.u8(0x49); out.u32(*waypoint); out.u32(destination);
-        p.sent(p.gs, out.release());
+        auto packet=out.release();
+        if(p.duplicateNavigation(packet)) return false;
+        p.sent(p.gs,std::move(packet));
         p.finish_pickup(OnlineItemRequest::State::Interrupted);
-        if (destination) p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.world.waypointSource.reset();
         p.view.world.waypointRequested.reset(); p.waypointDeadline = {};
         p.view.world.waypointActivation.reset();

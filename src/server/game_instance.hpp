@@ -1,25 +1,19 @@
 #pragma once
+#include "core/id.hpp"
+#include "server/corpse_view.hpp"
 #include "server/game_messages.hpp"
-#include "server/area_store.hpp"
+#include "server/game_definition.hpp"
 #include "server/player_store.hpp"
 #include "server/runtime/game_command.hpp"
 #include "server/runtime/game_systems.hpp"
 #include "server/runtime/simulation.hpp"
 #include "server/runtime/prepared_rules.hpp"
 #include "server/runtime/diagnostics.hpp"
-#include "core/native_unit_id.hpp"
+#include "core/native_unit_ids.hpp"
 #include <optional>
 
 namespace d2x { enum class PointRefund; }
 namespace d2x::server {
-struct GameDefinition {
-    GameSettings settings;
-    AreaDefinition area;
-    CharacterDefinition character;
-    PersistentCharacter persistent;
-    PreparedRules rules;
-};
-struct CorpseView { PlayerCorpse corpse; PersistentCharacter equipment; uint64_t revision{}; };
 // Composition and ordering only; domain implementations live beside this class.
 class GameInstance {
     GameSettings settings_;
@@ -72,10 +66,11 @@ class GameInstance {
         const auto *p=players_.find(player);return p && systems_.quests.npcVisible(p->persistent.player,code,area,initFunction);
     }
     std::optional<uint16_t> npcQuestAlert(PlayerId player,const NpcRule &npc,RegionId area) const {
+        // Fn032 and Fn054 publish 8A from their proximity/quest selection.
+        if(npc.combat && (npc.combat->ai.kind==MonsterAiKind::Npc || npc.combat->ai.kind==MonsterAiKind::NpcStationary)) return {};
         const auto *p=players_.find(player);const auto *a=areas_.find(area);
-        if(!p || !a || systems_.npc.conversation(player) || !systems_.quests.npcVisible(p->persistent.player,npc.code,area,npc.questInitFunction)) return {};
-        const auto message=systems_.quests.dialogue({player,p->actor,area,a->generation,0,tick_},npc);
-        return message && message->message.menu!=2?std::optional<uint16_t>{message->message.text}:std::nullopt;
+        if(!p || !a || systems_.npc.conversation(player)) return {};
+        return systems_.quests.alertMessage({player,p->actor,area,a->generation,0,tick_},npc);
     }
     std::vector<PlayerId> visiblePlayers(PlayerId) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerId) const;

@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include <set>
 namespace d2x {struct PersistentCharacter;struct ItemInstance;struct StatList;}
 namespace d2x::server::attributes {

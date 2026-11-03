@@ -1,7 +1,7 @@
 #pragma once
+#include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
 #include "gameplay/skills/cast_spec.hpp"
 #include "gameplay/skills/rank_sources.hpp"
 #include "preparation.hpp"
@@ -17,10 +17,7 @@ namespace d2x::server::monsters { struct Actor; }
 namespace d2x::server { struct RoomRandomLoan; }
 
 namespace d2x::server::companions {
-// Ownership and control for hirelings/summons; live actors belong to Monsters.
 enum class Kind { Hireling, Summon, IronGolem };
-enum class Action { Hire, Resurrect, Dismiss, List, Equipment, Potion, CommandInteract, CommandMove };
-struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; std::optional<ItemHandle> item{}; bool belt{}; UnitTarget target{}; std::optional<Vec> destination{}; };
 struct ShadowDecision;struct DruidDecision;struct Pd2ShadowFollow;
 struct CorpseSummonExecution {EntityId corpse;Vec position;};
 struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint16_t> sourceSkill;

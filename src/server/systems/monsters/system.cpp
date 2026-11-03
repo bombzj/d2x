@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "core/id.hpp"
 #include "server/systems/attributes/pd2/map_values.hpp"
 #include "server/systems/travel/system.hpp"
 #include "gameplay/maps/pd2/definition.hpp"
@@ -27,6 +28,8 @@
 
 #include "system_detail.hpp"
 namespace d2x::server::monsters {
+const NativeUnitIds &System::nativeIdentities() const {return ports_.ids.nativeIdentities();}
+
 void System::refreshCollision(const Actor &unit) noexcept {
     if(unit.roomless) {ports_.areas.setUnitCollision(unit.id,{});return;}
     NativeFootprint body,reservation;
@@ -381,7 +384,8 @@ DomainResult<Vec> System::ensureAiHomeCommand(EntityId id) {
     const bool countess=unit.identity.rank==MonsterRank::SuperUnique && unit.rule.superUniqueIndex==6;
     if(!unit.aiHomeCommand || (countess && (unit.aiHomeCommand->x==0 || unit.aiHomeCommand->y==0))) {
         if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
-        const auto global=unit.position+ports_.areas.at(unit.area).definition.origin;
+        auto global=unit.position+ports_.areas.at(unit.area).definition.origin;
+        if(townNpcAi(unit.rule.ai.kind)) global=global+Vec{.5f,.5f};
         unit.aiHomeCommand=Vec{std::floor(global.x),std::floor(global.y)};++unit.revision;
     }
     return {DomainStatus::Applied,*unit.aiHomeCommand};

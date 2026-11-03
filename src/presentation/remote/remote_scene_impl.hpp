@@ -145,6 +145,7 @@ struct RemoteScene::Impl {
         std::deque<Vec> route;
         NativePathStep pathStep;
         float pathElapsed{};
+        std::optional<Vec> stopDestination;
         std::deque<std::pair<float,Vec>> samples; // Recent displayed path; native samples have no timestamps.
         std::optional<Vec> goal;
         uint64_t requestRevision{}, invalidatedRequest{}, actionRevision{};
@@ -152,6 +153,7 @@ struct RemoteScene::Impl {
         std::optional<CastHandoff> castHandoff;
         bool npcClickStopped{};
         uint64_t npcFacingRevision{};
+        std::optional<uint64_t> npcLookRandom;
         bool running{};
         std::optional<int> objectSoundMode;
         int lightRadius{13};
@@ -230,6 +232,7 @@ struct RemoteScene::Impl {
     struct BlazeTrail { OnlinePoint cell; uint64_t discontinuity{}; };
     std::map<OnlineUnitKey,BlazeTrail> blazeTrails;
     std::map<int, size_t> monsterRows;
+    std::set<int> idleFacingNpcClasses;
     std::map<int,int> catapultChainOffsets;
     std::map<int, int> monsterWalkRates;
     std::map<int, int> monsterRunRates;
@@ -237,7 +240,7 @@ struct RemoteScene::Impl {
     std::map<std::string, size_t, std::less<>> monsterExtra;
     std::map<std::string,std::vector<uint8_t>,std::less<>> monsterSequenceFlags;
     std::map<std::pair<int,std::string>,MonsterMotionTiming> monsterChargeTimings;
-    struct MonsterIdentity { bool champion{},unique{},minion{},ghostly{}; std::optional<uint16_t> superUnique; uint16_t nameSeed{}; std::vector<uint8_t> modifiers; };
+    struct MonsterIdentity { bool champion{},unique{},minion{},ghostly{},hireling{}; std::optional<uint16_t> superUnique; uint16_t nameSeed{}; std::vector<uint8_t> modifiers; };
     std::map<OnlineUnitKey,MonsterIdentity> monsterIdentities;
     std::map<OnlineUnitKey,std::pair<int,bool>> monsterTransforms;
     std::set<OnlineUnitKey> deathCallbacks, preparedDeaths;
@@ -283,7 +286,7 @@ struct RemoteScene::Impl {
     const OnlineWorldView &world() const;
     std::optional<uint16_t> unitClass(const OnlineUnit &unit) const;
     std::optional<OnlinePoint> targetPosition(OnlineUnitKey key) const;
-    std::optional<Vec> localUnitPosition(OnlineUnitKey key) const;
+    std::optional<Vec> localUnitPosition(OnlineUnitKey key,bool includeVisualCorrection=true) const;
     std::pair<int, bool> equippedWeaponReach(const OnlineUnit &) const;
     std::optional<int> castMeleeRange(const OnlineUnit &actor, const OnlineCombatCommand &command) const;
     static EntityId effectOwner(OnlineUnitKey key);
@@ -298,7 +301,7 @@ struct RemoteScene::Impl {
     void observeEffects(const OnlineView &v, SceneView &shared, const RemoteCombat &combat, bool town,const Grid &collision,Vec worldOrigin);
     void observeDenLights(const OnlineView &,const Map &,SceneView &,float elapsed);
     const OnlineUnit *questNearbyUnit(const OnlineView &,const Map &,int type,int identity) const;
-    void observeQuestMissileEffects(const OnlineView &,const Map &,SceneView &,float elapsed);
+    void observeQuestMissileEffects(const OnlineView &,const Map &,SceneView &,WorldDrawView &,float elapsed);
     bool walking(const OnlineUnit &u) const;
     float movementSpeed(const OnlineUnit &u) const;
     std::optional<uint8_t> locomotionMode(const OnlineUnit &u,bool moving,bool town) const;

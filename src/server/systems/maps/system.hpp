@@ -1,7 +1,6 @@
 #pragma once
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
 #include "gameplay/maps/pd2/definition.hpp"
 #include "gameplay/events/frame_queue.hpp"
 #include "server/systems/monsters/pd2/scene_pack.hpp"

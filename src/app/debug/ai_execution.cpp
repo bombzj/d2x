@@ -36,6 +36,7 @@ bool DebugAi::Impl::decisionDue(const Context &c,Clock::time_point now) {
     const auto include=[&](Clock::time_point at) {if(at!=Clock::time_point{} && at>now && (deadline==Clock::time_point{} || at<deadline)) deadline=at;};
     if(questRun.pending && !questRun.pending->resultObserved) include(questRun.pending->deadline);
     if(questRun.worldWait) include(questRun.worldWait->deadline);
+    if(pickup && !pickup->observed) include(pickup->deadline);
     if(potionRequest) include(potionRequest->deadline);
     if(mobilityTarget) include(mobilityDeadline);
     if(pendingDoor) include(doorDeadline);
@@ -105,6 +106,51 @@ bool DebugAi::Impl::questWaitRequiresInput(const Context &c) const {
     if(cursor<goals.size() && questRun.step<goals[cursor].steps.size() && goals[cursor].steps[questRun.step].optional) return false;
     return pending.unit && (!pending.statusRequested || c.session.read().world.npcRequested!=pending.unit->id);
 }
+void DebugAi::Impl::execute(Context &c,const Goal &goal) {
+    if(continuation==Continuation::WorldResult) continuation=Continuation::None;
+    executeGoal(c,goal);
+    if(continuation==Continuation::WorldResult && canInput(c,DebugActionOwner::Combat,DebugMotion|DebugSkill))
+        combat(c,goal,true);
+}
+// Re-enter the selected step through its normal postcondition. A reaction
+// can replace a walk, but it cannot complete the parent or repeat its input.
+bool DebugAi::Impl::resumeAction(Context &c,const Goal &goal,const Goal &leaf) {
+    if(supplyStage!=SupplyStage::None) return false;
+    const bool search=goal.kind==Kind::Quest && questRun.step<goal.steps.size() &&
+        goal.steps[questRun.step].action==QuestAction::SearchDrop;
+    if((leaf.kind==Kind::Acquire || search) && (pickup || rememberedDrops.contains(leaf.item)))
+        continuation=Continuation::KnownDrop;
+    else if(continuation==Continuation::KnownDrop) continuation=Continuation::None;
+    if(continuation==Continuation::None) return false;
+    using Owner=DebugActionOwner;
+    if(!canInput(c,Owner::Goal,DebugAllInputs)) return true;
+    const bool collecting=continuation==Continuation::KnownDrop;
+    if(!pickup && (collecting || questRun.worldWait) &&
+        canInput(c,Owner::Supply,DebugAllInputs) && autoSupply(c,leaf)) return true;
+    if(collecting && !pickup && rememberedDrops.contains(leaf.item) &&
+        canInput(c,Owner::Combat,DebugMotion|DebugSkill) && combat(c,leaf,true)) return true;
+    if(collecting) releaseCombat(c);
+    execute(c,goal);
+    if(active() && !pickup && canInput(c,Owner::Mobility,DebugMotion|DebugSkill)) mobility(c);
+    return true;
+}
+void DebugAi::Impl::observePickup(const Context &c) {
+    if(!pickup) return;
+    if(pickup->observed) {
+        if(!owned(c,pickup->code)) {note("pickup-ownership-lost",pickup->code);pickup.reset();}
+        return;
+    }
+    if(owned(c,pickup->code)) {
+        pickup->observed=true;note("pickup-ownership-observed",pickup->code);return;
+    }
+    const auto &request=c.session.read().world.itemRequest;
+    if(request && (request->sequence!=pickup->sequence || request->command.item!=pickup->item ||
+        request->state==OnlineItemRequest::State::Rejected || request->state==OnlineItemRequest::State::Interrupted ||
+        request->state==OnlineItemRequest::State::TimedOut))
+        throw std::runtime_error("Pickup request ended without observed ownership: "+pickup->code);
+    if(Clock::now()>=pickup->deadline)
+        throw std::runtime_error("No ownership observed for submitted pickup: "+pickup->code);
+}
 std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c) const {
     using Owner=DebugActionOwner;std::vector<DebugActionContract> result;
     const auto defense=debugActionBit(Owner::Combat)|debugActionBit(Owner::Potion);
@@ -116,6 +162,8 @@ std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c
         closeWaypoint?"close owned menu when input resumes":"mode / personal 63 unlock","defer optional activation without local unlock",waypointDeadline,bool(closeWaypoint)});
     if(mobilityTarget) result.push_back({Owner::Mobility,"mobility",DebugMotion|DebugSkill,0,
         "normal skill displacement","fall back to ordinary walking",mobilityDeadline});
+    if(pickup) result.push_back({Owner::Goal,"pickup-result",DebugItem|DebugInteraction,0,
+        "personal item ownership","observe without replaying pickup",pickup->deadline,pickup->observed});
     if(potionRequest) result.push_back({Owner::Potion,"potion",DebugItem,0,
         potionRequest->buying?"trade result and actual owned stock":"actual potion consumption","fail without repeating use / purchase",potionRequest->deadline});
     if(localPad && localPad->waiting) result.push_back({Owner::Goal,"local-pad-transfer",
@@ -154,6 +202,7 @@ bool DebugAi::Impl::canInput(const Context &c,DebugActionOwner owner,unsigned re
 }
 void DebugAi::Impl::describeActions(const Context &c) {
     actionDiagnostics={{"inputBlocked",inputBlocked},{"actionRecoveryBusy",actionRecoveryBusy},{"executionSuspendedMs",executionClock.suspendedMs()},
+        {"continuation",continuation==Continuation::KnownDrop?"known-drop":continuation==Continuation::WorldResult?"world-result":"none"},
         {"contracts",Json::array()},{"submissions",Json::array()},{"allowed",Json::object()}};
     for(const auto &[owner,pending]:submissionWaits) if(pending.decision+1>=decisions)
         actionDiagnostics["submissions"].push_back({{"owner",ownerName(owner)},{"action",pending.action},
@@ -183,6 +232,7 @@ void DebugAi::Impl::observeActions(Context &c) {
     observe([&]{observeLocalPad(c);});
     // Observe every independent result before considering any new input.
     // A potion or movement wait must not hide an already arrived door result.
+    observe([&]{observePickup(c);});
     observe([&]{observePotion(c);});
     observe([&]{observeCombat(c);});
     observeWaypointMemory(c);
@@ -198,6 +248,7 @@ void DebugAi::Impl::observeActions(Context &c) {
             note("door-assignment-withdrawn");pendingDoor.reset();
         } else if(door->second.mode && *door->second.mode!=0) {
             operatedDoors.insert(*pendingDoor);note("door-mode-observed",std::to_string(door->first.id));pendingDoor.reset();
+            if(supplyStage==SupplyStage::None) continuation=Continuation::WorldResult;
         } else if(now>=doorDeadline) failure="Door interaction submitted but the assigned door stayed closed";
         else wait("door-wait","Waiting for the actual door mode; defensive inputs remain eligible");
     }
@@ -210,17 +261,17 @@ void DebugAi::Impl::observeActions(Context &c) {
         const bool activated=!pendingWaypoint->menu && view.world.waypointActivation &&
             view.world.waypointActivation->source==pendingWaypoint->unit.id &&
             view.world.waypointActivation->generation==view.world.interactionGeneration;
-        if(waypoint==view.world.units.end() || waypoint->second.assignmentRevision!=pendingWaypoint->assignment) {
-            note("waypoint-assignment-withdrawn");pendingWaypoint.reset();
-        } else if(menu || activated) {
+        if(menu || activated) {
             knownWaypointAreas.insert(pendingWaypoint->area);
             if(view.world.waypointSource==pendingWaypoint->unit.id) closeWaypoint=pendingWaypoint->unit.id;
-            note("waypoint-activation-observed",std::to_string(waypoint->first.id));pendingWaypoint.reset();
+            note("waypoint-activation-observed","area="+std::to_string(pendingWaypoint->area)+" unit="+std::to_string(pendingWaypoint->unit.id));pendingWaypoint.reset();
+        } else if(waypoint==view.world.units.end() || waypoint->second.assignmentRevision!=pendingWaypoint->assignment) {
+            note("waypoint-assignment-withdrawn");pendingWaypoint.reset();
         } else if(now>=waypointDeadline) {
             // This is an opportunistic activation, not a requested journey.
             // A server-side approach may be interrupted by defensive input.
             // Keep the missing result visible; never unlock locally or abort
-            // the unrelated quest. Retry only after time AND a new approach.
+            // the unrelated quest. Retry after the cooldown.
             deferredWaypoint=WaypointDeferral{pendingWaypoint->unit,pendingWaypoint->assignment,
                 now+std::chrono::seconds(30),c.position};
             if(view.world.waypointSource==pendingWaypoint->unit.id || view.world.waypointRequested==pendingWaypoint->unit.id)

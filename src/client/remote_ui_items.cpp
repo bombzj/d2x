@@ -1,3 +1,4 @@
+#include "gameplay/items/quality_rules.hpp"
 #include "remote_ui_clients_impl.hpp"
 #include "content/pd2_stash.hpp"
 #include "content/items/item_appearance.hpp"

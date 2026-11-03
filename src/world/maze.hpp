@@ -10,7 +10,7 @@ int mazePresetType(int preset);
 int mazePresetVariants(const WorldCatalog &catalog, int preset);
 bool supportsMaze(int level);
 std::array<int, 2> actTwoTombs(uint32_t seed);
-inline constexpr std::array actTwoTombSymbols{313, 312, 308, 310, 311, 309, 307};
+extern const std::array<int, 7> actTwoTombSymbols;
 struct NativeMazeLevel {
     MapRecipe recipe;
     std::vector<RetailRoom> rooms;

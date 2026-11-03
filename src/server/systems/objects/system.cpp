@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "system.hpp"
 #include "core/random.hpp"
 #include "gameplay/rules/arithmetic.hpp"

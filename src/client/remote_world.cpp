@@ -149,8 +149,9 @@ void removePlayer(OnlineWorldView &w) {
     w.playerPosition.reset();
     mapEvent(w, OnlineMapEvent::Kind::RemovePlayer);
 }
-void position(OnlineView &v, OnlineUnit &u, OnlinePoint p) {
+void position(OnlineView &v, OnlineUnit &u, OnlinePoint p,std::optional<uint8_t> checkMode={}) {
     u.position = p;
+    u.positionCheckMode = checkMode;
     u.positionRevision = v.world.revision;
     if (u.key.type == 0 && v.load.playerUnitId == u.key.id)
         playerPosition(v.world, p);
@@ -794,7 +795,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             throw ProtocolError("Invalid unit update batch");
         for (int i = 0; i < count; ++i) {
             auto &u = unit(w, key(r));
-            position(v, u, point(r));
+            position(v, u, point(r),u.key.type==1?u.mode:std::nullopt);
         }
         break;
     }
@@ -1412,12 +1413,13 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     case 0x67:
     case 0x68: {
         auto &u = unit(w, {1, r.u32()});
+        const auto previousMode=u.mode;
         monsterAction(w, u, r.u8());
         if (p.id == 0x67) {
             // 0x67 contains a path endpoint; 0x68 contains current position and target GUID.
             u.destination = point(r); u.destinationUnit.reset();
         } else {
-            position(v, u, point(r)); u.destinationUnit = key(r); u.destination.reset();
+            position(v, u, point(r),previousMode); u.destinationUnit = key(r); u.destination.reset();
         }
         u.pathSteps = r.u8(); u.hitClass = r.u8(); u.pathType = r.u8();
         u.velocityPercent = int16_t(r.u16()); u.pathDistance = r.u8(); r.finish();
@@ -1460,6 +1462,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     case 0x6B:
     case 0x6C: {
         auto &u = unit(w, {1, r.u32()});
+        const auto previousMode=u.mode;
         monsterAction(w, u, r.u8());
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Action;
         event.source = u.key; event.action = u.wireAction;
@@ -1471,13 +1474,13 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         } else {
             u.destinationUnit = key(r); u.destination.reset(); r.u8(); event.target = u.destinationUnit;
         }
-        position(v, u, point(r));
+        position(v, u, point(r),previousMode);
         r.finish(); combatEvent(w, std::move(event));
         break;
     }
     case 0x6D: {
         auto &u = unit(w, {1, r.u32()});
-        position(v, u, point(r));
+        position(v, u, point(r),u.mode);
         u.lifePercent = r.u8(); u.lifeCarriesTriggerFlag = false;
         r.finish();
         u.mode = 1; u.wireAction = 7; u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
@@ -1610,6 +1613,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         const auto tail = r.take(r.remaining());
         u.appearanceBits.assign(tail.begin(), tail.end());
         u.assignmentRevision = w.revision;
+        // AC supplies an initial mode and feet, never a movement order.
+        u.destination.reset(); u.destinationUnit.reset(); u.pathSteps.reset();
+        u.pathType.reset(); u.pathDistance.reset(); u.velocityPercent.reset();
         u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
         u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds(); u.nativeMode = true;
         if (!tail.empty()) {

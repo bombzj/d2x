@@ -1,3 +1,4 @@
+#include "gameplay/items/quality_rules.hpp"
 #include "item_content.hpp"
 #include "content/items/item_properties.hpp"
 #include "content/items/item_quality.hpp"

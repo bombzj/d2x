@@ -1,3 +1,4 @@
+#include "core/native_unit_ids.hpp"
 #include "../system.hpp"
 #include "../native_caster.hpp"
 #include "../runtime.hpp"

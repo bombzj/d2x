@@ -1,10 +1,18 @@
 #pragma once
-#include "game_content.hpp"
+#include "core/bytes.hpp"
+#include "core/entity_id.hpp"
+#include "core/math.hpp"
 #include "network/protocol/wire.hpp"
 #include "gameplay/environment/time.hpp"
 #include "native_identity.hpp"
 #include <span>
+namespace d2x::server { struct AreaMetadata; struct AreaExit; struct QuestFact; }
 namespace d2x {
+struct ClassicData;
+struct PersistentCharacter;
+struct GeneratedArea;
+struct CharacterRecord;
+struct PlayerSnapshot;
 // Original 1.13c wire encoding at the hosting boundary, outside the authority.
 std::vector<Bytes> nativeGameAdmission(const ClassicData &, const PersistentCharacter &, const GeneratedArea &, const PlayerSnapshot &, const server::AreaMetadata &, const server::QuestFact &,const NativeActEnvironment &,uint32_t objectSeed);
 std::vector<Bytes> nativeAreaWarps(const GeneratedArea &, std::span<const server::AreaExit>);

@@ -74,7 +74,7 @@ PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留
 | gameplay/character/persistent_character | 纯角色持久值；不带路径、表现、网络或整局运行态 |
 | persistence | 沿用master支持范围的D2S v96编码／校验；CharacterSaveData为上述值的别名 |
 | app/frontend | 连接选择、Single Player自动建房、窗口／输入／宿主调度与开发管理；不读写D2S，不另设世界循环 |
-| app/debug/navigation_search | 调试父AI／子行走共享求路配额、候选续算缓存及计时；只持有路径值，公共Grid搜索与真实客户端移动裁决不变 |
+| app/debug/navigation_search | 调试父AI与子行走共享后台路径查询、碰撞快照和跨区连通范围。长路线按目的地保留，客户端复验实际输入 |
 | asset_tool | 独立MPQ／地图／存档只读诊断 |
 
 ## 依赖方向

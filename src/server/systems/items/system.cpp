@@ -1,4 +1,8 @@
 #include "system.hpp"
+#include "gameplay/items/quality_rules.hpp"
+#include "core/id.hpp"
+#include "gameplay/items/pd2/charges.hpp"
+#include "server/runtime/events.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/spatial/system.hpp"
@@ -9,6 +13,28 @@
 #include <algorithm>
 #include <tuple>
 namespace d2x::server::items {
+bool System::identityCapacity(size_t count) const { return !count || (ports_.ids.cursor()<=UINT32_MAX && count<=uint64_t(UINT32_MAX)-ports_.ids.cursor()+1); }
+
+uint64_t System::identityCursor() const {return ports_.ids.cursor();}
+
+std::shared_ptr<EntityIdPublication> System::prepareIdentities(uint64_t expected,size_t count) const {
+    if(ports_.ids.cursor()!=expected || !identityCapacity(count)) throw std::logic_error("Stale native item identity allocation");
+    auto publication=ports_.ids.preparePublication(count);
+    for(size_t index=0;index<count;++index) publication->bind(EntityId{expected+index},NativeUnitType::Item);
+    return publication;
+}
+
+void System::publishIdentities(EntityIdPublication &publication) noexcept {ports_.ids.publish(publication);}
+
+void System::publishIdentities(uint64_t expected,size_t count) {
+    auto publication=prepareIdentities(expected,count);publishIdentities(*publication);
+}
+
+EntityId System::reserveIdentity(std::optional<NativeUnitType> type) {
+    if(ports_.ids.cursor()>UINT32_MAX) throw std::overflow_error("Native item identity exhausted");
+    return type?ports_.ids.allocate(*type):ports_.ids.allocate();
+}
+
 namespace {
 uint64_t groundExpiration(const ItemInstance &item,const ItemDefinition &base,uint64_t tick) {
     if(base.questTag) return 0;

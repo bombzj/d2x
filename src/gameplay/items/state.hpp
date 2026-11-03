@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/items/handle.hpp"
 #include "gameplay/items/generation.hpp"
 #include "gameplay/items/native_identity.hpp"

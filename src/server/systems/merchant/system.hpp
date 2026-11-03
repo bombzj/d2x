@@ -1,12 +1,11 @@
 #pragma once
+#include "request.hpp"
+#include "gameplay/character/persistent_character.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/prepared_rules.hpp"
-#include "server/runtime/events.hpp"
 #include "server/runtime/npc_rules.hpp"
 namespace d2x::server::merchant {
-enum class Action { Open, Gamble, Buy, Sell, Repair, RepairAll, IdentifyAll, IdentifyBought };
-struct Request { Action action; UnitTarget npc; std::optional<ItemHandle> item; uint64_t offerRevision{}; bool gamble{}, multibuy{}; };
 struct Offer { ItemInstance item; EquipmentValues equipment; bool permanent{}; std::string displayCode; int storePage{-1};Cell cell;uint64_t propertyRandom{}; };
 struct Stock { uint64_t revision = 1; std::map<EntityId, Offer> offers; RegionId area{}; EquipmentRules setRules; bool generated{}; uint64_t conversation{}, refreshAt{}; bool refreshPending{}; int columns{},rows{}; };
 std::optional<Cell> shelfPosition(const Stock &,const ItemDefinition &,const ItemCatalog &,int page);

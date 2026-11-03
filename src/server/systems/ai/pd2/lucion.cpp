@@ -10,6 +10,7 @@
 #include "gameplay/combat/life.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/pd2_random.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <memory>
 

@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "core/fixed.hpp"
 #include "gameplay/character/allocation.hpp"
 #include "gameplay/character/skill_choices.hpp"

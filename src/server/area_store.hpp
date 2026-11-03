@@ -7,7 +7,7 @@
 #include "world/native_field.hpp"
 #include "world/identity.hpp"
 #include "gameplay/monsters/components.hpp"
-#include "gameplay/monsters/native_spawn.hpp"
+#include "gameplay/monsters/level_spawn_entry.hpp"
 #include "gameplay/monsters/region_generation.hpp"
 #include "gameplay/environment/time.hpp"
 #include "gameplay/maps/pd2/portal_program.hpp"

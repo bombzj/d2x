@@ -162,7 +162,10 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
         const auto result=commit(actor,std::move(record));
         if(result) {
             state_.actOne.monoliths.at(state_.actOne.activatedStones)=source;
-            ++state_.actOne.activatedStones;if(control) state_.actOne.cairnPending=*control;
+            if(++state_.actOne.activatedStones==5) {
+                state_.actOne.cairnPending=control;
+                state_.actOne.cairnEffectPending=true;
+            }
         }
         return result;
     }
@@ -181,6 +184,10 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
 }
 StepStatus System::actOneStep(TickContext tick) {
     bool blocked=false;
+    if(state_.actOne.cairnEffectPending) {
+        const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{1}}});
+        if(sent) state_.actOne.cairnEffectPending=false;else blocked=true;
+    }
     if(state_.actOne.cairnPending) {
         const auto control=*state_.actOne.cairnPending;
         const auto definition=ports_.missiles.nativeDefinition("cairnstones");

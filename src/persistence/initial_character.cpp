@@ -1,4 +1,5 @@
 #include "initial_character.hpp"
+#include "gameplay/character/persistent_character.hpp"
 #include "content/classic_data.hpp"
 #include "d2s_inventory.hpp"
 #include "core/random.hpp"

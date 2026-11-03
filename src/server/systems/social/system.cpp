@@ -1,3 +1,4 @@
+#include "server/runtime/events.hpp"
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/trade/system.hpp"

@@ -32,7 +32,7 @@ const OnlineUnit *RemoteScene::Impl::questNearbyUnit(const OnlineView &view,cons
     }
     return found;
 }
-void RemoteScene::Impl::observeQuestMissileEffects(const OnlineView &view,const Map &map,SceneView &shared,float elapsed) {
+void RemoteScene::Impl::observeQuestMissileEffects(const OnlineView &view,const Map &map,SceneView &shared,WorldDrawView &scene,float elapsed) {
     if(pd2) return;
     auto &quest=mapDisplay.questEffects;
     const auto staff=view.world.questEffectOccurrences[3];
@@ -96,7 +96,16 @@ void RemoteScene::Impl::observeQuestMissileEffects(const OnlineView &view,const 
         const Vec at{float(target->position->x)+.5f,float(target->position->y)+.5f};
         ClientMissileInitialization initialization;initialization.sourceSkill=0;
         bool resources=true;
-        if(effect==14) {
+        if(effect==1) {
+            // Retail 52D00 starts 288 at StoneAlpha. The server's separate
+            // controller uses StoneLambda and owns the portal, not this visual.
+            const auto row=missileRows.find(missile);
+            if(row!=missileRows.end()) {
+                const int fade=missiles.number(row->second,"Param1").value_or(0);
+                const int total=missiles.number(row->second,"Range").value_or(0);
+                if(fade>0 && fade<=total/2) scene.ambientFade=WorldDrawView::AmbientFade{4,fade,total-2*fade,fade};
+            }
+        } else if(effect==14) {
             initialization.parameters=std::array<int32_t,2>{int32_t(target->key.id),0};
             for(const int id:{373,374,375,376,377}) if(!missileRows.contains(id) || !shared.projectileVisual(id)) {
                 effectLimitations.insert("Hellforge: original client missile resource unavailable");resources=false;
@@ -122,12 +131,14 @@ void RemoteScene::Impl::observeQuestMissileEffects(const OnlineView &view,const 
                 emitSound(PresentationSoundEvent::Kind::Original,*target,0,-1,-1,{},-1,35);
             }
             if(!resources) continue;
-            shared.launchClientMissile(missile,at,at,1,0,{},-1,effectOwner(player->first),false,0,
-                ClientMissileSource::Program,0,{},0,initialization);
+            if(!shared.launchClientMissile(missile,at,at,1,0,{},-1,effectOwner(player->first),false,0,
+                ClientMissileSource::Program,0,{},0,initialization))
+                effectLimitations.insert("Quest effect "+std::to_string(effect)+": missile "+std::to_string(missile)+" unavailable");
             if(effect==17) shared.launchClientMissile(603,at,at,1,0,{},-1,effectOwner(player->first),false,0,
                 ClientMissileSource::Program,0,{},0,initialization);
         }
     };
+    start(1,quest.cairnOccurrence,2,17,288);
     start(14,quest.forgeOccurrence,2,376,373);
     start(16,quest.anyaOccurrence,2,460,528);
     start(17,quest.nihlathakOccurrence,1,526,606);

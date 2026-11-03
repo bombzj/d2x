@@ -1,3 +1,5 @@
+#include "server/runtime/diagnostics.hpp"
+#include "server/game_messages.hpp"
 #include "embedded_realm.hpp"
 #include "automap_store.hpp"
 #include "detail/realm_connection.hpp"

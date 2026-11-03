@@ -1,3 +1,4 @@
+#include "gameplay/character/persistent_character.hpp"
 #include "content/pd2/item_encoding.hpp"
 #include "native_item_wire.hpp"
 #include "persistence/d2s_inventory.hpp"

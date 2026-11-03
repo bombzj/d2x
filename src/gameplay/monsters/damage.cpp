@@ -1,3 +1,4 @@
+#include <string_view>
 #include "damage.hpp"
 #include "core/random.hpp"
 #include "gameplay/rules/arithmetic.hpp"

@@ -1,12 +1,14 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/native_unit_id.hpp"
 #include "admission.hpp"
 #include "gameplay/monsters/corpse.hpp"
 #include "curse_control.hpp"
 #include "gameplay/events/frame_queue.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/domain_fact.hpp"
+#include "server/game_commands.hpp"
+#include "gameplay/items/state.hpp"
 #include "gameplay/monsters/identity.hpp"
 #include "gameplay/monsters/kind.hpp"
 #include "gameplay/monsters/components.hpp"
@@ -43,6 +45,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+namespace d2x { class EntityIds; class EntityIdPublication; class NativeUnitIds; }
 namespace d2x { struct PersistentCharacter; struct MonsterSnapshot; }
 namespace d2x::server::effects {struct AuraUnitPublication;struct BirthEffectsPublication;}
 namespace d2x::server::reactions {class ItemTriggers;}
@@ -252,7 +255,7 @@ struct ActorPublication {
     std::map<EntityId,uint64_t> expected;
     uint64_t cursor{};
     size_t allocatedIds{};
-    std::shared_ptr<EntityIds::Publication> identities;
+    std::shared_ptr<EntityIdPublication> identities;
     std::map<EntityId,uint64_t> removals;
     std::set<EntityId> restoredIdentities,presetIdentities;
     std::optional<std::set<size_t>> uniquesExpected,uniquesNext;
@@ -344,7 +347,7 @@ class System {
         if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.hirelingNextExperience=next;it->second.hirelingPassiveMask=passives;it->second.hirelingMovementPercent=movement;it->second.hirelingBaseAttributes=std::move(base);}
     }
     explicit System(Ports ports) : ports_(ports) {}
-    const NativeUnitIds &nativeIdentities() const {return ports_.ids.nativeIdentities();}
+    const NativeUnitIds &nativeIdentities() const;
     const SkillRules *skillPrograms() const {return ports_.skillPrograms.get();}
     std::optional<EquipmentPreparation> pendingEquipment();
     DomainResult<> prepareEquipment(PreparedEquipment);
@@ -395,7 +398,7 @@ class System {
     const State &read() const { return state_; }
     const GameSettings &gameSettings() const noexcept {return ports_.settings;}
     ActorPublication prepareActorPublication(std::map<EntityId,Actor>,size_t allocatedIds,std::span<const EntityId> restored={},
-        std::shared_ptr<EntityIds::Publication> identities={},std::span<const EntityId> retired={},std::span<const EntityId> presets={}) const;
+        std::shared_ptr<EntityIdPublication> identities={},std::span<const EntityId> retired={},std::span<const EntityId> presets={}) const;
     void preparePrisonerDeaths(ActorPublication &) const;
     bool validateActors(const ActorPublication &) const;
     void publishActors(ActorPublication &) noexcept;

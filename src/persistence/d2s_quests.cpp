@@ -7,6 +7,7 @@
 #include "content/npc/npc_dialogue.hpp"
 #include "gameplay/character/record.hpp"
 #include "gameplay/quest/catalog.hpp"
+#include "gameplay/quest/prelude_rules.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
 #include "gameplay/quest/search_for_cain.hpp"

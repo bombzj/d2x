@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/character/hireling_record.hpp"
 #include "server/game_commands.hpp"

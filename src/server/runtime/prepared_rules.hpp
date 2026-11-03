@@ -5,7 +5,7 @@
 #include "gameplay/consumables/potions.hpp"
 #include "gameplay/stats/stat_list.hpp"
 #include "gameplay/stats/modifier_values.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "world/identity.hpp"
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/modifiers.hpp"

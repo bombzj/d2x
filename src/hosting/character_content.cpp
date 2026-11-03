@@ -1,4 +1,5 @@
 #include "character_content.hpp"
+#include "gameplay/character/persistent_character.hpp"
 #include "skill_content.hpp"
 #include "content/skills/skill_eligibility.hpp"
 #include "content/classic_data.hpp"

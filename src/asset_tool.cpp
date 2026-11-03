@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/monsters/monster_loot.hpp"

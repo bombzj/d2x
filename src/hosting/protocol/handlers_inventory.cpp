@@ -1,3 +1,6 @@
+#include "server/systems/inventory/system.hpp"
+#include "server/game_messages.hpp"
+#include "hosting/game_host.hpp"
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting::handlers {

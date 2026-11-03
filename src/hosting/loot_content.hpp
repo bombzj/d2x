@@ -1,7 +1,14 @@
 #pragma once
-#include "hosting/game_host.hpp"
-#include "content/classic_data.hpp"
+#include "core/entity_id.hpp"
+#include <map>
+#include <memory>
+#include "server/player_identity.hpp"
+
 namespace d2x {
+class GameHost;
+struct ClassicData;
+class Archives;
+
 class MonsterCatalog;
 class WorldCatalog;
 struct LootContent {

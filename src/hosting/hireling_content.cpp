@@ -1,3 +1,5 @@
+#include "hosting/game_host.hpp"
+#include "server/systems/companions/preparation.hpp"
 #include "companion_content.hpp"
 #include "loot_content.hpp"
 #include "monster_actions_content.hpp"

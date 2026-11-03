@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "core/math.hpp"
 #include "world/identity.hpp"
 #include <cstdint>
@@ -47,7 +47,8 @@ struct WorldDrawView {
     std::optional<bool> eclipse;
     std::optional<int> denIntensity; // Retail level-8 ambient override; absence uses Levels/environment.
     std::optional<int> sanctumIntensity; // Retail 107/108 ambient override after FX12.
-    std::optional<int> cloakDuration;
+    struct AmbientFade {int level,down,hold,up;};
+    std::optional<AmbientFade> ambientFade;
     std::optional<size_t> selectedExit;
     EntityId groundHighlight;
     std::vector<WorldDrawItem> items;

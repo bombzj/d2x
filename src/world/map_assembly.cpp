@@ -1,3 +1,4 @@
+#include <type_traits>
 #include "map_assembly.hpp"
 #include "native_map.hpp"
 #include <algorithm>

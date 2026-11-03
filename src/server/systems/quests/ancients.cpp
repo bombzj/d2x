@@ -1,3 +1,4 @@
+#include <array>
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -10,6 +11,10 @@
 #include <vector>
 
 namespace d2x::server::quests {
+namespace {
+constexpr std::array<std::string_view, 3> ancientIdentities{"Ancient Barbarian 1", "Ancient Barbarian 2", "Ancient Barbarian 3"};
+}
+
 DomainResult<> System::readAncientAltar(const ActorContext &actor,EntityId source) {
     auto &world=state_.actFive;
     if(world.ancientsActive || world.ancientsDefeated) return {DomainStatus::Applied,std::monostate{}};

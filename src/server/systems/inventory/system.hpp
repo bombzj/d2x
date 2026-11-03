@@ -1,11 +1,11 @@
 #pragma once
+#include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/prepared_rules.hpp"
-#include "server/runtime/events.hpp"
 #include "gameplay/items/intents.hpp"
 #include "gameplay/skills/cast_spec.hpp"
-#include "server/systems/transactions/system.hpp"
+#include "server/systems/transactions/plan.hpp"
 #include <map>
 #include <set>
 #include <string>
@@ -13,23 +13,6 @@
 
 namespace d2x::server { class MovementSystem; }
 namespace d2x::server::inventory {
-// Inventory access and placement plans; no second occupancy or item copy.
-struct GroundTransfer { ItemHandle item; bool drop{}, cursor{}; std::optional<ItemHandle> cube{}; };
-// Native direct placement: cursor/ground to an owned cube, or pack to belt.
-struct AutoStoreItem { ItemHandle item; std::optional<ItemHandle> cube{}; };
-struct CloseCube {};
-using Intent = std::variant<GroundTransfer, AutoStoreItem, MoveItem, TransferItem, SwapItems, SplitStack, MergeStacks,
-    LoadBook, IdentifyItem, EquipBelt, EquipItem, EquipHirelingItem, UseItem,
-    UseBeltColumn, UseHirelingPotion, SwitchWeaponSet, CloseStorage, CloseCube, GoldTransaction>;
-enum class Source { Stored, Cursor, Belt };
-enum class EquipmentMode { Insert, Indirect, Swap, TwoHanded };
-struct Request {
-    Intent intent;
-    Source source = Source::Cursor;
-    EquipmentMode equipmentMode = EquipmentMode::Insert;
-    std::optional<unsigned> weaponSet{};
-    std::vector<ItemHandle> equipmentGuards{};
-};
 bool supports(const Request &);
 // Host-only decoder input; includes no property data or mutable domain references.
 struct InputItem { ItemHandle handle; ContainerLocation location; };

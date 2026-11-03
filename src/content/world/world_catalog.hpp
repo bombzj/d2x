@@ -5,7 +5,7 @@
 #include <optional>
 
 namespace d2x {
-inline constexpr std::array<int, 5> actTownLevels{1, 40, 75, 103, 109};
+extern const std::array<int, 5> actTownLevels;
 enum class GenerationKind { None, Maze, Preset, Outdoor };
 struct LevelPopulation {
     bool supported = false, rangedFirst = false;

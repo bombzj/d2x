@@ -1,4 +1,5 @@
 #pragma once
+#include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
@@ -11,9 +12,6 @@
 
 namespace d2x::server { struct PlayerState; }
 namespace d2x::server::death {
-// Death occurrences, resurrection and corpse recovery; no duplicated persistent corpse items.
-enum class Action { Resurrect, RecoverCorpse };
-struct Request { Action action; std::optional<UnitTarget> corpse; };
 struct Transition {
     uint64_t occurrence{}; EntityId victim; bool finalized{}; uint64_t ready{}; bool reviving{}; bool companionsSettled{};
     PlayerMessageFact message; std::optional<PointTarget> revival{}; bool penaltySettled{};uint64_t recoverableExperience{};

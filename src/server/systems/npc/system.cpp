@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/quest/prelude_rules.hpp"
 #include "server/player_store.hpp"
 #include "server/movement.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -136,9 +137,18 @@ std::pair<Conversation,NpcMessagesFact> System::offer(const ActorContext &actor,
         if(offered.menu==1) offered.menu=0;
         fact.messages.push_back(offered);
     }
+    const auto *arrival=questPreludeForNpc(ports_.areas.at(actor.area).definition.act,npc.rule.code);
+    if(arrival && !record.questPreludes.at(size_t(ports_.settings.difficulty)).at(size_t(arrival->id))) {
+        const auto text=arrival->messageFor(record.characterClass);
+        if(npc.rule.questMessages.contains(text) && !next.pendingQuests.contains(text)) {
+            next.pendingArrival=text;
+            fact.messages.insert(fact.messages.begin(),NpcMessage{0,text});
+        }
+    }
     if(!record.npcIntroductions.at(size_t(ports_.settings.difficulty)).contains(npc.rule.introduction)) {
         const auto intro=npc.rule.introductions.find(record.characterClass);
-        if(intro!=npc.rule.introductions.end() && !next.pendingQuests.contains(intro->second)) {
+        if(intro!=npc.rule.introductions.end() && !next.pendingQuests.contains(intro->second) &&
+            (!arrival || (intro->second!=arrival->message && intro->second!=arrival->alternate))) {
             next.pendingIntroduction=intro->second;
             fact.messages.push_back({0,intro->second});
         }
@@ -196,9 +206,10 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         auto current = state_.conversations.find(actor.player);
         if (!find(actor,npc->id,true) || current == state_.conversations.end() || !talk.message) return {DomainStatus::Stale,{}};
         const bool introduction=current->second.pendingIntroduction==talk.message;
+        const bool arrival=current->second.pendingArrival==talk.message;
         const auto pending=current->second.pendingQuests.find(*talk.message);
-        if(!introduction && pending==current->second.pendingQuests.end()) return {DomainStatus::Stale,{}};
-        if(!introduction) {
+        if(!introduction && !arrival && pending==current->second.pendingQuests.end()) return {DomainStatus::Stale,{}};
+        if(!introduction && !arrival) {
             auto result=ports_.quests.execute(actor,{quests::Action::Acknowledge,pending->second,npc->id,talk.message});
             if(isDeferred(result.status)) {
                 // Native callbacks wait synchronously for content/output. Keep
@@ -218,12 +229,15 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             }
             return result;
         }
-        record.npcIntroductions.at(size_t(ports_.settings.difficulty)).insert(npc->rule.introduction);
-        for(const auto &prelude:questPreludes) if(npc->rule.code==prelude.npcClass && ports_.areas.at(actor.area).definition.act==prelude.act) record.questPreludes.at(size_t(ports_.settings.difficulty)).at(size_t(prelude.id))=true;
+        if(arrival) {
+            const auto *prelude=questPreludeForNpc(ports_.areas.at(actor.area).definition.act,npc->rule.code);
+            if(!prelude || prelude->messageFor(record.characterClass)!=*talk.message) return {DomainStatus::Stale,{}};
+            record.questPreludes.at(size_t(ports_.settings.difficulty)).at(size_t(prelude->id))=true;
+        } else record.npcIntroductions.at(size_t(ports_.settings.difficulty)).insert(npc->rule.introduction);
         auto plan = ports_.transactions.prepare(transactions::CharacterEdit{actor,player.inventoryRevision,player.characterRevision,std::move(record)});
         if (!plan) return {plan.status,{}};
         auto result = ports_.transactions.commit(std::move(*plan.value));
-        if (result) current->second.pendingIntroduction.reset();
+        if(result) (arrival?current->second.pendingArrival:current->second.pendingIntroduction).reset();
         return result;
     }
     if (talk.action != TalkToNpc::Action::Talk) return {};

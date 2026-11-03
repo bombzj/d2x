@@ -1,3 +1,6 @@
+#include "server/systems/crafting/system.hpp"
+#include "content/classic_data.hpp"
+#include "hosting/game_host.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "crafting_content.hpp"
 #include "character_content.hpp"

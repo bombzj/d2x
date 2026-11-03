@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include <cstdint>
 #include <optional>
 namespace d2x {

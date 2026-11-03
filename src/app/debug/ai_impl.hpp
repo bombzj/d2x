@@ -1,5 +1,6 @@
 #pragma once
 #include "ai.hpp"
+#include "ai_behavior_log.hpp"
 #include "auto_walk.hpp"
 #include "action_state.hpp"
 #include "client/remote_combat.hpp"
@@ -70,6 +71,7 @@ struct DebugAi::Impl {
     };
     struct Definitions {
         DataTable monsters,objects,skills,levels,misc,weapons,armor,types,states,npcs,superuniques,missiles,difficulties;
+        std::optional<uint16_t> harrogathGate;
         uint16_t staticFieldSkill{};size_t staticFieldRow{};RuleFormula staticFieldRange;
         std::map<int,int> hazardSizes;
         std::set<int> dangerousMissiles;
@@ -114,6 +116,12 @@ struct DebugAi::Impl {
     Archives &archives;std::unique_ptr<Definitions> definitions;
     std::vector<Goal> goals;size_t cursor{};std::string state="idle",phase,reason,configurationFile;
     std::deque<Json> history;uint64_t decisions{},sequence{},game{},areaGeneration{};
+    std::filesystem::path logDirectory;
+    AiBehaviorLog behaviorLog;
+    uint64_t observedWalkFailures{};
+    bool phaseReported{};
+    void goalStarted();
+    void cancel(DebugAutoWalk &,RemoteControl &,RemoteCombat &,std::string);
     std::optional<uint16_t> area;std::optional<OnlineUnitKey> target;
     std::optional<uint16_t> tombSymbol; // Actual journal-qualified server payload, including valid initialization.
     // Present only after the summit door refused this player during this visit.
@@ -125,15 +133,18 @@ struct DebugAi::Impl {
         std::set<std::tuple<int,int,int>> visited;
     };
     std::optional<ExplorationReturn> explorationReturn;
+    std::map<std::tuple<int,int,int>,size_t> hubReturnCoverage;
     bool resumeExplorationReturn(Context &);
     std::set<std::tuple<int,int,int>> visited;std::optional<std::tuple<int,int,int>> exploring;
     struct FrontierAttempt {
         Vec position;uint64_t geometryRevision{};Clock::time_point retryAt;
-        bool reached{};std::string outcome,reason;
+        bool reached{},retainAfterMove{};std::string outcome,reason;std::optional<OnlinePoint> relayGoal;
     };
     std::map<std::pair<uint16_t,uint16_t>,FrontierAttempt> frontierAttempts;
     struct ViewpointAttempt {size_t observedCells{};Clock::time_point retryAt;};
     std::map<std::pair<uint16_t,uint16_t>,ViewpointAttempt> viewpointAttempts;
+    struct ViewpointRoute {OnlinePoint target;size_t observed;std::vector<Vec> origins;};
+    std::optional<ViewpointRoute> viewpointRoute;
     struct BacktrackAttempt {size_t observedCells{};Clock::time_point retryAt;std::string reason;};
     std::map<std::tuple<int,int,int>,BacktrackAttempt> backtrackAttempts;
     std::map<std::tuple<int,int,int,int,int,int>,bool> observedRoomPassages;
@@ -143,6 +154,7 @@ struct DebugAi::Impl {
     std::optional<Vec> searchPosition;Clock::time_point searchRetry{};
     std::set<std::tuple<int,int,int>> unavailableRooms;
     std::optional<OnlinePoint> interest;std::optional<uint16_t> travelDestination;
+    std::optional<OnlinePoint> boundaryAim;
     std::vector<int> travelRoute;
     std::set<int> travelVisitedAreas;
     std::optional<uint16_t> unavailableWaypointArea;
@@ -158,9 +170,14 @@ struct DebugAi::Impl {
     std::optional<WaypointActivation> pendingWaypoint;
     struct WaypointDeferral {OnlineUnitKey unit;uint64_t assignment{};Clock::time_point retryAt{};Vec position;};
     std::optional<WaypointDeferral> deferredWaypoint;
+    std::optional<uint64_t> handledWaypointTimeout;
+    std::set<uint16_t> requiredWaypointAreas;
+    std::optional<uint16_t> waypointDepartureArea,nearbyWaypointArea;
+    std::optional<OnlinePoint> missingWaypointAt;
     std::set<uint16_t> knownWaypointAreas; // Sole AI unlock memory; raw 63 remains the protocol snapshot.
     std::set<uint16_t> waypointTownArrivals;
     uint64_t waypointMemoryGame{},waypointMemoryRevision{};
+    std::optional<uint64_t> waypointActivationGeneration;
     struct RememberedEnemy {OnlinePoint position;uint64_t assignment{};std::optional<uint16_t> identity;};
     struct AreaPopulation {
         std::optional<uint32_t> seed;
@@ -190,6 +207,10 @@ struct DebugAi::Impl {
     }
     DebugExecutionClock executionClock;
     DebugDecisionCadence cadence;
+    std::optional<Json> defendedTravel;
+    size_t defendedStep{};
+    bool defendNavigation(Context &,const Goal &);
+    void resumeDefendedTravel(Context &);
     std::optional<uint16_t> decisionLife;
     bool decisionDue(const Context &,Clock::time_point);
     Json actionDiagnostics;
@@ -223,13 +244,17 @@ struct DebugAi::Impl {
     std::optional<OnlinePoint> hazardDodge;Clock::time_point hazardDodgeUntil{};Json hazardDiagnostics;
     struct BypassedThreat {Clock::time_point retryAt;Vec observer,target;};
     std::map<std::pair<OnlineUnitKey,uint64_t>,BypassedThreat> bypassedThreats;
-    bool combatOwned{},objectIssued{},pickupIssued{},portalIssued{},portalAttempted{},portalUsed{},greetingIssued{};
-    std::optional<uint32_t> pickupId;std::set<uint32_t> oldPortals;
+    bool combatOwned{},objectIssued{},portalIssued{},portalAttempted{},portalUsed{},greetingIssued{};
+    struct PickupReceipt {std::string code;uint32_t item;uint64_t sequence;Clock::time_point deadline;bool observed{};};
+    std::optional<PickupReceipt> pickup;std::set<uint32_t> oldPortals;
     struct RememberedDrop {uint32_t id{};uint16_t area{};OnlinePoint position{};Clock::time_point inspectSince{};};
     std::map<std::string,RememberedDrop,std::less<>> rememberedDrops;
     void observeDrops(const Context &,const Goal &);
-    bool guardingOpening{};
-    void guardOpening(Context &);
+    enum class Continuation {None, WorldResult, KnownDrop};
+    Continuation continuation{};
+    bool resumeAction(Context &,const Goal &,const Goal &leaf);
+    void observePickup(const Context &);
+    void executeGoal(Context &,const Goal &);
     std::set<std::tuple<uint32_t,uint16_t,uint16_t,uint16_t,uint16_t>> pickupApproaches;
     unsigned castRequests{},moveGoals{},interactions{};
     unsigned npcOpenRetries{};
@@ -244,7 +269,6 @@ struct DebugAi::Impl {
     bool mobilityHold{},mobilityTeleport{};uint64_t mobilityDiscontinuity{};
     std::optional<OnlinePoint> mobilityTarget;Vec mobilityFrom;
     std::optional<OnlinePoint> mobilityGoal;uint16_t mobilityArea{};
-    std::optional<float> mobilityBestRemaining;
     std::vector<Vec> mobilityRoute;float mobilityRouteProgress{},mobilityPendingProgress{},mobilityRouteLength{};
     Clock::time_point mobilityDeadline{},nextMobility{},lastSelection{},exitRetryAt{};
     std::optional<uint16_t> townExitArea;Clock::time_point townExitObserveUntil{};
@@ -381,9 +405,18 @@ struct DebugAi::Impl {
     Clock::time_point nextArmorAttempt{};
     bool maintainArmor(Context &);
     bool knownSkill(const Context &,uint16_t,bool left=false) const;
+    struct TeleportRooms {
+        const std::vector<RemoteTown::NavigationRoom> &rooms;
+        const RemoteTown::NavigationRoom *current{};
+        TeleportRooms(const Context &);
+        bool contains(Vec) const;
+    };
     bool teleportAvailable(const Context &,bool resourceReady=true) const;
     bool selectSkill(Context &,uint16_t,OnlineSkillHand);
     std::optional<uint16_t> battleAura(const Context &) const;
+    std::vector<Vec> travelLandingThreats(const Context &) const;
+    bool crowdedTravelLanding(std::span<const Vec>,Vec) const;
+    std::optional<Vec> teleportLanding(Context &,Vec wanted,bool exploration,std::optional<OnlinePoint> relayGoal={}) const;
     bool mobility(Context &);
     void stop(DebugAutoWalk &,RemoteControl &,RemoteCombat &);
     void finish(std::string,std::string,Context &);
@@ -391,7 +424,7 @@ struct DebugAi::Impl {
     void resetStep();
     void cancelWalk(Context &);
     bool walk(Context &,Json);
-    bool walkPoint(Context &,OnlinePoint,bool interact=false);
+    bool walkPoint(Context &,OnlinePoint,bool exploration=false);
     void observeChild(Context &,const Goal &);
     void rememberTravel(Context &,OnlineUnitKey);
     bool recoverTravel(Context &);
@@ -403,26 +436,30 @@ struct DebugAi::Impl {
     bool canInput(const Context &,DebugActionOwner,unsigned) const;
     void describeActions(const Context &);
     std::string walkState(const Context &) const;
-    void wait(std::string p,std::string why) {phase=std::move(p);reason=std::move(why);}
+    void wait(std::string p,std::string why) {phaseReported=true;phase=std::move(p);reason=std::move(why);}
     std::vector<int> route(const Context &,int from,int to) const;
     float navigationCost(const Context &,int level,std::optional<Vec> start,std::optional<OnlinePoint> target) const;
     bool exploreLocalPad(Context &);
     void observeLocalPad(Context &);
     float routeCost(const Context &,const std::vector<int> &,std::optional<Vec> start={}) const;
     void refreshNavigationAttempts(const Context &);
-    void recordFrontierAttempt(const Context &,OnlinePoint,std::string outcome,std::string reason={});
-    bool frontierCoolingDown(OnlinePoint,float radius) const;
+    void recordFrontierAttempt(const Context &,OnlinePoint,std::string outcome,std::string reason={},std::optional<OnlinePoint> relayGoal={});
+    void deferViewpoint(const Context &,OnlinePoint);
+    bool frontierCoolingDown(OnlinePoint,float radius,std::optional<OnlinePoint> relayGoal={}) const;
+    bool tryTeleportAcrossExit(Context &,uint16_t);
     bool travel(Context &,uint16_t,bool allowWaypoint=true);
     bool explore(Context &,std::string,bool recoveryOnly=false);
     bool approachKnown(Context &,const Selector &);
-    bool approachPoint(Context &,OnlinePoint,std::string,float vicinity=8);
+    bool approachPoint(Context &,OnlinePoint,std::string,float vicinity=8,bool exploration=false,bool enterUnitRange=false);
     bool openDoor(Context &,bool frontier=false);
-    bool activateWaypoint(Context &);
+    bool approachTownGate(Context &,uint16_t destination);
+    bool activateWaypoint(Context &,bool required=false);
+    bool waypointBeforeDeparture(Context &);
     void observeWaypointMemory(const Context &);
     void observePopulation(const Context &);
     std::optional<OnlineUnit> find(const Context &,const Selector &,bool corpses=false) const;
     bool owned(const Context &,std::string_view) const;
-    bool combat(Context &,const Goal &,bool nearbyDefense=false);
+    bool combat(Context &,const Goal &,bool nearbyDefense=false,bool planningDefense=false);
     bool avoidHazards(Context &);
     void observeCombat(Context &);
     void releaseCombat(Context &);

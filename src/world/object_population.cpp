@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "object_population.hpp"
 #include "generation_seed.hpp"
 #include <algorithm>

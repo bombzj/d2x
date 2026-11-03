@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/items/modifiers.hpp"
 #include "gameplay/items/equipment_set.hpp"
 #include <array>

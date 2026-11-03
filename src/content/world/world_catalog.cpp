@@ -340,4 +340,6 @@ LevelAvailability WorldCatalog::availability(Archives &archives, int levelId, in
     }
     return result;
 }
+
+constexpr std::array<int, 5> actTownLevels{1, 40, 75, 103, 109};
 } // namespace d2x

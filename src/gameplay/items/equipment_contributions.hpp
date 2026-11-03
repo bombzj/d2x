@@ -1,7 +1,7 @@
 #pragma once
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/items/modifiers.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/items/equipment_set.hpp"
 #include <functional>
 #include <span>

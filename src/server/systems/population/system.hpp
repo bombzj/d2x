@@ -1,7 +1,7 @@
 #pragma once
+#include <string_view>
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
 #include "gameplay/monsters/region_generation.hpp"
 #include <map>
 #include <utility>

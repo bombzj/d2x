@@ -168,7 +168,7 @@ void LightingView::resetEnvironment() {
     eclipse_ = false;
     denIntensity_.reset();
     sanctumIntensity_.reset();
-    cloakLevel_=-1;cloakFactor_=1;
+    fadeLevel_=-1;fadeFactor_=1;
 }
 void LightingView::resetSources() { *sources_ = {}; }
 int LightingView::overlayRadius(uint64_t owner, int overlay, float startedAt, int initial, int target) {
@@ -191,12 +191,10 @@ int LightingView::overlayRadius(uint64_t owner, int overlay, float startedAt, in
 void LightingView::finishSources() {
     std::erase_if(sources_->overlays,[&](const auto &entry) { return entry.second.seen != sources_->visit; });
 }
-void LightingView::beginCloak(int duration,int level) {
-    // D2Client 1.13c StateSet2: five ticks down, 3/5 duration dark,
-    // 2/5 back up (25 if zero). Ambient only; unit lights survive.
-    cloakLevel_=level;cloakFrame_=cloakAngle_=0;cloakFactor_=1;
-    cloakRise_=2*duration/5;if(!cloakRise_) cloakRise_=25;
-    cloakTotal_=3*duration/5+cloakRise_+5;
+void LightingView::beginAmbientFade(int level,int down,int hold,int up) {
+    // D2Client 52450 / 52F10. Unit lights keep their own intensity.
+    fadeLevel_=level;fadeFrame_=fadeAngle_=0;fadeFactor_=1;
+    fadeDown_=down;fadeRise_=up;fadeTotal_=down+hold+up;
 }
 void LightingView::setEclipse(bool active) {
     if (eclipse_ == active) return;
@@ -217,13 +215,13 @@ void LightingView::advance(float dt, const LevelRecord &level) {
     const int rate = eclipse ? 4 : timeRate;
     const auto &cycles = eclipse ? eclipseCycles : level.act == 3 ? actFourCycles : normalCycles;
     for (int frame = 0; frame < frames; ++frame) {
-        if(cloakLevel_!=level.id || cloakFrame_>cloakTotal_) {cloakLevel_=-1;cloakFactor_=1;}
-        if(cloakLevel_>=0) {
-            if(cloakFrame_<5 || cloakFrame_>=cloakTotal_-cloakRise_) {
-                cloakFactor_=std::clamp(float(std::cos(double(cloakAngle_)*3.14159265358979323846/256.0)),0.f,1.f);
-                cloakAngle_=cloakFrame_<5?cloakFrame_*128/5:128-(cloakFrame_-cloakTotal_+cloakRise_)*128/cloakRise_;
-            } else cloakFactor_=0;
-            ++cloakFrame_;
+        if(fadeLevel_!=level.id || fadeFrame_>fadeTotal_) {fadeLevel_=-1;fadeFactor_=1;}
+        if(fadeLevel_>=0) {
+            if(fadeFrame_<fadeDown_ || fadeFrame_>=fadeTotal_-fadeRise_) {
+                fadeFactor_=std::clamp(float(std::cos(double(fadeAngle_)*3.14159265358979323846/256.0)),0.f,1.f);
+                fadeAngle_=fadeFrame_<fadeDown_?fadeFrame_*128/fadeDown_:128-(fadeFrame_-fadeTotal_+fadeRise_)*128/fadeRise_;
+            } else fadeFactor_=0;
+            ++fadeFrame_;
         }
         // GAME_UpdateProgress -> GAME_UpdateEnvironment: one update per 25 Hz frame.
         ++environment.ticks;
@@ -279,10 +277,10 @@ void LightingView::prepare(const Grid &grid, const LevelRecord &level, Vec playe
     if (!lightMap_.id) return;
     origin_ = {float(originX), float(originY)};
     // A9A20: a nonzero room RGB selects the table, including intensity zero.
-    // A cloak's cached ambient applies to the near rooms too; unit lights
+    // An active fade's cached ambient applies to the near rooms too; unit lights
     // remain independent. Preserve intensity until the palette/shader boundary.
     const auto roomAmbient = [&](const LevelRecord &roomLevel) {
-        const auto &source = cloakLevel_ >= 0 ? level : roomLevel;
+        const auto &source = fadeLevel_ >= 0 ? level : roomLevel;
         const auto &environment = environments_[size_t(std::clamp(source.act, 0, 4))];
         const bool tableLight = source.lightRed || source.lightGreen || source.lightBlue;
         Color result = tableLight
@@ -296,7 +294,7 @@ void LightingView::prepare(const Grid &grid, const LevelRecord &level, Vec playe
             result={255,64,48,uint8_t(std::clamp(*denIntensity_,0,255))};
         if((source.id==107 || source.id==108) && sanctumIntensity_)
             result={255,64,48,uint8_t(std::clamp(*sanctumIntensity_,0,255))};
-        result.a = uint8_t(float(result.a) * cloakFactor_);
+        result.a = uint8_t(float(result.a) * fadeFactor_);
         return result;
     };
     const Color ambient = roomAmbient(level);

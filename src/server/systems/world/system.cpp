@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"

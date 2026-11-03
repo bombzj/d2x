@@ -1,3 +1,6 @@
+#include "server/runtime/diagnostics.hpp"
+#include "server/game_messages.hpp"
+#include "server/runtime/events.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/pd2/map_wire.hpp"
 #include "hosting/native_item_wire.hpp"

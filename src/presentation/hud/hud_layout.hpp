@@ -5,58 +5,22 @@
 namespace d2x {
 // One coordinate system for drawing and hit testing the original 800-pixel panel.
 // Native DC6 panel frames are bottom-aligned; the globes rise above the 55px strip.
-inline float hudScale() { return float(W) / 800.f; }
+float hudScale();
 // UI glyphs keep their MPQ pixel size. The outer viewport already scales the
 // whole canvas; widening the HUD must not enlarge text a second time.
-inline float hudTextScale() { return 1.f; }
-inline Rectangle hudRect(float x, float fromBottom, float width, float height) {
-    return {x * hudScale(), H - fromBottom * hudScale(), width * hudScale(), height * hudScale()};
-}
-inline Rectangle hudSkillSlot(bool right) {
-    return hudRect(right ? 635 : 117, 48, 48, 48);
-}
-inline Rectangle hudGlobe(bool mana) {
-    return hudRect(mana ? 690 : 30, mana ? 92 : 93, 80, 80);
-}
-inline Rectangle hudRunButton() {
-    return hudRect(255, 30, 16, 20);
-}
-inline Rectangle hudStamina() {
-    return hudRect(273, 28, 102, 19);
-}
-inline Rectangle hudExperience() {
-    return hudRect(256, 39, 120, 4);
-}
-inline Rectangle hudBeltSlot(int column, int row = 0) {
-    return hudRect(425 + 31 * column, 41 + 32 * row, 29, 29);
-}
-inline Rectangle hudCharacterButton() {
-    return hudRect(206, 39, 30, 30);
-}
-inline Rectangle hudSkillTreeButton() {
-    return hudRect(563, 39, 30, 30);
-}
-inline Rectangle hudMenuButton() {
-    return hudRect(393, 39, 16, 32);
-}
-inline Rectangle hudMiniPanel(const Sprite &image) {
-    return hudRect(325, 49 + image.texture.height,
-                   float(image.texture.width), float(image.texture.height));
-}
-inline Rectangle hudMiniButton(const Sprite &image, int index) {
-    return hudRect(328 + index * (image.texture.width + 1), 52 + image.texture.height,
-                   float(image.texture.width), float(image.texture.height));
-}
-// MPQ frame pairs: character, inventory, skills, party, automap, messages,
-// quests, menu. Values are the semantic actions consumed by SceneController.
-inline constexpr std::array<int, 8> hudMiniActions{0, 1, 2, 4, 3, 7, 5, 6};
-inline Rectangle hudPickerSlot(bool right, int column, int row) {
-    constexpr float side = 48;
-    return hudRect(right ? 720 - (column + 1) * side : 90 + column * side,
-                   135 + row * side, side, side);
-}
-inline bool hudSurface(Vec mouse) {
-    return mouse.y >= H - HUD || CheckCollisionPointRec(rv(mouse), hudRect(0, 104, 117, 104)) ||
-           CheckCollisionPointRec(rv(mouse), hudRect(683, 104, 117, 104));
-}
+float hudTextScale();
+Rectangle hudRect(float x, float fromBottom, float width, float height);
+Rectangle hudSkillSlot(bool right);
+Rectangle hudGlobe(bool mana);
+Rectangle hudRunButton();
+Rectangle hudStamina();
+Rectangle hudExperience();
+Rectangle hudBeltSlot(int column, int row = 0);
+Rectangle hudCharacterButton();
+Rectangle hudSkillTreeButton();
+Rectangle hudMenuButton();
+Rectangle hudMiniPanel(const Sprite &image);
+Rectangle hudMiniButton(const Sprite &image, int index);
+Rectangle hudPickerSlot(bool right, int column, int row);
+bool hudSurface(Vec mouse);
 } // namespace d2x

@@ -1,3 +1,4 @@
+#include <utility>
 #include "loot_program.hpp"
 #include "gameplay/rules/pd2_random.hpp"
 #include "gameplay/rules/arithmetic.hpp"
@@ -66,4 +67,7 @@ bool visitMapBonusTreasure(const MapLootRules &rules,const MapMonsterLoot &unit,
     for(const uint16_t id:{502,506}) if(!roll(id,true)) return false;
     return true;
 }
-}
+
+constexpr std::array<int,21> sceneCharmPrefixes{
+    430,431,432,442,443,444,454,455,456,466,467,468,478,479,480,490,491,492,502,503,504};
+} // namespace d2x::pd2

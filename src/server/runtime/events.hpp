@@ -1,6 +1,8 @@
 #pragma once
-#include "gameplay/quest/acts/act_two_state.hpp"
+#include "environment_fact.hpp"
+#include "gameplay/quest/acts/act_two_runtime.hpp"
 #include "contracts.hpp"
+#include "domain_fact.hpp"
 #include "server/game_commands.hpp"
 #include "server/systems/attributes/calculation.hpp"
 #include "gameplay/items/operations.hpp"
@@ -8,6 +10,7 @@
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/units/resources.hpp"
 #include <deque>
+#include <variant>
 #include <array>
 #include <optional>
 #include <span>
@@ -55,7 +58,6 @@ struct InventoryFact {
 enum class QuestPublication {Transition,Query,Private,Global};
 struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; std::optional<uint16_t> tombOffset{}; std::optional<bool> eclipse{}; std::optional<uint8_t> staffStatus{}; std::optional<uint8_t> khalimStatus{}; unsigned rescued{}; std::array<uint16_t,48> gameFlags{}; std::array<bool,size_t(QuestId::Count)> unavailable{}, credited{}, entitled{}; bool fullStatus{}; std::optional<uint16_t> zooMonster{}; bool zooOnly{}; bool denEffect{}; QuestPublication publication{};std::array<ActTwoQuestRuntime,6> actTwoRuntime{};bool nativeActTwo{};std::optional<uint8_t> iceStatus{},baalStatus{}; bool figurineDropped{}; };
 struct AttributeFact { EntityId unit; uint64_t revision{}; };
-struct EnvironmentFact {int act{},cycle{},ticks{};bool eclipse{};};
 struct CharacterFact {
     CharacterRecord before, after;
     attributes::Totals previous, current;
@@ -98,7 +100,6 @@ struct InventoryResetFact { PersistentCharacter projection; };
 struct PlayerMessageFact { uint8_t type{}; std::string name; std::string other{}; uint32_t value{}; uint8_t parameter{}; std::string characterClass{}; };
 struct ChatRelationFact { EntityId from,to; uint16_t flags{}, reverse{}, fromLevel{}, toLevel{}; };
 struct PartyNoticeFact {PlayerId recipient;EntityId player;uint8_t action{};};
-using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact, ItemTargetingFact, GroundDropFact, NpcServiceFact, GroundRemoveFact, ItemSkillFact, GroundRestoredFact, HirelingListFact, TradeFact, TradeItemsFact, PlayerMessageFact, ChatRelationFact, PartyNoticeFact, EnvironmentFact, ResourcesFact, SkillEndFact, QuestStatusFact, QuestEffectFact, MonsterClassHintFact, Pd2MapAttributesFact, InventoryResetFact, QuestAlertFact, UnitRefreshFact, QuestClueFact>;
 // Compact bounded observation, independent of reliable delivery and acknowledgement.
 struct DiagnosticEvent {
     uint64_t sequence{}, batch{}, tick{}, transaction{};

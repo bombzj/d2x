@@ -531,7 +531,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
     switch(step.action) {
     case QuestAction::Travel:
         done=!step.activateWaypoint || (area && knownWaypointAreas.contains(*area));
-        if(!done && !activateWaypoint(c)) explore(c,"required quest-route waypoint");
+        if(!done && !activateWaypoint(c,true)) explore(c,"required quest-route waypoint");
         break;
     case QuestAction::UseItem:done=questUseItem(c,step);break;
     case QuestAction::Combine:done=questCombine(c,step);break;

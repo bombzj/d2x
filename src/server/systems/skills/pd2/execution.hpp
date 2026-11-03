@@ -1,6 +1,6 @@
 #pragma once
 #include "core/math.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/events/frame_queue.hpp"
 #include "server/runtime/contracts.hpp"
 #include <array>

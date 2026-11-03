@@ -107,18 +107,20 @@ bool DebugAi::Impl::approachPickup(Context &c,const OnlineItem &item) {
     for(const auto p:candidates) {
         const Vec world{float(p.x),float(p.y)},local=world-offset+Vec{.5f,.5f};
         const auto trial=std::tuple{area.value_or(0),p.x,p.y,p.x,p.y};
-        const bool flight=teleport && Clock::now()>=nextMobility && (world-c.position).length()>=1 &&
-            (world-c.position).length()<=mobilityPolicy.distance &&
-            (!mobilityTrials.contains(trial) || mobilityTrials.at(trial)<2);
-        ++pathSearches;const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},local,false,playerMovement,true);
-        if(path.empty() && !flight) continue;
-        wait("pickup-approach",flight?"Selecting a normal teleport landing at the item or its reachable side":"Walking around to another valid pickup position");
+        if(teleport) {
+            if(mobilityTrials.contains(trial) && mobilityTrials.at(trial)>=2) continue;
+            if(!teleportLanding(c,world,false)) continue;
+        } else {
+            ++pathSearches;
+            if(c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},local,false,playerMovement,true).empty()) continue;
+        }
+        wait("pickup-approach",teleport?"Approaching the item's pickup position by Teleport":"Walking to a valid pickup position");
         walk(c,{{"goal","point"},{"x",p.x},{"y",p.y},{"interact",false},{"purpose","pickup-approach"},
             {"itemId",item.id},{"groundX",item.groundX},{"groundY",item.groundY}});
         // Quest reward topics can still own the parent's pending snapshot in
         // this decision. Prepare normal teleport input before the child tries
         // an impossible walking path; no coordinates are changed here.
-        if(path.empty()) mobility(c);
+        if(teleport) mobility(c);
         return false;
     }
     if((at-c.position).length()>12) {
@@ -174,27 +176,17 @@ void DebugAi::Impl::observeDrops(const Context &c,const Goal &goal) {
 bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
     if(owned(c,goal.item)) return true;
     const auto now=Clock::now();const auto &world=c.session.read().world;
-    if(pickupIssued) {
-        wait("pickup-wait","Waiting for actual item ownership, not merely a related inventory update");
-        if(world.itemRequest && world.itemRequest->command.item==pickupId &&
-            (world.itemRequest->state==OnlineItemRequest::State::Rejected || world.itemRequest->state==OnlineItemRequest::State::Interrupted ||
-             world.itemRequest->state==OnlineItemRequest::State::TimedOut)) throw std::runtime_error("Native pickup did not confirm ownership");
-        if(now>=actionDeadline) throw std::runtime_error("Pickup ownership was not observed; request is not blindly repeated");
-        return false;
+    if(pickup) {
+        wait("pickup-wait","Waiting for actual item ownership");return false;
     }
     if(const auto *observed=observedDrop(c,goal.item)) {
         const auto ground=*observed;
-        if(pickupId!=ground.id) {
-            pickupId=ground.id;
-            note(ground.groundAnimationRevision?"item-drop-observed":"ground-item-assigned",
-                goal.item+" #"+std::to_string(ground.id)+" at "+std::to_string(ground.groundX)+","+std::to_string(ground.groundY));
-        }
         if(!approachPickup(c,ground)) return false;
         cancelWalk(c);
         if(ground.mode==5) {wait("pickup-landing","Drop observed; waiting for the assigned item to land");return false;}
         OnlineItemCommand take;take.action=OnlineItemAction::Pickup;take.item=ground.id;take.itemRevision=ground.revision;
         if(submitItem(c,take,"item-pickup")) {
-            pickupIssued=true;setActionDeadline(std::chrono::seconds(12));note("pickup-submitted",goal.item);
+            pickup=PickupReceipt{goal.item,ground.id,c.session.read().world.itemRequest->sequence,now+std::chrono::seconds(12)};note("pickup-submitted",goal.item);
         } else wait("pickup-blocked",c.inventory.reason());
         return false;
     }
@@ -250,6 +242,7 @@ void DebugAi::Impl::returnTown(Context &c) {
 }
 bool DebugAi::Impl::reachTown(Context &c) {
     if(c.town.read().town) return true;
+    if(!portalIssued && waypointBeforeDeparture(c)) return false;
     const auto &view=c.session.read();const auto now=Clock::now();
     if(!view.load.townArea) throw std::runtime_error("Current native act has no assigned town");
     // An unlocked waypoint already within interaction approach is cheaper
@@ -257,7 +250,7 @@ bool DebugAi::Impl::reachTown(Context &c) {
     // frames, but never replace a portal request that is already submitted.
     const bool nearbyWaypoint=area && knownWaypointAreas.contains(*area) && area!=unavailableWaypointArea &&
         std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &entry) {
-            if(entry.interaction!=OnlineMapInteraction::Waypoint || (position(entry.position)-c.position).length()>16) return false;
+            if(entry.interaction!=OnlineMapInteraction::Waypoint || c.town.assignedUnitLevel(entry.unit)!=area || (position(entry.position)-c.position).length()>16) return false;
             const auto unit=view.world.units.find(entry.unit);
             return unit!=view.world.units.end() && !(deferredWaypoint && deferredWaypoint->unit==entry.unit &&
                 deferredWaypoint->assignment==unit->second.assignmentRevision && now<deferredWaypoint->retryAt);
@@ -287,7 +280,7 @@ bool DebugAi::Impl::reachTown(Context &c) {
                 // Request accepted is not a successful return. Keep observing the scene.
                 rememberTravel(c,portal->unit);
                 portalUsed=true;setActionDeadline(std::chrono::seconds(15));
-                phase="town-portal-wait";reason="Waiting for the native town scene";
+                wait("town-portal-wait","Waiting for the native town scene");
             }
             return false;
         }
@@ -360,8 +353,7 @@ void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
     if(actionDeadline==Clock::time_point{}) setActionDeadline(std::chrono::seconds(12),false);
     if(now>=actionDeadline) throw std::runtime_error("NPC did not confirm item consumption and reward readiness");
 }
-void DebugAi::Impl::execute(Context &c,const Goal &goal) {
-    guardingOpening=false;
+void DebugAi::Impl::executeGoal(Context &c,const Goal &goal) {
     if(localPad && localPad->waiting) {wait("local-pad-result","Waiting for the actual same-level relocation");return;}
     if(goal.kind==Kind::Quest) {quest(c,goal);return;}
     if (goal.requiredWaypoint && goal.area && knownWaypointAreas.contains(*goal.area)) {
@@ -372,7 +364,7 @@ void DebugAi::Impl::execute(Context &c,const Goal &goal) {
     switch(goal.kind) {
     case Kind::Travel:
         if (goal.requiredWaypoint) {
-            if (!activateWaypoint(c)) explore(c, "required waypoint");
+            if (!activateWaypoint(c,true)) explore(c, "required waypoint");
             return;
         }
         advance(c,"Native target area observed");return;

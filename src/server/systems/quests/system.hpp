@@ -1,4 +1,5 @@
 #pragma once
+#include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
@@ -13,8 +14,6 @@
 namespace d2x::server::reactions { class ItemTriggers; }
 namespace d2x::server::monsters {struct Actor;}
 namespace d2x::server::quests {
-enum class Action { Refresh, ViewLog, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal, ReadAncientAltar, ReadClue, ReadFrozenAnya };
-struct Request { Action action; QuestId quest; std::optional<EntityId> npc; std::optional<uint32_t> message; std::optional<EntityId> item{}; };
 struct State {
     NpcStoryState npcStory;
   std::optional<uint64_t> controlRandom;
@@ -162,6 +161,7 @@ class System {
     bool pendingGoals(PlayerId) const;
     QuestFact projection(PlayerId player,const CharacterRecord &record,RegionId area,bool fullStatus=true) const { auto result=fact(player,record,area);result.fullStatus=fullStatus;return result; }
     std::optional<Dialogue> dialogue(const ActorContext &,const NpcRule &) const;
+    std::optional<uint16_t> alertMessage(const ActorContext &,const NpcRule &) const;
     std::vector<Dialogue> dialogues(const ActorContext &,const NpcRule &) const;
     DomainResult<> operate(const ActorContext &,EntityId,int definition,int operation,Vec);
     std::vector<Preparation> pending() const;

@@ -72,6 +72,10 @@ Teleport普通施放、聚气与物品触发共用`travel::castTeleport`。请�
 
 实际落点、法力／聚气及可靠位置事实共用人物事务，输出背压不提前扣费或移动。相连同幕邻区复验目的区域代次及碰撞，TravelFact和位置事实一起接受后提交区域／房间归属；成功清空旧路线、定点步进及移动交互目标，并更新传送历史位置和代次。客户端只提交原目标、等待原15位置包，不预判落点。原版1.13c D2Game SrvDo表RVA1074A8第27项指向43450；43484–434C1确认Levels.Teleport及0x0804分支，E19C0／E1A44–E1A83确认公共重定位的尺寸查询、0x1c09、关闭失败后备及路径重置入口。D2Common ordinal10509／RVA4D840传入最大距离50、步长1并调用4D140。DLL摘要见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)；当前MPQ Skills[54].SrvDoFunc=27、Levels.Teleport仍动态准备。上述为源码／原表／原DLL静态核对，尚未进行本项实机回归。
 
+**联网落点。** 零售 Skills[54] 的 CltStFunc／CltDoFunc 均为空。原 1.13c D2Client 的 11 字节 S2C 0x15 表项在 RVA DDF5C，AF640 处理器按类型和 GUID 找单位，把包内坐标交给 A7E20 重定位。D2X 可先显示施法，收到本人重定位后才切换脚点并清除旧路径。先到的佣兵重定位只作用于佣兵。
+
+原版 Host 蛇殿两次手动施法可直接对包。旧记录 `artifacts/ai-campaign-rerun-20261102-124242/native-02-point-prefix/client.jsonl` 中，C2S 0x0C 的 seq 5091／5208 分别对应本人 S2C 0x15 的 5097／5212，收发相隔约 198／216 ms。这是两次实际施法的间隔，包含出手和收发时间。故意断流或高延迟下的原客户端逐帧表现尚未对照。
+
 未释放动作随移动／死亡／换区取消；已释放弹体可在施法者死亡后完成，玩家离开或区域代次变化时清理。持续Inferno不能将每帧续射的结束刻误投影为站立，原0D只在动作真实结束后发出。受控Hydra不发敌怪经验／掉落；三头生命周期、337弹体及强化沿各自领域。
 
 hosting独立prepareHydraRules从当前MPQ准备三头／三难度基础、初始技能槽、生命及模式表、普通／L-AC比例、LoD区域等级和PetType；服务端不读取原表。原单位初始化后先赋Hydra自身技能，再安装主人原Passive／Aura／Calc1／SumSkill，因此火焰精通为召唤时的基础贡献。共用prepareSummonStatSources，关闭SetSummonBaseStats和召唤抵抗；初始生命按生命表投掷并保留raw单位。当前三头生命表为零；maxhp的fMin／MinAccr／ValShift不代表缺项查询最小生命，keepzero关闭时SetStat(0)移除字段，缺项仍返回零。实体通过modeAlive保持活动，死亡模式清除该标记；参与者查询、动作入口、死亡／到期、拥有者清理和复制开始区分原生命与存活，不人为安装256。

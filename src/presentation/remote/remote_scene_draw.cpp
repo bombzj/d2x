@@ -54,10 +54,12 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     lastFrame = now;
     wasPaused = paused;
     shared.pauseWorldPresentation(paused);
+    const auto previousTick=uint64_t(double(time)*25);
     time += elapsed;
     // Long window/loading waits skip stale queued casts and audio.
     // Assigned actors and active missiles retain their own lifecycles.
     const bool suspended = elapsed > .25f;
+    const auto clientTicks=suspended?1:uint64_t(double(time)*25)-previousTick;
     if (suspended) {
         // Monster point paths (67) carry endpoints, not current positions.
         // Clearing motion here would restart them at a stale 68/6D sample
@@ -91,7 +93,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     });
     observeEffects(v, shared, combat, binding.town,map.grid,{float(binding.origin->x),float(binding.origin->y)});
     observeDenLights(v,map,shared,suspended?0.f:elapsed);
-    observeQuestMissileEffects(v,map,shared,suspended?0.f:elapsed);
+    WorldDrawView worldScene;
+    observeQuestMissileEffects(v,map,shared,worldScene,suspended?0.f:elapsed);
     intent.input.castInputBusy = localCast && !channelSkill(localCast->command.skill) &&
         (localCast->started < 0 || time < localCast->started + localCast->duration);
     // Decode the real death art when a boss is first visible, before its
@@ -222,7 +225,6 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             break;
         }
     }
-    WorldDrawView worldScene;
     worldScene.map = &map; worldScene.region = shared.mapView().region;
     worldScene.level = binding.area.value(); worldScene.palette = binding.palette.value_or(0);
     worldScene.gameGeneration = v.gameGeneration; worldScene.areaGeneration = v.world.areaGeneration;
@@ -446,6 +448,20 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             // Path/Step.cpp measures clockwise from +Y, with its eight-bin offset.
             const float angle = (float(*u.direction & 63) - 7.5f) * 2.f * pi / 64.f;
             m.look = {-std::sin(angle), std::cos(angle)};
+        }
+        // Retail D2Client 4F577-4F60E rolls the idle NPC's seed on
+        // client game frames, independently of a quest alert or conversation.
+        if(!pd2 && clientTicks && key.type==1 && playerId && u.mode==1 && !u.actionSkill &&
+            !moving && !frozen && !talkingNpc && idleFacingNpcClasses.contains(npcClass)) {
+            decodeMonsterIdentity(u);
+            const auto identity=monsterIdentities.find(key);
+            const Vec here=feet+Vec{float(origin.x),float(origin.y)};
+            if(const auto at=localUnitPosition({0,*playerId});at && identity!=monsterIdentities.end() &&
+                !identity->second.hireling && nativeUnitDistance(here,unitSize(u),*at,playerMovement.size)<7) {
+                if(!m.npcLookRandom) m.npcLookRandom=initialRandom(key.id);
+                for(uint64_t i=0;i<clientTicks;++i)
+                    if(limitedRandom(*m.npcLookRandom,100)<10) m.look=*at-here;
+            }
         }
         auto displayed = u;
         float objectElapsed = m.animation.elapsed(time);
@@ -754,7 +770,10 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                         if(value.id==skillStat) skill=int(value.value);
                         if(value.id==rankStat) rank=int(value.value);
                     }
-                    if(skill>=0 && rank>0) worldScene.cloakDuration=skillCalculation(skill,rank,"auralencalc",key);
+                    if(skill>=0 && rank>0) if(const auto duration=skillCalculation(skill,rank,"auralencalc",key)) {
+                        const int rise=2 * *duration / 5;
+                        worldScene.ambientFade=WorldDrawView::AmbientFade{worldScene.level,5,3 * *duration / 5,rise?rise:25};
+                    }
                 }
                 const auto cast=overlayNames.find(states.value(row->second,"castoverlay"));
                 if(cast!=overlayNames.end()) {
@@ -1007,7 +1026,13 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if(unit==v.world.units.end() || !unitClass(unit->second)) continue;
         auto [name,modifiers]=monsterCaption(unit->second);
         monsters.push_back({key.id,*unitClass(unit->second),std::move(name),std::move(modifiers),transform.first,transform.second,
-            !pd2 && mapDisplay.questEffects.hiddenUnits.contains(key)});
+            !pd2 && mapDisplay.questEffects.hiddenUnits.contains(key),{}});
+        const auto pose=motion.find(key);
+        if(pose!=motion.end() && pose->second.last && pose->second.assignmentRevision==unit->second.assignmentRevision) {
+            const auto &m=pose->second;
+            monsters.back().motion=OnlineSceneView::MonsterMotion{*m.last,m.position,m.position+m.correction,
+                m.positionRevision,m.stopDestination.has_value()};
+        }
     }
     return intent;
 }

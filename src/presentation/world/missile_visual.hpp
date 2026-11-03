@@ -1,7 +1,7 @@
 #pragma once
 #include "core/math.hpp"
 #include "missile_graphics.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "world/collision.hpp"
 #include "gameplay/skills/elemental_spec.hpp"
 #include "gameplay/skills/amazon_missile.hpp"

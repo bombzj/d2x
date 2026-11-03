@@ -9,6 +9,7 @@
 #include "server/systems/effects/system.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
 #include "gameplay/quest/catalog.hpp"
+#include "gameplay/quest/prelude_rules.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
@@ -63,6 +64,20 @@ std::optional<Dialogue> System::dialogue(const ActorContext &actor,const NpcRule
     // Jerhyn's arrival speech is an independent A2Q0 prelude.
     if(offered && offered->message.text!=253 && unavailable(actor.player,p->persistent.player,offered->quest)) return {};
     return offered;
+}
+std::optional<uint16_t> System::alertMessage(const ActorContext &actor,const NpcRule &npc) const {
+    const auto *player=ports_.players.find(actor.player);
+    const auto *area=ports_.areas.find(actor.area);
+    if(!player || !area || !npc.interactable) return {};
+    const auto &record=player->persistent.player;
+    if(!npcVisible(record,npc.code,actor.area,npc.questInitFunction)) return {};
+    if(const auto *arrival=questPreludeForNpc(area->definition.act,npc.code);
+       arrival && !record.questPreludes.at(size_t(ports_.settings.difficulty)).at(size_t(arrival->id))) {
+        const auto text=arrival->messageFor(record.characterClass);
+        if(npc.questMessages.contains(text)) return text;
+    }
+    const auto offered=dialogue(actor,npc);
+    return offered && offered->message.menu!=2?std::optional{offered->message.text}:std::nullopt;
 }
 std::optional<Dialogue> System::actOneDialogue(const ActorContext &actor,const NpcRule &npc) const {
     const auto *p=ports_.players.find(actor.player); if(!p) return {};

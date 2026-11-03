@@ -2,7 +2,7 @@
 #include <span>
 #include <optional>
 #include <set>
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 
 namespace d2x {
 struct CombatModifiers;

@@ -63,4 +63,6 @@ MapRecipe generateMaze(Archives &archives, const WorldCatalog &catalog, int leve
     if (level == 28) layout.levels.at(27) = buildRetailPresetLevel(archives, catalog, layout, 27).placement;
     return buildNativeMazeLevel(archives, catalog, layout, level, seed, difficulty, entranceDirection).recipe;
 }
+
+constexpr std::array<int, 7> actTwoTombSymbols{313, 312, 308, 310, 311, 309, 307};
 } // namespace d2x

@@ -1,6 +1,6 @@
 #pragma once
 #include "server/player_identity.hpp"
-#include "server/runtime/simulation.hpp"
+#include "server/runtime/system_metrics.hpp"
 #include "server/systems/spatial/footprint_metrics.hpp"
 #include <cstdint>
 #include <functional>

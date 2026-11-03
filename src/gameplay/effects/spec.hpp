@@ -1,7 +1,7 @@
 #pragma once
 #include "gameplay/effects/definition.hpp"
 #include "gameplay/effects/unit_event.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "core/math.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/stats/stat_list.hpp"

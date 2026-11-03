@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/loot/request.hpp"
 #include "gameplay/loot/plan.hpp"
 #include <array>

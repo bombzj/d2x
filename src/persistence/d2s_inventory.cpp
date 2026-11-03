@@ -1,3 +1,4 @@
+#include "gameplay/items/quality_rules.hpp"
 #include "d2s_inventory.hpp"
 #include "gameplay/items/quality.hpp"
 #include "content/items/item_properties.hpp"
@@ -11,7 +12,6 @@ namespace {
 void require(bool condition, const std::string &reason) {
     if (!condition) throw std::runtime_error("D2S item mapping: " + reason);
 }
-constexpr auto &qualities = nativeItemQualities;
 std::vector<D2sStat> extraProperties(const ClassicData &content, const ItemInstance &item) {
     std::vector<D2sStat> result;
     auto check = [&](const auto &properties) {
@@ -68,13 +68,13 @@ void initializeD2sInventory(CharacterSaveData &snapshot, const ClassicData &cont
 void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const ClassicData &content,
                    bool hireling, EntityId corpse, EntityId socketHost, unsigned socketIndex) {
     const auto *definition = content.items.find(source.code);
-    require(definition != nullptr && source.quality > 0 && source.quality < qualities.size(), "item identity");
+    require(definition != nullptr && source.quality > 0 && source.quality < nativeItemQualities.size(), "item identity");
     ItemInstance item;
     item.id = EntityId{snapshot.nextEntityId++};
     item.definition = source.code;
     item.level = source.level;
     item.identified = (source.flags & 0x10) != 0;
-    item.quality = qualities[source.quality];
+    item.quality = nativeItemQualities[source.quality];
     item.defense = int(source.defense);
     item.durability = source.durability;
     item.quantity = definition->bookCapacity ? 1 : source.quantity;
@@ -249,7 +249,7 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     if (item.sockets) output.flags |= 0x800u;
     if (content.tables.at(definition->base.sourceTable).number(definition->base.sourceRow, "compactsave").value_or(0))
         output.flags |= 0x00200000;
-    output.quality = unsigned(std::find(qualities.begin() + 1, qualities.end(), item.quality) - qualities.begin());
+    output.quality = unsigned(std::find(nativeItemQualities.begin() + 1, nativeItemQualities.end(), item.quality) - nativeItemQualities.begin());
     output.fileIndex = unsigned(std::max(0, item.specialRow >= 0 ? item.specialRow : item.gradeRow));
     if (item.quality == ItemQuality::Normal && definition->equipment.isType("body") &&
         !definition->equipment.isType("play")) output.fileIndex = item.nativeBodyPart;

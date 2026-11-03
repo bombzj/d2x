@@ -311,4 +311,215 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
         drop.description = inventoryErrorText(drop.error);
     return drop;
 }
+
+float inventoryScale() { return classicPanelScale(); }
+
+float inventoryCellSize(const InventoryView &inventory) { return inventory.itemCellSize[0] * inventoryScale(); }
+
+Rectangle orificeBounds() {return {106*inventoryScale(),98*inventoryScale(),108*inventoryScale(),164*inventoryScale()};}
+
+Rectangle orificeSlot() {const auto p=orificeBounds();return {p.x+16*inventoryScale(),p.y+12*inventoryScale(),76*inventoryScale(),108*inventoryScale()};}
+
+Rectangle orificeButton(bool confirm) {const auto p=orificeBounds();return {p.x+(confirm?10:66)*inventoryScale(),p.y+126*inventoryScale(),32*inventoryScale(),32*inventoryScale()};}
+
+Rectangle inventoryBounds() {
+    return classicPanelBounds(true);
+}
+
+Rectangle inventoryBounds(const InventoryView &inventory) {
+    auto panel = classicPanelBounds(true, float(inventory.panelTop));
+    panel.height = inventory.panelHeight * inventoryScale();
+    return panel;
+}
+
+Rectangle inventoryGrid(const InventoryView &inventory) {
+    auto p = inventoryBounds(inventory);
+    const auto &layout = inventory.backpackLayout;
+    return {p.x + layout.left * inventoryScale(), p.y + layout.top * inventoryScale(),
+            layout.columns * inventoryCellSize(inventory), layout.rows * inventoryCellSize(inventory)};
+}
+
+Rectangle inventoryClose() {
+    auto p = inventoryBounds();
+    // The 32x32 buysellbtn frame fits the invchar6 socket at (18,385).
+    return {p.x + 18 * inventoryScale(), p.y + 385 * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
+}
+
+Rectangle inventoryGold() {
+    auto p = inventoryBounds();
+    return {p.x + 82 * inventoryScale(), p.y + 391 * inventoryScale(),
+            120 * inventoryScale(), 20 * inventoryScale()};
+}
+
+Rectangle inventoryGoldButton() {
+    const auto p = inventoryBounds();
+    // Native 1.13c goldcoinbtn anchor, inside the invchar6 gold socket.
+    return {p.x + 84 * inventoryScale(), p.y + 392 * inventoryScale(),
+            20 * inventoryScale(), 18 * inventoryScale()};
+}
+
+Rectangle inventoryClose(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return inventoryClose();
+    const auto p = inventoryBounds(inventory);
+    return {p.x + 18 * inventoryScale(), p.y + (inventory.panelHeight - 4) * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
+}
+
+Rectangle inventoryGold(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return inventoryGold();
+    const auto p = inventoryBounds(inventory);
+    // CN invchar6 frames 4-7: the gold socket starts at (72,468),
+    // with the extended art's signed DC6 origin at Y=25.
+    return {p.x + 72 * inventoryScale(), p.y + (inventory.panelHeight + 1) * inventoryScale(),
+            116 * inventoryScale(), 20 * inventoryScale()};
+}
+
+Rectangle inventoryGoldButton(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return inventoryGoldButton();
+    const auto field = inventoryGold(inventory);
+    return {field.x + 2 * inventoryScale(), field.y + 2 * inventoryScale(),
+            20 * inventoryScale(), 18 * inventoryScale()};
+}
+
+Rectangle inventoryToggle() {
+    return hudMenuButton();
+}
+
+Rectangle beltSlot(Cell cell) {
+    return hudBeltSlot(cell.x, cell.y);
+}
+
+Rectangle beltBounds(int rows) {
+    return hudRect(424, 42 + (rows - 1) * 32, 125, rows * 32);
+}
+
+std::optional<Cell> beltCell(Vec mouse, int rows) {
+    for (int y = 0; y < rows; ++y)
+        for (int x = 0; x < 4; ++x)
+            if (CheckCollisionPointRec(rv(mouse), beltSlot({x, y})))
+                return Cell{x, y};
+    return std::nullopt;
+}
+
+Rectangle storageBounds() {
+    return classicPanelBounds(false);
+}
+
+Rectangle storageBounds(const InventoryView &inventory) {
+    auto panel = classicPanelBounds(false, float(inventory.storagePanelTop));
+    panel.height = inventory.storagePanelHeight * inventoryScale();
+    return panel;
+}
+
+Rectangle storageNavigationButton(unsigned button, const InventoryView &inventory) {
+    const auto p = classicPanelBounds(false);
+    constexpr std::array x{30, 75, 120, 165, 210, 15};
+    const auto grid = storageBounds(inventory);
+    const float y = button == 5 ? grid.y + (inventory.storagePanelHeight - 14) * inventoryScale() :
+        grid.y + (inventory.stashLayout.top - 34) * inventoryScale();
+    return {p.x + x.at(button) * inventoryScale(), y,
+            32 * inventoryScale(), 32 * inventoryScale()};
+}
+
+Rectangle storageMaterialBounds(const InventoryMaterialView &item) {
+    const auto p = classicPanelBounds(false);
+    const auto scale = inventoryScale();
+    // 0x275E0/0x27600 and 0x27B80/0x27BA0; native DC6 baseline to top.
+    return {p.x + (item.x + 2) * scale,
+            p.y + (item.y - 1 - item.height * 29) * scale,
+            item.width * 29 * scale, item.height * 29 * scale};
+}
+
+Rectangle storageMaterialUpgradeBounds(const InventoryMaterialView &item) {
+    auto bounds = storageMaterialBounds(item);
+    bounds.x += (item.upgradeOnLeft ? 0 : 24) * inventoryScale();
+    bounds.width = 5 * inventoryScale();
+    return bounds;
+}
+
+Rectangle storageClose() {
+    return {storageBounds().x + 274 * inventoryScale(), storageBounds().y + 384 * inventoryScale(),
+            31 * inventoryScale(), 34 * inventoryScale()};
+}
+
+Rectangle storageClose(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return storageClose();
+    const auto p = storageBounds(inventory);
+    return {p.x + 274 * inventoryScale(), p.y + (inventory.storagePanelHeight - 14) * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
+}
+
+Rectangle cubeBounds() {
+    return classicPanelBounds(false);
+}
+
+Rectangle cubeClose(const InventoryView &inventory) {
+    auto p = cubeBounds();
+    return {p.x + inventory.cubeCloseOffset[0] * inventoryScale(), p.y + inventory.cubeCloseOffset[1] * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
+}
+
+Rectangle cubeTransmute() {
+    auto p = cubeBounds();
+    // D2Client RVA 99657/99678: miniconvert at X=144, baseline=292.
+    return {p.x + 144 * inventoryScale(), p.y + 260 * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
+}
+
+Rectangle storageGold(bool expansion) {
+    auto p = storageBounds();
+    return {p.x + 74 * inventoryScale(),
+            p.y + (expansion ? 20 : 218) * inventoryScale(),
+            176 * inventoryScale(), 22 * inventoryScale()};
+}
+
+Rectangle storageGoldButton(bool expansion) {
+    const auto p = storageBounds();
+    // Native stash button moves down 198 pixels in the classic layout.
+    return {p.x + 75 * inventoryScale(),
+            p.y + (expansion ? 23 : 221) * inventoryScale(),
+            20 * inventoryScale(), 18 * inventoryScale()};
+}
+
+Rectangle storageGold(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return storageGold(inventory.stashLayout.expansion);
+    const auto p = storageBounds(inventory);
+    // CN tradestash's two bottom fields are bank gold and the page name.
+    return {p.x + 72 * inventoryScale(), p.y + (inventory.storagePanelHeight - 18) * inventoryScale(),
+            176 * inventoryScale(), 20 * inventoryScale()};
+}
+
+Rectangle storageGoldButton(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return storageGoldButton(inventory.stashLayout.expansion);
+    const auto field = storageGold(inventory);
+    return {field.x + 2 * inventoryScale(), field.y + 2 * inventoryScale(),
+            20 * inventoryScale(), 18 * inventoryScale()};
+}
+
+Rectangle storageNameField(const InventoryView &inventory) {
+    auto bounds = storageGold(inventory);
+    bounds.y += 21 * inventoryScale();
+    bounds.height = 20 * inventoryScale();
+    return bounds;
+}
+
+Rectangle goldDialogBounds() {
+    // Retail gold menu starts at (215,140) in 640x480, centered when the
+    // game canvas grows. The MPQ dialogbackground frame is 210x158.
+    return {W / 2.f - 105 * inventoryScale(), (H - HUD) / 2.f - 79 * inventoryScale(),
+            210 * inventoryScale(), 158 * inventoryScale()};
+}
+
+Rectangle goldDialogButton(int index) {
+    auto p = goldDialogBounds();
+    return {p.x + (35 + index * 105) * inventoryScale(), p.y + 115 * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
+}
+
+Rectangle goldDialogEntry() {
+    const auto p = goldDialogBounds();
+    return {p.x + 29 * inventoryScale(), p.y + 62 * inventoryScale(),
+            152 * inventoryScale(), 24 * inventoryScale()};
+}
 } // namespace d2x

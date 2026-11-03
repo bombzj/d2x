@@ -1,9 +1,25 @@
 #include "network/protocol/d2gs_stream.hpp"
-#include "network/protocol/message_schema.hpp"
+#include "network/protocol/message_schema_detail.hpp"
 #include <algorithm>
 #include <iterator>
 
 namespace d2x::net::protocol {
+std::string_view framingName(WireFraming framing) {
+    switch (framing) {
+    case WireFraming::Fixed: return "fixed";
+    case WireFraming::ByteLength: return "u8-length";
+    case WireFraming::WordLength: return "u16-length";
+    case WireFraming::Chat: return "chat-strings";
+    case WireFraming::SkillList: return "skill-count";
+    case WireFraming::Compression: return "compression";
+    case WireFraming::SavePart: return "save-part";
+    case WireFraming::Unsupported: return "unsupported";
+    }
+    return "unsupported";
+}
+const ServerWireDescriptor *findServerWireMessage(uint8_t id) { return detail::findServerWireMessage(id); }
+const ClientWireDescriptor *findClientWireMessage(uint8_t id) { return detail::findClientWireMessage(id); }
+
 namespace {
 size_t byte_length(std::span<const uint8_t> bytes, size_t offset, size_t minimum) {
     if (bytes.size() <= offset) return 0;

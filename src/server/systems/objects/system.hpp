@@ -1,7 +1,7 @@
 #pragma once
+#include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
 #include "server/runtime/object_rules.hpp"
 #include "server/systems/items/system.hpp"
 #include "server/area_store.hpp"
@@ -16,9 +16,6 @@
 namespace d2x::server {struct RoomView;struct RoomRandomLoan;}
 namespace d2x::server::monsters {struct NativeBirthBatch;}
 namespace d2x::server::objects {
-// Runtime doors/chests/shrines/wells/quest objects; resource-only map decorations are separate.
-enum class Action { Operate, HighlightDoor };
-struct Request { UnitTarget target; Action action=Action::Operate; };
 struct Admission { int definition{}; RegionId area; Vec position; std::optional<int> shrine,trap; int mode{}; uint64_t tick{};std::optional<RoomView> room{}; int pd2Binding{-1};bool collisionReleased{};EntityId nativePortalOwner{};std::optional<pd2::MapPortalProgram> pd2Portal{}; };
 struct Object { EntityId id; int definition{}; RegionId area; Vec position; uint64_t revision{}; int mode{}; ObjectRule rule; uint64_t until{}, reset{}; bool pending{}; int uses{}; uint64_t random{},hazardAt{},trapAt{}; int phase{},trap{}; PlayerId operatorId{}; bool specialPending{}; int spawnCount{},spawned{}; bool trapWarned{};uint64_t lootAt{};bool urnPending{},resurrected{};uint8_t sparkChest{},portalDestination{};uint64_t portalAt{}; int pd2Binding{-1};bool collisionReleased{};EntityId nativePortalOwner{};std::optional<pd2::MapPortalProgram> pd2Portal{};EntityId operatorActor{}; };
 struct State { std::map<EntityId, Object> objects; std::optional<uint64_t> controlRandom; };

@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "content/monsters/monster_identity.hpp"
 #include "object_content.hpp"
 #include "monster_actions_content.hpp"

@@ -1,10 +1,12 @@
 #pragma once
-#include "gameplay/character/persistent_character.hpp"
 #include "core/bytes.hpp"
+#include "core/math.hpp"
 #include "native_identity.hpp"
 #include <vector>
 namespace d2x {
 struct ClassicData;
+struct ItemInstance;
+struct PersistentCharacter;
 std::vector<Bytes> nativeShopItems(const ClassicData &, const PersistentCharacter &);
 namespace server { struct InventoryFact; struct TradeItemsFact; }
 // Original inventory admission/delta packets; never exposes D2S bytes to UI.

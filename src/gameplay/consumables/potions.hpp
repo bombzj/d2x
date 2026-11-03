@@ -2,7 +2,7 @@
 #include "gameplay/effects/definition.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/stats/stat_list.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include <array>
 #include <string_view>
 #include <functional>

@@ -1,6 +1,6 @@
 #pragma once
 #include "server/game_messages.hpp"
-#include "server/runtime/simulation.hpp"
+#include "server/runtime/system_metrics.hpp"
 #include "fixed_step_job.hpp"
 #include "gameplay/monsters/identity.hpp"
 #include "gameplay/items/generation.hpp"

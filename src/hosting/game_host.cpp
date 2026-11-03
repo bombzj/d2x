@@ -1,4 +1,5 @@
 #include "game_host.hpp"
+#include "server/game_instance.hpp"
 #include "native_identity.hpp"
 #include <chrono>
 #include <cmath>
@@ -6,6 +7,11 @@
 #include <utility>
 
 namespace d2x {
+GameHost::GameHost() = default;
+GameHost::~GameHost() = default;
+GameHost::GameHost(GameHost &&) noexcept = default;
+GameHost &GameHost::operator=(GameHost &&) noexcept = default;
+
 uint32_t hosting::NativeIdentityView::guid(EntityId entity,uint8_t type) const {
     const auto native=host_.nativeIdentity(game_,entity);
     if(!native || uint8_t(native->type)!=type) throw std::logic_error("Missing or mismatched native unit identity");

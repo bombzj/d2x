@@ -77,7 +77,7 @@ void RealmSession::Impl::clear_game() {
     view.load = {};
     view.world.clear();
     view.latencyMilliseconds.reset();
-    nextMovement = {};
+    lastNavigationPacket.clear();
     nextItem = {}; itemDeadline = {};
     nextCombat = {}; combatDeadline = {};
     storageDeadline = {}; npcDeadline = {}; respawnDeadline = {}; waypointDeadline = {};
@@ -227,6 +227,14 @@ void RealmSession::Impl::observed(OnlineProtocolCounters &counters, const Packet
     changed();
 }
 
+bool RealmSession::Impl::duplicateNavigation(const Bytes &packet) {
+    // Retail D2Client 1.13c RVA 14446..14462 compares the bytes of the
+    // preceding packet. A new destination remains eligible immediately.
+    if(packet!=lastNavigationPacket || Clock::now()-lastNavigationSent>=std::chrono::milliseconds(200)) return false;
+    error(OnlineErrorKind::Input,"Duplicate navigation packet");
+    return true;
+}
+
 void RealmSession::Impl::sent(ByteStream &stream, Bytes bytes) {
     if (&stream == &gs) compatibility.validateClientPacket(bytes);
     const auto byteCount = bytes.size();
@@ -234,8 +242,15 @@ void RealmSession::Impl::sent(ByteStream &stream, Bytes bytes) {
     const auto id = bytes.size() > idOffset ? std::optional<uint8_t>{bytes[idOffset]} : std::nullopt;
     Bytes observed;
     if (&stream == &gs && gameRequestObserver) observed = bytes;
+    Bytes navigation;
+    if (&stream == &gs && id && ((*id >= 1 && *id <= 4) || *id == 0x13 || *id == 0x49))
+        navigation = bytes;
     if (!stream.send(std::move(bytes)))
         throw ProtocolError("Protocol send queue unavailable");
+    if (&stream == &gs) {
+        lastNavigationPacket = std::move(navigation);
+        if (!lastNavigationPacket.empty()) lastNavigationSent = Clock::now();
+    }
     auto &counts = &stream == &sid ? view.sidProtocol : &stream == &mcp ? view.mcpProtocol : view.gameProtocol;
     if (id) ++counts.sent[*id];
     counts.sentBytes += byteCount;

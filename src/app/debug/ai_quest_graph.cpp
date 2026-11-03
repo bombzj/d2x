@@ -142,7 +142,7 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
     }
     // Never replace a submitted operation with a newly attractive branch.
     // Its own handler must first consume the actual result or report unknown.
-    const bool waiting=questRun.pending || questRun.recoveringItem || questTransaction(c) || objectIssued || pickupIssued || portalIssued || potionRequest ||
+    const bool waiting=questRun.pending || questRun.recoveringItem || questTransaction(c) || objectIssued || pickup || portalIssued || potionRequest ||
         pendingDoor || pendingWaypoint || closeWaypoint || mobilityTarget || (localPad && localPad->waiting) ||
         travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit);
     if(questRun.selected && waiting) {

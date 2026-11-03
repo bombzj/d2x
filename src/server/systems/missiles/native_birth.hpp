@@ -1,6 +1,6 @@
 #pragma once
 #include "server/runtime/contracts.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/domain_fact.hpp"
 #include <cstddef>
 #include <memory>
 #include <vector>

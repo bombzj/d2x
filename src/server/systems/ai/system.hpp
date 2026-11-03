@@ -1,7 +1,6 @@
 #pragma once
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
 #include "gameplay/effects/definition.hpp"
 #include "target_query.hpp"
 #include "server/systems/actions/requests.hpp"

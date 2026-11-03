@@ -2,7 +2,7 @@
 #include "server/runtime/contracts.hpp"
 #include "server/area_store.hpp"
 #include "gameplay/quest/id.hpp"
-#include "gameplay/quest/acts/act_two_state.hpp"
+#include "gameplay/quest/acts/act_two_runtime.hpp"
 #include "gameplay/quest/forge_rewards.hpp"
 #include <memory>
 #include <deque>
@@ -42,6 +42,7 @@ struct ActOneState {
     uint64_t andarielPortalAt{};
     struct CairnControl {EntityId owner;RegionId area;Vec position;};
     std::optional<CairnControl> cairnPending;
+    bool cairnEffectPending{};
 };
 struct ActTwoState {
     bool sunScheduled{}, dark{}, altarDestroyed{}, journalRead{}, tombOpen{}, durielSlain{}, tyraelPortal{};

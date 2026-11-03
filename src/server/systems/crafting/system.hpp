@@ -1,8 +1,8 @@
 #pragma once
+#include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/prepared_rules.hpp"
-#include "server/runtime/events.hpp"
 #include "server/systems/transactions/plan.hpp"
 #include "gameplay/items/intents.hpp"
 #include "gameplay/npc/intents.hpp"
@@ -13,11 +13,6 @@
 #include <vector>
 
 namespace d2x::server::crafting {
-struct RewardItem { EntityId npc; ItemHandle item; };
-struct Pd2SacrificeItem { EntityId altar;ItemHandle input; };
-struct TransmogrifyItem { std::optional<ItemHandle> source; };
-using Intent = std::variant<TransmuteCube, SocketItem, ImbueItem, SocketQuestItem, PersonalizeQuestItem, RewardItem,Pd2SacrificeItem,TransmogrifyItem>;
-struct Request { Intent intent; };
 struct Pending { ActorContext actor; Request request; uint64_t token{}, seed{}, inventoryRevision{}, characterRevision{}, conversation{}; };
 // Immutable content-worker input. Authority revalidates revisions and access
 // before placing every output and consuming every input in one transaction.

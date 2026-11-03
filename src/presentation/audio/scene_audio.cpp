@@ -1,3 +1,4 @@
+#include <exception>
 #include "scene_audio.hpp"
 #include "scene_streams.hpp"
 #include "core/random.hpp"

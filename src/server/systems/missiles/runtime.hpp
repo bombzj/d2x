@@ -1,4 +1,5 @@
 #pragma once
+#include "core/id.hpp"
 #include "system.hpp"
 #include "server/systems/effects/skill_state.hpp"
 #include <functional>

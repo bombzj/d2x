@@ -3,7 +3,7 @@
 #include "world/collision.hpp"
 #include "world/room_layout.hpp"
 #include "core/math.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include <deque>
 #include <functional>
 #include <optional>
@@ -50,6 +50,10 @@ struct Grid {
     // Ephemeral collision view; owns no terrain and must not survive a unit
     // publication. Coordinates remain local to this grid, including neighbours.
     std::function<uint16_t(int,int,EntityId)> collisionSample;
+    // Optional bulk reader for derived views. The returned mask values own
+    // their storage and include a one-cell halo for size 2/3 footprints.
+    std::function<std::vector<uint16_t>()> copyMovementMasks;
+    std::vector<uint16_t> movementMaskSnapshot() const;
     // A path query withdraws/reinstalls footprints once, including nested path
     // helpers. Physical movement instead uses the transactional cell callback.
     std::function<void(bool)> collisionQuery;

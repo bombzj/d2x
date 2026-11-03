@@ -290,7 +290,8 @@ RemoteScene::Impl::readMonsterAppearance(const OnlineUnit &u, size_t extraRow, R
             }
             if (!terminated && bits.read(8) != 0) return std::nullopt;
             identity.nameSeed=uint16_t(bits.read(16));
-            if (bits.read(1)) bits.read(32);
+            identity.hireling=bits.read(1)!=0;
+            if (identity.hireling) bits.read(32);
         }
         return std::pair{mode, std::move(identity)};
     } catch (const net::protocol::ProtocolError &) {

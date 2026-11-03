@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "character_admission.hpp"
 #include "gameplay/items/inventory_order.hpp"
 #include <functional>

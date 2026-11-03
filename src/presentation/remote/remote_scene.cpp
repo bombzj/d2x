@@ -103,6 +103,8 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
         chargeSkills.emplace(lower(std::string(skills.value(entry,"skill"))),skill);
     for(const auto &[id,row]:monsterRows) {
         const auto extra=monsterExtra.find(monstats.value(row,"MonStatsEx"));if(extra==monsterExtra.end()) continue;
+        if(monstats.number(row,"interact").value_or(0) && !monstats2.number(extra->second,"critter").value_or(0) &&
+            id!=537 && id!=538 && id!=539) idleFacingNpcClasses.insert(id);
         for(int slot=1;slot<=8;++slot) {
             const auto skill=chargeSkills.find(lower(std::string(monstats.value(row,"Skill"+std::to_string(slot)))));
             if(skill==chargeSkills.end()) continue;
@@ -293,14 +295,14 @@ std::optional<OnlinePoint> RemoteScene::Impl::targetPosition(OnlineUnitKey key) 
     return unit==world().units.end() ? std::nullopt : unit->second.position;
 }
 
-std::optional<Vec> RemoteScene::Impl::localUnitPosition(OnlineUnitKey key) const {
+std::optional<Vec> RemoteScene::Impl::localUnitPosition(OnlineUnitKey key,bool includeVisualCorrection) const {
     const auto unit = world().units.find(key);
     if (unit == world().units.end() || !unit->second.position) return {};
     const auto display = motion.find(key);
     if (display != motion.end() && display->second.last &&
         display->second.assignmentRevision == unit->second.assignmentRevision &&
         display->second.discontinuity == unit->second.positionDiscontinuity)
-        return display->second.position + display->second.correction;
+        return includeVisualCorrection ? display->second.position + display->second.correction : display->second.position;
     // A freshly assigned unit starts its local path at its assignment.
     return Vec{float(unit->second.position->x), float(unit->second.position->y)};
 }

@@ -12,7 +12,7 @@ bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
     if(owned(c,step.item)) return true;
     const auto now=Clock::now();
     Goal leaf;leaf.kind=Kind::Acquire;leaf.item=step.item;
-    if(rememberedDrops.contains(step.item) || observedDrop(c,step.item) || pickupIssued) return acquireItem(c,leaf);
+    if(rememberedDrops.contains(step.item) || observedDrop(c,step.item) || pickup) return acquireItem(c,leaf);
     // A withdrawn opportunity cannot turn a different quest into a search.
     if(goals[cursor].routeDrop==questRun.step && goals[cursor].questId!=step.stateQuest) return false;
     if(step.witness) {
@@ -29,7 +29,7 @@ bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
         if(questRun.sweepReady==Clock::time_point{}) {cancelWalk(c);questRun.sweepReady=now+std::chrono::seconds(90);}
         if(now>=questRun.sweepReady) throw std::runtime_error("Timed quest source produced no observed drop; retaining source and scene");
         wait("quest-drop-spawn","Holding the actual altar's area while normal combat handles its timed monster");
-        guardOpening(c);return false;
+        continuation=Continuation::WorldResult;return false;
     }
     if(step.searchAreas.empty()) throw std::runtime_error("Quest drop has no verified search areas");
     if(questRun.materialPhase>=step.searchAreas.size())

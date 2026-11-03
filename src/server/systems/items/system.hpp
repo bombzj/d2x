@@ -1,10 +1,10 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/native_unit_id.hpp"
 #include "state.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/prepared_rules.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/domain_fact.hpp"
 #include "gameplay/items/state.hpp"
 #include "gameplay/items/generation.hpp"
 #include "gameplay/items/replenishment.hpp"
@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <span>
 
+namespace d2x { class EntityIds; class EntityIdPublication; }
 namespace d2x::server::items {
 // Canonical non-character items; character-owned items remain in PlayerStore.
 struct CreateItem { std::string code; unsigned level{}; ItemGeneration generation; ItemLocation location; };
@@ -101,25 +102,15 @@ class System {
     }
     void clearRestoration(EntityId id) {restoration_.erase(id);ports_.frameEvents.cancelHandler({FrameEventUnit::Item,id},FrameEventType::StatRegeneration,0);}
     DomainResult<> restoreGround(EntityId,uint64_t tick);
-    bool identityCapacity(size_t count) const { return !count || (ports_.ids.cursor()<=UINT32_MAX && count<=uint64_t(UINT32_MAX)-ports_.ids.cursor()+1); }
-    uint64_t identityCursor() const {return ports_.ids.cursor();}
-    std::shared_ptr<EntityIds::Publication> prepareIdentities(uint64_t expected,size_t count) const {
-        if(ports_.ids.cursor()!=expected || !identityCapacity(count)) throw std::logic_error("Stale native item identity allocation");
-        auto publication=ports_.ids.preparePublication(count);
-        for(size_t index=0;index<count;++index) publication->bind(EntityId{expected+index},NativeUnitType::Item);
-        return publication;
-    }
-    void publishIdentities(EntityIds::Publication &publication) noexcept {ports_.ids.publish(publication);}
-    void publishIdentities(uint64_t expected,size_t count) {
-        auto publication=prepareIdentities(expected,count);publishIdentities(*publication);
-    }
-    EntityId reserveIdentity(std::optional<NativeUnitType> type=NativeUnitType::Item) {
-        if(ports_.ids.cursor()>UINT32_MAX) throw std::overflow_error("Native item identity exhausted");
-        return type?ports_.ids.allocate(*type):ports_.ids.allocate();
-    }
+    bool identityCapacity(size_t count) const;
+    uint64_t identityCursor() const;
+    std::shared_ptr<EntityIdPublication> prepareIdentities(uint64_t expected,size_t count) const;
+    void publishIdentities(EntityIdPublication &publication) noexcept;
+    void publishIdentities(uint64_t expected,size_t count);
+    EntityId reserveIdentity(std::optional<NativeUnitType> type=NativeUnitType::Item);
     DomainResult<State> prepare(PreparedBatch, GroundLocation);
     DomainResult<> install(PreparedBatch, GroundLocation);
-    DomainResult<> installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &,uint64_t tick,std::span<const EntityId> identities={},std::shared_ptr<EntityIds::Publication> allocation={},bool flip=true,std::optional<PlayerId> goldOwner={});
+    DomainResult<> installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &,uint64_t tick,std::span<const EntityId> identities={},std::shared_ptr<EntityIdPublication> allocation={},bool flip=true,std::optional<PlayerId> goldOwner={});
     DomainResult<PreparedBatch> prepareNativeGold(unsigned level,uint64_t &random,bool inStore) const;
     struct PlayerGoldSelection {std::string code;unsigned level{};};
     DomainResult<PlayerGoldSelection> selectPlayerGold(RegionId,Vec);

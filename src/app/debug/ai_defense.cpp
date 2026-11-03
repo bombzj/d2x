@@ -147,7 +147,7 @@ bool DebugAi::Impl::avoidHazards(Context &c) {
             (exact-Vec{float(unit.position->x),float(unit.position->y)}).length()<4) {occupied=true;break;}
         if(occupied) continue;
         if(!teleport) {
-            const auto path=c.walk.navigationSearch().path(grid,c.position-offset+Vec{.5f,.5f},local,false,playerMovement,true);
+            const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},local,false,playerMovement,true);
             if(path.empty() || (path.back()-local).length()>1) continue;
             if(!tacticalPathSafe(c,path,offset,hazards)) continue;
         }

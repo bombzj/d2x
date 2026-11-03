@@ -1,3 +1,4 @@
+#include "core/native_unit_ids.hpp"
 #include "system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "runtime.hpp"

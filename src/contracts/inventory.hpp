@@ -9,8 +9,6 @@
 #include <vector>
 
 namespace d2x {
-inline constexpr std::array hirelingEquipmentOrder{EquipmentSlot::Head, EquipmentSlot::Torso,
-    EquipmentSlot::RightHand, EquipmentSlot::LeftHand, EquipmentSlot::Belt, EquipmentSlot::Feet, EquipmentSlot::Gloves};
 struct InventoryDefinitionView {
     bool socketFiller = false, twoHanded = false;
     int targetCursor = -1;

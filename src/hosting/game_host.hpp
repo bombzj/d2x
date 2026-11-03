@@ -2,13 +2,91 @@
 #include "gameplay/environment/time.hpp"
 #include "fixed_step_job.hpp"
 #include "performance.hpp"
-#include "server/game_instance.hpp"
+#include "core/native_unit_id.hpp"
+#include "server/game_commands.hpp"
+#include "gameplay/combat/damage_type.hpp"
+#include <map>
+#include <set>
+#include <string>
+#include <string_view>
 #include <memory>
 #include <functional>
 #include <utility>
 #include <vector>
 
+namespace d2x::server {
+class GameInstance;
+struct AreaMetadata;
+struct AreaView;
+struct CorpseView;
+struct DiagnosticSnapshot;
+struct EventBatch;
+struct GameCommand;
+struct GameDefinition;
+struct MissileFact;
+struct NpcRule;
+struct PreparedMonster;
+struct QuestFact;
+struct RoomView;
+namespace companions {
+struct HirelingListPreparation;
+struct HirelingPreparation;
+struct Preparation;
+struct Prepared;
+struct PreparedHireling;
+struct PreparedHirelingList;
+}
+namespace crafting {
+struct Preparation;
+struct Prepared;
+}
+namespace inventory {
+struct InputState;
+}
+namespace items {
+struct InactiveItemRequest;
+struct PreparedBatch;
+struct PreparedInactiveItem;
+}
+namespace loot {
+struct Preparation;
+}
+namespace merchant {
+struct Preparation;
+struct Prepared;
+}
+namespace monsters {
+struct EquipmentPreparation;
+struct ModifierPreparation;
+struct PreparedEquipment;
+struct PreparedModifiers;
+}
+namespace objects {
+struct Admission;
+struct GroundGenerationRequest;
+struct Object;
+}
+namespace quests {
+struct Preparation;
+struct Prepared;
+}
+namespace travel {
+struct Portal;
+}
+namespace world {
+struct PrepareArea;
+struct PreparedArea;
+}
+}
+
 namespace d2x {
+struct PlayerSnapshot;
+struct MonsterSnapshot;
+struct PetOwnershipSnapshot;
+struct PersistentCharacter;
+struct HirelingRecord;
+struct ItemInstance;
+struct ItemSeeds;
 enum class PointRefund;
 // No window, network, archive or storage dependencies. Call from one host
 // scheduler thread; a future transport posts commands onto that thread.
@@ -33,6 +111,12 @@ class GameHost {
     void publish(size_t slot);
     void advanceStep(size_t slot);
   public:
+    GameHost();
+    ~GameHost();
+    GameHost(GameHost &&) noexcept;
+    GameHost &operator=(GameHost &&) noexcept;
+    GameHost(const GameHost &) = delete;
+    GameHost &operator=(const GameHost &) = delete;
     void observeSteps(std::function<void(const hosting::StepTiming &)> observer);
     PlayerBinding create(server::GameDefinition);
     bool destroy(GameHandle);

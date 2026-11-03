@@ -1,3 +1,5 @@
+#include "core/id.hpp"
+#include "gameplay/monsters/native_spawn.hpp"
 #include "system.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "native_birth.hpp"

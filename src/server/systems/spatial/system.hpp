@@ -1,7 +1,6 @@
 #pragma once
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
 #include "footprint_metrics.hpp"
 #include "server/area_store.hpp"
 

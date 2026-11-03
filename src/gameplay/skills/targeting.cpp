@@ -1,3 +1,4 @@
+#include "core/native_unit_ids.hpp"
 #include "targeting.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <cmath>

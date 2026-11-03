@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/items/equipment_rules.hpp"
 #include "gameplay/combat/stat_modifiers.hpp"
 #include "gameplay/combat/weapon_projectile.hpp"

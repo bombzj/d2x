@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "../system.hpp"
 #include "../native_birth.hpp"
 #include "../native_birth_data.hpp"

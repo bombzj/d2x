@@ -51,12 +51,7 @@ void DebugAi::Impl::observeCombat(Context &c) {
     }
     if(unit->second.hitRevision>combatRun.hitRevision) {combatRun.hitRevision=unit->second.hitRevision;++combatRun.hits;}
 }
-void DebugAi::Impl::guardOpening(Context &c) {
-    guardingOpening=true;
-    if(canInput(c,DebugActionOwner::Combat,DebugMotion|DebugSkill))
-        combat(c,goals.at(cursor),true);
-}
-bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense) {
+bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool planningDefense) {
     const auto &view=c.session.read();const auto now=Clock::now();
     if(!policy.enabled || c.town.read().town || view.world.npcRequested || view.world.waypointSource) return false;
     if(nearbyDefense && (view.world.npcConversation || view.world.waypointRequested || view.world.staffSource ||
@@ -98,19 +93,19 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense) {
          questRun.encounterArea==area && (position(*questRun.encounterPosition)-c.position).length()<=encounterMovementRadius()));
     const auto mustClear=[&](const OnlineUnit &unit) {return clearing && (step->action==QuestAction::Clear || encounterEnemy(c,unit));};
     const auto routeDrop=step?routeDropState(c,goals[cursor]):RouteDrop::None;
-    const bool collecting=step && step->action==QuestAction::SearchDrop && (pickupIssued || observedDrop(c,step->item));
+    const bool collecting=step && step->action==QuestAction::SearchDrop && (pickup || observedDrop(c,step->item));
     const bool seekingElite=!nearbyDefense && routeDrop==RouteDrop::Seek && !clearing && !targetedDrop && !questRun.pending && !questRun.worldWait &&
-        !questTransaction(c) && !objectIssued && !pickupIssued && !portalIssued;
-    const bool teleportTravel=teleportAvailable(c,false) && !clearing && !nearObjective;
-    if (!nearbyDefense && (collecting || (teleportTravel && !seekingElite))) {
+        !questTransaction(c) && !objectIssued && !pickup && !portalIssued;
+    const bool fastTravel=(mobilityPolicy.mode=="teleport" || townExitArea || teleportAvailable(c,false)) && !clearing && !nearObjective;
+    if (!nearbyDefense && (collecting || (fastTravel && !seekingElite))) {
         releaseCombat(c);
         combatTarget.reset(); retreatPoint.reset(); combatRun = {};
-        combatDiagnostics = {{"status", collecting?"quest-drop-pickup":"travel-teleport"}};
+        combatDiagnostics = {{"status", collecting?"quest-drop-pickup":"travel-skip-optional-combat"}};
         return false;
     }
     std::vector<OnlineUnit> enemies;std::optional<OnlineUnit> chosen,obstructed,elite;
     float eliteDistance=float(policy.engage);
-    const bool elitesOnly=!nearbyDefense && (teleportTravel || (step && goals[cursor].routeDrop==questRun.step));
+    const bool elitesOnly=!nearbyDefense && (fastTravel || (step && goals[cursor].routeDrop==questRun.step));
     float nearest=clearing && step->action==QuestAction::Encounter && questRun.worldWait?
         float(std::max(policy.engage,2*encounterMovementRadius())):float(policy.engage);
     float nearestObstructed=nearest;
@@ -118,7 +113,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense) {
         if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false) ||
             (!mustClear(unit) && (!objective || objective->key!=key) && bypassedThreats.contains({key,unit.assignmentRevision}))) continue;
         const float distance=(position(*unit.position)-c.position).length();
-        if(nearbyDefense && distance>policy.radius && key!=combatTarget &&
+        if(nearbyDefense && distance>policy.radius && (planningDefense || key!=combatTarget) &&
             !(view.load.playerUnitId && unit.destinationUnit==OnlineUnitKey{0,*view.load.playerUnitId})) continue;
         const bool candidate=seekingElite && distance<=policy.engage && c.combat.jadeFigurineCandidate(unit);
         if(elitesOnly && !candidate && distance>policy.radius) continue;
@@ -178,7 +173,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense) {
         if(const auto floor=definitions->difficulties.number(*view.load.difficulty,"StaticFieldMin");floor && *floor>=0 && *floor<90)
             staticStop=std::max(25,*floor+5);
     if(combatTarget!=chosen->key || combatRun.assignment!=chosen->assignmentRevision || combatRun.skills.empty()) {
-        releaseCombat(c);cancelWalk(c);combatTarget=chosen->key;combatRun={};
+        releaseCombat(c);if(!planningDefense) cancelWalk(c);combatTarget=chosen->key;combatRun={};
         combatRun.assignment=chosen->assignmentRevision;combatRun.progressAt=combatRun.strategyAt=now;
         combatRun.orbitDirection=(chosen->key.id&1)?1:-1;
         combatRun.openingLife=combatRun.bestLife=combatRun.lastLife=life(*chosen);combatRun.hitRevision=chosen->hitRevision;
@@ -282,7 +277,11 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense) {
         // search cache, and no failed candidate is retried ahead of a better one.
         for(const auto &candidate:candidates) {
             const auto destination=candidate.point;const auto exact=position(destination);
-            const auto path=c.walk.navigationSearch().path(grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
+            if(teleportAvailable(c)) {
+                if((exact-c.position).length()<=mobilityPolicy.distance && TeleportRooms(c).contains(exact)) return destination;
+                continue;
+            }
+            const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
             if(path.empty() || point(path.back()+offset)!=destination || !tacticalPathSafe(c,path,offset,hazards)) continue;
             return destination;
         }
@@ -329,8 +328,8 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense) {
         // consume the shared full-path budget; Teleport validates known landings.
         for(size_t i=0;i<std::min<size_t>(4,candidates.size());++i) {
             const auto destination=candidates[i].point;const auto exact=position(destination);
-            if(teleport) return destination;
-            const auto path=c.walk.navigationSearch().path(grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
+            if(teleport) {if(TeleportRooms(c).contains(exact)) return destination;continue;}
+            const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
             if(path.empty() || point(path.back()+offset)!=destination || path.size()>size_t(policy.kiteDistance*3+4) ||
                 !tacticalPathSafe(c,path,offset,hazards)) continue;
             if(std::any_of(path.begin(),path.end(),[&](Vec p) {const Vec at=p+offset;return (at-c.position).length()>2 &&
@@ -493,24 +492,28 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense) {
         if(const auto at=selectPosition(false,range)) {
             run.triedPositions.emplace(at->x,at->y);
             run.reposition=at;run.approachUntil=now+std::chrono::seconds(8);
-            cancelWalk(c);walkPoint(c,*at);phase="combat-approach";
+            cancelWalk(c);walkPoint(c,*at);wait("combat-approach","Approaching the combat target");
             combatDiagnostics["status"]="approach";note("combat-firing-position",std::to_string(at->x)+","+std::to_string(at->y));
             mobility(c);return true;
         }
         run.obstacle=ray?"no usable approach within attack range":"observed line blocked / no usable approach";
         // Range and line failures belong to navigation. A skill has no
         // damage evidence until a cast was actually submitted.
+        std::optional<OnlinePoint> next;
         if(map && origin) {
-            const auto grid=c.town.navigationGrid(view);
-            const auto path=c.walk.navigationSearch().path(grid,c.position-offset+Vec{.5f,.5f},
-                targetPosition-offset+Vec{.5f,.5f},true,playerMovement,true);
-            if(!path.empty() && tacticalPathSafe(c,path,offset,visibleThreats(c))) {
-                const auto next=point(path.back()+offset);
-                if((position(next)-c.position).length()>1 && run.triedPositions.emplace(next.x,next.y).second) {
-                    run.reposition=next;run.approachUntil=now+std::chrono::seconds(8);
-                    cancelWalk(c);walkPoint(c,next);mobility(c);return true;
-                }
+            const auto hazards=visibleThreats(c);
+            if(teleportAvailable(c)) {
+                if(const auto landing=teleportLanding(c,targetPosition,false);landing && tacticalPositionAllowed(c,*landing) &&
+                    threatClearance(hazards,*landing)>=0) next=point(*landing);
+            } else {
+                const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},
+                    targetPosition-offset+Vec{.5f,.5f},true,playerMovement,true);
+                if(!path.empty() && tacticalPathSafe(c,path,offset,hazards)) next=point(path.back()+offset);
             }
+        }
+        if(next && (position(*next)-c.position).length()>1 && run.triedPositions.emplace(next->x,next->y).second) {
+            run.reposition=next;run.approachUntil=now+std::chrono::seconds(8);
+            cancelWalk(c);walkPoint(c,*next);mobility(c);return true;
         }
         wait("combat-approach","Waiting for a reachable shot or changed target position");
         return true;
@@ -546,7 +549,10 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense) {
     combatDiagnostics["status"]=delayed?"native-skill-delay":"attack";
     if(delayed || now<run.nextCast || (c.supplies && c.supplies->castInputBusy.value_or(false)) ||
         (view.world.combatRequest && view.world.combatRequest->state==OnlineCombatRequest::State::Pending)) return true;
-    cancelWalk(c);OnlineCombatCommand cast;cast.action=OnlineCombatCommand::Action::Cast;
+    // A one-shot from the current feet leaves the travel child and its exit
+    // intent intact. Actual evasive movement still owns its ordinary child.
+    if(!planningDefense) cancelWalk(c);
+    OnlineCombatCommand cast;cast.action=OnlineCombatCommand::Action::Cast;
     cast.hand=hand;cast.target=chosen->key;cast.stationary=true;
     if(skill==definitions->staticFieldSkill) {cast.target.reset();cast.point=point(c.position);}
     // Same held pointer as the ordinary controller. Skills with a known
@@ -556,6 +562,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense) {
         if(!run.strategyCasts) run.strategyAt=now;
         ++run.strategyCasts;
         if(run.staticOpening && skill==definitions->staticFieldSkill) {++run.staticCasts;run.staticCastLife=run.lastLife;}
+        if(planningDefense) mobilityHold=true;
         combatOwned=true;run.repeating=true;++run.casts;++castRequests;lastAttack=now;
         run.kiteAfterCast=rangedKite;
         run.nextCast=now+(delay && *delay>0?std::chrono::milliseconds(int64_t(*delay)*40):debugInputRetryInterval);

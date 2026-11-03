@@ -1,3 +1,4 @@
+#include "gameplay/items/quality_rules.hpp"
 #include "asset_save_recipe.hpp"
 #include "content/items/cube_data.hpp"
 #include "content/items/item_magic_loot.hpp"

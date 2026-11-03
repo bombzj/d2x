@@ -1,4 +1,5 @@
 #include "../system.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"

@@ -1,3 +1,7 @@
+#include "gameplay/character/persistent_character.hpp"
+#include "server/systems/world/system.hpp"
+#include "server/game_messages.hpp"
+#include "server/area_store.hpp"
 #include "native_realm_host.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/loot_content.hpp"

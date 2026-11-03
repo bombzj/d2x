@@ -1,7 +1,7 @@
 #pragma once
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "audio_settings.hpp"
 #include <cstdint>
 #include <map>

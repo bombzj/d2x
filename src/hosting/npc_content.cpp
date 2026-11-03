@@ -1,4 +1,5 @@
 #include "gameplay/quest/catalog.hpp"
+#include "gameplay/quest/prelude_rules.hpp"
 #include "gameplay/maps/pd2/definition.hpp"
 #include "npc_content.hpp"
 #include "content/monsters/monster_catalog.hpp"
@@ -172,6 +173,9 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
     const auto npcRule=[&](const MonsterRecord &record) {
         const auto name=strings.find(record.name);
         auto result=prepareNpcRule(data,speechIndexes,callbacks,record,name.empty()?std::string_view(record.name):name,area.act);
+        if(const auto *arrival=questPreludeForNpc(area.act,record.id))
+            for(const auto text:{arrival->message,arrival->alternate})
+                if(!strings.speech(text).empty()) result.questMessages.insert(text);
         const auto hireling=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry) {
             return entry.seller==record.index && entry.difficulty==1;
         });

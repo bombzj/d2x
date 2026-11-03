@@ -73,7 +73,10 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     if(scene.eclipse) lighting_->setEclipse(*scene.eclipse);
     lighting_->setDenIntensity(scene.denIntensity);
     lighting_->setSanctumIntensity(scene.sanctumIntensity);
-    if(scene.cloakDuration) lighting_->beginCloak(*scene.cloakDuration,level.id);
+    if(scene.ambientFade) {
+        const auto &fade=*scene.ambientFade;
+        lighting_->beginAmbientFade(fade.level,fade.down,fade.hold,fade.up);
+    }
     lighting_->advance(scene.elapsed, level);
     assets_.prepareWorldTiles(map, scene.palette);
     if (map.terrain.preparedRooms)

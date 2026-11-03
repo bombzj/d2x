@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "../system.hpp"
 #include "server/area_store.hpp"
 #include "gameplay/maps/pd2/definition.hpp"

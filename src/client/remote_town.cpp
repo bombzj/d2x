@@ -76,7 +76,8 @@ Grid RemoteTown::navigationGrid(const OnlineView &online,std::optional<OnlineUni
     // Identity of this ephemeral collision view for debug-query continuation.
     // Hash the derived masks, not unit packets/timestamps: movement unrelated
     // to collision must not invalidate an otherwise identical query domain.
-    uint64_t collisionRevision=navigationRevision();
+    const uint64_t terrainRevision=navigationRevision()*0x100000001b3ULL+terrain->nativeCollisionRevision;
+    uint64_t collisionRevision=terrainRevision;
     for(const auto &[cell,mask]:*presence) {
         collisionRevision=(collisionRevision^uint32_t(cell.first))*0x100000001b3ULL;
         collisionRevision=(collisionRevision^uint32_t(cell.second))*0x100000001b3ULL;
@@ -86,6 +87,24 @@ Grid RemoteTown::navigationGrid(const OnlineView &online,std::optional<OnlineUni
     result.collisionSample=[terrain,presence](int x,int y,EntityId target) {
         const auto found=presence->find({x,y});
         return uint16_t(terrain->nativeMovementMask(x,y,target)|(found==presence->end()?0:found->second));
+    };
+    // Freeze on demand on the client thread. A moving unit only changes the
+    // sparse overlay, so avoid a map lookup per terrain cell on every change.
+    result.copyMovementMasks=[this,terrain,presence,terrainRevision] {
+        const int stride=terrain->width+2;
+        if(navigationMaskRevision_!=terrainRevision) {
+            std::vector<uint16_t> masks(size_t(stride)*(terrain->height+2));
+            for(int y=-1;y<=terrain->height;++y) for(int x=-1;x<=terrain->width;++x)
+                masks[size_t(y+1)*stride+(x+1)]=terrain->nativeMovementMask(x,y);
+            navigationMasks_=std::move(masks);navigationMaskRevision_=terrainRevision;
+        }
+        auto masks=navigationMasks_;
+        for(const auto &[cell,mask]:*presence) {
+            const auto [x,y]=cell;
+            if(x>=-1 && y>=-1 && x<=terrain->width && y<=terrain->height)
+                masks[size_t(y+1)*stride+(x+1)]|=mask;
+        }
+        return masks;
     };
     return result;
 }
@@ -784,7 +803,8 @@ std::optional<RemoteTown::NavigationObservation> RemoteTown::navigationObservati
     for(const auto value:{int64_t(seed->second),int64_t(act),int64_t(level),int64_t(bounds.x),int64_t(bounds.y)})
         fingerprint.add(std::to_string(value));
     if(known.width!=bounds.width+1 || known.height!=bounds.height+1 || known.layoutFingerprint!=fingerprint.value()) return {};
-    return NavigationObservation{bounds.x,bounds.y,known.width,known.height,known.seen,observationExtent_};
+    return NavigationObservation{bounds.x,bounds.y,known.width,known.height,known.seen,observationExtent_,
+        catalog_->level(level).generation==GenerationKind::Outdoor};
 }
 std::optional<OnlinePoint> RemoteTown::knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const {
     const auto found=knownTargetPositions_.find({area,type,identity});
@@ -823,6 +843,11 @@ std::optional<OnlinePoint> RemoteTown::fixedCanyonTombPosition(uint16_t destinat
     }
     const auto found=canyonHints_.find(destination);
     return found==canyonHints_.end()?std::nullopt:std::optional{found->second};
+}
+std::optional<uint16_t> RemoteTown::assignedUnitLevel(OnlineUnitKey key) const {
+    const auto it=unitRooms_.find(key);
+    if(!view_.nativeMapReady || !nativeMap_ || it==unitRooms_.end()) return {};
+    return uint16_t(nativeMap_->tiles().rooms().at(it->second.room).level);
 }
 std::optional<OnlinePoint> RemoteTown::knownWaypointPosition(uint16_t area) const {
     const auto found=knownWaypoints_.find(area);return found==knownWaypoints_.end()?std::nullopt:std::optional{found->second};

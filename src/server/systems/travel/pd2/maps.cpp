@@ -1,3 +1,4 @@
+#include "gameplay/items/quality_rules.hpp"
 #include "../system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/world/system.hpp"

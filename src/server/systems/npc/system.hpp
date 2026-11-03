@@ -1,17 +1,17 @@
 #pragma once
+#include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
+#include "gameplay/quest/id.hpp"
 #include "server/area_store.hpp"
 #include "gameplay/npc/intents.hpp"
 #include <deque>
 #include <span>
 #include <utility>
+namespace d2x { struct CharacterRecord; }
+namespace d2x::server { struct NpcMessagesFact; }
 namespace d2x::server::npc {
-struct StopForClick { EntityId target; Vec observed; };
-using Intent = std::variant<TalkToNpc, EndNpcConversation,ConfirmNpcVoice,StopForClick>;
-struct Request { Intent intent; };
-struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::map<uint16_t,QuestId> pendingQuests; EntityId actor{}; uint64_t areaGeneration{}; std::optional<uint16_t> pendingIntroduction{}; bool refresh{}; };
+struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::map<uint16_t,QuestId> pendingQuests; EntityId actor{}; uint64_t areaGeneration{}; std::optional<uint16_t> pendingIntroduction{},pendingArrival{}; bool refresh{}; };
 struct ServiceAccess { const AreaNpc *npc; const Conversation *conversation; };
 struct Escape {RegionId area;Vec destination;std::deque<Vec> route;bool escaped{};};
 struct HirelingSlot {uint16_t name{};uint32_t seed{};bool available{},hired{};};

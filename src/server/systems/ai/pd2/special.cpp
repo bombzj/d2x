@@ -7,6 +7,7 @@
 #include "server/systems/attributes/monster_resources.hpp"
 #include "gameplay/combat/life.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/pd2_random.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/monsters/movement_math.hpp"

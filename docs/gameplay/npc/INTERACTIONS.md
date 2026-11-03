@@ -6,13 +6,13 @@
 
 NPC是所连接服务端的真实type1单位，位置／模式、对白、任务提示和服务资格均由该服务端提供。中立单位不使用敌对替身；组件／原图由公共ActorAnimation／Graphics解析。
 
-原版 LoD 1.13c `D2Client 4B955→46770` 在确认交谈时清除旧 NPC 提示；`479DA` 忽略正在交谈 NPC 的新 8A。客户端已同步这两个条件，后续提醒仍由新 8A 决定。`4BA48→A5600` 的交谈朝向已补入显示层，保留原类537／538／539／527的固定朝向例外；不修改服务端位置或交互距离。本批待用户运行验收。
+原版 LoD 1.13c `D2Client 4B955→46770` 在确认交谈时清除旧 NPC 提示；`479DA` 忽略正在交谈 NPC 的新 8A。客户端已同步这两个条件，后续提醒仍由新 8A 决定。`4BA48→A5600` 的交谈朝向已补入显示层，保留原类537／538／539／527的固定朝向例外；不修改服务端位置或交互距离。交谈前另有待机转向分支。零售 D2Client RVA `4F577–4F60E` 对 MonStats.interact、非 critter／佣兵且处于 NU 的单位，按双方原生尺寸距离 <7、每次客户端游戏帧抽取 <10/100 转向本人；此处分开排除类537／538／539。显示层按该条件使用单位本地表现随机流，实际转身时刻待对照。
 
 ## 宿主NPC移动与地图动作
 
 `hosting/npc_content.cpp`按当前MPQ的MonStats.AI区分Npc、Towner、NpcStationary、JarJar和NpcOutOfTown，准备Velocity、aidel、MonStats2.mS1／mS2及原AnimData时钟；DS1单位预设的MapAI节点连同动作号完整传入该出生点的MonsterRule，使用全局子格坐标。节点不按自定义半径、当前碰撞或动作号预先删减，不为缺路径的NPC合成随机闲逛。NPC的AI／模式事件和碰撞移动由同一个monsters::Actor执行，城镇门控允许这些非战斗AI；原协议仍由公共monster_replication发布；S1／S2显式朝向经Actor→MonsterSnapshot→原6B／6C动作包传递，不再统一写0。
 
-权威入口为`server/systems/ai/town_npc.cpp`，对照本地D2MOO `AiThink.cpp::AITHINK_Fn032_Npc/Fn041_Towner/Fn054_NpcStationary`、`AITHINK_ExecuteMapAiAction`、`sub_6FCE61E0/6270/6340/64D0/69A0`及AiTactics移动辅助。Npc／Towner首次记录command10原地坐标并等待20帧；MapAI先掷66%再从全部节点抽一个，1／3为走位，2保留20次等待，4／5保留走位、command4等待及command7的S1／S2动作；缺少该模式时沿原NU50分支。动作支持来自当前MPQ，不伪造S1／S2资源。已有路线在结束前继续执行，交谈暂停，NpcStationary保持原位。Fn032提醒接近使用原SetVelocity路径类型1，MapAI普通走位使用类型7；不能共用直线路径。Npc的任务提醒对象查询在近房间单位顺序中取首个满足FullUnitSize距离15和现有任务提醒资格的玩家，保留接近、问候18、60次冷却及command10距离16分支；Towner不执行该玩家接近分支。休眠保留MapAI及NPC的command10原点，临时command4／7及问候计数在重建AI时重新开始，不写角色档。
+权威入口为`server/systems/ai/town_npc.cpp`，对照本地D2MOO `AiThink.cpp::AITHINK_Fn032_Npc/Fn041_Towner/Fn054_NpcStationary`、`AITHINK_ExecuteMapAiAction`、`sub_6FCE61E0/6270/6340/64D0/69A0`及AiTactics移动辅助。Npc／Towner首次记录command10原地坐标并等待20帧；MapAI先掷66%再从全部节点抽一个，1／3为走位，2保留20次等待，4／5保留走位、command4等待及command7的S1／S2动作；缺少该模式时沿原NU50分支。动作支持来自当前MPQ，不伪造S1／S2资源。已有路线在结束前继续执行，交谈暂停，NpcStationary保持原位。Fn032 的 `SetVelocity(1,0,0)` 在 AiTactics 内转为路径类型7，零售 D2Game RVA `19D4C` 直接写7；接近按双方原生子格计算短步坐标，保留一步参数。Npc的任务提醒对象查询在近房间单位顺序中取首个满足FullUnitSize距离15和现有任务提醒资格的玩家，保留接近、问候18、60次冷却及command10距离16分支。Fn032／Fn054 在选中有资格的玩家时向该人发8A；A1–A4的Q0欢迎资格取本人当前难度的原任务位。无合格目标时Fn032继续原DS1地图动作。Towner不执行该玩家接近分支。休眠保留MapAI及NPC的command10原点，临时command4／7及问候计数在重建AI时重新开始，不写角色档。
 
 定点只读核对本机1.13c D2Game.dll，MD5 `978f6f74cd031bce6ecee602cd5988cc`、ImageBase `6FC20000`：AI表第32／41／54项分别为RVA `1DB40/1BC60/19880`，MapAI选择为`1BBC0`。Npc的交互辅助`19C20`在`19C62–19C67`要求交互结构非空；本地D2MOO `sub_6FCE5EE0`的该判空方向有转录错误，不能照搬为“有交互结构就跳过”。`16A30`读取全局绕行计数，不能照搬D2MOO局部零变量；执行器在实例内保留该计数。预设传递及休眠依据为D2MOO `SUNIT_SpawnPresetUnit`、`SUNITINACTIVE_*`与`DRLGPRESET_CreateCopyOfMapAI/ChangeMapAI`。
 

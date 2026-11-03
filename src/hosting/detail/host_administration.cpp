@@ -1,3 +1,8 @@
+#include "gameplay/character/persistent_character.hpp"
+#include "server/runtime/diagnostics.hpp"
+#include "server/systems/objects/system.hpp"
+#include "server/systems/items/system.hpp"
+#include "server/game_messages.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/combat_content.hpp"
 #include "hosting/item_content.hpp"

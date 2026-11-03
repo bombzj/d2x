@@ -1,3 +1,4 @@
+#include "gameplay/items/quality_rules.hpp"
 #include "equipment_stats.hpp"
 #include "definitions.hpp"
 #include "state.hpp"

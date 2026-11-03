@@ -1,3 +1,6 @@
+#include "server/systems/merchant/system.hpp"
+#include "content/classic_data.hpp"
+#include "hosting/game_host.hpp"
 #include "merchant_content.hpp"
 #include "gameplay/items/charges.hpp"
 #include "character_content.hpp"

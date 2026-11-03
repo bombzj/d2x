@@ -80,10 +80,11 @@ bool DebugAi::Impl::worldResultReady(const Context &c,const QuestStep &step) con
         if(step.target) if(const auto unit=find(c,*step.target,true)) return onlineMonsterCorpse(*unit) || c.combat.monsterTargetEligible(*unit,false);
         return false;
     case QuestAction::Portal:
-        if(step.cinematic) return world.cinematic==step.cinematic;
-        if(step.area==c.town.read().area) return true;
+        if(step.cinematic && world.cinematic==step.cinematic) return true;
+        if(step.area==c.town.read().area) return !step.cinematic;
         if(step.target) if(const auto portal=find(c,*step.target,true))
             return c.town.permitsInteraction(c.session.read(),portal->key);
+        if(step.cinematic) return false;
         return std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &target) {
             return target.interaction==OnlineMapInteraction::Portal && target.destination==step.area &&
                 c.town.permitsInteraction(c.session.read(),target.unit);
@@ -113,13 +114,16 @@ void DebugAi::Impl::waitForWorldResult(Context &c,const QuestStep &step,std::str
         questRun.worldWait=std::move(pending);note("world-wait-started",std::string(expected));
     }
     wait("quest-world-result",std::string(expected));
-    if(!step.clearCombat) guardOpening(c);
+    if(!step.clearCombat) continuation=Continuation::WorldResult;
 }
 void DebugAi::Impl::observeWorldWait(Context &c) {
     if(!questRun.worldWait || cursor>=goals.size() || questRun.step>=goals[cursor].steps.size()) return;
     const auto &step=goals[cursor].steps[questRun.step];auto &pending=*questRun.worldWait;
     // Facts are checked even while input is suspended and before deadlines.
-    if(worldResultReady(c,step)) {note("world-result-observed",pending.expected);questRun.worldWait.reset();return;}
+    if(worldResultReady(c,step)) {
+        note("world-result-observed",pending.expected);questRun.worldWait.reset();
+        continuation=Continuation::WorldResult;return;
+    }
     if(c.town.read().area && c.town.read().area!=pending.area) {
         note("world-wait-left-scene",pending.expected);questRun.worldWait.reset();return;
     }
@@ -210,7 +214,11 @@ std::optional<OnlinePoint> DebugAi::Impl::encounterStance(Context &c,OnlinePoint
     std::stable_sort(candidates.begin(),candidates.end(),[](const auto &a,const auto &b){return a.score<b.score;});
     for(const auto &candidate:candidates) {
         const Vec at{float(candidate.point.x),float(candidate.point.y)};
-        const auto path=c.walk.navigationSearch().path(grid,c.position-offset+Vec{.5f,.5f},at-offset+Vec{.5f,.5f},false,playerMovement,true);
+        if(teleportAvailable(c)) {
+            if((at-c.position).length()<=mobilityPolicy.distance && TeleportRooms(c).contains(at)) return candidate.point;
+            continue;
+        }
+        const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},at-offset+Vec{.5f,.5f},false,playerMovement,true);
         if(!path.empty() && (path.back()-(at-offset+Vec{.5f,.5f})).length()<1 && tacticalPathSafe(c,path,offset,hazards)) return candidate.point;
     }
     return {};

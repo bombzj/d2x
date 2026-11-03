@@ -1,6 +1,6 @@
 #pragma once
 #include "formula_parameters.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include <cstdint>
 #include <functional>
 #include <memory>

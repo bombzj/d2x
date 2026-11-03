@@ -238,7 +238,7 @@ Grid RemoteScene::Impl::navigationCollision(const Grid &terrain,Vec origin,Onlin
                 pattern=NativeCollisionPattern::SmallNoPresence;mask=0x8000;
             }
         }
-        const auto point=localUnitPosition(key);if(!point) continue;
+        const auto point=localUnitPosition(key,false);if(!point) continue;
         const int x=int(std::floor(point->x+.5f)),y=int(std::floor(point->y+.5f));
         for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx)
             if(const auto value=nativeCollisionFootprint(pattern,dx,dy,mask)) occupied.emplace_back(Cell{x+dx,y+dy},value);
@@ -268,7 +268,9 @@ Grid RemoteScene::Impl::navigationCollision(const Grid &terrain,Vec origin,Onlin
 void RemoteScene::Impl::plan(Motion &m, Vec goal, const Map &map, Vec origin, MovementCollisionRule rule, float speed,
           const OnlineUnit &unit, std::optional<OnlineUnitKey> target) {
     m.route.clear(); m.goal = goal;
-    m.pathStep.reset(); m.pathElapsed = 0;
+    // A monster retargets between render frames without restarting its
+    // 25 Hz clock. NativePathStep detects a changed precise origin itself.
+    if(unit.key.type!=1) {m.pathStep.reset();m.pathElapsed=0;}
     if (speed <= 0 || rule.size <= 0) return;
     // Native precise coordinates target cell centers; presentation adds
     // its half-cell offset when drawing. Match the control planner here.
@@ -476,7 +478,8 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     const Vec origin{float(mapOrigin.x), float(mapOrigin.y)};
     // Camera and actor rendering consult this method in the same frame.
     if (m.updatedAt == time) return m.position + m.correction;
-    const float elapsed = m.updatedAt < 0 ? 0 : std::clamp(time - m.updatedAt, 0.f, .1f);
+    const float frameTime = m.updatedAt < 0 ? 0 : std::max(0.f,time-m.updatedAt);
+    const float elapsed = std::min(frameTime,.1f);
     m.updatedAt = time;
     const bool own = u.key.type == 0 && u.key.id == playerId;
     if (m.npcClickStopped && (m.actionRevision != u.actionRevision || m.positionRevision != u.positionRevision ||
@@ -494,6 +497,10 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     }
     const auto rule = movementRule(u);
     const bool alive = u.key.type == 0 ? !playerDead(u) : !onlineMonsterCorpse(u);
+    const bool monsterCheck=!pd2 && u.key.type==1 && u.positionCheckMode.has_value();
+    const bool stopSample=monsterCheck && u.mode==1 && !u.actionSkill && u.wireAction==7 &&
+        m.actionRevision!=u.actionRevision;
+    if(m.actionRevision!=u.actionRevision || m.npcClickStopped || !alive) m.stopDestination.reset();
     // A handoff suppresses the old native walk after an attack starts. It
     // must not suppress the next attack's approach when its target escaped:
     // packet/world revisions may advance during the preceding animation.
@@ -513,6 +520,8 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         m.position = target;
     } else if (m.discontinuity != u.positionDiscontinuity) {
         m.position = target; m.correction = {}; m.correctionLeft = 0;
+        m.stopDestination.reset();
+        m.pathStep.reset(); m.pathElapsed=0;
         m.route.clear(); m.samples.clear(); m.goal.reset(); m.pathMoving = false;
         if(pd2 || m.playerLeap) {
             m.invalidatedSkillMovement=own && localCast?localCast->revision:u.actionRevision;
@@ -524,6 +533,34 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         if (beginCast && localCast) m.castRevision = localCast->revision;
         if (request) m.invalidatedRequest = request->revision;
         activeRequest = false;
+    } else if(monsterCheck && m.positionRevision!=u.positionRevision && alive) {
+        // Retail 1.13c AF2B0 -> 2A1B0; action 7 (4E981..4EA01)
+        // approaches a nearby stop on a real path when either axis exceeds 1.
+        const int dx=std::abs(int(std::floor(m.position.x+.5f))-int(u.position->x));
+        const int dy=std::abs(int(std::floor(m.position.y+.5f))-int(u.position->y));
+        const int error=std::max(dx,dy),mode=*u.positionCheckMode;
+        const int tolerance=(mode>=3 && mode<=5)?5:(mode>=6 && mode<=11)?7:15;
+        if(stopSample) {m.route.clear();m.goal.reset();m.pathMoving=false;}
+        if(error>tolerance) {
+            m.position=target;m.correction={};m.correctionLeft=0;m.pathStep.reset();m.pathElapsed=0;
+            m.stopDestination.reset();corrected=true;
+        } else if(stopSample && error>1 && !(u.pathType && u.pathDistance && u.velocityPercent)) {
+            // Assignment can be followed by a stop before any walking
+            // packet. Reconcile that sample without inventing a path speed.
+            const auto displayed=m.position+m.correction;
+            m.position=target;
+            m.correction=map.grid.segment(target-origin,displayed-origin,{},rule)?displayed-target:Vec{};
+            m.correctionLeft=.12f;
+        } else if(stopSample && error>1 && u.pathType && u.pathDistance && u.velocityPercent && !m.npcClickStopped) {
+            const auto row=monsterRows.find(unitClass(u).value_or(UINT16_MAX));
+            if(row!=monsterRows.end()) {
+                const auto extra=monsterExtra.find(monstats.value(row->second,"MonStatsEx"));
+                const auto effects=combatBinding->states().find(u.key);
+                const bool attached=effects!=combatBinding->states().end() && effects->second.states.contains(0x8f);
+                if(!attached && extra!=monsterExtra.end() && monstats2.number(extra->second,"mWL").value_or(0))
+                    m.stopDestination=target;
+            }
+        }
     } else if (own && !request && m.requestRevision && !beginCast) {
         // An interaction intent stops the local approach before the next
         // sparse resource sample. Retain its precise endpoint until an
@@ -547,9 +584,8 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         // stop the path without supplying a current position. Keep the
         // continuous feet instead of returning to the last native sample.
         // Fresh position samples, including DEAD, still reconcile below.
-        m.position = m.position + m.correction;
-        m.correction = {}; m.correctionLeft = 0; m.pathMoving = false;
-    } else if ((m.positionRevision != u.positionRevision && *m.last != *u.position &&
+        m.pathMoving = false;
+    } else if ((m.positionRevision != u.positionRevision && (u.key.type==1 || *m.last != *u.position) &&
                 !(own && u.positionRevision==u.pathVerificationRevision)) ||
                (m.actionRevision != u.actionRevision && !walking(u)) ||
                (own && m.requestRevision && !request && m.goal)) {
@@ -574,11 +610,11 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
               std::abs(lag.x * m.castHandoff->direction.y - lag.y * m.castHandoff->direction.x) <=
                   std::max(1.f, m.castHandoff->direction.length()) &&
               map.grid.segment(target - origin, displayed - origin, {}, rule)));
-        const bool behind = previousPath || seenOnPath || stoppedWalkSample || (m.goal && (activeRequest || walking(u)) &&
+        const bool behind = previousPath || seenOnPath || stoppedWalkSample || (u.key.type==0 && m.goal && (activeRequest || walking(u)) &&
             lag.x * ahead.x + lag.y * ahead.y >= 0 &&
             std::abs(lag.x * ahead.y - lag.y * ahead.x) <= 2.f * std::max(1.f, ahead.length()) &&
             map.grid.segment(target - origin, displayed - origin, {}, rule));
-        if (!behind) {
+        if (!behind && (m.position.x!=target.x || m.position.y!=target.y)) {
             m.position = target; m.correction = displayed - target; m.correctionLeft = .12f;
             corrected = true;
         }
@@ -605,7 +641,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
             if (item == world().items.end() || item->second.mode != 3) return {};
             return Vec{float(item->second.groundX), float(item->second.groundY)};
         }
-        if (key->type <= 1) return localUnitPosition(*key);
+        if (key->type <= 1) return localUnitPosition(*key,false);
         const auto found = world().units.find(*key);
         if (found == world().units.end() || !found->second.position) return {};
         const auto p = *found->second.position; return Vec{float(p.x), float(p.y)};
@@ -628,6 +664,8 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         // nor reposition its owner. D2Client 1.13c RVA 2A1B0 sends 5F on
         // excessive drift and leaves precise movement to the local path.
         m.running = request->run && (!world().stamina || *world().stamina != 0);
+    } else if(m.stopDestination) {
+        goal=m.stopDestination;m.running=false;
     } else if (alive && walking(u) && !m.npcClickStopped && !m.castHandoff && !(own && request &&
                request->revision <= m.invalidatedRequest && u.actionRevision < request->revision)) {
         if (u.destination) goal = Vec{float(u.destination->x), float(u.destination->y)};
@@ -694,11 +732,18 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     }
     if(u.key.type==0) m.movementTiming=playerTiming(u,m.running,clients);
     const float speed = knocked ? 25.f : movementSpeed(u);
+    float pathElapsed=elapsed;
     if (goal && !knocked) {
-        const bool changedTarget = !m.goal || (u.key.type == 0 && playerTarget
+        const bool movingUnitTarget=playerTarget.has_value() || (u.key.type==1 && u.destinationUnit.has_value());
+        const bool changedTarget = !m.goal || (movingUnitTarget
             ? (std::floor(m.goal->x+.5f) != std::floor(goal->x+.5f) ||
                std::floor(m.goal->y+.5f) != std::floor(goal->y+.5f))
             : (*m.goal - *goal).length() > .5f);
+        // A retained monster path runs on game ticks, even across a slow
+        // render frame. Do not charge that gap to a new order or position.
+        if(u.key.type==1 && !changedTarget && !m.route.empty() && m.positionRevision==u.positionRevision &&
+            m.actionRevision==u.actionRevision && m.discontinuity==u.positionDiscontinuity)
+            pathElapsed=frameTime;
         // A fresh ordinary input must retry a path stopped by dynamic
         // collision, even when its pointer target is unchanged. Otherwise
         // the retained goal prevents replanning forever after the blocker
@@ -711,9 +756,11 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     } else if(!knocked) { m.route.clear(); m.goal.reset(); }
     m.actionRevision = u.actionRevision;
     m.requestRevision = request ? request->revision : 0;
+    std::optional<Grid> stepCollision;
     const auto advanceRoute = [&](float remaining) {
         bool obstructed = false;
-        const auto movementGrid=navigationCollision(map.grid,origin,u.key);
+        if(!stepCollision) stepCollision.emplace(navigationCollision(map.grid,origin,u.key));
+        const auto &movementGrid=*stepCollision;
         while (!m.route.empty() && remaining > 0) {
             if (playerPathArrived(m.position) || monsterPathArrived(m.position)) { m.route.clear(); m.goal.reset(); break; }
             const auto next = m.route.front(), delta = next - m.position;
@@ -767,9 +814,9 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     if (u.key.type == 0 || (u.key.type == 1 && !knocked)) {
         // Ordinary dynamic paths use the same 25Hz step as authority, while
         // presentation frames only accumulate time for that simulation.
-        if (m.route.empty()) m.pathElapsed = 0;
+        if (m.route.empty() || speed<=0) m.pathElapsed = 0;
         else {
-            m.pathElapsed += elapsed;
+            m.pathElapsed += pathElapsed;
             while (m.pathElapsed >= NativePathStep::seconds) {
                 m.pathElapsed -= NativePathStep::seconds;
                 advanceRoute(speed * NativePathStep::seconds);
@@ -785,6 +832,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     // same game frame. Keep walking between 25Hz steps, but never add a
     // rendering-time grace period after arrival, collision or cancellation.
     m.pathMoving=!m.route.empty() && speed>0;
+    if(!m.pathMoving) m.stopDestination.reset();
     m.last = u.position;
     m.positionRevision = u.positionRevision;
     m.discontinuity = u.positionDiscontinuity;

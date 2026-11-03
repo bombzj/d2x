@@ -2,7 +2,6 @@
 #include "server/game_messages.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
 
 #include <map>
 #include <set>

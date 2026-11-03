@@ -1,3 +1,6 @@
+#include "gameplay/character/persistent_character.hpp"
+#include "server/game_messages.hpp"
+#include "server/area_store.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/protocol/gameplay_dispatch.hpp"
 #include "persistence/save_codec.hpp"

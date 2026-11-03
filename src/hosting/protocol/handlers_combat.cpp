@@ -1,3 +1,5 @@
+#include "server/game_messages.hpp"
+#include "hosting/game_host.hpp"
 #include "gameplay_dispatch.hpp"
 namespace d2x::hosting::handlers {
 RequestResult LegacySkillEnd(GameplayContext &, net::protocol::Reader &) { return {RequestStatus::Completed}; }

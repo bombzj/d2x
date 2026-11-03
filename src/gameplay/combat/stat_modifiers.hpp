@@ -1,5 +1,6 @@
 #pragma once
-#include "core/id.hpp"
+#include <utility>
+#include "core/entity_id.hpp"
 #include "gameplay/items/skill_sources.hpp"
 #include "gameplay/combat/damage_type.hpp"
 #include "gameplay/combat/pd2/item_modifiers.hpp"

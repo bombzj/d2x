@@ -328,7 +328,7 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
             if(modeCompletes) return true;
         } else {
             wait("quest-object-result","Waiting for the actual object mode/quest flag");checkQuestPending(c);
-            guardOpening(c);return false;
+            continuation=Continuation::WorldResult;return false;
         }
     }
     std::optional<Selector> selector=step.target;
@@ -384,7 +384,7 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
                 questRun.pending.reset();cancelWalk(c);return false;
             }
             wait("quest-portal-activation","Waiting for OPENED, including the MPQ silent ENDANIM deadline");
-            checkQuestPending(c);guardOpening(c);return false;
+            checkQuestPending(c);continuation=Continuation::WorldResult;return false;
         } else wait("quest-portal-result","Waiting for the actual quest destination scene");
         checkQuestPending(c);return false;
     }
@@ -411,7 +411,7 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
                     const auto mode=c.town.projectedObjectMode(c.session.read(),target.unit);
                     if(!mode || *mode==1) {
                         wait("quest-portal-activation","The assigned entrance is still operating; waiting for its MPQ ENDANIM");
-                        guardOpening(c);return false;
+                        continuation=Continuation::WorldResult;return false;
                     }
                     activation=*mode==0;
                     if(*mode==2 && definitions->objects.number(row,"OperateFn")==66) {
@@ -422,6 +422,7 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
                             }
                     }
                 }
+        if(!activation && waypointBeforeDeparture(c)) return false;
         const Json intent{{"goal","unit"},{"unitType",interactionUnit.type},{"unitId",interactionUnit.id},{"interact",true},
             {"purpose","quest-portal"},{"activation",activation}};
         if(walk(c,intent)) observeQuestInteraction(c,intent);
@@ -547,6 +548,7 @@ bool DebugAi::Impl::questActTravel(Context &c,const Goal &goal,const QuestStep &
         wait("quest-act-flags","Destination town observed; waiting for final quest/change flags");checkQuestPending(c);return false;
     }
     if(questRun.pending) {wait("quest-act-travel-result","Waiting for the real normal act transfer");checkQuestPending(c);return false;}
+    if(waypointBeforeDeparture(c)) return false;
     const auto npc=find(c,*step.target);
     if(!npc) {if(!approachKnown(c,*step.target)) explore(c,"the actual NPC act travel service");return false;}
     const auto &world=c.session.read().world;

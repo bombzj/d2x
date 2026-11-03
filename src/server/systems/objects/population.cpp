@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/objects/system.hpp"
 #include "server/systems/spatial/system.hpp"

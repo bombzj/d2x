@@ -233,6 +233,14 @@ Grid Grid::linkedNavigation(Vec &origin) const {
     };
     return view;
 }
+std::vector<uint16_t> Grid::movementMaskSnapshot() const {
+    if(copyMovementMasks) return copyMovementMasks();
+    const int stride=width+2;
+    std::vector<uint16_t> masks(size_t(stride)*(height+2));
+    for(int y=-1;y<=height;++y) for(int x=-1;x<=width;++x)
+        masks[size_t(y+1)*stride+(x+1)]=movementMask(x,y);
+    return masks;
+}
 uint16_t Grid::nativeMovementMask(int x,int y,EntityId ignored) const {
     const auto sample=[&](const Grid &grid,int column,int row) {
         if(grid.nativeCollision.empty()) return grid.movementMask(column,row,ignored);
@@ -265,6 +273,9 @@ uint16_t Grid::nativeMovementMask(int x,int y,EntityId ignored) const {
 }
 bool Grid::navigationContains(Vec point) const {
     if (!std::isfinite(point.x) || !std::isfinite(point.y)) return false;
+    if(neighbours.empty() && navigationSources.empty())
+        return point.x>=0 && point.y>=0 && point.x<width && point.y<height &&
+            movementMask(int(std::floor(point.x)),int(std::floor(point.y)))!=0xffff;
     Vec origin;
     const auto view = linkedNavigation(origin);
     point = point - origin;
@@ -679,11 +690,21 @@ std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisio
     if (allowPartial && !walkable(to, rule)) {
         nearestPossible = std::numeric_limits<float>::infinity();
         const int gx = goal % width, gy = goal / width;
-        for (int radius = 1; radius <= std::max(width, height) && radius <= nearestPossible; ++radius)
-            for (int y = std::max(0, gy - radius); y <= std::min(height - 1, gy + radius); ++y)
-                for (int x = std::max(0, gx - radius); x <= std::min(width - 1, gx + radius); ++x)
-                    if ((std::abs(x - gx) == radius || std::abs(y - gy) == radius) && walkable(x, y, rule))
-                        nearestPossible = std::min(nearestPossible, heuristic(y * width + x));
+        const auto consider=[&](int x,int y) {
+            if(x>=0 && x<width && walkable(x,y,rule))
+                nearestPossible=std::min(nearestPossible,heuristic(y*width+x));
+        };
+        // Visit only the perimeter. Scanning each square's interior to skip
+        // it made a blocked goal deep in unknown terrain cubic in radius.
+        for(int radius=1;radius<=std::max(width,height) && radius<=nearestPossible;++radius) {
+            for(int y=std::max(0,gy-radius);y<=std::min(height-1,gy+radius);++y) {
+                if(std::abs(y-gy)==radius) {
+                    for(int x=std::max(0,gx-radius);x<=std::min(width-1,gx+radius);++x) consider(x,y);
+                } else {
+                    consider(gx-radius,y);consider(gx+radius,y);
+                }
+            }
+        }
     }
     costs[start] = 0;
     int closest = start;

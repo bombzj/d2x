@@ -1,3 +1,6 @@
+#include "server/game_messages.hpp"
+#include "server/runtime/game_command.hpp"
+#include "hosting/game_host.hpp"
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting {

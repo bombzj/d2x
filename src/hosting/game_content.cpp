@@ -1,3 +1,5 @@
+#include "gameplay/character/persistent_character.hpp"
+#include "server/game_definition.hpp"
 #include "game_content.hpp"
 #include "character_content.hpp"
 #include "combat_content.hpp"

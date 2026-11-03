@@ -1,6 +1,6 @@
 #pragma once
 #include "core/fixed.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/combat/stats.hpp"
 #include "gameplay/combat/poison.hpp"
 #include "gameplay/combat/open_wounds.hpp"

@@ -1,3 +1,4 @@
+#include "gameplay/character/persistent_character.hpp"
 #include "monster_sources.hpp"
 #include "monster_resources.hpp"
 #include "server/systems/monsters/system.hpp"

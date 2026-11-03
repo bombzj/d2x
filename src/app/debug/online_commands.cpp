@@ -99,8 +99,13 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     result["scene"]["localCast"] = scene.localCastSkill ? Json{{"skill", *scene.localCastSkill}, {"age", scene.localCastAge}} : Json(nullptr);
     result["scene"]["clientMissiles"] = Json::array();
     result["scene"]["monsters"] = Json::array();
-    for(const auto &m:scene.monsters) result["scene"]["monsters"].push_back({{"id",m.id},{"classId",m.classId},
-        {"name",m.name},{"modifiers",m.modifiers},{"transform",m.transform},{"randomTransform",m.random},{"effectHidden",m.effectHidden}});
+    for(const auto &m:scene.monsters) {
+        Json actor={{"id",m.id},{"classId",m.classId},{"name",m.name},{"modifiers",m.modifiers},
+            {"transform",m.transform},{"randomTransform",m.random},{"effectHidden",m.effectHidden}};
+        if(m.motion) actor["motion"]={{"sample",{m.motion->sample.x,m.motion->sample.y}},{"path",{m.motion->path.x,m.motion->path.y}},
+            {"display",{m.motion->display.x,m.motion->display.y}},{"positionRevision",m.motion->positionRevision},{"walkingToStop",m.motion->walkingToStop}};
+        result["scene"]["monsters"].push_back(std::move(actor));
+    }
     for (const auto &missile : scene.clientMissiles)
         result["scene"]["clientMissiles"].push_back({{"id", missile.id}, {"age", missile.age}, {"remaining", missile.remaining},
             {"position", {{"x", missile.position.x}, {"y", missile.position.y}}},

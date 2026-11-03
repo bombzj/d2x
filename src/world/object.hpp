@@ -3,7 +3,7 @@
 #include "gameplay/model/definitions.hpp"
 #include "world/collision.hpp"
 #include "world/object_animation.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include <array>
 #include <cstdint>
 #include <deque>

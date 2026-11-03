@@ -1,3 +1,6 @@
+#include "server/systems/quests/preparation.hpp"
+#include "content/classic_data.hpp"
+#include "hosting/game_host.hpp"
 #include "quest_content.hpp"
 #include "character_content.hpp"
 #include "item_content.hpp"

@@ -1,3 +1,6 @@
+#include "server/systems/companions/preparation.hpp"
+#include "server/game_messages.hpp"
+#include "hosting/game_host.hpp"
 #include "companion_content.hpp"
 #include "assassin_summon_content.hpp"
 #include "druid_summon_content.hpp"

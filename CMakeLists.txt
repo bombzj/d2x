@@ -8,11 +8,11 @@ if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
 endif()
 include(cmake/Dependencies.cmake)
 
-add_library(d2x_core INTERFACE)
-target_include_directories(d2x_core INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_compile_features(d2x_core INTERFACE cxx_std_20)
+add_library(d2x_core src/core/id.cpp src/core/native_unit_ids.cpp)
+target_include_directories(d2x_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(d2x_core PUBLIC cxx_std_20)
 if(WIN32)
-  target_compile_definitions(d2x_core INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_compile_definitions(d2x_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
 add_library(d2x_resources
@@ -74,7 +74,10 @@ add_library(d2x_rules
 target_link_libraries(d2x_rules PUBLIC d2x_core)
 
 add_library(d2x_items
-  src/gameplay/items/definitions.cpp src/gameplay/items/stat_evaluation.cpp
+  src/gameplay/items/definitions.cpp
+  src/gameplay/items/quality.cpp
+  src/gameplay/items/replenishment.cpp
+  src/gameplay/items/pd2/charges.cpp src/gameplay/items/stat_evaluation.cpp
   src/gameplay/items/property_program.cpp src/gameplay/items/skill_sources.cpp
   src/gameplay/items/inventory_error.cpp src/gameplay/items/equipment_rules.cpp
   src/gameplay/items/equipment_combat.cpp
@@ -96,6 +99,8 @@ add_library(d2x_content
     src/content/pd2/summon_data.cpp
     src/content/pd2/curse_data.cpp
   src/content/classic_data.cpp src/content/lod_data.cpp src/content/pd2/town_data.cpp src/content/world/world_catalog.cpp
+  src/content/world/object_mode.cpp
+  src/content/pd2_stash.cpp
   src/content/monsters/monster_catalog.cpp src/content/skills/description_formula.cpp
   src/content/skills/description_data.cpp src/content/skills/formula_data.cpp
   src/content/skills/description_values.cpp src/content/skills/skill_description.cpp
@@ -175,7 +180,10 @@ add_library(d2x_gameplay
   src/gameplay/skills/aura_resolve.cpp src/gameplay/skills/stat_callbacks.cpp
   src/gameplay/skills/equipment.cpp src/gameplay/skills/passive.cpp
   src/gameplay/skills/targeting.cpp src/gameplay/skills/weapon_damage.cpp
-  src/gameplay/skills/amazon_magic.cpp src/gameplay/monsters/melee_decision.cpp
+  src/gameplay/skills/amazon_magic.cpp
+  src/gameplay/skills/amazon_missile.cpp
+  src/gameplay/skills/amazon_sequence.cpp
+  src/gameplay/skills/barbarian_sequence.cpp src/gameplay/monsters/melee_decision.cpp
   src/gameplay/monsters/skirmish_decision.cpp src/gameplay/monsters/act2_decision.cpp
   src/gameplay/monsters/curse_decision.cpp src/gameplay/monsters/ranged_decision.cpp
   src/gameplay/monsters/special_decision.cpp src/gameplay/monsters/shaman_decision.cpp
@@ -188,6 +196,10 @@ add_library(d2x_gameplay
   src/gameplay/units/restoration.cpp src/gameplay/units/resources.cpp
   src/gameplay/consumables/potions.cpp src/gameplay/events/frame_queue.cpp
   src/gameplay/effects/native_status.cpp src/gameplay/quest/den_of_evil.cpp
+  src/gameplay/quest/prelude_rules.cpp
+  src/gameplay/quest/catalog.cpp
+  src/gameplay/quest/acts/act_two_state.cpp
+  src/gameplay/quest/acts/act_five_state.cpp
   src/gameplay/character/respec.cpp src/gameplay/quest/burial_grounds.cpp
   src/gameplay/quest/search_for_cain.cpp src/gameplay/quest/forgotten_tower.cpp
   src/gameplay/quest/tools_of_trade.cpp src/gameplay/quest/sisters_to_slaughter.cpp
@@ -521,7 +533,8 @@ add_library(d2x_presentation
   src/presentation/graphics/primitives.cpp src/presentation/graphics/original_menu.cpp
   src/presentation/scene_assets.cpp src/presentation/actors/actor_animation.cpp
   src/presentation/scene_view.cpp src/presentation/hud/skill_assets.cpp
-  src/presentation/hud/hud_controls.cpp src/presentation/hud/skill_controller.cpp
+  src/presentation/hud/hud_controls.cpp
+  src/presentation/hud/hud_layout.cpp src/presentation/hud/skill_controller.cpp
   src/presentation/hud/classic_hud.cpp src/presentation/hud/chat_view.cpp
   src/presentation/hud/escape_menu.cpp
   src/presentation/control_bindings.cpp
@@ -538,7 +551,8 @@ add_library(d2x_presentation
   src/presentation/inventory/storage_view.cpp src/presentation/inventory/cube_view.cpp
   src/presentation/inventory/belt_view.cpp src/presentation/inventory/inventory_view.cpp
   src/presentation/inventory/inventory_controller.cpp src/presentation/audio/scene_audio.cpp
-  src/presentation/npc/hireling_view.cpp src/presentation/npc/client_views.cpp
+  src/presentation/npc/hireling_view.cpp
+  src/presentation/npc/hireling_panel.cpp src/presentation/npc/client_views.cpp
   src/presentation/npc/commerce_controller.cpp src/presentation/hud/pet_portraits.cpp
   src/presentation/world/automap_assets.cpp src/presentation/world/automap_view.cpp
   src/presentation/world/automap_projection.cpp
@@ -572,6 +586,7 @@ add_executable(d2x
   src/app/debug/navigation_search.cpp
   src/app/debug/chat_command.cpp
   src/app/debug/ai.cpp
+  src/app/debug/ai_behavior_log.cpp
   src/app/debug/ai_navigation.cpp
   src/app/debug/ai_local_travel.cpp
   src/app/debug/ai_execution.cpp
@@ -592,7 +607,7 @@ add_executable(d2x
   src/app/debug/ai_quest_items.cpp
   src/app/debug/ai_quest_actions.cpp
 )
-target_link_libraries(d2x PRIVATE d2x_presentation d2x_remote_client d2x_character_host d2x_hash nlohmann_json::nlohmann_json)
+target_link_libraries(d2x PRIVATE Threads::Threads d2x_presentation d2x_remote_client d2x_character_host d2x_hash nlohmann_json::nlohmann_json)
 if(WIN32)
   target_link_libraries(d2x PRIVATE advapi32 dbghelp imm32)
 endif()

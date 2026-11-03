@@ -1,3 +1,4 @@
+#include "server/systems/companions/preparation.hpp"
 #include "assassin_summon_content.hpp"
 #include "companion_content.hpp"
 #include "monster_actions_content.hpp"

@@ -1,4 +1,5 @@
 #pragma once
+#include "level_spawn_entry.hpp"
 #include "core/random.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <optional>
@@ -6,7 +7,6 @@
 #include <utility>
 
 namespace d2x {
-struct NativeLevelSpawnEntry {int definition{-1};bool randomSpawn{};};
 // MONSTERSPAWN_SpawnRandomMonsterForLevel always uses Levels.mon, including
 // Nightmare/Hell. Advance the selected index before the first isSpawn probe;
 // a failed spawn of the first eligible class never tries a different class.

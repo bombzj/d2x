@@ -1,3 +1,4 @@
+#include "core/id.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "world/maze.hpp"
 #include "region.hpp"

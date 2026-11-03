@@ -41,6 +41,8 @@ class RemoteTown {
     AutomapExploration explored_;
     AutomapExploration navigationObserved_;
     Vec observationExtent_;
+    mutable std::optional<uint64_t> navigationMaskRevision_;
+    mutable std::vector<uint16_t> navigationMasks_;
     std::string navigationProfile_;
     uint32_t navigationObjectSeed_{};
     bool navigationRestored_{};
@@ -134,10 +136,12 @@ class RemoteTown {
         int tileX{},tileY{},width{},height{};
         std::span<const uint8_t> seen;
         Vec halfExtent; // x-y and x+y axes, from the rendered world viewport.
+        bool outdoor{};
     };
     std::optional<NavigationObservation> navigationObservation() const;
     std::optional<OnlinePoint> knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const;
     std::optional<OnlinePoint> knownConnectionPosition(uint16_t from,uint16_t to) const;
+    std::optional<uint16_t> assignedUnitLevel(OnlineUnitKey) const;
     std::optional<OnlinePoint> knownWaypointPosition(uint16_t area) const;
     // Fixed authored canyon entrances only; never chooses the true tomb.
     std::optional<OnlinePoint> fixedCanyonTombPosition(uint16_t destination) const;

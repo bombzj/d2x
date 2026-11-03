@@ -1,3 +1,5 @@
+#include "server/game_messages.hpp"
+#include "server/runtime/events.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/native_combat_wire.hpp"
 #include "hosting/native_item_wire.hpp"

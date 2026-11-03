@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/effects/definition.hpp"
 #include "gameplay/effects/spec.hpp"
 #include "gameplay/stats/stat_list.hpp"

@@ -68,7 +68,11 @@ struct OnlineSceneView {
     bool playerDisplayed{};
     std::optional<Vec> playerDisplayPosition; // Presentation coordinates; never used as authority.
     std::vector<OnlinePlayerDisplay> players;
-    struct MonsterDisplay { uint32_t id{}; uint16_t classId{}; std::string name, modifiers; int transform{}; bool random{}, effectHidden{}; };
+    struct MonsterMotion { OnlinePoint sample; Vec path,display; uint64_t positionRevision{}; bool walkingToStop{}; };
+    struct MonsterDisplay {
+        uint32_t id{}; uint16_t classId{}; std::string name, modifiers; int transform{}; bool random{}, effectHidden{};
+        std::optional<MonsterMotion> motion;
+    };
     std::vector<MonsterDisplay> monsters;
     std::optional<uint16_t> area;
     std::optional<uint8_t> palette;

@@ -61,7 +61,8 @@ bool DebugAi::Impl::exploreLocalPad(Context &c) {
     if(padTransfersWithoutDiscovery>=16)
         throw std::runtime_error("Local teleport exploration exhausted its no-discovery budget; retaining observed links and scene");
     const Vec offset{float(origin->x),float(origin->y)},from=c.position-offset+Vec{.5f,.5f};
-    const auto grid=c.town.navigationGrid(view);
+    const auto &grid=map->grid;
+    const bool canTeleport=teleportAvailable(c);
     const OnlineMapTarget *chosen=nullptr;float best=std::numeric_limits<float>::max();
     for(const auto &entry:c.town.read().mapTargets) {
         if(entry.interaction!=OnlineMapInteraction::TeleportPad) continue;
@@ -73,7 +74,7 @@ bool DebugAi::Impl::exploreLocalPad(Context &c) {
         const auto observed=padObservations.find(key);
         if(observed!=padObservations.end() && now-observed->second.used<std::chrono::seconds(2)) continue;
         float score=span+(observed==padObservations.end()?0.f:1000.f+float(observed->second.visits)*100.f);
-        if(!c.town.interactionReady(view,entry.unit,c.position)) {
+        if(!canTeleport && !c.town.interactionReady(view,entry.unit,c.position)) {
             const auto path=c.walk.navigationSearch().path(grid,from,at-offset+Vec{.5f,.5f},true,playerMovement,true);
             // A disconnected platform can be reached with normal Teleport or
             // after further observation. Lack of a walking path is not proof

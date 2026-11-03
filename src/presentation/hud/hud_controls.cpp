@@ -24,6 +24,10 @@ void SceneView::drawHostilityWarning() const {
         image->texture.width * classicPanelScale(), image->texture.height * classicPanelScale()});
 }
 namespace {
+// MPQ frame pairs: character, inventory, skills, party, automap, messages,
+// quests, menu. Values are the semantic actions consumed by SceneController.
+constexpr std::array<int, 8> hudMiniActions{0, 1, 2, 4, 3, 7, 5, 6};
+
 void imageAt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
     if (!image || !image->texture.id)
         return;

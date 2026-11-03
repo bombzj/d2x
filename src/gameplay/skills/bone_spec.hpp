@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "core/math.hpp"
 #include "gameplay/combat/stats.hpp"
 #include <array>

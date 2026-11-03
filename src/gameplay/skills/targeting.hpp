@@ -1,11 +1,12 @@
 #pragma once
 #include "core/math.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/monsters/rank.hpp"
 #include <cstdint>
 #include <span>
 
 namespace d2x {
+class NativeUnitIds;
 enum class SkillAreaCoordinates { TruncatedCells, FlooredCells, Continuous };
 // Callers retain relation, room, collision and target ordering rules.
 bool withinSkillArea(Vec origin, Vec target, float radius, SkillAreaCoordinates coordinates);

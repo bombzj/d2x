@@ -1,7 +1,7 @@
 #pragma once
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/environment_fact.hpp"
 #include "server/area_store.hpp"
 #include "world/room_terrain.hpp"
 
@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+namespace d2x { class EntityIds; }
 namespace d2x::server::world {
 // Area activation and prepared-area handoff; generation stays in the host.
 enum class Residency { Prepared, Active, Sleeping };

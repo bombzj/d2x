@@ -18,6 +18,7 @@
 #include <deque>
 #include <string_view>
 #include <span>
+namespace d2x { class EntityIds; }
 namespace d2x::server {struct SkillRules;struct RoomUnitRegistration;}
 namespace d2x {class SkillFormulaValues;}
 namespace d2x::server::actions {class State;}

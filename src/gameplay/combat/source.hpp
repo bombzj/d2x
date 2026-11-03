@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "alignment.hpp"
 #include <compare>
 #include <cstdint>

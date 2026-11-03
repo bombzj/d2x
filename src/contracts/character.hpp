@@ -1,5 +1,6 @@
 #pragma once
-#include "core/id.hpp"
+#include <string_view>
+#include "core/entity_id.hpp"
 #include "animation_timing.hpp"
 #include "gameplay/character/intents.hpp"
 #include "gameplay/character/display.hpp"

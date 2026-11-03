@@ -5,6 +5,7 @@
 #include "world/map.hpp"
 #include <span>
 
+namespace d2x { class EntityIds; }
 namespace d2x {
 class MonsterCatalog;
 struct Region {

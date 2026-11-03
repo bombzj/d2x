@@ -1,3 +1,4 @@
+#include "gameplay/items/quality_rules.hpp"
 #include "content/monsters/monster_identity.hpp"
 #include "remote_inventory.hpp"
 #include "content/pd2_stash.hpp"

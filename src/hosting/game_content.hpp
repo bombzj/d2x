@@ -1,5 +1,5 @@
 #pragma once
-#include "server/game_instance.hpp"
+#include "server/game_definition.hpp"
 #include "world/generated_area.hpp"
 
 namespace d2x {

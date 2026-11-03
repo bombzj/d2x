@@ -1,7 +1,6 @@
 #pragma once
 #include "core/bytes.hpp"
 #include "hosting/character_directory.hpp"
-#include "gameplay/character/persistent_character.hpp"
 #include "resources/atomic_file.hpp"
 #include <filesystem>
 #include <map>
@@ -9,6 +8,7 @@
 
 namespace d2x {
 struct ClassicData;
+struct PersistentCharacter;
 // Server-side repository. UI identities never become filesystem paths.
 class CharacterStore {
   public:

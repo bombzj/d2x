@@ -1,5 +1,5 @@
 #pragma once
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "core/math.hpp"
 #include "server/player_identity.hpp"
 #include "world/interaction_geometry.hpp"

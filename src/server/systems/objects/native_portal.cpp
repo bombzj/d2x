@@ -1,3 +1,4 @@
+#include "server/runtime/events.hpp"
 #include "system.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/systems/maps/system.hpp"

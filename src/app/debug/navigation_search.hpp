@@ -1,17 +1,19 @@
 #pragma once
+#include <utility>
 #include "world/navigation.hpp"
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <nlohmann/json_fwd.hpp>
 #include <source_location>
 #include <string>
 #include <tuple>
 
 namespace d2x {
-// Cooperative yield, not an unreachable route or an action failure. Only the
-// debug decision boundary catches this; submitted requests keep their owner.
+bool debugUnknownFrontier(const Grid &,Vec endpoint);
+// A pending background result is distinct from an empty completed route.
 struct DebugSearchPending {};
 class DebugNavigationSearch {
     using Clock=std::chrono::steady_clock;
@@ -21,6 +23,8 @@ class DebugNavigationSearch {
     // Reachability only: a prefix of an already checked route is a proof,
     // not a claim that it is the shortest route to another candidate.
     std::map<Key,Key> reachable_;
+    static constexpr int wallBlock=32;
+    std::map<std::pair<int,int>,std::array<uint8_t,wallBlock*wallBlock>> wallDistances_;
     std::array<uint64_t,3> context_{};
     size_t points_{};
     uint64_t frames_{},queries_{},hits_{},proofHits_{},yields_{},resets_{},segmentReuses_{};
@@ -29,13 +33,38 @@ class DebugNavigationSearch {
     std::string lastFile_,slowestFile_;
     uint_least32_t lastLine_{},slowestLine_{};
     Vec slowestFrom_{},slowestTo_{};
-    Clock::time_point started_{};
+    class Worker;
+    std::unique_ptr<Worker> worker_;
+    [[noreturn]] void defer(bool travel=false);
+    uint64_t componentSearches_{},routeJoins_{};
+    struct Anchor {Vec from; Clock::time_point touched;};
+    std::map<std::pair<float,float>,Anchor> travelAnchors_;
+    Clock::time_point lastDeferred_{},waitingSince_{};
+    uint64_t lastDeferredFrame_{};
+
     bool yielded_{};
   public:
-    static constexpr unsigned queryBudget=8;
-    static constexpr double microsecondBudget=2000;
+    DebugNavigationSearch();
+    ~DebugNavigationSearch();
+    struct TravelRoute {Vec origin;std::deque<Vec> points;};
+    TravelRoute travelRoute(const Grid &terrain,Vec from,Vec to,bool partial=false,
+                            std::source_location caller=std::source_location::current());
+    std::deque<Vec> joinTravelRoute(const Grid &terrain,const Grid &live,Vec from,Vec to);
+    struct Component {Bytes cells;std::vector<Vec> frontiers;};
+    const Component &connectionComponent(const Grid &,Vec from);
+    bool prolongedWait() const;
+    void noteTravelWait();
     void beginFrame(uint64_t game,uint64_t area,uint64_t geometry);
     void clear();
+    static constexpr int explorationClearance=6; // AI policy, in native subtiles.
+    static constexpr int wallSearchRadius=explorationClearance+3;
+    static float wallCost(int clearance) {
+        return clearance<explorationClearance?2.f*(explorationClearance-clearance):float(clearance-explorationClearance);
+    }
+    int wallClearance(const Grid &terrain,Vec at);
+    Vec explorationLane(const Grid &terrain,const Grid &collision,Vec from,Vec onRoute,Vec onward,bool walking);
+    static constexpr int townClearance=4; // Preferred space at bends, never a collision requirement.
+    Vec townWalkLane(const Grid &terrain,const Grid &collision,Vec from,Vec onRoute,Vec onward);
     std::deque<Vec> path(const Grid &,Vec from,Vec to,bool partial=false,
                         MovementCollisionRule rule={},bool native=false,
                         std::source_location caller=std::source_location::current());

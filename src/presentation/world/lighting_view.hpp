@@ -41,8 +41,8 @@ class LightingView {
     bool eclipse_ = false;
     std::optional<int> denIntensity_;
     std::optional<int> sanctumIntensity_;
-    int cloakLevel_{-1},cloakFrame_{},cloakRise_{},cloakTotal_{},cloakAngle_{};
-    float cloakFactor_{1};
+    int fadeLevel_{-1},fadeFrame_{},fadeDown_{},fadeRise_{},fadeTotal_{},fadeAngle_{};
+    float fadeFactor_{1};
     Vec origin_{};
     Color ambient_{};
     struct Sources;
@@ -62,7 +62,7 @@ class LightingView {
     void setEclipse(bool active);
     void setDenIntensity(std::optional<int> intensity) { denIntensity_=intensity; }
     void setSanctumIntensity(std::optional<int> intensity) { sanctumIntensity_=intensity; }
-    void beginCloak(int duration,int level);
+    void beginAmbientFade(int level,int down,int hold,int up);
     void prepare(const Grid &grid, const LevelRecord &level, Vec player, int radius, Color playerColor,
                  std::span<const SceneLight> lights, std::span<const SceneLightRegion> regions,
                  Rectangle worldBounds);

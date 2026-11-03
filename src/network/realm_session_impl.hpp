@@ -135,7 +135,9 @@ struct RealmSession::Impl {
     std::function<void(uint64_t, const Packet &)> gamePacketObserver;
     std::function<void(uint64_t, std::span<const uint8_t>)> gameRequestObserver;
     size_t worldBytes{};
-    Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{}, lastGameReceive{}, nextMovement{};
+    Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{}, lastGameReceive{};
+    Bytes lastNavigationPacket;
+    Clock::time_point lastNavigationSent{};
     std::optional<uint32_t> initializedNpc;
     std::map<uint32_t,Clock::time_point> doorHighlights;
     Clock::time_point npcDeadline{}, waypointDeadline{}, playerTradeDeadline{};
@@ -189,6 +191,7 @@ struct RealmSession::Impl {
     bool require_navigation(const OnlineIntentContext &context);
     void finish_pickup(OnlineItemRequest::State state);
     void observed(OnlineProtocolCounters &counters, const Packet &packet, size_t header);
+    bool duplicateNavigation(const Bytes &packet);
     void sent(ByteStream &stream, Bytes bytes);
     void send_sid(uint8_t id, Writer out = {});
     void send_mcp(uint8_t id, Writer out = {});

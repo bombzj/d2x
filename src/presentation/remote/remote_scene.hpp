@@ -22,7 +22,7 @@ struct RemoteMapDisplayState {
     Vec offset;
     struct QuestEffects {
         uint64_t gameGeneration{},denOccurrence{};
-        uint64_t forgeOccurrence{},staffOccurrence{};
+        uint64_t cairnOccurrence{},forgeOccurrence{},staffOccurrence{};
         std::optional<OnlinePoint> openedTombEntrance;
         uint64_t nihlathakOccurrence{};
         uint64_t anyaOccurrence{};

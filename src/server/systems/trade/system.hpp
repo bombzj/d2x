@@ -1,18 +1,19 @@
 #pragma once
+#include <memory>
+#include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
 #include "gameplay/items/handle.hpp"
-#include "server/systems/transactions/system.hpp"
+#include "gameplay/items/state.hpp"
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
 
+namespace d2x::server::transactions { struct InventoryEdit; }
+namespace d2x::server { struct EquipmentRules; }
+namespace d2x { struct PersistentCharacter; }
 namespace d2x::server::trade {
-// Two-player offers reference items; final exchange uses one atomic transaction.
-enum class Action { Invite, Accept, Cancel, Agree, Revoke, OfferGold };
-struct Request { Action action; std::optional<PlayerId> peer; uint64_t revision{}; unsigned gold{}; };
 struct Mirror { EntityId id; uint32_t flags{}; };
 using Mirrors=std::map<EntityId,Mirror>;
 struct Offer {

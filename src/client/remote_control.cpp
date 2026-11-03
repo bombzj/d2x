@@ -28,7 +28,6 @@ bool RemoteControl::submitSegment(Movement &movement, std::optional<OnlinePoint>
         const auto found = view.world.units.find(*movement.unit);
         if (found == view.world.units.end() || !found->second.position)
             return reject("Movement target is no longer assigned");
-        movement.goal = *found->second.position;
     }
     const Vec origin = movement.requestOrigin.value_or(Vec{float(player.x),float(player.y)});
     const float dx = float(movement.goal.x) - origin.x, dy = float(movement.goal.y) - origin.y;
@@ -41,11 +40,11 @@ bool RemoteControl::submitSegment(Movement &movement, std::optional<OnlinePoint>
     // behind the moving server player and waits for samples between legs.
     if (movement.unit) {
         if (!session_.move_to_unit(*movement.unit, movement.run, movement.context, stopNpc))
-            return reject(view.error ? view.error->message : "Unit movement is rate limited");
+            return reject(session_.read().error ? session_.read().error->message : "Unit movement was not submitted");
         movement.finalUnit = true;
     } else {
         if (!session_.move_to(movement.goal, movement.run, movement.context))
-            return reject(view.error ? view.error->message : "Movement request is rate limited");
+            return reject(session_.read().error ? session_.read().error->message : "Movement request was not submitted");
         movement.segment = movement.goal;
     }
     const auto &sent = session_.read();
@@ -91,7 +90,8 @@ bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run, std::optional<Onl
     scene_.update(session_.read(), displayOrigin);
     if (!scene_.permitsInteraction(session_.read(), target)) return reject("Target is not assigned in the current scene");
     const auto player = *session_.read().world.playerPosition;
-    const auto point = *session_.read().world.units.at(target).position;
+    const auto sample = *session_.read().world.units.at(target).position;
+    const auto point = target.type==1 && npcPathPosition_ ? npcPathPosition_(target).value_or(sample) : sample;
     const Vec origin = displayOrigin.value_or(Vec{float(player.x), float(player.y)});
     if (!std::isfinite(origin.x) || !std::isfinite(origin.y) ||
         std::abs(origin.x - point.x) > 50 || std::abs(origin.y - point.y) > 50)
@@ -115,7 +115,8 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<Onlin
     const auto &world = session_.read();
     if (!scene_.permitsInteraction(world, target)) return reject("Target is not assigned in the current scene");
     const auto player = *world.world.playerPosition;
-    const auto point = *world.world.units.at(target).position;
+    const auto sample = *world.world.units.at(target).position;
+    const auto point = target.type==1 && npcPathPosition_ ? npcPathPosition_(target).value_or(sample) : sample;
     if (displayOrigin && (!std::isfinite(displayOrigin->x) || !std::isfinite(displayOrigin->y) ||
         displayOrigin->x < 0 || displayOrigin->y < 0 || displayOrigin->x > UINT16_MAX || displayOrigin->y > UINT16_MAX))
         return reject("Interaction projection origin is invalid");
@@ -129,8 +130,8 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<Onlin
     const auto &targets = scene_.read().mapTargets;
     std::optional<OnlinePoint> stopNpc;
     if (std::any_of(targets.begin(), targets.end(), [&](const auto &entry) { return entry.unit == target && entry.stopNpcOnClick; }))
-        stopNpc = npcPathPosition_ ? npcPathPosition_(target).value_or(point) : point;
-    if (!followUntilServerArrival && scene_.interactionReady(world, target, displayOrigin, false, stopNpc)) {
+        stopNpc = point;
+    if (!followUntilServerArrival && scene_.interactionReady(world, target, displayOrigin, false, point)) {
         if (!submitInteraction(target, *context, stopNpc)) return false;
         if (stopNpc && stopNpcPath_) stopNpcPath_(target);
         cancelMovement(); reason_.clear(); return true;
@@ -157,7 +158,7 @@ bool RemoteControl::submitInteraction(OnlineUnitKey target, const OnlineIntentCo
         submitted.revision=session_.read().world.revision;interactionSubmission_=submitted;
     };
     if (target.type == 1) {
-        if (!session_.interact_npc(target.id, context, stopNpc)) return reject(session_.read().error ? session_.read().error->message : "Interaction is rate limited");
+        if (!session_.interact_npc(target.id, context, stopNpc)) return reject(session_.read().error ? session_.read().error->message : "Interaction is already pending or open");
         remember();
         const auto now=std::chrono::steady_clock::now();
         opening_=Opening{target,onlineIntentContext(session_.read()),0,0,
@@ -168,7 +169,7 @@ bool RemoteControl::submitInteraction(OnlineUnitKey target, const OnlineIntentCo
     if (entry == scene_.read().mapTargets.end()) return reject("Interaction target is no longer assigned");
     const auto intent = entry->interaction == OnlineMapInteraction::Stash ? OnlineObjectIntent::Stash
         : entry->interaction == OnlineMapInteraction::Waypoint ? OnlineObjectIntent::Waypoint : OnlineObjectIntent::Operate;
-    if (!session_.interact_map_unit(target, intent, context)) return reject(session_.read().error ? session_.read().error->message : "Interaction is rate limited");
+    if (!session_.interact_map_unit(target, intent, context)) return reject(session_.read().error ? session_.read().error->message : "Interaction is already pending or open");
     remember();
     if(target.type==5 || intent==OnlineObjectIntent::Waypoint) {
         const auto &view=session_.read();const auto now=std::chrono::steady_clock::now();
@@ -225,7 +226,7 @@ bool RemoteControl::townPortal() {
         if (quantity != world.itemSkillQuantities.end() ? quantity->second != 0
             : level != world.playerSkills.end() && level->second != 0) {
             if (!session_.create_town_portal(skill)) return reject(session_.read().error
-                ? session_.read().error->message : "Portal creation is rate limited");
+                ? session_.read().error->message : "Portal creation was not submitted");
             cancelMovement(); reason_.clear(); return true;
         }
     }

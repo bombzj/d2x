@@ -364,7 +364,7 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
     if(supplyStage!=SupplyStage::None) return supplyDetour(c,goal);
     if(questTransaction(c) || questRun.pending) return false;
     const auto &world=c.session.read().world;
-    if(potionRequest || objectIssued || pickupIssued || portalAttempted || portalIssued || pendingDoor || mobilityTarget ||
+    if(potionRequest || objectIssued || pickup || portalAttempted || portalIssued || pendingDoor || mobilityTarget ||
         world.npcRequested || world.waypointSource || world.waypointRequested || world.townPortalPending ||
         world.storage.kind!=OnlineStorageKind::None || world.storage.requested!=OnlineStorageKind::None ||
         (goal.kind==Kind::Deliver && actionDeadline!=Clock::time_point{}) ||
@@ -435,6 +435,7 @@ bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
             wait("supply-return-wait","Waiting for the original area's native scene");return true;
         }
         const auto &view=c.session.read();
+        if(waypointBeforeDeparture(c)) return true;
         if(c.town.read().town) for(const auto &entry:c.town.read().mapTargets) {
             const auto u=view.world.units.find(entry.unit);
             if(entry.interaction!=OnlineMapInteraction::Portal || entry.destination!=supplyOrigin || u==view.world.units.end() || u->second.portalOwner!=view.load.playerUnitId) continue;

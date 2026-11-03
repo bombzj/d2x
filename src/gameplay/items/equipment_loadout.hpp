@@ -1,6 +1,6 @@
 #pragma once
 #include "gameplay/items/equipment_rules.hpp"
-#include "core/id.hpp"
+#include "core/entity_id.hpp"
 #include "gameplay/items/errors.hpp"
 #include <array>
 #include <functional>

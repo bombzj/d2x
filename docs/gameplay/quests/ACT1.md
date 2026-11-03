@@ -15,7 +15,9 @@
 | 交易的工具 | ToolsOfTheTrade | A1Q3 | 4 | 2 | 3 |
 | 屠戮的姐妹 | SistersToTheSlaughter | A1Q6 | 5 | 5 | 6 |
 
-五石柱演出已接零售 `D2Client BB8F0` 的 CltDo24：当前 MPQ 的 cairnstones 控制飞弹驱动落雷和同房间石柱连线，子飞弹、参数及图像取 MPQ，门仍由原服务端时序产生。原版依据为 A1Q4 末石操作创建288及本机1.13c DLL；本批待用户实测，完整视觉随机流与房间单位交错未宣称逐帧一致。
+第五石按正确顺序点亮后，原版 Host 广播 `89 01`。1.13c 客户端 FX1（RVA 52D00）在本地玩家邻近房间查找 Alpha 石柱（17），在柱脚创建 cairnstones（288）。CltDo24（BB8F0）产生落雷和同房间石柱连线。环境光按当前 MPQ 的 Param1／Range 渐暗、保持、恢复（40／220／40 帧），离开石块旷野即结束该光照效果。服务端另在 Lambda 柱偏移（+6，−3）建立控制飞弹，按自身时序开启红门。已补 D2X 的 FX1 广播和客户端入口，音画仍待实机复验。
+
+[原版 Host 抓包](../../development/AI_TEST_REC.md)中，native-04 的 seq3262 已指派 Alpha 柱，seq3441 收到 FX1，约 7.3 秒后 seq3525 才指派通往 38 区的红门。
 
 ## 边界与依据
 

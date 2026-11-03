@@ -1,3 +1,4 @@
+#include "gameplay/character/persistent_character.hpp"
 #include "character_creation.hpp"
 #include "content/classic_data.hpp"
 #include <algorithm>

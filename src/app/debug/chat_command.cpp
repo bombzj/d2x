@@ -71,6 +71,11 @@ std::vector<std::string> debugChatSummary(const nlohmann::json &reply) {
                 std::to_string(steps)+"; "+progress.at("action").dump());
         }
         const auto reason=ai.value("reason",std::string{});if(!reason.empty()) lines.push_back("Reason: "+reason);
+        if(const auto log=ai.find("behaviorLog");log!=ai.end()) {
+            const auto file=log->value("file",std::string{}),error=log->value("error",std::string{});
+            if(!file.empty()) lines.push_back("AI log: "+file);
+            if(!error.empty()) lines.push_back("AI log error: "+error);
+        }
     } else if(reply.contains("navigation")) {
         const auto &nav=reply.at("navigation");
         lines.push_back("Walk "+nav.at("state").get<std::string>());

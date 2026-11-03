@@ -256,7 +256,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     auto hostFrame = std::chrono::steady_clock::now();
     RemoteControl control(town, session);
     DebugAutoWalk debugWalk;
-    DebugAi debugAi(archives);
+    const auto packetDirectory=std::filesystem::path(options.gamePacketLog).parent_path();
+    DebugAi debugAi(archives,options.gamePacketLog.empty()?std::filesystem::path("logs"):
+        packetDirectory.empty()?std::filesystem::path("."):packetDirectory);
     RemoteInventory inventory(archives, options.protocolProfile);
     if (options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020)
         session.configure_stash(inventory.stashLayout());

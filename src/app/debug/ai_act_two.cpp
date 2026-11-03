@@ -80,10 +80,17 @@ void DebugAi::Impl::configureActTwoQuest(Goal &goal,QuestId id) const {
     const auto sunReward=node("sun-town-confirmation",talk(QuestId::TaintedSun,"drognan",371,1),
         {{flags(QuestId::TaintedSun,1)}},{sunAltar},false,50);
     auto arcaneProof=Proof{{in(arcane)},{wp(arcane)}};
-    auto intro=talk(QuestId::ArcaneSanctuary,"drognan",373,4,true);
+    // A2Q4's 373 opens the palace; lack of a current NPC assignment is not
+    // evidence that the operation can be skipped. An already opened native
+    // blocker is an independent, observed alternative for an advanced game.
+    auto palaceOpened=fact(Kind::ObjectOpened);palaceOpened.area=town;palaceOpened.value=318;
+    auto intro=talk(QuestId::ArcaneSanctuary,"drognan",373,4);
     auto introProof=arcaneProof;introProof.push_back({flags(QuestId::ArcaneSanctuary,0x1d,true)});
-    introProof.push_back({late});introProof.push_back({submitted});
-    const auto drognan=node("palace-introduction",intro,introProof,{sunReward},true,60);
+    introProof.push_back({late});introProof.push_back({submitted});introProof.push_back({palaceOpened});
+    // Cubing the staff starts A2Q4 through A2Q2_UpdateHoradricItemCounts.
+    // Prefer that verified sequence trigger when no later Arcane facts exist;
+    // a Sun reward reclaimed after joining need not have advanced this game.
+    const auto drognan=node("palace-introduction",intro,introProof,{sunReward,staff},true,60);
     intro=talk(QuestId::ArcaneSanctuary,"jerhyn",377,8,true);
     introProof=arcaneProof;introProof.push_back({flags(QuestId::ArcaneSanctuary,0x19,true)});
     introProof.push_back({late});introProof.push_back({submitted});
@@ -95,7 +102,10 @@ void DebugAi::Impl::configureActTwoQuest(Goal &goal,QuestId id) const {
     QuestStep basement;basement.action=QuestAction::Travel;basement.stateQuest=QuestId::ArcaneSanctuary;
     basement.area=definitions->area("Act 2 - Basement 3");
     auto basementProof=arcaneProof;basementProof.push_back({in(*basement.area)});
-    const auto cellar=node("palace-portal-source",basement,basementProof,{tombIntro});
+    // Hearing A2Q6's independent 430 does not prove A2Q4's palace-opening
+    // dialogue happened. Keep both introductions as direct prerequisites so
+    // satisfying the tomb introduction cannot prune the unopened palace.
+    const auto cellar=node("palace-portal-source",basement,basementProof,{drognan,jerhyn,tombIntro});
     auto entry=portal(QuestId::ArcaneSanctuary,*basement.area,arcane);
     entry.target=Selector{2,object("portal",34),"palace Arcane portal"};
     const auto arcaneAccess=node("arcane-access",entry,arcaneProof,{cellar});

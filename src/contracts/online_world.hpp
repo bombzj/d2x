@@ -127,6 +127,7 @@ struct OnlineUnit {
     uint64_t actionRevision{}, hitRevision{};
     uint64_t actionReceivedMilliseconds{}; // Local receipt time, not server action time.
     std::optional<uint8_t> pathType, pathSteps, pathDistance;
+    std::optional<uint8_t> positionCheckMode; // Monster mode before this native position verification.
     std::optional<int16_t> velocityPercent;
     // State stat widths belong to MPQ consumers; the transport retains ordered native messages.
     uint64_t stateSequence{}, stateGeneration{}; // First state receipt of this unit lifetime; survives area changes.
