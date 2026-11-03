@@ -106,9 +106,10 @@ bool RealmSession::Impl::handle_stash_pd2(const Packet &packet) {
     } else if (function == 0x19) {
         Reader fields(payload); fields.take(8);
         world.cnSharedGold = fields.u32(); // mdll1 1DFD0 reads packet +0x18.
-        // Server 0x1E670 sends this after all 98 absolute counter records.
+        // mdll1 6d6b8bf3:1E670 / 02ab4a66:29EF1 sends this after the
+        // absolute counters. The newer catalog includes additional materials.
         // Function 19 also carries shared gold during other initialization.
-        // Require the complete fixed 98-code response before releasing access.
+        // Require every prepared material, not an exact server catalog size.
         if (world.cnMaterialsRequested)
             world.cnMaterialsSynchronized = !stashLayout.materialKeys.empty() &&
                 std::all_of(stashLayout.materialKeys.begin(), stashLayout.materialKeys.end(),
@@ -125,13 +126,21 @@ bool RealmSession::Impl::handle_stash_pd2(const Packet &packet) {
         if (first.ec != std::errc{} || first.ptr != text.data() + comma || second.ec != std::errc{} ||
             second.ptr != text.data() + text.size() || amount < -int64_t(INT32_MAX) || amount > INT32_MAX)
             throw ProtocolError("Invalid CN material counter number");
-        if (std::find(stashLayout.materialKeys.begin(), stashLayout.materialKeys.end(), key) == stashLayout.materialKeys.end())
-            throw ProtocolError("CN material counter is absent from the prepared catalog");
+        if (function == 0x2A && amount < 0)
+            throw ProtocolError("Negative CN absolute material counter");
+        if (std::find(stashLayout.materialKeys.begin(), stashLayout.materialKeys.end(), key) == stashLayout.materialKeys.end()) {
+            // The CN catalog can grow independently of our prepared UI slots
+            // (02ab4a66 has 163 entries, including all previous 98). A valid
+            // counter for an unsupported material must not abort game entry.
+            // Isolate both absolute and delta records without granting access
+            // or allowing unknown keys to grow the inventory state.
+            ++view.gameProtocol.unconsumed[packet.id];
+            changed(); return true;
+        }
         if (function == 0x27 && !world.cnMaterialCounts.contains(key))
             throw ProtocolError("CN material delta preceded its absolute counter");
         auto &quantity = world.cnMaterialCounts[key];
         if (function == 0x2A) {
-            if (amount < 0) throw ProtocolError("Negative CN absolute material counter");
             quantity = uint32_t(amount);
         }
         else {
