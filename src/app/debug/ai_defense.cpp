@@ -76,7 +76,12 @@ std::vector<DebugAi::Impl::VisualThreat> DebugAi::Impl::visibleThreats(const Con
             std::min(float(policy.hazardLookaheadMs)/1000.f,missile.remaining),float(size->second+policy.hazardPadding),false,boss || definitions->dangerousMissiles.contains(missile.id)});
     }
     for(const auto &[key,unit]:c.session.read().world.units) {
-        if(key.type!=1 || !unit.position || onlineMonsterCorpse(unit) || !c.combat.hostileSource(unit) || c.combat.monsterTargetEligible(unit,false)) continue;
+        // Temporary target rejection (Submerge, roosting, attached) is not
+        // evidence of an active damaging field. Such actors' real missiles
+        // are still observed above; ordinary combat handles them on return.
+        // Keep proximity hazards for intrinsically unattackable emitters
+        // such as Hydra, using the client's MPQ killable/isAtt classification.
+        if(key.type!=1 || !unit.position || onlineMonsterCorpse(unit) || !c.combat.hostileSource(unit) || c.combat.hostile(unit)) continue;
         const auto row=findCompiledMonsterRow(definitions->monsters,c.combat.monsterClass(unit).value_or(UINT16_MAX));
         if(!row || !definitions->monsters.number(*row,"killable").value_or(0) ||
             definitions->monsters.number(*row,"npc").value_or(0) || definitions->monsters.number(*row,"interact").value_or(0)) continue;
@@ -115,6 +120,9 @@ bool DebugAi::Impl::avoidHazards(Context &c) {
     const float current=safety(c.position);
     const auto sources=std::count_if(hazards.begin(),hazards.end(),[](const auto &threat){return threat.unitSource;});
     hazardDiagnostics={{"dangerousHostileMissiles",hazards.size()-size_t(sources)},{"unitThreatSources",sources},{"clearance",current},{"status","clear"}};
+    hazardDiagnostics["unitThreats"]=Json::array();
+    for(const auto &hazard:hazards) if(hazard.unitSource)
+        hazardDiagnostics["unitThreats"].push_back({hazard.id,hazard.from.x,hazard.from.y});
     if(hazardDodge) {
         const bool reached=(Vec{float(hazardDodge->x),float(hazardDodge->y)}-c.position).length()<=3;
         const Vec destination{float(hazardDodge->x),float(hazardDodge->y)};
@@ -141,9 +149,11 @@ bool DebugAi::Impl::avoidHazards(Context &c) {
         const auto landing=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && inside(room,exact);});
         if(landing==rooms.end()) continue;
         if(teleport && (source==rooms.end() || (landing!=source && std::find(source->near.begin(),source->near.end(),size_t(landing-rooms.begin()))==source->near.end()))) continue;
+        if(teleport && !c.combat.teleportPathAllowed(*area,grid,c.position-offset,exact-offset)) continue;
         const float clearance=safety(exact);if(clearance<2) continue;
         bool occupied=false;
         for(const auto &[key,unit]:c.session.read().world.units) if(key.type==1 && unit.position && c.combat.hostileSource(unit) && !onlineMonsterCorpse(unit) &&
+            (!c.combat.hostile(unit) || c.combat.monsterTargetEligible(unit,false)) &&
             (exact-Vec{float(unit.position->x),float(unit.position->y)}).length()<4) {occupied=true;break;}
         if(occupied) continue;
         if(!teleport) {
@@ -160,7 +170,8 @@ bool DebugAi::Impl::avoidHazards(Context &c) {
     if(combatTarget && combatRun.suspendedAt==Clock::time_point{}) combatRun.suspendedAt=now;
     hazardDodge=selected;hazardDodgeUntil=now+std::chrono::seconds(2);
     hazardDiagnostics["status"]="evading";hazardDiagnostics["destination"]={selected->x,selected->y};
-    note("hazard-dodge-selected",std::to_string(selected->x)+","+std::to_string(selected->y));
+    note("hazard-dodge-selected",std::to_string(selected->x)+","+std::to_string(selected->y)+
+        " missiles="+std::to_string(hazards.size()-size_t(sources))+" units="+std::to_string(sources));
     walk(c,{{"goal","point"},{"x",selected->x},{"y",selected->y},{"interact",false},{"purpose","combat-evade"}});
     mobility(c);return true;
 }

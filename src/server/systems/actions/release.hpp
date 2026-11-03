@@ -51,6 +51,9 @@ struct SkillRelease {
     bool nativeCallbackStarted{};
     bool nativeStartPrepared{};
     bool eventDriven{};
+    // SrvDo has committed; only its timed-state publication remains. Never
+    // repeat damage, missiles or payment when that publication is deferred.
+    std::optional<uint64_t> delayPublicationUntil{};
     // SrvDo012/013 replan after a completed callback, from a game-frame anchor.
     int rewindRemaining{};
     int64_t animationAnchor{};

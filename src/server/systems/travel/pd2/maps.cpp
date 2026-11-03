@@ -1,4 +1,7 @@
 #include "gameplay/items/quality_rules.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/map.hpp"
+#include "server/runtime/facts/travel.hpp"
 #include "../system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/world/system.hpp"

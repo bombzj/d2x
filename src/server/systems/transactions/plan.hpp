@@ -1,13 +1,15 @@
 #pragma once
 #include "server/runtime/contracts.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/domain_fact.hpp"
 #include "server/systems/items/state.hpp"
 #include "server/systems/attributes/calculation.hpp"
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/items/skill_sources.hpp"
+#include "gameplay/items/operations.hpp"
 #include "gameplay/skills/stat_callbacks.hpp"
 #include "gameplay/units/resources.hpp"
 #include <map>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <variant>

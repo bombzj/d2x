@@ -1,4 +1,9 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "gameplay/items/operations.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "server/systems/skills/shape.hpp"
 #include "gameplay/actions/shape_timing.hpp"
@@ -433,13 +438,13 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
     }
     const auto percent = playerLifePercentage(int64_t(edit.player.hp.raw()),p->totals.character.maxLifeFixed.raw());
     if(dealt>0 || adjustment.crushing>0 || hit.mana>0 || hit.stamina>0 || getHit) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,!deferAction && edit.player.hp<=0,p->position,hit.hitClass});
-    if(getHit || knockback) for(auto &fact:edit.publicFacts) if(auto *damage=std::get_if<HitFact>(&fact)) damage->playerMode=knockback?20:6;
+    if(getHit || knockback) for(auto &fact:edit.publicFacts) if(auto *damage=factIf<HitFact>(&fact)) damage->playerMode=knockback?20:6;
     if(knockback && source) {
         const auto attacker=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source);
         const auto &area=ports_.areas.at(actor.area);const Vec destination=knockbackDestination(p->position,attacker.position(),3);
         if(ports_.spatial.navigationGrid(actor.area,p->actor).nativeMovementSegment(p->position+Vec{.5f,.5f},destination+Vec{.5f,.5f},playerMovement)) {
             edit.knockback=PointTarget{actor.area,area.generation,destination};
-            for(auto &fact:edit.publicFacts) if(auto *damage=std::get_if<HitFact>(&fact)) damage->knockback=destination;
+            for(auto &fact:edit.publicFacts) if(auto *damage=factIf<HitFact>(&fact)) damage->knockback=destination;
         }
     }
     edit.random=transactions::UnitRandomEdit{p->combatRandom,random};

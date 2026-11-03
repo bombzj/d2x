@@ -5,7 +5,7 @@
 #include <span>
 
 namespace d2x {
-enum class PaletteComposition { Normal, Screen, Burn };
+enum class PaletteComposition { Normal, Screen, Burn, Trans25, Trans50, Trans75 };
 // Original PL2 screen/rectangle blending and 32 intensity transforms share the palette.
 // Destination capture stays on the GPU; see LIGHTING.md for spatial/color limits.
 class PaletteBlendView {

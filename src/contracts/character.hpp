@@ -22,6 +22,7 @@ struct CharacterSkillView {
     bool baseRankKnown = false, effectiveRankKnown = false;
     bool passive = false, leftAllowed = false, available = false, canAllocate = false, usableNow = false;
     bool pickerEnabled = false; // Selection permission; independent of town casting permission and red tint.
+    std::optional<int> delayFrames; // Current MPQ formula at this skill source's effective rank.
     CharacterActionDisplay action;
     std::vector<std::string> treeTooltip, pickerTooltip;
     bool treeTooltipUnavailable = false; // Native tree's unavailable branch: red body and requirement/max-level line.

@@ -92,7 +92,7 @@ class System {
     void acknowledgeEnvironment(int act,uint64_t revision);
     void objectCollision(RegionId, std::vector<Grid::Obstacle>);
     void openTombWall(RegionId);
-    DomainResult<EntityId> admitQuestNpc(RegionId,std::string_view,Vec,int searchRadius=15);
+    DomainResult<EntityId> admitQuestNpc(RegionId,std::string_view,Vec,int searchRadius=15,bool specialInit=false);
     std::optional<QuestPosition> questFreePosition(RegionId,Vec roomPosition,Vec requested,int size,int radius,uint16_t mask=0x400) const;
     std::optional<QuestPosition> nativeFreeSpace(RegionId,Vec roomPosition,Vec requested,int size) const;
     std::optional<QuestPosition> nativeLinkPortalPosition(RegionId,bool durielOpening=false);

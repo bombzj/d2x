@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/facts/effects.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "corpse_explosion.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

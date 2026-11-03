@@ -1,4 +1,5 @@
 #include "item_triggers.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "item_trigger_runtime.hpp"
 #include "server/runtime/events.hpp"
 #include "server/player_store.hpp"

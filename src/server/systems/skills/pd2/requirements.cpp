@@ -1,4 +1,5 @@
 #include "requirements.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "../evaluation.hpp"
 #include "server/player_store.hpp"
 #include "gameplay/skills/pd2_program.hpp"

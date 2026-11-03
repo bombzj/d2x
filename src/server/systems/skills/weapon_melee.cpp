@@ -1,4 +1,5 @@
 #include "core/native_unit_ids.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "system.hpp"
 #include "runtime.hpp"
 #include "weapon_melee.hpp"

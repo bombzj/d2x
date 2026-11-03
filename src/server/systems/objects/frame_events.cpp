@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "replication.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/object.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -10,10 +13,25 @@
 #include <algorithm>
 
 namespace d2x::server::objects {
+bool usesReliableModeFacts(const ObjectRule &rule) {
+    if(rule.chest || rule.shrine || rule.operation==9 || rule.initialization==13) return true;
+    // These native programs schedule silent ENDANIM. Retain their OP fact
+    // even if several server frames elapse before hosting publishes snapshots.
+    // The corresponding client projection lives in content/world/object_mode.
+    if(!rule.openedMode) return false;
+    if(rule.initialization==11 || rule.initialization==12 || rule.initialization==38 || rule.initialization==39) return true;
+    switch(rule.operation) {
+    case 2:return !rule.cycleOperating;
+    case 1:case 3:case 4:case 5:case 7:case 14:case 15:case 18:
+    case 30:case 34:case 46:case 48:case 49:case 51:case 52:case 54:
+    case 55:case 56:case 66:case 68:return true;
+    default:return false; // Waypoint23 retains its native target-flag branch.
+    }
+}
 StepStatus System::publishChanges(TickContext tick) {
     std::erase_if(publishedModes_,[&](const auto &entry){return !state_.objects.contains(entry.first);});
     for(const auto &[id,object]:state_.objects) {
-        if(!object.rule.chest && !object.rule.shrine && object.rule.operation!=18 && object.rule.operation!=66) continue;
+        if(!usesReliableModeFacts(object.rule)) continue;
         auto [previous,inserted]=publishedModes_.try_emplace(id,object.revision,object.mode);
         // Initialization seeds the baseline before any operation, including
         // operations in the birth frame. Unknown initial state is a snapshot.
@@ -22,12 +40,17 @@ StepStatus System::publishChanges(TickContext tick) {
         const int before=previous->second.second;
         // Native ENDANIM writes ON silently. The preceding OP fact is already
         // retained even when hosting advances several frames before delivery.
-        if(before!=object.mode && !(before==1 && object.mode==2)) {
+        const bool silentEnd=before==1 && object.mode==2 && object.rule.operation!=9 && object.rule.initialization!=13;
+        if(before!=object.mode && !silentEnd) {
             const auto shrine=object.rule.shrine && (object.rule.subClass&1) && !(object.rule.subClass&4)
                 ?std::optional<int>{object.rule.shrine->code}:std::nullopt;
+            // Operate09 preserves the original selectable unit flag. The
+            // 1.13c monolith update carries selection=1 even in mode OP.
+            const uint8_t selection=object.rule.operation==9?uint8_t(object.rule.selectable[0]):
+                shrine && object.mode==1?1:object.rule.operation!=18 && object.rule.selectable[size_t(object.mode)]?2:0;
             const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},object.area},
                 {ObjectFact{id,object.operatorActor,object.area,object.revision,object.position,object.mode,
-                    object.rule.operation!=18 && object.rule.selectable[size_t(object.mode)],shrine}}});
+                    selection,shrine}}});
             if(!sent) return StepStatus::Blocked;
         }
         // Advance only after acceptance. A full outbox retries this publication

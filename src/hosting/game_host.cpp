@@ -1,4 +1,7 @@
 #include "game_host.hpp"
+#include "server/runtime/event_batch.hpp"
+#include "server/runtime/facts/quest.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "server/game_instance.hpp"
 #include "native_identity.hpp"
 #include <chrono>

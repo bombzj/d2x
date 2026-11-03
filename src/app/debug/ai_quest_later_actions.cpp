@@ -112,7 +112,7 @@ bool DebugAi::Impl::questSmashOrb(Context &c,const QuestStep &step) {
             QuestPending pending;pending.action=QuestPending::Action::Object;
             pending.deadline=now+std::chrono::seconds(20);questRun.pending=pending;
         }
-        if(!questRun.pending->statusRequested && c.session.request_quests(c.session.read().gameGeneration))
+        if(!questRun.pending->statusRequested && c.control.refreshQuests())
             questRun.pending->statusRequested=true;
         wait("quest-orb-result","Two original Operate53 clicks submitted; waiting for actual Will consumption and private reward");
         checkQuestPending(c);return false;
@@ -157,7 +157,7 @@ bool DebugAi::Impl::questSmashForge(Context &c,const QuestStep &step) {
             note("quest-forge-drops-observed",std::to_string(gems)+" gems / "+std::to_string(runes)+" runes");return true;
         }
         if(now>=questRun.pending->deadline) throw std::runtime_error("Forge result incomplete: pending/reward flag, hammer removal and four gems / one rune were not all observed");
-        if(!questRun.pending->statusRequested && c.session.request_quests(c.session.read().gameGeneration)) questRun.pending->statusRequested=true;
+        if(!questRun.pending->statusRequested && c.control.refreshQuests()) questRun.pending->statusRequested=true;
         wait("quest-forge-result","Observing actual hammer consumption and the native sequential reward drops");return false;
     }
     if(now<questRun.sweepReady) {wait("quest-forge-input","Waiting between native hammer operations");return false;}

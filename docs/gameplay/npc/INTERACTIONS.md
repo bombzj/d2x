@@ -6,9 +6,13 @@
 
 NPC是所连接服务端的真实type1单位，位置／模式、对白、任务提示和服务资格均由该服务端提供。中立单位不使用敌对替身；组件／原图由公共ActorAnimation／Graphics解析。
 
+剧情关键NPC的出生沿D2MOO `QUESTS_SpawnCriticalMonster(bSpecialInit)`传递原ISRESURRECT保留资格，复用公共Actor的`restoredFromInactive`与既有休眠／恢复；不把城镇SaveMonsters=0当作可丢弃关键NPC。当前MPQ安雅Restore=1、Harrogath SaveMonsters=0，缺该资格会在离城后丢失本人，却留下任务出生位。现spawnStoryNpc仅对原critical分支传入specialInit，非critical及其他默认出生调用保持原资格；无按NPC名称强制重生。81412075实测安雅领取个性化资格、离城后本人285进入109区room12休眠记录（dead=false），不再丢失；同版实际读回完成档后，再以正常旅行离开第五幕至Act1城镇，安雅233进入休眠；同局返回109后恢复同一233并正常交谈。普通出生／退役／恢复通过，容量与提交交错仍未穷举，入口见[AI验收](../../development/AI_TEST_REC.md)。
+
 原版 LoD 1.13c `D2Client 4B955→46770` 在确认交谈时清除旧 NPC 提示；`479DA` 忽略正在交谈 NPC 的新 8A。客户端已同步这两个条件，后续提醒仍由新 8A 决定。`4BA48→A5600` 的交谈朝向已补入显示层，保留原类537／538／539／527的固定朝向例外；不修改服务端位置或交互距离。交谈前另有待机转向分支。零售 D2Client RVA `4F577–4F60E` 对 MonStats.interact、非 critter／佣兵且处于 NU 的单位，按双方原生尺寸距离 <7、每次客户端游戏帧抽取 <10/100 转向本人；此处分开排除类537／538／539。显示层按该条件使用单位本地表现随机流，实际转身时刻待对照。
 
 ## 宿主NPC移动与地图动作
+
+奥玛斯演出是否可点必须分别核对服务端交谈与客户端选取。D2MOO A3Q3／Fn032及MonsterAI交谈入口未见放置期间的专门拒绝；原1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）RVA `A68E0`另检查单位可选标志及图形命中，S1动作12／13经`4DC70→4E006／4DED6→2A6C0`进入模式8，所查分支未直接清除目标可选位。当前MPQ `ors1hth.cof`与`ornuhth.cof`的TR层Selectable均为1。上述不能证明演出每阶段都可点；运行中的标志与完整鼠标链仍待核实，不据服务端允许新增客户端全程禁点或宣称全程可点。AI主动等待祭坛放置完成是策略，不能充当原版点击规则。
 
 `hosting/npc_content.cpp`按当前MPQ的MonStats.AI区分Npc、Towner、NpcStationary、JarJar和NpcOutOfTown，准备Velocity、aidel、MonStats2.mS1／mS2及原AnimData时钟；DS1单位预设的MapAI节点连同动作号完整传入该出生点的MonsterRule，使用全局子格坐标。节点不按自定义半径、当前碰撞或动作号预先删减，不为缺路径的NPC合成随机闲逛。NPC的AI／模式事件和碰撞移动由同一个monsters::Actor执行，城镇门控允许这些非战斗AI；原协议仍由公共monster_replication发布；S1／S2显式朝向经Actor→MonsterSnapshot→原6B／6C动作包传递，不再统一写0。
 

@@ -41,6 +41,9 @@ struct WorldDrawView {
     RegionId region{};
     int level = 0, palette = 0;
     uint64_t gameGeneration = 0, areaGeneration = 0;
+    // Initializes an independent client presentation stream. This is not a
+    // server weather epoch and does not synchronize weather between clients.
+    uint32_t weatherSeed{};
     Vec observer, roomObserver, terrainOrigin;
     uint32_t observerLightColor{}; // Native item_lightcolor, 0 selects white.
     float time = 0, elapsed = 0;

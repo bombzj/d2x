@@ -1,4 +1,6 @@
 #include "core/id.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/area_store.hpp"

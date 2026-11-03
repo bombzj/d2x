@@ -1,4 +1,8 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
+#include "server/runtime/facts/travel.hpp"
 #include "server/player_store.hpp"
 #include "server/movement.hpp"
 #include "server/systems/npc/system.hpp"
@@ -81,10 +85,14 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     const int state=found->rules.skills->syncWarped.id;
     if(state<0 || state>=255) return {DomainStatus::Unavailable,{}};
     auto next=previous==state_.synchronizations.end()?PositionSynchronization{}:previous->second;
-    for(auto &frame:next.attempts) if(!recent(frame,actor.tick)) frame=actor.tick;
-    uint64_t random=ports_.random;
+    // Retail 1.13c D2Game RVA 4A6E0 records only the first expired slot,
+    // then returns. D2MOO's loop without a break fills all five at once.
+    for(auto &frame:next.attempts) if(!recent(frame,actor.tick)) {frame=actor.tick;break;}
+    uint64_t random=found->combatRandom;
     uint64_t delay=125;
-    if(ports_.settings.singlePlayer && std::all_of(next.attempts.begin(),next.attempts.end(),[&](auto frame){return recent(frame,actor.tick);})) {
+    // RVA CFE75 tests Game.nGameType == 0, not single player (type 1).
+    // Local and TCP/IP games keep the normal five-second correction window.
+    if(ports_.settings.nativeGameType==0 && std::all_of(next.attempts.begin(),next.attempts.end(),[&](auto frame){return recent(frame,actor.tick);})) {
         const auto roll=limitedRandom(random,100);
         delay=roll<50?1500:roll<75?3000:4500;
     }
@@ -113,7 +121,7 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     player.moving=!player.route.empty();player.locomotionSequence=actor.sequence;
     ++player.teleportRevision;
     player.lastTeleportPosition=at+destination->definition.origin;
-    state_.synchronizations[actor.player]=next;ports_.random=random;
+    state_.synchronizations[actor.player]=next;player.combatRandom=random;
     return {DomainStatus::Applied,std::monostate{}};
 }
 

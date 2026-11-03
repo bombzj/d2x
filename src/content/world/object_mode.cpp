@@ -10,8 +10,15 @@ std::optional<float> objectEndAnimation(const DataTable &objects, size_t row, in
         const auto frames=objects.number(row,"FrameCnt1");
         return frames && *frames>0?std::optional<float>{float(*frames)/25.f}:std::nullopt;
     }
-    if(objects.number(row,"OperateFn").value_or(0)==49 || objects.number(row,"OperateFn").value_or(0)==66) {
-        // A4Q3's stone and A5Q5's Ancients door use FrameCnt1 without +1.
+    if(objects.number(row,"InitFn").value_or(0)==39) {
+        // ACT3Q3_SetAltarMode: Ormus's placed Gidbinn altar has no OperateFn.
+        const auto frames=objects.number(row,"FrameCnt1");
+        return frames && *frames>0?std::optional<float>{(float(*frames)+1.f)/25.f}:std::nullopt;
+    }
+    if(objects.number(row,"OperateFn").value_or(0)==46 || objects.number(row,"OperateFn").value_or(0)==49 ||
+        objects.number(row,"OperateFn").value_or(0)==66) {
+        // A3Q6's HellGate, A4Q3's stone and A5Q5's Ancients door use
+        // FrameCnt1 without +1. ENDANIM need not publish another mode packet.
         const auto frames=objects.number(row,"FrameCnt1");
         return frames && *frames>0?std::optional<float>{float(*frames)/25.f}:std::nullopt;
     }

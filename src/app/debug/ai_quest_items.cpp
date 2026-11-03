@@ -109,12 +109,12 @@ bool DebugAi::Impl::questUseItem(Context &c,const QuestStep &step) {
             if(const auto flags=questFlags(c,QuestId::PrisonOfIce);flags && (*flags&0x80)) {
                 note("quest-resistance-scroll-consumed","Actual scroll removal and permanent resistance quest bit observed");return true;
             }
-            if(!questRun.pending->statusRequested && c.session.request_quests(c.session.read().gameGeneration)) questRun.pending->statusRequested=true;
+            if(!questRun.pending->statusRequested && c.control.refreshQuests()) questRun.pending->statusRequested=true;
         }
         if(step.item=="xyz" && !owned(c,step.item)) {
             const auto flags=questFlags(c,QuestId::GoldenBird);
             if(!questRun.pending->statusRequested) {
-                if(!c.session.request_quests(c.session.read().gameGeneration)) return false;
+                if(!c.control.refreshQuests()) return false;
                 questRun.pending->statusRequested=true;
             }
             if(flags && (*flags&1) && !(*flags&0x20)) {
@@ -126,7 +126,7 @@ bool DebugAi::Impl::questUseItem(Context &c,const QuestStep &step) {
             // Keep this observed irreversible postcondition in the graph and
             // refresh the private record, never acquire/use another book.
             if(step.item=="ass" && !questRun.pending->statusRequested) {
-                if(!c.session.request_quests(c.session.read().gameGeneration)) return false;
+                if(!c.control.refreshQuests()) return false;
                 questRun.pending->statusRequested=true;
                 note("quest-status-requested","Confirmed skill-book consumption; refreshing its private record");
             }
@@ -170,7 +170,7 @@ bool DebugAi::Impl::questCombine(Context &c,const QuestStep &step) {
         }
         note("quest-cube-output-observed",step.item);return true;
     }
-    if(world.npcRequested) {c.session.close_npc();return false;}
+    if(world.npcRequested) {c.control.closeNpc();return false;}
     if(output && output->mode==4) return questStoreCursor(c,output->id);
     if(!cube || cube->mode!=0 || cube->page!=1) throw std::runtime_error("Quest transmutation needs the actual backpack cube");
     if(world.storage.kind!=OnlineStorageKind::Cube) {
@@ -244,7 +244,7 @@ bool DebugAi::Impl::questSubmitStaff(Context &c,const QuestStep &step) {
     }
     if(item->mode!=4) throw std::runtime_error("Staff submission requires the actual completed staff on Cursor");
     const auto before=world.staffRevision;
-    if(!c.session.submit_staff(*world.staffSource,item->id)) {wait("quest-staff-submit","Normal staff UI submission was not accepted");return false;}
+    if(!c.inventory.submitQuestItem(c.session,*world.staffSource,item->id)) {wait("quest-staff-submit","Normal staff UI submission was not accepted");return false;}
     QuestPending p;p.action=QuestPending::Action::SubmitStaff;p.item=item->id;p.beforeRevision=before;
     p.deadline=Clock::now()+std::chrono::seconds(30);questRun.pending=p;
     note("quest-staff-submit-submitted",std::to_string(item->id));return false;

@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/facts/inventory.hpp"
 #include "detail.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -21,6 +22,8 @@
 #include "gameplay/quest/catalog.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <string>
+#include <string_view>
 
 namespace d2x::server::quests {
 namespace {
@@ -103,6 +106,10 @@ DomainResult<> System::prepareReward(const ActorContext &actor,EntityId source,R
 std::vector<Preparation> System::pending() const {
     std::vector<Preparation> result;for(const auto &[id,s]:state_.pending) {(void)id;result.push_back(s);}return result;
 }
+uint64_t System::pendingCommand(PlayerId player,uint64_t sequence) const {
+    const auto found=state_.pending.find(player);
+    return sequence && found!=state_.pending.end() && found->second.actor.sequence==sequence?found->second.token:0;
+}
 std::optional<bool> System::takeCompletion(EntityId source) {
     const auto found=state_.completed.find(source);if(found==state_.completed.end()) return {};
     const bool result=found->second;state_.completed.erase(found);return result;
@@ -113,13 +120,20 @@ DomainResult<> System::install(Prepared prepared) {
     const auto &s=found->second;
     const auto *sourceArea=ports_.areas.find(s.actor.area);
     const bool objectSource=!s.conversation && sourceArea && std::any_of(sourceArea->definition.objects.begin(),sourceArea->definition.objects.end(),[&](const auto &object){return object.id==s.source;});
-    const auto fail=[&](DomainStatus status)->DomainResult<> {
+    const auto fail=[&](DomainStatus status,std::string_view reason={}) -> DomainResult<> {
         if(objectSource) state_.completed.insert_or_assign(s.source,false);
-        state_.deferred=prepared.deferred;state_.pending.erase(found);return {status,{}};
+        state_.deferred="Quest reward kind="+std::to_string(int(s.kind))+" command="+std::to_string(s.actor.sequence)+
+            " status="+std::to_string(int(status));
+        if(!reason.empty()) state_.deferred+=" "+std::string(reason);
+        if(!prepared.deferred.empty()) state_.deferred+=" "+prepared.deferred;
+        state_.pending.erase(found);return {status,{}};
+    };
+    const auto reject=[&](DomainStatus status)->DomainResult<> {
+        return isDeferred(status)?DomainResult<>{status,{}}:fail(status);
     };
     const auto *p=ports_.players.find(s.actor.player);const auto *area=ports_.areas.find(s.actor.area);
     if(!p || !p->entered || p->actor!=s.actor.actor || p->area!=s.actor.area || p->persistent.player.hp<=0 || !area || area->generation!=s.actor.areaGeneration ||
-        p->inventoryRevision!=s.inventoryRevision || p->persistent.player.level!=s.character.player.level) return fail(DomainStatus::Stale);
+        p->inventoryRevision!=s.inventoryRevision || p->persistent.player.level!=s.character.player.level) return fail(DomainStatus::Stale,"actor, area or inventory changed");
     uint64_t forgeAnimation{};
     if(s.kind==RewardKind::PlaceSoulstone || s.kind==RewardKind::SmashSoulstone) {
         const auto object=ports_.objects.read().objects.find(s.source);
@@ -129,7 +143,7 @@ DomainResult<> System::install(Prepared prepared) {
             return fail(DomainStatus::NotImplemented);
     }
     const auto *lease=ports_.npc.conversation(s.actor.player);
-    if(s.conversation && (!lease || lease->revision!=s.conversation || lease->npc!=s.source)) return fail(DomainStatus::Stale);
+    if(s.conversation && (!lease || lease->revision!=s.conversation || lease->npc!=s.source)) return fail(DomainStatus::Stale,"conversation changed");
     if(!prepared.deferred.empty() || !prepared.items.equipment) return fail(DomainStatus::Unavailable);
     if(s.hireling) {
         const auto &selection=*s.hireling;
@@ -283,7 +297,7 @@ DomainResult<> System::install(Prepared prepared) {
         const auto object=std::find_if(area->definition.objects.begin(),area->definition.objects.end(),[&](const auto &o){return o.id==s.source;});
         if(!s.dropPosition && object==area->definition.objects.end()) return fail(DomainStatus::Stale);
         auto next=ports_.items.prepare(std::move(prepared.items),{s.actor.area,s.dropPosition.value_or(object==area->definition.objects.end()?Vec{}:object->position)});
-        if(!next) return {next.status,{}};
+        if(!next) return reject(next.status);
         for(const auto &[id,item]:next.value->world.items) if(!ports_.items.read().world.items.contains(id)) drops.emplace_back(GroundDropFact{item});
         world=transactions::WorldEdit{ports_.items.read().revision,std::move(*next.value)};
     } else {
@@ -300,7 +314,7 @@ DomainResult<> System::install(Prepared prepared) {
         rules->includeSets(*prepared.items.equipment);
         if(!draft.edit.spilled.empty()) {
             auto spill=inventory::detail::prepareSpill(*p,draft.edit,*rules,ports_.items);
-            if(!spill) return {spill.status,{}};
+            if(!spill) return reject(spill.status);
             for(const auto &item:draft.edit.spilled) drops.emplace_back(GroundDropFact{spill.value->next.world.items.at(item.id)});
             world=std::move(*spill.value);
         }
@@ -332,10 +346,10 @@ DomainResult<> System::install(Prepared prepared) {
     if(s.hireling) {
         const auto &selection=*s.hireling;
         auto roster=ports_.npc.prepareHirelingHired(selection.seller,selection.revision,selection.name,selection.seed);
-        if(!roster) return {roster.status,{}};
+        if(!roster) return reject(roster.status);
         rosterPublication=std::move(*roster.value);
     }
-    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return reject(plan.status);
     auto result=ports_.transactions.commit(std::move(*plan.value));
     if(result) {
         if(rosterPublication) ports_.npc.publishVendorControl(std::move(*rosterPublication));
@@ -415,6 +429,6 @@ DomainResult<> System::install(Prepared prepared) {
         }
         state_.completed.swap(completed);state_.pending.erase(found);state_.deferred.clear();
     }
-    return result;
+    return result?result:reject(result.status);
 }
 }

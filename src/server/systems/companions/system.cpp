@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/frame_facts.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/combat/system.hpp"
 #include "server/systems/combat/participants.hpp"

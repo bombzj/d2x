@@ -1,4 +1,8 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/frame_facts.hpp"
+#include "server/runtime/facts/player_message.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "server/systems/skills/native_caster.hpp"
@@ -21,6 +25,11 @@
 #include <exception>
 #include "gameplay/skills/rank_bonus.hpp"
 namespace d2x::server::effects {
+PlayerMessageFact System::deathMessage(EntityId actor) const {
+    const auto it=state_.players.find(actor);
+    return it==state_.players.end()?PlayerMessageFact{}:PlayerMessageFact{6,{},it->second.killerName,0,0,it->second.killerClass};
+}
+
 uint64_t System::reserveAuraEventOrder() {
     if(nextAuraEventOrder_==UINT64_MAX) throw std::overflow_error("Aura event order exhausted");
     return nextAuraEventOrder_++;
@@ -408,7 +417,7 @@ DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {
         life.cureColdPoison=true;life.changed|=ailments;
         const auto appendRemoved=[&](int state) {
             if(state<0 || std::any_of(plan.units->facts.begin(),plan.units->facts.end(),[&](const auto &fact) {
-                const auto *removed=std::get_if<StateFact>(&fact);return removed && removed->actor==m.id && removed->state==state && !removed->enabled;
+                const auto *removed=factIf<StateFact>(&fact);return removed && removed->actor==m.id && removed->state==state && !removed->enabled;
             })) return;
             plan.units->facts.emplace_back(StateFact{m.id,1,m.area,state,false});
         };
@@ -466,7 +475,7 @@ DomainResult<WellRestoration> System::restoreWell(const ActorContext &actor,Fixe
         MonsterResourceTrace resources(m,actor.tick,&unit.states);resources.seedLife(resources.read().maximum);
         const auto appendRemoved=[&](int state) {
             if(state<0 || std::any_of(edit.publicFacts.begin(),edit.publicFacts.end(),[&](const auto &fact) {
-                const auto *removed=std::get_if<StateFact>(&fact);return removed && removed->actor==id && removed->state==state && !removed->enabled;
+                const auto *removed=factIf<StateFact>(&fact);return removed && removed->actor==id && removed->state==state && !removed->enabled;
             })) return;
             edit.publicFacts.emplace_back(StateFact{id,1,m.area,state,false});
         };

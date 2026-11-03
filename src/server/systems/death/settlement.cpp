@@ -1,4 +1,8 @@
 #include "system.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/social.hpp"
+#include "server/runtime/facts/player_message.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/inventory/planning.hpp"
@@ -196,7 +200,7 @@ DomainResult<> System::settle(const ActorContext &actor) {
     // Native gold was published through Loot before this equipment transaction.
     // Keep any overflow equipment drops staged in this candidate as well.
     auto refreshed=ports_.items.read();
-    for(const auto &fact:drops) if(const auto *drop=std::get_if<GroundDropFact>(&fact)) {
+    for(const auto &fact:drops) if(const auto *drop=factIf<GroundDropFact>(&fact)) {
         refreshed.world.items.emplace(drop->item.id,drop->item);
         refreshed.equipment.items.emplace(drop->item.id,world.equipment.items.at(drop->item.id));
     }

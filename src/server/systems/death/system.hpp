@@ -1,8 +1,9 @@
 #pragma once
+#include "server/runtime/facts/player_message.hpp"
 #include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/domain_fact.hpp"
 #include "gameplay/player/corpse.hpp"
 #include "server/systems/companions/preparation.hpp"
 #include <map>

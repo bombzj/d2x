@@ -5,8 +5,9 @@
 #include "skill_state.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/prepared_rules.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/domain_fact.hpp"
 #include "server/systems/attributes/calculation.hpp"
+#include "gameplay/character/record.hpp"
 #include "gameplay/effects/definition.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/stats/stat_list.hpp"
@@ -26,6 +27,7 @@
 #include "server/systems/reactions/item_triggers.hpp"
 #include "server/systems/actions/state.hpp"
 #include <array>
+#include <deque>
 #include <list>
 #include <initializer_list>
 #include <algorithm>
@@ -429,10 +431,7 @@ class System {
         const std::array<int,6> &pierce={},bool bypass=false,bool sanctuary=false,bool directDrain=true) const;
     DomainResult<> commitUnitReception(UnitReceptionPlan &);
     DomainResult<ReceivedDamage> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {}, const PlayerHitAdjustment & = {},const DamageReception *preparedReception=nullptr,bool deferAction=false,bool successfulHit=true);
-    PlayerMessageFact deathMessage(EntityId actor) const {
-        const auto it=state_.players.find(actor);
-        return it==state_.players.end()?PlayerMessageFact{}:PlayerMessageFact{6,{},it->second.killerName,0,0,it->second.killerClass};
-    }
+    PlayerMessageFact deathMessage(EntityId actor) const;
     DomainResult<> block(const ActorContext &);
     DomainResult<> missileReaction(EntityId target,EntityId source,bool getHit,bool knockback,uint8_t hitClass,uint64_t tick);
     DomainResult<> nativeMeleeReaction(EntityId target,EntityId source,const MonsterHit &,int64_t amount,uint64_t tick,bool *lifeUpdate=nullptr);

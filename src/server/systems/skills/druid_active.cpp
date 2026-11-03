@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "pd2/vengeance.hpp"
 #include "pd2/corpses.hpp"
 #include "runtime.hpp"

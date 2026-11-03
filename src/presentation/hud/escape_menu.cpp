@@ -98,12 +98,14 @@ EscapeMenu::EscapeMenu(Archives &archives)
                  {"sprevious", {}, true}};
     // Disabled controls retain the original records' initial presentation;
     // they are not writable settings or a claim about backend capabilities.
-    pages_[4] = {{"resolution", {"640x480", "800x600"}},
+    pages_[4] = {{"resolution", {"800x600", "any"}, true},
                  {"lightquality", {"smalloff", "smallon"}, true, false, 1},
                  {"blendshadow", {"smalloff", "smallon"}, false, false, 1},
                  {"perspective", {"smalloff", "smallon"}}, {"gamma", {}, false, true, 0, 21, true},
                  {"contrast", {}, false, true, 50, 100, true}, {"sprevious", {}, true}};
 
+    loadClassicFont(graphics_, archives, resolutionFont_, "font30", 4);
+    resolutionFont_.originalGlyphs = true;
     const auto path = std::string("data/local/font/latin/fontingamechat");
     const auto *source = graphics_.animation(path + ".dc6");
     const auto table = archives.read(path + ".tbl");
@@ -307,7 +309,7 @@ void EscapeMenu::drawControls(int selected, int first, int scrollPressed, const 
     }
 }
 void EscapeMenu::draw(EscapeMenuPage page, int selected, float elapsed, const std::array<int, 5> &automap, const AudioSettings &audio,
-                      bool lighting, int controlScroll, int scrollPressed, const ControlBindings &controls,
+                      bool lighting, bool standardResolution, int controlScroll, int scrollPressed, const ControlBindings &controls,
                       int action, int column, bool capturing, const PaletteBlendView &blend) const {
     if (page == EscapeMenuPage::Controls) {
         drawControls(selected, controlScroll, scrollPressed, controls, action, column, capturing, elapsed, blend);
@@ -334,8 +336,11 @@ void EscapeMenu::draw(EscapeMenuPage page, int selected, float elapsed, const st
         } else {
             int value = page == EscapeMenuPage::Automap ? automap[size_t(row)] : entry.value;
             if (page == EscapeMenuPage::Sound && row == 5) value = int(audio.speech);
-            if (page == EscapeMenuPage::Video && row == 0)
-                value = W == 800 && H == 600 ? 1 : entry.value;
+            if (page == EscapeMenuPage::Video && row == 0) {
+                if (standardResolution) image("800x600", center + 230, baseline, 2, true);
+                else resolutionFont_.drawBaseline("Any", {center + 230 - resolutionFont_.textWidth("Any"), baseline}, 1);
+                continue;
+            }
             if (page == EscapeMenuPage::Video && row == 1) value = int(lighting);
             if (value >= 0 && value < int(entry.values.size()))
                 image(entry.values[size_t(value)], center + 230, baseline, 2, entry.enabled);

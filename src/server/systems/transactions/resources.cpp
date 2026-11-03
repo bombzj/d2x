@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/resources.hpp"
+#include "server/runtime/facts/travel.hpp"
 #include <set>
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

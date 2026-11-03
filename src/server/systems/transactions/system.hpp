@@ -4,7 +4,7 @@
 #include "plan.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/event_batch.hpp"
 #include "gameplay/items/state.hpp"
 #include "server/systems/items/system.hpp"
 #include <map>
@@ -28,7 +28,7 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
-    bool hasOutputCapacity(size_t extraFacts = 0) const { return ports_.events.hasCapacity(2 + extraFacts); }
+    bool hasOutputCapacity(size_t extraFacts = 0) const;
     DomainResult<Plan> prepare(Change,const PlayerState *candidate=nullptr,const InitialEffectMutation &initialAura={},std::shared_ptr<effects::AuraUnitPublication> units={});
     DomainResult<std::vector<Plan>> prepareGroup(std::vector<Change>,std::shared_ptr<effects::AuraUnitPublication> units={});
     using AuraRecipient=std::function<void(const ActorContext &,const AuraDefinition &,const SkillAuraChange &,EntityId)>;

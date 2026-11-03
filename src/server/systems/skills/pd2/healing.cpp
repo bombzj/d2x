@@ -1,4 +1,6 @@
 #include "../system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "../native_caster.hpp"
 #include "execution.hpp"
 #include "server/systems/actions/release.hpp"

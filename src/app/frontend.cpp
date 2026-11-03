@@ -69,7 +69,7 @@ bool debugQuestInspectionInput(const FrameInput &input,const ViewState *ui) {
         CheckCollisionPointRec(rv(input.mouse),classicSideBounds(false))));
 }
 bool debugInspectionOpen(const ViewState &ui,bool inventoryOwned) {
-    return (ui.inventory.open && !inventoryOwned) || ui.characterOpen || ui.skillTreeOpen || ui.questOpen || ui.hirelingOpen || ui.partyOpen ||
+    return (ui.inventory.open && !inventoryOwned) || ui.characterOpen || ui.skillTreeOpen || (ui.questOpen && !ui.questAutoPreview) || ui.hirelingOpen || ui.partyOpen ||
         ui.help || ui.messageLogOpen || ui.chatInputOpen || ui.bhSettingsOpen;
 }
 // Bounded diagnostics of completed presentation frames, independent of game time.
@@ -265,6 +265,15 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     RemoteCombat combat(archives, town, session, inventory);
     profile.mark("client-adapters-ready");
     ClientPreferences preferences = loadClientPreferences();
+    const auto resizeWindow = [&](bool standard) {
+        // raylib takes client-area dimensions on both Windows and Linux.
+        // Restore first so a maximized window can actually become 800x600.
+        if (IsWindowMaximized()) RestoreWindow();
+        SetWindowSize(standard ? 800 : preferences.customWindowWidth,
+                      standard ? 600 : preferences.customWindowHeight);
+    };
+    resizeWindow(preferences.standardResolution);
+    int observedWindowWidth = GetScreenWidth(), observedWindowHeight = GetScreenHeight();
     bool preferencesDirty = false;
     double preferencesRetryAt = 0;
     RemoteMapDisplayState mapDisplay;
@@ -275,6 +284,30 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     std::unique_ptr<RemoteUiClients> sharedClients;
     std::unique_ptr<SceneView> sharedUi;
     std::unique_ptr<SceneController> sharedController;
+    const auto syncWindow = [&] {
+        if (IsWindowMinimized()) return;
+        if (sharedUi && sharedUi->ui().standardResolution != preferences.standardResolution) {
+            preferences.standardResolution = sharedUi->ui().standardResolution;
+            resizeWindow(preferences.standardResolution);
+            observedWindowWidth = GetScreenWidth();
+            observedWindowHeight = GetScreenHeight();
+            preferencesDirty = true;
+        }
+        const int width = GetScreenWidth(), height = GetScreenHeight();
+        if (width >= 800 && height >= 510 &&
+            (width != observedWindowWidth || height != observedWindowHeight)) {
+            // A manual resize/maximize selects Any. Programmatic switches
+            // update the observed size above and preserve the saved Any size.
+            if (width != 800 || height != 600) preferences.standardResolution = false;
+            if (!preferences.standardResolution) {
+                preferences.customWindowWidth = width;
+                preferences.customWindowHeight = height;
+            }
+            observedWindowWidth = width; observedWindowHeight = height;
+            if (sharedUi) sharedUi->ui().standardResolution = preferences.standardResolution;
+            preferencesDirty = true;
+        }
+    };
     auto syncPreferences = [&](bool force = false) {
         if (sharedUi && sharedClients) {
             const auto &panels = sharedUi->ui();
@@ -285,7 +318,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 panels.bhShowXpText, panels.bhShowBeltStatus, panels.bhForceLightRadius,
                 panels.bhShowPathLine, panels.bhShowResistances, panels.bhShowMonsters,
                 panels.bhShowEnchantments, panels.bhShowChests, panels.bhAutomapOnJoin, panels.bhShowLkChestLines,
-                panels.controls};
+                panels.controls, preferences.standardResolution,
+                preferences.customWindowWidth, preferences.customWindowHeight};
             if (current != preferences) { preferences = current; preferencesDirty = true; }
         }
         if (!preferencesDirty || (!force && GetTime() < preferencesRetryAt)) return;
@@ -656,6 +690,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
             scene && scene->actionInputBusy().value_or(scene->castInputBusy()));
         DebugAi::SuppliesView aiSupplies;
+        if(sharedUi) {
+            aiSupplies.openQuestLog=[&]{return sharedUi->openQuestLogPreview();};
+            aiSupplies.closeQuestLog=[&]{sharedUi->closeQuestLogPreview();};
+        }
         if(debugAi.hasPlan() && sharedClients) {
             if(scene) {aiSupplies.castInputBusy=scene->castInputBusy();aiSupplies.actionInputBusy=scene->actionInputBusy();aiSupplies.missiles=scene->missileObservations();}
             aiSupplies.skillUsable=[&](uint16_t skill)->std::optional<bool> {
@@ -1054,6 +1092,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 showScene = false;
             }
         }
+        syncWindow();
         const auto viewport = currentViewport();
         uiScale = viewport.scale;
         uiScaleX = uiScaleY = 1.f;
@@ -1098,6 +1137,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         };
         auto drawGameUi = [&](Vec windowMouse) {
             if (!sharedUi) return;
+            sharedUi->ui().hidePointer=debugAi.active() && !sharedUi->ui().gameMenuOpen &&
+                !debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory());
             if (!sharedUi->ui().shopOpen) {
                 sharedUi->drawUi(windowMouse);
                 return;
@@ -1144,6 +1185,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         initial.automapNames = preferences.automapNames;
                         initial.automapFade = preferences.automapFade;
                         initial.lighting = preferences.lighting;
+                        initial.standardResolution = preferences.standardResolution;
                         initial.controls = preferences.controls;
                         initial.bhEnabled = pd2Resources;
                         initial.bhRevealMap = preferences.bhRevealMap;

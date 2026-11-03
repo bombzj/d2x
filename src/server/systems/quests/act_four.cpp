@@ -1,4 +1,6 @@
 #include "gameplay/quest/catalog.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
 #include "system.hpp"
 #include "detail.hpp"
 #include "server/player_store.hpp"
@@ -179,7 +181,10 @@ DomainResult<> System::operateActFour(const ActorContext &actor,EntityId source,
             const auto global=requested+area.origin;
             const auto room=ports_.areas.roomAtPosition(actor.area,position,int(global.x),int(global.y));
             if(!room || room->area!=actor.area) return {DomainStatus::Unavailable,{}};
-            const auto found=ports_.world.questFreePosition(actor.area,requested,requested,3,13+int(index),0x3f11);
+            // Retail 1.13c RVA BC050's shared seal helper passes radius100
+            // to QUESTS_GetFreePosition (BC0A2). D2MOO's 13/14/15 argument
+            // is ignored by that routine; it is not the search radius.
+            const auto found=ports_.world.questFreePosition(actor.area,requested,requested,3,100,0x3f11);
             if(!found || found->area!=actor.area) return {DomainStatus::Unavailable,{}};
             const auto spawned=ports_.objects.admit({131,found->area,found->position,{},{},0,actor.tick});
             if(!spawned) return {spawned.status,{}};

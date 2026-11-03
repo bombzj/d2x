@@ -1,4 +1,6 @@
 #include "core/native_unit_ids.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "runtime.hpp"

@@ -1,4 +1,5 @@
 #include "../system.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "../attribute_projection.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

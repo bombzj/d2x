@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"

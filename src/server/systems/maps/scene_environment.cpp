@@ -1,4 +1,6 @@
 #include "server/runtime/events.hpp"
+#include "server/runtime/environment_fact.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "system.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/world/system.hpp"

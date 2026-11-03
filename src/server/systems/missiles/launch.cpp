@@ -1,5 +1,9 @@
 #include "core/id.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "server/systems/combat/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/player_store.hpp"
@@ -245,7 +249,7 @@ std::vector<MissileFact> System::visible(PlayerId id) const {
     for(const auto &[key,missile]:state_.missiles) {
         (void)key;
         if(!participants.find(missile.owner).id() || !ports_.areas.nearby(player->area,player->position,missile.area,missile.position)) continue;
-        for(const auto &fact:visuals({missile})) result.push_back(std::get<MissileFact>(fact));
+        for(const auto &fact:visuals({missile})) result.push_back(factGet<MissileFact>(fact));
     }
     return result;
 }

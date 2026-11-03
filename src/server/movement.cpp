@@ -1,4 +1,5 @@
 #include "movement.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "area_store.hpp"
 #include "player_store.hpp"
 #include "server/systems/travel/system.hpp"
@@ -184,8 +185,8 @@ DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext ti
         if(const auto step=skillSteps_.find(id);step!=skillSteps_.end() && step->second==tick.tick) {skillSteps_.erase(step);continue;}
         skillSteps_.erase(id);
         if(ports.effects.recovering(player.actor,tick.tick)) {player.moving=false;player.runningNow=false;continue;}
-        // Unit paths follow the current target. Keep an unchanged route instead
-        // of restarting Straight/AStar every simulation tick during pursuit.
+        // Arrival uses the live target, but the retail active path tolerates
+        // five subtiles of target movement before rebuilding its points.
         if(player.movementTarget && !player.route.empty()) {
             const auto target=*player.movementTarget;
             std::optional<Vec> position;
@@ -214,9 +215,10 @@ DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext ti
                     if(const auto *at=std::get_if<GroundLocation>(&found->second.location);at && at->region==player.area) position=at->position;
             }
             if(dynamic && !position) {player.route.clear();player.movementTarget.reset();player.movementArrival.reset();}
-            else if(position && (std::floor(position->x+.5f)!=std::floor(player.routeDestination.x+.5f) || std::floor(position->y+.5f)!=std::floor(player.routeDestination.y+.5f))) {
-                auto arrival=player.movementArrival;if(arrival) arrival->pos=arrival->accessPoint=*position;
-                apply(player,ports.areas.at(player.area),{MovementAction::Move,*position,player.routeRunning,{},target,arrival});
+            else if(position) {
+                if(player.movementArrival) player.movementArrival->pos=player.movementArrival->accessPoint=*position;
+                if(nativeUnitTargetMoved(player.routeDestination,*position,target.type))
+                    apply(player,ports.areas.at(player.area),{MovementAction::Move,*position,player.routeRunning,{},target,player.movementArrival});
             }
         }
         if(!player.route.empty() && player.pathStep.changedCell()) {
@@ -296,15 +298,10 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
     if (!grid.navigationContains(target + center)) return CommandStatus::InvalidDestination;
     if(arrival && interactionClear(grid,player.position,*arrival))
         return applyMovement(player,area,{MovementAction::Stop,{},false},grid);
-    const bool sameTarget=(!command.target && !player.movementTarget) ||
-        (command.target && player.movementTarget && command.target->id==player.movementTarget->id && command.target->type==player.movementTarget->type);
-    const auto obstacleRevision = grid.navigationRevision();
-    if(!player.route.empty() && sameTarget && player.routeObstacles==obstacleRevision &&
-        std::floor(target.x+.5f)==std::floor(player.routeDestination.x+.5f) && std::floor(target.y+.5f)==std::floor(player.routeDestination.y+.5f)) {
-        player.routeRunning=command.forceRun;player.movementArrival=arrival;
-        return CommandStatus::Applied;
-    }
-    player.routeDestination=target;player.routeObstacles=obstacleRevision;
+    // PlrModes::StartXY/StartID -> sub_6FC7F600 runs D2Common_10142
+    // for each admitted command, including another click at the same point.
+    // Passive pursuit has a separate native target-displacement threshold.
+    player.routeDestination=target;player.routeObstacles=grid.navigationRevision();
     // D2Common Straight is shared with prediction. Convert only at the grid
     // boundary; native packet coordinates name subtiles, not cell centers.
     const uint8_t targetType=command.target?command.target->type:
@@ -317,7 +314,7 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
         return CommandStatus::NoRoute;
     }
     player.route = std::move(route);
-    player.pathStep.reset();
+    // Replacing path points does not replace native precise coordinates.
     player.movementTarget=command.target;
     player.movementArrival=arrival;
     if(command.exit) {
@@ -367,7 +364,6 @@ void advanceMovement(PlayerState &player, const AreaState &area, float seconds,c
         (player.movementArrival->nativeObject || player.movementArrival->nativeUnit)) {
         player.route = nativeTargetPath(pathGrid, player.position, *player.movementArrival,
             player.movementTarget->type);
-        player.pathStep.reset();
     }
 }
 } // namespace

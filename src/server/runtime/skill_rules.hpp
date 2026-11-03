@@ -41,7 +41,7 @@ struct SkillRules {
     std::map<std::string,int,std::less<>> nativeStats;
     CombatStateDefinition redeemed,holyShield,alignment,stunned,syncWarped,shatter,terror;
     CombatStateDefinition chilled,poisoned,openWounds,frozen,justHit,uninterruptable,burning,fireShrine;
-    CombatStateDefinition healthPotion,manaPotion,itemFullSet;
+    CombatStateDefinition healthPotion,manaPotion,itemFullSet,skillDelay;
     std::shared_ptr<const MonsterTypeCatalog> monsterTypes;
     int poisonState{-1};
     std::set<int> dismissibleSummons;

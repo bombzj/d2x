@@ -10,6 +10,9 @@ namespace d2x {
 bool DebugAi::Impl::questFactSatisfied(const Context &c,const Goal &goal,size_t node,const QuestFact &fact) const {
     using Kind=QuestFact::Kind;
     switch(fact.kind) {
+    case Kind::RequirementObserved:
+        return fact.value<goal.requirements.size() && goal.requirements[fact.value].retainObservation &&
+            questRun.observations.contains(fact.value);
     case Kind::Status:
         return c.session.read().world.quests.statuses[questDefinition(fact.quest).nativeSlot]==fact.value;
     case Kind::MonsterObserved:
@@ -239,7 +242,7 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
     questPlanDiagnostics["selected"]={{"index",chosen},{"name",goal.requirements[chosen].name}};
     if(!questRun.selected || questRun.step!=chosen) {
         releaseCombat(c);cancelWalk(c);
-        if(c.session.read().world.npcRequested) c.session.close_npc();
+        if(c.session.read().world.npcRequested) c.control.closeNpc();
         auto observations=std::move(questRun.observations);
         resetStep();questRun={};questRun.initialized=true;questRun.selected=true;questRun.step=chosen;
         questRun.observations=std::move(observations);

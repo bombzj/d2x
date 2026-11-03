@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

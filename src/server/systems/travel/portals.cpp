@@ -1,4 +1,6 @@
 #include "gameplay/quest/catalog.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/world/system.hpp"

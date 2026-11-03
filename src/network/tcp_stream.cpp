@@ -1,4 +1,5 @@
 #include "network/tcp_stream.hpp"
+#include "server/runtime/events.hpp"
 #include <asio.hpp>
 #include <array>
 #include <deque>

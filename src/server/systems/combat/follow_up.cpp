@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/effects/system.hpp"
@@ -11,6 +13,7 @@ DomainStatus System::finishImpact(SpellImpact &impact,const PlayerState *owner,u
         const auto *pet=ports_.monsters.find(impact.source);
         if(pet && pet->alive() && pet->life>0 && (impact.lifeGain || impact.contactOverlay>=0 || impact.leechOverlay>=0)) {
             std::vector<DomainFact> visuals;
+            visuals.reserve(size_t(impact.contactOverlay>=0)+size_t(impact.leechOverlay>=0 && impact.lifeGain));
             if(impact.contactOverlay>=0) visuals.emplace_back(OverlayFact{impact.targets[impact.next],uint8_t(ports_.players.findActor(impact.targets[impact.next])?0:1),impact.area,impact.contactOverlay});
             if(impact.leechOverlay>=0 && impact.lifeGain) visuals.emplace_back(OverlayFact{impact.source,1,impact.area,impact.leechOverlay});
             if(!ports_.events.hasCapacity(visuals.size()+2,2)) return DomainStatus::Capacity;
@@ -24,6 +27,7 @@ DomainStatus System::finishImpact(SpellImpact &impact,const PlayerState *owner,u
         const ActorContext actor{owner->player,owner->actor,owner->area,generation,0,tick};
         if(owner->persistent.player.hp>0 && (impact.lifeGain || impact.manaGain || impact.contactOverlay>=0 || impact.leechOverlay>=0)) {
             std::vector<DomainFact> visuals;
+            visuals.reserve(size_t(impact.contactOverlay>=0)+size_t(impact.leechOverlay>=0));
             if(impact.contactOverlay>=0) visuals.emplace_back(OverlayFact{impact.targets[impact.next],uint8_t(ports_.players.findActor(impact.targets[impact.next])?0:1),impact.area,impact.contactOverlay});
             if(impact.leechOverlay>=0) visuals.emplace_back(OverlayFact{impact.source,0,impact.area,impact.leechOverlay});
             const auto &record=owner->persistent.player;

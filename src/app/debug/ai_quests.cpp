@@ -213,8 +213,8 @@ void DebugAi::Impl::questStepDone(Context &c,std::string evidence) {
         questRun.pending->refreshIssued && questRun.pending->statusRequested && tombSymbol && *tombSymbol<7)
         journalReadGame=c.session.read().gameGeneration;
     releaseCombat(c);
-    if(c.session.read().world.npcRequested) c.session.close_npc();
-    if(c.session.read().world.waypointSource) c.session.use_waypoint(0);
+    if(c.session.read().world.npcRequested) c.control.closeNpc();
+    if(c.session.read().world.waypointSource) c.control.useWaypoint(0);
     cancelWalk(c);note("quest-step-completed",std::move(evidence));
     if(cursor<goals.size() && !goals[cursor].requirements.empty()) {
         auto observations=std::move(questRun.observations);
@@ -274,6 +274,8 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
     }
     for(const auto &step:goal.steps) if(step.action==QuestAction::Hunt && step.witness && step.area==area)
         if(const auto anchor=find(c,*step.witness,true);anchor && anchor->position) questSpawnAnchor=std::pair{*area,*anchor->position};
+    for(const auto &step:goal.steps) if(step.spawnSource && step.area==area)
+        if(const auto anchor=find(c,*step.spawnSource,true);anchor && anchor->position) questSpawnAnchor=std::pair{*area,*anchor->position};
     if(!goal.requirements.empty()) return selectQuestRequirement(c,goal);
     while(questRun.step<goal.steps.size() && goal.steps[questRun.step].skipPending && (*flags&3))
         questStepDone(c,"Native reward/pending flag already satisfies the field objective");
@@ -443,8 +445,25 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
         break;
     }
     if(observed) {pending.resultObserved=true;note("quest-pending-result-observed");}
-    else if(pending.action==QuestPending::Action::Portal && Clock::now()>=pending.deadline && recoverTravel(c))
-        questRun.pending.reset();
+    else if(pending.action==QuestPending::Action::Portal) {
+        const auto now=Clock::now();
+        if(now<pending.deadline && recoverTravel(c,true)) {questRun.pending.reset();return;}
+        // A selectable portal may ignore the first click during opening, or
+        // its server approach may be interrupted. An idle client need not
+        // receive another position correction. Re-enter ordinary interaction
+        // only in the same loaded source scene, with the same assignment.
+        if(now>=pending.retryAt && now<pending.deadline && submittedTravel && !inputBlocked && !c.moving) {
+            const auto &sent=*submittedTravel;const auto &view=c.session.read();
+            if(view.stage==OnlineStage::ProtocolReady && view.load.serverLoadComplete &&
+                view.gameGeneration==sent.game && world.areaGeneration==sent.world && area==sent.sourceArea &&
+                pending.unit==sent.unit && unit!=world.units.end() && unit->second.assignmentRevision==sent.assignment &&
+                c.town.interactionReady(view,sent.unit,c.position)) {
+                note("quest-portal-retry","Destination absent; retrying normal interaction with "+std::to_string(sent.unit.id));
+                cancelWalk(c);submittedTravel.reset();questRun.pending.reset();return;
+            }
+        }
+        checkQuestPending(c);
+    }
     else checkQuestPending(c);
 }
 void DebugAi::Impl::observeQuestInteraction(Context &c,const Json &intent) {
@@ -478,7 +497,14 @@ void DebugAi::Impl::observeQuestInteraction(Context &c,const Json &intent) {
     if(p.action==QuestPending::Action::Portal) rememberTravel(c,*p.unit);
     const auto unit=c.session.read().world.units.find(*p.unit);
     if(unit!=c.session.read().world.units.end()) p.assignment=unit->second.assignmentRevision;
-    p.deadline=Clock::now()+std::chrono::seconds(30);questRun.pending=p;
+    const auto now=Clock::now();p.deadline=now+std::chrono::seconds(30);
+    if(p.action==QuestPending::Action::Portal) {
+        const auto &step=goals[cursor].steps.at(questRun.step);
+        if(questRun.portalDeadline==Clock::time_point{})
+            questRun.portalDeadline=now+std::chrono::seconds(step.resultWaitSeconds?step.resultWaitSeconds:unsigned(eventPolicy.waitSeconds));
+        p.deadline=questRun.portalDeadline;p.retryAt=now+std::chrono::seconds(3);
+    }
+    questRun.pending=p;
     ++interactions;note("quest-interaction-submitted",std::to_string(p.unit->id));cancelWalk(c);
 }
 void DebugAi::Impl::quest(Context &c,const Goal &goal) {
@@ -531,7 +557,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
     switch(step.action) {
     case QuestAction::Travel:
         done=!step.activateWaypoint || (area && knownWaypointAreas.contains(*area));
-        if(!done && !activateWaypoint(c,true)) explore(c,"required quest-route waypoint");
+        if(!done && !activateWaypoint(c,true)) explore(c,"required quest-route waypoint",false,ExplorationFocus::Units);
         break;
     case QuestAction::UseItem:done=questUseItem(c,step);break;
     case QuestAction::Combine:done=questCombine(c,step);break;
@@ -596,7 +622,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
         if(phase=="explore-wait" && !c.walk.active() && Clock::now()>=questRun.sweepReady) {
             // Refresh the authoritative counter without erasing empty-room
             // knowledge and walking the same clear rooms every two seconds.
-            c.session.request_quests(c.session.read().gameGeneration);
+            c.control.refreshQuests();
             questRun.sweepReady=Clock::now()+std::chrono::seconds(5);++questRun.sweeps;
             note("clear-status-requested",std::to_string(questRun.sweeps));
         }
@@ -610,7 +636,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
         if(unit && onlineMonsterCorpse(*unit)) {
             if(step.flags && (!flags || (*flags&step.flags)!=step.flags)) {
                 if(!questRun.pending) {
-                    if(!c.session.request_quests(c.session.read().gameGeneration)) break;
+                    if(!c.control.refreshQuests()) break;
                     QuestPending p;p.action=QuestPending::Action::Object;p.unit=unit->key;p.assignment=unit->assignmentRevision;
                     p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;
                 }
@@ -631,7 +657,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
                 questRun.encounterAnchored=true;
                 waitForWorldResult(c,step,"Waiting at the actually observed birth anchor for the original boss assignment");break;
             }
-            if(!approachKnown(c,*step.target)) explore(c,step.target->name);
+            if(!approachKnown(c,*step.target)) explore(c,step.target->name,false,ExplorationFocus::Units);
             break;
         }
         if(!c.combat.hostile(*unit)) throw std::runtime_error("Quest hunt target is not an actual hostile");

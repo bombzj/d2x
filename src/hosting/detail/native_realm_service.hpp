@@ -86,8 +86,11 @@ struct NativeRealmService {
         std::set<EntityId> missiles;
         std::map<EntityId, Bytes> pets;
         std::map<EntityId, Bytes> petVitals;
-        std::map<EntityId, uint64_t> groundItems, corpses, portals;
-        std::map<EntityId, std::pair<uint64_t,int>> objects; // Last delivered revision/mode, independent of newer authority.
+        std::map<EntityId, uint64_t> groundItems, corpses;
+        struct VisibleObject { uint64_t revision{}; int mode{}; Bytes assignment; };
+        // Assignment identity is separate from the last delivered mode. A mode
+        // change must not replace the client's unit or invalidate its intent.
+        std::map<EntityId, VisibleObject> objects, portals;
         std::map<EntityId, std::set<EntityId>> corpseEquipment;
         std::map<EntityId, EntityId> corpseOwners;
         std::map<int,int> itemSkills;

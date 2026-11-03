@@ -1,4 +1,7 @@
 #include "core/id.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/skills/native_caster.hpp"

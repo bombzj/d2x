@@ -88,6 +88,10 @@ REA属于开发期分析工具，不进入D2X构建或玩法依赖。上述快�
 
 ## 原版1.13c静态与开发对照证据
 
+本人位置纠偏另核对同一D2Game（MD5 `978f6f74cd031bce6ecee602cd5988cc`，ImageBase `0x6fc20000`）：RVA4A6E0的4A768–4A777只写第一个失效纠偏记录并返回；本地D2MOO `CLIENTS_NotifyWarpAttempt`缺少该退出，不能照抄其填满五槽的行为。4A660检查五条记录的2250帧有效期；CFE67初始化125帧，CFE75–CFE7A只允许`Game+6A == 0`进入长冷却，CFE7C–CFE94推进玩家单位+20／+24种子，表FB170为50%／1500、25%／3000、25%／4500帧。D2X单机nativeGameType=1、TCP/IP=2，不适用该长冷却。原DLL与反汇编仅只读取证；源码及未运行边界见[本人位置回包](../modules/MAP.md#本人位置回包)。
+
+普通路径重算定点核对同快照D2Common（MD5 `ee1238806ef6d6d9801d12a09d128fe1`，ImageBase `0x6fd50000`）：RVA36230对应D2Common_10142，362B6–362C6读取既有定点坐标的整数部分，3644E／36459清路径索引／点数，不将位置重置为整数中心；普通新命令入口参考D2MOO `PlrModes::StartXY／StartID→sub_6FC7F600`。RVA DB70的DC07–DC31确认活目标相对tPrevTargetCoord任一轴大于5才立即重算；DC46–DC61的路径耗尽／final坐标分支也适用于物件，与本地D2MOO转录把该分支只放在活目标内不同。原二进制与反汇编留忽略目录`artifacts/single-movement-sync-analysis-20261103/original-path-update-disassembly.txt`；不据局部修正认证全部路径生命周期。
+
 城镇技能资格定点核对同快照D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）：RVA19350–193A9读取技能记录，19382经C1F0调用D2Common ordinal10331（UNITS_GetRoom），1938D–19395检查Skills的InTown位并经C208调用ordinal10057。该Common导出RVA3C390读取Room1的RoomEx／level后判城镇，与D2MOO `DUNGEON_IsRoomInTown`相符；没有在此分支读取独立“启用技能”网络位。服务端对应`SKILLS/Skills.cpp`的技能执行入口同样以实际单位房间和InTown拒绝城镇施法。实机出城包型与预测差异的范围见[调试导航缺口](../development/ORIGINAL_GAPS.md#调试导航)；这不认证全部输入／边界时序。
 
 第五幕终局与表现的定点依据：本机D2Client RVA6CF32–6CF4C将Missiles.Trans1／2分别映射CelDraw3／4，D2CMP RVA9FA0以RGB逐通道乘法和原最近色生成PL2的0x43500表；RVA25660–25884处理非门物件OP末帧到ON及Start2／CycleAnim循环。D2Client的S2C表RVA DDE60中0x61指向AF940并将程序号交给899A0；7是资料片终局，结束后使用43710／43A70的原endgame2背景与5098／5100文字；43E53先设字体3（D2MOO Font.h为Font42），经43710、42C70画正文／姓名／称号，43E67才切字体1供按钮使用，D2Win10205（BD00→BB50）按5／10／15进度、HC及原职业性别表选称号。正常原版Host红门72实见13→返109及6107，不能将仅观察565等同于操作完成。DC6／DCC的TY组件位置另可由原图与COF界限直接复核，详见[光照与合成](../gameplay/world/LIGHTING.md)。这些定点核对不代表电影播放器、全部终局通知及各语言／模式已完整复刻。
@@ -160,7 +164,7 @@ MonStats基础攻击空值另以当前MPQ的TXT／BIN和同快照1.13c D2Common�
 
 [Blizzard原手册](https://ftp.blizzard.com/pub/misc/Diablo%20II%20Manual.pdf)、[LoD手册](https://ftp.blizzard.com/pub/misc/Diablo%20II%20-%20Lord%20of%20Destruction.pdf)与Arreat Summit用于交叉核对操作、物品／药剂／技能用途；[D2R Data Guide](https://locbones.github.io/D2R_DataGuide/#missilestxt)及原数据字段指南只补函数／字段含义，不能把D2R时钟、参数或简化客户端行为当1.13c规范。
 
-RandStart、非零FsOff、字幕节拍、雨线／天气、精确Fade／光照及多个客户端程序仍缺证据；明确暂缓，不导入第三方数值、地图或素材。资源路径发现曾使用OpenDiablo2 MPQ Viewer／Zezula文件名表；运行时只读明确路径与当前MPQ内置清单。
+RandStart、非零FsOff、字幕节拍、精确Fade／光照及多个客户端程序仍缺证据；明确暂缓，不导入第三方数值、地图或素材。天气阶段、风向、雨雪线和水花已定点核对本机零售1.13c客户端并接入源码；完整声音／闪电、随机交错及运行表现仍有缺口，定位及同步边界见[天气](../gameplay/world/LIGHTING.md#天气与河流水面)。资源路径发现曾使用OpenDiablo2 MPQ Viewer／Zezula文件名表；运行时只读明确路径与当前MPQ内置清单。
 
 零售客户端任务表现补核：同一1.13c D2Client的packet89回调表F2138按0–19为52440／52D00／空／53450／空／空／52C50／空／空／空／空／空／533F0／52420／53220／空／52B70／52AF0／空／52410。FX0由52440置计数0，53720–53756在30帧后只完成一次；53550给8区房间创建最多3个287号光束、最多25次探针及掩码5，536D3／536F0／440C0给出房间／活动链入口。CltDo表DD8A0的23=B2980使用当前帧<100→500；本机D2Common #10737 RVA6A270／#10970 RVA6A6D0是对应读写，不能套旧导出号。新增消费者及未齐范围见[第一幕任务](../gameplay/quests/ACT1.md)。
 

@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/systems/ai/target_query.hpp"

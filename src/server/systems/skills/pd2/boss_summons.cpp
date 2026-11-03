@@ -1,4 +1,5 @@
 #include "../system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "../runtime.hpp"
 #include "../native_caster.hpp"
 #include "execution.hpp"

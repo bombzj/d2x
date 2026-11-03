@@ -2,6 +2,7 @@
 #include "content/classic_data.hpp"
 #include "scene_view.hpp"
 #include "presentation/world/lighting_view.hpp"
+#include "presentation/world/weather_view.hpp"
 #include "presentation/world/palette_blend_view.hpp"
 #include "core/random.hpp"
 #include <algorithm>
@@ -66,7 +67,7 @@ SceneView::SceneView(Archives &archives, const ClassicData &content, const IActo
     const AudioSettings &audio)
     : archives_(archives), actorClient_(actor), inventoryClient_(inventory), characterClient_(character), questClient_(quests),
       npcClient_(npc), mapClient_(map), assets_(archives, content), lighting_(std::make_unique<LightingView>()),
-      paletteBlend_(std::make_unique<PaletteBlendView>(archives)),
+      weather_(std::make_unique<WeatherView>()), paletteBlend_(std::make_unique<PaletteBlendView>(archives)),
       painter_(assets_.font), chat_(archives),
       originalMenu_(archives, assets_.font), tradeInvite_(archives, assets_.font, originalMenu_), party_(archives) {
     applyAudioSettings(audio);

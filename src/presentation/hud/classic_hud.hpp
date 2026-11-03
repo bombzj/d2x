@@ -10,6 +10,7 @@ struct ClassicHudValues {
     std::optional<float> life, mana, stamina, experience; // Fractions; unknown stays empty.
     bool running{}, blueStamina{}, miniPanel{}, attributePoints{}, skillPoints{};
     std::optional<bool> pressedPoint;
+    bool menuPressed{};
 };
 // Shared original panel rendering. Values come from either client view; no gameplay mutations.
 void drawClassicHud(const ClassicHudArt &, const ClassicHudValues &);

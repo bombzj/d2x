@@ -16,6 +16,10 @@
 namespace d2x {
 RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSession &session, RemoteInventory &inventory)
     : scene_(scene), inventory_(inventory), session_(session) {
+    const DataTable levels(archives.read("data/global/excel/levels.txt"));
+    for(size_t row=0;row<levels.rows().size();++row)
+        if(const auto id=levels.number(row,"Id");id && *id>=0 && *id<=UINT16_MAX)
+            teleportModes_.emplace(uint16_t(*id),levels.number(row,"Teleport").value_or(0));
     for (const char *name : {"skills", "skilldesc", "missiles", "playerclass", "charstats", "monstats", "monstats2", "pettype", "states", "itemstatcost", "setitems", "weapons", "armor"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));
     for (const auto &[name, column] : {std::pair{"skills", "Id"}, {"itemstatcost", "ID"}}) {
@@ -87,6 +91,13 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
     session_.configure_player_default_skill(*defaultSkill);
 }
 bool RemoteCombat::reject(std::string reason) { reason_ = std::move(reason); return false; }
+bool RemoteCombat::teleportPathAllowed(uint16_t level,const Grid &grid,Vec from,Vec to) const {
+    const auto mode=teleportModes_.find(level);
+    if(mode==teleportModes_.end() || !mode->second) return false;
+    // SkillSor::SrvDo027 -> UNITS_TestCollisionByCoordinates, sizes 2/2.
+    // This is DOOR | MISSILE_BARRIER, not walking collision or monsters.
+    return mode->second!=2 || grid.interactionSegment(from,to,2,{},0x0804,2);
+}
 std::string_view RemoteCombat::classCode() const {
     const auto &view = session_.read();
     for (const auto &character : view.characters)
@@ -404,6 +415,24 @@ bool RemoteCombat::corpseTargetEligible(const OnlineUnit &unit,int selection) co
     default: return false;
     }
 }
+std::optional<int> RemoteCombat::skillDelayFrames(uint16_t skill,uint32_t owner) const {
+    if(skillDelayResolver_) if(const auto delay=skillDelayResolver_(skill,owner)) return delay;
+    const auto row=skills_.find(skill);
+    return row==skills_.end()?std::nullopt:tables_.at("skills").number(row->second,"delay");
+}
+bool RemoteCombat::skillDelayActive(uint16_t skill,uint32_t owner) const {
+    const auto &view=session_.read();
+    if(view.protocolProfile!="lod113c" || !view.load.playerUnitId) return false;
+    const OnlineUnitKey playerKey{0,*view.load.playerUnitId};
+    const auto unit=view.world.units.find(playerKey);
+    const auto observed=unitStates_.find(playerKey);
+    if(unit==view.world.units.end() || observed==unitStates_.end() || !observed->second.decoded ||
+        observed->second.sequence!=unit->second.stateSequence) return false;
+    if(!std::any_of(observed->second.states.begin(),observed->second.states.end(),
+        [](const auto &state){return state.second.name=="skilldelay";})) return false;
+    const auto delay=skillDelayFrames(skill,owner);
+    return delay && *delay>0;
+}
 bool RemoteCombat::submit(OnlineCombatCommand command,std::optional<Vec> inputOrigin) {
     command.interaction.reset();
     if (!command.context) command.context = onlineIntentContext(session_.read());
@@ -475,6 +504,8 @@ bool RemoteCombat::submit(OnlineCombatCommand command,std::optional<Vec> inputOr
             if (!eligibility.canSelect(command.hand == OnlineSkillHand::Left, metadata))
                 return reject("Server has not reported an available active skill for this hand");
             if (command.action == Action::Cast) {
+                if(skillDelayActive(command.skill,command.owner))
+                    return reject("Skill is waiting for the native casting delay to expire");
                 const auto &binding = scene_.read();
                 if (!binding.nativeMapReady)
                     return reject("Skill is waiting for the active map: " + binding.nativeMapReason);
@@ -542,6 +573,17 @@ bool RemoteCombat::submit(OnlineCombatCommand command,std::optional<Vec> inputOr
                 if (std::abs(int(player.x) - point->x) > 50 || std::abs(int(player.y) - point->y) > 50)
                     return reject("Cast exceeds the native 50-subtile request range");
                 const bool teleport=tables_.at("skills").number(row->second,"srvdofunc")==27;
+                if(teleport && binding.area) {
+                    const auto mode=teleportModes_.find(*binding.area);
+                    if(mode==teleportModes_.end() || !mode->second) return reject("Teleport is unavailable in this level");
+                    // Ordinary Teleport needs no intermediate collision grid.
+                    if(mode->second==2 && binding.origin && scene_.map()) {
+                        const Vec offset{float(binding.origin->x),float(binding.origin->y)};
+                        if(!teleportPathAllowed(*binding.area,scene_.navigationGrid(session_.read()),
+                            Vec{float(player.x),float(player.y)}-offset,Vec{float(point->x),float(point->y)}-offset))
+                            return reject("Teleport is blocked by this level's native barrier rule");
+                    }
+                }
                 if (!binding.origin || (!teleport && (point->x < binding.origin->x || point->y < binding.origin->y ||
                     int(point->x - binding.origin->x) >= binding.width || int(point->y - binding.origin->y) >= binding.height)))
                     return reject("Cast target is outside the current map binding");

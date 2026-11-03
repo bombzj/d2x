@@ -36,6 +36,7 @@ struct OnlineSkillHotkey {
 };
 struct OnlineQuestState {
     std::optional<std::array<uint16_t, 48>> playerFlags, gameFlags;
+    uint64_t playerFlagsRevision{}; // Receipt of the private snapshot, not a public status change.
     std::optional<std::array<uint8_t,37>> availability; // Native 5E initialization-table order.
     // Latest 0x91 report per zero-based act. FFFF is an absent entry,
     // not a request to clear an already introduced NPC.

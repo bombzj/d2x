@@ -28,7 +28,7 @@ struct CharacterProjectionInput {
     bool baseRanksAssigned = false;
     std::array<bool, 2> throwReady{};
     std::array<std::optional<SkillHandEquipment>, 2> handEquipment;
-    struct ResourceStates { bool bloodMana = false, inferno = false; };
+    struct ResourceStates { bool bloodMana = false, inferno = false, skillDelay = false; };
     std::optional<ResourceStates> resourceStates;
     struct ShapeStates {
         bool restricted = false;

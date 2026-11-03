@@ -39,6 +39,8 @@ OperateFn18暗门依据D2MOO `ObjMode::OBJECTS_OperateFunction18_SecretDoor`：�
 
 OperateFn16活板门按D2MOO `OBJECTS_OperateFunction16_TrapDoor`处理：NEUTRAL首次操作立即转OPENED；已打开时寻找本房间第一个真实UNIT_TILE并走既有楼梯旅行。门模式／碰撞使用当前MPQ，楼梯目的地和出生点使用实际地图，不生成替代出口。对象发起的普通楼梯旅行也绑定本次移动序号，后续移动仍会使等待失效。此分支由第二幕单机AI遇到鲁高因TrappDoor保持关闭而补齐；已观察首次开门及实际楼梯旅行，已打开时再点活板门直接旅行的组合仍待验收。
 
+客户端目标列表将已指派Operate16盖子与同房间唯一真实type5入口绑定，由盖子承接目的地并隐藏底层独立点击目标；AI先观察开盖结果，再交互进入，不能直接点击底层入口绕过关闭盖子。仅使用实际指派及房间关系，绑定不唯一时不猜关联；海边裸入口不受此绑定影响。此目标／AI修正未构建、未实测。
+
 交互几何核对D2MOO UNITS_IsObjectInInteractRange／D2Common_10399：原整数子格、对象矩形及外侧条带，OperateRange不当中心圆半径。接近点查询完整行走体积与原射线；范围预览不能证明原服操作成功。
 
 普通蓝门与travel持有的特殊门户也复用上述原物件矩形及交互射线，排除目标自身的占位；不再以OperateRange作中心圆半径，也不使用普通行走线段穿过门户自身的碰撞。依据为PlrMsg::sub_6FC828D0的UNIT_OBJECT前置与ObjMode::OBJECTS_OperateFunction15_Portal；所有权、队伍、敌意延迟及目的地资格保留。已链接的OperateFn15门户在OPERATING即能使用，原函数不检查OPENED，动画／碰撞仍按原计时推进；其他操作的开启资格不外推。直接发送远距门户0x13时的宿主自动接近仍未补齐，常规客户端先通过正常移动接近再提交交互，不能由近处过门结果认证远距原包。
@@ -57,9 +59,15 @@ OperateFn16活板门按D2MOO `OBJECTS_OperateFunction16_TrapDoor`处理：NEUTRA
 
 RemoteTown从真实物件／目标、原Selectable及上述门参数投影资格；SceneController提交靠近／0x13。神坛InteractType结合Shrines.Code与TBL ShrId显示真实名称，不本地授予效果。开箱状态取0x0E，掉落取真实物品通知，传送点取0x63及原服旅行位置；0x77属于玩家交易，不能当开箱回执。
 
+宿主已区分物件指派与模式更新：`publishObjects`缓存最后指派的类型／坐标／外观字段，普通门、井、陷阱和任务机关仅模式变化走0x0E；首次可见、真实重订阅及身份／坐标／外观重建才发0x51。箱锁／井次数属于运行状态，不当作新身份；门户目的地与主人沿60／82。`publishPortals`也不再因开启或链接修订重复51，保留不可见另一端的占位与移除。依据D2MOO `SUnitMsg`首次指派、`ObjMode::sub_6FC752A0`通用模式更新及`SCmd::sub_6FC3F550`门户状态。
+
+箱子、祭坛、石柱及客户端已核实静默ENDANIM的程序使用可靠ObjectFact，初始化、领域发布和宿主快照共用`objects::usesReliableModeFacts`，保留跨多服务帧的OP事实；含封印52／54／55／56、任务门34／46／66及Init11／12／38／39。传送点23保留原目标标志与静默ON分支。其他物件仍由快照投影0x0E，其同次发布前多次模式切换的历史尚未迁入可靠事实；不宣称所有特殊程序的时序已完全复刻。
+
+OperateFn34皇宫／庇护所入口按D2MOO `OBJECTS_OperateFunction34_ArcaneSanctuaryPortal`先在NEUTRAL启动动画，后续非NEUTRAL操作旅行；当前MPQ class298的Selectable1=0、Selectable2=1、FrameCnt1=30，因此客户端／AI仍等待31帧投影至可选OPENED再点击。目的地由原操作的54↔74规则投影，无portalDestination包不是故障。AI保留指派身份校验，正常开门／进入及反向返回待新版复验。
+
 传送点OperateFn23在mode1／2保留点击例外，启动后衔接ON动画／灯光，详见[联网实现](../../modules/NETWORK.md#本批源码修正)；共用模式投影也更新原MPQ对象碰撞，不改副本模式或解锁。
 
-祭坛表现源码补回公共绘制迁移时漏掉的未领取类型图／闪光层及物件COF阴影。真实Objects.SubClass／OperateFn识别祭坛，原服0x51的InteractType经既有shrineStateName映射到当前MPQ States.overlay1／2和Overlay DCC；只在原服mode0显示，mode1开始后移除，角色增益图仍只读原服状态。物件Overlay使用原静态落点及Height1，角色用Height2，secondary层先入队，两层各自按PreDraw排序；不使用物件X／Yoffset移动Overlay。
+祭坛表现源码补回公共绘制迁移时漏掉的未领取类型图／闪光层及物件COF阴影。物件阴影按当前模式的BlocksLight正向许可及COF Shadow字节进入公共逐帧投影；火把柱／火焰的缺失与动画轮廓修正、原DLL消费端依据及待验收边界见[光照](LIGHTING.md)。真实Objects.SubClass／OperateFn识别祭坛，原服0x51的InteractType经既有shrineStateName映射到当前MPQ States.overlay1／2和Overlay DCC；只在原服mode0显示，mode1开始后移除，角色增益图仍只读原服状态。物件Overlay使用原静态落点及Height1，角色用Height2，secondary层先入队，两层各自按PreDraw排序；不使用物件X／Yoffset移动Overlay。
 
 OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(FrameCnt1+1)/25秒衔接ON，模式动画、Start／帧数及灯光继续读当前MPQ；显示模式与对象碰撞分别投影，不写回原服副本或授予效果。资源解码／COF合成沿用公共实现。另据ObjMode／SCmd解释0x4D物件操作通知：其技能字段实际是操作者GUID，等级字段是祭坛类型；只对玩家／怪物生成施法动作，不清除物件0x0E模式或生成伪施法效果。原服state137及生命祭坛模式／回复参考见[联网](../../modules/NETWORK.md#原服物件与交易观察)；精确Overlay节拍及全部祭坛表现仍待原版对照。
 
@@ -93,7 +101,7 @@ OperateFn4的掉落完成路径按当前MPQ `Objects.Mode1`选择模式：`hosti
 | 飞箭、火球、毒球、诅咒骷髅、闪电控制器 | MonStats真实trap类型 | 原9A图、动作／释放帧与MissA1／S1／S2；Draw=0物件有意隐藏，不报告缺图 |
 | 毒云、新星、喷火雕像 | 原ClientSend／CltDo4／25／51 | 毒云只由0x73出生，按MPQ机会／数量／范围产生poisonpuff；新星64整数方向；喷火雕像原序列释放帧与枪口偏移 |
 
-`content/world/object_mode.hpp`与ActorAnimation／RemoteTown共用已核实的ENDANIM期限：OperateFn1／3／4／5／7／14／15／23／30／48／51／68及非循环2，在Mode2存在时按(FrameCnt1+1)/25秒衔接。D2MOO `sub_6FC74AC0`直接写OPENED并释放对应碰撞，不安排后续单位刷新，因此不能一直等待第二个0x0E。副本模式保留原值，显示和对象层各自投影；ON重新从零计时。同模式0x0E标志刷新保留原动画起点，0x51新指派重置表现缓存。
+`content/world/object_mode.hpp`与ActorAnimation／RemoteTown共用已核实的ENDANIM期限：OperateFn1／3／4／5／7／14／15／18／23／30／34／48／51／68及非循环2，在Mode2存在时按(FrameCnt1+1)/25秒衔接。D2MOO `sub_6FC74AC0`直接写OPENED并释放对应碰撞，不安排后续单位刷新，因此不能一直等待第二个0x0E。副本模式保留原值，显示和对象层各自投影；ON重新从零计时。同模式0x0E标志刷新保留原动画起点，0x51新指派重置表现缓存。
 
 OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12_PermanentPortal的ENDANIM；当前MPQ class59／60的CycleAnim1=0、CycleAnim2=1，开启后按原ON资源持续循环，不停在OP末帧。自研蓝门openingTicks也按FrameCnt1+1准备，不能用FrameDelta反算权威期限。旧master门户绘制已经分开OP／ON，但其单机衔接期限不是原ENDANIM依据；当前公共投影适用于原服和自研连接，精确表现节拍仍待逐帧对照。
 

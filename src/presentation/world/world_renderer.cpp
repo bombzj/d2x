@@ -1,5 +1,6 @@
 #include "presentation/world/world_draw_view.hpp"
 #include "presentation/world/lighting_view.hpp"
+#include "presentation/world/weather_view.hpp"
 #include "presentation/world/palette_blend_view.hpp"
 #include "presentation/world/overlay_geometry.hpp"
 #include "client/actor_client.hpp"
@@ -67,7 +68,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     if (newGame || worldAreaGeneration_ != scene.areaGeneration) {
         worldGameGeneration_ = scene.gameGeneration; worldAreaGeneration_ = scene.areaGeneration;
         assets_.resetWorldTiles(); worldVisibility_.clear(); lighting_->resetSources();
-        if (newGame) {lighting_->resetEnvironment();beginWorldGame(scene.gameGeneration);}
+        if (newGame) {lighting_->resetEnvironment();weather_->reset(scene.weatherSeed);beginWorldGame(scene.gameGeneration);}
     }
     view_.camera = project(scene.observer);
     if(scene.eclipse) lighting_->setEclipse(*scene.eclipse);
@@ -171,7 +172,22 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         }
     }
     auto items = scene.items;
-    items.reserve(items.size() + inventoryView_.items.size() + clientMissiles_.size());
+    items.reserve(items.size() + inventoryView_.items.size() + clientMissiles_.size() + map.terrain.clientObjects.size());
+    // SpawnHardcodedPresetUnits creates these locally, independently of server
+    // unit assignments. R1/R2/R3 retain the original COF, frame rate, offset and
+    // ground order from Objects; room release removes them with the snapshot.
+    for (const auto &object:map.terrain.clientObjects) {
+        if (object.type!=2) continue;
+        const auto *visual=assets_.objectAnimation(object.id,0,scene.palette);
+        if (!visual || !visual->ready()) continue;
+        const Vec feet{float(object.x),float(object.y)};
+        const auto offset=unitScreenOffset+visual->offset;
+        if (!visual->animation.intersects(screen(feet)+offset,viewport)) continue;
+        WorldDrawItem item;
+        item.image=visual->sampleFacing(scene.time,scene.time,0);
+        item.position=feet;item.pixelOffset=offset;item.orderFlag=visual->order;item.shadow=visual->shadow;
+        if (item.image) items.push_back(item);
+    }
     for (const auto &[id, item] : inventoryView_.items) {
         const auto *ground = std::get_if<GroundLocation>(&item.location);
         if (!ground || ground->region != scene.region) continue;
@@ -247,11 +263,30 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     includeEntryLights(draw); includeEntryLights(roofs);
     auto &palette = prepareWorldLighting(scene, items,
         {minimum.x, minimum.y, maximum.x - minimum.x, maximum.y - minimum.y});
+    if (level.rain || level.mud) assets_.prepareWeather(*weather_,scene.palette);
+    weather_->advance(scene.elapsed,level,project(scene.observer+scene.terrainOrigin)*view_.zoom,
+        W,H-HUD,lighting_->period(level.act),palette);
+    for (const auto index:visibleCells) {
+        const auto &instance=map.terrain.instances[index];
+        const auto *tile=map.terrain.tiles.at(size_t(instance.renderTile(scene.time)));
+        if (instance.type==0 && (tile->materialFlags&2)) {
+            const Vec feet{instance.x*5.f,instance.y*5.f};
+            weather_->waterTile(feet+scene.terrainOrigin,screen(feet),viewport);
+        }
+    }
+    weather_->finishWaterTiles();
     const PaletteBlendView::TargetScope targetScope(palette);
+    bool splashesDrawn=false;
+    const auto splashes=[&] {
+        if (splashesDrawn) return;
+        weather_->drawSplashes(palette,[&](Vec position) {return screen(position-scene.terrainOrigin);});
+        splashesDrawn=true;
+    };
     auto paint = [&](auto &entries) {
         std::stable_sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b) { return a.order < b.order; });
         std::optional<PaletteBlendView::TerrainBatch> terrainBatch;
         for (const auto &entry : entries) {
+            if (entry.order.pass>0 && !splashesDrawn) {terrainBatch.reset();splashes();}
             if (!entry.item) {
                 if (entry.tint.a == 0) continue;
                 if(!terrainBatch) terrainBatch.emplace(palette);
@@ -284,7 +319,9 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     };
     uiScissor(viewport.x, viewport.y, viewport.width, viewport.height);
     paint(draw);
+    splashes();
     paint(roofs);
+    weather_->draw(palette,viewport);
     EndScissorMode();
     return visibleCells;
 }
@@ -308,13 +345,16 @@ PaletteBlendView &SceneView::prepareWorldLighting(const WorldDrawView &scene, st
     std::vector<SceneLight> lights;
     for (const auto &player : scene.playerLights)
         lights.push_back({player.position, player.radius, sceneLightColor(player.color)});
-    for (const auto &object : scene.objects) {
-        const auto found = assets_.objectLights.find(object.identity);
-        if (found == assets_.objectLights.end()) continue;
+    const auto objectLight = [&](int identity, int mode, Vec position) {
+        const auto found = assets_.objectLights.find(identity);
+        if (found == assets_.objectLights.end()) return;
         const auto &light = found->second;
-        const int radius = light.diameter[size_t(std::clamp(object.mode, 0, 7))] >> 1;
-        if (radius > 0) lights.push_back({object.position, radius, light.color, SceneLight::Occlusion::Propagated});
-    }
+        const int radius = light.diameter[size_t(std::clamp(mode, 0, 7))] >> 1;
+        if (radius > 0) lights.push_back({position, radius, light.color, SceneLight::Occlusion::Propagated});
+    };
+    for (const auto &object : scene.objects) objectLight(object.identity,object.mode,object.position);
+    for (const auto &object : terrain.clientObjects)
+        if (object.type==2) objectLight(object.id,0,{float(object.x),float(object.y)});
     for (const auto &monster : scene.monsters) {
         const auto found = assets_.monsterLights.find(monster.identity);
         if (found != assets_.monsterLights.end() && found->second.radius > 0)

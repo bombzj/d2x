@@ -1,4 +1,5 @@
 #include "../system.hpp"
+#include "server/runtime/events.hpp"
 #include "server/systems/monsters/system.hpp"
 
 namespace d2x::server::effects {

@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "gameplay/skills/mana_payment.hpp"
 #include "attribute_projection.hpp"
 #include "gameplay/skills/targeting.hpp"

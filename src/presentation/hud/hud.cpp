@@ -129,7 +129,7 @@ void SceneView::drawGameMenu() const {
         view_.automapFade == AutomapFade::Everything ? 2 : 3,
         int(view_.automapCenterWhenCleared), int(view_.automapParty), int(view_.automapNames)};
     assets_.escapeMenu.draw(view_.gameMenuPage, view_.gameMenuSelected, view_.gameMenuTime,
-                            values, view_.audio, view_.lighting, view_.gameMenuControlScroll, view_.gameMenuScrollPressed,
+                            values, view_.audio, view_.lighting, view_.standardResolution, view_.gameMenuControlScroll, view_.gameMenuScrollPressed,
                             view_.controlDraft, view_.controlSelected, view_.controlColumn, view_.controlCapturing, *blend);
 }
 void SceneView::drawHelp() const {
@@ -346,7 +346,6 @@ void SceneView::drawBhSettings() const {
 }
 void SceneView::drawUi(Vec mouse) const {
     deferredTooltip_.active = false;
-    drawControlPanel();
     drawDurabilityWarning();
     drawHostilityWarning();
     drawQuestNotice();
@@ -369,11 +368,14 @@ void SceneView::drawUi(Vec mouse) const {
     drawSkillTree(mouse);
     if (view_.shopOpen) drawNpcShop(mouse);
     drawInventory(mouse);
+    if (view_.travelMenu && view_.waypointSource)
+        drawWaypointMenu(mouse);
+    // Side frames extend into the HUD: draw the globes and control strip
+    // over them, then the expandable belt, tooltips and modal overlays.
+    drawControlPanel();
     drawBelt(mouse);
     if (view_.help)
         drawHelp();
-    if (view_.travelMenu && view_.waypointSource)
-        drawWaypointMenu(mouse);
     drawSkillControls(mouse);
     if (view_.npcMenu) drawNpcMenu(mouse);
     drawHirelingList(mouse);
@@ -389,7 +391,7 @@ void SceneView::drawUi(Vec mouse) const {
     drawBhOverlay();
     drawBhSettings();
     drawDeathNotice(); // Native C3DAA draws death notices after the main HUD.
-    if (!itemCursor) {
+    if (!itemCursor && !view_.hidePointer) {
         const Sprite *pointer = assets_.cursor.frame(0, 0);
         Vec hotspot = handCursorHotspot(pointer);
         if (const auto &targeting = view_.inventory.identify) {

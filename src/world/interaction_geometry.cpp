@@ -75,6 +75,11 @@ bool interactionClear(const Grid &grid, Vec position, const InteractionTarget &o
     return (position - object.pos).length() <= object.reach &&
         grid.segment(position, interactionPoint(grid, object), object.id);
 }
+bool nativeUnitTargetMoved(Vec planned, Vec current, uint8_t targetType) {
+    if(targetType>1) return false;
+    return std::abs(std::floor(planned.x+.5f)-std::floor(current.x+.5f))>5 ||
+        std::abs(std::floor(planned.y+.5f)-std::floor(current.y+.5f))>5;
+}
 std::deque<Vec> nativeTargetPath(const Grid &grid, Vec position, const InteractionTarget &target, uint8_t targetType) {
     if (interactionClear(grid, position, target)) return {};
     // PathMisc::sub_6FD5DB70 / D2Common_10236: object and unreached living

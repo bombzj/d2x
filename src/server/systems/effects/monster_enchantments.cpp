@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "attribute_projection.hpp"
 #include "native_area.hpp"
 #include "gameplay/skills/targeting.hpp"

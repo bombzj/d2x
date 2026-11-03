@@ -194,6 +194,10 @@ struct RemoteScene::Impl {
     std::set<std::string> effectLimitations;
     std::map<OnlineUnitKey, uint64_t> missileCastRevisions;
     std::deque<OverlayVisual> overlayVisuals;
+    // Native monster-owned overlays outlive actions; mode 3 loops, mode 5
+    // holds its last frame. Assignment changes must not inherit either.
+    struct MonsterOverlay { uint64_t assignment{}; int identity{}; float born{}; bool loop{}; };
+    std::map<std::pair<OnlineUnitKey,int>,MonsterOverlay> monsterOverlays;
     std::map<std::pair<OnlineUnitKey, uint8_t>, float> stateTimes;
     struct BoneArmorVisual {
         struct Piece {

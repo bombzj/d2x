@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "player_contact.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

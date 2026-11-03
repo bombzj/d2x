@@ -1,4 +1,6 @@
 #include "planning.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/inventory.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/transactions/system.hpp"

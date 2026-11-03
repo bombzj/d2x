@@ -49,6 +49,8 @@ class RemoteControl {
     std::optional<Movement> movement_;
     uint64_t verificationGame_{}, verificationArea_{}, verificationRevision_{};
     std::string reason_;
+    uint64_t questRefreshConnection_{}, questRefreshGame_{}, questRefreshRevision_{}, questRefreshWorldRevision_{};
+    std::chrono::steady_clock::time_point questRefreshDeadline_{};
     std::function<std::optional<OnlinePoint>(OnlineUnitKey)> npcPathPosition_;
     std::function<void(OnlineUnitKey)> stopNpcPath_;
     std::function<std::optional<int>(OnlineUnitKey)> npcFollowRange_;
@@ -71,6 +73,15 @@ class RemoteControl {
     bool interact(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {},
                   std::optional<Vec> displayOrigin = {}, bool followUntilServerArrival = false);
     bool townPortal();
+    const OnlineQuestState &quests() const { return session_.read().world.quests; }
+    // Reuse a private snapshot newer than the caller's observed revision;
+    // otherwise join/request a refresh. Accepted is not completion.
+    bool refreshQuests(std::optional<uint64_t> newerThan = {});
+    bool closeNpc(std::optional<OnlineIntentContext> context = {});
+    bool acknowledgeNpc(uint16_t topic,std::optional<OnlineIntentContext> context = {});
+    bool greetNpc(uint16_t identity,std::optional<OnlineIntentContext> context = {});
+    bool npcTravel(uint32_t destination,std::optional<OnlineIntentContext> context = {});
+    bool useWaypoint(uint16_t destination,uint8_t number = 0,std::optional<OnlineIntentContext> context = {});
     void cancelApproach() {
         if (approach_) movement_.reset();
         approach_.reset();

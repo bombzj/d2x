@@ -205,7 +205,9 @@ DomainResult<EntityId> System::spawnStoryNpc(RegionId region,std::string_view co
         for(const auto &[view,loan]:loans) {(void)view;ports_.areas.publishRoomRandom(loan);}
         return {DomainStatus::Unavailable,{}};
     }
-    const auto admitted=ports_.world.admitQuestNpc(region,code,**placed.value,0);
+    // QUESTS_SpawnCriticalMonster's special-init branch sets ISRESURRECT,
+    // preserving this actor when a town with SaveMonsters=0 retires its room.
+    const auto admitted=ports_.world.admitQuestNpc(region,code,**placed.value,0,critical);
     if(!admitted) return admitted;
     for(const auto &[view,loan]:loans) {(void)view;ports_.areas.publishRoomRandom(loan);}
     return admitted;

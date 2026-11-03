@@ -1,6 +1,6 @@
 #pragma once
 #include "content/character/actor_appearance.hpp"
-#include "contracts/character.hpp"
+#include "contracts/animation_timing.hpp"
 #include "content/world/object_mode.hpp"
 #include "core/math.hpp"
 #include "presentation/graphics/graphics.hpp"

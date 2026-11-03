@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/frame_facts.hpp"
 #include "server/systems/quests/system.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/objects/system.hpp"

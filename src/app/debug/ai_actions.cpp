@@ -236,7 +236,7 @@ bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
         }
     }
     if(goal.sourceObject && approachKnown(c,Selector{2,*goal.sourceObject,"item source"})) return false;
-    explore(c,"item "+goal.item);return false;
+    explore(c,"item "+goal.item,false,ExplorationFocus::Units);return false;
 }
 void DebugAi::Impl::returnTown(Context &c) {
     if(reachTown(c)) advance(c,"Native town scene observed");
@@ -264,10 +264,8 @@ bool DebugAi::Impl::reachTown(Context &c) {
     if(portalIssued) {
         if(portalUsed) {
             wait("town-portal-wait","Waiting for the native town scene");
-            if(now>=actionDeadline) {
-                if(recoverTravel(c)) portalUsed=false;
-                else throw std::runtime_error("Own portal was used but town was not observed");
-            }
+            if(recoverTravel(c,now<actionDeadline)) portalUsed=false;
+            else if(now>=actionDeadline) throw std::runtime_error("Own portal was used but town was not observed");
             return false;
         }
         std::optional<OnlineMapTarget> portal;
@@ -325,19 +323,19 @@ bool DebugAi::Impl::reachTown(Context &c) {
 void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
     const auto &view=c.session.read();const auto slot=goal.questSlot;
     if(view.world.quests.playerFlags && ((*view.world.quests.playerFlags)[slot]&3) && !owned(c,goal.item)) {
-        if(view.world.npcRequested) c.session.close_npc();
+        if(view.world.npcRequested) c.control.closeNpc();
         advance(c,"Item consumed and actual native reward flag observed: "+goal.quest);return;
     }
     if(!owned(c,goal.item)) throw std::runtime_error("No required item is owned and no delivery reward flag confirms completion");
     const auto npc=find(c,*goal.target);
-    if(!npc) {if(!approachKnown(c,*goal.target)) explore(c,"delivery NPC "+goal.target->name);return;}
+    if(!npc) {if(!approachKnown(c,*goal.target)) explore(c,"delivery NPC "+goal.target->name,false,ExplorationFocus::Units);return;}
     const auto now=Clock::now();
     if(!view.world.npcConversation || view.world.npcConversation->type!=1 || view.world.npcConversation->source!=npc->key.id) {
         wait("delivery-approach","Opening the actual delivery NPC conversation");
         walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true}});return;
     }
     wait("delivery-dialogue","Acknowledging only actually offered automatic text or the verified Malus topic");
-    if(!greetingIssued && npc->classId) {greetingIssued=c.session.confirm_npc_voice(*npc->classId);if(greetingIssued)return;}
+    if(!greetingIssued && npc->classId) {greetingIssued=c.control.greetNpc(*npc->classId);if(greetingIssued)return;}
     const auto conversation=*view.world.npcConversation;
     const auto automatic = nextAutomaticNpcSpeech(conversation);
     for(const auto &message:conversation.messages) {
@@ -346,7 +344,7 @@ void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
         // It is acknowledged only when the real NPC offered it to this client.
         if((message.menu==0 || std::find(goal.topics.begin(),goal.topics.end(),message.stringId)!=goal.topics.end()) &&
             !conversation.acknowledged.contains(message.stringId)) {
-            if(c.session.acknowledge_npc_message(message.stringId)) {
+            if(c.control.acknowledgeNpc(message.stringId)) {
                 ++interactions;setActionDeadline(std::chrono::seconds(12));note("npc-topic-acknowledged",std::to_string(message.stringId));
             }
             return;
@@ -366,7 +364,7 @@ void DebugAi::Impl::executeGoal(Context &c,const Goal &goal) {
     switch(goal.kind) {
     case Kind::Travel:
         if (goal.requiredWaypoint) {
-            if (!activateWaypoint(c,true)) explore(c, "required waypoint");
+            if (!activateWaypoint(c,true)) explore(c, "required waypoint",false,ExplorationFocus::Units);
             return;
         }
         advance(c,"Native target area observed");return;
@@ -380,7 +378,7 @@ void DebugAi::Impl::executeGoal(Context &c,const Goal &goal) {
     case Kind::Find: case Kind::Hunt: break;
     }
     const auto unit=find(c,*goal.target,goal.kind==Kind::Hunt || !goal.interact);
-    if(!unit) {target.reset();if(!approachKnown(c,*goal.target)) explore(c,goal.target->name);return;}
+    if(!unit) {target.reset();if(!approachKnown(c,*goal.target)) explore(c,goal.target->name,false,ExplorationFocus::Units);return;}
     target=unit->key;targetAssignment=unit->assignmentRevision;
     if(goal.kind==Kind::Hunt) {
         if(onlineMonsterCorpse(*unit)) {advance(c,"Assigned target death mode observed: "+goal.target->name);return;}

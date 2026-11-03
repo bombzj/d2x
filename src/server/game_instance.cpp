@@ -1,4 +1,10 @@
 #include "game_instance.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/skills.hpp"
+#include "server/runtime/facts/quest.hpp"
+#include "server/runtime/facts/social.hpp"
+#include "server/runtime/facts/player_message.hpp"
 #include "movement.hpp"
 #include "player_projection.hpp"
 #include "core/random.hpp"
@@ -6,6 +12,12 @@
 #include <algorithm>
 
 namespace d2x::server {
+std::vector<MissileFact> GameInstance::visibleMissiles(PlayerId id) const { return systems_.missiles.visible(id); }
+std::optional<QuestFact> GameInstance::questProjection(PlayerId id) const {
+    const auto *player = players_.find(id);
+    return player ? std::optional<QuestFact>{systems_.quests.projection(id,player->persistent.player,player->area)} : std::nullopt;
+}
+
 namespace {
 NativeUnitIds::Publication prepareCharacterIdentities(const NativeUnitIds &identities,const PersistentCharacter &character) {
     std::vector<NativeUnitIds::Request> requests{{character.player.id,NativeUnitType::Player}};
@@ -162,7 +174,7 @@ bool GameInstance::pendingSynchronousCommand(PlayerId id,uint64_t sequence) cons
     return systems_.inventory.pendingGoldCommand(id,sequence) || systems_.travel.pendingPortalCommand(id,sequence) ||
         systems_.crafting.pendingTransmute(id,sequence) ||
         std::any_of(commands_.begin(),commands_.end(),[&](const auto &pending) {
-            return pending.player==id && pending.awaitingCrafting && (!sequence || pending.command.sequence==sequence);
+            return pending.player==id && (pending.awaitingCrafting || pending.awaitingQuest || pending.retryingNpcAcknowledgement) && (!sequence || pending.command.sequence==sequence);
         });
 }
 bool GameInstance::enter(PlayerId id, bool active) {
@@ -303,6 +315,18 @@ CommandStatus GameInstance::enqueue(PlayerId id, GameCommand command) {
     observeCommand(id, sequence, result);
     return result;
 }
+DomainResult<> GameInstance::installQuests(quests::Prepared prepared) {
+    const auto actor=prepared.source.actor;
+    const auto token=prepared.source.token;
+    const bool current=systems_.quests.pendingCommand(actor.player,actor.sequence)==token;
+    const auto result=systems_.quests.install(std::move(prepared));
+    if(current && !isDeferred(result.status)) {
+        for(auto &pending:commands_)
+            if(pending.player==actor.player && pending.command.sequence==actor.sequence && pending.awaitingQuest==token)
+                pending.dispatchedResult=commandStatus(result.status);
+    }
+    return result;
+}
 void GameInstance::step() {
     if(systems_.monsters.finishModifiers({tick_})!=StepStatus::Complete) return;
     if(systems_.population.advanceQuestBirths({tick_})!=StepStatus::Complete) return;
@@ -317,8 +341,9 @@ void GameInstance::step() {
         const ActorContext actor{pending.player, player.actor, player.area,
             area.generation, command.sequence, tick_};
         // Recheck at execution: earlier commands may have replaced the area.
-        auto result = pending.awaitingCrafting?pending.dispatchedResult:CommandStatus::Unavailable;
-        if (!pending.awaitingCrafting && player.entered) {
+        const bool dispatched=pending.awaitingCrafting || pending.awaitingQuest;
+        auto result = dispatched?pending.dispatchedResult:CommandStatus::Unavailable;
+        if (!dispatched && player.entered) {
             if (command.area != player.area || command.areaGeneration != area.generation) result = CommandStatus::Stale;
             else {
                 const auto *movement=std::get_if<MovementCommand>(&command.payload);
@@ -354,6 +379,27 @@ void GameInstance::step() {
                             participant.route.clear();participant.moving=false;participant.runningNow=false;
                             systems_.travel.cancel(id);systems_.skills.cancel(id,participant.actor);
                         }
+            }
+        }
+        // Native quest callbacks create/replace rewards before the next input.
+        // Hold the accepted command across external content preparation, so a
+        // following 30/move cannot invalidate its conversation or inventory.
+        // Installation supplies the final result; never replay the callback.
+        if(const auto token=systems_.quests.pendingCommand(pending.player,command.sequence)) {
+            pending.awaitingQuest=token;pending.dispatchedResult=result;
+            inventoryWaiting=true;break;
+        }
+        // Scroll callbacks also prepare world content or wait for output without
+        // a reward token. Capacity/PendingContent both dispatch as QueueFull.
+        // Retry that uncommitted callback before close/movement or simulation;
+        // it is not a cancellable approach to an NPC. Token-backed callbacks
+        // above finish through installation and must never be replayed here.
+        if(result==CommandStatus::QueueFull && !dispatched) {
+            const auto *request=std::get_if<npc::Request>(&command.payload);
+            const auto *talk=request?std::get_if<TalkToNpc>(&request->intent):nullptr;
+            if(talk && talk->action==TalkToNpc::Action::Acknowledge) {
+                pending.retryingNpcAcknowledgement=true;
+                inventoryWaiting=true;break;
             }
         }
         // Retail transmutation is synchronous. Its content worker finishes

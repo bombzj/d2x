@@ -187,17 +187,21 @@ GpuAnimation Graphics::worldSingle(const std::string &path, WorldSingleArt kind,
     const bool keepColor = kind != WorldSingleArt::Object;
     const bool ground = kind == WorldSingleArt::GroundItem;
     const bool item = ground || kind == WorldSingleArt::ItemIcon;
-    const bool paired = item || kind == WorldSingleArt::BlendedEffect;
+    const bool paired = item || kind == WorldSingleArt::BlendedEffect || kind == WorldSingleArt::BlendedOverlay;
     auto &art = worldArt();
     auto asset = art.asset(path);
     if (!asset)
         return {};
+    // Native overlay cells share the unit baseline. DC6 stores that baseline;
+    // DCC already has a decoded top edge. Other standalone/UI art keeps its API.
+    const bool baseline = ground || (asset->dc6 &&
+        (kind==WorldSingleArt::Overlay || kind==WorldSingleArt::BlendedOverlay));
     std::optional<std::array<uint8_t, 256>> shift;
     if (itemShift)
         std::copy_n(itemShift, 256, shift.emplace().begin());
     const auto use = item ? WorldArt::Use::Item : keepColor ? WorldArt::Use::Effect : WorldArt::Use::Actor;
     auto animation = art.animation(
-        asset->directions, asset->count, [this, asset, keepColor, paired, shift, ground, use](size_t offset) {
+        asset->directions, asset->count, [this, asset, keepColor, paired, shift, baseline, use](size_t offset) {
             auto &cache = worldArt();
             const int direction = int(offset / asset->count), frame = int(offset % asset->count);
             const auto pixels = cache.pixels(*asset, direction, frame);
@@ -226,7 +230,7 @@ GpuAnimation Graphics::worldSingle(const std::string &path, WorldSingleArt kind,
                 result.texture.width = pixels->width;
                 result.texture.height = pixels->height;
                 result.x = pixels->x;
-                result.y = pixels->y - (ground ? pixels->height : 0);
+                result.y = pixels->y - (baseline ? pixels->height : 0);
                 if (pixels->cellOffsetY)
                     result.selectionFrameBounds =
                         Rectangle{float(pixels->x), float(*pixels->cellOffsetY - pixels->height),
@@ -234,7 +238,7 @@ GpuAnimation Graphics::worldSingle(const std::string &path, WorldSingleArt kind,
             }
             return result;
         });
-    animation.bounds = ground ? asset->compositeBounds : asset->bounds;
+    animation.bounds = baseline ? asset->compositeBounds : asset->bounds;
     return animation;
 }
 GpuAnimation Graphics::composite(const std::string &type, const std::string &token, const std::string &mode,
@@ -259,6 +263,8 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     std::array<bool, 16> castsShadow{};
     std::array<bool, 16> selectable{};
     std::array<bool, 16> softAdditive{};
+    std::array<uint8_t,16> drawModes{};
+    drawModes.fill(5);
     std::array<bool, 16> dc6Component{};
     int omitted = 0;
     static const std::string codes[] = {"hd", "tr", "lg", "ra", "la", "rh", "lh", "sh",
@@ -267,9 +273,12 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
         int c = cof.components[i];
         if (c < 0 || c >= 16)
             throw std::runtime_error("Invalid COF component");
-        castsShadow[size_t(c)] = cof.shadows[size_t(i)] && !cof.transparent[size_t(i)];
+        // Client 6BE75 -> 6D740 reads only the COF shadow byte. A
+        // component's color draw mode does not suppress its shadow mask.
+        castsShadow[size_t(c)] = cof.shadows[size_t(i)];
         selectable[size_t(c)] = cof.selectable[size_t(i)];
         softAdditive[size_t(c)] = cof.transparent[size_t(i)] && cof.drawEffects[size_t(i)] == 3;
+        if(cof.transparent[size_t(i)]) drawModes[size_t(c)]=cof.drawEffects[size_t(i)];
         if (equipment && std::string_view((*equipment)[c]) == "nil") {
             ++omitted;
             continue;
@@ -330,7 +339,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     const int directions = cof.directions, frames = cof.frames;
     auto gpu = art.animation(
         directions, frames,
-        [this, cof, parts, componentY, castsShadow, selectable, softAdditive, menuPortrait,
+        [this, cof, parts, componentY, castsShadow, selectable, softAdditive, drawModes, menuPortrait,
          colors = colorMap ? std::make_shared<const std::array<uint8_t, 256>>(*colorMap)
                            : nullptr](size_t offset) {
             const int d = int(offset / cof.frames), f = int(offset % cof.frames);
@@ -410,7 +419,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                 }
                 const auto cell = cache.component(*parts.at(c), part.direction, part.frame, p);
                 result.layers.push_back(
-                    {cell.texture, p.x, y, softAdditive[c], cell.indexedTexture, cell.cell});
+                    {cell.texture, p.x, y, softAdditive[c], cell.indexedTexture, cell.cell, drawModes[c]});
                 if (castsShadow[c]) {
                     for (int row = 0; row < p.height; ++row)
                         for (int x = 0; x < p.width; ++x)

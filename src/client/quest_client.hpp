@@ -7,6 +7,7 @@ class IQuestClient {
     virtual ~IQuestClient() = default;
     // Borrow only until the next read/destruction.
     virtual const QuestView &read() const = 0;
+    virtual bool refresh() = 0;
     virtual bool acknowledgeCompletion(QuestId) = 0;
 };
 } // namespace d2x

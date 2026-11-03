@@ -37,6 +37,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         monsterIdentities.clear();
         monsterTransforms.clear();
         deathCallbacks.clear(); preparedDeaths.clear();
+        monsterOverlays.clear();
         monsterEffects.clear();
         shared.clearClientMissiles(); channels.clear(); ownerMissiles.clear(); blazeTrails.clear(); effectLimitations.clear(); missileCastRevisions.clear(); overlayVisuals.clear(); stateTimes.clear(); boneArmorVisuals.clear(); shattered.clear();
         soundEvents.clear();
@@ -229,6 +230,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     worldScene.map = &map; worldScene.region = shared.mapView().region;
     worldScene.level = binding.area.value(); worldScene.palette = binding.palette.value_or(0);
     worldScene.gameGeneration = v.gameGeneration; worldScene.areaGeneration = v.world.areaGeneration;
+    worldScene.weatherSeed = v.load.mapSeed.value_or(0);
     worldScene.observer = camera;
     const auto lightStat = [&](const auto &attributes, const char *name) -> int32_t {
         if (!monsterText->nativeStats) return 0;
@@ -675,24 +677,6 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         actorEntry.shadow = visual->shadow; actorEntry.orderFlag = visual->order; actorEntry.unit = effectOwner(key);
         draw.push_back(actorEntry);
     }
-    for (const auto &decoration : map.terrain.clientObjects) {
-        if (decoration.type != 2) continue;
-        OnlineUnit unit;
-        unit.classId = uint16_t(decoration.id);
-        unit.mode = 0;
-        const auto *visual = object(unit, shared);
-        if (!visual || !visual->animation.available()) continue;
-        const Vec feet{float(decoration.x), float(decoration.y)};
-        const auto pixelOffset = unitScreenOffset + visual->offset;
-        const auto position = screen(feet) + pixelOffset;
-        worldScene.objects.push_back({decoration.id, 0, feet});
-        if (!visual->animation.intersects(position,{0,0,float(W),float(H-HUD)})) continue;
-        const auto *image = visual->sampleFacing(time, time, 0);
-        if (image && visible(*image, position)) {
-            WorldDrawItem entry; entry.image = image; entry.position = feet; entry.pixelOffset = pixelOffset;
-            entry.shadow = visual->shadow; entry.orderFlag = visual->order; draw.push_back(entry);
-        }
-    }
     auto addOverlay = [&](int id, OnlineUnitKey key, float born, bool loop,std::optional<int> frame = {}) {
         const float age = time - born;
         if(age<0) return;
@@ -722,6 +706,39 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         draw.push_back(entry);
     };
     for (const auto &effect : overlayVisuals) addOverlay(effect.id, effect.unit, effect.born, false);
+    std::erase_if(monsterOverlays,[&](const auto &entry) {
+        const auto unit=v.world.units.find(entry.first.first);
+        if(unit==v.world.units.end() || unit->second.assignmentRevision!=entry.second.assignment ||
+           unitClass(unit->second)!=entry.second.identity) return true;
+        // 6C130 loops type 3 through DT; 4E824-4E847 removes it on DD.
+        // Duriel's type-5 blood survives DD, but not revival or reassignment.
+        return entry.second.loop ? unit->second.mode==12 : unit->second.mode!=0 && unit->second.mode!=12;
+    });
+    if(!pd2) for(const auto &[key,unit]:v.world.units) {
+        if(key.type!=1 || !unitClass(unit) || unit.mode==12) continue;
+        const auto row=monsterRows.find(*unitClass(unit));
+        if(row==monsterRows.end()) continue;
+        const auto name=monstats.value(row->second,"Id");
+        // Retail A70C0/A7282/A729B attach type-3 overlays at creation.
+        // These are independent of skills, states and the body's COF.
+        const std::string_view overlay=name=="mephisto"?"mephisto":name=="baalthrone"?"baal_on_throne":"";
+        if(overlay.empty()) continue;
+        const auto found=overlayNames.find(overlay);
+        if(found==overlayNames.end() || !shared.overlayVisual(int(found->second))) {
+            effectLimitations.insert("Original monster overlay unavailable: "+std::string(overlay));
+            continue;
+        }
+        monsterOverlays.try_emplace(std::pair{key,int(found->second)},
+            MonsterOverlay{unit.assignmentRevision,int(*unitClass(unit)),time,true});
+    }
+    for(const auto &[key,effect]:monsterOverlays) {
+        // Share the body's visibility, height and display position. In
+        // particular, Mephisto's corpse-hide callback must also hide its fog.
+        if(std::none_of(draw.begin(),draw.end(),[&](const auto &item) {
+            return item.image && item.unit==effectOwner(key.first);
+        })) continue;
+        addOverlay(key.second,key.first,effect.born,effect.loop);
+    }
     for (const auto &[key, unit] : v.world.units) {
         // A neutral shrine owns its icon/shimmer. Once the server starts
         // operating it, only the recipient's actual state owns those layers.

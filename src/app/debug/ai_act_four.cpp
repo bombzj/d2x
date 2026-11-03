@@ -40,7 +40,9 @@ void DebugAi::Impl::configureActFourQuest(Goal &goal,QuestId id) const {
     const auto angelReward=node("izual-two-skill-points",s,{{flag(angel,1)}},{izual});
 
     const auto altar=object("Hellforge",49);
-    F opened=fact(K::ObjectOpened);opened.value=altar.identity;opened.area=river;
+    // Operate49 consumes mss when entering OPERATING, before ENDANIM.
+    // Any activated forge proves placement; striking still waits for OPENED.
+    F opened=fact(K::ObjectOpened);opened.value=altar.identity;opened.area=river;opened.any=true;
     s=talk(forge,"cain4",679,0);s.produced="mss";
     const auto stone=node("soulstone-owned",s,{{item("mss")},{forgeDone},{opened}});
     s=hunt(forge,river,Json{{"superunique","The Feature Creep"}});
@@ -52,6 +54,8 @@ void DebugAi::Impl::configureActFourQuest(Goal &goal,QuestId id) const {
     const auto hammer=node("hellforge-hammer-owned",s,{{item("hfh")},{forgeDone}},{hephasto});
     s={};s.action=QuestAction::Operate;s.stateQuest=forge;s.area=river;s.target=altar;s.item="mss";
     const auto placed=node("soulstone-placed",s,{{opened},{forgeDone}},{stone},true);
+    auto placementObserved=fact(K::RequirementObserved);placementObserved.value=uint16_t(placed);
+    goal.requirements[stone].alternatives.push_back({placementObserved});
     s={};s.action=QuestAction::EquipWeapon;s.stateQuest=forge;s.area=river;s.item="hfh";
     auto equipped=item("hfh");equipped.kind=K::Equipped;
     const auto weapon=node("hellforge-hammer-equipped",s,{{equipped},{forgeDone}},{hammer,placed});
@@ -93,6 +97,7 @@ void DebugAi::Impl::configureActFourQuest(Goal &goal,QuestId id) const {
     s=talk(terror,"tyrael2",20000,0x200);s.witness=harrogath;
     const auto portalReady=node("tyrael-harrogath-portal",s,{{flag(terror,0x200)},{changed},{portalBorn}},{diablo});
     s={};s.action=QuestAction::Portal;s.stateQuest=terror;s.sourceArea=town;s.area=definitions->area("Act 5 - Town");s.target=harrogath;
+    s.witness=definitions->selector(Json{{"npc","tyrael2"}});s.witnessOffset=Vec{5,0};
     const auto arrival=node("act-five-arrival",s,{{changed}},{portalReady});
     switch(id) {
     case QuestId::FallenAngel:goal.roots={angelReward};break;

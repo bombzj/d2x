@@ -1,8 +1,10 @@
 #pragma once
+#include "server/runtime/facts/npc.hpp"
+#include "server/runtime/facts/quest.hpp"
 #include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/domain_fact.hpp"
 #include "server/runtime/npc_rules.hpp"
 #include "gameplay/quest/id.hpp"
 #include "preparation.hpp"
@@ -165,6 +167,7 @@ class System {
     std::vector<Dialogue> dialogues(const ActorContext &,const NpcRule &) const;
     DomainResult<> operate(const ActorContext &,EntityId,int definition,int operation,Vec);
     std::vector<Preparation> pending() const;
+    uint64_t pendingCommand(PlayerId, uint64_t sequence) const;
     DomainResult<> install(Prepared);
     std::optional<bool> takeCompletion(EntityId);
     bool npcVisible(const CharacterRecord &,std::string_view code,RegionId,int initFunction=0) const;

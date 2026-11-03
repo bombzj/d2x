@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/frame_facts.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "gameplay/combat/life.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

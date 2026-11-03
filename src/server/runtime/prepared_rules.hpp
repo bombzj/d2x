@@ -1,6 +1,5 @@
 #pragma once
 #include "combat_rules.hpp"
-#include "skill_rules.hpp"
 #include "equipment_rules.hpp"
 #include "gameplay/consumables/potions.hpp"
 #include "gameplay/stats/stat_list.hpp"
@@ -26,9 +25,10 @@
 #include <memory>
 #include <vector>
 
-namespace d2x {class CombatEffectSet;struct NativeItemSaveRules;}
+namespace d2x {class CombatEffectSet;struct NativeItemSaveRules;struct SkillFormulaCatalog;}
 namespace d2x::pd2 {struct MapCatalog;}
 namespace d2x::server {
+struct SkillRules;
 using EffectRules = std::map<int, CombatStateDefinition>;
 using TreasureRules = std::vector<TreasureClass>;
 struct LearningRule {

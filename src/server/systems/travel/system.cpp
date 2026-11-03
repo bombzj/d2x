@@ -1,4 +1,9 @@
 #include "system.hpp"
+#include "server/runtime/frame_facts.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/travel.hpp"
+#include "server/runtime/facts/ui.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/movement.hpp"
@@ -352,10 +357,14 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         if(transition.kind==Kind::QuestObject) {
             const auto found=ports_.objects.read().objects.find(transition.source);
-            if(found==ports_.objects.read().objects.end() || found->second.area!=transition.from ||
-                !(found->second.rule.operation==72?ports_.quests.credited(player.player,QuestId::EveOfDestruction):
-                    ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to))) {pending=state_.transitions.erase(pending);continue;}
+            if(found==ports_.objects.read().objects.end() || found->second.area!=transition.from) {pending=state_.transitions.erase(pending);continue;}
             const auto *object=&found->second;
+            const bool permitted=object->rule.operation==43?
+                (object->definition==100 && int(transition.to)==73) ||
+                    (object->definition==377 && int(transition.to)==object->portalDestination):
+                object->rule.operation==72?ports_.quests.credited(player.player,QuestId::EveOfDestruction):
+                    ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to);
+            if(!permitted) {pending=state_.transitions.erase(pending);continue;}
             if(object->rule.operation==34 || object->rule.operation==43) {
                 if(!transition.arrivalGeneration) {
                     const auto point=object->rule.operation==43?ports_.world.nativeDurielPortalPosition(transition.to):

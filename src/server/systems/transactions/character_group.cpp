@@ -1,4 +1,10 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/character.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/effects.hpp"
+#include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/social.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/player_store.hpp"
@@ -100,7 +106,7 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
         const auto &publicFacts=inventory?inventory->publicFacts:character->publicFacts;
         const auto &facts=inventory?inventory->facts:character->facts;
         const bool settlesTrade=std::any_of(facts.begin(),facts.end(),[](const auto &fact){
-            const auto *trade=std::get_if<TradeFact>(&fact);return trade && trade->action==13;
+            const auto *trade=factIf<TradeFact>(&fact);return trade && trade->action==13;
         });
         std::optional<InventoryFact> receivedTradeItems;
         if(!publicFacts.empty()) batches.push_back({0,tick,plan.id,{AudienceKind::Area,{},player->area},publicFacts});
@@ -129,17 +135,17 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
             batch.facts.insert(batch.facts.begin(),std::move(projection));
         }
         size_t targetingPrefix=0;
-        const bool resetInventory=std::any_of(facts.begin(),facts.end(),[](const auto &fact){return std::holds_alternative<InventoryResetFact>(fact);});
+        const bool resetInventory=std::any_of(facts.begin(),facts.end(),[](const auto &fact){return factHolds<InventoryResetFact>(fact);});
         for(const auto &fact:facts) {
-            if(std::holds_alternative<InventoryResetFact>(fact)) {
+            if(factHolds<InventoryResetFact>(fact)) {
                 resets.push_back({0,tick,plan.id,{AudienceKind::Game,{},player->area},{fact}});
                 continue;
             }
-            const auto *targeting=std::get_if<ItemTargetingFact>(&fact);
-            const auto *trade=std::get_if<TradeFact>(&fact);
+            const auto *targeting=factIf<ItemTargetingFact>(&fact);
+            const auto *trade=factIf<TradeFact>(&fact);
             if((targeting && targeting->cursor<0) ||
                 (trade && (trade->action==6 || trade->action==14)) ||
-                (resetInventory && std::holds_alternative<TradeFact>(fact))) batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
+                (resetInventory && factHolds<TradeFact>(fact))) batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
             else batch.facts.push_back(fact);
         }
         // Native trade disposal and close precede the recipients' item rebuild.
@@ -158,7 +164,7 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
         publication={state_.next++};last=publication.value;
     } else publication=plans.back().id;
     if(auraUnits) for(const auto &fact:auraUnits->facts) {
-        const auto *state=std::get_if<StateFact>(&fact);const auto *hit=std::get_if<HitFact>(&fact);
+        const auto *state=factIf<StateFact>(&fact);const auto *hit=factIf<HitFact>(&fact);
         batches.push_back({0,tick,publication,{AudienceKind::Area,{},state?state->area:hit?hit->area:region},{fact}});
     }
     // Native unit skill assignments may change only authoritative attributes.

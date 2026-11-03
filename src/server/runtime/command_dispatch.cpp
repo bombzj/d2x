@@ -86,6 +86,7 @@ struct Dispatch {
     }
 };
 }
+CommandStatus commandStatus(DomainStatus result) { return status(result); }
 SystemId commandSystem(const CommandPayload &payload) {
     return std::visit([]<class T>(const T &) { return Target<T>::id; }, payload);
 }

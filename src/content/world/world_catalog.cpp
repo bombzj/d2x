@@ -55,7 +55,7 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
         const std::map<std::string_view, std::vector<std::string_view>> required = {
             {"levels",
              {"Id", "Act", "Pal", "DrlgType", "LevelType", "SizeX", "SizeY", "LevelName", "Vis0", "Warp0",
-              "IsInside", "LOSDraw", "Intensity", "Red", "Green", "Blue"}},
+              "IsInside", "LOSDraw", "Rain", "Mud", "Intensity", "Red", "Green", "Blue"}},
             {"lvlprest", {"Def", "LevelId", "File1", "File6", "Dt1Mask", "FillBlanks"}},
             {"lvltypes", {"Id", "File 1", "File 32"}},
             {"lvlmaze", {"Level", "Rooms", "SizeX", "SizeY", "Merge"}},
@@ -90,6 +90,8 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
                 record.levelType = number("LevelType");
                 record.isInside = number("IsInside") != 0;
                 record.losDraw = number("LOSDraw") != 0;
+                record.rain = number("Rain") != 0;
+                record.mud = number("Mud") != 0;
                 record.lightIntensity = number("Intensity");
                 record.lightRed = number("Red");
                 record.lightGreen = number("Green");

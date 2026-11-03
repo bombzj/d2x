@@ -6,6 +6,7 @@
 #include <chrono>
 #include <iostream>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -454,20 +455,33 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                 number("SizeX"), number("SizeY")});
         }
     }
-    if(v.protocolProfile=="lod113c") for(auto &entry:view_.mapTargets) if(entry.unit.type==2 && entry.interaction==OnlineMapInteraction::Exit) {
+    std::set<OnlineUnitKey> coveredWarps;
+    if(v.protocolProfile=="lod113c") for(auto &entry:view_.mapTargets) if(entry.unit.type==2 &&
+        (entry.interaction==OnlineMapInteraction::Exit || entry.interaction==OnlineMapInteraction::Door)) {
         const auto unit=v.world.units.find(entry.unit);if(unit==v.world.units.end() || !unit->second.classId) continue;
         const auto row=objectRows_.find(*unit->second.classId);
-        if(row==objectRows_.end() || objects_.number(row->second,"OperateFn")!=44) continue;
+        if(row==objectRows_.end()) continue;
+        const auto operation=objects_.number(row->second,"OperateFn");
+        if(operation!=44 && operation!=16) continue;
         const auto room=nativeMap_->clientRoom(entry.position.x,entry.position.y);if(!room) continue;
         const OnlineMapTarget *tile=nullptr;bool ambiguous=false;
-        // ObjMode44 -> WarpPlayerToTile iterates the object's real Room1.
+        // ObjMode16/44 -> WarpPlayerToTile iterates the object's real Room1.
         // Bind only a unique currently assigned tile in that same room.
         for(const auto &candidate:view_.mapTargets) if(candidate.unit.type==5 && candidate.destination &&
             nativeMap_->clientRoom(candidate.position.x,candidate.position.y)==room) {
             if(tile) {ambiguous=true;break;}tile=&candidate;
         }
-        if(tile && !ambiguous) entry.destination=tile->destination;
+        if(tile && !ambiguous) {
+            entry.destination=tile->destination;
+            if(operation==16) {
+                // The visible trapdoor owns this tile: first click opens it,
+                // a later click on the open object enters. Do not expose the
+                // underlying tile as an independent shortcut past the lid.
+                entry.interaction=OnlineMapInteraction::Exit;coveredWarps.insert(tile->unit);
+            }
+        }
     }
+    std::erase_if(view_.mapTargets,[&](const auto &entry){return coveredWarps.contains(entry.unit);});
     nativeTerrain_->grid.setObstacles(std::move(obstacles));
     for(const auto &entry:view_.mapTargets) {
         const auto room=nativeMap_->clientRoom(entry.position.x,entry.position.y);if(!room) continue;
@@ -805,6 +819,21 @@ std::optional<RemoteTown::NavigationObservation> RemoteTown::navigationObservati
     if(known.width!=bounds.width+1 || known.height!=bounds.height+1 || known.layoutFingerprint!=fingerprint.value()) return {};
     return NavigationObservation{bounds.x,bounds.y,known.width,known.height,known.seen,observationExtent_,
         catalog_->level(level).generation==GenerationKind::Outdoor};
+}
+std::vector<RemoteTown::NavigationWall> RemoteTown::observedNavigationWalls(uint16_t level) const {
+    std::vector<NavigationWall> result;
+    if(!view_.nativeMapReady || !map_ || !view_.origin || view_.area!=level) return result;
+    const auto &terrain=map_->terrain;
+    if(automapVisitedTiles_.size()!=terrain.instances.size()) return result;
+    for(size_t i=0;i<terrain.instances.size();++i) {
+        const auto &instance=terrain.instances[i];
+        if(!automapVisitedTiles_[i] || !instance.wallArray || instance.type<1 || instance.type>12 ||
+            (instance.flags&8) || terrain.rooms.at(instance.room).level!=level) continue;
+        const auto *tile=terrain.tiles.at(size_t(instance.tile));
+        result.push_back({instance.x+view_.origin->x/5,instance.y+view_.origin->y/5,
+            uint32_t((tile->main<<16)|(tile->sub<<8)|instance.type)});
+    }
+    return result;
 }
 std::optional<OnlinePoint> RemoteTown::knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const {
     const auto found=knownTargetPositions_.find({area,type,identity});

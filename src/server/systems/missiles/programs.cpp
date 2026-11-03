@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
 #include "runtime.hpp"
 #include "server/systems/combat/system.hpp"
 #include "server/systems/effects/system.hpp"

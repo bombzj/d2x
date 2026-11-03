@@ -55,13 +55,21 @@ Play-Diagnostic.cmd的stderr.log中[area-load]记录宿主terrain_ms／content_m
 
 ## 客户端显示与操作
 
+### Act 1河流与天气
+
+河道沿现有原版DRLG／预设地图生成，`preset_scan.cpp::buildClientUnits`按D2MOO的`SpawnRiver/AddPresetRiverObjects`放置客户端物件40／41／42，桥段按原样式和序列跳过；65保留为河流声音锚点。它们属于房间快照的`clientObjects`，随房间释放，不分配服务端单位GUID，不改变碰撞或地图拓扑。
+
+原R1／R2／R3河流图形现由公共`SceneView::drawWorld`直接消费，沿当前MPQ的Objects、COF、DCC决定动画、偏移、阴影及地面绘制顺序，不再在远端场景中构造临时在线单位。当前原表的河流动画为8帧、FrameDelta0=128、CycleAnim0=1、OrderFlag0=1、Yoffset=-9；这些参数由资源加载器读取，未另写固定绘图参数。三者NU COF均为TR单组件、transparent=1、drawEffect=0；公共COF路径现按原mode0查PL2 trans[2]，修正旧路径画成不透明的问题，不依据Objects.Trans=7另猜混合模式。该透明修正及水花／雨线后续修正尚未构建或运行对照。物件65的环境声音消费者尚未接入，客户端物件创建相位与原版逐对象生命周期仍待对照。
+
+Rain／Mud和WATER地砖上的水花由客户端`WeatherView`消费，规则与未完成边界见[天气与河流水面](../gameplay/world/LIGHTING.md#天气与河流水面)。地图布局依赖共享地图描述和种子；天气阶段、风向及水花没有服务端同步，不保证同局各客户端一致。绘制调整已纳入578F99D3构建及原版Host五幕流程，尚未进行原版逐帧音画对照；运行问题见[验收记录](../development/AI_TEST_REC.md)。
+
 ### 共用寻路
 
 D2MOO在D2Common/Path/Path.cpp的公共分派表统一AStar(1)、Toward(2／13)、Straight(7)、WallFollow(15)；MonsterMode::sub_6FC65680只选择类型和失败重试策略，不在D2Game重复实现算法。D2X对应入口为[Grid::nativeUnitPath](../../src/world/navigation.cpp)及[WallFollow](../../src/world/navigation_wall_follow.cpp)，同属d2x_navigation；怪物权威requestMove与RemoteScene按同一个入口计算。共享函数只接收坐标、碰撞值和路径参数，不持有MPQ、网络、服务端单位或UI。WallFollow的左右交替绕障、合流检测、距离上限和折点简化按本地D2MOO 1.13c注释实现；单位目标最小40搜索上限也在公共函数内，双方不各写一份。
 
 双方共享算法而不共享运行状态：宿主决定移动、目标和实际路径类型，自有客户端用原67／68已公开的参数生成表现路径。原环绕算法另由nativeMonsterCirclePath提供；特殊技能／击退不冒充普通Toward。[nativeAStarPath](../../src/world/navigation_astar.cpp)按D2MOO的200节点上限、正交2／斜向3代价、八邻接顺序、同分先插、已访问节点代价传播及78折点边界实现；不再用通用A*的全图搜索／任意直线简化代替原版路径。
 
-玩家权威移动、旅行后续路线和RemoteScene都调用nativePlayerPath（Straight 7，Toward 73步，18格内AStar回退）。玩家及普通非玩家动态路径执行共用[NativePathStep](../../src/world/native_path_step.cpp)：保存16.16定点位置，每个25Hz游戏帧从定点位置重算到下一折点的12位量化方向，单帧最多推进到一个折点，按Step.cpp实际进入的子格检查对应MPQ移动碰撞轮廓；碰撞后停在最后接受格的中心。客户端渲染帧只累积25Hz时间，浮点Vec仅为输出投影，不按渲染帧重算方向或用于DDA经过格扫描。世界／区域原点仅用于碰撞格转换，换房间平移保留定点位置，旅行发布背压回退同时恢复步进状态。128个方向值以数学公式独立推导，源码核对与D2MOO表逐项相同；依据为Step::PATH_GetDirectionVector／sub_6FDAB810／sub_6FDACEC0和PathMisc::D2Common_10226／PATH_ComputeVelocityAndDirectionVectorsToNextPoint。普通玩家路径按D2Common_10226保留剩余折点；房间物化／卸载和无关物件变化不重算途中路径。目标单位换格、显式新命令及原单位目标部分路径续算分别处理；实际新障碍由每步进入格的碰撞检测阻止。无路径的普通攻击／踢击返回不可用，不无限挂起。01／02与03／04明确区分走／跑，自动近战追击和拾取按PlrMsg使用Run，体力不足仍由权威降为走。5F可达性使用同一跨区碰撞域中的原WallFollow 15／77步；部分AI查询及囚犯路线仍有独立用途的Grid::path调用。普通单位实时占位与寻路时的目标脚印撤销已接入，具体范围见下节；门的专用目标偏移、完整移动速度修饰的客户端投影和原版完整房间内存回收尚不等价，不能据共享函数宣称所有种子逐帧一致。
+玩家权威移动、旅行后续路线和RemoteScene都调用nativePlayerPath（Straight 7，Toward 73步，18格内AStar回退）。玩家及普通非玩家动态路径执行共用[NativePathStep](../../src/world/native_path_step.cpp)：保存16.16定点位置，每个25Hz游戏帧从定点位置重算到下一折点的12位量化方向，单帧最多推进到一个折点，按Step.cpp实际进入的子格检查对应MPQ移动碰撞轮廓；碰撞后停在最后接受格的中心。客户端渲染帧只累积25Hz时间，浮点Vec仅为输出投影，不按渲染帧重算方向或用于DDA经过格扫描。世界／区域原点仅用于碰撞格转换，换房间平移保留定点位置，旅行发布背压回退同时恢复步进状态。128个方向值以数学公式独立推导，源码核对与D2MOO表逐项相同；依据为Step::PATH_GetDirectionVector／sub_6FDAB810／sub_6FDACEC0和PathMisc::D2Common_10226／PATH_ComputeVelocityAndDirectionVectorsToNextPoint。普通玩家路径按D2Common_10226保留剩余折点；房间物化／卸载和无关物件变化不重算途中路径。显式新命令（包括重复坐标）重新求路，保留16.16位置及客户端未满25Hz一帧的时间；普通续算也不从浮点投影重建定点位置。玩家追踪活人／怪物时，目标相对上次求路位置任一轴超过5个整数子格才重算正在执行的路径，到达检查仍使用目标当帧位置；原单位目标部分路径续算另行处理。实际新障碍由每步进入格的碰撞检测阻止。无路径的普通攻击／踢击返回不可用，不无限挂起。01／02与03／04明确区分走／跑，自动近战追击和拾取按PlrMsg使用Run，体力不足仍由权威降为走。5F可达性使用同一跨区碰撞域中的原WallFollow 15／77步；部分AI查询及囚犯路线仍有独立用途的Grid::path调用。普通单位实时占位与寻路时的目标脚印撤销已接入，具体范围见下节；门的专用目标偏移、完整移动速度修饰的客户端投影和原版完整房间内存回收尚不等价，不能据共享函数宣称所有种子逐帧一致。
 
 原生Straight／Toward、AStar及WallFollow入口只要求起点为已知范围内的格，不额外要求其当前占位可行；PATH_RayTrace与NativePathStep从第一个实际进入格检查碰撞。移动NPC与本人当前轮廓重叠时仍可向合法新格走出，未删除地形或其他单位脚印，未知起点仍拒绝。该修正依据本地D2MOO PathMisc／AStar；城镇实机停步及回归范围见[调试导航缺口](../development/ORIGINAL_GAPS.md#调试导航)，不能当作全部预测／服务端位置差异已关闭。
 
@@ -97,7 +105,7 @@ RemoteScene的走跑判定取本帧路径推进后是否仍有路径，不再以
 
 本地显示模式与原协议动作分开：同一走／跑模式改目标不重置相位，走／跑／待机切换从各自动画起点开始，不再按全局渲染时间取循环帧。冻结暂停相位，技能、死亡及脚本序列仍沿自身动作时钟，骑乘锚点与所显示的动画使用同一相位。25Hz逐次累加原8.8动画帧，移动速度修正变化只影响后续推进，不回算已播放相位。
 
-`gameplay/actions/movement_timing.hpp`声明共用纯计算，实现在角色属性计算单元；服务端角色属性和客户端预测／动画共用原整数运算。人物走／跑动画基础速率为213／101，物品FRW使用150递减式，叠加普通velocitypercent、当前MPQ CharStats走跑比值的临时跑步加成，下限25；路径速度与动画速率分别按原8.8截断，动画上限32767。不能直接把AnimData速度当走跑速度。RemoteUiClients复用已有装备／护甲重量、状态和被动属性投影，材料未齐时只使用明确的基础走跑并报告修正不可用；他人的完整私人装备／被动修正仍不可视作已知。变身按当前MPQ States／MonStats／MonStats2及原模式回退选择速度与已准备的怪物动画速率；服务端普通步进也消费已准备的ShapeProfile、当帧真实状态和同一速度百分比，不继续使用人形基础速度。
+`gameplay/actions/movement_timing.hpp`声明共用纯计算，实现在角色属性计算单元；服务端角色属性和客户端预测／动画共用原整数运算。人物走／跑动画基础速率为213／101，物品FRW使用150递减式，叠加普通velocitypercent、当前MPQ CharStats走跑比值的临时跑步加成，下限25；路径速度与动画速率分别按原8.8截断，动画上限32767。不能直接把AnimData速度当走跑速度。护甲按当前MPQ armor.speed以负velocitypercent进入物品原生属性表，不能只在旧装备修饰器中扣除后被权威nativeStats覆盖；依据ITEMS_DecodeItemFromBitstream／D2Game物品创建。RemoteUiClients复用装备／护甲重量、状态和被动属性投影，命名原表分支补入状态的velocitypercent／item_fastermovevelocity；材料未齐时只使用明确的基础走跑并报告修正不可用；他人的完整私人装备／被动修正仍不可视作已知。变身按当前MPQ States／MonStats／MonStats2及原模式回退选择速度与已准备的怪物动画速率；服务端普通步进也消费已准备的ShapeProfile、当帧真实状态和同一速度百分比，不继续使用人形基础速度。
 
 依据为D2MOO `PathMisc::D2Common_10226`在路径耗尽时立即ResetMovement并返回FALSE，`Units::UNITS_ChangeAnimMode`仅在模式变化时调用`UNITS_SetAnimStartFrame`。同快照1.13c D2Client RVA1C1AE读取原路径推进返回值，1C2F6–1C2FC分支在结束时进入1C47B–1C4AC，按城镇选择1／5并调用ChangeAnimMode；D2Common RVA33920／33938／33952／3395B确认模式比较及重置起点。静态依据与DLL摘要见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。本次未启动游戏，全部装备／变身、冻结与网络延迟组合的逐帧原客户端运行对照仍未完成。
 
@@ -109,7 +117,7 @@ UNIT_TILE入口按原D2MOO PlrMsg的D2Common_10399单位距离判断：超过50�
 
 拾取双方共用nativePickupReach：D2Common_10399单位距离不大于4，尺寸为玩家2／物品1，另检查0x0804缩短交互射线；移除服务端原有的1.8格欧氏距离门槛。02／04支持地面物品目标。物件使用UNITS_IsObjectInInteractRange对应几何；交谈以单位距离6判断，原13请求在距离7–8时排队走近。普通NPC单位路径按Path.cpp初始化nStepNum=0、PathMisc::sub_6FD5DB70单位距离不大于0停止，预测对普通02／04也逐步执行该判据；不把菜单资格6作为04移动终点。客户端已有足够近的直接点击仍按原13资格，远点靠近在当前本地普通单位路径到达后发送13，服务端复验交談资格；不把稀疏96位置采样当作请求门槛。移除枚举交互距离环并选最近候选点的第二套寻路，物件接近直接使用原单位目标路径。物件13与NPC13都保留待执行意图，到达后执行；新移动／攻击／交互、死亡、离区或目标失效会使旧意图失效。背压重试不重复执行已经成功的交互。
 
-普通攻击起手、伤害释放和客户端就绪检查共用playerMeleeReach，按单位距离、武器rangeadder及原0x0804缩短射线判断，不再把整条行走碰撞轮廓当成近战视线；追击起手包含移动目标的范围增量。客户端以本人及目标的本地连续显示位置检查起手和执行靠近；按原生目标子格变化重算单位路径，不等待本人96／移动回包。服务端独立检查同样的原生子格、资格及路径，命中和伤害仍只认服务端。物件靠近从当前显示位置启动原02／04 GUID路径，不再预选地面终点或要求部分路径已经满足交互资格；旧interactionApproach／RemoteTown::interactionApproachPoint接口已删除。物件部分路径到头且尚未进入交互范围时，双方共用nativeTargetPath按真实目标类型续算Straight；依据为PathMisc::sub_6FD5DB70／D2Common_10236，不能把它解释为无条件改用WallFollow。公共nativePlayerPath另按Straight的0x1000策略准备被阻挡目标：原三条有序正交射线及玩家近目标修整，对应PATH_PreparePathTargetForPathUpdate／PATH_FindValidTargetCoordsByMovingOrthogonally；后者9×9表由公式独立推导，81项逐项核对相同。
+普通攻击起手、伤害释放和客户端就绪检查共用playerMeleeReach，按单位距离、武器rangeadder及原0x0804缩短射线判断，不再把整条行走碰撞轮廓当成近战视线；追击起手包含移动目标的范围增量。客户端以本人及目标的本地连续显示位置检查起手和执行靠近；玩家按原版活目标任一轴位移大于5格的门槛重算已有单位路径，新指令单独触发求路，不等待本人96／移动回包。服务端独立检查同样的原生子格、资格及路径，命中和伤害仍只认服务端。物件靠近从当前显示位置启动原02／04 GUID路径，不再预选地面终点或要求部分路径已经满足交互资格；旧interactionApproach／RemoteTown::interactionApproachPoint接口已删除。物件部分路径到头且尚未进入交互范围时，双方共用nativeTargetPath按真实目标类型续算Straight；依据为PathMisc::sub_6FD5DB70／D2Common_10236，不能把它解释为无条件改用WallFollow。公共nativePlayerPath另按Straight的0x1000策略准备被阻挡目标：原三条有序正交射线及玩家近目标修整，对应PATH_PreparePathTargetForPathUpdate／PATH_FindValidTargetCoordsByMovingOrthogonally；后者9×9表由公式独立推导，81项逐项核对相同。
 
 ### 本人位置回包
 
@@ -118,6 +126,10 @@ UNIT_TILE入口按原D2MOO PlrMsg的D2Common_10399单位距离判断：超过50�
 本机原1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）的S2C表RVA `0xDDE60`把18／95／96分派到`0xAECA0`／`0xAEBE0`／`0xAD950`，三者调用`0x2A1B0`：记录服务端整数位置，在每轴偏差超过动作阈值和延迟补偿后，经`0x2A3EA–0x2A40D`上报5F；本人分支不调用他人单位的重新定位。模式1／3／其他的阈值分别为3／7／5，加`(latency+50)>>7`，另有平方距离小于100时的位置趋势判断。15独立走`0xAF640`重新定位。以上为同版本静态分支核对。
 
 D2X的RemoteWorld保留18／95／96的权威位置和路径校验值供诊断／路径校验；RemoteScene不再用这些采样拉回本人，也不拿接近的校验目标替换本地目的地。结束拾取／交谈／移动请求以及无进展超时只停止本地路径，不把旧资源坐标当成传送。RemoteControl按上述距离／趋势核对新采样，通过RealmSession发送原5F；不会取消当前交互或自行修改权威。原15、入场重建及真正的动作／区域变化仍各走原有处理。原版跨房间可见性条件及全部延迟组合尚未实机认证。
+
+服务端5F纠偏冷却在`travel/position_sync.cpp`维护：单机（nativeGameType=1）及TCP/IP（2）为125帧；仅类型0且90秒内五条记录均有效时，按玩家单位种子抽取1500／3000／4500帧。每次成功纠偏只写第一个失效槽，不一次填满五槽。本机1.13c DLL确认该登记行为与D2MOO当前循环存在差异，依据见[原版静态证据](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。此前误用singlePlayer、填满全部槽及共享随机流的源码已修正；其构建及续测范围见[测试记录](../development/AI_TEST_REC.md)，125帧解除边界尚未触发验收。长冷却期间5F可能只让权威角色走向报告坐标；不能用AI重试替代这条同步规则，也不能据此认定首次预测差异、全部动态碰撞与路径续算均已消除。
+
+原版一致性以客户端、服务端分别对照为准，不能由两端共用函数直接认证。当前源码修正了换目标丢帧时间／定点状态、重复输入与活目标的重算条件、护甲重量及状态速度投影，均尚未构建／运行。仍须覆盖动态碰撞Set／Reset历史与客户端公开占位、路径终止／部分路径续算的完整标志、体力耗尽的模式切换及长帧时钟；旧单机日志只能确认首次明显偏差早于SYNC_WARPED，缺少首次分叉的逐帧路径／速度／碰撞记录。server-snapshot现输出running、movementSpeed、walkSpeed、runSpeed、velocityPercent和pathTarget供后续对齐；这些是权威快照，不提供给AI作导航依据。
 
 SceneController 统一世界手势；RemoteScene 返回当帧命中／绘制输入。SceneView／SceneAssets 共用原地形、Pops、Warp、原对象／单位动画及光照，原服模式与显示模式分开。地图交互和传送点解锁／菜单／旅行都等原服，面板不推断成功。
 

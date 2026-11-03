@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "progressive_execution.hpp"
 #include "pd2/progressive.hpp"
 #include "server/player_store.hpp"

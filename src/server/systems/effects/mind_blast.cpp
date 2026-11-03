@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "mind_blast.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

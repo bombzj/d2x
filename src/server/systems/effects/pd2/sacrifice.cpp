@@ -1,4 +1,6 @@
 #include "sacrifice.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "../system.hpp"
 #include "../native_area.hpp"
 #include "server/area_store.hpp"

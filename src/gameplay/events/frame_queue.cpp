@@ -1,4 +1,5 @@
 #include "frame_queue.hpp"
+#include "server/runtime/events.hpp"
 #include "gameplay/rules/event_frame.hpp"
 #include <limits>
 #include <stdexcept>

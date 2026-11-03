@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
 #include "pd2/item_pierce.hpp"
 #include "player_contact.hpp"
 #include "server/player_store.hpp"

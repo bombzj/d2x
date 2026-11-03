@@ -17,6 +17,7 @@
 namespace d2x {
 class MonsterCatalog;
 class WorldCatalog;
+class WeatherView;
 struct LevelRecord;
 struct Map;
 struct ClassicData;
@@ -186,6 +187,7 @@ class SceneAssets {
     const std::vector<TownAutomapCell> &townAutomapSprites(int level, int variant, bool large) const;
     int automapNpcCel(std::string_view monsterClass) const { return automapCatalog_.npcCel(monsterClass); }
     const LevelRecord &worldLevel(int id) const;
+    void prepareWeather(WeatherView &, int palette);
     void prepareWorldTiles(const Map &, int palette) const;
     const Sprite &worldTileSprite(size_t index) const;
     void resetWorldTiles() {

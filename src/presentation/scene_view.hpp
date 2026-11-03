@@ -25,6 +25,7 @@ class IActorClient;
 struct Grid;
 struct Map;
 class LightingView;
+class WeatherView;
 class PaletteBlendView;
 class AutomapProjection;
 struct WorldDrawView;
@@ -43,6 +44,7 @@ struct ViewState {
     float clickAge = 10, zoom = 1;
     bool help = false, automap = false, debug = false, travelMenu = false;
     bool miniPanelOpen = false;
+    std::optional<int> miniPanelPressed; // -1: bottom toggle, otherwise semantic button ID.
     bool gameMenuOpen = false;
     bool chatInputOpen = false, messageLogOpen = false;
     bool playerTradeBlocking = false;
@@ -60,6 +62,7 @@ struct ViewState {
     int gameMenuSliderDragging = -1;
     AudioSettings audio;
     bool lighting = true;
+    bool standardResolution = false; // App-owned window mode; menu submits a change.
     bool minimapRight = false;
     bool automapLarge = false;
     bool automapNames = true;
@@ -77,6 +80,7 @@ struct ViewState {
     bool hirelingPortraitCanFeed = false;
     int hireListScroll = 0;
     bool questOpen = false;
+    bool questAutoPreview = false, hidePointer = false;
     bool partyOpen = false;
     int questAct = 0;
     int questSelected = -1;
@@ -153,6 +157,7 @@ class SceneView {
     mutable HirelingListView hirelingListView_;
     SceneAssets assets_;
     std::unique_ptr<LightingView> lighting_;
+    std::unique_ptr<WeatherView> weather_;
     std::optional<uint64_t> questAudioGameGeneration_;
     std::unique_ptr<PaletteBlendView> paletteBlend_;
     std::array<std::unique_ptr<PaletteBlendView>, 5> actPaletteBlends_;
@@ -401,6 +406,10 @@ class SceneView {
     const CharacterView &characterView() const { return characterView_; }
     void refreshCharacterView();
     const QuestView &questView() const { return questView_; }
+    bool refreshQuests() { return questClient_.refresh(); }
+    void openQuestLog();
+    bool openQuestLogPreview();
+    void closeQuestLogPreview();
     const NpcConversationView &npcView() const { return npcView_; }
     const MapSceneView &mapView() const;
     const ShopView &shopView() const;

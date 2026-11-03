@@ -23,6 +23,8 @@ struct SpriteLayer {
     bool softAdditive = false;
     Texture2D indexedTexture{};
     AtlasCell cell;
+    // COF transparency enabled: native CelDraw mode; otherwise NORMAL (5).
+    uint8_t drawMode = 5;
 };
 struct SpriteComponentBounds {
     Rectangle bounds{};
@@ -66,7 +68,7 @@ struct GpuAnimation {
     const Sprite *frame(int direction, int index) const;
 
 };
-enum class WorldSingleArt { Object, Effect, BlendedEffect, ItemIcon, GroundItem };
+enum class WorldSingleArt { Object, Effect, BlendedEffect, ItemIcon, GroundItem, Overlay, BlendedOverlay };
 class Graphics {
     enum class AssetKind { Direct, Single, Composite };
     std::array<uint64_t, 3> textureCounts{}, textureBytes{};

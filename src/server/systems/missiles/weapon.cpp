@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "runtime.hpp"
 #include "server/systems/combat/system.hpp"

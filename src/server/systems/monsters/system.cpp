@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
 #include "core/id.hpp"
 #include "server/systems/attributes/pd2/map_values.hpp"
 #include "server/systems/travel/system.hpp"

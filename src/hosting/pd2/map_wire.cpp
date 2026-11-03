@@ -1,5 +1,5 @@
 #include "map_wire.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/facts/map.hpp"
 #include <algorithm>
 
 namespace d2x::hosting {

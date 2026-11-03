@@ -25,6 +25,8 @@ struct ClientPreferences {
     bool bhAutomapOnJoin = false;
     bool bhShowLkChestLines = false;
     ControlBindings controls = defaultControlBindings();
+    bool standardResolution = false;
+    int customWindowWidth = 1280, customWindowHeight = 816;
     bool operator==(const ClientPreferences &) const = default;
 };
 ClientPreferences loadClientPreferences();

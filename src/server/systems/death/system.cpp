@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/frame_facts.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/movement.hpp"

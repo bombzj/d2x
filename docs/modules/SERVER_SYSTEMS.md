@@ -141,6 +141,8 @@ GameCommand由服务端产生sequence、来源area及areaGeneration，负载为M
 
 runtime/command_dispatch为每个负载显式映射SystemId与领域入口，没有默认成功分支。CommandStatus区分Queued、Applied、NotImplemented、Stale、Conflict等结果。PlayerSnapshot.command只保存最近执行结果，movementSequence单独触发原移动回复；最近结果可以被覆盖，不能用作物品／交易的可靠完成通知。
 
+NPC话题确认的内容／输出等待保留在GameInstance命令队首，不提前报Applied，也不进入普通接近队列；后续关窗／移动及模拟阶段等待其完成。奖励token由安装回写最终结果，不重放回调；其他未提交回调原位重试，领域保留已确定的准备结果。暂停保留该命令，离局及稳定保存等待其结算。泰瑞尔302的原版依据与待验边界见[第二幕任务](../gameplay/quests/ACT2.md)。
+
 Travel独立于人物事务：自然边界按原room连接和统一坐标确认接触面，沿既有速度逐步走过接缝；瓦片出口按原13/type=5绑定World分配的UNIT_TILE，接近后进入唯一反向出口，保留LvlWarp的ExitWalk偏移。区域、来源generation、移动意图序号在提交前复验，库存／成长命令不会取消路线；新移动／旅行、退役和离开取消旧过渡。完整TravelFact进入Outbox后才提交区域／位置／新路线，失败不半换区。多重反向出口、原任务锁入口及未核实资格明确暂缓。
 
 runtime/simulation固定顺序为：区域／人口 → 属性 → 初次空间索引 → 伙伴／AI → 技能 → 玩家移动 → 库存恢复／地面恢复与过期 → 怪物／空间索引 → 弹体／效果／战斗 → 死亡 → NPC／商店／加工 → 物件／任务 → 掉落／成长 → 旅行 → 投影。P5补merchant／crafting／items.step调度，不依赖界面操作推进维护。此处不宣称已核实原版全部结算细节；规则接入按生产者／消费者依赖调整。所有步沿用25Hz，不用渲染delta执行玩法。
@@ -162,6 +164,10 @@ transactions的Plan含TransactionId、库存／人物双RevisionGuard、Inventor
 实现提交时必须一起处理：目标／所有权／版本再校验、所有参与者资源及空间资格、事件容量预留、随机及ID的提交语义、去重，以及完整成功后的状态／事件发布。失败不得部分扣费、移物、推进随机或记录已领奖；不能先改库存再发现输出队列已满。掉落发生标识、任务奖励资格和交易版本均由服务端产生，不能以客户端重试次数结算。
 
 附着单位声音先沿原SUNIT_AttachSound写入每单位一个待同步槽，同帧后写覆盖事件号与接收范围；directSound的原F0直接声音继续作为可靠事实。publish／publishGroup对纯附着声音返回内部序号0表示槽状态已受理，只有帧末flushUnitSounds才分配真实可靠序号，序号0不作为网络ACK。槽在独立UnitSounds阶段按已确定前缀发布；容量不足保留剩余槽与同一逻辑帧，不重跑Objects发布或此前玩法。准入失败、单位完整移除／压缩时清槽，恢复单位不重播旧事件；待发布槽存在时身份映射暂不回收。槽的跨单位顺序与原每客户端房间遍历仍待对照，不能据单槽覆盖实现宣称全部输出交错已认证。
+
+事件载荷分别定义在 `runtime/facts/`，类型编号由不包含载荷布局的 `fact_catalog.inc`／`fact_kind.hpp` 维护，保留原诊断顺序。`DomainFact` 是布局独立的拥有型值：128字节以内、对齐满足条件且可无异常移动的载荷内联存储，较大快照独占分配；复制保持独立值，移动转移所有权，移出后的空值禁止发布。生产／读取具体载荷的 cpp 显式包含对应头，通过 `factIf`／`factGet`／`factHolds` 访问；通用事务只持有 `DomainFact`，不包含全量载荷。不要恢复聚合载荷头或以全部载荷定义实例化公共 variant。
+
+`event_batch.hpp`、`frame_facts.hpp`、`diagnostic_event.hpp` 分别维护批次、本帧事实和诊断值；`events.hpp` 只暴露可靠输出接口，队列、声音槽及历史环的私有存储在 `events.cpp`。Windows Release all 已构建通过，最终构建零警告且输入稳定性检查通过；Ninja实际依赖确认 `facts/object.hpp` 只有物件发布、宿主编码、事件诊断三个 cpp 消费者，字段变化不再经事务／技能接口传遍服务端。独立测试会话已用重构后0B8CB8EE单机自主完成邪恶洞窟、血乌和完整凯恩任务，见[AI验收记录](../development/AI_TEST_REC.md)；大快照的额外对象分配、复制与吞吐仍待实际验证，不能据依赖收窄宣称运行性能提升。
 
 EventOutbox有256批／4096事实容量及有序累计确认。InventoryFact保留当次稀疏物品值，CharacterFact保留前后人物／Totals，TravelFact保留提交区域／位置，ChatFact保留提交时收件人。NativeRealmHost集中路由：库存／人物／换区仅本人，聊天仅已捕获的同局连接。每位接收者完整编码后一次提交字节队列；失败明确终止该连接、移出投影并保留可恢复存档租约，再确认已送达或明确退役的批，不向其他连接重复发送。Area受众按同实例可见区域及单位过滤；未实现事实明确拒绝。玩家／世界／怪物增量由独立player_replication／world_replication／monster_replication编码；只发别人穿戴外观，不发背包、Cursor、私人箱或人物属性。
 

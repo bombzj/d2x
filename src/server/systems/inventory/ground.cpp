@@ -1,4 +1,7 @@
 #include "planning.hpp"
+#include "server/runtime/frame_facts.hpp"
+#include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "eligibility.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

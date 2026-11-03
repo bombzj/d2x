@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "gameplay/combat/weapon_snapshot.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "runtime.hpp"
@@ -29,9 +32,9 @@
 #include <stdexcept>
 namespace d2x::server::missiles {
 RegionId nativeBirthFactArea(const DomainFact &fact) {
-    if(const auto *missile=std::get_if<MissileFact>(&fact)) return missile->area;
-    if(const auto *pulse=std::get_if<SkillPulseFact>(&fact)) return pulse->area;
-    if(const auto *overlay=std::get_if<OverlayFact>(&fact)) return overlay->area;
+    if(const auto *missile=factIf<MissileFact>(&fact)) return missile->area;
+    if(const auto *pulse=factIf<SkillPulseFact>(&fact)) return pulse->area;
+    if(const auto *overlay=factIf<OverlayFact>(&fact)) return overlay->area;
     throw std::logic_error("Unsupported native missile birth fact");
 }
 struct NativeBirthPublication::Data {

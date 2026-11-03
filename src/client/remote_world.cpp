@@ -181,14 +181,14 @@ void equipment(OnlineView &v, const Packet &p) {
     // Any unequip/removal/action replaces the old appearance by item identity.
     if (auto old = v.world.equipment.find(id); old != v.world.equipment.end()) {
         if (auto oldOwner = v.world.units.find({old->second.ownerType, old->second.owner}); oldOwner != v.world.units.end())
-            ++oldOwner->second.appearanceRevision;
+            oldOwner->second.appearanceRevision = v.world.revision;
         v.world.equipment.erase(old);
     }
     if (p.id == 0x9C && action <= 3)
         return; // Ground items have no player owner.
     auto &u = unit(v.world, {ownerType, *owner});
     u.equipmentObserved = true;
-    ++u.appearanceRevision;
+    u.appearanceRevision = v.world.revision;
     if (action == 5 || action == 8 || action == 12 || action == 15 || action == 17)
         return;
     BitReader bits(r.take(r.remaining()));
@@ -371,7 +371,7 @@ void removeItem(OnlineWorldView &world, uint32_t id) {
     }
     if (const auto found = world.equipment.find(id); found != world.equipment.end())
         if (const auto owner = world.units.find({found->second.ownerType, found->second.owner}); owner != world.units.end())
-            ++owner->second.appearanceRevision;
+            owner->second.appearanceRevision = world.revision;
     world.items.erase(id); world.equipment.erase(id); world.units.erase({4,id});
     for (const auto child : children) if (child != id) removeItem(world, child);
     ++world.itemRevision;
@@ -525,7 +525,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         const auto id = r.u32();
         r.u32(); r.finish();
         if (const auto owner = w.units.find({type, id}); owner != w.units.end()) {
-            ++owner->second.appearanceRevision;
+            owner->second.appearanceRevision = w.revision;
             ++w.itemRevision;
         }
         // Full native eligibility recomputation is not implemented for CN.
@@ -572,7 +572,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         if (changed) {
             ++w.itemRevision;
             if (ownedItem) item->second.revision = w.itemRevision;
-            ++actor->second.appearanceRevision;
+            actor->second.appearanceRevision = w.revision;
         }
         break;
     }
@@ -909,7 +909,10 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         for (auto &value : flags) value = r.u16();
         r.finish();
         if (p.id == 0x29) w.quests.gameFlags = flags;
-        else if (kind == 6 || kind == 1) w.quests.playerFlags = flags; // Initialization or NPC's player-private record.
+        else if (kind == 6 || kind == 1) {
+            w.quests.playerFlags = flags;
+            w.quests.playerFlagsRevision = w.revision;
+        }
         // Retail 4B955 calls 46770 for every NPC: clear old alert overlays
         // when an assigned NPC opens a conversation; later 8A may rearm them.
         if(p.id==0x28 && kind==1 && w.units.contains({1,source})) w.questAlerts.clear();
@@ -1622,7 +1625,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             BitReader bits(tail);
             u.mode = uint8_t(bits.read(4));
         }
-        ++u.appearanceRevision;
+        // Remove + assign can be consumed before the next projection update.
+        // A per-unit counter would restart at 1 and reuse the removed unit's
+        // cached rank/owner/stats. All appearance producers use the packet's
+        // world revision, which survives unit removal within this game.
+        u.appearanceRevision = w.revision;
         break;
     }
     default:

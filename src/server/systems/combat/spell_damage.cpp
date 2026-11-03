@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "pd2/item_pierce.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
 #include "player_contact.hpp"

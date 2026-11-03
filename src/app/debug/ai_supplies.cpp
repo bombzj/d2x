@@ -1,4 +1,5 @@
 #include "ai_impl.hpp"
+#include "content/world/world_catalog.hpp"
 #include "client/inventory_actions.hpp"
 #include "content/npc/vendor_stock.hpp"
 #include "gameplay/items/belt_rules.hpp"
@@ -229,7 +230,7 @@ bool DebugAi::Impl::restock(Context &c) {
             if(Clock::now()>=shopDeadline) throw std::runtime_error("Town healer interaction did not restore observed life; no blind retry");
             wait("supply-heal-wait","Waiting for actual life recovery from the normal healer conversation");return false;
         }
-        if(world.npcRequested) c.session.close_npc();
+        if(world.npcRequested) c.control.closeNpc();
         healingIssued=false;healingObserved=false;supplyNpc.reset();shopDeadline={};note("town-healing-observed");return false;
     }
     if(injured) {
@@ -266,13 +267,13 @@ bool DebugAi::Impl::restock(Context &c) {
     }
     const bool portal=supplyPolicy.fillPortalBook && (!stock.books || stock.pages<stock.capacity);
     if(!life && !mana && !portal) {
-        if(world.npcRequested && supplyNpc && world.npcRequested==supplyNpc->id) c.session.close_npc();
+        if(world.npcRequested && supplyNpc && world.npcRequested==supplyNpc->id) c.control.closeNpc();
         shelfReopens=0;shopIssued=false;shelfObserved=false;supplyNpc.reset();return true;
     }
     if(!view.load.act || !c.town.read().town) throw std::runtime_error("Potion restock requires the current act's native town");
     const auto supplier=definitions->supplier(*view.load.act,portal);const auto npc=find(c,supplier);
     if(shopIssued && supplyNpc && (!npc || *supplyNpc!=npc->key)) {
-        c.session.close_npc();cancelWalk(c);shopIssued=false;shelfObserved=false;supplyNpc.reset();shopDeadline={};return false;
+        c.control.closeNpc();cancelWalk(c);shopIssued=false;shelfObserved=false;supplyNpc.reset();shopDeadline={};return false;
     }
     if(!npc) {if(!approachKnown(c,supplier)) explore(c,"potion supplier "+supplier.name);return false;}
     supplyNpc=npc->key;
@@ -291,7 +292,7 @@ bool DebugAi::Impl::restock(Context &c) {
         if(Clock::now()>=shopDeadline) {
             if(shelfReopens || (world.itemRequest && world.itemRequest->state==OnlineItemRequest::State::Pending))
                 throw std::runtime_error("Potion vendor shelf unavailable after bounded shop observation");
-            if(c.session.close_npc()) {
+            if(c.control.closeNpc()) {
                 ++shelfReopens;shopIssued=false;shelfObserved=false;shopDeadline={};cancelWalk(c);
                 note("merchant-reopen","No shelf or pending transaction; reopening the conversation once");
             }
@@ -350,6 +351,13 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
     if(!supplyPolicy.enabled || !supplyPolicy.buy || goal.kind==Kind::Restock) return false;
     if(supplyStage!=SupplyStage::None) return supplyDetour(c,goal);
     if(questTransaction(c) || questRun.pending) return false;
+    // Town-to-town quest travel consumes no field reserves. Restock at the
+    // destination before its next field departure, preserving a delayed gate.
+    if(c.town.read().town && cursor<goals.size() && questRun.step<goals[cursor].steps.size()) {
+        const auto &step=goals[cursor].steps[questRun.step];
+        if(step.action==QuestAction::Portal && step.area &&
+            std::find(actTownLevels.begin(),actTownLevels.end(),*step.area)!=actTownLevels.end()) return false;
+    }
     const auto &world=c.session.read().world;
     if(potionRequest || objectIssued || pickup || portalAttempted || portalIssued || pendingDoor || mobilityTarget ||
         world.npcRequested || world.waypointSource || world.waypointRequested || world.townPortalPending ||
@@ -359,9 +367,11 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
         (world.combatRequest && world.combatRequest->state==OnlineCombatRequest::State::Pending) ||
         travelPhase==TravelPhase::WaypointWait || travelPhase==TravelPhase::CrossWait) return false;
     const auto stock=portalStock(c);
-    const bool needs=(world.life && c.supplies && c.supplies->maxLife && *world.life<*c.supplies->maxLife) ||
-        potionCount(c,PotionKind::Life)<unsigned(supplyPolicy.healthCount) || potionCount(c,PotionKind::Mana)<unsigned(supplyPolicy.manaCount) ||
-        (supplyPolicy.fillPortalBook && (!stock.known || !stock.books || stock.pages<=stock.capacity/2));
+    const bool needsHealing=world.life && c.supplies && c.supplies->maxLife && *world.life<*c.supplies->maxLife;
+    const bool needsHealth=potionCount(c,PotionKind::Life)<unsigned(supplyPolicy.healthCount);
+    const bool needsMana=potionCount(c,PotionKind::Mana)<unsigned(supplyPolicy.manaCount);
+    const bool needsPortal=supplyPolicy.fillPortalBook && (!stock.known || !stock.books || stock.pages<=stock.capacity/2);
+    const bool needs=needsHealing || needsHealth || needsMana || needsPortal;
     bool empty=false;
     if(c.supplies && supplyPolicy.returnWhenEmpty && !potionCount(c,PotionKind::Rejuvenation)) {
         empty=(supplyPolicy.healthCount && !potionCount(c,PotionKind::Life) && world.life && c.supplies->maxLife &&
@@ -399,7 +409,9 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
     stop(c.walk,c.control,c.combat);resetStep();combatTarget.reset();retreatPoint.reset();
     supplyStage=c.town.read().town?SupplyStage::Shop:SupplyStage::ToTown;
     shopIssued=false;shelfObserved=false;supplyNpc.reset();supplyPortalUsed=false;
-    note("supply-detour-started",bossPressure?"Observed boss pressure without healing; retaining the original goal":"Preparing normal travel reserves");return true;
+    note("supply-detour-started",std::string(bossPressure?"boss-pressure":"travel-reserves")+
+        " heal="+std::to_string(needsHealing)+" hp="+std::to_string(needsHealth)+
+        " mp="+std::to_string(needsMana)+" tp="+std::to_string(needsPortal));return true;
 }
 bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
     const auto now=Clock::now();

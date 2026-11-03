@@ -27,6 +27,8 @@ class DebugAi {
         std::optional<bool> actionInputBusy;
         std::function<std::optional<bool>(uint16_t)> skillUsable;
         std::function<std::optional<unsigned>(uint32_t)> buyQuote;
+        std::function<bool()> openQuestLog;
+        std::function<void()> closeQuestLog;
         std::span<const OnlineSceneView::MissileDisplay> missiles;
     };
     explicit DebugAi(Archives &,std::filesystem::path logDirectory="logs");

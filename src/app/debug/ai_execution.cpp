@@ -82,15 +82,20 @@ bool DebugAi::Impl::submitItem(Context &c,const OnlineItemCommand &command,std::
 bool DebugAi::Impl::prepareNpcService(Context &c, OnlineUnitKey npc, DebugActionOwner owner) {
     const auto &conversation = c.session.read().world.npcConversation;
     if (!conversation || conversation->type != npc.type || conversation->source != npc.id) {
+        wait("npc-service-open","Waiting for the current NPC service conversation");
         walk(c,{{"goal","unit"},{"unitType",npc.type},{"unitId",npc.id},{"interact",true}});
         return false;
     }
     const auto automatic = nextAutomaticNpcSpeech(*conversation);
     if (!automatic) return true;
     const auto result = submitInput(c, owner, "npc-service-speech", DebugInteraction | DebugMenu,
-        [&]{return c.session.acknowledge_npc_message(*automatic);},
+        [&]{return c.control.acknowledgeNpc(*automatic);},
         [&]{return c.session.read().error ? c.session.read().error->message : std::string{};});
     if (result == DebugSubmitResult::Expired) throw std::runtime_error("Unable to finish the NPC's automatic speech");
+    if (result == DebugSubmitResult::Accepted) {
+        cancelWalk(c);
+        wait("npc-service-speech","Automatic speech acknowledged; observing the resulting conversation");
+    }
     return false;
 }
 bool DebugAi::Impl::submitCombat(Context &c,const OnlineCombatCommand &command,DebugActionOwner owner,std::string action,std::optional<Vec> at) {
@@ -119,7 +124,7 @@ bool DebugAi::Impl::questWaitRequiresInput(const Context &c) const {
         pending.action==QuestPending::Action::Service) && questRun.materialPhase==4)) return false;
     if(!pending.refreshIssued) return true;
     if(cursor<goals.size() && questRun.step<goals[cursor].steps.size() && goals[cursor].steps[questRun.step].optional) return false;
-    return pending.unit && (!pending.statusRequested || c.session.read().world.npcRequested!=pending.unit->id);
+    return !pending.statusRequested;
 }
 void DebugAi::Impl::execute(Context &c,const Goal &goal) {
     if(continuation==Continuation::WorldResult) continuation=Continuation::None;
@@ -188,10 +193,11 @@ std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c
         const bool atomic=questTransaction(c);
         const bool journal=questRun.pending && cursor<goals.size() && questRun.step<goals[cursor].steps.size() &&
             goals[cursor].steps[questRun.step].publishesTombSymbol;
-        result.push_back({Owner::Goal,atomic?"quest-transaction":journal?"journal-reading":"quest-result",
-            atomic?unsigned(DebugAllInputs):journal?unsigned(DebugMotion|DebugSkill|DebugInteraction|DebugMenu):unsigned(DebugItem|DebugInteraction|DebugMenu),0,
+        const bool portal=questRun.pending && questRun.pending->action==QuestPending::Action::Portal;
+        result.push_back({Owner::Goal,atomic?"quest-transaction":journal?"journal-reading":portal?"quest-portal-transfer":"quest-result",
+            atomic?unsigned(DebugAllInputs):(journal || portal)?unsigned(DebugMotion|DebugSkill|DebugInteraction|DebugMenu):unsigned(DebugItem|DebugInteraction|DebugMenu),0,
             questWaitRequiresInput(c)?"normal follow-up query input":"native quest / inventory result",
-            "observe result; query only at the registered continuation; never replay service",
+            portal?"bounded normal portal retry in the confirmed source scene":"observe result; query only at the registered continuation; never replay service",
             questRun.pending?questRun.pending->deadline:Clock::time_point{},questRun.pending && questRun.pending->resultObserved});
     }
     if(questRun.worldWait) result.push_back({Owner::Goal,"world-result",0,0,
@@ -229,7 +235,7 @@ void DebugAi::Impl::describeActions(const Context &c) {
         {"waitingFor",entry.waitingFor},{"recovery",entry.recovery},{"resultObserved",entry.resultObserved},
         {"waitRemainingMs",entry.deadline==Clock::time_point{}?Json(nullptr):Json(std::max<int64_t>(0,
             std::chrono::duration_cast<std::chrono::milliseconds>(entry.deadline-Clock::now()).count()))},
-        {"clock",entry.action=="supply-detour" || entry.action=="world-result" || (entry.action=="merchant" && shelfObserved) ||
+        {"clock",entry.action=="supply-detour" || entry.action=="world-result" || entry.action=="quest-portal-transfer" || (entry.action=="merchant" && shelfObserved) ||
             (questWaitRequiresInput(c) && entry.owner==DebugActionOwner::Goal)?"execution":"real"}});
     for(const auto &[owner,inputs]:std::initializer_list<std::pair<DebugActionOwner,unsigned>>{
         {DebugActionOwner::Goal,DebugAllInputs},{DebugActionOwner::Combat,DebugMotion|DebugSkill},
@@ -311,14 +317,16 @@ void DebugAi::Impl::observeActions(Context &c) {
         if(legDestination && c.town.read().area==legDestination) {
             travelPhase=TravelPhase::Route;legDestination.reset();waypointDestination.reset();legUnit.reset();cancelWalk(c);
             note("travel-result-observed");
+        } else if(travelPhase==TravelPhase::CrossWait && legUnit && recoverTravel(c,true)) {
+            travelPhase=TravelPhase::WarpExit;
         } else if(now>=actionDeadline) {
             if(travelPhase==TravelPhase::CrossWait && legUnit && recoverTravel(c)) travelPhase=TravelPhase::WarpExit;
             else failure="Submitted travel's destination was not observed";
         }
     }
-    if(supplyPortalUsed && supplyOrigin!=c.town.read().area && now>=supplyPortalDeadline) {
-        if(recoverTravel(c)) supplyPortalUsed=false;
-        else failure="Return portal was used but the original supply area was not observed";
+    if(supplyPortalUsed && supplyOrigin!=c.town.read().area) {
+        if(recoverTravel(c,now<supplyPortalDeadline)) supplyPortalUsed=false;
+        else if(now>=supplyPortalDeadline) failure="Return portal was used but the original supply area was not observed";
     }
     if(!failure.empty()) throw std::runtime_error(failure);
 }

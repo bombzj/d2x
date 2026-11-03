@@ -1,5 +1,9 @@
 #include "core/id.hpp"
+#include "server/runtime/frame_facts.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "system.hpp"
+#include "replication.hpp"
 #include "core/random.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "server/player_store.hpp"
@@ -34,7 +38,7 @@ bool System::waypointArrival(const Object &object) const {
     });
 }
 void System::publishInitialization(const Object &object) {
-    if(object.rule.chest || object.rule.shrine || object.rule.operation==18 || object.rule.operation==66)
+    if(usesReliableModeFacts(object.rule))
         publishedModes_.insert_or_assign(object.id,std::pair{object.revision,object.mode});
     ports_.maps.bind(object.pd2Binding,object.id,object.area,object.position,true);
     if(ports_.maps.opensBlockerOnBirth(object.definition)) openNativeBlocker(object.id,ports_.frameEvents.currentFrame());
@@ -313,7 +317,12 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
                 if(cainControl->area!=actor.area) collision(cainControl->area);
             }
             if(rule.operation==12 || rule.operation==21) object.pending=true;
-            else {object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);++object.revision;collision(actor.area);}
+            else {
+                // A1Q4 Operate09 changes to OPERATING without scheduling
+                // ENDANIM; lit stones keep that mode until a quest restore.
+                object.mode=1;object.until=rule.operation==9?0:actor.tick+std::max(uint64_t{1},rule.openingTicks);
+                ++object.revision;collision(actor.area);
+            }
         }
         return result;
     }
@@ -520,7 +529,9 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
             if(selected==371) object.rule.towerReward=source.rule.towerReward;
             object.uses=2*object.rule.parameters[2];
         }
-        if(source.questSpawn) {object.mode=ports_.quests.read().actTwo.tombOpen?2:1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);}
+        // A2Q6_Timer_UpdateObjects creates the real entrance in OP without
+        // scheduling ENDANIM. Operate43 accepts it immediately in that mode.
+        if(source.questSpawn) {object.mode=ports_.quests.read().actTwo.tombOpen?2:1;object.until=0;}
         if(source.rule.operation==23 && area.definition.town) object.mode=2;
         if(source.rule.operation==10 && int(region)==38 && ports_.quests.read().actOne.cainRescued) object.mode=5;
         if(source.rule.operation==9 && int(region)==4 && ports_.quests.read().actOne.restoreCairnStones) object.mode=2;

@@ -1,4 +1,5 @@
 #include "equipped_skills.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "../system.hpp"
 #include "../attribute_projection.hpp"
 #include "server/runtime/skill_rules.hpp"

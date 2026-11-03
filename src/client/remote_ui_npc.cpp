@@ -38,7 +38,7 @@ void RemoteUiClients::Impl::Npc::submit(NpcIntent c) {
                 OnlineItemCommand request;
                 request.npc = o.context.npc.value_or(0);
                 if constexpr (std::is_same_v<T, EndNpcConversation>) {
-                    if (o.session.close_npc(o.context)) o.context = onlineIntentContext(o.session.read());
+                    if (o.control.closeNpc(o.context)) o.context = onlineIntentContext(o.session.read());
                     return;
                 }
                 else if constexpr (std::is_same_v<T, OpenHirelingList>) {
@@ -57,7 +57,7 @@ void RemoteUiClients::Impl::Npc::submit(NpcIntent c) {
                     const auto raw=v.npc.value?v.npc.value-1:0;
                     const auto unit=o.session.read().world.units.find({1,uint32_t(raw)});
                     if(unit!=o.session.read().world.units.end() && unit->second.classId)
-                        o.session.confirm_npc_voice(uint16_t(*unit->second.classId),o.context);
+                        o.control.greetNpc(uint16_t(*unit->second.classId),o.context);
                     return;
                 }
                 else if constexpr (std::is_same_v<T, TalkToNpc>) {
@@ -65,7 +65,7 @@ void RemoteUiClients::Impl::Npc::submit(NpcIntent c) {
                         const auto &conversation = o.session.read().world.npcConversation;
                         const auto topic = uint16_t(*v.message);
                         if (!conversation || conversation->acknowledged.contains(topic)) return;
-                        o.session.acknowledge_npc_message(topic, o.context);
+                        o.control.acknowledgeNpc(topic, o.context);
                     } else if (v.action == TalkToNpc::Action::Trade) {
                         request.action = OnlineItemAction::TradeOpen; o.enqueue(request);
                     }
@@ -73,10 +73,10 @@ void RemoteUiClients::Impl::Npc::submit(NpcIntent c) {
                 }
                 else if constexpr (std::is_same_v<T, CompleteActOne> || std::is_same_v<T, CompleteActTwo>) {
                     if(o.scene && o.scene->npcConversation && o.scene->npcConversation->travelDestination)
-                        o.session.npc_travel(*o.scene->npcConversation->travelDestination,o.context);
+                        o.control.npcTravel(*o.scene->npcConversation->travelDestination,o.context);
                     return;
                 }
-                else if constexpr (std::is_same_v<T, ClaimAkaraRespec>) {o.session.npc_travel(0,o.context);return;}
+                else if constexpr (std::is_same_v<T, ClaimAkaraRespec>) {o.control.npcTravel(0,o.context);return;}
                 else if constexpr (std::is_same_v<T, IdentifyWithCain>) request.action = OnlineItemAction::IdentifyAll;
                 else if constexpr (std::is_same_v<T, BuyVendorItem>) {
                     request.action = OnlineItemAction::Buy; request.item = v.slot;

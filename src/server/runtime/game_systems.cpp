@@ -1,4 +1,5 @@
 #include "game_systems.hpp"
+#include "server/runtime/events.hpp"
 
 namespace d2x::server {
 // Constructors only retain Ports; they must not inspect/call peer systems.

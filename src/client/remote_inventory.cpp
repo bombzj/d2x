@@ -15,6 +15,19 @@
 #include <stdexcept>
 
 namespace d2x {
+bool RemoteInventory::submitQuestItem(net::RealmSession &session,uint32_t source,std::optional<uint32_t> item,
+                                     std::optional<OnlineIntentContext> context) {
+    update(session.read());
+    const auto &view=session.read();
+    if(view.world.staffSource!=source) return reject("Quest item panel source changed");
+    if(item) {
+        const auto wire=view.world.items.find(*item);const auto decoded=view_.items.find(*item);
+        if(wire==view.world.items.end() || !onlineItemOwnedBy(wire->second,view.load.playerUnitId) ||
+            wire->second.mode!=4 || decoded==view_.items.end() || !decoded->second.decoded)
+            return reject("Quest item is not the current decoded cursor item");
+    }
+    return session.submit_staff(source,item,context.value_or(onlineIntentContext(view)));
+}
 using net::protocol::BitReader;
 std::optional<OnlinePoint> firstBackpackSpace(const OnlineView &view, const OnlineInventoryView &inventory, uint32_t movingItem) {
     const auto moving = inventory.items.find(movingItem);

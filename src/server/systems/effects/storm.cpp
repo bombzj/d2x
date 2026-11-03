@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "native_area.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

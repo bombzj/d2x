@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "runtime.hpp"
 #include "native_caster.hpp"
 #include "evaluation.hpp"

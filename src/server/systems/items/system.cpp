@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/frame_facts.hpp"
+#include "server/runtime/facts/inventory.hpp"
 #include "gameplay/items/quality_rules.hpp"
 #include "core/id.hpp"
 #include "gameplay/items/pd2/charges.hpp"
@@ -147,7 +149,7 @@ DomainResult<> System::prepareInactiveItem(PreparedInactiveItem prepared) {
 }
 void System::prepareGroundOrder(State &next,std::span<const DomainFact> facts) const {
     next.world.itemOrder=inventoryItemOrder(next.world);
-    for(const auto &fact:facts) if(const auto *drop=std::get_if<GroundDropFact>(&fact)) {
+    for(const auto &fact:facts) if(const auto *drop=factIf<GroundDropFact>(&fact)) {
         const auto found=next.world.items.find(drop->item.id);
         if(found==next.world.items.end() || !std::holds_alternative<GroundLocation>(found->second.location)) continue;
         const auto previous=state_.world.items.find(drop->item.id);

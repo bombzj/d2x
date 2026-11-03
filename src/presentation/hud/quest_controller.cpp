@@ -24,27 +24,12 @@ bool SceneController::handleQuestToggle(const FrameInput &input) {
     if ((input.quests || (ui.questNotice && !ui.questOpen && !ui.partyOpen && !ui.characterOpen &&
          !ui.inventory.storage && !ui.inventory.cubeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), questNoticeBounds()))) && !ui.capturesWorldInput()) {
+        ui.questAutoPreview = false;
         ui.questOpen = !ui.questOpen;
         if (ui.questOpen) {
+            view_.openQuestLog();
             ui.partyOpen = false;
             ui.hirelingOpen = false;
-            const bool updated = ui.questNotice;
-            if (updated && ui.questUpdated >= 0 && ui.questUpdated < int(QuestId::Count))
-                ui.questAct = view_.questView().entry(QuestId(ui.questUpdated)).act;
-            else ui.questAct = view_.questView().currentAct;
-            ui.questNotice = false;
-            if (ui.questSelected < 0 || ui.questSelected >= int(view_.questView().quests(ui.questAct).size()) ||
-                !view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(ui.questSelected))).selectable()) {
-                ui.questSelected = -1;
-                for (int index = 0; index < int(view_.questView().quests(ui.questAct).size()); ++index)
-                    if (view_.questView().entry(view_.questView().displayed(ui.questAct, size_t(index))).selectable()) {
-                        ui.questSelected = index;
-                        break;
-                    }
-            }
-            if (updated && ui.questUpdated >= 0 && ui.questUpdated < int(QuestId::Count) &&
-                view_.questView().entry(QuestId(ui.questUpdated)).selectable())
-                ui.questSelected = int(view_.questView().entry(QuestId(ui.questUpdated)).displaySlot);
             ui.characterOpen = false;
             ui.skillTreeOpen = false;
             if (ui.inventory.open) toggleInventory();
@@ -57,6 +42,7 @@ bool SceneController::handleQuestPanel(const FrameInput &input) {
     auto &ui = view_.ui();
     if (ui.questOpen && input.insideViewport &&
         CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
+        if(input.leftPressed || input.rightPressed || input.mouseWheel) ui.questAutoPreview=false;
         if (input.leftPressed) {
             if (CheckCollisionPointRec(rv(input.mouse), questCloseBounds()))
                 ui.questOpen = false;

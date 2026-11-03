@@ -30,7 +30,7 @@ class DebugAutoWalk {
     unsigned approachRetries_{};
     Clock::time_point clickedAt_{},alertWaitSince_{};
     Clock::time_point townTurnSince_{};
-    uint64_t legRevision_{},legDiscontinuity_{};
+    uint64_t legDiscontinuity_{};
     uint64_t interactionRevision_{},interactionDiscontinuity_{};
     std::optional<OnlinePoint> interactionFrom_;
     std::optional<uint16_t> exitLevel_;

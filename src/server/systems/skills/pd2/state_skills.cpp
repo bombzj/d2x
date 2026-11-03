@@ -1,4 +1,5 @@
 #include "../system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "../runtime.hpp"
 #include "../evaluation.hpp"
 #include "server/player_store.hpp"

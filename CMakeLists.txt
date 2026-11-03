@@ -228,7 +228,7 @@ add_library(d2x_server
   src/server/player_store.cpp src/server/runtime/system_catalog.cpp
   src/server/runtime/game_systems.cpp src/server/runtime/command_dispatch.cpp
   src/server/runtime/simulation.cpp src/server/systems/actions/state.cpp
-  src/server/runtime/events.cpp src/server/systems/world/system.cpp
+  src/server/runtime/events.cpp src/server/runtime/domain_fact.cpp src/server/systems/world/system.cpp
   src/server/systems/world/pd2/maps.cpp
   src/server/systems/world/quest_placement.cpp src/server/systems/quests/orb.cpp
   src/server/systems/effects/redemption.cpp src/server/systems/effects/damage_absorption.cpp
@@ -558,7 +558,7 @@ add_library(d2x_presentation
   src/presentation/world/automap_projection.cpp
   src/presentation/world/bh_automap_view.cpp
   src/presentation/world/map_view.cpp src/presentation/world/map_controller.cpp
-  src/presentation/world/object_hint.cpp src/presentation/world/lighting_view.cpp
+  src/presentation/world/object_hint.cpp src/presentation/world/lighting_view.cpp src/presentation/world/weather_view.cpp
   src/presentation/world/palette_blend_view.cpp src/presentation/world/tile_visibility.cpp
   src/presentation/audio/audio_emitters.cpp src/presentation/audio/scene_streams.cpp
   src/presentation/world/projectile_view.cpp src/presentation/world/client_missile_assets.cpp
@@ -588,6 +588,7 @@ add_executable(d2x
   src/app/debug/ai.cpp
   src/app/debug/ai_behavior_log.cpp
   src/app/debug/ai_navigation.cpp
+  src/app/debug/ai_terrain_clues.cpp
   src/app/debug/ai_local_travel.cpp
   src/app/debug/ai_execution.cpp
   src/app/debug/ai_events.cpp

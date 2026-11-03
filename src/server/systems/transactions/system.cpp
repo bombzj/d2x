@@ -1,4 +1,13 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/character.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/effects.hpp"
+#include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/resources.hpp"
+#include "server/runtime/facts/social.hpp"
+#include "server/runtime/facts/travel.hpp"
 #include "server/systems/effects/pd2/equipped_skills.hpp"
 #include "server/systems/effects/pd2/map_state.hpp"
 #include "server/systems/spatial/system.hpp"
@@ -44,6 +53,7 @@ using d2x::swap;
 }
 #endif
 namespace d2x::server::transactions {
+bool System::hasOutputCapacity(size_t extraFacts) const { return ports_.events.hasCapacity(2 + extraFacts); }
 static_assert(std::is_nothrow_swappable_v<PersistentCharacter> && std::is_nothrow_swappable_v<attributes::Totals>);
 namespace {
 struct AuraPreparationFailure : std::runtime_error {
@@ -830,8 +840,8 @@ DomainResult<> System::commit(Plan plan) {
     const auto &extra = edit ? edit->facts : characterChange->facts;
     size_t targetingPrefix=0;
     for(const auto &fact:extra) {
-        const auto *targeting=std::get_if<ItemTargetingFact>(&fact);
-        const auto *trade=std::get_if<TradeFact>(&fact);
+        const auto *targeting=factIf<ItemTargetingFact>(&fact);
+        const auto *trade=factIf<TradeFact>(&fact);
         // Native ItemMode cancels targeting while the source still exists on
         // the client, before the inventory removal receipt in this same batch.
         // Trade's agreement reset and lock likewise precede its item receipts.
@@ -866,7 +876,7 @@ DomainResult<> System::commit(Plan plan) {
         }
         size_t peerTargetingPrefix=0;
         for(const auto &fact:change.facts) {
-            const auto *targeting=std::get_if<ItemTargetingFact>(&fact);
+            const auto *targeting=factIf<ItemTargetingFact>(&fact);
             if(targeting && targeting->cursor<0) delivery.facts.insert(delivery.facts.begin()+peerTargetingPrefix++,fact);
             else delivery.facts.push_back(fact);
         }
@@ -874,7 +884,7 @@ DomainResult<> System::commit(Plan plan) {
         if(!change.publicFacts.empty()) batches.push_back({0,request->actor.tick,plan.id,{AudienceKind::Area,{},target.area},change.publicFacts});
     }
     if(plan.auraUnits) for(const auto &fact:plan.auraUnits->facts) {
-        const auto *state=std::get_if<StateFact>(&fact);const auto *hit=std::get_if<HitFact>(&fact);
+        const auto *state=factIf<StateFact>(&fact);const auto *hit=factIf<HitFact>(&fact);
         batches.push_back({0,request->actor.tick,plan.id,{AudienceKind::Area,{},state?state->area:hit?hit->area:player.area},{fact}});
     }
     if(plan.missileBirth) for(const auto &fact:plan.missileBirth->facts())

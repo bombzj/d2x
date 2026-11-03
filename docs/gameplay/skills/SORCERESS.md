@@ -8,6 +8,8 @@ PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版
 
 ## 30项公共职责核对
 
+客户端RemoteCombat现按当前Levels.Teleport复验传送路径：0拒绝，2沿UNITS_TestCollisionByCoordinates的源／目标尺寸2与0x0804检查截短射线，其他非零模式不检查中途步行障碍。都瑞尔房间73的当前原表值为2；限制并非“击杀后才禁传送”，实际可否跨越取决于这次路径上的门／飞弹屏障。AI提前查询同一功能，受阻段改步行；怪物不计入该射线。此项未构建、未实测。
+
 按当前MPQ的Skills／Missiles函数号定位本地D2MOO。空SrvDo经通用 `D2GAME_SKILLS_Handler_6FD12BA0` 创建srvmissile，不是未实现；被动不走施法入口。C＝公共法力／等级公式，D＝公共技能元素伤害／协同／支配，L＝公共元素长度，P＝公共线性被动；通用取整与权限见[跨职业计算](COMMON.md#跨职业公共计算)。表中已接入口不代表全部参数或表现已认证。
 
 | ID／技能 | 原SrvSt／SrvDo及执行证据 | 公共计算／定义 | 两端执行边界 |
@@ -51,6 +53,7 @@ PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版
 
 ### 时序与弹体差异
 
+- 原版共享施法延迟见[公共规范](COMMON.md#原版施法延迟)。当前`assets/mpq2`的Frozen Orb delay=25帧（1秒）、Meteor=30帧、Blizzard=45帧，Teleport为空／0；值由表读取。服务端补发／移除skilldelay，客户端据此变红并统一限制普通输入和AI，尚未运行验收。
 - `prepareCastAnimationTiming`／`normalCastTiming`／`playerCastSequenceTiming`两端共用SC／seq12时钟，seq6固定速率。本人FCR优先取收到的属性；必要时从完整装备／套装／状态列表汇总，缺输入保持未知，远端未知FCR仍使用基础显示速率。
 - 冰封球用原GetRemainingFrames的TotalFrames−CurrentFrame差值判散射与转向，保留Clt／Srv参数及零帧发射。0x73带剩余寿命时，客户端时钟已有已过帧前缀，不能重复扣除。子弹出生时服务端重新求当前支配／协同；撞墙不补自然到期环射。
 - `advanceMissileVelocity`共用五帧加速／限速，`missileChangedCell`共用跨格条件；两端固定点与cells/second表示仍各自适配。Blaze留火、火墙maker、Meteor落地及Blizzard周期持有各端创建队列，尚未共用完整调度／路径状态。

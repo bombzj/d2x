@@ -1,4 +1,7 @@
 #include "gameplay/character/persistent_character.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/social.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/game_messages.hpp"
 #include "server/area_store.hpp"
@@ -10,7 +13,7 @@
 #include "hosting/quest_content.hpp"
 #include "hosting/companion_content.hpp"
 #include "content/world/world_catalog.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/event_batch.hpp"
 #include <algorithm>
 namespace d2x::hosting {
 void NativeRealmHost::initialize() {
@@ -183,10 +186,10 @@ void NativeRealmHost::publishEvents(GameHandle game) {
     std::vector<EntityId> monsterDeaths;
     std::vector<std::pair<EntityId,EntityId>> relationUpdates;
     for(const auto &batch:*pending) for(const auto &fact:batch.facts) {
-        if(const auto *reset=std::get_if<server::InventoryResetFact>(&fact)) inventoryResets.push_back(reset->projection.player.id);
-        else if(const auto *relation=std::get_if<server::ChatRelationFact>(&fact)) relationUpdates.emplace_back(relation->from,relation->to);
-        else if(const auto *drop=std::get_if<server::GroundDropFact>(&fact)) groundDrops.push_back(drop->item.id);
-        else if(const auto *hit=std::get_if<server::HitFact>(&fact);hit && hit->type==1 && hit->killed) monsterDeaths.push_back(hit->target);
+        if(const auto *reset=server::factIf<server::InventoryResetFact>(&fact)) inventoryResets.push_back(reset->projection.player.id);
+        else if(const auto *relation=server::factIf<server::ChatRelationFact>(&fact)) relationUpdates.emplace_back(relation->from,relation->to);
+        else if(const auto *drop=server::factIf<server::GroundDropFact>(&fact)) groundDrops.push_back(drop->item.id);
+        else if(const auto *hit=server::factIf<server::HitFact>(&fact);hit && hit->type==1 && hit->killed) monsterDeaths.push_back(hit->target);
     }
     // Prepare recipient baselines once before draining this immutable event set.
     if (!pending->empty()) for (auto *peer : peers) {

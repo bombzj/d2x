@@ -139,6 +139,10 @@ class RemoteTown {
         bool outdoor{};
     };
     std::optional<NavigationObservation> navigationObservation() const;
+    struct NavigationWall {int x{},y{};uint32_t key{};};
+    // Actual viewport observations in the current terrain snapshot, in world
+    // tile coordinates. Room activation and automap reveal do not qualify.
+    std::vector<NavigationWall> observedNavigationWalls(uint16_t level) const;
     std::optional<OnlinePoint> knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const;
     std::optional<OnlinePoint> knownConnectionPosition(uint16_t from,uint16_t to) const;
     std::optional<uint16_t> assignedUnitLevel(OnlineUnitKey) const;

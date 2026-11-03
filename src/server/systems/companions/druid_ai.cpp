@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
 #include "native_pet_move.hpp"
 #include "druid_corpse.hpp"
 #include "server/player_store.hpp"

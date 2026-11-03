@@ -1,4 +1,5 @@
 #include "state.hpp"
+#include "server/runtime/events.hpp"
 #include "release.hpp"
 #include "server/player_store.hpp"
 #include <algorithm>
@@ -134,9 +135,9 @@ bool State::coolingDown(EntityId actor, uint64_t tick) const {
     return found != casts.end() && found->second.cooldownUntil > tick;
 }
 void State::cancel(EntityId actor) {
-    cancelTimeline(actor);
     const auto current=releases_->pending.find(actor);
-    if(current!=releases_->pending.end() && (current->second.nativeCallbackStarted ||
+    if(current==releases_->pending.end() || !current->second.delayPublicationUntil) cancelTimeline(actor);
+    if(current!=releases_->pending.end() && (current->second.nativeCallbackStarted || current->second.delayPublicationUntil ||
         std::find(executingReleases_.begin(),executingReleases_.end(),actor)!=executingReleases_.end())) current->second.cancelled=true;
     else releases_->pending.erase(actor);
     const auto monster=releases_->monsters.find(actor);

@@ -35,7 +35,7 @@ Energy Shield常驻Overlay为0／0，原6B49F不为它分配光源；其八种�
 
 `LightOcclusion`读取原地形碰撞及物件实际碰撞掩码中的0x22（VISIBLE／BLANK），不把 `Objects.BlocksLight` 另铺为矩形挡光区域。`UNITS_GetCollisionMask`和HasCollision决定物件登记；普通物件0x400不挡这条光照路径，挡视线的门0x0806含0x02。传送点HasCollision全0，即使BlocksLight全1也不产生挡光足迹。客户端、Region和宿主共用这一掩码边界。阻挡前驱值为16，否则使用其传播值；以中心3×3种子，从第2圈起按原八个方向顺序向外，按主／次轴距离的8位权重混合前驱。目标墙格本身不被直接黑掉，阻挡传播到其后。贡献按`(contribution×(8-(obstruction>>1)))>>3`衰减，值≥16跳过。本人使用原高质量type0路径，室内／户外均可遮挡；物件使用type2路径，其他玩家／怪物／飞弹／Overlay保持所属非遮挡路径。当前每次绘制按连续光源位置和当前碰撞重建所需范围，不等同原物件缓存生命周期。
 
-Client 251AE／25572／25B0D依据 `BlocksLight[mode]` 清除或设置Unit+0xC4的DRAWSHADOW位0x20，不能把同名字段解释成碰撞位0x20。物件阴影按此模式标志及原COF组件掩码决定。地形阴影另走GDI 60A0的原图索引混色：开启混合阴影时调用D2gfx helper+0x14、alpha192，即PL2 trans[0]，删除自造RGB染色／alpha100。
+1.13c Client 251AE／25572／25B0D在`BlocksLight[mode]`非零时清除Unit+0xC4位0x20，为零时设置。消费端6AA30／6BAA5在该位非零时跳过阴影，故参考名DRAWSHADOW不能当作正向许可：公共物件动画以`BlocksLight[mode] != 0`允许投影，修正此前反向判断。该字段不作为光照碰撞位0x20。6BE75调用6D740只读取COF组件的Shadow字节，再由6BED5调用D2gfx #10011；透明／Screen绘制模式不能额外排除投影组件。阴影掩码来自本帧各组件，随同一动画采样变化，不冻结为首帧。当前MPQ火把37（TO）及营地火把48／49（T1／T2）的BlocksLight均为1，COF的TR组件Shadow=1；TO的ON有20帧、FrameDelta=200，T1／T2有9帧、FrameDelta=256且循环，柱体与火焰共用原帧轮廓。该修正走公共动画准备和合成路径，未构建／运行验收；阴影透明度、投影像素与全部物件模式仍待原版逐项对照。地形阴影另走GDI 60A0的原图索引混色：开启混合阴影时调用D2gfx helper+0x14、alpha192，即PL2 trans[0]，删除自造RGB染色／alpha100。
 
 每个样本保存独立的0–255强度和RGB；先填环境，再逐来源把贡献加到强度并封顶255。颜色按`min(255,((oldColor×oldIntensity+sourceColor×contribution)×floor(65536/totalIntensity))>>16)`逐通道处理，保留原除法、截断及封顶顺序。当前来源遍历仍沿场景列表，未恢复原创建链的完整交错；彩光逐次舍入不能据此认证所有来源顺序。
 
@@ -60,6 +60,8 @@ DT1头的`LightDirection`由`decodeDt1`读取并保留，与`orientation`分开�
 COF透明组件的mode3在世界单位单点取光路径保留原索引，逐层经过现有PL2 Screen程序，保持身体／两翼原COF顺序；不再对已转RGB的两翼使用硬件SoftAdditive。当前MPQ泰瑞尔TYNUHTH是三组件：TR普通mode5，LA／RA透明mode3。该修正已通过Windows Release构建，并在single-15幕末实看截图；与原客户端逐像素对照仍待完成，不等于全部COF DrawMode、染色及RGBA背景反查已完整核实。
 
 后续两处独立绘制差异已通过Windows Release全部目标构建；UnHolyBolt专项视觉仍待实看：Missiles.Trans=1映射原CelDraw3／PL2 Screen，Trans=2映射CelDraw4／PL2 Burn（0x43500乘法表），不再把所有非零Trans当硬件增亮。依据本机1.13c D2Client RVA6CF32–6CF4C与D2CMP RVA9FA0的逐通道乘法及原表查色；UnHolyBolt使用真实77–80弹体的UnholyBolt图形与Trans=2。普通、状态及其他COF模式不据此宣称已全部认证。
+
+COF透明组件现进一步保留原CelDraw模式，世界单点取光的mode0／1／2分别消费PL2 trans[2]／[1]／[0]，mode4沿Burn；未启用透明时不套用该字节。墨菲斯托DT的S2实际使用mode2，此前被画成不透明。Screen／Burn及这些透明组件的来源直接使用光照表保存的结果索引，不再经RGB最近色反查；背景RGBA反查边界仍保留。新增源码未构建／运行，五幕原图、常驻覆盖图与未完成项见[首领绘制](../monsters/BOSSES.md#五幕首领绘制)。
 
 世界COF合成中的DC6组件按cellOffsetY−height作为顶边，DCC仍用其已解码顶边；不更改菜单／字体等独立DC6绘制。当前TY的TR原图44×90、offsetY=-12，原COF纵界为[-152,-4]；旧合成误将-12当顶边，把身体画到两翼下方，正确顶边为-102，未缩放任何组件。合成、组件选取和阴影共用此位置；single-34候选E16B32DA幕末截图已实见修正后的身体／两翼位置，其他混合DC6／DCC组件及与原客户端逐像素对照仍待回归。
 
@@ -93,7 +95,17 @@ Den依据本机D2Client524D0／A9A20、62E30／AC090的37字节5E投影，以及
 
 后续需核实并接齐源创建／更新时序、其余特殊环境覆盖及创建链顺序，继续核对全部DT1方向／备用面、地面子块光栅化和完整索引混色。完整Flicker、3D后端彩光、Gamma、天气和全场景原版画面对照仍待核实；本节不把网格规则移植等同于完整客户端光照复刻。
 
-原版参考截图中的雨线尚未实现。OpenDiablo2 的 `LevelDetailsRecord.EnableRain` 和 Diablerie 的 `LevelInfo.rain` 证实 `Levels.Rain` 是区域天气许可；两个参考客户端未找到可直接核对的完整降雨实现。降雨开始／停止、密度、风向和天气光照时序仍未核实，不能仅因区域允许下雨就永久绘制雨线。正常世界绘制已移除原先供顶部开发文字使用的黑色渐变，不以固定遮罩冒充天气。
+### 天气与河流水面
+
+`WeatherView`由公共世界绘制入口持有，读取当前MPQ的`Levels.Rain/Mud`和当前幕调色板，按客户端25Hz推进。Rain是区域许可，不等于永久降雨；已接晴／增强／持续／减弱四阶段、密度、风向、雨线与第五幕雪线，颜色随当前展示层昼夜周期选择。暂停保持状态，新局重新初始化。原始资源由`SceneAssets`加载，不进入玩法或存档。
+
+阶段和粒子依据本机零售1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）RVA 81120／811F0、80BE0／80E30／80F60、80700／7FE80／81750；Common #10215／#10499分别读取Rain／Mud。四阶段持续帧数分别为7500–14999、250–499、3000–5999、125–174，第三／第五幕持续段为9000–11999；普通峰值32–255。第五幕109–112的雨雪选择及密度、117／120／121的持续雪和风向沿814F0／80CA0已接。这些是原引擎常量，区域许可及原图仍读取当前MPQ。
+
+水面仅消费DT1的WATER材质位`0x2`，不把任意地砖视为水。原13E82／14050以雨量决定每四个客户端帧的水花机会；Mud有独立的`frame > lastFrame + 25`门控，使用同一次千分掷数的100阈值，不能每帧生成。80A70／80940选择原`uncompoverlays/rain3/4.dc6`及`bubble3.dc6`，80160／800D0每两帧换一张，7FC70以DC6基线走PL2 Screen；当前顶边已改为offsetY−height。水花锚定世界坐标，在地面／河流后、墙体／单位前绘制，雨雪线在世界层末尾裁剪，HUD不受影响。原雨／气泡各四组DC6由当前MPQ加载，缺失时报明确资源路径。当前Act 1各区域Mud均为0，扩散圆圈来自雨水波纹，不能把它解释成允许晴天生成的泥水泡；雨量为0不生成新雨水波纹，已生成的动画自然结束。
+
+**天气目前没有服务端状态同步，不保证同局玩家天气一致。** 当前以地图种子初始化独立的客户端天气／水花随机流；入场时间、所处区域、视口和随机消费不同仍会分歧。原客户端天气、水面机会及落点均消费本地人物随机流：14050将player+0x20写入地面绘制上下文+0x1C，13E82据此掷数，80940／80A70直接取同一个人物种子。当前未恢复它们与其他客户端程序的全部交错，也未找到服务器广播天气阶段的依据；不能把地图种子或昼夜同步当成天气同步。
+
+基础天气已纳入578F99D3的Windows Release构建，并随原版Host五幕流程运行，尚未进行原版音画／逐帧／随机对照；该轮通关确认后另有未定位堆损坏，见[验收记录](../../development/AI_TEST_REC.md)。后续源码修正尚未构建／运行：雨雪线按本机GDI RVA77B0／DDraw RVA65C0的整数累加规则逐像素绘制，包含起点及零长度落地粒子；两后端直接写颜色索引、不消费alpha参数，故不再额外半透明混合白天雨线。水花DC6基线及Mud门控同时修正。上述差异可造成雨线不明显而水圈突出，但尚无运行证据认定已完全解决用户报告的晴天水圈。完整粒子槽顺序、随机交错、扩展视口／缩放及跨区生命周期仍待对照。雷声、降雨音量与外部触发的闪电尚未接入；当前零售80DB5–80DFB的自然触发分支清零闪电标志，不自造周期闪光，也不添加未经证实的下雨变暗遮罩。Act 1河流物件和声音边界见[地图](../../modules/MAP.md#act-1河流与天气)。
 
 参考代码：`reference/d2moo/source/D2Common/src/DataTbls/LevelsTbls.cpp`、`ItemsTbls.cpp`、`Items/ItemMods.cpp`、`Monsters/Monsters.cpp` 和 `D2Environment.cpp`；DT1 标志交叉核对 `reference/diablerie/Assets/Scripts/Diablerie/Engine/IO/D2Formats/DT1.cs`。图形仍从用户挂载的原 MPQ 读取，不导出成独立资源文件。
 

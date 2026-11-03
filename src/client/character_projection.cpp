@@ -168,9 +168,23 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         const auto eligibility = evaluateSkillEligibility(entry, eligibilityInput);
         skill.available = eligibility.available; skill.canAllocate = eligibility.canAllocate;
         skill.usableNow = eligibility.usableNow; skill.pickerEnabled = eligibility.pickerEnabled;
+        if(data.skills.descriptions) {
+            const auto &catalog=*data.skills.descriptions;
+            if(const auto source=catalog.skills.find(id);source!=catalog.skills.end()) {
+                SkillDescriptionInput delayInput{id,innate?std::optional{std::max(1,effective)}:
+                    skill.effectiveRankKnown?std::optional{effective}:std::nullopt,input.baseRanks,input.effectiveRanks,input.stats};
+                delayInput.baseRanksComplete=input.baseRanksAssigned;
+                SkillDescriptionValues values(catalog,delayInput,source->second);
+                if(const auto formula=source->second.formulas.find("delay");formula!=source->second.formulas.end())
+                    skill.delayFrames=values.formula(formula->second);
+            }
+        }
+        const bool delayed=data.profile=="lod-named-txt-v1" && input.resourceStates && input.resourceStates->skillDelay &&
+            skill.delayFrames.value_or(0)>0;
+        if(delayed) skill.usableNow=false;
         // Native picker color uses SKILLS_GetUseState, not town permission or
         // point-allocation eligibility. AURA exits before equipment/mana checks.
-        skill.pickerTooltipUnavailable = !entry.inGame || !skill.available || entry.passive || view.dead;
+        skill.pickerTooltipUnavailable = !entry.inGame || !skill.available || entry.passive || view.dead || delayed;
         if (!entry.aura) {
             if (data.skills.descriptions && input.shapeStates) {
                 const auto source = data.skills.descriptions->skills.find(id);

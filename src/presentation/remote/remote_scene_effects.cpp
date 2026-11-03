@@ -1,5 +1,6 @@
 #include "remote_scene_impl.hpp"
 #include "gameplay/units/direction.hpp"
+#include <cmath>
 
 namespace d2x {
 
@@ -1521,11 +1522,23 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                             emitSound(PresentationSoundEvent::Kind::IzualComplete,unit->second,age,-1,0,{},-1,4691);
                             deathMissile("izual control");
                         }
-                        else if(!pd2 && code=="duriel" && v.load.playerUnitId) {
+                        else if(!pd2 && code=="duriel") {
+                            // 21210: DT frame 13 creates two type-5 overlays;
+                            // 6C130 holds their last frame and DD preserves them.
+                            if(animation && animation->fps>0 && animation->frameCount>13) {
+                                const float born=time-age+float(std::ceil(13.0*25.0/animation->fps))/25.f;
+                                for(const auto *name:{"durieldead_fwd","durieldead_rear"}) {
+                                    const auto found=overlayNames.find(name);
+                                    if(found!=overlayNames.end() && shared.overlayVisual(int(found->second)))
+                                        monsterOverlays.insert_or_assign(std::pair{event.source,int(found->second)},
+                                            MonsterOverlay{unit->second.assignmentRevision,int(*unitClass(unit->second)),born,false});
+                                    else effectLimitations.insert("Original monster overlay unavailable: "+std::string(name));
+                                }
+                            }
                             // 52620 uses the local player as owner, while the
                             // explicit creation coordinates belong to Duriel.
                             ClientMissileInitialization initialization;initialization.sourceSkill=0;
-                            if(const auto missile=missileNames.find("durieldeathcontrol");missile!=missileNames.end())
+                            if(const auto missile=missileNames.find("durieldeathcontrol");v.load.playerUnitId && missile!=missileNames.end())
                                 launch(missile->second,at,at,1,-age,{},OnlineUnitKey{0,*v.load.playerUnitId},-1,0,
                                     ClientMissileSource::Death,{},0,initialization);
                         }

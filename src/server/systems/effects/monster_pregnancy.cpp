@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "attribute_projection.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/spatial/system.hpp"

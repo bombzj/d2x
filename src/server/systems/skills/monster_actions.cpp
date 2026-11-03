@@ -1,4 +1,6 @@
 #include "core/native_unit_ids.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/combat.hpp"
 #include "system.hpp"
 #include "runtime.hpp"
 #include "assassin_kick.hpp"

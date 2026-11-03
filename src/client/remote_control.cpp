@@ -17,6 +17,54 @@ bool nativeProgress(std::optional<OnlinePoint> &previous, OnlinePoint player, On
 }
 }
 bool RemoteControl::reject(std::string reason) { reason_ = std::move(reason); return false; }
+bool RemoteControl::refreshQuests(std::optional<uint64_t> newerThan) {
+    const auto &view=session_.read();const auto &state=view.world.quests;
+    if(view.stage!=OnlineStage::ProtocolReady || !view.load.serverLoadComplete) return reject("Quest data is not available in this session");
+    if(newerThan && state.playerFlags && state.playerFlagsRevision>*newerThan) return true;
+    const auto now=std::chrono::steady_clock::now();
+    if(questRefreshConnection_==view.connectionGeneration && questRefreshGame_==view.gameGeneration && questRefreshRevision_==state.playerFlagsRevision &&
+        (!newerThan || questRefreshWorldRevision_>=*newerThan) && now<questRefreshDeadline_) return true;
+    if(!session_.request_quests(view.gameGeneration)) return reject("Quest refresh could not be queued");
+    questRefreshConnection_=view.connectionGeneration;questRefreshGame_=view.gameGeneration;questRefreshRevision_=state.playerFlagsRevision;
+    questRefreshWorldRevision_=view.world.revision;
+    questRefreshDeadline_=now+std::chrono::seconds(20);return true;
+}
+bool RemoteControl::closeNpc(std::optional<OnlineIntentContext> context) {
+    const bool accepted=session_.close_npc(context.value_or(onlineIntentContext(session_.read())));
+    if(accepted) questRefreshDeadline_={}; // NPCDEACTIVATE can change private state.
+    return accepted;
+}
+bool RemoteControl::acknowledgeNpc(uint16_t topic,std::optional<OnlineIntentContext> context) {
+    const auto &view=session_.read();const auto &conversation=view.world.npcConversation;
+    if(!conversation || conversation->acknowledged.contains(topic) ||
+        std::none_of(conversation->messages.begin(),conversation->messages.end(),[&](const auto &line){return line.stringId==topic;}))
+        return reject("The requested NPC speech is not currently offered");
+    const bool accepted=session_.acknowledge_npc_message(topic,context.value_or(onlineIntentContext(view)));
+    if(accepted) questRefreshDeadline_={};
+    return accepted;
+}
+bool RemoteControl::greetNpc(uint16_t identity,std::optional<OnlineIntentContext> context) {
+    const auto &view=session_.read();const auto &conversation=view.world.npcConversation;
+    if(!conversation || conversation->type!=1) return reject("No current NPC conversation");
+    const auto npc=view.world.units.find({1,conversation->source});
+    if(npc==view.world.units.end() || npc->second.classId!=identity) return reject("NPC greeting source changed");
+    return session_.confirm_npc_voice(identity,context.value_or(onlineIntentContext(view)));
+}
+bool RemoteControl::npcTravel(uint32_t destination,std::optional<OnlineIntentContext> context) {
+    const auto &view=session_.read();const auto &conversation=scene_.read().npcConversation;
+    const auto &current=view.world.npcConversation;
+    if(!conversation || !current || conversation->source!=current->source || conversation->revision!=current->revision ||
+        (destination?conversation->travelDestination!=destination:conversation->respecLabel.empty()))
+        return reject("The requested NPC service is not currently offered");
+    return session_.npc_travel(destination,context.value_or(onlineIntentContext(view)));
+}
+bool RemoteControl::useWaypoint(uint16_t destination,uint8_t number,std::optional<OnlineIntentContext> context) {
+    const auto &view=session_.read();
+    if(destination && std::none_of(scene_.read().waypoints.begin(),scene_.read().waypoints.end(),[&](const auto &entry) {
+        return entry.level==destination && entry.number==number && entry.unlocked;
+    })) return reject("Waypoint destination is not in the current unlocked menu");
+    return session_.use_waypoint(destination,number,context.value_or(onlineIntentContext(view)));
+}
 bool RemoteControl::submitSegment(Movement &movement, std::optional<OnlinePoint> stopNpc) {
     const auto &view = session_.read();
     const auto &binding = scene_.read();

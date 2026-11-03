@@ -162,6 +162,11 @@ void LightingView::resizeMask(int width, int height) {
 LightingView::~LightingView() {
     if (lightMap_.id) UnloadTexture(lightMap_);
 }
+int LightingView::period(int act) const {
+    constexpr std::array<int,6> periods{3,3,0,1,1,2};
+    constexpr std::array<int,6> eclipsePeriods{3,0,1,2,2,2};
+    return (act==1 && eclipse_ ? eclipsePeriods : periods)[size_t(environments_.at(size_t(act)).cycle)];
+}
 void LightingView::resetEnvironment() {
     environments_ = {};
     frameRemainder_ = 0;

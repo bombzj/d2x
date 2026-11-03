@@ -1,4 +1,8 @@
 #include "system.hpp"
+#include "server/runtime/frame_facts.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/npc.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/npc/system.hpp"
 #include "server/systems/items/system.hpp"

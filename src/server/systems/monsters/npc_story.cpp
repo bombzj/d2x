@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
 #include "server/systems/effects/system.hpp"
 #include <memory>
 #include <cmath>

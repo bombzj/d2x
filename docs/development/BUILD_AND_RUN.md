@@ -14,6 +14,8 @@ PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版�
 
 若共享结构布局在编译过程中发生改变，应等当前构建结束，再触发所有依赖单元重新编译并冻结产物。对象文件可能在头文件修改后才写完，却已读过旧声明；仅追加一次无工作可做的增量构建，不能证明这些单元的布局一致。
 
+`scripts/build.ps1` 在配置前和编译后比较 `src/`、`cmake/` 与根目录 `CMakeLists.txt` 的文件列表、修改时间和大小。检测到变动时拒绝报告构建成功，并在编译结束后刷新变动文件的时间，确保下一次构建重新处理依赖；结束编辑后再运行脚本。此检测不覆盖绕过脚本直接执行的 CMake／Ninja，也不代替构建期间保持输入稳定。2026-11-03 的入局崩溃转储中，同一 EXE 的 `SceneView` 构造函数将 `worldVisibility_` 初始化于偏移 `0x12348`，绘制函数却使用 `0x12340`，导致 `TileVisibility::clear()` 访问无效树节点；这是编译期间修改共享头后的混合对象布局，不是字体缺失。
+
 ## Linux 支持状态
 
 核心代码使用 C++20、标准文件系统、raylib 和 StormLib。存档替换单独区分 Windows 的 MoveFileExW 与其他系统的 rename；玩法、数据和存档编码不依赖 Win32。两个依赖都有 Linux 构建支持，运行时读取 `assets/mpq2` 的原始 MPQ。CMake 只在 Windows 定义相关宏，只对 MinGW 使用 Windows 静态链接选项。
@@ -160,7 +162,7 @@ PD2专项说明见[运行与部署：CN账号与大厅](../pd2/OPERATIONS.md#运
 .\dist\current\Play.cmd -Mpq assets/mpq2
 ```
 
-`build.ps1` 默认只构建`d2x`及其依赖；独立服务端用`-Target d2x_pvpgn`，资源工具用`-Target d2x_assets`，需要全部目标时显式指定`-Target all`。公共头文件仍会使依赖它们的编译单元重新构建；Ninja增量不会因为只选客户端而跳过必要依赖。
+`build.ps1` 默认只构建`d2x`及其依赖；独立服务端用`-Target d2x_pvpgn`，资源工具用`-Target d2x_assets`，需要全部目标时显式指定`-Target all`。公共头文件仍会使依赖它们的编译单元重新构建；Ninja增量不会因为只选客户端而跳过必要依赖。 事件容器与输出队列的依赖隔离重构会在首次构建重编译公共布局消费者；之后修改单个事件字段只应触发对应载荷的消费者。重构已通过 Windows Release all 构建，Ninja实际依赖中 `facts/object.hpp` 的消费者为三个 cpp；相关边界见[事务与输出](../modules/SERVER_SYSTEMS.md#内容事务与输出)。
 
 需要可分发压缩包时，用`package.ps1 -OutputDirectory dist/<新的包名> -Archive`创建全新的包目录及同名ZIP；输出必须位于本项目dist内且尚不存在。压缩只针对这次新目录，避免将dist/current中已有的存档、凭据、截图和诊断文件带入；旧压缩包保留。原MPQ和PD2文件仍由使用者提供，复制的本机配置路径在其他机器上须重新选择。
 

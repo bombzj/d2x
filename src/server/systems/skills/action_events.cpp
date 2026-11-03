@@ -13,7 +13,7 @@ DomainResult<> System::actionEvent(const FrameEvent &event,uint64_t tick) {
     const auto pending=runtime_->releases.find(event.owner.unit);
     // Rewinds may publish a successor generation inside the entered callback.
     // Its retained contact still belongs to this executing event until accepted.
-    const bool continuing=pending!=runtime_->releases.end() && pending->second.nativeCallbackStarted;
+    const bool continuing=pending!=runtime_->releases.end() && (pending->second.nativeCallbackStarted || pending->second.delayPublicationUntil);
     if(cast==state_.casts.end() || !event.payload || (cast->second.timeline!=event.payload && !continuing)) {
         ports_.frameEvents.cancel(event.handle);
         return {DomainStatus::Applied,std::monostate{}};
@@ -40,7 +40,7 @@ DomainResult<> System::actionEvent(const FrameEvent &event,uint64_t tick) {
         const auto ended=ports_.effects.endMode(event.owner.unit,tick);if(!ended) return ended;
         cast->second.until=tick;
         // Animations can finish without crossing an action flag (high speed).
-        if(pending!=runtime_->releases.end() && pending->second.eventDriven) {
+        if(pending!=runtime_->releases.end() && pending->second.eventDriven && !pending->second.delayPublicationUntil) {
             if(pending->second.weaponMelee && pending->second.weaponMelee->occurrence)
                 ports_.combat.discardNativeMelee(event.owner.unit,*pending->second.weaponMelee->occurrence);
             if(pending->second.druidMelee && pending->second.druidMelee->occurrence)

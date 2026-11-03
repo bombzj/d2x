@@ -1,4 +1,6 @@
 #include "core/id.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "system.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "server/area_store.hpp"
@@ -243,13 +245,15 @@ DomainResult<> System::spawnSkillChildren(EntityId source,Vec target,int count,b
 DomainResult<> System::burrow(EntityId source,bool below,uint64_t tick) {
     auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive() || found->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;
-    if(!below) {
-        const auto &grid=ports_.areas.at(actor.area).definition.collision;
-        if(!grid.walkable(actor.position,actor.rule.spawnCollision)) return {DomainStatus::Unavailable,{}};
-        for(const auto &[id,other]:state_.actors) if(id!=source && other.alive() && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && other.area==actor.area && meleeDistance(actor.position,actor.rule.size,other.position,other.rule.size)<=0) return {DomainStatus::Unavailable,{}};
-        for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==actor.area && p.persistent.player.hp>0 && meleeDistance(actor.position,actor.rule.size,p.position,2)<=0) return {DomainStatus::Unavailable,{}};}
+    if(!below && actor.burrowed) {
+        // St44 MaggotUp calls SUNIT's relocation path at the current feet.
+        // It searches native free coordinates (size, 0x1c09), rather than
+        // rejecting an occupied origin while Fn015 advances to its up phase.
+        // A deferred action publication may retry this already applied start.
+        const auto placed=nativeTeleport(source,actor.position,tick,ports_.spatial.nativeCollisionSample(0x1c09));
+        if(!placed) return placed;
     }
-    (void)tick;stop(source);actor.burrowed=below;refreshCollision(actor);
+    stop(source);actor.burrowed=actor.targetFlagsDisabled=below;refreshCollision(actor);
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t until,int skill,bool leap,uint64_t tick,EntityId victim) {

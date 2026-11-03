@@ -1,4 +1,9 @@
 #include "core/native_unit_ids.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/effects.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "system.hpp"
 #include "server/systems/combat/system.hpp"
@@ -72,6 +77,8 @@ DomainResult<> System::avoidance(const ActorContext &actor,WeaponAvoidance resul
     if(animation==p.rules.skills->weaponAnimations.end()) return {DomainStatus::Unavailable,{}};
     const auto &a=animation->second;
     std::map<EntityId,Cast> candidate;candidate.emplace(actor.actor,Cast{actor.actor,uint16_t(id),actor.tick,actor.tick,actor.tick+uint64_t(std::max(1,(a.frames*256+a.speed-1)/a.speed)),actor.area,attacker});
+    if(const auto prior=state_.casts.find(actor.actor);prior!=state_.casts.end())
+        candidate.at(actor.actor).cooldownUntil=prior->second.cooldownUntil;
     const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},{AttackFact{actor.actor,attacker,0,uint8_t(ports_.players.findActor(attacker)?0:1),actor.area,p.position,p.position,actor.tick,uint16_t(id),uint8_t(rank->second),true}}});
     if(!output) return {output.status,{}};
     cancel(actor.player,actor.actor);state_.casts.erase(actor.actor);state_.casts.merge(candidate);ports_.movement.execute(actor,{MovementAction::Stop,{},false});

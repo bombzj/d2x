@@ -1,4 +1,5 @@
 #include "shape.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "server/player_store.hpp"
 #include "gameplay/actions/shape_timing.hpp"
 #include "gameplay/actions/timing.hpp"

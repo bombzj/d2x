@@ -312,7 +312,8 @@ void RemoteUiClients::Impl::projectSkillUseFacts(CharacterProjectionInput &input
             observed->second.sequence == actor->second.stateSequence && bloodMana != data.states.end() && inferno != data.states.end())
             input.resourceStates = CharacterProjectionInput::ResourceStates{
                 observed->second.states.contains(bloodMana->second.definition.id),
-                observed->second.states.contains(inferno->second.definition.id)};
+                observed->second.states.contains(inferno->second.definition.id),
+                data.states.contains("skilldelay") && observed->second.states.contains(data.states.at("skilldelay").definition.id)};
     }
 void RemoteUiClients::Impl::projectObservedAttributes(CharacterProjectionInput &input,const CharacterDefinition &definition) const {
         if(data.profile!="lod-named-txt-v1" || !data.nativeStats || !input.stats.contains("level")) return;

@@ -28,6 +28,18 @@ namespace {
 // quests, menu. Values are the semantic actions consumed by SceneController.
 constexpr std::array<int, 8> hudMiniActions{0, 1, 2, 4, 3, 7, 5, 6};
 
+std::optional<int> miniPanelOffset(const ViewState &view, Rectangle viewport) {
+    // Visibility is temporary; closing a covering panel restores the user's
+    // expanded state. Drawing, hit testing and tooltips use the same rule.
+    if (!view.miniPanelOpen || view.gameMenuOpen || view.messageLogOpen || view.chatInputOpen)
+        return {};
+    const bool left = viewport.x > 0, right = viewport.x + viewport.width < W;
+    // D2Client 63000/64990: move toward the uncovered side; hide when
+    // both side panels are open. These are native pixel offsets.
+    if (left && right) return {};
+    return left ? 119 : right ? -118 : 0;
+}
+
 void imageAt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
     if (!image || !image->texture.id)
         return;
@@ -114,6 +126,7 @@ void SceneView::drawControlPanel() const {
     values.running = player.running; values.blueStamina = player.blueStamina;
     values.attributePoints = player.unspentAttributes > 0; values.skillPoints = player.unspentSkills > 0;
     values.miniPanel = view_.miniPanelOpen; values.pressedPoint = view_.pointButtonPressed;
+    values.menuPressed = view_.miniPanelPressed == -1;
     if (!player.unknownStats.contains("experience") && !player.unknownStats.contains("level") &&
         player.nextLevelExperience && *player.nextLevelExperience > player.currentLevelExperience) {
         const auto gained = player.experience > player.currentLevelExperience
@@ -125,24 +138,30 @@ void SceneView::drawControlPanel() const {
                     assets_.attributeButtons, assets_.miniPanelToggle}, values);
     drawSkillIcon(view_.leftSkill, hudSkillSlot(false),false,player.selectedSkillOwners[player.weaponSet*2]);
     drawSkillIcon(view_.rightSkill, hudSkillSlot(true),false,player.selectedSkillOwners[player.weaponSet*2+1]);
-    if (view_.miniPanelOpen) {
+    if (const auto offset = miniPanelOffset(view_, worldViewport())) {
         if (const auto *background = assets_.miniPanel.frame(0, 0))
-            imageAt(background, hudMiniPanel(*background));
+            imageAt(background, hudMiniPanel(*background, *offset));
         for (int index = 0; index < int(hudMiniActions.size()); ++index)
-            if (const auto *icon = assets_.miniPanelButtons.frame(0, index * 2))
-                imageAt(icon, hudMiniButton(*icon, index),
+            if (const auto *icon = assets_.miniPanelButtons.frame(0,
+                    index * 2 + int(view_.miniPanelPressed == hudMiniActions[size_t(index)])))
+                imageAt(icon, hudMiniButton(*icon, index, *offset),
                         WHITE);
     }
 }
 std::optional<int> SceneView::miniPanelAt(Vec mouse) const {
-    if (!view_.miniPanelOpen) return std::nullopt;
+    const auto offset = miniPanelOffset(view_, worldViewport());
+    if (!offset) return std::nullopt;
     const auto *background = assets_.miniPanel.frame(0, 0);
-    if (!background || !CheckCollisionPointRec(rv(mouse), hudMiniPanel(*background)))
+    if (!background || !CheckCollisionPointRec(rv(mouse), hudMiniPanel(*background, *offset)))
         return std::nullopt;
     for (int index = 0; index < int(hudMiniActions.size()); ++index)
-        if (const auto *icon = assets_.miniPanelButtons.frame(0, index * 2);
-            icon && CheckCollisionPointRec(rv(mouse), hudMiniButton(*icon, index)))
-            return hudMiniActions[size_t(index)];
+        if (const auto *icon = assets_.miniPanelButtons.frame(0, index * 2)) {
+            const auto bounds = hudMiniButton(*icon, index, *offset);
+            // 64C80 excludes the left/right edges; vertical bounds are
+            // H-69 < y < H-47, independently of the DC6 cell rectangle.
+            if (mouse.x > bounds.x && mouse.x < bounds.x + bounds.width && mouse.y > H - 69 && mouse.y < H - 47)
+                return hudMiniActions[size_t(index)];
+        }
     return -1;
 }
 bool SceneView::leftSkillAllowed(int skill) const {
@@ -255,7 +274,8 @@ void SceneView::drawSkillControls(Vec mouse) const {
     Vec anchor{};
     auto setHint = [&](std::string text, float x, float fromBottom) {
         hint = std::move(text);
-        anchor = {x * hudScale(), H-fromBottom * hudScale()};
+        const auto bounds = hudRect(x, fromBottom, 0, 0);
+        anchor = {bounds.x, bounds.y};
     };
     const auto &labels = assets_.characterLabels;
     const auto shortcut = [&](ControlAction action) {
@@ -276,9 +296,10 @@ void SceneView::drawSkillControls(Vec mouse) const {
             ControlAction::Automap, ControlAction::Party, ControlAction::QuestLog, ControlAction::Count, ControlAction::MessageLog};
         const auto index = int(std::find(hudMiniActions.begin(), hudMiniActions.end(), *button) - hudMiniActions.begin());
         if (const auto *icon = assets_.miniPanelButtons.frame(0, index*2)) {
-            const auto rect = hudMiniButton(*icon, index);
+            const auto rect = hudMiniButton(*icon, index, miniPanelOffset(view_, worldViewport()).value_or(0));
             hint = labels.at(keys[*button]) + shortcut(actions[*button]);
-            anchor = {rect.x + rect.width/2, rect.y};
+            // D2Client 63AC5: button x-3, baseline H-50-26.
+            anchor = {rect.x - 3, float(H - 76)};
         }
     }
     const auto values = [&](const char *key, std::string_view token, const std::string &current, const std::string &maximum) {

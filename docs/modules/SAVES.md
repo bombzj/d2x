@@ -171,6 +171,8 @@ save-info只读输入，按相同codec和内容准入边界报告角色摘要；
 
 client-settings.json保存客户端走跑、底栏、地图、声音、光照和键位选项，原子替换由resources/atomic_file承担；不引入D2S编码。soundVolume／musicVolume为0–100且为5的整数倍，缺省100／50；npcSpeech为0=Audio Only、1=Text Only、2=Audio + Text，缺省2；lighting为布尔值，缺省true，false表示世界全亮。旧偏好文件缺字段使用缺省，非法字段报告并回退；写失败保留待保存状态／旧文件并限频重试。
 
+窗口偏好standardResolution缺省false（Any）；customWindowWidth／customWindowHeight缺省1280／816，读取接受800–16384／510–16384的整数客户区尺寸。标准模式为800×600，不覆盖已保存Any大小；拖动非标准大小选择Any，最小化尺寸不落盘，重新启动恢复对应模式及尺寸。窗口操作由app消费，UI只提交模式，不写人物存档；新增保存与切换尚未运行验收。
+
 键位按用户选择全角色共享，保存在同文件的`controls`对象：`version: 1`、`encoding: "d2x-vk"`、`bindings`为56个固定顺序的`[primary, secondary]`整数对。顺序唯一由`presentation/control_bindings.hpp::ControlAction`定义，与配置页功能顺序一致、忽略分隔行；后续改顺序或编码必须升版本。0为None，键盘使用明确支持的原VK数值，左右Shift／Ctrl／Alt合并，数字小键盘独立，4／5／6为中键／侧键，256／257为滚轮上／下；滚轮值是d2x格式，不声称原版编码兼容。Esc、左右鼠标键及未知键不可绑定，不支持组合键；保持跑步／原地攻击／显示物品不接受滚轮。读取严格校验版本、编码、56行双槽、整数范围、可用键与全表非零键唯一性；缺字段采用默认，非法controls整体报告后回退默认，不部分载入，不修改D2S。
 
 配置页持有草稿，Default只改草稿，Cancel／非捕获时Esc丢弃，Accept才替换活动绑定；随后沿既有原子保存及两秒重试路径写盘。写失败保留内存设置并提示重试，不能把界面生效视为磁盘成功。旧文件没有controls时按原版默认表初始化；不会读取、覆盖或迁移原版`.key`文件。本机1.13c的default.key只读取证：1146字节，起始字节`57 53 25 00 7A 04`，后续114条10字节记录为`u32功能ID / u16键值 / u32槽标志`，包含固定Esc功能，未绑定为0xFFFF；此布局与d2x JSON刻意分离。技能槽到技能／手别／来源的关联仍由原0x51请求、0x7B副本及既有16槽D2S字段负责，不与物理键位混存。当前未执行跨进程保存／恢复实机验证。

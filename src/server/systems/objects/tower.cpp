@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/quests/system.hpp"
@@ -132,7 +134,7 @@ StepStatus System::towerStep(TickContext tick) {
     if(!publication.validate()) return StepStatus::Blocked;
     std::vector<EventBatch> events;
     for(const auto &fact:publication.facts())
-        events.push_back({0,tick.tick,{}, {AudienceKind::Area,{},std::get<MissileFact>(fact).area},{fact}});
+        events.push_back({0,tick.tick,{}, {AudienceKind::Area,{},factGet<MissileFact>(fact).area},{fact}});
     if(!events.empty() && !ports_.events.publishGroup(std::move(events))) return StepStatus::Blocked;
     publication.publish();
     for(const auto &request:requests) ports_.world.retainControllerRoom(request.area,request.position,true);

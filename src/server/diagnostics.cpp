@@ -1,4 +1,5 @@
 #include "game_instance.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include <algorithm>
 #include <cmath>
 

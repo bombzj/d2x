@@ -114,7 +114,7 @@ bool RemoteUiClients::Impl::Inventory::submitStaff(EntityId source,std::optional
                     std::find(o.inventoryView.pd2SacrificeItems.begin(),o.inventoryView.pd2SacrificeItems.end(),item->id)==o.inventoryView.pd2SacrificeItems.end():
                     value->definition!=o.data.staffRecipe.output)) return false;
             }
-            return o.session.submit_staff(uint32_t(source.value-1),item?std::optional{guid(item->id)}:std::nullopt,o.context);
+            return o.items.submitQuestItem(o.session,uint32_t(source.value-1),item?std::optional{guid(item->id)}:std::nullopt,o.context);
         }
 InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &intent) const {
             if (o.inventoryView.dead || o.inventoryView.readOnly) return InventoryError::AccessDenied;

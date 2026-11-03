@@ -1,4 +1,8 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "gameplay/skills/targeting.hpp"
 #include "runtime.hpp"
 #include "shape.hpp"
@@ -41,6 +45,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <stdexcept>
 namespace d2x::server::skills {
 namespace {
 bool inside(const Grid &g, Vec p) {return std::isfinite(p.x) && std::isfinite(p.y) && p.x>=0 && p.y>=0 && p.x<g.width && p.y<g.height;}
@@ -153,9 +158,6 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         return {DomainStatus::Applied,std::monostate{}};
     }
     if(busy(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
-    if(definition.spec.delayFrames>0) {
-        if(state_.coolingDown(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
-    }
     const int effectiveRank=source->rank;
     if(effectiveRank<=0 || effectiveRank>255) return {DomainStatus::InvalidRequest,{}};
     // ObjMode calls PLAYERMODE_Change directly, including barrels in town;
@@ -163,7 +165,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     const bool objectKick=definition.spec.effect==SkillBehavior::Kick && type==2;
     if(area.definition.town && !definition.allowedInTown && !objectKick) return {DomainStatus::Unavailable,{}};
     auto skill=evaluate(p,selected,effectiveRank);
-    if(skill.pd2 && skill.delayFrames>0 && state_.coolingDown(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
+    if(skill.delayFrames>0 && state_.coolingDown(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
     if(!pd2SkillStartAllowed(p,skill)) return {DomainStatus::Unavailable,{}};
     // SkillNec SrvSt15/21 must succeed before publishing an action or
     // queuing its release. The release still rechecks corpse ownership/state.
@@ -452,7 +454,11 @@ StepStatus System::release(TickContext tick,EntityId only) {
     for(auto it=releases_.find(only);it!=releases_.end() && it->first==only;) {
         auto &pending=it->second;if(tick.tick<pending.tick) {++it;continue;}
         auto actor=pending.actor;actor.tick=tick.tick;const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
-        const bool continuing=pending.nativeCallbackStarted;
+        if(pending.delayPublicationUntil && p && p->actor==actor.actor) {
+            actor.area=p->area;area=ports_.areas.find(actor.area);
+            if(area) actor.areaGeneration=area->generation;
+        }
+        const bool continuing=pending.nativeCallbackStarted || pending.delayPublicationUntil.has_value();
         bool valid=p && p->entered && p->actor==actor.actor && p->area==actor.area && (p->persistent.player.hp>0 || continuing) && area && area->generation==actor.areaGeneration;
         const auto used=state_.usedSkill(actor.actor);
         if(valid && !continuing) valid=used && used->skill==pending.skill.sourceId &&
@@ -514,7 +520,8 @@ StepStatus System::release(TickContext tick,EntityId only) {
         DomainStatus status;
         {
         auto execution=state_.executingRelease(actor.actor);
-        if(channel) {
+        if(pending.delayPublicationUntil) status=DomainStatus::Applied;
+        else if(channel) {
             auto skill=evaluate(*p,pending.skill.sourceId,pending.skill.rank);
             if(pending.skill.charge) {skill.charge=pending.skill.charge;skill.manaCost=skill.startMana=0;}
             const bool consume=pending.pulses%2==0;
@@ -522,14 +529,33 @@ StepStatus System::release(TickContext tick,EntityId only) {
             status=ports_.missiles.spawn({actor,skill,pending.collision,target,!consume}).status;
         } else status=activate(pending,actor,target);
         }
-        if(pending.cancelled && (!isDeferred(status) || !pending.nativeCallbackStarted)) {
+        if(pending.cancelled && !pending.delayPublicationUntil && (!isDeferred(status) || !pending.nativeCallbackStarted)) {
             if(pending.weaponMelee && pending.weaponMelee->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.weaponMelee->occurrence);
             if(pending.assassinKick && pending.assassinKick->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.assassinKick->occurrence);
             if(pending.druidMelee && pending.druidMelee->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.druidMelee->occurrence);
             ports_.companions.cancel(actor.actor);it=releases_.erase(it);continue;
         }
         if(isDeferred(status)) {blocked=true;++it;continue;}
-        if(status==DomainStatus::Applied) {
+        if(status==DomainStatus::Applied && !p->rules.skills->pd2 && pending.skill.delayFrames>0 &&
+            (!pending.assassinKick || pending.assassinKick->phase==AssassinKickExecution::Phase::Complete)) {
+            if(!pending.delayPublicationUntil) {
+                pending.delayPublicationUntil=tick.tick+uint64_t(pending.skill.delayFrames);
+                state_.casts.at(actor.actor).cooldownUntil=*pending.delayPublicationUntil;
+            }
+            // Original SKILLS_SetDelay posts a separate expiring state list;
+            // cast animation completion, movement and Stop cannot clear it.
+            if(tick.tick<*pending.delayPublicationUntil && p->persistent.player.hp>0) {
+                CombatEffectSpec delay;delay.state=p->rules.skills->skillDelay;
+                delay.source={CombatEffectSource::NativeState,actor.actor,delay.state.id,0};
+                delay.duration=*pending.delayPublicationUntil-tick.tick;delay.stacking=EffectStacking::ReuseState;
+                delay.nativeState=true;delay.nativeDirectAllocation=true;delay.refreshPassivesOnRemoval=true;
+                const auto published=ports_.effects.apply(actor,std::move(delay));
+                if(isDeferred(published.status)) {blocked=true;++it;continue;}
+                if(!published) throw std::runtime_error("Native skill delay state could not be published");
+            }
+            pending.delayPublicationUntil.reset();
+        }
+        if(status==DomainStatus::Applied && !pending.cancelled) {
             commitPd2CastItemEvent(pending);
             auto &cast=state_.casts.at(actor.actor);
             if(pending.assassinKick && pending.assassinKick->phase!=AssassinKickExecution::Phase::Complete) {
@@ -553,7 +579,7 @@ StepStatus System::release(TickContext tick,EntityId only) {
             if(pending.whirlwind) {pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
             if(pending.leaping && !pending.landed) {pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
             if(pending.leaping && pending.landed && pending.tick>tick.tick) {++it;continue;}
-            if(pending.skill.delayFrames>0) cast.cooldownUntil=tick.tick+uint64_t(pending.skill.delayFrames);
+            if(p->rules.skills->pd2 && pending.skill.delayFrames>0) cast.cooldownUntil=tick.tick+uint64_t(pending.skill.delayFrames);
             if(channel) {if(pending.skill.charge) pending.skill.charge->item=p->persistent.inventory.items.at(pending.skill.charge->item.id).handle();++pending.pulses;pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
             if(pending.weapon) {
                 pending.manaPaid=true;

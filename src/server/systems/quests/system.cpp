@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/frame_facts.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/reactions/item_triggers.hpp"
 #include "server/player_store.hpp"

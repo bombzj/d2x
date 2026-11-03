@@ -1,10 +1,10 @@
 #include "gameplay/character/persistent_character.hpp"
+#include "server/runtime/facts/inventory.hpp"
 #include "content/pd2/item_encoding.hpp"
 #include "native_item_wire.hpp"
 #include "persistence/d2s_inventory.hpp"
 #include "network/protocol/wire.hpp"
 #include "network/protocol/bits.hpp"
-#include "server/runtime/events.hpp"
 #include "protocol/message_catalog.hpp"
 #include <algorithm>
 #include <array>

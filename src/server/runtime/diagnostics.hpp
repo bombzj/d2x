@@ -1,7 +1,7 @@
 #pragma once
 #include "server/game_messages.hpp"
 #include "server/runtime/simulation.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/diagnostic_event.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/ai/system.hpp"
 #include "server/systems/missiles/system.hpp"

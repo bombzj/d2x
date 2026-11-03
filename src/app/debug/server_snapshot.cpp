@@ -1,4 +1,5 @@
 #include "server_snapshot.hpp"
+#include "server/runtime/fact_kind.hpp"
 #include "hosting/administration.hpp"
 #include <nlohmann/json.hpp>
 #include <cmath>
@@ -182,7 +183,10 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     result["itemAuras"]=auraTimers(s.itemAuras);
     result["player"] = {{"id", p.actor.id.value}, {"name", p.name}, {"entered", p.entered},
         {"position", point(p.actor.position + origin)}, {"localPosition", point(p.actor.position)},
-        {"moving", p.actor.moving}, {"attacking", p.attacking}, {"recovering",p.recovering}, {"level", r.level}, {"experience", r.experience}, {"gold", r.gold}, {"bankGold", r.bankGold}, {"states", p.states},
+        {"moving", p.actor.moving}, {"running",p.actor.running}, {"movementSpeed",p.actor.movementSpeed},
+        {"walkSpeed",a.walkSpeed}, {"runSpeed",a.runSpeed}, {"velocityPercent",a.velocityPercent},
+        {"pathTarget",point(p.actor.nextPosition+origin)},
+        {"attacking", p.attacking}, {"recovering",p.recovering}, {"level", r.level}, {"experience", r.experience}, {"gold", r.gold}, {"bankGold", r.bankGold}, {"states", p.states},
         {"life", double(r.hp.raw()) / 256}, {"maxLife", a.maxLife}, {"mana", double(r.mana.raw()) / 256}, {"maxMana", a.maxMana},
         {"stamina", double(r.stamina.raw()) / 256}, {"maxStamina", a.maxStamina}, {"statPoints", r.unspentAttributes}, {"skillPoints", r.unspentSkills},
         {"lifeRaw", r.hp.raw()}, {"maxLifeRaw", a.maxLifeFixed.raw()}, {"manaRaw", r.mana.raw()}, {"maxManaRaw", a.maxManaFixed.raw()},
@@ -306,10 +310,10 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
             {"handler",event.handler},{"customId",event.customId},{"customParameter",event.customParameter},{"payload",event.payload},
             {"executing",entry.executing},{"pendingRemoval",entry.pendingRemoval}});
     }
-    // Variant names are maintained beside the domain fact catalog.
+    // Names retain the stable diagnostic order from fact_catalog.inc.
     constexpr std::array names{"mana", "reposition", "life", "attack", "hit", "death", "item", "inventory", "character",
         "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop", "npc-service", "ground-remove", "item-skill", "ground-restored", "hireling-list", "trade", "trade-items", "player-message", "chat-relation", "party-notice", "environment", "resources", "skill-end", "quest-status", "quest-effect", "monster-class-hint", "pd2-map-attributes", "inventory-reset", "quest-alert", "unit-refresh", "quest-clue"};
-    static_assert(names.size() == std::variant_size_v<server::DomainFact>);
+    static_assert(names.size() == server::factKindCount);
     result["corpses"]=Json::array();
     for(const auto &corpse:s.corpses) result["corpses"].push_back({{"id",corpse.id.value},{"owner",corpse.owner.value},{"area",int(corpse.region)},{"localPosition",point(corpse.position)},{"container",corpse.items.value},{"recoverableExperience",corpse.recoverableExperience}});
     result["objects"]=Json::array();

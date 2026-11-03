@@ -1,4 +1,5 @@
 #include "content/monsters/monster_identity.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "skill_content.hpp"
 #include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
@@ -147,6 +148,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     prepared->fireShrine=data.states.at("shrine_resist_fire").definition;
     prepared->healthPotion=data.states.at("healthpot").definition;
     prepared->manaPotion=data.states.at("manapot").definition;
+    if(!prepared->pd2) prepared->skillDelay=data.states.at("skilldelay").definition;
     prepared->itemFullSet=data.states.at("skel_mastery").definition;
     prepared->frozen=data.states.at("freeze").definition;
     prepared->openWounds=data.states.at("openwounds").definition;

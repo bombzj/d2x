@@ -1,4 +1,5 @@
 #include "simulation.hpp"
+#include "server/runtime/events.hpp"
 #include "game_systems.hpp"
 #include "frame_event_dispatch.hpp"
 #include <chrono>

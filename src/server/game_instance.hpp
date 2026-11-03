@@ -1,4 +1,5 @@
 #pragma once
+#include "server/runtime/events.hpp"
 #include "core/id.hpp"
 #include "server/corpse_view.hpp"
 #include "server/game_messages.hpp"
@@ -32,6 +33,8 @@ class GameInstance {
     struct Pending {
         PlayerId player; GameCommand command;
         bool awaitingCrafting{};
+        uint64_t awaitingQuest{};
+        bool retryingNpcAcknowledgement{};
         CommandStatus dispatchedResult{CommandStatus::Unavailable};
     };
     std::deque<Pending> commands_;
@@ -74,7 +77,7 @@ class GameInstance {
     }
     std::vector<PlayerId> visiblePlayers(PlayerId) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerId) const;
-    std::vector<MissileFact> visibleMissiles(PlayerId id) const {return systems_.missiles.visible(id);}
+    std::vector<MissileFact> visibleMissiles(PlayerId) const;
     std::vector<PetOwnershipSnapshot> pets(PlayerId id) const {return systems_.replication.pets(id);}
     std::set<int> unitStates(EntityId id) const {return systems_.effects.unitStates(id,tick_); }
     std::optional<PlayerSnapshot> snapshot(PlayerId) const;
@@ -85,7 +88,7 @@ class GameInstance {
     std::vector<PlayerId> participants() const;
     std::vector<ItemInstance> groundItems(PlayerId) const;
     std::vector<CorpseView> visibleCorpses(PlayerId) const;
-    std::optional<QuestFact> questProjection(PlayerId id) const { const auto *p=players_.find(id);return p?std::optional<QuestFact>{systems_.quests.projection(id,p->persistent.player,p->area)}:std::nullopt; }
+    std::optional<QuestFact> questProjection(PlayerId) const;
     std::map<EntityId, EntityId> corpseOwners() const;
     std::vector<objects::Object> visibleObjects(PlayerId) const;
     std::vector<travel::Portal> visiblePortals(PlayerId) const;
@@ -99,7 +102,7 @@ class GameInstance {
     auto pendingMerchant() const { return systems_.merchant.pending(); }
     auto pendingCrafting() const { return systems_.crafting.pending(); }
     auto pendingQuests() const { return systems_.quests.pending(); }
-    DomainResult<> installQuests(quests::Prepared prepared) { return systems_.quests.install(std::move(prepared)); }
+    DomainResult<> installQuests(quests::Prepared);
     DomainResult<> installCrafting(crafting::Prepared prepared) { return systems_.crafting.install(std::move(prepared)); }
     DomainResult<> installMerchant(merchant::Prepared prepared) { return systems_.merchant.install(std::move(prepared)); }
     auto shop(PlayerId id) const { return systems_.merchant.shop(id); }

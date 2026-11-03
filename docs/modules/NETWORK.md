@@ -6,7 +6,7 @@ PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留
 
 原服与自研宿主共用RealmSession／Remote*客户端，传输为TCP或内存字节队列。[基线](../../BASELINE.md)维护能力概况，[总计划](../architecture/MULTIPLAYER.md#21-统一状态口径)维护状态口径与顺序；未消费包、引擎启动限制及完整互通组合仍需核对。
 
-原版1.13c的非终局电影（S2C61/1–6）当前按跳过处理，并发送原C2S48结束回执；D2Client RVA89E38及D2MOO `Rcv0x48_TurnOffBusyState`说明该回执用于解除服务端过场busy，不能只显示下一幕就省略。61/7仍保留实际终局界面；FMV播放及PD2对应行为未核实。原版 Host 的跨幕和终局通知见[五幕验收记录](../development/AI_TEST_REC.md#分幕结果)。
+原版1.13c的非终局电影（S2C61/1–6）当前按跳过处理，并发送原C2S48结束回执；D2Client RVA89E38及D2MOO `Rcv0x48_TurnOffBusyState`说明该回执用于解除服务端过场busy，不能只显示下一幕就省略。61/7仍保留实际终局界面；FMV播放及PD2对应行为未核实。原版 Host 的跨幕和终局通知见[五幕验收记录](../development/AI_TEST_REC.md#历史证据索引)。
 
 普通恢复药剂经MPQ适配器准备`recoveryPotion`能力后，Use可与技能／回城回包等待并存；物品请求仍单独串行，其他物品操作保留原门控，身份与正常原包不变。依据与消费者见[腰带与消耗品](../gameplay/items/BELT_AND_CONSUMABLES.md)。
 

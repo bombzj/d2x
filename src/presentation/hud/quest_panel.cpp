@@ -16,6 +16,40 @@ void drawArt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
 }
 } // namespace
 
+void SceneView::openQuestLog() {
+    refreshQuests();
+    view_.questOpen=true;
+    const bool updated=view_.questNotice;
+    const bool hasUpdated=view_.questUpdated>=0 && view_.questUpdated<int(QuestId::Count);
+    view_.questAct=updated && hasUpdated?questView_.entry(QuestId(view_.questUpdated)).act:questView_.currentAct;
+    view_.questNotice=false;
+    if(view_.questSelected<0 || view_.questSelected>=int(questView_.quests(view_.questAct).size()) ||
+        !questView_.entry(questView_.displayed(view_.questAct,size_t(view_.questSelected))).selectable()) {
+        view_.questSelected=-1;
+        for(int index=0;index<int(questView_.quests(view_.questAct).size());++index)
+            if(questView_.entry(questView_.displayed(view_.questAct,size_t(index))).selectable()) {
+                view_.questSelected=index;break;
+            }
+    }
+    if(updated && hasUpdated && questView_.entry(QuestId(view_.questUpdated)).selectable())
+        view_.questSelected=int(questView_.entry(QuestId(view_.questUpdated)).displaySlot);
+}
+bool SceneView::openQuestLogPreview() {
+    refreshInteractions();
+    // Manual inspection already serves the request; closing a preview must
+    // never close a log subsequently taken over by the player.
+    if(view_.questOpen && !view_.questAutoPreview) return true;
+    if(!view_.questOpen && !view_.questNotice) return true;
+    const bool occupied=view_.blocksInput() || view_.inventory.open || view_.characterOpen || view_.skillTreeOpen ||
+        view_.partyOpen || view_.hirelingOpen || view_.bhSettingsOpen || characterView_.dead;
+    if(occupied) return false;
+    openQuestLog();view_.questAutoPreview=true;return true;
+}
+void SceneView::closeQuestLogPreview() {
+    if(!view_.questAutoPreview) return;
+    view_.questOpen=false;view_.questAutoPreview=false;view_.questPressed=-1;
+}
+
 void SceneView::resetQuestAnimations() {
     questAnimations_ = {};
     for (size_t index = 0; index < questAnimations_.size(); ++index)

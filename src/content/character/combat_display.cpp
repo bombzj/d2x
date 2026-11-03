@@ -57,6 +57,8 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
         if(stat.effect=="tohit") mods.attackRating+=stat.value;
         if(stat.effect=="strength") mods.strength+=stat.value;
         if(stat.effect=="dexterity") mods.dexterity+=stat.value;
+        if(stat.effect=="item_fastermovevelocity") mods.fasterMoveVelocity+=stat.value;
+        if(stat.effect=="velocitypercent") mods.velocityPercent+=stat.value;
         if(stat.effect=="maxhp") mods.maxLife+=stat.value/256;
         if(stat.effect=="fireresist") mods.fireResist+=stat.value;
         if(stat.effect=="coldresist") mods.coldResist+=stat.value;

@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "attribute_projection.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/area_store.hpp"

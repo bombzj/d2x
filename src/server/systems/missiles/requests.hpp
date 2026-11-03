@@ -1,6 +1,6 @@
 #pragma once
 #include "server/runtime/contracts.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/domain_fact.hpp"
 #include "server/runtime/combat_rules.hpp"
 #include "server/systems/transactions/plan.hpp"
 #include "gameplay/skills/cast_spec.hpp"

@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/travel.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -167,8 +170,10 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         if(area->definition.act==4 && object->rule.operation==72 && int(actor.area)==132) level=109;
         if(object->rule.operation==34 && (int(actor.area)==54 || int(actor.area)==74)) level=int(actor.area)==54?74:54;
         if(object->rule.operation==43) {
-            if(int(actor.area)==73 && area->definition.staffTomb) level=*area->definition.staffTomb;
-            else if(ports_.quests.read().actTwo.tombOpen && ports_.quests.read().actTwo.tomb==actor.area) level=73;
+            // Operate43 routes from the actual object class/InteractType. It
+            // has no animation or personal/shared quest-flag prerequisite.
+            if(object->definition==100) level=73;
+            else if(object->definition==377) level=object->portalDestination;
         }
         if(!level) return {DomainStatus::Conflict,{}};
         if(object->rule.operation==72) {
@@ -177,7 +182,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
                     {SoundFact{actor.actor,0,actor.area,19}}});
                 return sent?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{sent.status,{}};
             }
-        } else if(!ports_.quests.allowsTravel(p->persistent.player,actor.area,RegionId(level))) return {DomainStatus::Conflict,{}};
+        } else if(object->rule.operation!=43 && !ports_.quests.allowsTravel(p->persistent.player,actor.area,RegionId(level))) return {DomainStatus::Conflict,{}};
         const auto prepared=ports_.world.request(RegionId(level));if(!prepared) return {prepared.status,{}};
         Transition next{actor.area,RegionId(level),*prepared.value,actor.areaGeneration,actor.sequence,object->id,p->position,{}};next.kind=Kind::QuestObject;
         state_.transitions.insert_or_assign(actor.player,next);auto &player=ports_.players.players_.at(actor.player);

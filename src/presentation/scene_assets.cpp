@@ -10,6 +10,7 @@
 #include "world/maze.hpp"
 #include "content/world/world_catalog.hpp"
 #include "scene_assets.hpp"
+#include "presentation/world/weather_view.hpp"
 #include "resources/data_table.hpp"
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
@@ -75,8 +76,9 @@ const SkillOverlayVisual *SceneAssets::ensureOverlay(int id) {
     for (int h = 0; h < 4; ++h) visual.heights[h] = table.number(row, "Height" + std::to_string(h + 1)).value_or(0);
     const auto file = table.value(row, "Filename");
     visual.art = "data/global/overlays/" + std::string(file) + ".dcc";
+    if(!archives_.contains(visual.art)) visual.art="data/global/overlays/"+std::string(file)+".dc6";
     if (file.empty() || visual.frames <= 0 || visual.fps <= 0 || !archives_.contains(visual.art)) return nullptr;
-    auto animation = unitsGraphics_.worldSingle(visual.art,visual.trans == 3 ? WorldSingleArt::BlendedEffect : WorldSingleArt::Effect);
+    auto animation = unitsGraphics_.worldSingle(visual.art,visual.trans == 3 ? WorldSingleArt::BlendedOverlay : WorldSingleArt::Overlay);
     if (animation.count < visual.frames) return nullptr;
     visual.frames = animation.count;
     unavailableOverlays.erase(id);
@@ -280,7 +282,8 @@ void SceneAssets::loadIceShatter() {
         throw std::runtime_error("Missing original ice shatter sound");
 }
 void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
-    if (const auto text = content.questStrings.find("newquestlog"); text != content.questStrings.end())
+    // Original 1.13c D2Client RVA 1E6CF/1E732 uses CfgQuestLog (3928), not newquestlog.
+    if (const auto text = content.questStrings.find("CfgQuestLog"); text != content.questStrings.end())
         questNoticeLabel = text->second;
     loadProjectileDefinitions(content);
     hirelingPanel = uiGraphics_.single("data/global/ui/panel/npcinv.dc6");
@@ -524,6 +527,9 @@ Graphics &SceneAssets::graphicsForAct(int act) const {
         graphics = std::make_unique<Graphics>(archives_, "data/global/palette/act" + std::to_string(act + 1) +
                                                              "/pal.dat");
     return *graphics;
+}
+void SceneAssets::prepareWeather(WeatherView &weather, int palette) {
+    weather.loadArt(archives_,graphicsForAct(palette),palette);
 }
 const ActorAnimation *SceneAssets::actorAnimation(const ActorAnimationRequest &request, int palette) const {
     if (!actorAnimations_)

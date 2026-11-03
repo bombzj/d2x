@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "server/systems/actions/release.hpp"
 #include "native_caster.hpp"
 #include "server/player_store.hpp"

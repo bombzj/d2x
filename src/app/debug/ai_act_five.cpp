@@ -52,6 +52,14 @@ void DebugAi::Impl::configureActFiveQuest(Goal &goal,QuestId id) const {
 
     const auto iceIntro=intro(ice,"malah",20116);const auto frozen=object("fana",67);
     s={};s.action=QuestAction::Operate;s.stateQuest=ice;s.area=iceArea;s.target=frozen;s.topics={20131};s.status=3;s.refreshFlags=true;
+    // A5Q3 Init67 schedules the frozen object after 25 frames (and retries
+    // allocation). Retain its actual 51 assignment while awaiting the object.
+    for(size_t row=0;row<definitions->objects.rows().size();++row) if(definitions->objects.number(row,"InitFn")==67) {
+        const auto id=definitions->objects.number(row,"Id");
+        if(!id || *id<0 || *id>UINT16_MAX || s.spawnSource) throw std::runtime_error("Ambiguous frozen Anya birth marker");
+        s.spawnSource=Selector{2,uint16_t(*id),"Frozen Anya birth marker"};
+    }
+    if(!s.spawnSource) throw std::runtime_error("Missing original Anya Init67 marker");
     // A5Q3's reading advances the game's fState/fLastState, not the
     // character's ENTERAREA bit. A normal query's status3 also resumes an
     // already-read game; carrying ice satisfies the same dependency.

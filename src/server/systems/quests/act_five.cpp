@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/npc.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
 #include "detail.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

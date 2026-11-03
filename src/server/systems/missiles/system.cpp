@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "runtime.hpp"
 #include "server/systems/combat/system.hpp"
 #include <stdexcept>

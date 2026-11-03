@@ -1,4 +1,5 @@
 #include "ai_impl.hpp"
+#include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -10,9 +11,24 @@ void DebugAi::Impl::observePopulation(const Context &c) {
     if(populationMemoryGame!=view.gameGeneration) {
         populationMemoryGame=view.gameGeneration;populationMemoryRevision=0;populationMemory.clear();
     }
+    const auto now=Clock::now();
+    // Seeing map tiles does not imply that their units have been assigned.
+    // Keep settled subscriptions after 08 releases the room, so walking away
+    // does not turn the same town corner into a fresh search objective.
+    for(auto &[level,memory]:populationMemory) {
+        (void)level;
+        std::erase_if(memory.settlingRooms,[&](const auto &entry) {
+            const auto [roomLevel,x,y]=entry.first;
+            const auto key=std::tuple{uint8_t(roomLevel),uint16_t(x/5),uint16_t(y/5)};
+            if(!world.rooms.contains(key)) return true;
+            const auto receipt=world.roomAssignmentRevisions.find(key);
+            if(receipt!=world.roomAssignmentRevisions.end() && memory.rooms.at(entry.first)!=receipt->second) return false;
+            if(now<entry.second) return false;
+            memory.searchedRooms.insert(entry.first);return true;
+        });
+    }
     if(populationMemoryRevision==world.revision) return;
     populationMemoryRevision=world.revision;
-    const auto now=Clock::now();
     // Original 07 precedes unit assignments. A renewed subscription, including
     // one to an already visited room, needs its own short settling window.
     for(const auto &[key,size]:world.rooms) {
@@ -24,6 +40,7 @@ void DebugAi::Impl::observePopulation(const Context &c) {
         const auto [entry,inserted]=memory.rooms.try_emplace(std::tuple{int(level),int(x)*5,int(y)*5},revision);
         if(inserted || entry->second!=revision) {
             entry->second=revision;memory.readyAt=now+std::chrono::milliseconds(250);
+            memory.settlingRooms[entry->first]=memory.readyAt;
         }
     }
     const auto &rooms=c.town.navigationRooms();
@@ -79,11 +96,22 @@ bool DebugAi::Impl::worldResultReady(const Context &c,const QuestStep &step) con
     case QuestAction::Hunt:
         if(step.target) if(const auto unit=find(c,*step.target,true)) return onlineMonsterCorpse(*unit) || c.combat.monsterTargetEligible(*unit,false);
         return false;
+    case QuestAction::Operate:
+        return step.spawnSource && step.target && find(c,*step.target,true).has_value();
     case QuestAction::Portal:
         if(step.cinematic && world.cinematic==step.cinematic) return true;
         if(step.area==c.town.read().area) return !step.cinematic;
-        if(step.target) if(const auto portal=find(c,*step.target,true))
+        if(step.walkingTrigger && !teleportAvailable(c)) {
+            const auto trigger=find(c,step.walkingTrigger->target,true);
+            if(!trigger || trigger->mode!=2) return false;
+        }
+        if(step.target) if(const auto portal=find(c,*step.target,true)) {
+            for(size_t row=0;row<definitions->objects.rows().size();++row)
+                if(definitions->objects.number(row,"Id")==step.target->identity &&
+                    (definitions->objects.number(row,"OperateFn")==34 || definitions->objects.number(row,"OperateFn")==66) &&
+                    c.town.projectedObjectMode(c.session.read(),portal->key)==1) return false;
             return c.town.permitsInteraction(c.session.read(),portal->key);
+        }
         if(step.cinematic) return false;
         return std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &target) {
             return target.interaction==OnlineMapInteraction::Portal && target.destination==step.area &&
@@ -100,6 +128,8 @@ bool DebugAi::Impl::worldResultReady(const Context &c,const QuestStep &step) con
 void DebugAi::Impl::waitForWorldResult(Context &c,const QuestStep &step,std::string_view expected) {
     if(!questRun.worldWait) {
         cancelWalk(c);
+        exploring.reset();interest.reset();viewpointRoute.reset();
+        approachHint.reset();approachFrontier.reset();approachDetour.reset();
         if(!c.town.read().area) return;
         WorldWait pending;pending.area=*c.town.read().area;pending.anchor=c.position;
         if(questRun.encounterArea==pending.area && questRun.encounterPosition)
@@ -111,10 +141,81 @@ void DebugAi::Impl::waitForWorldResult(Context &c,const QuestStep &step,std::str
         }
         pending.seconds=step.resultWaitSeconds?step.resultWaitSeconds:unsigned(eventPolicy.waitSeconds);
         pending.deadline=Clock::now()+std::chrono::seconds(pending.seconds);pending.expected=expected;
+        if(step.action==QuestAction::Portal) {
+            if(questRun.portalDeadline==Clock::time_point{}) questRun.portalDeadline=pending.deadline;
+            pending.deadline=questRun.portalDeadline;
+        }
         questRun.worldWait=std::move(pending);note("world-wait-started",std::string(expected));
     }
     wait("quest-world-result",std::string(expected));
     if(!step.clearCombat) continuation=Continuation::WorldResult;
+}
+void DebugAi::Impl::waitAtWorldEvent(Context &c,const QuestStep &step,OnlinePoint at,std::string_view expected,float vicinity) {
+    waitForWorldResult(c,step,expected);
+    if(!questRun.worldWait) return;
+    auto &pending=*questRun.worldWait;
+    pending.anchor={float(at.x),float(at.y)};pending.vicinity=vicinity;
+    // The same event owns approach, defensive interruptions and resumption.
+    // A blocked approach never falls through to a whole-level search.
+    if(!retreatPoint && !combatRun.reposition && !combatRun.kitePoint) {
+        if((c.position-pending.anchor).length()>vicinity) approachPoint(c,at,"observed world event",vicinity);
+        else if(approachHint && c.walk.active()) {
+            cancelWalk(c);approachHint.reset();approachFrontier.reset();
+        }
+    }
+}
+bool DebugAi::Impl::approachWorldTrigger(Context &c,const QuestStep &step) {
+    if(!step.walkingTrigger || teleportAvailable(c) || !area || (step.sourceArea && step.sourceArea!=area)) return false;
+    const auto &rule=*step.walkingTrigger;
+    const auto trigger=find(c,rule.target,true);
+    // The server advances this object through QUESTFN, not silent ENDANIM.
+    if(trigger && trigger->mode==2) return false;
+    const auto marker=trigger?trigger->position:c.town.knownTargetPosition(*area,rule.target.type,rule.target.identity);
+    if(!marker) {
+        const auto portal=step.target?find(c,*step.target,true):std::nullopt;
+        if(!portal || !portal->position) return false;
+        waitAtWorldEvent(c,step,*portal->position,"Approaching the observed portal to receive its passage trigger");return true;
+    }
+    waitForWorldResult(c,step,"Waiting for the observed proximity passage to open");
+    const Vec center{float(marker->x),float(marker->y)};
+    const auto &rooms=c.town.navigationRooms();
+    const auto room=std::find_if(rooms.begin(),rooms.end(),[&](const auto &r) {
+        return r.loaded && r.level==*area && center.x>=r.x && center.x<r.x+r.width && center.y>=r.y && center.y<r.y+r.height;
+    });
+    int size=0;
+    for(size_t row=0;row<definitions->objects.rows().size();++row)
+        if(definitions->objects.number(row,"Id")==rule.target.identity) {size=definitions->objects.number(row,"SizeX").value_or(0);break;}
+    const auto inside=[&](Vec at) {
+        return room!=rooms.end() && at.x>=room->x && at.x<room->x+room->width && at.y>=room->y && at.y<room->y+room->height &&
+            nativeUnitDistance(at,2,center,size)<rule.distance;
+    };
+    if(inside(c.position)) {
+        waitAtWorldEvent(c,step,{uint16_t(c.position.x+.5f),uint16_t(c.position.y+.5f)},
+            "Waiting inside the observed proximity trigger for the server to open the passage",1);return true;
+    }
+    const auto *map=c.town.map();const auto origin=c.town.read().origin;
+    if(map && origin && room!=rooms.end()) {
+        const Vec offset{float(origin->x),float(origin->y)};
+        const auto grid=c.town.navigationGrid(c.session.read());
+        const auto &component=c.walk.navigationSearch().connectionComponent(map->grid,c.position-offset+Vec{.5f,.5f});
+        std::optional<OnlinePoint> best;float score=std::numeric_limits<float>::max();
+        // Sample only actual same-room terrain connected to this bank. Do
+        // not aim at the blocked bridge center or assume a fixed map layout.
+        const int radius=rule.distance+size/2+1;
+        for(int y=std::max(room->y,int(marker->y)-radius);y<std::min(room->y+room->height,int(marker->y)+radius+1);++y)
+            for(int x=std::max(room->x,int(marker->x)-radius);x<std::min(room->x+room->width,int(marker->x)+radius+1);++x) {
+                const Vec at{float(x),float(y)},local=at-offset+Vec{.5f,.5f};
+                if(x<0 || y<0 || x>65535 || y>65535 || !inside(at) || local.x<0 || local.y<0 || local.x>=grid.width || local.y>=grid.height ||
+                    size_t(local.y)*grid.width+int(local.x)>=component.cells.size() ||
+                    !component.cells[size_t(local.y)*grid.width+int(local.x)] ||
+                    !grid.nativeMovementSegment(local,local,playerMovement) || frontierCoolingDown({uint16_t(x),uint16_t(y)},1)) continue;
+                const float distance=questRun.worldWait && at.x==questRun.worldWait->anchor.x && at.y==questRun.worldWait->anchor.y?
+                    -1.f:(at-c.position).length();
+                if(distance<score) {score=distance;best=OnlinePoint{uint16_t(x),uint16_t(y)};}
+            }
+        if(best) {waitAtWorldEvent(c,step,*best,"Approaching the observed passage proximity trigger",.5f);return true;}
+    }
+    waitAtWorldEvent(c,step,*marker,"Waiting for a reachable approach to the observed passage trigger");return true;
 }
 void DebugAi::Impl::observeWorldWait(Context &c) {
     if(!questRun.worldWait || cursor>=goals.size() || questRun.step>=goals[cursor].steps.size()) return;

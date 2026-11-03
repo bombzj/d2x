@@ -41,5 +41,6 @@ struct GameCommand {
 SystemId commandSystem(const CommandPayload &);
 bool acceptsCommand(const CommandPayload &);
 struct GameSystems;
+CommandStatus commandStatus(DomainStatus);
 CommandStatus dispatchCommand(const ActorContext &, const CommandPayload &, GameSystems &);
 }

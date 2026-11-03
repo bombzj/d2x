@@ -8,19 +8,20 @@
 namespace d2x {
 void DebugAi::Impl::refreshQuestNpc(Context &c) {
     if(!questRun.pending || !questRun.pending->unit) return;
-    auto &pending=*questRun.pending;const auto source=*pending.unit;
+    auto &pending=*questRun.pending;
     checkQuestPending(c);
     if(!pending.refreshIssued) {
-        if(c.session.read().world.npcRequested) c.session.close_npc();
-        cancelWalk(c);pending.refreshIssued=true;note("quest-flag-refresh","Querying the private NPC record without replaying the submitted topic");return;
+        if(c.session.read().world.npcRequested && !c.control.closeNpc()) return;
+        pending.beforeRevision=std::max(pending.beforeRevision,c.control.quests().revision);
+        cancelWalk(c);pending.refreshIssued=true;note("quest-dialogue-closed","Allowing the native NPCDEACTIVATE callback to finish");return;
     }
-    if(c.session.read().world.npcRequested==source.id) {
-        if(!pending.statusRequested) {
-            pending.statusRequested=true;pending.deadline=Clock::now()+std::chrono::seconds(20);
-        }
-        return;
+    // Original Rcv0x40 -> QUESTS_StatusCallback sends private 0x28 flags,
+    // not just public status. Reopening the NPC is unnecessary and can
+    // interrupt a departure/placement scene after the accepted delivery.
+    if(!pending.statusRequested && c.control.refreshQuests(pending.beforeRevision)) {
+        pending.statusRequested=true;pending.deadline=Clock::now()+std::chrono::seconds(20);
+        note("quest-status-requested","Reading private quest flags without reopening the NPC");
     }
-    walk(c,{{"goal","unit"},{"unitType",source.type},{"unitId",source.id},{"interact",true}});
 }
 std::optional<OnlineItem> DebugAi::Impl::accessibleItem(const Context &c,std::string_view code) const {
     for(const auto &[id,item]:c.session.read().world.items) {
@@ -87,7 +88,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
             for(const auto &[id,item]:world.items) if(item.code=="rin" && item.mode==3 && item.positionKnown && !questRun.rewardBefore.contains(id)) {
                 if(questRun.pending && questRun.pending->action==QuestPending::Action::Pickup) {checkQuestPending(c);return false;}
                 if(questRun.pending && questRun.pending->action==QuestPending::Action::Topic) questRun.pending.reset();
-                if(world.npcRequested) {c.session.close_npc();cancelWalk(c);return false;}
+                if(world.npcRequested) {c.control.closeNpc();cancelWalk(c);return false;}
                 if(!approachPickup(c,item)) return false;
                 const uint32_t reward=id;OnlineItemCommand pickup;pickup.action=OnlineItemAction::Pickup;pickup.item=reward;pickup.itemRevision=item.revision;
                 if(!submitItem(c,pickup,"quest-reward")) return false;
@@ -108,7 +109,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         if(questRun.pending->action==QuestPending::Action::Introduction) {
             checkQuestPending(c);
             if(world.quests.revision<=questRun.pending->beforeRevision) {
-                if(!questRun.pending->statusRequested && c.session.request_quests(view.gameGeneration)) {
+                if(!questRun.pending->statusRequested && c.control.refreshQuests()) {
                     questRun.pending->statusRequested=true;
                     questRun.pending->deadline=Clock::now()+std::chrono::seconds(20);
                     note("quest-status-requested","Querying the actual prerequisite greeting result without replaying its topic");
@@ -122,24 +123,35 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
             // A1Q1/A1Q2 queue their introduction status until NPCDEACTIVATE.
             // End normal listening once; only the later real state/status
             // completes this optional step, never the queued acknowledgement.
-            if(world.npcRequested) c.session.close_npc();
+            if(world.npcRequested) c.control.closeNpc();
             cancelWalk(c);questRun.pending->refreshIssued=true;
             note("quest-introduction-closed","Waiting for the native post-conversation quest update");
             checkQuestPending(c);return false;
         }
         // Retail ScrollMessage callbacks (notably Cain's A2Q2 335..338)
         // change private flags without immediately sending another 0x28.
-        // Close/listen again once to request the actual private record. This
-        // is an ordinary NPC query, never a replay of the accepted topic or
+        // Close once and request 0x40 for the actual private record. This
+        // is a status query, never a replay of the accepted topic or
         // evidence of completion; the checks above still require its result.
         if(questRun.pending->action==QuestPending::Action::Topic) {
             if(step.witness) {
                 // A world-creating callback may still be preparing its actual
                 // result. Query flags without closing its live conversation.
-                if(!questRun.pending->statusRequested && c.session.request_quests(view.gameGeneration)) questRun.pending->statusRequested=true;
+                if(!questRun.pending->statusRequested && c.control.refreshQuests()) questRun.pending->statusRequested=true;
             } else refreshQuestNpc(c);
         }
         wait("quest-dialogue-result","Waiting for actual quest/item state after the offered topic");checkQuestPending(c);return false;
+    }
+    if(questRun.missingTopicRefresh) {
+        if(world.quests.playerFlagsRevision<=*questRun.missingTopicRefresh) {
+            if(Clock::now()>=actionDeadline) throw std::runtime_error("Quest topic recovery received no fresh private quest snapshot");
+            if(!c.control.refreshQuests(*questRun.missingTopicRefresh)) {
+                wait("quest-topic-refresh","Waiting to refresh private quest data after closing the unavailable topic");return false;
+            }
+            wait("quest-topic-refresh","Waiting for private quest data before reopening the NPC");return false;
+        }
+        questRun.missingTopicRefresh.reset();
+        note("quest-topic-state-refreshed","Rechecking the actual offered topic after the private snapshot");
     }
     const auto npc=find(c,*step.target);
     if(!npc) {
@@ -148,13 +160,13 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         }
         if(approachKnown(c,*step.target)) return false;
         if(step.optional) {note("optional-quest-npc-not-exposed",step.target->name);return true;}
-        explore(c,"quest NPC "+step.target->name);return false;
+        explore(c,"quest NPC "+step.target->name,false,ExplorationFocus::Units);return false;
     }
     if(!world.npcConversation || world.npcConversation->type!=1 || world.npcConversation->source!=npc->key.id) {
         wait("quest-dialogue","Opening the actual quest NPC conversation");
         walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true},{"waitQuestAlert",true}});return false;
     }
-    if(!greetingIssued && npc->classId) {greetingIssued=c.session.confirm_npc_voice(*npc->classId);if(greetingIssued) return false;}
+    if(!greetingIssued && npc->classId) {greetingIssued=c.control.greetNpc(*npc->classId);if(greetingIssued) return false;}
     const auto conversation=*world.npcConversation;
     const auto automatic = nextAutomaticNpcSpeech(conversation);
     // A goal can finish a required automatic line, or select an offered topic
@@ -178,7 +190,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
             questRun.skillPointsBefore=points==world.playerAttributes.end()?0:points->second;
         }
         const auto before=world.quests.revision;
-        if(c.session.acknowledge_npc_message(topic)) {
+        if(c.control.acknowledgeNpc(topic)) {
             QuestPending p;p.action=QuestPending::Action::Topic;p.unit=npc->key;p.beforeRevision=before;
             p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;++interactions;note("quest-topic-submitted",std::to_string(topic));
         }
@@ -186,7 +198,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
     }
     if(automatic) {
         const auto before=world.quests.revision;
-        if(c.session.acknowledge_npc_message(*automatic)) {
+        if(c.control.acknowledgeNpc(*automatic)) {
             QuestPending p;p.action=QuestPending::Action::Introduction;p.unit=npc->key;p.beforeRevision=before;
             p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;
             note("quest-prerequisite-greeting-submitted",std::to_string(*automatic));
@@ -198,12 +210,14 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         if(questRun.missingTopicSince==Clock::time_point{}) questRun.missingTopicSince=now;
         const auto grace=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*view.latencyMilliseconds.value_or(0)+200,600,2000));
         if(now-questRun.missingTopicSince<grace) {wait("quest-topic-wait","Allowing the offered quest topic to arrive");return false;}
+        if(world.npcRequested==npc->key.id && !c.control.closeNpc()) return false;
         questRun.retriedMissingTopic=true;
-        if(world.npcRequested==npc->key.id && c.session.close_npc()) {
-            greetingIssued=false;cancelWalk(c);
-            note("quest-topic-reopen","Expected topic absent; reopening the conversation once");
-            return false;
-        }
+        questRun.missingTopicRefresh=c.control.quests().revision;
+        if(actionDeadline==Clock::time_point{}) setActionDeadline(std::chrono::seconds(20),false);
+        c.control.refreshQuests(*questRun.missingTopicRefresh);
+        greetingIssued=false;cancelWalk(c);
+        note("quest-topic-refresh","Expected topic absent; closed conversation and requested private state before one retry");
+        return false;
     }
     if(step.optional) {note("optional-quest-introduction-unavailable","Original objective may be done without this introduction");return true;}
     if(actionDeadline==Clock::time_point{}) setActionDeadline(std::chrono::seconds(20),false);
@@ -254,7 +268,7 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
     if(step.refreshFlags && questRun.pending && !questRun.pending->statusRequested &&
         (step.topics.empty() || questRun.pending->refreshIssued)) {
         const auto before=world.quests.revision;
-        if(c.session.request_quests(c.session.read().gameGeneration)) {
+        if(c.control.refreshQuests()) {
             if(step.status) questRun.pending->beforeRevision=before;
             questRun.pending->statusRequested=true;questRun.pending->deadline=Clock::now()+std::chrono::seconds(20);
             note("quest-status-requested","Private object eligibility, without replaying its operation");
@@ -272,7 +286,7 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
         const auto unit=world.units.find({2,world.npcConversation->source});
         if(unit!=world.units.end() && unit->second.classId==step.target->identity) for(const auto &message:world.npcConversation->messages)
             if(std::find(step.topics.begin(),step.topics.end(),message.stringId)!=step.topics.end() && !world.npcConversation->acknowledged.contains(message.stringId)) {
-                if(c.session.acknowledge_npc_message(message.stringId)) {
+                if(c.control.acknowledgeNpc(message.stringId)) {
                     QuestPending p;p.action=QuestPending::Action::Object;p.unit=unit->first;
                     p.assignment=unit->second.assignmentRevision;p.beforeRevision=questRun.clueBefore;p.refreshIssued=true;
                     p.deadline=Clock::now()+std::chrono::seconds(30);questRun.pending=p;
@@ -285,7 +299,7 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
         !questRun.pending->statusRequested) {
         // Original QUESTS_StatusCallback (C2S40) publishes the private flags
         // and the combined 50/id1 tomb clue after the journal callback.
-        if(c.session.request_quests(c.session.read().gameGeneration)) {
+        if(c.control.refreshQuests()) {
             questRun.pending->statusRequested=true;note("quest-status-requested","Horazon journal: original 0x40 query");
             questRun.pending->deadline=Clock::now()+std::chrono::seconds(30);
         }
@@ -333,9 +347,13 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
     if(!selector) throw std::runtime_error("Quest operation has no verified object identity");
     const auto unit=find(c,*selector,true);
     if(!unit) {
+        if(step.spawnSource && questSpawnAnchor && questSpawnAnchor->first==area) {
+            const auto anchor=questSpawnAnchor->second;
+            waitAtWorldEvent(c,step,anchor,"Waiting at the assigned birth marker for the actual quest object");return false;
+        }
         if(approachKnown(c,*selector)) return false;
         if(step.optional) {note("optional-quest-object-not-exposed","Direct tower entry is permitted by A1Q5");return true;}
-        explore(c,selector->name);return false;
+        explore(c,selector->name,false,ExplorationFocus::Units);return false;
     }
     wait("quest-object","Approaching and operating the actual quest object");
     const Json intent{{"goal","unit"},{"unitType",unit->key.type},{"unitId",unit->key.id},{"interact",true},{"purpose","quest-object"}};
@@ -348,6 +366,8 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
         if(!step.cinematic) return true;
         waitForWorldResult(c,step,"Destination observed; waiting for the original cinematic notification");return false;
     }
+    if(questRun.portalDeadline!=Clock::time_point{} && Clock::now()>=questRun.portalDeadline)
+        throw std::runtime_error("Quest portal did not reach its destination within the event wait budget");
     if(travelDestination && (travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit))) {
         travel(c,*travelDestination);return false;
     }
@@ -370,16 +390,15 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
                 note("quest-portal-activation-observed",std::to_string(pending.unit->id));
                 questRun.pending.reset();cancelWalk(c);return false;
             }
-            wait("quest-portal-activation","Waiting for OPENED, including the MPQ silent ENDANIM deadline");
-            checkQuestPending(c);continuation=Continuation::WorldResult;return false;
+            waitForWorldResult(c,step,"Waiting for OPENED, including the MPQ silent ENDANIM deadline");
+            checkQuestPending(c);return false;
         } else wait("quest-portal-result","Waiting for the actual quest destination scene");
         checkQuestPending(c);return false;
     }
+    if(approachWorldTrigger(c,step)) return false;
     if(questRun.worldWait && !worldResultReady(c,step)) {
         const auto anchor=questRun.worldWait->anchor;
-        if(!retreatPoint && !combatRun.reposition && !combatRun.kitePoint && (c.position-anchor).length()>8 &&
-            approachPoint(c,OnlinePoint{uint16_t(anchor.x),uint16_t(anchor.y)},"observed event location",3)) return false;
-        waitForWorldResult(c,step,questRun.worldWait->expected);return false;
+        waitAtWorldEvent(c,step,{uint16_t(anchor.x),uint16_t(anchor.y)},questRun.worldWait->expected,questRun.worldWait->vicinity);return false;
     }
     for(const auto &target:c.town.read().mapTargets) if((target.interaction==OnlineMapInteraction::Portal ||
         (step.target && (target.interaction==OnlineMapInteraction::Door || target.interaction==OnlineMapInteraction::Exit))) &&
@@ -397,8 +416,8 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
                     (definitions->objects.number(row,"OperateFn")==34 || definitions->objects.number(row,"OperateFn")==66)) {
                     const auto mode=c.town.projectedObjectMode(c.session.read(),target.unit);
                     if(!mode || *mode==1) {
-                        wait("quest-portal-activation","The assigned entrance is still operating; waiting for its MPQ ENDANIM");
-                        continuation=Continuation::WorldResult;return false;
+                        waitAtWorldEvent(c,step,{uint16_t(c.position.x+.5f),uint16_t(c.position.y+.5f)},
+                            "Waiting for the assigned entrance's MPQ ENDANIM");return false;
                     }
                     activation=*mode==0;
                     if(*mode==2 && definitions->objects.number(row,"OperateFn")==66) {
@@ -415,12 +434,21 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
         if(walk(c,intent)) observeQuestInteraction(c,intent);
         return false;
     }
-    if(step.target && approachKnown(c,*step.target)) return false;
-    if(area && step.area) if(const auto hint=c.town.knownConnectionPosition(*area,*step.area)) {
-        if(approachPoint(c,*hint,"previously observed quest portal")) return false;
-        if((c.position-Vec{float(hint->x),float(hint->y)}).length()<=8) {
-            waitForWorldResult(c,step,"Waiting for the real portal assignment at its observed position");return false;
+    // A quest portal can already exist while its opening animation makes it
+    // unselectable. That is an event at a known position, not a missing unit
+    // to search for across the level. Keep its hint even after room release.
+    if(step.target && area && (!step.sourceArea || step.sourceArea==area)) {
+        const auto portal=find(c,*step.target,true);
+        const auto hint=portal?portal->position:c.town.knownTargetPosition(*area,step.target->type,step.target->identity);
+        if(hint) {
+            const OnlinePoint anchor=portal?OnlinePoint{uint16_t(c.position.x+.5f),uint16_t(c.position.y+.5f)}:*hint;
+            waitAtWorldEvent(c,step,anchor,portal?"Waiting for the assigned quest portal to become selectable":
+                "Waiting for the quest portal to be reassigned at its observed position");
+            return false;
         }
+    }
+    if(area && step.area) if(const auto hint=c.town.knownConnectionPosition(*area,*step.area)) {
+        waitAtWorldEvent(c,step,*hint,"Waiting for the real portal assignment at its observed position");return false;
     }
     if(step.sourceArea && c.town.read().area!=step.sourceArea) {
         travel(c,*step.sourceArea);return false;
@@ -432,18 +460,12 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
             const Vec at=Vec{float(marker->x),float(marker->y)}+step.witnessOffset.value_or(Vec{});
             if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535) throw std::runtime_error("Quest event anchor is outside native coordinates");
             const OnlinePoint birth{uint16_t(at.x),uint16_t(at.y)};
-            if((c.position-Vec{float(birth.x),float(birth.y)}).length()<=8) {
-                waitForWorldResult(c,step,"Waiting for the actual selectable portal beside "+step.witness->name);return false;
-            }
-            if(approachPoint(c,birth,"portal event beside "+step.witness->name,step.witnessOffset?3.f:8.f)) return false;
-            // A temporarily blocked approach is not a reason to abandon a
-            // known event scene and search unrelated corners of the level.
-            waitForWorldResult(c,step,"Waiting for a reachable approach to the observed portal event");
-            if(questRun.worldWait) questRun.worldWait->anchor=at;
+            waitAtWorldEvent(c,step,birth,"Waiting for the actual selectable portal beside "+step.witness->name,
+                step.witnessOffset?3.f:8.f);
             return false;
         }
     }
-    explore(c,"the actual assigned quest portal");return false;
+    explore(c,"the actual assigned quest portal",false,ExplorationFocus::Units);return false;
 }
 bool DebugAi::Impl::questImbue(Context &c,const Goal &goal,const QuestStep &step) {
     const auto &view=c.session.read();const auto &world=view.world;const auto flags=questFlags(c,goal.questId);
@@ -471,7 +493,7 @@ bool DebugAi::Impl::questImbue(Context &c,const Goal &goal,const QuestStep &step
             if(flags && (*flags&1)) return true;
             // SUnitNpc's Charsi service calls ACT1Q3_SetRewardGranted without
             // UpdatePlayerFlags. Observe the completed service and store its
-            // actual output before reopening the NPC for the full snapshot.
+            // actual output before querying the private flags with 0x40.
             QuestPending p;p.action=QuestPending::Action::Imbue;p.unit=questRun.materialNpc;
             p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;questRun.materialPhase=4;
         }
@@ -542,7 +564,7 @@ bool DebugAi::Impl::questActTravel(Context &c,const Goal &goal,const QuestStep &
         if(Clock::now()>=actionDeadline) throw std::runtime_error("NPC did not offer the actual act travel service");
         wait("quest-act-service","Waiting for the eligible act travel service");return false;
     }
-    if(!c.session.npc_travel(*conversation->travelDestination)) {wait("quest-act-service","Normal NPC travel was not accepted");return false;}
+    if(!c.control.npcTravel(*conversation->travelDestination)) {wait("quest-act-service","Normal NPC travel was not accepted");return false;}
     QuestPending p;p.action=QuestPending::Action::Travel;p.unit=npc->key;p.deadline=Clock::now()+std::chrono::seconds(30);
     questRun.pending=p;cancelWalk(c);note("quest-act-travel-submitted",std::to_string(*step.area));return false;
 }

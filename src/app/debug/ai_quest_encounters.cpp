@@ -29,7 +29,7 @@ bool DebugAi::Impl::questReceiveRewards(Context &c,const QuestStep &step) {
         }
         if(questRun.pending && questRun.pending->action==QuestPending::Action::Pickup) {checkQuestPending(c);return false;}
         if(questRun.pending && questRun.pending->action==QuestPending::Action::Topic) questRun.pending.reset();
-        if(world.npcRequested) {c.session.close_npc();cancelWalk(c);return false;}
+        if(world.npcRequested) {c.control.closeNpc();cancelWalk(c);return false;}
         if(!approachPickup(c,item)) return false;
         OnlineItemCommand pickup;pickup.action=OnlineItemAction::Pickup;pickup.item=id;pickup.itemRevision=item.revision;
         questItemRequest(c,pickup,QuestPending::Action::Pickup,"quest-reward-pickup-submitted");return false;
@@ -148,12 +148,12 @@ bool DebugAi::Impl::questRescue(Context &c,const QuestStep &step) {
         return false;
     }
     if(world.quests.rescuedBarbsRemaining==0) {
-        if(!questRun.pending && c.session.request_quests(c.session.read().gameGeneration)) {
+        if(!questRun.pending && c.control.refreshQuests()) {
             QuestPending p;p.action=QuestPending::Action::Object;p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;
         }
         wait("quest-prisoner-entitlement","Waiting for actual personal rescue eligibility after the native counter");checkQuestPending(c);return false;
     }
-    if(!approachKnown(c,*step.target)) explore(c,"remaining actual prisoner cages");
+    if(!approachKnown(c,*step.target)) explore(c,"remaining actual prisoner cages",false,ExplorationFocus::Units);
     return false;
 }
 bool DebugAi::Impl::questEncounter(Context &c,const QuestStep &step) {

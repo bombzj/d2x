@@ -156,7 +156,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
             result.healingMaximum=Fixed8(calculation("calc2"));
         }
     }
-    result.delayFrames = (spec.pd2 || spec.assassin || spec.druid) && input.nativeFormulas?calculation("delay"):spec.delayFrames;
+    result.delayFrames = input.nativeFormulas?calculation("delay"):spec.delayFrames;
     result.blizzard = spec.blizzard;
     result.telekinesisRange = spec.telekinesisRange;
     if (spec.hydraDuration) {

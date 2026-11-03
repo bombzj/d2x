@@ -195,9 +195,12 @@ void main() {
         index = int(round(texelFetch(palette, ivec2(index, translationRow), 0).r * 255.0));
         if (index == 0) discard;
     }
-    vec3 lit = texelFetch(lightTable, ivec2(index, clamp(int(round(sourceLight.a * 255.0)) / 8, 0, 31)), 0).rgb;
+    // The light table keeps the original result index in alpha. RGB reverse
+    // lookup would pick a different index when the palette has duplicate colors.
+    int lit = int(round(texelFetch(lightTable,
+        ivec2(index, clamp(int(round(sourceLight.a * 255.0)) / 8, 0, 31)), 0).a * 255.0));
     int background = closestIndex(texelFetch(destination, ivec2(gl_FragCoord.xy), 0).rgb);
-    finalColor = texelFetch(screenTable, ivec2(background, closestIndex(lit)), 0);
+    finalColor = texelFetch(screenTable, ivec2(background, lit), 0);
 }
 )";
 constexpr const char *rectangleFragment = R"(
@@ -249,7 +252,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         for (size_t destination = 0; destination < 256; ++destination)
             blend[source * 256 + destination] = colors[bytes[0x23500 + destination * 256 + source]];
     socketTable_ = upload(blend.data(), 256, 256);
-    // CelDraw mode 2 uses trans[0]; automap Everything uses this on full size.
+    // CelDraw mode 2 uses trans[0]; full-size automap Auto uses it in Act 1/3.
     for (size_t source = 0; source < 256; ++source)
         for (size_t destination = 0; destination < 256; ++destination)
             blend[source * 256 + destination] = colors[bytes[0x3500 + destination * 256 + source]];
@@ -475,12 +478,23 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
     const Color fullLight = WHITE;
     if (fullBright_) samples = {&fullLight, 1};
     if(!image->layers.empty() && samples.size()==1) {
-        // Preserve COF component order and original indices for PL2 mode 3.
+        // COF transparent components select native CelDraw 0..5. Mephisto's
+        // DT S2 uses mode 2; treating every non-Screen layer as opaque loses it.
         for(const auto &layer:image->layers) {
             Sprite part;part.cell=layer.cell;part.texture=layer.texture;part.indexedTexture=layer.indexedTexture;
             part.translation=image->translation;part.x=layer.x;part.y=layer.y;
-            drawLit(&part,position,samples,tint,highlight,
-                composition==PaletteComposition::Normal && layer.softAdditive?PaletteComposition::Screen:composition);
+            auto mode=composition;
+            if(mode==PaletteComposition::Normal) {
+                switch(layer.drawMode) {
+                    case 0:mode=PaletteComposition::Trans25;break;
+                    case 1:mode=PaletteComposition::Trans50;break;
+                    case 2:mode=PaletteComposition::Trans75;break;
+                    case 3:mode=PaletteComposition::Screen;break;
+                    case 4:mode=PaletteComposition::Burn;break;
+                    default:if(layer.softAdditive) mode=PaletteComposition::Screen;break;
+                }
+            }
+            drawLit(&part,position,samples,tint,highlight,mode);
         }
         return;
     }
@@ -507,10 +521,13 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
         SetShaderValue(litBlendShader_,litBlendLocations_[BlendTranslation],&translation,SHADER_UNIFORM_INT);
         const auto light = packed(samples.front());
         SetShaderValue(litBlendShader_, litBlendLocations_[BlendLight], light.data(), SHADER_UNIFORM_VEC4);
+        const auto blendTable=composition==PaletteComposition::Burn?burnTable_:
+            composition==PaletteComposition::Trans25?socketTable_:
+            composition==PaletteComposition::Trans50?halfTable_:
+            composition==PaletteComposition::Trans75?quarterTable_:screenTable_;
         for (const auto &[uniform, texture] : std::array<std::pair<LitBlendUniform,Texture2D>,4>{{
                 {BlendDestination, destination_.texture}, {BlendPalette, palette_},
-                {BlendLightTable, lightTable_}, {BlendScreenTable,
-                    composition==PaletteComposition::Burn?burnTable_:screenTable_}}})
+                {BlendLightTable, lightTable_}, {BlendScreenTable,blendTable}}})
             SetShaderValueTexture(litBlendShader_, litBlendLocations_[uniform], texture);
         DrawTexturePro(image->indexedTexture, image->cell.page.id?image->cell.rect:Rectangle{0,0,bounds.width,bounds.height}, bounds, {}, 0, WHITE);
         EndShaderMode();

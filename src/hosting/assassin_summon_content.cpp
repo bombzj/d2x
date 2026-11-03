@@ -8,6 +8,7 @@
 #include "content/items/item_properties.hpp"
 #include "content/skills/table_values.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/actions/timing.hpp"
 #include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/items/equipment_contributions.hpp"

@@ -11,6 +11,9 @@ namespace {
 // bottom-origin text baselines. Keep those coordinates and the DC6 offsets.
 void characterText(const ClassicFont &font, const std::string &value, float left, float baseline, float right) {
     if (value.empty()) return;
+    // Text records use the logical y=60 origin; DC6 artwork starts at 61.
+    // BD64B, for example, puts the name baseline at H-60-455 = 85.
+    baseline -= 1;
     // Original two-line labels use baselines four pixels either side of the row.
     constexpr float lineStep = 8;
     const float scale = classicPanelScale();

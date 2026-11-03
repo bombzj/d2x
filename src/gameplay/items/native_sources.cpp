@@ -53,6 +53,9 @@ NativeEquipmentSources prepareNativeEquipmentSources(const ItemCatalog &items,co
             if(data->family==ItemFamily::Armor) {
                 addNativeStat(*list,rules,"armorclass",item.defense);
                 if(data->base.block) addNativeStat(*list,rules,"toblock",*data->base.block);
+                // ITEMS_DecodeItemFromBitstream installs armor weight on
+                // the item itself; it is not a saved magic-property roll.
+                addNativeStat(*list,rules,"velocitypercent",nativeSubtract(0,data->base.speed.value_or(0)));
             }
             if(data->equipment.isType("weap")) {
                 const auto channelDamage=[&](int base,int minimum) {

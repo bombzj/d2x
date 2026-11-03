@@ -35,6 +35,7 @@ class RemoteCombat {
     std::map<std::string, DataTable, std::less<>> tables_;
     std::map<uint16_t, size_t> skills_, stats_, monsters_, monsterExtras_;
     std::map<uint16_t, SkillMetadata> skillMetadata_;
+    std::map<uint16_t,int> teleportModes_;
     std::map<uint8_t, size_t> states_;
     std::map<std::string, std::set<uint16_t>, std::less<>> innateSkills_;
     std::vector<OnlineCombatSkillView> catalog_;
@@ -46,6 +47,7 @@ class RemoteCombat {
     uint64_t game_{~uint64_t{}}, area_{~uint64_t{}};
     std::string reason_;
     std::function<std::optional<std::map<int,int>>()> skillRankResolver_;
+    std::function<std::optional<int>(uint16_t,uint32_t)> skillDelayResolver_;
     void applyObservedSkillRanks();
     bool reject(std::string);
     std::string_view classCode() const;
@@ -61,8 +63,11 @@ class RemoteCombat {
   public:
     RemoteCombat(Archives &, RemoteTown &, net::RealmSession &, RemoteInventory &);
     bool submit(OnlineCombatCommand,std::optional<Vec> inputOrigin = {});
+    // Local grid coordinates; uses the source level's MPQ Teleport rule.
+    bool teleportPathAllowed(uint16_t level,const Grid &,Vec from,Vec to) const;
     void update();
     void setSkillRankResolver(std::function<std::optional<std::map<int,int>>()> resolver) {skillRankResolver_=std::move(resolver);}
+    void setSkillDelayResolver(std::function<std::optional<int>(uint16_t,uint32_t)> resolver) {skillDelayResolver_=std::move(resolver);}
     bool hostile(const OnlineUnit &) const;
     bool hostileSource(const OnlineUnit &) const;
     std::optional<bool> knownHostileSource(const OnlineUnit &) const;
@@ -78,6 +83,8 @@ class RemoteCombat {
     bool monsterTargetEligible(const OnlineUnit &, bool targetCorpse) const;
     bool skillTargetEligible(const OnlineUnit &, uint16_t skill) const;
     bool skillTargetEligible(const OnlineItem &, uint16_t skill) const;
+    std::optional<int> skillDelayFrames(uint16_t skill,uint32_t owner=UINT32_MAX) const;
+    bool skillDelayActive(uint16_t skill,uint32_t owner=UINT32_MAX) const;
     const auto &skills() const { return catalog_; }
     const auto &states() const { return unitStates_; }
     const auto &reason() const { return reason_; }

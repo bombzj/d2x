@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "pd2/wounds.hpp"
 #include "gameplay/combat/weapon_block.hpp"
 #include "player_contact.hpp"

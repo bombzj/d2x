@@ -1,6 +1,23 @@
 #include "server/runtime/diagnostics.hpp"
+#include "server/runtime/environment_fact.hpp"
+#include "server/runtime/facts/character.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/effects.hpp"
+#include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/map.hpp"
+#include "server/runtime/facts/npc.hpp"
+#include "server/runtime/facts/object.hpp"
+#include "server/runtime/facts/quest.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
+#include "server/runtime/facts/resources.hpp"
+#include "server/runtime/facts/skills.hpp"
+#include "server/runtime/facts/social.hpp"
+#include "server/runtime/facts/player_message.hpp"
+#include "server/runtime/facts/travel.hpp"
+#include "server/runtime/facts/ui.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "server/game_messages.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/event_batch.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/pd2/map_wire.hpp"
 #include "hosting/native_item_wire.hpp"
@@ -43,35 +60,35 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         return type==0 && (actor==host.read(*binding)->actor.id || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &entry){return entry.second.actor==actor;}));
     };
     for (const auto &fact : batch.facts) {
-        if (const auto *travel = std::get_if<server::TravelFact>(&fact)) {
+        if (const auto *travel = server::factIf<server::TravelFact>(&fact)) {
             if (!packets.empty()) { sendGameBatch(std::move(packets)); packets.clear(); }
             changeArea(*travel); continue;
         }
         std::vector<Bytes> delta;
-        if(const auto *map=std::get_if<server::Pd2MapAttributesFact>(&fact)) {
+        if(const auto *map=server::factIf<server::Pd2MapAttributesFact>(&fact)) {
             if(!content->pd2Host) throw std::logic_error("PD2 map report in an original game");
             auto projected=*map;projected.portal={identities().guid(map->portal,2)};
             delta.push_back(pd2MapAttributes(projected));
         }
-        else if (const auto *list = std::get_if<server::HirelingListFact>(&fact)) {
+        else if (const auto *list = server::factIf<server::HirelingListFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::HirelingListReset,[](auto &){}));
             for(const auto &[name,seed]:list->offers)
                 delta.push_back(encodeServerPacket(ServerMessage::HirelingOffer,[&](auto &out){out.u16(name);out.u32(seed);}));
         }
-        else if (std::holds_alternative<server::LifeFact>(fact) || std::holds_alternative<server::ManaFact>(fact) || std::holds_alternative<server::ResourcesFact>(fact)) {
+        else if (server::factHolds<server::LifeFact>(fact) || server::factHolds<server::ManaFact>(fact) || server::factHolds<server::ResourcesFact>(fact)) {
             // Ordinary costs and per-frame regeneration are observed by
             // publishMotion's native 18/95/96 checks. Keep domain diagnostics
             // without a second 1D/E/F stream for the same resource writes.
         }
-        else if(const auto *object=std::get_if<server::ObjectFact>(&fact)) {
+        else if(const auto *object=server::factIf<server::ObjectFact>(&fact)) {
             const auto known=peer.objects.find(object->object);
             // No history for a newly visible unit or a recipient that left its
             // room. Its first assignment describes the current authoritative mode.
-            if(known==peer.objects.end() || known->second.first>=object->revision ||
+            if(known==peer.objects.end() || known->second.revision>=object->revision ||
                 !host.visiblePoint(*binding,object->area,object->position)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::UnitMode,[&](auto &out) {
                 out.u8(2);out.u32(wireId(object->object));out.u8(3);
-                out.u8(object->shrine && object->mode==1?1:object->targetable?2:0);
+                out.u8(object->selectionFlags);
                 out.u32(uint32_t(object->mode));
             }));
             if(object->mode==1 && object->shrine && object->actor)
@@ -79,9 +96,9 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                     out.u8(2);out.u32(wireId(object->object));out.u32(wireId(object->actor));
                     out.u8(uint8_t(*object->shrine));out.u16(0);out.u16(0);out.u16(0);
                 }));
-            known->second={object->revision,object->mode};
+            known->second.revision=object->revision;known->second.mode=object->mode;
         }
-        else if (const auto *position = std::get_if<server::RepositionFact>(&fact)) {
+        else if (const auto *position = server::factIf<server::RepositionFact>(&fact)) {
             if(!position->notifyOwner && position->actor==host.read(*binding)->actor.id) continue;
             if (position->actor != host.read(*binding)->actor.id &&
                 std::none_of(peer.visible.begin(), peer.visible.end(), [&](const auto &entry) { return entry.second.actor == position->actor; })) continue;
@@ -89,7 +106,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             peer.lastMotion.clear();
             for (auto &[id, player] : peer.visible) { (void)id; if (player.actor == position->actor) player.motion.clear(); }
         }
-        else if (const auto *attack = std::get_if<server::AttackFact>(&fact)) {
+        else if (const auto *attack = server::factIf<server::AttackFact>(&fact)) {
             if (attack->actorType == 1 && !peer.monsters.contains(attack->actor)) continue;
             auto projected=*attack;
             const bool objectSelector=projected.actorType==1 && projected.skill && projected.targetType==2;
@@ -106,7 +123,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             peer.lastMotion.clear();
             for (auto &[id, player] : peer.visible) { (void)id; if (player.actor == attack->actor) player.motion.clear(); }
             if (auto found = peer.monsters.find(attack->actor); found != peer.monsters.end()) found->second.motion.clear();
-        } else if (const auto *hit = std::get_if<server::HitFact>(&fact)) {
+        } else if (const auto *hit = server::factIf<server::HitFact>(&fact)) {
             if (hit->type == 1 && !peer.monsters.contains(hit->target)) continue;
             if (hit->type == 0 && hit->target != host.read(*binding)->actor.id &&
                 std::none_of(peer.visible.begin(), peer.visible.end(), [&](const auto &entry) { return entry.second.actor == hit->target; })) continue;
@@ -121,11 +138,11 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 MonsterSnapshot dying;dying.id=hit->target;dying.position=hit->position;dying.mode=0;
                 found->second.motion=nativeMonsterMotion(dying,shared.terrain.at(binding->game).at(hit->area).origin);
             }
-        } else if (const auto *inventory = std::get_if<server::InventoryFact>(&fact)) {
+        } else if (const auto *inventory = server::factIf<server::InventoryFact>(&fact)) {
             delta = nativeInventoryDelta(*content, *inventory);
             for (const auto &change : inventory->changes) if (change.kind == ItemChangeKind::Created) peer.groundItems.erase(change.item);
         }
-        else if (const auto *drop = std::get_if<server::GroundDropFact>(&fact)) {
+        else if (const auto *drop = server::factIf<server::GroundDropFact>(&fact)) {
             const auto &at = std::get<GroundLocation>(drop->item.location);
             // Area audiences include distant rooms. Match the ground snapshot's
             // room interest before 9C asks the retail client to attach an item.
@@ -134,11 +151,11 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 shared.terrain.at(binding->game).at(at.region).origin, drop->flip?GroundItemAction::Drop:GroundItemAction::Add));
             peer.groundItems.insert_or_assign(drop->item.id, drop->item.revision);
         }
-        else if(const auto *hint=std::get_if<server::MonsterClassHintFact>(&fact)) {
+        else if(const auto *hint=server::factIf<server::MonsterClassHintFact>(&fact)) {
             if(!visibleActor(hint->actor,1)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::MonsterClassHint,[&](auto &out){out.u16(hint->nativeClass);}));
         }
-        else if(const auto *refresh=std::get_if<server::UnitRefreshFact>(&fact)) {
+        else if(const auto *refresh=server::factIf<server::UnitRefreshFact>(&fact)) {
             if(!visibleActor(refresh->actor,refresh->type)) continue;
             const auto origin=shared.terrain.at(binding->game).at(refresh->area).origin;
             const auto point=refresh->position+origin;
@@ -150,27 +167,27 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 !entry->second.motion.empty() && (entry->second.motion.front()==0x67 || entry->second.motion.front()==0x68))
                 entry->second.motion.clear();
         }
-        else if(const auto *alert=std::get_if<server::QuestAlertFact>(&fact)) {
+        else if(const auto *alert=server::factIf<server::QuestAlertFact>(&fact)) {
             if(!visibleActor(alert->actor,alert->type)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::QuestAlert,[&](auto &out){out.u8(alert->type);out.u32(wireId(alert->actor));}));
         }
-        else if(const auto *clue=std::get_if<server::QuestClueFact>(&fact)) {
+        else if(const auto *clue=server::factIf<server::QuestClueFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::QuestPayload,[&](auto &out){out.u16(clue->quest);for(auto value:clue->payload) out.u16(value);}));
         }
-        else if(const auto *sound=std::get_if<server::SoundFact>(&fact)) {
+        else if(const auto *sound=server::factIf<server::SoundFact>(&fact)) {
             if(!sound->directSound && !visibleActor(sound->actor,sound->type)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::UnitSound,[&](auto &out){out.u8(uint8_t(sound->type+(sound->directSound?0xf0:0)));out.u32(wireId(sound->actor));out.u16(sound->sound);}));
         }
-        else if(const auto *overlay=std::get_if<server::OverlayFact>(&fact)) {
+        else if(const auto *overlay=server::factIf<server::OverlayFact>(&fact)) {
             if(!visibleActor(overlay->actor,overlay->type)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::Overlay,[&](auto &out){out.u8(overlay->type);out.u32(wireId(overlay->actor));out.u16(uint16_t(overlay->overlay));}));
         }
-        else if(const auto *restored=std::get_if<server::GroundRestoredFact>(&fact)) {
+        else if(const auto *restored=server::factIf<server::GroundRestoredFact>(&fact)) {
             // ItemMode only sends 3E to an owner. An unowned ground item
             // silently restores; its next admission/pickup contains the value.
             if(auto old=peer.groundItems.find(restored->item);old!=peer.groundItems.end()) old->second=restored->revision;
         }
-        else if(const auto *trigger=std::get_if<server::ItemSkillFact>(&fact)) {
+        else if(const auto *trigger=server::factIf<server::ItemSkillFact>(&fact)) {
             if(!visibleActor(trigger->owner,trigger->ownerType)) continue;
             const auto origin=shared.terrain.at(binding->game).at(trigger->area).origin;
             if(trigger->target) delta.push_back(encodeServerPacket(ServerMessage::CastUnitAlternate,[&](auto &out){
@@ -182,25 +199,25 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 out.u16(uint16_t(std::floor(trigger->position.x+origin.x)));out.u16(uint16_t(std::floor(trigger->position.y+origin.y)));out.u16(trigger->flags);
             }));
         }
-        else if (const auto *pulse = std::get_if<server::SkillPulseFact>(&fact)) {
+        else if (const auto *pulse = server::factIf<server::SkillPulseFact>(&fact)) {
             if(!visibleActor(pulse->owner,pulse->ownerType) || (pulse->target && !visibleActor(pulse->target,pulse->targetType))) continue;
             delta.push_back(encodeServerPacket(ServerMessage::SkillEvent, [&](auto &out) {
                 out.u8(pulse->parameter);out.u16(uint16_t(pulse->skill));out.u16(uint16_t(pulse->rank));
                 out.u8(pulse->ownerType);out.u32(wireId(pulse->owner));out.u8(pulse->target?pulse->targetType:0);out.u32(pulse->target?wireId(pulse->target):UINT32_MAX);out.u32(pulse->argumentX);out.u32(pulse->argumentY);
             }));
         }
-        else if(const auto *ended=std::get_if<server::SkillEndFact>(&fact)) {
+        else if(const auto *ended=server::factIf<server::SkillEndFact>(&fact)) {
             if(!visibleActor(ended->actor,ended->type)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::SkillEnd,[&](auto &out) {
                 out.u8(ended->type);out.u32(wireId(ended->actor));out.u16(ended->skill);
             }));
         }
-        else if (const auto *missile = std::get_if<server::MissileFact>(&fact)) {
+        else if (const auto *missile = server::factIf<server::MissileFact>(&fact)) {
             if((!missile->forcePublication && !visibleActor(missile->owner,missile->ownerType)) || (missile->missile && peer.missiles.contains(missile->missile))) continue;
             delta.push_back(nativeMissile(*missile,shared.terrain.at(binding->game).at(missile->area).origin));
             if(missile->missile) peer.missiles.insert(missile->missile);
         }
-        else if (const auto *state = std::get_if<server::StateFact>(&fact)) {
+        else if (const auto *state = server::factIf<server::StateFact>(&fact)) {
             if (state->state < 0 || state->state > 255) throw std::runtime_error("State exceeds native capacity");
             if (state->type == 1) {
                 const auto entry = peer.monsters.find(state->actor);
@@ -216,20 +233,20 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             auto packet=nativeState(*content,*state);
             if(!packet.empty()) delta.push_back(std::move(packet));
         }
-        else if (const auto *quest = std::get_if<server::QuestFact>(&fact)) delta=nativeQuestUpdate(*content,*quest);
-        else if(const auto *quest=std::get_if<server::QuestStatusFact>(&fact)) {
+        else if (const auto *quest = server::factIf<server::QuestFact>(&fact)) delta=nativeQuestUpdate(*content,*quest);
+        else if(const auto *quest=server::factIf<server::QuestStatusFact>(&fact)) {
             const auto &definition=questDefinition(quest->quest);
             delta.push_back(encodeServerPacket(ServerMessage::QuestUpdate,[&](auto &out){
                 out.u8(uint8_t(definition.nativeSlot-unsigned(definition.act)));out.u8(0);out.u8(quest->status);out.u16(quest->counter);
             }));
         }
-        else if(const auto *effect=std::get_if<server::QuestEffectFact>(&fact))
+        else if(const auto *effect=server::factIf<server::QuestEffectFact>(&fact))
             delta.push_back(encodeServerPacket(ServerMessage::QuestEffect,[&](auto &out){out.u8(effect->effect);}));
-        else if (const auto *removed=std::get_if<server::GroundRemoveFact>(&fact)) {
+        else if (const auto *removed=server::factIf<server::GroundRemoveFact>(&fact)) {
             if(peer.groundItems.erase(removed->item)) delta.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(wireId(removed->item));}));
         }
-        else if (const auto *character = std::get_if<server::CharacterFact>(&fact)) delta = nativeCharacterDelta(*content, *character);
-        else if (const auto *death = std::get_if<server::DeathFact>(&fact)) {
+        else if (const auto *character = server::factIf<server::CharacterFact>(&fact)) delta = nativeCharacterDelta(*content, *character);
+        else if (const auto *death = server::factIf<server::DeathFact>(&fact)) {
             if (death->victim != host.read(*binding)->actor.id) continue;
             const auto stat = content->nativeStats->names.at("goldlost");
             if (stat > UINT8_MAX) throw std::runtime_error("Death gold stat lacks native byte identity");
@@ -243,27 +260,27 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 else out.u32(value);
             }));
         }
-        else if(const auto *environment=std::get_if<server::EnvironmentFact>(&fact))
+        else if(const auto *environment=server::factIf<server::EnvironmentFact>(&fact))
             delta.push_back(encodeServerPacket(ServerMessage::Environment,[&](auto &out) {
                 out.u32(uint32_t(environment->cycle));out.u32(uint32_t(environment->ticks));out.u8(environment->eclipse?1:0);
             }));
-        else if (const auto *chat = std::get_if<server::ChatFact>(&fact)) {
+        else if (const auto *chat = server::factIf<server::ChatFact>(&fact)) {
             if (std::find(chat->recipients.begin(), chat->recipients.end(), binding->player) == chat->recipients.end()) continue;
             delta.push_back(encodeServerPacket(ServerMessage::Chat, [&](auto &out) {
                 out.u8(chat->type); out.u8(chat->language); out.u8(chat->unitType); out.u32(wireId(chat->actor)); out.u8(chat->messageColor); out.u8(chat->nameColor);
                 out.string(chat->name); out.string(chat->text);
             }));
-        } else if (const auto *relation=std::get_if<server::ChatRelationFact>(&fact)) {
+        } else if (const auto *relation=server::factIf<server::ChatRelationFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::PlayerRelationFlags,[&](auto &out){out.u32(wireId(relation->from));out.u32(wireId(relation->to));out.u16(relation->flags);}));
             peer.relations[{relation->from,relation->to}]=relation->flags;
             // The roster projection carries current party/status/flags together.
-        } else if(const auto *notice=std::get_if<server::PartyNoticeFact>(&fact)) {
+        } else if(const auto *notice=server::factIf<server::PartyNoticeFact>(&fact)) {
             if(notice->recipient!=binding->player) continue;
             delta.push_back(encodeServerPacket(ServerMessage::Reserved5A,[&](auto &out){
                 out.u8(7);out.u8(notice->action==3?8:notice->action==4?0:notice->action==6 || notice->action==9?9:2);
                 out.u32(wireId(notice->player));out.u8(notice->action);out.append(std::array<uint8_t,32>{});
             }));
-        } else if (const auto *trade = std::get_if<server::TradeFact>(&fact)) {
+        } else if (const auto *trade = server::factIf<server::TradeFact>(&fact)) {
             if(trade->action) delta.push_back(encodeServerPacket(ServerMessage::UiAction,[&](auto &out){out.u8(*trade->action);}));
             if(trade->partner) delta.push_back(encodeServerPacket(ServerMessage::TradePeer,[&](auto &out) {
                 std::array<uint8_t,16> name{};
@@ -274,7 +291,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 const auto amount=side?trade->ownGold:trade->peerGold;
                 if(amount) delta.push_back(encodeServerPacket(ServerMessage::TradeGold,[&](auto &out){out.u8(side);out.u32(*amount);}));
             }
-        } else if(const auto *reset=std::get_if<server::InventoryResetFact>(&fact)) {
+        } else if(const auto *reset=server::factIf<server::InventoryResetFact>(&fact)) {
             const auto owner=reset->projection.player.id;
             delta.push_back(encodeServerPacket(ServerMessage::Reserved92,[&](auto &out){out.u8(0);out.u32(wireId(owner));}));
             for(auto &[id,sent]:peer.visible) if(sent.actor==owner) {
@@ -284,9 +301,9 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 sent.equipment.clear(); sent.inventoryRevision=0;
                 break;
             }
-        } else if(const auto *items=std::get_if<server::TradeItemsFact>(&fact)) {
+        } else if(const auto *items=server::factIf<server::TradeItemsFact>(&fact)) {
             delta=nativeTradeItems(*content,*items,host.read(*binding)->actor.id);
-        } else if(const auto *message=std::get_if<server::PlayerMessageFact>(&fact)) {
+        } else if(const auto *message=server::factIf<server::PlayerMessageFact>(&fact)) {
             auto value=message->value;
             if(message->type==7) value=identities().guid(EntityId{value},0);
             if(message->type==6 && message->parameter==0) {
@@ -300,7 +317,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 std::copy(message->name.begin(),message->name.end(),names.begin());
                 std::copy(message->other.begin(),message->other.end(),names.begin()+16);out.append(names);
             }));
-        } else if (const auto *npc = std::get_if<server::NpcMessagesFact>(&fact)) {
+        } else if (const auto *npc = server::factIf<server::NpcMessagesFact>(&fact)) {
             if(npc->messages.size()>=8) throw std::runtime_error("NPC message count exceeds native limit");
             delta.push_back(encodeServerPacket(ServerMessage::NpcMessages,[&](auto &out) {
                 out.u8(npc->type); out.u32(wireId(npc->npc)); out.u8(uint8_t(npc->messages.size())); out.u8(0);
@@ -316,20 +333,20 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                     for(const auto word:quests->gameFlags) out.u16(word);
                 }));
             }
-        } else if (const auto *merchant = std::get_if<server::MerchantFact>(&fact)) {
+        } else if (const auto *merchant = server::factIf<server::MerchantFact>(&fact)) {
             if (merchant->refreshShop) peer.shopItems.clear();
             else delta.push_back(encodeServerPacket(ServerMessage::MerchantResult,[&](auto &out) {out.u8(merchant->operation);out.u8(merchant->result);out.u32(0);out.u32(merchant->result==2?UINT32_MAX:wireId(merchant->item));out.u32(merchant->gold);}));
-        } else if (const auto *waypoint=std::get_if<server::WaypointFact>(&fact)) {
+        } else if (const auto *waypoint=server::factIf<server::WaypointFact>(&fact)) {
             std::array<uint16_t,8> history{}; history[0]=0x102; history[1]=1; const auto &levels=content->tables.at("levels");
             for(const auto region:waypoint->unlocked) for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Id")==int(region)) {
                 const auto index=levels.number(row,"Waypoint").value_or(255); if(nativeWaypointIndex(index)) history[size_t(1+index/16)]|=uint16_t(1u<<(index%16));
             }
             delta.push_back(encodeServerPacket(ServerMessage::Waypoints,[&](auto &out){out.u32(wireId(waypoint->source));for(const auto word:history)out.u16(word);}));
-        } else if (const auto *targeting=std::get_if<server::ItemTargetingFact>(&fact)) {
+        } else if (const auto *targeting=server::factIf<server::ItemTargetingFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::ItemTargeting,[&](auto &out){out.u8(uint8_t(targeting->cursor));out.u32(wireId(targeting->source));out.u16(uint16_t(targeting->skill));}));
-        } else if (const auto *service = std::get_if<server::NpcServiceFact>(&fact)) {
+        } else if (const auto *service = server::factIf<server::NpcServiceFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::NpcServiceResult,[&](auto &out){out.u32(wireId(service->npc));out.u8(service->result);out.u8(service->state);}));
-        } else if (const auto *ui = std::get_if<server::UiFact>(&fact)) {
+        } else if (const auto *ui = server::factIf<server::UiFact>(&fact)) {
             delta.push_back(encodeServerPacket(ui->kind==server::UiFact::Kind::Cinematic?ServerMessage::Cinematic:ServerMessage::UiAction,
                 [&](auto &out){out.u8(ui->action);}));
         } else throw std::logic_error("Native event encoder is not implemented for this fact");

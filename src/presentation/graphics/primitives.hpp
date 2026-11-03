@@ -10,7 +10,10 @@
 #include <vector>
 namespace d2x {
 inline int W = 1066, H = 680;
-inline constexpr int HUD = 74;
+// The 55-pixel middle cells of 800ctrlpnl7.dc6 have seven rows above
+// the solid strip. Render the world behind their transparent pixels.
+// Artwork retains its native size; only the bottom 48 pixels block the world.
+inline constexpr int HUD = 48;
 inline constexpr float pi = std::numbers::pi_v<float>;
 // The scene renders into a window-sized target; UI coordinates stay in the
 // virtual W x H space. Normal frames scale by viewport.scale and uiScale stays

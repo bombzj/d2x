@@ -2,7 +2,7 @@
 #include "request.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/domain_fact.hpp"
 #include "server/systems/actions/state.hpp"
 #include "server/systems/actions/requests.hpp"
 #include "gameplay/actions/weapon_timing.hpp"
@@ -15,7 +15,8 @@
 #include <string>
 #include <vector>
 
-namespace d2x { struct SkillCastSpec; enum class SkillBehavior; }
+namespace d2x { struct SkillCastSpec; struct MissileCollisionRule; enum class SkillBehavior; }
+namespace d2x::server { struct MonsterAttackRule; }
 namespace d2x::server::reactions { class ItemTriggers; }
 namespace d2x::server::skills {
 // Internal AI/companion action, not a player identity supplied over the wire.

@@ -4,14 +4,16 @@
 #include "contracts/character.hpp"
 
 namespace d2x {
-inline Rectangle skillTreeBounds() { return classicPanelBounds(true, 64); }
+inline Rectangle skillTreeBounds() { return classicInsetPanelBounds(true); }
 inline Rectangle skillTreeRect(float x, float y, float width, float height) {
     auto panel = skillTreeBounds();
     float scale = classicPanelScale();
     return {panel.x + x * scale, panel.y + y * scale, width * scale, height * scale};
 }
 inline Rectangle skillTreeNode(int row, int column) {
-    return skillTreeRect(11.f + (column - 1) * 68.f, 12.f + (row - 1) * 68.f, 48, 48);
+    // 77CA0: native bottom rows 122/190/258/326/395/463 at 800x600.
+    return skillTreeRect(11.f + (column - 1) * 68.f,
+                         14.f + (row - 1) * 68.f + (row >= 5 ? 1.f : 0.f), 48, 48);
 }
 inline Rectangle skillTreeTab(int page) {
     return skillTreeRect(231, 110.f + (3 - page) * 107.f, 85, 105);

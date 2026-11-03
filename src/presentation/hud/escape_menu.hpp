@@ -36,6 +36,7 @@ class EscapeMenu {
     std::map<std::string, Art, std::less<>> art_;
     std::array<std::vector<Row>, 5> pages_;
     std::array<ClassicFont, 6> fonts_;
+    ClassicFont resolutionFont_;
     std::vector<Binding> bindings_;
     std::map<uint16_t, std::string> keyNames_;
     std::array<std::string, 3> headers_, buttons_;
@@ -64,7 +65,7 @@ class EscapeMenu {
     std::string keyName(uint16_t) const;
     std::string bindingName(const ControlBindings &, ControlAction) const;
     void draw(EscapeMenuPage, int selected, float elapsed, const std::array<int, 5> &automap, const AudioSettings &,
-              bool lighting, int controlScroll, int scrollPressed, const ControlBindings &, int action,
+              bool lighting, bool standardResolution, int controlScroll, int scrollPressed, const ControlBindings &, int action,
               int column, bool capturing, const PaletteBlendView &) const;
 };
 } // namespace d2x

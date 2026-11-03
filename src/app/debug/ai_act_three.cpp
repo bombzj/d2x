@@ -64,8 +64,14 @@ void DebugAi::Impl::configureActThreeQuest(Goal &goal,QuestId id) const {
     const auto gidbinn=node("gidbinn-owned",s,{{item("g33")},{bladeReturned}},{altar});
     s=talk(blade,"ormus",587,0x40);s.item="g33";
     const auto bladeBack=node("gidbinn-returned",s,{{bladeReturned}},{gidbinn},false,10);
+    s={};s.action=QuestAction::Encounter;s.stateQuest=blade;s.area=town;
+    s.target=object("gidbinn altar",0);s.witness=definitions->selector(Json{{"npc","ormus"}});
+    auto placed=fact(K::ObjectOpened);placed.value=s.target->identity;placed.area=town;
+    // NPCDEACTIVATE starts Fn032's walk; Init39 altar OP -> ON witnesses
+    // placement. Keep the NPC free until that observed event completes.
+    const auto placement=node("gidbinn-placed-on-altar",s,{{placed},{flag(blade,0x100)},{bladeDone}},{bladeBack},true);
     s=talk(blade,"ormus",593,0x100);s.produced="rin";
-    const auto ring=node("gidbinn-ring",s,{{flag(blade,0x100)},{bladeDone}},{bladeBack},false,20);
+    const auto ring=node("gidbinn-ring",s,{{flag(blade,0x100)},{bladeDone}},{placement},false,20);
     const auto hire=node("iron-wolf-reward",talk(blade,"asheara",589,1),{{bladeDone}},{bladeBack,ring},false,30);
 
     const auto tomeItem=node("lam-tome-owned",acquire(tome,"Act 3 - Temple 1","bbb","LamTome",28),{{item("bbb")},{flag(tome,1)}});
@@ -112,6 +118,16 @@ void DebugAi::Impl::configureActThreeQuest(Goal &goal,QuestId id) const {
     s={};s.action=QuestAction::Hunt;s.stateQuest=guardian;s.area=definitions->area("Act 3 - Mephisto 3");s.target=definitions->selector(Json{{"monster","mephisto"}});
     const auto mephisto=node("mephisto-dead",s,{{flag(guardian,0x2003,true)},{fact(K::Corpse)}},{templeReward,restored},true);
     s={};s.action=QuestAction::Portal;s.stateQuest=guardian;s.area=definitions->area("Act 4 - Town");s.sourceArea=definitions->area("Act 3 - Mephisto 3");s.target=object("portal",46);
+    s.witness=definitions->selector(Json{{"monster","mephisto"}});
+    // Quests.cpp OBJECT_MEPHISTOBRIDGE: a player in the same room must
+    // satisfy D2Common_10399 < 18 before the bridge advances (24-frame ticks).
+    for(size_t row=0;row<definitions->objects.rows().size();++row) if(definitions->objects.number(row,"InitFn")==45) {
+        const auto bridge=definitions->objects.number(row,"Id");
+        if(!bridge || *bridge<0 || *bridge>UINT16_MAX || s.walkingTrigger)
+            throw std::runtime_error("Ambiguous original Mephisto bridge marker");
+        s.walkingTrigger=QuestStep::ProximityTrigger{Selector{2,uint16_t(*bridge),"Mephisto bridge"},18};
+    }
+    if(!s.walkingTrigger) throw std::runtime_error("Missing original Mephisto bridge Init45 marker");
     auto changed=fact(K::ActChange);changed.value=23;
     const auto passage=node("act-four-arrival",s,{{changed}},{mephisto});
     switch(id) {

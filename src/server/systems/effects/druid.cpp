@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "gameplay/effects/queries.hpp"
 #include "server/systems/skills/native_caster.hpp"
 #include "gameplay/skills/druid_spec.hpp"

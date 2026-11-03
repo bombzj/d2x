@@ -111,6 +111,8 @@ flowchart TD
 
 客户端和表现库不链接host、server或persistence；客户端EXE经嵌入宿主链接存储库，独立EXE经同一character_host连接权威内核。server／host不链接content、resources、raylib或network；独立目标不链接presentation／raylib，但项目配置仍包含其他客户端目标，尚无仅服务端依赖配置开关。C++20／CMake保留Windows／Linux路径，独立进程目前仅Windows构建，Linux未认证。目标、包目录及部署统一见[PvPGN服务端](../development/PVPGN_SERVER.md)。
 
+编译依赖按实际类型使用收窄：`runtime/prepared_rules.hpp` 仅前置声明 `SkillRules`，完整规则由读取成员或构造规则的 cpp 显式包含；仅转交规则指针的领域不依赖其布局。`actors/actor_animation.hpp` 直接使用 `contracts/animation_timing.hpp`，不引入整套角色面板契约。此项为头文件依赖调整，不改变运行态布局；尚未构建验证。
+
 ## 生命周期
 
 原服与自研均由FrameInput → SceneController → RemoteUiClients／RemoteControl／Combat／Inventory → RealmSession发送原包。回包进入同一RemoteWorld／RemoteTown／RemoteScene，再由公共UI、动画和声音消费。单机仅在组装入口建立内存字节连接；移除了LocalGame／GameClients／GameScene及其CMake目标。

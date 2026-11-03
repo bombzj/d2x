@@ -1,4 +1,5 @@
 #include "core/id.hpp"
+#include "server/runtime/frame_facts.hpp"
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -55,7 +56,7 @@ DomainResult<> System::moveQuestNpc(RegionId region,EntityId id,Vec position,Vec
         return ports_.monsters.moveNpc(id,region,position,destination,escaped);
     return {DomainStatus::Stale,{}};
 }
-DomainResult<EntityId> System::admitQuestNpc(RegionId region,std::string_view code,Vec position,int searchRadius) {
+DomainResult<EntityId> System::admitQuestNpc(RegionId region,std::string_view code,Vec position,int searchRadius,bool specialInit) {
     const auto found=ports_.areas.areas_.find(region);if(found==ports_.areas.areas_.end()) return {DomainStatus::Unavailable,{}};
     auto &area=found->second.definition;
     for(const auto &npc:area.npcs) if(npc.rule.code==code)
@@ -70,7 +71,7 @@ DomainResult<EntityId> System::admitQuestNpc(RegionId region,std::string_view co
     const EntityId id{ports_.ids.cursor()};
     AreaNpc candidate{id,*point,prepared->second};
     area.npcs.reserve(area.npcs.size()+1);
-    const auto admitted=ports_.monsters.admitNpc(id,region,*point,prepared->second);
+    const auto admitted=ports_.monsters.admitNpc(id,region,*point,prepared->second,specialInit);
     if(!admitted) return {admitted.status,{}};
     area.npcs.push_back(std::move(candidate));
     return {DomainStatus::Applied,id};

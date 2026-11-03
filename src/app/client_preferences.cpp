@@ -55,6 +55,15 @@ ClientPreferences loadClientPreferences() {
             setting("bhShowXpText"), setting("bhShowBeltStatus"), setting("bhForceLightRadius"),
             setting("bhShowPathLine"), setting("bhShowResistances"), setting("bhShowMonsters"),
             setting("bhShowEnchantments"), setting("bhShowChests"), setting("bhAutomapOnJoin"), setting("bhShowLkChestLines")};
+        result.standardResolution = setting("standardResolution");
+        const auto dimension = [&](const char *key, int fallback, int minimum) {
+            const int value = integer(key, fallback, 16384);
+            if (value >= minimum) return value;
+            std::cerr << "Invalid client setting: " << key << " below minimum window size\n";
+            return fallback;
+        };
+        result.customWindowWidth = dimension("customWindowWidth", 1280, 800);
+        result.customWindowHeight = dimension("customWindowHeight", 816, 510);
         if (const auto found = settings.find("controls"); found != settings.end()) {
             try {
                 if (!found->is_object() || !found->at("version").is_number_integer() || found->at("version") != 1 ||
@@ -99,6 +108,8 @@ bool saveClientPreferences(const ClientPreferences &preferences) {
                 : preferences.automapFade == AutomapFade::Center ? "center" : "auto"},
             {"soundVolume", preferences.audio.sound}, {"musicVolume", preferences.audio.music},
             {"npcSpeech", int(preferences.audio.speech)}, {"lighting", preferences.lighting},
+            {"standardResolution", preferences.standardResolution},
+            {"customWindowWidth", preferences.customWindowWidth}, {"customWindowHeight", preferences.customWindowHeight},
             {"bhRevealMap", preferences.bhRevealMap}, {"bhAlwaysShowLoot", preferences.bhAlwaysShowLoot},
             {"bhShowAreaName", preferences.bhShowAreaName}, {"bhShowXpText", preferences.bhShowXpText},
             {"bhShowBeltStatus", preferences.bhShowBeltStatus}, {"bhForceLightRadius", preferences.bhForceLightRadius},

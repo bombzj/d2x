@@ -32,8 +32,10 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
     // RVA 60346: Auto reads Unit.nAct, not its animation mode.
     const bool autoFade = mapView().act == 0 || mapView().act == 2;
     auto fadeMode = [&](Vec position, bool town) {
-        if (view_.automapFade == AutomapFade::Everything ||
-            (view_.automapFade == AutomapFade::Auto && autoFade)) return large ? 2 : 1;
+        // 6034E -> 60384: Everything always selects mode 1. Only Auto
+        // (6036F..6038C) uses mode 2 for the full-size map in Act 1/3.
+        if (view_.automapFade == AutomapFade::Everything) return 1;
+        if (view_.automapFade == AutomapFade::Auto && autoFade) return large ? 2 : 1;
         if (view_.automapFade != AutomapFade::Center || !large || town) return 5;
         // RVA 60391..6045B: one mode for the entire cell, selected from its
         // anchor plus (8,16); the native center is fixed while the map pans.

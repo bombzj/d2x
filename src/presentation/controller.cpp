@@ -68,7 +68,8 @@ bool SceneController::handleMenu(const FrameInput &input) {
         int activated = input.enter && view_.gameMenuItemEnabled(ui.gameMenuSelected) ? ui.gameMenuSelected : -1;
         const bool settingArrow = ((ui.gameMenuPage == EscapeMenuPage::Automap && ui.gameMenuSelected < 5) ||
                                   (ui.gameMenuPage == EscapeMenuPage::Sound && ui.gameMenuSelected == 5) ||
-                                  (ui.gameMenuPage == EscapeMenuPage::Video && ui.gameMenuSelected == 1)) &&
+                                  (ui.gameMenuPage == EscapeMenuPage::Video &&
+                                      (ui.gameMenuSelected == 0 || ui.gameMenuSelected == 1))) &&
                                   (input.menuLeft || input.menuRight);
         if (settingArrow) activated = ui.gameMenuSelected;
         if (input.leftPressed) ui.gameMenuPressed = hovered;
@@ -136,7 +137,8 @@ bool SceneController::handleMenu(const FrameInput &input) {
                 // Enter/clicking a slider's label does not advance its value.
             }
             else if (ui.gameMenuPage == EscapeMenuPage::Video) {
-                if (activated == 1) ui.lighting = !ui.lighting;
+                if (activated == 0) ui.standardResolution = !ui.standardResolution;
+                else if (activated == 1) ui.lighting = !ui.lighting;
                 else if (activated == 6) page(EscapeMenuPage::Options, 1);
             }
             else if (ui.gameMenuPage == EscapeMenuPage::Controls) {
@@ -191,6 +193,24 @@ bool SceneController::handleBhSettings(const FrameInput &input) {
 }
 bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
+    std::optional<int> miniAction;
+    if (ui.miniPanelPressed) {
+        if (input.escape || input.clearScreen || ui.blocksInput()) ui.miniPanelPressed.reset();
+        else if (input.leftReleased) {
+            const int pressed = *ui.miniPanelPressed;
+            ui.miniPanelPressed.reset();
+            inventoryClick_ = true;
+            if (input.insideViewport) {
+                if (pressed == -1 && CheckCollisionPointRec(rv(input.mouse), hudMenuButton())) {
+                    ui.miniPanelOpen = !ui.miniPanelOpen;
+                    return true;
+                }
+                if (pressed >= 0 && view_.miniPanelAt(input.mouse) == pressed) miniAction = pressed;
+            }
+            if (!miniAction) return true;
+        } else if (!input.leftHeld && !input.leftPressed) ui.miniPanelPressed.reset();
+        else return true;
+    }
     if (input.clearScreen && !ui.inventory.drag && !ui.playerTradeBlocking) {
         if (ui.travelMenu) closeTravel();
         if (ui.inventory.open) toggleInventory();
@@ -293,68 +313,7 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         ui.skillPicker.reset();
         return true;
     }
-    if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
-        view_.characterView().unspentAttributes > 0 &&
-        CheckCollisionPointRec(rv(input.mouse), hudCharacterButton())) {
-        ui.pointButtonPressed = false;
-        pickupClick_ = true;
-        return true;
-    }
-    if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
-        view_.characterView().unspentSkills > 0 &&
-        CheckCollisionPointRec(rv(input.mouse), hudSkillTreeButton())) {
-        ui.pointButtonPressed = true;
-        pickupClick_ = true;
-        return true;
-    }
-    if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
-        CheckCollisionPointRec(rv(input.mouse), hudMenuButton())) {
-        inventoryClick_ = true;
-        ui.miniPanelOpen = !ui.miniPanelOpen;
-        return true;
-    }
-    if (ui.miniPanelOpen && !ui.blocksInput() && input.insideViewport) {
-        if (auto button = view_.miniPanelAt(input.mouse)) {
-            if (input.leftPressed) {
-                inventoryClick_ = true;
-                if (*button == 7) {
-                    FrameInput action;
-                    action.messageLog = true;
-                    const auto intent = view_.handleChat(action);
-                    if (!intent.error.empty()) view_.notice(intent.error, true);
-                    ui.miniPanelOpen = false;
-                    return true;
-                }
-                if (*button == 4) {
-                    FrameInput action;
-                    action.focused = true; action.party = true;
-                    ui.miniPanelOpen = false;
-                    const bool handled = handle(action, elapsed);
-                    inventoryClick_ = true;
-                    return handled;
-                }
-                if (*button == 6) {
-                    openGameMenu(input.mouse);
-                    return true;
-                }
-                FrameInput action;
-                action.focused = true;
-                if (*button == 0) action.character = true;
-                if (*button == 1) action.inventory = true;
-                if (*button == 2) action.skillTree = true;
-                if (*button == 3) action.automap = true;
-                if (*button == 5) action.quests = true;
-                const bool handled = handle(action, elapsed);
-                // The synthetic shortcut has no mouse state. Preserve the
-                // original mini-panel press until the physical release.
-                inventoryClick_ = true;
-                return handled;
-            }
-            return true;
-        }
-    }
-    if (input.collision)
-        ui.debug = !ui.debug;
+    // Keyboard dismissal must precede pointer hover ownership of HUD buttons.
     if (input.escape) {
         if (ui.skillPicker) {
             ui.skillPicker.reset();
@@ -385,6 +344,70 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         inventoryRight_ = inventoryRight_ || input.rightPressed;
         return true;
     }
+    if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
+        view_.characterView().unspentAttributes > 0 &&
+        CheckCollisionPointRec(rv(input.mouse), hudCharacterButton())) {
+        ui.pointButtonPressed = false;
+        pickupClick_ = true;
+        return true;
+    }
+    if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
+        view_.characterView().unspentSkills > 0 &&
+        CheckCollisionPointRec(rv(input.mouse), hudSkillTreeButton())) {
+        ui.pointButtonPressed = true;
+        pickupClick_ = true;
+        return true;
+    }
+    if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
+        CheckCollisionPointRec(rv(input.mouse), hudMenuButton())) {
+        inventoryClick_ = true;
+        ui.miniPanelPressed = -1;
+        return true;
+    }
+    if (ui.miniPanelOpen && !ui.blocksInput() && input.insideViewport) {
+        if (auto button = miniAction ? miniAction : view_.miniPanelAt(input.mouse)) {
+            if (input.leftPressed) {
+                if (*button >= 0) ui.miniPanelPressed = *button;
+                inventoryClick_ = true;
+                return true;
+            }
+            if (miniAction) {
+                inventoryClick_ = true;
+                if (*button == 7) {
+                    FrameInput action;
+                    action.messageLog = true;
+                    const auto intent = view_.handleChat(action);
+                    if (!intent.error.empty()) view_.notice(intent.error, true);
+                    return true;
+                }
+                if (*button == 4) {
+                    FrameInput action;
+                    action.focused = true; action.party = true;
+                    const bool handled = handle(action, elapsed);
+                    inventoryClick_ = true;
+                    return handled;
+                }
+                if (*button == 6) {
+                    openGameMenu(input.mouse);
+                    return true;
+                }
+                FrameInput action;
+                action.focused = true;
+                if (*button == 0) action.character = true;
+                if (*button == 1) action.inventory = true;
+                if (*button == 2) action.skillTree = true;
+                if (*button == 3) action.automap = true;
+                if (*button == 5) action.quests = true;
+                const bool handled = handle(action, elapsed);
+                // Preserve UI ownership of the release across the semantic action.
+                inventoryClick_ = true;
+                return handled;
+            }
+            return true;
+        }
+    }
+    if (input.collision)
+        ui.debug = !ui.debug;
     if (handleTravel(input)) return true;
     if (ui.blocksInput()) {
         ui.skillPicker.reset();
@@ -458,7 +481,7 @@ bool SceneController::handleDeath(const FrameInput &input) {
     ui.hirelingPortraitCanFeed = false;
     ui.npcMenu = ui.shopOpen = ui.hireListOpen = false;
     ui.help = ui.travelMenu = ui.gameMenuOpen = false; ui.showLoot = false;
-    ui.pointButtonPressed.reset(); ui.shopConfirm.reset(); ui.shopSalePending.reset();
+    ui.pointButtonPressed.reset(); ui.miniPanelPressed.reset(); ui.shopConfirm.reset(); ui.shopSalePending.reset();
     ui.characterPressed.reset(); ui.skillTreePressed.reset();
     view_.cancelNpcDialogue();
     if (input.focused && input.escape) actorClient_.respawn();
@@ -590,6 +613,7 @@ void SceneController::resetInput() {
     temporaryRun_ = false;
     skillGesture_ = false;
     view_.ui().pointButtonPressed.reset();
+    view_.ui().miniPanelPressed.reset();
     view_.ui().characterPressed.reset(); view_.ui().skillTreePressed.reset();
     view_.ui().questPressed = -1;
     view_.ui().hirelingPortraitHovered={};
@@ -616,6 +640,7 @@ void SceneController::openGameMenu(Vec mouse) {
     ui.skillPicker.reset();
     ui.partyOpen = ui.characterOpen = ui.hirelingOpen = ui.skillTreeOpen = ui.questOpen = false;
     ui.pointButtonPressed.reset();
+    ui.miniPanelPressed.reset();
     ui.characterPressed.reset(); ui.skillTreePressed.reset();
     ui.questPressed = -1;
     ui.gameMenuOpen = true;

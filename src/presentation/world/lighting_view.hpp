@@ -57,6 +57,7 @@ class LightingView {
     void advance(float dt, const LevelRecord &level);
     void resetEnvironment();
     void resetSources();
+    int period(int act) const;
     int overlayRadius(uint64_t owner, int overlay, float startedAt, int initial, int target);
     void finishSources();
     void setEclipse(bool active);

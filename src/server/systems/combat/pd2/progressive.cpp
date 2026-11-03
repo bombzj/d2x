@@ -1,4 +1,5 @@
 #include "progressive.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "../system.hpp"
 #include "../progressive_execution.hpp"
 #include "server/systems/skills/native_caster.hpp"

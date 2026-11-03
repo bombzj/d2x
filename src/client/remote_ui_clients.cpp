@@ -14,6 +14,7 @@ RemoteUiClients::Impl::Impl(Archives &a, net::RealmSession &s, RemoteInventory &
     }
 }
 const QuestView &RemoteUiClients::Impl::Quests::read() const { return o.questView; }
+bool RemoteUiClients::Impl::Quests::refresh() { return o.control.refreshQuests(); }
 bool RemoteUiClients::Impl::Quests::acknowledgeCompletion(QuestId quest) {
             return o.session.acknowledge_quest_log(uint16_t(questDefinition(quest).nativeSlot),o.context.gameGeneration);
         }
@@ -29,7 +30,7 @@ bool RemoteUiClients::Impl::MapClient::waypointSource(EntityId source) const {
             return o.session.read().world.waypointSource == npcGuid(source);
         }
 void RemoteUiClients::Impl::MapClient::closeTravel() {
-            if (onlineInteractionMatches(o.context, o.session.read()) && o.session.use_waypoint(0, 0, o.context)) {
+            if (onlineInteractionMatches(o.context, o.session.read()) && o.control.useWaypoint(0, 0, o.context)) {
                 // Only our successful close advances this frame's interaction.
                 // The following click/shortcut must use the resulting context.
                 o.context = onlineIntentContext(o.session.read());
@@ -42,7 +43,7 @@ void RemoteUiClients::Impl::MapClient::submit(MapIntent intent) {
                 using T = std::decay_t<decltype(v)>;
                 if constexpr (std::is_same_v<T, WaypointTravel>)
                     if (o.scene) for (const auto &d : o.scene->waypoints)
-                        if (d.level == uint16_t(v.destination) && d.unlocked) { o.session.use_waypoint(d.level,d.number,o.context); return; }
+                        if (d.level == uint16_t(v.destination) && d.unlocked) { o.control.useWaypoint(d.level,d.number,o.context); return; }
             }, intent);
         }
 std::optional<double> RemoteUiClients::Impl::stat(std::string_view name) const {
@@ -162,8 +163,12 @@ void RemoteUiClients::Impl::update(const OnlineSceneView &binding, std::optional
     }
 RemoteUiClients::RemoteUiClients(Archives &a,net::RealmSession &s,RemoteInventory &i,RemoteCombat &c,RemoteControl &r,bool running):impl_(std::make_unique<Impl>(a,s,i,c,r)){
     impl_->run=running;c.setSkillRankResolver([state=impl_.get()]{return state->observedSkillRanks();});
+    c.setSkillDelayResolver([state=impl_.get()](uint16_t skill,uint32_t owner)->std::optional<int> {
+        const auto *entry=state->characterView.skill(skill,owner);
+        return entry?entry->delayFrames:std::nullopt;
+    });
 }
-RemoteUiClients::~RemoteUiClients(){impl_->combat.setSkillRankResolver({});}
+RemoteUiClients::~RemoteUiClients(){impl_->combat.setSkillRankResolver({});impl_->combat.setSkillDelayResolver({});}
 size_t RemoteUiClients::queuedItemCommands() const { return impl_->transactions.size(); }
 std::optional<uint64_t> RemoteUiClients::waitingItemRequest() const { return impl_->waiting; }
 std::optional<unsigned> RemoteUiClients::itemQuote(uint32_t item, OnlineItemAction action) const {

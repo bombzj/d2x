@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "native_pet_move.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

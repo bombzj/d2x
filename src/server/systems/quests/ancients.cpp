@@ -1,4 +1,6 @@
 #include <array>
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

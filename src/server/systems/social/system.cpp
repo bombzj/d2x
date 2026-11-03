@@ -1,4 +1,7 @@
 #include "server/runtime/events.hpp"
+#include "server/runtime/facts/social.hpp"
+#include "server/runtime/facts/player_message.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/trade/system.hpp"
@@ -95,7 +98,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         }
         facts.emplace_back(std::move(fact));
     }
-    const auto audience=std::holds_alternative<PlayerMessageFact>(facts.front())?Audience{AudienceKind::Player,actor.player,actor.area}:Audience{AudienceKind::Game,{},actor.area};
+    const auto audience=factHolds<PlayerMessageFact>(facts.front())?Audience{AudienceKind::Player,actor.player,actor.area}:Audience{AudienceKind::Game,{},actor.area};
     const auto published = ports_.events.publish({0, actor.tick, {}, audience, std::move(facts)});
     return published ? DomainResult<>{DomainStatus::Applied, std::monostate{}} : DomainResult<>{published.status, {}};
 }

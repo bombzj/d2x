@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "pd2/equipped_skills.hpp"
 #include "gameplay/skills/mana_payment.hpp"
 #include "attribute_projection.hpp"

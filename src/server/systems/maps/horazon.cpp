@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/loot/system.hpp"

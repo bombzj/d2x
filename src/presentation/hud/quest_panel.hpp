@@ -6,7 +6,7 @@
 #include <array>
 
 namespace d2x {
-inline Rectangle questBounds() { return classicPanelBounds(false, 64); }
+inline Rectangle questBounds() { return classicInsetPanelBounds(false); }
 inline Rectangle questArtRect(float x, float y, float width, float height) {
     const auto panel = questBounds();
     return {panel.x + x * inventoryScale(), panel.y + y * inventoryScale(),

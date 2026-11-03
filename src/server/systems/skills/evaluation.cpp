@@ -1,4 +1,5 @@
 #include "evaluation.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "gameplay/skills/passive_stats.hpp"

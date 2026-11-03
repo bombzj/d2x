@@ -73,6 +73,8 @@ MonPreset固定身份包括Radament、Bloodwitch the Wild、Fangskin、Beetlebur
 
 沙虫钻地的MonSeq按原表S1帧11→0组装，已钻地下的末帧保持只应用于完整序列，不传给组成COF；原D2MOO SkillMonst::SKILLS_SrvDo086_MaggotDown在完成边界冻结序列速度，不把组成动画改成零速。客户端此前因错误传播finalFrame拒绝seq_maggotdown，此处已修正；实机范围见[原版缺口](../../development/ORIGINAL_GAPS.md)。
 
+沙虫出土按`SkillMonst::SKILLS_SrvSt44_MaggotUp → SUnit::sub_6FCBDFE0`复用公共`nativeTeleport`落点流程，以实际体型、碰撞掩码0x1c09搜索附近合法位置，再恢复目标资格与占位；下钻清除资格。此前只检验原地，被占用便失败，而Fn015仍按原逻辑推进阶段，可能留下潜地与AI阶段不一致。修复适用于共享程序的第三幕sandmaggot4；85区暂停快照见两只phase1且burrowed=true，但旧日志未记录每次出土失败原因，不能断言各次都由占位造成。当前源码修复未构建／实测，保持无合法位置时失败，不强制穿过碰撞。
+
 零售客户端对普通分配／模式包中的无技能S1也识别SandMaggot潜地、Vulture空中和FrogDemon潜水，不要求另收到0x0E标记。战斗目标筛选沿既有显示判定排除不可攻击状态，调试导航的临时单位占位查询不为这些非实体状态加地面障碍；不改宿主碰撞或从模式伪造伤害。依据为D2MOO MaggotDown清除目标资格／碰撞、Submerge及对应AI。PD2原有判定保留，新分配包修正只用于lod113c。
 
 沙虫／虫后子怪只禁经验，保留MPQ掉落资格；Nest和复活同时禁重复经验／掉落。Bestow当前calc1／calc2均为空，治疗量为0，不自造比例。SkeletonRaise是复活显示声明，不添加AI主动施放。Swarm Move及VampireMeteor保留声明与原AI开启条件，不因有槽擅自启用。

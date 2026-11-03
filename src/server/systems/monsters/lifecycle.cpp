@@ -1,4 +1,7 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/combat.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "server/systems/attributes/monster_sources.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "gameplay/rules/arithmetic.hpp"

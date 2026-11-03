@@ -1,4 +1,8 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
+#include "server/runtime/facts/skills.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"

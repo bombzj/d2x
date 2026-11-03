@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "server/systems/skills/native_caster.hpp"
 #include "server/runtime/skill_rules.hpp"
 #include "attribute_projection.hpp"

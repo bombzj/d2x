@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
 #include "runtime.hpp"
 #include "weapon_melee.hpp"
 #include "server/area_store.hpp"

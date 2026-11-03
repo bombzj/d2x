@@ -1,4 +1,5 @@
 #include "native_caster.hpp"
+#include "server/runtime/skill_rules.hpp"
 #include "evaluation.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"

@@ -1,4 +1,5 @@
 #include "timeline.hpp"
+#include "server/runtime/events.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <stdexcept>

@@ -1,9 +1,10 @@
 #include "gameplay/character/persistent_character.hpp"
+#include "server/runtime/facts/travel.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/objects/system.hpp"
+#include "server/systems/objects/replication.hpp"
 #include "server/game_messages.hpp"
 #include "server/corpse_view.hpp"
-#include "server/runtime/events.hpp"
 #include "server/area_store.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/native_combat_wire.hpp"
@@ -14,6 +15,22 @@
 #include <cmath>
 namespace d2x::hosting {
 using net::protocol::Writer;
+namespace {
+bool sameObjectAssignment(const Bytes &before,const Bytes &after,bool statefulInteractType=false) {
+    // 51: header/type/GUID/class/XY/mode/InteractType. Mode belongs to 0E;
+    // portal destination uses 60; chest locks and well uses are runtime state,
+    // not a new visual identity. Shrine type still requires its assignment.
+    if(before.size()!=14 || after.size()!=14) return false;
+    for(size_t i=0;i<before.size();++i)
+        if(i!=12 && !(statefulInteractType && i==13) && before[i]!=after[i]) return false;
+    return true;
+}
+Bytes objectModePacket(uint32_t wireId,int mode,uint8_t selection) {
+    return encodeServerPacket(ServerMessage::UnitMode,[&](auto &out) {
+        out.u8(2);out.u32(wireId);out.u8(3);out.u8(selection);out.u32(uint32_t(mode));
+    });
+}
+}
 void NativeRealmService::publishAreas(RegionId region) {
     const auto &areas = shared.terrain.at(binding->game);
     const auto &destination = areas.at(region);
@@ -219,32 +236,43 @@ void NativeRealmService::publishCorpses() {
 
 namespace d2x::hosting {
 void NativeRealmService::publishObjects() {
-    std::map<EntityId, std::pair<uint64_t,int>> next; std::vector<Bytes> packets;
+    decltype(peer.objects) next; std::vector<Bytes> packets;
     for (const auto &object : host.visibleObjects(*binding)) {
-        next.emplace(object.id, std::pair{object.revision,object.mode});
-        const auto old = peer.objects.find(object.id); if (old != peer.objects.end() && old->second.first == object.revision) continue;
-        if(object.rule.operation==23 && old!=peer.objects.end()) {
+        const auto old = peer.objects.find(object.id);
+        if(old!=peer.objects.end() && old->second.revision==object.revision) {next.emplace(*old);continue;}
+        const auto position = object.position + shared.terrain.at(binding->game).at(object.area).origin;
+        const bool linkedPortal=object.rule.initialization==11 || object.rule.initialization==12;
+        auto assignment=encodeServerPacket(ServerMessage::AssignObject, [&](auto &out) {
+            out.u8(2); out.u32(wireId(object.id)); out.u16(uint16_t(object.definition)); out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y)));
+            out.u8(uint8_t(object.mode)); out.u8(object.rule.shrine ? uint8_t(object.rule.shrine->code) : object.rule.chest ? uint8_t((object.rule.chest->locked ? 128 : 0) | object.rule.chest->trap) : linkedPortal ? object.portalDestination : object.rule.operation==22 ? uint8_t(object.uses) : uint8_t(object.rule.trap));
+        });
+        next.emplace(object.id,GamePeer::VisibleObject{object.revision,object.mode,assignment});
+        if(old==peer.objects.end() || !sameObjectAssignment(old->second.assignment,assignment,
+            linkedPortal || object.rule.chest || object.rule.operation==22)) {
+            // A new subscription or actual class/position/appearance change
+            // needs its native assignment. A revision alone does not.
+            packets.push_back(std::move(assignment));continue;
+        }
+        if(object.rule.operation==23) {
             // ObjMode::sub_6FC752A0 sends3/TARGETABLE/native mode. A waypoint
             // keeps its initial target flag; ENDANIM writes ON silently.
-            if(object.mode==1) packets.push_back(encodeServerPacket(ServerMessage::UnitMode,[&](auto &out) {
+            if(object.mode==1 && old->second.mode!=object.mode) {
                 const auto area=host.area(binding->game,object.area);
-                out.u8(2);out.u32(wireId(object.id));out.u8(3);
-                out.u8(object.rule.selectable[area->definition.town?2:0]?2:0);out.u32(object.mode);
-            }));
+                packets.push_back(objectModePacket(wireId(object.id),object.mode,object.rule.selectable[area->definition.town?2:0]?2:0));
+            }
             continue;
         }
-        if(old!=peer.objects.end() && (object.rule.chest || object.rule.shrine || object.rule.operation==18 || object.rule.operation==66)) {
+        if(server::objects::usesReliableModeFacts(object.rule)) {
             // Existing-unit changes belong to frozen ObjectFacts. Retain the
             // delivered baseline even if a partial frame exposes newer state.
             next.at(object.id)=old->second;
             continue;
-        } else {
-            const auto position = object.position + shared.terrain.at(binding->game).at(object.area).origin;
-            packets.push_back(encodeServerPacket(ServerMessage::AssignObject, [&](auto &out) {
-                out.u8(2); out.u32(wireId(object.id)); out.u16(uint16_t(object.definition)); out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y)));
-                out.u8(uint8_t(object.mode)); out.u8(object.rule.shrine ? uint8_t(object.rule.shrine->code) : object.rule.chest ? uint8_t((object.rule.chest->locked ? 128 : 0) | object.rule.chest->trap) : object.rule.initialization==11 || object.rule.initialization==12 ? object.portalDestination : object.rule.operation==22 ? uint8_t(object.uses) : uint8_t(object.rule.trap));
-            }));
         }
+        // ObjMode::sub_6FC752A0 is the common existing-object update, also
+        // for doors, seals and quest mechanisms outside the fact migration.
+        // Init11/12 portal ENDANIM changes ON silently, as on the native host.
+        if(old->second.mode!=object.mode && !(linkedPortal && old->second.mode==1 && object.mode==2))
+            packets.push_back(objectModePacket(wireId(object.id),object.mode,object.rule.selectable.at(size_t(object.mode))?2:0));
     }
     for (const auto &[id, revision] : peer.objects) if (!next.contains(id)) {
         (void)revision;
@@ -290,28 +318,37 @@ void NativeRealmService::publishShop() {
 
 namespace d2x::hosting {
 void NativeRealmService::publishPortals() {
-    std::map<EntityId,uint64_t> next; std::vector<Bytes> packets;
+    decltype(peer.portals) next; std::vector<Bytes> packets;
     const auto objects=host.visibleObjects(*binding);
     for(const auto &portal:host.visiblePortals(*binding)) {
         bool changed=false;
         // 0x82 introduces both GUIDs, including the endpoint outside visibility.
         // Track those placeholders too so replacing/closing a pair removes both.
-        next.emplace(portal.fieldId, 0);
-        if(portal.townId) next.emplace(portal.townId, 0);
+        next.try_emplace(portal.fieldId);
+        if(portal.townId) next.try_emplace(portal.townId);
         for(const bool town:{false,true}) {
             if(town && !portal.townId) continue;
             const auto area=town?portal.town:portal.field;
             if (!host.visiblePoint(*binding, area, town ? portal.townPosition : portal.fieldPosition)) continue;
-            const auto id=town?portal.townId:portal.fieldId; next.insert_or_assign(id,portal.revision);
-            if(peer.portals.contains(id) && peer.portals.at(id)==portal.revision) continue;
+            const auto id=town?portal.townId:portal.fieldId;
+            const auto old=peer.portals.find(id);
+            if(old!=peer.portals.end() && old->second.revision==portal.revision) {next.at(id)=old->second;continue;}
             changed=true; const auto position=(town?portal.townPosition:portal.fieldPosition)+shared.terrain.at(binding->game).at(area).origin;
-            if(std::none_of(objects.begin(),objects.end(),[&](const auto &object){return object.id==id;}))
-                packets.push_back(encodeServerPacket(ServerMessage::AssignObject,[&](auto &out){out.u8(2);out.u32(wireId(id));out.u16(uint16_t(portal.rule.definition));out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(portal.isOpened(town)?2:1);out.u8(portal.townId?uint8_t(town?portal.field:portal.town):0);}));
+            const int mode=portal.isOpened(town)?2:1;
+            auto assignment=encodeServerPacket(ServerMessage::AssignObject,[&](auto &out){out.u8(2);out.u32(wireId(id));out.u16(uint16_t(portal.rule.definition));out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(uint8_t(mode));out.u8(portal.townId?uint8_t(town?portal.field:portal.town):0);});
+            next.at(id)={portal.revision,mode,assignment};
+            if(std::none_of(objects.begin(),objects.end(),[&](const auto &object){return object.id==id;}) &&
+                (old==peer.portals.end() || !sameObjectAssignment(old->second.assignment,assignment,true)))
+                packets.push_back(std::move(assignment));
+            // Init11/12 -> ENDANIM opens an already assigned portal silently.
+            // Link/owner updates use 60/82 and must not restart its 51 identity.
             if(portal.townId) packets.push_back(encodeServerPacket(ServerMessage::PortalState,[&](auto &out){out.u8(0);out.u8(uint8_t(town?portal.field:portal.town));out.u32(wireId(id));}));
         }
         if(changed && !portal.shared) packets.push_back(encodeServerPacket(ServerMessage::PortalOwner,[&](auto &out){out.u32(wireId(portal.owner));for(size_t i=0;i<16;++i) out.u8(i<portal.name.size()?uint8_t(portal.name[i]):0);out.u32(wireId(portal.fieldId));out.u32(wireId(portal.townId));}));
     }
-    for(const auto &[id,revision]:peer.portals) if(!next.contains(id) || (!next.at(id) && revision)) { (void)revision; packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(2);out.u32(wireId(id));})); }
+    for(const auto &[id,previous]:peer.portals) if(!next.contains(id) || (!next.at(id).revision && previous.revision)) {
+        packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(2);out.u32(wireId(id));}));
+    }
     if(!packets.empty()) sendGameBatch(std::move(packets));
     peer.portals.swap(next);
 }

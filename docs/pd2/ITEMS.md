@@ -211,4 +211,6 @@ PD2护甲防御及暗金／套装强制无形、不可破坏的属性检查，�
 
 ### Lucion献祭与奖励箱
 
+客户端提交共用RemoteInventory::submitQuestItem，复验实际面板来源与本人已解码Cursor；UI仍按当前pd2SacrificeItems筛选候选，未改献祭资格、配方或44／58协议。该公共入口调整未构建／未运行回归。
+
 当前41d49的396190／372B60／364B40与3A9480分别负责原44提交、护符替换／亵渎和623奖励箱。资格、CubeMain实际配方、两条TC及随机／事务边界见[F61](parity/MAPS.md#f61-专属4145控制器的出生与事件依赖)。独立消费者位于hosting/pd2/{sacrifice,lucion_chest}与maps/sacrifice；客户端使用当前MPQ desecratepanel，保留真实物品属性和原44／58交互。属性叠加与恢复速率的32位加法使用nativeAdd；镶嵌／方块属性执行更新同一运行种子，不重新准备已落定的保存属性。

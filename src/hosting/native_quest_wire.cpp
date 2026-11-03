@@ -1,5 +1,5 @@
 #include "native_quest_wire.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/facts/quest.hpp"
 #include "content/classic_data.hpp"
 #include "persistence/d2s_quests.hpp"
 #include "persistence/d2s_fixed_sections.hpp"

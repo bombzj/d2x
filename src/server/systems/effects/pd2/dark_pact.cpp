@@ -1,4 +1,6 @@
 #include "dark_pact.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "../system.hpp"
 #include "../attribute_projection.hpp"
 #include "server/player_store.hpp"

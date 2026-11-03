@@ -1,4 +1,5 @@
 #include "monster_timing.hpp"
+#include "server/runtime/events.hpp"
 #include <algorithm>
 #include <stdexcept>
 

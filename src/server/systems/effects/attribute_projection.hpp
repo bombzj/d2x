@@ -9,7 +9,8 @@ namespace d2x {struct CurseSpec;struct StatValue;struct AuraDefinition;}
 #include <utility>
 #include "gameplay/effects/definition.hpp"
 #include "server/systems/attributes/calculation.hpp"
-#include "server/runtime/events.hpp"
+#include "server/runtime/domain_fact.hpp"
+#include "gameplay/character/persistent_character.hpp"
 #include "gameplay/units/resources.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 namespace d2x::server {struct PlayerState;}

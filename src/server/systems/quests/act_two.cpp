@@ -1,10 +1,15 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/npc.hpp"
+#include "server/runtime/facts/quest.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
 #include <stdexcept>
 #include "server/systems/missiles/system.hpp"
 #include "detail.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/objects/system.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/systems/social/system.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
@@ -152,7 +157,17 @@ StepStatus System::actTwoStep(TickContext tick) {
     if(state_.actTwo.tombAt && !state_.actTwo.tombOpen && tick.tick>=state_.actTwo.tombAt) {
         const auto &area=ports_.areas.at(state_.actTwo.tomb);
         const auto entrance=std::find_if(area.definition.objects.begin(),area.definition.objects.end(),[](const auto &o){return o.questSpawn;});
-        if(entrance!=area.definition.objects.end() && tick.tick>=state_.actTwo.tombAt+entrance->rule.openingTicks) {ports_.world.openTombWall(state_.actTwo.tomb);state_.actTwo.tombOpen=true;}
+        // Timer_UpdateObjects marks the tomb open when the entrance is born,
+        // not after its client animation. Wait for actual admission so deferred
+        // population cannot turn the prepared marker into an existing portal.
+        if(entrance!=area.definition.objects.end()) {
+            const auto &objects=ports_.objects.read().objects;
+            const auto object=objects.find(entrance->id);
+            if(object!=objects.end() && object->second.area==state_.actTwo.tomb &&
+                object->second.rule.operation==43 && object->second.mode!=0) {
+                ports_.world.openTombWall(state_.actTwo.tomb);state_.actTwo.tombOpen=true;
+            }
+        }
     }
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered) continue;

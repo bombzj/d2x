@@ -98,7 +98,7 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
         state_="searching";reason_.clear();segment_.reset();previous_=view.world.playerPosition;visited_.clear();
         source_=kind==Goal::Point?"explicit-point":kind==Goal::Unit?"assigned-unit":"";
         client_.reset();server_=view.world.playerPosition;edgeStart_.reset();edgeEnd_.reset();exitLevel_.reset();
-        townTurnSince_={};legRevision_=legDiscontinuity_=0;
+        townTurnSince_={};legDiscontinuity_=0;
         lastFrom_.reset();lastRequest_.reset();lastTarget_.reset();closeApproach_=false;approachRetries_=0;clickedAt_={};decisions_=0;clientMoving_=false;
         resyncApproach_=request.value("resyncApproach",false);
         changeStance_=request.value("changeStance",false);
@@ -225,14 +225,18 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         const Vec approach=Vec{float(lastFrom_->x),float(lastFrom_->y)}-offset+Vec{.5f,.5f};
         const Vec in=(bend-approach).unit(),out=(next-bend).unit();
         if((next-bend).length()<1 || in.x*out.x+in.y*out.y>.85f ||
-            search_.wallClearance(map.grid,bend)>DebugNavigationSearch::townClearance+1 || !pointerClear(bend)) return false;
-        // Keep the submitted leg through the inside corner. A fresh host
+            search_.wallClearance(map.grid,bend)>DebugNavigationSearch::townClearance+1) return false;
+        // Keep the submitted leg through the inside corner. The latest host
         // sample behind it may need a little longer than the displayed feet.
         const bool early=pathMoving && distance(player,*segment_)>1;
         const auto &unit=actor->second;
         const Vec host=Vec{float(server_->x),float(server_->y)}-offset+Vec{.5f,.5f};
-        const bool behind=unit.pathVerificationRevision>legRevision_ && unit.positionRevision==unit.pathVerificationRevision &&
-            distance(*server_,*segment_)>1 && distance(*server_,*segment_)<=24 &&
+        // Pointer updates can outpace native verification. Requiring a sample
+        // newer than this leg disables the bend guard on every replacement.
+        // An unchanged-area verification still constrains a safe turn; it
+        // never becomes a request to walk back to that sampled position.
+        const bool behind=unit.pathVerificationRevision && unit.positionRevision==unit.pathVerificationRevision &&
+            distance(*server_,*segment_)>1 && distance(*server_,*segment_)<=50 &&
             !map.grid.nativeMovementSegment(host,next,playerMovement);
         if(!early && !behind) return false;
         if(townTurnSince_==Clock::time_point{}) townTurnSince_=now;
@@ -258,14 +262,14 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
              (waypointOpening_ && view.world.waypointRequested==unit_->id));
         const bool waypointUnanswered=waitingAtTarget && waypointOpening_ && now-clickedAt_>=3*settle;
         if(waypointUnanswered && goal_==Goal::Unit) {
-            session.use_waypoint(0);finish("failed","Waypoint opening remained unanswered in range",control);return;
+            control.useWaypoint(0);finish("failed","Waypoint opening remained unanswered in range",control);return;
         }
         if((waitingAtTarget && !waypointUnanswered) || (unit_->type==1 && view.world.npcPendingConversation && view.world.npcRequested==unit_->id) ||
             now-clickedAt_<settle || now-progressAt_<settle) {
             reason_="Waiting for the actual opening after bounded quick clicks";return;
         }
-        if(unit_->type==1 && view.world.npcRequested==unit_->id) session.close_npc();
-        if(waypointOpening_ && view.world.waypointRequested==unit_->id) session.use_waypoint(0);
+        if(unit_->type==1 && view.world.npcRequested==unit_->id) control.closeNpc();
+        if(waypointOpening_ && view.world.waypointRequested==unit_->id) control.useWaypoint(0);
         if(approachRetries_>=2) {finish("failed","Interaction opening had no result after quick clicks and local approaches",control);return;}
         visited_.emplace(player.x,player.y);++approachRetries_;closeApproach_=true;
         forceApproach_=true;
@@ -535,6 +539,9 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             };
             if(localArrival || directApproach()) {
                 if(!hostReady && holdTownTurn(pathGrid.nativeMovementTarget(from,targetPoint,playerMovement))) return;
+                if(laggingTurnOrigin) {
+                    reason_="Keeping the town bend before handing off the unit approach";return;
+                }
                 const bool follow=forceApproach_ || (!waypoint && localArrival && !hostReady);
                 if(!control.interact(*unit_,run_,{},pathPosition,follow)) {reason_=control.reason();return;}
                 forceApproach_=false;
@@ -770,13 +777,20 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         // After the brief grace prefer a shorter forward input visible from
         // both feet. Never walk back to the packet position to reconcile it.
         const Vec delta=nextLocal-from;
+        bool commonPointer=false;
         for(int n=int(delta.length())-1;n>=2;--n) {
             const auto sample=from+delta.unit()*float(n);
             const Vec at{std::floor(sample.x)+.5f,std::floor(sample.y)+.5f};
             if(pointerClear(at) && pathGrid.nativeMovementSegment(*laggingTurnOrigin,at,playerMovement) &&
                 pathGrid.nativeMovementSegment(at,nextLocal,playerMovement)) {
-                next=point(at+offset);break;
+                next=point(at+offset);commonPointer=true;break;
             }
+        }
+        if(!commonPointer) {
+            // No safe shared continuation exists yet. Replacing the bend
+            // anyway makes the host clip its path against the inside wall.
+            reason_="Keeping the town bend until a forward pointer is reachable from both observed positions";
+            return;
         }
     }
     if(segment_ && pathMoving) {
@@ -799,7 +813,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         reason_="Waiting before retrying the same temporarily stopped native path";return;
     }
     if(!control.move(next,run_,{},pathPosition)) {reason_=control.reason();return;}
-    lastFrom_=player;lastRequest_=next;townTurnSince_={};legRevision_=view.world.revision;
+    lastFrom_=player;lastRequest_=next;townTurnSince_={};
     legDiscontinuity_=actor==view.world.units.end()?0:actor->second.positionDiscontinuity;
     segment_=next;lastTarget_=point_;submittedAt_=now;++moves_;reason_.clear();if(!searching) state_="moving";
     } catch(const DebugSearchPending &) {

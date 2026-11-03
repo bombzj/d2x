@@ -16,12 +16,82 @@
     "hazardLookaheadMs": 350,
     "hazardPadding": 3,
     "scope": "defensive",
-    "fallbackSkills": [
-      "Ice Blast",
-      "Fire Bolt",
-      "Charged Bolt"
-    ],
-    "skill": "Frozen Orb"
+    "byClass": {
+      "amazon": {
+        "skill": {
+          "skill": "Lightning Fury",
+          "minLevel": 1
+        },
+        "fallbackSkills": [
+          "Charged Strike",
+          "Jab",
+          "Attack"
+        ]
+      },
+      "sorceress": {
+        "skill": {
+          "skill": "Frozen Orb",
+          "minLevel": 1
+        },
+        "fallbackSkills": [
+          "Ice Blast",
+          "Fire Bolt",
+          "Charged Bolt",
+          "Attack"
+        ]
+      },
+      "necromancer": {
+        "skill": {
+          "skill": "Bone Spear",
+          "minLevel": 1
+        },
+        "fallbackSkills": [
+          "Bone Spirit",
+          "Teeth",
+          "Attack"
+        ]
+      },
+      "paladin": {
+        "skill": {
+          "skill": "Zeal",
+          "minLevel": 1
+        },
+        "fallbackSkills": [
+          "Attack"
+        ]
+      },
+      "barbarian": {
+        "skill": {
+          "skill": "Concentrate",
+          "minLevel": 1
+        },
+        "fallbackSkills": [
+          "Berserk",
+          "Bash",
+          "Attack"
+        ]
+      },
+      "druid": {
+        "skill": {
+          "skill": "Tornado",
+          "minLevel": 1
+        },
+        "fallbackSkills": [
+          "Firestorm",
+          "Attack"
+        ]
+      },
+      "assassin": {
+        "skill": {
+          "skill": "Fire Trauma",
+          "minLevel": 1
+        },
+        "fallbackSkills": [
+          "Shock Field",
+          "Attack"
+        ]
+      }
+    }
   },
   "events": {
     "waitSeconds": 90,
@@ -31,7 +101,7 @@
   },
   "mobility": {
     "distance": 48,
-    "mode": "teleport"
+    "mode": "auto"
   },
   "supplies": {
     "healthCount": 8,

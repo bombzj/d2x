@@ -22,15 +22,30 @@ void drawClassicGlobe(const GpuAnimation &orbs, const GpuAnimation &overlap, boo
             DrawTexturePro(texture, {0, empty, float(texture.width), float(filled)}, bounds, {0, 0}, 0, WHITE);
         }
     }
-    imageAt(overlap.frame(0, mana ? 1 : 0), hudRect(mana ? 691 : 28, mana ? 96 : 93, 82, 88));
+    imageAt(overlap.frame(0, mana ? 1 : 0), hudRect(mana ? 691 : 28, mana ? 96 : 93, 82, 88,
+        mana ? HudAnchor::Right : HudAnchor::Left));
 }
 void drawClassicHud(const ClassicHudArt &art, const ClassicHudValues &value) {
     DrawRectangle(0, H - HUD, W, HUD, BLACK);
+    // Frame 6's first 80 pixels contain the original empty bordered strip.
+    // Tile its interior horizontally, preserving the artwork's pixel size.
+    if (const auto *strip = art.panel.frame(0, 6); strip && W > 800) {
+        const auto fill = [&](float left, float right) {
+            for (float x = left; x < right; x += 78) {
+                const float width = std::min(78.f, right - x);
+                DrawTexturePro(strip->texture, {1, 0, width, float(strip->texture.height)},
+                    {x, float(H - strip->texture.height), width, float(strip->texture.height)}, {}, 0, WHITE);
+            }
+        };
+        fill(165, hudRect(165, 0, 0, 0).x);
+        fill(hudRect(635, 0, 0, 0).x, hudSkillSlot(true).x);
+    }
     for (bool mana : {false, true}) imageAt(art.orbs.frame(0, mana ? 1 : 0), hudGlobe(mana), BLACK);
     constexpr std::array<float, 6> offsets{0, 165, 293, 421, 549, 683};
     for (size_t i = 0; i < offsets.size(); ++i) {
         const auto &part = art.panel.frames.at(i);
-        imageAt(&part, hudRect(offsets[i], float(part.texture.height), float(part.texture.width), float(part.texture.height)));
+        const auto anchor = i == 0 ? HudAnchor::Left : i == 5 ? HudAnchor::Right : HudAnchor::Center;
+        imageAt(&part, hudRect(offsets[i], float(part.texture.height), float(part.texture.width), float(part.texture.height), anchor));
     }
     drawClassicGlobe(art.orbs, art.overlap, false, value.life);
     drawClassicGlobe(art.orbs, art.overlap, true, value.mana);
@@ -49,6 +64,7 @@ void drawClassicHud(const ClassicHudArt &art, const ClassicHudValues &value) {
     imageAt(art.run.frame(0, value.running ? 2 : 0), hudRunButton());
     imageAt(art.points.frame(0, value.attributePoints ? (value.pressedPoint == false ? 1 : 0) : 2), hudRect(206, 38, 30, 30));
     imageAt(art.points.frame(0, value.skillPoints ? (value.pressedPoint == true ? 1 : 0) : 2), hudRect(563, 38, 30, 30));
-    imageAt(art.menu.frame(0, value.miniPanel ? 2 : 0), hudMenuButton());
+    if (const auto *image = art.menu.frame(0, (value.miniPanel ? 2 : 0) + int(value.menuPressed)))
+        imageAt(image, hudMenuButtonArt(*image));
 }
 } // namespace d2x

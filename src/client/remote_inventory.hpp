@@ -35,5 +35,7 @@ class RemoteInventory {
     OnlineStashLayout stashLayout() const { return stashLayout_; }
     const std::string &reason() const { return reason_; }
     bool submit(net::RealmSession &, OnlineItemCommand);
+    bool submitQuestItem(net::RealmSession &,uint32_t source,std::optional<uint32_t> item,
+                         std::optional<OnlineIntentContext> context = {});
 };
 } // namespace d2x

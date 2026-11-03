@@ -268,9 +268,9 @@ Grid RemoteScene::Impl::navigationCollision(const Grid &terrain,Vec origin,Onlin
 void RemoteScene::Impl::plan(Motion &m, Vec goal, const Map &map, Vec origin, MovementCollisionRule rule, float speed,
           const OnlineUnit &unit, std::optional<OnlineUnitKey> target) {
     m.route.clear(); m.goal = goal;
-    // A monster retargets between render frames without restarting its
-    // 25 Hz clock. NativePathStep detects a changed precise origin itself.
-    if(unit.key.type!=1) {m.pathStep.reset();m.pathElapsed=0;}
+    // D2Common_10142 replaces path points, not precise coordinates or the
+    // game clock. Retargeting must preserve the unconsumed part of a 25 Hz
+    // frame for players as well as monsters. Corrections reset separately.
     if (speed <= 0 || rule.size <= 0) return;
     // Native precise coordinates target cell centers; presentation adds
     // its half-cell offset when drawing. Match the control planner here.
@@ -735,7 +735,8 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     float pathElapsed=elapsed;
     if (goal && !knocked) {
         const bool movingUnitTarget=playerTarget.has_value() || (u.key.type==1 && u.destinationUnit.has_value());
-        const bool changedTarget = !m.goal || (movingUnitTarget
+        const bool changedTarget = !m.goal || (u.key.type==0 && playerTarget
+            ? nativeUnitTargetMoved(*m.goal,*goal,playerTarget->type) : movingUnitTarget
             ? (std::floor(m.goal->x+.5f) != std::floor(goal->x+.5f) ||
                std::floor(m.goal->y+.5f) != std::floor(goal->y+.5f))
             : (*m.goal - *goal).length() > .5f);
@@ -744,12 +745,10 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         if(u.key.type==1 && !changedTarget && !m.route.empty() && m.positionRevision==u.positionRevision &&
             m.actionRevision==u.actionRevision && m.discontinuity==u.positionDiscontinuity)
             pathElapsed=frameTime;
-        // A fresh ordinary input must retry a path stopped by dynamic
-        // collision, even when its pointer target is unchanged. Otherwise
-        // the retained goal prevents replanning forever after the blocker
-        // moves away, while authority has already accepted the new input.
-        const bool retryStoppedPath=requested && request->revision!=m.requestRevision && m.route.empty();
-        if (changedTarget || corrected || retryStoppedPath ||
+        // An admitted ordinary input recomputes the native path even if
+        // its coordinate is unchanged, just as StartXY/StartID on authority.
+        const bool newRequest=requested && request->revision!=m.requestRevision;
+        if (changedTarget || corrected || newRequest ||
             m.actionRevision != u.actionRevision)
             plan(m, *goal, map, origin, rule, speed, u,
                 requested?request->unit:u.destinationUnit);
@@ -809,7 +808,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
                 const auto pathGrid=navigationCollision(map.grid,origin,u.key,playerTarget);
                 auto route = nativeTargetPath(pathGrid, m.position - origin, *arrival, playerTarget->type);
                 for (auto &point : route) point = point + origin;
-                m.route = std::move(route); m.pathStep.reset();
+                m.route = std::move(route);
             }
         }
     };
