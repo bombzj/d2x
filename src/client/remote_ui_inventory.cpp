@@ -532,7 +532,7 @@ void RemoteUiClients::Impl::inventoryCommand(InventoryIntent intent) {
                     notice = "Swap destination must belong to the covered item's container."; return;
                 }
                 if (loc) {
-                    const auto cell = v.destination ? v.destination->cell : loc->cell;
+                    const Cell cell = v.destination ? v.destination->cell : loc->cell;
                     if (cell.x < 0 || cell.y < 0 || cell.x > UINT8_MAX || cell.y > UINT8_MAX) {
                         notice = "Swap destination is outside the native grid coordinate range."; return;
                     }

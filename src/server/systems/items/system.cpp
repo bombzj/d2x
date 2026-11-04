@@ -108,7 +108,7 @@ ItemInstance restoredGroundItem(const D2sItem &saved,const NativeItemSaveRules &
     }
     const auto copy=[](const auto &source,auto &destination) {
         for(const auto &stat:source) {
-            if(stat.value<INT32_MIN || stat.value>INT32_MAX) throw std::invalid_argument("Inactive item stat out of range");
+            if((stat.value)<INT32_MIN || (stat.value)>INT32_MAX) throw std::invalid_argument("Inactive item stat out of range");
             destination.push_back({int(stat.id),stat.parameter,int(stat.value)});
         }
     };
