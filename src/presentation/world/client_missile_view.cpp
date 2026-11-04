@@ -14,7 +14,6 @@
 #include <array>
 #include <cmath>
 #include <deque>
-#include <limits>
 
 namespace d2x {
 namespace {
@@ -474,7 +473,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
             return true;
         }
         if(program.hitFunction==48) {
-            if(!effect.owner) return true;
+            if(!effect.owner || (program.rules==ClientMissileProgram::Rules::Original && !relatedOwner(effect))) return true;
             emit(program.hitChildren[0],effect.pos,{},effect,overshoot);
             constexpr std::array<Vec,8> offsets{Vec{0,1},Vec{1,1},Vec{1,0},Vec{1,-1},Vec{0,-1},Vec{-1,-1},Vec{-1,0},Vec{-1,1}};
             for(const auto offset:offsets) {
@@ -493,7 +492,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
             return true;
         }
         if(program.hitFunction==47) {
-            if(!effect.owner) return true;
+            if(!effect.owner || (program.rules==ClientMissileProgram::Rules::Original && !relatedOwner(effect))) return true;
             int count=nativeAdd(program.hitParameters[0],nativeMultiply(program.hitParameters[1],nativeSubtract(effect.level,1)));
             if(count<=0) {
                 if(!effect.impactCount) return true;
@@ -515,7 +514,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
             return true;
         }
         if(program.hitFunction==46) {
-            if(!effect.owner) return true;
+            if(!effect.owner || (program.rules==ClientMissileProgram::Rules::Original && !relatedOwner(effect))) return true;
             int count=nativeAdd(program.hitParameters[0],nativeMultiply(program.hitParameters[1],nativeSubtract(effect.level,1)));
             if(count<=0) {
                 if(!effect.impactCount) return true;
@@ -572,7 +571,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                 emit(program.hitChildren[0],effect.pos,heading.direction,effect,overshoot,cloud.poisonVelocity[heading.secondary?1:0]);
         }
         if(program.hitFunction==50 || program.hitFunction==52) {
-            if(!effect.owner) return true;
+            if(!effect.owner || (program.rules==ClientMissileProgram::Rules::Original && !relatedOwner(effect))) return true;
             const int rockGuard=program.hitChildren[program.hitFunction==50?0:1];
             const int fireMissile=program.hitChildren[program.hitFunction==50?1:2];
             if(program.hitFunction==52) emit(program.hitChildren[0],effect.pos,{},effect,overshoot);
@@ -838,7 +837,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                         return a.type==2 && a.nativeId==uint32_t((*effect.nativeParameters)[0]);
                     });
                     if(previous==anchors.end()) {(*effect.nativeParameters)[0]=int32_t(stone.nativeId);continue;}
-                    ClientMissileInitialization init;init.sourceSkill=effect.sourceSkill;
+                    ClientMissileInitialization init;init.sourceSkill=effect.sourceSkill;init.distanceLimited=true;
                     emit(program.children[1],stone.position,previous->position-stone.position,effect,childAge,-1,0,-1,init);
                     if(limitedRandom(effect.random,4)==0) (*effect.nativeParameters)[0]=int32_t(stone.nativeId);
                 }
@@ -847,7 +846,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
             case 31: {
                 // LoD B4B80 / D36D0: seven timed beams, then the wall strike.
                 const int current=effect.nativeCurrentFrames;
-                if(current==150) shakeScreen(25,0,4000,0,-childAge);
+                if(current==150) shakeScreen(25,0,100,0,-childAge);
                 constexpr std::array<std::array<int,3>,7> beams{{{3,-2,4},{1,-3,58},{3,1,13},
                     {-2,-3,49},{1,3,22},{-3,0,40},{-2,2,31}}};
                 for(size_t i=0;i<beams.size();++i) if(current==325-int(i)*25) {
@@ -1098,11 +1097,11 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
             case 38: {
                 // Retail BA7E0 -> B4FB0: fourteen fixed directions, once at
                 // elapsed 10. These are engine offsets, not a replacement MPQ.
-                if(elapsedFrames!=10 || !forgeObject(effect) || !relatedOwner(effect)) break;
+                if(elapsedFrames!=10 || !forgeObject(effect)) break;
                 constexpr std::array<int,14> x{-4,2,4,-3,-2,3,5,-3,-5,5,-6,-1,0,6};
                 constexpr std::array<int,14> y{6,4,-4,-2,1,7,0,3,-4,-3,4,-5,5,-3};
-                const auto shard=assets_.clientMissilePrograms.find(374);if(shard==assets_.clientMissilePrograms.end()) break;
-                for(size_t index=0;index<x.size();++index) {
+                const auto shard=assets_.clientMissilePrograms.find(374);
+                if(relatedOwner(effect) && shard!=assets_.clientMissilePrograms.end()) for(size_t index=0;index<x.size();++index) {
                     const int distance=(x[index]>=y[index]?std::abs(x[index])+2*std::abs(y[index]):std::abs(y[index])+2*std::abs(x[index]))>>1;
                     const int frames=nativeMultiply(shard->second.frames,distance)/6;
                     ClientMissileInitialization initialization;initialization.totalFrames=frames;initialization.sourceSkill=effect.sourceSkill;

@@ -88,6 +88,10 @@ REA属于开发期分析工具，不进入D2X构建或玩法依赖。上述快�
 
 ## 原版1.13c静态与开发对照证据
 
+移动补查使用下述同快照：Common路径函数表RVA942F0确认3指向6B7B70（清索引后进入Toward）、12指向67850（-4后-2，无追加点才+2），共同偏移求路helper674C0；方向表8C320第19项为2／1／0。D2Game的5F入口RVA D0790在D081B检查距离5，D082C／D0831检查15／45，D0875查询有效目标，D0897坐标模式调用后直接返回；不以求路失败额外发15。REA有限批次retail-sync-server／retail-sync-entry实际分析CD790可达性、E0BD0目标查询及E19C0放置，Evidence分别为`ev_8c6d94e3607bf4166bb97f84ce5511df8cb93d133223af380284d19c7a7c139f`、`ev_148d36860246c01de1c0bd154f3c0a145ceb9b1db3afa308206f8419ae7a319a`、`ev_3b731d55d222f22e16b668f411be5b81678ab87a97f06aab8b7b15866d7ed57b`。D0790／CFE40未被Ghidra识别为函数，保留失败报告并用有界机器码核对，空xref不是无消费者证据。产物仍留忽略的reference/pd2-cn-analysis目录。
+
+击退依据为本地D2MOO `PathMisc::PATH_Knockback_Server／Client`、`Path.cpp`路径标志表、`Step.cpp`进入格处理、`Units::UNITS_UpdateKnockbackAnimRateAndVelocity`及Game的PlrModes／MonsterMode／MonsterMsg／SCmd调用链：服务端8号按(nDist>>1)+1求整数方向终点并射线裁剪，客户端11号直接裁剪目标；11带位4，仅改占位，8仍碰撞；路径速度4096。角色nDist=5；怪物BaseId沙地跳跃者为10，其余5。MonsterMsg模式13禁用单位目标发包，67坐标取最后折点，SCmd将8改11。MonsterMode::sub_6FC64B60要求mGH与mKB，sub_6FC64E20按动画周期结束调用sub_6FC64CD0，后者恢复前类型、普通GH和沙地跳跃者15／45帧AI延迟；普通GH及专用AI等待已有源码消费者，完整前类型恢复尚未接齐。角色StartID在已有模式19时不重启击退，sub_6FC7F780经SUnit::sub_6FCBC930取得路径完成结果再待机或续行。尚未逐函数用同版DLL认证整条结束链。源码与未运行范围见[移动审计](../modules/MAP.md#移动一致性审计边界)。
+
 本人位置纠偏另核对同一D2Game（MD5 `978f6f74cd031bce6ecee602cd5988cc`，ImageBase `0x6fc20000`）：RVA4A6E0的4A768–4A777只写第一个失效纠偏记录并返回；本地D2MOO `CLIENTS_NotifyWarpAttempt`缺少该退出，不能照抄其填满五槽的行为。4A660检查五条记录的2250帧有效期；CFE67初始化125帧，CFE75–CFE7A只允许`Game+6A == 0`进入长冷却，CFE7C–CFE94推进玩家单位+20／+24种子，表FB170为50%／1500、25%／3000、25%／4500帧。D2X单机nativeGameType=1、TCP/IP=2，不适用该长冷却。原DLL与反汇编仅只读取证；源码及未运行边界见[本人位置回包](../modules/MAP.md#本人位置回包)。
 
 普通路径重算定点核对同快照D2Common（MD5 `ee1238806ef6d6d9801d12a09d128fe1`，ImageBase `0x6fd50000`）：RVA36230对应D2Common_10142，362B6–362C6读取既有定点坐标的整数部分，3644E／36459清路径索引／点数，不将位置重置为整数中心；普通新命令入口参考D2MOO `PlrModes::StartXY／StartID→sub_6FC7F600`。RVA DB70的DC07–DC31确认活目标相对tPrevTargetCoord任一轴大于5才立即重算；DC46–DC61的路径耗尽／final坐标分支也适用于物件，与本地D2MOO转录把该分支只放在活目标内不同。原二进制与反汇编留忽略目录`artifacts/single-movement-sync-analysis-20261103/original-path-update-disassembly.txt`；不据局部修正认证全部路径生命周期。
@@ -106,7 +110,13 @@ D2Client的03处理RVA `ADB50`读取幕号、地图种子、城镇及尾部种�
 
 同一原版 1.13c D2Client 的坐标走跑 01／03 经 RVA 29FA0 分派至 149E0，单位走跑 02／04 也进入公共发送函数 143E0。14415 读取 GetTickCount，01–04 均走 14446 的 200ms 分支。间隔不足时，1445E 逐字节比较前一包，内容相同才跳过；内容不同时，14462 起更新缓存，144A1 调用网络发送。该证据覆盖已形成的移动指令，长按鼠标何时产生下一条指令仍由上层输入处理。
 
+零体力客户端转换另核对同版D2Client：RVA1C50C检查当前模式3，1C515调用19D80；19D88限定本人，19D90–19D9C读取stat10并仅在零值继续。19DF0–19E2B保留单位目标进入19830，坐标目标分支19E36–19EBA读取原目标并调用2A040重算，19E96–19EAB按城镇选择Walk6／2和待机5／1；成功经2A6C0换模式，失败经19710待机。该函数未显示扣体力，不据缺少本地扣体力代码认定缺陷，也不把服务端RunDrain直接移入客户端。当前转换及剩余范围见[移动审计](../modules/MAP.md#移动一致性审计边界)。
+
+同一组DLL摘要重新只读核实后的移动分支：D2Client RVA3ADF0在本人模式3及输入资格下经2A6C0先切本地模式2，再于3AE30／3AE35发送54；3AE40在本人模式2且原始stamina非零等资格下经3AE87切本地模式3，再于3AE8D／3AE90发送53。Common RVA35470的35504转35160执行门目标准备，351C9检查Objects朝向，351DD／351E5对Y减／加2，351F6／351FE对X减／加2。Common RVA DC80–DCA2将停止位置16.16低位归为0x8000，DCB0–DCCC清推进标志、折点及速度。E230的E277–E2C9虽然计算客户端／异步标志，仍进入DB70及步进，不支持本地D2MOO转录中以该条件包住整段推进的解释。D2Client AF640的AF673–AF682把15尾字节传入A7E20，A7F08及A8012消费它；尚未认证所有输入／附加处理，不能直接命名为保留路径开关。各分支与当前实现的差异及未运行边界统一见[移动一致性审计](../modules/MAP.md#移动一致性审计边界)，不据静态入口宣称完整原客户端复刻。
+
 玩家动态占位另核对同一1.13c D2Common（MD5 `ee1238806ef6d6d9801d12a09d128fe1`，ImageBase `0x6fd50000`）：RVA359D0入口在359DF–359EC将type0／1共同送入35A2A，35A31读取DynamicPath+0x48的碰撞pattern，35A83调用4BE90按pattern写位；type2另走矩形。玩家与怪物同有presence，与本地1.10f D2MOO `PATH_AddCollisionFootprintForUnit`给玩家调用SetMaskWithSize的转录不同。RVA361BD–361CE确认玩家FootprintMask=0x80、MoveTestMask=0x1c09及Straight；RVA363D0–36406核对自身与0x800目标临时撤脚印，364B8–364CA按序恢复。实际入场、走跑、死亡与旅行入口及仍未认证的历史位交错见[地图](../modules/MAP.md#单位占位与入场)。原DLL只读，不修改、提交或分发。
+
+原版15链已实际通过REA 6.7.0的MCP／Ghidra 12.1.4查询：目标为原版目录D2Client.dll，SHA256 `dd8bc6025de921216a97c17f97cd1a50fbb85926e838ec60e13451448836d906`，分析前后摘要一致；分析配置为x86 shared-library、ephemeral-source-immutable，不执行DLL入口。有限批次`retail-movement`及`retail-movement-followup`的请求与Evidence分别留在忽略目录`reference/pd2-cn-analysis/rea-requests-*`及`ghidra-*`，均正常关闭。AF640／A7E20报告分别为`ev_cf87648174008a789f20e2bce58634dadef18a76a0ffb3a3037a1922318b29ea`／`ev_0538fb0240122ae261e2e2c753949863add2448f07a38070fbeb3e475dce67d5`；A7E20引用查询得到调用点1B60A、AF682、C7351，1B60A及C7351两条非15路径尚未全部闭合。尾字节消费者10EA0的REA报告及原机器码一致：只写全局RVA11C554为GetTickCount()+500，10EC0查询该时间，到期清零，未到期进入屏幕坐标处理；不能将此函数命名为清输入、移动冷却或保留路径开关。81720另有ESI参数及到814F0的尾跳，后者存在区域和随机消费；完整表现语义仍待核实。反编译存在in_EAX／unaff_ESI、导入实参缺失、栈槽合并及可疑条件，报告也保留terminal-call边界告警；必须逐条用调用点寄存器／栈及机器码复核，不将伪代码直接移植为客户端规则。
 
 同快照的持久碰撞位补查：RVA4BB70按房间坐标定位16位格，4BBA0–4BBA2执行NOT／AND；Set入口4B930的4B960直接OR该格，均无重叠计数。ResetPattern入口4BCF0的4BD30–4BD3A对SmallUnit另清0x1000，4BD90–4BD9A对SmallPet另清0x2000；对应D2MOO `COLLISION_ResetMaskWithPattern`。1.13c RVA4D5C0的4D5D7调用4BCF0撤旧位，4D5F1调用4CE90检查新格，无碰撞在4D60D调用4BE90置新位，失败在4D62A恢复旧位；对应D2MOO `COLLISION_TrySetUnitCollisionMask`。这些证据确认状态随操作历史变化，不能把当前领域脚印的位或重建或简单贡献计数当成等价实现；迁移入口与保留边界见[动态碰撞格](../modules/SERVER_SYSTEMS.md#动态碰撞格的原版语义与迁移边界)。
 

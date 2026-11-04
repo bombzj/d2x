@@ -86,6 +86,9 @@ class RealmSession {
     bool send_chat(std::string text, std::string receiver = {}, bool overhead = false);
     bool send_chat_input(std::string text); // Client syntax and room/BNCS routing; local actions belong to app.
     bool send_bnet_command(std::string text);
+    bool send_lobby_chat(std::string text, uint64_t connectionGeneration);
+    bool join_lobby_channel(std::string name, uint64_t connectionGeneration);
+    bool list_lobby_channels(uint64_t connectionGeneration);
     bool chat_relation(uint32_t player, bool squelch, bool enabled);
     bool player_relation(uint32_t player, OnlineRelationAction action, bool enabled, uint64_t gameGeneration);
     bool party_action(uint32_t player, OnlinePartyAction action, uint64_t gameGeneration);
@@ -116,7 +119,7 @@ class RealmSession {
     bool cancel_item_targeting(std::optional<OnlineIntentContext> context = {});
     bool play_voice(uint16_t sound, std::optional<OnlineIntentContext> context = {});
     bool highlight_door(uint32_t object, std::optional<OnlineIntentContext> context = {});
-    bool set_running_animation(bool run, std::optional<OnlineIntentContext> context = {});
+    bool set_running_animation(bool run, std::optional<OnlineIntentContext> context = {}, std::optional<uint8_t> localMode = {});
     bool confirm_npc_voice(uint16_t nativeClass, std::optional<OnlineIntentContext> context = {});
     bool acknowledge_npc_message(uint16_t stringId, std::optional<OnlineIntentContext> context = {});
     bool acknowledge_quest_log(uint16_t nativeSlot, uint64_t gameGeneration);

@@ -7,14 +7,11 @@
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/effects/system.hpp"
-#include "server/systems/inventory/system.hpp"
 #include "server/systems/transactions/system.hpp"
-#include "gameplay/combat/accuracy.hpp"
 #include "gameplay/combat/weapon_hit.hpp"
 #include "gameplay/combat/scaling.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
-#include "gameplay/skills/assassin_spec.hpp"
 #include <algorithm>
 
 namespace d2x::server::combat {
@@ -356,7 +353,12 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     if(execution.hostile && !impact.reaction) ports_.effects.triggerMonsterCurse(impact.source,tick.tick);
     if(impact.nextDelay) ports_.monsters.hitDelay(live->id,tick.tick+impact.nextDelay);
     if(impact.knockback && live->alive() && live->life>0) {
-        if(source || player) ports_.monsters.knockback(live->id,source?source->position:player->position,tick.tick);
+        if(source || player) {
+            const auto sourceArea=source?source->area:player->area;
+            const auto position=(source?source->position:player->position)+ports_.areas.at(sourceArea).definition.origin-
+                ports_.areas.at(live->area).definition.origin;
+            ports_.monsters.knockback(live->id,position,tick.tick);
+        }
         cancel(live->id);
     }
     if(execution.hostile) {

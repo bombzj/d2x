@@ -210,6 +210,8 @@ class DebugNavigationSearch::Worker {
     struct TeleportPlan {
         TravelRoute route;size_t cursor{};uint64_t geometry{},used{};bool planned{};
         std::optional<Job<TravelRoute>> job;
+        struct Landing {Vec waypoint,requested;};
+        std::optional<Landing> landing;
     };
     std::map<TeleportKey,TeleportPlan> teleportPlans;
     // The graph is touched only by serialized worker jobs. The app thread
@@ -482,7 +484,7 @@ DebugNavigationSearch::TravelRoute DebugNavigationSearch::teleportRoute(const Gr
     for(auto &entry:worker_->teleportPlans) {
         auto &pending=entry.second;
         if(pending.job && pending.job->ready()) {
-            pending.route=pending.job->future.get();pending.job.reset();pending.cursor=0;pending.planned=true;
+            pending.route=pending.job->future.get();pending.job.reset();pending.cursor=0;pending.planned=true;pending.landing.reset();
         }
     }
     const Worker::TeleportKey key{to.x,to.y,range,restricted};
@@ -494,14 +496,18 @@ DebugNavigationSearch::TravelRoute DebugNavigationSearch::teleportRoute(const Gr
     auto &plan=worker_->teleportPlans[key];plan.used=frames_;
     if(plan.job) {
         if(!plan.job->ready()) defer(true);
-        plan.route=plan.job->future.get();plan.job.reset();plan.cursor=0;plan.planned=true;
+        plan.route=plan.job->future.get();plan.job.reset();plan.cursor=0;plan.planned=true;plan.landing.reset();
     }
     // Only actual feet at a retained waypoint consume it. Merely selecting
     // a cast (or moving sideways in combat) cannot discard the suffix.
     for(size_t i=plan.route.points.size();i>plan.cursor;--i)
         if((from-plan.route.points[i-1]).length()<=2) {plan.cursor=i;break;}
     if(plan.cursor==plan.route.points.size() && !plan.route.points.empty() &&
-        (plan.route.points.back()-to).length()<1 && (from-to).length()>2) plan.cursor=0;
+        (plan.route.points.back()-to).length()<1 && (from-to).length()>2) {
+        // A completed/adjusted arrival is not a reason to replay the old
+        // prefix when walking or combat subsequently moves away from it.
+        plan.route={};plan.planned=false;plan.landing.reset();
+    }
     if(plan.cursor<plan.route.points.size())
         return {plan.route.origin,std::deque<Vec>(plan.route.points.begin()+plan.cursor,plan.route.points.end())};
     if(plan.planned && plan.geometry==context_[2] && (!plan.route.points.empty() ||
@@ -532,6 +538,28 @@ DebugNavigationSearch::TravelRoute DebugNavigationSearch::teleportRoute(const Gr
 }
 void DebugNavigationSearch::discardTeleportRoute(Vec to,int range,bool restricted) {
     if(worker_) worker_->teleportPlans.erase({to.x,to.y,range,restricted});
+}
+void DebugNavigationSearch::rememberTeleportLanding(Vec to,int range,bool restricted,Vec waypoint,Vec landing) {
+    if(!worker_) return;
+    const auto found=worker_->teleportPlans.find({to.x,to.y,range,restricted});
+    if(found!=worker_->teleportPlans.end() && !found->second.job)
+        found->second.landing=Worker::TeleportPlan::Landing{waypoint,landing};
+}
+void DebugNavigationSearch::confirmTeleportLanding(Vec requested,Vec arrived) {
+    if(!worker_ || (requested-arrived).length()>4) return;
+    // Parent staging and the mobility child can address different goals.
+    // Match their actual accepted landing, retaining each destination's suffix.
+    for(auto &[key,plan]:worker_->teleportPlans) {
+        if(plan.job || !plan.planned) continue;
+        const Vec goal{std::get<0>(key),std::get<1>(key)};
+        if((requested-goal).length()<.1f) {
+            plan.cursor=plan.route.points.size();plan.landing.reset();continue;
+        }
+        if(!plan.landing || (plan.landing->requested-requested).length()>=.1f) continue;
+        for(size_t i=plan.cursor;i<plan.route.points.size();++i)
+            if((plan.route.points[i]-plan.landing->waypoint).length()<.1f) {plan.cursor=i+1;break;}
+        plan.landing.reset();
+    }
 }
 DebugNavigationSearch::TravelRoute DebugNavigationSearch::travelRoute(const Grid &terrain,Vec from,Vec to,bool partial,std::source_location caller) {
     // Long routes are addressed by destination in the current terrain domain.

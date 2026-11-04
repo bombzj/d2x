@@ -6,6 +6,89 @@
 #include <stdexcept>
 
 namespace d2x {
+std::string_view DebugAi::Impl::passageName(Passage kind) {
+    switch(kind) {
+    case Passage::Door:return "door";
+    case Passage::CreatePortal:return "scroll";
+    case Passage::WorldEvent:return "world";
+    case Passage::Transfer:return "enter";
+    }
+    return "unknown";
+}
+DebugAi::Impl::PassageWait &DebugAi::Impl::beginPassage(Passage kind,std::chrono::milliseconds initial,Clock::time_point deadline) {
+    const auto [it,created]=passageWaits.try_emplace(kind);
+    auto &pending=it->second;
+    if(created) {
+        pending.retryAt=Clock::now()+initial;pending.deadline=deadline;
+        note("passage-wait",std::string(passageName(kind))+" initial="+std::to_string(initial.count())+"ms");
+    }
+    return pending;
+}
+bool DebugAi::Impl::retryPassage(Passage kind,std::string_view detail) {
+    const auto found=passageWaits.find(kind);if(found==passageWaits.end()) return false;
+    auto &pending=found->second;const auto now=Clock::now();
+    if(now<pending.retryAt || now>=pending.deadline || inputBlocked) return false;
+    pending.retryAt=now+passageRetryInterval;++pending.attempts;
+    note("passage-retry",std::string(passageName(kind))+" n="+std::to_string(pending.attempts)+" "+std::string(detail));
+    return true;
+}
+bool DebugAi::Impl::servicePassage(Context &c,const Goal &goal,bool prepared) {
+    const bool transfer=passageWaits.contains(Passage::Transfer);
+    const bool questEntrance=goal.kind==Kind::Quest && questRun.step<goal.steps.size() &&
+        goal.steps[questRun.step].action==QuestAction::Portal;
+    const bool assignedEntrance=travelPhase==TravelPhase::WarpExit && legUnit.has_value();
+    const bool clearing=goal.kind==Kind::Quest && questRun.step<goal.steps.size() && goal.steps[questRun.step].clearCombat;
+    const bool opening=questRun.worldWait.has_value() && !clearing;
+    if(!pendingDoor && !portalIssued && !supplyPortalUsed && !transfer && !opening && !questEntrance && !assignedEntrance) return false;
+    using Owner=DebugActionOwner;
+    // Passage continuation runs before optional combat, even when a combat
+    // child is still active. Consumptive operations keep their own receipts.
+    if(pendingDoor) {
+        if(canInput(c,Owner::Goal,DebugAllInputs) && retryPassage(Passage::Door,"operate assigned door")) {
+            const auto key=pendingDoor->first;
+            releaseCombat(c);
+            walk(c,{{"goal","unit"},{"unitType",key.type},{"unitId",key.id},{"interact",true},{"purpose","door"}});
+        }
+    } else if(prepared && canInput(c,supplyStage==SupplyStage::None?Owner::Goal:Owner::Supply,DebugAllInputs)) {
+        const auto previous=cursor;
+        releaseCombat(c);
+        if(supplyStage!=SupplyStage::None) supplyDetour(c,goal);
+        else executeGoal(c,goal);
+        if(!active() || cursor!=previous) return true;
+    }
+    const bool stillWaiting=pendingDoor || portalIssued || supplyPortalUsed || questRun.worldWait || questEntrance || assignedEntrance ||
+        passageWaits.contains(Passage::Transfer) ||
+        (submittedTravel && ((travelPhase==TravelPhase::CrossWait && legUnit) ||
+         (questRun.pending && questRun.pending->action==QuestPending::Action::Portal)));
+    if(!stillWaiting) return false;
+    // This branch returns before the main decision loop's mobility tail.
+    // Let the same career movement planner own an entrance approach too;
+    // a remembered waiting target must not keep it in combat mode.
+    if(c.walk.active()) {
+        if(combatTarget && combatRun.suspendedAt==Clock::time_point{}) {
+            combatRun.suspendedAt=Clock::now();note("combat-suspended","Passage approach owns navigation and mobility");
+        }
+        if(canInput(c,Owner::Mobility,DebugMotion|DebugSkill)) mobility(c);
+    }
+    // Never replace an active entrance approach with an attack. After the
+    // approach settles, allow a single attack; the next passage attempt wins.
+    if(!c.moving && !c.walk.active()) {
+        const bool activating=questEntrance && questRun.pending && questRun.pending->action==QuestPending::Action::Object;
+        const bool stationary=transfer || pendingDoor || portalIssued || supplyPortalUsed || activating;
+        passageDefending=stationary;
+        struct Reset {bool &flag;~Reset(){flag=false;}} reset{passageDefending};
+        const auto approach=submittedTravel?std::optional{submittedTravel->unit}:
+            activating?questRun.pending->unit:pendingDoor?std::optional{pendingDoor->first}:std::nullopt;
+        const bool approachSettled=!approach || c.town.interactionReady(c.session.read(),*approach);
+        const auto creation=passageWaits.find(Passage::CreatePortal);
+        const bool creationSettled=creation==passageWaits.end() || creation->second.attempts>0;
+        if(approachSettled && creationSettled && canInput(c,Owner::Combat,DebugMotion|DebugSkill)) {
+            if(!stationary && avoidHazards(c)) return true;
+            combat(c,goal,true,stationary);
+        }
+    }
+    return true;
+}
 void DebugAi::Impl::observePopulation(const Context &c) {
     const auto &view=c.session.read();const auto &world=view.world;
     if(populationMemoryGame!=view.gameGeneration) {
@@ -63,7 +146,8 @@ void DebugAi::Impl::observePopulation(const Context &c) {
             const auto previous=memory.enemies.find(key);if(previous==memory.enemies.end()) continue;
             if(level!=room->level || c.combat.knownHostileSource(unit)==false) memory.enemies.erase(previous);
         }
-        if(hostile) populationMemory[uint16_t(room->level)].enemies[key]={point,unit.assignmentRevision,unit.classId};
+        if(hostile) populationMemory[uint16_t(room->level)].enemies[key]={point,unit.assignmentRevision,unit.classId,
+            c.combat.superUnique(unit),c.combat.eliteMonster(unit)};
     }
 }
 int DebugAi::Impl::encounterMovementRadius() const {
@@ -145,8 +229,10 @@ void DebugAi::Impl::waitForWorldResult(Context &c,const QuestStep &step,std::str
             if(questRun.portalDeadline==Clock::time_point{}) questRun.portalDeadline=pending.deadline;
             pending.deadline=questRun.portalDeadline;
         }
+        beginPassage(Passage::WorldEvent,std::chrono::milliseconds(step.initialWaitMs?step.initialWaitMs:unsigned(eventPolicy.initialWaitMs)),pending.deadline);
         questRun.worldWait=std::move(pending);note("world-wait-started",std::string(expected));
     }
+    retryPassage(Passage::WorldEvent,"observe actual world result / entrance readiness");
     wait("quest-world-result",std::string(expected));
     if(!step.clearCombat) continuation=Continuation::WorldResult;
 }
@@ -222,11 +308,11 @@ void DebugAi::Impl::observeWorldWait(Context &c) {
     const auto &step=goals[cursor].steps[questRun.step];auto &pending=*questRun.worldWait;
     // Facts are checked even while input is suspended and before deadlines.
     if(worldResultReady(c,step)) {
-        note("world-result-observed",pending.expected);questRun.worldWait.reset();
+        note("world-result-observed",pending.expected);questRun.worldWait.reset();passageWaits.erase(Passage::WorldEvent);
         continuation=Continuation::WorldResult;return;
     }
     if(c.town.read().area && c.town.read().area!=pending.area) {
-        note("world-wait-left-scene",pending.expected);questRun.worldWait.reset();return;
+        note("world-wait-left-scene",pending.expected);questRun.worldWait.reset();passageWaits.erase(Passage::WorldEvent);return;
     }
     bool progress=false;
     if(pending.residualRange && step.stageSound && questRun.encounterWitness) {
@@ -259,7 +345,10 @@ void DebugAi::Impl::observeWorldWait(Context &c) {
             if(!enemy.bestLife || health<*enemy.bestLife) enemy.bestLife=health;
         }
     }
-    if(progress) {++pending.progress;pending.deadline=Clock::now()+std::chrono::seconds(pending.seconds);}
+    if(progress) {
+        ++pending.progress;pending.deadline=Clock::now()+std::chrono::seconds(pending.seconds);
+        if(auto found=passageWaits.find(Passage::WorldEvent);found!=passageWaits.end()) found->second.deadline=pending.deadline;
+    }
     if(!inputBlocked && Clock::now()>=pending.deadline)
         throw std::runtime_error("World event made no relevant progress: "+pending.expected+"; no operation replayed");
 }

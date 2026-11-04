@@ -1,7 +1,9 @@
 #include "chat_command.hpp"
 #include "network/chat_text.hpp"
 #include <algorithm>
+#include <cctype>
 #include <stdexcept>
+#include <utility>
 #include <nlohmann/json.hpp>
 
 namespace d2x {
@@ -27,18 +29,33 @@ std::optional<nlohmann::json> parseDebugChatCommand(std::string_view text) {
     name.erase(0,1);
     const bool plan=name=="debug-ai-start" || name=="debug-ai-append";
     const bool walk=name=="debug-walk";
+    const bool weather=name=="debug-weather";
     const bool noArguments=name=="debug-help" || name=="debug-ai-status" || name=="debug-ai-pause" ||
         name=="debug-ai-resume" || name=="debug-ai-cancel" || name=="debug-walk-status" || name=="debug-walk-cancel";
-    if(!plan && !walk && !noArguments) throw std::invalid_argument("Unknown local debug command. Use /debug-help.");
+    if(!plan && !walk && !weather && !noArguments) throw std::invalid_argument("Unknown local debug command. Use /debug-help.");
     if(noArguments && !text.empty()) throw std::invalid_argument("Usage: /"+name);
     Json request=Json::object();
     if(plan && !text.empty() && text.front()!='{') {
-        const auto scenario=word(text);
+        auto scenario=word(text);
+        auto selector=scenario;
+        for(auto &c:selector) c=char(std::tolower(static_cast<unsigned char>(c)));
+        if(selector=="quest" || (selector.starts_with("act") && selector.size()>3 && selector[3]>='0' && selector[3]<='9'))
+            scenario=std::move(selector);
         if(scenario=="quest") {
             if(text.empty() || text.front()=='{') throw std::invalid_argument("Usage: /"+name+" quest <quest-name> [JSON options]");
             request["goals"]=Json::array({{{"action","quest"},{"quest",word(text)}}});
-        } else request["scenario"]=scenario;
+        } else {
+            request["scenario"]=scenario;
+            if(scenario.starts_with("act") && scenario.size()>3 && scenario[3]>='0' && scenario[3]<='9' && !text.empty() && text.front()!='{') {
+                auto quest=word(text);
+                for(auto &c:quest) c=char(std::tolower(static_cast<unsigned char>(c)));
+                if(quest.size()!=6 || !quest.starts_with("quest") || quest.back()<'1' || quest.back()>'6')
+                    throw std::invalid_argument("Use actN quest1..quest6; the quest number is the original MPQ A#Q# number");
+                request["questNumber"]=quest.back()-'0';
+            }
+        }
     } else if(walk && !text.empty() && text.front()!='{') request["goal"]=word(text);
+    else if(weather && !text.empty() && text.front()!='{') request["mode"]=word(text);
     if(!text.empty()) {
         const auto options=Json::parse(text.begin(),text.end(),nullptr,false);
         if(options.is_discarded() || !options.is_object()) throw std::invalid_argument("Debug options must be a JSON object with double-quoted keys and strings.");
@@ -47,8 +64,8 @@ std::optional<nlohmann::json> parseDebugChatCommand(std::string_view text) {
             request[key]=value;
         }
     }
-    if(plan && !request.contains("scenario") && !request.contains("goals") && !request.contains("configFile"))
-        throw std::invalid_argument("Usage: /"+name+" <scenario> [JSON options], quest <quest-name>, {\"goals\":[...]}, or {\"configFile\":\"file.json\"}");
+    if(name=="debug-ai-append" && request.empty())
+        throw std::invalid_argument("Usage: /"+name+" act1[-5], actN questN, <config-name>, or JSON goals");
     request["command"]=name;return request;
 }
 std::vector<std::string> debugChatSummary(const nlohmann::json &reply) {
@@ -76,6 +93,12 @@ std::vector<std::string> debugChatSummary(const nlohmann::json &reply) {
             if(!file.empty()) lines.push_back("AI log: "+file);
             if(!error.empty()) lines.push_back("AI log error: "+error);
         }
+    } else if(reply.contains("weather")) {
+        const auto &weather=reply.at("weather");
+        lines.push_back("Weather "+weather.at("mode").get<std::string>()+"; level "+weather.at("level").dump()+
+            "; "+weather.at("type").get<std::string>()+"; density "+weather.at("density").dump());
+        lines.push_back("Allowed: rain="+weather.at("rainAllowed").dump()+", snow="+weather.at("snowAllowed").dump());
+        if(!weather.at("modeEffective").get<bool>()) lines.push_back("Weather override is inactive in this level.");
     } else if(reply.contains("navigation")) {
         const auto &nav=reply.at("navigation");
         lines.push_back("Walk "+nav.at("state").get<std::string>());

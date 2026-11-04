@@ -78,6 +78,7 @@ struct StatusNotice {
     bool prepared{};
 };
 struct ActThreeState {
+    bool khalimIntroAvailable{};
     EntityId figurineSource{};
     bool figurineDropped{};
     bool figurineEnabled{true};

@@ -37,6 +37,10 @@ foreach($folder in @($destination,(Join-Path $destination 'scripts'),(Join-Path 
 }
 Copy-ChangedFile $exe (Join-Path $destination 'd2x.exe')
 Copy-ChangedFile $networkRuntime (Join-Path $destination 'd2x_bncs_legacy.dll')
+$aiConfig=Join-Path $destination 'debug-ai.json'
+if(-not (Test-Path -LiteralPath $aiConfig)){
+    Copy-ChangedFile (Join-Path $projectRoot 'config/debug-ai.json') $aiConfig
+}
 $onlineProfile=Join-Path $projectRoot 'online.local.json'
 if(Test-Path -LiteralPath $onlineProfile){
     $profile=Get-Content -LiteralPath $onlineProfile -Raw | ConvertFrom-Json

@@ -34,6 +34,9 @@ enum class FrontendCommand {
     SelectDifficulty,
     CreateGame,
     LeaveGame,
+    SendLobbyChat,
+    JoinLobbyChannel,
+    ListLobbyChannels,
     Dismiss
 };
 struct FrontendIntent {
@@ -45,6 +48,7 @@ struct FrontendIntent {
     bool ladder{};
     std::optional<std::string> editedAccount;
     std::optional<uint8_t> gameServer;
+    uint64_t connectionGeneration{};
 };
 // Original MPQ art and input only. The application owns authentication and sockets.
 enum class RealmPortraitSupport { Original113c, Unverified };
@@ -60,6 +64,7 @@ class RealmFrontend {
     void clearTransientPasswords();
     void setLogin(std::string account, std::string password);
     void setLanAddresses(std::string addresses);
+    void lobbyRequestQueued(FrontendCommand command);
 
   private:
     struct Impl;

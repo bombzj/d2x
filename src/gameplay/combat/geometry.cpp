@@ -7,11 +7,12 @@
 
 namespace d2x {
 Vec knockbackDestination(Vec target, Vec source, int distance) {
-    const int x=int(std::floor(target.x))-int(std::floor(source.x));
-    const int y=int(std::floor(target.y))-int(std::floor(source.y));
+    const int targetX=int(std::floor(target.x+.5f)),targetY=int(std::floor(target.y+.5f));
+    const int x=targetX-int(std::floor(source.x+.5f));
+    const int y=targetY-int(std::floor(source.y+.5f));
     const int divisor=std::max(std::abs(x),std::abs(y));
     if(!divisor || distance<=0) return target;
-    return {std::floor(target.x)+float(x*distance/divisor)+.5f,std::floor(target.y)+float(y*distance/divisor)+.5f};
+    return {float(targetX+x*distance/divisor),float(targetY+y*distance/divisor)};
 }
 std::optional<float> missileTerrainContact(const Grid &grid, Vec from, Vec to, MissileCollisionRule rule, Vec origin) {
     if (grid.missileSegment(from - origin, to - origin, rule)) return {};

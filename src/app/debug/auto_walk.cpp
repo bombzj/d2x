@@ -24,7 +24,7 @@ bool DebugAutoWalk::active() const {return state_=="searching" || state_=="movin
 nlohmann::json DebugAutoWalk::snapshot() const {return status();}
 void DebugAutoWalk::finish(std::string state,std::string reason,RemoteControl &control) {
     if(state=="failed") ++failures_;
-    state_=std::move(state);reason_=std::move(reason);control.cancelMovement();segment_.reset();
+    state_=std::move(state);reason_=std::move(reason);control.cancelMovement();segment_.reset();recoveryAnchor_.reset();
 }
 void DebugAutoWalk::manualInput(RemoteControl &control) {if(active()) finish("cancelled","Manual input took control",control);}
 nlohmann::json DebugAutoWalk::status() const {
@@ -35,6 +35,8 @@ nlohmann::json DebugAutoWalk::status() const {
         {"unit",unit_?Json{{"type",unit_->type},{"id",unit_->id}}:Json(nullptr)},
         {"segment",segment_?Json{{"x",segment_->x},{"y",segment_->y}}:Json(nullptr)},
         {"interactionApproachRetries",approachRetries_},
+        {"movementRecoveries",movementRecoveries_},
+        {"recoveryAnchor",recoveryAnchor_?Json{{"x",recoveryAnchor_->x},{"y",recoveryAnchor_->y}}:Json(nullptr)},
         {"clientPosition",client_?Json{{"x",client_->x},{"y",client_->y}}:Json(nullptr)},
         {"serverPosition",server_?Json{{"x",server_->x},{"y",server_->y}}:Json(nullptr)},
         {"targetSource",source_},{"exitLevel",exitLevel_?Json(*exitLevel_):Json(nullptr)},{"navigationSearch",search_.snapshot()},
@@ -89,6 +91,9 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
         const auto destination=request.contains("level")?std::optional{uint16_t(integer("level",1,136))}:std::nullopt;
         const int timeout=int(request.contains("timeoutSeconds")?integer("timeoutSeconds",5,300):120);
         const bool run=request.value("run",true),interact=request.value("interact",kind==Goal::Waypoint || kind==Goal::Unit);
+        const bool retainHostProgress=game_==view.gameGeneration && area_==view.world.areaGeneration && level_==scene.area &&
+            hostProgressPosition_==view.world.playerPosition && client_ && view.world.playerPosition &&
+            distance(*client_,*view.world.playerPosition)>8;
         if(game_!=view.gameGeneration || area_!=view.world.areaGeneration || level_!=scene.area)
             exhaustedExitFrontiers_.clear();
         control.cancelMovement();goal_=kind;point_=location;unit_=target;destination_=destination;
@@ -101,6 +106,10 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
         townTurnSince_={};legDiscontinuity_=0;
         lastFrom_.reset();lastRequest_.reset();lastTarget_.reset();closeApproach_=false;approachRetries_=0;clickedAt_={};decisions_=0;clientMoving_=false;
         resyncApproach_=request.value("resyncApproach",false);
+        recoveryAnchor_.reset();movementRecoveries_=0;
+        if(!retainHostProgress) {
+            hostProgressPosition_=view.world.playerPosition;hostProgressAt_=Clock::now();hostProgressRevision_=view.world.revision;
+        }
         changeStance_=request.value("changeStance",false);
         forceApproach_=request.value("forceApproach",false);
         waitQuestAlert_=kind==Goal::Unit && target->type==1 && request.value("waitQuestAlert",false);
@@ -121,7 +130,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     const auto now=Clock::now();const auto &view=session.read();const auto &scene=town.read();
     const bool unavailable=blocked || !scene.movementAvailable || !scene.origin || !view.world.playerPosition || !town.map() || !pathPosition;
     const auto suspended=executionClock_.sample(now,unavailable);
-    deadline_+=suspended;progressAt_+=suspended;
+    deadline_+=suspended;progressAt_+=suspended;hostProgressAt_+=suspended;
     if(clickedAt_!=Clock::time_point{}) clickedAt_+=suspended;
     if(alertWaitSince_!=Clock::time_point{}) alertWaitSince_+=suspended;
     if(townTurnSince_!=Clock::time_point{}) townTurnSince_+=suspended;
@@ -170,6 +179,9 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             progressAt_=now;
     }
     server_=view.world.playerPosition;
+    if(server_ && (!hostProgressPosition_ || distance(*hostProgressPosition_,*server_)>=2)) {
+        hostProgressPosition_=server_;hostProgressAt_=now;hostProgressRevision_=view.world.revision;
+    }
     if(!pathPosition) {reason_="Waiting for the normal client path position";return;}
     // Use the same local DynamicPath position as ordinary pointer input. The
     // server's sparse 96 samples are observations, not the client's input clock.
@@ -247,6 +259,69 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         reason_=behind?"Keeping the town bend while the latest host position cannot reach the next leg":
             "Finishing the town bend before turning";return true;
     };
+    // Recovery belongs to walking, not to a particular interaction. A fresh
+    // verification plus stopped host progress can expose a missed bend before
+    // the predicted player reaches an NPC, portal or ordinary ground goal.
+    const bool divergent=server_ && distance(player,*server_)>8;
+    const bool failedOpening=resyncApproach_ && unit_ && server_ && distance(player,*server_)>2 &&
+        town.interactionReady(view,*unit_,*pathPosition) && !town.interactionReady(view,*unit_);
+    const bool verifiedStall=divergent && (moves_ || interactions_) && actor!=view.world.units.end() &&
+        actor->second.pathVerificationRevision>hostProgressRevision_ &&
+        actor->second.positionRevision==actor->second.pathVerificationRevision &&
+        actor->second.verifiedDestination && distance(*server_,*actor->second.verifiedDestination)<=1 &&
+        !view.world.npcRequested && !view.world.waypointRequested &&
+        now-hostProgressAt_>=std::max(2*settle,std::chrono::milliseconds(2000)) &&
+        (!pathMoving || !map.grid.nativeMovementSegment(
+            Vec{float(server_->x),float(server_->y)}-offset+Vec{.5f,.5f},from,playerMovement));
+    if(!recoveryAnchor_ && movementRecoveries_<2 && (failedOpening || verifiedStall)) {
+        const Vec host=Vec{float(server_->x),float(server_->y)}-offset+Vec{.5f,.5f};
+        if(pathGrid.nativeMovementSegment(host,host,playerMovement)) {
+            recoveryAnchor_=server_;resyncApproach_=false;++movementRecoveries_;
+            control.cancelMovement();segment_.reset();lastRequest_.reset();townTurnSince_={};
+            source_="walk-rejoin-host";state_="moving";clickedAt_={};
+        }
+    }
+    if(!recoveryAnchor_ && movementRecoveries_>=2 && verifiedStall) {
+        finish("failed","No observed player progress on host after bounded walking recovery",control);return;
+    }
+    if(recoveryAnchor_) {
+        // Keep the original goal. Walk back in collision-checked short legs,
+        // including the bends, rather than issuing one long ray to old feet.
+        if(distance(player,*recoveryAnchor_)<=2 || (server_ && distance(player,*server_)<=2)) {
+            recoveryAnchor_.reset();control.cancelMovement();segment_.reset();lastRequest_.reset();lastFrom_.reset();
+            forceApproach_=unit_.has_value();source_="walk-rejoined";townTurnSince_={};
+            progressAt_=hostProgressAt_=now;hostProgressRevision_=view.world.revision;
+            reason_="Rejoined observed feet; resuming the original walking goal";return;
+        }
+        if(now-progressAt_>std::chrono::seconds(15)) {
+            finish("failed","No observed player progress while rejoining the blocked walking path",control);return;
+        }
+        if(segment_ && pathMoving && distance(player,*segment_)>1) return;
+        const Vec anchor=Vec{float(recoveryAnchor_->x),float(recoveryAnchor_->y)}-offset+Vec{.5f,.5f};
+        const auto back=search_.path(pathGrid,from,anchor,true,playerMovement,true);
+        std::optional<OnlinePoint> next;bool shared=false;
+        const Vec host=Vec{float(server_->x),float(server_->y)}-offset+Vec{.5f,.5f};
+        for(const Vec node:back) {
+            const Vec delta=node-from;const float span=delta.length();
+            if(span<=0) continue;
+            for(float reach=std::min(18.f,span);reach>0;reach-=1.f) {
+                const auto candidate=point(from+delta*(reach/span)+offset);
+                const Vec at=Vec{float(candidate.x),float(candidate.y)}-offset+Vec{.5f,.5f};
+                if(candidate==player || distance(candidate,*server_)>50 || !pointerClear(at)) continue;
+                const bool common=pathGrid.nativeMovementSegment(host,at,playerMovement);
+                if(!next || common || !shared) {next=candidate;shared=common;}
+                break;
+            }
+            if(span>=18 || !pointerClear(node)) break;
+        }
+        if(!next) {reason_="Waiting for a reachable return leg or ordinary server position correction";return;}
+        if(lastFrom_==player && lastRequest_==next && now-submittedAt_<std::chrono::seconds(1)) return;
+        control.cancelMovement();
+        if(!control.move(*next,run_,{},pathPosition)) {reason_=control.reason();return;}
+        lastFrom_=player;lastRequest_=segment_=next;lastTarget_=recoveryAnchor_;
+        legDiscontinuity_=actor==view.world.units.end()?0:actor->second.positionDiscontinuity;
+        submittedAt_=now;++moves_;reason_="Returning through the blocked walking bend";return;
+    }
     if(clickedAt_!=Clock::time_point{} && unit_ && (unit_->type==1 || unit_->type==5 || waypointOpening_)) {
         // RemoteControl first supplements the opening at 100 ms intervals.
         // If that burst has no result, retain this target and choose a closer
@@ -465,18 +540,6 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             // Choose an ordinary approach point visible from both positions.
             const bool localReady=town.interactionReady(view,*unit_,*pathPosition);
             const bool hostReady=town.interactionReady(view,*unit_);
-            if(resyncApproach_ && unit_->type==1 && localReady && !hostReady && server_) {
-                // A final failed opening with divergent feet can be recovered
-                // by the same ordinary move as a player clicking the host point.
-                resyncApproach_=false;
-                if(distance(player,*server_)>2 && inLevel(*server_) && control.move(*server_,run_,{},pathPosition)) {
-                    segment_=server_;source_="unit-rejoin-host";submittedAt_=progressAt_=now;++moves_;return;
-                }
-            }
-            if(source_=="unit-rejoin-host" && segment_) {
-                if(distance(player,*segment_)>2 && (pathMoving || now-submittedAt_<settle)) return;
-                source_="unit-collision-detour";segment_.reset();
-            }
             if(forceApproach_ && localReady && (!hostReady || changeStance_) && server_) {
                 const Vec host{float(int(server_->x)-origin.x)+.5f,float(int(server_->y)-origin.y)+.5f};
                 std::optional<OnlinePoint> stance;

@@ -37,6 +37,7 @@ class DebugAi {
     bool hasPlan() const;
     bool controlsMovement() const;
     bool controlsInventory() const;
+    // Player input releases a live AI plan only through Escape in the game view.
     void manualInput(net::RealmSession &,DebugAutoWalk &,RemoteControl &,RemoteCombat &);
     std::optional<std::string> command(const nlohmann::json &,net::RealmSession &,RemoteTown &,
         DebugAutoWalk &,RemoteControl &,RemoteCombat &,RemoteInventory &);

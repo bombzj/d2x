@@ -452,7 +452,8 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             }
             view_.mapTargets.push_back({key, *unit.position, *interaction,
                 std::string(label.empty() ? keyName : label), destination,
-                number("SizeX"), number("SizeY")});
+                number("SizeX"), number("SizeY"),false,
+                number("IsDoor")?std::optional<int>{number("Orientation")}:std::nullopt});
         }
     }
     std::set<OnlineUnitKey> coveredWarps;

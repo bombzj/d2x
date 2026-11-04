@@ -128,6 +128,10 @@ void System::initialize(const CharacterRecord &creator) {
     state_.actOne.burialOffer=(state_.initialFlags[1]&0x8000)!=0;
     state_.actOne.toolsOffer=(state_.initialFlags[4]&0x8000)!=0;
     state_.actThree.orbSmashed=book[questIndex(QuestId::KhalimsWill)].stage>=4;
+    const auto &khalim=book[questIndex(QuestId::KhalimsWill)];
+    state_.actThree.khalimIntroAvailable=!state_.actThree.orbSmashed &&
+        ((khalim.flags&(khalimAssigned|khalimWillExplained)) ||
+         book[questIndex(QuestId::GoldenBird)].stage>=uint32_t(GoldenBirdStage::Rewarded));
     state_.actThree.mephistoSlain=book[questIndex(QuestId::Guardian)].stage>=4;
     state_.actThree.figurineEnabled=(state_.initialFlags[questDefinition(QuestId::GoldenBird).nativeSlot]&0x8000)==0;
     if(const auto *player=ports_.players.find({1})) {

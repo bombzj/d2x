@@ -149,6 +149,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.nativeClass = record->index; rule.level = profile->level;
     const auto *baseRecord=catalog.find(record->base);if(!baseRecord) return {};
     rule.baseClass=baseRecord->index;
+    rule.knockbackDistance=record->base=="sandleaper1"?10:5;
     rule.minimumLife = profile->damage.minLife; rule.maximumLife = profile->damage.maxLife;
     if(profile->damage.attack1Damage) {rule.minimumDamage=profile->damage.attack1Damage->first;rule.maximumDamage=profile->damage.attack1Damage->second;}
     rule.defense = *profile->defense; rule.attackRating = profile->attack1Rating.value_or(0);

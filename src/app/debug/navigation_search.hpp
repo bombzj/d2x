@@ -57,6 +57,8 @@ class DebugNavigationSearch {
     TravelRoute teleportRoute(const Grid &,const std::vector<TeleportRoom> &,Vec from,Vec to,int range,bool restricted,Vec coordinateOrigin);
     bool teleportPassage(const Grid &,TeleportRoom from,TeleportRoom to,int range);
     void discardTeleportRoute(Vec to,int range,bool restricted);
+    void rememberTeleportLanding(Vec to,int range,bool restricted,Vec waypoint,Vec landing);
+    void confirmTeleportLanding(Vec requested,Vec arrived);
     TravelRoute travelRoute(const Grid &terrain,Vec from,Vec to,bool partial=false,
                             std::source_location caller=std::source_location::current());
     std::deque<Vec> joinTravelRoute(const Grid &terrain,const Grid &live,Vec from,Vec to);

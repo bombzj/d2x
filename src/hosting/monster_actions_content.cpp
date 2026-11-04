@@ -6,19 +6,15 @@
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
-#include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
-#include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/monsters/collision_spec.hpp"
 #include <algorithm>
-#include <cmath>
 #include <cctype>
 #include <array>
 #include <tuple>
 #include "content/monsters/monster_ai_data.hpp"
 #include "content/skills/aura_data.hpp"
 #include "content/skills/table_values.hpp"
-#include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <vector>
 
@@ -587,7 +583,7 @@ bool prepareMonsterLifecycle(Archives &archives,const ClassicData &data,const An
                 *ticks=monsterAnimationTicks({timing.frames,effectiveRecoverySpeed(timing.speed,0)});
             }
         }
-        if(extra.number(row,"mKB").value_or(0) && extra.number(row,"mWL").value_or(0) && record.walkAnimationRate.value_or(0)>0) {
+        if(extra.number(row,"mKB").value_or(0) && extra.number(row,"mGH").value_or(0) && record.walkAnimationRate.value_or(0)>0) {
             const auto hit=loadMonsterMotionTiming(animations,record.token,"gh",monsterModeWeapon(archives,record.token,"gh",record.baseWeapon));
             if(hit) rule.knockbackTicks=monsterAnimationTicks({hit->frames,*record.walkAnimationRate});
         }

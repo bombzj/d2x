@@ -102,7 +102,7 @@ struct Grid {
     Vec nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule = playerMovement) const;
     // Shared native Straight/Toward policy, with AStar fallback restricted to
     // 18 cells. Inputs/outputs use grid cell centers; callers own route state.
-    std::deque<Vec> nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule = playerMovement, uint8_t targetType = 255) const;
+    std::deque<Vec> nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule = playerMovement, uint8_t targetType = 255, std::optional<int> doorOrientation = {}) const;
     std::deque<Vec> nativeAStarPath(Vec from, Vec to, MovementCollisionRule rule, bool unitTarget = false) const;
     // Native ordinary unit paths: AStar(1), Toward(2/13), Straight(7), WallFollow(15).
     // maxDistance bounds Toward's obstacle search, not its unobstructed ray.

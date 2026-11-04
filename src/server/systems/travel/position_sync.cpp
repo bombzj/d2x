@@ -43,19 +43,39 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
             {RepositionFact{actor.actor,actor.area,found->position}}});
         return output?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{output.status,{}};
     };
-    const int distance=missileDistance(found->position,reported);
+    const Vec nativePosition{std::floor(found->position.x+.5f),std::floor(found->position.y+.5f)};
+    const int distance=missileDistance(nativePosition,reported);
     if(distance<5) return {DomainStatus::Applied,std::monostate{}};
     const auto previous=state_.synchronizations.find(actor.player);
     const bool synchronized=previous!=state_.synchronizations.end() && previous->second.until>actor.tick;
     if(synchronized || distance<15 || distance>45) {
-        if(found->movementTarget && (!found->route.empty() || found->moving)) return {DomainStatus::Applied,std::monostate{}};
+        if(found->movementTarget && found->movementTarget->id!=found->actor) {
+            const auto target=*found->movementTarget;
+            bool present=ports_.spatial.locate(target.id,target.type).has_value();
+            if(present && target.type==4) {
+                for(const auto &[ownerId,owner]:ports_.players.all()) {
+                    (void)ownerId;
+                    const auto item=owner.persistent.inventory.items.find(target.id);
+                    if(item==owner.persistent.inventory.items.end()) continue;
+                    if(const auto *at=std::get_if<ContainerLocation>(&item->second.location)) {
+                        const auto container=owner.persistent.inventory.containers.find(at->container);
+                        if(container!=owner.persistent.inventory.containers.end()) {
+                            const auto kind=container->second.spec.kind;
+                            if(kind==ContainerKind::Equipment || kind==ContainerKind::BeltEquipment || kind==ContainerKind::Belt)
+                                present=false;
+                        }
+                    }
+                }
+            }
+            if(present) return {DomainStatus::Applied,std::monostate{}};
+        }
         if(ports_.trade.find(actor.player)) return correction();
         auto &player=ports_.players.players_.at(actor.player);
         const MovementCommand movement{MovementAction::Move,reported,player.runningNow};
         cancel(actor.player);
         const auto grid=ports_.spatial.navigationGrid(player.area,player.actor);
         const auto moved=applyMovement(player,*source,movement,grid);
-        if(moved!=CommandStatus::Applied) return correction();
+        if(moved!=CommandStatus::Applied) return {DomainStatus::Applied,std::monostate{}};
         player.locomotionSequence=actor.sequence;
         return {DomainStatus::Applied,std::monostate{}};
     }
@@ -97,13 +117,6 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
         delay=roll<50?1500:roll<75?3000:4500;
     }
     next.until=actor.tick+delay;
-    std::deque<Vec> route;
-    if(!found->route.empty()) {
-        Vec goal=found->route.back()+source->definition.origin-destination->definition.origin;
-        constexpr Vec center{.5f,.5f};
-        route=placementGrid.nativePlayerPath(at+center,goal+center,playerMovement);
-        for(auto &point:route) point=point-center;
-    }
     std::vector<EventBatch> events;
     if(region!=actor.area) events.push_back({0,actor.tick,{}, {AudienceKind::Player,actor.player,region},
         {TravelFact{actor.player,actor.actor,actor.area,region,destination->generation,at,true}}});
@@ -114,13 +127,22 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     ports_.npc.close(actor.player);ports_.inventory.close(actor.player);
     state_.waypoints.erase(actor.player);cancel(actor.player);
     auto &player=ports_.players.players_.at(actor.player);
-    player.area=region;player.position=at;player.route=std::move(route);
+    player.area=region;player.position=at;player.route.clear();
+    ports_.areas.moveRoomUnit(player.actor,player.area,player.position);
     player.pathStep.reset();
-    player.movementTarget.reset();player.movementArrival.reset();
-    player.routeDestination=player.route.empty()?at:player.route.back();player.routeObstacles=destination->definition.collision.obstacleRevision;
-    player.moving=!player.route.empty();player.locomotionSequence=actor.sequence;
+    player.knockback.reset();
+    const auto offset=source->definition.origin-destination->definition.origin;
+    player.routeDestination=player.routeDestination+offset;
+    if(player.movementArrival) {
+        player.movementArrival->pos=player.movementArrival->pos+offset;
+        player.movementArrival->accessPoint=player.movementArrival->accessPoint+offset;
+    }
+    player.routeObstacles=destination->definition.collision.obstacleRevision;
+    player.moving=false;player.runningNow=false;
     ++player.teleportRevision;
     player.lastTeleportPosition=at+destination->definition.origin;
+    player.movementHistory.push_back(player.lastTeleportPosition);
+    if(player.movementHistory.size()>20) player.movementHistory.pop_front();
     state_.synchronizations[actor.player]=next;player.combatRandom=random;
     return {DomainStatus::Applied,std::monostate{}};
 }

@@ -1,6 +1,5 @@
 #include "ai_impl.hpp"
 #include "contracts/online_npc_speech.hpp"
-#include "gameplay/quest/catalog.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <array>
@@ -264,7 +263,7 @@ bool DebugAi::Impl::reachTown(Context &c) {
     if(portalIssued) {
         if(portalUsed) {
             wait("town-portal-wait","Waiting for the native town scene");
-            if(recoverTravel(c,now<actionDeadline)) portalUsed=false;
+            if(recoverTravel(c)) portalUsed=false;
             else if(now>=actionDeadline) throw std::runtime_error("Own portal was used but town was not observed");
             return false;
         }
@@ -278,16 +277,17 @@ bool DebugAi::Impl::reachTown(Context &c) {
             if(walk(c,{{"goal","unit"},{"unitType",portal->unit.type},{"unitId",portal->unit.id},{"interact",true}})) {
                 // Request accepted is not a successful return. Keep observing the scene.
                 rememberTravel(c,portal->unit);
-                portalUsed=true;setActionDeadline(std::chrono::seconds(15));
+                portalUsed=true;setActionDeadline(std::chrono::seconds(eventPolicy.waitSeconds));actionDeadline=passageWaits.at(Passage::Transfer).deadline;
                 wait("town-portal-wait","Waiting for the native town scene");
             }
             return false;
         }
         if(now>=actionDeadline && !view.world.townPortalPending) {
-            portalIssued=false;cancelWalk(c);
+            portalIssued=false;cancelWalk(c);passageWaits.erase(Passage::CreatePortal);
             note("town-portal-unconfirmed","No usable own portal observed; continuing by ordinary travel without recasting");
             return false;
         }
+        retryPassage(Passage::CreatePortal,"look for the assigned own portal; do not repeat scroll consumption");
         wait("town-portal-wait","Waiting for a newly assigned own portal");return false;
     }
     if(!portalAttempted) for(const auto &entry:c.town.read().mapTargets)
@@ -307,7 +307,10 @@ bool DebugAi::Impl::reachTown(Context &c) {
         const auto submitted=submitInput(c,DebugActionOwner::Goal,"town-portal-input",DebugMotion|DebugSkill,
             [&]{return c.control.townPortal();},[&]{return c.control.reason();},std::chrono::seconds(2));
         if(submitted==DebugSubmitResult::Accepted) {
-            portalAttempted=portalIssued=true;setActionDeadline(std::chrono::seconds(12));note("town-portal-submitted");return false;
+            portalAttempted=portalIssued=true;
+            setActionDeadline(std::chrono::seconds(eventPolicy.waitSeconds));
+            actionDeadline=beginPassage(Passage::CreatePortal,std::chrono::milliseconds(eventPolicy.scrollInitialWaitMs),actionDeadline).deadline;
+            note("town-portal-submitted");return false;
         }
         // A rejected local input is not a submitted portal. Crossing a level
         // can briefly retain the movement throttle; let it settle before

@@ -11,6 +11,7 @@ namespace d2x {
 // This state is exclusively cosmetic and never consumes a combat seed.
 struct ClientMissileGraphics {
     std::array<int32_t,3> position{},velocity{},acceleration{};
+    std::array<int32_t,3> target{};
     uint32_t flags{};
     int remaining{},bounces{},restitution{};
     static std::optional<ClientMissileGraphics> leap(int distance,int fixedVelocity) {
@@ -50,6 +51,11 @@ struct ClientMissileGraphics {
                 velocity[2]=nativeDivide(nativeMultiply(restitution,velocity[2]),-100);position[2]=0;
                 if(bounces) {--bounces;bounced=true;}
                 else flags|=1;
+            }
+        } else if(flags&0x20) {
+            if((position[0]>>11)>=target[0] && (position[1]>>11)>=target[1] && (position[2]>>11)>=target[2]) {
+                for(size_t axis=0;axis<position.size();++axis) position[axis]=nativeShiftLeft(target[axis],11);
+                flags|=1;
             }
         } else if((position[0]>>11)<=0 && (position[1]>>11)<=0 && (position[2]>>11)<=0) {
             position={0,0,0};flags|=1;

@@ -78,10 +78,6 @@ void DebugAi::Impl::configureActThreeQuest(Goal &goal,QuestId id) const {
     s=talk(tome,"alkor",564,1);s.item="bbb";
     const auto tomeReward=node("lam-tome-reward",s,{{flag(tome,1)}},{tomeItem});
 
-    // A3Q2 NpcActivate offers543 before part explanations when STARTED is
-    // absent. Materials may be gathered first; this only orders native topics.
-    const auto introduction=node("khalim-introduction",talk(khalim,"cain3",543,4),{{flag(khalim,4)},{orbDone}});
-
     std::vector<size_t> council;
     for(const auto name:{"Ismail Vilehand","Geleb Flamefinger","Toorc Icefist"}) {
         s={};s.action=QuestAction::Hunt;s.stateQuest=temple;s.area=councilArea;s.target=definitions->selector(Json{{"superunique",name}});
@@ -96,19 +92,15 @@ void DebugAi::Impl::configureActThreeQuest(Goal &goal,QuestId id) const {
     const auto lever=node("sewer-stairs-open",s,{{stairs},{in(definitions->area("Act 3 - Sewer 2"))},{item("qhr")},{item("qf2")},{orbDone}},{},true);
     const auto heart=node("khalim-heart-owned",acquire(khalim,"Act 3 - Sewer 2","qhr","chest",57),willProof("qhr"),{lever});
     const auto flail=node("khalim-flail-owned",acquire(khalim,"Act 3 - Travincal","qf1",{},0),willProof("qf1"),council);
-    const auto explanation=[&](std::string name,uint16_t topic,uint16_t mask,size_t ingredient,int order) {
-        return node(std::move(name),talk(khalim,"cain3",topic,mask),{{flag(khalim,mask)},{item("qf2")},{orbDone}},{ingredient,introduction},false,order);
-    };
-    const auto eyeTalk=explanation("khalim-eye-explanation",545,8,eye,20);
-    const auto brainTalk=explanation("khalim-brain-explanation",546,0x10,brain,40);
-    const auto heartTalk=explanation("khalim-heart-explanation",544,0x40,heart,30);
-    const auto flailTalk=explanation("khalim-flail-explanation",547,0x20,flail,10);
+    // Slot 18 status 7 is qstsa3q21a: Ask Cain about Khalim's relics.
+    QuestStep advice;advice.action=QuestAction::Talk;advice.stateQuest=khalim;advice.area=town;
+    advice.target=definitions->selector(Json{{"npc","cain3"}});advice.journalTalkStatus=7;
+    const auto cainAdvice=node("journal-asks-cain-about-relics",advice,{},{},true);
     s={};s.action=QuestAction::Combine;s.stateQuest=khalim;s.item="qf2";s.produced="box";s.ingredients={"qey","qbr","qhr","qf1"};
-    const auto will=node("khalims-will-owned",s,{{item("qf2")},{orbDone}},{cube,eye,brain,heart,flail,eyeTalk,brainTalk,heartTalk,flailTalk});
-    const auto willTalk=node("khalims-will-explanation",talk(khalim,"cain3",548,0x80),{{flag(khalim,0x80)},{orbDone}},{will,introduction},false,5);
+    const auto will=node("khalims-will-owned",s,{{item("qf2")},{orbDone}},{cube,eye,brain,heart,flail,cainAdvice});
     s={};s.action=QuestAction::EquipWeapon;s.stateQuest=khalim;s.item="qf2";s.area=councilArea;
     auto equipped=item("qf2");equipped.kind=K::Equipped;
-    const auto weapon=node("khalims-will-equipped",s,{{equipped},{orbDone}},{will,willTalk});
+    const auto weapon=node("khalims-will-equipped",s,{{equipped},{orbDone}},{will});
     s.action=QuestAction::SmashOrb;s.target=object("compellingorb",53);s.flags=1;
     const auto smashed=node("compelling-orb-smashed",s,{{orbDone}},{weapon});
     s={};s.action=QuestAction::EquipWeapon;s.stateQuest=khalim;

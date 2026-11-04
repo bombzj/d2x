@@ -230,6 +230,7 @@ struct Actor {
     uint64_t chilledUntil{}, frozenUntil{}, nextHitTick{};
     uint64_t stunnedUntil{};
     uint64_t knockedUntil{};
+    uint64_t knockbackStarted{};
     Vec knockbackSource;
     std::optional<Vec> knockbackGoal;
     std::optional<PoisonStatus> poison;

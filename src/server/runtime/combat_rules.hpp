@@ -152,6 +152,7 @@ struct MonsterRule {
     int restore{};
     int difficultyResistancePenalty{};
     int knockbackTicks{};
+    uint8_t knockbackDistance{5};
     std::vector<uint64_t> experience;
     uint64_t experienceBase{};
     int experienceLevel{},experienceShift{};

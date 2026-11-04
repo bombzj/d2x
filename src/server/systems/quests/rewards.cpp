@@ -17,7 +17,6 @@
 #include "gameplay/quest/burial_grounds.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
-#include "gameplay/quest/acts/act_four_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "core/random.hpp"
@@ -366,7 +365,11 @@ DomainResult<> System::install(Prepared prepared) {
             shareProgress(QuestId::BladeOfTheOldReligion,4,std::move(delivery));
             state_.objectives[questIndex(QuestId::BladeOfTheOldReligion)]=true;
         }
-        if(s.kind==RewardKind::LifePotion) {creditPlayer(s.actor.player,QuestId::GoldenBird);state_.objectives[questIndex(QuestId::GoldenBird)]=true;}
+        if(s.kind==RewardKind::LifePotion) {
+            creditPlayer(s.actor.player,QuestId::GoldenBird);state_.objectives[questIndex(QuestId::GoldenBird)]=true;
+            // A3Q4 advances A3Q2's sequence on granting the potion.
+            state_.actThree.khalimIntroAvailable=true;
+        }
         if((s.kind==RewardKind::GidbinnRing || s.kind==RewardKind::IronWolf) && book[questIndex(QuestId::BladeOfTheOldReligion)].stage==5) creditPlayer(s.actor.player,QuestId::BladeOfTheOldReligion);
         if(s.kind==RewardKind::SmashSoulstone) captureGoal(QuestId::HellsForge,4,std::move(delivery),false,true);
         if(s.kind==RewardKind::ThawAnya) {

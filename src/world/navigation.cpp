@@ -7,6 +7,7 @@
 #include <stdexcept>
 namespace d2x {
 namespace {
+void appendOffsetPath(const Grid &,Vec,Vec,int,int,MovementCollisionRule,std::deque<Vec> &);
 int nativeDirectionIndex(int dx, int dy) {
     const int ax = std::abs(dx), ay = std::abs(dy);
     if (ax < 2 * ay) {
@@ -322,6 +323,11 @@ bool Grid::nativeMovementSegment(Vec a, Vec b, MovementCollisionRule rule) const
 }
 Vec Grid::nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule) const {
     const CollisionQueryScope collisionScope{*this};
+    if (!neighbours.empty()) {
+        Vec origin;
+        const auto view=linkedNavigation(origin);
+        return view.nativeMovementTarget(a-origin,b-origin,rule)+origin;
+    }
     // PATH_RayTrace starts testing at the first entered cell. A moving
     // actor can overlap our current pattern; that must not forbid an escape
     // through clear cells. Keep unknown/out-of-bounds origins unavailable.
@@ -362,16 +368,20 @@ Vec Grid::nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule) const {
     // that cell is not the path target when the whole ray succeeds.
     return {float(endX) + .5f, float(endY) + .5f};
 }
-std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule, uint8_t targetType) const {
+std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule, uint8_t targetType, std::optional<int> doorOrientation) const {
     const CollisionQueryScope collisionScope{*this};
     if (!neighbours.empty()) {
         Vec origin; const auto view = linkedNavigation(origin);
-        auto route = view.nativePlayerPath(from - origin, to - origin, rule, targetType);
+        auto route = view.nativePlayerPath(from - origin, to - origin, rule, targetType, doorOrientation);
         for (auto &point : route) point = point + origin;
         return route;
     }
     if (rule.size<0 || rule.size>3 || !navigationContains(from) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
         to.x < 0 || to.y < 0 || to.x >= width || to.y >= height) return {};
+    if(targetType==2 && doorOrientation) {
+        if(*doorOrientation==1) to.y+=std::floor(from.y)>=std::floor(to.y)?2.f:-2.f;
+        else to.x+=std::floor(from.x)>=std::floor(to.x)?2.f:-2.f;
+    }
     const auto target = preparedPlayerTarget(*this, from, to, rule);
     return target ? nativeUnitPath(from,*target,7,73,rule,targetType!=255,targetType==2 || targetType==4?2:1)
                   : std::deque<Vec>{};
@@ -388,7 +398,17 @@ std::deque<Vec> Grid::nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t max
         to.x < 0 || to.y < 0 || to.x >= width || to.y >= height) return {};
     if(type==1) return nativeAStarPath(from,to,rule,unitTarget);
     if(type==15) return nativeWallFollowPath(from,to,unitTarget?std::max(uint8_t(40),maxDistance):maxDistance,rule);
-    if(type!=2 && type!=7 && type!=13) return {};
+    if(type==5 || type==6) return nativeMonsterCirclePath(from,to,maxDistance,type==5?1:-1,rule);
+    if(type==12) {
+        std::deque<Vec> route;
+        appendOffsetPath(*this,from,to,maxDistance,-4,rule,route);
+        if(route.empty()) return route;
+        const auto count=route.size();
+        appendOffsetPath(*this,from,to,maxDistance,-2,rule,route);
+        if(route.size()==count) appendOffsetPath(*this,from,to,maxDistance,2,rule,route);
+        return route;
+    }
+    if(type!=2 && type!=3 && type!=7 && type!=13) return {};
     // D2MOO PathMisc (MIT, docs/licenses/D2MOO.txt): Straight first uses
     // the biased collision ray, then Toward's three direction priorities.
     // The 73-step player bound and 18-cell AStar scope are path policy,
@@ -446,38 +466,51 @@ std::deque<Vec> Grid::nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t max
 }
 std::deque<Vec> Grid::nativeMonsterCirclePath(Vec from,Vec target,int distance,int turn,MovementCollisionRule rule) const {
     const CollisionQueryScope collisionScope{*this};
+    if(!neighbours.empty()) {
+        Vec origin;const auto view=linkedNavigation(origin);
+        auto route=view.nativeMonsterCirclePath(from-origin,target-origin,distance,turn,rule);
+        for(auto &point:route) point=point+origin;
+        return route;
+    }
     // D2MOO PathMisc sub_6FDAA720 / Path type 5 and 6 (MIT,
     // docs/licenses/D2MOO.txt): rotate native direction priorities by +/-2,
     // test each cell and stop on an obstructed or reversed direction.
     std::deque<Vec> route;
-    if(!walkable(from,rule) || !std::isfinite(target.x) || !std::isfinite(target.y) ||
+    if(!navigationContains(from) || !std::isfinite(target.x) || !std::isfinite(target.y) ||
        distance<=0 || distance>77 || (turn!=-1 && turn!=1)) return route;
+    appendOffsetPath(*this,from,target,distance,2*turn,rule,route);
+    return route;
+}
+namespace {
+void appendOffsetPath(const Grid &grid,Vec from,Vec target,int distance,int offset,MovementCollisionRule rule,std::deque<Vec> &route) {
     constexpr std::array<std::array<int,3>,25> directions{{
         {5,4,6},{4,5,6},{4,3,5},{4,3,2},{3,4,2},
         {6,5,4},{5,4,6},{4,3,5},{3,4,2},{2,3,4},
         {6,7,5},{6,7,5},{6,7,5},{2,1,3},{2,1,3},
-        {6,7,0},{7,0,6},{0,1,7},{1,0,2},{1,0,2},
+        {6,7,0},{7,0,6},{0,1,7},{1,0,2},{2,1,0},
         {7,0,6},{0,7,6},{0,1,7},{0,1,2},{1,0,2}}};
     constexpr std::array<int,8> ox{1,1,0,-1,-1,-1,0,1},oy{0,1,1,1,0,-1,-1,-1};
     int x=int(std::floor(from.x)),y=int(std::floor(from.y)),previous=-1;
     const int tx=int(std::floor(target.x)),ty=int(std::floor(target.y));
-    for(int step=0;step<distance && (x!=tx || y!=ty);++step) {
-        int dx=tx-x,dy=ty-y;
-        const int ax=std::abs(dx),ay=std::abs(dy);
-        if(ax<2*ay) {if(ay>=2*ax) dx=dx<0?-1:dx&1;}
-        else dy=dy>=0?dy&1:-1;
-        dx=std::clamp(dx,-2,2);
-        const int index=dy< -1?5*dx+10:std::min(dy,2)+5*dx+12;
+    bool changedDirection=false;
+    int steps=0;
+    for(;steps<distance && (x!=tx || y!=ty);++steps) {
+        changedDirection=false;
+        const int index=nativeDirectionIndex(tx-x,ty-y);
         int selected=-1;
         for(int direction:directions[size_t(index)]) {
-            const int d=(direction+2*turn+8)%8;
-            if(walkable(x+ox[d],y+oy[d],rule)) {selected=d;break;}
+            const int d=(direction+offset+8)%8;
+            if(grid.movementClear(x+ox[d],y+oy[d],rule)) {selected=d;break;}
         }
         if(selected<0 || ((selected+4)%8)==previous) break;
+        if(selected!=previous) {
+            route.push_back({float(x)+.5f,float(y)+.5f});
+            changedDirection=true;
+        }
         x+=ox[selected];y+=oy[selected];previous=selected;
-        route.push_back({float(x)+.5f,float(y)+.5f});
     }
-    return route;
+    if(steps && !changedDirection) route.push_back({float(x)+.5f,float(y)+.5f});
+}
 }
 bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
     const CollisionQueryScope collisionScope{*this};

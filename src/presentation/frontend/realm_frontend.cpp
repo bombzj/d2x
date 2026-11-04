@@ -2,11 +2,11 @@
 #include "content/character/realm_portrait.hpp"
 #include "content/string_table.hpp"
 #include "core/text.hpp"
+#include "core/utf8.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include "resources/data_table.hpp"
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <charconv>
 #include <iomanip>
 #include <filesystem>
@@ -163,7 +163,7 @@ struct RealmFrontend::Impl {
     };
     std::array<Hero, 7> heroes;
     int hero{-1}, difficulty{}, gameOffset{}, gameInfoOffset{}, realmSelected{};
-    enum class LobbyPanel { Notice, Create, Join };
+    enum class LobbyPanel { Notice, Create, Join, Channel, Help };
     LobbyPanel lobbyPanel{LobbyPanel::Notice};
     bool hardcore{}, confirmHardcore{};
     bool ladder{}, confirmLadder{};
@@ -181,7 +181,8 @@ struct RealmFrontend::Impl {
     std::map<Bytes, GpuAnimation, PortraitKeyLess> portraits;
     ClassicStrings strings;
     ClassicFont normal, buttonFont, inputFont, titleFont, lobbyFont, roomGoldFont, roomGrayFont, lanTitleFont, lanTipFont,
-        hardcoreRedFont, rosterGold, rosterGreen, rosterHeading, victoryFont, difficultyTitleFont;
+        hardcoreRedFont, rosterGold, rosterGreen, rosterHeading, victoryFont, difficultyTitleFont,
+        lobbyEntryFont, lobbyDisabledFont, lobbyErrorFont, lobbyWhisperFont;
     UiPainter text, inputText, title, lobbyText, roomGoldText, roomGrayText, lanTitle, lanTip;
     UiPainter victoryTitle{victoryFont};
     struct ControlArt { const Animation *source; std::string palette; };
@@ -193,6 +194,14 @@ struct RealmFrontend::Impl {
     std::vector<std::string> classes;
     std::vector<std::string> classNames;
     std::string account, password, gameName, gamePassword, description;
+    std::string lobbyDraft, channelDraft;
+    int lobbyScroll{}, channelScroll{};
+    int lobbyHelpScroll{};
+    std::vector<std::string> lobbyHelpLines;
+    bool lobbyModal{};
+    struct LobbyEntry { size_t caret{}, anchor{}, first{}; bool selecting{}; };
+    std::map<std::pair<int, int>, LobbyEntry> lobbyEntries;
+    std::optional<std::pair<int, int>> draggedLobbyScroll;
     std::string lanAddresses, hostAddress = "127.0.0.1";
     bool replaceHostAddress{}, lanArtReady{};
     int focus{}, selected{}, page{}, players{8}, difference{4};
@@ -210,6 +219,8 @@ struct RealmFrontend::Impl {
     FrontendPage previous{FrontendPage::Main};
     Vector2 mouse{};
     bool clicked{}, enabled{};
+    bool lobbyButtonGestures{};
+    std::optional<std::tuple<std::string, int, int>> pressedLobbyButton;
     FrontendIntent intent;
     Impl(Archives &a, RealmPortraitSupport portraitSupport)
         : sky(a, "data/global/palette/sky/pal.dat"), units(a, "data/global/palette/units/pal.dat"),
@@ -223,7 +234,9 @@ struct RealmFrontend::Impl {
           roomGoldFont(font(units, a, "font8", 4)), roomGrayFont(font(units, a, "font8", 5)),
           hardcoreRedFont(font(units, a, "font16", 1)),
           rosterGold(font(units, a, "font16", 4)), rosterGreen(font(units, a, "font16", 2)),
-          rosterHeading(font(units, a, "font42")), text(normal),
+          rosterHeading(font(units, a, "font42")),
+          lobbyEntryFont(font(units, a, "font8")), lobbyDisabledFont(font(units, a, "font16", 5)),
+          lobbyErrorFont(font(units, a, "font8", 1)), lobbyWhisperFont(font(units, a, "font8", 2)), text(normal),
           inputText(inputFont), title(titleFont), lobbyText(lobbyFont),
           roomGoldText(roomGoldFont, 0), roomGrayText(roomGrayFont, 0), lanTitle(lanTitleFont), lanTip(lanTipFont) {
         if(portraitSupport == RealmPortraitSupport::Original113c)
@@ -249,8 +262,16 @@ struct RealmFrontend::Impl {
                                 {"realmButton", "CharSelect/realmselectbuttonthin"},
                                 {"lobby", "bigmenu/bnet"},
                                 {"create", "bigmenu/creategamebckg"},
+                                {"channel", "bigmenu/createjoinbckg"},
+                                {"lobbyHelp", "bigmenu/HelpBckg"},
                                 {"arrows", "bigmenu/numberarrows"},
                                 {"radio", "bigmenu/radiobutton"},
+                                {"radioDisabled", "bigmenu/radiobuttonGrey"},
+                                {"lobbyScroll", "bigmenu/scrollbar"},
+                                {"joinScroll", "FrontEnd/joingamescrollbars"},
+                                {"greyNumber", "bigmenu/GreyLevelBox"},
+                                {"greyArrows", "bigmenu/numbergreyarrows"},
+                                {"lobbyCheck", "bigmenu/joingameclickbox"},
                                 {"popup", "FrontEnd/PopUpLarge"},
                                 {"cursor", "CURSOR/ohand"}})
             load(units, id, path);
@@ -393,14 +414,18 @@ struct RealmFrontend::Impl {
                                                                       pl2.begin() + burn + length)}).first->second;
     }
     bool button(const char *id, int x, int y, std::string label, bool active = true, int segments = 1,
-                int base = 0) {
+                int base = 0, bool activateOnPress = false) {
         const auto &a = art.at(id);
         int width = 0;
         for (int i = 0; i < segments; ++i)
             width += a.frame(0, base + i)->texture.width;
         Rectangle r{float(x), float(y), float(width), float(a.frame(0, base)->texture.height)};
         const bool interactive = enabled && active && CheckCollisionPointRec(mouse, r);
-        const bool down = interactive && input.leftHeld;
+        const auto key = std::tuple{std::string(id), x, y};
+        if (lobbyButtonGestures && interactive && input.leftPressed)
+            pressedLobbyButton = key;
+        const bool captured = pressedLobbyButton && *pressedLobbyButton == key;
+        const bool down = interactive && input.leftHeld && (!lobbyButtonGestures || captured);
         int first = base + (down ? segments : 0);
         Color tint = active ? WHITE : Color{255, 255, 255, 128};
         if (!active && base + segments * 3 <= a.count) {
@@ -429,9 +454,46 @@ struct RealmFrontend::Impl {
                 UiPainter(face, 0).inBox(line, {float(x - (down ? 2 : 0)), float(y + row * height / count +
                     (down ? 2 : 0)), float(width), float(height / count)}, 16, BLACK);
         }
-        return interactive && clicked;
+        return interactive && (lobbyButtonGestures && !activateOnPress ? captured && input.leftReleased : clicked);
     }
     void label(const std::string &v, int x, int y, Color c = parchment) { text.label(v, x, y, 16, c); }
+    void lobbyLabel(const ClassicFont &face, const std::string &value, int x, int bottom,
+                    int width, int height, int alignment = 0) {
+        const int measured = face.textWidth(value);
+        if (alignment == 1) x -= measured;
+        else if (alignment == 2) x += std::max(0, (width - measured) / 2);
+        face.drawBaseline(value, {float(x), float(bottom - height + face.textHeight)}, 1);
+    }
+    void lobbyScrollbar(const char *id, int x, int bottom, int height, int &position, int maximum, int pageSize) {
+        position = std::clamp(position, 0, std::max(0, maximum));
+        const auto key = std::pair{x, bottom};
+        if (!enabled || !input.leftHeld) {
+            if (draggedLobbyScroll == key) draggedLobbyScroll.reset();
+        }
+        if (maximum <= 0) return;
+        const int top = bottom - height;
+        const int travel = height - 30;
+        const int thumb = top + 10 + position * travel / maximum;
+        const bool upper = CheckCollisionPointRec(mouse, {float(x), float(top), 10, 10});
+        const bool lower = CheckCollisionPointRec(mouse, {float(x), float(bottom - 10), 10, 10});
+        if (enabled && clicked && CheckCollisionPointRec(mouse, {float(x), float(top), 10, float(height)})) {
+            if (upper) --position;
+            else if (lower) ++position;
+            else if (mouse.y >= thumb && mouse.y < thumb + 10) draggedLobbyScroll = key;
+            else position += mouse.y < thumb ? -pageSize : pageSize;
+        }
+        if (enabled && draggedLobbyScroll == key && input.leftHeld)
+            position = int((mouse.y - top - 15) * maximum / std::max(1, travel));
+        position = std::clamp(position, 0, maximum);
+        const auto cell = [&](int frame, int baseline) {
+            const auto *image = art.at(id).frame(0, frame);
+            sprite(image, {float(x), float(baseline - image->texture.height)});
+        };
+        cell(lower && input.leftHeld && enabled ? 3 : 1, bottom - 1);
+        for (int offset = 10; offset < height - 10; offset += 10) cell(5, bottom - 1 - offset);
+        cell(upper && input.leftHeld && enabled ? 2 : 0, top + 9);
+        cell(4, top + 19 + position * travel / maximum);
+    }
     void centered(const std::string &v, int y) { label(v, (800 - text.measure(v, 16)) / 2, y); }
     void wrap(const std::string &v, int x, int y, int width, bool center = false,
               int bottom = std::numeric_limits<int>::max(), const UiPainter *font = nullptr) {
@@ -459,6 +521,77 @@ struct RealmFrontend::Impl {
     }
     void field(std::string &value, Rectangle r, int index, size_t limit, bool secret = false,
                bool drawBox = true) {
+        if (lobbyButtonGestures) {
+            auto &entry = lobbyEntries[{index == 3 ? -1 : int(lobbyPanel), index}];
+            entry.caret = std::min(entry.caret, value.size());
+            entry.anchor = std::min(entry.anchor, value.size());
+            entry.first = std::min(entry.first, entry.caret);
+            const bool focused = enabled && focus == index;
+            auto shown = secret ? std::string(value.size(), '*') : value;
+            const auto width = [&](size_t begin, size_t end) {
+                return lobbyEntryFont.textWidth(std::string_view(shown).substr(begin, end - begin));
+            };
+            const auto locate = [&] {
+                size_t position = entry.first;
+                float left = r.x;
+                while (position < shown.size()) {
+                    const int advance = lobbyEntryFont.widthOf(uint8_t(shown[position]));
+                    if (mouse.x < left + advance * .5f) break;
+                    left += advance; ++position;
+                }
+                return position;
+            };
+            if (enabled && clicked && CheckCollisionPointRec(mouse, r)) {
+                focus = index;
+                entry.caret = locate();
+                if (!input.shift) entry.anchor = entry.caret;
+                entry.selecting = true;
+            } else if (enabled && focus == index && entry.selecting && (input.leftHeld || input.leftReleased))
+                entry.caret = locate();
+            if (!input.leftHeld || !enabled) entry.selecting = false;
+            if (enabled && focus == index && !input.entryComposing && !input.entryCompositionCommitted) {
+                const auto eraseSelection = [&] {
+                    if (entry.caret == entry.anchor) return false;
+                    const auto first = std::min(entry.caret, entry.anchor);
+                    value.erase(first, std::max(entry.caret, entry.anchor) - first);
+                    entry.caret = entry.anchor = first;
+                    return true;
+                };
+                if (input.entrySelectAll) { entry.anchor = 0; entry.caret = value.size(); }
+                if (input.entryHome || input.entryEnd || input.entryStep) {
+                    if (input.entryHome) entry.caret = 0;
+                    else if (input.entryEnd) entry.caret = value.size();
+                    else if (!input.shift && entry.caret != entry.anchor)
+                        entry.caret = input.entryStep < 0 ? std::min(entry.caret, entry.anchor) : std::max(entry.caret, entry.anchor);
+                    else entry.caret = size_t(std::clamp(int(entry.caret) + input.entryStep, 0, int(value.size())));
+                    if (!input.shift) entry.anchor = entry.caret;
+                }
+                if (input.backspace && !eraseSelection() && entry.caret) {
+                    value.erase(--entry.caret, 1); entry.anchor = entry.caret;
+                }
+                if (input.entryDelete && !eraseSelection() && entry.caret < value.size()) value.erase(entry.caret, 1);
+                for (unsigned char character : input.entryText) {
+                    if (character < 32 || character > 126) continue;
+                    eraseSelection();
+                    if (value.size() < limit) { value.insert(entry.caret++, 1, char(character)); entry.anchor = entry.caret; }
+                }
+                input.entryText.clear(); input.backspace = input.entryDelete = input.entryHome = input.entryEnd = input.entrySelectAll = false;
+                input.entryStep = 0;
+            }
+            shown = secret ? std::string(value.size(), '*') : value;
+            entry.first = std::min(entry.first, entry.caret);
+            while (entry.first < entry.caret && width(entry.first, entry.caret) > r.width - lobbyEntryFont.widthOf('_')) ++entry.first;
+            uiScissor(r.x, r.y, r.width, r.height);
+            const size_t first = std::max(entry.first, std::min(entry.caret, entry.anchor));
+            const size_t last = std::max(entry.caret, entry.anchor);
+            if (enabled && focus == index && first < last)
+                DrawRectangleRec({r.x + width(entry.first, first), r.y, float(width(first, last)), float(lobbyEntryFont.textHeight)}, {64, 64, 64, 255});
+            lobbyEntryFont.drawBaseline(std::string_view(shown).substr(entry.first), {r.x, r.y + lobbyEntryFont.textHeight}, 1);
+            if ((focused || (enabled && focus == index)) && (uint64_t(GetTime() * 4) & 1))
+                lobbyEntryFont.drawBaseline("_", {r.x + width(entry.first, entry.caret), r.y + lobbyEntryFont.textHeight}, 1);
+            EndScissorMode();
+            return;
+        }
         if (enabled && clicked && CheckCollisionPointRec(mouse, r))
             focus = index;
         if (drawBox)
@@ -948,16 +1081,15 @@ struct RealmFrontend::Impl {
             intent.name = v.characters[size_t(selected)].name;
         }
     }
-    void spinner(int x, int y, int &value, int low, int high) {
-        label(std::to_string(value), x + 8, y + 5, WHITE);
-        image("arrows", x + 33, y, 0);
-        image("arrows", x + 33, y + 12, 2);
-        if (enabled && clicked) {
-            if (CheckCollisionPointRec(mouse, {float(x + 33), float(y), 15, 12}))
-                value = std::min(high, value + 1);
-            if (CheckCollisionPointRec(mouse, {float(x + 33), float(y + 12), 15, 12}))
-                value = std::max(low, value - 1);
+    void spinner(int bottom, int &value, int low, int high, bool active = true) {
+        if (!active) {
+            image("greyNumber", 647, bottom - 25);
+            image("greyArrows", 681, bottom - 25);
+            return;
         }
+        lobbyEntryFont.drawBaseline(std::to_string(value), {657, float(bottom - 22 + lobbyEntryFont.textHeight)}, 1);
+        if (button("arrows", 681, bottom - 25, "", value < high, 1, 0)) value = std::min(high, value + 1);
+        if (button("arrows", 681, bottom - 11, "", value > low, 1, 2)) value = std::max(low, value - 1);
     }
     void localDifficulty(const OnlineView &v) {
         if (!difficultyTitleFont.ready) {
@@ -985,17 +1117,64 @@ struct RealmFrontend::Impl {
     }
     void lobby(const OnlineView &v) {
         tiles("lobby", 0, 0, 4);
+        intent.connectionGeneration = v.connectionGeneration;
         if (serverConnection != v.connectionGeneration) {
             serverConnection = v.connectionGeneration;
             gameServer = v.defaultGameServer;
+            lobbyDraft.clear(); channelDraft.clear(); lobbyScroll = channelScroll = 0;
+            lobbyEntries.clear();
         }
         if (lobbyGeneration != v.gameGeneration) {
             lobbyGeneration = v.gameGeneration;
             difficulty = 0;
         }
         if (lobbyPanel != LobbyPanel::Notice)
-            tiles(lobbyPanel == LobbyPanel::Join ? "join" : "create", 418, 72, 2);
-        text.inBox(s(11123), {19, 72, 357, 20}, 16, Color{100, 100, 220, 255});
+            tiles(lobbyPanel == LobbyPanel::Join ? "join" : lobbyPanel == LobbyPanel::Channel ? "channel" :
+                lobbyPanel == LobbyPanel::Help ? "lobbyHelp" : "create", 415, 75, 2);
+        lobbyLabel(lobbyEntryFont, v.lobbyChannel.name.empty() ? s(11123) :
+            v.lobbyChannel.name + " (" + std::to_string(v.lobbyChannel.members.size()) + ")", 28, 138, 354, 60, 2);
+        struct ChatLine { std::string text; const ClassicFont *font; };
+        std::vector<ChatLine> lines;
+        for (const auto &message : v.lobbyChannel.messages) {
+            if (message.type == 2 || message.type == 3 || message.type == 7) continue;
+            const auto &face = message.type == 0x13 || (message.type >= 0x0D && message.type <= 0x0F)
+                ? lobbyErrorFont : message.type == 4 || message.type == 10 ? lobbyWhisperFont : lobbyEntryFont;
+            const auto value = message.name.empty() || message.type == 0x12 || message.type == 0x13
+                ? message.text : message.name + ": " + message.text;
+            std::string line;
+            for (const auto character : utf8Decode(value)) {
+                if (character == '\r') continue;
+                std::string encoded;
+                appendUtf8(encoded, character);
+                if (character == '\n' || (!line.empty() && face.textWidth(line + encoded) > 354)) {
+                    lines.push_back({std::move(line), &face}); line.clear();
+                }
+                if (character != '\n') line += encoded;
+            }
+            if (!line.empty()) lines.push_back({std::move(line), &face});
+        }
+        const int chatStep = std::max(1, lobbyEntryFont.textHeight + 4);
+        const int visibleLines = std::max(1, 298 / chatStep);
+        if (enabled && CheckCollisionPointRec(mouse, {28, 112, 354, 298})) lobbyScroll += int(input.wheel);
+        lobbyScroll = std::clamp(lobbyScroll, 0, std::max(0, int(lines.size()) - visibleLines));
+        const int maximumChatScroll = std::max(0, int(lines.size()) - visibleLines);
+        int chatPosition = maximumChatScroll - lobbyScroll;
+        lobbyScrollbar("lobbyScroll", 400, 390, 314, chatPosition, maximumChatScroll, visibleLines);
+        lobbyScroll = maximumChatScroll - chatPosition;
+        const int firstLine = std::max(0, int(lines.size()) - visibleLines - lobbyScroll);
+        uiScissor(28, 112, 354, 298);
+        for (int row = 0; row < visibleLines && firstLine + row < int(lines.size()); ++row) {
+            const auto &line = lines[size_t(firstLine + row)];
+            line.font->drawBaseline(line.text, {28, float(112 + lobbyEntryFont.textHeight + row * chatStep)}, 1);
+        }
+        EndScissorMode();
+        field(lobbyDraft, {28, 418, 335, 32}, 3, 255, false, false);
+        if (enabled && input.enter && focus == 3) {
+            if (!lobbyDraft.empty() && !input.entryComposing && !input.entryCompositionCommitted) {
+                emit(FrontendCommand::SendLobbyChat); intent.name = lobbyDraft;
+            }
+            input.enter = false;
+        }
         const bool listing = v.stage == OnlineStage::ListingGames;
         const bool serversReady = lobbyPanel != LobbyPanel::Create || !v.maximumGameServer ||
             prepareGameServers(v.maximumGameServer);
@@ -1004,20 +1183,21 @@ struct RealmFrontend::Impl {
             bool doubleClickGame = false, clickedGame = false;
             if (!enabled || input.wheel || input.tab || input.backspace || input.entryDelete ||
                 !input.entryText.empty()) lastClickedGame.clear();
-            title.inBox(s(5151), {418, 73, 373, 38}, 16, parchment);
-            label(s(5274), 428, 101);
-            field(gameName, {428, 121, 166, 26}, 0, 15, false, false);
-            label(s(5256), 603, 101);
-            field(gamePassword, {603, 121, 168, 26}, 1, 15, true, false);
-            label(s(5275), 428, 190);
+            lobbyLabel(titleFont, s(5151), 496, 106, 200, 22, 2);
+            lobbyLabel(normal, s(5274), 428, 121, 150, 12);
+            field(gameName, {432, 128, 155, 20}, 0, 15, false, false);
+            lobbyLabel(normal, s(5256), 602, 121, 150, 12);
+            field(gamePassword, {606, 128, 155, 20}, 1, 15, true, false);
+            lobbyLabel(normal, s(5275), 431, 212, 200, 12);
             const int count = int(v.games.size());
-            if (enabled && CheckCollisionPointRec(mouse, {428, 208, 166, 186}))
+            const int gameRows = std::max(1, 173 / chatStep);
+            if (enabled && CheckCollisionPointRec(mouse, {432, 220, 160, 173}))
                 gameOffset -= int(input.wheel);
-            gameOffset = std::clamp(gameOffset, 0, std::max(0, count - 10));
-            for (int i = gameOffset; i < count && i < gameOffset + 10; ++i) {
+            lobbyScrollbar("joinScroll", 592, 393, 173, gameOffset, std::max(0, count - gameRows), gameRows);
+            for (int i = gameOffset; i < count && i < gameOffset + gameRows; ++i) {
                 const auto &game = v.games[size_t(i)];
-                const int y = 212 + (i - gameOffset) * 18;
-                if (enabled && clicked && CheckCollisionPointRec(mouse, {428, float(y), 166, 18})) {
+                const int y = 220 + (i - gameOffset) * chatStep;
+                if (enabled && clicked && CheckCollisionPointRec(mouse, {432, float(y), 160, float(chatStep)})) {
                     const auto now = GetTime();
                     doubleClickGame = lastClickedGame == game.name && lastClickedGameIndex == game.index &&
                         lastGameConnection == v.connectionGeneration && lastGameGeneration == v.gameGeneration &&
@@ -1036,10 +1216,11 @@ struct RealmFrontend::Impl {
                     }
                 }
                 auto name = game.name;
-                while (!name.empty() && inputText.measure(name, 16) > 130)
-                    name.pop_back();
-                inputText.label(name, 432, y, 16, game.name == gameName ? WHITE : parchment);
-                inputText.label(std::to_string(game.players), 574, y, 16, WHITE);
+                while (!name.empty() && lobbyEntryFont.textWidth(name) > 130)
+                    name.resize(previousUtf8(name, name.size()));
+                const auto &face = game.name == gameName ? lobbyEntryFont : roomGoldFont;
+                face.drawBaseline(name, {432, float(y + face.textHeight)}, 1);
+                lobbyEntryFont.drawBaseline(std::to_string(game.players), {574, float(y + lobbyEntryFont.textHeight)}, 1);
             }
             if (enabled && clicked && !clickedGame) lastClickedGame.clear();
             const auto chosenGame = std::find_if(v.games.begin(), v.games.end(),
@@ -1047,9 +1228,9 @@ struct RealmFrontend::Impl {
             if (v.gameInfo && v.gameInfo->name == gameName) {
                 const auto &info = *v.gameInfo;
                 if (info.state == OnlineGameInfo::State::Ready) {
-                    const auto detailLine = [](const UiPainter &painter, std::string value, int y) {
-                        while (!value.empty() && painter.measure(value, 16) > 142) value.pop_back();
-                        painter.inBox(value, {612, float(y), 142, 16}, 16, WHITE);
+                    const auto detailLine = [&](const ClassicFont &face, std::string value, int y) {
+                        while (!value.empty() && face.textWidth(value) > 142) value.resize(previousUtf8(value, value.size()));
+                        lobbyLabel(face, value, 609, y + 16, 143, 16, 2);
                     };
                     std::ostringstream elapsed;
                     elapsed << info.uptimeSeconds / 3600 << ':' << std::setfill('0')
@@ -1057,7 +1238,7 @@ struct RealmFrontend::Impl {
                             << std::setw(2) << info.uptimeSeconds % 60;
                     // Caption and layout follow the supplied original-game screenshot;
                     // MCP supplies the elapsed time, creator level and level difference.
-                    detailLine(roomGoldText, "Elapsed Time: " + elapsed.str(), 198);
+                    detailLine(roomGoldFont, "Elapsed Time: " + elapsed.str(), 198);
                     auto level = s(5017);
                     const auto placeholder = level.find("%d");
                     std::string range = "? to ?";
@@ -1066,21 +1247,22 @@ struct RealmFrontend::Impl {
                             std::to_string(std::min(maximumCharacterLevel, int(info.creatorLevel) + info.levelDifference));
                     }
                     if (placeholder != std::string::npos) level.replace(placeholder, 2, range);
-                    detailLine(roomGoldText, level, 216);
+                    detailLine(roomGoldFont, level, 216);
                     const int playerCount = int(info.players.size());
                     constexpr int firstPlayer = 248, playerStep = 44, visiblePlayers = 3;
                     if (enabled && CheckCollisionPointRec(mouse, {612, firstPlayer, 142, 146}))
                         gameInfoOffset -= int(input.wheel);
                     gameInfoOffset = std::clamp(gameInfoOffset, 0, std::max(0, playerCount - visiblePlayers));
+                    lobbyScrollbar("joinScroll", 753, 394, 196, gameInfoOffset, std::max(0, playerCount - visiblePlayers), visiblePlayers);
                     for (int i = gameInfoOffset; i < playerCount && i < gameInfoOffset + visiblePlayers; ++i) {
                         const auto &player = info.players[size_t(i)];
                         const int y = firstPlayer + (i - gameInfoOffset) * playerStep;
-                        detailLine(roomGoldText, player.name, y);
+                        detailLine(roomGoldFont, player.name, y);
                         auto playerLevel = s(5017);
                         const auto at = playerLevel.find("%d");
                         if (at != std::string::npos) playerLevel.replace(at, 2, std::to_string(player.level));
                         const auto characterClass = player.characterClass < classNames.size() ? classNames[player.characterClass] : "?";
-                        detailLine(roomGrayText, playerLevel + " " + characterClass, y + 18);
+                        detailLine(roomGrayFont, playerLevel + " " + characterClass, y + 18);
                     }
                 } else wrap(info.state == OnlineGameInfo::State::Pending ? "Retrieving room details..."
                     : "Room details unavailable. Refresh or join by name.", 608, 212, 155, false, 394);
@@ -1089,13 +1271,14 @@ struct RealmFrontend::Impl {
             if (!v.gameListComplete)
                 inputText.label(listing ? "Retrieving room list..." : "Incomplete list. Join by name or refresh.",
                      428, 165, 16, parchment);
-            if (button("cancel", 434, 404, s(5103))) {
+            if (button("cancel", 433, 402, s(5103))) {
                 lastClickedGame.clear();
                 lobbyPanel = LobbyPanel::Notice;
+                focus = 3;
                 if (listing) emit(FrontendCommand::CancelList);
                 wipe(gamePassword);
             }
-            if (button("gameButton", 599, 404, s(5151), v.gameEntryAvailable && !gameName.empty()) ||
+            if (button("gameButton", 594, 402, s(5151), v.gameEntryAvailable && !gameName.empty()) ||
                 (enabled && v.gameEntryAvailable && !gameName.empty() && (input.enter || doubleClickGame))) {
                 lastClickedGame.clear();
                 emit(FrontendCommand::JoinGame);
@@ -1104,18 +1287,18 @@ struct RealmFrontend::Impl {
                 wipe(gamePassword);
             }
         } else if (lobbyPanel == LobbyPanel::Create) {
-            title.inBox(s(5150), {418, 73, 373, 38}, 16, parchment);
-            label(s(5274), 426, 114);
-            field(gameName, {429, 135, 182, 26}, 0, 15, false, false);
-            label(s(5256), 426, 169);
-            field(gamePassword, {429, 189, 182, 26}, 1, 15, true, false);
+            lobbyLabel(titleFont, s(5150), 496, 111, 200, 22, 2);
+            lobbyLabel(normal, s(5274), 427, 134, 150, 12);
+            field(gameName, {432, 142, 158, 20}, 0, 15, false, false);
+            lobbyLabel(normal, s(5256), 427, 188, 300, 12);
+            field(gamePassword, {432, 197, 158, 20}, 1, 15, true, false);
             if (v.maximumGameServer) {
                 const auto caption = s(5257);
                 int size = 16;
                 while (size > 8 && inputText.measure(caption, size) > 182) --size;
                 inputText.label(caption, 426, 224, size, parchment);
-            } else label(s(5257), 426, 224);
-            field(description, {429, 243, v.maximumGameServer ? 182.f : 341.f, 26}, 2, 31, false, false);
+            } else lobbyLabel(normal, s(5257), 427, 243, 300, 12);
+            field(description, {432, 248, v.maximumGameServer ? 179.f : 333.f, 20}, 2, 31, false, false);
             if (v.maximumGameServer) {
                 inputText.inBox(gameServerTitle, {648, 114, 120, 18}, 16, parchment);
                 if (serversReady) {
@@ -1132,34 +1315,37 @@ struct RealmFrontend::Impl {
                     wrap("CN server list resource unavailable", 648, 141, 120, false, 270, &inputText);
                 }
             }
-            label(s(5258), 436, 290);
-            spinner(650, 283, players, 1, 8);
-            image("check", 430, 324, restrictLevels ? 1 : 0);
-            if (enabled && clicked && CheckCollisionPointRec(mouse, {430, 324, 20, 20}))
+            lobbyLabel(normal, s(5258), 632, 306, 300, 12, 1);
+            spinner(310, players, 1, 8);
+            image("lobbyCheck", 431, 326, restrictLevels ? 1 : 0);
+            if (enabled && clicked && CheckCollisionPointRec(mouse, {431, 326, 15, 16}))
                 restrictLevels = !restrictLevels;
-            label(s(5259), 460, 325);
-            spinner(650, 319, difference, 0, 99);
-            label(s(5260), 700, 325);
+            lobbyLabel(restrictLevels ? normal : lobbyDisabledFont, s(5259), 632, 342, 300, 12, 1);
+            spinner(346, difference, 0, 99, restrictLevels);
+            lobbyLabel(restrictLevels ? normal : lobbyDisabledFont, s(5260), 705, 342, 150, 12);
             const auto chosen = std::find_if(v.characters.begin(), v.characters.end(),
                                              [&](const auto &c) { return c.name == v.selectedCharacter; });
             const auto progress = chosen != v.characters.end() ? chosen->progression.value_or(0) : 0;
             const int unlocked = progress >= 10 ? 2 : progress >= 5 ? 1 : 0;
             difficulty = std::min(difficulty, unlocked);
             for (int i = 0; i < 3; ++i) {
-                int x = 430 + i * 140;
-                image("radio", x, 366, i == difficulty ? 1 : 0, i <= unlocked ? WHITE : GRAY);
-                label(s(5156 - i), x + 26, 366, i <= unlocked ? parchment : GRAY);
+                constexpr std::array positions{430, 555, 698};
+                constexpr std::array labels{459, 579, 723};
+                int x = positions[size_t(i)];
+                image(i <= unlocked ? "radio" : "radioDisabled", x, 366, i == difficulty ? 1 : 0);
+                lobbyLabel(i <= unlocked ? normal : lobbyDisabledFont, s(5156 - i), labels[size_t(i)], 380, 150, 12);
                 if (enabled && clicked && i <= unlocked &&
-                    CheckCollisionPointRec(mouse, {float(x), 366, 130, 22}))
+                    CheckCollisionPointRec(mouse, {float(x), 366, 16, 16}))
                     difficulty = i;
             }
-            if (button("cancel", 434, 404, s(5103))) {
+            if (button("cancel", 433, 402, s(5103))) {
                 lobbyPanel = LobbyPanel::Notice;
+                focus = 3;
                 gameName.clear();
                 wipe(gamePassword);
                 description.clear();
             }
-            if (button("gameButton", 599, 404, s(5150), canSubmit) ||
+            if (button("gameButton", 594, 402, s(5150), canSubmit) ||
                 (enabled && input.enter && canSubmit)) {
                 emit(FrontendCommand::CreateGame);
                 intent.name = gameName;
@@ -1171,6 +1357,64 @@ struct RealmFrontend::Impl {
                 intent.levelDifference = uint8_t(restrictLevels ? difference : 99);
                 if (v.maximumGameServer) intent.gameServer = gameServer;
             }
+        } else if (lobbyPanel == LobbyPanel::Help) {
+            lobbyLabel(titleFont, s(686), 400, 112, 400, 22, 2);
+            if (lobbyHelpLines.empty()) {
+                constexpr std::array paragraphs{687,688,0,689,0,690,0,691,0,692,0,693,0,694,695,0,
+                    696,11060,697,698,699,11061,701,0,702,703,0,704,705,0,706,0,707,0,708,0,709,0,
+                    710,711,0,712,0,713,714,715,0,716,717,718,0,719,720,0,721,0,722,0,10092,0,10093,0,
+                    723,0,724,11046,0,11047,0,11048,0,10004,10005,730,0,11041,11042,0,731,732,0,
+                    10006,10007,735,0,10008,10009,738,0,739,740,0,741,742,0,743,744,0,745,746,0,
+                    10010,748,0,749,750,0,10011,752,0,10012,754,0,755,756,0,10013,10014,759,0,
+                    760,761,0,762,763,0,764,765,0,766,767,0,768,769,0,10015,771,0,772,0,773,0,774,0,
+                    775,11043,777,778,779,780,781,782,783,784,785,786,787,0};
+                for (const int id : paragraphs) {
+                    if (!id) { lobbyHelpLines.emplace_back(); continue; }
+                    std::string line;
+                    for (const auto character : utf8Decode(s(id))) {
+                        if (character == '\r') continue;
+                        std::string encoded; appendUtf8(encoded, character);
+                        if (character == '\n' || (!line.empty() && lobbyEntryFont.textWidth(line + encoded) > 290)) {
+                            lobbyHelpLines.push_back(std::move(line)); line.clear();
+                        }
+                        if (character != '\n') line += encoded;
+                    }
+                    if (!line.empty()) lobbyHelpLines.push_back(std::move(line));
+                }
+            }
+            const int rows = std::max(1, 269 / chatStep);
+            if (enabled && CheckCollisionPointRec(mouse, {447, 129, 290, 269})) lobbyHelpScroll -= int(input.wheel);
+            lobbyScrollbar("joinScroll", 753, 391, 266, lobbyHelpScroll,
+                std::max(0, int(lobbyHelpLines.size()) - rows), rows);
+            uiScissor(447, 129, 290, 269);
+            for (int row = 0; row < rows && lobbyHelpScroll + row < int(lobbyHelpLines.size()); ++row)
+                lobbyEntryFont.drawBaseline(lobbyHelpLines[size_t(lobbyHelpScroll + row)],
+                    {447, float(129 + lobbyEntryFont.textHeight + row * chatStep)}, 1);
+            EndScissorMode();
+            if (button("cancel", 671, 402, s(5102))) { lobbyPanel = LobbyPanel::Notice; focus = 3; }
+        } else if (lobbyPanel == LobbyPanel::Channel) {
+            lobbyLabel(titleFont, s(5261), 496, 114, 200, 22, 2);
+            lobbyLabel(normal, s(5262), 427, 135, 150, 12);
+            lobbyLabel(normal, s(5263), 427, 187, 150, 12);
+            field(channelDraft, {432, 142, 155, 20}, 0, 31, false, false);
+            const int rows = std::max(1, 200 / chatStep);
+            if (enabled && CheckCollisionPointRec(mouse, {432, 197, 321, 200})) channelScroll -= int(input.wheel);
+            channelScroll = std::clamp(channelScroll, 0, std::max(0, int(v.lobbyChannel.channels.size()) - rows));
+            lobbyScrollbar("joinScroll", 753, 393, 197, channelScroll, std::max(0, int(v.lobbyChannel.channels.size()) - rows), rows);
+            uiScissor(432, 197, 321, 200);
+            for (int row = 0; row < rows && channelScroll + row < int(v.lobbyChannel.channels.size()); ++row) {
+                const auto &name = v.lobbyChannel.channels[size_t(channelScroll + row)];
+                if (enabled && clicked && CheckCollisionPointRec(mouse, {432, float(197 + row * chatStep), 321, float(chatStep)}))
+                    channelDraft = name;
+                const auto &face = channelDraft == name ? lobbyWhisperFont : lobbyEntryFont;
+                face.drawBaseline(name, {432, float(197 + lobbyEntryFont.textHeight + row * chatStep)}, 1);
+            }
+            EndScissorMode();
+            if (button("cancel", 433, 402, s(5103))) { lobbyPanel = LobbyPanel::Notice; focus = 3; }
+            if (button("cancel", 671, 402, s(5102), !channelDraft.empty()) ||
+                (enabled && input.enter && focus == 0 && !channelDraft.empty())) {
+                emit(FrontendCommand::JoinLobbyChannel); intent.name = channelDraft;
+            }
         } else {
             // Only server announcements populate the initial lobby panel.
             int y = 145;
@@ -1178,16 +1422,15 @@ struct RealmFrontend::Impl {
                 std::istringstream words(announcement.text);
                 std::string word, line;
                 auto drawLine = [&]() {
-                    inputText.inBox(line, {428, float(y), 343, 18}, 16,
-                                    announcement.error ? RED : parchment);
+                    lobbyLabel(announcement.error ? lobbyErrorFont : lobbyEntryFont, line, 447, y + 18, 290, 18, 2);
                     y += 18;
                     line.clear();
                 };
                 while (words >> word) {
-                    while (!word.empty() && inputText.measure(word, 16) > 343)
-                        word.pop_back();
+                    while (!word.empty() && lobbyEntryFont.textWidth(word) > 290)
+                        word.resize(previousUtf8(word, word.size()));
                     const auto next = line.empty() ? word : line + ' ' + word;
-                    if (!line.empty() && inputText.measure(next, 16) > 343)
+                    if (!line.empty() && lobbyEntryFont.textWidth(next) > 290)
                         drawLine();
                     if (y > 380) break;
                     line = line.empty() ? word : line + ' ' + word;
@@ -1196,53 +1439,68 @@ struct RealmFrontend::Impl {
                 if (!line.empty()) drawLine();
             }
         }
-        if (button("tabs", 534, 449, s(5312), v.gameEntryAvailable)) {
+        if (button("tabs", 533, 450, s(5312), v.gameEntryAvailable, 1, 0, true)) {
             lastClickedGame.clear();
             lobbyPanel = LobbyPanel::Create;
             if (listing) emit(FrontendCommand::CancelList);
             focus = 0;
         }
-        if (button("tabs", 654, 449, s(5313))) {
+        if (button("tabs", 652, 450, s(5313), true, 1, 0, true)) {
             lastClickedGame.clear();
             lobbyPanel = LobbyPanel::Join;
             gameOffset = 0;
             focus = 0;
             emit(FrontendCommand::ListGames);
         }
-        button("chatButton", 534, 469, s(5254), false);
-        button("chatButton", 614, 469, s(5315), false);
-        if (button("chatButton", 694, 469, s(5316)))
+        if (button("chatButton", 535, 471, s(5314), true, 1, 0, true)) {
+            lobbyPanel = LobbyPanel::Channel; channelDraft = v.lobbyChannel.name;
+            channelScroll = 0; focus = 0; emit(FrontendCommand::ListLobbyChannels);
+        }
+        button("chatButton", 614, 471, s(5315), false, 1, 0, true);
+        if (button("chatButton", 693, 471, s(5316)))
             emit(FrontendCommand::Back);
-        tiles("leftButton", 19, 461, 3, 0, 3, GRAY);
-        lobbyText.inBox(s(11126), {19, 461, 120, 20}, 16, BLACK);
-        lobbyText.inBox(s(5308), {139, 461, 120, 20}, 16, BLACK);
+        if (button("tabs", 27, 461, s(11126), !lobbyDraft.empty())) {
+            emit(FrontendCommand::SendLobbyChat); intent.name = lobbyDraft;
+        }
+        if (button("tabs", 146, 461, s(5308))) {
+            lobbyPanel = LobbyPanel::Help; lobbyHelpScroll = 0; focus = 3;
+            if (listing) emit(FrontendCommand::CancelList);
+        }
         auto c = std::find_if(v.characters.begin(), v.characters.end(),
                               [&](const auto &entry) { return entry.name == v.selectedCharacter; });
-        label(v.selectedCharacter, 139, 511, c != v.characters.end() && c->hardcore.value_or(false) ? RED : WHITE);
+        lobbyLabel(c != v.characters.end() && c->hardcore.value_or(false) ? lobbyErrorFont : lobbyEntryFont,
+            v.selectedCharacter, 143, 519, 230, 18);
         if (c != v.characters.end() && c->characterClass && *c->characterClass < classNames.size() && c->level) {
             auto level = s(5017);
             const auto at = level.find("%d");
             if (at != std::string::npos)
                 level.replace(at, 2, std::to_string(*c->level));
-            label(level + " " + classNames[*c->characterClass], 139, 531, WHITE);
+            lobbyLabel(lobbyEntryFont, level + " " + classNames[*c->characterClass], 143, 537, 230, 18);
         }
         if (c != v.characters.end() && characterGraphics)
             portrait(*c, 66, 586);
         if (c != v.characters.end() && c->progression) {
-            label(s(11124), 139, 552, WHITE);
+            lobbyLabel(lobbyEntryFont, s(11124), 143, 555, 230, 18);
             const auto progress = *c->progression;
-            label(s(progress >= 15   ? 5154
+            lobbyLabel(lobbyEntryFont, s(progress >= 15   ? 5154
                     : progress >= 10 ? 5155
                     : progress >= 5  ? 5156
                                      : 3762),
-                  139, 572, WHITE);
+                  143, 573, 230, 18);
         }
     }
     FrontendIntent draw(FrontendPage current, const OnlineView &v, std::string_view gateway,
                         std::string_view notice, Vector2 at, const FrameInput &frameInput,
                         bool allowRealmSelection, std::string_view worldNotice) {
         input = frameInput.focused ? frameInput : FrameInput{};
-        if (!frameInput.focused) lastClickedGame.clear();
+        if (!frameInput.focused) {
+            lastClickedGame.clear();
+            draggedLobbyScroll.reset();
+            for (auto &[key, entry] : lobbyEntries) { (void)key; entry.selecting = false; }
+        }
+        lobbyButtonGestures = current == FrontendPage::Lobby;
+        if (!frameInput.focused || current != previous || input.leftPressed ||
+            (!input.leftHeld && !input.leftReleased)) pressedLobbyButton.reset();
         mouse = at;
         clicked = input.leftPressed;
         intent = {};
@@ -1281,6 +1539,7 @@ struct RealmFrontend::Impl {
             return std::move(intent);
         }
         if (current != previous) {
+            draggedLobbyScroll.reset();
             focus = 0;
             deleteName.clear();
             confirmHardcore = false;
@@ -1297,6 +1556,8 @@ struct RealmFrontend::Impl {
             }
             if (current == FrontendPage::Lobby) {
                 lobbyPanel = LobbyPanel::Notice;
+                focus = 3;
+                lobbyEntries.clear();
                 gameOffset = 0;
                 gameName.clear();
                 wipe(gamePassword);
@@ -1314,8 +1575,17 @@ struct RealmFrontend::Impl {
         // confirmations still interrupt, and Escape leaves the game.
         bool modal = !notice.empty() || confirmation ||
                      (busy(v.stage) && current != FrontendPage::Loading);
+        if (modal != lobbyModal) pressedLobbyButton.reset();
+        lobbyModal = modal;
+        if (modal) draggedLobbyScroll.reset();
         enabled = !modal;
-        if (enabled && input.tab)
+        if (enabled && input.tab && current == FrontendPage::Lobby) {
+            const int count = lobbyPanel == LobbyPanel::Create ? 4 : lobbyPanel == LobbyPanel::Join ? 3 :
+                lobbyPanel == LobbyPanel::Channel ? 2 : 1;
+            const int position = focus == 3 ? count - 1 : focus;
+            const int next = (position + (input.shift ? count - 1 : 1)) % count;
+            focus = next == count - 1 ? 3 : next;
+        } else if (enabled && input.tab)
             focus = (focus + 1) %
                     (current == FrontendPage::Register ||
                      (current == FrontendPage::Lobby && lobbyPanel == LobbyPanel::Create) ? 3
@@ -1400,6 +1670,7 @@ struct RealmFrontend::Impl {
         } else if (input.escape && current == FrontendPage::Lobby && lobbyPanel != LobbyPanel::Notice) {
             lastClickedGame.clear();
             lobbyPanel = LobbyPanel::Notice;
+            focus = 3;
             wipe(gamePassword);
             if (v.stage == OnlineStage::ListingGames) emit(FrontendCommand::CancelList);
         } else if (input.escape)
@@ -1408,11 +1679,19 @@ struct RealmFrontend::Impl {
                                                     : FrontendCommand::Back);
         const auto *cursor = art.at("cursor").frame(0, 0);
         cursorSprite(cursor, {mouse.x, mouse.y}, handCursorHotspot(cursor));
+        if (input.leftReleased) pressedLobbyButton.reset();
         return std::move(intent);
     }
 };
 RealmFrontend::RealmFrontend(Archives &a, RealmPortraitSupport support) : impl_(std::make_unique<Impl>(a, support)) {}
 RealmFrontend::~RealmFrontend() = default;
+void RealmFrontend::lobbyRequestQueued(FrontendCommand command) {
+    if (command == FrontendCommand::SendLobbyChat) impl_->lobbyDraft.clear();
+    if (command == FrontendCommand::JoinLobbyChannel) {
+        impl_->lobbyPanel = Impl::LobbyPanel::Notice;
+        impl_->focus = 3;
+    }
+}
 FrontendIntent RealmFrontend::frame(FrontendPage p, const OnlineView &v, std::string_view gateway,
                                     std::string_view notice, Vector2 mouse, const FrameInput &input,
                                     bool allowRealmSelection, std::string_view worldNotice) {

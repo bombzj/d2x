@@ -119,6 +119,11 @@ bool DebugAi::Impl::observeMobility(Context &c) {
             const bool arrived=(!mobilityTeleport || world.playerPosition.has_value()) && miss<=4 &&
                 miss<(mobilityFrom-target).length();
             if(arrived) {
+                if(mobilityTeleport && c.town.read().origin) {
+                    const auto origin=*c.town.read().origin;
+                    const Vec offset{float(origin.x)-.5f,float(origin.y)-.5f};
+                    c.walk.navigationSearch().confirmTeleportLanding(target-offset,at-offset);
+                }
                 // A near landing can be short of its requested route sample.
                 mobilityRouteProgress=std::max(mobilityRouteProgress,mobilityPendingProgress-miss);
                 // A confirmed arrival is not a failed landing attempt. A
@@ -211,7 +216,10 @@ std::optional<DebugAi::Impl::TeleportApproach> DebugAi::Impl::teleportLanding(Co
         staticJoin=true;
         std::optional<Vec> landing;float best=std::numeric_limits<float>::max();
         const bool endpoint=(anchor-wanted).length()<1;
-        const int adjustment=endpoint?6:2;
+        // A monster cluster can occupy the entire small endpoint disk.
+        // Look for nearby safe approach floor before falling back to an
+        // earlier relay; combat still checks its real range and shot.
+        const int adjustment=endpoint?std::clamp(int(policy.range),6,18):2;
         for(int dy=-adjustment;dy<=adjustment;++dy) for(int dx=-adjustment;dx<=adjustment;++dx) {
             const Vec at=anchor+Vec{float(dx),float(dy)};
             if(Vec{float(dx),float(dy)}.length()>adjustment || (at-c.position).length()<2 ||
@@ -220,7 +228,10 @@ std::optional<DebugAi::Impl::TeleportApproach> DebugAi::Impl::teleportLanding(Co
                 DebugNavigationSearch::wallCost(search.wallClearance(map->grid,at-offset+Vec{.5f,.5f}))*.1f:0.f);
             if(score<best) {best=score;landing=at;}
         }
-        if(landing) return TeleportApproach{*landing,completeRoute};
+        if(landing) {
+            search.rememberTeleportLanding(goal,mobilityPolicy.distance,restricted,*it,*landing-offset+Vec{.5f,.5f});
+            return TeleportApproach{*landing,completeRoute};
+        }
     }
     // Only changed terrain or a displacement off the route invalidates a
     // retained plan. Crowds and animation/input waits do not change topology.

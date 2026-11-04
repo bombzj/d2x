@@ -5,26 +5,19 @@
 #include "server/systems/attributes/monster_sources.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "gameplay/rules/arithmetic.hpp"
-#include "gameplay/units/resources.hpp"
-#include "gameplay/stats/modifier_values.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "core/random.hpp"
 #include "gameplay/combat/geometry.hpp"
-#include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/combat/life.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
 #include "gameplay/combat/reception.hpp"
 #include "gameplay/combat/pd2/leech.hpp"
-#include "gameplay/rewards/experience.hpp"
-#include "gameplay/monsters/melee_decision.hpp"
 #include "server/systems/effects/system.hpp"
-#include "server/systems/loot/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/systems/reactions/item_triggers.hpp"
-#include "server/runtime/skill_rules.hpp"
 #include <algorithm>
-#include <cmath>
 #include <stdexcept>
 
 #include "system_detail.hpp"
@@ -181,6 +174,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     std::vector<FrameEventQueue::PreparedInsertion> cascades;
     if (dead) {
         actor.itemAuraTimers.clear();
+        actor.knockbackGoal.reset();actor.knockedUntil=0;
         // Fn043 marks an exhausted nest NOTC before its own death action.
         if(source==id && (actor.rule.ai.kind==MonsterAiKind::FoulCrowNest || actor.rule.ai.kind==MonsterAiKind::Sarcophagus)) actor.rule.noTreasure=true;
         actor.corpse.unavailable=corpseUnavailable;
@@ -252,8 +246,12 @@ DomainResult<> System::holyFreeze(EntityId id,uint64_t until,uint64_t tick) {
 void System::hitDelay(EntityId id, uint64_t until) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.nextHitTick = std::max(it->second.nextHitTick, until); }
 void System::knockback(EntityId id, Vec source, uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || !it->second.alive() || it->second.life<=0 || it->second.owner || it->second.rule.knockbackTicks<=0) return;
-    auto &m=it->second;stop(id);m.knockbackSource=source;m.knockbackGoal=knockbackDestination(m.position,source,3);
-    m.knockedUntil=tick+uint64_t(m.rule.knockbackTicks);m.busyUntil=m.knockedUntil;m.neutralAt.reset();++m.hitOccurrence;++m.interruption;++m.revision;
+    auto &m=it->second;m.route.clear();m.moving=m.running=false;m.movementTarget={};m.knockbackSource=source;
+    recordNativeMode(m,13);
+    const Vec center{.5f,.5f};
+    m.knockbackGoal=ports_.spatial.navigationGrid(m.area,m.id).nativeMovementTarget(m.position+center,
+        knockbackDestination(m.position,source,(m.rule.knockbackDistance>>1)+1)+center,m.rule.collision)-center;
+    m.knockbackStarted=tick;m.knockedUntil=tick+uint64_t(m.rule.knockbackTicks);m.busyUntil=m.knockedUntil;m.neutralAt.reset();++m.hitOccurrence;++m.interruption;++m.revision;
 }
 DomainResult<> System::missileReaction(EntityId id,EntityId source,bool getHit,bool knockback,uint8_t hitClass,uint64_t tick) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::Unavailable,{}};
@@ -271,7 +269,7 @@ DomainResult<> System::missileReaction(EntityId id,EntityId source,bool getHit,b
     actor.route.clear();actor.moving=false;actor.movementTarget={};
     recordNativeMode(actor,knockback?13:3);
     actor.reactionMode=knockback?8:3;actor.reactionUntil=tick+std::min<uint64_t>(uint64_t(duration),UINT64_MAX-tick);
-    actor.busyUntil=actor.reactionUntil;actor.neutralAt=actor.reactionUntil;
+    actor.busyUntil=actor.reactionUntil;actor.neutralAt=knockback?std::nullopt:std::optional{actor.reactionUntil};
     ++actor.interruption;++actor.revision;++actor.hitOccurrence;
     HitFact fact{id,1,actor.area,monsterLifeRatio(actor.life,actor.maximumLife),false,actor.position,hitClass,actor.reactionMode};
     if(knockback) {
@@ -279,8 +277,11 @@ DomainResult<> System::missileReaction(EntityId id,EntityId source,bool getHit,b
         if(!attacker.id()) return {DomainStatus::Unavailable,{}};
         const auto region=attacker.player?attacker.player->area:attacker.monster->area;
         const auto point=attacker.position()+ports_.areas.at(region).definition.origin-ports_.areas.at(actor.area).definition.origin;
-        actor.knockbackSource=point;actor.knockbackGoal=knockbackDestination(actor.position,point,3);
-        actor.knockedUntil=actor.reactionUntil;fact.knockback=actor.knockbackGoal;
+        actor.knockbackSource=point;
+        const Vec center{.5f,.5f};
+        actor.knockbackGoal=ports_.spatial.navigationGrid(actor.area,actor.id).nativeMovementTarget(actor.position+center,
+            knockbackDestination(actor.position,point,(actor.rule.knockbackDistance>>1)+1)+center,actor.rule.collision)-center;
+        actor.knockbackStarted=tick;actor.knockedUntil=actor.reactionUntil;fact.knockback=actor.knockbackGoal;fact.knockbackDistance=actor.rule.knockbackDistance;
     }
     auto publication=prepareActorPublication({{id,std::move(actor)}},0);
     if(!validateActors(publication)) return {DomainStatus::Conflict,{}};

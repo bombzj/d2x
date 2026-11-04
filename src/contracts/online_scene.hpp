@@ -14,6 +14,7 @@ struct OnlineMapTarget {
     std::optional<uint16_t> destination;
     int collisionWidth{}, collisionHeight{};
     bool stopNpcOnClick{};
+    std::optional<int> doorOrientation{};
 };
 struct OnlineWaypointDestination {
     uint16_t level{};

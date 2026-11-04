@@ -34,6 +34,7 @@ PlayerSnapshot projectPlayer(const PlayerState &p) {
     // PathGetFirstPoint reads tTargetCoord, not PathPoints[0]. Point paths
     // publish their reachable endpoint; unit paths retain the unit's position.
     actor.nextPosition = p.route.empty() ? p.position : p.movementTarget ? p.routeDestination : p.route.back();
+    if(p.knockback) actor.nextPosition=p.position+(p.knockback->destination-p.knockback->position);
     actor.moving = p.moving && p.persistent.player.hp > 0; actor.running = p.runningNow;
     if(actor.moving && !p.route.empty()) actor.target=p.movementTarget;
     actor.movementSpeed = p.runningNow ? p.totals.character.runSpeed : p.totals.character.walkSpeed;

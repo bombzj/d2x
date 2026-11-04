@@ -23,6 +23,7 @@ class NativePathStep {
   public:
     static constexpr float seconds = 1.f / 25.f;
     void reset();
+    Vec stop(Vec position);
     bool changedCell() const {return changedCell_;}
     uint8_t direction() const {return direction_;}
     Vec nativePosition() const {return published_;}

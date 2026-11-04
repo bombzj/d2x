@@ -395,11 +395,12 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         } else {m.leapFlying=false;m.leapLanding=-1;}
         if(const auto channel=channels.find(key);channel!=channels.end() && u.actionSkill==41 && u.mode==21)
             m.animation.startedAt=channel->second.started;
-        if (m.route.empty() && !walking(u) && u.destination) {
+        const bool knockbackPose=(key.type==0 && (u.nativeMode?u.mode==19:u.mode==20)) || (key.type==1 && u.mode==13);
+        if (m.route.empty() && !walking(u) && !knockbackPose && u.destination) {
             const auto look=local(*u.destination)-feet;
             if(look.length()>.001f) m.look=look;
         }
-        if (m.route.empty() && !walking(u) && u.destinationUnit) {
+        if (m.route.empty() && !walking(u) && !knockbackPose && u.destinationUnit) {
             if (const auto target = localUnitPosition(*u.destinationUnit)) {
                 const auto look=*target-Vec{float(origin.x),float(origin.y)}-feet;
                 if(look.length()>.001f) m.look=look;
@@ -467,6 +468,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             }
         }
         auto displayed = u;
+        const bool playerKnockback=key.type==0 && (u.nativeMode?u.mode==19:u.mode==20);
+        if(playerKnockback && !m.playerKnockback) {displayed.mode=7;displayed.nativeMode=false;}
         float objectElapsed = m.animation.elapsed(time);
         if (key.type == 2) {
             const auto presentation = shared.objectPresentation(*unitClass(u), u.mode.value_or(0), objectElapsed);
@@ -516,13 +519,13 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             (u.mode == 4 || (u.mode && *u.mode >= 7 && *u.mode <= 15) || u.mode == 19) :
             (u.mode == 6 || u.mode == 18 || u.mode == 20))) ||
             (key.type == 1 && u.mode && *u.mode >= 3 && *u.mode <= 11);
-        const bool completedAction = m.scriptedSequence?m.scriptedSequence->ended:oneShot && visual->finished(m.animation.elapsed(time));
+        const bool completedAction = playerKnockback?!m.playerKnockback:m.scriptedSequence?m.scriptedSequence->ended:oneShot && visual->finished(m.animation.elapsed(time));
         if(playerId && key==OnlineUnitKey{0,*playerId}) {
             // Same MPQ animation and observed FHR/FBR/FCR clock used to draw
             // this actor; damage alone is not proof of hit recovery. Do not
             // extend a stale wire GH/BL/KB mode past its actual animation end.
             const bool channel=u.actionSkill && channelSkill(*u.actionSkill);
-            actionInputBusy=oneShot && !channel && !completedAction;
+            actionInputBusy=playerKnockback?m.playerKnockback:oneShot && !channel && !completedAction;
         }
         if (completedAction) {
             auto idle = u; idle.actionSkill.reset(); idle.nativeMode = false;

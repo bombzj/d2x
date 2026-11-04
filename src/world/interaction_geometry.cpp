@@ -86,7 +86,7 @@ std::deque<Vec> nativeTargetPath(const Grid &grid, Vec position, const Interacti
     // unit targets recompute at a partial endpoint. Straight stays Straight;
     // this is not an unconditional switch to WallFollow or an unbounded solver.
     constexpr Vec center{.5f, .5f};
-    auto route = grid.nativePlayerPath(position + center, target.pos + center, playerMovement, targetType);
+    auto route = grid.nativePlayerPath(position + center, target.pos + center, playerMovement, targetType,target.doorOrientation);
     for (auto &point : route) point = point - center;
     return route;
 }

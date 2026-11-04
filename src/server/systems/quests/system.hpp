@@ -133,6 +133,7 @@ class System {
     const State &read() const { return state_; }
     bool nativeCallbackPending() const {return stepResuming_ || completionPending();}
     void initialize(const CharacterRecord &);
+    void onLevelEntered(RegionId);
     void nativeEliteBorn(EntityId);
     void releaseFigurineSource(EntityId);
     DomainResult<> activateSiegeBoss(EntityId,uint64_t tick);

@@ -2,7 +2,6 @@
 #include "world/collision.hpp"
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <stdexcept>
 
 namespace d2x {
@@ -139,6 +138,12 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         const bool candidate=seekingElite && distance<=policy.engage && c.combat.jadeFigurineCandidate(unit);
         if(elitesOnly && !candidate && distance>policy.radius) continue;
         const bool visible=clearLine(c.position,position(*unit.position));
+        if(passageDefending) {
+            const auto skill=definitions->skillRows.find(*excursionSkill);
+            const bool melee=*excursionSkill==definitions->skill("Attack") ||
+                (skill!=definitions->skillRows.end() && definitions->skills.value(skill->second,"range")=="h2h");
+            if(!visible || distance>(melee?3:policy.range)) continue;
+        }
         if(candidate && visible && (!elite || distance<eliteDistance)) {elite=unit;eliteDistance=distance;}
         if(mustClear(unit) && !visible && distance<nearestObstructed) {nearestObstructed=distance;obstructed=unit;}
         if(distance<=policy.engage && (visible || distance<=policy.radius)) enemies.push_back(unit);
@@ -259,7 +264,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
     };
     if(!run.waitingForDelay && now-run.progressAt>=std::chrono::seconds(policy.stallTimeoutSeconds))
         return obstruct("local combat execution budget exhausted; last obstacle: "+run.obstacle);
-    if(retreatPoint) {
+    if(retreatPoint && !passageDefending) {
         if(walkState(c)!="failed" && now<retreatUntil && (position(*retreatPoint)-c.position).length()>2 &&
             tacticalPositionAllowed(c,position(*retreatPoint)) && threatClearance(visibleThreats(c),position(*retreatPoint))>=0) {
             combatDiagnostics["status"]="retreat";wait("retreat","Following the known safe retreat while observing life and supplies");
@@ -371,7 +376,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
     const bool lowLife=lifePercent>=0 && lifePercent<=policy.retreatLifePercent;
     const bool falling=lossPercent>=policy.lifeDropPercent;
     const bool scarce=singleThreat && (required || boss) && !healing && lifePercent>=0 && lifePercent<70;
-    if((close>=policy.crowd || (singleThreat && (lowLife || falling || scarce))) && now>=retreatReady) {
+    if(!passageDefending && (close>=policy.crowd || (singleThreat && (lowLife || falling || scarce))) && now>=retreatReady) {
         const auto safe=selectPosition(true,policy.range);
         retreatReady=now+std::chrono::seconds(4);
         if(safe) {
@@ -384,7 +389,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         if(lifePercent>=0 && lifePercent<=supplyPolicy.criticalLifePercent && !healing) return obstruct(run.obstacle);
     }
     const auto window=std::chrono::seconds(policy.noProgressSeconds);
-    if(run.reposition) {
+    if(run.reposition && !passageDefending) {
         const auto state=walkState(c);const bool reached=(position(*run.reposition)-c.position).length()<=1;
         const bool failed=!reached && (state=="failed" || state=="completed" || now>=run.approachUntil);
         if(!failed && !reached) {
@@ -398,7 +403,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
     // Static Field is a special cooldown filler, never a replacement in the
     // departure attack list. SrvDo020 permits it during a delayed spell's
     // shared cooldown. Retain nextCast for that primary spell unchanged.
-    const bool staticWindow=policy.staticField && boss && run.strategyCasts && run.waitingForDelay &&
+    const bool staticWindow=!passageDefending && policy.staticField && boss && run.strategyCasts && run.waitingForDelay &&
         *excursionSkill!=definitions->staticFieldSkill && !battleAura(c) &&
         staticRange && *staticRange>2 && staticFloor && run.lastLife &&
         int(*run.lastLife)*100>*staticFloor*128 &&
@@ -431,7 +436,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         if(run.kitePoint) {cancelWalk(c);run.kitePoint.reset();}
         run.kiteAfterCast=false;
     }
-    if(run.kitePoint) {
+    if(run.kitePoint && !passageDefending) {
         const bool reached=(position(*run.kitePoint)-c.position).length()<=2;
         const auto field=visibleThreats(c);
         const bool failed=!reached && (now>=run.kiteUntil || walkState(c)=="failed" || !tacticalPositionAllowed(c,position(*run.kitePoint)) ||
@@ -493,7 +498,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         run.strategyAt=now;combatDiagnostics["status"]="normal-action-wait";
         wait("combat-action-wait","Observing the current native action before judging attack effectiveness");return true;
     }
-    if(!run.waitingForDelay && now-run.strategyAt>=window && now>=run.nextCast && run.strategyCasts && ray && (targetPosition-c.position).length()<=range) {
+    if(!passageDefending && !run.waitingForDelay && now-run.strategyAt>=window && now>=run.nextCast && run.strategyCasts && ray && (targetPosition-c.position).length()<=range) {
         if(!run.repositioned) {
             releaseCombat(c);const auto at=selectPosition(false,range);
             run.repositioned=true;
@@ -506,6 +511,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         return obstruct(run.obstacle.empty()?"no observed net life progress with the departure skill after position reassessment":run.obstacle);
     }
     if((targetPosition-c.position).length()>range || !ray) {
+        if(passageDefending) return false;
         releaseCombat(c);
         if(!nearbyDefense && !pendingDoor && !pendingWaypoint && openDoor(c)) return true;
         if(const auto at=selectPosition(false,range)) {
@@ -540,7 +546,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
     run.approachUntil={};
     // Retail St11/Do19 owns the held Inferno / Arctic Blast sequence.
     const bool channelled=definitions->skills.number(row,"srvstfunc")==11 && definitions->skills.number(row,"srvdofunc")==19;
-    const bool rangedKite=policy.rangedKite && range>3 && skill!=definitions->staticFieldSkill && !channelled;
+    const bool rangedKite=!passageDefending && policy.rangedKite && range>3 && skill!=definitions->staticFieldSkill && !channelled;
     if(rangedKite && run.kiteAfterCast && now>=run.nextKite) {
         const auto destination=selectKitePosition(range);
         run.kiteAfterCast=false;run.nextKite=now+std::chrono::milliseconds(policy.kiteIntervalMs);

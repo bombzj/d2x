@@ -4,11 +4,13 @@ AI任务、策略、恢复与验收入口统一见[调试任务AI](DEBUG_AI.md)�
 
 `online-status`的`world.cinematic`记录真实S2C61程序号与观察修订，`frontend.page`在61/7通关画面实际生效时为Victory。该状态不提供伪造通知或任务完成指令；最终出口须经正常客户端交互，由服务端决定旅行与通知。
 
-`debug-ai-start`可用`configFile`加载已有计划／策略JSON；启动参数`"activateAllWaypoints":true`要求离区前先确认本区传送点已开，完整五幕计划分幕补齐未途经的点。`debug-ai-reload-config`在同一活动或暂停计划中验证并原子应用安全数值策略，省略文件名沿用最近成功配置，详细字段及不可热改范围见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。不重置现实请求期限，也不改服务端规则。
+`debug-ai-start`默认加载完整`debug-ai.json`；`scenario=act1`或`act1-5`按幕筛选其中任务并保持配置顺序，`scenario=act1, questNumber=3`按原MPQ A1Q3编号选择马勒斯。其他scenario名称如campaign读取`debug-ai-campaign.json`，没有保留别名；仍可显式传configFile。启动参数`"activateAllWaypoints":true`要求离区前先确认本区传送点已开，完整五幕计划分幕补齐未途经的点。`debug-ai-reload-config`从同一完整文件提取可热改数值，保留计划／技能／移动模式；详细字段见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。不重置现实请求期限，也不改服务端规则。新解析尚未构建／运行。
 
 PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版／公共规则及必要的版本边界。
 
 直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算；功能范围及缺口见[基线](../../BASELINE.md)，构建／运行方法见[开发指南](BUILD_AND_RUN.md)。
+
+同名Windows管道已被占用等导致创建返回ACCESS_DENIED／PIPE_BUSY／ALREADY_EXISTS时，后启动进程仅记录管道名及Windows错误码，禁用自身管道后继续启动游戏，不接入、关闭或替换已有监听；其他初始化错误仍明确报错。此路径尚未构建／运行验证。需要多实例分别调试时使用不同`-PipeName`；同名情况下`Send-D2XCommand.ps1`仍访问先启动实例，后启动实例的游戏内本地调试聊天不依赖管道。
 
 Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。显式`server-pause`不会因退局自动解除；关闭商店等已受理命令仍需逻辑帧执行，验证正常退出前应`server-resume`或单步推进待办。等待选角阶段及角色租约释放后再停止进程，不能将暂停下的结算超时当作正常退出结果。
 ## 按任务与权限查找
@@ -21,6 +23,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | 观察实际原包与耗时 | [原服收包记录](#原服收包记录)、[诊断与异步含义](#诊断与异步含义)；入队不代表执行成功 |
 | 权威快照、暂停、单步和管理操作 | [嵌入宿主管理](#嵌入宿主管理命令)；仅具有自研宿主能力的连接，不能用于远端原服 |
 | 客户端请求、会话与物品确认 | [联网命令](#联网命令)、[联网物品操作](#联网物品操作)；只读副本不授予权威修改 |
+| 客户端晴／雨／雪控制 | [客户端天气](#客户端天气)；单机与Join共用，只影响本机表现 |
 | 离线资源查询 | [资源工具](#资源工具)；不将工具输出作为玩法已完成证明 |
 | 允许执行哪些检查 | [验证边界](#验证边界)与项目验证指南；本页列出命令不等于授权执行 |
 
@@ -43,9 +46,28 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。管道由独立重叠I/O线程收发有界文本，主线程每轮最多领取一个命令；线程不读取玩法、MPQ或GPU。响应不再按渲染帧限制每帧4 KiB，调用脚本按字节块写入MemoryStream而非逐字节PowerShell循环，仍保留16 KiB请求／4 MiB响应上限、当前用户ACL及断开后的代次复验；quit等待本次响应交付或连接截止。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](PVPGN_SERVER.md#本机部署与验证入口)。
 
+## 客户端天气
+
+图形客户端入局且当前区域已绘制后，管道`debug-weather`与聊天`/debug-weather`共用本地入口。`mode=status`（省略参数时默认）只读状态；`rain`／`snow`立即将目标雨量／雪量设为`density=1..255`（整数，默认255），后续按原25Hz粒子和风向更新并保持强度；`clear`清除当前雨雪及水花并保持无降水；`auto`清除覆盖并随机选取当前区域自然周期的起点，不重新初始化地图或天气随机种子。`density`仅接受于rain／snow。回复中的目标密度设置成功不等于已有实机画面对照。
+
+区域许可仍读取当前MPQ的`Levels.Rain`；下雪还要求第五幕，下雨在第五幕只允许原雨雪混合区109–112，其他幕按Rain许可。当前场景不支持指定类型时明确失败且保留之前的设置。覆盖在本局跨区保留，在不兼容区域不产生降水，状态`modeEffective=false`；回到适用区域重新生效。重新入局恢复auto，不写角色档／客户端偏好，不发聊天或天气包给Host；原版Host、TCP/IP和单机适用同一表现入口，无窗口模式不支持。clear不关闭MPQ Mud允许的独立泥水泡，也不改变昼夜和光照。雷声／闪电尚未接齐，命令不提供这些模式。此入口未构建／运行。
+
+```powershell
+# 正常进入第一幕城镇后开启下雨：
+.\scripts\Send-D2XCommand.ps1 -Command debug-weather -Arguments @{mode='rain'}
+.\scripts\Send-D2XCommand.ps1 -Command debug-weather -Arguments @{mode='rain';density=128}
+# 在第五幕允许降水的区域开启下雪：
+.\scripts\Send-D2XCommand.ps1 -Command debug-weather -Arguments @{mode='snow'}
+.\scripts\Send-D2XCommand.ps1 -Command debug-weather -Arguments @{mode='clear'}
+.\scripts\Send-D2XCommand.ps1 -Command debug-weather -Arguments @{mode='auto'}
+.\scripts\Send-D2XCommand.ps1 -Command debug-weather
+```
+
+聊天可用`/debug-weather rain`、`/debug-weather snow {"density":128}`、`/debug-weather clear`、`/debug-weather auto`及`/debug-weather status`，帮助列在`/debug-help`。回复`weather`包含mode、modeEffective、level、type、density、requestedDensity、stage、remainingFrames、precipitationAllowed、rainAllowed、snowAllowed及粒子／水花数；type按当前有效密度与雨雪类型表示，旧粒子仍可在自然减弱结束后短暂落完。lightning表示原事件雷电开关，thunderSoundFrames表示待播放雷声帧数（−1为无）；切换调试模式清除雷电及待播放雷声，不添加自然雷雨概率。
+
 ## 客户端自主行走
 
-批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方，源码含scenario=act1／act2／act3／act5的各六任务和act4三任务编排及单项quest，仍由下面的行走驱动执行接近。Windows Release已构建并入局检查；实际覆盖和剩余组合以该专题为准，不把单目标行走结果当作整条任务验收。聊天入口可用`/debug-ai-start act3`、`/debug-ai-start quest search-for-cain`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和运行边界见该专题。
+批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方。各幕任务顺序由配置维护，源码只负责按幕／原资源任务编号选择及具体任务条件图，不再另存一套幕队列。历史Windows Release运行结果不认证本次新解析；实际覆盖和剩余组合以该专题为准。聊天可用`/debug-ai-start act3`、`/debug-ai-start act1 quest4`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和运行边界见该专题。
 
 新增第一幕六任务配方与200毫秒决策，以及`supplies`整计划药剂策略和`goals:[{action:'restock'}]`补给目标，支持低血／低法力饮药、正常货架购买和安全的缺药回城往返；这批源码已通过Windows Release构建并执行实机回归，实际奖励、药剂和补给覆盖见该专题。其他任务／五幕首领的前置覆盖限制见同一专题，不能把通用hunt视为所有任务已完成。
 
@@ -215,7 +237,7 @@ $spec.preview=$false
 | `pause` / `resume` | 只在显式调试管道启用；pause要求在线ProtocolReady，冻结画面和界面输入。回执presentationPaused／networkRunning=true；不暂停原服。Single Player在下一宿主调度帧应用权威暂停，以server-status.paused为准；恢复采用最新副本，旧动作不重放 |
 | `online-status` | 顶层presentationPaused；online.protocol按SID／MCP／game返回包ID、received／sent／unconsumed、逻辑字节数和lastReceived；只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟（首个pong前null）、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
 | `online-social` / `online-chat` | 同一完整只读快照的accountChat及world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；只读、不刷新。共享界面就绪后额外chatUi返回ready／inputOpen／logOpen／draft／scroll／rows／unavailableMessages／reason，只有表现和草稿，不是发送回执。scene.automap.markers只读标记类型／名称／位置／cel；当前范围、原服参考与缺口见[联网模块](../modules/NETWORK.md) |
-| `online-chat-input` | message经过与游戏UI相同的通用分流，支持/debug-ai-*、/debug-walk*、/debug-help、/nopickup、/players、房间／头顶／私聊和BNCS命令；调试目标语法见DEBUG_AI。模式错误明确拒绝；accepted只代表本地执行或传输入队，远端结果查看accountChat及world.social，本地调试摘要另见界面[Debug]消息。scene.noPickup显示本机开关；server-snapshot.virtualPlayers和怪物admittedPlayers／experienceBase提供人数观察 |
+| `online-chat-input` | message经过与游戏UI相同的通用分流，支持/debug-ai-*、/debug-walk*、/debug-weather、/debug-help、/nopickup、/players、房间／头顶／私聊和BNCS命令；调试目标语法见DEBUG_AI，天气见本页客户端天气。模式错误明确拒绝；accepted只代表本地执行或传输入队，远端结果查看accountChat及world.social，本地调试摘要另见界面[Debug]消息。scene.noPickup显示本机开关；server-snapshot.virtualPlayers和怪物admittedPlayers／experienceBase提供人数观察 |
 | `online-send-chat` | message为1–255字节可打印ASCII且不全为空格；可选receiver为15字节内角色名，发送原0x15私聊；可选overhead=true发送原0x14且receiver须为空。accepted只代表入队，消息取真实0x26及chatSequence，不插本地回显／自动重试。普通广播、私聊、头顶原包与屏蔽由共享服务端social执行；中文编码、表情与BNCS频道暂缓。头顶消息值为world.social.hover，图形气泡未新增 |
 | `online-party-action` | unitId为当前名册真实GUID，action为invite／cancel／accept／leave（leave目标为本人）；可选gameGeneration复验本局。与P界面共用RealmSession.party_action，只发送原5E；accepted不修改名册／队号，真实结果读取75／8B／8D。 |
 | `online-chat-relation` | unitId为当前名册另一玩家GUID，action为ignore／squelch／loot／hostile，enabled布尔值；原5D/action2／3／1／4。真实关系等75／8C；忽略者阻止自己的话到达目标，squelch者屏蔽目标发来的消息，沿原PlrMsg方向条件；loot只接受存活HC，用于授予／撤销本人尸体许可；hostile仍受原等级／城镇规则约束，队伍使用online-party-action |

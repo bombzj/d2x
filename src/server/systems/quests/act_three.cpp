@@ -10,6 +10,11 @@
 #include "gameplay/quest/catalog.hpp"
 #include <algorithm>
 namespace d2x::server::quests {
+void System::onLevelEntered(RegionId level) {
+    // A3Q2_Callback03 opens Cain's introduction for this game on entering Great Marsh.
+    if(int(level)==77 && !(state_.initialFlags[questDefinition(QuestId::KhalimsWill).nativeSlot]&0x8000))
+        state_.actThree.khalimIntroAvailable=true;
+}
 void System::nativeEliteBorn(EntityId id) {
     auto &world=state_.actThree;
     if(!world.figurineEnabled || world.figurineSource || world.figurineDropped) return;
@@ -54,10 +59,11 @@ std::optional<Dialogue> System::actThreeDialogue(const ActorContext &actor,const
     }
     const auto &book=p->persistent.player.quests.at(size_t(ports_.settings.difficulty));
     const auto &khalim=book[questIndex(QuestId::KhalimsWill)];
-    if(available(QuestId::KhalimsWill) && npc.code.starts_with("cain") && khalim.stage<4 && (q.stage>=5 || khalim.stage || int(actor.area)!=75)) {
+    if(available(QuestId::KhalimsWill) && npc.code=="cain3" && khalim.stage<4) {
         // A3Q2_Callback00: introduction, cubed flail, base flail, eye,
         // heart, brain. This order also applies with several carried parts.
-        if(!(khalim.flags&khalimAssigned)) return speech(npc,QuestId::KhalimsWill,"Init");
+        if(state_.actThree.khalimIntroAvailable && !(khalim.flags&khalimAssigned))
+            return speech(npc,QuestId::KhalimsWill,"Init");
         if(detail::actTwoCarried(*p,items.khalimWill,ports_.settings.difficulty) && !(khalim.flags&khalimWillExplained)) return speech(npc,QuestId::KhalimsWill,"Successful");
         constexpr std::array names{"EarlyReturnEye","EarlyReturnBrain","EarlyReturnHeart","EarlyReturnFlail"};
         for(const unsigned part:{3u,0u,2u,1u}) if(detail::actTwoCarried(*p,items.khalimParts[part],ports_.settings.difficulty) && !(khalim.flags&(1u<<part))) return speech(npc,QuestId::KhalimsWill,names[part]);

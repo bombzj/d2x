@@ -50,7 +50,7 @@ cmake --build build --parallel
 
 ## Windows 运行
 
-链接d2x后，构建规则会将config/debug-ai.json与config/debug-ai-campaign.json复制到EXE所在目录，仅补缺、不覆盖已有同名JSON。调试AI配置的相对路径优先从EXE目录解析，不存在再按工作目录查找；因此五幕配置可直接用`/debug-ai-start {"configFile":"debug-ai-campaign.json"}`。运行副本可自行编辑，加载／重载及实际路径诊断见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。
+链接d2x及打包时仅补齐缺少的`debug-ai.json`，不覆盖已有运行配置；源码只提供`config/debug-ai.json`这一份完整27任务／七职业策略默认值。`/debug-ai-start`运行默认完整计划，`act1-5`选择五幕，`act1 quest3`按原MPQ A1Q3编号选择马勒斯任务；`/debug-ai-start campaign`与任何自定义名称一样读取独立的`debug-ai-campaign.json`，该文件由用户复制默认配置并自行修改，不随构建提供。相对配置路径先查EXE目录，再查工作目录；旧运行副本若仅含策略、没有goals，须自行更新，程序不静默覆盖或补造任务队列。加载／重载及实际路径诊断见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。新指令与配置整理尚未构建／运行。
 
 构建已有EXE后，在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。显式 `--mpq <目录或文件>` 优先；未指定时，依次搜索工作目录本身、EXE 所在目录本身、工作目录的 `assets/mpq2`，再搜索 EXE 所在目录及最多四级父目录中的 `assets/mpq2`。自动定位以 `d2data.mpq`／`D2Data.mpq` 为入口，找到首个目录即停止，挂载该目录全部 MPQ，不递归搜索子目录。无论是否显式 `--mpq`，另在工作目录、EXE 所在目录及其最多五级父目录中查找 `assets/mpq`：其中的补充包最先挂载，优先级低于 `--mpq` 目录，原版成员始终优先，补充包只填补原版未提供的路径；两目录指向同一位置时不重复挂载。工作目录与 EXE 所在目录可以不同。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](../resources/THIRD_PARTY.md) 及 `docs/licenses/`。
 

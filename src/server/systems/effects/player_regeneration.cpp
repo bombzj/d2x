@@ -14,6 +14,17 @@
 #include <stdexcept>
 
 namespace d2x::server::effects {
+DomainResult<> System::drainRunningStamina(EntityId id,uint64_t tick) {
+    const auto *player=ports_.players.findActor(id);
+    if(!player || !player->entered) return {DomainStatus::InvalidActor,{}};
+    const auto &area=ports_.areas.at(player->area);
+    const auto &record=player->persistent.player;
+    if(record.hp<=0 || area.definition.town || !player->routeRunning || player->route.empty())
+        return {DomainStatus::Applied,std::monostate{}};
+    const auto stamina=Fixed8::fromRaw(std::max(0,nativeSubtract(record.stamina.raw(),player->totals.character.staminaDrainPerFrame)));
+    return ports_.transactions.resources({player->player,id,player->area,area.generation,0,tick},
+        player->characterRevision,record.hp,record.mana,stamina);
+}
 void System::registerPlayer(EntityId id,uint64_t tick) {
     const auto *player=ports_.players.findActor(id);if(!player) throw std::invalid_argument("Missing player regeneration owner");
     auto [current,fresh]=state_.players.try_emplace(id);

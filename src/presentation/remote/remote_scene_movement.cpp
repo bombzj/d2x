@@ -275,14 +275,30 @@ void RemoteScene::Impl::plan(Motion &m, Vec goal, const Map &map, Vec origin, Mo
     // Native precise coordinates target cell centers; presentation adds
     // its half-cell offset when drawing. Match the control planner here.
     const Vec center{.5f, .5f};
-    const bool nativeMonster=unit.key.type==1 && unit.pathType && unit.pathDistance &&
-        (*unit.pathType==1 || *unit.pathType==2 || *unit.pathType==7 || *unit.pathType==13 || *unit.pathType==15);
-    const bool removeTarget=unit.key.type==0 || (unit.pathType && (*unit.pathType==1 || *unit.pathType==7 || *unit.pathType==15));
+    if(m.actionRevision!=unit.actionRevision || !m.effectivePathType) m.effectivePathType=unit.pathType;
+    else if(unit.key.type==1 && target && m.effectivePathType &&
+        (*m.effectivePathType==2 || *m.effectivePathType==13 || *m.effectivePathType==15)) m.effectivePathType=13;
+    const auto pathType=m.effectivePathType;
+    const bool nativeMonster=unit.key.type==1 && pathType && unit.pathDistance &&
+        (*pathType==1 || *pathType==2 || *pathType==3 || *pathType==5 || *pathType==6 || *pathType==7 || *pathType==12 || *pathType==13 || *pathType==15);
+    if(unit.key.type==1 && !nativeMonster) {
+        effectLimitations.insert("Native monster path parameters unavailable or unsupported");
+        return;
+    }
+    const bool removeTarget=unit.key.type==0 || (pathType && (*pathType==1 || *pathType==7 || *pathType==15));
     const auto grid=navigationCollision(map.grid,origin,unit.key,removeTarget?target:std::nullopt);
+    std::optional<int> doorOrientation;
+    if(target && target->type==2 && sceneBinding)
+        for(const auto &entry:sceneBinding->mapTargets) if(entry.unit==*target) {doorOrientation=entry.doorOrientation;break;}
     auto path = unit.key.type==0
-        ? grid.nativePlayerPath(m.position - origin + center, goal - origin + center, rule,target?target->type:255)
-        : nativeMonster ? grid.nativeUnitPath(m.position-origin+center,goal-origin+center,*unit.pathType,*unit.pathDistance,rule,unit.destinationUnit.has_value())
+        ? grid.nativePlayerPath(m.position - origin + center, goal - origin + center, rule,target?target->type:255,doorOrientation)
+        : nativeMonster ? grid.nativeUnitPath(m.position-origin+center,goal-origin+center,*pathType,*unit.pathDistance,rule,unit.destinationUnit.has_value())
         : grid.path(m.position - origin + center, goal - origin + center, true, rule);
+    if(nativeMonster && path.empty() && target && m.actionRevision==unit.actionRevision && pathType==13) {
+        m.effectivePathType=15;
+        const auto retry=navigationCollision(map.grid,origin,unit.key,target);
+        path=retry.nativeUnitPath(m.position-origin+center,goal-origin+center,15,*unit.pathDistance,rule,true);
+    }
     for (auto point : path)
         m.route.push_back(point + origin - center);
 }
@@ -478,6 +494,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     const Vec origin{float(mapOrigin.x), float(mapOrigin.y)};
     // Camera and actor rendering consult this method in the same frame.
     if (m.updatedAt == time) return m.position + m.correction;
+    m.playerKnockback=false;
     const float frameTime = m.updatedAt < 0 ? 0 : std::max(0.f,time-m.updatedAt);
     const float elapsed = std::min(frameTime,.1f);
     m.updatedAt = time;
@@ -522,6 +539,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         m.position = target; m.correction = {}; m.correctionLeft = 0;
         m.stopDestination.reset();
         m.pathStep.reset(); m.pathElapsed=0;
+        m.effectivePathType.reset();m.staminaExhausted=false;m.runningRevision=0;m.requestedRunning=false;
         m.route.clear(); m.samples.clear(); m.goal.reset(); m.pathMoving = false;
         if(pd2 || m.playerLeap) {
             m.invalidatedSkillMovement=own && localCast?localCast->revision:u.actionRevision;
@@ -663,7 +681,12 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         // 18/95/96 verify the native path; they neither replace its target
         // nor reposition its owner. D2Client 1.13c RVA 2A1B0 sends 5F on
         // excessive drift and leaves precise movement to the local path.
-        m.running = request->run && (!world().stamina || *world().stamina != 0);
+        if(request->revision!=m.requestRevision || request->run!=m.requestedRunning || request->runningRevision!=m.runningRevision) {
+            m.staminaExhausted=world().stamina && !*world().stamina;
+            m.running=request->run && !m.staminaExhausted;
+        }
+        m.requestedRunning=request->run;
+        m.runningRevision=request->runningRevision;
     } else if(m.stopDestination) {
         goal=m.stopDestination;m.running=false;
     } else if (alive && walking(u) && !m.npcClickStopped && !m.castHandoff && !(own && request &&
@@ -676,28 +699,32 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     // every movement step. A plain 02/04 has the same nStepNum=0 rule as
     // an interaction approach; it must not keep drawing into the NPC.
     const auto playerTarget = u.key.type == 0 ? (requested ? request->unit : u.destinationUnit) : std::nullopt;
-    const auto playerUnitGoal = playerTarget && playerTarget->type <= 1 ? pointForUnit(playerTarget) : std::nullopt;
-    int playerTargetSize = 0;
+    const auto playerUnitGoal = playerTarget ? pointForUnit(playerTarget) : std::nullopt;
+    int playerTargetSize = -1;
     if (playerUnitGoal) {
         const auto targetUnit = world().units.find(*playerTarget);
-        if (targetUnit != world().units.end()) playerTargetSize = unitSize(targetUnit->second);
+        if (targetUnit != world().units.end() && playerTarget->type<=1) playerTargetSize = unitSize(targetUnit->second);
+        else if(playerTarget->type==4 || playerTarget->type==5) playerTargetSize=1;
+        else if(playerTarget->type==2 && sceneBinding)
+            for(const auto &entry:sceneBinding->mapTargets) if(entry.unit==*playerTarget) {playerTargetSize=entry.collisionWidth;break;}
     }
     const auto playerPathArrived = [&](Vec position) {
-        return playerUnitGoal && playerTargetSize > 0 &&
+        return playerUnitGoal && playerTargetSize >= 0 &&
             nativeUnitDistance(position, rule.size, *playerUnitGoal, playerTargetSize) == 0;
     };
     const auto monsterPathArrived = [&](Vec position) {
-        if(u.key.type!=1 || !u.destinationUnit || !u.pathSteps || !*u.pathSteps) return false;
+        if(u.key.type!=1 || !u.destinationUnit || !u.pathSteps) return false;
         const auto targetUnit=world().units.find(*u.destinationUnit);
         const auto point=pointForUnit(u.destinationUnit);
         if(targetUnit==world().units.end() || !point) return false;
         const int targetSize=unitSize(targetUnit->second);
-        return targetSize>0 && nativeUnitDistance(position,unitSize(u),*point,targetSize)<=int(*u.pathSteps)-1;
+        return targetSize>0 && nativeUnitDistance(position,unitSize(u),*point,targetSize)<=std::max(0,int(*u.pathSteps)-1);
     };
-    if (goal && playerPathArrived(m.position)) goal.reset();
-    // Plain 02/04 object paths still stop in interaction range; only the
-    // later 13 request authorizes the local barrel Kick above.
-    if (own && request && request->unit && goal && (request->interaction || request->unit->type == 2)) {
+    if (goal && playerPathArrived(m.position)) {
+        m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+        goal.reset();
+    }
+    if (own && request && request->unit && goal && request->interaction) {
         const auto key = *request->unit;
         const Vec position = m.position + m.correction;
         bool reached = false;
@@ -718,27 +745,43 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         }
         if (reached) goal.reset();
     }
-    if(goal && monsterPathArrived(m.position)) goal.reset();
-    // Circle/knockback/leap paths need their own native client solver; never substitute a straight chase.
-    if (u.key.type == 1 && u.pathType && (*u.pathType == 5 || *u.pathType == 6 ||
-        *u.pathType == 8 || *u.pathType == 9 || *u.pathType == 11)) goal.reset();
-    const bool knocked=u.key.type==1 && u.mode==13 && u.pathType && (*u.pathType==8 || *u.pathType==11);
-    if(knocked && alive && !m.castHandoff) {
-        auto sourcePoint=u.destination ? std::optional{Vec{float(u.destination->x),float(u.destination->y)}}:pointForUnit(u.destinationUnit);
-        if(sourcePoint && m.actionRevision!=u.actionRevision) {
-            m.route.clear();m.goal=knockbackDestination(m.position,*sourcePoint,u.pathSteps.value_or(0));m.route.push_back(*m.goal);
+    if(goal && monsterPathArrived(m.position)) {
+        m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+        goal.reset();
+    }
+    if (u.key.type == 1 && u.pathType && (*u.pathType == 8 || *u.pathType == 9 || *u.pathType == 11)) goal.reset();
+    const bool playerKnocked=alive && !requested && u.key.type==0 && (u.nativeMode?u.mode==19:u.mode==20);
+    const bool knocked=playerKnocked || (alive && u.key.type==1 && u.mode==13 && u.pathType && (*u.pathType==8 || *u.pathType==11));
+    if(playerKnocked && alive && u.destination) {
+        if(m.actionRevision!=u.actionRevision) {
+            const Vec center{.5f,.5f};
+            const Vec destination{float(u.destination->x),float(u.destination->y)};
+            const auto grid=navigationCollision(map.grid,origin,u.key);
+            m.route.clear();m.castHandoff.reset();
+            m.goal=grid.nativeMovementTarget(m.position-origin+center,destination-origin+center,rule)+origin-center;
+            m.route.push_back(*m.goal);
+            m.pathElapsed=0;
+        }
+        goal=m.goal;m.running=false;
+    } else if(knocked && alive && !m.castHandoff) {
+        const auto endpoint=u.destination ? std::optional{Vec{float(u.destination->x),float(u.destination->y)}}:pointForUnit(u.destinationUnit);
+        if(endpoint && m.actionRevision!=u.actionRevision) {
+            const Vec center{.5f,.5f};
+            const auto grid=navigationCollision(map.grid,origin,u.key);
+            const auto destination=*u.pathType==8?knockbackDestination(m.position,*endpoint,(u.pathSteps.value_or(0)>>1)+1):*endpoint;
+            m.route.clear();m.goal=grid.nativeMovementTarget(m.position-origin+center,destination-origin+center,rule)+origin-center;
+            m.route.push_back(*m.goal);m.pathElapsed=0;
         }
         goal=m.goal;
     }
     if(u.key.type==0) m.movementTiming=playerTiming(u,m.running,clients);
-    const float speed = knocked ? 25.f : movementSpeed(u);
-    float pathElapsed=elapsed;
+    float speed = knocked ? 25.f : movementSpeed(u);
+    float pathElapsed=u.key.type==0?frameTime:elapsed;
+    if(knocked) pathElapsed=(m.actionRevision!=u.actionRevision || corrected)?(frameTime>.1f?0:frameTime):frameTime;
     if (goal && !knocked) {
-        const bool movingUnitTarget=playerTarget.has_value() || (u.key.type==1 && u.destinationUnit.has_value());
-        const bool changedTarget = !m.goal || (u.key.type==0 && playerTarget
-            ? nativeUnitTargetMoved(*m.goal,*goal,playerTarget->type) : movingUnitTarget
-            ? (std::floor(m.goal->x+.5f) != std::floor(goal->x+.5f) ||
-               std::floor(m.goal->y+.5f) != std::floor(goal->y+.5f))
+        const auto unitTarget=u.key.type==0?playerTarget:u.destinationUnit;
+        const bool changedTarget = !m.goal || (unitTarget
+            ? nativeUnitTargetMoved(*m.goal,*goal,unitTarget->type)
             : (*m.goal - *goal).length() > .5f);
         // A retained monster path runs on game ticks, even across a slow
         // render frame. Do not charge that gap to a new order or position.
@@ -748,31 +791,35 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         // An admitted ordinary input recomputes the native path even if
         // its coordinate is unchanged, just as StartXY/StartID on authority.
         const bool newRequest=requested && request->revision!=m.requestRevision;
+        if(newRequest || corrected || m.actionRevision!=u.actionRevision) pathElapsed=frameTime>.1f?0:frameTime;
         if (changedTarget || corrected || newRequest ||
             m.actionRevision != u.actionRevision)
             plan(m, *goal, map, origin, rule, speed, u,
                 requested?request->unit:u.destinationUnit);
+        if(m.route.empty() && u.key.type<=1)
+            m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
     } else if(!knocked) { m.route.clear(); m.goal.reset(); }
     m.actionRevision = u.actionRevision;
     m.requestRevision = request ? request->revision : 0;
     std::optional<Grid> stepCollision;
     const auto advanceRoute = [&](float remaining) {
-        bool obstructed = false;
         if(!stepCollision) stepCollision.emplace(navigationCollision(map.grid,origin,u.key));
         const auto &movementGrid=*stepCollision;
         while (!m.route.empty() && remaining > 0) {
-            if (playerPathArrived(m.position) || monsterPathArrived(m.position)) { m.route.clear(); m.goal.reset(); break; }
+            if (!knocked && (playerPathArrived(m.position) || monsterPathArrived(m.position))) {
+                m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+                m.route.clear(); m.goal.reset(); break;
+            }
             const auto next = m.route.front(), delta = next - m.position;
             const float distance = delta.length();
-            if (u.key.type == 0 || (u.key.type == 1 && !knocked)) {
+            if (u.key.type <= 1) {
                 const Vec center{.5f, .5f};
                 const auto step = m.pathStep.advance(movementGrid, m.position + center,
-                    next + center, remaining, rule, origin);
+                    next + center, remaining, (playerKnocked || (knocked && u.pathType==11))?MovementCollisionRule{0,rule.size}:rule, origin);
                 // Consuming an already reached path point supplies no new facing.
-                if (delta.x != 0 || delta.y != 0) m.look = delta;
+                if (delta.x != 0 || delta.y != 0) m.look = knocked?delta*-1.f:delta;
                 m.position = step.position - center;
-                if (step.blocked) { m.route.clear(); obstructed = true; break; }
-                if (monsterPathArrived(m.position)) {m.route.clear();m.goal.reset();break;}
+                if (step.blocked) { m.route.clear(); break; }
                 if (!step.reached) break;
                 remaining -= step.travelled; m.route.pop_front();
                 if (step.travelled > 0) break;
@@ -787,32 +834,8 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
             if (distance > remaining) break;
             remaining -= distance; m.route.pop_front();
         }
-        if (!obstructed && u.key.type == 0 && playerTarget && m.route.empty() && goal) {
-            std::optional<InteractionTarget> arrival;
-            if (playerUnitGoal && playerTargetSize > 0)
-                arrival = InteractionTarget{EntityId{uint64_t(playerTarget->id)+1}, *playerUnitGoal - origin,
-                    *playerUnitGoal - origin, playerTargetSize, playerTargetSize, 0, false, true, false};
-            else if (playerTarget->type == 4)
-                arrival = InteractionTarget{EntityId{uint64_t(playerTarget->id)+1}, *goal - origin,
-                    *goal - origin, 1, 1, 4, false, true, true};
-            else if (playerTarget->type == 2 && sceneBinding) {
-                const auto object = std::find_if(sceneBinding->mapTargets.begin(), sceneBinding->mapTargets.end(),
-                    [&](const auto &entry) { return entry.unit == *playerTarget; });
-                if (object != sceneBinding->mapTargets.end()) {
-                    const Vec target{float(object->position.x), float(object->position.y)};
-                    arrival = InteractionTarget{EntityId{uint64_t(playerTarget->id)+1}, target - origin,
-                        target - origin, object->collisionWidth, object->collisionHeight, 0, true};
-                }
-            }
-            if (arrival) {
-                const auto pathGrid=navigationCollision(map.grid,origin,u.key,playerTarget);
-                auto route = nativeTargetPath(pathGrid, m.position - origin, *arrival, playerTarget->type);
-                for (auto &point : route) point = point + origin;
-                m.route = std::move(route);
-            }
-        }
     };
-    if (u.key.type == 0 || (u.key.type == 1 && !knocked)) {
+    if (u.key.type <= 1) {
         // Ordinary dynamic paths use the same 25Hz step as authority, while
         // presentation frames only accumulate time for that simulation.
         if (m.route.empty() || speed<=0) m.pathElapsed = 0;
@@ -821,6 +844,11 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
             while (m.pathElapsed >= NativePathStep::seconds) {
                 m.pathElapsed -= NativePathStep::seconds;
                 advanceRoute(speed * NativePathStep::seconds);
+                if(!knocked && own && requested && m.running && world().stamina && !*world().stamina) {
+                    m.running=false;m.staminaExhausted=true;
+                    m.movementTiming=playerTiming(u,false,clients);speed=movementSpeed(u);
+                    if(goal && !m.route.empty()) plan(m,*goal,map,origin,rule,speed,u,playerTarget);
+                }
                 if (m.route.empty()) { m.pathElapsed = 0; break; }
             }
         }
@@ -833,6 +861,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     // same game frame. Keep walking between 25Hz steps, but never add a
     // rendering-time grace period after arrival, collision or cancellation.
     m.pathMoving=!m.route.empty() && speed>0;
+    m.playerKnockback=playerKnocked && m.pathMoving;
     if(!m.pathMoving) m.stopDestination.reset();
     m.last = u.position;
     m.positionRevision = u.positionRevision;

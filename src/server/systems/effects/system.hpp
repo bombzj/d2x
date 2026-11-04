@@ -307,6 +307,7 @@ class System {
     explicit System(Ports ports) : ports_(ports), itemTriggers_(ports.itemTriggers) {}
     void registerPlayer(EntityId,uint64_t tick);
     DomainResult<> regeneratePlayer(EntityId,uint64_t tick);
+    DomainResult<> drainRunningStamina(EntityId,uint64_t tick);
     void forgetUnit(EntityId) noexcept;
     BirthEffectsPublication prepareBirthEffects(const std::map<EntityId,monsters::Actor> &) const;
     bool validateBirthEffects(const BirthEffectsPublication &) const;
@@ -436,6 +437,8 @@ class System {
     DomainResult<> missileReaction(EntityId target,EntityId source,bool getHit,bool knockback,uint8_t hitClass,uint64_t tick);
     DomainResult<> nativeMeleeReaction(EntityId target,EntityId source,const MonsterHit &,int64_t amount,uint64_t tick,bool *lifeUpdate=nullptr);
     bool recovering(EntityId, uint64_t tick) const;
+    bool knockbackActive(EntityId) const;
+    void finishKnockback(EntityId,uint64_t tick);
     bool missileHitAllowed(EntityId,uint64_t tick) const;
     bool pd2MissileHitAllowed(EntityId,const std::array<int32_t,2> &) const;
     DomainResult<> pd2MissileHitDelay(EntityId,const std::array<int32_t,2> &,uint64_t duration,uint64_t tick);

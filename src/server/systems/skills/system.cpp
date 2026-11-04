@@ -21,11 +21,8 @@
 #include "server/systems/combat/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/companions/system.hpp"
-#include "server/systems/travel/system.hpp"
 #include "server/systems/reactions/pd2/item_events.hpp"
 #include "server/systems/inventory/item_skills.hpp"
-#include "gameplay/combat/geometry.hpp"
-#include "gameplay/combat/attack_timing.hpp"
 #include <algorithm>
 namespace d2x::server::skills {
 System::System(Ports ports):state_(ports.actions),ports_(ports),runtime_(std::make_unique<Runtime>(state_.releases(),state_.monsterReleases())) {}
@@ -72,7 +69,7 @@ bool System::uninterruptible(EntityId actor) const {
 size_t System::pendingReleases() const {return state_.pendingReleases();}
 bool System::busy(EntityId id,uint64_t tick) const {
     const auto mode=runtime_->monsterModes.find(id);
-    return state_.recovering(id,tick) || state_.busy(id,tick) || (mode!=runtime_->monsterModes.end() && !mode->second.frozenSequence);
+    return ports_.effects.recovering(id,tick) || state_.busy(id,tick) || (mode!=runtime_->monsterModes.end() && !mode->second.frozenSequence);
 }
 void System::interrupt(const ActorContext &actor) {
     cancel(actor.player,actor.actor);
@@ -185,7 +182,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         return result;
     }
     if (request.action != Action::Cast) return {};
-    if(state_.recovering(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
+    if(ports_.effects.recovering(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
     const auto result = attack(actor, request);
     if (result.status == DomainStatus::Conflict) { pending_[actor.player] = {actor, request}; return applied(); }
     if (pending_.erase(actor.player) && !result) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});

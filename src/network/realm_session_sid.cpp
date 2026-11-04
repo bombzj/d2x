@@ -201,16 +201,60 @@ void RealmSession::Impl::handle_sid(Packet packet) {
         deadline = Clock::now() + options.timeout;
         break;
     }
+    case 0x0B: {
+        auto &channels = view.lobbyChannel.channels;
+        channels.clear();
+        for (size_t index = 0; index < 1024; ++index) {
+            auto name = in.string(256);
+            if (name.empty()) { in.finish(); ++view.lobbyChannel.revision; changed(); return; }
+            channels.push_back(std::move(name));
+        }
+        throw std::runtime_error("Battle.net channel list exceeds the supported limit");
+    }
     case 0x0F: {
         const auto type = in.u32();
-        if (type != 0x04 && type != 0x0A && type != 0x12 && type != 0x13) {
+        if (type != 0x01 && type != 0x02 && type != 0x03 && type != 0x04 && type != 0x05 &&
+            type != 0x06 && type != 0x07 && type != 0x09 && type != 0x0A && type != 0x0D &&
+            type != 0x0E && type != 0x0F && type != 0x12 && type != 0x13 && type != 0x17) {
             ++view.sidProtocol.unconsumed[packet.id];
             break;
         }
-        in.take(20); // Flags, latency, IP, account and authority fields.
+        const auto flags = in.u32();
+        const auto latency = in.u32();
+        in.take(12);
         const auto name = in.string(64);
         auto message = in.string(512);
         in.finish();
+        auto &channel = view.lobbyChannel;
+        if (type == 0x07) {
+            channel.name = message;
+            channel.flags = flags;
+            channel.members.clear();
+        } else if (type == 0x01 || type == 0x02 || type == 0x03 || type == 0x09) {
+            const auto member = std::find_if(channel.members.begin(), channel.members.end(), [&](const auto &entry) {
+                return entry.name.size() == name.size() && std::equal(entry.name.begin(), entry.name.end(), name.begin(),
+                    [](unsigned char left, unsigned char right) {
+                        const auto lower = [](unsigned char value) { return value >= 'A' && value <= 'Z' ? value + 32 : value; };
+                        return lower(left) == lower(right);
+                    });
+            });
+            if (type == 0x03) {
+                if (member != channel.members.end()) channel.members.erase(member);
+            } else if (member != channel.members.end()) {
+                member->flags = flags;
+                member->latency = latency;
+                if (type != 0x09) member->description = message;
+            } else if (type != 0x09 && !name.empty() && channel.members.size() < 1024) {
+                channel.members.push_back({name, message, flags, latency});
+            }
+        }
+        if (type != 0x01 && type != 0x09) {
+            channel.messages.push_back({type, name, message});
+            if (channel.messages.size() > 128) channel.messages.pop_front();
+        }
+        ++channel.revision;
+        changed();
+        if (type != 0x04 && type != 0x0A && type != 0x12 && type != 0x13) break;
         if (!message.empty()) {
             if (type == 0x12 || type == 0x13) {
                 if (view.lobbyNotices.size() == 32) view.lobbyNotices.erase(view.lobbyNotices.begin());

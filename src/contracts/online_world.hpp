@@ -145,6 +145,7 @@ struct OnlineMovementRequest {
     bool run{}; // Requested gait, not a simulated server position or mode.
     uint64_t revision{};
     bool interaction{};
+    uint64_t runningRevision{};
 };
 inline constexpr int onlineMovementProgressTimeoutSeconds = 15;
 struct OnlineNpcMessage {

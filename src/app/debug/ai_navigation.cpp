@@ -42,6 +42,18 @@ size_t roomCoverage(const std::vector<RemoteTown::NavigationRoom> &rooms,uint16_
         return r.exploredTiles;
     return 0;
 }
+std::vector<Vec> roomStandingCells(const Grid &grid,Vec offset,const RemoteTown::NavigationRoom &room) {
+    // A room may contain disconnected islands or only a thin riverbank.
+    // Enumerate real, reconstructed standing cells; nine center/quarter
+    // probes cannot prove that an approach has no usable landing.
+    std::vector<Vec> result;
+    const int left=std::max(0,room.x-int(offset.x)),top=std::max(0,room.y-int(offset.y));
+    const int right=std::min(grid.width,room.x+room.width-int(offset.x));
+    const int bottom=std::min(grid.height,room.y+room.height-int(offset.y));
+    for(int y=top;y<bottom;++y) for(int x=left;x<right;++x)
+        if(grid.walkable(x,y,playerMovement)) result.push_back({float(x)+.5f,float(y)+.5f});
+    return result;
+}
 bool possibleWalkingPassage(const RemoteTown &town,const RemoteTown::NavigationRoom &a,const RemoteTown::NavigationRoom &b) {
     // D2MOO DRLGROOM near lists include rooms separated by up to five tiles.
     // They are visibility candidates, not evidence of a walking connection.
@@ -143,37 +155,28 @@ bool DebugAi::Impl::resumeExplorationReturn(Context &c) {
 }
 std::string DebugAi::Impl::walkState(const Context &c) const {return c.walk.snapshot().at("state").get<std::string>();}
 void DebugAi::Impl::rememberTravel(Context &c,OnlineUnitKey key) {
+    const bool retry=passageWaits.contains(Passage::Transfer);
+    auto &pending=beginPassage(Passage::Transfer,std::chrono::milliseconds(eventPolicy.initialWaitMs),
+        Clock::now()+std::chrono::seconds(eventPolicy.waitSeconds));
+    if(retry) pending.retryAt=Clock::now()+passageRetryInterval;
     const auto &view=c.session.read();const auto unit=view.world.units.find(key);
     const auto child=c.walk.snapshot();const auto &submitted=child.at("submittedInteraction");
     if(!area || unit==view.world.units.end() || !submitted.is_object()) return;
     submittedTravel=TravelSubmission{key,unit->second.assignmentRevision,view.gameGeneration,view.world.areaGeneration,
         submitted.at("worldRevision").get<uint64_t>(),submitted.at("discontinuity").get<uint64_t>(),*area};
 }
-bool DebugAi::Impl::recoverTravel(Context &c,bool correctionOnly) {
-    if(!submittedTravel || inputBlocked) return false;
-    const auto &sent=*submittedTravel;const auto &view=c.session.read();const auto &world=view.world;
-    const auto unit=world.units.find(sent.unit),player=world.units.find({0,view.load.playerUnitId.value_or(0)});
+bool DebugAi::Impl::recoverTravel(Context &c) {
+    if(!submittedTravel || inputBlocked || actionRecoveryBusy || c.moving) return false;
+    const auto &sent=*submittedTravel;const auto &view=c.session.read();
     if(view.stage!=OnlineStage::ProtocolReady || !view.load.serverLoadComplete || view.gameGeneration!=sent.game ||
-        world.areaGeneration!=sent.world || c.town.read().area!=sent.sourceArea || onlinePlayerDead(world) ||
-        unit==world.units.end() || unit->second.assignmentRevision!=sent.assignment ||
-        player==world.units.end() || !player->second.position || player->second.positionRevision<=sent.request ||
-        player->second.positionDiscontinuity<sent.discontinuity || !c.town.permitsInteraction(view,sent.unit)) return false;
-    const bool corrected=player->second.positionDiscontinuity>sent.discontinuity;
-    // A newer 15 can reject the predicted approach without changing scenes.
-    // Keep every source identity/room guard; only a settled correction away
-    // from the source's interaction range permits recovery before timeout.
-    if(correctionOnly && (!corrected || c.moving || c.town.interactionReady(view,sent.unit))) return false;
-    const auto at=*player->second.position;
-    const auto &rooms=c.town.navigationRooms();
-    if(std::none_of(rooms.begin(),rooms.end(),[&](const auto &room) {
-        return room.loaded && room.level==sent.sourceArea && at.x>=room.x && at.y>=room.y &&
-            at.x<room.x+room.width && at.y<room.y+room.height;
-    })) return false;
-    auto &attempt=travelRetries[{sent.sourceArea,sent.unit,sent.assignment}];
-    if(attempt>=2) return false;
-    ++attempt;note("travel-source-confirmed-recovery",std::to_string(sent.unit.id)+" attempt "+std::to_string(attempt)+
-        (corrected?" corrected ":" observed ")+std::to_string(at.x)+","+std::to_string(at.y));
-    cancelWalk(c);submittedTravel.reset();return true;
+        view.world.areaGeneration!=sent.world || c.town.read().area!=sent.sourceArea || onlinePlayerDead(view.world)) return false;
+    const auto unit=view.world.units.find(sent.unit);
+    const bool withdrawn=unit==view.world.units.end() || unit->second.assignmentRevision!=sent.assignment;
+    if(!withdrawn && !c.town.permitsInteraction(view,sent.unit)) return false;
+    if(!retryPassage(Passage::Transfer,withdrawn?"reacquire entrance assignment":"resume normal entrance approach / interaction")) return false;
+    auto &attempt=travelRetries[{sent.sourceArea,sent.unit,sent.assignment}];++attempt;
+    note("travel-source-confirmed-recovery",std::to_string(sent.unit.id)+" attempt "+std::to_string(attempt));
+    releaseCombat(c);cancelWalk(c);submittedTravel.reset();return true;
 }
 void DebugAi::Impl::observeChild(Context &c,const Goal &goal) {
     if(!walkIntent.is_object() || walkIntent.value("goal",std::string{})!="unit" || !walkIntent.value("interact",false)) return;
@@ -199,7 +202,7 @@ void DebugAi::Impl::observeChild(Context &c,const Goal &goal) {
     if(door) {
         const auto found=c.session.read().world.units.find(unit);
         if(found!=c.session.read().world.units.end()) pendingDoor=std::pair{unit,found->second.assignmentRevision};
-        doorDeadline=now+std::chrono::seconds(12);
+        doorDeadline=beginPassage(Passage::Door,std::chrono::milliseconds(eventPolicy.doorInitialWaitMs),now+std::chrono::seconds(eventPolicy.waitSeconds)).deadline;
         ++interactions;note("door-interaction-submitted",std::to_string(unit.id));cancelWalk(c);
     } else if(waypoint) {
         const auto found=c.session.read().world.units.find(unit);
@@ -224,7 +227,7 @@ void DebugAi::Impl::observeChild(Context &c,const Goal &goal) {
         note("town-healing-submitted",std::to_string(unit.id));
     } else if(walkIntent.value("purpose",std::string{})=="supply-return" && supplyStage==SupplyStage::Return) {
         rememberTravel(c,unit);
-        supplyPortalUsed=true;supplyPortalDeadline=now+std::chrono::seconds(15);cancelWalk(c);
+        supplyPortalUsed=true;supplyPortalDeadline=passageWaits.at(Passage::Transfer).deadline;cancelWalk(c);
         note("supply-return-submitted",std::to_string(unit.id));
     } else if(supplyStage==SupplyStage::None && (walkIntent.value("purpose",std::string{})=="quest-object" ||
         walkIntent.value("purpose",std::string{})=="quest-portal" || walkIntent.value("purpose",std::string{})=="quest-orb" || walkIntent.value("purpose",std::string{})=="quest-forge")) {
@@ -234,11 +237,11 @@ void DebugAi::Impl::observeChild(Context &c,const Goal &goal) {
         note("item-source-submitted",goal.item);cancelWalk(c);
     } else if(travelPhase==TravelPhase::WarpExit && legUnit==unit) {
         rememberTravel(c,unit);
-        travelPhase=TravelPhase::CrossWait;setActionDeadline(std::chrono::seconds(15));++interactions;
+        travelPhase=TravelPhase::CrossWait;setActionDeadline(std::chrono::seconds(eventPolicy.waitSeconds));actionDeadline=passageWaits.at(Passage::Transfer).deadline;++interactions;
         note("warp-interaction-submitted",std::to_string(unit.id));cancelWalk(c);
     } else if((goal.kind==Kind::ReturnTown || goal.kind==Kind::Restock || supplyStage==SupplyStage::ToTown || (explorationReturn && !explorationReturn->returning)) && portalIssued && !portalUsed) {
         rememberTravel(c,unit);
-        portalUsed=true;setActionDeadline(std::chrono::seconds(15));++interactions;
+        portalUsed=true;setActionDeadline(std::chrono::seconds(eventPolicy.waitSeconds));actionDeadline=passageWaits.at(Passage::Transfer).deadline;++interactions;
         note("town-portal-interaction-submitted",std::to_string(unit.id));cancelWalk(c);
     }
 }
@@ -355,8 +358,23 @@ bool DebugAi::Impl::walk(Context &c,Json intent) {
         if(intent.value("goal",std::string{})=="unit") {
             const OnlineUnitKey key{intent.at("unitType").get<uint8_t>(),intent.at("unitId").get<uint32_t>()};
             const auto unit=c.session.read().world.units.find(key);
-            if(unit!=c.session.read().world.units.end() && travelRetries.contains({area.value_or(0),key,unit->second.assignmentRevision})) {
-                intent["forceApproach"]=true;intent["changeStance"]=true;
+            unsigned retry=0;
+            if(unit!=c.session.read().world.units.end()) {
+                const auto previous=travelRetries.find({area.value_or(0),key,unit->second.assignmentRevision});
+                if(previous!=travelRetries.end()) retry=previous->second;
+                const auto door=passageWaits.find(Passage::Door);
+                if(door!=passageWaits.end() && (intent.value("purpose",std::string{})=="door" || intent.value("activation",false)))
+                    retry=std::max(retry,door->second.attempts);
+            }
+            if(retry && intent.value("interact",false) && (key.type==1 || key.type==2 || key.type==5)) {
+                // A failed opening needs the same approach recovery even
+                // when prediction has already reached the target. Otherwise
+                // a host stuck behind collision only receives more clicks.
+                intent["forceApproach"]=true;intent["resyncApproach"]=retry>=2;
+                const auto host=c.session.read().world.playerPosition;
+                note("interaction-approach-retry",std::to_string(key.type)+"/"+std::to_string(key.id)+
+                    " n="+std::to_string(retry)+" local="+std::to_string(int(c.position.x))+","+std::to_string(int(c.position.y))+
+                    (host?" host="+std::to_string(host->x)+","+std::to_string(host->y):" host=unknown"));
             }
         }
         c.walk.command(intent,c.session,c.town,c.control,c.combat);++moveGoals;
@@ -623,7 +641,7 @@ bool DebugAi::Impl::openDoor(Context &c,bool frontier) {
     if(walk(c,{{"goal","unit"},{"unitType",best->unit.type},{"unitId",best->unit.id},{"interact",true},{"purpose","door"}})) {
         const auto unit=c.session.read().world.units.find(best->unit);
         if(unit!=c.session.read().world.units.end()) pendingDoor=std::pair{best->unit,unit->second.assignmentRevision};
-        doorDeadline=Clock::now()+std::chrono::seconds(12);
+        doorDeadline=beginPassage(Passage::Door,std::chrono::milliseconds(eventPolicy.doorInitialWaitMs),Clock::now()+std::chrono::seconds(eventPolicy.waitSeconds)).deadline;
         ++interactions;note("door-interaction-submitted",std::to_string(best->unit.id));cancelWalk(c);
     }
     return true;
@@ -1410,6 +1428,9 @@ bool DebugAi::Impl::explore(Context &c,std::string purpose,bool recoveryOnly,Exp
         std::optional<std::tuple<int,int,int>> backtrackRoom;
         bool backtrackTeleport=false;
         const TeleportRooms neighborhood(c);
+        const auto threats=canTeleport?travelLandingThreats(c):std::vector<Vec>{};
+        const auto collision=c.town.navigationGrid(c.session.read());
+        const auto *walking=canTeleport?nullptr:&c.walk.navigationSearch().connectionComponent(grid,from);
         struct IndirectViewpoint {float score;OnlinePoint at;size_t destination;};
         std::vector<IndirectViewpoint> indirect;
         for(const auto &[next,destination]:junctions) {
@@ -1418,34 +1439,26 @@ bool DebugAi::Impl::explore(Context &c,std::string purpose,bool recoveryOnly,Exp
             const bool unseen=other.exploredTiles==0;
             const Vec onward{float(other.x)+float(other.width)/2,float(other.y)+float(other.height)/2};
             std::optional<IndirectViewpoint> staged;
-            // River banks and walls can cover a room center while a side is
-            // open. Probe its quarters, including our own room when moving
-            // toward its unrevealed neighbor needs a closer observation point.
-            std::vector<Vec> samples;
-            if(const auto landing=directLandings.find(next);landing!=directLandings.end()) samples.push_back(landing->second);
-            for(const float y:{.25f,.5f,.75f}) for(const float x:{.25f,.5f,.75f})
-                samples.push_back({float(r.x)+float(r.width)*x,float(r.y)+float(r.height)*y});
-            for(const Vec sample:samples) {
-                const auto open=grid.nativeSpawn(sample-offset+Vec{.5f,.5f},8,playerMovement);
-                if(!open) continue;
-                std::deque<Vec> path;
-                if(!canTeleport) {++pathSearches;path=c.walk.navigationSearch().path(grid,from,*open,false,playerMovement,true);}
-                if(path.empty() && !canTeleport) continue;
-                const auto endpoint=nativePoint((path.empty()?*open:path.back())+offset);
+            const auto cells=roomStandingCells(grid,offset,r);
+            searchDiagnostics["backtrackStandingCells"]=searchDiagnostics.value("backtrackStandingCells",size_t{})+cells.size();
+            for(const Vec open:cells) {
+                if(walking && !walking->cells[size_t(open.y)*grid.width+int(open.x)]) continue;
+                const auto endpoint=nativePoint(open+offset);
                 const Vec to{float(endpoint.x),float(endpoint.y)};
-                if(to.x<r.x || to.y<r.y || to.x>=r.x+r.width || to.y>=r.y+r.height ||
-                    distance(to,sample)>10 || distance(c.position,to)<=3 ||
+                if(distance(c.position,to)<=3 ||
                     (next==root && distance(to,onward)+2>=distance(c.position,onward))) continue;
                 if(frontierCoolingDown(endpoint,3)) continue;
-                const float wall=clearing?0.f:DebugNavigationSearch::wallCost(c.walk.navigationSearch().wallClearance(grid,*open));
-                const float score=(float(depth[destination])*40+distance(to,onward)+.25f*distance(c.position,to)+(path.empty()?20.f:0.f)+wall)*
+                const float wall=clearing?0.f:DebugNavigationSearch::wallCost(c.walk.navigationSearch().wallClearance(grid,open));
+                const float score=(float(depth[destination])*40+distance(to,onward)+.25f*distance(c.position,to)+(canTeleport?20.f:0.f)+wall)*
                     directionCost(onward)*(unseen?.75f:1.f);
                 if(canTeleport && (!neighborhood.contains(to) || distance(c.position,to)>mobilityPolicy.distance)) {
                     if(!staged || score<staged->score) staged=IndirectViewpoint{score,endpoint,destination};
                     continue;
                 }
+                if(canTeleport && (!collision.walkable(open,playerMovement) || crowdedTravelLanding(threats,to) ||
+                    !c.combat.teleportPathAllowed(*area,collision,c.position-offset,to-offset))) continue;
                 if(score<best) {
-                    best=score;point=endpoint;backtrackRoom={other.level,other.x,other.y};backtrackTeleport=path.empty();
+                    best=score;point=endpoint;backtrackRoom={other.level,other.x,other.y};backtrackTeleport=canTeleport;
                     searchDiagnostics["backtrackDestination"]={{"room",{other.level,other.x,other.y}},
                         {"observedTiles",other.exploredTiles},{"roomSteps",depth[destination]},{"loaded",other.loaded},
                         {"viaRoom",{r.level,r.x,r.y,r.width,r.height}}};
@@ -1535,8 +1548,35 @@ bool DebugAi::Impl::explore(Context &c,std::string purpose,bool recoveryOnly,Exp
 }
 bool DebugAi::Impl::approachKnown(Context &c,const Selector &selector) {
     if(!area) return false;
-    const auto hint=selector.type==5?c.town.knownConnectionPosition(*area,selector.identity):
-        c.town.knownTargetPosition(*area,selector.type,selector.identity);if(!hint) return approachTerrainClue(c,selector);
+    std::optional<OnlinePoint> hint;
+    if(selector.type==1 && (selector.superUnique || selector.eliteOnly)) {
+        // A class-level map hint may belong to an ordinary monster or corpse.
+        // Only real per-unit identity observations can guide a ranked hunt.
+        const auto population=populationMemory.find(*area);
+        float nearest=std::numeric_limits<float>::max();
+        if(population!=populationMemory.end()) for(const auto &[key,enemy]:population->second.enemies) {
+            if(enemy.identity!=selector.identity || (selector.superUnique && enemy.superUnique!=selector.superUnique) ||
+                (selector.eliteOnly && !enemy.elite)) continue;
+            const auto unit=c.session.read().world.units.find(key);
+            if(unit==c.session.read().world.units.end()) {
+                const auto &rooms=c.town.navigationRooms();
+                const auto room=std::find_if(rooms.begin(),rooms.end(),[&](const auto &r) {
+                    return r.level==*area && enemy.position.x>=r.x && enemy.position.y>=r.y &&
+                        enemy.position.x<r.x+r.width && enemy.position.y<r.y+r.height;
+                });
+                if(room!=rooms.end()) {
+                    const auto roomKey=std::tuple{int(room->level),room->x,room->y};
+                    const auto nativeKey=std::tuple{uint8_t(room->level),uint16_t(room->x/5),uint16_t(room->y/5)};
+                    if(c.session.read().world.rooms.contains(nativeKey) && population->second.searchedRooms.contains(roomKey) &&
+                        !population->second.settlingRooms.contains(roomKey)) continue;
+                }
+            }
+            const float span=distance(c.position,{float(enemy.position.x),float(enemy.position.y)});
+            if(span<nearest) {nearest=span;hint=enemy.position;}
+        }
+    } else hint=selector.type==5?c.town.knownConnectionPosition(*area,selector.identity):
+        c.town.knownTargetPosition(*area,selector.type,selector.identity);
+    if(!hint) return approachTerrainClue(c,selector);
     const auto key=std::tuple{*area,selector.type,selector.identity,hint->x,hint->y};
     if(checkedHints.contains(key)) return false;
     if(distance(c.position,{float(hint->x),float(hint->y)})<=8) {checkedHints.insert(key);note("known-target-not-reassigned",selector.name);return false;}
@@ -1652,31 +1692,30 @@ bool DebugAi::Impl::approachPoint(Context &c,OnlinePoint hint,std::string purpos
         const TeleportRooms neighborhood(c);
         const auto threats=canTeleport?travelLandingThreats(c):std::vector<Vec>{};
         const auto collision=c.town.navigationGrid(c.session.read());
+        const auto *walking=canTeleport?nullptr:&c.walk.navigationSearch().connectionComponent(grid,from);
         size_t last=0;while(last+1<chain.size() && rooms[chain[last+1]].loaded) ++last;
         for(size_t n=last+1;n>0;--n) {
             const size_t i=n-1;const auto &r=rooms[chain[i]];
             const auto &next=rooms[chain[std::min(i+1,chain.size()-1)]];
             const Vec onward=i+1<chain.size()?Vec{float(next.x)+next.width*.5f,float(next.y)+next.height*.5f}:wanted;
             std::optional<OnlinePoint> selected;float best=std::numeric_limits<float>::max();bool directTeleport=false;
-            for(const float y:{.25f,.5f,.75f}) for(const float x:{.25f,.5f,.75f}) {
-                const Vec sample{float(r.x)+r.width*x,float(r.y)+r.height*y};
-                const auto open=grid.nativeSpawn(sample-offset+Vec{.5f,.5f},8,playerMovement);if(!open) continue;
-                const auto point=nativePoint(*open+offset);const Vec at{float(point.x),float(point.y)};
-                if(at.x<r.x || at.y<r.y || at.x>=r.x+r.width || at.y>=r.y+r.height ||
-                    distance(c.position,at)<=3 || (i==0 && distance(at,onward)+2>=distance(c.position,onward)) ||
+            const auto cells=roomStandingCells(grid,offset,r);
+            approachDiagnostics["backtrackStandingCells"]=approachDiagnostics.value("backtrackStandingCells",size_t{})+cells.size();
+            for(const Vec open:cells) {
+                const auto point=nativePoint(open+offset);const Vec at{float(point.x),float(point.y)};
+                if(distance(c.position,at)<=3 || (i==0 && distance(at,onward)+2>=distance(c.position,onward)) ||
                     frontierCoolingDown(point,3,hint)) continue;
-                const float wall=exploration?DebugNavigationSearch::wallCost(c.walk.navigationSearch().wallClearance(map->grid,*open)):0.f;
+                const float wall=exploration?DebugNavigationSearch::wallCost(c.walk.navigationSearch().wallClearance(map->grid,open)):0.f;
                 const float score=distance(at,onward)+.25f*distance(c.position,at)+wall;
                 if(score>=best) continue;
                 const bool jump=canTeleport && distance(c.position,at)<=mobilityPolicy.distance &&
-                    neighborhood.contains(at) && !crowdedTravelLanding(threats,at) &&
+                    neighborhood.contains(at) && collision.walkable(open,playerMovement) && !crowdedTravelLanding(threats,at) &&
                     c.combat.teleportPathAllowed(*area,collision,c.position-offset,at-offset);
                 if(canTeleport && !jump) continue;
                 if(!jump) {
                     // Rank junctions on stable terrain. The walker validates the selected
                     // leg against live footprints before sending movement.
-                    const auto &component=c.walk.navigationSearch().connectionComponent(map->grid,from);
-                    if(!component.cells[size_t(open->y)*grid.width+int(open->x)]) continue;
+                    if(!walking->cells[size_t(open.y)*grid.width+int(open.x)]) continue;
                 }
                 best=score;selected=point;directTeleport=jump;
             }
@@ -1890,7 +1929,7 @@ bool DebugAi::Impl::travel(Context &c,uint16_t destination,bool allowWaypoint) {
     };
     if(travelPhase==TravelPhase::WaypointWait || travelPhase==TravelPhase::CrossWait) {
         if(travelPhase==TravelPhase::CrossWait && !legUnit && !c.moving &&
-            now+std::chrono::seconds(12)>=actionDeadline) {
+            retryPassage(Passage::Transfer,"resume ordinary walking boundary approach")) {
             // A walking pointer can stop at a newly occupied seam. It has no
             // irreversible service result to replay: choose a fresh ordinary
             // approach from current client collision instead of waiting forever.
@@ -2016,7 +2055,10 @@ bool DebugAi::Impl::travel(Context &c,uint16_t destination,bool allowWaypoint) {
             // The approach already completed. Keep the newly accepted crossing pointer alive.
             walkIntent=nullptr;
         } else cancelWalk(c);
-        ++interactions;travelPhase=TravelPhase::CrossWait;setActionDeadline(std::chrono::seconds(15));return false;
+        ++interactions;travelPhase=TravelPhase::CrossWait;setActionDeadline(std::chrono::seconds(eventPolicy.waitSeconds));
+        if(warp) actionDeadline=passageWaits.at(Passage::Transfer).deadline;
+        else actionDeadline=beginPassage(Passage::Transfer,std::chrono::milliseconds(eventPolicy.initialWaitMs),actionDeadline).deadline;
+        return false;
     }
     // Costs for unknown entry points are estimates. Repricing after every
     // boundary can prefer the area just left and create a two-area loop.

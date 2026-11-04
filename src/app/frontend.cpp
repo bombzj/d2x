@@ -7,8 +7,6 @@
 #include "world/tile_library_usage.hpp"
 #include "hosting/embedded_realm.hpp"
 #include "hosting/automap_store.hpp"
-#include "network/tcp_stream.hpp"
-#include "network/local_addresses.hpp"
 #include "app/online_login_memory.hpp"
 #include "app/client_preferences.hpp"
 #include "app/debug/debug_pipe.hpp"
@@ -282,6 +280,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     mapDisplay.running = preferences.running;
     mapDisplay.large = preferences.automapLarge;
     std::unique_ptr<RemoteUiClients> sharedClients;
+    WeatherCycleState weatherCycle;
     std::unique_ptr<SceneView> sharedUi;
     std::unique_ptr<SceneController> sharedController;
     const auto syncWindow = [&] {
@@ -332,6 +331,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     uint32_t displayedWaypoint{};
     bool displayedWaypointKnown{};
     std::unique_ptr<RemoteScene> scene;
+    control.bindPlayerMovementMode([&] { return scene ? scene->playerMovementMode(session.read()) : std::nullopt; });
     control.bindNpcPath(
         [&](OnlineUnitKey key) { return scene ? scene->npcPathPosition(session.read(), key) : std::nullopt; },
         [&](OnlineUnitKey key) { if (scene) scene->stopNpcPath(session.read(), key); },
@@ -370,14 +370,61 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     bool quitAwaitingLeave = false;
     int frames = 0;
     std::deque<FrameInput> debugInputs;
-    auto debugNavigationCommand=[&](const nlohmann::json &command) -> std::optional<std::string> {
+    auto localDebugCommand=[&](const nlohmann::json &command) -> std::optional<std::string> {
         const auto name=command.at("command").get<std::string>();
+        if(name=="debug-weather") {
+            const auto mode=command.value("mode",std::string{"status"});
+            std::optional<WeatherDebugMode> selected;
+            if(mode=="auto") selected=WeatherDebugMode::Auto;
+            else if(mode=="clear") selected=WeatherDebugMode::Clear;
+            else if(mode=="rain") selected=WeatherDebugMode::Rain;
+            else if(mode=="snow") selected=WeatherDebugMode::Snow;
+            else if(mode!="status") throw std::invalid_argument("Weather mode must be auto, clear, rain, snow or status");
+            int density=255;
+            if(const auto value=command.find("density");value!=command.end()) {
+                if(mode!="rain" && mode!="snow") throw std::invalid_argument("Weather density is only valid for rain or snow");
+                if(!value->is_number_integer() || *value<1 || *value>255)
+                    throw std::invalid_argument("Weather density must be an integer from 1 to 255");
+                density=value->get<int>();
+            }
+            if(session.read().stage!=OnlineStage::ProtocolReady || !sharedUi || !scene || !town.read().area)
+                throw std::invalid_argument("Weather requires an entered, rendered client world");
+            auto weather=sharedUi->debugWeather();
+            if(weather.level!=*town.read().area) throw std::invalid_argument("Wait for the current level to be rendered before controlling weather");
+            if(selected) weather=sharedUi->debugWeather(selected,density);
+            constexpr std::array modes{"auto","clear","rain","snow"};
+            constexpr std::array stages{"clear","build-up","steady","fade-out"};
+            const bool effective=weather.mode==WeatherDebugMode::Auto || weather.mode==WeatherDebugMode::Clear ||
+                (weather.mode==WeatherDebugMode::Rain?weather.rainAllowed:weather.snowAllowed);
+            return nlohmann::json{{"ok",true},{"weather",{
+                {"mode",modes.at(size_t(weather.mode))},{"modeEffective",effective},{"level",weather.level},
+                {"type",weather.density?(weather.snow?"snow":"rain"):"clear"},
+                {"density",weather.density},{"requestedDensity",weather.requestedDensity},
+                {"stage",stages.at(size_t(weather.stage))},{"remainingFrames",weather.remainingFrames},
+                {"precipitationAllowed",weather.precipitationAllowed},
+                {"rainAllowed",weather.rainAllowed},{"snowAllowed",weather.snowAllowed},
+                {"lightning",weather.lightning},{"thunderSoundFrames",weather.thunderSoundFrames},
+                {"particles",weather.particles},{"splashes",weather.splashes}}}}.dump();
+        }
         if(auto ai=debugAi.command(command,session,town,debugWalk,control,combat,inventory)) return ai;
-        if(name=="debug-walk" || name=="debug-walk-cancel") debugAi.manualInput(session,debugWalk,control,combat);
         return debugWalk.command(command,session,town,control,combat);
     };
     auto debugChatOwnsInput=[&] {
         return sharedUi && (sharedUi->ui().chatInputOpen || sharedUi->ui().messageLogOpen);
+    };
+    auto handleDebugInput=[&](FrameInput &input) {
+        if(debugAi.hasPlan()) {
+            // Escape releases AI only from the game view. Panels keep their
+            // ordinary Escape handling without changing AI ownership.
+            const bool mainView=sharedUi && !sharedUi->ui().blocksInput() &&
+                !debugInspectionOpen(sharedUi->ui(),false) && !sharedUi->ui().questOpen && !sharedUi->ui().skillPicker;
+            if(input.escape && mainView) debugAi.manualInput(session,debugWalk,control,combat);
+            else if(debugAi.active()) input.focused=true;
+        } else if(debugWalk.active()) {
+            if(debugInputTakesControl(input,debugChatOwnsInput(),debugQuestInspectionInput(input,sharedUi?&sharedUi->ui():nullptr)))
+                debugWalk.manualInput(control);
+            else input.focused=true;
+        }
     };
     auto submitChatInput=[&](const std::string &text) -> std::string {
         if(session.read().stage!=OnlineStage::ProtocolReady) return "Enter a game before submitting a command.";
@@ -385,14 +432,15 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             if(const auto request=parseDebugChatCommand(text)) {
                 if(request->at("command")=="debug-help") {
                     if(sharedUi) {
-                        sharedUi->debugChatMessage("/debug-ai-start <scenario> [JSON options]; /debug-ai-start quest <quest-name>");
-                        sharedUi->debugChatMessage("/debug-ai-append <scenario> or {\"goals\":[...]}; /debug-ai-status");
+                        sharedUi->debugChatMessage("/debug-ai-start [act1[-5] | actN questN | <config-name>] [JSON options]");
+                        sharedUi->debugChatMessage("/debug-ai-append actN, quest <quest-name> or JSON goals; /debug-ai-status");
                         sharedUi->debugChatMessage("/debug-ai-pause; /debug-ai-resume; /debug-ai-cancel");
                         sharedUi->debugChatMessage("/debug-walk [waypoint|exit|JSON options]; /debug-walk-status; /debug-walk-cancel");
+                        sharedUi->debugChatMessage("/debug-weather [status|auto|clear|rain|snow] [JSON options]; rain/snow: {\"density\":255}");
                     }
                     return {};
                 }
-                const auto response=debugNavigationCommand(*request);
+                const auto response=localDebugCommand(*request);
                 if(!response) throw std::invalid_argument("Unsupported local debug command.");
                 const auto reply=nlohmann::json::parse(*response);
                 if(sharedUi) for(const auto &line:debugChatSummary(reply)) sharedUi->debugChatMessage(line);
@@ -682,7 +730,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         }
         const bool focused = !minimized && (debugAi.active() || debugWalk.active() || (debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused));
         const bool escape = debugInputs.empty() ? IsKeyPressed(KEY_ESCAPE) : debugInputs.front().escape;
-        if (focused && escape) control.cancelMovement();
+        if (focused && escape) {
+            FrameInput release;release.escape=true;handleDebugInput(release);
+            control.cancelMovement();
+        }
         if (!focused || presentationPaused || (sharedUi && (sharedUi->ui().blocksInput() ||
             ((debugAi.hasPlan() || debugWalk.active()) && debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory())))))
             control.cancelMovement();
@@ -770,16 +821,15 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     return sharedClients->itemQuote(item, action);
                 }, submitChatInput, [&](const nlohmann::json &command) {
                     const auto name=command.at("command").get<std::string>();
-                    if(auto navigation=debugNavigationCommand(command)) return navigation;
+                    if(auto local=localDebugCommand(command)) return local;
                     const bool inputTakeover=name=="ui-input" && std::ranges::any_of(parseDebugInput(command),
                         [&](const auto &input){return debugInputTakesControl(input,debugChatOwnsInput(),debugQuestInspectionInput(input,sharedUi?&sharedUi->ui():nullptr));});
-                    if((debugAi.hasPlan() || debugWalk.active()) && (inputTakeover || name=="quit" || name=="pause" ||
+                    if(!debugAi.hasPlan() && debugWalk.active() && (inputTakeover || name=="quit" || name=="pause" ||
                         name=="travel" || name=="load" ||
                         (name.starts_with("online-") && name!="online-status" && name!="online-world" && name!="online-quest-refresh" &&
                          name!="online-items" && name!="online-ground" && name!="online-social" && name!="online-automap" &&
                          name!="online-combat" && name!="online-skills" && name!="online-item-quote" && name!="online-chat-input")))
                     {
-                        debugAi.manualInput(session,debugWalk,control,combat);
                         debugWalk.manualInput(control);
                     }
                     return serverDebugCommand(command, localConnection || lanListening ? embedded.get() : nullptr, administerLocal);
@@ -1171,7 +1221,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         sharedClients = std::make_unique<RemoteUiClients>(archives,session,inventory,combat,control,preferences.running);
                         profile.mark("client-content-ready");
                         sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
-                        sharedUi = std::make_unique<SceneView>(archives,sharedClients->content(),sharedClients->actor(),
+                        sharedUi = std::make_unique<SceneView>(archives,sharedClients->content(),weatherCycle,sharedClients->actor(),
                             sharedClients->inventory(),sharedClients->character(),sharedClients->quests(),sharedClients->npc(),sharedClients->map(),preferences.audio);
                         profile.mark("game-ui-ready");
                         sharedController = std::make_unique<SceneController>(sharedClients->actor(),sharedClients->inventory(),
@@ -1292,14 +1342,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         input={};input.mouse=finaleInput.mouse;input.focused=finaleInput.focused;
                         input.insideViewport=finaleInput.insideViewport;input.screenshot=finaleInput.screenshot;
                     }
-                    if(debugAi.hasPlan() || debugWalk.active()) {
-                        if(debugInputTakesControl(input,debugChatOwnsInput(),debugQuestInspectionInput(input,sharedUi?&sharedUi->ui():nullptr)))
-                        {
-                            debugAi.manualInput(session,debugWalk,control,combat);
-                            debugWalk.manualInput(control);
-                        }
-                        else if(debugAi.active() || debugWalk.active()) input.focused=true; // Active debug input owns background navigation.
-                    }
+                    handleDebugInput(input);
                     captureRequested = input.screenshot && !panels.capturesWorldInput();
                     if (localConnection && input.focused && !panels.gameMenuOpen && (input.save || input.load)) {
                         try {
@@ -1357,14 +1400,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     input={};input.mouse=finaleInput.mouse;input.focused=finaleInput.focused;
                     input.insideViewport=finaleInput.insideViewport;input.screenshot=finaleInput.screenshot;
                 }
-                if(debugAi.hasPlan() || debugWalk.active()) {
-                    if(debugInputTakesControl(input,debugChatOwnsInput(),debugQuestInspectionInput(input,sharedUi?&sharedUi->ui():nullptr)))
-                    {
-                        debugAi.manualInput(session,debugWalk,control,combat);
-                        debugWalk.manualInput(control);
-                    }
-                    else if(debugAi.active() || debugWalk.active()) input.focused=true;
-                }
+                handleDebugInput(input);
                 captureRequested = input.screenshot && (!sharedUi || !sharedUi->ui().capturesWorldInput());
                 ClearBackground(BLACK);
                 if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {

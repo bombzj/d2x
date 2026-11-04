@@ -138,7 +138,9 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (distance > 50) return {DomainStatus::InvalidRequest, {}};
     std::deque<Vec> route;
     if (distance > 4) {
-        route = playerRoute(ports_.spatial.navigationGrid(actor.area,actor.actor),player->position,found->arrival);
+        constexpr Vec center{.5f,.5f};
+        route = ports_.spatial.navigationGrid(actor.area,actor.actor).nativePlayerPath(player->position+center,found->position+center,playerMovement,5);
+        for(auto &point:route) point=point-center;
         if (route.empty()) return {DomainStatus::Unavailable, {}};
     }
     const auto prepared = ports_.world.requestArea(actor, found->destination);
@@ -148,10 +150,9 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     // Object operators such as TrapDoor16 also enter this ordinary tile warp.
     // Bind their accepted command just like a direct Travel request.
     mutablePlayer.locomotionSequence=actor.sequence;
-    mutablePlayer.route = std::move(route); mutablePlayer.routeRunning = mutablePlayer.running;
-    mutablePlayer.pathStep.reset();
-    mutablePlayer.movementTarget.reset();mutablePlayer.movementArrival.reset();
-    mutablePlayer.routeDestination=found->arrival;mutablePlayer.routeObstacles=area->definition.collision.obstacleRevision;
+    mutablePlayer.route = std::move(route); mutablePlayer.routeRunning = mutablePlayer.persistent.player.stamina.raw()>0;
+    mutablePlayer.movementTarget=MotionTarget{found->id,5};mutablePlayer.movementArrival.reset();
+    mutablePlayer.routeDestination=found->position;mutablePlayer.routeObstacles=area->definition.collision.obstacleRevision;
     return {DomainStatus::Applied, std::monostate{}};
 }
 DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, Fixed8 manaCost,std::optional<SkillCharge> charge,int skill) {
@@ -443,8 +444,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) {writePortalCollision(portal->second,false);state_.portals.erase(portal);} }
         if(transition.pd2SceneEntry) {state_.pd2SceneEntrants.insert(player.player);state_.pd2SceneEntryRooms.insert(free->room);}
         player.area = transition.to; player.position = arrival;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route = std::move(route);
+        if(transition.from!=transition.to) ports_.quests.onLevelEntered(transition.to);
         if(int(transition.from)==132 && int(transition.to)==109 && transition.kind==Kind::QuestObject) player.nativeBusy=true;
         player.pathStep.reset();
+        player.knockback.reset();
         player.routeRunning = player.running; player.moving = !player.route.empty();
         player.movementTarget.reset();player.movementArrival.reset();
         player.routeDestination=exitWalk.value_or(arrival);player.routeObstacles=destination->definition.collision.obstacleRevision;

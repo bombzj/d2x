@@ -266,6 +266,10 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     if (level.rain || level.mud) assets_.prepareWeather(*weather_,scene.palette);
     weather_->advance(scene.elapsed,level,project(scene.observer+scene.terrainOrigin)*view_.zoom,
         W,H-HUD,lighting_->period(level.act),palette);
+    const auto weatherState=weather_->debugState();
+    assets_.streams.weather(scene.elapsed,weatherState.rainAllowed && !weatherState.snow,weatherState.density);
+    weather_->presentLightning();
+    if (weather_->takeThunder()) assets_.sceneAudio.play("event_thunder_1",uint64_t(view_.animationTime*25.f));
     for (const auto index:visibleCells) {
         const auto &instance=map.terrain.instances[index];
         const auto *tile=map.terrain.tiles.at(size_t(instance.renderTile(scene.time)));

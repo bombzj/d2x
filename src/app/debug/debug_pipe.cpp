@@ -5,6 +5,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <iostream>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -165,9 +166,19 @@ DebugPipe::DebugPipe(const std::string &name) {
         CreateNamedPipeA(path.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE | FILE_FLAG_OVERLAPPED,
                          PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1,
                          65536, 65536, 0, &security);
+    const DWORD pipeError=impl_->pipe==INVALID_HANDLE_VALUE?GetLastError():ERROR_SUCCESS;
     LocalFree(descriptor);
-    if (impl_->pipe == INVALID_HANDLE_VALUE)
-        throw std::runtime_error("Cannot create debug pipe (name may already be in use)");
+    if (impl_->pipe == INVALID_HANDLE_VALUE) {
+        // FIRST_PIPE_INSTANCE reports ACCESS_DENIED when the name is already
+        // owned. Keep the first listener; the extra client needs no debug IO.
+        if(pipeError==ERROR_ACCESS_DENIED || pipeError==ERROR_PIPE_BUSY || pipeError==ERROR_ALREADY_EXISTS) {
+            impl_.reset();
+            std::clog<<"[debug-pipe] '"<<name<<"' unavailable (Windows error "<<pipeError
+                     <<"); continuing without a debug pipe.\n";
+            return;
+        }
+        throw std::runtime_error("Cannot create debug pipe (Windows error "+std::to_string(pipeError)+")");
+    }
     impl_->start();
 #else
     throw std::runtime_error("--debug-pipe is available only on Windows");

@@ -53,7 +53,15 @@ std::optional<AnimationTiming> reactionTiming(const PlayerState &player,std::str
 }
 }
 bool System::recovering(EntityId id,uint64_t tick) const {
+    if(const auto *player=ports_.players.findActor(id);player && player->knockback && knockbackActive(id)) return true;
     return ports_.actions.recovering(id,tick);
+}
+bool System::knockbackActive(EntityId id) const {return ports_.actions.recovery(id).knockback;}
+void System::finishKnockback(EntityId id,uint64_t tick) {
+    if(!ports_.actions.recovery(id).knockback) return;
+    auto recovery=ports_.actions.prepareRecovery(id);
+    recovery.mapped().until=tick;recovery.mapped().knockback=false;
+    ports_.actions.commitRecovery(std::move(recovery));
 }
 DomainResult<> System::block(const ActorContext &actor) {
     const auto *player=ports_.players.find(actor.player);
@@ -71,6 +79,7 @@ DomainResult<> System::block(const ActorContext &actor) {
     HitFact fact{actor.actor,0,actor.area,playerLifePercentage(int64_t(player->persistent.player.hp.raw()),player->totals.character.maxLifeFixed.raw()),false,player->position};
     fact.playerMode=18;
     recovery.lastBlockTick=actor.tick;
+    recovery.knockback=false;
     recovery.until=actor.tick+std::min<uint64_t>(timing->durationTicks(),UINT64_MAX-actor.tick);
     const auto result=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},{fact}});
     if(!result) return {result.status,{}};
@@ -85,6 +94,7 @@ DomainResult<> System::missileReaction(EntityId target,EntityId source,bool getH
     if(!recipient.player || !attacker.id()) return {DomainStatus::Unavailable,{}};
     const auto &player=*recipient.player;const auto &area=ports_.areas.at(player.area);
     if(!recipient.aliveIn(player.area) || ports_.skills.uninterruptible(target)) return {DomainStatus::Applied,std::monostate{}};
+    if(knockback && player.knockback && knockbackActive(target)) return {DomainStatus::Applied,std::monostate{}};
     // Failed area damage has no total damage and never executes HP/events.
     // Its explicit reaction still applies to a stunned unit or knockback.
     const auto *states=unitEffects(target);
@@ -94,15 +104,18 @@ DomainResult<> System::missileReaction(EntityId target,EntityId source,bool getH
     if(!timing) return {DomainStatus::Applied,std::monostate{}};
     const auto ended=endMode(target,tick);if(!ended) return ended;
     auto recovery=ports_.actions.prepareRecovery(target);
+    recovery.mapped().knockback=knockback;
     recovery.mapped().until=tick+std::min<uint64_t>(timing->durationTicks(),UINT64_MAX-tick);
     HitFact fact{target,0,player.area,playerLifePercentage(player.persistent.player.hp.raw(),player.totals.character.maxLifeFixed.raw()),false,player.position,hitClass};
     fact.playerMode=knockback?20:6;
     if(knockback) {
         const auto attackerArea=attacker.player?attacker.player->area:attacker.monster->area;
         const auto point=attacker.position()+ports_.areas.at(attackerArea).definition.origin-area.definition.origin;
-        const auto destination=knockbackDestination(player.position,point,3);
+        const Vec center{.5f,.5f};
+        const auto destination=ports_.spatial.navigationGrid(player.area,player.actor).nativeMovementTarget(
+            player.position+center,knockbackDestination(player.position,point,3)+center,playerMovement)-center;
         transactions::CharacterEdit edit{{player.player,target,player.area,area.generation,0,tick},player.inventoryRevision,player.characterRevision,player.persistent.player};
-        if(ports_.spatial.navigationGrid(player.area,player.actor).nativeMovementSegment(player.position+Vec{.5f,.5f},destination+Vec{.5f,.5f},playerMovement)) {
+        if(destination.x!=std::floor(player.position.x+.5f) || destination.y!=std::floor(player.position.y+.5f)) {
             edit.knockback=PointTarget{player.area,area.generation,destination};fact.knockback=destination;
         }
         edit.publicFacts.emplace_back(fact);
@@ -272,7 +285,7 @@ DomainResult<> System::nativeMeleeReaction(EntityId target,EntityId source,const
     }
     const bool interruptible=!ports_.skills.uninterruptible(target);
     const auto clock=reactionTiming(*player,"gh"),knockbackClock=hit.knockback?reactionTiming(*player,"kb"):std::optional<AnimationTiming>{};
-    const bool knockback=source && hit.knockback && knockbackClock && interruptible;
+    const bool knockback=source && hit.knockback && knockbackClock && interruptible && !(player->knockback && knockbackActive(target));
     auto random=player->combatRandom;const auto states=unitEffects(target);
     const bool getHit=source && hit.getHit.value_or(!hit.softHit) && (amount>0 || hit.stunFrames) && !hit.knockback && clock && interruptible &&
         monsterHitRecovery(amount,player->totals.character.maxLifeFixed.raw(),hit.hitClass,false,
@@ -287,6 +300,7 @@ DomainResult<> System::nativeMeleeReaction(EntityId target,EntityId source,const
     actions::State::PreparedRecovery recovery;
     if(getHit || knockback) {
         recovery=ports_.actions.prepareRecovery(target);
+        recovery.mapped().knockback=knockback;
         recovery.mapped().until=tick+std::min<uint64_t>((knockback?knockbackClock:clock)->durationTicks(),UINT64_MAX-tick);
         HitFact fact{target,0,player->area,playerLifePercentage(player->persistent.player.hp.raw(),player->totals.character.maxLifeFixed.raw()),false,player->position,hit.hitClass};
         fact.playerMode=knockback?20:6;
@@ -295,8 +309,10 @@ DomainResult<> System::nativeMeleeReaction(EntityId target,EntityId source,const
             if(attacker.id()) {
                 const auto region=attacker.player?attacker.player->area:attacker.monster->area;
                 const auto point=attacker.position()+ports_.areas.at(region).definition.origin-area.definition.origin;
-                const auto destination=knockbackDestination(player->position,point,3);
-                if(ports_.spatial.navigationGrid(player->area,player->actor).nativeMovementSegment(player->position+Vec{.5f,.5f},destination+Vec{.5f,.5f},playerMovement)) {
+                const Vec center{.5f,.5f};
+                const auto destination=ports_.spatial.navigationGrid(player->area,player->actor).nativeMovementTarget(
+                    player->position+center,knockbackDestination(player->position,point,3)+center,playerMovement)-center;
+                if(destination.x!=std::floor(player->position.x+.5f) || destination.y!=std::floor(player->position.y+.5f)) {
                     edit.knockback=PointTarget{player->area,area.generation,destination};fact.knockback=destination;
                 }
             }
@@ -424,7 +440,7 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
             hit.channels[5]>0 && std::all_of(hit.channels.begin(),hit.channels.begin()+5,[](auto n){return n==0;}),true,random,
             p->rules.skills && states.hasState(p->rules.skills->stunned.id,actor.tick));
     const auto knockbackClock=hit.knockback?reactionTiming(*p,"kb"):std::optional<AnimationTiming>{};
-    const bool knockback=!deferAction && source && dealt>0 && edit.player.hp>0 && knockbackClock && !ports_.skills.uninterruptible(actor.actor);
+    const bool knockback=!deferAction && source && dealt>0 && edit.player.hp>0 && knockbackClock && !ports_.skills.uninterruptible(actor.actor) && !(p->knockback && knockbackActive(actor.actor));
     if(getHit || knockback) {
         const auto removed=states.endModeEffects({},observe);
         for(const auto &entry:removed) if(entry.effect.spec.state.id>=0 && !states.hasState(entry.effect.spec.state.id,actor.tick))
@@ -434,6 +450,7 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
     actions::State::PreparedRecovery recoveryAction;
     if(getHit || knockback) {
         recoveryAction=ports_.actions.prepareRecovery(actor.actor);
+        recoveryAction.mapped().knockback=knockback;
         recoveryAction.mapped().until=actor.tick+std::min<uint64_t>((knockback?knockbackClock:clock)->durationTicks(),UINT64_MAX-actor.tick);
     }
     const auto percent = playerLifePercentage(int64_t(edit.player.hp.raw()),p->totals.character.maxLifeFixed.raw());
@@ -441,10 +458,17 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
     if(getHit || knockback) for(auto &fact:edit.publicFacts) if(auto *damage=factIf<HitFact>(&fact)) damage->playerMode=knockback?20:6;
     if(knockback && source) {
         const auto attacker=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source);
-        const auto &area=ports_.areas.at(actor.area);const Vec destination=knockbackDestination(p->position,attacker.position(),3);
-        if(ports_.spatial.navigationGrid(actor.area,p->actor).nativeMovementSegment(p->position+Vec{.5f,.5f},destination+Vec{.5f,.5f},playerMovement)) {
-            edit.knockback=PointTarget{actor.area,area.generation,destination};
-            for(auto &fact:edit.publicFacts) if(auto *damage=factIf<HitFact>(&fact)) damage->knockback=destination;
+        if(attacker.id()) {
+            const auto &area=ports_.areas.at(actor.area);
+            const auto attackerArea=attacker.player?attacker.player->area:attacker.monster->area;
+            const auto point=attacker.position()+ports_.areas.at(attackerArea).definition.origin-area.definition.origin;
+            const Vec center{.5f,.5f};
+            const auto destination=ports_.spatial.navigationGrid(actor.area,p->actor).nativeMovementTarget(
+                p->position+center,knockbackDestination(p->position,point,3)+center,playerMovement)-center;
+            if(destination.x!=std::floor(p->position.x+.5f) || destination.y!=std::floor(p->position.y+.5f)) {
+                edit.knockback=PointTarget{actor.area,area.generation,destination};
+                for(auto &fact:edit.publicFacts) if(auto *damage=factIf<HitFact>(&fact)) damage->knockback=destination;
+            }
         }
     }
     edit.random=transactions::UnitRandomEdit{p->combatRandom,random};

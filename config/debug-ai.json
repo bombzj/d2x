@@ -15,6 +15,7 @@
     "kiteMinDistance": 8,
     "hazardLookaheadMs": 350,
     "hazardPadding": 3,
+    "scope": "defensive",
     "byClass": {
       "amazon": {
         "skill": {
@@ -94,12 +95,16 @@
   },
   "events": {
     "waitSeconds": 90,
+    "initialWaitMs": 1000,
+    "doorInitialWaitMs": 250,
+    "scrollInitialWaitMs": 1000,
     "encounterRadius": 32,
     "standoffMin": 8,
     "standoffMax": 24
   },
   "mobility": {
-    "distance": 48
+    "distance": 48,
+    "mode": "auto"
   },
   "supplies": {
     "healthCount": 8,
@@ -108,5 +113,116 @@
     "manaPercent": 35,
     "criticalLifePercent": 25,
     "intervalMs": 1500
-  }
+  },
+  "goalTimeoutSeconds": 3600,
+  "goals": [
+    {
+      "action": "quest",
+      "quest": "den-of-evil"
+    },
+    {
+      "action": "quest",
+      "quest": "sisters-burial-grounds"
+    },
+    {
+      "action": "quest",
+      "quest": "search-for-cain"
+    },
+    {
+      "action": "quest",
+      "quest": "forgotten-tower"
+    },
+    {
+      "action": "quest",
+      "quest": "tools-of-the-trade"
+    },
+    {
+      "action": "quest",
+      "quest": "sisters-to-the-slaughter"
+    },
+    {
+      "action": "quest",
+      "quest": "radaments-lair"
+    },
+    {
+      "action": "quest",
+      "quest": "tainted-sun"
+    },
+    {
+      "action": "quest",
+      "quest": "arcane-sanctuary"
+    },
+    {
+      "action": "quest",
+      "quest": "summoner"
+    },
+    {
+      "action": "quest",
+      "quest": "horadric-staff"
+    },
+    {
+      "action": "quest",
+      "quest": "seven-tombs"
+    },
+    {
+      "action": "quest",
+      "quest": "blade-of-the-old-religion"
+    },
+    {
+      "action": "quest",
+      "quest": "lam-esens-tome"
+    },
+    {
+      "action": "quest",
+      "quest": "khalims-will"
+    },
+    {
+      "action": "quest",
+      "quest": "blackened-temple"
+    },
+    {
+      "action": "quest",
+      "quest": "golden-bird"
+    },
+    {
+      "action": "quest",
+      "quest": "guardian"
+    },
+    {
+      "action": "quest",
+      "quest": "fallen-angel"
+    },
+    {
+      "action": "quest",
+      "quest": "hells-forge"
+    },
+    {
+      "action": "quest",
+      "quest": "terrors-end"
+    },
+    {
+      "action": "quest",
+      "quest": "siege-on-harrogath"
+    },
+    {
+      "action": "quest",
+      "quest": "rescue-on-mount-arreat"
+    },
+    {
+      "action": "quest",
+      "quest": "prison-of-ice"
+    },
+    {
+      "action": "quest",
+      "quest": "betrayal-of-harrogath"
+    },
+    {
+      "action": "quest",
+      "quest": "rite-of-passage"
+    },
+    {
+      "action": "quest",
+      "quest": "eve-of-destruction"
+    }
+  ]
 }

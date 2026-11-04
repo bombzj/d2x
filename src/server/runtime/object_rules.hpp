@@ -45,5 +45,6 @@ struct ObjectRule {
     std::optional<TowerReward> towerReward;
     bool openingMode{};
     bool restore{},restoreVirgins{},cycleOperating{},openedMode{};
+    std::optional<int> doorOrientation;
 };
 }

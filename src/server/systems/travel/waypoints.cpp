@@ -113,17 +113,17 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
             // PlrMsg::sub_6FC828D0 UNIT_OBJECT retains the click and runs to
             // interaction range, including portals represented by Travel.
             if(nativeUnitDistance(p->position,2,at,portal.rule.width)>50) return {DomainStatus::InvalidRequest,{}};
-            const auto grid=ports_.spatial.navigationGrid(actor.area,actor.actor);
+            const auto grid=ports_.spatial.navigationGrid(actor.area,actor.actor,request.source.id);
             route=nativeTargetPath(grid,p->position,access,2);
-            if(route.empty() || !interactionClear(grid,route.back(),access)) return {DomainStatus::Unavailable,{}};
+            if(route.empty()) return {DomainStatus::Unavailable,{}};
         }
         const auto approach=route.empty()?p->position:route.back();
         Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,
             request.source.id,approach,returning?portal.fieldPosition:portal.townPosition};next.kind=kind;
         state_.transitions[actor.player]=next;
         auto &player=ports_.players.players_.at(actor.player);
-        player.locomotionSequence=actor.sequence;player.route=std::move(route);player.routeRunning=player.running;
-        player.pathStep.reset();player.movementTarget.reset();player.movementArrival.reset();
+        player.locomotionSequence=actor.sequence;player.route=std::move(route);player.routeRunning=player.persistent.player.stamina.raw()>0;
+        player.movementTarget.reset();player.movementArrival.reset();
         if(!remote) {player.movementTarget=MotionTarget{request.source.id,2};player.movementArrival=access;}
         player.routeDestination=at;player.routeObstacles=area->definition.collision.obstacleRevision;
         if(player.route.empty()) player.moving=false;

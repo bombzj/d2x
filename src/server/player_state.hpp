@@ -22,6 +22,11 @@ struct PlayerState {
     Vec position, look{0, 1};
     std::deque<Vec> route;
     NativePathStep pathStep;
+    struct KnockbackMotion {
+        Vec destination, position;
+        uint64_t started{}, teleportRevision{};
+    };
+    std::optional<KnockbackMotion> knockback;
     // PlrModes: twenty global native positions, sampled after squared travel >45.
     // Runtime follow history only; never serialized with the character.
     std::deque<Vec> movementHistory;

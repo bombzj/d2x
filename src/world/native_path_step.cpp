@@ -17,6 +17,16 @@ Vec projected(int64_t x, int64_t y) {
 bool same(Vec a, Vec b) { return a.x == b.x && a.y == b.y; }
 }
 void NativePathStep::reset() { initialized_ = changedCell_ = false;direction_={}; }
+Vec NativePathStep::stop(Vec position) {
+    if(!initialized_ || !same(position,published_)) {
+        precisionX_=precise(position.x);precisionY_=precise(position.y);
+    }
+    precisionX_=(precisionX_>>16)*precisionScale+precisionScale/2;
+    precisionY_=(precisionY_>>16)*precisionScale+precisionScale/2;
+    published_=projected(precisionX_,precisionY_);
+    initialized_=true;changedCell_=false;
+    return published_;
+}
 Vec NativePathStep::translate(Vec position, Vec offset) {
     if (!initialized_ || !same(position, published_)) { reset(); return position + offset; }
     precisionX_ += precise(offset.x); precisionY_ += precise(offset.y);
@@ -60,6 +70,7 @@ NativePathStepResult NativePathStep::advance(const Grid &grid, Vec position, Vec
         velocityX >>= 1; velocityY >>= 1;
     }
     int savedSteps = 0;
+    if(rule.mask==0x3401) rule.mask=0x3c01;
     while (column != endColumn || row != endRow) {
         sampleX += velocityX; sampleY += velocityY;
         const int nextColumn = int(sampleX >> 16), nextRow = int(sampleY >> 16);

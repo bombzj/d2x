@@ -49,6 +49,8 @@ EXE入口为`--client-profile <file.json>`，PD2窗口标题为D2X - PD2。启�
 
 默认独立调试管道为`d2x-pd2-debug`，可用`-NoDebugPipe`关闭。大厅支持既有`online-login`、状态／列表别名、选Realm／角色、返回角色／Realm、取消列表、注销、`ui-input`、`screenshot`及`quit`，JSON请求格式沿用[调试指南](../development/DEBUG_PIPE.md)。管道登录不记忆密码，状态仅给公开身份／挑战名称、包ID／计数和数值拒绝码，不保存认证载荷；需要记忆时仍通过UI登录。`-Hidden`建立隐藏的正常渲染窗口，便于沿相同入口自动操作和截图，不是无窗口协议模式。`-Diagnostic`记录程序身份、输出、启动节点及client-packets.jsonl的D2GS逻辑包；不记录SID／MCP原始认证载荷，0x68票据字段脱敏。没有到达GS收发阶段时文件可为空。游戏心跳问题可用`PlayPD2.cmd -Diagnostic`保留程序身份及游戏包记录，再取`online-status`的`gameHeartbeat`计数／时间及截图；只有游戏包完全断流才触发CN心跳超时。原版`Play-Diagnostic.cmd`语义保持原样。
 
+公共大厅新增原控件字体／基线、按钮手势、滚动条、ASCII聊天、频道列表／切换与原帮助页，见[大厅实现边界](../modules/NETWORK.md#局前逐界面一致性核对)。CN继续保留GS选择、默认Realm、房间详情禁用等原有分支；新增频道路径及原灰图在CN资源／服务尚未构建或运行，不能沿用历史登录／入场记录认证。CN中文消息编码、成员肖像、天梯／资料及完整窗口排版仍待核实。
+
 <a id="运行与部署无窗口配置"></a>
 
 ## 运行与部署：无窗口配置

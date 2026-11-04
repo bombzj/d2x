@@ -123,6 +123,7 @@ struct RemoteScene::Impl {
         Vec look;
         std::optional<uint8_t> boneWallDirection;
         bool pathMoving{};
+        bool playerKnockback{};
         std::optional<MovementTiming> movementTiming;
         ActorAnimationState animation;
         ActorAnimationState locomotionAnimation;
@@ -143,6 +144,7 @@ struct RemoteScene::Impl {
         float correctionLeft{}, updatedAt{-1}, progressAt{};
         std::deque<Vec> route;
         NativePathStep pathStep;
+        std::optional<uint8_t> effectivePathType;
         float pathElapsed{};
         std::optional<Vec> stopDestination;
         std::deque<std::pair<float,Vec>> samples; // Recent displayed path; native samples have no timestamps.
@@ -154,6 +156,8 @@ struct RemoteScene::Impl {
         uint64_t npcFacingRevision{};
         std::optional<uint64_t> npcLookRandom;
         bool running{};
+        bool requestedRunning{},staminaExhausted{};
+        uint64_t runningRevision{};
         std::optional<int> objectSoundMode;
         int lightRadius{13};
         uint64_t leapRevision{};bool leapFlying{};float leapLanding{-1};

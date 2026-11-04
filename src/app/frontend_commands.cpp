@@ -112,6 +112,18 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
     case FrontendCommand::ListGames:
         state.session.list_games();
         break;
+    case FrontendCommand::SendLobbyChat:
+        if (state.session.send_lobby_chat(std::move(action.name), action.connectionGeneration))
+            state.ui.lobbyRequestQueued(action.command);
+        break;
+    case FrontendCommand::JoinLobbyChannel:
+        if (state.session.join_lobby_channel(std::move(action.name), action.connectionGeneration))
+            state.ui.lobbyRequestQueued(action.command);
+        break;
+    case FrontendCommand::ListLobbyChannels:
+        state.session.cancel_game_list();
+        state.session.list_lobby_channels(action.connectionGeneration);
+        break;
     case FrontendCommand::CancelList:
         state.session.cancel_game_list();
         break;

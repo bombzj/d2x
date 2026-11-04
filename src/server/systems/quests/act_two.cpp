@@ -58,7 +58,8 @@ QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId re
         else {
             std::array<bool,4> parts{};unsigned count=0;
             for(size_t i=0;i<4;++i) {parts[i]=detail::actTwoCarried(*p,items.khalimParts[i],ports_.settings.difficulty)!=nullptr;count+=parts[i];}
-            status=count==4?uint8_t((q.flags&khalimWillExplained)?5:7):!parts[0]?uint8_t(q.stage?1:0):!parts[1]?2:!parts[2]?4:uint8_t(4*parts[3]+3);
+            // A3Q2_StatusFilter uses CUSTOM1 (base flail explained) when all four parts are held.
+            status=count==4?uint8_t((q.flags&khalimFlailExplained)?5:7):!parts[0]?uint8_t((count || q.stage)?1:0):!parts[1]?2:!parts[2]?4:uint8_t(4*parts[3]+3);
         }
         result.khalimStatus=status;
     }

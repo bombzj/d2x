@@ -441,7 +441,7 @@ bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
             wait("supply-return","Returning through the actually assigned own portal");
             if(walk(c,{{"goal","unit"},{"unitType",entry.unit.type},{"unitId",entry.unit.id},{"interact",true},{"purpose","supply-return"}})) {
                 rememberTravel(c,entry.unit);
-                supplyPortalUsed=true;supplyPortalDeadline=now+std::chrono::seconds(15);cancelWalk(c);
+                supplyPortalUsed=true;supplyPortalDeadline=passageWaits.at(Passage::Transfer).deadline;cancelWalk(c);
             }
             return true;
         }

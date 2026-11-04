@@ -44,7 +44,7 @@ void RemoteScene::Impl::observeQuestMissileEffects(const OnlineView &view,const 
         if(orifice && view.load.playerUnitId) {
             const Vec at{float(orifice->position->x)+.5f,float(orifice->position->y)+.5f};
             ClientMissileInitialization init;init.sourceSkill=0;
-            ClientMissileGraphics graphics;graphics.flags=0x20;graphics.position[2]=40<<11;graphics.velocity[2]=0x200;graphics.acceleration[2]=70;
+            ClientMissileGraphics graphics;graphics.flags=0x20;graphics.position[2]=40<<11;graphics.velocity[2]=0x200;graphics.target[2]=70;
             init.graphics=graphics;
             for(uint64_t i=0;i<count;++i) {
                 shared.questMusic("music_quest_horadric",725,1);
@@ -726,6 +726,22 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             clientDoSucceeded|=created;return created;
         };
         const auto runDo=[&] {
+        if (!pd2 && function==84) {
+            const auto target=event.target?targetPosition(*event.target):std::nullopt;
+            const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
+            if (!target || missile==missileNames.end() || releaseTime<0) return;
+            const Vec at{float(target->x)+.5f,float(target->y)+.5f};
+            ClientMissileInitialization initialization;
+            ClientMissileGraphics graphics;graphics.position[2]=280<<11;graphics.velocity[2]=-81920;
+            initialization.graphics=graphics;
+            launchDo(missile->second,at,at,event.level.value_or(1),releaseTime-age,{},event.source,-1,0,
+                ClientMissileSource::Program,{},0,initialization);
+            shared.triggerWeatherLightning(releaseTime-age);
+            const auto visual=overlayNames.find(skills.value(row->second,"prgoverlay"));
+            if (visual!=overlayNames.end()) overlay(int(visual->second),*event.target);
+            clientDoSucceeded=true;
+            return;
+        }
         if(triggered && (function==10 || function==96)) {
             const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
             auto target=event.target?targetPosition(*event.target):event.point;

@@ -32,6 +32,7 @@ struct SkillAction {
 };
 struct RecoveryAction {
     uint64_t until{}, lastBlockTick{};
+    bool knockback{};
 };
 struct State {
     private:

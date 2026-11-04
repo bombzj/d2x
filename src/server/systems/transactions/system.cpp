@@ -32,7 +32,6 @@
 #include "server/systems/monsters/system.hpp"
 #include "gameplay/skills/aura_resolve.hpp"
 #include <algorithm>
-#include <limits>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -310,8 +309,11 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
     const auto &knockback=inventoryEdit?inventoryEdit->knockback:characterEdit->knockback;
     if(knockback) {
         const auto &point=*knockback;const auto *area=ports_.areas.find(point.area);
-        if(!area || point.area!=player->area || area->generation!=point.generation || player->persistent.player.hp<=0 ||
-            !ports_.spatial.navigationGrid(point.area,player->actor).nativeMovementSegment(player->position+Vec{.5f,.5f},point.position+Vec{.5f,.5f},playerMovement)) return {DomainStatus::InvalidRequest,{}};
+        if(!area || point.area!=player->area || area->generation!=point.generation || player->persistent.player.hp<=0) return {DomainStatus::InvalidRequest,{}};
+        const Vec center{.5f,.5f};
+        const auto clipped=ports_.spatial.navigationGrid(point.area,player->actor).nativeMovementTarget(
+            player->position+center,point.position+center,playerMovement)-center;
+        if(clipped.x!=point.position.x || clipped.y!=point.position.y) return {DomainStatus::InvalidRequest,{}};
     }
     auto equipment = inventoryEdit && inventoryEdit->equipment ? inventoryEdit->equipment : characterEdit && characterEdit->equipment ? characterEdit->equipment : player->rules.equipment;
     if (inventoryEdit && std::any_of(equipment->items.begin(),equipment->items.end(),
@@ -750,8 +752,12 @@ DomainResult<> System::commit(Plan plan) {
     }
     const auto knockbackPlacement=characterPlacement?characterPlacement->knockback:
         inventoryPlacement?inventoryPlacement->knockback:std::optional<PointTarget>{};
-    if(knockbackPlacement && !ports_.spatial.navigationGrid(player.area,player.actor).nativeMovementSegment(
-        player.position+Vec{.5f,.5f},knockbackPlacement->position+Vec{.5f,.5f},playerMovement)) return {DomainStatus::Conflict,{}};
+    if(knockbackPlacement) {
+        const Vec center{.5f,.5f};
+        const auto clipped=ports_.spatial.navigationGrid(player.area,player.actor).nativeMovementTarget(
+            player.position+center,knockbackPlacement->position+center,playerMovement)-center;
+        if(clipped.x!=knockbackPlacement->position.x || clipped.y!=knockbackPlacement->position.y) return {DomainStatus::Conflict,{}};
+    }
     std::set<PlayerId> auraOwners{player.player};
     for(const auto &peer:plan.auraPlayers) {
         const auto *change=std::get_if<CharacterEdit>(&peer.change);
@@ -932,8 +938,12 @@ DomainResult<> System::commit(Plan plan) {
     }
     const auto &knockback=edit?edit->knockback:characterChange->knockback;
     if(knockback && player.persistent.player.hp>0) {
-        player.position=knockback->position;ports_.players.refreshCollision(player.player,ports_.areas);ports_.areas.moveRoomUnit(player.actor,player.area,player.position);player.route.clear();player.moving=false;player.runningNow=false;++player.locomotionSequence;
+        const auto origin=ports_.areas.at(player.area).definition.origin;
+        player.knockback=PlayerState::KnockbackMotion{knockback->position+origin,player.position+origin,
+            request->actor.tick,player.teleportRevision};
+        player.route.clear();player.moving=false;player.runningNow=false;++player.locomotionSequence;
     }
+    if(player.persistent.player.hp<=0 || (characterChange && characterChange->revival)) player.knockback.reset();
     ports_.players.refreshCollision(player.player,ports_.areas);
     if(player.collisionActive) PlayerStore::publishCorpseCollision(ports_.areas,next.persistent.corpses,player.persistent.corpses);
     if (next.inventoryChanged) ++player.inventoryRevision;

@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 namespace d2x {
-void DebugAi::Impl::configureQuest(Goal &goal) const {
+std::optional<QuestId> DebugAi::Impl::questIdentity(std::string_view name) {
     static constexpr std::array<std::pair<std::string_view,QuestId>,27> quests{{
         {"den-of-evil",QuestId::DenOfEvil},{"sisters-burial-grounds",QuestId::SistersBurialGrounds},
         {"search-for-cain",QuestId::SearchForCain},{"forgotten-tower",QuestId::ForgottenTower},
@@ -20,9 +20,13 @@ void DebugAi::Impl::configureQuest(Goal &goal) const {
         {"siege-on-harrogath",QuestId::SiegeOnHarrogath},{"rescue-on-mount-arreat",QuestId::RescueOnMountArreat},
         {"prison-of-ice",QuestId::PrisonOfIce},{"betrayal-of-harrogath",QuestId::BetrayalOfHarrogath},
         {"rite-of-passage",QuestId::RiteOfPassage},{"eve-of-destruction",QuestId::EveOfDestruction}}};
-    const auto found=std::find_if(quests.begin(),quests.end(),[&](const auto &v){return v.first==goal.quest;});
-    if(found==quests.end()) throw std::invalid_argument("No verified quest recipe: "+goal.quest);
-    goal.questId=found->second;goal.questSlot=questDefinition(goal.questId).nativeSlot;
+    const auto found=std::find_if(quests.begin(),quests.end(),[&](const auto &v){return v.first==name;});
+    return found==quests.end()?std::nullopt:std::optional{found->second};
+}
+void DebugAi::Impl::configureQuest(Goal &goal) const {
+    const auto id=questIdentity(goal.quest);
+    if(!id) throw std::invalid_argument("No verified quest recipe: "+goal.quest);
+    goal.questId=*id;goal.questSlot=questDefinition(goal.questId).nativeSlot;
     if(questDefinition(goal.questId).act==1) {configureActTwoQuest(goal,goal.questId);return;}
     if(questDefinition(goal.questId).act==2) {configureActThreeQuest(goal,goal.questId);return;}
     if(questDefinition(goal.questId).act==3) {configureActFourQuest(goal,goal.questId);return;}
@@ -218,9 +222,10 @@ void DebugAi::Impl::questStepDone(Context &c,std::string evidence) {
     cancelWalk(c);note("quest-step-completed",std::move(evidence));
     if(cursor<goals.size() && !goals[cursor].requirements.empty()) {
         auto observations=std::move(questRun.observations);
+        auto receipts=std::move(questRun.journalReceipts);
         if(goals[cursor].requirements.at(questRun.step).retainObservation) observations.insert(questRun.step);
         const auto completed=questRun.step;questRun={};questRun.initialized=true;questRun.step=completed;
-        questRun.observations=std::move(observations);resetStep();return;
+        questRun.observations=std::move(observations);questRun.journalReceipts=std::move(receipts);resetStep();return;
     }
     const auto step=questRun.step+1;questRun={};questRun.initialized=true;questRun.step=step;resetStep();
 }
@@ -444,25 +449,20 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
             observed=goals[cursor].questId==QuestId::SiegeOnHarrogath?decoded->second.sockets>0:!decoded->second.personalizedName.empty();
         break;
     }
-    if(observed) {pending.resultObserved=true;note("quest-pending-result-observed");}
+    if(observed) {
+        pending.resultObserved=true;
+        if(step.action==QuestAction::Portal && pending.action==QuestPending::Action::Object) passageWaits.erase(Passage::Door);
+        note("quest-pending-result-observed");
+    }
     else if(pending.action==QuestPending::Action::Portal) {
-        const auto now=Clock::now();
-        if(now<pending.deadline && recoverTravel(c,true)) {questRun.pending.reset();return;}
-        // A selectable portal may ignore the first click during opening, or
-        // its server approach may be interrupted. An idle client need not
-        // receive another position correction. Re-enter ordinary interaction
-        // only in the same loaded source scene, with the same assignment.
-        if(now>=pending.retryAt && now<pending.deadline && submittedTravel && !inputBlocked && !c.moving) {
-            const auto &sent=*submittedTravel;const auto &view=c.session.read();
-            if(view.stage==OnlineStage::ProtocolReady && view.load.serverLoadComplete &&
-                view.gameGeneration==sent.game && world.areaGeneration==sent.world && area==sent.sourceArea &&
-                pending.unit==sent.unit && unit!=world.units.end() && unit->second.assignmentRevision==sent.assignment &&
-                c.town.interactionReady(view,sent.unit,c.position)) {
-                note("quest-portal-retry","Destination absent; retrying normal interaction with "+std::to_string(sent.unit.id));
-                cancelWalk(c);submittedTravel.reset();questRun.pending.reset();return;
-            }
-        }
+        if(Clock::now()<pending.deadline && recoverTravel(c)) {questRun.pending.reset();return;}
         checkQuestPending(c);
+    }
+    else if(step.action==QuestAction::Portal && pending.action==QuestPending::Action::Object && pending.unit &&
+        unit!=world.units.end() && unit->second.assignmentRevision==pending.assignment && unit->second.mode==0 &&
+        !inputBlocked && !actionRecoveryBusy && !c.moving && c.town.permitsInteraction(c.session.read(),*pending.unit) &&
+        retryPassage(Passage::Door,"activate assigned entrance")) {
+        releaseCombat(c);cancelWalk(c);questRun.pending.reset();
     }
     else checkQuestPending(c);
 }
@@ -502,7 +502,12 @@ void DebugAi::Impl::observeQuestInteraction(Context &c,const Json &intent) {
         const auto &step=goals[cursor].steps.at(questRun.step);
         if(questRun.portalDeadline==Clock::time_point{})
             questRun.portalDeadline=now+std::chrono::seconds(step.resultWaitSeconds?step.resultWaitSeconds:unsigned(eventPolicy.waitSeconds));
-        p.deadline=questRun.portalDeadline;p.retryAt=now+std::chrono::seconds(3);
+        p.deadline=questRun.portalDeadline;
+        if(auto found=passageWaits.find(Passage::Transfer);found!=passageWaits.end()) found->second.deadline=p.deadline;
+    }
+    if(intent.value("activation",false)) {
+        if(questRun.portalDeadline==Clock::time_point{}) questRun.portalDeadline=now+std::chrono::seconds(eventPolicy.waitSeconds);
+        p.deadline=beginPassage(Passage::Door,std::chrono::milliseconds(eventPolicy.doorInitialWaitMs),questRun.portalDeadline).deadline;
     }
     questRun.pending=p;
     ++interactions;note("quest-interaction-submitted",std::to_string(p.unit->id));cancelWalk(c);

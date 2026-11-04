@@ -233,8 +233,8 @@ Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
         });
     if(monster.mode==13)
         return encodeServerPacket(ServerMessage::NpcMovePoint,[&](auto &out) {
-            out.u32(uint32_t(monster.id.value));out.u8(20);point(out,monster.knockbackSource+origin);
-            out.u8(3);out.u8(109);out.u8(11);out.u16(0);out.u8(monster.life);
+            out.u32(uint32_t(monster.id.value));out.u8(20);point(out,monster.destination+origin);
+            out.u8(monster.pathDistance);out.u8(109);out.u8(11);out.u16(0);out.u8(monster.life);
         });
     if (monster.attacking) {
         if(!monster.moving) return {};
@@ -285,7 +285,7 @@ std::vector<Bytes> nativeAttack(const server::AttackFact &fact, Vec origin) {
 }
 Bytes nativeReposition(const server::RepositionFact &fact, Vec origin) {
     return encodeServerPacket(ServerMessage::Reposition, [&](auto &out) {
-        key(out, 0, fact.actor); point(out, fact.position + origin); out.u8(0);
+        key(out, 0, fact.actor); point(out, fact.position + origin); out.u8(fact.flags);
     });
 }
 std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
@@ -311,7 +311,12 @@ std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
         result.push_back(encodeServerPacket(ServerMessage::UnitIdle,[&](auto &out) {
             key(out,0,fact.target);out.u8(fact.playerMode);point(out,fact.position+origin);out.u8(fact.hitClass);out.u8(fact.life);
         }));
-    if(fact.type==1 && !fact.killed && fact.monsterMode==6)
+    if(fact.type==1 && !fact.killed && fact.knockback)
+        result.push_back(encodeServerPacket(ServerMessage::NpcMovePoint,[&](auto &out) {
+            out.u32(uint32_t(fact.target.value));out.u8(20);point(out,*fact.knockback+origin);
+            out.u8(fact.knockbackDistance);out.u8(fact.hitClass);out.u8(11);out.u16(0);out.u8(fact.life);
+        }));
+    else if(fact.type==1 && !fact.killed && fact.monsterMode==6)
         result.push_back(monsterBlock(fact.target,fact.actionTarget));
     else if(fact.type==1 && !fact.killed && fact.monsterMode)
         result.push_back(encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){

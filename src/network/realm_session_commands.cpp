@@ -315,13 +315,21 @@ bool RealmSession::highlight_door(uint32_t object,std::optional<OnlineIntentCont
     try {Writer out;out.u8(0x3D);out.u32(object);p.sent(p.gs,out.release());p.doorHighlights[object]=now;return true;}
     catch(const std::exception &) {p.fail(OnlineErrorKind::Transport,"Door highlight could not be queued");return false;}
 }
-bool RealmSession::set_running_animation(bool run,std::optional<OnlineIntentContext> context) {
+bool RealmSession::set_running_animation(bool run,std::optional<OnlineIntentContext> context,std::optional<uint8_t> localMode) {
     std::lock_guard lock(impl_->mutex);impl_->snapshotDirty=true;auto &p=*impl_;
     if(p.compatibility.profile!=ClientProfile::Lod113c) return false;
     if(!p.require_navigation(context.value_or(onlineIntentContext(snapshot_))) || !p.view.load.playerUnitId) return false;
     const auto unit=p.view.world.units.find({0,*p.view.load.playerUnitId});
-    if(unit==p.view.world.units.end() || (run?unit->second.mode!=2:unit->second.mode!=3)) return false;
-    try {Writer out;out.u8(run?0x53:0x54);p.sent(p.gs,out.release());return true;}
+    if(unit==p.view.world.units.end() || !localMode || *localMode!=(run?2:3) || onlinePlayerDead(p.view.world)) return false;
+    if(run && (!p.view.world.stamina || !*p.view.world.stamina)) return false;
+    auto &movement=p.view.world.movementRequest;
+    if(!movement) return false;
+    try {
+        Writer out;out.u8(run?0x53:0x54);p.sent(p.gs,out.release());
+        movement->run=run;
+        movement->runningRevision=++p.view.world.revision;
+        p.changed();return true;
+    }
     catch(const std::exception &) {p.fail(OnlineErrorKind::Transport,"Run-state request could not be queued");return false;}
 }
 bool RealmSession::confirm_npc_voice(uint16_t nativeClass,std::optional<OnlineIntentContext> context) {

@@ -65,6 +65,7 @@ class RemoteScene {
     std::optional<int> npcFollowRange(const OnlineView &, OnlineUnitKey) const;
     void stopNpcPath(const OnlineView &, OnlineUnitKey);
     std::optional<Vec> playerPathPosition(const OnlineView &) const;
+    std::optional<uint8_t> playerMovementMode(const OnlineView &) const;
     const std::vector<OnlinePlayerDisplay> &players() const;
     const std::vector<OnlineSceneView::MissileDisplay> &missileObservations() const;
     std::vector<std::string> effectLimitations() const;

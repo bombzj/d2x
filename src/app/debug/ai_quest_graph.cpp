@@ -140,12 +140,26 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
     // Observe transient corpses/portals even while a different node owns an
     // accepted request. Retaining that request must not discard new facts.
     for(size_t i=0;i<goal.requirements.size();++i) {
+        const auto &step=goal.steps[i];
+        if(step.journalTalkStatus && c.control.quests().statuses[questDefinition(*step.stateQuest).nativeSlot]!=step.journalTalkStatus) {
+            // Only the current journal instruction can request this visit.
+            questRun.observations.erase(i);
+            questRun.journalReceipts.erase(i);
+            satisfied[i]=true;
+            continue;
+        }
+        if(step.journalTalkStatus && c.town.read().area==step.area && questRun.observations.contains(i)) {
+            const auto npc=find(c,*step.target);
+            if(npc && c.session.read().world.questAlerts.contains(npc->key) &&
+                questRun.journalReceipts[i].unproductiveFlags!=questFlags(c,*step.stateQuest))
+                questRun.observations.erase(i);
+        }
         satisfied[i]=questRequirementSatisfied(c,goal,i);
         if(satisfied[i] && goal.requirements[i].retainObservation) questRun.observations.insert(i);
     }
     // Never replace a submitted operation with a newly attractive branch.
     // Its own handler must first consume the actual result or report unknown.
-    const bool waiting=questRun.pending || questRun.recoveringItem || questTransaction(c) || objectIssued || pickup || portalIssued || potionRequest ||
+    const bool waiting=questRun.journalVisit || questRun.pending || questRun.recoveringItem || questTransaction(c) || objectIssued || pickup || portalIssued || potionRequest ||
         pendingDoor || pendingWaypoint || closeWaypoint || mobilityTarget || (localPad && localPad->waiting) ||
         travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit);
     if(questRun.selected && waiting) {
@@ -244,8 +258,10 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
         releaseCombat(c);cancelWalk(c);
         if(c.session.read().world.npcRequested) c.control.closeNpc();
         auto observations=std::move(questRun.observations);
+        auto receipts=std::move(questRun.journalReceipts);
         resetStep();questRun={};questRun.initialized=true;questRun.selected=true;questRun.step=chosen;
         questRun.observations=std::move(observations);
+        questRun.journalReceipts=std::move(receipts);
         note("quest-condition-selected",goal.requirements[chosen].name);
     }
     return true;

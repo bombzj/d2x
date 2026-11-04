@@ -16,7 +16,7 @@ namespace {
 RequestResult move(GameplayContext &context, net::protocol::Reader &in, bool run) {
     const auto x = in.u16(), y = in.u16(); in.finish();
     return submitGameplay(context, MovementCommand{MovementAction::Move,
-        Vec{float(x), float(y)} - context.origin, run});
+        Vec{float(x), float(y)} - context.origin, run,{},{},{},true});
 }
 RequestResult approach(GameplayContext &context, net::protocol::Reader &in, bool run) {
     const auto type = in.u32(), id = in.u32(); in.finish();

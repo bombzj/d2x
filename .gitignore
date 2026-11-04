@@ -6,6 +6,7 @@
 !/assets/mpq/.gitkeep
 /artifacts/
 /dist/
+/trash/
 /saves/
 /client-settings.json
 /online.local.json

@@ -1,6 +1,7 @@
 #pragma once
 #include "core/entity_id.hpp"
 #include "core/math.hpp"
+#include <optional>
 
 namespace d2x {
 struct Grid;
@@ -15,6 +16,7 @@ struct InteractionTarget {
     bool nativeObject = false;
     bool nativeUnit = false;
     bool collisionRequired = true;
+    std::optional<int> doorOrientation{};
 };
 bool interactionClear(const Grid &grid, Vec position, const InteractionTarget &target);
 } // namespace d2x

@@ -1,5 +1,4 @@
 #include "ai_impl.hpp"
-#include <algorithm>
 #include <stdexcept>
 
 namespace d2x {
@@ -57,19 +56,17 @@ void DebugAi::Impl::configureActTwoQuest(Goal &goal,QuestId id) const {
         QuestStep s;s.action=QuestAction::Portal;s.stateQuest=quest;s.area=to;s.sourceArea=from;s.preferWaypoint=true;return s;
     };
     // These are shared fact requirements, not recursively expanded recipes.
-    // Original A2Q2 CheckItemsAndState prioritizes cube, scroll, amulet, shaft;
-    // holding hst selects 339 instead, which sets all component explanation bits.
     const auto cube=node("cube-owned",acquire(QuestId::HoradricStaff,"Act 2 - Tomb 2 Treasure","box","chest",39),material("box"));
     const auto shaft=node("shaft-owned",acquire(QuestId::HoradricStaff,"Act 2 - Lair 1 Treasure","msf","chest",41),material("msf"));
     const auto amulet=node("amulet-owned",acquire(QuestId::HoradricStaff,"Act 2 - Tomb 3 Treasure","vip","taintedsunaltar",24),material("vip"));
-    const auto cubeTalk=node("cube-explanation",talk(QuestId::HoradricStaff,"cain2",338,0x40),explained(0x40),{cube},false,10);
-    const auto amuletTalk=node("amulet-explanation",talk(QuestId::HoradricStaff,"cain2",336,0x10),explained(0x10),{amulet},false,30);
-    const auto shaftTalk=node("shaft-explanation",talk(QuestId::HoradricStaff,"cain2",337,0x20),explained(0x20),{shaft},false,40);
+    QuestStep advice;advice.action=QuestAction::Talk;advice.stateQuest=QuestId::HoradricStaff;
+    advice.target=definitions->selector(Json{{"npc","cain2"}});advice.area=town;advice.journalTalkStatus=4; // qstsa2q25
+    const auto cainAdvice=node("journal-asks-cain-about-artifacts",advice,{},{},true);
+    auto scrollStep=advice;scrollStep.journalTalkStatus=1; // qstsa2q21
+    const auto scrollTalk=node("journal-asks-cain-about-scroll",scrollStep,explained(8),{},true);
     QuestStep combine;combine.action=QuestAction::Combine;combine.stateQuest=QuestId::HoradricStaff;combine.item="hst";combine.produced="box";
     auto readyStaff=item("hst");readyStaff.kind=Kind::BackpackItem;
-    const auto staff=node("staff-ready",combine,{{readyStaff},{submitted}},{cube,shaft,amulet,cubeTalk,amuletTalk,shaftTalk});
-    const auto staffTalk=node("assembled-staff-explanation",talk(QuestId::HoradricStaff,"cain2",339,0x400),
-        {{submitted},{flags(QuestId::HoradricStaff,0x400)}},{staff},false,5);
+    const auto staff=node("staff-ready",combine,{{readyStaff},{submitted}},{cube,shaft,amulet,cainAdvice,scrollTalk});
 
     // Owning a traded amulet/staff is not evidence of personal Sun reward.
     // Keep the real altar operation and the private pending/reward query.
@@ -131,15 +128,15 @@ void DebugAi::Impl::configureActTwoQuest(Goal &goal,QuestId id) const {
     QuestStep waypoint;waypoint.action=QuestAction::Travel;waypoint.area=valley;waypoint.activateWaypoint=true;
     const auto canyonWaypoint=node("canyon-waypoint",waypoint,{{wp(valley)}},{canyon});
     QuestStep tomb;tomb.action=QuestAction::Travel;tomb.stateQuest=QuestId::SevenTombs;tomb.trueTomb=true;
-    const auto trueTomb=node("true-tomb-arrival",tomb,{{fact(Kind::TrueTombArea)}},{clue,canyonWaypoint,staff,staffTalk});
+    const auto trueTomb=node("true-tomb-arrival",tomb,{{fact(Kind::TrueTombArea)}},{clue,canyonWaypoint,staff});
     QuestStep submit;submit.action=QuestAction::SubmitStaff;submit.stateQuest=QuestId::HoradricStaff;submit.trueTomb=true;submit.item="hst";
     submit.target=Selector{2,object("orifice",25),"Horadric orifice"};
-    const auto staffSubmitted=node("personal-staff-submission",submit,{{submitted}},{staff,staffTalk,trueTomb});
+    const auto staffSubmitted=node("personal-staff-submission",submit,{{submitted}},{staff,trueTomb});
     auto entrance=portal(QuestId::SevenTombs,valley,lair);entrance.sourceArea.reset();entrance.preferWaypoint=false;
     entrance.target=Selector{2,object("Duriel's Lair",43),"opened tomb entrance"};
     entrance.witness=Selector{2,object("orifice",25),"Horadric orifice"};
     // A2Q6_Timer_UpdateObjects: relative to the actually observed orifice.
-    entrance.witnessOffset=Vec{-13,3};entrance.resultWaitSeconds=30;
+    entrance.witnessOffset=Vec{-13,3};entrance.resultWaitSeconds=30;entrance.initialWaitMs=15000;
     const auto lairArrival=node("duriel-lair-arrival",entrance,{{in(lair)},{late}},{trueTomb,staffSubmitted});
     const auto duriel=node("duriel-death",hunt(QuestId::SevenTombs,"Act 2 - Duriel's Lair","duriel"),
         {{flags(QuestId::SevenTombs,0x2039,true)},{fact(Kind::Corpse)}},{lairArrival},true);
@@ -168,10 +165,8 @@ void DebugAi::Impl::configureActTwoQuest(Goal &goal,QuestId id) const {
         {{flags(QuestId::RadamentsLair,1)}},{radament,bookUsed},false,1);
     auto scrollProof=explained(8);scrollProof.push_back({item("tr1")});
     const auto scroll=node("horadric-scroll-owned",acquire(QuestId::HoradricStaff,"Act 2 - Sewer 1 C","tr1","chest",40),scrollProof,{radament});
-    auto scrollStep=talk(QuestId::HoradricStaff,"cain2",335,8);scrollStep.item="tr1";
-    const auto scrollTalk=node("horadric-scroll-explanation",scrollStep,explained(8),{scroll},false,20);
     switch(id) {
-    case QuestId::RadamentsLair:goal.roots={bookUsed,radamentReward,scrollTalk};break;
+    case QuestId::RadamentsLair:goal.roots={bookUsed,radamentReward,scroll,scrollTalk};break;
     case QuestId::TaintedSun:goal.roots={amulet,sunReward};break;
     case QuestId::ArcaneSanctuary:goal.roots={canyonWaypoint,summonerComment,arcaneComment};break;
     case QuestId::Summoner:goal.roots={canyonWaypoint,summonerComment};break;

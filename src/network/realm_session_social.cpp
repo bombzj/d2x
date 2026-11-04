@@ -66,6 +66,53 @@ bool RealmSession::send_bnet_command(std::string text) {
         p.error(OnlineErrorKind::Transport,"Battle.net command could not be queued.");return false;
     }
 }
+bool RealmSession::send_lobby_chat(std::string text, uint64_t connectionGeneration) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &p = *impl_;
+    if ((p.view.stage != OnlineStage::Lobby && p.view.stage != OnlineStage::ListingGames) ||
+        connectionGeneration != p.view.connectionGeneration || !p.sid.connected()) return false;
+    if (!text_valid(text, 255)) {
+        p.error(OnlineErrorKind::Input, "Lobby messages must fit in 255 printable ASCII bytes.");
+        return false;
+    }
+    try {
+        Writer out; out.string(text, 255); p.send_sid(0x0E, std::move(out));
+        p.view.error.reset(); p.changed(); return true;
+    } catch (const std::exception &) {
+        p.error(OnlineErrorKind::Transport, "Lobby message could not be queued."); return false;
+    }
+}
+bool RealmSession::join_lobby_channel(std::string name, uint64_t connectionGeneration) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &p = *impl_;
+    if ((p.view.stage != OnlineStage::Lobby && p.view.stage != OnlineStage::ListingGames) ||
+        connectionGeneration != p.view.connectionGeneration || !p.sid.connected()) return false;
+    if (!text_valid(name, 31)) {
+        p.error(OnlineErrorKind::Input, "Channel names must fit in 31 printable ASCII bytes.");
+        return false;
+    }
+    try {
+        Writer out; out.u32(2); out.string(name, 31); p.send_sid(0x0C, std::move(out));
+        p.view.error.reset(); p.changed(); return true;
+    } catch (const std::exception &) {
+        p.error(OnlineErrorKind::Transport, "Channel change could not be queued."); return false;
+    }
+}
+bool RealmSession::list_lobby_channels(uint64_t connectionGeneration) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &p = *impl_;
+    if ((p.view.stage != OnlineStage::Lobby && p.view.stage != OnlineStage::ListingGames) ||
+        connectionGeneration != p.view.connectionGeneration || !p.sid.connected()) return false;
+    try {
+        Writer out; out.u32(0); p.send_sid(0x0B, std::move(out));
+        p.view.error.reset(); p.changed(); return true;
+    } catch (const std::exception &) {
+        p.error(OnlineErrorKind::Transport, "Channel list could not be requested."); return false;
+    }
+}
 bool RealmSession::send_chat_input(std::string text) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;

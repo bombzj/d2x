@@ -43,9 +43,9 @@ struct DebugAi::Impl {
         bool clearCombat{};std::vector<std::string> ingredients;std::vector<uint16_t> searchAreas;
         unsigned skillPointReward{};
         std::vector<std::string> rewardCodes;bool rareReward{};
-        std::optional<uint8_t> status,dropNoticeStatus;
+        std::optional<uint8_t> status,dropNoticeStatus,journalTalkStatus;
         std::optional<uint8_t> cinematic;
-        unsigned resultWaitSeconds{};int residualRange{};std::optional<uint8_t> stageSound;
+        unsigned resultWaitSeconds{},initialWaitMs{};int residualRange{};std::optional<uint8_t> stageSound;
         std::optional<Vec> witnessOffset;
         struct ProximityTrigger {Selector target;int distance{};};
         std::optional<ProximityTrigger> walkingTrigger;
@@ -104,7 +104,10 @@ struct DebugAi::Impl {
         int kiteIntervalMs=900,kiteDistance=6,kiteMinDistance=8,hazardLookaheadMs=350,hazardPadding=3;
     } policy;
     struct MobilityPolicy {std::string mode="auto";bool vigor=true;int distance=24;} mobilityPolicy;
-    struct EventPolicy {int waitSeconds=90,encounterRadius=32,standoffMin=8,standoffMax=24;} eventPolicy;
+    struct EventPolicy {
+        int waitSeconds=90,initialWaitMs=1000,doorInitialWaitMs=250,scrollInitialWaitMs=1000;
+        int encounterRadius=32,standoffMin=8,standoffMax=24;
+    } eventPolicy;
     struct SupplyPolicy {
         bool enabled=true,buy=true,returnWhenEmpty=true,fillPortalBook=true;
         int lifePercent=60,manaPercent=35,criticalLifePercent=25,healthCount=4,manaCount=4,intervalMs=1500;
@@ -196,6 +199,15 @@ struct DebugAi::Impl {
     std::set<std::pair<OnlineUnitKey,uint64_t>> operatedDoors;
     std::optional<std::pair<OnlineUnitKey,uint64_t>> pendingDoor;
     Clock::time_point doorDeadline{};
+    enum class Passage {Door,CreatePortal,WorldEvent,Transfer};
+    static constexpr auto passageRetryInterval=std::chrono::seconds(1);
+    struct PassageWait {Clock::time_point retryAt{},deadline{};unsigned attempts{};};
+    std::map<Passage,PassageWait> passageWaits;
+    static std::string_view passageName(Passage);
+    PassageWait &beginPassage(Passage,std::chrono::milliseconds,Clock::time_point);
+    bool retryPassage(Passage,std::string_view);
+    bool servicePassage(Context &,const Goal &,bool prepared);
+    bool passageDefending{};
     struct WaypointActivation {OnlineUnitKey unit;uint64_t assignment{};uint16_t area{};bool menu{};};
     std::optional<WaypointActivation> pendingWaypoint;
     struct WaypointDeferral {OnlineUnitKey unit;uint64_t assignment{};Clock::time_point retryAt{};Vec position;};
@@ -208,7 +220,10 @@ struct DebugAi::Impl {
     std::set<uint16_t> waypointTownArrivals;
     uint64_t waypointMemoryGame{},waypointMemoryRevision{};
     std::optional<uint64_t> waypointActivationGeneration;
-    struct RememberedEnemy {OnlinePoint position;uint64_t assignment{};std::optional<uint16_t> identity;};
+    struct RememberedEnemy {
+        OnlinePoint position;uint64_t assignment{};std::optional<uint16_t> identity;
+        std::optional<uint16_t> superUnique{};bool elite{};
+    };
     struct AreaPopulation {
         std::optional<uint32_t> seed;
         std::map<std::tuple<int,int,int>,uint64_t> rooms;
@@ -327,7 +342,7 @@ struct DebugAi::Impl {
     struct QuestPending {
         enum class Action {Object,Portal,Scroll,Topic,Take,Imbue,Place,Travel,Pickup,Use,OpenCube,StoreCube,Transmute,SubmitStaff,Introduction,CloseCube,Service,RecoverOpen,RecoverTake,RecoverPlace,RecoverClose} action{};
         std::optional<OnlineUnitKey> unit;uint64_t assignment{},sequence{},beforeRevision{};
-        uint32_t item{};Clock::time_point deadline{},retryAt{};
+        uint32_t item{};Clock::time_point deadline{};
         bool refreshIssued{},statusRequested{},resultObserved{};
     };
     // Passive scene observation is not a submitted operation. It may be
@@ -349,7 +364,12 @@ struct DebugAi::Impl {
         std::optional<OnlineUnitKey> materialNpc;
         std::set<uint32_t> rewardBefore;
         std::set<uint32_t> materialBefore;std::optional<uint32_t> skillPointsBefore;
-        bool rewardTracked{},retriedMissingTopic{};Clock::time_point missingTopicSince{};uint64_t clueBefore{};
+        bool rewardTracked{},awaitingTopicAlert{},journalVisit{};Clock::time_point missingTopicSince{};uint64_t clueBefore{};
+        struct JournalReceipt {
+            std::set<std::pair<uint16_t,uint16_t>> heard; // private quest word and offered line
+            std::optional<uint16_t> unproductiveFlags;
+        };
+        std::map<size_t,JournalReceipt> journalReceipts;
         std::optional<uint64_t> missingTopicRefresh;
         std::set<size_t> observations;
         bool selected{};
@@ -389,6 +409,7 @@ struct DebugAi::Impl {
     bool supplyCombat(Context &,const Goal &);
     bool reachTown(Context &);
     void configureQuest(Goal &) const;
+    static std::optional<QuestId> questIdentity(std::string_view);
     void configureActTwoQuest(Goal &,QuestId) const;
     void configureActThreeQuest(Goal &,QuestId) const;
     void configureActFourQuest(Goal &,QuestId) const;
@@ -416,6 +437,8 @@ struct DebugAi::Impl {
     void questStepDone(Context &,std::string);
     void quest(Context &,const Goal &);
     bool questTalk(Context &,const Goal &,const QuestStep &);
+    bool questJournalTalk(Context &,const QuestStep &);
+    bool quietQuestNpc(Context &,const OnlineUnit &);
     bool questOperate(Context &,const QuestStep &);
     bool questPortal(Context &,const QuestStep &);
     bool questImbue(Context &,const Goal &,const QuestStep &);
@@ -472,7 +495,7 @@ struct DebugAi::Impl {
     bool walkPoint(Context &,OnlinePoint,bool exploration=false);
     void observeChild(Context &,const Goal &);
     void rememberTravel(Context &,OnlineUnitKey);
-    bool recoverTravel(Context &,bool correctionOnly=false);
+    bool recoverTravel(Context &);
     void observeActions(Context &);
     void observeQuestResult(Context &);
     bool observeMobility(Context &);

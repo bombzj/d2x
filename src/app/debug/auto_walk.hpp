@@ -26,6 +26,10 @@ class DebugAutoWalk {
     std::optional<uint16_t> destination_;
     std::optional<OnlinePoint> point_,segment_,previous_,client_,server_,edgeStart_,edgeEnd_;
     std::optional<OnlinePoint> lastFrom_,lastRequest_,lastTarget_;
+    std::optional<OnlinePoint> recoveryAnchor_,hostProgressPosition_;
+    Clock::time_point hostProgressAt_{};
+    uint64_t hostProgressRevision_{};
+    unsigned movementRecoveries_{};
     bool resyncApproach_{},changeStance_{},closeApproach_{},forceApproach_{},waitQuestAlert_{},waypointOpening_{},waypointMenu_{};
     unsigned approachRetries_{};
     Clock::time_point clickedAt_{},alertWaitSince_{};
@@ -50,6 +54,7 @@ class DebugAutoWalk {
   public:
     DebugNavigationSearch &navigationSearch() {return search_;}
     bool active() const;
+    bool recoveringMovement() const {return active() && recoveryAnchor_.has_value();}
     bool blockedByUnit() const {return active() && reason_=="Next movement segment temporarily occupied";}
     uint64_t failureCount() const {return failures_;}
     nlohmann::json snapshot() const;

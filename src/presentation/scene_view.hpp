@@ -12,6 +12,7 @@
 #include "presentation/hud/party_view.hpp"
 #include "presentation/world/scene_geometry.hpp"
 #include "presentation/world/tile_visibility.hpp"
+#include "presentation/world/weather_debug.hpp"
 #include <array>
 #include <cstdint>
 #include <map>
@@ -302,7 +303,7 @@ class SceneView {
     bool hirelingPortraitVisible() const;
     std::optional<int> miniPanelAt(Vec mouse) const;
     const ExitView *exitAt(Vec mouse) const;
-    SceneView(Archives &, const ClassicData &, const IActorClient &, IInventoryClient &,
+    SceneView(Archives &, const ClassicData &, WeatherCycleState &, const IActorClient &, IInventoryClient &,
                 ICharacterClient &, IQuestClient &, INpcClient &, IMapClient &, const AudioSettings & = {});
     void updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events) {
         assets_.sceneAudio.update(clock,actors,events);
@@ -313,6 +314,7 @@ class SceneView {
     void beginWorldGame(uint64_t generation) {
         if(questAudioGameGeneration_!=generation) {questAudioGameGeneration_=generation;assets_.streams.resetQuestCue();}
     }
+    WeatherDebugState debugWeather(std::optional<WeatherDebugMode> mode = {}, int density = 255);
     const auto &soundLimitations() const { return assets_.sceneAudio.limitations(); }
     void drawUi(Vec mouse) const;
     void updateChat(const OnlineSocialView &social,const OnlineSocialView &account) { chat_.update(social,account); }
@@ -333,6 +335,7 @@ class SceneView {
     const TradeInviteView &tradeInvite() const { return tradeInvite_; }
     // Shared original-resource effects; server replica supplies presentation data only.
     void drawNativeIceShatter(Vec position, int size) { createIceShatter(position,size); }
+    void triggerWeatherLightning(float delay);
     const SceneAssets::ProjectileVisual *projectileVisual(int id) { return assets_.ensureProjectile(id); }
     const SkillOverlayVisual *overlayVisual(int id) { return assets_.ensureOverlay(id); }
     void drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset = {},
@@ -431,7 +434,7 @@ class SceneView {
     std::optional<int> skillAt(Vec mouse) const;
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;
     void advanceUi(float dt);
-    void pauseWorldPresentation(bool paused) { assets_.audio.pauseEmitters(paused); }
+    void pauseWorldPresentation(bool paused) { assets_.audio.pauseEmitters(paused); assets_.streams.pauseWeather(paused); }
     void notice(std::string text, bool error = false);
     void openNpcDialogue(EntityId object, std::string speaker, std::string text, std::optional<uint32_t> stringId = {});
     bool npcSpeechFinished() const;

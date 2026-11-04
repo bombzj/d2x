@@ -46,6 +46,17 @@ patch_d2.mpq与pd2monchars.mpq摘要仍与规则分析基线相同。启动不�
 
 属性通知查询2FAE70→2FAE80、主人查询2FAA20→2FAA30及Vengeance Do174的3B10E0→3B3550另经实际函数体复核。计数选择器41d49的37E630使用37EE60字节表／37EC40跳转表及434DB0地图代码；300项普通选择与60项地图代码均与17d5逐项相同，详见[F63](parity/ITEMS.md#f63-41d49核心计数映射)。这些局部对应不代表新版全部玩法等价。
 
+### 2026-11-04安装身份
+
+再次只读核对同一安装目录，变化的是CN附加模块mdll1及BH，不是ProjectDiablo核心。与11月3日相比，ProjectDiablo.dll、pd2data.mpq、pd2maps.mpq、pd2assets.mpq、pd2monchars.mpq及patch_d2.mpq摘要均未变化；D2Common、D2Game和PD2_EXT也仍与已登记摘要相同。文件修改时间只作定位，不代替摘要。
+
+| 文件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| mdll1.dll | 463,360 | `a44e887d10816daf1842689b8ca2da5a912296c10bb41f363dc03a81714ac5e0` |
+| BH.dll | 2,801,152 | `f7f8c71047e02266ffeabbe0458979356beefae6c4346e65245a330d8c676a5a` |
+
+本次更新不能用来改标17d5／41d49的核心RVA或宣称核心玩法发生变化。当前mdll1已定点核对8分类、163项材料目录、滚轮分页／筛选、分类亲和性及物品续办入口，详见[当前CN分类契约](../resources/PD2_CN_DLL_ANALYSIS.md#cn当前分类标签与物品续办)；BH仅核到导出名与代码引用，不宣称全库差分完成。当前目录保留D2X旧98项并增加65项，分类15的29项路由到地图标签。未找到11月3日两份附加DLL原件，不能断言这些功能全部是11月4日新增；此前98／163项材料目录结论保留各自版本边界。固定样本按完整摘要存于`reference/pd2-cn-analysis/native-20261021/`，新的静态工程／定点函数导出位于`reference/pd2-cn-analysis/update-20261104/`，均不纳入源码提交。
+
 ### 本地原生战网对照环境
 
 用户的`artifacts/d2gs-local/Play-pd2.bat`转入其下的`pd2-native-realm-lab`；另一个`artifacts/pd2-native-realm-lab`目录仍存在，二者不是同一路径，也不是链接。选择环境时显式传LabRoot并核对配置／进程路径，不能只按目录名认定目标。

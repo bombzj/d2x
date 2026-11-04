@@ -7,6 +7,7 @@
 #include "core/random.hpp"
 #include <algorithm>
 #include <chrono>
+#include <stdexcept>
 
 namespace d2x {
 namespace {
@@ -24,6 +25,13 @@ void main() {
 }
 )";
 } // namespace
+WeatherDebugState SceneView::debugWeather(std::optional<WeatherDebugMode> mode, int density) {
+    const auto state=weather_->debugState();
+    if(state.level<0) throw std::invalid_argument("Weather requires a rendered client world");
+    if(mode) weather_->debugWeather(*mode,density,assets_.worldLevel(state.level));
+    return weather_->debugState();
+}
+void SceneView::triggerWeatherLightning(float delay) { weather_->lightning(delay); }
 void SceneView::updatePlayerTrade(const OnlinePlayerTrade &trade) {
     tradeInvite_.update(trade);
     view_.playerTradeBlocking = trade.active();
@@ -62,12 +70,12 @@ void SceneView::drawPlayerTrade(Vec mouse) const {
                     drawItemTooltip(*item,{mouse.x+170,mouse.y});
     }
 }
-SceneView::SceneView(Archives &archives, const ClassicData &content, const IActorClient &actor,
+SceneView::SceneView(Archives &archives, const ClassicData &content, WeatherCycleState &weatherCycle, const IActorClient &actor,
     IInventoryClient &inventory, ICharacterClient &character, IQuestClient &quests, INpcClient &npc, IMapClient &map,
     const AudioSettings &audio)
     : archives_(archives), actorClient_(actor), inventoryClient_(inventory), characterClient_(character), questClient_(quests),
       npcClient_(npc), mapClient_(map), assets_(archives, content), lighting_(std::make_unique<LightingView>()),
-      weather_(std::make_unique<WeatherView>()), paletteBlend_(std::make_unique<PaletteBlendView>(archives)),
+    weather_(std::make_unique<WeatherView>(weatherCycle)), paletteBlend_(std::make_unique<PaletteBlendView>(archives)),
       painter_(assets_.font), chat_(archives),
       originalMenu_(archives, assets_.font), tradeInvite_(archives, assets_.font, originalMenu_), party_(archives) {
     applyAudioSettings(audio);

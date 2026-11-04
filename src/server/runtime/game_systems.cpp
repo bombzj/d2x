@@ -8,7 +8,7 @@ namespace d2x::server {
 GameSystems::GameSystems(PlayerStore &players, AreaStore &areas, EntityIds &ids, uint64_t &random,
                          EventOutbox &events, const PreparedRules &rules, const GameSettings &settings)
     : pd2ProgramRandom(uint32_t(random)),
-      movement(MovementPorts{players, areas, travel, monsters, effects, items,objects,frameEvents,spatial}),
+      movement(MovementPorts{players, areas, travel, monsters, effects, items,objects,frameEvents,spatial,events}),
       actionState(frameEvents),
       itemTriggers(reactions::ItemTriggerPorts{players, areas, skills, transactions, random, events,monsters,effects,frameEvents}),
       world(d2x::server::world::Ports{areas, players, settings, ids, travel, monsters, missiles, skills, objects, loot,spatial,population,maps,items}),

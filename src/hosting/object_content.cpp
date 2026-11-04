@@ -133,6 +133,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         rule.subClass=objectTable.number(row,"SubClass").value_or(0);
         rule.collisionMask=object.collisionMask;rule.collision=object.hasCollision;rule.light=object.blocksLight;rule.parameters=object.parameters;
         rule.door=object.interaction==Interaction::Door;rule.stash=object.interaction==Interaction::Stash;
+        if(objectTable.number(row,"IsDoor").value_or(0)) rule.doorOrientation=objectTable.number(row,"Orientation").value_or(0);
         rule.initialization=objectTable.number(row,"InitFn").value_or(0);rule.damage=objectTable.number(row,"Damage").value_or(0);
         rule.lockable=objectTable.number(row,"Lockable").value_or(0)!=0;
         rule.preOperate=objectTable.number(row,"PreOperate").value_or(0)!=0;

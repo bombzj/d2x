@@ -7,7 +7,7 @@
 #include <cstdint>
 
 namespace d2x::server {
-struct RepositionFact { EntityId actor; RegionId area; Vec position; bool notifyOwner=true; };
+struct RepositionFact { EntityId actor; RegionId area; Vec position; bool notifyOwner=true; uint8_t flags{}; };
 struct TravelFact { PlayerId player; EntityId actor; RegionId from, to; uint64_t areaGeneration{}; Vec position; bool walking{}, revived{}; };
 struct WaypointFact { EntityId source; std::vector<RegionId> unlocked; };
 }

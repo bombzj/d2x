@@ -16,6 +16,7 @@ struct MovementCommand {
     EntityId exit{};
     std::optional<MotionTarget> target{};
     std::optional<InteractionTarget> arrival{};
+    bool coordinateRequest{};
 };
 enum class CommandStatus { Queued, Applied, NotImplemented, InvalidBinding, Stale, Paused, QueueFull, InvalidDestination, NoRoute, InvalidRequest, Unavailable, Conflict };
 struct CommandResult {

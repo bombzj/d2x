@@ -78,6 +78,22 @@ struct OnlineLobbyNotice {
     std::string text;
     bool error{};
 };
+struct OnlineLobbyMember {
+    std::string name, description;
+    uint32_t flags{}, latency{};
+};
+struct OnlineLobbyMessage {
+    uint32_t type{};
+    std::string name, text;
+};
+struct OnlineLobbyChannel {
+    std::string name;
+    uint32_t flags{};
+    uint64_t revision{};
+    std::vector<OnlineLobbyMember> members;
+    std::vector<std::string> channels;
+    std::deque<OnlineLobbyMessage> messages;
+};
 struct OnlineLoadInfo {
     std::optional<uint8_t> act, difficulty;
     std::optional<uint16_t> townArea; // LOADACT metadata, not the player's current region.
@@ -135,6 +151,7 @@ struct OnlineView {
     std::vector<OnlineGame> games;
     std::optional<OnlineGameInfo> gameInfo;
     std::vector<OnlineLobbyNotice> lobbyNotices; // Bounded native SID info/error announcements, not chat.
+    OnlineLobbyChannel lobbyChannel;
     OnlineSocialView accountChat; // BNCS transcript, independent of the current game replica.
     std::string selectedRealm, selectedCharacter;
     OnlineLoadInfo load;
@@ -161,6 +178,7 @@ struct OnlineView {
         games.clear();
         gameInfo.reset();
         lobbyNotices.clear();
+        lobbyChannel = {};
         accountChat = {};
         selectedRealm.clear();
         selectedCharacter.clear();

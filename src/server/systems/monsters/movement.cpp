@@ -1,27 +1,20 @@
 #include "system.hpp"
 #include "server/systems/attributes/monster_sources.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
-#include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/pd2_phasing.hpp"
-#include "gameplay/units/resources.hpp"
-#include "gameplay/stats/modifier_values.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
-#include "core/random.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/combat.hpp"
 #include "gameplay/combat/geometry.hpp"
-#include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/combat/life.hpp"
-#include "gameplay/combat/damage_resolution.hpp"
-#include "gameplay/combat/reception.hpp"
-#include "gameplay/rewards/experience.hpp"
+#include "world/native_target_path.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
 #include "server/systems/effects/system.hpp"
-#include "server/systems/loot/system.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "server/systems/objects/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include <algorithm>
-#include <cmath>
 #include <stdexcept>
 
 #include "system_detail.hpp"
@@ -117,14 +110,14 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     // AiTactics::sub_6FCD0E80 passes its circle radius through velocity
     // parameters into PATH_SetMaxDistance; SCmd publishes that same value.
     const uint8_t pathDistance=request.circleTurn?uint8_t(request.circleDistance):request.pathDistance;
-    if((pathType!=1 && pathType!=2 && pathType!=7 && pathType!=13 && pathType!=15) || !pathDistance)
+    if((pathType!=1 && pathType!=2 && pathType!=3 && pathType!=5 && pathType!=6 && pathType!=7 && pathType!=12 && pathType!=13 && pathType!=15) || !pathDistance)
         return {DomainStatus::InvalidRequest,{}};
     const Vec center{.5f,.5f};
     auto pathGrid=ports_.spatial.navigationGrid(actor.area,actor.id,
         !request.circleTurn && (pathType==1 || pathType==7 || pathType==15)?request.target:EntityId{});
     // A retained WallFollow path still needs its unit-target search bound.
     auto route = request.circleTurn?pathGrid.nativeMonsterCirclePath(actor.position+center,request.destination.position+center,request.circleDistance,request.circleTurn,collision):
-        pathGrid.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision,pathType==15 && bool(request.target));
+        pathGrid.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision,bool(request.target));
     if(route.empty() && !request.circleTurn && (pathType==2 || pathType==7 || pathType==13)) {
         // MonsterMode retries failed Toward paths with WallFollow. The
         // solver raises its search bound to 40 for a live unit target.
@@ -140,7 +133,6 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     const auto goal=request.circleTurn?route.back():request.destination.position;
     recordNativeMode(actor,request.running?15:2);
     actor.route = std::move(route); actor.movementTarget = request.circleTurn?EntityId{}:request.target;
-    actor.pathStep.reset();
     actor.pathSteps=uint8_t(request.pathSteps);
     actor.pathType=pathType;actor.pathDistance=pathDistance;
     actor.movementGoal = goal;
@@ -168,7 +160,11 @@ void System::stop(EntityId id) {
     if (auto it = state_.actors.find(id); it != state_.actors.end()) {
         auto &actor = it->second;
         // Step::PATH_ResetMovement clears points and velocity, not pTargetUnit.
-        if (!actor.route.empty() || actor.moving || actor.running) { actor.route.clear(); actor.moving = false; actor.running = false; ++actor.revision; }
+        if (!actor.route.empty() || actor.moving || actor.running) {
+            actor.position=actor.pathStep.stop(actor.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+            actor.route.clear(); actor.moving = false; actor.running = false; ++actor.revision;
+            if(ports_.areas.hasRoomUnit(id)) ports_.areas.moveRoomUnit(id,actor.area,actor.position);
+        }
     }
 }
 DomainResult<> System::beginAttack(EntityId id, uint64_t until, bool returnToNeutral, EntityId target,std::optional<NativeUnitStats> modeStats,uint8_t mode) {
@@ -253,6 +249,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             const auto result=ports_.effects.movementSkills(id,tick.tick,actor.pathStep.direction(),actor.pathStep.nativePosition());
             if(!result) {blocked=true;continue;}
         }
+        const auto previousModeFrame=actor.modeFrame;
         actor.modeFrame=tick.tick;
         if (!ports_.areas.loaded(actor.area, actor.position+Vec{.5f,.5f})) {
             actor.moving = false; actor.route.clear(); actor.movementTarget = {};
@@ -275,14 +272,43 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             if(!result) {blocked=true;continue;}
         }
         if(actor.knockbackGoal && actor.alive() && actor.life>0) {
-            const auto grid=ports_.spatial.navigationGrid(actor.area,actor.id);
-            const Vec delta=*actor.knockbackGoal-actor.position;
-            const Vec next=actor.position+delta.unit()*std::min(delta.length(),25.f*TickContext::seconds);
-            if(grid.segment(actor.position+Vec{.5f,.5f},next+Vec{.5f,.5f},{},actor.rule.collision)) {actor.position=next;ports_.areas.moveRoomUnit(id,actor.area,actor.position);refreshCollision(actor);}
-            else actor.knockbackGoal=actor.position;
+            if(tick.tick<=actor.knockbackStarted) continue;
+            const auto previousPosition=actor.position;
+            const auto previousStep=actor.pathStep;
+            AreaStore::CollisionMove collisionMove{ports_.areas,actor.id,actor.area};
+            const auto grid=ports_.spatial.movementGrid(actor.area,collisionMove);
+            const Vec center{.5f,.5f};
+            const auto step=actor.pathStep.advance(grid,actor.position+center,*actor.knockbackGoal+center,
+                1.f,actor.rule.collision);
+            actor.position=step.position-center;
+            const bool finished=tick.tick>=actor.knockedUntil;
+            const bool leaper=actor.rule.knockbackDistance==10;
+            if(finished && !leaper && actor.rule.hitRecoveryTicks>0) {
+                const HitFact fact{id,1,actor.area,monsterLifeRatio(actor.life,actor.maximumLife),false,actor.position,160,3};
+                if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},{fact}})) {
+                    actor.position=previousPosition;actor.pathStep=previousStep;actor.modeFrame=previousModeFrame;
+                    collisionMove.rollback();blocked=true;continue;
+                }
+            }
+            collisionMove.commit();ports_.areas.moveRoomUnit(id,actor.area,actor.position);
+            if(step.blocked) actor.knockbackGoal=actor.position;
             ++actor.revision;
             if(tick.tick<actor.knockedUntil) continue;
             actor.knockbackGoal.reset();actor.knockedUntil=0;
+            actor.position=actor.pathStep.stop(actor.position+center)-center;
+            ports_.areas.moveRoomUnit(id,actor.area,actor.position);
+            if(leaper) {
+                actor.neutralAt.reset();actor.reactionUntil=0;
+                const bool stunned=ports_.effects.unitStates(id,tick.tick).contains(actor.rule.stunState);
+                const uint64_t delay=stunned?45:15;
+                actor.busyUntil=tick.tick;
+                scheduleAi(id,tick.tick+std::min(delay,UINT64_MAX-tick.tick));
+            } else if(actor.rule.hitRecoveryTicks>0) {
+                recordNativeMode(actor,3);actor.reactionMode=3;
+                actor.reactionUntil=tick.tick+std::min<uint64_t>(recoveryTicks(actor,ports_.effects,tick.tick,false),UINT64_MAX-tick.tick);
+                actor.busyUntil=actor.reactionUntil;actor.neutralAt=actor.reactionUntil;
+            } else scheduleAi(id,tick.tick+1);
+            continue;
         }
         if(actor.holyFreezeUntil && actor.holyFreezeUntil<=tick.tick) actor.holyFreezeUntil=0;
         if(!actor.nativeAi()) continue;
@@ -292,9 +318,6 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         if (actor.route.empty()) continue;
         const auto target=actor.movementTarget ? nativePathTarget(ports_.players,*this,actor.movementTarget,actor.area) : std::optional(std::pair{actor.movementGoal, 0});
         if(!target) {stop(id);continue;}
-        const auto &grid=ports_.areas.at(actor.area).definition.collision;
-        AreaStore::CollisionMove collisionMove{ports_.areas,actor.id,actor.area};
-        const auto movementGrid=ports_.spatial.movementGrid(actor.area,collisionMove);
         auto collision=(actor.airborne || actor.submerged)?MovementCollisionRule{0,1}:actor.rule.collision;
         if(collision.mask && actor.rule.stats && actor.rule.stats->pd2) {
             const auto states=ports_.effects.unitStates(actor.id,tick.tick);
@@ -304,10 +327,32 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             // Coordinate paths finish by consuming their last precise point,
             // not by an extra floating stopping radius.
             if (!actor.movementTarget) return false;
-            return meleeDistance(position,actor.rule.size,target->first,target->second)<=actor.stopDistance &&
-                (actor.pathSteps || grid.segment(position,target->first));
+            return meleeDistance(position,actor.rule.size,target->first,target->second)<=actor.stopDistance;
         };
-        if (arrived(actor.position)) { stop(id); continue; }
+        if (arrived(actor.position)) { stop(id);recordNativeMode(actor,1);continue; }
+        const auto identity=actor.movementTarget?nativeTargetIdentity(actor.movementTarget,actor.area):std::nullopt;
+        if(identity && nativeUnitTargetMoved(actor.movementGoal,target->first,identity->type)) {
+            auto type=actor.pathType;
+            if(type==2 || type==13 || type==15) type=13;
+            const Vec center{.5f,.5f};
+            auto pathGrid=ports_.spatial.navigationGrid(actor.area,actor.id,
+                type==1 || type==7 || type==15?actor.movementTarget:EntityId{});
+            auto route=pathGrid.nativeUnitPath(actor.position+center,target->first+center,type,actor.pathDistance,collision,true);
+            if(route.empty() && type==13) {
+                type=15;
+                pathGrid=ports_.spatial.navigationGrid(actor.area,actor.id,actor.movementTarget);
+                route=pathGrid.nativeUnitPath(actor.position+center,target->first+center,type,actor.pathDistance,collision,true);
+            }
+            for(auto &point:route) point=point-center;
+            actor.route=std::move(route);actor.pathType=type;actor.movementGoal=target->first;
+            if(actor.route.empty()) {
+                actor.position=actor.pathStep.stop(actor.position+center)-center;
+                ports_.areas.moveRoomUnit(id,actor.area,actor.position);
+                actor.moving=false;actor.running=false;recordNativeMode(actor,1);++actor.revision;continue;
+            }
+        }
+        AreaStore::CollisionMove collisionMove{ports_.areas,actor.id,actor.area};
+        const auto movementGrid=ports_.spatial.movementGrid(actor.area,collisionMove);
         const int speed = movementPercent(actor,tick.tick);
         float remaining = monsterMovementSpeed(actor.rule.nativeVelocity, speed) * TickContext::seconds;
         while (!actor.route.empty() && remaining > 0) {
@@ -319,13 +364,11 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             const auto step=actor.pathStep.advance(movementGrid,actor.position+center,actor.route.front()+center,
                 remaining,collision);
             const Vec next=step.position-center;
-            const bool atGoal=arrived(next);
             const auto previous=actor.position;actor.position=next;
             if(!recacheHirelingRoom(actor)) {actor.position=previous;actor.pathStep=previousStep;collisionMove.rollback();break;}
             ports_.areas.moveRoomUnit(id,actor.area,actor.position);refreshCollision(actor);
             actor.moving=actor.moving || step.travelled>0;++actor.revision;
             if(step.blocked) {actor.route.clear();break;}
-            if (atGoal) { actor.route.clear(); break; }
             if(!step.reached) break;
             remaining-=step.travelled;actor.route.pop_front();
             if(step.travelled>0) break; // D2Common_10226: one nonzero path point per frame.
@@ -333,7 +376,11 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         collisionMove.commit();
         // Path exhaustion/collision returns FALSE from D2Common_10226 and
         // leaves WALK/RUN in this frame; do not publish a stale chase target.
-        if(actor.route.empty()) {recordNativeMode(actor,1);actor.moving=false;actor.running=false;}
+        if(actor.route.empty()) {
+            actor.position=actor.pathStep.stop(actor.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+            ports_.areas.moveRoomUnit(id,actor.area,actor.position);
+            recordNativeMode(actor,1);actor.moving=false;actor.running=false;
+        }
     }
     return blocked ? StepStatus::Blocked : StepStatus::Complete;
 }

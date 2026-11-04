@@ -8,6 +8,8 @@ class DebugPipe {
     struct Impl;
     std::unique_ptr<Impl> impl_;
   public:
+    // An empty name or a Windows pipe-name conflict leaves this instance
+    // disabled; poll is a no-op and responsePending is false in either case.
     explicit DebugPipe(const std::string &name);
     ~DebugPipe();
     // The IO worker only transfers bounded text. Execute at most one claimed

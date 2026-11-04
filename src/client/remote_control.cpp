@@ -118,10 +118,6 @@ bool RemoteControl::move(OnlinePoint point, bool run, std::optional<OnlineIntent
     if (!player || std::abs(origin.x - point.x) > 50 || std::abs(origin.y - point.y) > 50)
         return reject("Movement exceeds the native 50-subtile request range");
     if (!scene_.permits(session_.read(), point)) return reject("Movement destination is outside active player collision");
-    if (movement_ && !movement_->unit && movement_->goal == point && movement_->run == run &&
-        movement_->game == session_.read().gameGeneration && movement_->area == session_.read().world.areaGeneration &&
-        onlineInteractionMatches(movement_->context, session_.read()))
-        return true;
     const auto now = std::chrono::steady_clock::now();
     Movement movement; movement.goal = point; movement.run = run;
     movement.requestOrigin = requestOrigin;

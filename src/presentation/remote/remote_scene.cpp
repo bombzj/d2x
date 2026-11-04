@@ -449,12 +449,19 @@ void RemoteScene::stopNpcPath(const OnlineView &view, OnlineUnitKey key) {
     if (!npcPathPosition(view,key)) return;
     auto &pose = impl_->motion.at(key);
     pose.npcClickStopped = true;
+    pose.position=pose.pathStep.stop(pose.position+Vec{.5f,.5f})-Vec{.5f,.5f};
     pose.route.clear(); pose.goal.reset(); pose.pathMoving = false;
 }
 std::optional<Vec> RemoteScene::playerPathPosition(const OnlineView &view) const {
     // Reuse assignment/area/discontinuity checks, but exclude visual correction.
     if (!playerDisplayPosition(view)) return {};
     return impl_->motion.at({0, *impl_->playerId}).position;
+}
+std::optional<uint8_t> RemoteScene::playerMovementMode(const OnlineView &view) const {
+    if(!playerPathPosition(view) || impl_->localCastBlocksMovement() || !impl_->sceneBinding) return {};
+    const auto &pose=impl_->motion.at({0,*impl_->playerId});
+    const bool town=impl_->sceneBinding->town;
+    return uint8_t(pose.pathMoving?(pose.running?3:town?6:2):town?5:1);
 }
 std::vector<std::string> RemoteScene::effectLimitations() const {
     return {impl_->effectLimitations.begin(), impl_->effectLimitations.end()};

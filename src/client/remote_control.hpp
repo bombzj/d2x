@@ -54,12 +54,17 @@ class RemoteControl {
     std::function<std::optional<OnlinePoint>(OnlineUnitKey)> npcPathPosition_;
     std::function<void(OnlineUnitKey)> stopNpcPath_;
     std::function<std::optional<int>(OnlineUnitKey)> npcFollowRange_;
+    std::function<std::optional<uint8_t>()> playerMovementMode_;
     bool reject(std::string reason);
     bool submitSegment(Movement &, std::optional<OnlinePoint> stopNpc = {});
     bool submitInteraction(OnlineUnitKey, const OnlineIntentContext &, std::optional<OnlinePoint> stopNpc = {});
     void observeOpening();
   public:
     RemoteControl(RemoteTown &scene, net::RealmSession &session) : scene_(scene), session_(session) {}
+    void bindPlayerMovementMode(std::function<std::optional<uint8_t>()> mode) { playerMovementMode_=std::move(mode); }
+    bool setRunning(bool run, const OnlineIntentContext &context) {
+        return session_.set_running_animation(run,context,playerMovementMode_?playerMovementMode_():std::nullopt);
+    }
     void bindNpcPath(std::function<std::optional<OnlinePoint>(OnlineUnitKey)> position,
                      std::function<void(OnlineUnitKey)> stop,
                      std::function<std::optional<int>(OnlineUnitKey)> followRange) {

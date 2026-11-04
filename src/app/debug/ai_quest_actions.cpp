@@ -2,7 +2,6 @@
 #include "client/inventory_actions.hpp"
 #include "contracts/online_npc_speech.hpp"
 #include <algorithm>
-#include <limits>
 #include <stdexcept>
 
 namespace d2x {
@@ -48,7 +47,67 @@ bool DebugAi::Impl::questStoreCursor(Context &c,uint32_t id) {
     QuestPending p;p.action=QuestPending::Action::Place;p.item=id;p.sequence=c.session.read().world.itemRequest->sequence;
     p.deadline=Clock::now()+std::chrono::seconds(12);questRun.pending=p;note("quest-item-place-submitted",std::to_string(id));return false;
 }
+bool DebugAi::Impl::quietQuestNpc(Context &c,const OnlineUnit &npc) {
+    if(npc.position && approachPoint(c,*npc.position,"quest NPC alert",4,false,true)) {
+        questRun.missingTopicSince={};
+        return false;
+    }
+    const auto now=Clock::now();
+    const auto grace=std::chrono::milliseconds(std::clamp<uint64_t>(
+        2ULL*c.session.read().latencyMilliseconds.value_or(0)+200,600,2000));
+    if(questRun.missingTopicSince==Clock::time_point{}) questRun.missingTopicSince=now;
+    wait("quest-npc-alert","Observing the named NPC for a new quest alert");
+    return now-questRun.missingTopicSince>=grace;
+}
+bool DebugAi::Impl::questJournalTalk(Context &c,const QuestStep &step) {
+    const auto &view=c.session.read();
+    const auto &world=view.world;
+    const auto slot=questDefinition(*step.stateQuest).nativeSlot;
+    if(world.quests.statuses[slot]!=step.journalTalkStatus) return true;
+    const auto npc=find(c,*step.target);
+    if(!npc) return !approachKnown(c,*step.target);
+    const auto now=Clock::now();
+    const auto &menu=world.npcConversation;
+    if(menu && menu->type==1 && menu->source==npc->key.id) {
+        questRun.journalVisit=true;
+        auto &receipt=questRun.journalReceipts[questRun.step];
+        const auto flags=questFlags(c,*step.stateQuest).value_or(0);
+        if(const auto line=nextAutomaticNpcSpeech(*menu)) {
+            // The server chooses the next line, including prerequisite greetings.
+            if(receipt.heard.contains({flags,*line})) {receipt.unproductiveFlags=flags;return true;}
+            if(!c.control.acknowledgeNpc(*line)) return false;
+            receipt.heard.emplace(flags,*line);
+            if(world.npcRequested==npc->key.id) return false;
+        } else {
+            if(menu->acknowledged.empty()) {receipt.unproductiveFlags=flags;return true;}
+            if(!c.control.closeNpc()) return false;
+        }
+        cancelWalk(c);
+        questRun.missingTopicRefresh=world.quests.playerFlagsRevision;
+        c.control.refreshQuests(*questRun.missingTopicRefresh);
+        setActionDeadline(std::chrono::seconds(20),false);
+        questRun.missingTopicSince={};
+        return false;
+    }
+    if(questRun.missingTopicRefresh) {
+        if(world.quests.playerFlagsRevision<=*questRun.missingTopicRefresh) {
+            if(now>=actionDeadline) return true; // Advice can yield to the field objective.
+            c.control.refreshQuests(*questRun.missingTopicRefresh);
+            wait("quest-journal-refresh","Waiting for the journal after the NPC conversation");
+            return false;
+        }
+        questRun.missingTopicRefresh.reset();
+    }
+    if(world.npcRequested==npc->key.id || world.questAlerts.contains(npc->key)) {
+        questRun.journalVisit=true;
+        questRun.missingTopicSince={};
+        walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true}});
+        return false;
+    }
+    return quietQuestNpc(c,*npc);
+}
 bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step) {
+    if(step.journalTalkStatus) return questJournalTalk(c,step);
     const auto &view=c.session.read();const auto &world=view.world;
     const auto stateQuest=step.stateQuest.value_or(goal.questId);const auto slot=questDefinition(stateQuest).nativeSlot;
     const auto flags=questFlags(c,stateQuest);
@@ -163,6 +222,13 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         explore(c,"quest NPC "+step.target->name,false,ExplorationFocus::Units);return false;
     }
     if(!world.npcConversation || world.npcConversation->type!=1 || world.npcConversation->source!=npc->key.id) {
+        if(world.npcRequested!=npc->key.id && !world.questAlerts.contains(npc->key)) {
+            if(step.optional) return quietQuestNpc(c,*npc);
+            if(questRun.awaitingTopicAlert) {
+                if(Clock::now()>=actionDeadline) throw std::runtime_error("Required quest result is missing and the NPC has no new quest alert");
+                wait("quest-topic-wait","Waiting for the required result or a new NPC quest alert");return false;
+            }
+        }
         wait("quest-dialogue","Opening the actual quest NPC conversation");
         walk(c,{{"goal","unit"},{"unitType",1},{"unitId",npc->key.id},{"interact",true},{"waitQuestAlert",true}});return false;
     }
@@ -205,24 +271,25 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         }
         return false;
     }
-    if(!questRun.retriedMissingTopic) {
+    {
         const auto now=Clock::now();
+        if(questRun.awaitingTopicAlert && now>=actionDeadline) {
+            if(step.optional) return true;
+            throw std::runtime_error("Quest NPC repeatedly offered no actionable topic for the required result");
+        }
         if(questRun.missingTopicSince==Clock::time_point{}) questRun.missingTopicSince=now;
         const auto grace=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*view.latencyMilliseconds.value_or(0)+200,600,2000));
         if(now-questRun.missingTopicSince<grace) {wait("quest-topic-wait","Allowing the offered quest topic to arrive");return false;}
         if(world.npcRequested==npc->key.id && !c.control.closeNpc()) return false;
-        questRun.retriedMissingTopic=true;
+        if(!questRun.awaitingTopicAlert) setActionDeadline(std::chrono::seconds(20),false);
+        questRun.awaitingTopicAlert=true;
+        questRun.missingTopicSince={};
         questRun.missingTopicRefresh=c.control.quests().revision;
-        if(actionDeadline==Clock::time_point{}) setActionDeadline(std::chrono::seconds(20),false);
         c.control.refreshQuests(*questRun.missingTopicRefresh);
         greetingIssued=false;cancelWalk(c);
-        note("quest-topic-refresh","Expected topic absent; closed conversation and requested private state before one retry");
+        note("quest-topic-refresh","Expected topic absent; re-evaluating private state and the NPC alert");
         return false;
     }
-    if(step.optional) {note("optional-quest-introduction-unavailable","Original objective may be done without this introduction");return true;}
-    if(actionDeadline==Clock::time_point{}) setActionDeadline(std::chrono::seconds(20),false);
-    if(Clock::now()>=actionDeadline) throw std::runtime_error("Quest NPC did not offer the required native topic");
-    wait("quest-topic-wait","Waiting for the actual offered quest topic");return false;
 }
 bool DebugAi::Impl::questReadScroll(Context &c,const QuestStep &step) {
     const auto &world=c.session.read().world;

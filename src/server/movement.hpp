@@ -10,6 +10,7 @@ namespace d2x {struct Grid;}
 namespace d2x::server {
 class PlayerStore;
 class AreaStore;
+class EventOutbox;
 struct AreaState;
 struct PlayerState;
 namespace travel { class System; }
@@ -21,15 +22,18 @@ namespace spatial { class System; }
 struct ActorContext;
 struct TickContext;
 inline constexpr uint32_t movementTimerHandler=0x4d4f5645;
-struct MovementPorts { PlayerStore &players; AreaStore &areas; travel::System &travel; const monsters::System &monsters; effects::System &effects; const items::System &items; const objects::System &objects; FrameEventQueue &frameEvents; const spatial::System &spatial; };
+struct MovementPorts { PlayerStore &players; AreaStore &areas; travel::System &travel; const monsters::System &monsters; effects::System &effects; const items::System &items; const objects::System &objects; FrameEventQueue &frameEvents; const spatial::System &spatial; EventOutbox &events; };
 class MovementSystem {
     const MovementPorts ports_;
     CommandStatus apply(PlayerState &,const AreaState &,const MovementCommand &);
     std::map<PlayerId,uint64_t> skillSteps_;
+    std::map<PlayerId,uint64_t> staminaFrames_;
+    std::map<PlayerId,uint64_t> coordinateFrames_;
     std::set<EntityId> admitted_;
   public:
     explicit MovementSystem(MovementPorts ports) : ports_(ports) {}
     CommandStatus execute(const ActorContext &, const MovementCommand &);
+    CommandStatus validateCoordinateRequest(const ActorContext &,const MovementCommand &);
     DomainResult<bool> chargeStep(const ActorContext &,Vec target,float speed,int stopDistance);
     DomainResult<bool> leapStep(const ActorContext &,Vec target,float speed,std::optional<MovementCollisionRule> collision = {});
     void step(TickContext);

@@ -22,7 +22,7 @@ namespace {
 struct Stream {
     Bytes bytes;
     Music music{};
-    int id = 0, volume = 255;
+    int id = 0, volume = 255, modulation = 255;
     bool musicVolume = false, releasing = false;
     float envelope = 0, fadeIn = 0, fadeOut = 0;
     std::array<int, 3> blocks{-1, -1, -1};
@@ -30,7 +30,7 @@ struct Stream {
     void update(float dt, const AudioSettings &settings) {
         envelope = releasing ? std::max(0.f, envelope - (fadeOut > 0 ? dt / fadeOut : 1.f))
             : std::min(1.f, envelope + (fadeIn > 0 ? dt / fadeIn : 1.f));
-        SetMusicVolume(music, originalSoundGain(volume, settings.sound, musicVolume ? settings.music : 100, int(255 * envelope)));
+        SetMusicVolume(music, originalSoundGain(volume, settings.sound, musicVolume ? settings.music : 100, int(modulation * envelope)));
         UpdateMusicStream(music);
     }
 };
@@ -45,6 +45,10 @@ struct SceneStreams::Impl {
     std::map<uint32_t, Speech> speechIds;
     unsigned scrollRate = 8;
     std::unique_ptr<Stream> song, speech;
+    std::unique_ptr<Stream> rain;
+    int rainVolume{};
+    float rainFrames{};
+    bool weatherPaused{};
     std::unique_ptr<Stream> questSong;
     struct QuestCue {std::string music,voice;double frames{};int start{},end{},voiceAt{};bool musicPending{true},voicePending{};};
     std::optional<QuestCue> quest;
@@ -86,7 +90,7 @@ struct SceneStreams::Impl {
     void unavailable(const std::string &message) {
         if (limitations.insert(message).second) std::cerr << "Original audio unavailable: " << message << '\n';
     }
-    std::unique_ptr<Stream> load(size_t row, const std::string &root) {
+    std::unique_ptr<Stream> load(size_t row, const std::string &root, int modulation = 255) {
         const auto &table = catalog.sounds();
         const auto path = root + std::string(table.value(row, "FileName"));
         if (!archives.contains(path)) { unavailable(path); return {}; }
@@ -101,6 +105,7 @@ struct SceneStreams::Impl {
         if (!volume || *volume < 0 || *volume > 255) throw std::runtime_error("Invalid original stream volume: " + path);
         stream->id = table.number(row, "Index").value_or(0);
         stream->volume = *volume;
+        stream->modulation = modulation;
         stream->musicVolume = table.number(row, "Music Vol").value_or(0) != 0;
         stream->music.looping = table.number(row, "Loop").value_or(0) != 0;
         stream->fadeIn = table.number(row, "Fade In").value_or(0) / 25.f;
@@ -159,7 +164,39 @@ void SceneStreams::settings(const AudioSettings &settings) {
     if (impl_->song) impl_->song->update(0, settings);
     if (impl_->speech) impl_->speech->update(0, settings);
     if (impl_->questSong) impl_->questSong->update(0, settings);
+    if (impl_->rain) impl_->rain->update(0, settings);
     for (auto &stream : impl_->fading) stream->update(0, settings);
+}
+void SceneStreams::weather(float dt, bool rainAllowed, int density) {
+    auto &state=*impl_;
+    if (state.weatherPaused) return;
+    if (!rainAllowed || !state.audio.sound) {
+        state.rain.reset(); state.rainVolume=0; state.rainFrames=0;
+        return;
+    }
+    const int target=std::clamp(density,0,256)*255/256;
+    if (!state.rain && target>0) {
+        if (const auto row=state.catalog.soundRow("scene_rain")) {
+            state.rain=state.load(*row,"data/global/sfx/",target);
+            state.rainVolume=target;
+        } else state.unavailable("scene_rain");
+    }
+    state.rainFrames+=std::max(0.f,dt)*25.f;
+    const int ticks=int(state.rainFrames); state.rainFrames-=float(ticks);
+    for (int tick=0;tick<ticks;++tick)
+        state.rainVolume+=std::clamp(target-state.rainVolume,-6,6);
+    if (state.rain) {
+        if (!state.rainVolume) state.rain.reset();
+        else {state.rain->modulation=state.rainVolume;state.rain->update(dt,state.audio);}
+    }
+}
+void SceneStreams::pauseWeather(bool paused) {
+    auto &state=*impl_;
+    if (state.weatherPaused==paused) return;
+    state.weatherPaused=paused;
+    if (!state.rain) return;
+    if (paused) PauseMusicStream(state.rain->music);
+    else ResumeMusicStream(state.rain->music);
 }
 void SceneStreams::update(int level, float dt) {
     auto &state = *impl_;

@@ -56,15 +56,8 @@ void applyResourceMaximums(Fixed8 &life,Fixed8 &mana,Fixed8 &stamina,ResourceMax
     stamina=resourceOnMaximumChange(stamina,before.stamina,after.stamina);
 }
 void advanceStamina(Fixed8 &stamina, const StaminaRecovery &recovery, const StaminaActivity &activity) {
-    // Running mode and STATREGEN are separate native callbacks. No seconds or
-    // floating-point projection participates in their resource calculation.
-    if (activity.moving && activity.running && !activity.safeZone)
-        stamina = Fixed8::fromRaw(std::max(0, nativeSubtract(stamina.raw(), recovery.drainPerFrame)));
     const bool walking = activity.moving && !activity.running;
     if (activity.idle || walking || recovery.recoveryBonus >= 1000) {
-        // PlrModes: running drain and EVENTS_StaminaRegen are independent.
-        // A large recovery stat permits regeneration in non-walk/idle modes;
-        // it does not switch off drain. Preserve the native 8.8 rounding.
         const auto maximum = recovery.maximum.raw();
         if ((!walking || stamina.raw() >= 256 || activity.safeZone) && stamina.raw() < maximum) {
             auto amount = maximum >> (walking ? 9 : 8);

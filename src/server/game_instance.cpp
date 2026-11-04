@@ -345,10 +345,16 @@ void GameInstance::step() {
         auto result = dispatched?pending.dispatchedResult:CommandStatus::Unavailable;
         if (!dispatched && player.entered) {
             if (command.area != player.area || command.areaGeneration != area.generation) result = CommandStatus::Stale;
+            else if(const auto *request=std::get_if<MovementCommand>(&command.payload);
+                request && (result=systems_.movement.validateCoordinateRequest(actor,*request))!=CommandStatus::Applied) {
+                if(result==CommandStatus::QueueFull) {inventoryWaiting=true;break;}
+            }
             else {
                 const auto *movement=std::get_if<MovementCommand>(&command.payload);
                 const bool synchronization=movement && movement->action==MovementAction::Synchronize;
-                if (!synchronization && (commandSystem(command.payload) == SystemId::Movement || commandSystem(command.payload) == SystemId::Travel))
+                const bool runningMode=movement && (movement->action==MovementAction::StartRunning || movement->action==MovementAction::StopRunning);
+                const bool preservesAction=synchronization || runningMode;
+                if (!preservesAction && (commandSystem(command.payload) == SystemId::Movement || commandSystem(command.payload) == SystemId::Travel))
                     player.locomotionSequence = command.sequence;
                 const auto domain = commandSystem(command.payload);
                 // Native interact data has one owner. A later interaction must
@@ -359,17 +365,17 @@ void GameInstance::step() {
                 if(domain==SystemId::Objects || domain==SystemId::Death ||
                     (talk && std::holds_alternative<TalkToNpc>(talk->intent) && std::get<TalkToNpc>(talk->intent).action==TalkToNpc::Action::Talk) ||
                     (ground && !ground->drop)) player.locomotionSequence=command.sequence;
-                const bool locked=!synchronization && (domain==SystemId::Movement || domain==SystemId::Travel) &&
+                const bool locked=!preservesAction && (domain==SystemId::Movement || domain==SystemId::Travel) &&
                     (systems_.skills.uninterruptible(player.actor) || systems_.effects.recovering(player.actor,tick_));
-                if (!synchronization && (domain == SystemId::Movement || domain == SystemId::Travel) && !locked) systems_.skills.cancel(player.player, player.actor);
+                if (!preservesAction && (domain == SystemId::Movement || domain == SystemId::Travel) && !locked) systems_.skills.cancel(player.player, player.actor);
                 if (const auto *skill = std::get_if<skills::Request>(&command.payload); skill && skill->action == skills::Action::Cast) {
                     systems_.travel.cancel(player.player); player.locomotionSequence = command.sequence;
                 }
                 const bool trading=systems_.trade.find(player.player)!=nullptr;
-                const bool endsTrade=!synchronization && (domain==SystemId::Movement || domain==SystemId::Travel || domain==SystemId::Death);
+                const bool endsTrade=!preservesAction && (domain==SystemId::Movement || domain==SystemId::Travel || domain==SystemId::Death);
                 if(locked) result=CommandStatus::Conflict;
                 else if (trading && endsTrade && !systems_.trade.cancelFor(player.player,tick_)) result=CommandStatus::QueueFull;
-                else if (trading && !endsTrade && !synchronization && domain!=SystemId::Inventory && domain!=SystemId::Trade && domain!=SystemId::Social) result=CommandStatus::Conflict;
+                else if (trading && !endsTrade && !preservesAction && domain!=SystemId::Inventory && domain!=SystemId::Trade && domain!=SystemId::Social) result=CommandStatus::Conflict;
                 else if (domain == SystemId::Inventory && !std::holds_alternative<UseItem>(std::get<inventory::Request>(command.payload).intent) && systems_.skills.busy(player.actor, tick_)) result = CommandStatus::Conflict;
                 else result = dispatchCommand(actor, command.payload, systems_);
                 if(result==CommandStatus::Applied && domain==SystemId::Trade)

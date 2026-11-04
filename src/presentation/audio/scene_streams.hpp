@@ -20,6 +20,8 @@ class SceneStreams {
     ~SceneStreams();
     void settings(const AudioSettings &);
     void update(int level, float dt);
+    void weather(float dt, bool rainAllowed, int density);
+    void pauseWeather(bool paused);
     // Retail 45570's single music/voice slot. Delays are client frames at 25 Hz.
     void questCue(std::string_view music,int startFrames,int endFrames,std::string_view voice,int voiceFrames,int resumeBlock);
     std::optional<std::string> advanceQuestCue(float dt,bool playerAlive);

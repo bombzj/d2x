@@ -37,6 +37,7 @@ bool DebugAi::Impl::decisionDue(const Context &c,Clock::time_point now) {
     const auto include=[&](Clock::time_point at) {if(at!=Clock::time_point{} && at>now && (deadline==Clock::time_point{} || at<deadline)) deadline=at;};
     if(questRun.pending && !questRun.pending->resultObserved) include(questRun.pending->deadline);
     if(questRun.worldWait) include(questRun.worldWait->deadline);
+    for(const auto &[kind,pending]:passageWaits) {(void)kind;include(pending.retryAt);include(pending.deadline);}
     if(pickup && !pickup->observed) include(pickup->deadline);
     if(potionRequest) include(potionRequest->deadline);
     if(mobilityTarget) include(mobilityDeadline);
@@ -174,10 +175,16 @@ void DebugAi::Impl::observePickup(const Context &c) {
 std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c) const {
     using Owner=DebugActionOwner;std::vector<DebugActionContract> result;
     const auto defense=debugActionBit(Owner::Combat)|debugActionBit(Owner::Potion);
-    if(c.walk.active()) result.push_back({Owner::Navigation,"navigation",DebugMotion|DebugInteraction,~0u,
-        "actual position / interaction","replan from current collision"});
-    if(pendingDoor) result.push_back({Owner::Door,"door",DebugMotion|DebugInteraction,defense,
-        "same assignment's non-neutral mode","fail without replay",doorDeadline});
+    if(c.walk.active()) {
+        const bool recovering=c.walk.recoveringMovement();
+        result.push_back({Owner::Navigation,recovering?"walking-recovery":"navigation",
+            recovering?unsigned(DebugMotion|DebugSkill|DebugInteraction|DebugMenu):unsigned(DebugMotion|DebugInteraction),
+            recovering?debugActionBit(Owner::Potion):~0u,
+            recovering?"rejoin observed feet through ordinary walking":"actual position / interaction",
+            "replan from current collision"});
+    }
+    if(pendingDoor) result.push_back({Owner::Door,"door",DebugMotion|DebugInteraction,defense|debugActionBit(Owner::Goal),
+        "same assignment's non-neutral mode","normal interaction retry every second after initial wait",doorDeadline});
     if(pendingWaypoint || closeWaypoint) result.push_back({Owner::Waypoint,"waypoint",DebugMotion|DebugInteraction|DebugMenu,defense,
         closeWaypoint?"close owned menu when input resumes":"mode / personal 63 unlock","defer optional activation without local unlock",waypointDeadline,bool(closeWaypoint)});
     if(mobilityTarget) result.push_back({Owner::Mobility,"mobility",DebugMotion|DebugSkill,0,
@@ -205,7 +212,7 @@ std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c
     if(travelPhase==TravelPhase::WaypointWait || (travelPhase==TravelPhase::CrossWait && legUnit) ||
         portalUsed || (portalIssued && c.session.read().world.townPortalPending) || supplyPortalUsed)
         result.push_back({supplyStage==SupplyStage::None?Owner::Goal:Owner::Supply,"area-transfer",
-            DebugMotion|DebugSkill|DebugInteraction|DebugMenu,0,"actual destination scene","observe or fail; no blind transfer replay",
+            DebugMotion|DebugSkill|DebugInteraction|DebugMenu,0,"actual destination scene","shared initial wait / one-second source-scene retry",
             supplyPortalUsed?supplyPortalDeadline:actionDeadline});
     if(shopIssued) result.push_back({Owner::Supply,"merchant",DebugItem|DebugInteraction|DebugMenu,0,
         "same interaction's shelf / transaction","reopen unconfirmed shelf once; never repeat a pending purchase",shopDeadline});
@@ -219,7 +226,12 @@ bool DebugAi::Impl::canInput(const Context &c,DebugActionOwner owner,unsigned re
     if(inputBlocked || !active()) return false;
     if(actionRecoveryBusy && owner!=DebugActionOwner::Potion) return false;
     const auto contracts=actionContracts(c);
-    return std::all_of(contracts.begin(),contracts.end(),[&](const auto &entry){return entry.permits(owner,requested);});
+    return std::all_of(contracts.begin(),contracts.end(),[&](const auto &entry){
+        if(passageDefending && owner==DebugActionOwner::Combat &&
+            (entry.action=="door" || entry.action=="quest-portal-transfer" ||
+             (entry.action=="area-transfer" && travelPhase!=TravelPhase::WaypointWait))) return true;
+        return entry.permits(owner,requested);
+    });
 }
 void DebugAi::Impl::describeActions(const Context &c) {
     actionDiagnostics={{"inputBlocked",inputBlocked},{"actionRecoveryBusy",actionRecoveryBusy},{"executionSuspendedMs",executionClock.suspendedMs()},
@@ -235,7 +247,7 @@ void DebugAi::Impl::describeActions(const Context &c) {
         {"waitingFor",entry.waitingFor},{"recovery",entry.recovery},{"resultObserved",entry.resultObserved},
         {"waitRemainingMs",entry.deadline==Clock::time_point{}?Json(nullptr):Json(std::max<int64_t>(0,
             std::chrono::duration_cast<std::chrono::milliseconds>(entry.deadline-Clock::now()).count()))},
-        {"clock",entry.action=="supply-detour" || entry.action=="world-result" || entry.action=="quest-portal-transfer" || (entry.action=="merchant" && shelfObserved) ||
+        {"clock",entry.action=="supply-detour" || entry.action=="world-result" || entry.action=="quest-portal-transfer" || entry.action=="door" || (entry.action=="area-transfer" && travelPhase!=TravelPhase::WaypointWait) || (entry.action=="merchant" && shelfObserved) ||
             (questWaitRequiresInput(c) && entry.owner==DebugActionOwner::Goal)?"execution":"real"}});
     for(const auto &[owner,inputs]:std::initializer_list<std::pair<DebugActionOwner,unsigned>>{
         {DebugActionOwner::Goal,DebugAllInputs},{DebugActionOwner::Combat,DebugMotion|DebugSkill},
@@ -266,9 +278,9 @@ void DebugAi::Impl::observeActions(Context &c) {
     if(pendingDoor) {
         const auto door=view.world.units.find(pendingDoor->first);
         if(door==view.world.units.end() || door->second.assignmentRevision!=pendingDoor->second) {
-            note("door-assignment-withdrawn");pendingDoor.reset();
+            note("door-assignment-withdrawn");pendingDoor.reset();passageWaits.erase(Passage::Door);
         } else if(door->second.mode && *door->second.mode!=0) {
-            operatedDoors.insert(*pendingDoor);note("door-mode-observed",std::to_string(door->first.id));pendingDoor.reset();
+            operatedDoors.insert(*pendingDoor);note("door-mode-observed",std::to_string(door->first.id));pendingDoor.reset();passageWaits.erase(Passage::Door);
             if(supplyStage==SupplyStage::None) continuation=Continuation::WorldResult;
         } else if(now>=doorDeadline) failure="Door interaction submitted but the assigned door stayed closed";
         else wait("door-wait","Waiting for the actual door mode; defensive inputs remain eligible");
@@ -317,7 +329,7 @@ void DebugAi::Impl::observeActions(Context &c) {
         if(legDestination && c.town.read().area==legDestination) {
             travelPhase=TravelPhase::Route;legDestination.reset();waypointDestination.reset();legUnit.reset();cancelWalk(c);
             note("travel-result-observed");
-        } else if(travelPhase==TravelPhase::CrossWait && legUnit && recoverTravel(c,true)) {
+        } else if(travelPhase==TravelPhase::CrossWait && legUnit && recoverTravel(c)) {
             travelPhase=TravelPhase::WarpExit;
         } else if(now>=actionDeadline) {
             if(travelPhase==TravelPhase::CrossWait && legUnit && recoverTravel(c)) travelPhase=TravelPhase::WarpExit;
@@ -325,7 +337,7 @@ void DebugAi::Impl::observeActions(Context &c) {
         }
     }
     if(supplyPortalUsed && supplyOrigin!=c.town.read().area) {
-        if(recoverTravel(c,now<supplyPortalDeadline)) supplyPortalUsed=false;
+        if(recoverTravel(c)) supplyPortalUsed=false;
         else if(now>=supplyPortalDeadline) failure="Return portal was used but the original supply area was not observed";
     }
     if(!failure.empty()) throw std::runtime_error(failure);

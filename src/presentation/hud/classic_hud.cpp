@@ -27,14 +27,16 @@ void drawClassicGlobe(const GpuAnimation &orbs, const GpuAnimation &overlap, boo
 }
 void drawClassicHud(const ClassicHudArt &art, const ClassicHudValues &value) {
     DrawRectangle(0, H - HUD, W, HUD, BLACK);
-    // Frame 6's first 80 pixels contain the original empty bordered strip.
-    // Tile its interior horizontally, preserving the artwork's pixel size.
-    if (const auto *strip = art.panel.frame(0, 6); strip && W > 800) {
+    // Frame 6 is an empty black slot. Frame 1 has a control-free stone strip
+    // at x=76..87, between the point button and stamina frame. Tile that
+    // original material, including the top/bottom trim, at its native size.
+    if (const auto *strip = art.panel.frame(0, 1); strip && W > 800) {
+        constexpr float tileWidth=12;
         const auto fill = [&](float left, float right) {
-            for (float x = left; x < right; x += 78) {
-                const float width = std::min(78.f, right - x);
-                DrawTexturePro(strip->texture, {1, 0, width, float(strip->texture.height)},
-                    {x, float(H - strip->texture.height), width, float(strip->texture.height)}, {}, 0, WHITE);
+            for (float x = left; x < right; x += tileWidth) {
+                const float width = std::min(tileWidth, right - x);
+                DrawTexturePro(strip->texture, {76, float(strip->texture.height-HUD), width, float(HUD)},
+                    {x, float(H-HUD), width, float(HUD)}, {}, 0, WHITE);
             }
         };
         fill(165, hudRect(165, 0, 0, 0).x);
