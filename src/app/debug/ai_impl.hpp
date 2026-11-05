@@ -104,8 +104,9 @@ struct DebugAi::Impl {
         int kiteIntervalMs=900,kiteDistance=6,kiteMinDistance=8,hazardLookaheadMs=350,hazardPadding=3;
     } policy;
     struct MobilityPolicy {std::string mode="auto";bool vigor=true;int distance=24;} mobilityPolicy;
-    struct EventPolicy {
+    struct EventPolicy : DebugWalkTiming {
         int waitSeconds=90,initialWaitMs=1000,doorInitialWaitMs=250,scrollInitialWaitMs=1000;
+        int questLogDurationMs=2000;
         int encounterRadius=32,standoffMin=8,standoffMax=24;
     } eventPolicy;
     struct SupplyPolicy {

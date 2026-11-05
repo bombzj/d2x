@@ -169,7 +169,8 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         if(found->second.position) signals[9]=uint64_t(found->second.position->x)|(uint64_t(found->second.position->y)<<16);
     }
     const auto mode=nearEnd || !pathMoving?DebugDecisionCadence::Mode::Reaction:DebugDecisionCadence::Mode::Navigation;
-    if(!cadence_.due(now,mode,signals,!pathMoving,std::min(deadline_,progressAt_+std::chrono::seconds(15)))) return;
+    if(!cadence_.due(now,mode,signals,!pathMoving,std::min(deadline_,progressAt_+std::chrono::seconds(15)),
+        timing_.walkDecisionMs,timing_.walkReactionMs)) return;
     if(now>=deadline_) {finish("failed","Debug navigation deadline expired",control);return;}
     ++decisions_;clientMoving_=pathMoving;
     if(unit_ && server_ && view.world.playerPosition && *server_!=*view.world.playerPosition) {
@@ -222,6 +223,8 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         });
     };
     const auto settle=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*view.latencyMilliseconds.value_or(0)+200,600,2000));
+    const auto townTurnWait=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*view.latencyMilliseconds.value_or(0)+timing_.townTurnBaseMs,
+        timing_.townTurnMinMs,timing_.townTurnMaxMs));
     const auto actor=view.load.playerUnitId?view.world.units.find({0,*view.load.playerUnitId}):view.world.units.end();
     if(scene.town && segment_ && segment_==lastRequest_ && actor!=view.world.units.end() &&
         actor->second.positionDiscontinuity!=legDiscontinuity_) {
@@ -252,7 +255,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             !map.grid.nativeMovementSegment(host,next,playerMovement);
         if(!early && !behind) return false;
         if(townTurnSince_==Clock::time_point{}) townTurnSince_=now;
-        if(now-townTurnSince_>=settle) {
+        if(now-townTurnSince_>=townTurnWait) {
             if(behind) laggingTurnOrigin=host;
             return false;
         }
@@ -315,7 +318,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             if(span>=18 || !pointerClear(node)) break;
         }
         if(!next) {reason_="Waiting for a reachable return leg or ordinary server position correction";return;}
-        if(lastFrom_==player && lastRequest_==next && now-submittedAt_<std::chrono::seconds(1)) return;
+        if(lastFrom_==player && lastRequest_==next && now-submittedAt_<std::chrono::milliseconds(timing_.walkRetryMs)) return;
         control.cancelMovement();
         if(!control.move(*next,run_,{},pathPosition)) {reason_=control.reason();return;}
         lastFrom_=player;lastRequest_=segment_=next;lastTarget_=recoveryAnchor_;
@@ -672,7 +675,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     }
     const auto movementTarget=point_;
     if(segment_) {
-        if(now-submittedAt_<std::chrono::milliseconds(200)) return;
+        if(now-submittedAt_<std::chrono::milliseconds(timing_.walkRequestIntervalMs)) return;
         const Vec oldLocal{float(int(segment_->x)-origin.x)+.5f,float(int(segment_->y)-origin.y)+.5f};
         // Observe the target/interaction above first. A still-moving pointer
         // for that same target needs only its NEXT ray checked, not AStar.
@@ -870,9 +873,9 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     }
     // Newly hired/following units and moving NPCs can briefly block a normal
     // path. Keep the existing 15-second progress bound rather than declaring
-    // failure after three 200-ms samples. Identical stopped input is bounded
-    // to once per second; actual progress/direction changes replan normally.
-    if(lastFrom_==player && lastRequest_==next && now-submittedAt_<std::chrono::seconds(1)) {
+    // failure after a few samples. Identical stopped input uses the configured
+    // retry interval; actual progress/direction changes replan normally.
+    if(lastFrom_==player && lastRequest_==next && now-submittedAt_<std::chrono::milliseconds(timing_.walkRetryMs)) {
         reason_="Waiting before retrying the same temporarily stopped native path";return;
     }
     if(!control.move(next,run_,{},pathPosition)) {reason_=control.reason();return;}

@@ -7,6 +7,10 @@
 #include <sstream>
 
 namespace d2x {
+uint64_t Archives::mountIdentity() const { return mountIdentity_.value(); }
+const std::vector<std::filesystem::path> &Archives::mountedPaths() const { return mountedPaths_; }
+void Archives::setLoadingPulse(std::function<void()> pulse) { loadingPulse = std::move(pulse); }
+void Archives::pulseLoading() const { if (loadingPulse) loadingPulse(); }
 Bytes readFile(const std::filesystem::path &p) {
     std::ifstream f(p, std::ios::binary | std::ios::ate);
     if (!f)
@@ -116,7 +120,8 @@ void Archives::retain(const std::string &name, const Bytes &value) const {
     if (cacheBytes_ + value.size() > budget) { readCache_.clear(); cacheBytes_ = 0; }
     cacheBytes_ += value.size(); readCache_.emplace(name, value);
 }
-Bytes Archives::read(const std::string &path, bool required) const {
+Bytes Archives::read(const std::string &path, bool required, const std::function<bool()> &cancelled) const {
+    if (cancelled && cancelled()) return {};
     pulseLoading();
     auto name = normalize(path);
     if (const auto cached = readCache_.find(name); cached != readCache_.end()) {
@@ -125,7 +130,22 @@ Bytes Archives::read(const std::string &path, bool required) const {
     }
     // The client's own loose tree is the authority for the paths it ships.
     if (const auto loose = loose_.find(name); loose != loose_.end()) {
-        auto b = readFile(loose->second);
+        Bytes b;
+        if (cancelled) {
+            std::ifstream input(loose->second, std::ios::binary | std::ios::ate);
+            const auto size = input.tellg();
+            if (!input || size < 0 || size > 1024ll * 1024 * 1024)
+                throw std::runtime_error("Invalid audio file: " + name);
+            b.resize(static_cast<size_t>(size));
+            input.seekg(0);
+            for (size_t offset = 0; offset < b.size();) {
+                if (cancelled()) return {};
+                const auto count = std::min(size_t(64 * 1024), b.size() - offset);
+                if (!input.read(reinterpret_cast<char *>(b.data() + offset), std::streamsize(count)))
+                    throw std::runtime_error("Read failed: " + name);
+                offset += count;
+            }
+        } else b = readFile(loose->second);
         used.insert(name);
         retain(name, b);
         return b;
@@ -140,10 +160,20 @@ Bytes Archives::read(const std::string &path, bool required) const {
             throw std::runtime_error("Oversized MPQ member: " + name);
         }
         Bytes b(size);
-        DWORD count = 0;
-        bool ok = SFileReadFile(f, b.data(), size, &count, nullptr);
+        bool ok = true;
+        DWORD offset = 0;
+        while (offset < size) {
+            if (cancelled && cancelled()) { SFileCloseFile(f); return {}; }
+            const DWORD requested = cancelled ? std::min<DWORD>(64 * 1024, size - offset) : size - offset;
+            DWORD count = 0;
+            if (!SFileReadFile(f, b.data() + offset, requested, &count, nullptr) || count != requested) {
+                ok = false;
+                break;
+            }
+            offset += count;
+        }
         SFileCloseFile(f);
-        if (!ok || count != size)
+        if (!ok)
             throw std::runtime_error("MPQ decompression failed: " + name);
         used.insert(name);
         retain(name, b);

@@ -1,4 +1,5 @@
 #include "client/actor_client.hpp"
+#include "contracts/online.hpp"
 #include "content/classic_data.hpp"
 #include "scene_view.hpp"
 #include "presentation/world/lighting_view.hpp"
@@ -25,6 +26,130 @@ void main() {
 }
 )";
 } // namespace
+bool ViewState::capturesWorldInput(bool includePlayerTrade) const {
+    return (includePlayerTrade && playerTradeBlocking) || chatInputOpen || messageLogOpen || gameMenuOpen || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty();
+}
+bool ViewState::blocksInput() const { return capturesWorldInput() || travelMenu; }
+void SceneView::deferTooltip(std::vector<ItemTextLine> lines, ItemQuality quality, Vec anchor,
+                            std::optional<unsigned> price, std::string_view priceLabel) const {
+    deferredTooltip_.active = true;
+    deferredTooltip_.lines = std::move(lines);
+    deferredTooltip_.quality = quality;
+    deferredTooltip_.price = price;
+    deferredTooltip_.priceLabel = std::string(priceLabel);
+    deferredTooltip_.anchor = anchor;
+}
+void SceneView::updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events) {
+    assets_.sceneAudio.update(clock,actors,events);
+}
+void SceneView::playUiSound(std::string_view sound) { assets_.sceneAudio.play(sound, uint64_t(GetTime() * 25)); }
+int SceneView::soundPeriod() const { return lighting_->period(std::clamp(mapView().palette,0,4)); }
+void SceneView::greetNpc(EntityId npc) {
+    const auto found=npcSoundIdentities_.find(npc);
+    if(found!=npcSoundIdentities_.end()) assets_.sceneAudio.npcGreeting(found->second,0,soundPeriod());
+}
+void SceneView::observeWorldSounds(const OnlineView &online) {
+    if(narrativeGameGeneration_!=online.gameGeneration) {
+        narrativeGameGeneration_=online.gameGeneration;
+        narrativeSequence_=0;
+        npcSoundIdentities_.clear();
+        beginWorldGame(online.gameGeneration);
+    }
+    npcSoundIdentities_.clear();
+    for(const auto &[key,unit]:online.world.units)
+        if(key.type==1 && unit.classId) npcSoundIdentities_.insert_or_assign(EntityId{(uint64_t{1}<<32)+key.id+1},int(*unit.classId));
+    for(const auto &event:online.world.combatEvents) {
+        if(event.sequence<=narrativeSequence_) continue;
+        if(event.kind!=OnlineCombatEvent::Kind::Sound || event.directSound) continue;
+        const auto source=online.world.units.find(event.source);
+        if(source==online.world.units.end() || !source->second.classId) continue;
+        const auto identity=*source->second.classId;
+        if(event.source.type==1 && event.auxiliary==18)
+            assets_.sceneAudio.npcGreeting(identity,1,soundPeriod());
+        else if(event.source.type==1 && event.auxiliary==10)
+            playUiSound("shrine_refill");
+        else if(event.source.type==0 && event.source.id==online.load.playerUnitId && event.auxiliary==8)
+            playUiSound("player_townportal_enter");
+        else if(online.protocolProfile=="lod113c" && event.source.type==0 && event.auxiliary>=33 && event.auxiliary<=83)
+            assets_.sceneAudio.playerNarrative(identity,int(event.auxiliary));
+    }
+    narrativeSequence_=online.world.combatSequence;
+    if(online.protocolProfile=="lod113c" && online.load.playerUnitId && !characterView_.dead && mapView().hasObserverRoom) {
+        const auto self=online.world.units.find({0,*online.load.playerUnitId});
+        if(self!=online.world.units.end() && self->second.classId)
+            assets_.sceneAudio.enterLevel(online.gameGeneration,*self->second.classId,int(mapView().region),online.world.quests);
+    }
+}
+void SceneView::playItemUse(const InventoryItemView &item) {
+    assets_.sceneAudio.itemUse(item.definition,item.quality,item.specialRow);
+}
+void SceneView::playPlayerFootstep(int identity, bool running, int material, int level, uint64_t frame) {
+    assets_.sceneAudio.playerFootstep(identity,running,material,level,frame);
+}
+void SceneView::questMusic(std::string_view music,int endFrames,int resumeBlock) {
+    assets_.streams.questCue(music,0,endFrames,{},0,resumeBlock);
+}
+void SceneView::beginWorldGame(uint64_t generation) {
+    if(questAudioGameGeneration_!=generation) {questAudioGameGeneration_=generation;assets_.streams.resetQuestCue();}
+}
+const std::set<std::string, std::less<>> &SceneView::soundLimitations() const { return assets_.sceneAudio.limitations(); }
+void SceneView::updateChat(const OnlineSocialView &social,const OnlineSocialView &account) { chat_.update(social,account); }
+bool SceneView::partyReady() const { return party_.ready(); }
+bool SceneView::storageNavigationReady() const { return assets_.storageNavigation.frames.size() == 12; }
+bool SceneView::storageMaterialUpgradeReady() const { return assets_.storageMaterialUpgrade.frames.size() >= 2; }
+bool SceneView::storageMaterialsReady() const { return assets_.storagePanel.frames.size() >= 8 && assets_.vendorButtons.frames.size() >= 32; }
+const std::string &SceneView::partyReason() const { return party_.reason(); }
+void SceneView::debugChatMessage(std::string_view text, bool error) { chat_.diagnostic(text,error); }
+const ChatView &SceneView::chat() const { return chat_; }
+const TradeInviteView &SceneView::tradeInvite() const { return tradeInvite_; }
+void SceneView::drawNativeIceShatter(Vec position, int size) { createIceShatter(position,size); }
+const SceneAssets::ProjectileVisual *SceneView::projectileVisual(int id) { return assets_.ensureProjectile(id); }
+const SkillOverlayVisual *SceneView::overlayVisual(int id) { return assets_.ensureOverlay(id); }
+void SceneView::clearClientMissiles() {
+    clientMissiles_.clear();
+    clientMissileHiddenOwners_.clear();
+    assets_.sceneAudio.reset();
+}
+const std::vector<SceneView::ClientMissile> &SceneView::clientMissiles() const { return clientMissiles_; }
+std::vector<EntityId> SceneView::takeClientMissileHiddenOwners() {
+    std::vector<EntityId> result;
+    result.swap(clientMissileHiddenOwners_);
+    return result;
+}
+void SceneView::retireClientMissileRoom(const std::array<int,3> &room) {
+    std::erase_if(clientMissiles_,[&](const auto &value){return value.roomAttachment && *value.roomAttachment==room;});
+}
+std::optional<int> SceneView::weaponMissile(std::string_view code) const {
+    const auto found = assets_.weaponMissiles.find(code);
+    return found == assets_.weaponMissiles.end() ? std::nullopt : std::optional{found->second};
+}
+void SceneView::cancelPendingClientMissiles(EntityId owner) {
+    std::erase_if(clientMissiles_, [&](const auto &value) { return value.flight && value.age < 0 && value.owner == owner; });
+}
+void SceneView::drawGroundLabels(Vec mouse) const { drawLootLabels(mouse); }
+void SceneView::drawHighlightedActor(const Sprite *image, Vec position) const { drawSelectableSprite(image, position, true); }
+void SceneView::drawNpcQuestAlert(EntityId npc, Vec position, bool back) const { drawNpcAlert(npc, position, back); }
+const ActorAnimation *SceneView::actorAnimation(const ActorAnimationRequest &request, int palette) const {
+    return assets_.actorAnimation(request, palette);
+}
+const ActorAnimation *SceneView::objectAnimation(int identity, int mode, int palette) const {
+    return assets_.objectAnimation(identity, mode, palette);
+}
+std::array<int, 2> SceneView::objectShrineOverlays(int identity, int code) const {
+    return assets_.objectShrineOverlays(identity, code);
+}
+ObjectPresentation SceneView::objectPresentation(int identity, int serverMode, float elapsed) const {
+    return assets_.objectPresentation(identity, serverMode, elapsed);
+}
+std::string SceneView::actorSequenceMode(std::string_view name) const { return assets_.actorSequenceMode(name); }
+ViewState &SceneView::ui() { return view_; }
+const ViewState &SceneView::ui() const { return view_; }
+const InventoryView &SceneView::inventoryView() const { return inventoryView_; }
+const CharacterView &SceneView::characterView() const { return characterView_; }
+const QuestView &SceneView::questView() const { return questView_; }
+bool SceneView::refreshQuests() { return questClient_.refresh(); }
+const NpcConversationView &SceneView::npcView() const { return npcView_; }
+void SceneView::pauseWorldPresentation(bool paused) { assets_.audio.pauseEmitters(paused); assets_.streams.pauseWeather(paused); }
 WeatherDebugState SceneView::debugWeather(std::optional<WeatherDebugMode> mode, int density) {
     const auto state=weather_->debugState();
     if(state.level<0) throw std::invalid_argument("Weather requires a rendered client world");
@@ -74,7 +199,7 @@ SceneView::SceneView(Archives &archives, const ClassicData &content, WeatherCycl
     IInventoryClient &inventory, ICharacterClient &character, IQuestClient &quests, INpcClient &npc, IMapClient &map,
     const AudioSettings &audio)
     : archives_(archives), actorClient_(actor), inventoryClient_(inventory), characterClient_(character), questClient_(quests),
-      npcClient_(npc), mapClient_(map), assets_(archives, content), lighting_(std::make_unique<LightingView>()),
+    npcClient_(npc), mapClient_(map), assets_(archives, content, int(map.read().region), audio), lighting_(std::make_unique<LightingView>()),
     weather_(std::make_unique<WeatherView>(weatherCycle)), paletteBlend_(std::make_unique<PaletteBlendView>(archives)),
       painter_(assets_.font), chat_(archives),
       originalMenu_(archives, assets_.font), tradeInvite_(archives, assets_.font, originalMenu_), party_(archives) {
@@ -87,6 +212,7 @@ SceneView::SceneView(Archives &archives, const ClassicData &content, WeatherCycl
 }
 void SceneView::refreshUi(float dt) {
     refreshInventory(); refreshCharacterView(); refreshInteractions();
+    assets_.streams.update(int(mapView().region), dt);
     const int palette=mapView().palette;
     assets_.loadInventoryArt(inventoryView_,palette);
     const auto &p = characterView_;
@@ -187,11 +313,21 @@ Rectangle SceneView::worldViewport() const {
     const bool right = view_.inventory.open || view_.skillTreeOpen;
     const float begin = left ? classicSideBounds(false).width : 0;
     const float end = right ? classicSideBounds(true).x : W;
-    return {begin, 0, end - begin, float(H - HUD)};
+    return {begin, 0, end - begin, float(H)};
+}
+Rectangle SceneView::worldRenderViewport() const {
+    return {0, 0, float(W), float(H)};
+}
+bool SceneView::worldContains(Vec mouse) const {
+    const auto viewport = worldViewport();
+    return CheckCollisionPointRec(rv(mouse), worldRenderViewport()) &&
+        !(viewport.x > 0 && CheckCollisionPointRec(rv(mouse), classicSideBounds(false))) &&
+        !(viewport.x + viewport.width < W && CheckCollisionPointRec(rv(mouse), classicSideBounds(true)));
 }
 Vec SceneView::worldObservationExtent() const {
-    const auto viewport=worldViewport();
-    return {viewport.width/(32*view_.zoom),viewport.height/(16*view_.zoom)};
+    const auto viewport = worldViewport();
+    const float centerX = viewport.x + viewport.width * .5f;
+    return {std::max(centerX, W - centerX)/(16*view_.zoom), H/(16*view_.zoom)};
 }
 Vec SceneView::screen(Vec p) const {
     const auto viewport = worldViewport();
@@ -209,7 +345,6 @@ void SceneView::notice(std::string text, bool error) {
     view_.noticeTime = 4;
 }
 void SceneView::advanceUi(float dt) {
-    assets_.streams.update(int(mapView().region), dt);
     view_.noticeTime = std::max(0.f, view_.noticeTime - dt);
     if (view_.gameMenuOpen) view_.gameMenuTime += dt;
     advanceNpcDialogue(dt);
@@ -259,6 +394,24 @@ void SceneView::refreshCharacterView() {
 }
 void SceneView::refreshInventory() {
     const auto &snapshot = inventoryClient_.read();
-    if (snapshot.revision != inventoryView_.revision) inventoryView_ = snapshot;
+    if (snapshot.revision == inventoryView_.revision) return;
+    if (inventoryView_.revision && snapshot.gameGeneration == inventoryView_.gameGeneration &&
+        snapshot.areaGeneration == inventoryView_.areaGeneration && !snapshot.dead) {
+        for (const auto &[id, item] : snapshot.items) {
+            const auto *before = inventoryView_.item(id);
+            const auto *location = std::get_if<ContainerLocation>(&item.location);
+            if (!before || !location || before->location == item.location) continue;
+            const auto *previous = std::get_if<ContainerLocation>(&before->location);
+            if (location->container == snapshot.containers.cursor) {
+                if (previous) playUiSound("item_pickup");
+                else if (std::holds_alternative<GroundLocation>(before->location))
+                    assets_.sceneAudio.itemPlacement(item.definition,item.quality,item.specialRow);
+            } else if ((previous && previous->container == inventoryView_.containers.cursor) ||
+                       std::holds_alternative<GroundLocation>(before->location)) {
+                assets_.sceneAudio.itemPlacement(item.definition,item.quality,item.specialRow);
+            }
+        }
+    }
+    inventoryView_ = snapshot;
 }
 } // namespace d2x

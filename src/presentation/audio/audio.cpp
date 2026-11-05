@@ -1,81 +1,201 @@
 #include "audio.hpp"
 #include "core/random.hpp"
-#include <algorithm>
-#include <stdexcept>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <iostream>
+#include <mutex>
+#include <set>
+#include <thread>
+#include <utility>
 namespace d2x {
-SoundBank::SoundBank() : groupRandom_(initialRandom(0)), enabled(IsAudioDeviceReady()) {}
+struct SoundBank::Async {
+    std::unique_ptr<Archives> archives;
+    std::mutex mutex;
+    std::condition_variable_any wake;
+    std::deque<std::function<void()>> commands;
+    std::set<std::string> travel;
+    std::set<std::string> prepared;
+    std::vector<std::string> failures;
+    std::vector<SoundEmitter> live;
+    uint64_t frame{};
+    bool syncPending{};
+    bool controlsPending{}, resetPending{}, paused{};
+    int sound = 100, music = 50;
+    uint64_t controlsRevision{}, appliedControlsRevision{}, appliedStopGeneration{};
+    std::atomic<uint64_t> generation{};
+    std::atomic<uint64_t> stopGeneration{};
+    std::jthread worker;
+};
+SoundBank::SoundBank(Archives &archives)
+    : groupRandom_(initialRandom(0)), enabled(IsAudioDeviceReady()), async_(std::make_unique<Async>()) {
+    async_->archives = archives.independent();
+    async_->worker = std::jthread([this](std::stop_token stop) {
+        while (!stop.stop_requested()) {
+            std::function<void()> command;
+            std::vector<SoundEmitter> live;
+            uint64_t frame = 0;
+            bool sync = false;
+            bool controls = false, reset = false, paused = false;
+            int sound = 100, music = 50;
+            uint64_t controlsRevision = 0;
+            {
+                std::unique_lock lock(async_->mutex);
+                if (!async_->wake.wait(lock, stop, [this] {
+                    return !async_->commands.empty() || async_->syncPending || async_->controlsPending || async_->resetPending;
+                })) break;
+                controls = std::exchange(async_->controlsPending, false);
+                reset = std::exchange(async_->resetPending, false);
+                paused = async_->paused;
+                sound = async_->sound;
+                music = async_->music;
+                controlsRevision = async_->controlsRevision;
+                if (async_->syncPending) {
+                    live = async_->live;
+                    frame = async_->frame;
+                    sync = true;
+                    async_->syncPending = false;
+                }
+                if (!async_->commands.empty()) {
+                    command = std::move(async_->commands.front());
+                    async_->commands.pop_front();
+                }
+            }
+            try {
+                if (reset) resetReady();
+                if (controls) {
+                    volumesReady(sound, music);
+                    pauseReady(paused);
+                    std::lock_guard lock(async_->mutex);
+                    async_->appliedControlsRevision = controlsRevision;
+                }
+                if (sync) syncReady(live, frame);
+                if (command) command();
+            } catch (const std::exception &error) {
+                std::cerr << "Original sound unavailable: " << error.what() << '\n';
+                std::lock_guard lock(async_->mutex);
+                async_->failures.emplace_back(error.what());
+            }
+        }
+        emitters_.reset();
+    });
+}
 SoundBank::~SoundBank() {
-    emitters_.reset();
-    for (const auto &[name, group] : originalGroups_)
-        for (const auto &variant : group.sounds) UnloadSound(variant.sound);
+    async_->worker.request_stop();
+    async_->wake.notify_all();
+    if (async_->worker.joinable()) async_->worker.join();
 }
-void SoundBank::play(const std::string &name, uint64_t frame, float volume) {
-    // Looping travel sounds are owned by live missile entities, not this event.
-    if (hasEmitterSound(name)) return;
-    if (const auto group = originalGroups_.find(name); group != originalGroups_.end()) {
-        auto &sound = group->second;
-        if (!enabled || sound.sounds.empty()) return;
-        if (sound.lastStart && frame >= *sound.lastStart && frame - *sound.lastStart < sound.compound) return;
-        auto &variant = sound.sounds[limitedRandom(groupRandom_, uint32_t(sound.sounds.size()))];
-        if (variant.deferInstance && IsSoundPlaying(variant.sound)) return;
-        sound.lastStart = frame;
-        // Stop Inst replaces the previous instance of the selected sound.
-        // A request rejected by Compound must not interrupt that instance.
-        if (variant.stopInstance) StopSound(variant.sound);
-        variant.activeVolume = volume >= 0 ? int(255 * std::clamp(volume, 0.f, 1.f)) : variant.volume;
-        SetSoundVolume(variant.sound, originalSoundGain(variant.activeVolume, volume_, variant.musicVolume ? musicVolume_ : 100));
-        PlaySound(variant.sound);
-        return;
+void SoundBank::enqueue(std::function<void()> command) {
+    {
+        std::lock_guard lock(async_->mutex);
+        async_->commands.push_back(std::move(command));
     }
+    async_->wake.notify_one();
 }
-void SoundBank::registerOriginalGroup(Archives &archives, std::string key, const DataTable &table, size_t row) {
-    const int count = std::max(1, table.number(row, "Group Size").value_or(0));
-    const int compound = table.number(row, "Compound").value_or(0);
-    if (compound < 0) throw std::runtime_error("Unsupported original one-shot Compound rule");
-    if (row + size_t(count) > table.rows().size()) throw std::runtime_error("Invalid original sound group");
-    for (size_t variant = row; variant < row + size_t(count); ++variant)
-        for (const auto field : {"Loop", "Duration", "Fade In"})
-            if (table.number(variant, field).value_or(0) != 0)
-                throw std::runtime_error("Unsupported original one-shot sound group: " + std::string(field));
-    for (size_t variant = row; variant < row + size_t(count); ++variant) {
-        // This path plays a finite WAV to its natural end. Fade Out only
-        // needs an interrupt envelope when Stop Inst can replace that voice;
-        // reject that combination until an interrupt mixer is available.
-        const int fadeOut=table.number(variant,"Fade Out").value_or(0);
-        if(fadeOut<0 || (fadeOut && table.number(variant,"Stop Inst").value_or(0)))
-            throw std::runtime_error("Unsupported original one-shot interrupt fade");
-        for (const auto field : {"Stop Inst", "Defer Inst"}) {
-            const int flag = table.number(variant, field).value_or(0);
-            if (flag != 0 && flag != 1)
-                throw std::runtime_error("Invalid original one-shot flag: " + std::string(field));
+void SoundBank::registerOriginalGroup(Archives &, std::string key, const DataTable &table, size_t row) {
+    if (!enabled) return;
+    enqueue([this, key = std::move(key), &table, row] {
+        registerGroup(*async_->archives, key, &table, row, false, async_->worker.get_stop_token());
+        std::lock_guard lock(async_->mutex);
+        async_->prepared.insert(key);
+    });
+}
+void SoundBank::registerTravelGroup(Archives &, std::string key, const DataTable &table, size_t row) {
+    if (!enabled) return;
+    {
+        std::lock_guard lock(async_->mutex);
+        async_->travel.insert(key);
+    }
+    enqueue([this, key = std::move(key), &table, row] {
+        registerGroup(*async_->archives, key, &table, row, true, async_->worker.get_stop_token());
+        std::lock_guard lock(async_->mutex);
+        async_->syncPending = true;
+        async_->controlsPending = true;
+    });
+}
+bool SoundBank::hasEmitterSound(const std::string &key) const {
+    std::lock_guard lock(async_->mutex);
+    return async_->travel.contains(key);
+}
+void SoundBank::registerFile(std::string path) {
+    if (!enabled) return;
+    enqueue([this, path = std::move(path)] {
+        registerGroup(*async_->archives, path, nullptr, 0, false, async_->worker.get_stop_token(), path);
+        std::lock_guard lock(async_->mutex);
+        async_->prepared.insert(path);
+    });
+}
+void SoundBank::stopAll() {
+    const auto generation = ++async_->stopGeneration;
+    enqueue([this, generation] {
+        stopAllReady();
+        std::lock_guard lock(async_->mutex);
+        async_->appliedStopGeneration = generation;
+    });
+}
+void SoundBank::play(const std::string &name, uint64_t frame, float volume, bool transient) {
+    if (!enabled) return;
+    if (!transient) {
+        std::lock_guard lock(async_->mutex);
+        if (async_->prepared.contains(name) &&
+            async_->appliedControlsRevision == async_->controlsRevision &&
+            async_->appliedStopGeneration == async_->stopGeneration) {
+            playReady(name, frame, volume);
+            return;
         }
     }
-    for (size_t variant = row; variant < row + size_t(count); ++variant)
-        if (table.number(variant, "Compound").value_or(0) != compound)
-            throw std::runtime_error("Inconsistent original one-shot Compound group");
-    if (!enabled || originalGroups_.contains(key)) return;
-    std::vector<OriginalSoundVariant> variants;
-    variants.reserve(size_t(count));
-    try {
-        for (size_t variant = row; variant < row + size_t(count); ++variant) {
-            const auto volume = table.number(variant, "Volume");
-            if (!volume || *volume < 0 || *volume > 255)
-                throw std::runtime_error("Invalid original sound group volume");
-            const auto bytes = archives.read("data/global/sfx/" + std::string(table.value(variant, "FileName")));
-            Wave wave = LoadWaveFromMemory(".wav", bytes.data(), int(bytes.size()));
-            if (!wave.data) throw std::runtime_error("Original sound group WAV could not be decoded");
-            const auto sound = LoadSoundFromWave(wave);
-            UnloadWave(wave);
-            if (!sound.stream.buffer) throw std::runtime_error("Original sound group could not be loaded");
-            variants.push_back({sound, table.number(variant, "Stop Inst").value_or(0) != 0,
-                                      table.number(variant, "Defer Inst").value_or(0) != 0,
-                                      table.number(variant, "Music Vol").value_or(0) != 0, *volume, *volume});
-            SetSoundVolume(sound, originalSoundGain(*volume, volume_, variants.back().musicVolume ? musicVolume_ : 100));
-        }
-        originalGroups_.emplace(std::move(key), OriginalSoundGroup{std::move(variants), unsigned(compound), {}});
-    } catch (...) {
-        for (const auto &variant : variants) UnloadSound(variant.sound);
-        throw;
+    const auto requested = std::chrono::steady_clock::now();
+    const auto generation = async_->generation.load();
+    const auto stopGeneration = async_->stopGeneration.load();
+    enqueue([this, name, frame, volume, requested, generation, stopGeneration, transient] {
+        if (stopGeneration == async_->stopGeneration && (!transient || (generation == async_->generation &&
+            std::chrono::steady_clock::now() - requested < std::chrono::milliseconds(250))))
+            playReady(name, frame, volume);
+    });
+}
+void SoundBank::setVolumes(int sound, int music) {
+    {
+        std::lock_guard lock(async_->mutex);
+        if (async_->sound == sound && async_->music == music) return;
+        async_->sound = sound;
+        async_->music = music;
+        ++async_->controlsRevision;
+        async_->controlsPending = true;
     }
+    async_->wake.notify_one();
+}
+void SoundBank::syncEmitters(std::span<const SoundEmitter> live, uint64_t frame) {
+    {
+        std::lock_guard lock(async_->mutex);
+        async_->live.assign(live.begin(), live.end());
+        async_->frame = frame;
+        async_->syncPending = true;
+    }
+    async_->wake.notify_one();
+}
+void SoundBank::pauseEmitters(bool paused) {
+    {
+        std::lock_guard lock(async_->mutex);
+        if (async_->paused == paused) return;
+        async_->paused = paused;
+        ++async_->controlsRevision;
+        async_->controlsPending = true;
+    }
+    async_->wake.notify_one();
+}
+void SoundBank::resetEmitters() {
+    ++async_->generation;
+    {
+        std::lock_guard lock(async_->mutex);
+        async_->live.clear();
+        async_->syncPending = false;
+        async_->resetPending = true;
+    }
+    async_->wake.notify_one();
+}
+std::vector<std::string> SoundBank::takeFailures() {
+    std::lock_guard lock(async_->mutex);
+    return std::exchange(async_->failures, {});
 }
 } // namespace d2x

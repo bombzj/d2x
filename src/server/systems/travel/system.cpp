@@ -412,6 +412,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (exitWalk) route = playerRoute(ports_.spatial.navigationGrid(transition.to,player.actor),arrival,*exitWalk);
         EventBatch event{0, tick.tick, {}, {AudienceKind::Player, player.player, transition.to},
             {TravelFact{player.player, player.actor, transition.from, transition.to, destination->generation, arrival, false}}};
+        if (transition.kind==Kind::Portal)
+            event.facts.emplace_back(SoundFact{player.actor,0,transition.to,8});
         if(player.rules.character->maps || transition.kind==Kind::Npc || (int(transition.from)==102 && int(transition.to)==103) || (int(transition.from)==103 && int(transition.to)==109) || (int(transition.from)==132 && int(transition.to)==109)) {
             transactions::CharacterEdit edit{{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick},player.inventoryRevision,player.characterRevision,player.persistent.player};
             if(player.rules.character->maps) edit.environmentRegion=transition.to;
@@ -435,6 +437,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
             edit.facts.emplace_back(ports_.quests.projection(player.player,edit.player,transition.to,false));
             edit.facts.emplace_back(TravelFact{player.player,player.actor,transition.from,transition.to,destination->generation,arrival,false});
+            if (transition.kind==Kind::Portal)
+                edit.facts.emplace_back(SoundFact{player.actor,0,transition.to,8});
             if(int(transition.from)==132 && int(transition.to)==109 && transition.kind==Kind::QuestObject && !player.nativeBusy)
                 edit.facts.emplace_back(UiFact{7,UiFact::Kind::Cinematic});
             auto plan=ports_.transactions.prepare(std::move(edit));

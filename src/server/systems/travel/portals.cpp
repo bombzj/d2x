@@ -1,6 +1,7 @@
 #include "gameplay/quest/catalog.hpp"
 #include "server/runtime/skill_rules.hpp"
 #include "server/runtime/events.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/world/system.hpp"
@@ -172,6 +173,7 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
         if(result!=DomainStatus::Applied) return fail(result);
     }
     transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),p->persistent.player.weaponSet};
+    edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,7});
     auto plan=ports_.transactions.prepare(std::move(edit)); if(!plan) return fail(plan.status);
     const auto result=ports_.transactions.commit(std::move(*plan.value));
     if(!result) return fail(result.status);

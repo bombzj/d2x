@@ -54,6 +54,7 @@ struct NativeRealmService {
     // peers keep loopback. No host-wide address leaks between transports.
     std::array<uint8_t, 4> gameAddress{127, 0, 0, 1};
     unsigned gameDifficulty{};
+    bool gameLadder{};
     std::string gameName, gamePassword, selectedName, failure, startupFile;
     CharacterRosterView roster;
     std::unique_ptr<CharacterStore::Lease> lease;
@@ -146,8 +147,8 @@ struct NativeRealmService {
     void initialize();
     void sendRealm(uint8_t, net::protocol::Writer);
     void sendGame(Bytes);
-    NativeIdentityView identities() const {return {host,binding.value().game};}
-    uint32_t wireId(EntityId id) const {return id?identities().guid(id):0;}
+    NativeIdentityView identities() const;
+    uint32_t wireId(EntityId id) const;
     template<class... Arguments> auto nativeMissile(Arguments &&...args) const {return d2x::nativeMissile(std::forward<Arguments>(args)...,identities());}
     template<class... Arguments> auto nativeState(Arguments &&...args) const {return d2x::nativeState(std::forward<Arguments>(args)...,identities());}
     template<class... Arguments> auto nativeStateSnapshot(Arguments &&...args) const {return d2x::nativeStateSnapshot(std::forward<Arguments>(args)...,identities());}
@@ -169,8 +170,8 @@ struct NativeRealmService {
     template<class... Arguments> auto nativeAreaWarps(Arguments &&...args) const {return d2x::nativeAreaWarps(std::forward<Arguments>(args)...,identities());}
     template<class... Arguments> auto nativeCorpseEquipment(Arguments &&...args) const {return d2x::nativeCorpseEquipment(std::forward<Arguments>(args)...,identities());}
     template<class... Arguments> auto nativeShopItems(Arguments &&...args) const {return d2x::nativeShopItems(std::forward<Arguments>(args)...,identities());}
-    Bytes nativePlayerMotion(const PlayerSnapshot &view,Vec origin,bool targetVisible=false) const {return d2x::nativePlayerMotion(view,origin,targetVisible,identities());}
-    Bytes nativeGroundItem(const ClassicData &data,const ItemInstance &item,Vec origin,GroundItemAction action=GroundItemAction::Add) const {return d2x::nativeGroundItem(data,item,origin,action,identities());}
+    Bytes nativePlayerMotion(const PlayerSnapshot &view,Vec origin,bool targetVisible=false) const;
+    Bytes nativeGroundItem(const ClassicData &data,const ItemInstance &item,Vec origin,GroundItemAction action=GroundItemAction::Add) const;
     void sendGameBatch(std::vector<Bytes>);
     void result(uint8_t, uint32_t);
     const CharacterRosterEntry &find(std::string_view) const;

@@ -14,7 +14,8 @@ Rectangle hirelingPortraitHitBounds(float offset) {
 }
 
 Rectangle hirelingPanelBounds() {
-    return {72 * classicPanelScale(), 54 * classicPanelScale(),
+    const auto side = classicSideBounds(false);
+    return {side.x + 72 * classicPanelScale(), side.y + 54 * classicPanelScale(),
         320 * classicPanelScale(), 432 * classicPanelScale()};
 }
 

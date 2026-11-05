@@ -194,10 +194,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     }
     const Vec camera = observer - Vec{float(origin.x), float(origin.y)} + Vec{.5f, .5f};
     shared.ui().camera = project(camera);
-    const auto viewport = shared.worldViewport();
     const bool surface = shared.ui().blocksInput() || shared.ui().skillPicker || shared.ui().inventory.drag ||
         shared.ui().inventory.goldDialog || shared.ui().inventory.identify ||
-        shared.characterView().dead || hudSurface(mouse) || !CheckCollisionPointRec(rv(mouse),viewport) || uiConsumed;
+        shared.characterView().dead || hudSurface(mouse) || !shared.worldContains(mouse) || uiConsumed;
     auto screen = [&](Vec p) { return shared.screen(p); };
     const auto groundTarget = surface ? std::optional<ItemHandle>{} : shared.lootAt(mouse);
     std::optional<size_t> selectedExit;
@@ -280,7 +279,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         source.position = {float(unit.position->x) + .5f, float(unit.position->y) + .5f};
         source.alive = key.type == 2 || (key.type == 1 ? !onlineMonsterCorpse(unit) : !playerDead(unit));
         source.neutral = key.type == 1 && unit.mode == 1 && !unit.actionSkill;
-        source.audible = CheckCollisionPointRec(rv(screen(local(*unit.position) + Vec{.5f,.5f})),shared.worldViewport());
+        source.audible = shared.worldContains(screen(local(*unit.position) + Vec{.5f,.5f}));
         soundActorsByKey.emplace(key,soundActors.size()); soundActors.push_back(source);
     }
     for (const auto &[key, u] : v.world.units) {
@@ -357,7 +356,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             auto &audio = soundActors[source->second];
             audio.frozen = frozen;
             audio.position = feet + Vec{float(origin.x) + .5f,float(origin.y) + .5f};
-            audio.audible = CheckCollisionPointRec(rv(screen(feet + Vec{.5f,.5f})),shared.worldViewport());
+            audio.audible = shared.worldContains(screen(feet + Vec{.5f,.5f}));
         }
         if (unitClass(u) && key.type == 1 && !onlineMonsterCorpse(u)) worldScene.monsters.push_back({*unitClass(u), feet + Vec{.5f, .5f}});
         if (key.type == 0 && key.id != playerId) {
@@ -547,11 +546,45 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             m.locomotionAnimation.observe(movementMode,0,time,0,frozen);
             if(changed) {m.locomotionFrame=0;m.locomotionTick=0;}
             const auto tick=uint64_t(std::floor(double(m.locomotionAnimation.elapsed(time))*25.0+1e-5));
+            const auto previousMovementTick=m.locomotionTick;
             // Accumulate native fractional frames. A speed/stat change
             // affects future ticks without rescaling the elapsed phase.
             if(tick>=m.locomotionTick)
                 m.locomotionFrame=std::fmod(m.locomotionFrame+double(tick-m.locomotionTick)*visual->fps/25.0,double(visual->frameCount));
             m.locomotionTick=tick;
+            if (key.type==0 && moving && !frozen && !displayed.actionSkill && !paused && !suspended &&
+                tick>previousMovementTick && visual->fps>0 && visual->frameCount>1 &&
+                (*movementMode==2 || *movementMode==3 || *movementMode==6) &&
+                shared.worldContains(screen(feet))) {
+                const int period=visual->frameCount*256/2;
+                const int speed=int(std::lround(visual->fps*256.f/25.f));
+                const int phase=int(std::lround(m.locomotionFrame*256));
+                const auto distance=[&](int value) {
+                    const int remainder=((value%period)+period)%period;
+                    return std::min(remainder,period-remainder);
+                };
+                if (distance(phase)<distance(phase+speed) && distance(phase)<distance(phase-speed)) {
+                    const int column=int(feet.x)/5,row=int(feet.y)/5;
+                    uint16_t flags=0;
+                    const auto &terrain=map.terrain;
+                    if (terrain.preparedRooms) {
+                        for (const auto &tile:terrain.instances)
+                            if (tile.type==0 && tile.x==column && tile.y==row && !(tile.flags&8) &&
+                                tile.tile>=0 && size_t(tile.tile)<terrain.tiles.size()) {
+                                flags=terrain.tiles[size_t(tile.tile)]->materialFlags;
+                                break;
+                            }
+                    } else if (column>=0 && row>=0 && column<terrain.data.width && row<terrain.data.height) {
+                        const auto cell=size_t(row)*terrain.data.width+column;
+                        for (const auto &floor:terrain.data.floors) if (cell<floor.size() && floor[cell].present()) {
+                            const int tile=terrain.tileIndex(floor[cell],column,row);
+                            if (tile>=0 && size_t(tile)<terrain.tiles.size()) {flags=terrain.tiles[size_t(tile)]->materialFlags;break;}
+                        }
+                    }
+                    const int material=flags&0x20?1:flags&8?2:flags&0x10?3:flags&0x40?4:flags&0x80?6:flags&0x400?5:0;
+                    shared.playPlayerFootstep(*unitClass(u),*movementMode==3,material,binding.area.value_or(0),uint64_t(time*25));
+                }
+            }
         } else m.locomotionAnimation.mode.reset();
         const auto [animationClock,animationElapsed]=m.animationTime(time);
         if (const auto source = soundActorsByKey.find(key); source != soundActorsByKey.end()) {
@@ -561,7 +594,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             audio.moving = moving && visual->cycle && !displayed.actionSkill;
             audio.neutral = !moving && !frozen && ((movementMode && (*movementMode==1 || *movementMode==5)) || completedAction);
             audio.movementCycle = audio.moving ? visual->duration() : 0.f;
-            audio.audible = CheckCollisionPointRec(rv(screen(feet)),shared.worldViewport());
+            audio.audible = shared.worldContains(screen(feet));
         }
         const float runClock=m.scriptedSequence?float(m.scriptedSequence->animation.frame)/256.f/25.f:0;
         if (!pd2 && key.type == 2 && unitClass(u) == 152) {
@@ -592,7 +625,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
               (m.scriptedSequence && m.scriptedSequence->leapGraphics?m.scriptedSequence->leapGraphics->offset():Vec{})+
               (m.playerLeap?m.playerLeap->graphics.offset():Vec{});
         if (player) player->reason = "Outside viewport";
-        if (!visual->animation.intersects(p,{0,0,float(W),float(H-HUD)})) continue;
+        if (!visual->animation.intersects(p,{0,0,float(W),float(H)})) continue;
         const auto *image = key.type == 2 ? visual->sample(objectElapsed, objectElapsed, m.look)
             : m.scriptedSequence && !completedAction?visual->sample(runClock,runClock,m.look,
                 m.scriptedSequence->nativeFrame?std::optional{float(m.scriptedSequence->animation.frame)/256.f}:std::nullopt)

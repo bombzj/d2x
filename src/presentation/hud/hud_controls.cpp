@@ -267,7 +267,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
         // D2Client 1.13c RVA 0x276EE/0x277AC: white color 0, baseline H-95,
         // centers 65 (Life) and W-80 (Mana). Anchors follow the HUD artwork;
         // glyphs keep their original size rather than the widened HUD scale.
-        const float center = mana ? W - 80 * hudScale() : 65 * hudScale();
+        const float center = hudRect(mana ? 720 : 65, 0, 0, 0).x;
         assets_.font.drawBaseline(text, {center-assets_.font.textWidth(text)/2, H-95*hudScale()}, 1);
     }
     std::string hint;

@@ -40,7 +40,8 @@ nlohmann::json reloadPolicyNumbers(const nlohmann::json &config) {
         "kiteMinDistance","hazardLookaheadMs","hazardPadding"});
     copy("mobility",{"distance"});
     copy("supplies",{"lifePercent","manaPercent","criticalLifePercent","healthCount","manaCount","intervalMs"});
-    copy("events",{"waitSeconds","initialWaitMs","doorInitialWaitMs","scrollInitialWaitMs","encounterRadius","standoffMin","standoffMax"});
+    copy("events",{"waitSeconds","initialWaitMs","doorInitialWaitMs","scrollInitialWaitMs","questLogDurationMs","encounterRadius","standoffMin","standoffMax",
+        "walkDecisionMs","walkReactionMs","walkRequestIntervalMs","walkRetryMs","townTurnBaseMs","townTurnMinMs","townTurnMaxMs"});
     return result;
 }
 nlohmann::json classCombat(nlohmann::json combat,std::optional<uint16_t> characterClass) {
@@ -357,13 +358,25 @@ DebugAi::Impl::EventPolicy DebugAi::Impl::parseEvents(const Json &j) const {
     if(!j.is_object()) throw std::invalid_argument("events must be an object");
     for(const auto &[key,value]:j.items()) {
         (void)value;
-        if(key!="waitSeconds" && key!="initialWaitMs" && key!="doorInitialWaitMs" && key!="scrollInitialWaitMs" && key!="encounterRadius" && key!="standoffMin" && key!="standoffMax")
+        if(key!="waitSeconds" && key!="initialWaitMs" && key!="doorInitialWaitMs" && key!="scrollInitialWaitMs" && key!="questLogDurationMs" && key!="encounterRadius" && key!="standoffMin" && key!="standoffMax" &&
+            key!="walkDecisionMs" && key!="walkReactionMs" && key!="walkRequestIntervalMs" && key!="walkRetryMs" &&
+            key!="townTurnBaseMs" && key!="townTurnMinMs" && key!="townTurnMaxMs")
             throw std::invalid_argument("Unknown event policy: "+key);
     }
     EventPolicy p;p.waitSeconds=integer(j,"waitSeconds",90,15,300);
     p.initialWaitMs=integer(j,"initialWaitMs",1000,0,30000);
     p.doorInitialWaitMs=integer(j,"doorInitialWaitMs",250,0,30000);
     p.scrollInitialWaitMs=integer(j,"scrollInitialWaitMs",1000,0,30000);
+    p.questLogDurationMs=integer(j,"questLogDurationMs",2000,0,30000);
+    p.walkDecisionMs=integer(j,"walkDecisionMs",160,1,5000);
+    p.walkReactionMs=integer(j,"walkReactionMs",40,1,5000);
+    p.walkRequestIntervalMs=integer(j,"walkRequestIntervalMs",200,0,5000);
+    p.walkRetryMs=integer(j,"walkRetryMs",1000,0,30000);
+    p.townTurnBaseMs=integer(j,"townTurnBaseMs",200,0,30000);
+    p.townTurnMinMs=integer(j,"townTurnMinMs",600,0,30000);
+    p.townTurnMaxMs=integer(j,"townTurnMaxMs",2000,0,30000);
+    if(p.townTurnMinMs>p.townTurnMaxMs)
+        throw std::invalid_argument("events.townTurnMinMs must not exceed townTurnMaxMs");
     if(std::max({p.initialWaitMs,p.doorInitialWaitMs,p.scrollInitialWaitMs})>=p.waitSeconds*1000)
         throw std::invalid_argument("Initial passage wait must be shorter than its total wait budget");
     p.encounterRadius=integer(j,"encounterRadius",32,12,64);
@@ -417,6 +430,10 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
         {"behaviorLog",{{"file",behaviorLog.path},{"error",behaviorLog.error}}},
         {"eventPolicy",{{"waitSeconds",eventPolicy.waitSeconds},{"initialWaitMs",eventPolicy.initialWaitMs},
             {"doorInitialWaitMs",eventPolicy.doorInitialWaitMs},{"scrollInitialWaitMs",eventPolicy.scrollInitialWaitMs},{"retryMs",1000},{"encounterRadius",eventPolicy.encounterRadius},
+            {"questLogDurationMs",eventPolicy.questLogDurationMs},
+            {"walkDecisionMs",eventPolicy.walkDecisionMs},{"walkReactionMs",eventPolicy.walkReactionMs},
+            {"walkRequestIntervalMs",eventPolicy.walkRequestIntervalMs},{"walkRetryMs",eventPolicy.walkRetryMs},
+            {"townTurnBaseMs",eventPolicy.townTurnBaseMs},{"townTurnMinMs",eventPolicy.townTurnMinMs},{"townTurnMaxMs",eventPolicy.townTurnMaxMs},
             {"standoffMin",eventPolicy.standoffMin},{"standoffMax",eventPolicy.standoffMax}}},
         {"worldWait",questRun.worldWait?Json{{"area",questRun.worldWait->area},
             {"anchor",{questRun.worldWait->anchor.x,questRun.worldWait->anchor.y}},{"expected",questRun.worldWait->expected},
@@ -551,7 +568,7 @@ void DebugAi::Impl::advance(Context &c,std::string evidence,bool skipped) {
     if(c.session.read().world.npcRequested) c.control.closeNpc();
     if(c.session.read().world.waypointSource) c.control.useWaypoint(0);
     if(skipped) goals.at(cursor).skipReason=evidence;
-    if(!skipped && goals.at(cursor).kind==Kind::Quest) {
+    if(!skipped && goals.at(cursor).kind==Kind::Quest && eventPolicy.questLogDurationMs>0) {
         questLogPending=true;questLogGame=c.session.read().gameGeneration;
         questLogConnection=c.session.read().connectionGeneration;
     }
@@ -662,10 +679,15 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
         nextSupply.enabled=stock.enabled;nextSupply.buy=stock.buy;nextSupply.returnWhenEmpty=stock.returnWhenEmpty;nextSupply.fillPortalBook=stock.fillPortalBook;
         const auto nextEvents=s.parseEvents(policyNumbers({{"waitSeconds",s.eventPolicy.waitSeconds},
             {"initialWaitMs",s.eventPolicy.initialWaitMs},{"doorInitialWaitMs",s.eventPolicy.doorInitialWaitMs},{"scrollInitialWaitMs",s.eventPolicy.scrollInitialWaitMs},
+            {"questLogDurationMs",s.eventPolicy.questLogDurationMs},
+            {"walkDecisionMs",s.eventPolicy.walkDecisionMs},{"walkReactionMs",s.eventPolicy.walkReactionMs},
+            {"walkRequestIntervalMs",s.eventPolicy.walkRequestIntervalMs},{"walkRetryMs",s.eventPolicy.walkRetryMs},
+            {"townTurnBaseMs",s.eventPolicy.townTurnBaseMs},{"townTurnMinMs",s.eventPolicy.townTurnMinMs},{"townTurnMaxMs",s.eventPolicy.townTurnMaxMs},
             {"encounterRadius",s.eventPolicy.encounterRadius},{"standoffMin",s.eventPolicy.standoffMin},{"standoffMax",s.eventPolicy.standoffMax}},
             j.value("events",Impl::Json::object())));
         s.policy=std::move(nextCombat);s.mobilityPolicy=std::move(nextMobility);s.supplyPolicy=std::move(nextSupply);
         s.eventPolicy=nextEvents;
+        walk.setTiming(nextEvents);s.cadence.wake();
         s.configurationFile=j.value("configFile",std::string{});
         s.note("config-reloaded",j.value("configFile",std::string("inline policy")));
     } else if(name=="debug-ai-start" || name=="debug-ai-append") {
@@ -786,6 +808,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             s.excursionSkill.reset();s.excursionSkillPrepared=false;
             s.configurationClass=characterClass && *characterClass<classNames.size()?classNames[*characterClass]:"unknown";
             s.eventPolicy=events;
+            walk.setTiming(events);
             s.rememberedDrops.clear();
             s.summitTrialKills.reset();
             s.deferredWaypoint.reset();
@@ -825,14 +848,15 @@ void DebugAi::Impl::tickQuestLog(const OnlineView &view,const SuppliesView &supp
     const auto now=Clock::now();
     const bool invalid=view.stage!=OnlineStage::ProtocolReady || view.gameGeneration!=questLogGame ||
         view.connectionGeneration!=questLogConnection || (!live() && state!="completed");
-    if(invalid) questLogPending=false;
-    if(questLogCloseAt!=Clock::time_point{} && (invalid || now>=questLogCloseAt)) {
+    const bool disabled=eventPolicy.questLogDurationMs==0;
+    if(invalid || disabled) questLogPending=false;
+    if(questLogCloseAt!=Clock::time_point{} && (invalid || disabled || now>=questLogCloseAt)) {
         if(supplies.closeQuestLog) supplies.closeQuestLog();
         questLogCloseAt={};
     }
     if(!invalid && questLogPending && !blocked && (active() || state=="completed") &&
         supplies.openQuestLog && supplies.openQuestLog()) {
-        questLogPending=false;questLogCloseAt=now+std::chrono::seconds(2);
+        questLogPending=false;questLogCloseAt=now+std::chrono::milliseconds(eventPolicy.questLogDurationMs);
     }
 }
 void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &walk,RemoteControl &control,

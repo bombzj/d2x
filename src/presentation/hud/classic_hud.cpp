@@ -22,32 +22,15 @@ void drawClassicGlobe(const GpuAnimation &orbs, const GpuAnimation &overlap, boo
             DrawTexturePro(texture, {0, empty, float(texture.width), float(filled)}, bounds, {0, 0}, 0, WHITE);
         }
     }
-    imageAt(overlap.frame(0, mana ? 1 : 0), hudRect(mana ? 691 : 28, mana ? 96 : 93, 82, 88,
-        mana ? HudAnchor::Right : HudAnchor::Left));
+    imageAt(overlap.frame(0, mana ? 1 : 0), hudRect(mana ? 691 : 28, mana ? 96 : 93, 82, 88));
 }
 void drawClassicHud(const ClassicHudArt &art, const ClassicHudValues &value) {
-    DrawRectangle(0, H - HUD, W, HUD, BLACK);
-    // Frame 6 is an empty black slot. Frame 1 has a control-free stone strip
-    // at x=76..87, between the point button and stamina frame. Tile that
-    // original material, including the top/bottom trim, at its native size.
-    if (const auto *strip = art.panel.frame(0, 1); strip && W > 800) {
-        constexpr float tileWidth=12;
-        const auto fill = [&](float left, float right) {
-            for (float x = left; x < right; x += tileWidth) {
-                const float width = std::min(tileWidth, right - x);
-                DrawTexturePro(strip->texture, {76, float(strip->texture.height-HUD), width, float(HUD)},
-                    {x, float(H-HUD), width, float(HUD)}, {}, 0, WHITE);
-            }
-        };
-        fill(165, hudRect(165, 0, 0, 0).x);
-        fill(hudRect(635, 0, 0, 0).x, hudSkillSlot(true).x);
-    }
+    DrawRectangleRec(hudRect(0, HUD, 800, HUD), BLACK);
     for (bool mana : {false, true}) imageAt(art.orbs.frame(0, mana ? 1 : 0), hudGlobe(mana), BLACK);
     constexpr std::array<float, 6> offsets{0, 165, 293, 421, 549, 683};
     for (size_t i = 0; i < offsets.size(); ++i) {
         const auto &part = art.panel.frames.at(i);
-        const auto anchor = i == 0 ? HudAnchor::Left : i == 5 ? HudAnchor::Right : HudAnchor::Center;
-        imageAt(&part, hudRect(offsets[i], float(part.texture.height), float(part.texture.width), float(part.texture.height), anchor));
+        imageAt(&part, hudRect(offsets[i], float(part.texture.height), float(part.texture.width), float(part.texture.height)));
     }
     drawClassicGlobe(art.orbs, art.overlap, false, value.life);
     drawClassicGlobe(art.orbs, art.overlap, true, value.mana);

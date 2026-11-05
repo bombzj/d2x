@@ -37,7 +37,7 @@ void NativeRealmService::logon(net::protocol::Reader &in) {
         name != selectedName || characterClass >= content->characters.size() || content->characters[characterClass].name != selected->player.characterClass)
         throw ProtocolError("D2GS ticket or character mismatch");
     ticket = false; peer.phase = GamePhase::LoggedOn;
-    Writer out; out.u8(1); out.u8(uint8_t(gameDifficulty)); out.u32(selected->player.hardcore?0x800u:0u); out.u8(1); out.u8(0); sendGame(out.release()); sendGame({2});
+    Writer out; out.u8(1); out.u8(uint8_t(gameDifficulty)); out.u32(selected->player.hardcore?0x800u:0u); out.u8(1); out.u8(gameLadder?1:0); sendGame(out.release()); sendGame({2});
 
 }
 void NativeRealmService::queryTcpIpGames(net::protocol::Reader &in) {

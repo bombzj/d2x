@@ -6,11 +6,10 @@ namespace d2x {
 // One coordinate system for drawing and hit testing the original 800-pixel panel.
 // Native DC6 panel frames are bottom-aligned; the globes rise above the 55px strip.
 float hudScale();
-enum class HudAnchor { Left, Center, Right };
 // UI glyphs keep their MPQ pixel size. The outer viewport already scales the
 // whole canvas; widening the HUD must not enlarge text a second time.
 float hudTextScale();
-Rectangle hudRect(float x, float fromBottom, float width, float height, HudAnchor = HudAnchor::Center);
+Rectangle hudRect(float x, float fromBottom, float width, float height);
 Rectangle hudSkillSlot(bool right);
 Rectangle hudGlobe(bool mana);
 Rectangle hudRunButton();

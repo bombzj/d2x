@@ -3,6 +3,9 @@
 #include "content/string_table.hpp"
 #include "core/text.hpp"
 #include "core/utf8.hpp"
+#include "presentation/audio/audio.hpp"
+#include "presentation/audio/scene_streams.hpp"
+#include "content/audio/sound_catalog.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include "resources/data_table.hpp"
 #include <algorithm>
@@ -158,10 +161,16 @@ struct RealmFrontend::Impl {
     std::unique_ptr<Graphics> heroGraphics;
     struct Hero {
         GpuAnimation idle, hover, forward, chosen, back, forwardOverlay, chosenOverlay, backOverlay;
-        int pose{};
-        float elapsed{};
+        int pose{}, frame{};
+        double started{};
     };
     std::array<Hero, 7> heroes;
+    double creationStarted{};
+    AudioSettings audioSettings;
+    std::unique_ptr<SoundBank> creationSounds;
+    bool buttonSoundRegistered{};
+    std::unique_ptr<SoundCatalog> musicCatalog;
+    std::unique_ptr<SceneStreams> music;
     int hero{-1}, difficulty{}, gameOffset{}, gameInfoOffset{}, realmSelected{};
     enum class LobbyPanel { Notice, Create, Join, Channel, Help };
     LobbyPanel lobbyPanel{LobbyPanel::Notice};
@@ -183,6 +192,7 @@ struct RealmFrontend::Impl {
     ClassicFont normal, buttonFont, inputFont, titleFont, lobbyFont, roomGoldFont, roomGrayFont, lanTitleFont, lanTipFont,
         hardcoreRedFont, rosterGold, rosterGreen, rosterHeading, victoryFont, difficultyTitleFont,
         lobbyEntryFont, lobbyDisabledFont, lobbyErrorFont, lobbyWhisperFont;
+    ClassicFont creationTitle, creationText, creationGold, creationEntry, creationButton;
     UiPainter text, inputText, title, lobbyText, roomGoldText, roomGrayText, lanTitle, lanTip;
     UiPainter victoryTitle{victoryFont};
     struct ControlArt { const Animation *source; std::string palette; };
@@ -220,6 +230,7 @@ struct RealmFrontend::Impl {
     Vector2 mouse{};
     bool clicked{}, enabled{};
     bool lobbyButtonGestures{};
+    bool creationControls{};
     std::optional<std::tuple<std::string, int, int>> pressedLobbyButton;
     FrontendIntent intent;
     Impl(Archives &a, RealmPortraitSupport portraitSupport)
@@ -421,11 +432,24 @@ struct RealmFrontend::Impl {
             width += a.frame(0, base + i)->texture.width;
         Rectangle r{float(x), float(y), float(width), float(a.frame(0, base)->texture.height)};
         const bool interactive = enabled && active && CheckCollisionPointRec(mouse, r);
+        if (interactive && input.leftPressed) {
+            if (!creationSounds) {
+                creationSounds = std::make_unique<SoundBank>(archives);
+                creationSounds->setVolumes(audioSettings.sound, audioSettings.music);
+            }
+            const std::string sound = "data/global/sfx/cursor/button.wav";
+            if (!buttonSoundRegistered) {
+                creationSounds->registerFile(sound);
+                buttonSoundRegistered = true;
+            }
+            creationSounds->play(sound, uint64_t(GetTime() * 25));
+        }
         const auto key = std::tuple{std::string(id), x, y};
-        if (lobbyButtonGestures && interactive && input.leftPressed)
+        const bool releaseGesture = lobbyButtonGestures || creationControls;
+        if (releaseGesture && interactive && input.leftPressed)
             pressedLobbyButton = key;
         const bool captured = pressedLobbyButton && *pressedLobbyButton == key;
-        const bool down = interactive && input.leftHeld && (!lobbyButtonGestures || captured);
+        const bool down = interactive && input.leftHeld && (!releaseGesture || captured);
         int first = base + (down ? segments : 0);
         Color tint = active ? WHITE : Color{255, 255, 255, 128};
         if (!active && base + segments * 3 <= a.count) {
@@ -433,7 +457,7 @@ struct RealmFrontend::Impl {
             tint = WHITE;
         }
         const int height = int(r.height);
-        const auto &face = height >= 35 ? buttonFont : lobbyFont;
+        const auto &face = creationControls ? creationButton : height >= 35 ? buttonFont : lobbyFont;
         auto &caption = captions[{id, x, y, first}];
         if (caption.label != label) {
             if (caption.texture.id) UnloadTexture(caption.texture);
@@ -454,7 +478,7 @@ struct RealmFrontend::Impl {
                 UiPainter(face, 0).inBox(line, {float(x - (down ? 2 : 0)), float(y + row * height / count +
                     (down ? 2 : 0)), float(width), float(height / count)}, 16, BLACK);
         }
-        return interactive && (lobbyButtonGestures && !activateOnPress ? captured && input.leftReleased : clicked);
+        return interactive && (releaseGesture && !activateOnPress ? captured && input.leftReleased : clicked);
     }
     void label(const std::string &v, int x, int y, Color c = parchment) { text.label(v, x, y, 16, c); }
     void lobbyLabel(const ClassicFont &face, const std::string &value, int x, int bottom,
@@ -521,21 +545,22 @@ struct RealmFrontend::Impl {
     }
     void field(std::string &value, Rectangle r, int index, size_t limit, bool secret = false,
                bool drawBox = true) {
-        if (lobbyButtonGestures) {
-            auto &entry = lobbyEntries[{index == 3 ? -1 : int(lobbyPanel), index}];
+        if (lobbyButtonGestures || creationControls) {
+            const auto &face = creationControls ? creationEntry : lobbyEntryFont;
+            auto &entry = lobbyEntries[{creationControls ? -2 : index == 3 ? -1 : int(lobbyPanel), index}];
             entry.caret = std::min(entry.caret, value.size());
             entry.anchor = std::min(entry.anchor, value.size());
             entry.first = std::min(entry.first, entry.caret);
             const bool focused = enabled && focus == index;
             auto shown = secret ? std::string(value.size(), '*') : value;
             const auto width = [&](size_t begin, size_t end) {
-                return lobbyEntryFont.textWidth(std::string_view(shown).substr(begin, end - begin));
+                return face.textWidth(std::string_view(shown).substr(begin, end - begin));
             };
             const auto locate = [&] {
                 size_t position = entry.first;
                 float left = r.x;
                 while (position < shown.size()) {
-                    const int advance = lobbyEntryFont.widthOf(uint8_t(shown[position]));
+                    const int advance = face.widthOf(uint8_t(shown[position]));
                     if (mouse.x < left + advance * .5f) break;
                     left += advance; ++position;
                 }
@@ -572,6 +597,16 @@ struct RealmFrontend::Impl {
                 if (input.entryDelete && !eraseSelection() && entry.caret < value.size()) value.erase(entry.caret, 1);
                 for (unsigned char character : input.entryText) {
                     if (character < 32 || character > 126) continue;
+                    if (creationControls) {
+                        const bool letter = (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z');
+                        if (!letter) {
+                            if (character != '-' && character != '_') continue;
+                            auto remainder = value;
+                            const auto first = std::min(entry.caret, entry.anchor);
+                            remainder.erase(first, std::max(entry.caret, entry.anchor) - first);
+                            if (!first || remainder.find_first_of("-_") != std::string::npos) continue;
+                        }
+                    }
                     eraseSelection();
                     if (value.size() < limit) { value.insert(entry.caret++, 1, char(character)); entry.anchor = entry.caret; }
                 }
@@ -580,15 +615,15 @@ struct RealmFrontend::Impl {
             }
             shown = secret ? std::string(value.size(), '*') : value;
             entry.first = std::min(entry.first, entry.caret);
-            while (entry.first < entry.caret && width(entry.first, entry.caret) > r.width - lobbyEntryFont.widthOf('_')) ++entry.first;
+            while (entry.first < entry.caret && width(entry.first, entry.caret) > r.width - face.widthOf('_')) ++entry.first;
             uiScissor(r.x, r.y, r.width, r.height);
             const size_t first = std::max(entry.first, std::min(entry.caret, entry.anchor));
             const size_t last = std::max(entry.caret, entry.anchor);
             if (enabled && focus == index && first < last)
-                DrawRectangleRec({r.x + width(entry.first, first), r.y, float(width(first, last)), float(lobbyEntryFont.textHeight)}, {64, 64, 64, 255});
-            lobbyEntryFont.drawBaseline(std::string_view(shown).substr(entry.first), {r.x, r.y + lobbyEntryFont.textHeight}, 1);
+                DrawRectangleRec({r.x + width(entry.first, first), r.y, float(width(first, last)), float(face.textHeight)}, {64, 64, 64, 255});
+            face.drawBaseline(std::string_view(shown).substr(entry.first), {r.x, r.y + face.textHeight}, 1);
             if ((focused || (enabled && focus == index)) && (uint64_t(GetTime() * 4) & 1))
-                lobbyEntryFont.drawBaseline("_", {r.x + width(entry.first, entry.caret), r.y + lobbyEntryFont.textHeight}, 1);
+                face.drawBaseline("_", {r.x + width(entry.first, entry.caret), r.y + face.textHeight}, 1);
             EndScissorMode();
             return;
         }
@@ -812,26 +847,31 @@ struct RealmFrontend::Impl {
         }
     }
     void creation(const OnlineView &v) {
-        // Same native expansion hero positions and animation timing as the offline selector.
         constexpr std::array folders{"amazon",  "assassin",  "necromancer", "barbarian",
                                      "paladin", "sorceress", "druid"};
         constexpr std::array tokens{"am", "as", "ne", "ba", "pa", "so", "dz"};
         constexpr std::array<int, 7> ids{0, 6, 2, 4, 3, 1, 5},
             descriptions{5128, 22519, 5129, 5130, 5132, 5131, 22518};
-        constexpr std::array<Rectangle, 7> hits{{{70, 220, 55, 200},
-                                                 {175, 235, 50, 180},
-                                                 {265, 220, 55, 175},
-                                                 {364, 201, 90, 170},
-                                                 {490, 210, 65, 180},
-                                                 {580, 240, 65, 160},
-                                                 {680, 220, 70, 195}}};
         constexpr std::array<Vector2, 7> positions{
-            {{100, 339}, {231, 365}, {300, 335}, {400, 330}, {521, 338}, {626, 352}, {720, 370}}};
-        constexpr std::array<float, 7> idleTimes{2.5f, 2.5f, 1.2f, 0, 2.5f, 2.5f, 1.5f},
-            forwardTimes{2.2f, 3.8f, 2, 2.5f, 3.4f, 2.3f, 4.8f},
-            backTimes{1.5f, 1.5f, 1.5f, 1, 1.3f, 1.2f, 1.5f};
+            {{100, 337}, {232, 364}, {301, 333}, {400, 330}, {521, 339}, {626, 353}, {720, 370}}};
+        constexpr std::array<int, 7> idleSpeed{3, 3, 3, 2, 2, 2, 2},
+            chosenSpeed{2, 2, 2, 1, 2, 1, 2};
+        constexpr std::array<size_t, 7> drawOrder{3, 5, 4, 2, 1, 0, 6};
         if (!heroGraphics) {
             heroGraphics = std::make_unique<Graphics>(archives, "data/global/palette/fechar/pal.dat");
+            creationTitle = font(*heroGraphics, archives, "font30");
+            creationText = font(*heroGraphics, archives, "font16");
+            creationGold = font(*heroGraphics, archives, "font16", 4);
+            creationEntry = font(*heroGraphics, archives, "fontformal12");
+            creationButton = font(*heroGraphics, archives, "fontexocet10");
+            const auto palette = archives.read("data/global/palette/fechar/pal.pl2");
+            constexpr size_t goldShift = 0x6B600 + 13 * 3 + 4 * 256;
+            if (palette.size() < goldShift + 256) throw std::runtime_error("Missing original creation font colors");
+            std::copy_n(palette.begin() + goldShift, 256, creationGold.transform.begin());
+            creationGold.textColor = pl2FontColor(palette, 4);
+            this->load(*heroGraphics, "creationButton", "FrontEnd/MediumSelButtonBlank");
+            this->load(*heroGraphics, "creationTextbox", "FrontEnd/textbox");
+            for (auto *face : {&creationTitle, &creationText, &creationGold, &creationEntry}) face->originalGlyphs = true;
             auto load = [&](const std::string &path) {
                 auto a = heroGraphics->single("data/global/ui/FrontEnd/" + path + ".dc6");
                 if (a.frames.empty())
@@ -855,97 +895,158 @@ struct RealmFrontend::Impl {
                     h.backOverlay = load(base + "bws");
                 }
             }
+            if (!creationSounds) {
+                creationSounds = std::make_unique<SoundBank>(archives);
+                creationSounds->setVolumes(audioSettings.sound, audioSettings.music);
+            }
+            for (const auto *name : folders)
+                for (const auto *action : {"select", "deselect"})
+                    creationSounds->registerFile("data/global/sfx/cursor/intro/" + std::string(name) + " " + action + ".wav");
         }
         tiles("creation", 0, 0, 4);
-        title.inBox(s(5127), {0, 17, 800, 36}, 16, parchment);
-        if (hero >= 0) {
-            centered(classNames[size_t(ids[size_t(hero)])], 65);
-            wrap(s(descriptions[size_t(hero)]), 255, 104, 290, true);
+        lobbyLabel(creationTitle, s(5127), 0, 80, 800, 50, 2);
+        const auto animationFor = [](const Hero &entry) -> const GpuAnimation & {
+            switch (entry.pose) {
+            case 1: return entry.hover;
+            case 2: return entry.forward;
+            case 3: return entry.chosen;
+            case 4: return entry.back;
+            default: return entry.idle;
+            }
+        };
+        const auto hit = [&](size_t index) {
+            const auto *cel = animationFor(heroes[index]).frame(0, 0);
+            return cel && CheckCollisionPointRec(mouse,
+                {positions[index].x + cel->x, positions[index].y + cel->y - cel->texture.height,
+                 float(cel->texture.width), float(cel->texture.height)});
+        };
+        const auto now = GetTime();
+        int hovered = -1;
+        for (const auto index : drawOrder) {
+            auto &entry = heroes[index];
+            if (entry.pose < 2) {
+                entry.pose = enabled && hit(index) ? 1 : 0;
+                if (entry.pose == 1) hovered = int(index);
+            }
         }
-        for (size_t i = 0; i < heroes.size(); ++i) {
-            auto &h = heroes[i];
-            if (enabled && clicked && CheckCollisionPointRec(mouse, hits[i]) && hero != int(i)) {
+        const bool transitioning = std::any_of(heroes.begin(), heroes.end(), [](const auto &entry) {
+            return entry.pose == 2 || entry.pose == 4;
+        });
+        for (const auto index : drawOrder) {
+            auto &entry = heroes[index];
+            if (enabled && clicked && !transitioning && hit(index)) {
+                const auto previousHero = hero;
+                creationSounds->stopAll();
                 if (hero >= 0) {
-                    heroes[size_t(hero)].pose = 3;
-                    heroes[size_t(hero)].elapsed = 0;
+                    creationSounds->play("data/global/sfx/cursor/intro/" + std::string(folders[size_t(hero)]) + " deselect.wav");
+                    heroes[size_t(hero)].pose = 4;
+                    heroes[size_t(hero)].frame = 0;
+                    heroes[size_t(hero)].started = now;
                 }
-                hero = int(i);
-                h.pose = 1;
-                h.elapsed = 0;
+                hero = previousHero == int(index) ? -1 : int(index);
+                if (hero >= 0) {
+                    creationSounds->play("data/global/sfx/cursor/intro/" + std::string(folders[index]) + " select.wav");
+                    entry.pose = 2;
+                    entry.frame = 0;
+                    entry.started = now;
+                    focus = 0;
+                }
+                break;
             }
         }
-        auto drawHero = [&](size_t i) {
-            auto &h = heroes[i];
-            h.elapsed += std::min(GetFrameTime(), .1f);
-            if (h.pose == 1 && h.elapsed >= forwardTimes[i]) {
-                h.pose = 2;
-                h.elapsed = 0;
+        const int described = hero >= 0 ? hero : hovered;
+        if (described >= 0) {
+            lobbyLabel(creationTitle, classNames[size_t(ids[size_t(described)])], 0, 180, 800, 100, 2);
+            int baseline = 110 + creationText.textHeight;
+            std::istringstream paragraphs(s(descriptions[size_t(described)]));
+            for (std::string paragraph; std::getline(paragraphs, paragraph);) {
+                std::istringstream words(paragraph);
+                std::string line;
+                const auto drawLine = [&] {
+                    centeredControlText(creationText, line, 250, 300, baseline, WHITE);
+                    baseline += creationText.textHeight;
+                };
+                for (std::string word; words >> word;) {
+                    const auto next = line.empty() ? word : line + " " + word;
+                    if (!line.empty() && creationText.textWidth(next) > 300) { drawLine(); line.clear(); }
+                    if (!line.empty()) line += ' ';
+                    line += word;
+                }
+                drawLine();
             }
-            if (h.pose == 3 && h.elapsed >= backTimes[i]) {
-                h.pose = 0;
-                h.elapsed = 0;
+        }
+        auto drawHero = [&](size_t index) {
+            auto &entry = heroes[index];
+            if ((entry.pose == 2 || entry.pose == 4) &&
+                entry.frame >= animationFor(entry).count - 2) {
+                entry.pose = entry.pose == 2 ? 3 : 1;
+                entry.frame = 0;
+                entry.started = now;
             }
-            const auto &animation = h.pose == 1                                         ? h.forward
-                                    : h.pose == 2                                       ? h.chosen
-                                    : h.pose == 3                                       ? h.back
-                                    : enabled && CheckCollisionPointRec(mouse, hits[i]) ? h.hover
-                                                                                        : h.idle;
-            const float duration = h.pose == 1   ? forwardTimes[i]
-                                   : h.pose == 3 ? backTimes[i]
-                                   : h.pose == 0 ? idleTimes[i]
-                                                 : 0;
-            const int progress = int(h.elapsed * (duration > 0 ? animation.count / duration : 25));
-            const int frame = (h.pose == 1 || h.pose == 3) ? std::min(progress, animation.count - 1)
-                                                           : progress % animation.count;
-            const auto *cel = animation.frame(0, frame);
-            sprite(cel, {positions[i].x, positions[i].y - cel->texture.height});
-            const auto &overlay = h.pose == 1   ? h.forwardOverlay
-                                  : h.pose == 2 ? h.chosenOverlay
-                                                : h.backOverlay;
-            if (h.pose && !overlay.frames.empty()) {
-                const auto *extra = overlay.frame(0, frame);
-                const Vec at{positions[i].x, positions[i].y - extra->texture.height};
-                if (h.pose != 1 || i == 2 || i == 5)
+            const auto &animation = animationFor(entry);
+            const auto *cel = animation.frame(0, entry.frame);
+            sprite(cel, {positions[index].x, positions[index].y - cel->texture.height});
+            const auto &overlay = entry.pose == 2 ? entry.forwardOverlay
+                                  : entry.pose == 3 ? entry.chosenOverlay : entry.backOverlay;
+            if (entry.pose >= 2 && !overlay.frames.empty()) {
+                const auto *extra = overlay.frame(0, entry.frame);
+                const Vec at{positions[index].x, positions[index].y - extra->texture.height};
+                if (index == 2 || index == 5)
                     softAdditiveSprite(extra, at);
                 else
                     sprite(extra, at);
             }
+            const int speed = entry.pose < 2 ? idleSpeed[index] : entry.pose == 3 ? chosenSpeed[index] : 1;
+            const auto progress = uint64_t(std::max(0.0, now - entry.started) * 1000) / (40 * speed);
+            entry.frame = entry.pose == 2 || entry.pose == 4
+                ? int(std::min(progress, uint64_t(std::max(0, animation.count - 1))))
+                : int(progress % uint64_t(std::max(1, animation.count - 1)));
         };
-        for (size_t i = 0; i < heroes.size(); ++i)
-            if (int(i) != hero)
-                drawHero(i);
-        if (hero >= 0)
-            drawHero(size_t(hero));
-        if (const auto *cel = art.at("campfire").frame(0, int(GetTime() * 25)))
-            softAdditiveSprite(cel, {380, 335});
-        label(s(5125), 321, 475);
-        field(characterName, {318, 493, 169, 26}, 0, 15);
-        image("check", 318, 526, 1);
-        label(s(22731), 339, 526, GREEN);
-        image("check", 318, 548, hardcore ? 1 : 0);
-        label(s(5126), 339, 548);
-        if (enabled && clicked && CheckCollisionPointRec(mouse, {318, 548, 20, 20})) {
+        for (const auto index : drawOrder) drawHero(index);
+        const auto &fire = art.at("campfire");
+        const auto *origin = fire.frame(0, 0);
+        const int fireFrame = int(uint64_t(std::max(0.0, now - creationStarted) * 25) % uint64_t(std::max(1, fire.count - 1)));
+        if (const auto *cel = fire.frame(0, fireFrame))
+            softAdditiveSprite(cel, {345.f - origin->x, 470.f - origin->y - cel->texture.height});
+        if (button("creationButton", 33, 538, s(5101)))
+            emit(FrontendCommand::Back);
+        if (hero < 0) {
+            lobbyEntries[{-2, 0}].selecting = false;
+            return;
+        }
+        lobbyLabel(creationGold, s(5125), 321, 512, 200, 32);
+        const bool pageEnabled = enabled;
+        enabled = enabled && hero >= 0;
+        image("creationTextbox", 319, 494);
+        field(characterName, {326, 498, 141, 16}, 0, 15, false, false);
+        image("check", 319, 525, 1);
+        lobbyLabel(creationGold, s(22731), 339, 561, 200, 32);
+        image("check", 319, 545, hardcore ? 1 : 0);
+        lobbyLabel(creationGold, s(5126), 339, 581, 100, 32);
+        if (enabled && clicked && CheckCollisionPointRec(mouse, {319, 544, 15, 16})) {
             if (hardcore)
                 hardcore = false;
             else
                 confirmHardcore = true;
         }
-        // Ladder is declared at creation only in the remote CN lobby, matching
-        // the native "ladder character" confirm (string 10928) and MCP 0x40.
-        if (v.remoteLobbyOnly) {
-            image("check", 318, 570, ladder ? 1 : 0);
-            label(s(10927), 339, 570);
-            if (enabled && clicked && CheckCollisionPointRec(mouse, {318, 570, 20, 20})) {
+        if (v.allowLadderSelection) {
+            image("check", 319, 565, ladder ? 1 : 0);
+            lobbyLabel(creationGold, s(10927), 339, 601, 200, 32);
+            if (enabled && clicked && CheckCollisionPointRec(mouse, {319, 564, 15, 16})) {
                 if (ladder)
                     ladder = false;
                 else
                     confirmLadder = true;
             }
         }
-        if (button("medium", 34, 538, s(5101)))
-            emit(FrontendCommand::Back);
-        const bool valid = hero >= 0 && !characterName.empty();
-        if (button("medium", 628, 538, s(5102), valid) || (enabled && valid && input.enter)) {
+        enabled = pageEnabled;
+        const auto letter = [](unsigned char character) {
+            return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z');
+        };
+        const bool valid = hero >= 0 && characterName.size() >= 2 && characterName.size() <= 15 &&
+            letter(characterName.front()) && letter(characterName.back()) &&
+            std::count_if(characterName.begin(), characterName.end(), [](char character) { return character == '-' || character == '_'; }) < 2;
+        if (button("creationButton", 627, 538, s(5102), valid) || (enabled && valid && input.enter)) {
             emit(FrontendCommand::CreateCharacter);
             intent.name = characterName;
             intent.characterClass = uint8_t(ids[size_t(hero)]);
@@ -1493,12 +1594,15 @@ struct RealmFrontend::Impl {
                         std::string_view notice, Vector2 at, const FrameInput &frameInput,
                         bool allowRealmSelection, std::string_view worldNotice) {
         input = frameInput.focused ? frameInput : FrameInput{};
+        if (current != FrontendPage::CreateCharacter && previous == FrontendPage::CreateCharacter && creationSounds)
+            creationSounds->stopAll();
         if (!frameInput.focused) {
             lastClickedGame.clear();
             draggedLobbyScroll.reset();
             for (auto &[key, entry] : lobbyEntries) { (void)key; entry.selecting = false; }
         }
         lobbyButtonGestures = current == FrontendPage::Lobby;
+        creationControls = current == FrontendPage::CreateCharacter;
         if (!frameInput.focused || current != previous || input.leftPressed ||
             (!input.leftHeld && !input.leftReleased)) pressedLobbyButton.reset();
         mouse = at;
@@ -1547,6 +1651,14 @@ struct RealmFrontend::Impl {
             lastClickedCharacter = -1;
             lastClickedGame.clear();
             if (current == FrontendPage::CreateCharacter) {
+                hero = -1;
+                lobbyEntries.erase({-2, 0});
+                creationStarted = GetTime();
+                for (auto &entry : heroes) {
+                    entry.pose = 0;
+                    entry.frame = 0;
+                    entry.started = creationStarted;
+                }
                 characterName.clear();
                 hardcore = false;
                 ladder = false;
@@ -1711,5 +1823,24 @@ void RealmFrontend::setLogin(std::string account, std::string password) {
 }
 void RealmFrontend::setLanAddresses(std::string addresses) {
     impl_->lanAddresses = std::move(addresses);
+}
+void RealmFrontend::setAudioSettings(const AudioSettings &settings) {
+    impl_->audioSettings = settings;
+    if (IsAudioDeviceReady() && !impl_->creationSounds) {
+        impl_->creationSounds = std::make_unique<SoundBank>(impl_->archives);
+        impl_->creationSounds->registerFile("data/global/sfx/cursor/button.wav");
+        impl_->buttonSoundRegistered = true;
+    }
+    if (impl_->creationSounds) impl_->creationSounds->setVolumes(settings.sound, settings.music);
+    if (impl_->music) impl_->music->settings(settings);
+}
+void RealmFrontend::updateMusic(bool active) {
+    if (!IsAudioDeviceReady()) return;
+    if (active && !impl_->music) {
+        impl_->musicCatalog = std::make_unique<SoundCatalog>(impl_->archives);
+        impl_->music = std::make_unique<SceneStreams>(impl_->archives, *impl_->musicCatalog);
+        impl_->music->settings(impl_->audioSettings);
+    }
+    if (impl_->music) impl_->music->menu(active);
 }
 } // namespace d2x

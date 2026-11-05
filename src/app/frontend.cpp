@@ -213,6 +213,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     std::string lanJoinAddress;
     std::deque<Bytes> tcpIpSaves;
     std::string reloadCharacter;
+    std::string createdCharacter;
+    uint64_t creationConnection{};
     uint8_t localDifficulty{};
     bool localDifficultyChosen = false;
     RemoteTown town(archives, options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020);
@@ -263,6 +265,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     RemoteCombat combat(archives, town, session, inventory);
     profile.mark("client-adapters-ready");
     ClientPreferences preferences = loadClientPreferences();
+    ui.setAudioSettings(preferences.audio);
     const auto resizeWindow = [&](bool standard) {
         // raylib takes client-area dimensions on both Windows and Linux.
         // Restore first so a maximized window can actually become 800x600.
@@ -319,7 +322,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 panels.bhShowEnchantments, panels.bhShowChests, panels.bhAutomapOnJoin, panels.bhShowLkChestLines,
                 panels.controls, preferences.standardResolution,
                 preferences.customWindowWidth, preferences.customWindowHeight};
-            if (current != preferences) { preferences = current; preferencesDirty = true; }
+            if (current != preferences) { preferences = current; preferencesDirty = true; ui.setAudioSettings(preferences.audio); }
         }
         if (!preferencesDirty || (!force && GetTime() < preferencesRetryAt)) return;
         preferencesDirty = !saveClientPreferences(preferences);
@@ -985,6 +988,20 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         // Keep this frame's value stable across commands/read() calls without
         // copying every world unit and item again on unchanged display frames.
         const auto &view = refreshFrontendView();
+        if (!createdCharacter.empty()) {
+            if (view.connectionGeneration != creationConnection || view.error ||
+                (view.stage != OnlineStage::CreatingCharacter && view.stage != OnlineStage::ListingCharacters &&
+                 view.stage != OnlineStage::CharacterSelection)) {
+                createdCharacter.clear();
+            } else if (view.stage == OnlineStage::CharacterSelection) {
+                localDifficulty = 0;
+                localDifficultyChosen = false;
+                if (session.select_character(std::exchange(createdCharacter, {}))) {
+                    enterLocalGame = localConnection;
+                    page = localConnection ? FrontendPage::Loading : FrontendPage::Characters;
+                }
+            }
+        }
         if (localConnection && !reloadCharacter.empty() && view.stage == OnlineStage::CharacterSelection) {
             enterLocalGame = session.select_character(std::exchange(reloadCharacter, {}));
         }
@@ -1119,6 +1136,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         // RealmSession already reduced these packets into its remote-only view.
         // No opaque queue is retained by this value-only client.
         session.take_game_packets();
+        ui.updateMusic(!quit && !gameStage(view.stage));
+        if (sharedUi && view.stage == OnlineStage::ProtocolReady)
+            sharedUi->observeWorldSounds(view);
         town.update(session.read(), !minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
         if (minimized) {
             if (sharedClients) sharedClients->update(town.read(), std::nullopt);
@@ -1479,7 +1499,16 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                                        lanJoiningGame, tcpIpSaveFailed, quit, manualRealm, lanJoinAddress,
                                        reloadCharacter, notice, gateway, localDifficulty,
                                        localDifficultyChosen, debugInputs, page, dismissedErrorSequence, prepareGame};
+        const auto creatingName = action.command == FrontendCommand::CreateCharacter ? action.name : std::string{};
+        const auto creatingConnection = session.read().connectionGeneration;
         dispatchFrontendCommand(dispatch, action);
+        const auto &creationResult = session.read();
+        if (!creatingName.empty() && creationResult.connectionGeneration == creatingConnection && !creationResult.error &&
+            (creationResult.stage == OnlineStage::CreatingCharacter || creationResult.stage == OnlineStage::ListingCharacters ||
+             creationResult.stage == OnlineStage::CharacterSelection)) {
+            createdCharacter = creatingName;
+            creationConnection = creatingConnection;
+        }
     }
     syncPreferences(true);
     session.logout();

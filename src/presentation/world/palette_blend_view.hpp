@@ -20,7 +20,7 @@ class PaletteBlendView {
     Texture2D palette_{}, screenTable_{}, burnTable_{}, lightTable_{}, paletteIndices_{};
     Texture2D rectangleTable_{}, halfTable_{}, highlightTable_{}, socketTable_{}, quarterTable_{};
     std::array<Color, 256> colors_{};
-    RenderTexture2D destination_{};
+    mutable RenderTexture2D destination_{};
     Texture2D worldLightMap_{};
     Vec lightPlayer_{}, lightPlayerScreen_{}, lightOrigin_{};
     float lightZoom_ = 1;
@@ -37,6 +37,7 @@ class PaletteBlendView {
     int translationRow(const std::shared_ptr<const Translation> &) const;
     void finishTerrainLighting() const;
     unsigned int targetFramebuffer() const;
+    unsigned int prepareDestination() const;
     int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1, opaqueLocation_ = -1;
     void drawSprite(const Sprite *, Rectangle, Texture2D) const;
     int paletteIndex(Color) const;
@@ -73,9 +74,9 @@ class PaletteBlendView {
     void drawAutomap(const Sprite *image, Vec position, int mode) const;
     void drawSocket(const Sprite *image, Rectangle bounds) const;
     void drawHighlight(const Sprite *image, Rectangle bounds) const;
-    Color paletteColor(Color rgb) const { return colors_[size_t(paletteIndex(rgb))]; }
+    Color paletteColor(Color rgb) const;
     // Original palette byte -> RGB, for BH hooks that draw with palette indices.
-    Color paletteByte(uint8_t index) const { return colors_[index]; }
+    Color paletteByte(uint8_t index) const;
     // Native DrawBox mode 0: trans[2][destination][color], with palette RGB lookup.
     void drawRectangle(Rectangle bounds, Color color,bool half=false) const;
     void setLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom, Color ambient,

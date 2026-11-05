@@ -47,6 +47,8 @@ bool SceneController::queueInventory(InventoryIntent command, EntityId source) {
         view_.notice(inventoryErrorText(error), true);
         return false;
     }
+    if (std::holds_alternative<UseItem>(command))
+        if (const auto *item=view_.inventoryView().item(source)) view_.playItemUse(*item);
     ui.pending = source;
     ui.pendingPlacement.reset();
     if (ui.drag && ui.drag->item.id==source)

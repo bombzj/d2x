@@ -9,6 +9,8 @@
 #include <utility>
 
 namespace d2x {
+Color PaletteBlendView::paletteColor(Color rgb) const { return colors_[size_t(paletteIndex(rgb))]; }
+Color PaletteBlendView::paletteByte(uint8_t index) const { return colors_[index]; }
 namespace {
 enum LightUniform {
     LightScreenHeight, LightPlayerScreen, LightPlayerWorld, LightOrigin, LightZoom, LightAmbient,
@@ -376,7 +378,7 @@ void PaletteBlendView::drawRectangle(Rectangle bounds, Color color,bool half) co
     if (left >= right || top >= bottom) return;
     const int index = paletteIndex(color);
     rlDrawRenderBatchActive();
-    const auto target = targetFramebuffer();
+    const auto target = prepareDestination();
     rlBindFramebuffer(RL_READ_FRAMEBUFFER, target);
     rlBindFramebuffer(RL_DRAW_FRAMEBUFFER, destination_.id);
     rlBlitFramebuffer(left, H - bottom, right, H - top,
@@ -410,6 +412,19 @@ PaletteBlendView::TargetScope::~TargetScope() { owner_.targetFramebuffer_.reset(
 unsigned int PaletteBlendView::targetFramebuffer() const {
     return targetFramebuffer_ ? *targetFramebuffer_ : rlGetActiveFramebuffer();
 }
+unsigned int PaletteBlendView::prepareDestination() const {
+    const auto target = targetFramebuffer();
+    const int width = std::max(1, GetScreenWidth());
+    const int height = std::max(1, GetScreenHeight());
+    if (destination_.texture.width != width || destination_.texture.height != height) {
+        rlDrawRenderBatchActive();
+        UnloadRenderTexture(destination_);
+        destination_ = LoadRenderTexture(width, height);
+        SetTextureFilter(destination_.texture, TEXTURE_FILTER_POINT);
+        rlEnableFramebuffer(target);
+    }
+    return target;
+}
 PaletteBlendView::TerrainBatch::TerrainBatch(const PaletteBlendView &owner) : owner_(owner) {
     if(owner_.terrainBatch_) throw std::logic_error("Nested terrain lighting batch");
     owner_.terrainBatch_=true;
@@ -434,7 +449,7 @@ void PaletteBlendView::drawWall(const Sprite *image, Vec position, std::span<con
     const int right = std::min(W,int(bounds.x + bounds.width)), bottom = std::min(H,int(bounds.y + bounds.height));
     if (left >= right || top >= bottom) return;
     rlDrawRenderBatchActive();
-    const auto target = targetFramebuffer();
+    const auto target = prepareDestination();
     rlBindFramebuffer(RL_READ_FRAMEBUFFER,target);
     rlBindFramebuffer(RL_DRAW_FRAMEBUFFER,destination_.id);
     rlBlitFramebuffer(left,H-bottom,right,H-top,left,H-bottom,right,H-top,0x00004000);
@@ -512,7 +527,7 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
         const int bottom = std::min(H, int(bounds.y + bounds.height));
         if (left >= right || top >= bottom) return;
         rlDrawRenderBatchActive();
-        const auto target = targetFramebuffer();
+        const auto target = prepareDestination();
         rlBindFramebuffer(RL_READ_FRAMEBUFFER, target);
         rlBindFramebuffer(RL_DRAW_FRAMEBUFFER, destination_.id);
         rlBlitFramebuffer(left, H - bottom, right, H - top, left, H - bottom, right, H - top, 0x00004000);
@@ -646,7 +661,7 @@ void PaletteBlendView::drawSprite(const Sprite *image, Rectangle bounds, Texture
     const int bottom = std::min(H, int(std::ceil(bounds.y + bounds.height)));
     if (left >= right || top >= bottom) return;
     rlDrawRenderBatchActive();
-    const auto target = targetFramebuffer();
+    const auto target = prepareDestination();
     rlBindFramebuffer(RL_READ_FRAMEBUFFER, target);
     rlBindFramebuffer(RL_DRAW_FRAMEBUFFER, destination_.id);
     // Identical framebuffer coordinates preserve orientation and the scissor.

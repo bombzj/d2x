@@ -43,6 +43,7 @@ bool SceneController::handleMenu(const FrameInput &input) {
         if (input.escape) {
             if (ui.gameMenuPage == EscapeMenuPage::Controls) page(EscapeMenuPage::Options, 3);
             else resume();
+            view_.playUiSound("cursor_switch");
             return true;
         }
         view_.scrollGameMenu(input);
@@ -53,11 +54,13 @@ bool SceneController::handleMenu(const FrameInput &input) {
         }
         const int navigation = ui.gameMenuPage == EscapeMenuPage::Controls ? input.menuRight - input.menuLeft : input.menuDelta;
         if (navigation) {
+            const int previous = ui.gameMenuSelected;
             const int count = view_.gameMenuItemCount();
             for (int attempt = 0; attempt < count; ++attempt) {
                 ui.gameMenuSelected = (ui.gameMenuSelected + (navigation > 0 ? 1 : -1) + count) % count;
                 if (view_.gameMenuItemEnabled(ui.gameMenuSelected)) break;
             }
+            if (previous != ui.gameMenuSelected) view_.playUiSound("cursor_pass");
             ui.gameMenuPressed = -1;
             ui.gameMenuSliderDragging = -1;
         }
@@ -78,6 +81,11 @@ bool SceneController::handleMenu(const FrameInput &input) {
             ui.gameMenuPressed = -1;
         } else if (!input.leftHeld) ui.gameMenuPressed = -1;
         if (activated >= 0 && view_.gameMenuItemEnabled(activated)) {
+            const auto currentPage = ui.gameMenuPage;
+            const bool soundSetting = currentPage == EscapeMenuPage::Sound && activated < 6;
+            const bool valueSetting = (currentPage == EscapeMenuPage::Automap && activated < 5) ||
+                (currentPage == EscapeMenuPage::Video && activated < 2);
+            if (!soundSetting) view_.playUiSound(valueSetting ? "cursor_pass" : "cursor_select");
             if (ui.gameMenuPage == EscapeMenuPage::Main) {
                 if (activated == 0) page(EscapeMenuPage::Options);
                 if (activated == 1) return false;
@@ -237,13 +245,15 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
                     ui.characterOpen = false;
                 else if (character && *character >= 0 && view_.characterView().unspentAttributes > 0 &&
                     !view_.characterView().unknownStats.contains("statpts") &&
-                    characterAttributeAt(input.mouse) == Attribute(*character))
+                    characterAttributeAt(input.mouse) == Attribute(*character)) {
                     characterClient_.submit(AllocateAttribute{Attribute(*character)});
+                }
                 if (skill == -1 && CheckCollisionPointRec(rv(input.mouse), skillTreeClose(view_.characterView(), ui.skillPage)))
                     ui.skillTreeOpen = false;
                 else if (skill && *skill >= 0 && view_.skillAt(input.mouse) == skill)
-                    if (const auto *entry = view_.characterView().skill(*skill); entry && entry->canAllocate)
+                    if (const auto *entry = view_.characterView().skill(*skill); entry && entry->canAllocate) {
                         characterClient_.submit(AllocateSkill{*skill});
+                    }
             }
             return true;
         } else if (input.leftHeld) return true;
@@ -361,13 +371,17 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
         CheckCollisionPointRec(rv(input.mouse), hudMenuButton())) {
         inventoryClick_ = true;
+        view_.playUiSound("cursor_button_click");
         ui.miniPanelPressed = -1;
         return true;
     }
     if (ui.miniPanelOpen && !ui.blocksInput() && input.insideViewport) {
         if (auto button = miniAction ? miniAction : view_.miniPanelAt(input.mouse)) {
             if (input.leftPressed) {
-                if (*button >= 0) ui.miniPanelPressed = *button;
+                if (*button >= 0) {
+                    ui.miniPanelPressed = *button;
+                    view_.playUiSound("cursor_button_click");
+                }
                 inventoryClick_ = true;
                 return true;
             }
@@ -426,8 +440,10 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
                 ui.characterPressed = -1;
             else if (view_.characterView().unspentAttributes > 0 &&
                 !view_.characterView().unknownStats.contains("statpts"))
-                if (auto attribute = characterAttributeAt(input.mouse))
+                if (auto attribute = characterAttributeAt(input.mouse)) {
                     ui.characterPressed = int(*attribute);
+                    view_.playUiSound("cursor_point_drop");
+                }
         }
         return true;
     }
@@ -447,8 +463,10 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
                     }
                 if (!switched)
                     if (auto skill = view_.skillAt(input.mouse))
-                        if (const auto *entry = view_.characterView().skill(*skill); entry && entry->canAllocate)
+                        if (const auto *entry = view_.characterView().skill(*skill); entry && entry->canAllocate) {
                             ui.skillTreePressed = *skill;
+                            view_.playUiSound("cursor_point_drop");
+                        }
             }
         }
         return true;
@@ -505,7 +523,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if(inventory.targetingReady && ui.inventory.targetingRevision!=inventory.targetingRevision) {
         ui.inventory.targetingRevision=inventory.targetingRevision;
         ui.inventory.identify=inventory.targetingSource;
-        if(ui.inventory.identify) {ui.inventory.open=true;ui.inventory.drag.reset();ui.inventory.goldDialog.reset();}
+        if(ui.inventory.identify) {
+            ui.inventory.open=true;ui.inventory.drag.reset();ui.inventory.goldDialog.reset();
+            view_.playUiSound("cursor_identify_ready");
+        }
     }
     // 1.13c RVA 26FEC: hover opens the belt and leaving its full bounds closes it.
     const auto *belt = inventory.container(inventory.containers.belt);
@@ -537,7 +558,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     // A ground press dismisses the NPC menu before pointer capture. The same
     // press then follows ordinary world hit testing and held-movement rules.
     if (ui.npcMenu && !input.escape && input.leftPressed && input.insideViewport &&
-        !hudSurface(input.mouse) && CheckCollisionPointRec(rv(input.mouse), view_.worldViewport()) &&
+        !hudSurface(input.mouse) && view_.worldContains(input.mouse) &&
         !view_.clickNpcMenu(input.mouse)) {
         npcClient_.submit(EndNpcConversation{ui.dialogueObject});
         ui.npcMenu = ui.npcTopics = false;
@@ -546,7 +567,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if ((input.leftPressed || input.rightPressed) &&
         (ui.blocksInput() || ui.skillPicker || ui.inventory.drag ||
          ui.inventory.goldDialog || ui.inventory.identify || hudSurface(input.mouse) ||
-         !input.insideViewport || !CheckCollisionPointRec(rv(input.mouse), view_.worldViewport()) ||
+         !input.insideViewport || !view_.worldContains(input.mouse) ||
          (ui.miniPanelOpen && view_.miniPanelAt(input.mouse)))) {
         inventoryClick_ |= input.leftPressed;
         inventoryRight_ |= input.rightPressed;
@@ -644,6 +665,7 @@ void SceneController::openGameMenu(Vec mouse) {
     ui.characterPressed.reset(); ui.skillTreePressed.reset();
     ui.questPressed = -1;
     ui.gameMenuOpen = true;
+    view_.playUiSound("cursor_switch");
     ui.gameMenuPage = EscapeMenuPage::Main;
     ui.gameMenuSelected = 2;
     ui.gameMenuPressed = -1;

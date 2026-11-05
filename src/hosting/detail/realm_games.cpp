@@ -52,6 +52,7 @@ void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &ro
     selectedName = saved.player.name;
     selected = saved;
     gameDifficulty = unsigned(room.settings.difficulty);
+    gameLadder = (room.flags & 0x00200000u) != 0;
     gameName = room.name; gamePassword = room.password;
     auto prepared = room.handle.generation ? prepareGuest(std::move(saved), room) : prepareGame(std::move(saved), room.settings);
     room.handle = prepared.binding.game;

@@ -479,6 +479,10 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         m = {};
         m.assignmentRevision = u.assignmentRevision;
     }
+    if(u.key.type==0 && m.updatedAt<0) {
+        const float angle=-7.5f*2.f*pi/64.f;
+        m.look={-std::sin(angle),std::cos(angle)};
+    }
     if(u.key.type==1 && !m.boneWallDirection && playerId)
         if(const auto row=monsterRows.find(unitClass(u).value_or(UINT16_MAX));row!=monsterRows.end() &&
             monstats.value(row->second,"Id")=="bonewall") {

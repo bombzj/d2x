@@ -68,7 +68,7 @@ void SceneView::drawOverheadText(const std::string &text,Vec p) {
     const auto decoded=strictUtf8(text);
     if(!decoded || decoded->empty() || !std::all_of(decoded->begin(),decoded->end(),[](uint32_t c){return c>=32 && c<=0xffff;})) return;
     const auto *font=assets_.ensureOverheadFont();if(!font) return;
-    const auto viewport=worldViewport();
+    const auto viewport=worldRenderViewport();
     if(p.y<=viewport.y || p.y>=viewport.y+viewport.height ||
         p.x<=viewport.x-100 || p.x>=viewport.x+viewport.width+100) return;
     std::vector<std::vector<uint32_t>> lines;int width=0;

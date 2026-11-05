@@ -23,6 +23,7 @@
 
 namespace d2x {
 class IActorClient;
+struct OnlineView;
 struct Grid;
 struct Map;
 class LightingView;
@@ -136,8 +137,8 @@ struct ViewState {
     // BH settings overlay (Ctrl+Z).
     bool bhSettingsOpen = false;
     int bhSettingsSelected = 0;
-    bool capturesWorldInput(bool includePlayerTrade = true) const { return (includePlayerTrade && playerTradeBlocking) || chatInputOpen || messageLogOpen || gameMenuOpen || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
-    bool blocksInput() const { return capturesWorldInput() || travelMenu; }
+    bool capturesWorldInput(bool includePlayerTrade = true) const;
+    bool blocksInput() const;
 };
 class SceneView {
     Archives &archives_;
@@ -160,6 +161,9 @@ class SceneView {
     std::unique_ptr<LightingView> lighting_;
     std::unique_ptr<WeatherView> weather_;
     std::optional<uint64_t> questAudioGameGeneration_;
+    std::optional<uint64_t> narrativeGameGeneration_;
+    uint64_t narrativeSequence_{};
+    std::map<EntityId,int> npcSoundIdentities_;
     std::unique_ptr<PaletteBlendView> paletteBlend_;
     std::array<std::unique_ptr<PaletteBlendView>, 5> actPaletteBlends_;
     Shader highlightShader_{};
@@ -268,14 +272,7 @@ class SceneView {
     };
     mutable DeferredTooltip deferredTooltip_;
     void deferTooltip(std::vector<ItemTextLine> lines, ItemQuality quality, Vec anchor,
-                      std::optional<unsigned> price, std::string_view priceLabel) const {
-        deferredTooltip_.active = true;
-        deferredTooltip_.lines = std::move(lines);
-        deferredTooltip_.quality = quality;
-        deferredTooltip_.price = price;
-        deferredTooltip_.priceLabel = std::string(priceLabel);
-        deferredTooltip_.anchor = anchor;
-    }
+                      std::optional<unsigned> price, std::string_view priceLabel) const;
     std::optional<unsigned> inventoryVendorPrice(ItemHandle item) const;
     static size_t itemTextFontIndex(ItemQuality, ItemTextTone);
     // Draws one tooltip/label line, honouring 0xFF 'c' colour escapes with the
@@ -289,7 +286,9 @@ class SceneView {
 
   public:
     Rectangle worldViewport() const;
-    // Half of the actual world viewport, in projected native subtile axes.
+        Rectangle worldRenderViewport() const;
+        bool worldContains(Vec mouse) const;
+    // Symmetric observation extent around the camera, in projected native subtile axes.
     Vec worldObservationExtent() const;
     Rectangle gameMenuItemBounds(int index) const;
     int gameMenuAt(Vec mouse) const;
@@ -305,39 +304,39 @@ class SceneView {
     const ExitView *exitAt(Vec mouse) const;
     SceneView(Archives &, const ClassicData &, WeatherCycleState &, const IActorClient &, IInventoryClient &,
                 ICharacterClient &, IQuestClient &, INpcClient &, IMapClient &, const AudioSettings & = {});
-    void updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events) {
-        assets_.sceneAudio.update(clock,actors,events);
-    }
-    void questMusic(std::string_view music,int endFrames,int resumeBlock) {
-        assets_.streams.questCue(music,0,endFrames,{},0,resumeBlock);
-    }
-    void beginWorldGame(uint64_t generation) {
-        if(questAudioGameGeneration_!=generation) {questAudioGameGeneration_=generation;assets_.streams.resetQuestCue();}
-    }
+    void updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events);
+    void playUiSound(std::string_view sound);
+    int soundPeriod() const;
+    void observeWorldSounds(const OnlineView &);
+    void greetNpc(EntityId npc);
+    void playItemUse(const InventoryItemView &item);
+    void playPlayerFootstep(int identity, bool running, int material, int level, uint64_t frame);
+    void questMusic(std::string_view music,int endFrames,int resumeBlock);
+    void beginWorldGame(uint64_t generation);
     WeatherDebugState debugWeather(std::optional<WeatherDebugMode> mode = {}, int density = 255);
-    const auto &soundLimitations() const { return assets_.sceneAudio.limitations(); }
+    const std::set<std::string, std::less<>> &soundLimitations() const;
     void drawUi(Vec mouse) const;
-    void updateChat(const OnlineSocialView &social,const OnlineSocialView &account) { chat_.update(social,account); }
+    void updateChat(const OnlineSocialView &social,const OnlineSocialView &account);
     void updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game, bool town);
     PartyIntent handleParty(const FrameInput &input);
-    bool partyReady() const { return party_.ready(); }
-    bool storageNavigationReady() const { return assets_.storageNavigation.frames.size() == 12; }
-    bool storageMaterialUpgradeReady() const { return assets_.storageMaterialUpgrade.frames.size() >= 2; }
-    bool storageMaterialsReady() const { return assets_.storagePanel.frames.size() >= 8 && assets_.vendorButtons.frames.size() >= 32; }
+    bool partyReady() const;
+    bool storageNavigationReady() const;
+    bool storageMaterialUpgradeReady() const;
+    bool storageMaterialsReady() const;
     float partyPortraitOffset() const;
-    const std::string &partyReason() const { return party_.reason(); }
+    const std::string &partyReason() const;
     ChatIntent handleChat(const FrameInput &input);
     void chatSent(bool accepted);
-    void debugChatMessage(std::string_view text, bool error = false) { chat_.diagnostic(text,error); }
-    const ChatView &chat() const { return chat_; }
+    void debugChatMessage(std::string_view text, bool error = false);
+    const ChatView &chat() const;
     void updatePlayerTrade(const OnlinePlayerTrade &trade);
     PlayerTradeIntent handlePlayerTrade(const FrameInput &input);
-    const TradeInviteView &tradeInvite() const { return tradeInvite_; }
+    const TradeInviteView &tradeInvite() const;
     // Shared original-resource effects; server replica supplies presentation data only.
-    void drawNativeIceShatter(Vec position, int size) { createIceShatter(position,size); }
+    void drawNativeIceShatter(Vec position, int size);
     void triggerWeatherLightning(float delay);
-    const SceneAssets::ProjectileVisual *projectileVisual(int id) { return assets_.ensureProjectile(id); }
-    const SkillOverlayVisual *overlayVisual(int id) { return assets_.ensureOverlay(id); }
+    const SceneAssets::ProjectileVisual *projectileVisual(int id);
+    const SkillOverlayVisual *overlayVisual(int id);
     void drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset = {},
                      std::optional<int> nativeFrame={}, const PaletteBlendView *lighting = nullptr, Color light = WHITE) const;
     bool launchClientMissile(int id, Vec start, Vec target, int level, float delay = 0,
@@ -347,51 +346,28 @@ class SceneView {
                                ClientMissileInitialization initialization = {});
     void advanceClientMissiles(float dt, const Map &, Vec origin, std::span<const ClientMissileTarget>,
                               std::span<const ClientMissileAnchor> = {});
-    void clearClientMissiles() {
-        clientMissiles_.clear();
-        clientMissileHiddenOwners_.clear();
-        assets_.sceneAudio.reset();
-    }
-    const auto &clientMissiles() const { return clientMissiles_; }
-    std::vector<EntityId> takeClientMissileHiddenOwners() {
-        std::vector<EntityId> result;
-        result.swap(clientMissileHiddenOwners_);
-        return result;
-    }
-    void retireClientMissileRoom(const std::array<int,3> &room) {
-        std::erase_if(clientMissiles_,[&](const auto &value){return value.roomAttachment && *value.roomAttachment==room;});
-    }
-    std::optional<int> weaponMissile(std::string_view code) const {
-        const auto found = assets_.weaponMissiles.find(code);
-        return found == assets_.weaponMissiles.end() ? std::nullopt : std::optional{found->second};
-    }
+    void clearClientMissiles();
+    const std::vector<ClientMissile> &clientMissiles() const;
+    std::vector<EntityId> takeClientMissileHiddenOwners();
+    void retireClientMissileRoom(const std::array<int,3> &room);
+    std::optional<int> weaponMissile(std::string_view code) const;
     Vec clientMissilePosition(const ClientMissile &, const Grid &, Vec origin) const;
-    void cancelPendingClientMissiles(EntityId owner) {
-        std::erase_if(clientMissiles_, [&](const auto &value) { return value.flight && value.age < 0 && value.owner == owner; });
-    }
+    void cancelPendingClientMissiles(EntityId owner);
     void drawSpellOverlay(int id, Vec position, float age, bool loop, int height = 1,
                           const PaletteBlendView *lighting = nullptr, Color light = WHITE,
                           std::optional<int> preciseFrame = {}, Vec pixelOffset = {}) const;
-    void drawGroundLabels(Vec mouse) const { drawLootLabels(mouse); }
+    void drawGroundLabels(Vec mouse) const;
     void drawDeathNotice() const;
     void drawCorpseLabel(const std::string &label, Vec ground) const;
-    void drawHighlightedActor(const Sprite *image, Vec position) const { drawSelectableSprite(image, position, true); }
-    void drawNpcQuestAlert(EntityId npc, Vec position, bool back) const { drawNpcAlert(npc, position, back); }
+    void drawHighlightedActor(const Sprite *image, Vec position) const;
+    void drawNpcQuestAlert(EntityId npc, Vec position, bool back) const;
     void drawAutomap(const AutomapDrawView &);
     std::vector<size_t> drawWorld(const WorldDrawView &);
-    const ActorAnimation *actorAnimation(const ActorAnimationRequest &request, int palette) const {
-        return assets_.actorAnimation(request, palette);
-    }
-    const ActorAnimation *objectAnimation(int identity, int mode, int palette) const {
-        return assets_.objectAnimation(identity, mode, palette);
-    }
-    std::array<int, 2> objectShrineOverlays(int identity, int code) const {
-        return assets_.objectShrineOverlays(identity, code);
-    }
-    ObjectPresentation objectPresentation(int identity, int serverMode, float elapsed) const {
-        return assets_.objectPresentation(identity, serverMode, elapsed);
-    }
-    std::string actorSequenceMode(std::string_view name) const { return assets_.actorSequenceMode(name); }
+    const ActorAnimation *actorAnimation(const ActorAnimationRequest &request, int palette) const;
+    const ActorAnimation *objectAnimation(int identity, int mode, int palette) const;
+    std::array<int, 2> objectShrineOverlays(int identity, int code) const;
+    ObjectPresentation objectPresentation(int identity, int serverMode, float elapsed) const;
+    std::string actorSequenceMode(std::string_view name) const;
     const Sprite *groundItemSprite(const InventoryItemView &) const;
     void drawGroundItem(const InventoryItemView &, bool highlighted,
                         const PaletteBlendView *lighting = nullptr, Color light = WHITE) const;
@@ -400,20 +376,20 @@ class SceneView {
     void refreshUi(float dt);
     void advanceWorldPresentation(float dt);
     ~SceneView();
-    ViewState &ui() { return view_; }
-    const ViewState &ui() const { return view_; }
-    const InventoryView &inventoryView() const { return inventoryView_; }
+    ViewState &ui();
+    const ViewState &ui() const;
+    const InventoryView &inventoryView() const;
     InventoryDrop inventoryDropAt(Vec mouse) const;
     size_t goldDialogCaretAt(Vec mouse) const;
     void refreshInventory();
-    const CharacterView &characterView() const { return characterView_; }
+    const CharacterView &characterView() const;
     void refreshCharacterView();
-    const QuestView &questView() const { return questView_; }
-    bool refreshQuests() { return questClient_.refresh(); }
+    const QuestView &questView() const;
+    bool refreshQuests();
     void openQuestLog();
     bool openQuestLogPreview();
     void closeQuestLogPreview();
-    const NpcConversationView &npcView() const { return npcView_; }
+    const NpcConversationView &npcView() const;
     const MapSceneView &mapView() const;
     const ShopView &shopView() const;
     const HirelingView &hirelingView() const;
@@ -434,7 +410,7 @@ class SceneView {
     std::optional<int> skillAt(Vec mouse) const;
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;
     void advanceUi(float dt);
-    void pauseWorldPresentation(bool paused) { assets_.audio.pauseEmitters(paused); assets_.streams.pauseWeather(paused); }
+    void pauseWorldPresentation(bool paused);
     void notice(std::string text, bool error = false);
     void openNpcDialogue(EntityId object, std::string speaker, std::string text, std::optional<uint32_t> stringId = {});
     bool npcSpeechFinished() const;

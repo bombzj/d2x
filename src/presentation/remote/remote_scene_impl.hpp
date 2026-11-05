@@ -56,30 +56,9 @@ namespace d2x {
 namespace remote_scene_impl_detail {
 inline constexpr std::array componentCodes{"HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
                                     "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"};
-inline std::string lower(std::string value) {
-    for (auto &ch : value)
-        ch = char(std::tolower(static_cast<unsigned char>(ch)));
-    return value;
-}
-inline std::vector<std::string> variants(std::string_view value) {
-    std::string text(value);
-    std::erase(text, '"');
-    std::istringstream stream(text);
-    std::vector<std::string> result;
-    for (std::string part; std::getline(stream, part, ',');) {
-        part.erase(0, part.find_first_not_of(" \t"));
-        const auto end = part.find_last_not_of(" \t");
-        if (end != std::string::npos)
-            part.resize(end + 1);
-        if (!part.empty())
-            result.push_back(lower(part));
-    }
-    return result;
-}
-inline bool visible(const Sprite &s, Vec p) {
-    return p.x + s.x < W && p.y + s.y < H - HUD && p.x + s.x + s.texture.width > 0 &&
-           p.y + s.y + s.texture.height > 0;
-}
+std::string lower(std::string value);
+std::vector<std::string> variants(std::string_view value);
+bool visible(const Sprite &s, Vec p);
 } // namespace remote_scene_impl_detail
 using namespace remote_scene_impl_detail;
 struct RemoteScene::Impl {
@@ -129,16 +108,8 @@ struct RemoteScene::Impl {
         ActorAnimationState locomotionAnimation;
         double locomotionFrame{};
         uint64_t locomotionTick{};
-        std::optional<float> animationFrame() const {
-            return locomotionAnimation.mode?std::optional{float(locomotionFrame)}:std::nullopt;
-        }
-        std::pair<float,float> animationTime(float now) const {
-            if(locomotionAnimation.mode) {
-                const float elapsed=locomotionAnimation.elapsed(now);
-                return {elapsed,elapsed};
-            }
-            return {animation.clock(now),animation.elapsed(now)};
-        }
+        std::optional<float> animationFrame() const;
+        std::pair<float,float> animationTime(float now) const;
         uint64_t positionRevision{}, discontinuity{}, assignmentRevision{};
         Vec position, correction;
         float correctionLeft{}, updatedAt{-1}, progressAt{};

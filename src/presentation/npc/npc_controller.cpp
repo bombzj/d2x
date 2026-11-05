@@ -56,6 +56,7 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
             ui.npcMenu = false;
         }
         else if (action == NpcMenuAction::Cancel) {
+            view_.playUiSound("cursor_pass");
             npcClient_.submit(EndNpcConversation{ui.dialogueObject});
             ui.npcMenu = false;
         }

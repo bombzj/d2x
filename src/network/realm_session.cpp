@@ -7,7 +7,6 @@ RealmSession::Impl::Impl(ClientProfile profile, bool retain)
     : compatibility(clientCompatibility(profile)), retainGamePackets(retain), gamePackets(profile) {
     view.protocolProfile = compatibility.id;
     view.remoteLobbyOnly = profile == ClientProfile::Pd2CnNormal20261020;
-    view.allowLadderSelection = view.remoteLobbyOnly;
     view.gameEntryAvailable = compatibility.gameEntryBlocker.empty();
     view.maximumGameServer = compatibility.maximumGameServer;
 }
@@ -324,6 +323,7 @@ void RealmSession::connect_realm(std::unique_ptr<IByteTransport> realmTransport,
     if (!gamePort) throw ProtocolError("Zero native game port");
     p.options.gamePort = gamePort;
     p.directRealm = endpoint;
+    p.view.allowLadderSelection = false;
     p.mcp.use(std::move(realmTransport)); p.gs.use(std::move(gameTransport));
     p.view.selectedRealm = std::move(name);
     p.realmStartup = preauthenticatedRealmStartup();
@@ -369,6 +369,7 @@ void RealmSession::connect_tcpip(Endpoint endpoint, Bytes save, std::optional<On
     p.shutdown(); p.directRealm.reset();
     p.selected = std::move(selected); p.view.selectedCharacter = p.selected->name;
     p.directTcpIp = true; p.tcpIpUpload = std::move(save);
+    p.view.allowLadderSelection = false;
     p.options = LoginOptions{}; p.options.gamePort = endpoint.port;
     p.gs.use(std::make_unique<TcpStream>()); p.gameEndpoint = endpoint;
     p.gs.connect(std::move(endpoint), p.options.timeout);
@@ -397,6 +398,7 @@ void RealmSession::authenticate(LoginOptions options, bool createAccount) {
                gameGeneration = p.view.gameGeneration;
     p.view.clear();
     p.view.revision = revision;
+    p.view.allowLadderSelection = true;
     p.view.connectionGeneration = generation + 1;
     p.view.gameGeneration = gameGeneration;
     p.requestCounter = 0;

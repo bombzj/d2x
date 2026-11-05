@@ -14,7 +14,7 @@
 | 非玩家特殊召唤 | Fire Golem／德鲁伊召唤等后续AI涉及PlayerData；需核实本机合法非玩家调用与原失败分支，不能以玩家替身或自造跟随补齐 | [触发施放](../../src/server/systems/skills/casting.cpp) · [装备技能](../gameplay/skills/ITEM_SKILLS.md) |
 | 同层传送台 | 自研物件执行尚无Operate27；按本房间单位链／邻室原序配对同类对端、size3／mask0x1C09寻位、实际搬移后的07／本人位置及背压继续点仍缺。原版Host客户端交互通过不代表自研已实现 | [物件](../gameplay/world/OBJECTS.md#同层传送台边界) · [执行入口](../../src/server/systems/objects/system.cpp) |
 | 全局交错与失败继续点 | 混合出生、事件队列1／2、装备／状态／伤害回调与房间压缩的原逐发生顺序尚未完整闭合；逐入口比较随机、身份与已提交前缀，仅修复有证据的差异 | [执行计划](../architecture/MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤) · [内核](../modules/SERVER_SYSTEMS.md) |
-| 经典模式／Ladder | 经典非资料片的内容／保存布局及结束游戏消费者、Ladder身份／赛季／匹配运行链未支持；当前明确拒绝，不能套资料片或本地身份模拟原Realm | [存档](../modules/SAVES.md) · [联网](../modules/NETWORK.md) |
+| 经典模式／Ladder | 经典非资料片仍拒绝；战网天梯建角／选角／房间过滤及GS入局已接，自研GS保留身份并按普通规则执行，新增路径未运行。赛季／排名及自研天梯专属规则未支持，不能以普通规则准入认证完整原Realm天梯 | [存档](../modules/SAVES.md) · [联网](../modules/NETWORK.md) |
 
 开放玩法入口的技能／飞弹／状态／物品／怪物／环境传递依赖仍缺完整可达闭包，不能根据表行数或零散NotImplemented数目给出完整率。逐程序发现的新缺实现应补到上表；已接的跨区弹体和女武神装备命中效果只核对剩余组合，不重新列成未实现功能。
 

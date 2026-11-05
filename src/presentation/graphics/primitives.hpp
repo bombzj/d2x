@@ -9,10 +9,10 @@
 #include <string_view>
 #include <vector>
 namespace d2x {
-inline int W = 1066, H = 680;
+extern int W, H;
 // The 55-pixel middle cells of 800ctrlpnl7.dc6 have seven rows above
 // the solid strip. Render the world behind their transparent pixels.
-// Artwork retains its native size; only the bottom 48 pixels block the world.
+// Artwork retains its native size; the centered 800-pixel strip blocks only its bottom 48 pixels.
 inline constexpr int HUD = 48;
 inline constexpr float pi = std::numbers::pi_v<float>;
 // The scene renders into a window-sized target; UI coordinates stay in the
@@ -21,17 +21,10 @@ inline constexpr float pi = std::numbers::pi_v<float>;
 // list, NPC trade) draw into a sub-canvas stretched across the window, so
 // scissors need separate horizontal/vertical layout -> pixel factors
 // (uiScaleX/uiScaleY) matching the rlScalef used for that canvas.
-inline float uiScale = 1.f, uiScaleX = 1.f, uiScaleY = 1.f;
-inline void uiScissor(float x, float y, float width, float height) {
-    const int left = int(x * uiScaleX + 0.5f), top = int(y * uiScaleY + 0.5f);
-    const int right = int((x + width) * uiScaleX + 0.5f);
-    const int bottom = int((y + height) * uiScaleY + 0.5f);
-    BeginScissorMode(left, top, right - left, bottom - top);
-}
+extern float uiScale, uiScaleX, uiScaleY;
+void uiScissor(float x, float y, float width, float height);
 inline constexpr Color gold{196, 164, 102, 255}, parchment{209, 196, 162, 255};
-inline Vector2 rv(Vec v) {
-    return {v.x, v.y};
-}
+Vector2 rv(Vec v);
 // Original font .tbl maps a Unicode code point to a DC6 glyph frame. Latin
 // tables cover 0..255; CJK tables cover thousands of sorted code points. Glyph
 // textures are uploaded on first use: a CJK font can hold over 16k frames, so
@@ -51,21 +44,12 @@ struct ClassicFont {
     mutable std::map<uint16_t, Sprite> sprites; // Only glyphs used in this color variant.
     bool ready = false;
 
-    int indexOf(uint32_t code) const {
-        const auto it = std::lower_bound(codes.begin(), codes.end(), code);
-        return it != codes.end() && *it == code ? int(it - codes.begin()) : -1;
-    }
-    int widthOf(uint32_t code) const {
-        const int i = indexOf(code);
-        return i < 0 ? 0 : widths[size_t(i)];
-    }
+    int indexOf(uint32_t code) const;
+    int widthOf(uint32_t code) const;
     int textWidth(std::string_view line) const;
     void drawBaseline(std::string_view line, Vec at, float scale, Color tint = WHITE) const;
     const Sprite *glyphFrame(uint16_t frame) const;
-    const Sprite *glyphOf(uint32_t code) const {
-        const int i = indexOf(code);
-        return i < 0 ? nullptr : glyphFrame(frames[size_t(i)]);
-    }
+    const Sprite *glyphOf(uint32_t code) const;
 };
 // Populate a ClassicFont from an original "Woo!" font table. Returns false when
 // the table is too small or holds no records.
@@ -93,7 +77,7 @@ class UiPainter {
     int glyphGap;
 
   public:
-    explicit UiPainter(const ClassicFont &f, int gap = 1) : font(f), glyphGap(gap) {}
+    explicit UiPainter(const ClassicFont &f, int gap = 1);
     int measure(const std::string &text, int size) const;
     void label(const std::string &text, int x, int y, int size, Color color = parchment) const;
     void centered(const std::string &text, int y, int size, Color color = parchment) const;
@@ -102,39 +86,12 @@ class UiPainter {
 // World-space heading to the original interleaved DCC direction index.
 int direction(Vec look, int count);
 void sprite(const Sprite *sprite, Vec position, Color tint = WHITE);
-inline bool selectionRectHit(Rectangle bounds, Vec position, Vec mouse) {
-    const auto point = mouse - position;
-    return bounds.width >= 0 && bounds.height >= 0 && point.x >= bounds.x && point.y >= bounds.y &&
-        point.x <= bounds.x + bounds.width && point.y <= bounds.y + bounds.height;
-}
+bool selectionRectHit(Rectangle bounds, Vec position, Vec mouse);
 // Retail 1.13c D2Client A68E0 / A6730: COF broad phase, then selectable
 // component frames with 12-pixel padding and symmetric minimum-32 growth.
 // Single-piece art (including ground items) uses its entire original frame.
-inline bool spriteHit(const Sprite *image, Vec position, Vec mouse, bool multiPiece = true,
-                      std::optional<Vec> coarsePosition = {}) {
-    if (!image) return false;
-    if (image->selectionCoarseBounds) {
-        const auto anchor = coarsePosition.value_or(position);
-        const auto point = mouse - Vec{float(int(anchor.x)),float(int(anchor.y))};
-        if (!CheckCollisionPointRec(rv(point), *image->selectionCoarseBounds)) return false;
-    }
-    const auto hit = [&](Rectangle bounds) {
-        bounds.x -= 12; bounds.y -= 12; bounds.width += 24; bounds.height += 24;
-        if (bounds.width < 32) {const int grow = (32 - int(bounds.width)) / 2; bounds.x -= grow; bounds.width += 2 * grow;}
-        if (bounds.height < 32) {const int grow = (32 - int(bounds.height)) / 2; bounds.y -= grow; bounds.height += 2 * grow;}
-        return selectionRectHit(bounds, {float(int(position.x)),float(int(position.y))}, mouse);
-    };
-    if (!image->componentBounds.empty()) {
-        for (const auto &component : image->componentBounds)
-            // A6CE9 requests TR (component 1) for single-piece units;
-            // the multi-piece branch visits each selectable COF component.
-            if ((multiPiece ? component.selectable : component.component == 1) && hit(component.bounds)) return true;
-        return false;
-    }
-    return image->texture.width > 0 && image->texture.height > 0 &&
-        hit(image->selectionFrameBounds.value_or(Rectangle{
-            float(image->x),float(image->y),float(image->texture.width),float(image->texture.height)}));
-}
+bool spriteHit(const Sprite *image, Vec position, Vec mouse, bool multiPiece = true,
+               std::optional<Vec> coarsePosition = {});
 // Cursor hotspots are texture-local, measured from the top-left pixel.
 Vec handCursorHotspot(const Sprite *sprite);
 void cursorSprite(const Sprite *sprite, Vec mouse, Vec hotspot);

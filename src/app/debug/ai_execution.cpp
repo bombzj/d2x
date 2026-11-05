@@ -44,7 +44,7 @@ bool DebugAi::Impl::decisionDue(const Context &c,Clock::time_point now) {
     if(pendingDoor) include(doorDeadline);
     if(pendingWaypoint) include(waypointDeadline);
     if(!inputBlocked) {include(combatRun.nextCast);include(nextPotion);}
-    if(!cadence.due(now,mode,signals,urgent,deadline)) return false;
+    if(!cadence.due(now,mode,signals,urgent,deadline,eventPolicy.walkDecisionMs)) return false;
     decisionLife=world.life;return true;
 }
 namespace {

@@ -110,6 +110,7 @@ bool tabAvailable(const ShopView &shop, int tab, float cellSize) {
 } // namespace
 bool SceneView::openNpcShop(bool gamble) {
     if (!view_.npcMenu || !npcClient_.shop(view_.dialogueObject, gamble).available) return false;
+    playUiSound("cursor_switch");
     view_.npcMenu = false;
     view_.shopOpen = true;
     view_.shopGamble = gamble;
@@ -127,6 +128,7 @@ bool SceneView::openNpcShop(bool gamble) {
     return true;
 }
 void SceneView::closeNpcShop() {
+    if(view_.shopOpen) playUiSound("cursor_pass");
     view_.shopOpen = false;
     view_.shopRepair = view_.shopSell = false;
     view_.npcMenu = false;
@@ -193,6 +195,7 @@ std::optional<uint32_t> SceneView::clickNpcShop(Vec mouse, bool directBuy) {
     for (int index = 0; !view_.shopGamble && index < 4; ++index)
         if (CheckCollisionPointRec(rv(mouse), tabBounds(index))) {
             if (!tabAvailable(shopView(), index, inventoryCellSize(inventoryView_))) return {};
+            if(view_.shopCategory!=index) playUiSound("cursor_switch");
             view_.shopCategory = index;
             view_.shopPage = index == 2 ? 1 : 0;
             return {};

@@ -149,7 +149,6 @@ void RealmSession::Impl::handle_mcp(Packet packet) {
         if (view.games.size() >= 256)
             throw ProtocolError("Game list limit exceeded");
         // PvPGN D2_GAMEFLAG_LADDER; match the selected server character.
-        // CN permits Ladder selection in the lobby, unlike the original path.
         if (bool(game.flags & 0x00200000) == (selected && selected->ladder.value_or(false)) &&
             (listFilter.empty() || game.name.find(listFilter) != std::string::npos))
             view.games.push_back(std::move(game));

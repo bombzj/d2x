@@ -28,8 +28,7 @@ void SceneView::advanceGroundAnimations(float dt) {
             const auto *art = assets_.groundItemAnimation(item);
             if (!art || art->count <= 0) continue;
             const auto at = screen(staticUnitPosition(location->position));
-            const auto viewport = worldViewport();
-            const bool audible = CheckCollisionPointRec(rv(at),viewport);
+            const bool audible = worldContains(at);
             if (!animation.flipSoundConsumed)
                 animation.flipSoundConsumed = assets_.sceneAudio.itemDrop(
                     {item.definition,item.quality,item.specialRow,animation.age,audible,ItemDropSoundEvent::Kind::Flip});

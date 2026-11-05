@@ -55,15 +55,16 @@ class Archives {
     ~Archives();
     std::unique_ptr<Archives> independent() const;
     void mount(const std::filesystem::path &path);
-    uint64_t mountIdentity() const { return mountIdentity_.value(); }
-    const auto &mountedPaths() const { return mountedPaths_; }
+    uint64_t mountIdentity() const;
+    const std::vector<std::filesystem::path> &mountedPaths() const;
     void mountDirectory(const std::filesystem::path &path);
     // Adds every regular file below root as <prefix>/<relative path>. The PD2 CN
     // client ships its Chinese tables, fonts and menu art as loose files under
     // Data/local instead of inside an archive; a missing or empty root is a hard
     // error rather than a silent loss of the profile's resources.
     void mountLooseDirectory(const std::filesystem::path &root, std::string_view prefix);
-    Bytes read(const std::string &name, bool required = true) const;
+    Bytes read(const std::string &name, bool required = true,
+               const std::function<bool()> &cancelled = {}) const;
     template<class T, class Loader> std::shared_ptr<const T> prepared(Loader &&loader) const {
         const auto key = std::type_index(typeid(T));
         if (const auto found = prepared_.find(key); found != prepared_.end())
@@ -72,8 +73,8 @@ class Archives {
         prepared_.emplace(key, value); // Publish only a completely loaded value.
         return value;
     }
-    void setLoadingPulse(std::function<void()> pulse) { loadingPulse = std::move(pulse); }
-    void pulseLoading() const { if (loadingPulse) loadingPulse(); }
+    void setLoadingPulse(std::function<void()> pulse);
+    void pulseLoading() const;
     bool contains(const std::string &name) const;
     std::vector<std::string> list(const std::string &pattern = "*") const;
     void packUsed(const std::filesystem::path &destination) const;

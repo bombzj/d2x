@@ -140,12 +140,16 @@ struct PvpgnGameThread::Impl {
             const auto marker = registration.u16(), characterClass = registration.u16();
             net::protocol::Reader summary(std::span<const uint8_t>(identity.portrait).subspan(176));
             const auto experience = summary.u32(), mode = summary.u32(), level = summary.u32(), summaryClass = summary.u32();
-            if (folded(name) != folded(identity.name) || (status != 0x21 && status != 0x25) || marker != 0x82 ||
+            if (folded(name) != folded(identity.name) || ((status & ~0x44u) != 0x21) || marker != 0x82 ||
                 characterClass != identity.characterClass || characterClass > 6 || experience || level != 1 ||
                 (mode & ~1u) != (status & ~1u) || summaryClass != characterClass)
                 throw ProtocolError("Invalid PvPGN new-character registration");
             character = createCharacter(*host.content,name,characterClass,uint32_t(std::random_device{}()),(status & 4) != 0);
             bytes = encodeSave(character,*host.content);
+            auto initialHeader = readD2sHeader(bytes);
+            initialHeader.flags |= status & 0x40u;
+            writeD2sHeader(bytes,initialHeader);
+            character = decodeSave(bytes,*host.content,definition.settings.difficulty);
         } else {
             try { character = decodeSave(bytes,*host.content,definition.settings.difficulty); }
             catch (const std::exception &) { throw AdmissionFailure(14,"Invalid D2DBS character save"); }

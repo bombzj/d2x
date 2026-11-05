@@ -7,6 +7,7 @@
 #include <raylib.h>
 
 namespace d2x {
+struct AudioSettings;
 enum class FrontendPage { Main, Login, Register, Realms, Characters, CreateCharacter, Lobby, Loading, TcpIp, JoinHost, Difficulty, Victory };
 enum class FrontendCommand {
     None,
@@ -64,6 +65,8 @@ class RealmFrontend {
     void clearTransientPasswords();
     void setLogin(std::string account, std::string password);
     void setLanAddresses(std::string addresses);
+    void setAudioSettings(const AudioSettings &);
+    void updateMusic(bool active);
     void lobbyRequestQueued(FrontendCommand command);
 
   private:

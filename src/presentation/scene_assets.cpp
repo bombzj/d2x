@@ -104,10 +104,12 @@ void SceneAssets::loadNpcAlert(const DataTable &overlays) {
         npcAlert.animation.count < npcAlert.frames)
         throw std::runtime_error("Original NPC alert overlay is missing or invalid");
 }
-SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
+SceneAssets::SceneAssets(Archives &archives, const ClassicData &content, int initialLevel, const AudioSettings &audioSettings)
     : archives_(archives), soundCatalog_(archives), graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
-      unitsGraphics_(archives, "data/global/palette/units/pal.dat"), automapCatalog_(archives), audio(),
+    unitsGraphics_(archives, "data/global/palette/units/pal.dat"), automapCatalog_(archives), audio(archives),
       streams(archives, content, soundCatalog_), sceneAudio(archives, soundCatalog_, audio,streams), escapeMenu(archives) {
+        streams.settings(audioSettings);
+        streams.update(initialLevel,0);
     loadClassicFont(uiGraphics_, archives, font, "font16");
     loadClassicFont(uiGraphics_, archives, skillGreenFont, "font16", 2);
     loadClassicFont(uiGraphics_, archives, characterLabelFont, "font6");

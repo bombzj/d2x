@@ -1,6 +1,7 @@
 #include "content/monsters/monster_identity.hpp"
 #include "sound_catalog.hpp"
 #include "content/character/character_attributes.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 #include <cctype>
 #include <sstream>
@@ -27,6 +28,17 @@ SoundRule rule(const DataTable &table, size_t row, std::string_view name,
 SoundCatalog::SoundCatalog(Archives &archives) : sounds_(archives.read("data/global/excel/sounds.txt")) {
     for (size_t row = 0; row < sounds_.rows().size(); ++row)
         soundRows_.emplace(sounds_.value(row, "Sound"), row);
+    const DataTable environments(archives.read("data/global/excel/soundenviron.txt"));
+    const DataTable levels(archives.read("data/global/excel/levels.txt"));
+    std::map<int,int> materials;
+    for (size_t row=0;row<environments.rows().size();++row)
+        if (const auto index=environments.number(row,"Index"))
+            materials.emplace(*index,environments.number(row,"Material 1").value_or(0));
+    for (size_t row=0;row<levels.rows().size();++row)
+        if (const auto id=levels.number(row,"Id")) {
+            const auto found=materials.find(levels.number(row,"SoundEnv").value_or(0));
+            if (found!=materials.end()) groundMaterials_.emplace(*id,found->second);
+        }
     const DataTable voices(archives.read("data/global/excel/monsounds.txt"));
     std::map<std::string, MonsterSoundDefinition, std::less<>> profiles;
     for (size_t row = 0; row < voices.rows().size(); ++row) {
@@ -72,6 +84,16 @@ SoundCatalog::SoundCatalog(Archives &archives) : sounds_(archives.read("data/glo
         const auto name=monsters.value(row,"Id");const auto special=greetingNames.find(name);
         const std::string sound=special!=greetingNames.end()?special->second:std::string(name)+"_greeting_return";
         if(soundRows_.contains(sound)) npcReturnGreetings_.emplace(compiledMonsterIndex(monsters,row),SoundRule{sound});
+        const auto marker=sound.find("_greeting");
+        if(marker==std::string::npos) continue;
+        const auto prefix=sound.substr(0,marker);
+        auto &greetings=npcGreetings_[compiledMonsterIndex(monsters,row)];
+        const std::array suffixes{"_greeting_1","_greeting_inactive_1","_greeting_time_1","_greeting_time_2","_greeting_time_3"};
+        for(size_t index=0;index<suffixes.size();++index) {
+            const auto candidate=prefix+suffixes[index];
+            if(soundRows_.contains(candidate)) greetings[index]=candidate;
+        }
+        if(greetings[0].empty()) {greetings[0]=greetings[1];greetings[1].clear();}
     }
     const DataTable characters(archives.read("data/global/excel/charstats.txt"));
     int identity = 0;
@@ -84,6 +106,13 @@ SoundCatalog::SoundCatalog(Archives &archives) : sounds_(archives.read("data/glo
         profile.nihlathakComplete.sound=name+"_act5_defeat_nihlathak";
         for(size_t slot=0;slot<profile.chat.size();++slot)
             profile.chat[slot].sound=name+"_chat_"+char('a'+slot)+"_1";
+        if(const auto first=soundRow(name+"_act1_complete_andariel")) {
+            auto &narratives=playerNarratives_[identity];
+            for(size_t offset=0;offset<narratives.size() && *first+offset<sounds_.rows().size();++offset) {
+                const auto sound=sounds_.value(*first+offset,"Sound");
+                if(sound.starts_with(name+"_act")) narratives[offset]=sound;
+            }
+        }
         players_.emplace(identity++,std::move(profile));
     }
     const DataTable skills(archives.read("data/global/excel/skills.txt"));
@@ -134,11 +163,6 @@ SoundCatalog::SoundCatalog(Archives &archives) : sounds_(archives.read("data/glo
         const auto id = objects.number(row,"Id");
         if (!id) continue;
         const int operation = objects.number(row,"OperateFn").value_or(0);
-        switch (operation) {
-        case 1: case 3: case 4: case 5: case 7: case 14: case 19: case 20:
-        case 26: case 30: case 48: case 51: case 68: break;
-        default: continue;
-        }
         const auto token = lower(std::string(objects.value(row,"Token")));
         if (const auto found = tokenSounds.find(token); found != tokenSounds.end())
             for (const auto &[mode, sound] : found->second) objects_[{*id,mode}] = SoundRule{sound};
@@ -151,7 +175,8 @@ SoundCatalog::SoundCatalog(Archives &archives) : sounds_(archives.read("data/glo
     auto itemSound = [](const DataTable &table, size_t row) {
         const auto code = table.value(row,"code");
         return ItemSoundDefinition{std::string(code.empty() ? table.value(row,"item") : code),
-            std::string(table.value(row,"dropsound")), table.number(row,"dropsfxframe").value_or(-1)};
+            std::string(table.value(row,"dropsound")), table.number(row,"dropsfxframe").value_or(-1),
+            table.value(row,"dropsound").empty() ? std::string{} : std::string(table.value(row,"usesound"))};
     };
     for (const auto *name : {"weapons", "armor", "misc"}) {
         const DataTable table(archives.read(std::string("data/global/excel/") + name + ".txt"));
@@ -169,6 +194,24 @@ SoundCatalog::SoundCatalog(Archives &archives) : sounds_(archives.read("data/glo
 const SoundRule *SoundCatalog::npcReturnGreeting(int identity) const {
     const auto found=npcReturnGreetings_.find(identity);
     return found==npcReturnGreetings_.end()?nullptr:&found->second;
+}
+std::string SoundCatalog::playerNarrative(int identity, int event) const {
+    const auto found=playerNarratives_.find(identity);
+    return found!=playerNarratives_.end() && event>=33 && event<=83?found->second[size_t(event-33)]:std::string{};
+}
+std::string SoundCatalog::npcGreeting(int identity, int mode, int period, uint64_t &random) const {
+    if(mode==2) {
+        const auto *greeting=npcReturnGreeting(identity);
+        return greeting?greeting->sound:std::string{};
+    }
+    const auto found=npcGreetings_.find(identity);
+    if(found==npcGreetings_.end()) return {};
+    const auto &greetings=found->second;
+    auto sound=greetings[0];
+    if(!mode && !greetings[1].empty() && limitedRandom(random,2)==0) sound=greetings[1];
+    if(!greetings[2].empty() && (sound.empty() || limitedRandom(random,3)==0))
+        sound=greetings[period==1?2:period==2 || period==3?3:4];
+    return sound;
 }
 std::optional<size_t> SoundCatalog::soundRow(std::string_view id) const {
     const auto found = soundRows_.find(id);
@@ -195,10 +238,23 @@ std::optional<ItemSoundDefinition> SoundCatalog::item(std::string_view code, Ite
         const auto &table = quality == ItemQuality::Unique ? uniqueItems_ : setItems_;
         const auto special = table.find(specialRow);
         if (special != table.end() && special->second.code == code) {
-            if (!special->second.drop.empty()) result.drop = special->second.drop;
+            if (!special->second.drop.empty()) {
+                result.drop = special->second.drop;
+                result.use = special->second.use;
+            }
             if (special->second.dropFrame >= 0) result.dropFrame = special->second.dropFrame;
         }
     }
     return result;
+}
+std::string SoundCatalog::playerFootstep(int identity, bool running, int material, int level) const {
+    if (identity<0 || identity>6) return {};
+    if (material<1 || material>6) {
+        const auto found=groundMaterials_.find(level);
+        material=found!=groundMaterials_.end() && found->second>=1 && found->second<=6 ? found->second : 1;
+    }
+    constexpr std::array surfaces{"dirt","istone","ostone","sand","snow","wood"};
+    const std::string weight=identity==4?"heavy":identity==0 || identity==3?"medium":"light";
+    return weight+(running?"_run_":"_walk_")+surfaces[size_t(material-1)]+"_1";
 }
 } // namespace d2x

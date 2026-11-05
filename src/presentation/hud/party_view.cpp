@@ -12,7 +12,8 @@
 namespace d2x {
 namespace {
 Rectangle partyRect(float x, float y, float width, float height) {
-    return {x * classicPanelScale(), y * classicPanelScale(),
+    const auto side = classicSideBounds(false);
+    return {side.x + x * classicPanelScale(), side.y + y * classicPanelScale(),
             width * classicPanelScale(), height * classicPanelScale()};
 }
 void art(const Sprite *image, float x, float y) {
@@ -167,7 +168,7 @@ PartyIntent PartyView::handle(const FrameInput &input, bool &open) {
             const bool level=ownLevel_ && *ownLevel_>=9 && player.level && *player.level>=9;
             tooltip_=action==OnlineRelationAction::Hostile && !level?levelTip_:action==OnlineRelationAction::Hostile && !town_?townTip_:
                 relationTips_[size_t(uint8_t(action)-1)][enabled?0:1];
-            tooltipAt_={bounds.x/classicPanelScale()+10,bounds.y/classicPanelScale()-5};
+            tooltipAt_={bounds.x/classicPanelScale()+10,(bounds.y-classicSideBounds(false).y)/classicPanelScale()-5};
             if(action!=OnlineRelationAction::Hostile || (town_ && level)) hovered=PartyIntent{true,player.id,game_,{},action,enabled};
         }
     if (inside && ready_ && ownParty_ && *ownParty_ != UINT16_MAX &&
@@ -223,7 +224,7 @@ void PartyView::draw(std::string_view ownName) const {
             const bool disabled=action==OnlineRelationAction::Hostile && (!town_ || !p.level || *p.level<9 || !ownLevel_ || *ownLevel_<9);
             const int frame=disabled?16+int(down):base+((flags(p.id)&onlineRelationMask(action))?2:0)+int(down);
             const auto bounds=relationBounds(i,action);
-            art(boxes_.frame(0,frame),bounds.x/classicPanelScale(),bounds.y/classicPanelScale());
+            art(boxes_.frame(0,frame),bounds.x/classicPanelScale(),(bounds.y-classicSideBounds(false).y)/classicPanelScale());
         }
         text(font, level_ + ": " + (p.level ? std::to_string(*p.level) : "?"), 325, 166 + offset, 61, true);
         if (allied) {
@@ -271,8 +272,11 @@ void PartyView::drawPortraits(float x, const PaletteBlendView &blend) const {
         const auto *image = portraits_[*p.characterClass].frame(0, 0);
         if (!image) continue;
         const float width = float(image->texture.width);
-        blend.drawHalf(image, partyRect(x, 19, width, float(image->texture.height)));
-        const auto bar = partyRect(x, 14, width, 5);
+        auto portrait = partyRect(x, 19, width, float(image->texture.height));
+        portrait.y -= classicSideBounds(false).y;
+        blend.drawHalf(image, portrait);
+        auto bar = partyRect(x, 14, width, 5);
+        bar.y -= classicSideBounds(false).y;
         DrawRectangleRec(bar, BLACK);
         if (p.lifePercentage) {
             const auto life = std::min<uint16_t>(*p.lifePercentage, 100);
@@ -282,7 +286,8 @@ void PartyView::drawPortraits(float x, const PaletteBlendView &blend) const {
         auto name = p.name;
         auto measured = [&] { int width = 0; for (uint32_t c : utf8Decode(name)) width += nameFont_.widthOf(c); return width; };
         while (!name.empty() && measured() > 66) name.pop_back();
-        text(nameFont_, name, std::max(0.f, x + 22 - measured() / 2.f), column % 2 ? 62 : 72);
+        text(nameFont_, name, std::max(0.f, x + 22 - measured() / 2.f),
+            (column % 2 ? 62 : 72) - classicSideBounds(false).y / classicPanelScale());
         x += 56;
         ++column;
     }

@@ -4,6 +4,42 @@
 #include "content/language.hpp"
 
 namespace d2x {
+namespace remote_scene_impl_detail {
+std::string lower(std::string value) {
+    for (auto &ch : value)
+        ch = char(std::tolower(static_cast<unsigned char>(ch)));
+    return value;
+}
+std::vector<std::string> variants(std::string_view value) {
+    std::string text(value);
+    std::erase(text, '"');
+    std::istringstream stream(text);
+    std::vector<std::string> result;
+    for (std::string part; std::getline(stream, part, ',');) {
+        part.erase(0, part.find_first_not_of(" \t"));
+        const auto end = part.find_last_not_of(" \t");
+        if (end != std::string::npos)
+            part.resize(end + 1);
+        if (!part.empty())
+            result.push_back(lower(part));
+    }
+    return result;
+}
+bool visible(const Sprite &sprite, Vec position) {
+    return position.x + sprite.x < W && position.y + sprite.y < H && position.x + sprite.x + sprite.texture.width > 0 &&
+           position.y + sprite.y + sprite.texture.height > 0;
+}
+} // namespace remote_scene_impl_detail
+std::optional<float> RemoteScene::Impl::Motion::animationFrame() const {
+    return locomotionAnimation.mode?std::optional{float(locomotionFrame)}:std::nullopt;
+}
+std::pair<float,float> RemoteScene::Impl::Motion::animationTime(float now) const {
+    if(locomotionAnimation.mode) {
+        const float elapsed=locomotionAnimation.elapsed(now);
+        return {elapsed,elapsed};
+    }
+    return {animation.clock(now),animation.elapsed(now)};
+}
 
 RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display, ContentPreparation preparation)
     : archives(a), mapDisplay(display),

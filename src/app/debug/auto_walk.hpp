@@ -11,6 +11,10 @@
 #include <string>
 
 namespace d2x {
+struct DebugWalkTiming {
+  int walkDecisionMs=160,walkReactionMs=40,walkRequestIntervalMs=200,walkRetryMs=1000;
+  int townTurnBaseMs=200,townTurnMinMs=600,townTurnMaxMs=2000;
+};
 struct Grid;
 class RemoteTown;
 class RemoteControl;
@@ -45,6 +49,7 @@ class DebugAutoWalk {
     Clock::time_point deadline_,progressAt_,submittedAt_;
     DebugExecutionClock executionClock_;
     DebugDecisionCadence cadence_;
+    DebugWalkTiming timing_;
     unsigned moves_{},interactions_{},searches_{},decisions_{};
     uint64_t failures_{};
     bool run_=true,interact_{},landmark_{},clientMoving_{},exploration_{},localCrossing_{};
@@ -52,6 +57,7 @@ class DebugAutoWalk {
     void finish(std::string,std::string,RemoteControl &);
     nlohmann::json status() const;
   public:
+    void setTiming(const DebugWalkTiming &timing) {timing_=timing;cadence_.wake();}
     DebugNavigationSearch &navigationSearch() {return search_;}
     bool active() const;
     bool recoveringMovement() const {return active() && recoveryAnchor_.has_value();}

@@ -8,6 +8,7 @@ FetchContent_Declare(d2x_bncs_source
   GIT_TAG 6334e0bde9cb7d2df73f7f9aa1072b54210a4d21
   SOURCE_SUBDIR d2x-no-upstream-build)
 FetchContent_MakeAvailable(d2x_asio_source d2x_bncs_source)
+d2x_prepare_dependency(bncsutil "${d2x_bncs_source_SOURCE_DIR}")
 find_package(Threads REQUIRED)
 
 add_library(d2x_asio INTERFACE)

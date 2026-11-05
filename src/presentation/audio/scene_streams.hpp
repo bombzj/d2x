@@ -17,8 +17,10 @@ class SceneStreams {
     std::unique_ptr<Impl> impl_;
   public:
     SceneStreams(Archives &, const ClassicData &, const SoundCatalog &);
+    SceneStreams(Archives &, const SoundCatalog &);
     ~SceneStreams();
     void settings(const AudioSettings &);
+    void menu(bool active);
     void update(int level, float dt);
     void weather(float dt, bool rainAllowed, int density);
     void pauseWeather(bool paused);

@@ -1,6 +1,7 @@
 #include "planning.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -71,6 +72,7 @@ DomainResult<> System::identify(const ActorContext &actor, const IdentifyItem &r
     transactions::InventoryEdit edit{actor, player.inventoryRevision, player.characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), player.persistent.player.weaponSet};
     edit.facts.emplace_back(ItemTargetingFact{request.source.id,-1});
+    edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,6});
     auto plan = ports_.transactions.prepare(std::move(edit));
     return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};
 }

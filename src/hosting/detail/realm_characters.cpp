@@ -38,7 +38,7 @@ void NativeRealmService::listCharacters(net::protocol::Reader &in) {
 void NativeRealmService::createCharacter(net::protocol::Reader &in) {
     const auto characterClass = in.u16(); in.u16(); const auto flags = in.u16(); const auto name = in.string(15); in.finish();
     try {
-        if (binding || (flags != 0x20 && flags != 0x24)) throw std::runtime_error("Only non-ladder expansion saves are supported");
+        if (binding || (flags & ~0x64u) || !(flags & 0x20)) throw std::runtime_error("Only expansion saves are supported");
         store->create(name, characterClass, uint32_t(std::random_device{}()), (flags & 4) != 0); result(2, 0);
     } catch (const std::exception &e) { failure = e.what(); result(2, 0x16); }
 }

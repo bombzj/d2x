@@ -16,6 +16,14 @@
 
 namespace d2x::hosting {
 using namespace net::protocol;
+NativeIdentityView NativeRealmService::identities() const {return {host,binding.value().game};}
+uint32_t NativeRealmService::wireId(EntityId id) const {return id?identities().guid(id):0;}
+Bytes NativeRealmService::nativePlayerMotion(const PlayerSnapshot &view,Vec origin,bool targetVisible) const {
+    return d2x::nativePlayerMotion(view,origin,targetVisible,identities());
+}
+Bytes NativeRealmService::nativeGroundItem(const ClassicData &data,const ItemInstance &item,Vec origin,GroundItemAction action) const {
+    return d2x::nativeGroundItem(data,item,origin,action,identities());
+}
 NativeRealmService::NativeRealmService(NativeRealmHost &owner, RealmOutput realm, GameOutput game)
     : shared(owner), archives(owner.archives), root(owner.root), realmOutput(std::move(realm)), gameOutput(std::move(game)),
       content(owner.content), portraits(owner.portraits), host(owner.host) {
@@ -99,6 +107,7 @@ void NativeRealmService::close(bool save, bool keepReload) {
     peer = {}; ticket = false;
     admission.clear(); terrain = {};
     gameName.clear(); gamePassword.clear();
+    gameLadder = false;
     if (!keepReload) discardReload();
 }
 void NativeRealmService::endGame(bool save, bool keepReload) {

@@ -167,7 +167,7 @@ class SceneAssets {
         float fps = 0;
         bool preDraw = false;
     } npcAlert;
-    SceneAssets(Archives &archives, const ClassicData &content);
+    SceneAssets(Archives &archives, const ClassicData &content, int initialLevel, const AudioSettings &audioSettings);
     const ProjectileVisual *ensureProjectile(int id);
     const ClassicFont *ensureOverheadFont();
     const std::string &overheadFontFailure() const {return overheadFontFailure_;}

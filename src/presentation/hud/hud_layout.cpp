@@ -5,18 +5,16 @@ float hudScale() { return 1.f; }
 
 float hudTextScale() { return 1.f; }
 
-Rectangle hudRect(float x, float fromBottom, float width, float height, HudAnchor anchor) {
-    const int extra = W - 800;
-    const int offset = anchor == HudAnchor::Left ? 0 : anchor == HudAnchor::Right ? extra : extra / 2;
-    return {x + offset, H - fromBottom, width, height};
+Rectangle hudRect(float x, float fromBottom, float width, float height) {
+    return {x + (W - 800) / 2, H - fromBottom, width, height};
 }
 
 Rectangle hudSkillSlot(bool right) {
-    return hudRect(right ? 635 : 117, 48, 48, 48, right ? HudAnchor::Right : HudAnchor::Left);
+    return hudRect(right ? 635 : 117, 48, 48, 48);
 }
 
 Rectangle hudGlobe(bool mana) {
-    return hudRect(mana ? 690 : 30, mana ? 92 : 93, 80, 80, mana ? HudAnchor::Right : HudAnchor::Left);
+    return hudRect(mana ? 690 : 30, mana ? 92 : 93, 80, 80);
 }
 
 Rectangle hudRunButton() {
@@ -71,11 +69,12 @@ Rectangle hudMiniButton(const Sprite &image, int index, int offset) {
 Rectangle hudPickerSlot(bool right, int column, int row) {
     constexpr float side = 48;
     return hudRect(right ? 720 - (column + 1) * side : 90 + column * side,
-                   135 + row * side, side, side, right ? HudAnchor::Right : HudAnchor::Left);
+                 135 + row * side, side, side);
 }
 
 bool hudSurface(Vec mouse) {
-    return mouse.y >= H - HUD || CheckCollisionPointRec(rv(mouse), hudRect(0, 104, 117, 104, HudAnchor::Left)) ||
-           CheckCollisionPointRec(rv(mouse), hudRect(683, 104, 117, 104, HudAnchor::Right));
+        return CheckCollisionPointRec(rv(mouse), hudRect(0, HUD, 800, HUD)) ||
+            CheckCollisionPointRec(rv(mouse), hudRect(0, 104, 117, 104)) ||
+            CheckCollisionPointRec(rv(mouse), hudRect(683, 104, 117, 104));
 }
 } // namespace d2x

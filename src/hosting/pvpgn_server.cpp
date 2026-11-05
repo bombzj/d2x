@@ -111,15 +111,15 @@ struct PvpgnServer::Impl {
             in.string(15);in.string(15);in.string(63);in.finish();
             uint32_t result=1,id=0;
             const bool duplicate=std::any_of(rooms.begin(),rooms.end(),[&](const auto &entry){return folded(entry.second.definition.name)==folded(name);});
-            if(authenticated && !stopping && !ladder && expansion==1 && hardcore<=1 && difficulty<=2 &&
+            if(authenticated && !stopping && ladder<=1 && expansion==1 && hardcore<=1 && difficulty<=2 &&
                 !name.empty() && !duplicate && rooms.size()<options.maximumGames && nextGame<=UINT16_MAX) {
                 std::vector<size_t> loads(games.size());
                 for(const auto &[key,room]:rooms){(void)key;++loads[room.thread];}
                 const auto thread=size_t(std::min_element(loads.begin(),loads.end())-loads.begin());
                 hosting::HostedGame room;room.index=nextGame++;id=room.index;
                 room.name=std::move(name);room.password=std::move(password);room.description=std::move(description);
-                room.capacity=8;room.levelDifference=99;room.flags=4u|uint32_t(difficulty)<<12;
-                room.settings={uint32_t(std::random_device{}()),int(difficulty),false,1,0,bool(ladder)};
+                room.capacity=8;room.levelDifference=99;room.flags=4u|uint32_t(difficulty)<<12|(ladder?0x00200000u:0u);
+                room.settings={uint32_t(std::random_device{}()),int(difficulty),false,1,0,false};
                 room.hardcore=hardcore!=0;room.settings.hardcore=room.hardcore;if(room.hardcore) room.flags|=0x800;
                 games[thread]->reserve(room);rooms.emplace(id,Room{std::move(room),thread});result=0;
                 log("D2CS game reserved: "+std::to_string(id)+" on game thread "+std::to_string(thread));

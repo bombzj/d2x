@@ -48,6 +48,8 @@ Akara每难度免费重置使用原slot41资格及0x38 parameter0，与Token共�
 
 ## 显示边界
 
+世界玩家首次建立显示状态时，朝向按D2MOO `PATH_AllocDynamicPath`零初始化的原生方向0设置，不再将零向量交给素材方向量化而落到方向7。后续移动、攻击及施法继续更新原有朝向，不在停步或换动画时强制转回。该初始化修正尚未构建／实机对照，不认证全部职业及入场组合。
+
 角色面板由[character_panel.cpp](../../src/presentation/hud/character_panel.cpp)消费同一CharacterView，使用当前MPQ invchar6、font6／font16／font8、原TBL strchr系列、level／levelsocket／skillpoints及buysellbtn关闭图。按用户原版截图恢复左右技能伤害／命中行、资源最大值／当前值分列、两行抗性与红色剩余属性点，去掉原版没有的额外属性行；经验加千位分隔，抗性数字不加百分号。资源格灰底属于原图，用户确认常驻，不按悬停绘制。标签／数值基线、加点位置、长姓名字体切换及资源／防御大数值切换核对原1.13c静态布局；字体使用原字形和TBL字宽，随侧栏统一适配。已知负抗性用原PL2红色；最终抗性与最大抗性输入已接共用装备／状态投影；增减属性颜色与封顶抗性金色暂未还原。完整像素仍待原版对照，布局入口及依据见[HUD](../gameplay/ui/CLASSIC_HUD.md#角色面板)。
 
 世界角色外观由RealmPortraitCatalog将原服装备身份与当前MPQ Armor／Weapons／ArmType解析为ActorAppearance，交给公共ActorAnimationCatalog合成。真实身体组件与未实现的装饰效果分开：魔法等品质、自动词缀、无形及符文之语不使整个人物不可绘制，equipmentEffectsKnown标记组件染色／无形透明缺口并由场景诊断报告；未知组件身份或缺少原COF仍明确不可用；已解析为真实身份的组件若对应DCC／DC6均不存在，则按下述原DLL的通用逐层规则省略并保留缺图路径诊断，不替换裸装或借图。选角肖像接受已知编码版本4／10／13；弓按原组件编号保持LH（`netnbow.cof`仅有LH弓层，MPQ弓DCC在`lh/`），弩则同时填充RH／LH（当前MPQ `netnxbw.cof`、`amtnxbw.cof`均有两层，弩DCC也分布于两个手部目录）。弩的双层补齐依据D2MOO `INVENTORY_GetItemSaveGfxInfo/sub_6FD917B0`，世界装备与选角共用，不能将弩当作只有LH的弓。非FF染色字节（14–24）不再整体丢弃卡片：与游戏内单位预览同样按基础组件图合成、不套逐组件调色板，染色外观仍是缺口。PD2专项说明见[客户端接入：选角预览](../pd2/CLIENT_INTEGRATION.md#客户端接入选角预览)。组件编号表按原初始化顺序构造：去重只扫描已推进的连续前缀，不能扫描全部255个预留槽，否则后续头盔／护甲的线上编号会偏移。依据为D2MOO INVENTORY_InitializeComponentArray及本机1.13c D2Common（MD5 ee1238806ef6d6d9801d12a09d128fe1）RVA 0x1E920，0x1EAB9–0x1EAE0确认去重循环以当前前缀为界；固定类别表位于文件偏移0x9D888。PD2专项说明见[客户端接入：肖像组件边界](../pd2/CLIENT_INTEGRATION.md#客户端接入肖像组件边界)。

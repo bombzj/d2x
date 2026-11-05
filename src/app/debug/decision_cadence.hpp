@@ -23,9 +23,9 @@ class DebugDecisionCadence {
     void wake() {next_={};}
     void continueNextFrame() {continuation_=true;}
     bool due(Clock::time_point now,Mode mode,const std::array<uint64_t,24> &signals,bool urgent=false,
-             Clock::time_point deadline={}) {
+           Clock::time_point deadline={},int navigationMs=160,int reactionMs=40) {
         static constexpr int periods[]{40,80,160,250,500,500};
-        interval_=periods[unsigned(mode)];
+         interval_=mode==Mode::Navigation?navigationMs:mode==Mode::Reaction?reactionMs:periods[unsigned(mode)];
         const auto period=std::chrono::milliseconds(interval_);
         const bool changed=signals!=observed_;
         auto dueAt=std::min(next_,last_+period);

@@ -176,7 +176,6 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     rejectPrivatePd2Save(bytes);
     // PlrSave rejects DEAD only in combination with HARDCORE. Softcore may
     // retain this flag after resurrection; its corpse is the JM section.
-    require(!(header.flags & 0x40), "ladder character unsupported");
     // PlrSave2's NEWBIE_SAVE is a complete header-only save, not a
     // truncated regular save. Share CharStats initialization with creation.
     if (header.flags & 1) {

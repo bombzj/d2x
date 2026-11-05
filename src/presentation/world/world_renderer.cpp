@@ -95,7 +95,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         bool alternateLight = false;
     };
     std::vector<Entry> draw, roofs;
-    const auto viewport = worldViewport();
+    const auto viewport = worldRenderViewport();
     auto visible = [&](const Sprite &image, Vec at) {
         return image.texture.id && at.x + image.x < viewport.x + viewport.width &&
             at.y + image.y < viewport.y + viewport.height &&
@@ -265,7 +265,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         {minimum.x, minimum.y, maximum.x - minimum.x, maximum.y - minimum.y});
     if (level.rain || level.mud) assets_.prepareWeather(*weather_,scene.palette);
     weather_->advance(scene.elapsed,level,project(scene.observer+scene.terrainOrigin)*view_.zoom,
-        W,H-HUD,lighting_->period(level.act),palette);
+        W,H,lighting_->period(level.act),palette);
     const auto weatherState=weather_->debugState();
     assets_.streams.weather(scene.elapsed,weatherState.rainAllowed && !weatherState.snow,weatherState.density);
     weather_->presentLightning();
@@ -424,7 +424,7 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
         const int elapsed = std::max(0, int(age * 25.f + .00001f));
         at.y -= float(std::max(0, fall->second.fallDistance - elapsed * fall->second.fallRate));
     }
-    if (!animation.intersects(at,worldViewport())) return;
+    if (!animation.intersects(at,worldRenderViewport())) return;
     const auto *image = animation.frame(direction(heading, animation.directions), frame);
     if (visual.trans == 1 || visual.trans == 2) {
         // Retail D2Client RVA 6CF32: Missiles.Trans 1 -> CelDraw 3,
@@ -448,7 +448,7 @@ void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop, int
     const int elapsed = preciseFrame.value_or(int(ticks*overlay.visual.fps/25.0));
     const int frame = loop ? elapsed % overlay.visual.frames : std::min(overlay.visual.frames - 1, elapsed);
     const Vec at = screen(position) + pixelOffset + overlayScreenOffset(overlay.visual.offset,overlay.visual.heights,height);
-    if (!overlay.animation.intersects(at,worldViewport())) return;
+    if (!overlay.animation.intersects(at,worldRenderViewport())) return;
     if (lighting) lighting->drawLit(overlay.animation.frame(0, frame), at, {&light,1}, WHITE,{1,1},
         overlay.visual.trans==3?PaletteComposition::Screen:PaletteComposition::Normal);
     else if (overlay.visual.trans == 3) paletteBlend_->draw(overlay.animation.frame(0, frame), at);

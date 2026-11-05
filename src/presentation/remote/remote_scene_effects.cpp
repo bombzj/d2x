@@ -1610,14 +1610,18 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 // Original 1.13c attached sound event dispatch, not Sounds.Index.
                 if (event.source.type == 0 && event.auxiliary>=25 && event.auxiliary<=32)
                     emitSound(Kind::Voice,source->second,age,-1,-1,{},int(event.auxiliary));
-                else if (!pd2 && event.source.type == 0 && event.auxiliary==35)
-                    emitSound(Kind::DenComplete,source->second,age);
-                else if (!pd2 && event.source.type == 0 && event.auxiliary==82)
-                    emitSound(Kind::NihlathakComplete,source->second,age);
                 else if (event.source.type == 0 && event.auxiliary == 22)
                     emitSound(Kind::NeedKey,source->second,age);
                 else if (event.source.type == 0 && event.auxiliary == 11)
                     emitSound(Kind::Original,source->second,age,-1,-1,"item_key_used");
+                else if (event.source.type == 0 && event.auxiliary == 1 && event.source.id != playerId)
+                    emitSound(Kind::Original,source->second,age,-1,-1,"item_pickup");
+                else if (event.source.type == 0 && event.auxiliary == 6)
+                    emitSound(Kind::Original,source->second,age,-1,-1,"cursor_identify_item");
+                else if (event.source.type == 0 && event.auxiliary == 7)
+                    emitSound(Kind::Original,source->second,age,-1,-1,"player_townportal_cast");
+                else if (event.source.type == 0 && event.auxiliary == 8 && event.source.id != playerId)
+                    emitSound(Kind::Original,source->second,age,-1,-1,"player_townportal_enter");
                 else if (event.source.type == 2 && (event.auxiliary == 13 || event.auxiliary == 14))
                     emitSound(Kind::Original,source->second,age,-1,-1,
                         event.auxiliary == 13 ? "object_trap_trigger" : "object_trap_release");
