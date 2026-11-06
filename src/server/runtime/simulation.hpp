@@ -3,6 +3,7 @@
 #include "frame_facts.hpp"
 #include "system_metrics.hpp"
 #include <array>
+#include <string_view>
 
 namespace d2x::server {
 struct GameSystems;
@@ -19,5 +20,6 @@ class Simulation {
     bool step(TickContext, GameSystems &);
     const SystemSteps &lastSteps() const { return steps_; }
     const SystemMetrics &metrics() const { return metrics_; }
+    std::string_view pendingPhase() const;
 };
 }

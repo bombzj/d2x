@@ -21,6 +21,9 @@ DomainResult<> System::retireQuestNpc(EntityId id) {
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::departQuestNpc(EntityId id,uint64_t tick) {
+    return departQuestNpc(id,tick,{},false);
+}
+DomainResult<> System::departQuestNpc(EntityId id,uint64_t tick,std::vector<EventBatch> notices,bool animateDeath) {
     const auto *unit=find(id);
     if(!unit || !unit->questNpc || unit->hostile || unit->owner) return {DomainStatus::InvalidActor,{}};
     if(!unit->alive()) return {DomainStatus::Applied,std::monostate{}};
@@ -28,13 +31,16 @@ DomainResult<> System::departQuestNpc(EntityId id,uint64_t tick) {
     auto &candidate=*dead.value;
     // Fn031 enters DD directly: no DT animation, kill award, UMod death
     // damage or killed-room GUID. The corpse leaves through normal room life.
-    recordNativeMode(candidate,12);candidate.busyUntil=tick;candidate.nativeActionUntil=0;candidate.neutralAt.reset();
+    recordNativeMode(candidate,animateDeath?0:12);
+    if(!animateDeath) candidate.busyUntil=tick;
+    candidate.nativeActionUntil=0;candidate.neutralAt.reset();
     candidate.movementGoal=candidate.position;candidate.pathStep.reset();candidate.rewardComplete=true;
     candidate.killer={};candidate.wanderTargetOrder=candidate.specialTargetOrder=0;
     auto publication=ports_.effects.prepareDamageStates(std::move(candidate),{},tick);
     if(!ports_.effects.validateAuraUnits(publication)) return {DomainStatus::Stale,{}};
-    if(!publication.facts.empty()) {
-        const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},unit->area},std::move(publication.facts)});
+    if(!publication.facts.empty()) notices.insert(notices.begin(),{0,tick,{}, {AudienceKind::Area,{},unit->area},std::move(publication.facts)});
+    if(!notices.empty()) {
+        const auto sent=ports_.events.publishGroup(std::move(notices));
         if(!sent) return {sent.status,{}};
     }
     ports_.effects.publishAuraUnits(publication);

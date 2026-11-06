@@ -152,7 +152,9 @@ DomainResult<> System::acknowledgeActFour(const ActorContext &actor,const Reques
             return result;
         } else if(q.stage==4 && npc.code.starts_with("cain")) q.flags&=~terrorCainPending;
     }
-    return commit(actor,std::move(record));
+    const auto committed=commit(actor,std::move(record));
+    if(committed && request.quest==QuestId::FallenAngel && npc.code=="izualghost") state_.actFour.izualGhostActivated=true;
+    return committed;
 }
 DomainResult<> System::operateActFour(const ActorContext &actor,EntityId source,int definition,int operation,Vec position) {
     const auto *p=ports_.players.find(actor.player);if(!p) return {DomainStatus::InvalidActor,{}};
@@ -202,6 +204,10 @@ DomainResult<> System::sealAfterglow(RegionId region,EntityId source,Vec positio
     return ports_.population.requestQuestBirth(region,found->second,{tick},position);
 }
 StepStatus System::actFourStep(TickContext tick) {
+    if(state_.actFour.diabloNarrativePending) {
+        if(finishNarratedGoal(QuestId::TerrorsEnd,75,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+        state_.actFour.diabloNarrativePending=false;
+    }
     bool blocked=false;auto &world=state_.actFour;
     const auto sanctumEffect=[&] {
         if(!world.sanctumCompletion) return true;
@@ -274,7 +280,14 @@ StepStatus System::actFourStep(TickContext tick) {
         if(int(m.area)==105 && m.identity.monster=="izual") {
             captureGoal(QuestId::FallenAngel,3,m.area,m.position,killerPlayer(m.killer));world.izualSlain=true;world.ghostPosition=m.position;
         }
-        if(int(m.area)==108 && m.identity.monster=="diablo") {captureGoal(QuestId::TerrorsEnd,4,m.area,m.position);world.diabloSlain=true;}
+        if(int(m.area)==108 && m.identity.monster=="diablo") {
+            world.diabloSlain=true;
+            if(!(state_.initialFlags[questDefinition(QuestId::TerrorsEnd).nativeSlot]&0x8000) && !state_.objectives[questIndex(QuestId::TerrorsEnd)]) {
+                captureGoal(QuestId::TerrorsEnd,4,m.area,m.position);world.diabloNarrativePending=true;
+                if(finishNarratedGoal(QuestId::TerrorsEnd,75,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+                world.diabloNarrativePending=false;
+            }
+        }
     }
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered || ports_.areas.at(p.area).definition.act!=3) continue;

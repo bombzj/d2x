@@ -47,7 +47,8 @@ unsigned questBits(const QuestRecord &quest, size_t index) {
         if (quest.flags & cainRescuedByRogues) return 0x8000;
         return stage >= 8 ? 0x2001 : stage >= 7 ? 0x2002 : stage >= 4 ? 0x1C : stage >= 2 ? 0xC : stage == 1 ? 4 : 0;
     case 3: return stage >= 4 ? 0x2001 : stage == 3 ? 0x1C : stage == 2 ? 0xC : stage == 1 ? 4 : 0;
-    case 4: return stage >= 6 ? 0x2001 : stage >= 5 ? 0x2002 : stage >= 2 ? 0xC : stage == 1 ? 4 : 0;
+    case 4: return (stage >= 6 ? 0x2001 : stage >= 5 ? 0x2002 : stage >= 2 ? 0xC : stage == 1 ? 4 : 0) |
+        (quest.flags & toolsPickupNarrated ? 0x40u : 0u);
     case 5: return stage >= 4 ? 0x2001 : stage == 3 ? 0x2002 : stage == 2 ? 0x1C : stage == 1 ? 4 : 0;
     }
     return 0;
@@ -79,7 +80,10 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
                 if (quest.flags) quest.stage = uint32_t(CainStage::Rewarded);
                 break;
             case 3: quest.stage = rewarded ? 4 : entered ? 3 : flags & 8 ? 2 : started ? 1 : 0; break;
-            case 4: quest.stage = rewarded ? 6 : pending ? 5 : flags & 8 ? 2 : started ? 1 : 0; break;
+            case 4:
+                quest.stage = rewarded ? 6 : pending ? 5 : flags & 8 ? 2 : started ? 1 : 0;
+                quest.flags = flags & 0x40 ? toolsPickupNarrated : 0;
+                break;
             case 5:
                 // A1Q6's Warriv183 grants the reward before the separate
                 // act-change word. Do not infer a journey from that reward.
@@ -122,10 +126,12 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
             izualFlags & 0x20 ? izualGhostSpoken : 0u};
         auto &bird = player.quests[difficulty][questIndex(QuestId::GoldenBird)];
         bird.stage = birdFlags & 1 ? 6 : birdFlags & 2 ? 5 : birdFlags & 0x10 ? 4 : birdFlags & 4 ? 2 : birdFlags & 0x40 ? 1 : 0;
-        bird.flags = (birdFlags & 1) && (birdFlags & 0x20) ? goldenBirdPotionPending : 0;
+        bird.flags = ((birdFlags & 1) && (birdFlags & 0x20) ? goldenBirdPotionPending : 0) |
+            (birdFlags & 0x40 ? goldenBirdPickupNarrated : 0);
         const auto bladeFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::BladeOfTheOldReligion).nativeSlot * 2);
         auto &blade = player.quests[difficulty][questIndex(QuestId::BladeOfTheOldReligion)];
-        blade.flags = (bladeFlags & 0x100 ? gidbinnRingGranted : 0) | (bladeFlags & 0x80 ? gidbinnHirelingGranted : 0);
+        blade.flags = (bladeFlags & 0x100 ? gidbinnRingGranted : 0) | (bladeFlags & 0x80 ? gidbinnHirelingGranted : 0) |
+            (bladeFlags & 0x200 ? gidbinnPickupNarrated : 0);
         blade.stage = bladeFlags & 1 ? 5 : bladeFlags & 0x40 ? 4 : bladeFlags & 0x20 ? 3 : bladeFlags & 8 ? 2 : bladeFlags & 4 ? 1 : 0;
         const auto khalimFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::KhalimsWill).nativeSlot * 2);
         auto &khalim = player.quests[difficulty][questIndex(QuestId::KhalimsWill)];
@@ -231,13 +237,15 @@ void exportD2sQuests(const CharacterRecord &player, D2sFixedSections &sections, 
             (izual.stage == 4 ? 0x2001 : izual.stage == 3 ? 0x2002 : izual.stage == 2 ? 0xC : izual.stage == 1 ? 4 : 0) |
             (izual.flags & izualGhostSpoken ? 0x20 : 0));
         const auto birdOffset = 10 + difficulty * 96 + questDefinition(QuestId::GoldenBird).nativeSlot * 2;
-        const unsigned birdBits = bird.stage == 6 ? 0x2001 | (bird.flags & goldenBirdPotionPending ? 0x20 : 0) :
-            bird.stage == 5 ? 2 : bird.stage >= 4 ? 0x50 : bird.stage == 3 ? 0x40 : bird.stage == 2 ? 0x44 : bird.stage == 1 ? 0x40 : 0;
+        const unsigned birdBits = (bird.stage == 6 ? 0x2001 | (bird.flags & goldenBirdPotionPending ? 0x20 : 0) :
+            bird.stage == 5 ? 2 : bird.stage >= 4 ? 0x10 : bird.stage == 2 ? 4 : 0) |
+            (bird.flags & goldenBirdPickupNarrated ? 0x40 : 0);
         putWord(sections.quests, birdOffset, (word(sections.quests, birdOffset) & ~0x2077u) | birdBits);
         const auto &blade = player.quests[difficulty][questIndex(QuestId::BladeOfTheOldReligion)];
         const auto bladeOffset = 10 + difficulty * 96 + questDefinition(QuestId::BladeOfTheOldReligion).nativeSlot * 2;
-        const unsigned bladeBits = (blade.stage == 5 ? 0x2001 : blade.stage == 4 ? 0x2040 : blade.stage == 3 ? 0x220 : blade.stage == 2 ? 0xC : blade.stage == 1 ? 4 : 0) |
-            (blade.flags & gidbinnRingGranted ? 0x100 : 0) | (blade.flags & gidbinnHirelingGranted ? 0x80 : 0);
+        const unsigned bladeBits = (blade.stage == 5 ? 0x2001 : blade.stage == 4 ? 0x2040 : blade.stage == 3 ? 0x20 : blade.stage == 2 ? 0xC : blade.stage == 1 ? 4 : 0) |
+            (blade.flags & gidbinnRingGranted ? 0x100 : 0) | (blade.flags & gidbinnHirelingGranted ? 0x80 : 0) |
+            (blade.flags & gidbinnPickupNarrated ? 0x200 : 0);
         putWord(sections.quests, bladeOffset, (word(sections.quests, bladeOffset) & ~0x23EDu) | bladeBits);
         const auto &khalim = player.quests[difficulty][questIndex(QuestId::KhalimsWill)];
         const auto khalimOffset = 10 + difficulty * 96 + questDefinition(QuestId::KhalimsWill).nativeSlot * 2;
@@ -261,7 +269,7 @@ void exportD2sQuests(const CharacterRecord &player, D2sFixedSections &sections, 
             (guardian.flags & guardianSpeechPending ? 0x800 : 0));
         for (size_t index = 0; index < questsForAct(0).size(); ++index) {
             const auto offset = 10 + difficulty * 96 + questDefinition(QuestId(index)).nativeSlot * 2;
-            const unsigned mask = 0x201F | (index == 2 ? 0x8000 : 0);
+            const unsigned mask = 0x201F | (index == 2 ? 0x8000 : 0) | (index == 4 ? 0x40 : 0);
             putWord(sections.quests, offset, (word(sections.quests, offset) & ~mask) |
                 questBits(player.quests[difficulty][index], index));
         }
@@ -362,11 +370,11 @@ int validateD2sQuestRecords(const QuestBook &book) {
         const auto &baal = difficulty[questIndex(QuestId::EveOfDestruction)];
         require(baal.stage <= 5 && !(baal.flags & ~127u) && (!baal.flags || baal.stage == 5), "Baal quest progress");
         const auto &bird = difficulty[questIndex(QuestId::GoldenBird)];
-        require(bird.stage <= 6 && !(bird.flags & ~goldenBirdPotionPending) &&
-            (!bird.flags || bird.stage == 6), "Golden Bird quest progress");
+        require(bird.stage <= 6 && !(bird.flags & ~(goldenBirdPotionPending | goldenBirdPickupNarrated)) &&
+            (!(bird.flags & goldenBirdPotionPending) || bird.stage == 6), "Golden Bird quest progress");
         const auto &blade = difficulty[questIndex(QuestId::BladeOfTheOldReligion)];
-        require(blade.stage <= 5 && !(blade.flags & ~3u) && (!blade.flags || blade.stage >= 4) &&
-            (blade.stage != 5 || blade.flags == 3), "Gidbinn quest progress");
+        require(blade.stage <= 5 && !(blade.flags & ~7u) && (!(blade.flags & 3u) || blade.stage >= 4) &&
+            (blade.stage != 5 || (blade.flags & 3u) == 3), "Gidbinn quest progress");
         const auto &khalim = difficulty[questIndex(QuestId::KhalimsWill)];
         require(khalim.stage <= 4 && !(khalim.flags & ~63u), "Khalim quest progress");
         const auto &tome = difficulty[questIndex(QuestId::LamEsensTome)];
@@ -391,7 +399,7 @@ int validateD2sQuestRecords(const QuestBook &book) {
             "Search for Cain quest progress");
         require(difficulty[3].stage <= uint32_t(TowerStage::CountessSlain) && !difficulty[3].flags,
             "Forgotten Tower quest progress");
-        require(difficulty[4].stage <= uint32_t(ToolsStage::Imbued) && !difficulty[4].flags,
+        require(difficulty[4].stage <= uint32_t(ToolsStage::Imbued) && !(difficulty[4].flags & ~toolsPickupNarrated),
             "Tools of the Trade quest progress");
         // PassageReady(4) already owns REWARDGRANTED; Completed(5) records
         // the later normal act transfer. Both are valid native v96 states.

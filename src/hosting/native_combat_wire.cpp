@@ -293,9 +293,10 @@ std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
     if(fact.type==0) {
         // PlrMsg::sub_6FC81C00: correction/life update is wire action 19,
         // not the monster-only 0C update or an invented player GH action.
-        result.push_back(encodeServerPacket(ServerMessage::UnitIdle,[&](auto &out) {
-            key(out,0,fact.target);out.u8(19);point(out,fact.position+origin);out.u8(fact.hitClass);out.u8(fact.life);
-        }));
+        if(!fact.killed && !fact.playerMode && !fact.knockback)
+            result.push_back(encodeServerPacket(ServerMessage::UnitIdle,[&](auto &out) {
+                key(out,0,fact.target);out.u8(19);point(out,fact.position+origin);out.u8(fact.hitClass);out.u8(fact.life);
+            }));
     } else if(!fact.killed && !fact.monsterMode) {
         // MonsterMsg::sub_6FC659E0 uses flag 19 for life/last hit class.
         // SUnitDmg does not set that flag when it enters GH/BL/death. Sending
@@ -304,10 +305,10 @@ std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
             key(out,fact.type,fact.target);out.u8(19);out.u8(fact.hitClass);out.u8(uint8_t(fact.life>1?fact.life-1:fact.life)|(fact.lightningReady?0x80:0));
         }));
     }
-    if(fact.type==0 && !fact.killed && fact.knockback) result.push_back(encodeServerPacket(ServerMessage::MovePoint,[&](auto &out) {
-        key(out,0,fact.target);out.u8(20);point(out,*fact.knockback+origin);out.u8(fact.hitClass);point(out,fact.position+origin);
+    if(fact.type==0 && !fact.killed && (fact.knockback || fact.playerMode==20)) result.push_back(encodeServerPacket(ServerMessage::MovePoint,[&](auto &out) {
+        key(out,0,fact.target);out.u8(20);point(out,fact.knockback.value_or(fact.position)+origin);out.u8(fact.hitClass);point(out,fact.position+origin);
     }));
-    if(fact.type==0 && !fact.killed && !fact.knockback && fact.playerMode)
+    if(fact.type==0 && !fact.killed && !fact.knockback && fact.playerMode && fact.playerMode!=20)
         result.push_back(encodeServerPacket(ServerMessage::UnitIdle,[&](auto &out) {
             key(out,0,fact.target);out.u8(fact.playerMode);point(out,fact.position+origin);out.u8(fact.hitClass);out.u8(fact.life);
         }));

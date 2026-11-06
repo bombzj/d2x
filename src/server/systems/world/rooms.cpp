@@ -514,7 +514,12 @@ void System::activate(RegionId region, Vec point) {
         rooms_->publish();
     }
 }
-void System::changeClientRoom(PlayerId id) {
+bool System::prepareClientRoom(RegionId region, Vec point) {
+    rooms_->rebuild();
+    const auto room=rooms_->locate(region,point);
+    return room && rooms_->ensure(*room,3);
+}
+void System::changeClientRoom(PlayerId id, uint64_t tick) {
     rooms_->rebuild();
     const auto *player=ports_.players.find(id);
     const auto old=rooms_->clients.find(id);
@@ -523,6 +528,8 @@ void System::changeClientRoom(PlayerId id) {
     if(!rooms_->change(previous,next)) return;
     if (next) rooms_->clients.insert_or_assign(id,*next);else rooms_->clients.erase(id);
     rooms_->publish();
+    rooms_->changeClientRooms(id,visibleRooms(id),tick);
+    if(!next) rooms_->clientRooms.erase(id);
 }
 bool System::retiringRoom() const {return rooms_->retirement.has_value();}
 bool System::awaitingRoomInputs() const {return rooms_->awaitingInputs;}

@@ -39,6 +39,13 @@
 #include <stdexcept>
 #include "core/random.hpp"
 namespace d2x::server::skills {
+std::shared_ptr<const AttackFact> System::monsterAction(EntityId id) const {
+    const auto found=runtime_->monsterModes.find(id);
+    const auto *unit=ports_.monsters.find(id);
+    if(found==runtime_->monsterModes.end() || !unit || !unit->alive() ||
+    found->second.interruption!=unit->interruption || found->second.publicationRevision!=unit->nativeActionRevision || !found->second.skill) return {};
+    return found->second.publication;
+}
 DomainResult<> System::requestCast(const CastRequest &request) {
     auto &monsterReleases_=runtime_->monsters;
     const auto *monster = ports_.monsters.find(request.actor);
@@ -49,8 +56,6 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const auto priorMode=runtime_->monsterModes.find(request.actor);
     const bool frozenSequence=priorMode!=runtime_->monsterModes.end() && priorMode->second.frozenSequence;
     if (!monster || !monster->alive() || !target || (!continuingLeap && ((!frozenSequence && (request.tick < monster->busyUntil || busy(request.actor,request.tick))) || ports_.monsters.frozen(monster->id,request.tick) || monster->stunnedUntil>request.tick || monster->knockedUntil>request.tick)) || !monster->standardAttackSource()) return {DomainStatus::InvalidActor, {}};
-    auto destination=ports_.monsters.targetPosition(target->id,monster->area);
-    if(!destination && continuingLeap) destination=std::pair{leapStart->second->targetPosition,0};
     const auto *victim=ports_.monsters.find(target->id);
     const bool petAttack=monster->amazonAttacker();
     const auto &area=ports_.areas.at(monster->area);
@@ -63,7 +68,12 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     auto slot=*prepared;
     const bool retailImpTeleport=slot.action==MonsterAttackRule::Action::Teleport && !rule.stats->pd2 && request.skill &&
         rule.formulas->skills.at(request.skill).number("srvdofunc")==129;
-    if(retailImpTeleport) destination=ports_.monsters.nativeTargetPosition(target->id,monster->area);
+    auto destination=[&]() -> std::optional<std::pair<Vec,int>> {
+        if(retailImpTeleport) return ports_.monsters.nativeTargetPosition(target->id,monster->area);
+        if(const auto position=ports_.monsters.targetPosition(target->id,monster->area)) return position;
+        if(continuingLeap) return std::pair{leapStart->second->targetPosition,0};
+        return std::nullopt;
+    }();
     if(slot.action==MonsterAttackRule::Action::Whirlwind && !request.position) {
         if(destination && unitMeleeReach(area.definition.collision,monster->position,monster->rule.size,destination->first,destination->second,rule.meleeRange))
             return requestCast({request.actor,0,*target,request.tick,4});
@@ -387,8 +397,11 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         const auto reserved=ports_.monsters.reserveNestSpawn(monster->id,monster->position+rule.spawnOffset,true,request.tick);
         if(!reserved) {monsterReleases_.erase(monster->id);return reserved;}
     }
-    auto event = ports_.events.publish({0, request.tick, {}, {AudienceKind::Area, {}, monster->area},
-        {AttackFact{monster->id, (request.position || slot.action==MonsterAttackRule::Action::Web || slot.action==MonsterAttackRule::Action::DiabloRun)?EntityId{}:target->id, 1, target->type, monster->area, monster->position, slot.action==MonsterAttackRule::Action::Web?monster->position:destination->first, request.tick + 1, request.skill, slot.rank, false, request.monsterMode}}});
+    const auto publication=std::make_shared<const AttackFact>(AttackFact{monster->id,
+        (request.position || slot.action==MonsterAttackRule::Action::Web || slot.action==MonsterAttackRule::Action::DiabloRun)?EntityId{}:target->id,
+        1,target->type,monster->area,monster->position,slot.action==MonsterAttackRule::Action::Web?monster->position:destination->first,
+        modeIdentity,request.skill,slot.rank,false,request.monsterMode});
+    auto event = ports_.events.publish({0, request.tick, {}, {AudienceKind::Area, {}, monster->area},{*publication}});
     if (!event) {
         // Output backpressure retains the already allocated start contact.
         if(!isDeferred(event.status)) ports_.combat.cancel(monster->id);
@@ -427,6 +440,8 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         runtime_->monsterWeaponStarts.erase(monster->id);runtime_->weaponStarts.erase(monster->id);
         if(slot.action==MonsterAttackRule::Action::NativeDruid) runtime_->druidStarts.erase(monster->id);
         Runtime::MonsterMode mode;mode.program=slot;mode.skill=request.skill;mode.identity=modeIdentity;mode.interruption=monster->interruption;
+        mode.publication=publication;
+        mode.publicationRevision=monster->nativeActionRevision;
         mode.animation.frame=slot.animationStartFrame*256;mode.animation.remaining=slot.animation->frames*256;
         if(pd2Dash) mode.pd2Dash.emplace();
         if(slot.action==MonsterAttackRule::Action::LeapAttack) {

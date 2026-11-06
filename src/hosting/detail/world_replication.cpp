@@ -31,11 +31,12 @@ Bytes objectModePacket(uint32_t wireId,int mode,uint8_t selection) {
     });
 }
 }
-void NativeRealmService::publishAreas(RegionId region) {
+void NativeRealmService::publishAreas(RegionId region, std::vector<Bytes> packets) {
     const auto &areas = shared.terrain.at(binding->game);
     const auto &destination = areas.at(region);
     const auto crossAct = terrain.request.act != destination.request.act;
     if (crossAct) {
+        if(!packets.empty()) {sendGameBatch(std::move(packets));packets.clear();}
         // LEVEL_ChangeAct drops the client's old room interest before 05/03.
         // Clearing only our cache leaves the retail client holding old units
         // while its act and room storage are released.
@@ -77,7 +78,6 @@ void NativeRealmService::publishAreas(RegionId region) {
     std::set<RegionId> desired{region};
     const auto rooms = host.visibleRooms(*binding);
     for (const auto &room : rooms) desired.insert(room.area);
-    std::vector<Bytes> packets;
     // Add references first, then remove the old ones, like ChangeClientRoom.
     // A shared seam never temporarily loses both of its collision owners.
     const auto reveal=[&](const auto &room) {if(!peer.rooms.insert(room).second) return;packets.push_back(encodeServerPacket(ServerMessage::RevealRoom, [&](auto &out) {
@@ -125,7 +125,12 @@ void NativeRealmService::publishLoadComplete() {
     if(!binding || peer.phase!=GamePhase::Entered || !peer.loadPending || leavePending || !host.clientLoadReady(*binding)) return;
     // Initial admission and CHANGING_ACT both wait for D2Common_10073 after
     // publishing rooms and the local player's assignment/reposition.
-    sendGame(encodeServerPacket(ServerMessage::LoadComplete,[](auto &) {}));
+    const auto player=host.read(*binding);
+    if(!player) throw net::protocol::ProtocolError("Load completion lacks its player");
+    sendGameBatch({encodeServerPacket(ServerMessage::LoadComplete,[](auto &) {}),
+        encodeServerPacket(ServerMessage::Reserved48,[&](auto &out) {
+            out.u8(0);out.u8(0);out.u32(wireId(player->actor.id));out.u32(0);
+        })});
     peer.loadPending=false;
 }
 void NativeRealmService::publishRoomRemovals() {

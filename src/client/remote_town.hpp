@@ -4,11 +4,13 @@
 #include "world/map.hpp"
 #include "world/outdoor/native_act_layout.hpp"
 #include "world/native_map.hpp"
+#include "world/navigation_snapshot.hpp"
 #include "resources/data_table.hpp"
 #include "content/world/automap_data.hpp"
 #include "content/string_table.hpp"
 #include "client/automap_exploration.hpp"
 #include "client/automap_reveal.hpp"
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <set>
@@ -41,8 +43,14 @@ class RemoteTown {
     AutomapExploration explored_;
     AutomapExploration navigationObserved_;
     Vec observationExtent_;
-    mutable std::optional<uint64_t> navigationMaskRevision_;
-    mutable std::vector<uint16_t> navigationMasks_;
+    NavigationWorldKey navigationWorld_;
+    using NavigationRevision=std::array<uint64_t,9>;
+    mutable std::optional<NavigationRevision> navigationStaticRevision_,navigationNativeRevision_;
+    mutable std::shared_ptr<const NavigationSnapshot> navigationStaticSnapshot_,navigationNativeSnapshot_;
+    mutable std::shared_ptr<const NavigationSnapshot> navigationTerrainSnapshot_;
+    mutable std::set<std::pair<int,int>> navigationDirtyStatic_,navigationDirtyNative_;
+    mutable bool navigationFullStatic_{true},navigationFullNative_{true};
+    std::string navigationPublicationError_;
     std::string navigationProfile_;
     uint32_t navigationObjectSeed_{};
     bool navigationRestored_{};
@@ -79,6 +87,8 @@ class RemoteTown {
     std::optional<OnlinePoint> nativePlayerPosition_;
     std::optional<OnlinePoint> displayPlayerPosition_;
     uint64_t nativeSequence_{};
+    std::optional<std::pair<uint32_t,uint64_t>> nativePositionDiscontinuity_;
+    uint64_t nativePendingSince_{};
     bool nativeLoadComplete_{};
     uint64_t nextNativeUpdateMilliseconds_{};
     std::string nativeReason_;
@@ -123,9 +133,13 @@ class RemoteTown {
     explicit RemoteTown(Archives &a, bool reportAutomapRoomsPd2 = false);
     void update(const OnlineView &, std::optional<Vec> displayPosition = {});
     const OnlineSceneView &read() const { return view_; }
+    void observeRendering(OnlineSceneView::MapRendering rendering) {
+      rendering.sample=view_.mapRendering.sample+1;view_.mapRendering=std::move(rendering);
+    }
     std::optional<Vec> inputOrigin(const OnlineView &) const;
     int monsterSizeX(uint16_t identity) const;
     Grid navigationGrid(const OnlineView &,std::optional<OnlineUnitKey> ignored = {}) const;
+    std::shared_ptr<const NavigationSnapshot> navigationSnapshot(bool native=false) const;
     const Map *map() const { return map_; }
     // Already reconstructed logical walking links, including an adjoining room
     // before it becomes active. Global subtile coordinates; no room generation.

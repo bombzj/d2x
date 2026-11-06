@@ -9,6 +9,7 @@
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/trade/system.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "server/systems/world/system.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
 #include <algorithm>
@@ -104,6 +105,7 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
         !exactPath(sourceGrid, found->position, reported)) return correction();
     const int state=found->rules.skills->syncWarped.id;
     if(state<0 || state>=255) return {DomainStatus::Unavailable,{}};
+    if(!ports_.world.prepareClientRoom(region,at+Vec{.5f,.5f})) return {DomainStatus::PendingContent,{}};
     auto next=previous==state_.synchronizations.end()?PositionSynchronization{}:previous->second;
     // Retail 1.13c D2Game RVA 4A6E0 records only the first expired slot,
     // then returns. D2MOO's loop without a break fills all five at once.
@@ -121,7 +123,7 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     if(region!=actor.area) events.push_back({0,actor.tick,{}, {AudienceKind::Player,actor.player,region},
         {TravelFact{actor.player,actor.actor,actor.area,region,destination->generation,at,true}}});
     events.push_back({0,actor.tick,{}, {AudienceKind::Area,{},region},
-        {RepositionFact{actor.actor,region,at,false},StateFact{actor.actor,0,region,state,true}}});
+        {RepositionFact{actor.actor,region,at,false,0,true},StateFact{actor.actor,0,region,state,true}}});
     const auto output=ports_.events.publishGroup(std::move(events));
     if(!output) return {output.status,{}};
     ports_.npc.close(actor.player);ports_.inventory.close(actor.player);
@@ -129,6 +131,7 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     auto &player=ports_.players.players_.at(actor.player);
     player.area=region;player.position=at;player.route.clear();
     ports_.areas.moveRoomUnit(player.actor,player.area,player.position);
+    ports_.world.changeClientRoom(actor.player,actor.tick);
     player.pathStep.reset();
     player.knockback.reset();
     const auto offset=source->definition.origin-destination->definition.origin;

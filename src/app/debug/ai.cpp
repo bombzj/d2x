@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <limits>
 #include <stdexcept>
 
 namespace d2x {
@@ -40,7 +41,7 @@ nlohmann::json reloadPolicyNumbers(const nlohmann::json &config) {
         "kiteMinDistance","hazardLookaheadMs","hazardPadding"});
     copy("mobility",{"distance"});
     copy("supplies",{"lifePercent","manaPercent","criticalLifePercent","healthCount","manaCount","intervalMs"});
-    copy("events",{"waitSeconds","initialWaitMs","doorInitialWaitMs","scrollInitialWaitMs","questLogDurationMs","encounterRadius","standoffMin","standoffMax",
+    copy("events",{"waitSeconds","initialWaitMs","doorInitialWaitMs","scrollInitialWaitMs","questLogDurationMs","waypointCloseDelayMs","encounterRadius","standoffMin","standoffMax",
         "walkDecisionMs","walkReactionMs","walkRequestIntervalMs","walkRetryMs","townTurnBaseMs","townTurnMinMs","townTurnMaxMs"});
     return result;
 }
@@ -248,7 +249,7 @@ std::vector<DebugAi::Impl::Goal> DebugAi::Impl::parse(const Json &request) {
             if(!id) throw std::invalid_argument("No verified quest recipe: "+entry.at("quest").get<std::string>());
             const auto &definition=questDefinition(*id);
             if(definition.act+1<acts->first || definition.act+1>acts->last ||
-                (questNumber && definition.nativeQuest!=unsigned(*questNumber))) continue;
+                (questNumber && definition.displaySlot+1!=unsigned(*questNumber))) continue;
         }
         goal.useServiceRewards=entry.value("useServiceRewards",request.value("useServiceRewards",false));
         goal.timeout=integer(entry,"timeoutSeconds",integer(request,"goalTimeoutSeconds",action=="quest"?1800:600,10,3600),10,3600);
@@ -358,7 +359,7 @@ DebugAi::Impl::EventPolicy DebugAi::Impl::parseEvents(const Json &j) const {
     if(!j.is_object()) throw std::invalid_argument("events must be an object");
     for(const auto &[key,value]:j.items()) {
         (void)value;
-        if(key!="waitSeconds" && key!="initialWaitMs" && key!="doorInitialWaitMs" && key!="scrollInitialWaitMs" && key!="questLogDurationMs" && key!="encounterRadius" && key!="standoffMin" && key!="standoffMax" &&
+        if(key!="waitSeconds" && key!="initialWaitMs" && key!="doorInitialWaitMs" && key!="scrollInitialWaitMs" && key!="questLogDurationMs" && key!="waypointCloseDelayMs" && key!="encounterRadius" && key!="standoffMin" && key!="standoffMax" &&
             key!="walkDecisionMs" && key!="walkReactionMs" && key!="walkRequestIntervalMs" && key!="walkRetryMs" &&
             key!="townTurnBaseMs" && key!="townTurnMinMs" && key!="townTurnMaxMs")
             throw std::invalid_argument("Unknown event policy: "+key);
@@ -368,6 +369,7 @@ DebugAi::Impl::EventPolicy DebugAi::Impl::parseEvents(const Json &j) const {
     p.doorInitialWaitMs=integer(j,"doorInitialWaitMs",250,0,30000);
     p.scrollInitialWaitMs=integer(j,"scrollInitialWaitMs",1000,0,30000);
     p.questLogDurationMs=integer(j,"questLogDurationMs",2000,0,30000);
+    p.waypointCloseDelayMs=integer(j,"waypointCloseDelayMs",300,0,30000);
     p.walkDecisionMs=integer(j,"walkDecisionMs",160,1,5000);
     p.walkReactionMs=integer(j,"walkReactionMs",40,1,5000);
     p.walkRequestIntervalMs=integer(j,"walkRequestIntervalMs",200,0,5000);
@@ -386,6 +388,7 @@ DebugAi::Impl::EventPolicy DebugAi::Impl::parseEvents(const Json &j) const {
     return p;
 }
 void DebugAi::Impl::note(std::string event,std::string detail) {
+    if(event=="exploration-backtrack" || event=="exploration-backtrack-cycle") ++navigationEfficiency.backtracks;
     ++sequence;behaviorLog.event(cursor,event,detail,sequence);
     history.push_back({{"sequence",sequence},{"goal",cursor},{"event",std::move(event)},{"detail",std::move(detail)}});
     while(history.size()>128) history.pop_front();
@@ -408,7 +411,7 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
         if(g.kind==Kind::Quest) {
             v["useServiceRewards"]=g.useServiceRewards;
             v["act"]=questDefinition(g.questId).act+1;
-            v["questNumber"]=questDefinition(g.questId).nativeQuest;
+            v["questNumber"]=questDefinition(g.questId).displaySlot+1;
         }
         if(g.area) v["area"]=*g.area;
         if(g.requiredWaypoint) v["requireWaypoint"]=true;
@@ -428,9 +431,15 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
     return {{"state",state},{"active",active()},{"phase",phase},{"reason",reason},{"goalIndex",cursor},{"goals",std::move(plan)},
         {"configuration",{{"file",configurationFile},{"characterClass",configurationClass},{"reload","explicit"}}},
         {"behaviorLog",{{"file",behaviorLog.path},{"error",behaviorLog.error}}},
+        {"navigationEfficiency",{{"activeMs",navigationEfficiency.activeMs},{"navigationWaitMs",navigationEfficiency.navigationWaitMs},
+            {"walkModeMs",navigationEfficiency.modeMs[0]},{"townWalkModeMs",navigationEfficiency.modeMs[1]},
+            {"teleportModeMs",navigationEfficiency.modeMs[2]},{"walkingDistance",navigationEfficiency.walkingDistance},
+            {"relocations",navigationEfficiency.relocations},{"backtracks",navigationEfficiency.backtracks},
+            {"newObservedTiles",navigationEfficiency.observedTiles}}},
         {"eventPolicy",{{"waitSeconds",eventPolicy.waitSeconds},{"initialWaitMs",eventPolicy.initialWaitMs},
             {"doorInitialWaitMs",eventPolicy.doorInitialWaitMs},{"scrollInitialWaitMs",eventPolicy.scrollInitialWaitMs},{"retryMs",1000},{"encounterRadius",eventPolicy.encounterRadius},
             {"questLogDurationMs",eventPolicy.questLogDurationMs},
+            {"waypointCloseDelayMs",eventPolicy.waypointCloseDelayMs},
             {"walkDecisionMs",eventPolicy.walkDecisionMs},{"walkReactionMs",eventPolicy.walkReactionMs},
             {"walkRequestIntervalMs",eventPolicy.walkRequestIntervalMs},{"walkRetryMs",eventPolicy.walkRetryMs},
             {"townTurnBaseMs",eventPolicy.townTurnBaseMs},{"townTurnMinMs",eventPolicy.townTurnMinMs},{"townTurnMaxMs",eventPolicy.townTurnMaxMs},
@@ -546,7 +555,9 @@ void DebugAi::Impl::resetStep() {
     submissionWaits.clear();
     localPad.reset();
     backtrackAttempts.clear();
-    viewpointAttempts.clear();viewpointRoute.reset();
+    if(!viewpointAttempts.empty()) note("observation-viewpoints-cleared",Json{
+        {"reason","step-reset"},{"count",viewpointAttempts.size()}}.dump());
+    viewpointAttempts.clear();viewpointRoute.reset();explorationPrefetch.reset();
     searchDiagnostics=nullptr;approachDiagnostics=nullptr;mobilityDiagnostics=nullptr;travelDiagnostics=nullptr;
     terrainClueDiagnostics=nullptr;
     vaughtSearch.aim.reset();
@@ -563,6 +574,16 @@ void DebugAi::Impl::resetStep() {
     mobilityTrials.clear();mobilityGoal.reset();mobilityRoute.clear();mobilityRouteProgress=mobilityPendingProgress=mobilityRouteLength=0;
 }
 void DebugAi::Impl::advance(Context &c,std::string evidence,bool skipped) {
+    note("goal-navigation-efficiency",Json{{"skipped",skipped},
+        {"activeMs",navigationEfficiency.activeMs-goalEfficiencyStart.activeMs},
+        {"navigationWaitMs",navigationEfficiency.navigationWaitMs-goalEfficiencyStart.navigationWaitMs},
+        {"walkModeMs",navigationEfficiency.modeMs[0]-goalEfficiencyStart.modeMs[0]},
+        {"townWalkModeMs",navigationEfficiency.modeMs[1]-goalEfficiencyStart.modeMs[1]},
+        {"teleportModeMs",navigationEfficiency.modeMs[2]-goalEfficiencyStart.modeMs[2]},
+        {"walkingDistance",navigationEfficiency.walkingDistance-goalEfficiencyStart.walkingDistance},
+        {"relocations",navigationEfficiency.relocations-goalEfficiencyStart.relocations},
+        {"backtracks",navigationEfficiency.backtracks-goalEfficiencyStart.backtracks},
+        {"newObservedTiles",navigationEfficiency.observedTiles-goalEfficiencyStart.observedTiles}}.dump());
     releaseCombat(c);
     questPlanDiagnostics=nullptr;
     if(c.session.read().world.npcRequested) c.control.closeNpc();
@@ -580,6 +601,7 @@ void DebugAi::Impl::advance(Context &c,std::string evidence,bool skipped) {
     goalDeadline=Clock::now()+std::chrono::seconds(goals[cursor].timeout);goalStarted();
 }
 void DebugAi::Impl::goalStarted() {
+    goalEfficiencyStart=navigationEfficiency;
     const auto &g=goals.at(cursor);
     std::string label=goalNames[size_t(g.kind)];
     if(!g.quest.empty()) label+=" "+g.quest;
@@ -680,6 +702,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
         const auto nextEvents=s.parseEvents(policyNumbers({{"waitSeconds",s.eventPolicy.waitSeconds},
             {"initialWaitMs",s.eventPolicy.initialWaitMs},{"doorInitialWaitMs",s.eventPolicy.doorInitialWaitMs},{"scrollInitialWaitMs",s.eventPolicy.scrollInitialWaitMs},
             {"questLogDurationMs",s.eventPolicy.questLogDurationMs},
+            {"waypointCloseDelayMs",s.eventPolicy.waypointCloseDelayMs},
             {"walkDecisionMs",s.eventPolicy.walkDecisionMs},{"walkReactionMs",s.eventPolicy.walkReactionMs},
             {"walkRequestIntervalMs",s.eventPolicy.walkRequestIntervalMs},{"walkRetryMs",s.eventPolicy.walkRetryMs},
             {"townTurnBaseMs",s.eventPolicy.townTurnBaseMs},{"townTurnMinMs",s.eventPolicy.townTurnMinMs},{"townTurnMaxMs",s.eventPolicy.townTurnMaxMs},
@@ -815,7 +838,6 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             s.handledWaypointTimeout.reset();
             s.padTransfersWithoutDiscovery=0;
             if(s.game!=view.gameGeneration) {
-                s.observedRoomPassages.clear();
                 s.journalReadGame.reset();s.padObservations.clear();s.padArrival.reset();s.questWeaponRestore.reset();
                 s.padProgressCells=s.padProgressTargets=s.padTransfersWithoutDiscovery=0;
             }
@@ -832,6 +854,9 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
                  view.world.storage.requested!=OnlineStorageKind::None);
             s.potionRequest.reset();s.nextPotion={};s.shelfReopens=0;s.shopIssued=false;s.shelfObserved=false;s.healingIssued=false;s.healingObserved=false;s.supplyNpc.reset();s.shopDeadline={};s.drinks=s.purchases=0;s.lastPotion=nullptr;s.supplyVitals=nullptr;
             s.executionClock.reset(now);s.inputBlocked=false;s.actionDiagnostics=nullptr;
+            s.navigationEfficiency={};s.goalEfficiencyStart={};s.efficiencySampleAt=now;
+            s.efficiencyExecuting=false;s.efficiencyWaiting=false;s.efficiencyPosition.reset();s.efficiencyArea.reset();
+            s.efficiencyObserved=town.navigationMemory().observedCells;
             s.cadence.reset();s.decisionLife.reset();
             s.behaviorLog.open(s.logDirectory,s.game);
             s.observedWalkFailures=walk.failureCount();
@@ -864,6 +889,43 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
     auto &s=*impl_;
     s.tickQuestLog(session.read(),supplies,blocked);
     if(!s.live()) return;
+    const auto sampledAt=Impl::Clock::now();
+    if(s.efficiencySampleAt!=Impl::Clock::time_point{} && s.efficiencyExecuting) {
+        const auto elapsed=std::chrono::duration<double,std::milli>(sampledAt-s.efficiencySampleAt).count();
+        s.navigationEfficiency.activeMs+=elapsed;s.navigationEfficiency.modeMs.at(s.efficiencyMode)+=elapsed;
+        if(s.efficiencyWaiting) s.navigationEfficiency.navigationWaitMs+=elapsed;
+    }
+    s.efficiencySampleAt=sampledAt;
+    s.efficiencyExecuting=s.active() && !blocked && position && town.read().nativeMapReady &&
+        session.read().stage==OnlineStage::ProtocolReady;
+    const auto observed=town.navigationMemory().observedCells;
+    if(observed>s.efficiencyObserved) s.navigationEfficiency.observedTiles+=observed-s.efficiencyObserved;
+    s.efficiencyObserved=observed;
+    const auto self=session.read().world.units.find({0,session.read().load.playerUnitId.value_or(0)});
+    const auto discontinuity=self==session.read().world.units.end()?0:self->second.positionDiscontinuity;
+    if(position && s.efficiencyPosition && s.efficiencyArea==town.read().area) {
+        if(discontinuity!=s.efficiencyDiscontinuity) ++s.navigationEfficiency.relocations;
+        else if(moving) s.navigationEfficiency.walkingDistance+=(*position-*s.efficiencyPosition).length();
+    }
+    s.efficiencyPosition=position;s.efficiencyArea=town.read().area;s.efficiencyDiscontinuity=discontinuity;
+    const auto timingKey=std::tuple{session.read().gameGeneration,
+        supplies.navigationFasterCast.value_or(std::numeric_limits<int>::min()),supplies.navigationWeaponSet,
+        self==session.read().world.units.end()?uint64_t{}:self->second.stateSequence,
+        self==session.read().world.units.end()?uint64_t{}:self->second.appearanceRevision,
+        self==session.read().world.units.end()?uint16_t{}:self->second.classId.value_or(0)};
+    const bool timingChanged=s.navigationTimingKey!=timingKey;
+    if(timingChanged) {
+        s.navigationTimingKey=timingKey;s.navigationTeleportSeconds.reset();
+    }
+    if(s.definitions && supplies.observedCastSeconds)
+        if(const auto sample=supplies.observedCastSeconds(s.definitions->skill("Teleport"));
+            sample && std::isfinite(sample->second) && sample->second>0) {
+            const auto identity=std::pair{session.read().gameGeneration,sample->first};
+            if(s.navigationCastSample!=identity) {
+                s.navigationCastSample=identity;
+                if(!timingChanged) s.navigationTeleportSeconds=sample->second;
+            }
+        }
     std::optional<OnlinePoint> local;
     if(position && position->x>=0 && position->y>=0 && position->x<=65535 && position->y<=65535)
         local=OnlinePoint{uint16_t(std::lround(position->x)),uint16_t(std::lround(position->y))};
@@ -881,7 +943,20 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
     }
     const auto decisions=s.decisions;
     s.phaseReported=false;
+    const auto decisionStarted=Impl::Clock::now();
     tickPlan(session,town,walk,control,combat,inventory,supplies,blocked,position,moving);
+    s.efficiencyWaiting=s.phase=="navigation-worker";
+    s.efficiencyMode=town.read().town?1:s.mobilityTeleport && s.mobilityTarget?2:0;
+    if(!town.read().town && s.searchDiagnostics.is_object() &&
+        s.searchDiagnostics.value("area",uint16_t{})==town.read().area)
+        s.efficiencyMode=s.searchDiagnostics.value("mobilityClass",0)==2?2:0;
+    const auto decisionMs=std::chrono::duration<double,std::milli>(Impl::Clock::now()-decisionStarted).count();
+    if(s.decisions!=decisions || decisionMs>=10) walk.navigationSearch().traceDecision({
+        {"decision",s.decisions},{"goal",s.cursor},{"phase",s.phase},{"reason",s.reason},
+        {"elapsedMs",decisionMs},{"blocked",s.inputBlocked},{"area",town.read().area?nlohmann::json(*town.read().area):nlohmann::json(nullptr)},
+        {"actionRecoveryBusy",s.actionRecoveryBusy},{"moving",moving},{"walkActive",walk.active()},
+        {"searchDecision",s.searchDiagnostics.is_object()?s.searchDiagnostics.value("decision",uint64_t{}):uint64_t{}},
+        {"position",position?nlohmann::json{position->x,position->y}:nlohmann::json(nullptr)}});
     s.tickQuestLog(session.read(),supplies,blocked);
     if(!s.active()) return;
     if(s.inputBlocked) {
@@ -968,6 +1043,8 @@ void DebugAi::tickPlan(net::RealmSession &session,RemoteTown &town,DebugAutoWalk
             s.hazardDodge.reset();s.hazardDiagnostics=nullptr;s.passageWaits.clear();
             s.defendedTravel.reset();
             s.backtrackAttempts.clear();
+            if(!s.viewpointAttempts.empty()) s.note("observation-viewpoints-cleared",Impl::Json{
+                {"reason","area-changed"},{"count",s.viewpointAttempts.size()}}.dump());
             s.viewpointAttempts.clear();s.viewpointRoute.reset();
             s.cancelWalk(c);s.area=town.read().area;s.areaGeneration=view.world.areaGeneration;s.visited.clear();s.frontierAttempts.clear();s.exploring.reset();
             if(leavingTown && s.teleportAvailable(c,false)) {
@@ -1072,12 +1149,10 @@ void DebugAi::tickPlan(net::RealmSession &session,RemoteTown &town,DebugAutoWalk
         const bool travelSatisfied=goal.kind==Impl::Kind::Travel && goal.area &&
             (goal.requiredWaypoint?s.knownWaypointAreas.contains(*goal.area):goal.area==s.area);
         if(s.actionRecoveryBusy) {
-            // Keep receipts, death/area changes and potion use above/inside
-            // this boundary. No path search, target replacement, menu, equip
-            // or independent cast is useful until the normal action recovers.
             if(!travelSatisfied && s.supplyStage==Impl::SupplyStage::None && now>=s.goalDeadline) {
                 s.finish("failed","Current high-level goal exceeded its execution budget during action recovery",c);return;
             }
+            s.prefetchExploration(c);
             s.wait("action-recovery","Observing the normal action animation; potion use and result observation remain active");
             s.describeActions(c);return;
         }
@@ -1109,6 +1184,12 @@ void DebugAi::tickPlan(net::RealmSession &session,RemoteTown &town,DebugAutoWalk
         }
         using Owner=DebugActionOwner;
         if(s.closeWaypoint && s.canInput(c,Owner::Waypoint,DebugMenu)) {
+            if(view.world.waypointSource==s.closeWaypoint && s.observedWaypointMenu==s.closeWaypoint &&
+                now<s.waypointMenuOpenedAt+std::chrono::milliseconds(s.eventPolicy.waypointCloseDelayMs)) {
+                if(s.canInput(c,Owner::Potion,DebugItem) && s.drink(c)) {s.describeActions(c);return;}
+                s.wait("waypoint-close-delay","Waiting for the configured waypoint menu display time");
+                s.describeActions(c);return;
+            }
             if(view.world.waypointSource==s.closeWaypoint || view.world.waypointRequested==s.closeWaypoint) control.useWaypoint(0);
             s.closeWaypoint.reset();s.describeActions(c);return;
         }

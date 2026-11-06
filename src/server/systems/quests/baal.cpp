@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/unit.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -97,11 +98,23 @@ DomainResult<> System::baalFx(RegionId region,Vec position) {
 }
 StepStatus System::baalStep(TickContext tick) {
     bool blocked=false;auto &world=state_.actFive;
+    if(world.baalNarrativePending) {
+        if(finishNarratedGoal(QuestId::EveOfDestruction,83,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+        world.baalNarrativePending=false;
+    }
     for(const auto &[id,m]:ports_.monsters.read().actors) {
         (void)id;
         if(!world.baalSlain && int(m.area)==132 && m.identity.monster=="baalcrab" && !m.owner && m.identity.origin!=SpawnOrigin::Debug && m.identity.origin!=SpawnOrigin::Summoned && !m.alive()) {
+            world.baalDeathEffectPending=true;
+            if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{19}}})) return StepStatus::Blocked;
+            world.baalDeathEffectPending=false;
             world.baalSlain=true;world.baalPosition=m.position;world.baalFxSource=m.id;
             captureGoal(QuestId::EveOfDestruction,5,m.area);
+            if(!(state_.initialFlags[questDefinition(QuestId::EveOfDestruction).nativeSlot]&0x8000)) {
+                world.baalNarrativePending=true;
+                if(finishNarratedGoal(QuestId::EveOfDestruction,83,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+                world.baalNarrativePending=false;
+            }
         }
     }
     if(world.baalSlain && !world.baalFxStarted) {

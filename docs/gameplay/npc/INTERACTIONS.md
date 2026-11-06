@@ -6,7 +6,7 @@
 
 NPC是所连接服务端的真实type1单位，位置／模式、对白、任务提示和服务资格均由该服务端提供。中立单位不使用敌对替身；组件／原图由公共ActorAnimation／Graphics解析。
 
-剧情关键NPC的出生沿D2MOO `QUESTS_SpawnCriticalMonster(bSpecialInit)`传递原ISRESURRECT保留资格，复用公共Actor的`restoredFromInactive`与既有休眠／恢复；不把城镇SaveMonsters=0当作可丢弃关键NPC。当前MPQ安雅Restore=1、Harrogath SaveMonsters=0，缺该资格会在离城后丢失本人，却留下任务出生位。现spawnStoryNpc仅对原critical分支传入specialInit，非critical及其他默认出生调用保持原资格；无按NPC名称强制重生。81412075实测安雅领取个性化资格、离城后本人285进入109区room12休眠记录（dead=false），不再丢失；同版实际读回完成档后，再以正常旅行离开第五幕至Act1城镇，安雅233进入休眠；同局返回109后恢复同一233并正常交谈。普通出生／退役／恢复通过，容量与提交交错仍未穷举，入口见[AI验收](../../development/AI_TEST_REC.md)。
+剧情关键NPC的出生沿D2MOO `QUESTS_SpawnCriticalMonster(bSpecialInit)`传递原ISRESURRECT保留资格，复用公共Actor的`restoredFromInactive`与既有休眠／恢复；不把城镇SaveMonsters=0当作可丢弃关键NPC。当前MPQ安雅Restore=1、Harrogath SaveMonsters=0，缺该资格会在离城后丢失本人，却留下任务出生位。现spawnStoryNpc仅对原critical分支传入specialInit，非critical及其他默认出生调用保持原资格；无按NPC名称强制重生。81412075实测安雅领取个性化资格、离城后本人285进入109区room12休眠记录（dead=false），不再丢失；同版实际读回完成档后，再以正常旅行离开第五幕至Act1城镇，安雅233进入休眠；同局返回109后恢复同一233并正常交谈。普通出生／退役／恢复通过，容量与提交交错仍未穷举，入口见[验证约定](../../development/TESTING.md)。
 
 原版 LoD 1.13c `D2Client 4B955→46770` 在确认交谈时清除旧 NPC 提示；`479DA` 忽略正在交谈 NPC 的新 8A。客户端已同步这两个条件，后续提醒仍由新 8A 决定。`4BA48→A5600` 的交谈朝向已补入显示层，保留原类537／538／539／527的固定朝向例外；不修改服务端位置或交互距离。交谈前另有待机转向分支。零售 D2Client RVA `4F577–4F60E` 对 MonStats.interact、非 critter／佣兵且处于 NU 的单位，按双方原生尺寸距离 <7、每次客户端游戏帧抽取 <10/100 转向本人；此处分开排除类537／538／539。显示层按该条件使用单位本地表现随机流，实际转身时刻待对照。
 

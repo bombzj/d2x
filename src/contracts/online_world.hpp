@@ -117,7 +117,12 @@ struct OnlineUnit {
     std::string portalOwnerName;
     std::string name;
     Bytes appearanceBits; // NPC assignment tail; decoded with current MPQ component tables.
+    struct MonsterIdentityUpdate {uint8_t flags{};uint16_t nameSeed{};std::array<uint8_t,3> modifiers{};bool champion{};};
+    std::optional<MonsterIdentityUpdate> monsterIdentityUpdate;
     uint64_t positionRevision{}, appearanceRevision{}, positionDiscontinuity{};
+    uint64_t repositionRevision{}, repositionReceivedMilliseconds{};
+    uint8_t repositionFlags{};
+    std::optional<uint16_t> repositionSkill;
     uint64_t assignmentRevision{}; // A new spatial assignment invalidates presentation cached before removal.
     bool equipmentObserved{};
     std::map<uint8_t, int32_t> attributes; // 1.13c 0x20: public player stats, separate from this client's private stats.

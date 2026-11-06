@@ -78,6 +78,8 @@ class SceneAssets {
         skillLevelCompactBlueFont, skillLevelCompactRedFont;
     ClassicFont automapPartyFont, automapNpcFont, automapOtherFont, deathFont;
     GpuAnimation deathTitle, deathInstruction;
+    GpuAnimation areaTitle;
+    void loadAreaTitle(int level, const std::optional<std::array<uint8_t,37>> &availability);
     std::array<ClassicFont, 13> itemTextFonts; // Original PL2 text-color indices.
     std::array<ClassicFont, 13> automapTextFonts; // font6 with the same colors; BH automap monster text.
     std::map<std::string, std::string, std::less<>> characterLabels;

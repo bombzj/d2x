@@ -26,9 +26,11 @@ struct NpcStoryState {
     std::optional<Vec> blocker,guard;
     EntityId blockerId,ormusAltar;
     bool ormusDelivery{},ormusActivate{},ormusActivated{},alkorDelivery{},alkorAnimate{};
+    EntityId tomeCourier,tomeNpc;
     bool cainDeparted{},cainTownActivated{},anyaDeparted{};
     std::optional<Vec> cainBirth;
     EntityId cainCage;
+    EntityId cainRescuer,cainBirthActor;
     uint64_t cainBirthAt{};
     bool cainOutsideSpawned{},cainBirthFailed{};
     struct Escape {Vec start,portal;int phase{},attempts{};uint64_t admissionRevision{};};

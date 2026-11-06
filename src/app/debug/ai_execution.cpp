@@ -17,7 +17,7 @@ bool DebugAi::Impl::decisionDue(const Context &c,Clock::time_point now) {
     const bool urgent=lostLife || onlinePlayerDead(world) || game!=view.gameGeneration || areaGeneration!=world.areaGeneration;
     auto mode=inputBlocked?Mode::Suspended:actionRecoveryBusy || missiles || hazardDodge?Mode::Reaction:
         combatTarget || closeThreat?Mode::Combat:c.moving || c.walk.active()?Mode::Navigation:
-        questRun.pending || questRun.worldWait || potionRequest || mobilityTarget || pendingDoor || pendingWaypoint?Mode::Waiting:Mode::Idle;
+        questRun.pending || questRun.worldWait || potionRequest || mobilityTarget || pendingDoor || pendingWaypoint || closeWaypoint?Mode::Waiting:Mode::Idle;
     std::array<uint64_t,24> signals{view.gameGeneration,world.areaGeneration,uint64_t(view.stage),uint64_t(inputBlocked),
         uint64_t(world.life.value_or(0))|(uint64_t(world.mana.value_or(0))<<16),world.quests.revision,world.itemRevision,
         world.combatRequest?world.combatRequest->revision:0,world.interactionGeneration,world.cinematicRevision,
@@ -43,6 +43,8 @@ bool DebugAi::Impl::decisionDue(const Context &c,Clock::time_point now) {
     if(mobilityTarget) include(mobilityDeadline);
     if(pendingDoor) include(doorDeadline);
     if(pendingWaypoint) include(waypointDeadline);
+    if(closeWaypoint && world.waypointSource==closeWaypoint && observedWaypointMenu==closeWaypoint)
+        include(waypointMenuOpenedAt+std::chrono::milliseconds(eventPolicy.waypointCloseDelayMs));
     if(!inputBlocked) {include(combatRun.nextCast);include(nextPotion);}
     if(!cadence.due(now,mode,signals,urgent,deadline,eventPolicy.walkDecisionMs)) return false;
     decisionLife=world.life;return true;
@@ -186,7 +188,7 @@ std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c
     if(pendingDoor) result.push_back({Owner::Door,"door",DebugMotion|DebugInteraction,defense|debugActionBit(Owner::Goal),
         "same assignment's non-neutral mode","normal interaction retry every second after initial wait",doorDeadline});
     if(pendingWaypoint || closeWaypoint) result.push_back({Owner::Waypoint,"waypoint",DebugMotion|DebugInteraction|DebugMenu,defense,
-        closeWaypoint?"close owned menu when input resumes":"mode / personal 63 unlock","defer optional activation without local unlock",waypointDeadline,bool(closeWaypoint)});
+        closeWaypoint?"close owned menu after display delay when input resumes":"mode / personal 63 unlock","defer optional activation without local unlock",waypointDeadline,bool(closeWaypoint)});
     if(mobilityTarget) result.push_back({Owner::Mobility,"mobility",DebugMotion|DebugSkill,0,
         "normal skill displacement","fall back to ordinary walking",mobilityDeadline});
     if(pickup) result.push_back({Owner::Goal,"pickup-result",DebugItem|DebugInteraction,0,

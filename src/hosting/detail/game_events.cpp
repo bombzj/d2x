@@ -52,12 +52,30 @@ void NativeRealmService::sendGameBatch(std::vector<Bytes> packets) {
 void NativeRealmService::publishEvents() {
     if (binding) shared.publishEvents(binding->game);
 }
+void NativeRealmService::publishInventoryRefresh() {
+    if(!binding || peer.phase!=GamePhase::Entered) return;
+    const auto own=host.read(*binding);if(!own) return;
+    std::vector<Bytes> packets;
+    for(const auto actor:peer.inventoryRefresh) {
+        if(actor!=own->actor.id && std::none_of(peer.visible.begin(),peer.visible.end(),
+            [&](const auto &entry){return entry.second.actor==actor;})) continue;
+        for(const auto message:{ServerMessage::Reserved47,ServerMessage::Reserved48})
+            packets.push_back(encodeServerPacket(message,[&](auto &out){
+                out.u8(0);out.u8(0);out.u32(wireId(actor));out.u32(0);
+            }));
+    }
+    if(!packets.empty()) sendGameBatch(std::move(packets));
+    peer.inventoryRefresh.clear();
+}
 void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
     std::vector<Bytes> packets;
     const auto visibleActor=[&](EntityId actor,uint8_t type) {
         if(type==1) return peer.monsters.contains(actor);
         if(type==2) return peer.objects.contains(actor) || peer.portals.contains(actor);
-        return type==0 && (actor==host.read(*binding)->actor.id || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &entry){return entry.second.actor==actor;}));
+        if(type==4) return peer.groundItems.contains(actor);
+        if(type==5) return peer.warps.contains(actor);
+        return type==0 && (actor==host.read(*binding)->actor.id || peer.corpses.contains(actor) ||
+            std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &entry){return entry.second.actor==actor;}));
     };
     for (const auto &fact : batch.facts) {
         if (const auto *travel = server::factIf<server::TravelFact>(&fact)) {
@@ -65,7 +83,15 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             changeArea(*travel); continue;
         }
         std::vector<Bytes> delta;
-        if(const auto *map=server::factIf<server::Pd2MapAttributesFact>(&fact)) {
+        if(const auto *identity=server::factIf<server::MonsterIdentityFact>(&fact)) {
+            if(!peer.monsters.contains(identity->actor)) continue;
+            delta.push_back(encodeServerPacket(ServerMessage::Reserved57,[&](auto &out) {
+                out.u32(wireId(identity->actor));out.u8(1);out.u16(identity->nameSeed);
+                out.u16(uint16_t(identity->modifiers[0]) | uint16_t(uint16_t(identity->modifiers[1])<<8));
+                out.u16(identity->modifiers[2]);out.u16(identity->champion?1:0);
+            }));
+        }
+        else if(const auto *map=server::factIf<server::Pd2MapAttributesFact>(&fact)) {
             if(!content->pd2Host) throw std::logic_error("PD2 map report in an original game");
             auto projected=*map;projected.portal={identities().guid(map->portal,2)};
             delta.push_back(pd2MapAttributes(projected));
@@ -99,7 +125,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             known->second.revision=object->revision;known->second.mode=object->mode;
         }
         else if (const auto *position = server::factIf<server::RepositionFact>(&fact)) {
-            if(!position->notifyOwner && position->actor==host.read(*binding)->actor.id) continue;
+            if((!position->notifyOwner || position->revealRoom) && position->actor==host.read(*binding)->actor.id) continue;
             if (position->actor != host.read(*binding)->actor.id &&
                 std::none_of(peer.visible.begin(), peer.visible.end(), [&](const auto &entry) { return entry.second.actor == position->actor; })) continue;
             delta.push_back(nativeReposition(*position, shared.terrain.at(binding->game).at(position->area).origin));
@@ -122,7 +148,10 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 delta = nativeAttack(projected, shared.terrain.at(binding->game).at(attack->area).origin);
             peer.lastMotion.clear();
             for (auto &[id, player] : peer.visible) { (void)id; if (player.actor == attack->actor) player.motion.clear(); }
-            if (auto found = peer.monsters.find(attack->actor); found != peer.monsters.end()) found->second.motion.clear();
+            if (auto found = peer.monsters.find(attack->actor); found != peer.monsters.end()) {
+                found->second.motion.clear();
+                if(attack->skill) found->second.skillAction=attack->action;
+            }
         } else if (const auto *hit = server::factIf<server::HitFact>(&fact)) {
             if (hit->type == 1 && !peer.monsters.contains(hit->target)) continue;
             if (hit->type == 0 && hit->target != host.read(*binding)->actor.id &&
@@ -140,6 +169,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             }
         } else if (const auto *inventory = server::factIf<server::InventoryFact>(&fact)) {
             delta = nativeInventoryDelta(*content, *inventory);
+            if(!delta.empty()) peer.inventoryRefresh.insert(inventory->projection.player.id);
             for (const auto &change : inventory->changes) if (change.kind == ItemChangeKind::Created) peer.groundItems.erase(change.item);
         }
         else if (const auto *drop = server::factIf<server::GroundDropFact>(&fact)) {
@@ -233,12 +263,35 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             auto packet=nativeState(*content,*state);
             if(!packet.empty()) delta.push_back(std::move(packet));
         }
-        else if (const auto *quest = server::factIf<server::QuestFact>(&fact)) delta=nativeQuestUpdate(*content,*quest);
+        else if (const auto *quest = server::factIf<server::QuestFact>(&fact)) {
+            if(quest->fullStatus) {
+                auto baseline=*quest;baseline.fullStatus=false;
+                for(auto &packet:nativeQuestUpdate(*content,baseline))
+                    if(packet.front()==uint8_t(ServerMessage::QuestUpdate))
+                        peer.questProjection[{packet.front(),packet.at(1)}]=std::move(packet);
+            }
+            for(auto &packet:nativeQuestUpdate(*content,*quest)) {
+                const auto message=ServerMessage(packet.front());
+                const uint16_t payload=message==ServerMessage::QuestPayload?uint16_t(packet.at(1)|uint16_t(packet.at(2))<<8):0;
+                if(message==ServerMessage::GameQuests || message==ServerMessage::PlayerQuests ||
+                    message==ServerMessage::QuestUpdate || (message==ServerMessage::QuestPayload && (payload==1 || payload==4))) {
+                    const uint16_t slot=message==ServerMessage::QuestUpdate?packet.at(1):
+                        message==ServerMessage::QuestPayload?payload:0;
+                    auto &previous=peer.questProjection[{packet.front(),slot}];
+                    const bool unchanged=previous==packet;
+                    previous=packet;
+                    if(unchanged && !quest->fullStatus && !quest->zooOnly) continue;
+                }
+                delta.push_back(std::move(packet));
+            }
+        }
         else if(const auto *quest=server::factIf<server::QuestStatusFact>(&fact)) {
             const auto &definition=questDefinition(quest->quest);
             delta.push_back(encodeServerPacket(ServerMessage::QuestUpdate,[&](auto &out){
-                out.u8(uint8_t(definition.nativeSlot-unsigned(definition.act)));out.u8(0);out.u8(quest->status);out.u16(quest->counter);
+                out.u8(uint8_t(definition.nativeSlot-unsigned(definition.act)));out.u8(quest->flags);out.u8(quest->status);out.u16(quest->counter);
             }));
+            if(!quest->flags)
+                peer.questProjection[{uint8_t(ServerMessage::QuestUpdate),uint16_t(definition.nativeSlot-unsigned(definition.act))}]=delta.back();
         }
         else if(const auto *effect=server::factIf<server::QuestEffectFact>(&fact))
             delta.push_back(encodeServerPacket(ServerMessage::QuestEffect,[&](auto &out){out.u8(effect->effect);}));
@@ -328,10 +381,14 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 if(!quests) throw std::logic_error("NPC interaction quest projection unavailable");
                 if(npc->activate) {
                     peer.npcQuestAlerts.clear(); // NPC-context28 clears every old alert in the client.
-                    for(auto &packet:nativeQuestUpdate(*content,*quests,EntityId{identities().guid(npc->npc,1)})) delta.push_back(std::move(packet));
+                    for(auto &packet:nativeQuestUpdate(*content,*quests,EntityId{identities().guid(npc->npc,1)})) {
+                        peer.questProjection[{packet.front(),0}]=packet;
+                        delta.push_back(std::move(packet));
+                    }
                 } else delta.push_back(encodeServerPacket(ServerMessage::GameQuests,[&](auto &out) {
                     for(const auto word:quests->gameFlags) out.u16(word);
                 }));
+                if(!npc->activate) peer.questProjection[{uint8_t(ServerMessage::GameQuests),0}]=delta.back();
             }
         } else if (const auto *merchant = server::factIf<server::MerchantFact>(&fact)) {
             if (merchant->refreshShop) peer.shopItems.clear();
@@ -344,6 +401,17 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             delta.push_back(encodeServerPacket(ServerMessage::Waypoints,[&](auto &out){out.u32(wireId(waypoint->source));for(const auto word:history)out.u16(word);}));
         } else if (const auto *targeting=server::factIf<server::ItemTargetingFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::ItemTargeting,[&](auto &out){out.u8(uint8_t(targeting->cursor));out.u32(wireId(targeting->source));out.u16(uint16_t(targeting->skill));}));
+        } else if(const auto *ended=server::factIf<server::ItemSpellEndFact>(&fact)) {
+            if(ended->afterInventory && ended->skill>=0) {
+                const auto own=host.read(*binding);
+                delta.push_back(encodeServerPacket(ServerMessage::ItemSkillQuantity,[&](auto &out){
+                    out.u8(0);out.u8(0);out.u32(wireId(own->actor.id));out.u16(uint16_t(ended->skill));out.u8(uint8_t(ended->quantity));out.u8(0);out.u8(0);
+                }));
+                peer.itemSkills[ended->skill]=ended->quantity;
+            }
+            delta.push_back(encodeServerPacket(ServerMessage::Reserved7C,[&](auto &out){out.u8(4);out.u32(wireId(ended->source));}));
+            if(ended->afterInventory)
+                delta.push_back(encodeServerPacket(ServerMessage::ItemTargeting,[&](auto &out){out.u8(255);out.u32(wireId(ended->source));out.u16(UINT16_MAX);}));
         } else if (const auto *service = server::factIf<server::NpcServiceFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::NpcServiceResult,[&](auto &out){out.u32(wireId(service->npc));out.u8(service->result);out.u8(service->state);}));
         } else if (const auto *ui = server::factIf<server::UiFact>(&fact)) {

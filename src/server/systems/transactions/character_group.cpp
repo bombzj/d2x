@@ -143,7 +143,8 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
             }
             const auto *targeting=factIf<ItemTargetingFact>(&fact);
             const auto *trade=factIf<TradeFact>(&fact);
-            if((targeting && targeting->cursor<0) ||
+            const auto *ended=factIf<ItemSpellEndFact>(&fact);
+            if((ended && !ended->afterInventory) || (targeting && targeting->cursor<0) ||
                 (trade && (trade->action==6 || trade->action==14)) ||
                 (resetInventory && factHolds<TradeFact>(fact))) batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
             else batch.facts.push_back(fact);

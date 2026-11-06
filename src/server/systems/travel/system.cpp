@@ -160,8 +160,10 @@ DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, F
     if (!player) return {DomainStatus::InvalidActor, {}};
     ports_.world.activate(target.area, target.position + Vec{.5f,.5f});
     if(!ports_.areas.loaded(target.area,target.position+Vec{.5f,.5f})) return {DomainStatus::PendingContent,{}};
+    if(!ports_.world.prepareClientRoom(target.area,target.position+Vec{.5f,.5f})) return {DomainStatus::PendingContent,{}};
     const auto result = ports_.transactions.release(actor, player->characterRevision, manaCost, target,charge,{},{},skill);
     if (result) {
+        ports_.world.changeClientRoom(actor.player,actor.tick);
         cancel(actor.player);
         if(target.area!=actor.area) {
             ports_.npc.close(actor.player);ports_.inventory.close(actor.player);state_.waypoints.erase(actor.player);
@@ -407,6 +409,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             2,mask,ports_.spatial.nativeCollisionSample(mask),{},0,false,50,changeAct?5:1); }();
         if(!free || free->room.area!=transition.to) {pending=state_.transitions.erase(pending);continue;}
         arrival=free->position;
+        if(!ports_.world.prepareClientRoom(transition.to,arrival+Vec{.5f,.5f})) {++pending;continue;}
         if(exitWalk) *exitWalk=*exitWalk+arrival;
         std::deque<Vec> route;
         if (exitWalk) route = playerRoute(ports_.spatial.navigationGrid(transition.to,player.actor),arrival,*exitWalk);
@@ -414,6 +417,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             {TravelFact{player.player, player.actor, transition.from, transition.to, destination->generation, arrival, false}}};
         if (transition.kind==Kind::Portal)
             event.facts.emplace_back(SoundFact{player.actor,0,transition.to,8});
+        std::optional<uint8_t> cinematic;
+        if(transition.kind==Kind::Npc && !player.nativeBusy) {
+            const auto &completed=player.persistent.player.completedActs.at(size_t(player.persistent.difficulty));
+            if(int(transition.from)==1 && int(transition.to)==40 && !completed[0]) cinematic=2;
+            if(int(transition.from)==40 && int(transition.to)==75 && !completed[1]) cinematic=3;
+        }
         if(player.rules.character->maps || transition.kind==Kind::Npc || (int(transition.from)==102 && int(transition.to)==103) || (int(transition.from)==103 && int(transition.to)==109) || (int(transition.from)==132 && int(transition.to)==109)) {
             transactions::CharacterEdit edit{{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick},player.inventoryRevision,player.characterRevision,player.persistent.player};
             if(player.rules.character->maps) edit.environmentRegion=transition.to;
@@ -436,6 +445,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 edit.waypoints->try_emplace(transition.to,float(tick.tick)*TickContext::seconds);
             }
             edit.facts.emplace_back(ports_.quests.projection(player.player,edit.player,transition.to,false));
+            if(cinematic) edit.facts.emplace_back(UiFact{*cinematic,UiFact::Kind::Cinematic});
             edit.facts.emplace_back(TravelFact{player.player,player.actor,transition.from,transition.to,destination->generation,arrival,false});
             if (transition.kind==Kind::Portal)
                 edit.facts.emplace_back(SoundFact{player.actor,0,transition.to,8});
@@ -448,8 +458,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) {writePortalCollision(portal->second,false);state_.portals.erase(portal);} }
         if(transition.pd2SceneEntry) {state_.pd2SceneEntrants.insert(player.player);state_.pd2SceneEntryRooms.insert(free->room);}
         player.area = transition.to; player.position = arrival;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route = std::move(route);
+        ports_.world.changeClientRoom(player.player,tick.tick);
         if(transition.from!=transition.to) ports_.quests.onLevelEntered(transition.to);
-        if(int(transition.from)==132 && int(transition.to)==109 && transition.kind==Kind::QuestObject) player.nativeBusy=true;
+        if(cinematic || (int(transition.from)==132 && int(transition.to)==109 && transition.kind==Kind::QuestObject)) player.nativeBusy=true;
         player.pathStep.reset();
         player.knockback.reset();
         player.routeRunning = player.running; player.moving = !player.route.empty();
@@ -496,6 +507,7 @@ DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::o
     const auto arrival=ports_.world.nativePlayerPosition(target,desired,actor.actor);
     if(!arrival || arrival->area!=target || (arrival->position-desired).length()>8) return {DomainStatus::Unavailable,{}};
     const Vec at=arrival->position;
+    if(!ports_.world.prepareClientRoom(target,at+Vec{.5f,.5f})) return {DomainStatus::PendingContent,{}};
     const TravelFact travel{actor.player,actor.actor,p->area,target,area->generation,at,false};
     const auto sent=[&]()->DomainResult<> {
         if(p->rules.character->maps) {
@@ -510,6 +522,7 @@ DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::o
     if(!sent) return {sent.status,{}};
     ports_.npc.close(actor.player);ports_.inventory.close(actor.player);state_.waypoints.erase(actor.player);cancel(actor.player);
     auto &player=ports_.players.players_.at(actor.player);player.route.clear();player.moving=false;player.area=target;player.position=at;ports_.areas.moveRoomUnit(player.actor,player.area,player.position);
+    ports_.world.changeClientRoom(actor.player,actor.tick);
     return {DomainStatus::Applied,std::monostate{}};
 }
 }

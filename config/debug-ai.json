@@ -99,6 +99,7 @@
     "doorInitialWaitMs": 250,
     "scrollInitialWaitMs": 1000,
     "questLogDurationMs": 2000,
+    "waypointCloseDelayMs": 300,
     "walkDecisionMs": 160,
     "walkReactionMs": 40,
     "walkRequestIntervalMs": 200,

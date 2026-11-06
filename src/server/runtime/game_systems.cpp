@@ -29,7 +29,7 @@ GameSystems::GameSystems(PlayerStore &players, AreaStore &areas, EntityIds &ids,
       maps(d2x::server::maps::Ports{players,areas,monsters,travel,world,loot,transactions,pd2ProgramRandom,spatial,objects,events,frameEvents,population,effects}),
       companions(d2x::server::companions::Ports{players, monsters, skills, transactions, missiles, areas, events, random, effects, npc, inventory, combat, social, spatial,ai,items,frameEvents}),
       objects(d2x::server::objects::Ports{players, areas, quests, loot, effects, transactions, ids, world, monsters, settings, inventory, travel, skills, events, combat, missiles, movement, random, spatial, items,frameEvents,population,maps}),
-      npc(d2x::server::npc::Ports{players, areas, transactions, events, settings, quests, effects,world, movement,monsters}),
+      npc(d2x::server::npc::Ports{players, areas, transactions, events, settings, quests, effects,world, movement,monsters,frameEvents}),
       merchant(d2x::server::merchant::Ports{players, npc, items, transactions, events, random, rules.items.get(), settings, loot,pd2ProgramRandom}),
       quests(d2x::server::quests::Ports{players, areas, population, monsters, npc, transactions, events, settings, items, travel, world, random, loot, effects, social, itemTriggers,missiles,objects,spatial}),
       progression(d2x::server::progression::Ports{players, transactions, itemTriggers}),
@@ -37,5 +37,5 @@ GameSystems::GameSystems(PlayerStore &players, AreaStore &areas, EntityIds &ids,
       social(d2x::server::social::Ports{players, events, trade, areas, travel}),
       trade(d2x::server::trade::Ports{players, items, transactions, areas, events, inventory, npc}),
       transactions(d2x::server::transactions::Ports{players, areas, events, items, actionState, effects,random,spatial}),
-      replication(d2x::server::replication::Ports{players, areas, spatial, monsters, events, effects}) {}
+      replication(d2x::server::replication::Ports{players, areas, spatial, monsters, events, effects, skills}) {}
 }

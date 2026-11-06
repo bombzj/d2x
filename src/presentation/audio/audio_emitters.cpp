@@ -24,6 +24,7 @@ struct SoundBank::EmitterAudio {
         bool looping = false, stopInstance = false;
         bool deferInstance = false;
         bool musicVolume = false;
+        float nearDistance = 60, farDistance = 700;
     };
     struct Group {
         std::vector<Sample> samples;
@@ -36,12 +37,16 @@ struct SoundBank::EmitterAudio {
         double cursor = 0, played = 0, released = 0;
         bool releasing = false, finished = false;
         EntityId entity{};
+        EntityId source{};
+        Vec position{};
         int volume = 255;
     };
     std::map<std::string, Group> groups;
     std::map<uint64_t, Voice> voices;
     uint64_t nextVoice{};
     std::set<EntityId> tracked;
+    std::map<EntityId, Vec> sources;
+    Vec listener;
     std::mutex mutex;
     AudioStream stream{};
     unsigned sampleRate = 0;
@@ -94,12 +99,20 @@ struct SoundBank::EmitterAudio {
     void render(float *output, unsigned count) {
         std::lock_guard lock(mutex);
         for (auto &[id, voice] : voices) {
-            if (paused && voice.entity && !voice.releasing) continue;
+            if (paused && (voice.entity || voice.source) && !voice.releasing) continue;
             const auto &sample = *voice.sample;
+            const auto relative = project(voice.position - listener);
+            const float distance = std::hypot(relative.x, relative.y * 2);
+            const float spatial = voice.entity || voice.source ?
+                (distance <= sample.nearDistance ? 1.f : distance >= sample.farDistance ? 0.f :
+                    (sample.farDistance - distance) / (sample.farDistance - sample.nearDistance)) : 1.f;
             const double step = double(sample.rate) / sampleRate;
             for (unsigned i = 0; i < count && !voice.finished; ++i) {
                 if (sample.duration && voice.played > sample.duration) { voice.finished = true; break; }
-                float gain = originalSoundGain(voice.volume, masterVolume, sample.musicVolume ? musicVolume : 100);
+                int envelope = 255 * (sample.musicVolume ? musicVolume : 100) / 100;
+                envelope = envelope * masterVolume / 100;
+                envelope = int(float(envelope) * spatial);
+                float gain = float(envelope * voice.volume / 255) / 255.f;
                 if (sample.fadeIn && voice.played < sample.fadeIn)
                     gain *= float(voice.played) / sample.fadeIn;
                 if (voice.releasing) {
@@ -137,8 +150,6 @@ void SoundBank::registerGroup(Archives &archives, std::string key, const DataTab
     const auto number = [&](size_t index, std::string_view column) -> std::optional<int> {
         return table ? table->number(index, column) : std::nullopt;
     };
-    if (travel && number(row, "Loop").value_or(0) != 1)
-        throw std::runtime_error("Travel emitter requires an original looping sound");
     EmitterAudio::Group group;
     group.travel = travel;
     const int count = std::max(1, number(row, "Group Size").value_or(0));
@@ -157,10 +168,12 @@ void SoundBank::registerGroup(Archives &archives, std::string key, const DataTab
             const int flag = number(variant, field).value_or(0);
             if (flag != 0 && flag != 1) throw std::runtime_error("Invalid original sound flag: " + soundId);
         }
-        for (const auto field : {"Duration", "Fade In", "Fade Out", "Compound"})
+        for (const auto field : {"Duration", "Fade In", "Fade Out"})
             if (number(variant, field).value_or(0) < 0)
                 throw std::runtime_error("Invalid original sound timing: " + soundId);
-        if (number(variant, "Compound").value_or(0) != int(group.compound))
+        const int compound = number(variant, "Compound").value_or(0);
+        if ((compound < 0 && !(travel && compound == -1)) ||
+            unsigned(std::max(0, compound)) != group.compound)
             throw std::runtime_error("Inconsistent original sound Compound: " + soundId);
         const auto volume = table ? number(variant, "Volume") : std::optional<int>(255);
         if (!volume || *volume < 0 || *volume > 255)
@@ -201,7 +214,7 @@ void SoundBank::registerGroup(Archives &archives, std::string key, const DataTab
             reader.seek(begin + length + (length & 1));
         }
         const int block = number(variant, "Block 1").value_or(-1);
-        if (travel && ((loop ? block < 0 || unsigned(block) != loop->first : block != -1) ||
+        if (travel && ((block != -1 && (!loop || unsigned(block) != loop->first)) ||
             number(variant, "Block 2").value_or(-1) != -1 ||
             number(variant, "Block 3").value_or(-1) != -1))
             throw std::runtime_error("Original travel WAV loop and Sounds.Block 1 disagree");
@@ -229,6 +242,12 @@ void SoundBank::registerGroup(Archives &archives, std::string key, const DataTab
         sample.duration = unsigned(uint64_t(number(variant, "Duration").value_or(0)) * rate / 25);
         sample.deferInstance = defer != 0;
         sample.musicVolume = number(variant, "Music Vol").value_or(0) != 0;
+        const int falloff = number(variant, "Falloff").value_or(1);
+        static constexpr float nearDistances[]{200,60,200,400,2000};
+        static constexpr float farDistances[]{400,700,1000,1500,2000};
+        const size_t falloffIndex = falloff >= 0 && falloff <= 4 ? size_t(falloff) : 1;
+        sample.nearDistance = nearDistances[falloffIndex];
+        sample.farDistance = farDistances[falloffIndex];
         sample.channels = decoder.channels;
         sample.frames = frames;
         sample.loopBegin = loop->first;
@@ -266,7 +285,7 @@ void SoundBank::stopAllReady() {
     emitters_->tracked.clear();
     for (auto &[key, group] : emitters_->groups) group.lastStart.reset();
 }
-void SoundBank::playReady(const std::string &name, uint64_t frame, float volume) {
+void SoundBank::playReady(const std::string &name, uint64_t frame, float volume, EntityId source) {
     if (!emitters_) return;
     std::lock_guard lock(emitters_->mutex);
     const auto found = emitters_->groups.find(name);
@@ -281,9 +300,29 @@ void SoundBank::playReady(const std::string &name, uint64_t frame, float volume)
     if (sample.stopInstance)
         for (auto &[id, voice] : emitters_->voices)
             if (voice.sample->soundId == sample.soundId) voice.releasing = true;
-    EmitterAudio::Voice voice{&sample};
+    EmitterAudio::Voice voice{};
+    voice.sample = &sample;
+    voice.source = source;
+    if (source) {
+        const auto at = emitters_->sources.find(source);
+        if (at == emitters_->sources.end()) return;
+        voice.position = at->second;
+    }
     voice.volume = volume >= 0 ? int(255 * std::clamp(volume, 0.f, 1.f)) : sample.volume;
     emitters_->voices.emplace(++emitters_->nextVoice, voice);
+}
+void SoundBank::syncSourcesReady(std::span<const SoundSource> sources, Vec listener) {
+    if (!emitters_) return;
+    std::lock_guard lock(emitters_->mutex);
+    emitters_->listener = listener;
+    emitters_->sources.clear();
+    for (const auto &source : sources) emitters_->sources.emplace(source.entity, source.position);
+    for (auto &[id, voice] : emitters_->voices) {
+        if (!voice.source) continue;
+        const auto at = emitters_->sources.find(voice.source);
+        if (at == emitters_->sources.end()) voice.releasing = true;
+        else voice.position = at->second;
+    }
 }
 void SoundBank::volumesReady(int sound, int music) {
     sound = std::clamp(sound, 0, 100);
@@ -305,6 +344,8 @@ void SoundBank::syncReady(std::span<const SoundEmitter> live, uint64_t frame) {
         auto found = emitters_->groups.find(emitter.key);
         if (!emitter.entity || found == emitters_->groups.end()) continue;
         present.insert(emitter.entity);
+        for (auto &[id, voice] : emitters_->voices)
+            if (voice.entity == emitter.entity) voice.position = emitter.position;
         if (!emitters_->tracked.insert(emitter.entity).second) continue;
         auto &group = found->second;
         // A suppressed creation remains suppressed for that entity's lifetime.
@@ -323,8 +364,10 @@ void SoundBank::syncReady(std::span<const SoundEmitter> live, uint64_t frame) {
         if (sample.stopInstance)
             for (auto &[id, voice] : emitters_->voices)
                 if (voice.sample->soundId == sample.soundId) voice.releasing = true;
-        EmitterAudio::Voice voice{&sample};
+        EmitterAudio::Voice voice{};
+        voice.sample = &sample;
         voice.entity = emitter.entity;
+        voice.position = emitter.position;
         voice.volume = sample.volume;
         emitters_->voices.emplace(++emitters_->nextVoice, voice);
     }
@@ -342,8 +385,9 @@ void SoundBank::resetReady() {
     {
         std::lock_guard lock(emitters_->mutex);
         for (auto &[id, voice] : emitters_->voices)
-            if (voice.entity) voice.releasing = true;
+            if (voice.entity || voice.source) voice.releasing = true;
         emitters_->tracked.clear();
+        emitters_->sources.clear();
         for (auto &[key, group] : emitters_->groups) group.lastStart.reset();
     }
 }

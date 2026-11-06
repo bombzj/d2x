@@ -4,12 +4,14 @@
 namespace d2x {
 enum class GoldenBirdStage : uint32_t { Unstarted, Figurine, FigurineExplained, Bird, BirdExplained, Brewing, Rewarded };
 inline constexpr uint32_t goldenBirdPotionPending = 1;
+inline constexpr uint32_t goldenBirdPickupNarrated = 2;
 inline constexpr uint8_t goldenBirdStatus(uint32_t stage,bool figurineDropped) {
     if(stage>=uint32_t(GoldenBirdStage::Rewarded)) return 13;
     return stage==0 && figurineDropped?1:uint8_t(stage);
 }
 enum class GidbinnStage : uint32_t { Unstarted, Assigned, AltarLit, Acquired, Returned, Rewarded };
 inline constexpr uint32_t gidbinnRingGranted = 1, gidbinnHirelingGranted = 2;
+inline constexpr uint32_t gidbinnPickupNarrated = 4;
 enum class KhalimStage : uint32_t { Unstarted, Assigned, Relics, Assembled, OrbSmashed };
 inline constexpr uint32_t khalimEyeExplained = 1, khalimBrainExplained = 2, khalimHeartExplained = 4,
     khalimFlailExplained = 8, khalimWillExplained = 16, khalimAssigned = 32;

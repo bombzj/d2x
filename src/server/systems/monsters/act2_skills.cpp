@@ -48,6 +48,7 @@ DomainResult<> System::nativeTeleport(EntityId id,Vec point,uint64_t tick,const 
     if(!landing) return {DomainStatus::Unavailable,{}};
     (void)tick;stop(id);unit.area=landing->room.area;unit.position=landing->position+Vec{.5f,.5f};
     ports_.areas.moveRoomUnit(id,unit.area,unit.position);refreshCollision(unit);++unit.revision;
+    unit.teleportRevision=unit.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
 bool System::canLand(EntityId source) const {

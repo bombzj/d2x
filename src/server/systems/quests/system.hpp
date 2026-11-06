@@ -52,7 +52,7 @@ class System {
     std::deque<FxPublication> fxPublications_;
     size_t stepCursor_{};
     bool stepResuming_{},stepBlocked_{};
-    bool completionPending() const {return state_.actOne.denCompletion.has_value() || state_.actFive.nihlathakCompletion.has_value() || state_.actFive.anyaCompletion.has_value() || state_.actFour.sanctumCompletion.has_value() || state_.actFour.sanctumSweep.has_value() || state_.actFour.diabloBirthPending;}
+    bool completionPending() const {return state_.actOne.pendingNarrative.has_value() || state_.actThree.pendingNarrative.has_value() || state_.actFour.diabloNarrativePending || state_.actFive.siegeNarrativePending || state_.actFive.baalNarrativePending || state_.actFive.baalDeathEffectPending || state_.actTwo.radamentNarrativePending || state_.actTwo.summonerEffectPending || state_.actTwo.summonerTimerPending || state_.actTwo.sunCallbackPending || state_.actOne.denCompletion.has_value() || state_.actFive.nihlathakCompletion.has_value() || state_.actFive.anyaCompletion.has_value() || state_.actFour.sanctumCompletion.has_value() || state_.actFour.sanctumSweep.has_value() || state_.actFour.diabloBirthPending;}
     DomainResult<> publishCompletion(const QuestCompletion &,uint8_t effect,std::optional<uint16_t> sound,TickContext);
     DomainResult<> commit(const ActorContext &,CharacterRecord,bool levelUp=false,std::optional<QuestId> primaryGoal={},bool notifyQuest=true);
     QuestFact fact(PlayerId,const CharacterRecord &,RegionId) const;
@@ -70,6 +70,8 @@ class System {
     StepStatus ancientsStep(TickContext);
     StepStatus baalStep(TickContext);
     StepStatus flushGoals(TickContext);
+    StepStatus flushGoalRecords(TickContext,std::optional<QuestId> = {});
+    StepStatus finishNarratedGoal(QuestId,uint16_t,TickContext);
     StepStatus flushStatuses(TickContext);
     StepStatus flushFx(TickContext);
     void queueFx(uint8_t);
@@ -173,7 +175,7 @@ class System {
     std::optional<bool> takeCompletion(EntityId);
     bool npcVisible(const CharacterRecord &,std::string_view code,RegionId,int initFunction=0) const;
     DomainResult<> execute(const ActorContext &,const Request &);
-    void npcDeactivated(EntityId);
+    DomainResult<> npcDeactivated(EntityId,PlayerId,uint64_t);
     bool credited(PlayerId,QuestId) const;
     bool allowsTravel(const CharacterRecord &,RegionId,RegionId) const;
     std::optional<int> objectMode(RegionId,EntityId,int definition,int operation,uint64_t tick) const;

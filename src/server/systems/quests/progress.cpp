@@ -15,6 +15,7 @@
 #include "gameplay/quest/catalog.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
+#include "gameplay/quest/sisters_to_slaughter.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_four_state.hpp"
@@ -148,6 +149,7 @@ void System::initialize(const CharacterRecord &creator) {
     }
     const auto sun=book[questIndex(QuestId::TaintedSun)].stage;
     state_.actTwo.dark=sun==1 || sun==2;state_.actTwo.sunScheduled=state_.actTwo.dark;
+    state_.actTwo.sunNoticePending=state_.actTwo.dark;
     auto &story=state_.npcStory;
     const auto difficulty=size_t(ports_.settings.difficulty);
     story.palaceRequested=creator.questPreludes.at(difficulty).at(size_t(QuestPreludeId::LutGholeinArrival)) ||
@@ -258,9 +260,10 @@ DomainResult<> System::publishCompletion(const QuestCompletion &completion,uint8
     const auto result=ports_.events.publishGroup(std::move(batches));
     return result?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{result.status,{}};
 }
-StepStatus System::flushGoals(TickContext tick) {
+StepStatus System::flushGoalRecords(TickContext tick,std::optional<QuestId> only) {
     bool blocked=false;
     for(auto it=state_.goals.begin();it!=state_.goals.end();) {
+    if(only && it->first!=*only) {++it;continue;}
         for(auto member=it->second.eligible.begin();member!=it->second.eligible.end();) {
             const auto *p=ports_.players.find(*member);
             // A disconnected actor retained for recovery still owns a frozen
@@ -350,6 +353,30 @@ StepStatus System::flushGoals(TickContext tick) {
         }
         if(it->second.eligible.empty()) it=state_.goals.erase(it);else ++it;
     }
+    return blocked?StepStatus::Blocked:StepStatus::Complete;
+}
+StepStatus System::finishNarratedGoal(QuestId quest,uint16_t sound,TickContext tick) {
+    if(flushGoalRecords(tick,quest)==StepStatus::Blocked) return StepStatus::Blocked;
+    std::vector<EventBatch> batches;
+    for(const auto &[id,player]:ports_.players.all()) {
+        if(!player.entered || !credited(id,quest)) continue;
+        if(quest==QuestId::Summoner && int(player.area)!=74) continue;
+        if(quest==QuestId::ForgottenTower && int(player.area)!=25) continue;
+        if(quest==QuestId::SistersToTheSlaughter &&
+            player.persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(quest)].stage!=uint32_t(SlaughterStage::AndarielSlain)) continue;
+        EventBatch batch{0,tick.tick,{}, {AudienceKind::Player,id,player.area},{}};
+        if(quest==QuestId::TerrorsEnd || quest==QuestId::EveOfDestruction)
+            batch.facts.emplace_back(QuestStatusFact{quest,0,0,2});
+        batch.facts.emplace_back(SoundFact{player.actor,0,player.area,sound});
+        batches.push_back(std::move(batch));
+    }
+    if(quest==QuestId::SiegeOnHarrogath)
+        batches.push_back({0,tick.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{15}}});
+    if(!batches.empty() && !ports_.events.publishGroup(std::move(batches))) return StepStatus::Blocked;
+    return StepStatus::Complete;
+}
+StepStatus System::flushGoals(TickContext tick) {
+    bool blocked=flushGoalRecords(tick)==StepStatus::Blocked;
     const auto completionEffects=[&](std::optional<QuestCompletion> &pending,QuestId quest,uint8_t effect,uint16_t sound) {
         if(!pending || state_.goals.contains(quest)) return;
         if(!publishCompletion(*pending,effect,sound,tick)) blocked=true;
@@ -403,8 +430,17 @@ void System::prepareStatusNotice(QuestId id,StatusNotice &notice) const {
     }
     notice.prepared=true;
 }
-void System::npcDeactivated(EntityId npc) {
+DomainResult<> System::npcDeactivated(EntityId npc,PlayerId player,uint64_t tick) {
     const auto *unit=ports_.monsters.find(npc);
+    const auto *courier=ports_.players.find(player);
+    if(npc==state_.npcStory.tomeNpc && courier && courier->actor==state_.npcStory.tomeCourier) {
+        if(courier->definition.code!="ass" && courier->definition.code!="dru") {
+            const auto sound=ports_.events.publish({0,tick,{}, {AudienceKind::Player,player,courier->area},
+                {SoundFact{courier->actor,0,courier->area,67}}});
+            if(!sound) return {sound.status,{}};
+        }
+        state_.npcStory.tomeCourier={};state_.npcStory.tomeNpc={};
+    }
     if(unit && unit->identity.monster=="tyrael3" && !state_.actFive.exitPortal) {
         // A5Q6 Callback02: one LastPortal per player room in the chamber,
         // after closing Tyrael. Scroll acknowledgement is independent.
@@ -431,6 +467,7 @@ void System::npcDeactivated(EntityId npc) {
         released.push_back(std::move(*it));it=state_.statusNotices.erase(it);
     }
     for(auto &notice:released) state_.statusNotices.push_back(std::move(notice));
+    return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::flushStatuses(TickContext tick) {
     for(auto it=state_.statusNotices.begin();it!=state_.statusNotices.end();) {

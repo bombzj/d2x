@@ -15,9 +15,12 @@ GameHost::~GameHost() = default;
 GameHost::GameHost(GameHost &&) noexcept = default;
 GameHost &GameHost::operator=(GameHost &&) noexcept = default;
 
-uint32_t hosting::NativeIdentityView::guid(EntityId entity,uint8_t type) const {
+uint32_t hosting::NativeIdentityView::guid(EntityId entity,uint8_t type,std::source_location caller) const {
     const auto native=host_.nativeIdentity(game_,entity);
-    if(!native || uint8_t(native->type)!=type) throw std::logic_error("Missing or mismatched native unit identity");
+    if(!native || uint8_t(native->type)!=type) throw std::logic_error(
+        "Missing or mismatched native unit identity: entity="+std::to_string(entity.value)+
+        " expectedType="+std::to_string(type)+" actualType="+(native?std::to_string(uint8_t(native->type)):"missing")+
+        " caller="+caller.file_name()+":"+std::to_string(caller.line())+" "+caller.function_name());
     return native->guid;
 }
 EntityId hosting::NativeIdentityView::entity(uint32_t guid,uint32_t type) const {
@@ -155,6 +158,12 @@ uint64_t GameHost::nextEntity(GameHandle handle) const {
 }
 std::optional<NativeUnitId> GameHost::nativeIdentity(GameHandle handle,EntityId id) const {
     const auto *slot=find(handle);return slot?slot->game->nativeIdentity(id):std::nullopt;
+}
+std::optional<server::MovementObservation> GameHost::movementObservation(PlayerBinding binding) const {
+    const auto *slot=find(binding.game);
+    auto result=slot?slot->game->movementObservation(binding.player):std::nullopt;
+    if(result) result->game=binding.game;
+    return result;
 }
 std::optional<EntityId> GameHost::entityIdentity(GameHandle handle,NativeUnitId id) const {
     const auto *slot=find(handle);return slot?slot->game->entityIdentity(id):std::nullopt;

@@ -1,4 +1,5 @@
 #include "navigation.hpp"
+#include "navigation_planner.hpp"
 #include "native_spawn.hpp"
 #include <algorithm>
 #include <array>
@@ -730,6 +731,7 @@ std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisio
         // Visit only the perimeter. Scanning each square's interior to skip
         // it made a blocked goal deep in unknown terrain cubic in radius.
         for(int radius=1;radius<=std::max(width,height) && radius<=nearestPossible;++radius) {
+            navigationWorkCheckpoint();
             for(int y=std::max(0,gy-radius);y<=std::min(height-1,gy+radius);++y) {
                 if(std::abs(y-gy)==radius) {
                     for(int x=std::max(0,gx-radius);x<=std::min(width-1,gx+radius);++x) consider(x,y);
@@ -743,6 +745,7 @@ std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisio
     int closest = start;
     open.emplace(heuristic(start), start);
     while (!open.empty()) {
+        navigationWorkCheckpoint();
         int cur = open.top().second;
         open.pop();
         if (closed[cur])
@@ -785,6 +788,7 @@ std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisio
     std::deque<Vec> smooth;
     Vec anchor = from;
     while (!out.empty()) {
+        navigationWorkCheckpoint();
         if (!clearLine(anchor, out.front())) return {};
         size_t far = 0;
         while (far + 1 < out.size() && clearLine(anchor, out[far + 1]))

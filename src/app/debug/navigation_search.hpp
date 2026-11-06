@@ -1,6 +1,7 @@
 #pragma once
 #include <utility>
 #include "world/navigation.hpp"
+#include "world/navigation_planner.hpp"
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -12,6 +13,10 @@
 #include <tuple>
 
 namespace d2x {
+class RemoteTown;
+struct OnlineView;
+struct OnlineSceneView;
+nlohmann::json debugMapReadiness(const OnlineSceneView &);
 bool debugUnknownFrontier(const Grid &,Vec endpoint);
 // A pending background result is distinct from an empty completed route.
 struct DebugSearchPending {};
@@ -39,6 +44,14 @@ class DebugNavigationSearch {
     uint64_t componentSearches_{},routeJoins_{};
     struct Anchor {Vec from; Clock::time_point touched;};
     std::map<std::pair<float,float>,Anchor> travelAnchors_;
+    struct WalkingRoute {
+        NavigationRoute route;
+        uint64_t geometry{},used{};
+        int width{},height{};
+        std::optional<std::pair<int,int>> origin;
+        std::shared_ptr<const NavigationSnapshot> snapshot;
+    };
+    std::map<std::pair<float,float>,WalkingRoute> walkingRoutes_;
     Clock::time_point lastDeferred_{},waitingSince_{};
     uint64_t lastDeferredFrame_{};
 
@@ -46,16 +59,22 @@ class DebugNavigationSearch {
   public:
     DebugNavigationSearch();
     ~DebugNavigationSearch();
-    struct TravelRoute {Vec origin;std::deque<Vec> points;};
-    struct TeleportRoom {
-        int x{},y{},width{},height{};
-        std::vector<size_t> near;
-        bool operator==(const TeleportRoom &) const = default;
-    };
+    using TravelRoute=NavigationRoute;
+    using TeleportRoom=NavigationRoom;
+    using PlanningRoom=NavigationPlanningRoom;
+    using RoomTree=NavigationRoomTree;
+    using Candidate=NavigationTarget;
+    using CandidateRoute=NavigationSelection;
+    enum class PlanningPurpose {Exploration,Waypoint,Interaction,ExitOpening,ExitFrontier,Backtrack};
+    NavigationExploration exploration(const Grid &,const NavigationViewpointInput &,uint64_t observationRevision,bool prefetch=false);
+    NavigationBacktrack backtrack(const Grid &,const NavigationBacktrackInput &);
+    CandidateRoute selectCandidate(const Grid &,Vec from,const std::vector<Candidate> &,
+        const std::vector<TeleportRoom> &rooms={},int range=0,bool restricted=false,Vec origin={},
+        PlanningPurpose purpose=PlanningPurpose::Exploration);
+    RoomTree roomTree(const Grid &,const std::vector<PlanningRoom> &,size_t root,int level,int range,Vec origin);
     // Local cell centers, static terrain only. Execution checks the current
     // native room neighbourhood and live landing occupancy separately.
     TravelRoute teleportRoute(const Grid &,const std::vector<TeleportRoom> &,Vec from,Vec to,int range,bool restricted,Vec coordinateOrigin);
-    bool teleportPassage(const Grid &,TeleportRoom from,TeleportRoom to,int range);
     void discardTeleportRoute(Vec to,int range,bool restricted);
     void rememberTeleportLanding(Vec to,int range,bool restricted,Vec waypoint,Vec landing);
     void confirmTeleportLanding(Vec requested,Vec arrived);
@@ -67,6 +86,8 @@ class DebugNavigationSearch {
     bool prolongedWait() const;
     void noteTravelWait();
     void beginFrame(uint64_t game,uint64_t area,uint64_t geometry);
+    void observeExplored(const RemoteTown &,const OnlineView &,std::optional<Vec> position);
+    void traceDecision(nlohmann::json details);
     void clear();
     static constexpr int explorationClearance=6; // AI policy, in native subtiles.
     static constexpr int wallSearchRadius=explorationClearance+3;

@@ -1,4 +1,5 @@
 #include "planning.hpp"
+#include "item_skills.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/inventory.hpp"
 #include "server/runtime/facts/unit.hpp"
@@ -50,10 +51,17 @@ DomainResult<> System::identify(const ActorContext &actor, const IdentifyItem &r
     if (!from || (from->container != containers.backpack && from->container != containers.belt && !(draft.storage && from->container == containers.stash) &&
         !(cube && from->container == containers.cube)) || !to || !draft.owned(*to) ||
         (to->container != containers.backpack && to->container != containers.equipment && to->container != containers.beltEquipment &&
-         !(draft.storage && to->container == containers.stash) && !(cube && to->container == containers.cube)) || draft.at({containers.cursor, {}}) || target->identified)
+         !(draft.storage && to->container == containers.stash) && !(cube && to->container == containers.cube)) || draft.at({containers.cursor, {}}))
         return {DomainStatus::InvalidRequest, {}};
     const auto rule = player.rules.character->itemSkills.find(source->definition);
-    if (rule == player.rules.character->itemSkills.end() || rule->second.action!=ItemSkillAction::Identify || !(rule->second.book ? source->charges : source->quantity))
+    if (rule == player.rules.character->itemSkills.end() || rule->second.action!=ItemSkillAction::Identify)
+        return {DomainStatus::InvalidRequest, {}};
+    if(rule->second.book && !source->charges) {
+        const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
+            {ItemSpellEndFact{source->id}}});
+        return {sent?DomainStatus::InvalidRequest:sent.status,{}};
+    }
+    if(target->identified || (!rule->second.book && !source->quantity))
         return {DomainStatus::InvalidRequest, {}};
     auto &identified = draft.edit.inventory.items.at(target->id);
     identified.identified = true; identified.nativeFlags |= 0x10; ++identified.revision;
@@ -63,6 +71,7 @@ DomainResult<> System::identify(const ActorContext &actor, const IdentifyItem &r
     const bool removed = rule->second.book ? (--used.charges, false) : --used.quantity == 0;
     draft.edit.changes.push_back({used.id, used.revision, removed ? ItemChangeKind::Removed : ItemChangeKind::QuantityChanged,
         used.location, removed ? std::nullopt : std::optional<ItemLocation>{used.location}, used.quantity});
+    draft.edit.changes.back().directQuantity=rule->second.book;
     const auto origin=*from;
     if (removed) draft.edit.inventory.items.erase(request.source.id);
     if (removed && origin.container==containers.belt) {
@@ -71,7 +80,12 @@ DomainResult<> System::identify(const ActorContext &actor, const IdentifyItem &r
     }
     transactions::InventoryEdit edit{actor, player.inventoryRevision, player.characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), player.persistent.player.weaponSet};
-    edit.facts.emplace_back(ItemTargetingFact{request.source.id,-1});
+    if(rule->second.book && origin.container!=containers.belt) {
+        PersistentCharacter projected;
+        projected.containers=player.persistent.containers;projected.inventory=edit.inventory;
+        const auto quantities=itemSkills(projected,*player.rules.character);
+        edit.facts.emplace_back(ItemSpellEndFact{request.source.id,true,rule->second.skill,quantities.at(rule->second.skill)});
+    } else edit.facts.emplace_back(ItemTargetingFact{request.source.id,-1});
     edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,6});
     auto plan = ports_.transactions.prepare(std::move(edit));
     return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};

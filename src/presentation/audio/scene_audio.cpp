@@ -27,12 +27,11 @@ bool SceneAudio::registerSound(std::string_view name, std::string key, bool trav
     if (aliases_.contains(key)) return true;
     const auto row = catalog_.soundRow(name);
     if (!row) { limitations_.insert("Original Sounds definition unavailable: " + std::string(name)); return false; }
-    const bool loop = travel && catalog_.sounds().number(*row,"Loop") == 1;
-    const std::string canonical = loop ? key : "original:" + std::string(name);
+    const std::string canonical = travel ? key : "original:" + std::string(name);
     if (unavailable_.contains(canonical)) return false;
     if (registered_.contains(canonical)) { aliases_.emplace(std::move(key),canonical); return true; }
     try {
-        if (loop) bank_.registerTravelGroup(archives_,canonical,catalog_.sounds(),*row);
+        if (travel) bank_.registerTravelGroup(archives_,canonical,catalog_.sounds(),*row);
         else bank_.registerOriginalGroup(archives_,canonical,catalog_.sounds(),*row);
         registered_.insert(canonical); aliases_.emplace(std::move(key),canonical);
         return true;
@@ -160,7 +159,11 @@ void SceneAudio::reset() {
     pending_.clear(); cadence_.clear(); clock_ = -1;
     bank_.resetEmitters();
 }
-void SceneAudio::update(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events) {
+void SceneAudio::update(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events, Vec listener) {
+    std::vector<SoundSource> sources;
+    sources.reserve(actors.size());
+    for (const auto &source : actors) sources.push_back({source.id, source.position});
+    bank_.syncSources(sources, listener);
     for (auto &failure : bank_.takeFailures()) limitations_.insert("Original sound unavailable: " + failure);
     if (clock_ >= 0 && (clock < clock_ || clock - clock_ > .25f)) {
         pending_.clear(); cadence_.clear();
@@ -255,7 +258,11 @@ void SceneAudio::update(float clock, std::span<const SoundActorView> actors, std
         if (!source || (sound.rule.interruptible && source->frozen) ||
             (sound.actionRevision && sound.actionRevision != source->actionRevision)) return true;
         if (clock < sound.due) return false;
-        if (clock - sound.due < .25f && source->audible) play(sound.rule.sound,uint64_t(std::max(0.f,clock) * 25.f),sound.rule.volume,sound.transient);
+        if (clock - sound.due < .25f && source->audible) {
+            const std::string key = "original:" + sound.rule.sound;
+            if (registerSound(sound.rule.sound, key))
+                bank_.play(key,uint64_t(std::max(0.f,clock) * 25.f),sound.rule.volume,sound.transient,source->id);
+        }
         return true;
     });
 }

@@ -8,7 +8,7 @@
 #include <deque>
 #include <span>
 #include <utility>
-namespace d2x { struct CharacterRecord; }
+namespace d2x { struct CharacterRecord; class FrameEventQueue; }
 namespace d2x::server { struct NpcMessagesFact; }
 namespace d2x::server::npc {
 struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::map<uint16_t,QuestId> pendingQuests; EntityId actor{}; uint64_t areaGeneration{}; std::optional<uint16_t> pendingIntroduction{},pendingArrival{}; bool refresh{}; };
@@ -18,7 +18,7 @@ struct HirelingSlot {uint16_t name{};uint32_t seed{};bool available{},hired{};};
 struct HirelingRoster {uint64_t revision{1};std::vector<HirelingSlot> slots;};
 struct VendorControlPublication {uint64_t expected{},next{};std::map<int,HirelingRoster> hirelings;};
 struct State { std::map<PlayerId, Conversation> conversations; uint64_t next = 1; std::map<EntityId,Escape> escapes; std::optional<uint64_t> controlRandom; std::map<int,HirelingRoster> hirelings; };
-struct Ports { const PlayerStore &players; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; quests::System &quests; effects::System &effects; world::System &world; MovementSystem &movement; monsters::System &monsters; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; quests::System &quests; effects::System &effects; world::System &world; MovementSystem &movement; monsters::System &monsters; FrameEventQueue &frameEvents; };
 class System {
     State state_; const Ports ports_;
     struct Approach { ActorContext actor; Request request; uint64_t locomotion; };

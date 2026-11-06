@@ -49,6 +49,23 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         localObjectKickRevision = 0;
     }
     const auto now = std::chrono::steady_clock::now();
+    const auto nowMilliseconds=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+    auto &repositionFade=mapDisplay.repositionFade;
+    if(repositionFade.gameGeneration!=v.gameGeneration || repositionFade.areaGeneration!=v.world.areaGeneration)
+        repositionFade={v.gameGeneration,v.world.areaGeneration,0,0};
+    if(!pd2 && playerId) if(const auto player=v.world.units.find({0,*playerId});player!=v.world.units.end()) {
+        const auto &unit=player->second;
+        if(unit.repositionRevision && unit.repositionRevision!=repositionFade.revision) {
+            repositionFade.revision=unit.repositionRevision;
+            auto usedSkill=unit.repositionSkill;
+            if(localCast && localCast->started>=0 && time<localCast->started+localCast->duration)
+                usedSkill=localCast->command.skill;
+            const auto skill=usedSkill?skillRows.find(*usedSkill):skillRows.end();
+            const bool warp=skill!=skillRows.end() && skills.number(skill->second,"warp").value_or(0)!=0;
+            if(unit.repositionFlags && !onlinePlayerDead(v.world) && !warp)
+                repositionFade.endMilliseconds=nowMilliseconds+500;
+        }
+    }
     // Refresh the wall-clock anchor while paused and on the resume frame.
     // Menu time must never become world animation/prediction catch-up.
     const float elapsed = paused || wasPaused || lastFrame == std::chrono::steady_clock::time_point{} ? 0.f
@@ -184,6 +201,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         clientMissiles.push_back({missile.missileId, missile.pos, missile.age, missile.duration - missile.age,missile.velocity,missile.hostile,
             missile.owner ? std::optional{OnlineUnitKey{uint8_t((missile.owner.value-1)>>32),uint32_t(missile.owner.value-1)}} : std::nullopt});
     const bool waypointOpen = v.world.waypointSource.has_value();
+    if(v.protocolProfile=="lod113c" && binding.area)
+        shared.updateAreaTitle(v.gameGeneration,int(*binding.area),v.world.quests.availability);
     auto local = [&](OnlinePoint p) {
         return Vec{float(int(p.x) - origin.x), float(int(p.y) - origin.y)};
     };
@@ -491,7 +510,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             if(m.leapLanding>=0 && (displayed.actionSkill==132 || displayed.actionSkill==143)) m.animation.startedAt=m.leapLanding;
             auto target = localCast->command.point;
             if (localCast->command.target) target=targetPosition(*localCast->command.target);
-            if (target) m.look = local(*target) - feet;
+            if (localCast->teleportFacing) m.look = *localCast->teleportFacing;
+            else if (target) m.look = local(*target) - feet;
         }
         if (key.type == 0 && v.world.corpseOwners.contains(key.id)) {
             displayed.mode = 17; displayed.nativeMode = true; displayed.actionSkill.reset();
@@ -879,8 +899,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if (found != motion.end()) worldScene.alerts.push_back({EntityId{(uint64_t{1} << 32) + key.id + 1},
             found->second.position - worldScene.terrainOrigin});
     }
-    intent.visibleMapTiles = shared.drawWorld(worldScene);
+    intent.visibleMapTiles = shared.drawWorld(worldScene,&intent.mapRendering);
     intent.observationExtent = shared.worldObservationExtent();
+    intent.mapRendering.halfExtent=intent.observationExtent;
     const auto hoverNow=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
     for(const auto &[id,message]:v.world.social.hover) {
         if(message.type!=5 || message.unitType!=0) continue;
@@ -913,6 +934,26 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 const auto localized = strings.find(target.name);
                 const auto name = localized.empty() ? target.name : std::string(localized);
                 const auto drawName = [&] {
+                    if (selectedTarget.type == 2 && target.interaction == OnlineMapInteraction::Portal) {
+                        const auto unit = v.world.units.find(selectedTarget);
+                        const auto row = unit != v.world.units.end() && unit->second.classId
+                            ? objectRows.find(*unit->second.classId) : objectRows.end();
+                        if (row == objectRows.end()) return;
+                        std::string title = name;
+                        if ((objects.number(row->second,"SubClass").value_or(0) & 4) != 0 && mapDisplay.multiplayer) {
+                            const auto &portal = unit->second;
+                            std::string owner = portal.portalOwnerName;
+                            if (portal.portalOwner) {
+                                const auto player = v.world.social.players.find(*portal.portalOwner);
+                                if (player != v.world.social.players.end() && !player->second.name.empty())
+                                    owner = player->second.name;
+                            }
+                            if (!owner.empty()) title += " (" + owner + ") ";
+                        }
+                        shared.drawPortalLabel(title,screen(local(target.position)),
+                            objects.number(row->second,"NameOffset").value_or(0));
+                        return;
+                    }
                     if (selectedTarget.type != 1) {
                         shared.drawInteractionLabel(name,at);
                         return;
@@ -1035,6 +1076,12 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             marker.position = moving->second.position + moving->second.correction;
     }
     shared.drawAutomap(automap);
+    if(!pd2 && nowMilliseconds<repositionFade.endMilliseconds) {
+        auto viewport=shared.worldViewport();
+        viewport.height=float(std::max(0,H-47));
+        const auto alpha=uint8_t(std::min(uint64_t{500},repositionFade.endMilliseconds-nowMilliseconds)*255/500);
+        DrawRectangleRec(viewport,Color{0,0,0,alpha});
+    }
     auto &hit = intent.input;
     hit.available = !surface && !waypointOpen && !v.world.npcConversation;
     hit.targetingAvailable = !shared.ui().blocksInput() && !shared.ui().skillPicker &&
@@ -1068,7 +1115,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             if (selections[hand] && combat.skillTargetEligible(item, selections[hand]->skill))
                 hit.validCombatTargets[hand].push_back(effectOwner({4,id}));
     }
-    shared.updateWorldAudio(time,soundActors,soundEvents);
+    shared.updateWorldAudio(time,soundActors,soundEvents,
+        {float(v.world.playerPosition->x)+.5f,float(v.world.playerPosition->y)+.5f});
     const auto &audioLimitations = shared.soundLimitations();
     effectLimitations.insert(audioLimitations.begin(),audioLimitations.end());
     // The frame's replica belongs to the caller. Diagnostics retain values,

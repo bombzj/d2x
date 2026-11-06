@@ -16,6 +16,7 @@ struct InventoryFact {
     std::vector<ItemInstance> removedItems{};
 };
 struct ItemTargetingFact { EntityId source; int cursor{-1}; int skill{-1}; };
+struct ItemSpellEndFact {EntityId source;bool afterInventory{};int skill{-1};int quantity{};};
 // Captured at the drop transaction; later visibility snapshots are not drops.
 struct GroundDropFact { ItemInstance item; bool flip=true; };
 struct GroundRemoveFact { EntityId item; };

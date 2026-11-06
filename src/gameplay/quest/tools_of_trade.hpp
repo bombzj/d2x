@@ -2,6 +2,7 @@
 #include "gameplay/quest/state.hpp"
 
 namespace d2x {
+inline constexpr uint32_t toolsPickupNarrated = 1;
 enum class ToolsStage : uint32_t {
     Unstarted, Assigned, BarracksEntered, MalusDropped, MalusAcquired,
     RewardReady, Imbued

@@ -513,6 +513,16 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     Reader r(p.body);
     switch (p.id) {
+    case 0x57: {
+        const auto id=r.u32();OnlineUnit::MonsterIdentityUpdate update;
+        update.flags=r.u8();update.nameSeed=r.u16();
+        const auto modifiers=r.u16();update.modifiers[0]=uint8_t(modifiers);update.modifiers[1]=uint8_t(modifiers>>8);
+        update.modifiers[2]=uint8_t(r.u16());update.champion=r.u16()!=0;r.finish();
+        if(auto found=w.units.find({1,id});found!=w.units.end()) {
+            found->second.monsterIdentityUpdate=update;found->second.appearanceRevision=w.revision;
+        }
+        break;
+    }
     case 0x61:
         w.cinematic=r.u8();r.finish();w.cinematicRevision=w.revision;break;
     case 0x47:
@@ -774,7 +784,10 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     case 0x15: {
         auto &u = unit(w, key(r));
         position(v, u, point(r));
-        r.u8();
+        u.repositionFlags=r.u8();
+        u.repositionRevision=w.revision;
+        u.repositionReceivedMilliseconds=receivedMilliseconds();
+        u.repositionSkill=u.actionSkill;
         ++u.positionDiscontinuity; // Native correction/teleport must not tween across geometry.
         u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
@@ -1615,6 +1628,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             throw ProtocolError("Invalid NPC assignment size");
         const auto tail = r.take(r.remaining());
         u.appearanceBits.assign(tail.begin(), tail.end());
+        u.monsterIdentityUpdate.reset();
         u.assignmentRevision = w.revision;
         // AC supplies an initial mode and feet, never a movement order.
         u.destination.reset(); u.destinationUnit.reset(); u.pathSteps.reset();

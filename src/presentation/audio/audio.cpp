@@ -1,5 +1,6 @@
 #include "audio.hpp"
 #include "core/random.hpp"
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -19,6 +20,9 @@ struct SoundBank::Async {
     std::set<std::string> prepared;
     std::vector<std::string> failures;
     std::vector<SoundEmitter> live;
+    std::vector<SoundSource> sources;
+    Vec listener;
+    bool sourcesPending{};
     uint64_t frame{};
     bool syncPending{};
     bool controlsPending{}, resetPending{}, paused{};
@@ -35,6 +39,9 @@ SoundBank::SoundBank(Archives &archives)
         while (!stop.stop_requested()) {
             std::function<void()> command;
             std::vector<SoundEmitter> live;
+            std::vector<SoundSource> sources;
+            Vec listener;
+            bool syncSources = false;
             uint64_t frame = 0;
             bool sync = false;
             bool controls = false, reset = false, paused = false;
@@ -43,7 +50,7 @@ SoundBank::SoundBank(Archives &archives)
             {
                 std::unique_lock lock(async_->mutex);
                 if (!async_->wake.wait(lock, stop, [this] {
-                    return !async_->commands.empty() || async_->syncPending || async_->controlsPending || async_->resetPending;
+                    return !async_->commands.empty() || async_->syncPending || async_->sourcesPending || async_->controlsPending || async_->resetPending;
                 })) break;
                 controls = std::exchange(async_->controlsPending, false);
                 reset = std::exchange(async_->resetPending, false);
@@ -51,6 +58,12 @@ SoundBank::SoundBank(Archives &archives)
                 sound = async_->sound;
                 music = async_->music;
                 controlsRevision = async_->controlsRevision;
+                if (async_->sourcesPending) {
+                    sources = async_->sources;
+                    listener = async_->listener;
+                    syncSources = true;
+                    async_->sourcesPending = false;
+                }
                 if (async_->syncPending) {
                     live = async_->live;
                     frame = async_->frame;
@@ -71,6 +84,7 @@ SoundBank::SoundBank(Archives &archives)
                     async_->appliedControlsRevision = controlsRevision;
                 }
                 if (sync) syncReady(live, frame);
+                if (syncSources) syncSourcesReady(sources, listener);
                 if (command) command();
             } catch (const std::exception &error) {
                 std::cerr << "Original sound unavailable: " << error.what() << '\n';
@@ -99,6 +113,7 @@ void SoundBank::registerOriginalGroup(Archives &, std::string key, const DataTab
         registerGroup(*async_->archives, key, &table, row, false, async_->worker.get_stop_token());
         std::lock_guard lock(async_->mutex);
         async_->prepared.insert(key);
+        async_->sourcesPending = true;
     });
 }
 void SoundBank::registerTravelGroup(Archives &, std::string key, const DataTable &table, size_t row) {
@@ -111,6 +126,7 @@ void SoundBank::registerTravelGroup(Archives &, std::string key, const DataTable
         registerGroup(*async_->archives, key, &table, row, true, async_->worker.get_stop_token());
         std::lock_guard lock(async_->mutex);
         async_->syncPending = true;
+        async_->sourcesPending = true;
         async_->controlsPending = true;
     });
 }
@@ -134,9 +150,9 @@ void SoundBank::stopAll() {
         async_->appliedStopGeneration = generation;
     });
 }
-void SoundBank::play(const std::string &name, uint64_t frame, float volume, bool transient) {
+void SoundBank::play(const std::string &name, uint64_t frame, float volume, bool transient, EntityId source) {
     if (!enabled) return;
-    if (!transient) {
+    if (!transient && !source) {
         std::lock_guard lock(async_->mutex);
         if (async_->prepared.contains(name) &&
             async_->appliedControlsRevision == async_->controlsRevision &&
@@ -148,11 +164,25 @@ void SoundBank::play(const std::string &name, uint64_t frame, float volume, bool
     const auto requested = std::chrono::steady_clock::now();
     const auto generation = async_->generation.load();
     const auto stopGeneration = async_->stopGeneration.load();
-    enqueue([this, name, frame, volume, requested, generation, stopGeneration, transient] {
-        if (stopGeneration == async_->stopGeneration && (!transient || (generation == async_->generation &&
+    enqueue([this, name, frame, volume, requested, generation, stopGeneration, transient, source] {
+        if (source) {
+            std::lock_guard lock(async_->mutex);
+            if (std::none_of(async_->sources.begin(), async_->sources.end(),
+                [&](const auto &entry) { return entry.entity == source; })) return;
+        }
+        if (stopGeneration == async_->stopGeneration && (!source || generation == async_->generation) && (!transient || (generation == async_->generation &&
             std::chrono::steady_clock::now() - requested < std::chrono::milliseconds(250))))
-            playReady(name, frame, volume);
+            playReady(name, frame, volume, source);
     });
+}
+void SoundBank::syncSources(std::span<const SoundSource> sources, Vec listener) {
+    {
+        std::lock_guard lock(async_->mutex);
+        async_->sources.assign(sources.begin(), sources.end());
+        async_->listener = listener;
+        async_->sourcesPending = true;
+    }
+    async_->wake.notify_one();
 }
 void SoundBank::setVolumes(int sound, int music) {
     {
@@ -189,6 +219,8 @@ void SoundBank::resetEmitters() {
     {
         std::lock_guard lock(async_->mutex);
         async_->live.clear();
+        async_->sources.clear();
+        async_->sourcesPending = false;
         async_->syncPending = false;
         async_->resetPending = true;
     }

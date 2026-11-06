@@ -20,6 +20,37 @@
 #include <utility>
 
 namespace d2x {
+void SceneAssets::loadAreaTitle(int level,const std::optional<std::array<uint8_t,37>> &availability) {
+    areaTitle={};
+    const DataTable levels(archives_.read("data/global/excel/levels.txt"));
+    std::string file,directory;
+    for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Id")==level) {
+        file=levels.value(row,"EntryFile");
+        const auto act=levels.number(row,"Act");
+        if(!act) return;
+        directory=level>=109?"expansion":"act"+std::to_string(*act+1);
+        break;
+    }
+    if(level==8 || level==20) {
+        if(!availability) return;
+        if(!(*availability)[level==8?1:5]) {directory="act1";file=level==8?"A1Q1":"A1Q5";}
+    }
+    if(file.empty()) return;
+    const auto path=localUiArtPath(archives_,directory+"/"+file);
+    if(!archives_.contains(path)) {
+        TraceLog(LOG_WARNING,"Original area title is missing: %s",path.c_str());return;
+    }
+    const auto *source=uiGraphics_.animation(path);
+    if(!source || source->frames.empty()) return;
+    const auto palette=archives_.read("data/global/palette/sky/pal.pl2");
+    constexpr size_t transform=0x6B600+13*3+256;
+    if(palette.size()<transform+256) return;
+    areaTitle.directions=source->directions;areaTitle.count=source->framesPerDirection;
+    for(auto cell:source->frames) {
+        for(auto &pixel:cell.pixels) if(pixel) pixel=palette[transform+pixel];
+        areaTitle.frames.push_back(uiGraphics_.upload(cell));
+    }
+}
 const ClassicFont *SceneAssets::ensureOverheadFont() {
     if(!overheadFontAttempted_) {
         overheadFontAttempted_=true;

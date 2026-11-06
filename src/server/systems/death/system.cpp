@@ -66,13 +66,17 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     ports_.world.activate(requested.area,requested.position+Vec{.5f,.5f});
     const auto arrival=ports_.world.nativePlayerPosition(requested.area,requested.position,actor.actor);
     if(!arrival) return {DomainStatus::Unavailable,{}};
+    if(!ports_.world.prepareClientRoom(arrival->area,arrival->position+Vec{.5f,.5f})) return {DomainStatus::PendingContent,{}};
     auto record = player->persistent.player; record.hp = 1;
     transactions::CharacterEdit edit{actor, player->inventoryRevision, player->characterRevision, std::move(record), transactions::ResourceRefresh::LevelUp};
     edit.revival = PointTarget{arrival->area,ports_.areas.at(arrival->area).generation,arrival->position};
     auto plan = ports_.transactions.prepare(std::move(edit));
     if (!plan) { if (isDeferred(plan.status)) return {DomainStatus::Applied, std::monostate{}}; death->second.reviving = false; return {plan.status, {}}; }
     const auto result = ports_.transactions.commit(std::move(*plan.value));
-    if (result) { state_.transitions.erase(death); state_.recoveries.erase(actor.player); }
+    if (result) {
+        ports_.world.changeClientRoom(actor.player,actor.tick);
+        state_.transitions.erase(death); state_.recoveries.erase(actor.player);
+    }
     else if (isDeferred(result.status)) return {DomainStatus::Applied, std::monostate{}};
     else death->second.reviving = false;
     return result;

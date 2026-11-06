@@ -114,7 +114,8 @@ class System {
     bool clientRoomsReady(PlayerId) const;
     bool visible(PlayerId, RegionId, Vec) const;
     void activate(RegionId, Vec); // Acquires resident terrain; queues released inputs. Caller checks loaded().
-    void changeClientRoom(PlayerId); // Current entered player, including initial admission.
+    bool prepareClientRoom(RegionId, Vec);
+    void changeClientRoom(PlayerId, uint64_t tick); // Current entered player, including initial admission.
     StepStatus step(TickContext, FrameFacts &);
 };
 }

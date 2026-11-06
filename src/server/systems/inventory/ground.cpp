@@ -10,6 +10,7 @@
 #include "server/systems/loot/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/social/system.hpp"
+#include "server/systems/quests/system.hpp"
 #include <algorithm>
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
@@ -243,6 +244,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
                     if(remaining==source.quantity) return {DomainStatus::Conflict,{}};
                     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
                     if(telekinesis) edit.charge=telekinesis->charge;
+                    edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,1});
                     edit.publicFacts.emplace_back(GroundRemoveFact{source.id});
                     if(remaining) {
                         if(!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity,{}};
@@ -326,7 +328,35 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
         std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
     edit.equipment = std::move(equipment); edit.character = std::move(record);if(telekinesis) edit.charge=telekinesis->charge;
     if(telekinesis) edit.skillPayment=transactions::SkillManaPayment{telekinesis->manaCost,telekinesis->sourceId};
+    if(!request.drop && !request.cursor) edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,1});
+    if(!request.drop && source.definition=="hdm" && edit.inventory.items.contains(source.id)) {
+        auto &quest=edit.character->quests.at(size_t(player->persistent.difficulty)).at(questIndex(QuestId::ToolsOfTheTrade));
+        if(!(quest.flags & toolsPickupNarrated)) {
+            quest.flags |= toolsPickupNarrated;
+            edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,36});
+        }
+    }
+    if(!request.drop && edit.inventory.items.contains(source.id)) {
+        const auto &items=player->rules.character->laterQuests;
+        auto &book=edit.character->quests.at(size_t(player->persistent.difficulty));
+        if(source.definition==items.figurine) {
+            auto &quest=book.at(questIndex(QuestId::GoldenBird));
+            if(quest.stage<uint32_t(GoldenBirdStage::Brewing) && !(quest.flags & goldenBirdPickupNarrated)) {
+                quest.flags|=goldenBirdPickupNarrated;
+                edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,72});
+            }
+        }
+        if(source.definition==items.gidbinn &&
+            !(ports_.quests.read().initialFlags.at(questDefinition(QuestId::BladeOfTheOldReligion).nativeSlot)&0x8000)) {
+            auto &quest=book.at(questIndex(QuestId::BladeOfTheOldReligion));
+            if(!(quest.flags & gidbinnPickupNarrated)) {
+                quest.flags|=gidbinnPickupNarrated;
+                edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,65});
+            }
+        }
+    }
     if (request.drop) edit.publicFacts.emplace_back(GroundDropFact{world.world.items.at(source.id)});
+    else if(request.cursor) edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,1});
     edit.world = transactions::WorldEdit{world.revision, std::move(world)};
     auto plan = ports_.transactions.prepare(std::move(edit));
     return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};

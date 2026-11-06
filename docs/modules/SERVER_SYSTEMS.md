@@ -167,7 +167,7 @@ transactions的Plan含TransactionId、库存／人物双RevisionGuard、Inventor
 
 事件载荷分别定义在 `runtime/facts/`，类型编号由不包含载荷布局的 `fact_catalog.inc`／`fact_kind.hpp` 维护，保留原诊断顺序。`DomainFact` 是布局独立的拥有型值：128字节以内、对齐满足条件且可无异常移动的载荷内联存储，较大快照独占分配；复制保持独立值，移动转移所有权，移出后的空值禁止发布。生产／读取具体载荷的 cpp 显式包含对应头，通过 `factIf`／`factGet`／`factHolds` 访问；通用事务只持有 `DomainFact`，不包含全量载荷。不要恢复聚合载荷头或以全部载荷定义实例化公共 variant。
 
-`event_batch.hpp`、`frame_facts.hpp`、`diagnostic_event.hpp` 分别维护批次、本帧事实和诊断值；`events.hpp` 只暴露可靠输出接口，队列、声音槽及历史环的私有存储在 `events.cpp`。Windows Release all 已构建通过，最终构建零警告且输入稳定性检查通过；Ninja实际依赖确认 `facts/object.hpp` 只有物件发布、宿主编码、事件诊断三个 cpp 消费者，字段变化不再经事务／技能接口传遍服务端。独立测试会话已用重构后0B8CB8EE单机自主完成邪恶洞窟、血乌和完整凯恩任务，见[AI验收记录](../development/AI_TEST_REC.md)；大快照的额外对象分配、复制与吞吐仍待实际验证，不能据依赖收窄宣称运行性能提升。
+`event_batch.hpp`、`frame_facts.hpp`、`diagnostic_event.hpp` 分别维护批次、本帧事实和诊断值；`events.hpp` 只暴露可靠输出接口，队列、声音槽及历史环的私有存储在 `events.cpp`。Windows Release all 已构建通过，最终构建零警告且输入稳定性检查通过；Ninja实际依赖确认 `facts/object.hpp` 只有物件发布、宿主编码、事件诊断三个 cpp 消费者，字段变化不再经事务／技能接口传遍服务端。独立测试会话已用重构后0B8CB8EE单机自主完成邪恶洞窟、血乌和完整凯恩任务，见[验证约定](../development/TESTING.md)；大快照的额外对象分配、复制与吞吐仍待实际验证，不能据依赖收窄宣称运行性能提升。
 
 EventOutbox有256批／4096事实容量及有序累计确认。InventoryFact保留当次稀疏物品值，CharacterFact保留前后人物／Totals，TravelFact保留提交区域／位置，ChatFact保留提交时收件人。NativeRealmHost集中路由：库存／人物／换区仅本人，聊天仅已捕获的同局连接。每位接收者完整编码后一次提交字节队列；失败明确终止该连接、移出投影并保留可恢复存档租约，再确认已送达或明确退役的批，不向其他连接重复发送。Area受众按同实例可见区域及单位过滤；未实现事实明确拒绝。玩家／世界／怪物增量由独立player_replication／world_replication／monster_replication编码；只发别人穿戴外观，不发背包、Cursor、私人箱或人物属性。
 

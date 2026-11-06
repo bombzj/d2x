@@ -357,6 +357,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         candidate.position={std::floor(p->position.x)+.5f,std::floor(p->position.y)+.5f};
         candidate.revivalPosition=PointTarget{p->area,area.generation,candidate.position};
         candidate.route.clear();candidate.pathStep={};candidate.moving=candidate.running=false;++candidate.revision;
+        candidate.teleportRevision=candidate.revision;
         auto placement=ports_.monsters.prepareActorPublication({{candidate.id,std::move(candidate)}},0);
         if(!ports_.monsters.validateActors(placement)) return StepStatus::Blocked;
         ports_.monsters.publishActors(placement);pet.ownerTeleport=p->teleportRevision;pet.nextDecision=tick.tick+1;

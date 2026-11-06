@@ -26,6 +26,22 @@
 
 #include "system_detail.hpp"
 namespace d2x::server::monsters {
+StepStatus System::publishIdentityNotices(TickContext tick) {
+    for(auto &[id,unit]:state_.actors) {
+        if(!unit.identityNoticePending || unit.restorationPending || unit.roomless) continue;
+        MonsterIdentityFact notice{id,unit.area};
+        if(unit.rule.enchantment) {
+            notice.nameSeed=unit.rule.enchantment->nameSeed;
+            const auto &modifiers=unit.rule.enchantment->ids;
+            for(size_t index=0;index<std::min(modifiers.size(),notice.modifiers.size());++index)
+                notice.modifiers[index]=uint8_t(modifiers[index]);
+        }
+        notice.champion=unit.identity.rank==MonsterRank::Champion;
+        if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},unit.area},{notice}})) return StepStatus::Blocked;
+        unit.identityNoticePending=false;
+    }
+    return StepStatus::Complete;
+}
 DomainResult<> System::directSound(EntityId id,uint16_t sound) {
     const auto *unit=find(id);if(!unit) return {DomainStatus::InvalidActor,{}};
     const auto sent=ports_.events.publish({0,ports_.frameEvents.currentFrame(),{}, {AudienceKind::Area,{},unit->area},
@@ -279,7 +295,9 @@ DomainResult<> System::upgradeShrine(EntityId id,uint64_t tick) {
         if(!minion || otherId==id || minion->area!=actor.area || !minion->alive() || minion->life<=0 || !minion->enemyTarget() || minionOwner(otherId)!=id) continue;
         minions.push_back(otherId);
     }
-    return prepareBirthModifiers(id,request.leader.identity.rank,std::move(request.selection.ids),minions,tick,
+    const auto result=prepareBirthModifiers(id,request.leader.identity.rank,std::move(request.selection.ids),minions,tick,
         std::pair{request.expectedRandom,request.nextRandom});
+    if(result) modifierPending_->identityNotice=true;
+    return result;
 }
 } // namespace d2x::server::monsters

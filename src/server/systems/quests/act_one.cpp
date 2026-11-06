@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "server/runtime/events.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "server/runtime/facts/quest_signals.hpp"
 #include "detail.hpp"
 #include "server/player_store.hpp"
@@ -133,7 +134,15 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
     if(operation==9 && int(actor.area)==4 && definition>=17 && definition<=21) {
         if(unavailable(actor.player,record,QuestId::SearchForCain)) return {DomainStatus::Conflict,{}};
         orderStones();
-        if(!detail::carried(*p,"bkd",ports_.settings.difficulty) && cain.stage<uint32_t(CainStage::ScrollTranslated)) return {DomainStatus::InvalidRequest,{}};
+        if(!detail::carried(*p,"bkd",ports_.settings.difficulty)) {
+            if(!(state_.actOne.stoneInteractions%64) && cain.stage<uint32_t(CainStage::TreeOpened)) {
+                const auto sound=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
+                    {SoundFact{actor.actor,0,actor.area,39}}});
+                if(!sound) return {sound.status,{}};
+            }
+            ++state_.actOne.stoneInteractions;
+            return {DomainStatus::InvalidRequest,{}};
+        }
         if(state_.actOne.activatedStones>=5) return {DomainStatus::Applied,std::monostate{}};
         if(state_.actOne.stones[state_.actOne.activatedStones]!=definition) return {DomainStatus::Conflict,{}};
         std::optional<ActOneState::CairnControl> control;
@@ -179,6 +188,7 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
         // the cage's +3,+3 coordinate. Fn031 owns the subsequent departure.
         state_.npcStory.cainBirth=position+ports_.areas.at(actor.area).definition.origin+Vec{3,3};
         state_.npcStory.cainCage=source;
+        state_.npcStory.cainRescuer=actor.actor;
         state_.npcStory.cainBirthAt=actor.tick+17;
         return {DomainStatus::Applied,std::monostate{}};
     }
@@ -186,6 +196,16 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
 }
 StepStatus System::actOneStep(TickContext tick) {
     bool blocked=false;
+    if(state_.actOne.pendingNarrative) {
+        const auto quest=*state_.actOne.pendingNarrative;
+        if(finishNarratedGoal(quest,quest==QuestId::SistersBurialGrounds?34:quest==QuestId::ForgottenTower?37:33,tick)==StepStatus::Blocked)
+            return StepStatus::Blocked;
+        state_.actOne.pendingNarrative.reset();
+        if(quest==QuestId::ForgottenTower && state_.actOne.countessChestPosition) {
+            ports_.objects.countessKilled(*state_.actOne.countessChestPosition,tick.tick);
+            state_.actOne.countessChestPosition.reset();
+        }
+    }
     if(state_.actOne.cairnEffectPending) {
         const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{1}}});
         if(sent) state_.actOne.cairnEffectPending=false;else blocked=true;
@@ -214,10 +234,21 @@ StepStatus System::actOneStep(TickContext tick) {
         captureGoal(*goal,stage,m.area,*goal==QuestId::SistersBurialGrounds?std::optional<Vec>{m.position}:std::nullopt,
             *goal==QuestId::SistersBurialGrounds?std::nullopt:killerPlayer(m.killer));
         if(*goal==QuestId::ForgottenTower && !(state_.initialFlags[questDefinition(*goal).nativeSlot]&0x8000))
-            ports_.objects.countessKilled(m.position,tick.tick);
+            state_.actOne.countessChestPosition=m.position;
         // Game.cpp calls QuestUpdater every 20 frames; timeout 1 uses a
         // strict '<', hence each invocation consumes two updater ticks.
         if(*goal==QuestId::SistersToTheSlaughter) state_.actOne.andarielPortalAt=(tick.tick/20+9*2)*20;
+        if((*goal==QuestId::SistersBurialGrounds || *goal==QuestId::SistersToTheSlaughter || *goal==QuestId::ForgottenTower) &&
+            !(state_.initialFlags[questDefinition(*goal).nativeSlot]&0x8000)) {
+            state_.actOne.pendingNarrative=*goal;
+            if(finishNarratedGoal(*goal,*goal==QuestId::SistersBurialGrounds?34:*goal==QuestId::ForgottenTower?37:33,tick)==StepStatus::Blocked)
+                return StepStatus::Blocked;
+            state_.actOne.pendingNarrative.reset();
+            if(*goal==QuestId::ForgottenTower && state_.actOne.countessChestPosition) {
+                ports_.objects.countessKilled(*state_.actOne.countessChestPosition,tick.tick);
+                state_.actOne.countessChestPosition.reset();
+            }
+        }
     }
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered) continue;

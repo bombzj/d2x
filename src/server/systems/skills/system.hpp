@@ -16,7 +16,7 @@
 #include <vector>
 
 namespace d2x { struct SkillCastSpec; struct MissileCollisionRule; enum class SkillBehavior; }
-namespace d2x::server { struct MonsterAttackRule; }
+namespace d2x::server { struct MonsterAttackRule; struct AttackFact; }
 namespace d2x::server::reactions { class ItemTriggers; }
 namespace d2x::server::skills {
 // Internal AI/companion action, not a player identity supplied over the wire.
@@ -126,6 +126,7 @@ class System {
     bool uninterruptible(EntityId actor) const;
     size_t pendingReleases() const;
     bool busy(EntityId id, uint64_t tick) const;
+    std::shared_ptr<const AttackFact> monsterAction(EntityId) const;
     DomainResult<> requestCast(const CastRequest &);
     DomainResult<> itemTrigger(const ActorContext &,SkillCastSpec,MissileCollisionRule,EntityId,Vec,bool dead,int alternativeEffect,std::shared_ptr<actions::SkillRelease> *continuation=nullptr);
     // Native OperateFn05 invokes the hidden Kick without changing either hand.

@@ -5,6 +5,7 @@
 #include "server/runtime/facts/combat.hpp"
 #include "server/runtime/facts/effects.hpp"
 #include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
 #include "server/runtime/facts/resources.hpp"
 #include "server/runtime/facts/social.hpp"
 #include "server/runtime/facts/travel.hpp"
@@ -848,10 +849,12 @@ DomainResult<> System::commit(Plan plan) {
     for(const auto &fact:extra) {
         const auto *targeting=factIf<ItemTargetingFact>(&fact);
         const auto *trade=factIf<TradeFact>(&fact);
+        const auto *ended=factIf<ItemSpellEndFact>(&fact);
+        const auto *quest=factIf<QuestStatusFact>(&fact);
         // Native ItemMode cancels targeting while the source still exists on
         // the client, before the inventory removal receipt in this same batch.
         // Trade's agreement reset and lock likewise precede its item receipts.
-        if((targeting && targeting->cursor<0) || (trade && (trade->action==6 || trade->action==14)))
+        if((edit && quest && quest->flags==2) || (ended && !ended->afterInventory) || (targeting && targeting->cursor<0) || (trade && (trade->action==6 || trade->action==14)))
             batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
         else batch.facts.push_back(fact);
     }
@@ -883,7 +886,8 @@ DomainResult<> System::commit(Plan plan) {
         size_t peerTargetingPrefix=0;
         for(const auto &fact:change.facts) {
             const auto *targeting=factIf<ItemTargetingFact>(&fact);
-            if(targeting && targeting->cursor<0) delivery.facts.insert(delivery.facts.begin()+peerTargetingPrefix++,fact);
+            const auto *ended=factIf<ItemSpellEndFact>(&fact);
+            if((ended && !ended->afterInventory) || (targeting && targeting->cursor<0)) delivery.facts.insert(delivery.facts.begin()+peerTargetingPrefix++,fact);
             else delivery.facts.push_back(fact);
         }
         batches.push_back(std::move(delivery));

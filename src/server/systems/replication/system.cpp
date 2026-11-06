@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/skills/system.hpp"
 #include "server/runtime/frame_facts.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/unit.hpp"
@@ -49,7 +50,8 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         const bool dead = !monster.alive();
         const uint8_t mode = dead ? (tick >= monster.busyUntil ? 12 : 0) : monster.knockedUntil>tick ? 13 : monster.riseUntil > tick ? monster.riseMode : monster.reactionUntil>tick?monster.reactionMode:monster.burrowed?8:(monster.holdPose || monster.poseUntil>tick)?monster.aiPose:1;
         result.push_back({key, monster.area, monster.rule.nativeClass, monster.position,
-            monster.questNpc?monster.movementGoal:monster.skillMotion?monster.skillMotion->destination:monster.route.empty()?monster.position:monster.route.back(),
+            monster.skillMotion?monster.skillMotion->destination:!monster.route.empty()?monster.route.back():
+                monster.questNpc && monster.moving?monster.movementGoal:monster.position,
             monster.modeAlive && !monster.maximumLife?uint8_t{128}:monsterLifeRatio(monster.life,monster.maximumLife),
             mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monsters::movementPercent(monster,tick), monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
         result.back().equipment=monster.equipment;
@@ -62,6 +64,9 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         result.back().pathType=monster.pathType;result.back().pathDistance=monster.pathDistance;
         if(mode==13) result.back().pathDistance=monster.rule.knockbackDistance;
         result.back().movementRevision=monster.movementRevision;
+        result.back().teleportRevision=monster.teleportRevision;
+        if(!dead && mode!=3 && mode!=6 && mode!=13 && monster.riseUntil<=tick)
+            result.back().skillAction=ports_.skills.monsterAction(key);
         result.back().rising=monster.riseUntil>tick;
         result.back().hostile=monster.enemyTarget();
         if(monster.poseUntil>tick || monster.holdPose) result.back().poseDirection=monster.poseDirection;

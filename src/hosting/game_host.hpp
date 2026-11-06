@@ -24,6 +24,7 @@ struct EventBatch;
 struct GameCommand;
 struct GameDefinition;
 struct MissileFact;
+struct MovementObservation;
 struct NpcRule;
 struct PreparedMonster;
 struct QuestFact;
@@ -180,6 +181,7 @@ class GameHost {
     std::optional<server::GameSettings> settings(GameHandle) const;
     uint64_t nextEntity(GameHandle) const;
     std::optional<NativeUnitId> nativeIdentity(GameHandle,EntityId) const;
+    std::optional<server::MovementObservation> movementObservation(PlayerBinding) const;
     std::optional<EntityId> entityIdentity(GameHandle,NativeUnitId) const;
     void collectNativeIdentities(GameHandle,std::set<EntityId>);
     bool pause(GameHandle, bool);

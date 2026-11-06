@@ -2,6 +2,7 @@
 #include "server/runtime/skill_rules.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/unit.hpp"
+#include "server/runtime/facts/inventory.hpp"
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/world/system.hpp"
@@ -166,6 +167,7 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     auto &consumed=draft.edit.inventory.items.at(item->id); ++consumed.revision;
     const bool remove=rule->book? (--consumed.charges,false):--consumed.quantity==0;
     draft.edit.changes.push_back({item->id,consumed.revision,remove?ItemChangeKind::Removed:ItemChangeKind::QuantityChanged,item->location,remove?std::nullopt:std::optional<ItemLocation>{item->location},consumed.quantity});
+    draft.edit.changes.back().directQuantity=rule->book;
     const auto origin=std::get<ContainerLocation>(item->location);
     if(remove) draft.edit.inventory.items.erase(item->id);
     if(remove && origin.container==p->persistent.containers.belt) {
@@ -174,6 +176,7 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     }
     transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),p->persistent.player.weaponSet};
     edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,7});
+    edit.facts.emplace_back(ItemSpellEndFact{item->id});
     auto plan=ports_.transactions.prepare(std::move(edit)); if(!plan) return fail(plan.status);
     const auto result=ports_.transactions.commit(std::move(*plan.value));
     if(!result) return fail(result.status);

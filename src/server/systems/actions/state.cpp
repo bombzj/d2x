@@ -30,7 +30,9 @@ State::PreparedTimeline State::prepareTimeline(EntityId actor,uint64_t started,c
 }
 void State::cancelTimeline(EntityId actor) {
     const FrameEventOwner owner{FrameEventUnit::Player,actor};
-    frameEvents_.cancelHandler(owner,FrameEventType::ModeChange,0);
+    for(const auto &event:frameEvents_.events(owner))
+        if(event.type==FrameEventType::ModeChange && !event.handler && event.payload)
+            frameEvents_.cancel(event.handle);
     frameEvents_.cancelHandler(owner,FrameEventType::EndAnimation,0);
 }
 void State::commitTimeline(PreparedTimeline &&prepared) noexcept {

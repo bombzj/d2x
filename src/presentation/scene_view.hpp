@@ -1,5 +1,6 @@
 #pragma once
 #include "input.hpp"
+#include "contracts/online_scene.hpp"
 #include "presentation/audio/audio_settings.hpp"
 #include "client/character_client.hpp"
 #include "client/quest_client.hpp"
@@ -173,6 +174,10 @@ class SceneView {
     struct ScreenShake {double startMilliseconds{};int magnitude{},buildMilliseconds{},holdMilliseconds{},fadeMilliseconds{};};
     std::optional<ScreenShake> screenShake_;
     Vec screenShakeOffset_;
+    uint64_t areaTitleGame_=~uint64_t{};
+    int areaTitleLevel_=-1;
+    mutable unsigned areaTitleFrames_=120;
+    bool areaTitlePending_{};
     std::optional<std::tuple<int, int, bool, bool>> automapLayout_;
     ChatView chat_;
     OriginalMenu originalMenu_;
@@ -230,6 +235,7 @@ class SceneView {
     void drawControlPanel() const;
     void drawDurabilityWarning() const;
     void drawHostilityWarning() const;
+    void drawAreaTitle() const;
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker = false, uint32_t owner=UINT32_MAX) const;
     void drawSkillTree(Vec mouse) const;
@@ -304,7 +310,8 @@ class SceneView {
     const ExitView *exitAt(Vec mouse) const;
     SceneView(Archives &, const ClassicData &, WeatherCycleState &, const IActorClient &, IInventoryClient &,
                 ICharacterClient &, IQuestClient &, INpcClient &, IMapClient &, const AudioSettings & = {});
-    void updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events);
+    void updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events, Vec listener);
+    void updateAreaTitle(uint64_t game,int level,const std::optional<std::array<uint8_t,37>> &availability);
     void playUiSound(std::string_view sound);
     int soundPeriod() const;
     void observeWorldSounds(const OnlineView &);
@@ -362,7 +369,7 @@ class SceneView {
     void drawHighlightedActor(const Sprite *image, Vec position) const;
     void drawNpcQuestAlert(EntityId npc, Vec position, bool back) const;
     void drawAutomap(const AutomapDrawView &);
-    std::vector<size_t> drawWorld(const WorldDrawView &);
+    std::vector<size_t> drawWorld(const WorldDrawView &,OnlineSceneView::MapRendering *diagnostics=nullptr);
     const ActorAnimation *actorAnimation(const ActorAnimationRequest &request, int palette) const;
     const ActorAnimation *objectAnimation(int identity, int mode, int palette) const;
     std::array<int, 2> objectShrineOverlays(int identity, int code) const;
@@ -400,6 +407,7 @@ class SceneView {
     void shakeScreen(int magnitude,int buildFrames,int holdFrames,int fadeFrames,float delay);
     Vec world(Vec position) const;
     void drawInteractionLabel(const std::string &, Vec, int offset = 70) const;
+    void drawPortalLabel(const std::string &, Vec ground, int nameOffset) const;
     void drawNpcLabel(const std::string &, Vec ground, int pixelHeight) const;
     void drawInteractionDetails(const std::vector<std::string> &,Vec) const;
     void drawPlayerLabel(const std::string &, Vec ground, bool hostile, int life) const;

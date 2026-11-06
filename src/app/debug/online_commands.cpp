@@ -286,6 +286,21 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     result["scene"]["layoutReason"] = scene.layoutReason;
     result["scene"]["nativeMapReady"] = scene.nativeMapReady;
     result["scene"]["nativeMapReason"] = scene.nativeMapReason;
+    const auto &loading=scene.mapLoading;
+    const auto known=[](std::optional<bool> value) {return value?Json(*value):Json(nullptr);};
+    result["scene"]["mapLoading"]={{"receivedSequence",loading.receivedSequence},{"consumedSequence",loading.consumedSequence},
+        {"pendingEvents",loading.pendingEvents},{"pendingMilliseconds",loading.pendingMilliseconds},
+        {"terrainRevision",loading.terrainRevision},{"assignedRooms",loading.assignedRooms},{"loadedRooms",loading.loadedRooms},
+        {"deferred",loading.deferred},{"terrainDirty",loading.terrainDirty},{"updateMilliseconds",loading.updateMilliseconds},
+        {"clientRoomLoaded",known(loading.clientRoomLoaded)},{"clientRoomAssigned",known(loading.clientRoomAssigned)},
+        {"serverRoomLoaded",known(loading.serverRoomLoaded)},{"serverRoomAssigned",known(loading.serverRoomAssigned)}};
+    const auto &rendering=scene.mapRendering;
+    result["scene"]["mapRendering"]={{"sample",rendering.sample},{"drawn",rendering.drawn},
+        {"gameGeneration",rendering.gameGeneration},{"areaGeneration",rendering.areaGeneration},
+        {"origin",{rendering.origin.x,rendering.origin.y}},{"viewportTiles",rendering.viewportTiles},
+        {"observer",{rendering.observer.x,rendering.observer.y}},{"halfExtent",{rendering.halfExtent.x,rendering.halfExtent.y}},
+        {"submittedTiles",rendering.submittedTiles},{"missingTextures",rendering.missingTextures},
+        {"transparentTiles",rendering.transparentTiles},{"visibleObservationTiles",rendering.visibleObservationTiles}};
     result["scene"]["cachedAreas"] = scene.cachedAreas;
     result["scene"]["mapErrors"] = Json::array();
     result["scene"]["mapTargets"] = Json::array();

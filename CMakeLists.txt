@@ -26,6 +26,8 @@ add_library(d2x_hash src/core/sha256.cpp)
 target_link_libraries(d2x_hash PUBLIC d2x_core)
 
 add_library(d2x_navigation
+  src/world/navigation_snapshot.cpp
+  src/world/navigation_planner.cpp
   src/world/navigation.cpp src/world/navigation_astar.cpp src/world/navigation_wall_follow.cpp
   src/world/native_path_step.cpp src/world/room_activation.cpp
   src/world/native_room_activation.cpp src/world/interaction_geometry.cpp
@@ -582,6 +584,7 @@ add_executable(d2x
   src/app/client_preferences.cpp src/app/crash_report.cpp src/app/debug/debug_pipe.cpp
   src/app/debug/ui_input.cpp src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp
   src/app/debug/server_snapshot.cpp
+  src/app/debug/movement_diff.cpp
   src/app/debug/auto_walk.cpp
   src/app/debug/navigation_search.cpp
   src/app/debug/chat_command.cpp

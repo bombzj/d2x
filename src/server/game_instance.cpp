@@ -12,6 +12,26 @@
 #include <algorithm>
 
 namespace d2x::server {
+std::optional<MovementObservation> GameInstance::movementObservation(PlayerId id) const {
+    const auto *player=players_.find(id);
+    if(!player || !player->entered) return {};
+    const auto *area=areas_.find(player->area);
+    const auto native=nativeEntities_.find(player->actor);
+    if(!area || !native) return {};
+    MovementObservation result;
+    result.actor=player->actor;result.nativeGuid=native->guid;result.area=player->area;result.tick=tick_;
+    result.position=player->position+area->definition.origin;
+    result.destination=player->routeDestination+area->definition.origin;
+    result.teleportRevision=player->teleportRevision;result.commandSequence=player->acceptedSequence;
+    result.movementSequence=player->movementSequence;
+    result.executedSequence=player->result.sequence;result.simulationPending=simulationPending_;
+    result.pendingPhase=simulationPending_?std::string(simulation_.pendingPhase()):
+        systems_.monsters.pendingModifiers()?"modifier-preparation":pendingSynchronousCommand(id)?"command-continuation":"commands";
+    if(player->movementTarget) {result.target=player->movementTarget->id;result.targetType=player->movementTarget->type;}
+    result.moving=player->moving;result.running=player->runningNow;
+    result.alive=player->persistent.player.hp>0;result.knockback=player->knockback.has_value();
+    return result;
+}
 std::vector<MissileFact> GameInstance::visibleMissiles(PlayerId id) const { return systems_.missiles.visible(id); }
 std::optional<QuestFact> GameInstance::questProjection(PlayerId id) const {
     const auto *player = players_.find(id);
@@ -203,7 +223,7 @@ bool GameInstance::enter(PlayerId id, bool active) {
     }
     if (active) systems_.world.activate(found->second.area, found->second.position + Vec{.5f, .5f});
     players_.refreshCollision(id,areas_);
-    systems_.world.changeClientRoom(id);
+    systems_.world.changeClientRoom(id,tick_);
     if (!active) {
         std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
         found->second.route.clear(); found->second.moving = false; systems_.travel.cancel(id);

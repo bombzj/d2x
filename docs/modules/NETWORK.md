@@ -6,7 +6,7 @@ PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留
 
 原服与自研宿主共用RealmSession／Remote*客户端，传输为TCP或内存字节队列。[基线](../../BASELINE.md)维护能力概况，[总计划](../architecture/MULTIPLAYER.md#21-统一状态口径)维护状态口径与顺序；未消费包、引擎启动限制及完整互通组合仍需核对。
 
-原版1.13c的非终局电影（S2C61/1–6）当前按跳过处理，并发送原C2S48结束回执；D2Client RVA89E38及D2MOO `Rcv0x48_TurnOffBusyState`说明该回执用于解除服务端过场busy，不能只显示下一幕就省略。61/7仍保留实际终局界面；FMV播放及PD2对应行为未核实。原版 Host 的跨幕和终局通知见[五幕验收记录](../development/AI_TEST_REC.md#历史证据索引)。
+原版1.13c的非终局电影（S2C61/1–6）当前按跳过处理，并发送原C2S48结束回执；D2Client RVA89E38及D2MOO `Rcv0x48_TurnOffBusyState`说明该回执用于解除服务端过场busy，不能只显示下一幕就省略。61/7仍保留实际终局界面；FMV播放及PD2对应行为未核实。原版 Host 的跨幕和终局通知见[验证约定](../development/TESTING.md)。
 
 普通恢复药剂经MPQ适配器准备`recoveryPotion`能力后，Use可与技能／回城回包等待并存；物品请求仍单独串行，其他物品操作保留原门控，身份与正常原包不变。依据与消费者见[腰带与消耗品](../gameplay/items/BELT_AND_CONSUMABLES.md)。
 
@@ -29,7 +29,7 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 - Join：首页TCP/IP Game → Join Game → 目标IP → 本地角色 → 游戏端口直连。默认IP为`127.0.0.1`；不同机器填宿主实际IPv4，不能填`0.0.0.0`。不展示宿主角色或MCP大厅。退局／失败重新打开本机选择器，不请求远端Realm票据。
 - `--host-lan <本机IPv4>`预先监听该接口；UI首次Host默认全部接口。`--lan <目标IPv4>`打开本机角色页。双方用`--host-saves <本机目录>`隔离角色，用`--game-port`覆盖游戏端口；`--realm-port`只保留内部MCP端点标识，不产生TCP监听。与原版互通使用4000；同机已有D2GS占用4000时必须选择空闲端口做D2X隔离验证，不停止已有服务。
 - 客户端收到AF后发送6A查询，B2游戏信息以FFFF结束；取得gameId后发送68。收到02后先上传本地v96存档（6C），再发送6B进入游戏。服务端B3回传完整存档，应用交给hosting的本地CharacterStore校验身份、校验和及文件版本后原子替换；network与UI不解码／写盘。传输严格限制小于8192字节，不新增私有包或存档段。
-- B3的`first=1`表示重新开始当前快照，允许替换未完成的旧分片；旧片段直接丢弃，只有新快照完整后才交给存档所有者。无首片、总长变化、越界及空片仍拒绝。2026-11-02原版Host最终门户实见1797字节快照收到1020字节时又发新首片；旧客户端错误断连，已修为上述重启语义。新房间已实见6107／Victory及正常完整回传退出，但未再次撞到半档替换时序，该特定交错仍待运行覆盖；证据见[五幕记录](../development/AI_TEST_REC.md)。依据为D2MOO的Game::sub_6FC37B10／CLIENT_SendSaveHeaderPart、Clients::D2GAME_SetSaveLoadComplete及A5Q6::OperateFunction72；D2MOO此分片包号为B2，本机1.13c为B3，不混用编号。
+- B3的`first=1`表示重新开始当前快照，允许替换未完成的旧分片；旧片段直接丢弃，只有新快照完整后才交给存档所有者。无首片、总长变化、越界及空片仍拒绝。2026-11-02原版Host最终门户实见1797字节快照收到1020字节时又发新首片；旧客户端错误断连，已修为上述重启语义。新房间已实见6107／Victory及正常完整回传退出，但未再次撞到半档替换时序，该特定交错仍待运行覆盖；证据见[验证约定](../development/TESTING.md)。依据为D2MOO的Game::sub_6FC37B10／CLIENT_SendSaveHeaderPart、Clients::D2GAME_SetSaveLoadComplete及A5Q6::OperateFunction72；D2MOO此分片包号为B2，本机1.13c为B3，不混用编号。
 - 自研宿主检查容量、同名角色、职业／姓名及难度资格。客人断线或正常关闭后宿主保留独立`tcpip-recovery/character-<时间标识>.d2s`恢复副本，不自动回写客户端角色。完整接收前不会替换本机D2S；本机写盘失败保留字节和租约，用户关闭错误提示后重试，不按帧反复写盘。
 
 共享房间按25Hz推进，TCP/IP Host由独立宿主线程收包／推进／发包，房主及客人失焦／ESC不暂停世界。Single Player仍在应用线程推进，一人内存实例保留暂停，暂停时协议与心跳继续服务；退局待结算解除普通暂停。最小化跳过绘制但继续协议、地图事件及B3回传消费；恢复清理旧输入。原版混合客户端及Linux上的线程和最小化行为仍待验证。独立PvPGN使用固定游戏线程分管房间，主线程处理TCP／D2CS，专用后端线程承担文件／DBS等待；继续使用原账号、票据和保存协议，不使用TCP/IP上传。部署与故障边界见[PvPGN服务端](../development/PVPGN_SERVER.md)。现有内容范围仍见[基线](../../BASELINE.md)。
@@ -397,7 +397,7 @@ TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互�
 
 经验祭坛class81／code15领取后收到原服state137和50%经验属性。生命祭坛class2从mode0进入mode1，生命恢复。客户端只应把玩家／怪物的0x4D解释为施法动作，不能覆盖物件的0x0E模式。全部祭坛形态与Overlay节拍仍待核对。
 
-2026-10-26普通难度原版TCP/IP Host补充观察：女巫无钥匙锁箱保持中立并私收0x2C事件22，有钥匙及刺客无钥匙成功均收到事件11；数量／掉落另看物品包。class83／code14耐力祭坛替换为class2／code15经验祭坛，先A9撤state136再A8加state137；A8从长度字段起分别为`0D881CD007FE03`与`0C895564FC07`。物件变化用0E，4D按type2、物件GUID、操作者GUID、code及零坐标／标志解释。自研同类状态载荷一致，常规箱子／祭坛增量、锁箱提示与私人蓝门房间准备已修复；X3R已改为固定帧冻结ObjectFact，多帧合并仍保留操作0E／4D，初次进入视野只取当前51快照；8步合并及双客户端／迟到视野复验通过；操作、准备边界及保存结果见[对比计划](../development/MESSAGE_COMPARISON_PLAN.md#野外交互与成长补测)，全部物件／技能仍未认证。
+2026-10-26普通难度原版TCP/IP Host补充观察：女巫无钥匙锁箱保持中立并私收0x2C事件22，有钥匙及刺客无钥匙成功均收到事件11；数量／掉落另看物品包。class83／code14耐力祭坛替换为class2／code15经验祭坛，先A9撤state136再A8加state137；A8从长度字段起分别为`0D881CD007FE03`与`0C895564FC07`。物件变化用0E，4D按type2、物件GUID、操作者GUID、code及零坐标／标志解释。物件操作在固定帧冻结ObjectFact，多帧合并保留操作0E／4D，初次进入视野只取当前51快照；原版依据见[原版协议与任务依据](../resources/NATIVE_PROTOCOL_EVIDENCE.md)，全部物件／技能仍未认证。
 
 两名角色交易hp2药水与10金币：放入报价后对端收到只读page2副本，取回收到14／15并撤销副本；报价金币收到0x79，成交收到0x77 action13。原服重新分配药水GUID，钱包112／0变为102／10；反向成交恢复112／0。退局重入后原物品位置与余额保留，零金币角色未收到属性14，缺字段不能当作已知零。具体实现与容量、取消、保存边界见[玩家交易](../gameplay/items/PLAYER_TRADE.md)。全部装备／镶嵌交易及原版金币弹窗、物品格底色、绿色专用变换仍缺对照。
 

@@ -2,6 +2,7 @@
 #include "server/runtime/facts/inventory.hpp"
 #include "content/pd2/item_encoding.hpp"
 #include "native_item_wire.hpp"
+#include "gameplay/items/inventory_order.hpp"
 #include "persistence/d2s_inventory.hpp"
 #include "network/protocol/wire.hpp"
 #include "network/protocol/bits.hpp"
@@ -250,6 +251,7 @@ PersistentCharacter nativeInventoryIdentity(PersistentCharacter value,const host
         if(container.spec.owner==owner) container.spec.owner=value.player.id;
         if(container.registeredWeapon) container.registeredWeapon={ids.guid(container.registeredWeapon,4)};
     }
+    value.inventory.itemOrder=inventoryItemOrder(value.inventory);
     std::map<EntityId,ItemInstance> items;
     for(auto &[id,item]:value.inventory.items) {(void)id;nativeItemIdentity(item,ids);items.emplace(item.id,std::move(item));}
     value.inventory.items=std::move(items);
@@ -491,6 +493,14 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
             result.push_back(itemStat(item.id,204,*value,uint16_t(change.statParameter)));continue;
         }
         if (change.kind == ItemChangeKind::QuantityChanged || change.kind == ItemChangeKind::PropertiesChanged || change.kind==ItemChangeKind::DurabilityChanged) {
+            if(change.kind==ItemChangeKind::QuantityChanged && change.directQuantity) {
+                const auto &item=state.inventory.items.at(change.item);
+                const auto *definition=data.items.find(item.definition);
+                if(definition && definition->equipment.isType("book")) {
+                    result.push_back(itemStat(change.item,70,item.charges));
+                    continue;
+                }
+            }
             if (partialStackTarget != changes.end() && change.kind == ItemChangeKind::QuantityChanged &&
                 (change.item == cursorQuantity->item || change.item == partialStackTarget->item)) {
                 result.push_back(itemStat(change.item, 70, state.inventory.items.at(change.item).quantity));

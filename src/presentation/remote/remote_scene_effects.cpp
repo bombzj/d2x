@@ -1932,6 +1932,13 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 if (!visual || visual->fps <= 0) localCast.reset();
                 else {
                     localCast->started = time; localCast->duration = visual->holdFrame>=0?std::numeric_limits<float>::infinity():visual->duration();
+                    if (skills.number(row->second,"srvdofunc").value_or(-1) == 27) {
+                        const auto &display = motion[u.key];
+                        const auto feet = display.last ? display.position + display.correction
+                            : Vec{float(u.position->x),float(u.position->y)};
+                        const auto facing = Vec{float(target->x),float(target->y)} - feet;
+                        localCast->teleportFacing = facing.length() > .001f ? facing : display.look;
+                    }
                     if(charge && localCast->command.target && targetSize>0) {
                         auto melee=localCast->command;melee.skill=0;melee.stationary=false;
                         const auto reach=castMeleeRange(u,melee);

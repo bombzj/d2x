@@ -7,8 +7,10 @@
 #include <deque>
 #include <functional>
 #include <optional>
+#include <memory>
 #include <vector>
 namespace d2x {
+class NavigationSnapshot;
 struct Grid {
     int width = 0, height = 0;
     Bytes blocked;
@@ -53,6 +55,7 @@ struct Grid {
     // Optional bulk reader for derived views. The returned mask values own
     // their storage and include a one-cell halo for size 2/3 footprints.
     std::function<std::vector<uint16_t>()> copyMovementMasks;
+    std::function<std::shared_ptr<const NavigationSnapshot>()> freezeMovement;
     std::vector<uint16_t> movementMaskSnapshot() const;
     // A path query withdraws/reinstalls footprints once, including nested path
     // helpers. Physical movement instead uses the transactional cell callback.

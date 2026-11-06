@@ -22,10 +22,12 @@
 #include "world/retail/preset_scan.hpp"
 #include "world/native_map.hpp"
 #include "world/generated_area.hpp"
+#include "world/navigation_planner.hpp"
 #include <nlohmann/json.hpp>
 #include "core/random.hpp"
 #include "core/random_seed.hpp"
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <fstream>
 #include <iostream>
@@ -159,6 +161,154 @@ nlohmann::json replayHostRooms(d2x::Archives &archives,int level,uint32_t seed,i
 
 int main(int argc, char **argv) {
     try {
+        if(argc==3 && std::string_view(argv[1])=="navigation-replay") {
+            using Json=nlohmann::json;
+            const std::filesystem::path path=argv[2];
+            std::ifstream input(path);
+            if(!input) throw std::runtime_error("Navigation capture is unavailable");
+            const auto metadata=Json::parse(input);
+            const auto kind=metadata.at("kind").get<std::string>();
+            if(kind!="candidate-plan" && kind!="teleport-route" && kind!="exploration-plan" && kind!="room-tree" && kind!="backtrack-plan")
+                throw std::runtime_error("Unsupported navigation capture kind");
+            const int width=metadata.at("grid").at("width"),height=metadata.at("grid").at("height");
+            if(width<=0 || height<=0 || width>65536 || height>65536 || uint64_t(width+2)*(height+2)>16*1024*1024)
+                throw std::runtime_error("Navigation capture dimensions exceed limits");
+            const size_t cells=size_t(width+2)*(height+2);
+            auto masks=std::make_shared<std::vector<uint16_t>>(cells);
+            const auto readMasks=[&](const std::string &filename,std::span<uint16_t> values) {
+                if(filename.empty() || std::filesystem::path(filename).filename()!=filename)
+                    throw std::runtime_error("Collision file must be a sibling filename");
+                const auto binary=path.parent_path()/filename;
+                if(std::filesystem::file_size(binary)!=values.size()*2) throw std::runtime_error("Collision size mismatch");
+                std::ifstream data(binary,std::ios::binary);
+                for(auto &mask:values) {
+                    unsigned char bytes[2];data.read(reinterpret_cast<char *>(bytes),2);
+                    if(!data) throw std::runtime_error("Truncated collision capture");
+                    mask=uint16_t(bytes[0])|(uint16_t(bytes[1])<<8);
+                }
+            };
+            const auto &collision=metadata.at("collision");
+            if(collision.at("encoding")=="chunk32-uint16-le") {
+                std::vector<bool> covered(cells,false);
+                const int64_t originX=collision.at("coordinateOrigin").at(0),originY=collision.at("coordinateOrigin").at(1);
+                for(const auto &chunk:collision.at("chunks")) {
+                    std::array<uint16_t,1024> values;readMasks(chunk.at("file").get<std::string>(),values);
+                    const int64_t globalX=chunk.at("globalOrigin").at(0),globalY=chunk.at("globalOrigin").at(1);
+                    if(globalX%32 || globalY%32 || std::abs(globalX)>262144 || std::abs(globalY)>262144 ||
+                        std::abs(originX)>131072 || std::abs(originY)>131072) throw std::runtime_error("Invalid chunk coordinate");
+                    for(int row=0;row<32;++row) for(int column=0;column<32;++column) {
+                        const auto localX=globalX+column-originX,localY=globalY+row-originY;
+                        if(localX< -1 || localY< -1 || localX>width || localY>height) continue;
+                        const size_t index=size_t(localY+1)*(width+2)+size_t(localX+1);
+                        if(covered[index]) throw std::runtime_error("Overlapping collision chunks");
+                        covered[index]=true;(*masks)[index]=values[size_t(row)*32+column];
+                    }
+                }
+                if(std::find(covered.begin(),covered.end(),false)!=covered.end()) throw std::runtime_error("Incomplete collision manifest");
+            } else if(collision.at("encoding")=="uint16-le") readMasks(collision.at("file").get<std::string>(),*masks);
+            else throw std::runtime_error("Unsupported collision encoding");
+            d2x::Grid grid;grid.width=width;grid.height=height;
+            grid.collisionSample=[masks,width,height](int x,int y,d2x::EntityId)->uint16_t {
+                if(x< -1 || y< -1 || x>width || y>height) return 0xffff;
+                return (*masks)[size_t(y+1)*(width+2)+x+1];
+            };
+            if(kind=="room-tree") {
+                std::vector<d2x::NavigationPlanningRoom> planning;
+                for(const auto &room:metadata.at("rooms")) planning.push_back({room.at("level"),room.at("x"),room.at("y"),
+                    room.at("width"),room.at("height"),room.at("loaded"),room.at("exploredTiles"),room.at("near").get<std::vector<size_t>>()});
+                d2x::NavigationPassageCache cache;
+                const d2x::Vec origin{metadata.at("coordinateOrigin").at(0),metadata.at("coordinateOrigin").at(1)};
+                const auto result=d2x::planRoomTree(grid,planning,metadata.at("root"),metadata.at("level"),metadata.at("range"),origin,0,cache);
+                std::cout<<Json{{"format","d2x-navigation-replay-v1"},{"kind",kind},{"root",result.root},
+                    {"previous",result.previous},{"depth",result.depth}}.dump(2)<<'\n';return 0;
+            }
+            if(kind=="backtrack-plan") {
+                d2x::NavigationBacktrackInput request;
+                request.origin={metadata.at("coordinateOrigin").at(0),metadata.at("coordinateOrigin").at(1)};
+                request.from={metadata.at("from").at(0),metadata.at("from").at(1)};
+                request.root=metadata.at("root");request.level=metadata.at("level");request.range=metadata.at("range");
+                request.restricted=metadata.at("restricted");request.clearing=metadata.at("clearing");
+                const int mobility=metadata.at("mobility");
+                if(mobility<0 || mobility>2) throw std::runtime_error("Invalid backtrack mobility");
+                request.mobility=d2x::NavigationMobility(mobility);
+                request.destinations=metadata.at("destinations").get<std::vector<size_t>>();
+                request.priorities=metadata.at("priorities").get<std::vector<float>>();
+                request.weights=metadata.at("weights").get<std::vector<float>>();
+                for(const auto &room:metadata.at("routeRooms")) request.routeRooms.push_back({room.at("x"),room.at("y"),
+                    room.at("width"),room.at("height"),room.at("near").get<std::vector<size_t>>()});
+                for(const auto &room:metadata.at("rooms")) request.rooms.push_back({room.at("level"),room.at("x"),room.at("y"),
+                    room.at("width"),room.at("height"),room.at("loaded"),room.at("exploredTiles"),room.at("near").get<std::vector<size_t>>()});
+                for(const auto &entry:metadata.at("exclusions")) request.exclusions.push_back({
+                    {entry.at("point").at(0),entry.at("point").at(1)},entry.at("radius")});
+                const auto &cost=metadata.at("cost");
+                request.cost={cost.at("walkUnit"),cost.at("teleportCast"),cost.at("observation"),cost.at("seconds")};
+                d2x::NavigationPassageCache cache;
+                const auto planned=d2x::planBacktrack(grid,request,cache);
+                const auto &selection=planned.selection;
+                if(!selection.route.points.empty() && !d2x::navigationRouteValid(grid,planned.routeRooms,
+                    selection.route,request.range,request.restricted)) throw std::runtime_error("Invalid backtrack route");
+                constexpr std::array outcomes{"complete","partial","no-route","cancelled","resource-limited","need-observation","start-blocked"};
+                Json report{{"format","d2x-navigation-replay-v1"},{"kind",kind},
+                    {"outcome",outcomes.at(size_t(selection.route.outcome))},{"candidates",planned.candidates},
+                    {"destination",selection.found?Json(planned.destination):Json(nullptr)},
+                    {"previous",planned.tree.previous},{"depth",planned.tree.depth},{"expanded",selection.expanded},
+                    {"travelCost",selection.travelCost},{"score",selection.score},{"costUnit",selection.costInSeconds?"seconds":"relative"},
+                    {"routeValidated",!selection.route.points.empty()},{"points",Json::array()}};
+                for(const auto point:selection.route.points) report["points"].push_back({point.x,point.y});
+                std::cout<<report.dump(2)<<'\n';return 0;
+            }
+            std::vector<d2x::NavigationRoom> rooms;
+            for(const auto &room:metadata.value("rooms",Json::array())) rooms.push_back({room.at("x"),room.at("y"),
+                room.at("width"),room.at("height"),room.value("near",std::vector<size_t>{})});
+            const auto &start=metadata.at("from");const d2x::Vec from{start.at(0),start.at(1)};
+            d2x::NavigationSelection result;
+            size_t viewpoints=0;
+            if(kind=="exploration-plan") {
+                d2x::NavigationViewpointInput request;
+                request.from=from;request.rooms=rooms;
+                request.origin={metadata.at("coordinateOrigin").at(0),metadata.at("coordinateOrigin").at(1)};
+                request.halfExtent={metadata.at("halfExtent").at(0),metadata.at("halfExtent").at(1)};
+                request.teleportRange=metadata.at("range");request.restricted=metadata.at("restricted");
+                request.outdoor=metadata.at("outdoor");request.branchScale=metadata.value("branchScale",0.f);
+                if(metadata.contains("hub") && !metadata.at("hub").is_null()) request.hub=d2x::Vec{metadata.at("hub").at(0),metadata.at("hub").at(1)};
+                for(const auto &entry:metadata.at("unseenBands")) {
+                    auto values=entry.at(1).get<std::vector<int>>();
+                    if(!std::is_sorted(values.begin(),values.end())) throw std::runtime_error("Unsorted observation band");
+                    request.unseenBands.emplace(entry.at(0).get<int>(),std::move(values));
+                }
+                for(const auto &entry:metadata.at("exclusions")) request.exclusions.push_back({
+                    {entry.at("point").at(0),entry.at("point").at(1)},entry.at("radius")});
+                for(const auto &entry:metadata.at("boundaries")) request.boundaries.push_back({entry.at(0),entry.at(1),entry.at(2),entry.at(3)});
+                const int mobility=metadata.value("mobility",request.teleportRange>0?2:0);
+                const int objective=metadata.value("objective",request.boundaries.empty()?0:1);
+                if(mobility<0 || mobility>2 || objective<0 || objective>3) throw std::runtime_error("Invalid exploration policy");
+                request.mobility=d2x::NavigationMobility(mobility);
+                request.objective=d2x::NavigationObjective(objective);
+                if(metadata.contains("cost")) {
+                    const auto &cost=metadata.at("cost");
+                    request.cost={cost.at("walkUnit"),cost.at("teleportCast"),cost.at("observation"),cost.at("seconds")};
+                }
+                auto planned=d2x::planExploration(grid,request);viewpoints=planned.viewpoints.size();result=std::move(planned.selection);
+            } else {
+                std::vector<d2x::NavigationTarget> targets;
+                if(metadata.contains("candidates")) for(const auto &entry:metadata.at("candidates"))
+                        targets.push_back({{entry.at("point").at(0),entry.at("point").at(1)},entry.value("weight",1.f),
+                            entry.value("gain",size_t{1}),entry.value("penalty",0.f)});
+                else {const auto &goal=metadata.at("to");targets.push_back({{goal.at(0),goal.at(1)},1,1});}
+                result=d2x::planNavigation(grid,rooms,from,targets,metadata.value("range",0),
+                    metadata.value("restricted",false),{},metadata.value("partial",false));
+            }
+            const bool valid=result.route.points.empty() || d2x::navigationRouteValid(grid,rooms,result.route,
+                metadata.value("range",0),metadata.value("restricted",false));
+            if(!valid) throw std::runtime_error("Planner returned an invalid route");
+            constexpr std::array outcomes{"complete","partial","no-route","cancelled","resource-limited","need-observation","start-blocked"};
+            Json report{{"format","d2x-navigation-replay-v1"},{"outcome",outcomes.at(size_t(result.route.outcome))},
+                {"candidate",result.found?Json(result.candidate):Json(nullptr)},{"viewpoints",viewpoints},
+                {"travelCost",result.travelCost},{"score",result.score},{"costUnit",result.costInSeconds?"seconds":"relative"},
+                {"expanded",result.expanded},{"routeValidated",!result.route.points.empty()},{"points",Json::array()}};
+            for(const auto point:result.route.points) report["points"].push_back({point.x,point.y});
+            std::cout<<report.dump(2)<<'\n';return 0;
+        }
         if (argc < 3) {
             std::cout
                 << "d2x_assets <archive-or-folder> list [wildcard]\n  ... text <txt-member>\n  ... hex <member> [byte-count]\n  ... ds1-paths <ds1-member>\n  ... extract <member> <destination>\n  "
@@ -174,6 +324,7 @@ int main(int argc, char **argv) {
                    "  ... save-info <file.d2s>\n"
                    "  ... save-recipes <recipe.json> <new-output-directory>\n"
                    "  ... save-json <file.d2s> <new-manifest.json>\n"
+                   "  d2x_assets navigation-replay <capture.json> (no MPQ required)\n"
                    "  ... treasure <TC-name> [seed] [monster-level]\n"
                    "  ... quality <item-code> <item-level> <MF> [seed] [unique set rare magic modifiers]\n"
                    "  ... loot-plan <TC-name> <item-level> <seed> [upgrade-level]\n"

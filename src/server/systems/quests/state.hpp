@@ -21,6 +21,8 @@ struct QuestCompletion {
 };
 // World state is per act and per game; personal progression stays in PlayerStore.
 struct ActOneState {
+    std::optional<QuestId> pendingNarrative;
+    std::optional<Vec> countessChestPosition;
     bool denCleared{};
     using DenCompletion=QuestCompletion;
     std::optional<DenCompletion> denCompletion;
@@ -31,6 +33,7 @@ struct ActOneState {
     std::map<PlayerId,unsigned> observed;
     std::array<int,5> stones{};
     unsigned activatedStones{};
+    uint32_t stoneInteractions{};
     EntityId cainInvisibleObject;
     EntityId cainStartObject;
     EntityId cainTownActor;
@@ -45,6 +48,10 @@ struct ActOneState {
     bool cairnEffectPending{};
 };
 struct ActTwoState {
+    bool radamentNarrativePending{},summonerKilled{},summonerEffectPending{},summonerSoundSent{};
+    uint64_t summonerTimerAt{};
+    bool summonerTimerPending{};
+    bool sunNoticePending{},sunCallbackPending{};
     bool sunScheduled{}, dark{}, altarDestroyed{}, journalRead{}, tombOpen{}, durielSlain{}, tyraelPortal{};
     uint64_t sunAt{}, tombAt{};
     bool tombEffectPending{};
@@ -78,6 +85,7 @@ struct StatusNotice {
     bool prepared{};
 };
 struct ActThreeState {
+    std::optional<QuestId> pendingNarrative;
     bool khalimIntroAvailable{};
     EntityId figurineSource{};
     bool figurineDropped{};
@@ -91,6 +99,8 @@ struct ActThreeState {
     bool orbSequenceStarted{},orbFxPending{};
 };
 struct ActFourState {
+    bool izualGhostActivated{};
+    bool diabloNarrativePending{};
     bool izualActivated{};
     uint8_t sealBossDeaths{};
     bool izualSlain{},ghostSpawned{},hammerDropped{},forgePlaced{},forgeSmashed{},diabloSlain{},diabloSpawned{},portalOpened{};
@@ -119,6 +129,7 @@ struct ActFourState {
     bool diabloBirthPending{};
 };
 struct ActFiveState {
+    bool siegeNarrativePending{},baalNarrativePending{},baalDeathEffectPending{},rescueNarrativePending{};
     bool anyaRead{};
     struct FrozenAnyaReader {EntityId actor,object;uint64_t generation{};};
     std::map<PlayerId,FrozenAnyaReader> frozenAnyaReaders;

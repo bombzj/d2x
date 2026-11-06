@@ -20,6 +20,10 @@ Bytes nativeQuestInitialization(const server::QuestFact &fact) {
     });
 }
 std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::QuestFact &fact,std::optional<EntityId> npc) {
+    if(!npc && fact.publication==server::QuestPublication::Global)
+        return {hosting::encodeServerPacket(hosting::ServerMessage::GameQuests,[&](auto &out) {
+            for(const auto word:fact.gameFlags) out.u16(word);
+        })};
     std::vector<Bytes> zoo;
     if(fact.zooMonster) zoo.push_back(hosting::encodeServerPacket(hosting::ServerMessage::QuestPayload,[&](auto &out) {
         out.u16(36);out.u16(*fact.zooMonster);for(int index=0;index<5;++index) out.u16(0);
@@ -44,7 +48,8 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
     if(fact.credited[questIndex(QuestId::DenOfEvil)]) flags[41*2+1]|=resetGoal;
     else if(flags[41*2]&2) flags[41*2+1]|=0x80;
     std::vector<Bytes> result;
-    result.push_back(encodeServerPacket(ServerMessage::GameQuests,[&](auto &out){for(const auto word:fact.gameFlags) out.u16(word);}));
+    if(npc || fact.publication!=server::QuestPublication::Query)
+        result.push_back(encodeServerPacket(ServerMessage::GameQuests,[&](auto &out){for(const auto word:fact.gameFlags) out.u16(word);}));
     result.push_back(encodeServerPacket(ServerMessage::PlayerQuests,[&](auto &out){out.u8(npc?1:6);out.u32(npc?uint32_t(npc->value):0);out.u8(0);out.append(flags);}));
     if(npc) return result; // 27 -> 29 -> NPC-context 28 activates the original client.
     std::array<uint8_t,41> statuses{};
@@ -96,10 +101,6 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
             !fact.unavailable[questIndex(definition.id)]) statuses.at(definition.nativeSlot)=0;
         if(!fact.fullStatus) result.push_back(encodeServerPacket(ServerMessage::QuestUpdate,[&](auto &out){out.u8(uint8_t(number));out.u8(0);out.u8(status);out.u16(definition.id==QuestId::DenOfEvil?uint16_t(fact.remaining):definition.id==QuestId::RescueOnMountArreat?uint16_t(15-std::min(fact.rescued,15u)):0);}));
     }
-    unsigned seen=0;bool valid=true;
-    for(const int stone:fact.stones) {if(stone<17 || stone>21 || (seen&(1u<<(stone-17)))) {valid=false;break;}seen|=1u<<(stone-17);}
-    if(valid && book.at(questIndex(QuestId::SearchForCain)).stage>=uint32_t(CainStage::ScrollTranslated))
-        result.push_back(encodeServerPacket(ServerMessage::QuestPayload,[&](auto &out){out.u16(4);for(int stone:fact.stones) out.u16(uint16_t(stone-17));out.u16(0);}));
     if((fact.tombOffset && *fact.tombOffset<7) || book.at(questIndex(QuestId::RescueOnMountArreat)).stage || book.at(questIndex(QuestId::DenOfEvil)).stage)
         result.push_back(encodeServerPacket(ServerMessage::QuestPayload,[&](auto &out){out.u16(1);out.u16(uint16_t(fact.remaining));out.u16(fact.tombOffset.value_or(0));out.u16(uint16_t(15-std::min(fact.rescued,15u)));for(int i=0;i<3;++i)out.u16(0);}));
     // ACT2Q3 explicitly sends these quest transitions. They are distinct from

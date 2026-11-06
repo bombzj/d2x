@@ -346,6 +346,7 @@ void SceneView::drawBhSettings() const {
 }
 void SceneView::drawUi(Vec mouse) const {
     deferredTooltip_.active = false;
+    drawAreaTitle();
     drawDurabilityWarning();
     drawHostilityWarning();
     drawQuestNotice();
@@ -404,6 +405,20 @@ void SceneView::drawUi(Vec mouse) const {
             }
         }
         cursorSprite(pointer, mouse, hotspot);
+    }
+}
+void SceneView::drawAreaTitle() const {
+    if(areaTitlePending_ || areaTitleFrames_>=120) return;
+    ++areaTitleFrames_;
+    const auto &art=assets_.areaTitle;
+    int width=0;
+    for(const auto &cell:art.frames) width+=cell.texture.width;
+    int x=W/2-width/2-1;
+    const int baseline=H/2-140;
+    for(const auto &cell:art.frames) {
+        DrawTexturePro(cell.texture,{0,0,float(cell.texture.width),float(cell.texture.height)},
+            {float(x+cell.x),float(baseline+cell.y-cell.texture.height),float(cell.texture.width),float(cell.texture.height)}, {},0,WHITE);
+        x+=256;
     }
 }
 } // namespace d2x

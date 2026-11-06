@@ -117,6 +117,11 @@ DomainResult<> System::acknowledgeActThree(const ActorContext &actor,const Reque
     return result;
 }
 StepStatus System::actThreeStep(TickContext tick) {
+    if(state_.actThree.pendingNarrative) {
+        const auto quest=*state_.actThree.pendingNarrative;
+        if(finishNarratedGoal(quest,quest==QuestId::Guardian?66:64,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+        state_.actThree.pendingNarrative.reset();
+    }
     bool blocked=orbStep(tick)==StepStatus::Blocked;auto &world=state_.actThree;
     constexpr std::array council{"Ismail Vilehand","Geleb Flamefinger","Toorc Icefist"};
     std::set<std::string> deadCouncil;
@@ -124,7 +129,13 @@ StepStatus System::actThreeStep(TickContext tick) {
     for(const auto &[id,m]:ports_.monsters.read().actors) {
         (void)id;if(m.alive() || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
         if(int(m.area)==102 && m.identity.monster=="mephisto") {
-            world.mephistoSlain=true;captureGoal(QuestId::Guardian,4,m.area,{},killerPlayer(m.killer));
+            world.mephistoSlain=true;
+            if(!(state_.initialFlags[questDefinition(QuestId::Guardian).nativeSlot]&0x8000) && !state_.objectives[questIndex(QuestId::Guardian)]) {
+                captureGoal(QuestId::Guardian,4,m.area,{},killerPlayer(m.killer));
+                world.pendingNarrative=QuestId::Guardian;
+                if(finishNarratedGoal(QuestId::Guardian,66,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+                world.pendingNarrative.reset();
+            }
         }
         if(int(m.area)==83 && m.identity.rank==MonsterRank::SuperUnique && std::find(council.begin(),council.end(),m.identity.superUnique)!=council.end()) {
             deadCouncil.insert(m.identity.superUnique);
@@ -132,7 +143,13 @@ StepStatus System::actThreeStep(TickContext tick) {
                (m.deathTick==lastCouncil->deathTick && m.deathOccurrence>lastCouncil->deathOccurrence)) lastCouncil=&m;
         }
     }
-    if(deadCouncil.size()==council.size() && lastCouncil) captureGoal(QuestId::BlackenedTemple,world.orbSmashed?4u:3u,lastCouncil->area,lastCouncil->position);
+    if(deadCouncil.size()==council.size() && lastCouncil &&
+        !(state_.initialFlags[questDefinition(QuestId::BlackenedTemple).nativeSlot]&0x8000) && !state_.objectives[questIndex(QuestId::BlackenedTemple)]) {
+        captureGoal(QuestId::BlackenedTemple,world.orbSmashed?4u:3u,lastCouncil->area,lastCouncil->position);
+        world.pendingNarrative=QuestId::BlackenedTemple;
+        if(finishNarratedGoal(QuestId::BlackenedTemple,64,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+        world.pendingNarrative.reset();
+    }
     const auto *source=ports_.monsters.find(world.figurineSource);
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered || ports_.areas.at(p.area).definition.act!=2) continue;

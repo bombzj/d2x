@@ -460,11 +460,19 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         }
         if(!point_) {
             const auto &component=search_.connectionComponent(map.grid,from);
-            for(const auto &opening:candidates) {
+            std::vector<DebugNavigationSearch::Candidate> openingTargets;
+            std::vector<size_t> openingIndices;
+            for(size_t index=0;index<candidates.size();++index) {
+                const auto &opening=candidates[index];
                 const auto at=localPoint(opening.point);
                 if(at.x<0 || at.y<0 || at.x>=pathGrid.width || at.y>=pathGrid.height ||
                     !component.cells[size_t(at.y)*pathGrid.width+int(at.x)]) continue;
-                if(!search_.travelRoute(map.grid,from,at).points.empty()) {accept(opening);break;}
+                openingTargets.push_back({at,float(opening.cost+8)/float(distance(player,opening.point)+8),1});openingIndices.push_back(index);
+            }
+            if(!openingTargets.empty()) {
+                const auto selected=search_.selectCandidate(map.grid,from,openingTargets,{},0,false,offset,
+                    DebugNavigationSearch::PlanningPurpose::ExitOpening);
+                if(selected.found) accept(candidates.at(openingIndices.at(selected.candidate)));
             }
             if(!point_) {
                 // Only score reachable observation cells which advance toward
@@ -499,12 +507,22 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                     if(bestEdge) frontiers.push_back({frontier,bestEdge,bestCost});
                 }
                 std::stable_sort(frontiers.begin(),frontiers.end(),[](const auto &a,const auto &b){return a.cost<b.cost;});
-                for(const auto &frontier:frontiers) {
+                std::vector<DebugNavigationSearch::Candidate> frontierTargets;
+                std::vector<size_t> frontierIndices;
+                for(size_t index=0;index<frontiers.size();++index) {
+                    const auto &frontier=frontiers[index];
                     if(destination_ && std::any_of(exhausted.begin(),exhausted.end(),[&](const auto &entry) {
                         return distance(frontier.point,{uint16_t(entry.first.first),uint16_t(entry.first.second)})<8;
                     })) continue;
-                    if(search_.travelRoute(map.grid,from,localPoint(frontier.point)).points.empty()) continue;
-                    selectEdge(*frontier.edge);point_=frontier.point;source_="walking-connection-frontier";break;
+                    frontierTargets.push_back({localPoint(frontier.point),float(frontier.cost+8)/float(distance(player,frontier.point)+8),1});frontierIndices.push_back(index);
+                }
+                if(!frontierTargets.empty()) {
+                    const auto selected=search_.selectCandidate(map.grid,from,frontierTargets,{},0,false,offset,
+                        DebugNavigationSearch::PlanningPurpose::ExitFrontier);
+                    if(selected.found) {
+                        const auto &frontier=frontiers.at(frontierIndices.at(selected.candidate));
+                        selectEdge(*frontier.edge);point_=frontier.point;source_="walking-connection-frontier";
+                    }
                 }
                 if(!point_ && !pathMoving && destination_) {
                     for(const auto &cell:visited_) exhausted[cell]=coverage(cell);
@@ -691,7 +709,8 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     if(!point_ && goal_!=Goal::Exit) {
         // Search only reconstructed rooms in this level. Walking exposes more
         // server rooms; their unit assignments can then reveal the actual target.
-        std::optional<OnlinePoint> candidate;int best=INT32_MAX;
+        std::optional<OnlinePoint> candidate;
+        std::vector<DebugNavigationSearch::Candidate> roomCandidates;
         const auto remembered=scene.area?town.knownWaypointPosition(*scene.area):std::nullopt;
         if(remembered) {
             const Vec wanted{float(int(remembered->x)-origin.x)+.5f,float(int(remembered->y)-origin.y)+.5f};
@@ -715,8 +734,12 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             const auto world=point(*cell+offset);
             if(visited_.contains({world.x,world.y})) continue;
             if(distance(player,world)<=16) {visited_.emplace(world.x,world.y);continue;}
-            const auto path=search_.path(routeGrid,from,*cell,false,playerMovement,true);
-            if(!path.empty() && distance(player,world)<best) {candidate=world;best=distance(player,world);}
+            roomCandidates.push_back({*cell,1,1});
+        }
+        if(!candidate && !roomCandidates.empty()) {
+            const auto selected=search_.selectCandidate(routeGrid,from,roomCandidates,{},0,false,offset,
+                DebugNavigationSearch::PlanningPurpose::Waypoint);
+            if(selected.found) candidate=point(roomCandidates.at(selected.candidate).point+offset);
         }
         // Room reconstruction and unit assignment arrive independently. Keep
         // observing normal client updates until the existing progress deadline;
@@ -765,10 +788,13 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                 }
         }
         std::stable_sort(approaches.begin(),approaches.end(),[&](auto a,auto b){return distance(player,a)<distance(player,b);});
-        for(const auto candidate:approaches) {
-            const Vec at{float(candidate.x)-offset.x+.5f,float(candidate.y)-offset.y+.5f};
-            auto alternative=search_.path(routeGrid,from,at,false,playerMovement,true);
-            if(!alternative.empty()) {path=std::move(alternative);break;}
+        std::vector<DebugNavigationSearch::Candidate> interactionCandidates;
+        for(const auto candidate:approaches)
+            interactionCandidates.push_back({{float(candidate.x)-offset.x+.5f,float(candidate.y)-offset.y+.5f},1,1});
+        if(!interactionCandidates.empty()) {
+            const auto selected=search_.selectCandidate(routeGrid,from,interactionCandidates,{},0,false,offset,
+                DebugNavigationSearch::PlanningPurpose::Interaction);
+            if(selected.found) path=selected.route.points;
         }
     }
     const bool interactionApproach=unit_ && interact_ && !path.empty() &&

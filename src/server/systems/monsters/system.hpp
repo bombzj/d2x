@@ -50,7 +50,7 @@ namespace d2x { struct PersistentCharacter; struct MonsterSnapshot; }
 namespace d2x::server::effects {struct AuraUnitPublication;struct BirthEffectsPublication;}
 namespace d2x::server::reactions {class ItemTriggers;}
 
-namespace d2x::server {struct HydraRules;struct SkillRules;struct RoomUnitRegistration;struct NpcRule;struct RoomView;struct RoomRandomLoan;}
+namespace d2x::server {struct EventBatch;struct HydraRules;struct SkillRules;struct RoomUnitRegistration;struct NpcRule;struct RoomView;struct RoomRandomLoan;}
 namespace d2x::server::monsters {
 class NativeBirthPublication;
 struct Pd2ScenePack;
@@ -125,6 +125,7 @@ struct Actor {
     std::optional<int> changedClass;
     EntityId lastAttacker;
     uint8_t nativeMode{1},nativeAiState{};
+    bool identityNoticePending{};
     EntityId tauntTarget;
     bool mainOwnerCleared{};
     // AIGENERAL owner/list are distinct from UNITS_StoreOwner and PlayerPets.
@@ -198,6 +199,7 @@ struct Actor {
     uint8_t pathSteps{};
     uint8_t pathType{13}, pathDistance{5};
     uint64_t movementRevision{}; // Accepted path starts, not per-frame position changes.
+    uint64_t teleportRevision{};
     int effectVelocity{};
     bool running{};
     bool rewardComplete{}, moving{};
@@ -416,6 +418,7 @@ class System {
     DomainResult<> rebindNpcMapAi(EntityId,const std::vector<MonsterRule::MapAiNode> &);
     DomainResult<> retireQuestNpc(EntityId);
     DomainResult<> departQuestNpc(EntityId,uint64_t tick);
+    DomainResult<> departQuestNpc(EntityId,uint64_t tick,std::vector<EventBatch> notices,bool animateDeath);
     void resetAiFunctionMemory(EntityId);
     DomainResult<> clearMinionLeash(EntityId);
     std::vector<EntityId> pets(PlayerId,bool includeInactive=false) const;
@@ -535,6 +538,7 @@ class System {
     DomainResult<> prepareBirthModifiers(EntityId,MonsterRank,std::vector<int>,std::span<const EntityId>,uint64_t tick,
         std::optional<std::pair<uint64_t,uint64_t>> random={},bool promoteMinions=false,std::optional<uint16_t> nameSeed={});
     std::optional<ModifierPreparation> pendingModifiers() const {return modifierPrepared_?std::nullopt:modifierPending_;}
+    StepStatus publishIdentityNotices(TickContext);
     bool modifiersPending() const {return modifierPending_.has_value();}
     std::string modifierFailure() const {return modifierPrepared_?modifierPrepared_->deferred:std::string{};}
     DomainResult<> prepareModifiers(PreparedModifiers);

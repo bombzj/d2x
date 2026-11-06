@@ -155,8 +155,10 @@ StepStatus System::think(EntityId id,TickContext tick) {
         controller.random=controller.randomExpected=monster.combatRandom;controller.randomPublished=false;sampled=true;
         const auto &area=ports_.areas.at(monster.area);
         const bool active = ports_.areas.active(monster.area, monster.position);
+        const bool cainDeparture=monster.questNpc && monster.identity.monster=="cain1" &&
+            monster.rule.ai.kind==MonsterAiKind::NpcOutOfTown && ports_.areas.loaded(monster.area,monster.position);
         const bool nativeRevive=monster.revived() && monster.rule.stats && !monster.rule.stats->pd2;
-        if(!active || (!nativeRevive && area.definition.town && monster.rule.ai.kind!=MonsterAiKind::GoodNpcRanged && !townNpcAi(monster.rule.ai.kind))) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
+        if((!active && !cainDeparture) || (!nativeRevive && area.definition.town && monster.rule.ai.kind!=MonsterAiKind::GoodNpcRanged && !townNpcAi(monster.rule.ai.kind))) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
         if(nativeRevive && !rescheduled && !monster.route.empty() && (monster.nativeMode==2 || monster.nativeMode==15)) {
             controller.nextDecision=tick.tick+1;continue;
         }

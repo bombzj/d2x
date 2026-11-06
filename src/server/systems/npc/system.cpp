@@ -4,6 +4,7 @@
 #include "server/runtime/facts/npc.hpp"
 #include "server/runtime/facts/unit.hpp"
 #include "gameplay/quest/prelude_rules.hpp"
+#include "gameplay/events/frame_queue.hpp"
 #include "server/player_store.hpp"
 #include "server/movement.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -261,7 +262,8 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
 DomainResult<> System::close(PlayerId player) {
     approaches_.erase(player);
     if(const auto current=state_.conversations.find(player);current!=state_.conversations.end()) {
-        ports_.quests.npcDeactivated(current->second.npc);
+        const auto closed=ports_.quests.npcDeactivated(current->second.npc,player,ports_.frameEvents.currentFrame());
+        if(!closed) return closed;
         state_.conversations.erase(current);
     }
     return {DomainStatus::Applied,std::monostate{}};
@@ -316,7 +318,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     std::erase_if(state_.conversations,[&](const auto &entry){
         if(conversation(entry.first)) return false;
-        ports_.quests.npcDeactivated(entry.second.npc);return true;
+        const auto closed=ports_.quests.npcDeactivated(entry.second.npc,entry.first,tick.tick);
+        if(!closed) {blocked=true;return false;}
+        return true;
     });
     return blocked?StepStatus::Blocked:StepStatus::Complete;
 }

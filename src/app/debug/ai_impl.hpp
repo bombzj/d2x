@@ -104,9 +104,12 @@ struct DebugAi::Impl {
         int kiteIntervalMs=900,kiteDistance=6,kiteMinDistance=8,hazardLookaheadMs=350,hazardPadding=3;
     } policy;
     struct MobilityPolicy {std::string mode="auto";bool vigor=true;int distance=24;} mobilityPolicy;
+    std::optional<std::tuple<uint64_t,int,unsigned,uint64_t,uint64_t,uint16_t>> navigationTimingKey;
+    std::optional<float> navigationTeleportSeconds;
+    std::optional<std::pair<uint64_t,uint64_t>> navigationCastSample;
     struct EventPolicy : DebugWalkTiming {
         int waitSeconds=90,initialWaitMs=1000,doorInitialWaitMs=250,scrollInitialWaitMs=1000;
-        int questLogDurationMs=2000;
+        int questLogDurationMs=2000,waypointCloseDelayMs=300;
         int encounterRadius=32,standoffMin=8,standoffMax=24;
     } eventPolicy;
     struct SupplyPolicy {
@@ -125,6 +128,19 @@ struct DebugAi::Impl {
     std::deque<Json> history;uint64_t decisions{},sequence{},game{},areaGeneration{};
     std::filesystem::path logDirectory;
     AiBehaviorLog behaviorLog;
+    struct NavigationEfficiency {
+        double activeMs{},navigationWaitMs{},walkingDistance{};
+        std::array<double,3> modeMs{};
+        uint64_t relocations{},backtracks{};
+        size_t observedTiles{};
+    } navigationEfficiency,goalEfficiencyStart;
+    Clock::time_point efficiencySampleAt{};
+    bool efficiencyExecuting{},efficiencyWaiting{};
+    size_t efficiencyMode{};
+    std::optional<Vec> efficiencyPosition;
+    std::optional<uint16_t> efficiencyArea;
+    uint64_t efficiencyDiscontinuity{};
+    size_t efficiencyObserved{};
     uint64_t observedWalkFailures{};
     bool phaseReported{};
     void goalStarted();
@@ -150,14 +166,16 @@ struct DebugAi::Impl {
     std::map<std::pair<uint16_t,uint16_t>,FrontierAttempt> frontierAttempts;
     struct ViewpointAttempt {size_t observedCells{};Clock::time_point retryAt;};
     std::map<std::pair<uint16_t,uint16_t>,ViewpointAttempt> viewpointAttempts;
+    enum class ExplorationFocus {Coverage,Units,Connection};
     struct ViewpointRoute {
         OnlinePoint target;size_t observed;std::vector<Vec> origins;
         std::vector<std::pair<int,int>> unseenTiles;
+        ExplorationFocus focus{ExplorationFocus::Coverage};
     };
     std::optional<ViewpointRoute> viewpointRoute;
+    std::optional<std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,size_t,size_t,size_t>> explorationPrefetch;
     struct BacktrackAttempt {size_t observedCells{};Clock::time_point retryAt;std::string reason;};
     std::map<std::tuple<int,int,int>,BacktrackAttempt> backtrackAttempts;
-    std::map<std::tuple<int,int,int,int,int,int>,std::pair<uint64_t,bool>> observedRoomPassages;
     std::set<std::tuple<uint16_t,uint8_t,uint16_t,uint16_t,uint16_t>> checkedHints;
     size_t knownExploredRooms{};
     uint64_t searchGeometryRevision{},mapCacheBuilds{},pathSearches{};
@@ -269,6 +287,8 @@ struct DebugAi::Impl {
     bool submitItem(Context &,const OnlineItemCommand &,std::string,DebugActionOwner=DebugActionOwner::Goal);
     bool submitCombat(Context &,const OnlineCombatCommand &,DebugActionOwner,std::string,std::optional<Vec> = {});
     bool inputBlocked{};std::optional<uint32_t> closeWaypoint;
+    std::optional<uint32_t> observedWaypointMenu;
+    Clock::time_point waypointMenuOpenedAt{};
     std::optional<OnlineUnitKey> combatTarget;std::optional<OnlinePoint> retreatPoint;
     std::optional<uint16_t> excursionSkill;
     bool excursionSkillPrepared{};
@@ -513,12 +533,12 @@ struct DebugAi::Impl {
     float routeCost(const Context &,const std::vector<int> &,std::optional<Vec> start={}) const;
     void refreshNavigationAttempts(const Context &);
     void recordFrontierAttempt(const Context &,OnlinePoint,std::string outcome,std::string reason={},std::optional<OnlinePoint> relayGoal={});
-    void deferViewpoint(const Context &,OnlinePoint);
+    void deferViewpoint(const Context &,OnlinePoint,std::string reason,Json details);
     bool frontierCoolingDown(OnlinePoint,float radius,std::optional<OnlinePoint> relayGoal={}) const;
     bool tryTeleportAcrossExit(Context &,uint16_t);
     bool travel(Context &,uint16_t,bool allowWaypoint=true);
-    enum class ExplorationFocus {Coverage,Units,Connection};
-    bool explore(Context &,std::string,bool recoveryOnly=false,ExplorationFocus=ExplorationFocus::Coverage);
+    void prefetchExploration(Context &);
+    bool explore(Context &,std::string,bool recoveryOnly=false,ExplorationFocus=ExplorationFocus::Coverage,bool planOnly=false);
     bool approachKnown(Context &,const Selector &);
     void prepareVaughtClues();
     bool approachTerrainClue(Context &,const Selector &);

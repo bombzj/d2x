@@ -1,10 +1,12 @@
 #include "server/game_messages.hpp"
 #include "server/runtime/facts/skills.hpp"
+#include "server/runtime/facts/combat.hpp"
 #include "server/runtime/facts/effects.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/native_combat_wire.hpp"
 #include "hosting/native_item_wire.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 namespace d2x::hosting {
 void NativeRealmService::publishMissiles() {
@@ -23,7 +25,7 @@ void NativeRealmService::publishMissiles() {
     // Removing an interest entry must never invent a RemoveUnit(3) packet.
     peer.missiles.swap(visible);
 }
-void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDeaths) {
+void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDeaths,const std::vector<EntityId> &pendingActions) {
     if (!binding || peer.phase != GamePhase::Entered) return;
     std::set<EntityId> visible;
     std::vector<Bytes> packets;
@@ -71,6 +73,15 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
             entry->second={};fresh=true;
         }
         if (fresh) packets.push_back(nativeMonsterAssignment(*content,monster, origin));
+        if(!fresh && monster.teleportRevision!=entry->second.teleportRevision) {
+            const auto position=monster.position+origin;
+            packets.push_back(encodeServerPacket(ServerMessage::Reposition,[&](auto &out){
+                out.u8(1);out.u32(wireId(monster.id));
+                out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(1);
+            }));
+            entry->second.motion.clear();
+        }
+        entry->second.teleportRevision=monster.teleportRevision;
         const bool pendingDeath=std::find(pendingDeaths.begin(),pendingDeaths.end(),monster.id)!=pendingDeaths.end();
         // Death and resurrection synchronize life through their native modes,
         // not through a regeneration AB in front of that mode notification.
@@ -85,6 +96,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
         }
         entry->second.nativeClass=monster.nativeClass;entry->second.modifiers=monster.modifiers;entry->second.rankFlags=monster.rankFlags;entry->second.nameSeed=monster.nameSeed;
         if(monster.hireling) {
+            if(peer.hireling.actor!=monster.id) {peer.hireling={};peer.hireling.actor=monster.id;}
             const auto &record=*monster.hireling;
             const auto definition=std::find_if(content->hirelings.begin(),content->hirelings.end(),[&](const auto &entry){return entry.sourceRow==record.sourceRow;});
             const auto name=content->hirelingNameIds.find(record.nameKey);
@@ -93,17 +105,34 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
                 out.u8(7);out.u16(uint16_t(record.classId));out.u32(wireId(monster.hirelingOwner));
                 out.u32(wireId(monster.id));out.u32(record.seed);out.u32(uint32_t(name->second));
             });
-            if(identity!=entry->second.hirelingIdentity) {packets.push_back(identity);entry->second.hirelingIdentity=std::move(identity);}
+            if(identity!=peer.hireling.identity) {packets.push_back(identity);peer.hireling.identity=std::move(identity);}
             const auto &values=monster.hirelingAttributes;
             const auto &table=content->tables.at("itemstatcost");
+            bool refreshLife=peer.hireling.stats.empty() || (peer.hireling.dead && monster.hirelingLife>0);
+            peer.hireling.dead=monster.hirelingLife<=0;
+            for(const auto name:{"level","maxhp"}) {
+                const auto value=values.find(name);
+                const auto stat=content->nativeStats->names.find(name);
+                if(value==values.end() || stat==content->nativeStats->names.end()) continue;
+                const auto previous=peer.hireling.stats.find(uint8_t(stat->second));
+                refreshLife|=previous==peer.hireling.stats.end() || previous->second!=uint32_t(value->second);
+            }
             for(size_t row=0;row<table.rows().size();++row) {
                 const auto value=values.find(table.value(row,"Stat"));if(value==values.end()) continue;
+                if(table.value(row,"Stat")=="hitpoints" && !refreshLife) continue;
                 const auto stat=table.number(row,"ID");if(!stat || *stat<0 || *stat>255 || value->second<INT32_MIN || value->second>UINT32_MAX) throw std::runtime_error("Hireling stat exceeds wire capacity");
                 const auto encoded=uint32_t(value->second);
-                const auto prior=entry->second.hirelingStats.find(uint8_t(*stat));
-                if(prior!=entry->second.hirelingStats.end() && prior->second==encoded) continue;
-                packets.push_back(encodeServerPacket(ServerMessage::HirelingAttributeDword,[&](auto &out){out.u8(uint8_t(*stat));out.u32(wireId(monster.id));out.u32(encoded);}));
-                entry->second.hirelingStats[uint8_t(*stat)]=encoded;
+                const auto prior=peer.hireling.stats.find(uint8_t(*stat));
+                if(prior!=peer.hireling.stats.end() && prior->second==encoded) continue;
+                const auto message=encoded<UINT8_MAX?ServerMessage::HirelingAttributeByte:
+                    encoded<UINT16_MAX?ServerMessage::HirelingAttributeWord:ServerMessage::HirelingAttributeDword;
+                packets.push_back(encodeServerPacket(message,[&](auto &out){
+                    out.u8(uint8_t(*stat));out.u32(wireId(monster.id));
+                    if(encoded<UINT8_MAX) out.u8(uint8_t(encoded));
+                    else if(encoded<UINT16_MAX) out.u16(uint16_t(encoded));
+                    else out.u32(encoded);
+                }));
+                peer.hireling.stats[uint8_t(*stat)]=encoded;
             }
         }
         const auto statePacket = [&](int state, bool enabled) {
@@ -148,11 +177,33 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
         // their animations, including when only the UMod life flag changes.
         // A newly interested observer still needs the current reaction mode.
         if(pendingDeath || (!fresh && (monster.mode==3 || monster.mode==6))) continue;
+        if(std::find(pendingActions.begin(),pendingActions.end(),monster.id)!=pendingActions.end()) continue;
+        if(monster.skillAction) {
+            if(fresh || entry->second.skillAction!=monster.skillAction->action) {
+                auto action=*monster.skillAction;
+                if(action.target && !(action.targetType==2 && action.skill)) {
+                    const bool known=action.targetType==0?(recipient && recipient->actor.id==action.target) || peer.corpses.contains(action.target) ||
+                        std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &player){return player.second.actor==action.target;}):
+                        action.targetType==1?peer.monsters.contains(action.target):
+                        action.targetType==2?peer.objects.contains(action.target) || peer.portals.contains(action.target):
+                        action.targetType==4?peer.groundItems.contains(action.target):action.targetType==5 && peer.warps.contains(action.target);
+                    if(!known) action.target={};
+                }
+                auto cast=nativeAttack(action,shared.terrain.at(binding->game).at(action.area).origin);
+                packets.insert(packets.end(),std::make_move_iterator(cast.begin()),std::make_move_iterator(cast.end()));
+                entry->second.skillAction=action.action;
+            }
+            entry->second.motion.clear();
+            continue;
+        }
         auto motion = [&] {
             if(monster.movementTarget) {
                 const auto target=*monster.movementTarget;
-                const bool known=target.type==0?(recipient && recipient->actor.id==target.id) || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &p){return p.second.actor==target.id;}):
-                    target.type==2?peer.objects.contains(target.id):peer.monsters.contains(target.id);
+                const bool known=target.type==0?(recipient && recipient->actor.id==target.id) || peer.corpses.contains(target.id) ||
+                    std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &player){return player.second.actor==target.id;}):
+                    target.type==1?peer.monsters.contains(target.id):
+                    target.type==2?peer.objects.contains(target.id) || peer.portals.contains(target.id):
+                    target.type==4?peer.groundItems.contains(target.id):target.type==5 && peer.warps.contains(target.id);
                 if(!known) {
                     auto projected=monster;projected.movementTarget.reset();
                     return nativeMonsterMotion(projected, origin);

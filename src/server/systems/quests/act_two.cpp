@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "server/runtime/events.hpp"
+#include "server/runtime/environment_fact.hpp"
 #include "server/runtime/facts/npc.hpp"
 #include "server/runtime/facts/quest.hpp"
 #include "server/runtime/facts/quest_signals.hpp"
@@ -64,7 +65,6 @@ QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId re
         result.khalimStatus=status;
     }
     if(area && area->definition.act==1) {
-        result.eclipse=state_.actTwo.dark;
         if(record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::ArcaneSanctuary)).stage>=uint32_t(ArcaneStage::JournalRead)) result.tombOffset=state_.actTwo.tombOffset;
         const auto *p=ports_.players.find(player);
         if(p) {
@@ -112,6 +112,27 @@ bool System::allowsTravel(const CharacterRecord &record,RegionId from,RegionId t
 }
 StepStatus System::actTwoStep(TickContext tick) {
     bool blocked=false;
+    if(state_.actTwo.radamentNarrativePending) {
+        if(finishNarratedGoal(QuestId::RadamentsLair,50,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+        state_.actTwo.radamentNarrativePending=false;
+    }
+    if(state_.actTwo.summonerEffectPending) {
+        if(flushGoalRecords(tick,QuestId::Summoner)==StepStatus::Blocked) return StepStatus::Blocked;
+        if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{7}}})) return StepStatus::Blocked;
+        state_.actTwo.summonerEffectPending=false;
+    }
+    if(state_.actTwo.summonerTimerAt && tick.tick>=state_.actTwo.summonerTimerAt) {
+        state_.actTwo.summonerTimerPending=true;
+        if(!state_.actTwo.summonerSoundSent) {
+            if(finishNarratedGoal(QuestId::Summoner,51,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+            state_.actTwo.summonerSoundSent=true;
+            state_.actTwo.summonerTimerAt=(tick.tick/20+4)*20;
+        } else {
+            queueStatus(QuestId::Summoner,4);
+            state_.actTwo.summonerTimerAt=0;
+        }
+        state_.actTwo.summonerTimerPending=false;
+    }
     if(state_.actTwo.tombEffectPending) {
         const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{3}}});
         if(sent) state_.actTwo.tombEffectPending=false;else blocked=true;
@@ -142,8 +163,19 @@ StepStatus System::actTwoStep(TickContext tick) {
             captureGoal(QuestId::RadamentsLair,uint32_t(RadamentStage::Slain),m.area,m.position);
             state_.actTwo.radament=id;state_.actTwo.bookPosition=m.position;
             state_.actTwo.radamentBooks=state_.goals.find(QuestId::RadamentsLair)->second.eligible;
+            state_.actTwo.radamentNarrativePending=true;
+            if(finishNarratedGoal(QuestId::RadamentsLair,50,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+            state_.actTwo.radamentNarrativePending=false;
         }
-        if(int(m.area)==74 && m.identity.monster=="summoner") captureGoal(QuestId::Summoner,uint32_t(SummonerStage::Slain),m.area,m.position);
+        if(int(m.area)==74 && m.identity.monster=="summoner" && !state_.actTwo.summonerKilled) {
+            captureGoal(QuestId::Summoner,uint32_t(SummonerStage::Slain),m.area,m.position);
+            state_.actTwo.summonerKilled=true;state_.actTwo.summonerEffectPending=true;
+            if(!(state_.initialFlags[questDefinition(QuestId::Summoner).nativeSlot]&0x8000))
+                state_.actTwo.summonerTimerAt=(tick.tick/20+4)*20;
+            if(flushGoalRecords(tick,QuestId::Summoner)==StepStatus::Blocked) return StepStatus::Blocked;
+            if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{7}}})) return StepStatus::Blocked;
+            state_.actTwo.summonerEffectPending=false;
+        }
         if(int(m.area)==73 && m.identity.monster=="duriel" && !state_.actTwo.durielSlain) {
             // CUSTOM1 is kill permission; PrimaryGoalDone and CompletedNow
             // are assigned later, when Tyrael opens the return portal.
@@ -154,6 +186,19 @@ StepStatus System::actTwoStep(TickContext tick) {
     }
     if(state_.actTwo.sunScheduled && !state_.actTwo.altarDestroyed && tick.tick>=state_.actTwo.sunAt && !state_.actTwo.dark) {
         state_.actTwo.dark=true;ports_.world.sunEclipse(true);
+        state_.actTwo.sunNoticePending=true;
+    }
+    if(state_.actTwo.sunNoticePending) {
+        std::vector<EventBatch> notices;
+        for(const auto &[id,player]:ports_.players.all())
+            if(player.entered && ports_.areas.at(player.area).definition.act==1)
+                notices.push_back({0,tick.tick,{}, {AudienceKind::Player,id,player.area},
+                    {EnvironmentFact{1,5,0,true},QuestStatusFact{QuestId::TaintedSun,0,0,16}}});
+        if(!notices.empty()) {
+            state_.actTwo.sunCallbackPending=true;
+            if(!ports_.events.publishGroup(std::move(notices))) return StepStatus::Blocked;
+            state_.actTwo.sunNoticePending=false;state_.actTwo.sunCallbackPending=false;
+        }
     }
     if(state_.actTwo.tombAt && !state_.actTwo.tombOpen && tick.tick>=state_.actTwo.tombAt) {
         const auto &area=ports_.areas.at(state_.actTwo.tomb);

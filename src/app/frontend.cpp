@@ -16,6 +16,8 @@
 #include "app/debug/chat_command.hpp"
 #include "app/debug/ui_input.hpp"
 #include "app/debug/server_commands.hpp"
+#include "app/debug/movement_diff.hpp"
+#include "app/debug/navigation_search.hpp"
 #include "client/remote_town.hpp"
 #include "client/pd2/automap.hpp"
 #include "client/remote_control.hpp"
@@ -485,6 +487,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             (sharedUi->ui().bhEnabled && sharedUi->ui().bhSettingsOpen)) return;
         auto trade = sharedUi->handlePlayerTrade(input);
         bool consumed = trade.consumed;
+        bool chatPointer = false;
         if (!trade.error.empty()) sharedUi->notice(std::move(trade.error), true);
         if (trade.accept) {
             const bool accepted = session.respond_player_trade(*trade.accept, trade.revision);
@@ -496,7 +499,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 session.read().error ? session.read().error->message : "Trade offer could not be submitted.",true);
         }
         if (!consumed && !session.read().world.playerTrade.active()) {
+            const bool editingChat=sharedUi->ui().chatInputOpen;
             auto intent = sharedUi->handleChat(input);
+            chatPointer=intent.consumed && !sharedUi->ui().messageLogOpen &&
+                (editingChat || sharedUi->ui().chatInputOpen);
             if (!intent.error.empty()) sharedUi->notice(std::move(intent.error), true);
             if (intent.message) {
                 const auto error=submitChatInput(*intent.message);
@@ -518,12 +524,19 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             consumed = party.consumed;
         }
         if (!consumed) return;
-        // Trade, chat or party controls own the whole pointer interaction frame.
+        // Trade, log or party controls own the whole pointer interaction frame.
         // Retain held buttons so reopening gameplay requires a physical release.
-        sharedController->resetInput();
+        if(!chatPointer) sharedController->resetInput();
         FrameInput quiet;
         quiet.mouse = input.mouse; quiet.insideViewport = input.insideViewport;
         quiet.focused = input.focused; quiet.leftHeld = input.leftHeld; quiet.rightHeld = input.rightHeld;
+        if(chatPointer) {
+            quiet.leftPressed=input.leftPressed;quiet.leftReleased=input.leftReleased;
+            quiet.rightPressed=input.rightPressed;quiet.rightReleased=input.rightReleased;
+            quiet.wheel=input.wheel;quiet.mouseWheel=input.mouseWheel;quiet.quantityDelta=int(input.mouseWheel);
+            quiet.shift=input.shift;quiet.control=input.control;quiet.alt=input.alt;
+            quiet.holdRun=input.holdRun;quiet.standStill=input.standStill;quiet.showLoot=input.showLoot;
+        }
         input = std::move(quiet);
     };
     const auto lang = languageOf(archives);
@@ -596,6 +609,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             {"areaGeneration",world.areaGeneration},{"area",town.read().area?nlohmann::json(*town.read().area):nlohmann::json(nullptr)},
             {"units",world.units.size()},{"items",world.items.size()},{"rooms",world.rooms.size()},
             {"knownNavigationRooms",town.navigationRooms().size()},{"aiActive",debugAi.active()},
+            {"mapReadiness",debugMapReadiness(town.read())},
             {"graphics",{{"textureCountsBySource",graphics.textureCounts},{"textureBytesBySource",graphics.textureBytes},{"owners",graphics.owners},{"textures",graphics.textures},{"logicalRgbaBytes",graphics.logicalRgbaBytes},
                 {"dt1Libraries",dt1.libraries},{"dt1PixelBytes",dt1.pixelBytes},{"atlasBytesByUse",graphics.atlasBytesByUse},{"atlasBytes",graphics.atlasBytes},{"atlasPages",graphics.atlasPages},{"atlasUploads",graphics.atlasUploads},
                 {"atlasUploadBytes",graphics.atlasUploadBytes},{"atlasEvictions",graphics.atlasEvictions},{"atlasOwnerPeaksBytes",graphics.atlasPeakBytes},
@@ -603,6 +617,12 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             {"minimized",minimized},{"presentationPaused",presentationPaused},
             {"renderedUnits",scene?scene->renderedUnits():0},{"navigationSearch",debugWalk.navigationSearch().snapshot()}};
     });
+    debug::MovementDiff movementDiff(options.movementDiffLog);
+    const auto recordMovementDiff=[&](bool suspended) {
+        if(!movementDiff.enabled()) return;
+        const auto host=localConnection && !lanConnection && embedded?embedded->singlePlayerMovement():std::nullopt;
+        movementDiff.record(host,session.read(),scene.get(),town.read().area,suspended);
+    };
     std::optional<OnlineView> frontendView;
     const auto refreshFrontendView = [&]() -> const OnlineView & {
         const auto &current = session.read();
@@ -750,6 +770,13 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         }
         if(debugAi.hasPlan() && sharedClients) {
             if(scene) {aiSupplies.castInputBusy=scene->castInputBusy();aiSupplies.actionInputBusy=scene->actionInputBusy();aiSupplies.missiles=scene->missileObservations();}
+            if(scene) aiSupplies.observedCastSeconds=[&](uint16_t skill){return scene->observedCastSeconds(skill);};
+            if(session.read().load.playerUnitId) {
+                const auto &character=sharedClients->character().read();
+                if(const auto timing=sharedClients->movement({0,*session.read().load.playerUnitId},character.running);
+                    timing && timing->velocity>0)
+                    aiSupplies.movementSecondsPerUnit=4096.f/(25.f*float(timing->velocity));
+            }
             aiSupplies.skillUsable=[&](uint16_t skill)->std::optional<bool> {
                 const auto &player=sharedClients->character().read();
                 if(!session.read().load.playerUnitId || player.actor.value!=uint64_t(*session.read().load.playerUnitId)+1) return {};
@@ -758,6 +785,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 return entry->available && entry->usableNow;
             };
             const auto &player=sharedClients->character().read();
+            aiSupplies.navigationFasterCast=player.fasterCast;
+            aiSupplies.navigationWeaponSet=player.weaponSet;
             // Shared UI identities encode a native GUID as GUID+1.
             if(session.read().load.playerUnitId && player.actor.value==uint64_t(*session.read().load.playerUnitId)+1) {
                 if(!player.unknownStats.contains("maxhp") && player.maxLife>0) aiSupplies.maxLife=player.maxLife;
@@ -767,6 +796,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         }
         frameTiming.mark(FrontendTimings::Client);
         debugWalk.navigationSearch().beginFrame(session.read().gameGeneration,session.read().world.areaGeneration,town.navigationRevision());
+        debugWalk.navigationSearch().observeExplored(town,session.read(),
+            !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
         debugAi.tick(session,town,debugWalk,control,combat,inventory,aiSupplies,
             minimized || presentationPaused || (sharedUi && (sharedUi->ui().gameMenuOpen || debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory()))),
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
@@ -1142,6 +1173,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         town.update(session.read(), !minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
         if (minimized) {
             if (sharedClients) sharedClients->update(town.read(), std::nullopt);
+            recordMovementDiff(true);
             const auto reveals = town.take_automap_room_reveals_pd2();
             if (!reveals.empty()) session.report_automap_rooms_pd2(reveals, onlineIntentContext(session.read()));
             syncPreferences();
@@ -1393,6 +1425,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     mapDisplay.visible = panels.automap; mapDisplay.large = panels.automapLarge;
                     mapDisplay.right = panels.minimapRight; mapDisplay.offset = panels.automapOffset; mapDisplay.running = sharedClients->running();
+                    mapDisplay.multiplayer = !localConnection || lanConnection;
                     worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,*sharedClients,
                         sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed,
                         localConnection && !lanConnection && ((!input.focused && !options.noPauseOnFocusLoss) || panels.gameMenuOpen));
@@ -1468,6 +1501,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             EndTextureMode();
         }
         frameTiming.mark(FrontendTimings::Scene);
+        recordMovementDiff(presentationPaused);
         BeginDrawing();
         ClearBackground(BLACK);
         DrawTexturePro(target.texture, {0, 0, float(target.texture.width), -float(target.texture.height)},
@@ -1480,6 +1514,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         if (captureRequested) saveFrontendScreenshot(target, "artifacts/d2x-capture.png");
         if (quit || presentationPaused)
             continue;
+        town.observeRendering(worldFrame.mapRendering);
         town.revealVisibleTiles(session.read(), worldFrame.visibleMapTiles, worldFrame.observationExtent);
         if (debugMapReveal && (session.read().stage != OnlineStage::ProtocolReady ||
             debugMapRevealGame != session.read().gameGeneration)) debugMapReveal.reset();

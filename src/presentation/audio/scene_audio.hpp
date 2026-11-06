@@ -44,7 +44,7 @@ class SceneAudio {
     void itemUse(std::string_view code, ItemQuality quality, int specialRow);
     void playerFootstep(int identity, bool running, int material, int level, uint64_t frame);
     void playRegistered(const std::string &key, uint64_t frame = UINT64_MAX);
-    void update(float clock, std::span<const SoundActorView>, std::span<const PresentationSoundEvent>);
+    void update(float clock, std::span<const SoundActorView>, std::span<const PresentationSoundEvent>, Vec listener);
     void reset();
     const std::set<std::string, std::less<>> &limitations() const;
 };

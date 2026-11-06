@@ -2,6 +2,7 @@
 #include "server/runtime/facts/combat.hpp"
 #include "server/runtime/facts/inventory.hpp"
 #include "server/runtime/facts/social.hpp"
+#include "server/runtime/facts/travel.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/game_messages.hpp"
 #include "server/area_store.hpp"
@@ -12,6 +13,7 @@
 #include "hosting/crafting_content.hpp"
 #include "hosting/quest_content.hpp"
 #include "hosting/companion_content.hpp"
+#include "hosting/native_combat_wire.hpp"
 #include "content/world/world_catalog.hpp"
 #include "server/runtime/event_batch.hpp"
 #include <algorithm>
@@ -129,7 +131,7 @@ void NativeRealmHost::advance(double seconds) {
             try {
                 const auto view = host.read(*peer->binding);
                 peer->publishAreas(view->actor.region); peer->publishGroundItems(); peer->publishPlayers(); peer->publishMonsters(); peer->publishMissiles(); peer->publishCorpses(); peer->publishObjects(); peer->publishNpcs(); peer->publishShop(); peer->publishPortals(); peer->publishItemSkills(); peer->publishMotion();
-                peer->publishRoomRemovals(); peer->publishLoadComplete();
+                peer->publishInventoryRefresh(); peer->publishRoomRemovals(); peer->publishLoadComplete();
             } catch (const std::exception &error) {
                 peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();
             }
@@ -147,6 +149,7 @@ void NativeRealmHost::advance(double seconds) {
             const auto &peer=connection->peer;
             retained.insert(peer.warps.begin(),peer.warps.end());retained.insert(peer.missiles.begin(),peer.missiles.end());
             retained.insert(peer.shopItems.begin(),peer.shopItems.end());retained.insert(peer.shopOwner);
+            retained.insert(peer.hireling.actor);
             keys(peer.roster);keys(peer.social);keys(peer.monsters);keys(peer.pets);keys(peer.petVitals);
             keys(peer.groundItems);keys(peer.corpses);keys(peer.portals);keys(peer.objects);keys(peer.states);keys(peer.stateStats);keys(peer.hover);
             for(const auto &[id,player]:peer.visible) {(void)id;retained.insert(player.actor);keys(player.equipment);}
@@ -184,19 +187,36 @@ void NativeRealmHost::publishEvents(GameHandle game) {
     std::vector<EntityId> inventoryResets;
     std::vector<EntityId> groundDrops;
     std::vector<EntityId> monsterDeaths;
+    std::vector<EntityId> monsterActions;
     std::vector<std::pair<EntityId,EntityId>> relationUpdates;
     for(const auto &batch:*pending) for(const auto &fact:batch.facts) {
         if(const auto *reset=server::factIf<server::InventoryResetFact>(&fact)) inventoryResets.push_back(reset->projection.player.id);
         else if(const auto *relation=server::factIf<server::ChatRelationFact>(&fact)) relationUpdates.emplace_back(relation->from,relation->to);
         else if(const auto *drop=server::factIf<server::GroundDropFact>(&fact)) groundDrops.push_back(drop->item.id);
         else if(const auto *hit=server::factIf<server::HitFact>(&fact);hit && hit->type==1 && hit->killed) monsterDeaths.push_back(hit->target);
+        else if(const auto *attack=server::factIf<server::AttackFact>(&fact);attack && attack->actorType==1) monsterActions.push_back(attack->actor);
     }
     // Prepare recipient baselines once before draining this immutable event set.
     if (!pending->empty()) for (auto *peer : peers) {
         if (!peer->binding || peer->binding->game != game || peer->peer.phase != GamePhase::Entered) continue;
         try {
             const auto view = host.read(*peer->binding);
-            peer->publishAreas(view->actor.region); peer->publishGroundItems(groundDrops); peer->publishPlayers(false,inventoryResets,relationUpdates); peer->publishMonsters(monsterDeaths);
+            std::vector<Bytes> roomPackets;
+            for(const auto &batch:*pending) for(const auto &fact:batch.facts) {
+                const auto *position=server::factIf<server::RepositionFact>(&fact);
+                if(!position || !position->revealRoom || position->actor!=view->actor.id) continue;
+                const auto &destination=terrain.at(game).at(position->area);
+                const auto *room=destination.map->activation.room(position->position+Vec{.5f,.5f});
+                if(!room) throw std::logic_error("Reposition destination has no native room");
+                roomPackets.push_back(encodeServerPacket(ServerMessage::RevealRoom,[&](auto &out) {
+                    out.u16(uint16_t((int(destination.origin.x)+room->x)/5));
+                    out.u16(uint16_t((int(destination.origin.y)+room->y)/5));
+                    out.u8(uint8_t(position->area));
+                }));
+                if(position->notifyOwner) roomPackets.push_back(nativeReposition(*position,destination.origin,peer->identities()));
+                peer->peer.lastMotion.clear();
+            }
+            peer->publishAreas(view->actor.region,std::move(roomPackets)); peer->publishGroundItems(groundDrops); peer->publishPlayers(false,inventoryResets,relationUpdates); peer->publishMonsters(monsterDeaths,monsterActions);
         } catch (const std::exception &error) {
             peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();
         }

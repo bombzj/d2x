@@ -167,7 +167,7 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         if(p->persistent.player.questLogViewed[difficulty][slot]) return {DomainStatus::Applied,std::monostate{}};
         auto record=p->persistent.player;
         record.questLogViewed[difficulty][slot]=true;
-        return commit(actor,std::move(record));
+        return commit(actor,std::move(record),false,{},false);
     }
     if(request.action==Action::ReadClue) {
         if(p->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
@@ -186,8 +186,9 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         return {sent.status,sent?std::optional{std::monostate{}}:std::nullopt};
     }
     if(request.action==Action::Refresh) {
-        orderStones();
-        const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{projection(actor.player,p->persistent.player,actor.area)}});
+        auto status=projection(actor.player,p->persistent.player,actor.area);
+        status.publication=QuestPublication::Query;
+        const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{std::move(status)}});
         return {sent.status,sent?std::optional<std::monostate>{std::monostate{}}:std::nullopt};
     }
     if(request.action==Action::ClaimRespec) {
@@ -296,8 +297,10 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
     const auto previous=flagPublications_.empty()?state_.publishedFlags:flagPublications_.back().flags;
     if(flags!=previous) {
         FlagPublication publication;publication.flags=flags;
-        for(const auto &[id,p]:ports_.players.all()) if(p.entered)
-            publication.recipients.push_back({p.actor,projection(id,p.persistent.player,p.area)});
+        for(const auto &[id,p]:ports_.players.all()) if(p.entered) {
+            auto notice=fact(id,p.persistent.player,p.area);notice.publication=QuestPublication::Global;
+            publication.recipients.push_back({p.actor,std::move(notice)});
+        }
         flagPublications_.push_back(std::move(publication));
     }
     while(!flagPublications_.empty()) {

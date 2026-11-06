@@ -18,6 +18,7 @@
 #include <vector>
 
 namespace d2x {
+namespace server {struct AttackFact;}
 // Internal authority/host values. These are not client messages or wire structs.
 struct PlayerSnapshot {
     struct Hover { std::string text; uint64_t revision{}; std::set<PlayerId> recipients; uint8_t language{}; };
@@ -95,5 +96,7 @@ struct MonsterSnapshot {
     int64_t hirelingLife{};
     std::map<std::string,int64_t,std::less<>> hirelingAttributes{};
     std::vector<StatValue> assignmentStats{}; // First sixteen base entries of the monster's MonProp list.
+    uint64_t teleportRevision{};
+    std::shared_ptr<const server::AttackFact> skillAction{};
 };
 } // namespace d2x

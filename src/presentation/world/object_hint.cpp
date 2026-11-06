@@ -37,6 +37,11 @@ void SceneView::drawInteractionLabel(const std::string &label, Vec p, int offset
     DrawRectangle(int(p.x - width / 2 - 8), int(p.y - offset), width + 16, 24, {0, 0, 0, 210});
     painter_.label(label, int(p.x - width / 2), int(p.y - offset + 5), 16, WHITE);
 }
+void SceneView::drawPortalLabel(const std::string &label, Vec ground, int nameOffset) const {
+    const int palette = std::clamp(mapView().palette, 0, 4);
+    const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
+    if (blend) drawFramedText(assets_.font,*blend,label,ground + Vec{0,8.f+float(nameOffset)});
+}
 void SceneView::drawNpcLabel(const std::string &label, Vec ground, int pixelHeight) const {
     // Retail C0D30 -> C0850 -> D2Win DrawFramedText: the ground anchor
     // receives +8, then MonStats2.pixHeight; the frame ends two pixels below.

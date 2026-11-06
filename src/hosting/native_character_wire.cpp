@@ -175,7 +175,7 @@ std::vector<Bytes> nativeCharacterDelta(const ClassicData &data,const server::Ch
 std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const CharacterRecord &record, const server::attributes::Totals &totals) {
     std::vector<Bytes> result;
     emitAttributes(result, data,nativeValues(data, values(data, record, totals)));
-    hirelingStatus(result,data,record.hireling);
+    if(record.hireling.sourceRow>=0 && record.hireling.hp<=0) hirelingStatus(result,data,record.hireling);
     const auto baseRanks = nativeBaseSkillRanks(data, record);
     if (record.id.value > UINT32_MAX || baseRanks.size() > 255) throw std::runtime_error("Skill list exceeds native capacity");
     result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::BaseSkills, [&](auto &out) {
@@ -185,7 +185,8 @@ std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const Charact
             out.u16(uint16_t(id)); out.u8(uint8_t(base));
         }
     }));
-    for (const auto &[id, effective] : totals.skillRanks) skillPacket(result, record.id, id, rank(baseRanks, id), effective);
+    for (const auto &[id, effective] : totals.skillRanks)
+        if(!baseRanks.contains(id)) skillPacket(result, record.id, id, 0, effective);
     return result;
 }
 std::vector<Bytes> nativePublicCharacterAttributes(const ClassicData &data, const CharacterRecord &record) {

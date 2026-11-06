@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -91,6 +93,7 @@ DomainResult<> System::returnNpcToTown(bool anya,uint64_t tick,bool portal,uint6
                 const auto status=ports_.objects.populatePresets(marker->second.area,size_t(bounds-area.activation.rooms().data()),{tick},source->id);
                 if(status!=StepStatus::Complete) return {status==StepStatus::Blocked?DomainStatus::Capacity:DomainStatus::NotImplemented,{}};
             }
+            if(!state_.actOne.cainTownActor) return done();
             next.actor=state_.actOne.cainTownActor;next.phase=1;
         }
     }
@@ -220,9 +223,18 @@ DomainResult<> System::cainBirthEvent(EntityId id,uint64_t tick) {
     auto &story=state_.npcStory;
     if(!cainBirthDue(id) || !story.cainBirth) return {DomainStatus::Applied,std::monostate{}};
     const auto &area=ports_.areas.at(RegionId(38)).definition;
-    const auto spawned=story.cainBirthFailed?DomainResult<EntityId>{DomainStatus::Unavailable,{}}:
+    const auto spawned=story.cainBirthActor?DomainResult<EntityId>{DomainStatus::Applied,story.cainBirthActor}:
+        story.cainBirthFailed?DomainResult<EntityId>{DomainStatus::Unavailable,{}}:
         spawnStoryNpc(RegionId(38),"cain1",*story.cainBirth-area.origin,tick,false);
     if(!spawned && spawned.status!=DomainStatus::Unavailable) return {spawned.status,{}};
+    if(spawned) {
+        story.cainBirthActor=*spawned.value;
+        if(const auto *rescuer=ports_.players.findActor(story.cainRescuer);rescuer && rescuer->entered) {
+            const auto sound=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},rescuer->area},
+                {SoundFact{rescuer->actor,0,rescuer->area,48}}});
+            if(!sound) return {sound.status,{}};
+        }
+    }
     if(!spawned) {
         story.cainBirthFailed=true;
         // Native failure still releases the town Cain and supplies a blue
@@ -329,13 +341,39 @@ DomainResult<NpcAiResult> System::npcThink(EntityId id,uint64_t tick) {
     };
     const auto walk=[&](Vec point) -> DomainResult<NpcAiResult> {
         if(!unit->route.empty()) return done({true,true,false,1,{}});
-        const auto result=ports_.monsters.requestMove({id,{unit->area,ports_.areas.at(unit->area).generation,point-area.origin},{},0,75,false,1,0,0,7,5});
+        const uint8_t pathType=unit->identity.monster=="cain1" && unit->rule.ai.kind==MonsterAiKind::NpcOutOfTown?13:7;
+        const auto result=ports_.monsters.requestMove({id,{unit->area,ports_.areas.at(unit->area).generation,point-area.origin},{},0,75,false,1,0,0,pathType,5});
         if(!result) {
             if(isDeferred(result.status)) return {result.status,{}};
             return idle(unit->rule.neutralDelayTicks);
         }
         return done({true,true,false,1,{}});
     };
+    if(unit->identity.monster=="tyrael1" || unit->identity.monster=="izualghost") {
+        const bool tyrael=unit->identity.monster=="tyrael1";
+        const auto quest=tyrael?QuestId::SevenTombs:QuestId::FallenAngel;
+        bool completedBefore=false;
+        if(tyrael) for(const auto &[playerId,player]:ports_.players.all()) {
+            (void)playerId;
+            completedBefore|=player.entered && !credited(playerId,quest) &&
+                player.persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(quest)].stage>=uint32_t(TombsStage::PassageGranted);
+        }
+        if(npcInteracting(id) || (tyrael?(!completedBefore && !state_.actTwo.tyraelPortal):!state_.actFour.izualGhostActivated)) return idle(20);
+        if(!completedBefore) for(const auto &[playerId,player]:ports_.players.all()) {
+            (void)playerId;
+            if(!player.entered || player.persistent.player.hp<=0 || ports_.areas.at(player.area).definition.act!=area.act) continue;
+            const auto point=player.position+ports_.areas.at(player.area).definition.origin;
+            if(unitDistanceWithSizes(int(std::floor(point.x+.5f)),int(std::floor(point.y+.5f)),2,
+                int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)),unit->rule.size)<(tyrael?12:5)) return idle(20);
+        }
+        std::vector<EventBatch> notices;
+        for(const auto &[playerId,player]:ports_.players.all()) if(player.entered && credited(playerId,quest))
+            notices.push_back({0,tick,{}, {AudienceKind::Player,playerId,player.area},
+                {SoundFact{player.actor,0,player.area,uint16_t(tyrael?54:74)}}});
+        const auto departed=ports_.monsters.departQuestNpc(id,tick,std::move(notices),true);
+        if(!departed) return {departed.status,{}};
+        return done({true,false,true,1,{}});
+    }
     const auto pose=[&](uint8_t mode) -> DomainResult<NpcAiResult> {
         const auto clock=unit->rule.aiPoseTicks.find(mode);
         if(clock==unit->rule.aiPoseTicks.end()) return {DomainStatus::NotImplemented,{}};

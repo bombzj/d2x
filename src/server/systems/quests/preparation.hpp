@@ -27,6 +27,7 @@ struct Preparation {
     struct HirelingSelection {int seller{};uint64_t revision{};uint32_t slot{};uint16_t name{};uint32_t seed{};};
     std::optional<HirelingSelection> hireling{};
     std::optional<unsigned> sourceItemLevel{}; // Frozen native monster level for its quest drop.
+    uint8_t altarPhase{};
 };
 struct Prepared {
     Preparation source;

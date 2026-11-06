@@ -6,6 +6,9 @@
 #include "persistence/save_codec.hpp"
 #include "persistence/d2s_header.hpp"
 #include "hosting/character_creation.hpp"
+#include "hosting/native_quest_wire.hpp"
+#include "server/runtime/facts/quest.hpp"
+#include <cmath>
 
 namespace d2x::hosting {
 using namespace net::protocol;
@@ -98,6 +101,8 @@ void NativeRealmService::enterEnvironment(net::protocol::Reader &in) {
         (int(terrain.origin.x)+current->x)/5,(int(terrain.origin.y)+current->y)/5};
     for (auto &packet : admission) {
         const bool loadAct=!packet.empty() && packet.front()==uint8_t(ServerMessage::LoadAct);
+        if(!packet.empty() && (packet.front()==uint8_t(ServerMessage::GameQuests) || packet.front()==uint8_t(ServerMessage::PlayerQuests)))
+            peer.questProjection[{packet.front(),0}]=packet;
         sendGame(std::move(packet));
         if (loadAct) {
             const auto reveal=[&](const auto &room) {sendGame(encodeServerPacket(ServerMessage::RevealRoom,[&](auto &out) {
@@ -110,6 +115,18 @@ void NativeRealmService::enterEnvironment(net::protocol::Reader &in) {
         }
     }
     admission.clear();
+    const auto position=view->actor.position+terrain.origin;
+    sendGame(encodeServerPacket(ServerMessage::Reposition,[&](auto &out) {
+        out.u8(0);out.u32(wireId(view->actor.id));
+        out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(1);
+    }));
+    sendGame(encodeServerPacket(ServerMessage::Reserved7E,[](auto &out){out.u32(0);}));
+    if(auto quests=host.questProjection(*binding)) {
+        quests->fullStatus=false;
+        for(auto &packet:nativeQuestUpdate(*content,*quests))
+            if(packet.front()==uint8_t(ServerMessage::QuestUpdate))
+                peer.questProjection[{packet.front(),packet.at(1)}]=std::move(packet);
+    }
     peer.phase = GamePhase::Entered;
     peer.loadPending = true;
     peer.sequence = peer.sentRevision = peer.sentMovement = 0;

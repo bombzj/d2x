@@ -11,6 +11,7 @@
 #include "server/runtime/prepared_rules.hpp"
 #include "server/runtime/diagnostics.hpp"
 #include "core/native_unit_ids.hpp"
+#include "server/movement_observation.hpp"
 #include <optional>
 
 namespace d2x { enum class PointRefund; }
@@ -81,6 +82,7 @@ class GameInstance {
     std::vector<PetOwnershipSnapshot> pets(PlayerId id) const {return systems_.replication.pets(id);}
     std::set<int> unitStates(EntityId id) const {return systems_.effects.unitStates(id,tick_); }
     std::optional<PlayerSnapshot> snapshot(PlayerId) const;
+    std::optional<MovementObservation> movementObservation(PlayerId) const;
     bool prepareSave(PlayerId);
     std::optional<PersistentCharacter> exportCharacter(PlayerId,bool settledOnly=true) const;
     std::optional<PersistentCharacter> publicEquipment(PlayerId) const;

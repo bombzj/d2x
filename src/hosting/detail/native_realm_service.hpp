@@ -82,8 +82,10 @@ struct NativeRealmService {
         std::map<std::pair<EntityId,EntityId>,uint16_t> relations;
         struct VisiblePlayer { EntityId actor; uint64_t inventoryRevision{}, characterRevision{}; Bytes motion; std::vector<Bytes> attributes; std::map<EntityId, std::vector<Bytes>> equipment; };
         std::map<PlayerId, VisiblePlayer> visible;
-        struct VisibleMonster { int nativeClass{-1}; Bytes motion; uint64_t movementRevision{}; std::set<int> states; std::map<int,std::vector<StatValue>> stateStats; Bytes hirelingIdentity; std::map<uint8_t,uint32_t> hirelingStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; std::optional<uint8_t> life; };
+        struct VisibleMonster { int nativeClass{-1}; Bytes motion; uint64_t movementRevision{},teleportRevision{},skillAction{}; std::set<int> states; std::map<int,std::vector<StatValue>> stateStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; std::optional<uint8_t> life; };
         std::map<EntityId, VisibleMonster> monsters;
+        struct HirelingProjection {EntityId actor;Bytes identity;std::map<uint8_t,uint32_t> stats;bool dead{};};
+        HirelingProjection hireling;
         std::set<EntityId> missiles;
         std::map<EntityId, Bytes> pets;
         std::map<EntityId, Bytes> petVitals;
@@ -96,7 +98,9 @@ struct NativeRealmService {
         std::map<EntityId, EntityId> corpseOwners;
         std::map<int,int> itemSkills;
         std::set<EntityId> shopItems;
+        std::set<EntityId> inventoryRefresh;
         std::map<EntityId,uint16_t> npcQuestAlerts;
+        std::map<std::pair<uint8_t,uint16_t>,Bytes> questProjection;
         EntityId shopOwner;
         std::map<EntityId, std::set<int>> states;
         std::map<EntityId,std::map<int,std::vector<StatValue>>> stateStats;
@@ -131,7 +135,7 @@ struct NativeRealmService {
     void receiveEvent(const server::EventBatch &);
     void publishPlayers(bool publishPartyVitals=true,std::span<const EntityId> inventoryResets={},
         std::span<const std::pair<EntityId,EntityId>> relationUpdates={});
-    void publishMonsters(const std::vector<EntityId> &pendingDeaths={});
+    void publishMonsters(const std::vector<EntityId> &pendingDeaths={},const std::vector<EntityId> &pendingActions={});
     void publishMissiles();
     void publishGroundItems(std::span<const EntityId> pendingDrops={});
     void publishCorpses();
@@ -140,7 +144,7 @@ struct NativeRealmService {
     void publishShop();
     void publishPortals();
     void publishItemSkills();
-    void publishAreas(RegionId area);
+    void publishAreas(RegionId area, std::vector<Bytes> packets = {});
     void publishRoomRemovals();
     void publishLoadComplete();
     void changeArea(const server::TravelFact &);
@@ -195,6 +199,7 @@ struct NativeRealmService {
     void setPaused(bool);
     void publishMotion(bool force = false);
     void publishEvents();
+    void publishInventoryRefresh();
     HostDiagnostics diagnostics() const;
     AdminResult administer(const AdminRequest &);
     std::string prepareStartup(const std::string &, const std::string &, const std::string &);

@@ -59,9 +59,15 @@ TileLightSamples tileLights(const LightingView &lighting, Vec feet, int directio
     return result;
 }
 }
-std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
+std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneView::MapRendering *diagnostics) {
     std::vector<size_t> visibleCells;
+    if(diagnostics) *diagnostics={};
     if (!scene.map) return visibleCells;
+    if(diagnostics) {
+        diagnostics->drawn=true;diagnostics->gameGeneration=scene.gameGeneration;
+        diagnostics->areaGeneration=scene.areaGeneration;diagnostics->origin=scene.terrainOrigin;
+        diagnostics->observer=scene.roomObserver+scene.terrainOrigin;
+    }
     const auto &map = *scene.map;
     const auto &level = assets_.worldLevel(scene.level);
     const bool newGame = worldGameGeneration_ != scene.gameGeneration;
@@ -117,8 +123,11 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         // Original DT1 bounds equal the uploaded texture bounds. Cull before
         // hashing/converting/uploading an image; never change tile selection.
         if (!visibleTile(size_t(index), at)) return;
+        if(diagnostics) ++diagnostics->viewportTiles;
         const auto &image = assets_.worldTileSprite(size_t(index));
+        if(diagnostics && !image.texture.id) ++diagnostics->missingTextures;
         if (!visible(image, at)) return;
+        if(diagnostics) {++diagnostics->submittedTiles;if(!tint.a) ++diagnostics->transparentTiles;}
         Entry entry{sceneOrder(feet, pass, wall, layer), &image, at, tint};
         entry.feet = feet;
         entry.alternateLight = alternateLight;
@@ -171,6 +180,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
             }
         }
     }
+    if(diagnostics) diagnostics->visibleObservationTiles=visibleCells.size();
     auto items = scene.items;
     items.reserve(items.size() + inventoryView_.items.size() + clientMissiles_.size() + map.terrain.clientObjects.size());
     // SpawnHardcodedPresetUnits creates these locally, independently of server

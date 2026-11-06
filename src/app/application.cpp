@@ -81,6 +81,7 @@ int runGame(int argc, char **argv) {
                      "--host-packet-log <new.jsonl>: embedded/LAN host requests/replies, up to 64 MiB.\n"
                      "--startup-profile <file.tsv>: record startup and first displayed game frame.\n"
                      "--frame-profile <file.jsonl>: record slow frames and process memory (32 MiB limit).\n"
+                     "--movement-diff-log <new.jsonl>: single-player movement divergence diagnostics (64 MiB limit).\n"
                      "--no-pause-on-focus-loss: keep Single Player running while unfocused; Escape still pauses.\n"
                      "pause/resume freeze client presentation only; the server and network keep running.\n"
                      "--online-character <name> --online-create-game <name> | --online-join-game <name>\n"

@@ -293,6 +293,12 @@ RemoteScene::Impl::readMonsterAppearance(const OnlineUnit &u, size_t extraRow, R
             identity.hireling=bits.read(1)!=0;
             if (identity.hireling) bits.read(32);
         }
+        if(u.monsterIdentityUpdate) {
+            const auto &update=*u.monsterIdentityUpdate;
+            identity.nameSeed=update.nameSeed;identity.champion=update.champion;
+            identity.modifiers.clear();
+            for(const auto modifier:update.modifiers) if(modifier) identity.modifiers.push_back(modifier);
+        }
         return std::pair{mode, std::move(identity)};
     } catch (const net::protocol::ProtocolError &) {
         return std::nullopt;
@@ -302,7 +308,7 @@ RemoteScene::Impl::readMonsterAppearance(const OnlineUnit &u, size_t extraRow, R
 void RemoteScene::Impl::decodeMonsterIdentity(const OnlineUnit &u) {
     // Appearance decoding otherwise runs only for drawn monsters; the BH
     // automap needs the rank flags of every known unit in the area.
-    if (monsterIdentities.contains(u.key)) return;
+    if (monsterIdentities.contains(u.key) && !u.monsterIdentityUpdate) return;
     const auto cls = unitClass(u);
     if (!cls) return;
     const auto row = monsterRows.find(*cls);

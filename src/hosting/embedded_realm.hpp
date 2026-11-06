@@ -4,6 +4,7 @@
 #include "performance.hpp"
 #include "administration.hpp"
 #include "server/runtime/diagnostics.hpp"
+#include "server/movement_observation.hpp"
 #include "content/content_preparation.hpp"
 #include <filesystem>
 
@@ -42,6 +43,7 @@ class EmbeddedRealm {
     void close(); // Disconnect only the primary memory client.
     void shutdown(); // Checkpoint all participants before closing the host.
     bool active() const;
+    std::optional<server::MovementObservation> singlePlayerMovement() const;
     std::string takeError();
 };
 }

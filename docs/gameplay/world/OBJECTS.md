@@ -10,6 +10,8 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 
 ## 世界悬停与点击选取
 
+门户悬停标题按当前MPQ的Objects.SubClass位4识别普通蓝／红门，使用原包60的目的地，未收到时读取51的ObjectData.InteractType；标题取Levels.LevelName的本地化文字，不再显示通用Objects.Name。目的地8沿5E任务数据第1字节选择TBL5048／5047，未知关卡使用原TBL5389。联网时优先使用已知主人名册姓名、其次82保留的姓名，按原` (%s) `附在同一行；单机不附主人名。其他专用门户保留Objects.Name，不从旅行目标另造名称。门户绘制复用原font16与PL2文字框，以静态地面屏幕坐标Y+8加Objects.NameOffset定位，不叠物件图形偏移。依据同一零售1.13c D2Client RVA C0D30／C1038–C1145（SubClass、NameOffset及主人格式）、BE240–BE29E（关卡名、洞窟特例与失败文字），以及D2MOO的ObjectsTbls、LevelsTbls、UNITS_GetNameOffsetFromObject和D2Win::DrawFramedText。此项源码未构建／实机验证；PD2专用地图说明覆盖分支未改，不认证其运行时改写。
+
 物件显示另补原客户端的本地OP→ON衔接：本机1.13c D2Client RVA25660–25884对非门、非循环的OPERATING在末帧切OPENED并从Start2继续；最终565（Init77／Operate72）的mode1指派不会另收到开门完成包，ON读取CycleAnim2循环。`objectPresentation`用当前FrameCnt1／FrameDelta1／Start1推算缺少既有ENDANIM分支时的本地表现，保留原世界副本和`objectDisplayMode`碰撞判定，不能由画面开启代替服务端资格。当前新增显示衔接待构建和实看。
 
 世界选取共用`graphics/primitives.hpp::spriteHit`与`remote_scene_draw.cpp`的单位分支；地面掉落的名称显现、发亮与本体点击也使用该帧几何。范围来自当前MPQ的COF、DCC／DC6及表字段，不裁到不透明像素包围框，不使用统一大小的自造交互框。可选模式、技能SelectProc、尸体／阵营资格仍由原有客户端副本入口筛选；鼠标命中不代表服务端允许操作。
@@ -79,9 +81,9 @@ OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(Fr
 
 OperateFn4的掉落完成路径按当前MPQ `Objects.Mode1`选择模式：`hosting/object_content.cpp`准备`ObjectRule::openingMode`，`objects::System::step`只在该位存在时进入OP(1)并设置ENDANIM期限，否则直接进入OPENED(2)，不安装开启动画期限；既有塔楼箱路径使用相同分支。依据D2MOO `ObjMode::OBJECTS_ChestEnd`（内联于`OBJECTS_OperateFunction04_Chest`），不能把其他物件程序固定使用OP的规则套给普通箱子。掉落、钥匙、陷阱及随机消费沿原有提交链。
 
-原版1.13c Join D2X Host开class5箱子曾触发`line #1244 / 6fb19fe0`：D2Client MD5 `f5860c629d309b8fc1f96174babcf633`、基址`6FAB0000`，RVA `69F83–69FE0`在`Objects.nMode[请求模式] != 1`时Halt。2026-10-29 20:44:16现场栈保留class5／mode1；同次宿主消息sequence5161为操作GUID86，5168为`0E0256000000030001000000`。当前`Patch_D2.mpq`的Objects TXT及BIN均确认class5（Token=L1）的Mode1=0、Mode2=1，旧普通掉落完成路径无条件选OP导致该非法通知。源码已按上述原表分支修正；修复后的原版开箱、含开启动画箱子及锁箱组合尚未运行复验。
+原版1.13c D2Client MD5 `f5860c629d309b8fc1f96174babcf633`、基址`6FAB0000`，RVA `69F83–69FE0`在`Objects.nMode[请求模式] != 1`时Halt。当前`Patch_D2.mpq`的Objects TXT及BIN均确认class5（Token=L1）的Mode1=0、Mode2=1；模式必须按原表支持位选择，不能无条件使用OP。
 
-箱子／祭坛初次可见使用当前0x51快照；已经可见的物件由objects::publishChanges在每个权威固定帧末尾冻结ObjectFact，保存revision、位置、模式、可选性、操作者及Shrines.Code，进入既有可靠outbox。初始化先建立模式基线，包括出生同帧操作；只有事实入队后才推进基线，满队列停留Simulation::ObjectPublication重试，不重做开箱、库存或祭坛事务。hosting::receiveEvent按已知GUID和房间兴趣发送0x0E，祭坛SubClass位1且非位4的OP另发0x4D，操作者GUID／类型取冻结事实，不读后续ON快照补造操作。每个观察者缓存最后已发送版本，部分帧暴露的新状态不能覆盖它；新进入视野者只收到当前51，不重放历史0E／4D。ENDANIM的OP→ON只更新权威状态，不补通知；神坛仅在Objects.CycleAnim1=0且Mode2存在时安排ENDANIM，重置清操作者并发布中立模式。依据D2MOO ObjMode::sub_6FC752A0／OBJECTS_OperateFunction02_Shrine及1.13c原包；X3R已完成8帧合并、双客户端、迟到OP／ON及单机单步复验，见[对比计划](../../development/MESSAGE_COMPARISON_PLAN.md#x3r-多帧合并修复复验)。其他物件族仍沿既有发布入口，不据此认证井水、门和任务物件全部增量。
+箱子／祭坛初次可见使用当前0x51快照；已经可见的物件由objects::publishChanges在每个权威固定帧末尾冻结ObjectFact，保存revision、位置、模式、可选性、操作者及Shrines.Code，进入既有可靠outbox。初始化先建立模式基线，包括出生同帧操作；只有事实入队后才推进基线，满队列停留Simulation::ObjectPublication重试，不重做开箱、库存或祭坛事务。hosting::receiveEvent按已知GUID和房间兴趣发送0x0E，祭坛SubClass位1且非位4的OP另发0x4D，操作者GUID／类型取冻结事实，不读后续ON快照补造操作。每个观察者缓存最后已发送版本，部分帧暴露的新状态不能覆盖它；新进入视野者只收到当前51，不重放历史0E／4D。ENDANIM的OP→ON只更新权威状态，不补通知；神坛仅在Objects.CycleAnim1=0且Mode2存在时安排ENDANIM，重置清操作者并发布中立模式。依据D2MOO ObjMode::sub_6FC752A0／OBJECTS_OperateFunction02_Shrine及1.13c原包；原版依据见[原版协议与任务依据](../../resources/NATIVE_PROTOCOL_EVIDENCE.md)。其他物件族仍沿既有发布入口，不据此认证井水、门和任务物件全部增量。
 
 | 类别 | OperateFn／定义数 | 表现与原服边界 |
 | --- | --- | --- |

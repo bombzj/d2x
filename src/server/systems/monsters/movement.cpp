@@ -137,7 +137,7 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     actor.pathType=pathType;actor.pathDistance=pathDistance;
     actor.movementGoal = goal;
     actor.stopDistance = request.pathSteps>0?request.pathSteps-1:request.stopDistance;
-    actor.velocityPercent = request.velocityPercent; actor.running = request.running;
+    actor.velocityPercent = request.velocityPercent; actor.running = request.running; actor.moving = true;
     if(!actor.airborne) {actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;}
     ++actor.revision;
     actor.movementRevision=actor.revision;

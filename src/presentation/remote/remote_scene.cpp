@@ -212,6 +212,12 @@ std::optional<bool> RemoteScene::actionInputBusy() const {
     // next independent AI command. Unknown art does not invent a duration.
     return castInputBusy()?std::optional<bool>{true}:impl_->actionInputBusy;
 }
+std::optional<std::pair<uint64_t,float>> RemoteScene::observedCastSeconds(uint16_t skill) const {
+    const auto &cast=impl_->localCast;
+    if(!cast || cast->command.skill!=skill || cast->started<0 ||
+        !std::isfinite(cast->duration) || cast->duration<=0) return {};
+    return std::pair{cast->revision,cast->duration};
+}
 
 bool RemoteScene::Impl::localCastBlocksMovement() const {
     if(!localCast || localCast->started<0 || time>=localCast->started+localCast->duration) return false;

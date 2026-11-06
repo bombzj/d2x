@@ -6,6 +6,12 @@
 #include <stdexcept>
 
 namespace d2x::server {
+std::string_view Simulation::pendingPhase() const {
+    constexpr std::array names{"environment","events","domains","rooms","population","actors","companions","skills",
+        "movement","items","effects","combat","state-removals","trade","tail","death","services","objects",
+        "object-removals","modifiers","quests","quest-births","tower","publication","object-publication","unit-sounds"};
+    return frame_?names.at(size_t(phase_)):"idle";
+}
 bool Simulation::step(TickContext tick, GameSystems &systems) {
     // Scratch facts only: reliable outputs live in EventOutbox and survive steps.
     // Each consumer must run after its producers; deferred work belongs to the
@@ -172,6 +178,8 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
         phase_=Phase::UnitSounds;
     }
     if(phase_==Phase::UnitSounds) {
+        run(SystemId::Monsters,[&]{return systems.monsters.publishIdentityNotices(tick);});
+        if(steps_[size_t(SystemId::Monsters)]!=StepStatus::Complete) return false;
         run(SystemId::Replication,[&]{return systems.replication.flushUnitSounds(tick);});
         if(steps_[size_t(SystemId::Replication)]!=StepStatus::Complete) return false;
     }

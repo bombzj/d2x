@@ -192,11 +192,20 @@ monsters::Actor prepareHirelingBody(const monsters::Actor &live,const Persistent
         candidate.rule.resistances[index]=logicalStatValue(stats.nativeStats,*candidate.rule.stats,resistNames[index]);
     candidate.hirelingStrength=stats.actor.strength;candidate.hirelingDexterity=stats.actor.dexterity;
     candidate.hirelingVitality=std::max(0,stats.modifiers.vitality);
-    auto gear=std::make_shared<PersistentCharacter>(owner);
-    std::erase_if(gear->inventory.items,[&](const auto &entry) {
-        const auto *at=std::get_if<ContainerLocation>(&entry.second.location);
-        return !at || at->container!=owner.containers.hirelingEquipment;
-    });
+    auto gear=std::make_shared<PersistentCharacter>();
+    gear->player.id=candidate.id;
+    gear->player.level=owner.player.level;
+    gear->containers.hirelingEquipment=owner.containers.hirelingEquipment;
+    const auto &container=owner.inventory.containers.at(owner.containers.hirelingEquipment);
+    gear->inventory.containers.emplace(container.id,
+        ContainerState{container.id,{candidate.id,container.spec.kind,container.spec.columns,container.spec.rows},container.registeredWeapon});
+    for(const auto id:inventoryItemOrder(owner.inventory)) {
+        const auto &item=owner.inventory.items.at(id);
+        const auto *location=std::get_if<ContainerLocation>(&item.location);
+        if(!location || location->container!=owner.containers.hirelingEquipment) continue;
+        gear->inventory.items.emplace(id,item);
+        gear->inventory.itemOrder.push_back(id);
+    }
     candidate.equipment=std::move(gear);candidate.hirelingInventoryRevision=inventoryRevision;candidate.hirelingCharacterRevision=characterRevision;
     prepareHirelingEquipmentSources(candidate,stats,tick,effects,initial,mutation);
     if(levelUp) candidate.life=candidate.maximumLife;

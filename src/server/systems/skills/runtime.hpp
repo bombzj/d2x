@@ -30,6 +30,8 @@ struct System::Runtime {
     std::map<FrameEventHandle,std::shared_ptr<DruidActiveExecution>> druidActive;
     struct MonsterMode {
         MonsterAttackRule program;
+        std::shared_ptr<const AttackFact> publication;
+        uint64_t publicationRevision{};
         uint16_t skill{};
         MonsterAnimationCursor animation;
         uint64_t identity{},interruption{},lastFrame{},movementFrame{};

@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/runtime/skill_rules.hpp"
+#include "server/runtime/facts/effects.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -68,9 +70,16 @@ StepStatus System::advanceRewards(TickContext tick) {
         }
         if(reward->second.phase==RewardPhase::Restore) {
             const ActorContext actor{killer->player,killer->actor,killer->area,ports_.areas.at(killer->area).generation,0,tick.tick};
+            std::vector<DomainFact> visuals;
+            if(killer->rules.skills) {
+                if(reward->second.life && killer->persistent.player.hp<killer->totals.character.maxLifeFixed && killer->rules.skills->lifeStealOverlay>=0)
+                    visuals.emplace_back(OverlayFact{killer->actor,0,killer->area,killer->rules.skills->lifeStealOverlay});
+                if(reward->second.mana && killer->persistent.player.mana<killer->totals.character.maxManaFixed && killer->rules.skills->manaStealOverlay>=0)
+                    visuals.emplace_back(OverlayFact{killer->actor,0,killer->area,killer->rules.skills->manaStealOverlay});
+            }
             const auto result=ports_.transactions.resources(actor,killer->characterRevision,
                 std::clamp(killer->persistent.player.hp+Fixed8(reward->second.life),Fixed8{},killer->totals.character.maxLifeFixed),
-                std::clamp(killer->persistent.player.mana+Fixed8(reward->second.mana),Fixed8{},killer->totals.character.maxManaFixed),killer->persistent.player.stamina);
+                std::clamp(killer->persistent.player.mana+Fixed8(reward->second.mana),Fixed8{},killer->totals.character.maxManaFixed),killer->persistent.player.stamina,std::move(visuals));
             if(isDeferred(result.status)) {blocked=true;continue;}
             if(!result) {ports_.monsters.rewardComplete(id);state_.rewards.erase(reward);continue;}
             reward->second.phase=RewardPhase::HirelingExperience;

@@ -11,6 +11,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <utility>
 
 namespace d2x {
 class SceneView;
@@ -18,8 +19,12 @@ class RemoteCombat;
 class RemoteUiClients;
 struct RemoteMapDisplayState {
     bool visible{}, large{true}, right{true};
+    bool multiplayer{};
     bool running{true}; // Session preference survives terrain/act renderer replacement.
     Vec offset;
+    struct RepositionFade {
+        uint64_t gameGeneration{}, areaGeneration{}, revision{}, endMilliseconds{};
+    } repositionFade;
     struct QuestEffects {
         uint64_t gameGeneration{},denOccurrence{};
         uint64_t cairnOccurrence{},forgeOccurrence{},staffOccurrence{};
@@ -41,6 +46,7 @@ struct RemoteSceneFrame {
     WorldInputView input;
     EntityId hoveredMonster; // Display selection is independent of the selected skill.
     std::vector<size_t> visibleMapTiles;
+    OnlineSceneView::MapRendering mapRendering;
     Vec observationExtent;
 };
 // Original-resource presentation of a server replica. Returns hit/projection results; owns no input gestures.
@@ -60,6 +66,7 @@ class RemoteScene {
     bool playerDisplayed() const;
     bool castInputBusy() const;
     std::optional<bool> actionInputBusy() const;
+    std::optional<std::pair<uint64_t,float>> observedCastSeconds(uint16_t skill) const;
     std::optional<Vec> playerDisplayPosition(const OnlineView &) const;
     std::optional<OnlinePoint> npcPathPosition(const OnlineView &, OnlineUnitKey) const;
     std::optional<int> npcFollowRange(const OnlineView &, OnlineUnitKey) const;

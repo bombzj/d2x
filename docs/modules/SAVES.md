@@ -16,7 +16,7 @@
 
 创建及INIT初始化在原起始装备完成后，只有当前活动装备实际提供`CharStats.StartSkill`时才将其选为当前组右手技能；左手和备用组保留普通攻击。该入口供所有职业共用，技能ID取当前MPQ各职业的CharStats与技能目录，不按女巫硬编码；起始物品的技能来自item_singleskill，不能给人物补已学等级，也不能将普通物品技能的选择来源写为物品GUID。初始备用组没有武器，切换过去后左右手均为普通攻击；不把主组的起始技能复制到备用组。依据D2MOO `Player.cpp::PLAYER_CreateStartItem`与`PlrSave2.cpp::PLRSAVE2ERROR_NEWBIE_SAVE`分支的`SKILLS_GetHighestLevelSkillFromUnitAndId`／`D2GAME_AssignSkill(..., 0, StartSkill, -1)`。此前只构造起始物品而漏选右手，原版新建女巫首次Join D2X Host因此收到普通攻击选择。修正仅作用于新建／合法INIT，完整旧档仍恢复其保存的两套武器四个手部选择，不静默更改玩家已有选择；格式和来源序号编码不变。自研新建女巫及完整档重入已确认右手火弹、基础等级0／短杖加成1，完整档也已由原版Host接收并恢复相同选择；原版335字节INIT首次Join已实包确认右手火弹，取消后的空备用组与主组W切换也正常；此实机例不等于七职业逐项联机认证。
 
-原版v96新建但尚未首次入局的角色可以只有`0x14F`（335）字节头部，`flags & 1`为INIT；不能按截断完整档拒绝。`decodeSave`先验证原头、大小、校验和及既有支持边界，再要求INIT档恰好只有头部，通过`persistence/initial_character`与本地建角共用MPQ初始化，读取时不改写源文件。初始化后的内存元数据清除INIT，保留原创建时间等头部值；正常保存才输出已有完整v96布局。未带INIT的短档与INIT后带额外段继续拒绝，不把损坏档当新角色。依据本地D2MOO `D2Game/src/PLAYER/PlrSave2.cpp::PLRSAVE2_ReadSaveHeader`及`PLRSAVE2ERROR_NEWBIE_SAVE`分支。原版客户端335字节INIT以255＋80字节上传后成功进入D2X Host，正常返回976字节完整档可由D2X解码和原版Host载入；原版写出的962字节完整档再次加入D2X Host也成功，且收到正常保存退出确认。见[消息对比缺陷J1](../development/MESSAGE_COMPARISON_DEFECTS.md)。
+原版v96新建但尚未首次入局的角色可以只有`0x14F`（335）字节头部，`flags & 1`为INIT；不能按截断完整档拒绝。`decodeSave`先验证原头、大小、校验和及既有支持边界，再要求INIT档恰好只有头部，通过`persistence/initial_character`与本地建角共用MPQ初始化，读取时不改写源文件。初始化后的内存元数据清除INIT，保留原创建时间等头部值；正常保存才输出已有完整v96布局。未带INIT的短档与INIT后带额外段继续拒绝，不把损坏档当新角色。依据本地D2MOO `D2Game/src/PLAYER/PlrSave2.cpp::PLRSAVE2_ReadSaveHeader`及`PLRSAVE2ERROR_NEWBIE_SAVE`分支。原版初始化依据另见[原版协议与任务依据](../resources/NATIVE_PROTOCOL_EVIDENCE.md)。
 
 腰带实际补位设置原物品UNK1（0x400）并清除NOEQUIP；UNK1随已有32位原flags字段保存，包含自研新生成但尚未重读的物品。依据D2MOO `ItemMode::sub_6FC49140`、`InvMode::D2GAME_ResetSomeItemFlags_6FC415F0`的清理集合（不含UNK1）及`Items::ITEMS_SerializeItem`的原flags写入；原版1.13c Host的补位后腰带交换包仍带0x400。NEWITEM与切入／切出仍只作原包瞬时标志；本次不改布局、不迁移旧档，未发生补位的物品不会凭读取获得UNK1。
 
@@ -57,6 +57,10 @@ TCP/IP Host／Join各自在本机`--host-saves`目录持有角色租约；Join�
 PD2专项说明见[原生存档：格式与边界](../pd2/SAVE_FORMAT.md#原生存档格式与边界)。
 
 ## 文件与值边界
+
+吉得宾CUSTOM5（0x200）和黄金鸟CUSTOM2（0x40）分别显式映射gidbinnPickupNarrated／goldenBirdPickupNarrated，成功拾取后随原子事务保存，不再从任务阶段生成“已播”事实。历史位独立于奖励阶段，领取／消费黄金鸟生命药剂不清除它；原文件已有位照读，未设置则保持未设置，不对旧档静默补位。原v96布局不变，校验分别约束奖励资格位与允许的旁白历史位；新增源码未运行往返验证。
+
+马勒斯拾取旁白的防重位沿原v96任务槽3的CUSTOM2（0x40）保存，内部映射为toolsPickupNarrated。该位独立于阶段，拾取事务成功才设置；读入只恢复原位，不从持有马勒斯或已领奖推测已播，不迁移／改写旧档。任务校验允许这一原历史位，布局及版本不变。原版旁白依据见[原版协议与任务依据](../resources/NATIVE_PROTOCOL_EVIDENCE.md)。
 
 宿主管理`unlock-waypoints`只追加当前难度的个人传送点记录，目的地须来自当前MPQ准备的Levels.Waypoint目录；保存复用原WS段及112位校验边界，其他难度和未知映射位继续保留。命令不改变格式、不迁移旧档，需正常保存或显式`save`才写盘；参数与菜单刷新边界见[调试管道](../development/DEBUG_PIPE.md#嵌入宿主管理命令)。
 

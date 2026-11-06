@@ -82,6 +82,19 @@ struct OnlineSceneView {
     bool layoutMatched{};
     bool nativeMapReady{};
     std::string nativeMapReason;
+    struct MapLoading {
+        uint64_t receivedSequence{},consumedSequence{},pendingEvents{},pendingMilliseconds{},terrainRevision{};
+        size_t assignedRooms{},loadedRooms{};
+        bool deferred{},terrainDirty{};
+        std::optional<bool> clientRoomLoaded,clientRoomAssigned,serverRoomLoaded,serverRoomAssigned;
+        double updateMilliseconds{};
+    } mapLoading;
+    struct MapRendering {
+        uint64_t sample{},gameGeneration{},areaGeneration{};
+        Vec origin,observer,halfExtent;
+        size_t viewportTiles{},submittedTiles{},missingTextures{},transparentTiles{},visibleObservationTiles{};
+        bool drawn{};
+    } mapRendering;
     std::vector<uint16_t> cachedAreas;
     std::map<int, std::string> mapErrors;
     std::vector<OnlineMapTarget> mapTargets;

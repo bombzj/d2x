@@ -41,6 +41,7 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--host-packet-log") options.hostPacketLog = value();
         else if (arg == "--startup-profile") options.startupProfile = value();
         else if (arg == "--frame-profile") options.frameProfile = value();
+        else if (arg == "--movement-diff-log") options.movementDiffLog = value();
         else if (arg == "--online-character") options.onlineCharacter = value();
         else if (arg == "--online-play") options.onlinePlay = value();
         else if (arg == "--online-create-game") options.onlineCreateGame = value();
@@ -64,6 +65,10 @@ AppOptions parseOptions(int argc, char **argv) {
     }
     if (legacyPd2Local && options.clientProfile.empty())
         throw std::runtime_error("--pd2-local requires --client-profile to bind the PD2 resource build");
+    if (!options.movementDiffLog.empty() && (!options.headlessProfile.empty() || !options.hostLan.empty() ||
+        !options.lan.empty() || !options.onlinePlay.empty() || !options.onlineCharacter.empty() ||
+        !options.onlineCreateGame.empty() || !options.onlineJoinGame.empty()))
+        throw std::runtime_error("--movement-diff-log supports graphical local single player only");
     if (!options.clientProfile.empty() && (explicitMpq || explicitOnlineConfig))
         throw std::runtime_error("--client-profile owns resources and online configuration; do not combine with MPQ or online overrides");
     if (!options.clientProfile.empty() && !explicitHostSaves) options.hostSaves = "saves/pd2";

@@ -1,4 +1,8 @@
 #include "system.hpp"
+#include "server/runtime/facts/unit.hpp"
+#include "server/runtime/events.hpp"
+#include "server/runtime/environment_fact.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
 #include "server/runtime/facts/inventory.hpp"
 #include "detail.hpp"
 #include "server/player_store.hpp"
@@ -99,6 +103,11 @@ DomainResult<> System::prepareReward(const ActorContext &actor,EntityId source,R
         if(!request.quantity) return {DomainStatus::Conflict,{}};
     }
     request.uniques=ports_.loot.read().uniques;
+    if(kind==RewardKind::Bark && !conversation) {
+        const auto sound=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
+            {SoundFact{actor.actor,0,actor.area,45}}});
+        if(!sound) return {sound.status,{}};
+    }
     state_.pending.emplace(actor.player,std::move(request));++state_.next;ports_.random=random;
     return {DomainStatus::Applied,std::monostate{}};
 }
@@ -116,7 +125,7 @@ std::optional<bool> System::takeCompletion(EntityId source) {
 DomainResult<> System::install(Prepared prepared) {
     const auto found=state_.pending.find(prepared.source.actor.player);
     if(found==state_.pending.end() || found->second.token!=prepared.source.token) return {DomainStatus::Stale,{}};
-    const auto &s=found->second;
+    auto &s=found->second;
     const auto *sourceArea=ports_.areas.find(s.actor.area);
     const bool objectSource=!s.conversation && sourceArea && std::any_of(sourceArea->definition.objects.begin(),sourceArea->definition.objects.end(),[&](const auto &object){return object.id==s.source;});
     const auto fail=[&](DomainStatus status,std::string_view reason={}) -> DomainResult<> {
@@ -153,6 +162,44 @@ DomainResult<> System::install(Prepared prepared) {
     for(const auto unique:prepared.items.limitedUniques) if(ports_.loot.read().uniques.contains(unique)) return fail(DomainStatus::Stale);
     auto uniques=ports_.loot.prepareUniques(prepared.items.limitedUniques);
     if(!ports_.transactions.hasOutputCapacity(3)) return {DomainStatus::Capacity,{}};
+    if(s.kind==RewardKind::ViperAmulet) {
+        const auto quest=QuestId::TaintedSun;
+        if(!s.altarPhase) {
+            const bool active=!(state_.initialFlags[questDefinition(quest).nativeSlot]&0x8000) && !state_.actTwo.altarDestroyed;
+            if(active) {
+                for(const auto id:eligibleParty(quest,uint32_t(SunStage::AltarDestroyed),s.actor.area,{},{}))
+                    s.participants.emplace(id,ports_.players.find(id)->actor);
+                const auto &personal=p->persistent.player.quests.at(size_t(s.difficulty))[questIndex(quest)];
+                if(personal.stage<uint32_t(SunStage::Confirmed)) s.participants.emplace(s.actor.player,s.actor.actor);
+            }
+            const auto mode=ports_.objects.setNativeMode(s.source,1,s.actor.tick,false,false);
+            if(!mode) return reject(mode.status);
+            s.altarPhase=active?1:4;
+        }
+        if(s.altarPhase==1) {
+            std::vector<EventBatch> batches;
+            for(const auto &[id,player]:ports_.players.all())
+                if(player.entered && ports_.areas.at(player.area).definition.act==1)
+                    batches.push_back({0,s.actor.tick,{}, {AudienceKind::Player,id,player.area},{EnvironmentFact{1,2,0,false}}});
+            batches.push_back({0,s.actor.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{6}}});
+            const auto sent=ports_.events.publishGroup(std::move(batches));if(!sent) return {sent.status,{}};
+            state_.actTwo.dark=false;state_.actTwo.altarDestroyed=true;ports_.world.sunEclipse(false);
+            state_.actTwo.sunNoticePending=false;state_.actTwo.sunCallbackPending=false;
+            std::set<PlayerId> eligible;
+            for(const auto &[id,identity]:s.participants) {
+                const auto *player=ports_.players.find(id);
+                if(player && player->actor==identity) eligible.insert(id);
+            }
+            captureGoal(quest,uint32_t(SunStage::AltarDestroyed),std::move(eligible));
+            s.altarPhase=2;
+        }
+        if(s.altarPhase==2) {
+            if(finishNarratedGoal(quest,52,{s.actor.tick})==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+            s.altarPhase=3;
+        }
+        p=ports_.players.find(s.actor.player);
+        if(!p) return fail(DomainStatus::Stale);
+    }
     auto record=p->persistent.player;auto &book=record.quests.at(size_t(s.difficulty));
     if(const auto quest=rewardQuest(s.kind,bool(s.conversation));quest && unavailable(s.actor.player,record,*quest)) return fail(DomainStatus::Stale);
     std::set<PlayerId> delivery;
@@ -256,7 +303,8 @@ DomainResult<> System::install(Prepared prepared) {
         book[questIndex(QuestId::GoldenBird)].stage=5;break;
     case RewardKind::LifePotion:
         if(book[questIndex(QuestId::GoldenBird)].stage!=5) return fail(DomainStatus::Stale);
-        book[questIndex(QuestId::GoldenBird)]={6,goldenBirdPotionPending};break;
+        book[questIndex(QuestId::GoldenBird)].stage=6;
+        book[questIndex(QuestId::GoldenBird)].flags|=goldenBirdPotionPending;break;
     case RewardKind::Gidbinn: if(state_.actThree.gidbinnDropped) return fail(DomainStatus::Stale);break;
     case RewardKind::ReturnGidbinn:
         if(book[questIndex(QuestId::BladeOfTheOldReligion)].stage>=4) return fail(DomainStatus::Stale);
@@ -354,7 +402,10 @@ DomainResult<> System::install(Prepared prepared) {
         if(rosterPublication) ports_.npc.publishVendorControl(std::move(*rosterPublication));
         if(s.kind==RewardKind::Rogue && credited(s.actor.player,QuestId::SistersBurialGrounds)) state_.actOne.cainOffer=true;
         if(s.kind==RewardKind::CainRing && credited(s.actor.player,QuestId::SearchForCain)) state_.actOne.toolsOffer=true;
-        if(s.kind==RewardKind::ReturnTome) captureGoal(QuestId::LamEsensTome,4,std::move(delivery),true);
+        if(s.kind==RewardKind::ReturnTome) {
+            state_.npcStory.tomeCourier=s.actor.actor;state_.npcStory.tomeNpc=s.source;
+            captureGoal(QuestId::LamEsensTome,4,std::move(delivery),true);
+        }
         if(s.kind==RewardKind::Malus && s.conversation) {
             Goal goal;goal.stage=5;goal.eligible=std::move(delivery);queueGoal(QuestId::ToolsOfTheTrade,std::move(goal));
             state_.objectives[questIndex(QuestId::ToolsOfTheTrade)]=true;

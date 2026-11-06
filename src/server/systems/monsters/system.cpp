@@ -123,6 +123,7 @@ DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,Entit
     const auto entered=unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &v){return v.second.entered;}));
     actor.admittedPlayerCount=rule.alignment?1u:std::clamp(std::max(entered,ports_.settings.virtualPlayers),1u,8u);
     actor.id = id; actor.identity = request.identity; actor.implementation = request.implementation;
+    actor.identityNoticePending=request.identity.monster=="summoner" && !request.resurrected;
     actor.area = request.area; actor.position = actor.home = request.position; actor.skillPositions=request.skillPositions; actor.revision = 1; actor.rule = rule;
     actor.admissionRule=std::make_shared<const MonsterRule>(rule);
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();

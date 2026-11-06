@@ -14,6 +14,7 @@ struct ItemChange {
     unsigned quantity;
     unsigned statParameter{};
     std::optional<int32_t> statValue{}; // Exact source value when multiple lists share a layer.
+    bool directQuantity{};
 };
 struct InventoryResult {
     InventoryError error = InventoryError::None;

@@ -176,6 +176,7 @@ void EventOutbox::observe(const EventBatch &batch) noexcept {
             else if constexpr (std::is_same_v<T, QuestClueFact>) {event.value=value.quest;}
             else if constexpr (std::is_same_v<T, SoundFact>) {event.actor=value.actor;event.value=value.sound;}
             else if constexpr (std::is_same_v<T, ItemTargetingFact>) {event.actor=value.source;event.value=value.cursor;event.secondary=value.skill;}
+            else if constexpr (std::is_same_v<T, ItemSpellEndFact>) {event.actor=value.source;}
             else if constexpr (std::is_same_v<T, OverlayFact>) {event.actor=value.actor;event.value=value.overlay;}
             else if constexpr (std::is_same_v<T, QuestStatusFact>) {event.value=int(value.quest);event.secondary=value.status;}
             else if constexpr (std::is_same_v<T, QuestEffectFact>) event.value=value.effect;
@@ -187,6 +188,7 @@ void EventOutbox::observe(const EventBatch &batch) noexcept {
             else if constexpr (std::is_same_v<T, SkillEndFact>) {event.actor=value.actor;event.value=value.skill;}
             else if constexpr (std::is_same_v<T, ItemSkillFact>) {event.actor=value.owner;event.target=value.target;event.value=value.skill;event.secondary=value.rank;event.position=value.position;}
             else if constexpr (std::is_same_v<T, GroundRemoveFact>) {event.target=value.item;}
+            else if constexpr (std::is_same_v<T, MonsterIdentityFact>) {event.actor=value.actor;event.area=value.area;event.value=value.nameSeed;}
             else if constexpr (std::is_same_v<T, GroundRestoredFact>) {event.target=value.item;event.secondary=int64_t(value.revision);}
             else if constexpr (std::is_same_v<T, NpcServiceFact>) {event.target=value.npc;event.value=value.result;}
             else if constexpr (std::is_same_v<T, MissileFact>) { event.actor = value.owner; event.value = value.definition; event.secondary = value.rank; event.position = value.position; }

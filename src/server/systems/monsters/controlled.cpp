@@ -498,7 +498,7 @@ DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec positio
     const bool stopping=!pet.route.empty() || pet.moving || pet.running;
     if(pet.revision==UINT64_MAX || (stopping && pet.revision==UINT64_MAX-1)) return {DomainStatus::Capacity,{}};
     // SUnit::sub_6FCBDFE0 relocates the dynamic path, not the state lists.
-    stop(id);pet.pathStep={};pet.area=owner.area;pet.position=position;ports_.areas.moveRoomUnit(id,pet.area,pet.position);refreshCollision(pet);pet.busyUntil=owner.tick;pet.neutralAt.reset();++pet.revision;return {DomainStatus::Applied,std::monostate{}};
+    stop(id);pet.pathStep={};pet.area=owner.area;pet.position=position;ports_.areas.moveRoomUnit(id,pet.area,pet.position);refreshCollision(pet);pet.busyUntil=owner.tick;pet.neutralAt.reset();++pet.revision;pet.teleportRevision=pet.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::stageRetirements(effects::AuraUnitPublication &publication,std::span<const EntityId> ids,uint64_t tick) const {
     for(const auto id:ids) {

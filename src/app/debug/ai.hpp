@@ -6,6 +6,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <nlohmann/json_fwd.hpp>
 
 namespace d2x {
@@ -25,6 +26,10 @@ class DebugAi {
         std::optional<int> maxLife,maxMana;
         std::optional<bool> castInputBusy;
         std::optional<bool> actionInputBusy;
+        std::optional<float> movementSecondsPerUnit;
+        std::function<std::optional<std::pair<uint64_t,float>>(uint16_t)> observedCastSeconds;
+        std::optional<int> navigationFasterCast;
+        unsigned navigationWeaponSet{};
         std::function<std::optional<bool>(uint16_t)> skillUsable;
         std::function<std::optional<unsigned>(uint32_t)> buyQuote;
         std::function<bool()> openQuestLog;

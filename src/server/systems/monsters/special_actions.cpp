@@ -826,13 +826,14 @@ DomainResult<> System::teleport(EntityId id,PointTarget target,uint64_t tick,int
         const auto room=ports_.areas.roomAtPosition(m.area,m.position,int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)));
         if(!room || room->area!=target.area) return {DomainStatus::Unavailable,{}};
     }
-    if(m.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    const uint64_t revisions=1+uint64_t(!m.route.empty() || m.moving || m.running);
+    if(m.revision>UINT64_MAX-revisions) return {DomainStatus::Capacity,{}};
     const auto grid=ports_.spatial.navigationGrid(target.area,id);const auto point=target.position;
     const Vec center{.5f,.5f};
     if(!grid.walkable(point+center,{uint16_t(nativeFreePosition?0x1c09:0x3c01),m.rule.size}) ||
        (!nativeFreePosition && !grid.segment(m.position+center,point+center,{}, {0x0c01,1}))) return {DomainStatus::Unavailable,{}};
-    // Native monster relocation is projected by 0x6D snapshot correction.
     (void)tick;stop(id);m.area=target.area;m.position=point;ports_.areas.moveRoomUnit(id,m.area,m.position);refreshCollision(m);m.life=std::min(m.maximumLife,m.life+int64_t(std::max(0,heal))*256);++m.revision;
+    m.teleportRevision=m.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
 

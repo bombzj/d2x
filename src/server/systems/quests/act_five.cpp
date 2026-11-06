@@ -285,12 +285,17 @@ void System::resolvePrisoners(std::optional<PlayerId> rescuedBy) {
                 const auto eligible=!rewardPending(record,rescue) && !unavailable(*rescuedBy,record,rescue)?
                     eligibleDelivery(rescue,3,*rescuedBy):std::set<PlayerId>{};
                 captureGoal(rescue,3,eligible);
-                queueStatus(rescue,3);world.rescueLastStatus=3;
+                world.rescueNarrativePending=true;
             }
         }
     }
 }
 DomainResult<bool> System::activatePrisoner(EntityId id,PlayerId playerId,uint64_t tick) {
+    if(state_.actFive.rescueNarrativePending) {
+        if(finishNarratedGoal(QuestId::RescueOnMountArreat,81,{tick})==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+        state_.actFive.rescueNarrativePending=false;
+        queueStatus(QuestId::RescueOnMountArreat,3);state_.actFive.rescueLastStatus=3;
+    }
     updatePrisonerCounters();resolvePrisoners({});
     const auto *unit=ports_.monsters.find(id);const auto *player=ports_.players.find(playerId);
     if(!unit || !unit->alive() || !unit->questNpc || unit->identity.monster!="act5pow" || !player || !player->entered)
@@ -346,12 +351,21 @@ DomainResult<bool> System::activatePrisoner(EntityId id,PlayerId playerId,uint64
         if(!scheduled) return {scheduled.status,{}};
     }
     updatePrisonerCounters();resolvePrisoners(playerId);
+    if(world.rescueNarrativePending) {
+        if(finishNarratedGoal(QuestId::RescueOnMountArreat,81,{tick})==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+        world.rescueNarrativePending=false;
+        queueStatus(QuestId::RescueOnMountArreat,3);world.rescueLastStatus=3;
+    }
     if(!state_.objectives[questIndex(QuestId::RescueOnMountArreat)] && world.rescueKilled<5) {
         queueStatus(QuestId::RescueOnMountArreat,2);world.rescueLastStatus=2;
     }
     return {DomainStatus::Applied,true};
 }
 StepStatus System::actFiveStep(TickContext tick) {
+    if(state_.actFive.siegeNarrativePending) {
+        if(finishNarratedGoal(QuestId::SiegeOnHarrogath,80,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+        state_.actFive.siegeNarrativePending=false;
+    }
     if(state_.actFive.anyaCompletion) {
         if(!publishCompletion(*state_.actFive.anyaCompletion,16,{},tick)) return StepStatus::Blocked;
         state_.actFive.anyaCompletion.reset();
@@ -366,7 +380,12 @@ StepStatus System::actFiveStep(TickContext tick) {
     updatePrisonerCounters();resolvePrisoners({});
     for(const auto &[monsterId,m]:ports_.monsters.read().actors) {
         (void)monsterId;if(m.alive() || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
-        if(int(m.area)==110 && m.identity.superUnique=="Siege Boss") captureGoal(QuestId::SiegeOnHarrogath,3,m.area,m.position);
+        if(int(m.area)==110 && m.identity.superUnique=="Siege Boss" &&
+            !(state_.initialFlags[questDefinition(QuestId::SiegeOnHarrogath).nativeSlot]&0x8000) && !state_.objectives[questIndex(QuestId::SiegeOnHarrogath)]) {
+            captureGoal(QuestId::SiegeOnHarrogath,3,m.area,m.position);world.siegeNarrativePending=true;
+            if(finishNarratedGoal(QuestId::SiegeOnHarrogath,80,tick)==StepStatus::Blocked) return StepStatus::Blocked;
+            world.siegeNarrativePending=false;
+        }
         if(int(m.area)==124 && m.identity.superUnique=="Nihlathak Boss" && !world.nihlathakSlain) {
             const auto quest=QuestId::BetrayalOfHarrogath;
             if(!(state_.initialFlags[questDefinition(quest).nativeSlot]&0x8000)) {

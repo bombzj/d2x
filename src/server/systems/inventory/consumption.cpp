@@ -1,5 +1,6 @@
 #include "planning.hpp"
 #include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/travel/system.hpp"
@@ -33,21 +34,23 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
     if(const auto special=player->rules.character->questConsumables.find(item->definition);special!=player->rules.character->questConsumables.end()) {
         if(source==Source::Belt || draft.at({draft.containers().cursor,{}}) || !item->quantity || (special->second!=QuestConsumable::RespecToken && item->nativeQuestDifficulty<unsigned(player->persistent.difficulty))) return {DomainStatus::InvalidRequest,{}};
         auto record=player->persistent.player;auto &book=record.quests.at(size_t(player->persistent.difficulty));
+        std::optional<QuestId> completedQuest;
         switch(special->second) {
         case QuestConsumable::SkillBook: {
             auto &quest=book.at(questIndex(QuestId::RadamentsLair));
             if(!(quest.flags&radamentBookPending) || record.unspentSkills==INT32_MAX) return {DomainStatus::Unavailable,{}};
-            quest.flags=(quest.flags&~radamentBookPending)|radamentBookUsed;++record.unspentSkills;break;
+            quest.flags=(quest.flags&~radamentBookPending)|radamentBookUsed;++record.unspentSkills;
+            completedQuest=QuestId::RadamentsLair;break;
         }
         case QuestConsumable::LifePotion: {
             auto &quest=book.at(questIndex(QuestId::GoldenBird));
             if(quest.stage!=uint32_t(GoldenBirdStage::Rewarded) || !(quest.flags&goldenBirdPotionPending)) return {DomainStatus::Unavailable,{}};
-            quest.flags&=~goldenBirdPotionPending;break;
+            quest.flags&=~goldenBirdPotionPending;completedQuest=QuestId::GoldenBird;break;
         }
         case QuestConsumable::ResistanceScroll: {
             auto &quest=book.at(questIndex(QuestId::PrisonOfIce));
             if(!(quest.flags&iceScrollGranted) || (quest.flags&iceScrollUsed)) return {DomainStatus::Unavailable,{}};
-            quest.flags|=iceScrollUsed;break;
+            quest.flags|=iceScrollUsed;completedQuest=QuestId::PrisonOfIce;break;
         }
         case QuestConsumable::RespecToken: {
             if(!refundCharacterPoints(record)) return {DomainStatus::Capacity,{}};
@@ -57,6 +60,7 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
         draft.edit.changes.push_back({item->id,item->revision+1,ItemChangeKind::Removed,item->location,{},0});draft.edit.inventory.items.erase(item->id);
         transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),record.weaponSet};
         edit.character=record;edit.facts.emplace_back(ports_.quests.projection(actor.player,record,actor.area,false));
+        if(completedQuest) edit.facts.emplace_back(QuestStatusFact{*completedQuest,0,0,2});
         auto plan=ports_.transactions.prepare(std::move(edit));return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
     }
     const auto definition = player->rules.potions->find(item->definition);

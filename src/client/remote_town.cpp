@@ -1,5 +1,6 @@
 #include "content/monsters/monster_identity.hpp"
 #include "remote_town.hpp"
+#include "world/navigation_snapshot.hpp"
 #include "world/retail/desert.hpp"
 #include <algorithm>
 #include <cmath>
@@ -91,23 +92,68 @@ Grid RemoteTown::navigationGrid(const OnlineView &online,std::optional<OnlineUni
     };
     // Freeze on demand on the client thread. A moving unit only changes the
     // sparse overlay, so avoid a map lookup per terrain cell on every change.
-    result.copyMovementMasks=[this,terrain,presence,terrainRevision] {
-        const int stride=terrain->width+2;
-        if(navigationMaskRevision_!=terrainRevision) {
-            std::vector<uint16_t> masks(size_t(stride)*(terrain->height+2));
-            for(int y=-1;y<=terrain->height;++y) for(int x=-1;x<=terrain->width;++x)
-                masks[size_t(y+1)*stride+(x+1)]=terrain->nativeMovementMask(x,y);
-            navigationMasks_=std::move(masks);navigationMaskRevision_=terrainRevision;
-        }
-        auto masks=navigationMasks_;
-        for(const auto &[cell,mask]:*presence) {
-            const auto [x,y]=cell;
-            if(x>=-1 && y>=-1 && x<=terrain->width && y<=terrain->height)
-                masks[size_t(y+1)*stride+(x+1)]|=mask;
-        }
-        return masks;
+    result.freezeMovement=[this,presence,collisionRevision] {
+        auto snapshot=std::make_shared<NavigationSnapshot>();
+        snapshot->base=navigationSnapshot(true);
+        snapshot->world=snapshot->base->world;
+        snapshot->width=snapshot->base->width;snapshot->height=snapshot->base->height;
+        snapshot->originX=snapshot->base->originX;snapshot->originY=snapshot->base->originY;
+        snapshot->publication=collisionRevision;snapshot->overlay=*presence;
+        return snapshot;
     };
     return result;
+}
+std::shared_ptr<const NavigationSnapshot> RemoteTown::navigationSnapshot(bool native) const {
+    if(!navigationPublicationError_.empty()) throw std::runtime_error(navigationPublicationError_);
+    if(!map_ || !view_.origin) return {};
+    if(native && map_->grid.nativeCollision.empty() && map_->grid.neighbours.empty() && map_->grid.navigationSources.empty())
+        return navigationSnapshot(false);
+    auto &revision=native?navigationNativeRevision_:navigationStaticRevision_;
+    auto &snapshot=native?navigationNativeSnapshot_:navigationStaticSnapshot_;
+    auto &dirty=native?navigationDirtyNative_:navigationDirtyStatic_;
+    auto &full=native?navigationFullNative_:navigationFullStatic_;
+    const NavigationRevision next{gameGeneration_,areaGeneration_,nativeMap_?nativeMap_->terrainRevision():0,
+        map_->grid.obstacleRevision,map_->grid.missileCollisionRevision,native?map_->grid.nativeCollisionRevision:0,
+        uint64_t(view_.origin->x),uint64_t(view_.origin->y),(uint64_t(uint32_t(map_->grid.width))<<32)|uint32_t(map_->grid.height)};
+    if(revision!=next || !snapshot) {
+        if(revision && ((*revision)[2]!=next[2] || (*revision)[4]!=next[4] ||
+            (native && (*revision)[5]!=next[5] && dirty.empty()))) full=true;
+        const auto &source=map_->grid;
+        if(!native && source.neighbours.empty() && source.navigationSources.empty() && !source.terrainCollision.empty()) {
+            if(full || !navigationTerrainSnapshot_) {
+                Grid terrain;terrain.width=source.width;terrain.height=source.height;
+                terrain.collisionSample=[&source](int column,int row,EntityId)->uint16_t {
+                    if(column<0 || row<0 || column>=source.width || row>=source.height) return 0xffff;
+                    const size_t index=size_t(row)*source.width+column;
+                    const auto flags=source.fullTerrainCollision.empty()?source.terrainCollision[index]:source.fullTerrainCollision[index];
+                    return uint16_t(flags|(source.missileCollision.empty()?0:source.missileCollision[index])|
+                        (source.blocked[index] && !(source.terrainCollision[index]&0x09)?1:0));
+                };
+                navigationTerrainSnapshot_=NavigationSnapshot::publish(terrain,{float(view_.origin->x),float(view_.origin->y)},
+                    navigationTerrainSnapshot_,false,nullptr,navigationWorld_);
+            }
+            auto layered=std::make_shared<NavigationSnapshot>();
+            layered->base=navigationTerrainSnapshot_;layered->world=navigationWorld_;
+            layered->width=source.width;layered->height=source.height;
+            layered->originX=view_.origin->x;layered->originY=view_.origin->y;
+            layered->publication=source.obstacleRevision;
+            if(full) {
+                layered->scannedCells=navigationTerrainSnapshot_->scannedCells;
+                layered->copiedBytes=navigationTerrainSnapshot_->copiedBytes;
+                layered->reusedBlocks=navigationTerrainSnapshot_->reusedBlocks;
+            }
+            for(const auto &obstacle:source.obstacles)
+                for(int row=std::max(0,obstacle.y);row<std::min(source.height,obstacle.y+obstacle.height);++row)
+                    for(int column=std::max(0,obstacle.x);column<std::min(source.width,obstacle.x+obstacle.width);++column)
+                        layered->overlay[{column,row}]|=obstacle.mask;
+            layered->copiedBytes+=layered->overlay.size()*sizeof(NavigationSnapshot::Overlay::value_type);
+            if(!snapshot || snapshot->base!=layered->base || snapshot->overlay!=layered->overlay) snapshot=std::move(layered);
+        } else snapshot=NavigationSnapshot::publish(source,{float(view_.origin->x),float(view_.origin->y)},snapshot,native,
+            full?nullptr:&dirty,navigationWorld_);
+        dirty.clear();full=false;
+        revision=next;
+    }
+    return snapshot;
 }
 RemoteTown::RemoteTown(Archives &a, bool reportAutomapRoomsPd2)
     : archives_(a), libraries_(a), objects_(a.read("data/global/excel/objects.txt")),
@@ -131,6 +177,14 @@ RemoteTown::RemoteTown(Archives &a, bool reportAutomapRoomsPd2)
         monsterSizeRows_.emplace(std::string(monsterSizes_.value(row, "Id")), row);
 }
 void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition) {
+    const NavigationWorldKey world{v.gameGeneration,v.world.areaGeneration,v.load.mapSeed.value_or(0),
+        v.load.act.value_or(0),v.load.difficulty.value_or(0),v.protocolProfile};
+    if(navigationWorld_!=world) {
+        navigationPublicationError_.clear();
+        navigationWorld_=world;navigationStaticSnapshot_.reset();navigationNativeSnapshot_.reset();navigationTerrainSnapshot_.reset();
+        navigationStaticRevision_.reset();navigationNativeRevision_.reset();
+        navigationFullStatic_=navigationFullNative_=true;
+    }
     automapPlayerPresentPd2_ = v.remoteLobbyOnly && v.load.playerUnitId && v.world.units.contains({0, *v.load.playerUnitId});
     std::optional<OnlinePoint> point;
     if (displayPosition && std::isfinite(displayPosition->x) && std::isfinite(displayPosition->y) &&
@@ -154,6 +208,9 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
         map_ = nullptr;
         nativeMap_.reset();
         nativeTerrain_.reset();
+        navigationStaticSnapshot_.reset();navigationNativeSnapshot_.reset();navigationTerrainSnapshot_.reset();
+        navigationStaticRevision_.reset();navigationNativeRevision_.reset();
+        navigationDirtyStatic_.clear();navigationDirtyNative_.clear();navigationFullStatic_=navigationFullNative_=true;
         automapVisitedTiles_.clear();automapViewportPrepared_=false;automapProjection_.reset();automapComponent_.clear();
         nativeTerrainDirty_ = true;
         nativePlayerRoom_.reset();
@@ -161,6 +218,8 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
         nativePlayerPosition_.reset();
         walkingObservation_.reset();
         nativeSequence_ = 0;
+        nativePositionDiscontinuity_.reset();
+        nativePendingSince_=0;
         nativeLoadComplete_ = false;
         nextNativeUpdateMilliseconds_ = 0;
         nextObjectTransition_.reset();
@@ -241,6 +300,12 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
         rememberWalkingConnection(v);
         updateUnitRooms(v);
         updateMapTargets(v);
+        navigationPublicationError_.clear();
+        try {navigationSnapshot();}
+        catch(const std::exception &failure) {
+            navigationPublicationError_="Navigation publication unavailable: "+std::string(failure.what());
+            view_.mapErrors[*view_.area]=navigationPublicationError_;
+        }
         try {
             prepareTownAutomap(v);
             explored_.reveal(automapScene(v), {});
@@ -450,8 +515,18 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                     }
                 }
             }
+            std::string displayName(label.empty() ? keyName : label);
+            if ((number("SubClass") & 4) != 0) {
+                const int titleDestination = unit.portalDestination.value_or(unit.objectInteractType.value_or(0));
+                const auto level = catalog_->levels().find(titleDestination);
+                if (level == catalog_->levels().end()) displayName = strings_.find(5389);
+                else if (v.protocolProfile == "lod113c" && titleDestination == 8) {
+                    const auto &quests = v.world.quests.availability;
+                    displayName = quests ? strings_.find((*quests)[1] ? 5048 : 5047) : std::string_view{};
+                } else displayName = strings_.find(level->second.name);
+            }
             view_.mapTargets.push_back({key, *unit.position, *interaction,
-                std::string(label.empty() ? keyName : label), destination,
+                std::move(displayName), destination,
                 number("SizeX"), number("SizeY"),false,
                 number("IsDoor")?std::optional<int>{number("Orientation")}:std::nullopt});
         }
@@ -483,6 +558,20 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         }
     }
     std::erase_if(view_.mapTargets,[&](const auto &entry){return coveredWarps.contains(entry.unit);});
+    if(view_.origin) {
+        const auto mark=[&](const Grid::Obstacle &obstacle) {
+            for(int row=NavigationSnapshot::blockCoordinate(obstacle.y+view_.origin->y);
+                row<=NavigationSnapshot::blockCoordinate(obstacle.y+obstacle.height-1+view_.origin->y);++row)
+                for(int column=NavigationSnapshot::blockCoordinate(obstacle.x+view_.origin->x);
+                    column<=NavigationSnapshot::blockCoordinate(obstacle.x+obstacle.width-1+view_.origin->x);++column) {
+                    navigationDirtyStatic_.emplace(column,row);navigationDirtyNative_.emplace(column,row);
+                }
+        };
+        for(const auto &old:nativeTerrain_->grid.obstacles)
+            if(std::find(obstacles.begin(),obstacles.end(),old)==obstacles.end()) mark(old);
+        for(const auto &next:obstacles)
+            if(std::find(nativeTerrain_->grid.obstacles.begin(),nativeTerrain_->grid.obstacles.end(),next)==nativeTerrain_->grid.obstacles.end()) mark(next);
+    }
     nativeTerrain_->grid.setObstacles(std::move(obstacles));
     for(const auto &entry:view_.mapTargets) {
         const auto room=nativeMap_->clientRoom(entry.position.x,entry.position.y);if(!room) continue;
@@ -557,11 +646,44 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
 bool RemoteTown::updateNative(const OnlineView &v) {
     view_.nativeMapReady = false;
     view_.nativeMapReason = nativeReason_;
+    view_.mapLoading={};
+    view_.mapLoading.receivedSequence=v.world.mapEventSequence;
+    view_.mapLoading.consumedSequence=nativeSequence_;
+    view_.mapLoading.assignedRooms=v.world.rooms.size();
     if (!nativeMap_ || !nativeReason_.empty()) return false;
     const auto started = std::chrono::steady_clock::now();
+    const auto sampleLoading=[&] {
+        auto &loading=view_.mapLoading;
+        loading.consumedSequence=nativeSequence_;
+        loading.pendingEvents=v.world.mapEventSequence>=nativeSequence_?v.world.mapEventSequence-nativeSequence_:0;
+        const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+        if(loading.pendingEvents) {if(!nativePendingSince_) nativePendingSince_=now;}
+        else nativePendingSince_=0;
+        loading.pendingMilliseconds=nativePendingSince_?now-nativePendingSince_:0;
+        loading.terrainDirty=nativeTerrainDirty_;
+        loading.terrainRevision=nativeMap_->terrainRevision();
+        const auto &rooms=nativeMap_->tiles().rooms();
+        loading.loadedRooms=std::count_if(rooms.begin(),rooms.end(),[](const auto &room){return room.loaded;});
+        const auto sampleRoom=[&](const std::optional<OnlinePoint> &position,std::optional<bool> &loaded,std::optional<bool> &assigned) {
+            if(!position) return;
+            loaded=false;assigned=false;
+            if(const auto index=nativeMap_->clientRoom(position->x,position->y)) {
+                const auto &room=rooms.at(*index);loaded=room.loaded;
+                assigned=v.world.rooms.contains({uint8_t(room.level),uint16_t(room.room.x),uint16_t(room.room.y)});
+            }
+        };
+        sampleRoom(displayPlayerPosition_,loading.clientRoomLoaded,loading.clientRoomAssigned);
+        sampleRoom(v.world.playerPosition,loading.serverRoomLoaded,loading.serverRoomAssigned);
+        loading.updateMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
+    };
     int eventLevel = 0;
     try {
         const auto &world = v.world;
+        std::optional<std::pair<uint32_t,uint64_t>> discontinuity;
+        if(v.load.playerUnitId) if(const auto player=world.units.find({0,*v.load.playerUnitId});player!=world.units.end())
+            discontinuity=std::pair{*v.load.playerUnitId,player->second.positionDiscontinuity};
+        const bool repositioned=discontinuity && discontinuity!=nativePositionDiscontinuity_;
         if (!nativeSequence_ && !nativePlayerPosition_)
             nativePlayerPosition_ = world.mapInitialPlayerPosition;
         bool changed = false;
@@ -619,7 +741,7 @@ bool RemoteTown::updateNative(const OnlineView &v) {
             }
             }
             nativeSequence_ = event.sequence;
-            if (nativeSequence_ != world.mapEventSequence && std::chrono::steady_clock::now() >= deadline) {
+            if (!repositioned && nativeSequence_ != world.mapEventSequence && std::chrono::steady_clock::now() >= deadline) {
                 deferred = true; break;
             }
         }
@@ -646,6 +768,8 @@ bool RemoteTown::updateNative(const OnlineView &v) {
             }
         } else locatePlayerRoom();
         nativeTerrainDirty_ |= changed || nativeMap_->terrainRevision() != terrainRevision;
+        view_.mapLoading.deferred=deferred;
+        sampleLoading();
         if (!nativePlayerRoom_ || v.stage != OnlineStage::ProtocolReady ||
             !v.load.serverLoadComplete || !nativeLoadComplete_ || !world.playerPosition) return false;
         if (!nativeMap_->tiles().rooms().at(*nativePlayerRoom_).loaded) return false;
@@ -657,6 +781,9 @@ bool RemoteTown::updateNative(const OnlineView &v) {
             view_.width = snapshot.map.grid.width; view_.height = snapshot.map.grid.height;
             auto map = std::make_unique<Map>(std::move(snapshot.map));
             nativeTerrain_.swap(map);
+            navigationFullStatic_=navigationFullNative_=true;
+            navigationStaticRevision_.reset();navigationNativeRevision_.reset();
+            nativeTerrain_->grid.freezeMovement=[this]{return navigationSnapshot();};
             ++automapTerrainRevision_;
             automapVisitedTiles_.assign(nativeTerrain_->terrain.instances.size(),0);
             automapViewportPrepared_=false;
@@ -679,6 +806,9 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         view_.collisionVerified = view_.available = view_.nativeMapReady = true;
         view_.movementAvailable = !onlinePlayerDead(world);
         view_.nativeMapReason = view_.reason = "Native room anchors and ordered lifecycle reconstructed";
+        nativePositionDiscontinuity_=discontinuity;
+        view_.mapLoading.terrainDirty=nativeTerrainDirty_;
+        view_.mapLoading.updateMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
         const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
         // Report work exceeding one 25 Hz simulation tick, not every movement.
         if (elapsed >= 40) std::clog << "[area-load] client level=" << level << " map_ms=" << elapsed << '\n';
@@ -687,6 +817,10 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         nativeReason_ = e.what();
         nativeErrors_[eventLevel] = nativeReason_;
         view_.nativeMapReason = nativeReason_;
+        view_.mapLoading.consumedSequence=nativeSequence_;
+        view_.mapLoading.pendingEvents=v.world.mapEventSequence>=nativeSequence_?v.world.mapEventSequence-nativeSequence_:0;
+        view_.mapLoading.terrainDirty=nativeTerrainDirty_;
+        view_.mapLoading.updateMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
         return false;
     }
 }
@@ -1356,7 +1490,7 @@ AutomapDiscovery RemoteTown::discovery() const {
 RemoteTown::NavigationMemory RemoteTown::navigationMemory() const {
     NavigationMemory result;result.targets=knownTargetPositions_.size();result.connections=knownConnections_.size();
     result.waypoints=knownWaypoints_.size();result.restored=navigationRestored_;
-    for(const auto &[id,layer]:navigationObserved_.layers()) {(void)id;result.observedCells+=size_t(std::count(layer.seen.begin(),layer.seen.end(),uint8_t{1}));}
+    for(const auto &[id,layer]:navigationObserved_.layers()) {(void)layer;result.observedCells+=navigationObserved_.revealedCount(id);}
     return result;
 }
 void RemoteTown::restoreDiscovery(const AutomapDiscovery &d,const OnlineView &v) {

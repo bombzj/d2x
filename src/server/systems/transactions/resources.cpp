@@ -124,7 +124,7 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
         edit.publicFacts=std::move(publicFacts);
         if(relocation) {
             if(relocation->area!=actor.area) edit.facts.emplace_back(travelFact());
-            edit.publicFacts.emplace_back(RepositionFact{player.actor,relocation->area,relocation->position,relocation->area==actor.area});
+            edit.publicFacts.emplace_back(RepositionFact{player.actor,relocation->area,relocation->position,relocation->area==actor.area,1,true});
         }
         auto plan=prepare(std::move(edit));if(!plan) return {plan.status,{}};
         const auto result=commit(std::move(*plan.value));
@@ -143,7 +143,7 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
     std::vector<EventBatch> events{{0, actor.tick, {}, {AudienceKind::Player, player.player, player.area}, {std::move(resourceFact)}}};
     if(relocation) {
         if(relocation->area!=actor.area) events.front().facts.emplace_back(travelFact());
-        publicFacts.emplace_back(RepositionFact{player.actor,relocation->area,relocation->position,relocation->area==actor.area});
+        publicFacts.emplace_back(RepositionFact{player.actor,relocation->area,relocation->position,relocation->area==actor.area,1,true});
     }
     if (!publicFacts.empty()) events.push_back({0, actor.tick, {}, {AudienceKind::Area, {}, player.area},std::move(publicFacts)});
     auto result = ports_.events.publishGroup(std::move(events));

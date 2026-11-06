@@ -36,12 +36,20 @@ if($ClientProfile){$ClientProfile=$ExecutionContext.SessionState.Path.GetUnresol
 if($HostSaves){$HostSaves=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HostSaves)}
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $diagnosticRoot=''
+$frameProfile=''
+$startupProfile=''
+$movementDiffLog=''
 if($Diagnostic){
     $runName=(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8)
     $diagnosticRoot=Join-Path $projectRoot "artifacts/diagnostics/$runName"
     New-Item -ItemType Directory -Path $diagnosticRoot -Force | Out-Null
     $GamePacketLog=Join-Path $diagnosticRoot 'client-packets.jsonl'
     $HostPacketLog=Join-Path $diagnosticRoot 'host-packets.jsonl'
+    $frameProfile=Join-Path $diagnosticRoot 'frames.jsonl'
+    $startupProfile=Join-Path $diagnosticRoot 'startup.tsv'
+    if(-not ($HostLan -or $Lan -or $OnlineCharacter -or $OnlinePlay -or $OnlineCreateGame -or $OnlineJoinGame)){
+        $movementDiffLog=Join-Path $diagnosticRoot 'movement-diff.jsonl'
+    }
 }
 if($GamePacketLog){$GamePacketLog=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($GamePacketLog)}
 if($HostPacketLog){$HostPacketLog=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HostPacketLog)}
@@ -84,6 +92,9 @@ try{
     if($Mpq){$arguments+=@('--mpq',$Mpq)}
     if($GamePacketLog){$arguments+=@('--game-packet-log',$GamePacketLog)}
     if($HostPacketLog){$arguments+=@('--host-packet-log',$HostPacketLog)}
+    if($frameProfile){$arguments+=@('--frame-profile',$frameProfile)}
+    if($startupProfile){$arguments+=@('--startup-profile',$startupProfile)}
+    if($movementDiffLog){$arguments+=@('--movement-diff-log',$movementDiffLog)}
     if($Lang){$arguments+=@('--lang',$Lang)}
     if(-not $NoDebugPipe){
         $arguments+=@('--debug-pipe',$PipeName)
@@ -94,13 +105,30 @@ try{
         $digest=[Security.Cryptography.SHA256]::Create()
         try{$binaryHash=[BitConverter]::ToString($digest.ComputeHash($binaryStream)).Replace('-','')}
         finally{$digest.Dispose();$binaryStream.Dispose()}
+        $aiConfig=Join-Path (Split-Path -Parent $exe) 'debug-ai.json'
+        if(-not (Test-Path -LiteralPath $aiConfig -PathType Leaf)){$aiConfig=Join-Path $projectRoot 'debug-ai.json'}
+        $aiConfigHash=''
+        if(Test-Path -LiteralPath $aiConfig -PathType Leaf){
+            $aiConfigSnapshot=Join-Path $diagnosticRoot 'debug-ai.initial.json'
+            Copy-Item -LiteralPath $aiConfig -Destination $aiConfigSnapshot
+            $aiConfigHash=(Get-FileHash -LiteralPath $aiConfigSnapshot -Algorithm SHA256).Hash
+        }else{$aiConfig=''}
         [ordered]@{
             executable=$exe; sha256=$binaryHash
             mpq=$Mpq; clientProfile=$ClientProfile; pipe=$PipeName; packets=$GamePacketLog
             hostPackets=$HostPacketLog; packetDirection='C2S+S2C'
+            startedAtUtc=[DateTime]::UtcNow.ToString('o'); workingDirectory=$projectRoot
+            frames=$frameProfile; startup=$startupProfile; movement=$movementDiffLog
+            defaultAiConfig=$aiConfig; defaultAiConfigSha256=$aiConfigHash
+            hidden=[bool]$Hidden; noPauseOnFocusLoss=[bool]$NoPauseOnFocusLoss
+            movementScope='Local graphical Single Player only; menu-selected remote games have no authoritative local samples.'
+            aiLog='Written under ai-*/events.log when an AI plan starts; the initial config snapshot does not capture later reloads or custom config files.'
             note=$(if($ClientProfile){'D2GS only; SID/MCP authentication payloads are excluded and game tickets are redacted.'}else{'Protocol traces redact tickets and opaque save transfers; authoritative inventory remains available through the debug pipe.'})
         } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $diagnosticRoot 'run.json') -Encoding utf8
         Write-Host "Diagnostic logs: $diagnosticRoot"
+        Write-Host "Frame and startup profiling enabled. AI behavior logging starts with your AI plan."
+        if($movementDiffLog){Write-Host "Movement comparison enabled for local Single Player."}
+        else{Write-Host "Movement comparison omitted for explicit remote/TCP startup."}
         # Windows PowerShell treats native stderr as ErrorRecords. Cache/resource
         # notices must be recorded without aborting the interactive game process.
         $nativePreference=$ErrorActionPreference

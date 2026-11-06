@@ -1676,7 +1676,7 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
         for (const auto &effect : clientMissiles_) {
             if (effect.age < 0 || !effect.soundEmitter) continue;
             const auto key = "missile-release:" + std::to_string(effect.missileId);
-            if (assets_.audio.hasEmitterSound(key)) sounds.push_back({effect.soundEmitter, key});
+            if (assets_.audio.hasEmitterSound(key)) sounds.push_back({effect.soundEmitter, key, effect.pos});
         }
         assets_.audio.syncEmitters(sounds, uint64_t(view_.animationTime * 25.f));
     }

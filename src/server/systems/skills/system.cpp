@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "server/runtime/frame_facts.hpp"
+#include "server/runtime/facts/combat.hpp"
 #include "runtime.hpp"
 #include "pd2/requirements.hpp"
 #include "pd2/vengeance.hpp"
@@ -41,6 +42,10 @@ void System::collectEntityReferences(std::set<EntityId> &entities) const {
         if(value.nativeSkill) release(*value.nativeSkill);
     }
     for(const auto &[id,cast]:state_.casts) {entities.insert(id);entities.insert(cast.target);}
+    for(const auto &[id,mode]:runtime_->monsterModes) {
+        entities.insert(id);
+        if(mode.publication) entities.insert(mode.publication->target);
+    }
     for(const auto &[id,skill]:state_.usedSkills_) {
         entities.insert(id);if(skill) entities.insert(skill->owner);
     }

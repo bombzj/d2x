@@ -199,6 +199,7 @@ struct RemoteScene::Impl {
         uint64_t authorityRevision{};
         float requested{}, started{-1}, duration{};
         uint64_t revision{};
+        std::optional<Vec> teleportFacing{};
     };
     std::optional<LocalCast> localCast;
     struct Channel {size_t skillRow{},missileRow{};int level{};float next{},started{};uint64_t revision{};OnlinePoint destination;std::optional<OnlineUnitKey> target;uint64_t random{};std::optional<float> until{};float releaseAt{};};

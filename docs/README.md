@@ -40,7 +40,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 原版人物数值对照的存档装配、已采范围、覆盖矩阵与截图数据契约 | [对照存档](development/CHARACTER_REFERENCE_FIXTURES.md) |
 | 主／副键设置、16个技能快捷槽与全角色共享偏好 | [ESC按键设置](gameplay/ui/CLASSIC_HUD.md#esc-菜单)、[偏好格式与保存](modules/SAVES.md#客户端偏好凭据与探索) |
 | 原版DLL地图对照与实机房间恢复排查 | [地图对照排查](development/MAP_PARITY.md) |
-| 本轮原版Host／自研单机消息对照范围及未解决项 | [消息对比计划](development/MESSAGE_COMPARISON_PLAN.md)、[临时缺陷清单](development/MESSAGE_COMPARISON_DEFECTS.md) |
+| 原版移动、任务、物品通知与佣兵属性的调用链及版本冲突 | [原版协议与任务依据](resources/NATIVE_PROTOCOL_EVIDENCE.md) |
 | 原版Glide／3dfx渲染证据、D2X差异与后续改造 | [Glide渲染分析与方案](architecture/DIABLO2_GLIDE_RENDERING.md) |
 
 已完成的结构改造内容并入架构／现有模块，不再维护第二份历史重构计划；已删除执行器的SESSION／UNITS／SKILL_RUNTIME／REWARDS说明不再作为模块入口。原版结构比较仍见[参考设计](architecture/REFERENCE_DESIGN.md)。后续服务端精确复刻的目标结构、D2MOO证据、公共函数边界及重构验收统一见[服务端战斗复刻目标架构](architecture/SERVER_COMBAT_RECONSTRUCTION.md)，该页是目标设计，不是当前实现状态；全局顺序仍由[总计划](architecture/MULTIPLAYER.md)维护。
@@ -52,7 +52,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 需要了解的内容 | 负责入口 |
 | --- | --- |
 | 高层任务指令、可重载配置、五幕配方与部分进度恢复 | [调试任务AI](development/DEBUG_AI.md) |
-| AI测试条件、分段与五幕全链路结果、问题、角色基准与消息证据 | [AI测试记录](development/AI_TEST_REC.md)，集中保留实测范围与干预边界 |
+| AI验证方法、隔离输入、结果与取证边界 | [测试指南](development/TESTING.md)，具体运行产物留在忽略目录，不维护历史流水 |
 | 旅行／探索、动作等待与输入占用、战斗／职业移动及通用补给的实现入口 | [执行分层](development/DEBUG_AI.md#执行分层)、[公共操作](development/DEBUG_AI.md#公共操作与部分进度恢复)、[战斗策略](development/DEBUG_AI.md#战斗策略) |
 | 管道命令、状态与诊断字段、消息和现场采集 | [调试管道](development/DEBUG_PIPE.md)、[AI命令与组合](development/DEBUG_AI.md#输入与组合) |
 | 启动与失焦继续运行参数、构建和正常退出 | [构建运行](development/BUILD_AND_RUN.md) |

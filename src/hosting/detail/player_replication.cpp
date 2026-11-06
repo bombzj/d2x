@@ -165,11 +165,13 @@ void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const 
                 sent.characterRevision = view->characterRevision;
             }
             if (inventoryChanged && std::find(inventoryResets.begin(),inventoryResets.end(),view->actor.id)==inventoryResets.end()) {
+                const auto beforeEquipment=packets.size();
                 if (!fresh) for (const auto &[item, removal] : sent.equipment)
                     if (!equipment.inventory.items.contains(item) && !peer.groundItems.contains(item))
                         for (const auto &packet : removal) packets.push_back(packet);
                 auto appearance = nativePublicEquipment(*content, equipment);
                 for (auto &packet : appearance) packets.push_back(std::move(packet));
+                if(!fresh && packets.size()!=beforeEquipment) peer.inventoryRefresh.insert(view->actor.id);
                 sent.equipment.clear();
                 for (const auto &[key, item] : equipment.inventory.items)
                     sent.equipment.emplace(key, nativePublicUnequip(*content, equipment, item));
@@ -184,7 +186,7 @@ void NativeRealmService::publishPlayers(bool publishPartyVitals,std::span<const 
             if(target.type==1) return peer.monsters.contains(target.id);
             if(target.type==2) return peer.objects.contains(target.id) || peer.portals.contains(target.id);
             if(target.type==4) return peer.groundItems.contains(target.id);
-            if(target.type==5) {const auto current=host.area(binding->game,view->actor.region);return current && std::any_of(current->definition.exits.begin(),current->definition.exits.end(),[&](const auto &exit){return exit.id==target.id;});}
+            if(target.type==5) return peer.warps.contains(target.id);
             return false;
         }();
         auto motion = nativePlayerMotion(*view, area.origin,targetVisible);

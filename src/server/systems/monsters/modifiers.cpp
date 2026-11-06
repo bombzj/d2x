@@ -187,6 +187,7 @@ StepStatus System::finishModifiers(TickContext context) {
         if(!assigned) return isDeferred(assigned.status) || assigned.status==DomainStatus::Conflict
             ?StepStatus::Blocked:StepStatus::NotImplemented;
     }
+    if(request.identityNotice) actor.identityNoticePending=true;
     modifierPending_.reset();modifierPrepared_.reset();modifierCommitted_=modifierInitialAuraCommitted_=false;
     return StepStatus::Complete;
 }

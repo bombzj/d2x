@@ -77,7 +77,7 @@ NPC话题确认遇到内容或输出等待时，由GameInstance保留当前命�
 
 原版插杖已实采rejoin-16序号14114的正常0x44，14115返回0x58 result5，14117私人槽10=0x2C79，并实际删除hst。AI此前在材料提交后立即恢复墓穴探索，离开了入口定时出生区域；已改为沿已观察orifice及D2MOO `ACT2Q6_Timer_UpdateObjects`的(-13,+3)接近入口房间并等待真实可选class100入口，不推测成功或重放插杖。原版1.13c的新采样run-15序号28133提交44、28134返回58/result5，28255实际出生class100且mode1；当前MPQ的Selectable1=1、HasCollision1=0，D2MOO Operate43不检查动画模式，Timer_UpdateObjects也未给此门户登记ENDANIM。AI等实际可选指派，客户端在实际mode1／2指派时开墙，不伪造副本mode2。
 
-自研入口出生不再额外安装FrameCnt1+1的ENDANIM；任务领域观察到实际入口已准入便开放墙体与tombOpen，不等画面结束。Operate43从真实class100进入73区，class377读取其实际InteractType目的地；受理与异步完成均不追加原版没有的tombOpen／个人任务门槛，仍校验物件、交互几何、人物／区域／移动代次及目标房间落点。未取得377目的地时拒绝，不从真墓猜回程。CE7D4177单机停点的命令216在tick2062返回conflict，而tombAt=2060、旧开放条件为2077；修复证据与验收见[AI记录](../../development/AI_TEST_REC.md)。新入口、重入恢复及多人使用待复验，原版逐包时序仍未全部配对。
+自研入口出生不再额外安装FrameCnt1+1的ENDANIM；任务领域观察到实际入口已准入便开放墙体与tombOpen，不等画面结束。Operate43从真实class100进入73区，class377读取其实际InteractType目的地；受理与异步完成均不追加原版没有的tombOpen／个人任务门槛，仍校验物件、交互几何、人物／区域／移动代次及目标房间落点。未取得377目的地时拒绝，不从真墓猜回程。CE7D4177单机停点的命令216在tick2062返回conflict，而tombAt=2060、旧开放条件为2077；修复证据与验收见[验证约定](../../development/TESTING.md)。新入口、重入恢复及多人使用待复验，原版逐包时序仍未全部配对。
 
 第二幕调试AI入口为`debug-ai-start`的`scenario='act2'`，六个独立任务名及完成条件见[客户端调试任务AI](../../development/DEBUG_AI.md#第二幕任务配方)。当前源码以物品／私人原字／本局线索的小型条件图替代递归线性前置：已满足条件剪去完整依赖，只为待执行动作安排旅行，合并合法的城镇访问。D2MOO A2Q2 `CheckItemsAndState`的成杖优先分支与339设置CUSTOM6／ENTERAREA／CUSTOM2／CUSTOM1／LEAVETOWN，是已有hst跳过材料说明的依据；仍保留尚缺的339与实际提交。A2Q3太阳资格独立于材料所有权，A2Q4宫殿恢复和介绍按实际私人／本局状态，召唤者死亡不授予日志资格的1.13c差异保持。编排继续使用正常旅行、开门、拾取、技能、NPC、方块及插杖请求，不调用宿主管理或假造任务位。条件图已通过Windows Release全部目标构建并进入原版1.13c Host分段回归；旧线性配方的分段单机、原版Host与保存重入结果仅按其旧版本覆盖，最新候选全新角色无介入整链仍待验收。
 

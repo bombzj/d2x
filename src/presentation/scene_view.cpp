@@ -27,9 +27,20 @@ void main() {
 )";
 } // namespace
 bool ViewState::capturesWorldInput(bool includePlayerTrade) const {
-    return (includePlayerTrade && playerTradeBlocking) || chatInputOpen || messageLogOpen || gameMenuOpen || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty();
+    return (includePlayerTrade && playerTradeBlocking) || messageLogOpen || gameMenuOpen || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty();
 }
 bool ViewState::blocksInput() const { return capturesWorldInput() || travelMenu; }
+void SceneView::updateAreaTitle(uint64_t game,int level,const std::optional<std::array<uint8_t,37>> &availability) {
+    if(areaTitleGame_!=game) {
+        areaTitleGame_=game;areaTitleLevel_=level;areaTitleFrames_=120;areaTitlePending_=false;assets_.areaTitle={};return;
+    }
+    if(areaTitleLevel_!=level) {
+        areaTitleLevel_=level;areaTitleFrames_=0;areaTitlePending_=true;assets_.areaTitle={};
+    }
+    if(!areaTitlePending_ || ((level==8 || level==20) && !availability)) return;
+    areaTitlePending_=false;
+    assets_.loadAreaTitle(level,availability);
+}
 void SceneView::deferTooltip(std::vector<ItemTextLine> lines, ItemQuality quality, Vec anchor,
                             std::optional<unsigned> price, std::string_view priceLabel) const {
     deferredTooltip_.active = true;
@@ -39,8 +50,8 @@ void SceneView::deferTooltip(std::vector<ItemTextLine> lines, ItemQuality qualit
     deferredTooltip_.priceLabel = std::string(priceLabel);
     deferredTooltip_.anchor = anchor;
 }
-void SceneView::updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events) {
-    assets_.sceneAudio.update(clock,actors,events);
+void SceneView::updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events, Vec listener) {
+    assets_.sceneAudio.update(clock,actors,events,listener);
 }
 void SceneView::playUiSound(std::string_view sound) { assets_.sceneAudio.play(sound, uint64_t(GetTime() * 25)); }
 int SceneView::soundPeriod() const { return lighting_->period(std::clamp(mapView().palette,0,4)); }
@@ -160,6 +171,9 @@ void SceneView::triggerWeatherLightning(float delay) { weather_->lightning(delay
 void SceneView::updatePlayerTrade(const OnlinePlayerTrade &trade) {
     tradeInvite_.update(trade);
     view_.playerTradeBlocking = trade.active();
+    if(trade.active() && chat_.inputOpen()) {
+        chat_.sent(true);view_.chatInputOpen=false;
+    }
     view_.playerTradeEditable = !trade.ownAgreed && trade.response == OnlinePlayerTrade::Response::None;
     const bool open = trade.phase == OnlinePlayerTrade::Phase::Open;
     if (open && !view_.inventory.playerTradeOpen) {
@@ -262,7 +276,11 @@ ChatIntent SceneView::handleChat(const FrameInput &input) {
     chat_.setLogOpen(view_.messageLogOpen);
     const bool canOpen = !view_.playerTradeBlocking && !view_.gameMenuOpen && !view_.help && !view_.npcMenu && !view_.shopOpen &&
         !view_.hireListOpen && view_.dialogue.empty() && !view_.travelMenu && !view_.inventory.drag &&
-        !view_.inventory.goldDialog && !view_.inventory.identify;
+        !view_.inventory.goldDialog && !view_.inventory.identify && !view_.inventory.storage && !view_.inventory.cubeOpen;
+    if(chat_.inputOpen() && !canOpen) {
+        chat_.sent(true);view_.chatInputOpen=false;
+        return {true,{}};
+    }
     auto intent = chat_.handle(input, canOpen);
     view_.chatInputOpen = chat_.inputOpen(); view_.messageLogOpen = chat_.logOpen();
     return intent;
