@@ -238,13 +238,6 @@ float SceneView::partyPortraitOffset() const {
 }
 void SceneView::drawBhOverlay() const {
     if (!view_.bhEnabled || view_.capturesWorldInput()) return;
-    // Area name: top-left, matching BH's display_level_names.
-    if (view_.bhShowAreaName) {
-        if (const auto &level = assets_.worldLevel(int(mapView().region)); !level.name.empty()) {
-            DrawRectangle(4, 4, painter_.measure(level.name, 14) + 12, 22, {0, 0, 0, 160});
-            painter_.label(level.name, 10, 7, 14, parchment);
-        }
-    }
     // Experience text: above the classic XP bar, showing current/needed/percent.
     if (view_.bhShowXpText) {
         const auto &player = characterView_;
@@ -303,7 +296,7 @@ void SceneView::drawBhSettings() const {
     if (!view_.bhEnabled || !view_.bhSettingsOpen) return;
     DrawRectangle(0, 0, W, H, {0, 0, 0, 140});
     const int width = 340;
-    const int rows = 14;
+    const int rows = 13;
     const int rowHeight = 24;
     const int panelHeight = 44 + rows * rowHeight;
     const Rectangle panel{float((W - width) / 2), float((H - panelHeight) / 2), float(width), float(panelHeight)};
@@ -315,7 +308,6 @@ void SceneView::drawBhSettings() const {
     const Entry entries[] = {
         {"Reveal Map", view_.bhRevealMap},
         {"Always Show Loot", view_.bhAlwaysShowLoot},
-        {"Area Name", view_.bhShowAreaName},
         {"XP Text", view_.bhShowXpText},
         {"Belt Status", view_.bhShowBeltStatus},
         {"Full Light Radius", view_.bhForceLightRadius},

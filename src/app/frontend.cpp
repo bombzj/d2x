@@ -318,7 +318,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             const ClientPreferences current{sharedClients->running(), panels.miniPanelOpen,
                 panels.automapLarge, panels.automapCenterWhenCleared,
                 panels.automapParty, panels.automapNames, panels.automapFade, panels.audio, panels.lighting,
-                panels.bhRevealMap, panels.bhAlwaysShowLoot, panels.bhShowAreaName,
+                panels.bhRevealMap, panels.bhAlwaysShowLoot,
                 panels.bhShowXpText, panels.bhShowBeltStatus, panels.bhForceLightRadius,
                 panels.bhShowPathLine, panels.bhShowResistances, panels.bhShowMonsters,
                 panels.bhShowEnchantments, panels.bhShowChests, panels.bhAutomapOnJoin, panels.bhShowLkChestLines,
@@ -1297,7 +1297,6 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         initial.bhEnabled = pd2Resources;
                         initial.bhRevealMap = preferences.bhRevealMap;
                         initial.bhAlwaysShowLoot = preferences.bhAlwaysShowLoot;
-                        initial.bhShowAreaName = preferences.bhShowAreaName;
                         initial.bhShowXpText = preferences.bhShowXpText;
                         initial.bhShowBeltStatus = preferences.bhShowBeltStatus;
                         initial.bhForceLightRadius = preferences.bhForceLightRadius;
