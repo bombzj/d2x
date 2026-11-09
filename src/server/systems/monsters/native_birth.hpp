@@ -20,6 +20,8 @@ class NativeBirthPublication {
     bool validate() const;
     void publish() noexcept;
     EntityId actor() const;
+    // Drawing feet in the request area's frame, including for probe-only searches.
+    // A native integer placement has no additional grid-center half-cell.
     std::optional<Vec> position() const;
 };
 }

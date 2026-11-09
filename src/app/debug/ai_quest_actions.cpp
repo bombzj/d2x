@@ -11,7 +11,7 @@ void DebugAi::Impl::refreshQuestNpc(Context &c) {
     checkQuestPending(c);
     if(!pending.refreshIssued) {
         if(c.session.read().world.npcRequested && !c.control.closeNpc()) return;
-        pending.beforeRevision=std::max(pending.beforeRevision,c.control.quests().revision);
+        pending.beforeRevision=std::max(pending.beforeRevision,c.control.quests().playerFlagsRevision);
         cancelWalk(c);pending.refreshIssued=true;note("quest-dialogue-closed","Allowing the native NPCDEACTIVATE callback to finish");return;
     }
     // Original Rcv0x40 -> QUESTS_StatusCallback sends private 0x28 flags,
@@ -48,7 +48,7 @@ bool DebugAi::Impl::questStoreCursor(Context &c,uint32_t id) {
     p.deadline=Clock::now()+std::chrono::seconds(12);questRun.pending=p;note("quest-item-place-submitted",std::to_string(id));return false;
 }
 bool DebugAi::Impl::quietQuestNpc(Context &c,const OnlineUnit &npc) {
-    if(npc.position && approachPoint(c,*npc.position,"quest NPC alert",4,false,true)) {
+    if(npc.position && approachPoint(c,*npc.position,"quest NPC alert",4)) {
         questRun.missingTopicSince={};
         return false;
     }
@@ -198,6 +198,10 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
                 // result. Query flags without closing its live conversation.
                 if(!questRun.pending->statusRequested && c.control.refreshQuests()) questRun.pending->statusRequested=true;
             } else refreshQuestNpc(c);
+            if(questRun.pending->statusRequested && world.quests.playerFlagsRevision>questRun.pending->beforeRevision) {
+                questRun.pending.reset();greetingIssued=false;
+                note("quest-dialogue-state-observed","Re-evaluating required results after the actual private state update");return false;
+            }
         }
         wait("quest-dialogue-result","Waiting for actual quest/item state after the offered topic");checkQuestPending(c);return false;
     }
@@ -235,10 +239,11 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
     if(!greetingIssued && npc->classId) {greetingIssued=c.control.greetNpc(*npc->classId);if(greetingIssued) return false;}
     const auto conversation=*world.npcConversation;
     const auto automatic = nextAutomaticNpcSpeech(conversation);
-    // A goal can finish a required automatic line, or select an offered topic
-    // once the automatic chain is over. Other greetings must be heard first.
-    for(const auto topic:step.topics) for(const auto &message:conversation.messages) {
-        if(message.stringId!=topic || conversation.acknowledged.contains(topic) || (automatic && *automatic!=topic)) continue;
+    auto &receipt=questRun.journalReceipts[questRun.step];
+    for(const auto &message:conversation.messages) {
+        const auto topic=message.stringId;
+        if(conversation.acknowledged.contains(topic) || (automatic && *automatic!=topic) ||
+            (!automatic && message.menu!=2) || receipt.heard.contains({flags.value_or(0),topic})) continue;
         if(step.rareReward || !step.rewardCodes.empty()) {
             questRun.rewardBefore.clear();for(const auto &[id,item]:world.items) {(void)item;questRun.rewardBefore.insert(id);}
             questRun.rewardTracked=true;
@@ -247,27 +252,19 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
             questRun.rewardBefore.clear();for(const auto &[id,item]:world.items) if(item.code=="rin") questRun.rewardBefore.insert(id);
             questRun.rewardTracked=true;
         }
-        if(goal.questId==QuestId::SistersBurialGrounds && topic==92) questRun.rewardTracked=true;
-        if(step.skillPointReward || (goal.questId==QuestId::DenOfEvil && topic==76)) {
+        if(goal.questId==QuestId::SistersBurialGrounds && step.flags==1) questRun.rewardTracked=true;
+        if(step.skillPointReward || (goal.questId==QuestId::DenOfEvil && step.flags==1)) {
             // Retail omits zero-valued stats from its initial stat-list
             // replication. An absent newskills entry on this ready player is
             // zero, not a reason to miss the later actual +1 reward update.
             const auto points=world.playerAttributes.find(5);
             questRun.skillPointsBefore=points==world.playerAttributes.end()?0:points->second;
         }
-        const auto before=world.quests.revision;
+        const auto before=world.quests.playerFlagsRevision;
         if(c.control.acknowledgeNpc(topic)) {
+            receipt.heard.emplace(flags.value_or(0),topic);
             QuestPending p;p.action=QuestPending::Action::Topic;p.unit=npc->key;p.beforeRevision=before;
             p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;++interactions;note("quest-topic-submitted",std::to_string(topic));
-        }
-        return false;
-    }
-    if(automatic) {
-        const auto before=world.quests.revision;
-        if(c.control.acknowledgeNpc(*automatic)) {
-            QuestPending p;p.action=QuestPending::Action::Introduction;p.unit=npc->key;p.beforeRevision=before;
-            p.deadline=Clock::now()+std::chrono::seconds(20);questRun.pending=p;
-            note("quest-prerequisite-greeting-submitted",std::to_string(*automatic));
         }
         return false;
     }
@@ -284,7 +281,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         if(!questRun.awaitingTopicAlert) setActionDeadline(std::chrono::seconds(20),false);
         questRun.awaitingTopicAlert=true;
         questRun.missingTopicSince={};
-        questRun.missingTopicRefresh=c.control.quests().revision;
+        questRun.missingTopicRefresh=c.control.quests().playerFlagsRevision;
         c.control.refreshQuests(*questRun.missingTopicRefresh);
         greetingIssued=false;cancelWalk(c);
         note("quest-topic-refresh","Expected topic absent; re-evaluating private state and the NPC alert");
@@ -352,7 +349,7 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
     if(!step.topics.empty() && world.npcConversation && world.npcConversation->type!=1 && step.target) {
         const auto unit=world.units.find({2,world.npcConversation->source});
         if(unit!=world.units.end() && unit->second.classId==step.target->identity) for(const auto &message:world.npcConversation->messages)
-            if(std::find(step.topics.begin(),step.topics.end(),message.stringId)!=step.topics.end() && !world.npcConversation->acknowledged.contains(message.stringId)) {
+            if(!world.npcConversation->acknowledged.contains(message.stringId)) {
                 if(c.control.acknowledgeNpc(message.stringId)) {
                     QuestPending p;p.action=QuestPending::Action::Object;p.unit=unit->first;
                     p.assignment=unit->second.assignmentRevision;p.beforeRevision=questRun.clueBefore;p.refreshIssued=true;

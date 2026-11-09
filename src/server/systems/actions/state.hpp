@@ -29,6 +29,9 @@ struct SkillAction {
     uint64_t cooldownUntil{};
     bool usesSkillPointer{};
     uint64_t timeline{};
+    // Ordinary player SC may accept the next cast before ENDANIM cleanup.
+    // Zero keeps the existing lock for sequences and unverified programs.
+    uint64_t recastAt{};
 };
 struct RecoveryAction {
     uint64_t until{}, lastBlockTick{};
@@ -92,6 +95,7 @@ struct State {
     void pruneSkillParameters(const std::function<bool(EntityId)> &exists);
     bool recovering(EntityId actor, uint64_t tick) const;
     bool busy(EntityId actor, uint64_t tick) const;
+    bool canRecast(EntityId actor, uint64_t tick) const;
     bool coolingDown(EntityId actor, uint64_t tick) const;
     size_t pendingReleases() const;
     void cancel(EntityId actor);

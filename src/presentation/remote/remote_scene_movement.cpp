@@ -228,6 +228,11 @@ Grid RemoteScene::Impl::navigationCollision(const Grid &terrain,Vec origin,Onlin
             if(row==monsterRows.end()) continue;
             const auto ai=monstats.value(row->second,"AI");
             if(unit.mode==8 && !unit.actionSkill && (ai=="Vulture" || ai=="SandMaggot" || ai=="FrogDemon")) continue;
+            if(ai=="FrogDemon") {
+                const auto used=unit.actionSkill?unit.actionSkill:unit.stoppedSkill;
+                const auto skill=used?skillRows.find(*used):skillRows.end();
+                if(skill!=skillRows.end() && skills.number(skill->second,"srvstfunc")==51) continue;
+            }
             const auto pose=motion.find(key);
             if(pose!=motion.end() && pose->second.scriptedSequence && pose->second.scriptedSequence->leapGraphics) continue;
             const bool town=monstats.number(row->second,"npc").value_or(0) || monstats.number(row->second,"inTown").value_or(0);

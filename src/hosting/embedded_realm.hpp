@@ -29,6 +29,7 @@ class EmbeddedRealm {
     void receiveTcpIpSave(Bytes);
     std::string prepareStartup(const std::string &load, const std::string &save, const std::string &characterClass);
     void pump(double seconds, bool paused);
+    bool singlePlayerContentBlocked() const;
     // Borrowed packet bytes are observed synchronously on the host thread.
     void observeGamePackets(hosting::GamePacketObserver);
     // Timings are delivered on the caller thread by pump/shutdown.

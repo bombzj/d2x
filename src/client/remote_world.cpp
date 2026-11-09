@@ -30,6 +30,7 @@ OnlineUnit &unit(OnlineWorldView &w, OnlineUnitKey k) {
     return u;
 }
 void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
+    event.worldRevision=w.revision;
     if (event.kind == OnlineCombatEvent::Kind::Skill &&
         (event.packet == 0x4C || event.packet == 0x4D)) {
         // Retail 0x99/0x9A invoke an item-effect skill without changing mode,
@@ -42,7 +43,9 @@ void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
         // their authoritative 0x0E mode and must not emit a spell effect.
         if (event.source.type > 1) return;
         auto &actor = unit(w, event.source);
+        actor.stoppedSkill.reset();
         actor.actionSkill = event.skill; actor.actionSkillLevel = event.level;
+        if(actor.key.type==0) actor.usedSkill=event.skill;
         if (actor.key.type == 1 && event.skill && event.level)
             actor.skills.insert_or_assign(*event.skill, *event.level);
         actor.actionRevision = w.revision; actor.actionReceivedMilliseconds = receivedMilliseconds();
@@ -58,6 +61,7 @@ void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
     if (w.combatEvents.size() > 256) w.combatEvents.pop_front();
 }
 void monsterAction(OnlineWorldView &w, OnlineUnit &u, uint8_t action) {
+    u.stoppedSkill.reset();
     u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
     u.wireAction = action; u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
     // MonsterMsg's native wire actions are not MONMODE indices.
@@ -713,6 +717,10 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             break;
         }
         u.mode = action;
+        if(u.key.type==0 && (action==1 || action==2 || action==3 || action==6 || action==7 || action==8 || action==9 || action==18 || action==20)) {
+            u.usedSkill.reset();if(v.load.playerUnitId==u.key.id) w.localUsedSkill.reset();
+        }
+        u.stoppedSkill.reset();
         u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
         position(v, u, point(r));
         u.hitClass = r.u8();
@@ -740,7 +748,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         const bool restart = u.key.type != 2 || !u.mode || *u.mode != mode;
         if (mode <= 255)
             u.mode = uint8_t(mode);
+        u.stoppedSkill.reset();
         u.nativeMode = true; u.actionSkill.reset(); u.actionSkillLevel.reset();
+        if(u.key.type==0 && (mode<=6 || mode==9 || mode==13 || mode==17 || mode==19)) {
+            u.usedSkill.reset();if(v.load.playerUnitId==u.key.id) w.localUsedSkill.reset();
+        }
         u.destination.reset(); u.destinationUnit.reset();
         // Object flags can be refreshed in the same mode. Preserve its original
         // animation epoch so targetability updates cannot restart OP/ENDANIM.
@@ -760,7 +772,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     case 0x0F: {
         auto &u = unit(w, key(r));
+        u.stoppedSkill.reset();
         u.mode = r.u8();
+        if(u.key.type==0 && (u.mode==1 || u.mode==2 || u.mode==3 || u.mode==6 || u.mode==7 || u.mode==8 || u.mode==9 || u.mode==18 || u.mode==20)) {
+            u.usedSkill.reset();if(v.load.playerUnitId==u.key.id) w.localUsedSkill.reset();
+        }
         u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
         u.destination = point(r);
         u.destinationUnit.reset();
@@ -772,7 +788,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     case 0x10: {
         auto &u = unit(w, key(r));
+        u.stoppedSkill.reset();
         u.mode = r.u8();
+        if(u.key.type==0 && (u.mode==1 || u.mode==2 || u.mode==3 || u.mode==6 || u.mode==7 || u.mode==8 || u.mode==9 || u.mode==18 || u.mode==20)) {
+            u.usedSkill.reset();if(v.load.playerUnitId==u.key.id) w.localUsedSkill.reset();
+        }
         u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
         u.destinationUnit = key(r);
         position(v, u, point(r));
@@ -783,11 +803,19 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     case 0x15: {
         auto &u = unit(w, key(r));
-        position(v, u, point(r));
+        const auto destination=point(r);
         u.repositionFlags=r.u8();
         u.repositionRevision=w.revision;
         u.repositionReceivedMilliseconds=receivedMilliseconds();
-        u.repositionSkill=u.actionSkill;
+        u.repositionSkill=u.usedSkill;
+        if(u.key.type==0 && v.load.playerUnitId==u.key.id) {
+            mapEvent(w,OnlineMapEvent::Kind::PlayerReposition,destination);
+            auto &event=w.mapEvents.back();event.receivedMilliseconds=u.repositionReceivedMilliseconds;
+            event.usedSkill=u.repositionSkill;event.repositionFlags=u.repositionFlags;
+            event.dead=u.nativeMode?(u.mode==0 || u.mode==17):(u.mode==8 || u.mode==9);
+            u.position=destination;u.positionCheckMode.reset();u.positionRevision=w.revision;
+            w.playerPosition=destination;
+        } else position(v,u,destination);
         ++u.positionDiscontinuity; // Native correction/teleport must not tween across geometry.
         u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         r.finish();
@@ -1251,6 +1279,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     case 0x99: {
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Skill;
         event.source = key(r); event.skill = r.u16(); event.level = r.u8(); event.target = key(r);
+        if(p.id==0x4C && event.source==OnlineUnitKey{0,v.load.playerUnitId.value_or(UINT32_MAX)}) w.localUsedSkill.reset();
         event.auxiliary = r.u16(); r.finish(); combatEvent(w, std::move(event));
         break;
     }
@@ -1258,6 +1287,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     case 0x9A: {
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Skill;
         event.source = key(r); event.skill = uint16_t(r.u32()); event.level = r.u8(); event.point = point(r);
+        if(p.id==0x4D && event.source==OnlineUnitKey{0,v.load.playerUnitId.value_or(UINT32_MAX)}) w.localUsedSkill.reset();
         event.auxiliary = r.u16(); r.finish(); combatEvent(w, std::move(event));
         break;
     }
@@ -1500,6 +1530,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         u.lifePercent = r.u8(); u.lifeCarriesTriggerFlag = false;
         r.finish();
         u.mode = 1; u.wireAction = 7; u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
+        if(u.actionSkill) u.stoppedSkill=u.actionSkill;
         u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
         u.destination.reset();
         u.destinationUnit.reset();
@@ -1620,6 +1651,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     case 0xAC: {
         auto &u = unit(w, {1, r.u32()});
+        u.stoppedSkill.reset();
         u.classId = r.u16();
         u.equipmentObserved=true;
         position(v, u, point(r));

@@ -19,6 +19,7 @@
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "gameplay/units/distance.hpp"
+#include "gameplay/units/coordinates.hpp"
 #include "gameplay/units/direction.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
@@ -30,9 +31,8 @@
 namespace d2x::server::companions {
 namespace {
 
-// Actor positions are cell-centered floats; CLIENTS_GetUnitX/Y reads the
-// integer cell, rather than rounding a .5 center into the following cell.
-Vec nativePosition(Vec point) {return {std::floor(point.x),std::floor(point.y)};}
+// Players and monsters share DynamicPath drawing feet.
+Vec nativePosition(Vec point) {return nativeFeetCell(point);}
 int coordinateDistance(Vec first,Vec second) {
     return unitCoordinateDistance(int(first.x),int(first.y),int(second.x),int(second.y));
 }
@@ -83,8 +83,8 @@ bool escapeFrom(const Ports &ports,const monsters::Actor &body,Vec target,unsign
 void followOwnerNear(const Ports &ports,Companion &pet,const PlayerState &owner,const monsters::Actor &body,int speed) {
     const auto &area=ports.areas.at(body.area);
     const auto origin=ports.areas.at(owner.area).definition.origin;
-    const auto current=nativePosition(owner.position)+origin,goal=nativePosition(owner.routeDestination)+origin;
-    const auto region=logicalRegion(ports.areas,owner.area,owner.position,current);
+    const auto current=nativeFeetCell(owner.position)+origin,goal=nativeFeetCell(owner.routeDestination)+origin;
+    const auto region=logicalRegion(ports.areas,owner.area,owner.position+Vec{.5f,.5f},current);
     if(!region) return;
     const auto direction=nativeDirectionVector(int64_t(goal.x-current.x),int64_t(goal.y-current.y));
     auto index=nativeOverlayDirection(direction.index);
@@ -97,7 +97,7 @@ void followOwnerNear(const Ports &ports,Companion &pet,const PlayerState &owner,
     };
     for(int attempt=0;attempt<7;++attempt,index=uint8_t((index+1)&7)) {
         const auto point=goal+offsets[order[index]]*8.f;
-        if(logicalRegion(ports.areas,owner.area,owner.position,point)==region && move(point)) return;
+        if(logicalRegion(ports.areas,owner.area,owner.position+Vec{.5f,.5f},point)==region && move(point)) return;
     }
     auto random=body.combatRandom;int x{},y{};
     if(rollRandom(random)&1) {x=4;y=int(limitedRandom(random,4));}
@@ -111,7 +111,7 @@ void followOwnerTrail(const Ports &ports,Companion &pet,const PlayerState &owner
                       const monsters::Actor &body,int distance) {
     const auto &area=ports.areas.at(body.area);
     const auto bodyWorld=nativePosition(body.position)+area.definition.origin;
-    const auto finalWorld=nativePosition(owner.routeDestination)+ports.areas.at(owner.area).definition.origin;
+    const auto finalWorld=nativeFeetCell(owner.routeDestination)+ports.areas.at(owner.area).definition.origin;
     const auto move=[&](Vec world,uint8_t type,uint8_t bound,int velocity,bool run) {
         monsters::MoveRequest request{pet.actor,{body.area,area.generation,world-area.definition.origin},{},0,velocity,run};
         request.pathSteps=1;request.pathType=type;request.pathDistance=bound;
@@ -130,7 +130,7 @@ void followOwnerTrail(const Ports &ports,Companion &pet,const PlayerState &owner
     }
     // This is the final native PETAI motion-1 WanderToTarget branch, not an
     // extra search/teleport policy invented for failed bridge paths.
-    const auto ownerWorld=nativePosition(owner.position)+ports.areas.at(owner.area).definition.origin;
+    const auto ownerWorld=nativeFeetCell(owner.position)+ports.areas.at(owner.area).definition.origin;
     const unsigned radius=unsigned(std::max(distance/4,4));
     int x=0,y=0;auto random=body.combatRandom;
     if(rollRandom(random)&1) {x=int(radius);y=int(limitedRandom(random,radius));}
@@ -216,8 +216,8 @@ DomainResult<std::shared_ptr<System::HirelingBirthPublication>> System::prepareH
     std::optional<Vec> position;
     std::vector<std::pair<Vec,int>> attempts;
     if(loadedDead) position=Vec{};
-    else if(seller) {attempts.emplace_back(*seller,4);attempts.emplace_back(player->position,4);}
-    else for(const int radius:{4,6,12}) attempts.emplace_back(player->position,radius);
+    else if(seller) {attempts.emplace_back(*seller,4);attempts.emplace_back(nativeFeetCell(player->position),4);}
+    else for(const int radius:{4,6,12}) attempts.emplace_back(nativeFeetCell(player->position),radius);
     const auto collision=ports_.spatial.nativeCollisionSample();
     for(const auto &[center,radius]:attempts) {
         const auto global=center+area.definition.origin;
@@ -349,12 +349,16 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
     if(!body->alive() || body->life<=0 || p->persistent.player.hp<=0) {ports_.monsters.stop(pet.actor);return StepStatus::Complete;}
     const auto &bodyArea=ports_.areas.at(body->area);
     const int distanceToOwner=ownerDistance(nativePosition(body->position)+bodyArea.definition.origin,
-        nativePosition(p->position)+area.definition.origin,body->rule.size);
+        nativeFeetCell(p->position)+area.definition.origin,body->rule.size);
     const bool walking=!body->route.empty() || body->moving;
     if(!walkingConnection(ports_.areas,body->area,p->area) || pet.ownerTeleport!=p->teleportRevision) {
         if(body->revision==UINT64_MAX) return StepStatus::Blocked;
-        auto candidate=*body;candidate.area=p->area;
-        candidate.position={std::floor(p->position.x)+.5f,std::floor(p->position.y)+.5f};
+        const auto position=nativeFeetCell(p->position);
+        // Movement may precede the ordinary walking-area transfer in this
+        // frame. Let that transfer finish; blocking this AI event would keep
+        // the owner in the old area forever. Do not consume ownerTeleport yet.
+        if(!area.definition.activation.room(position+Vec{.5f,.5f})) {pet.nextDecision=tick.tick+1;return StepStatus::Complete;}
+        auto candidate=*body;candidate.area=p->area;candidate.position=position;
         candidate.revivalPosition=PointTarget{p->area,area.generation,candidate.position};
         candidate.route.clear();candidate.pathStep={};candidate.moving=candidate.running=false;++candidate.revision;
         candidate.teleportRevision=candidate.revision;
@@ -479,7 +483,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
     } else {
         if(mustWalk) {walkNear(ports_,*body,body->position,5);pet.nextDecision=tick.tick+5;return StepStatus::Complete;}
         const auto bodyRegion=logicalRegion(ports_.areas,body->area,body->position,nativePosition(body->position)+bodyArea.definition.origin);
-        const auto ownerRegion=logicalRegion(ports_.areas,p->area,p->position,nativePosition(p->position)+area.definition.origin);
+        const auto ownerRegion=logicalRegion(ports_.areas,p->area,p->position+Vec{.5f,.5f},nativeFeetCell(p->position)+area.definition.origin);
         if(bodyRegion && ownerRegion && bodyRegion!=ownerRegion) {
             followOwnerNear(ports_,pet,*p,*body,60);
             pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;

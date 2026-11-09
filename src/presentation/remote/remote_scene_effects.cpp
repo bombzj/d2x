@@ -36,6 +36,21 @@ const OnlineUnit *RemoteScene::Impl::questNearbyUnit(const OnlineView &view,cons
 void RemoteScene::Impl::observeQuestMissileEffects(const OnlineView &view,const Map &map,SceneView &shared,WorldDrawView &scene,float elapsed) {
     if(pd2) return;
     auto &quest=mapDisplay.questEffects;
+    const auto taintedSun=view.world.questEffectOccurrences[6];
+    if(quest.taintedSunOccurrence!=taintedSun) {
+        const auto count=taintedSun>=quest.taintedSunOccurrence?taintedSun-quest.taintedSunOccurrence:taintedSun;
+        quest.taintedSunOccurrence=taintedSun;
+        const auto *altar=questNearbyUnit(view,map,2,149);
+        if(altar && view.load.playerUnitId) {
+            const Vec at{float(altar->position->x)+.5f,float(altar->position->y)+.5f};
+            ClientMissileInitialization initialization;initialization.sourceSkill=0;
+            initialization.parameters=std::array<int32_t,2>{0,int32_t(altar->key.id)};
+            for(uint64_t index=0;index<count;++index)
+                if(!shared.launchClientMissile(350,at,at,1,0,{},-1,effectOwner({0,*view.load.playerUnitId}),false,0,
+                    ClientMissileSource::Program,0,{},0,initialization))
+                    effectLimitations.insert("Tainted Sun: original client missile resource unavailable");
+        }
+    }
     const auto staff=view.world.questEffectOccurrences[3];
     if(quest.staffOccurrence!=staff) {
         const auto count=staff>=quest.staffOccurrence?staff-quest.staffOccurrence:staff;quest.staffOccurrence=staff;
@@ -1799,6 +1814,20 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             else if (const auto owner = v.world.units.find(event.source); owner != v.world.units.end())
                 missileCastRevisions[event.source] = owner->second.actionRevision;
             if (own) localCast.reset();
+            if(own && usedSkill) {
+                combat.clearLocalUsedSkill(usedSkill->revision,onlineIntentContext(v));usedSkill.reset();
+            }
+            if(own) if(const auto owner=v.world.units.find(event.source);owner!=v.world.units.end() &&
+                owner->second.usedSkill==event.skill && owner->second.actionRevision==event.worldRevision) {
+                if(const auto *visual=character(owner->second,false,town,shared);visual && visual->fps>0) {
+                    const auto received=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count());
+                    const float age=received>=event.receivedMilliseconds?float(received-event.receivedMilliseconds)/1000.f:0.f;
+                    usedSkill=UsedSkill{*event.skill,event.worldRevision,time-age,
+                        visual->holdFrame>=0?std::numeric_limits<float>::infinity():visual->duration()};
+                    combat.setLocalUsedSkill(usedSkill->skill,usedSkill->revision,owner->second.actionRevision,onlineIntentContext(v));
+                }
+            }
         }
     }
     for(const auto &release:monsterEffects.advance(v.world,time)) {
@@ -1829,10 +1858,10 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         if(source!=v.world.units.end() && !onlinePlayerDead(v.world) && target!=v.world.units.end() && unitClass(target->second) && target->second.mode==0 &&
             (!localCast || (localCast->started>=0 && time>=localCast->started+localCast->duration))) {
             for(size_t row=0;row<objects.rows().size();++row)
-                if(objects.number(row,"Id")==unitClass(target->second) && objects.number(row,"OperateFn")==5)
+                if(objects.number(row,"Id")==unitClass(target->second) &&
+                    (objects.number(row,"OperateFn")==5 || (!pd2 && objects.number(row,"Id")==149 && objects.number(row,"IsAttackable0").value_or(0))))
                     for(const auto &[id,skillRow]:skillRows)
                         if(skills.number(skillRow,"srvstfunc")==2 && skills.number(skillRow,"srvdofunc")==2) {
-                            // Native barrel operation invokes hidden KK; PlrMsg omits the owner's 4C.
                             OnlineCombatCommand command;command.action=OnlineCombatCommand::Action::Cast;
                             command.skill=id;command.target=*interaction->unit;command.stationary=true;
                             localCast=LocalCast{command,source->second.actionRevision,time,-1,0,interaction->revision};
@@ -1865,6 +1894,9 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     shared.cancelPendingClientMissiles(effectOwner(owner));
             }
             if (localChannel) localCast.reset();
+            if(localChannel && usedSkill) {
+                combat.clearLocalUsedSkill(usedSkill->revision,onlineIntentContext(v));usedSkill.reset();
+            }
         } else if (request->command.action != OnlineCombatCommand::Action::SelectSkill &&
                    request->command.action != OnlineCombatCommand::Action::BindHotkey &&
                    request->command.action != OnlineCombatCommand::Action::Stop)
@@ -1893,6 +1925,9 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             movementInterrupt ||
             ((localCast->started < 0 || unconfirmedLeap || unconfirmedCharge) && time - localCast->requested > 15.f)) {
             if (playerId) shared.cancelPendingClientMissiles(effectOwner({0, *playerId}));
+            if(usedSkill) {
+                combat.clearLocalUsedSkill(usedSkill->revision,onlineIntentContext(v));usedSkill.reset();
+            }
             localCast.reset();
         }
         else if(localCast->started>=0 && motion[u.key].leapLanding>=0) {
@@ -1932,6 +1967,8 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 if (!visual || visual->fps <= 0) localCast.reset();
                 else {
                     localCast->started = time; localCast->duration = visual->holdFrame>=0?std::numeric_limits<float>::infinity():visual->duration();
+                    usedSkill=UsedSkill{localCast->command.skill,localCast->revision,time,localCast->duration};
+                    combat.setLocalUsedSkill(usedSkill->skill,usedSkill->revision,u.actionRevision,onlineIntentContext(v));
                     if (skills.number(row->second,"srvdofunc").value_or(-1) == 27) {
                         const auto &display = motion[u.key];
                         const auto feet = display.last ? display.position + display.correction
@@ -2048,7 +2085,19 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         if(!diablo && !arctic && channel.next<time) channel.next=time; // Clt54/56 retain every native callback.
         ++it;
     }
-    if(localCast && channelSkill(localCast->command.skill) && localCast->started>=0 && playerId && !channels.contains({0,*playerId})) localCast.reset();
+    if(localCast && channelSkill(localCast->command.skill) && localCast->started>=0 && playerId && !channels.contains({0,*playerId})) {
+        if(usedSkill) {combat.clearLocalUsedSkill(usedSkill->revision,onlineIntentContext(v));usedSkill.reset();}
+        localCast.reset();
+    }
+    if(usedSkill && localCast && localCast->revision==usedSkill->revision)
+        usedSkill->duration=localCast->duration;
+    if(usedSkill && (time>=usedSkill->started+usedSkill->duration || onlinePlayerDead(v.world) ||
+        (v.world.movementRequest && v.world.movementRequest->revision>usedSkill->revision && !localCastBlocksMovement()) ||
+        (source!=v.world.units.end() && source->second.actionRevision>usedSkill->revision &&
+            (source->second.nativeMode?(source->second.mode==0 || source->second.mode==4 || source->second.mode==17 || source->second.mode==19):
+                (source->second.mode==6 || source->second.mode==8 || source->second.mode==9 || source->second.mode==18 || source->second.mode==20))))) {
+        combat.clearLocalUsedSkill(usedSkill->revision,onlineIntentContext(v));usedSkill.reset();
+    }
     if (localCast && localCast->started >= 0 && time >= localCast->started + localCast->duration)
         localCast.reset(); // Released missiles have their own lifetime.
     std::erase_if(overlayVisuals, [&](const auto &effect) {

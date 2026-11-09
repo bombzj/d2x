@@ -16,6 +16,8 @@ AI通过`RemoteCombat::skillDelayFrames／skillDelayActive`与提交入口共用
 
 ## 技能执行路径源码核对
 
+普通人形SC施法区分客户端完成／再次输入和宿主`ENDANIM`清理：`normalCastTiming`按当前MPQ动画与FCR计算前者，`playerActionTimeline`保留原动作事件及较晚一帧的结束事件。LoD普通SC在`SkillAction::recastAt`记录共享的输入边界；`skills::cast`只在旧释放已完成、未中断且没有受击恢复时允许新施法重入，成功提交新动作才取消旧时间线。此前宿主把`timeline.end`同时作为再次施法门槛，连续输入每次多排队一帧，使落点逐渐晚于客户端UsedSkill生命周期。释放帧、扣费、技能delay和未完成的异步释放不提前；无下一次施法仍按原ENDANIM清理。依据D2MOO `SUnit::sub_6FCBCE70`、`PlrModes::sub_6FC81890／D2GAME_PLRMODES_First`及[零售定点证据](../../resources/THIRD_PARTY.md#客户端usedskill与重定位淡入)。当前只开放普通人形SC的完成边界，不实现原版允许的全部提前替换；序列、引导、变形及PD2继续保留原门槛，不能据此宣称所有动作重入等价。
+
 怪物动作的1／2标记先于同帧ENDANIM兑现，`monsterActionEvent`不能因该帧同时结束动画而跳过SrvDo或最后一次原生联系；原版依据为D2MOO MonsterMode的技能动作回调和`sub_6FD13410`。当前MPQ的E9S2HTH仅两帧，第二帧标记1，陷阱的实际飞弹出生依赖这一公共顺序，不能只发布4C动作而漏掉服务端效果。
 
 伙伴AI区分逻辑决策期限与动作锁造成的实际唤醒期限；后者不属于原版显式未来AITHINK等待。AI101／104成功UseSkill后保留已到期的逻辑期限，公共ENDANIM沿MonStats aidel设置下一次思考；`companions::think`不把物理延迟改写成逻辑等待。依据D2MOO AiThink::AITHINK_Fn101_AssassinSentry及MonsterMode::sub_6FC64310；其他AI显式等待保持其原逻辑期限。不同宿主墙钟推进速度应先校准，不能据原包秒数直接替换帧参数。

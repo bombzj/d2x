@@ -597,7 +597,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
         }
         if(enemy) {
             if(openDoor(c)) break;
-            if(approachPoint(c,*enemy->position,"remaining assigned Den hostile",2)) break;
+            if(approachEnemy(c,*enemy,"remaining assigned clear hostile")) break;
         }
         if(Clock::now()<population.readyAt) {
             wait("clear-room-assignments","Waiting briefly for units following the host's newly subscribed rooms");break;
@@ -623,7 +623,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
             if(distance<=2) {wait("clear-target-ready","Waiting for the observed remaining hostile's attackable state");break;}
             if(approachPoint(c,*remembered,"last observed remaining hostile",2)) break;
         }
-        explore(c,"host room subscriptions that may reveal remaining hostiles");
+        explore(c,"unexplored passages that may reveal remaining hostiles");
         if(phase=="explore-wait" && !c.walk.active() && Clock::now()>=questRun.sweepReady) {
             // Refresh the authoritative counter without erasing empty-room
             // knowledge and walking the same clear rooms every two seconds.
@@ -670,7 +670,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
             waitForWorldResult(c,step,"Waiting for the observed hunt target's actual attack eligibility");break;
         }
         target=unit->key;targetAssignment=unit->assignmentRevision;
-        if(!approachPoint(c,*unit->position,"quest hunt target",2)) explore(c,"reachable quest target");
+        approachEnemy(c,*unit,"quest hunt target");
         break;
     }
     }

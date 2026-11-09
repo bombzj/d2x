@@ -228,10 +228,8 @@ void RealmSession::Impl::observed(OnlineProtocolCounters &counters, const Packet
 
 bool RealmSession::Impl::duplicateNavigation(const Bytes &packet) {
     // Retail D2Client 1.13c RVA 14446..14462 compares the bytes of the
-    // preceding packet. A new destination remains eligible immediately.
-    if(packet!=lastNavigationPacket || Clock::now()-lastNavigationSent>=std::chrono::milliseconds(200)) return false;
-    error(OnlineErrorKind::Input,"Duplicate navigation packet");
-    return true;
+    // preceding packet. Suppression skips only the send, not the local intent.
+    return packet==lastNavigationPacket && Clock::now()-lastNavigationSent<std::chrono::milliseconds(200);
 }
 
 void RealmSession::Impl::sent(ByteStream &stream, Bytes bytes) {
@@ -244,6 +242,7 @@ void RealmSession::Impl::sent(ByteStream &stream, Bytes bytes) {
     Bytes navigation;
     if (&stream == &gs && id && ((*id >= 1 && *id <= 4) || *id == 0x13 || *id == 0x49))
         navigation = bytes;
+    if (!navigation.empty() && duplicateNavigation(navigation)) return;
     if (!stream.send(std::move(bytes)))
         throw ProtocolError("Protocol send queue unavailable");
     if (&stream == &gs) {

@@ -46,6 +46,7 @@ struct NativeRealmHost {
         : archives(a), root(std::move(directory)), preparation(mode) {}
     void initialize();
     void installPreparedArea(GameHandle, uint64_t request, PreparedWorldArea);
+    void installPreparedRoomInputs(GameHandle, const server::world::PrepareArea &, std::shared_ptr<const PreparedRoomTerrain>);
     void advance(double seconds);
     void publishEvents(GameHandle);
     void retire(PlayerBinding);

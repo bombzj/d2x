@@ -9,10 +9,16 @@ class AreaPreparation {
     struct Impl;
     std::unique_ptr<Impl> impl_;
   public:
-    struct Result { std::optional<PreparedWorldArea> area; std::string error; };
+    struct Result {
+      std::optional<PreparedWorldArea> area;
+      std::shared_ptr<const PreparedRoomTerrain> roomInputs;
+      std::string error;
+      int level{};
+      uint64_t submittedMilliseconds{},startedMilliseconds{},completedMilliseconds{};
+    };
     AreaPreparation(const Archives &, std::shared_ptr<const ClassicData>);
     ~AreaPreparation();
-    uint64_t submit(AreaGenerationRequest);
+    uint64_t submit(AreaGenerationRequest, std::vector<RoomTerrainId> roomInputs = {});
     std::optional<Result> take(uint64_t);
     void cancel(uint64_t);
 };

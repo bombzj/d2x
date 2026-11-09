@@ -17,6 +17,7 @@
 #include "content/world/world_catalog.hpp"
 #include "server/runtime/event_batch.hpp"
 #include <algorithm>
+#include <iostream>
 namespace d2x::hosting {
 void NativeRealmHost::initialize() {
     if (content) return;
@@ -57,27 +58,43 @@ void NativeRealmHost::installPreparedArea(GameHandle game, uint64_t request, Pre
     }
     projection->second = std::move(prepared.terrain);
 }
+void NativeRealmHost::installPreparedRoomInputs(GameHandle game,const server::world::PrepareArea &request,
+    std::shared_ptr<const PreparedRoomTerrain> inputs) {
+    server::world::PreparedArea prepared;
+    prepared.request=request.request;prepared.definition.id=request.destination;
+    prepared.definition.pd2Map=request.pd2Map;prepared.roomInputs=std::move(inputs);
+    if(!host.installArea(game,std::move(prepared))) throw std::runtime_error("Prepared room input handoff expired");
+}
 void NativeRealmHost::advance(double seconds) {
     using Clock=std::chrono::steady_clock;
-    const auto started=performanceObserver?Clock::now():Clock::time_point{};
+    const auto started=Clock::now();
+    const auto measure=[&](const char *stage,auto &&operation) {
+        const auto begin=Clock::now();
+        operation();
+        const auto end=Clock::now();
+        const auto milliseconds=std::chrono::duration<double,std::milli>(end-begin).count();
+        if(milliseconds>=40) std::clog << "[host-work] steady_ms="
+            << std::chrono::duration_cast<std::chrono::milliseconds>(end.time_since_epoch()).count()
+            << " stage=" << stage << " work_ms=" << milliseconds << '\n';
+    };
     // Exactly one advance per scheduler call, regardless of connected clients.
     host.advance(seconds);
-    const auto simulated=performanceObserver?Clock::now():Clock::time_point{};
+    const auto simulated=Clock::now();
     // Resource preparation never occupies the simulation scheduler. Consume
     // only the oldest request per game so completion timing cannot reorder IDs.
     for (auto &[game, areas] : terrain) {
         // Failed unpublished map openings retire authority before the host's
         // decoded terrain. Never leave an old map occupying a future handoff.
         std::erase_if(areas,[&](const auto &entry){return !host.areaMetadata(game,entry.first);});
-        preparePendingLoot(host, game, archives, *content, lootContent);
-        prepareMerchant(host, game, *content);
-        prepareCrafting(host, game, *content);
-        prepareQuests(host,game,archives,*content);
-        preparePendingHirelings(host,game,archives,*content,lootContent);
-        for(const auto &issue:preparePendingSummons(host,game,archives,*content))
+        measure("loot",[&]{preparePendingLoot(host, game, archives, *content, lootContent);});
+        measure("merchant",[&]{prepareMerchant(host, game, *content);});
+        measure("crafting",[&]{prepareCrafting(host, game, *content);});
+        measure("quests",[&]{prepareQuests(host,game,archives,*content);});
+        measure("hirelings",[&]{preparePendingHirelings(host,game,archives,*content,lootContent);});
+        measure("summons",[&]{for(const auto &issue:preparePendingSummons(host,game,archives,*content))
             for(auto *peer:peers) if(peer->binding && peer->binding->game==game) {
                 peer->counters.lastFailure=issue;++peer->counters.failures;
-            }
+            }});
         const auto pending = host.pendingAreas(game);
         if (!pending) continue;
         std::erase_if(areaPreparations,[&](const auto &entry) {
@@ -92,15 +109,22 @@ void NativeRealmHost::advance(double seconds) {
                 if (found == areaPreparations.end()) {
                     const auto catalog = sharedWorldCatalog(archives, request.settings.difficulty);
                     const auto &level = catalog->level(int(request.destination));
-                    const auto ticket = areaPreparation->submit({request.settings.mapSeed, level.act, level.id, request.settings.difficulty,request.settings.ladderMonsterStats(),request.pd2Map});
+                    const auto act=request.roomInputs.empty()?level.act:request.roomInputAct;
+                    const auto ticket = areaPreparation->submit({request.settings.mapSeed, act, level.id, request.settings.difficulty,request.settings.ladderMonsterStats(),request.pd2Map},request.roomInputs);
                     areaPreparations.emplace(key, ticket);
+                    std::clog << "[host-content] bind game=" << game.slot << ':' << game.generation
+                        << " request=" << request.request << " ticket=" << ticket << " level=" << int(request.destination) << '\n';
                     break;
                 }
                 auto result = areaPreparation->take(found->second);
                 if (!result) break;
                 areaPreparations.erase(found);
                 if (!result->error.empty()) throw std::runtime_error(result->error);
-                installPreparedArea(game, request.request, std::move(result->area.value()));
+                if(result->roomInputs) {
+                    measure("install-room-inputs",[&] {
+                        installPreparedRoomInputs(game,request,std::move(result->roomInputs));
+                    });
+                } else measure("install-area",[&]{installPreparedArea(game, request.request, std::move(result->area.value()));});
                 break;
             } catch (const std::exception &error) {
                 if (const auto found = areaPreparations.find(key); found != areaPreparations.end()) {
@@ -113,7 +137,7 @@ void NativeRealmHost::advance(double seconds) {
             }
         }
     }
-    const auto prepared=performanceObserver?Clock::now():Clock::time_point{};
+    const auto prepared=Clock::now();
     Clock::time_point eventsPublished;
     {
         struct MonsterPublicationScope {
@@ -125,18 +149,32 @@ void NativeRealmHost::advance(double seconds) {
                 for(auto *peer:peers) {peer->retainMonsterProjection=false;peer->monsterProjection.reset();}
             }
         } projections{peers};
-        for (const auto &[game, areas] : terrain) { (void)areas; publishEvents(game); }
-        eventsPublished=performanceObserver?Clock::now():Clock::time_point{};
+        for (const auto &[game, areas] : terrain) { (void)areas; measure("events",[&]{publishEvents(game);}); }
+        eventsPublished=Clock::now();
         for (auto *peer : peers) if (peer->binding && peer->peer.phase == GamePhase::Entered) {
             try {
                 const auto view = host.read(*peer->binding);
-                peer->publishAreas(view->actor.region); peer->publishGroundItems(); peer->publishPlayers(); peer->publishMonsters(); peer->publishMissiles(); peer->publishCorpses(); peer->publishObjects(); peer->publishNpcs(); peer->publishShop(); peer->publishPortals(); peer->publishItemSkills(); peer->publishMotion();
-                peer->publishInventoryRefresh(); peer->publishRoomRemovals(); peer->publishLoadComplete();
+                measure("publish-areas",[&]{peer->publishAreas(view->actor.region);});
+                measure("publish-ground-items",[&]{peer->publishGroundItems();});
+                measure("publish-players",[&]{peer->publishPlayers();});
+                measure("publish-monsters",[&]{peer->publishMonsters();});
+                measure("publish-missiles",[&]{peer->publishMissiles();});
+                measure("publish-corpses",[&]{peer->publishCorpses();});
+                measure("publish-objects",[&]{peer->publishObjects();});
+                measure("publish-npcs",[&]{peer->publishNpcs();});
+                measure("publish-shop",[&]{peer->publishShop();});
+                measure("publish-portals",[&]{peer->publishPortals();});
+                measure("publish-item-skills",[&]{peer->publishItemSkills();});
+                measure("publish-motion",[&]{peer->publishMotion();});
+                measure("publish-inventory",[&]{peer->publishInventoryRefresh();});
+                measure("publish-room-removals",[&]{peer->publishRoomRemovals();});
+                measure("publish-load-complete",[&]{peer->publishLoadComplete();});
             } catch (const std::exception &error) {
                 peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();
             }
         }
     }
+    const auto published=Clock::now();
     if(performanceObserver) {
         const auto now=Clock::now();
         const auto ns=[](auto duration){return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count());};
@@ -181,6 +219,13 @@ void NativeRealmHost::advance(double seconds) {
             if(peer->counters.lastFailure!=error.what()) {peer->counters.lastFailure=error.what();++peer->counters.failures;}
         }
     }
+    const auto finished=Clock::now();
+    const auto ms=[](auto duration){return std::chrono::duration<double,std::milli>(duration).count();};
+    if(ms(finished-started)>=40) std::clog << "[host-pump] steady_ms="
+        << std::chrono::duration_cast<std::chrono::milliseconds>(finished.time_since_epoch()).count()
+        << " total_ms=" << ms(finished-started) << " simulation_ms=" << ms(simulated-started)
+        << " preparation_ms=" << ms(prepared-simulated) << " events_ms=" << ms(eventsPublished-prepared)
+        << " publication_ms=" << ms(published-eventsPublished) << " cleanup_ms=" << ms(finished-published) << '\n';
 }
 void NativeRealmHost::publishEvents(GameHandle game) {
     const auto pending = host.pendingEvents(game); if (!pending) return;

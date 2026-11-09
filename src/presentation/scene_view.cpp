@@ -119,12 +119,18 @@ const SkillOverlayVisual *SceneView::overlayVisual(int id) { return assets_.ensu
 void SceneView::clearClientMissiles() {
     clientMissiles_.clear();
     clientMissileHiddenOwners_.clear();
+    clientMissileObjectOverlays_.clear();
     assets_.sceneAudio.reset();
 }
 const std::vector<SceneView::ClientMissile> &SceneView::clientMissiles() const { return clientMissiles_; }
 std::vector<EntityId> SceneView::takeClientMissileHiddenOwners() {
     std::vector<EntityId> result;
     result.swap(clientMissileHiddenOwners_);
+    return result;
+}
+std::vector<ClientMissileObjectOverlay> SceneView::takeClientMissileObjectOverlays() {
+    std::vector<ClientMissileObjectOverlay> result;
+    result.swap(clientMissileObjectOverlays_);
     return result;
 }
 void SceneView::retireClientMissileRoom(const std::array<int,3> &room) {

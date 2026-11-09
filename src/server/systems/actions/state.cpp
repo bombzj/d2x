@@ -136,6 +136,11 @@ bool State::coolingDown(EntityId actor, uint64_t tick) const {
     const auto found = casts.find(actor);
     return found != casts.end() && found->second.cooldownUntil > tick;
 }
+bool State::canRecast(EntityId actor, uint64_t tick) const {
+    const auto found=casts.find(actor);
+    return found!=casts.end() && !found->second.interrupted && found->second.recastAt &&
+        tick>=found->second.recastAt && !releases_->pending.contains(actor) && !releases_->monsters.contains(actor);
+}
 void State::cancel(EntityId actor) {
     const auto current=releases_->pending.find(actor);
     if(current==releases_->pending.end() || !current->second.delayPublicationUntil) cancelTimeline(actor);

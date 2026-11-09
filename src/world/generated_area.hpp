@@ -43,4 +43,7 @@ class AreaGenerator {
 // The Map is an offline authored-content projection and retains its libraries.
 // Only roomTerrain may supply authority terrain and active-room initial seeds.
 GeneratedArea generateArea(Archives &, AreaGenerationRequest);
+// Selective resource reload; no offline map projection or gameplay content.
+std::shared_ptr<const PreparedRoomTerrain> generateRoomInputs(Archives &, AreaGenerationRequest,
+    std::span<const RoomTerrainId>);
 } // namespace d2x

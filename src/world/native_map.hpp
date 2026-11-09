@@ -33,6 +33,7 @@ class NativeMapGenerator {
         std::vector<size_t> rooms;
     };
     std::map<int, Level> levels_;
+    std::map<int,std::vector<std::array<int,3>>> townPresetPositions_;
     // Global game-tile buckets; only allocated rooms participate in lookups.
     std::map<std::pair<int,int>, std::vector<size_t>> roomBuckets_;
     std::map<std::pair<int, uint32_t>, std::shared_ptr<RetailTileSelector>> selectors_;
@@ -55,8 +56,10 @@ class NativeMapGenerator {
     // Decode all inputs needed by this level's three DRLG reference rings.
     // Does not prepare lazy preset units or materialize linked room tiles /
     // collision. Outdoor substitution inputs retain their isolated seed draws.
+    // A nonempty room list decodes only those anchors for an existing session's
+    // restore(); it is not a standalone topology or an include() package.
     std::shared_ptr<const PreparedRoomTerrain> prepareRoomTerrain(int level,
-        std::shared_ptr<const WorldCatalog>);
+        std::shared_ptr<const WorldCatalog>, std::span<const RoomTerrainId> rooms = {});
     size_t reveal(int level, int tileX, int tileY);
     // Allocation order; MPQ AutoMap presets also initialize their native rooms.
     std::vector<size_t> levelRooms(int level);
@@ -79,6 +82,7 @@ class NativeMapGenerator {
     // BH LK Chest Lines: resolved preset object classes (Objects.txt Id) with
     // global subtile coordinates; empty until the level is allocated.
     std::vector<std::array<int, 3>> levelPresetObjects(int level) const;
+    const std::vector<std::array<int,3>> &townPresetPositions(int level);
     bool waypointObject(int id) const {return identities_.waypointObject(id);}
     const auto &layout() const { return layout_; }
     const auto &tiles() const { return tiles_; }

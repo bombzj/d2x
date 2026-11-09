@@ -20,6 +20,8 @@
 
 原版新增的共享`skilldelay`状态发布与客户端禁用明确限于LoD配置；PD2仍保留既有冷却路径。当前PD2独立／共享冷却及图标规则尚未核实，不能由原版冰封球25帧或此次修复推定。公共delay公式求值继续使用当前资料，不固定职业或技能编号。
 
+LoD普通人形SC的完成边界重入（`SkillAction::recastAt`）同样暂不向PD2开放。PD2继续使用既有动作门槛；当前核心的重入、附加传送释放和客户端时序尚未定点闭合，不能把LoD连续传送的修复当作PD2连传已对齐。公共算法及LoD范围见[技能执行路径](../gameplay/skills/COMMON.md#技能执行路径源码核对)。
+
 较大差异位于`src/content/pd2/{skill_data,aura_data,curse_data,summon_data,corpse_data}.cpp`、`src/server/systems/{skills,combat,missiles,effects}/pd2`及`src/gameplay/effects/pd2`；德鲁伊／刺客复用各自领域执行器并按固定规则选择分支。参数来自当前MPQ，内核不读取MPQ。PD2普通飞弹接触同样经过公共`missiles/motion::collisionContacts`，单位位置到原生子格的转换与动态占位保持一致，规则及未验证边界见[公共飞弹接触](../gameplay/combat/MISSILES.md#飞弹数值与接触收尾源码)；这不是PD2专属尺寸或命中范围改动。
 
 | 职业／机制 | 当前执行范围及入口 |

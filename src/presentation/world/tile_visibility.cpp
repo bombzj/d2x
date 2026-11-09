@@ -95,7 +95,7 @@ void TileVisibility::update(const MapTerrain &terrain, Vec position, int originX
         const auto *region = room.singleLogicalRegion ? nullptr : logical(room,tile.x,tile.y);
         const bool front = region && region->index != observerIndex &&
             (playerX < region->left || playerY < region->top);
-        if (!(tile.flags & 4)) {
+        if (tile.type != 15 && !(tile.flags & 4)) {
             if (front && !(state.flags & 1)) {
                 transition(state,255,128,now + 500 + 500 * (state.red - 255) / 255);
                 state.flags |= 1;

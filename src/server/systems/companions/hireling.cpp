@@ -4,6 +4,7 @@
 #include "server/runtime/facts/combat.hpp"
 #include "server/runtime/facts/npc.hpp"
 #include "system.hpp"
+#include "gameplay/units/coordinates.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -243,8 +244,8 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             const auto *live=ports_.monsters.find(id);
             if(!live || live->alive() || live->revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
             auto candidate=*live;
-            const Vec restored{std::floor(player->position.x)+.5f,std::floor(player->position.y)+.5f};
-            if(!ports_.areas.at(actor.area).definition.activation.room(restored)) return {DomainStatus::Unavailable,{}};
+            const Vec restored=nativeFeetCell(player->position);
+            if(!ports_.areas.at(actor.area).definition.activation.room(restored+Vec{.5f,.5f})) return {DomainStatus::Unavailable,{}};
             candidate.area=actor.area;candidate.position=candidate.home=restored;candidate.roomless=false;
             candidate.revivalPosition=PointTarget{actor.area,actor.areaGeneration,restored};
             candidate.life=candidate.maximumLife;candidate.inactivePet=candidate.petUnregistered=false;
@@ -295,7 +296,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             }
             if(live->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
             auto candidate=*live;
-            candidate.area=actor.area;candidate.position={std::floor(player->position.x)+.5f,std::floor(player->position.y)+.5f};
+            candidate.area=actor.area;candidate.position=nativeFeetCell(player->position);
             candidate.revivalPosition=PointTarget{actor.area,actor.areaGeneration,candidate.position};
             candidate.route.clear();candidate.pathStep={};candidate.moving=candidate.running=false;++candidate.revision;
             actors.emplace(id,std::move(candidate));

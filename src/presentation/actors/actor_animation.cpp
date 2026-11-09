@@ -159,6 +159,8 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
             const auto animation=prepareCastAnimationTiming(int(record->frames),record->speed,record->frameFlags);
             if (!animation) return {};
             const auto timing=normalCastTiming(*animation,*request.fasterCast);
+            // This completion also gates input and UsedSkill retirement.
+            // The host's later ENDANIM cleanup is not the client cast period.
             result.fps=float(timing.speed)*25.f/256.f;
             result.releaseTime=float(timing.impact)/25.f;
             result.durationFrames=timing.duration;

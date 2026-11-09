@@ -129,6 +129,25 @@ std::vector<std::array<int, 3>> NativeMapGenerator::levelPresetObjects(int level
         for (const auto &[key, units] : found->second.maze->presetUnits) { (void)key; add(units); }
     return result;
 }
+const std::vector<std::array<int,3>> &NativeMapGenerator::townPresetPositions(int level) {
+    if(const auto cached=townPresetPositions_.find(level);cached!=townPresetPositions_.end()) return cached->second;
+    std::vector<std::array<int,3>> result;
+    const auto found=levels_.find(level);
+    if(!catalog_.level(level).town || found==levels_.end()) return townPresetPositions_.emplace(level,std::move(result)).first->second;
+    std::set<RetailPresetKey> visited;
+    for(const auto index:found->second.rooms) {
+        const auto &room=tiles_.rooms().at(index).room;
+        if(!room.preset || !visited.emplace(level,room.preset,room.file,room.mapX,room.mapY).second) continue;
+        const auto &source=pattern(catalog_.presets().at(room.preset).variants.at(size_t(room.file)));
+        for(const auto &object:source.objects) {
+            if(object.type!=1) continue;
+            const auto unit=identities_.resolveUnit(object,source.version,source.act,room.mapX,room.mapY);
+            if(unit && unit->unit.type==1 && unit->identityResolved)
+                result.push_back({unit->unit.id,unit->unit.x,unit->unit.y});
+        }
+    }
+    return townPresetPositions_.emplace(level,std::move(result)).first->second;
+}
 std::vector<size_t> NativeMapGenerator::near(size_t index) {
     const auto &room = tiles_.rooms().at(index);
     if (!room.near.empty()) return room.near;

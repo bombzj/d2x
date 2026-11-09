@@ -17,8 +17,10 @@ namespace d2x::server::world {
 // Area activation and prepared-area handoff; generation stays in the host.
 enum class Residency { Prepared, Active, Sleeping };
 struct AreaLease { RegionId area; uint64_t generation{}; Residency residency; };
-struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; std::shared_ptr<const pd2::MapInstance> pd2Map{}; uint64_t terrainGeneration{}; };
-struct PreparedArea { uint64_t request{}; AreaDefinition definition; };
+// Empty roomInputs requests the area's gameplay definition. A nonempty list
+// only rehydrates those known native rooms; it must not install an area.
+struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; std::shared_ptr<const pd2::MapInstance> pd2Map{}; uint64_t terrainGeneration{}; std::vector<RoomTerrainId> roomInputs{}; int roomInputAct{-1}; };
+struct PreparedArea { uint64_t request{}; AreaDefinition definition; std::shared_ptr<const PreparedRoomTerrain> roomInputs{}; };
 struct EnvironmentNotice {EnvironmentFact value;uint64_t revision{};};
 struct QuestPosition {RegionId area;Vec position;std::optional<RoomView> room{};};
 struct State { std::map<RegionId, AreaLease> residency; std::vector<PrepareArea> preparation; };
@@ -61,6 +63,9 @@ class System {
     void refreshRoomTerrain();
     bool roomInputsReady(RegionId) const;
     bool restoreRoomInputs(const AreaDefinition &);
+    bool restoreRoomInputs(const PrepareArea &, const PreparedRoomTerrain &);
+    DomainResult<uint64_t> requestAreaInputs(RegionId,std::shared_ptr<const pd2::MapInstance>);
+    DomainResult<uint64_t> requestRoomInputs(RegionId, int act, std::vector<RoomTerrainId>, std::shared_ptr<const pd2::MapInstance>);
     DomainResult<uint64_t> request(RegionId,std::shared_ptr<const pd2::MapInstance> = {});
     bool cancelPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &);
     void commitPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &) noexcept;

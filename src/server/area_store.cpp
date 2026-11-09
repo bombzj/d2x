@@ -9,6 +9,11 @@
 
 namespace d2x::server {
 namespace {
+Vec roomCoordinates(uint8_t kind,Vec position) {
+    // Players/monsters expose drawing feet. Missile motion already retains
+    // PATH's cell center; static units retain their authored coordinates.
+    return kind<=1?position+Vec{.5f,.5f}:position;
+}
 template<class Mask> bool nativeFieldBlocked(const CollisionField &field,int originX,int originY,int x,int y,uint16_t mask,const Mask &sample) {
     const auto direction=[&](int column,int row)->int {
         const auto atX=int64_t(field.width/2)+column-originX,atY=int64_t(field.height/2)+row-originY;
@@ -292,6 +297,7 @@ void AreaStore::setNativePatternMask(RegionId source,Vec position,NativeCollisio
 }
 std::optional<std::pair<RegionId,size_t>> AreaStore::unitRoom(RegionId region,Vec point) const noexcept {
     const auto *area=find(region);if(!area) return {};
+    // Callers normalize according to the registered unit kind exactly once.
     const auto *room=area->definition.activation.room(point);if(!room) return {};
     return std::pair{region,size_t(room-area->definition.activation.rooms().data())};
 }
@@ -302,7 +308,8 @@ std::shared_ptr<RoomUnitRegistration> AreaStore::prepareRoomUnit(EntityId id,uin
             ", kind="+std::to_string(kind)+", area="+std::to_string(int(region))+
             ", existing kind="+std::to_string(found->second.kind)+
             ", area="+std::to_string(found->second.room?int(found->second.room->first):0));
-    auto room=unitRoom(region,point);
+    const auto coordinates=roomCoordinates(kind,point);
+    auto room=unitRoom(region,coordinates);
     if(nativeRoom) {
         if(nativeRoom->area!=region) throw std::invalid_argument("Native room belongs to another area");
         const auto *area=find(region);if(!area) throw std::invalid_argument("Missing native room area");
@@ -315,7 +322,10 @@ std::shared_ptr<RoomUnitRegistration> AreaStore::prepareRoomUnit(EntityId id,uin
         if(index>=area->rooms.size() || !area->rooms[index].loaded) throw std::invalid_argument("Native admission room is not loaded");
         room=std::pair{region,index};
     }
-    if(!room) throw std::runtime_error("Unit admission has no native room");
+    if(!room) throw std::runtime_error("Unit admission has no native room: id="+std::to_string(id.value)+
+        ", kind="+std::to_string(kind)+", area="+std::to_string(int(region))+
+        ", position="+std::to_string(point.x)+","+std::to_string(point.y)+
+        ", cell="+std::to_string(std::floor(coordinates.x))+","+std::to_string(std::floor(coordinates.y)));
     std::map<EntityId,RoomUnitEntry> prepared;prepared.emplace(id,RoomUnitEntry{kind,room,{},{}});
     auto result=std::make_shared<RoomUnitRegistration>();result->node=prepared.extract(id);return result;
 }
@@ -360,7 +370,7 @@ void AreaStore::moveRoomUnit(EntityId id,RegionId region,Vec point) noexcept {
         body.area=region;body.x=int32_t(std::floor(global.x+.5f));body.y=int32_t(std::floor(global.y+.5f));
         setUnitCollision(id,body,found->second.reservation,found->second.collisionAlive);
     }
-    const auto room=unitRoom(region,point);auto &entry=found->second;
+    auto &entry=found->second;const auto room=unitRoom(region,roomCoordinates(entry.kind,point));
     if(room==entry.room) return;
     unlinkRoomUnit(id,entry);entry.room=room;linkRoomUnit(id,entry);
 }

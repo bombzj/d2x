@@ -21,6 +21,7 @@
 #include "server/systems/travel/system.hpp"
 #include "server/systems/quests/system.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/units/coordinates.hpp"
 #include <map>
 #include <vector>
 #include <span>
@@ -357,8 +358,8 @@ bool System::validateActors(const ActorPublication &plan) const {
                     !owner || !owner->entered || !area || area->generation!=placement.generation ||
                     (!revive && candidate.area!=owner->area) || placement.area!=candidate.area ||
                     placement.position.x!=candidate.position.x || placement.position.y!=candidate.position.y ||
-                    (!revive && (candidate.position.x!=std::floor(owner->position.x)+.5f || candidate.position.y!=std::floor(owner->position.y)+.5f)) ||
-                    !area->definition.activation.room(candidate.position)) return false;
+                    (!revive && (candidate.position.x!=nativeFeetCell(owner->position).x || candidate.position.y!=nativeFeetCell(owner->position).y)) ||
+                    !area->definition.activation.room(candidate.position+Vec{.5f,.5f})) return false;
             } else if(candidate.area!=live->area || candidate.position.x!=live->position.x || candidate.position.y!=live->position.y || candidate.roomless!=live->roomless) return false;
         } else {
             const bool restored=plan.restoredIdentities.contains(id);
@@ -492,7 +493,10 @@ DomainResult<std::map<EntityId,Actor>> System::prepareNativePet(const ActorConte
 DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec position) {
     const auto found=state_.actors.find(id);const auto *area=ports_.areas.find(owner.area);
     if(found==state_.actors.end() || (!(found->second.amazonPet && found->second.amazonPet->warp) && !(found->second.assassinPet && found->second.assassinPet->definition->warp) && !found->second.druidPet && !found->second.necroSummon && !found->second.hireling) || found->second.owner!=owner.player || !area || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
-    auto &pet=found->second;if(!area->definition.collision.walkable(position,pet.rule.collision)) return {DomainStatus::Unavailable,{}};
+    auto &pet=found->second;
+    // Linked collision can be clear in a neighboring area; publication still
+    // needs a room belonging to the requested destination area.
+    if(!area->definition.activation.room(position+Vec{.5f,.5f}) || !area->definition.collision.walkable(position+Vec{.5f,.5f},pet.rule.collision)) return {DomainStatus::Unavailable,{}};
     for(const auto &[other,body]:state_.actors) if(other!=id && body.alive() && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }
     const bool stopping=!pet.route.empty() || pet.moving || pet.running;

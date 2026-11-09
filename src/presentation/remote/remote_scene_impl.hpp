@@ -202,6 +202,8 @@ struct RemoteScene::Impl {
         std::optional<Vec> teleportFacing{};
     };
     std::optional<LocalCast> localCast;
+    struct UsedSkill {uint16_t skill{};uint64_t revision{};float started{},duration{};};
+    std::optional<UsedSkill> usedSkill;
     struct Channel {size_t skillRow{},missileRow{};int level{};float next{},started{};uint64_t revision{};OnlinePoint destination;std::optional<OnlineUnitKey> target;uint64_t random{};std::optional<float> until{};float releaseAt{};};
     std::map<OnlineUnitKey,Channel> channels;
     struct Pd2VisualSeed { uint64_t random{}; uint32_t path{}; };

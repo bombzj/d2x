@@ -18,7 +18,7 @@ bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
     if(step.witness) {
         if(step.target) if(const auto enemy=find(c,*step.target);enemy && c.combat.hostile(*enemy) &&
             c.combat.monsterTargetEligible(*enemy,false)) {
-            approachPoint(c,*enemy->position,"assigned quest drop carrier",2);return false;
+            approachEnemy(c,*enemy,"assigned quest drop carrier");return false;
         }
         const auto source=find(c,*step.witness,true);
         const auto point=source?source->position:area?c.town.knownTargetPosition(*area,step.witness->type,step.witness->identity):std::nullopt;
@@ -46,7 +46,7 @@ bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
         const auto distance=(Vec{float(unit.position->x),float(unit.position->y)}-c.position).length();
         if(distance<nearest) {nearest=distance;candidate=&unit;}
     }
-    if(candidate && approachPoint(c,*candidate->position,"observed figurine candidate",2)) {
+    if(candidate && approachEnemy(c,*candidate,"observed figurine candidate")) {
         questRun.sweepReady={};return false;
     }
     explore(c,"eligible elites for "+step.item);
@@ -54,7 +54,7 @@ bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
         if(questRun.sweepReady==Clock::time_point{}) questRun.sweepReady=now+std::chrono::seconds(5);
         if(now>=questRun.sweepReady) {
             ++questRun.materialPhase;questRun.sweepReady={};cancelWalk(c);
-            visited.clear();unavailableRooms.clear();backtrackAttempts.clear();
+            frontierRoute.reset();
             note("quest-drop-search-next-area",std::to_string(destination));
         }
     } else questRun.sweepReady={};

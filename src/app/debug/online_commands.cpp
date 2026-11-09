@@ -286,6 +286,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     result["scene"]["layoutReason"] = scene.layoutReason;
     result["scene"]["nativeMapReady"] = scene.nativeMapReady;
     result["scene"]["nativeMapReason"] = scene.nativeMapReason;
+    result["scene"]["repositionFadeEndMilliseconds"] = scene.repositionFadeEndMilliseconds;
     const auto &loading=scene.mapLoading;
     const auto known=[](std::optional<bool> value) {return value?Json(*value):Json(nullptr);};
     result["scene"]["mapLoading"]={{"receivedSequence",loading.receivedSequence},{"consumedSequence",loading.consumedSequence},
@@ -340,6 +341,14 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                        {"rooms", Json::array()},
                        {"equipment", Json::array()},
                        {"attributes", Json::object()}};
+    result["world"]["localUsedSkill"] = v.world.localUsedSkill ? Json{
+        {"skill",v.world.localUsedSkill->skill},{"revision",v.world.localUsedSkill->revision}} : Json(nullptr);
+    result["world"]["playerRepositions"] = Json::array();
+    for(const auto &event:v.world.mapEvents) if(event.kind==OnlineMapEvent::Kind::PlayerReposition)
+        result["world"]["playerRepositions"].push_back({{"sequence",event.sequence},
+            {"position",{{"x",event.point.x},{"y",event.point.y}}},
+            {"receivedMilliseconds",event.receivedMilliseconds},{"usedSkill",optional(event.usedSkill)},
+            {"flags",event.repositionFlags},{"dead",event.dead}});
     const auto &social = v.world.social;
     result["world"]["skillHotkeys"] = Json::array();
     for (size_t slot=0; slot<v.world.skillHotkeys.size(); ++slot) {
@@ -1009,7 +1018,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             {"online", snapshot(session.read(), sceneSnapshot(), inventory.read())}};
         const auto memory=town.navigationMemory();
         response["online"]["navigationMemory"]={{"observedCells",memory.observedCells},{"targets",memory.targets},
-            {"connections",memory.connections},{"waypoints",memory.waypoints},{"restored",memory.restored}};
+            {"connections",memory.connections},{"waypoints",memory.waypoints}};
         if(command=="online-world") {
             auto &boundaries=response["online"]["scene"]["walkingBoundaries"];boundaries=Json::array();
             for(const auto &edge:town.walkingBoundaries()) boundaries.push_back({{"destination",edge.destination},

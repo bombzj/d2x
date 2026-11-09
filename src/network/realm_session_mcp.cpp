@@ -264,6 +264,8 @@ void RealmSession::Impl::reset_area(bool preserveInitialPosition) {
     doorHighlights.clear();
     auto &world = view.world;
     ++world.interactionGeneration;
+    world.localUsedSkill.reset();
+    for(auto &[key,unit]:world.units) {(void)key;unit.usedSkill.reset();}
     world.playerTrade = {}; playerTradeDeadline = {};
     const auto player = view.load.playerUnitId;
     std::erase_if(world.units, [&](const auto &entry) {

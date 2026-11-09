@@ -10,7 +10,8 @@ Vec position(OnlinePoint p) {return {float(p.x),float(p.y)};}
 OnlinePoint point(Vec p) {
     if(!std::isfinite(p.x) || !std::isfinite(p.y) || p.x<0 || p.y<0 || p.x>65535 || p.y>65535)
         throw std::runtime_error("Combat position outside native coordinates");
-    return {uint16_t(std::floor(p.x)),uint16_t(std::floor(p.y))};
+    const auto feet=DebugExplorationMemory::playerCell(p);
+    return {uint16_t(feet.first),uint16_t(feet.second)};
 }
 std::optional<uint8_t> life(const OnlineUnit &unit) {
     if(!unit.lifePercent) return {};
@@ -49,6 +50,23 @@ void DebugAi::Impl::prepareCombatSkill(const Context &c) {
 }
 void DebugAi::Impl::observeCombat(Context &c) {
     const auto now=Clock::now();const auto &world=c.session.read().world;
+    // Reuse only an actually observed animation, under the same player,
+    // equipment and state inputs. A stale current-cast object cannot refresh
+    // the estimate after those inputs change.
+    const auto player=world.units.find({0,c.session.read().load.playerUnitId.value_or(0)});
+    if(c.supplies && c.supplies->navigationFasterCast && c.supplies->observedCastSeconds && player!=world.units.end()) {
+        const auto sample=c.supplies->observedCastSeconds(definitions->skill("Teleport"));
+        const auto key=std::tuple{c.session.read().gameGeneration,player->first.id,player->second.assignmentRevision,
+            player->second.appearanceRevision,player->second.stateSequence,world.itemRevision,
+            c.supplies->navigationWeaponSet,*c.supplies->navigationFasterCast};
+        if(teleportTiming.key!=key) {
+            teleportTiming.key=key;teleportTiming.seconds.reset();
+            if(sample) teleportTiming.revision=sample->first;
+        } else if(sample && sample->first!=teleportTiming.revision) {
+            teleportTiming.revision=sample->first;
+            if(std::isfinite(sample->second) && sample->second>0) teleportTiming.seconds=sample->second;
+        }
+    } else {teleportTiming.key.reset();teleportTiming.seconds.reset();}
     if(c.supplies && c.supplies->maxLife) combatMaxLife=c.supplies->maxLife;
     if(world.life && (combatLifeSamples.empty() || now-combatLifeSamples.back().at>=debugInputRetryInterval))
         combatLifeSamples.push_back({now,*world.life});
@@ -69,6 +87,32 @@ void DebugAi::Impl::observeCombat(Context &c) {
         combatRun.lastLife=health;
     }
     if(unit->second.hitRevision>combatRun.hitRevision) {combatRun.hitRevision=unit->second.hitRevision;++combatRun.hits;}
+}
+bool DebugAi::Impl::approachEnemy(Context &c,const OnlineUnit &enemy,std::string purpose) {
+    if(!enemy.position) return false;
+    auto *knowledge=observeTerrain(c);const auto origin=c.town.read().origin;
+    if(!knowledge || !origin) {wait("combat-observation","Waiting for acquired approach terrain");return true;}
+    const auto skill=excursionSkill.value_or(policy.skill.value_or(definitions->skill("Attack")));
+    const auto row=definitions->skillRows.find(skill);
+    const bool melee=skill==definitions->skill("Attack") ||
+        (row!=definitions->skillRows.end() && definitions->skills.value(row->second,"range")=="h2h");
+    const int range=melee?3:std::min(policy.range,policy.engage);
+    const auto mask=definitions->attackMasks.find(skill);
+    const uint16_t attackMask=mask==definitions->attackMasks.end()?uint16_t(4):mask->second;
+    const Vec target{float(enemy.position->x),float(enemy.position->y)},offset{float(origin->x),float(origin->y)};
+    const auto &terrain=c.town.map()->grid;
+    std::vector<DebugExplorationMemory::Cell> stances;
+    for(int y=std::max(0,int(target.y)-range);y<=std::min(65535,int(target.y)+range);++y)
+        for(int x=std::max(0,int(target.x)-range);x<=std::min(65535,int(target.x)+range);++x) {
+            const Vec at{float(x),float(y)},local=at-offset+Vec{.5f,.5f};
+            if((at-target).length()>range || !knowledge->stand(x,y) ||
+                !terrain.collisionSegment(local,target-offset+Vec{.5f,.5f},attackMask)) continue;
+            stances.emplace_back(x,y);
+        }
+    // A real enemy supplies an identity and an attack perimeter, never a
+    // standable centre. Hunt/clear/drop and rescue gates share this route model.
+    if(approachPoint(c,*enemy.position,std::move(purpose),0,false,{},std::move(stances))) return true;
+    wait("combat-ready","At an observed attack stance; awaiting normal combat selection");return true;
 }
 bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool planningDefense) {
     const auto &view=c.session.read();const auto now=Clock::now();
@@ -126,12 +170,30 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
     std::vector<OnlineUnit> enemies;std::optional<OnlineUnit> chosen,obstructed,elite;
     float eliteDistance=float(policy.engage);
     const bool elitesOnly=!nearbyDefense && (fastTravel || (step && goals[cursor].routeDrop==questRun.step));
+    bool defensiveDanger=false;
+    if(nearbyDefense || policy.scope=="defensive") {
+        size_t nearby=0;
+        for(const auto &[key,unit]:view.world.units) {
+            if(key.type==1 && unit.position && c.combat.hostile(unit) && c.combat.monsterTargetEligible(unit,false) &&
+                (position(*unit.position)-c.position).length()<=policy.radius) ++nearby;
+        }
+        if(combatMaxLife && *combatMaxLife>0 && view.world.life) {
+            uint16_t peak=*view.world.life;
+            for(const auto &sample:combatLifeSamples) peak=std::max(peak,sample.life);
+            const auto health=uint64_t(*view.world.life)*100/unsigned(*combatMaxLife);
+            const auto loss=uint64_t(peak-*view.world.life)*100/unsigned(*combatMaxLife);
+            defensiveDanger=nearby>=size_t(policy.crowd) ||
+                (nearby && (health<unsigned(policy.retreatLifePercent) || loss>=unsigned(policy.lifeDropPercent)));
+        } else defensiveDanger=nearby>=size_t(policy.crowd);
+    }
     float nearest=clearing && step->action==QuestAction::Encounter && questRun.worldWait?
         float(std::max(policy.engage,2*encounterMovementRadius())):float(policy.engage);
     float nearestObstructed=nearest;
     for(const auto &[key,unit]:view.world.units) {
         if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false) ||
             (!mustClear(unit) && (!objective || objective->key!=key) && bypassedThreats.contains({key,unit.assignmentRevision}))) continue;
+        if(!defensiveDanger && (nearbyDefense || policy.scope=="defensive") && !mustClear(unit) &&
+            (!objective || objective->key!=key) && !seekingElite) continue;
         const float distance=(position(*unit.position)-c.position).length();
         if(nearbyDefense && distance>policy.radius && (planningDefense || key!=combatTarget) &&
             !(view.load.playerUnitId && unit.destinationUnit==OnlineUnitKey{0,*view.load.playerUnitId})) continue;
@@ -174,6 +236,11 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         if(combatTarget || combatOwned) {
             releaseCombat(c);retreatPoint.reset();
             const auto previous=combatTarget?view.world.units.find(*combatTarget):view.world.units.end();
+            if(!defensiveDanger && (nearbyDefense || policy.scope=="defensive") && !clearing && !nearObjective && !seekingElite) {
+                combatTarget.reset();combatRun={};
+                combatDiagnostics={{"status","travel-threat-contained"}};
+                note("combat-defense-released","Nearby pressure no longer requires stopping travel");return false;
+            }
             if(previous!=view.world.units.end() && previous->second.assignmentRevision==combatRun.assignment &&
                 !onlineMonsterCorpse(previous->second) && c.combat.hostile(previous->second)) {
                 if(combatRun.suspendedAt==Clock::time_point{}) {
@@ -183,6 +250,8 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
             }
             cancelWalk(c);combatTarget.reset();combatRun={};note("combat-clear");
         }
+        combatDiagnostics={{"status",clearing?"clear-awaiting-approach":"no-relevant-target"},
+            {"clearing",clearing},{"engageRadius",policy.engage}};
         return false;
     }
     const bool required=mustClear(*chosen) || (objective && chosen->key==objective->key);
@@ -331,7 +400,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         if(teleport && c.supplies && c.supplies->skillUsable)
             if(const auto usable=c.supplies->skillUsable(definitions->skill("Teleport"));usable && !*usable) teleport=false;
         Vec center=targetPosition;unsigned count=1;
-        for(const auto &enemy:enemies) {center=center+position(*enemy.position);++count;}
+        for(const auto &enemy:enemies) if(enemy.key!=chosen->key) {center=center+position(*enemy.position);++count;}
         center={center.x/count,center.y/count};
         const Vec radial=c.position-center;const float length=radial.length();
         const Vec tangent=length>0?Vec{-radial.y/length,radial.x/length}:Vec{1,0};
@@ -342,14 +411,28 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         };
         struct Candidate {OnlinePoint point;float score;};std::vector<Candidate> candidates;
         const float minimum=std::min(float(policy.kiteMinDistance),float(range)*.65f);
+        const float baseline=clearance(c.position),hazardBaseline=threatClearance(hazards,c.position);
+        auto &assessment=combatDiagnostics["kiteAssessment"];
+        assessment={{"enemyClearance",baseline},{"hazardClearance",hazardBaseline},{"desiredClearance",minimum},
+            {"teleportSeconds",teleportTiming.seconds?Json(*teleportTiming.seconds):Json(nullptr)}};
+        // A valid shot with adequate separation beats optional orbiting.
+        // These are AI spacing preferences, not monster reach/damage rules.
+        if(baseline>=minimum && hazardBaseline>=1) {
+            assessment["result"]="hold-effective-position";return {};
+        }
+        assessment["trigger"]=hazardBaseline<1?"observed-hazard":"close-enemies";
+        assessment["result"]="no-improving-position";
         for(const int radius:{policy.kiteDistance,std::max(3,policy.kiteDistance/2)}) for(int direction=0;direction<16;++direction) {
             const float angle=float(direction)*6.28318530718f/16;
             const Vec at=c.position+Vec{std::cos(angle),std::sin(angle)}*float(radius);
             if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535) continue;
             const auto destination=point(at);const Vec exact=position(destination),delta=exact-c.position;
             const float distance=delta.length(),toTarget=(exact-targetPosition).length(),safe=clearance(exact);
+            const float hazardSafety=threatClearance(hazards,exact);
             if(distance<3 || toTarget>range || safe<minimum || !tacticalPositionAllowed(c,exact) || !clearLine(exact,targetPosition) || threatClearance(hazards,exact)<1 ||
                 !grid.nativeMovementSegment(exact-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},playerMovement)) continue;
+            if(hazardBaseline>=1 && safe<baseline+1) continue;
+            if(hazardBaseline<1 && hazardSafety<hazardBaseline+1) continue;
             const auto landing=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && contains(room,exact);});
             if(landing==rooms.end() || (teleport && (source==rooms.end() || (landing!=source &&
                 std::find(source->near.begin(),source->near.end(),size_t(landing-rooms.begin()))==source->near.end())))) continue;
@@ -362,12 +445,29 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         // consume the shared full-path budget; Teleport validates known landings.
         for(size_t i=0;i<std::min<size_t>(4,candidates.size());++i) {
             const auto destination=candidates[i].point;const auto exact=position(destination);
-            if(teleport) {if(TeleportRooms(c).contains(exact)) return destination;continue;}
+            const auto record=[&](std::optional<float> walking) {
+                assessment["result"]="improve-safety";assessment["destination"]={destination.x,destination.y};
+                assessment["candidateEnemyClearance"]=clearance(exact);
+                assessment["candidateHazardClearance"]=threatClearance(hazards,exact);
+                assessment["walkSeconds"]=walking?Json(*walking):Json(nullptr);
+                assessment["movement"]=!teleport || (walking && teleportTiming.seconds && *walking<=*teleportTiming.seconds)?"walk":"teleport";
+            };
+            if(teleport) {
+                if(TeleportRooms(c).contains(exact) && (exact-c.position).length()<=mobilityPolicy.distance &&
+                    c.combat.teleportPathAllowed(*area,grid,c.position-offset,exact-offset)) {
+                    record(kiteWalkSeconds(c,exact));return destination;
+                }
+                continue;
+            }
             const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
             if(path.empty() || point(path.back()+offset)!=destination || path.size()>size_t(policy.kiteDistance*3+4) ||
                 !tacticalPathSafe(c,path,offset,hazards)) continue;
             if(std::any_of(path.begin(),path.end(),[&](Vec p) {const Vec at=p+offset;return (at-c.position).length()>2 &&
                 (clearance(at)<std::min(4.f,minimum) || threatClearance(hazards,at)<0);})) continue;
+            float length=0;Vec previous=c.position-offset+Vec{.5f,.5f};
+            for(const auto at:path) {length+=(at-previous).length();previous=at;}
+            record(c.supplies && c.supplies->movementSecondsPerUnit?
+                std::optional<float>{length * *c.supplies->movementSecondsPerUnit}:std::nullopt);
             return destination;
         }
         return {};
@@ -553,11 +653,13 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         if(destination) {
             releaseCombat(c);cancelWalk(c);run.kitePoint=destination;run.kiteUntil=now+std::chrono::seconds(4);
             combatDiagnostics["status"]="kite";combatDiagnostics["kiteDestination"]={destination->x,destination->y};
-            note("combat-kite-selected",std::to_string(destination->x)+","+std::to_string(destination->y));
+            note("combat-kite-selected",combatDiagnostics["kiteAssessment"].dump());
             walk(c,{{"goal","point"},{"x",destination->x},{"y",destination->y},{"interact",false},{"purpose","combat-kite"}});
             mobility(c);return true;
         }
-        run.orbitDirection=-run.orbitDirection;note("combat-kite-unavailable","No safe observed firing position; retain effect recovery and re-evaluate");
+        if(combatDiagnostics["kiteAssessment"].value("result",std::string{})=="hold-effective-position")
+            note("combat-kite-held",combatDiagnostics["kiteAssessment"].dump());
+        else {run.orbitDirection=-run.orbitDirection;note("combat-kite-unavailable",combatDiagnostics["kiteAssessment"].dump());}
     }
     if(aura && !selectSkill(c,*aura,OnlineSkillHand::Right)) {wait("combat-aura","Waiting for the normal battle aura selection");return true;}
     if(!selectSkill(c,skill,hand)) {wait("combat-select","Waiting for normal attack skill selection");return true;}

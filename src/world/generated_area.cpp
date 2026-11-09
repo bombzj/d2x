@@ -121,4 +121,13 @@ GeneratedArea generateArea(Archives &archives, AreaGenerationRequest request) {
     while (!generation.advance(std::chrono::steady_clock::time_point::max())) {}
     return generation.take();
 }
+std::shared_ptr<const PreparedRoomTerrain> generateRoomInputs(Archives &archives, AreaGenerationRequest request,
+    std::span<const RoomTerrainId> rooms) {
+    if(rooms.empty()) throw std::invalid_argument("Room input reload requires native anchors");
+    const auto catalog=sharedWorldCatalog(archives,request.difficulty);
+    TileLibraryCache libraries(archives);
+    NativeMapGenerator generator(archives,*catalog,libraries,request.act,request.seed,
+        request.difficulty,NativeRoomActivation::Side::Server);
+    return generator.prepareRoomTerrain(request.level,catalog,rooms);
+}
 } // namespace d2x

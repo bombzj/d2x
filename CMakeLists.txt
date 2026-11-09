@@ -587,6 +587,7 @@ add_executable(d2x
   src/app/debug/movement_diff.cpp
   src/app/debug/auto_walk.cpp
   src/app/debug/navigation_search.cpp
+  src/app/debug/exploration_memory.cpp
   src/app/debug/chat_command.cpp
   src/app/debug/ai.cpp
   src/app/debug/ai_behavior_log.cpp

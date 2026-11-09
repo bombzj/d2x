@@ -274,8 +274,9 @@ bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorp
     if(unit.key.type!=1) return false;
     // Corpse selectors do not consult live-unit alignment or killable.
     if(targetCorpse) return corpseSelectable(unit);
-    if(session_.read().protocolProfile=="lod113c" && unit.actionSkill) {
-        const auto skill=skills_.find(*unit.actionSkill);
+    const auto usedSkill=unit.actionSkill?unit.actionSkill:unit.stoppedSkill;
+    if(session_.read().protocolProfile=="lod113c" && usedSkill) {
+        const auto skill=skills_.find(*usedSkill);
         // D2MOO St51 clears the target/attack flags until St52 Emerge.
         // Native 4C/4D can report Submerge with monanim=xx, so an idle-S1
         // check alone misses tentacle heads. A new native action replaces

@@ -11,11 +11,14 @@
 #include "gameplay/quest/catalog.hpp"
 #include "gameplay/rules/formula.hpp"
 #include <chrono>
+#include <algorithm>
+#include <array>
 #include <deque>
 #include <functional>
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -104,9 +107,6 @@ struct DebugAi::Impl {
         int kiteIntervalMs=900,kiteDistance=6,kiteMinDistance=8,hazardLookaheadMs=350,hazardPadding=3;
     } policy;
     struct MobilityPolicy {std::string mode="auto";bool vigor=true;int distance=24;} mobilityPolicy;
-    std::optional<std::tuple<uint64_t,int,unsigned,uint64_t,uint64_t,uint16_t>> navigationTimingKey;
-    std::optional<float> navigationTeleportSeconds;
-    std::optional<std::pair<uint64_t,uint64_t>> navigationCastSample;
     struct EventPolicy : DebugWalkTiming {
         int waitSeconds=90,initialWaitMs=1000,doorInitialWaitMs=250,scrollInitialWaitMs=1000;
         int questLogDurationMs=2000,waypointCloseDelayMs=300;
@@ -143,6 +143,9 @@ struct DebugAi::Impl {
     size_t efficiencyObserved{};
     uint64_t observedWalkFailures{};
     bool phaseReported{};
+    struct StallWatch {std::optional<OnlinePoint> host;std::optional<uint16_t> area;Clock::time_point since{};unsigned reports{};} stallWatch;
+    std::set<OnlineUnitKey> loggedQuestAlerts;
+    void observeDiagnostics(const Context &);
     void goalStarted();
     void cancel(DebugAutoWalk &,RemoteControl &,RemoteCombat &,std::string);
     std::optional<uint16_t> area;std::optional<OnlineUnitKey> target;
@@ -153,41 +156,47 @@ struct DebugAi::Impl {
     uint64_t targetAssignment{};
     struct ExplorationReturn {
         uint16_t area{};bool returning{};Clock::time_point deadline;
-        std::set<std::tuple<int,int,int>> visited;
+        std::optional<uint16_t> waypoint;
     };
     std::optional<ExplorationReturn> explorationReturn;
-    std::map<std::tuple<int,int,int>,size_t> hubReturnCoverage;
     bool resumeExplorationReturn(Context &);
-    std::set<std::tuple<int,int,int>> visited;std::optional<std::tuple<int,int,int>> exploring;
     struct FrontierAttempt {
         Vec position;uint64_t geometryRevision{};Clock::time_point retryAt;
         bool reached{},retainAfterMove{};std::string outcome,reason;std::optional<OnlinePoint> relayGoal;
     };
     std::map<std::pair<uint16_t,uint16_t>,FrontierAttempt> frontierAttempts;
-    struct ViewpointAttempt {size_t observedCells{};Clock::time_point retryAt;};
-    std::map<std::pair<uint16_t,uint16_t>,ViewpointAttempt> viewpointAttempts;
     enum class ExplorationFocus {Coverage,Units,Connection};
-    struct ViewpointRoute {
-        OnlinePoint target;size_t observed;std::vector<Vec> origins;
-        std::vector<std::pair<int,int>> unseenTiles;
-        ExplorationFocus focus{ExplorationFocus::Coverage};
+    using TerrainMemory=DebugExplorationMemory::Area;
+    TerrainMemory *observeTerrain(const Context &);
+    struct TerrainLeg {std::optional<OnlinePoint> point;size_t nearest{};bool teleport{};};
+    TerrainLeg terrainLeg(const Context &,const std::vector<OnlinePoint> &path) const;
+    struct FrontierRoute {
+        uint16_t area{};OnlinePoint target;std::vector<OnlinePoint> path;
+        uint64_t passage{},evidence{};size_t bestRemaining{~size_t{}};unsigned stalls{};
+        Clock::time_point blockedSince{};std::optional<Clock::time_point> observationSince;
     };
-    std::optional<ViewpointRoute> viewpointRoute;
-    std::optional<std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,size_t,size_t,size_t>> explorationPrefetch;
-    struct BacktrackAttempt {size_t observedCells{};Clock::time_point retryAt;std::string reason;};
-    std::map<std::tuple<int,int,int>,BacktrackAttempt> backtrackAttempts;
+    std::optional<FrontierRoute> frontierRoute;
+    bool frontierWalking(const Context &) const;
+    bool exploreFrontier(Context &,const std::string &purpose,bool recoveryOnly,ExplorationFocus);
     std::set<std::tuple<uint16_t,uint8_t,uint16_t,uint16_t,uint16_t>> checkedHints;
-    size_t knownExploredRooms{};
-    uint64_t searchGeometryRevision{},mapCacheBuilds{},pathSearches{};
-    std::optional<Vec> searchPosition;Clock::time_point searchRetry{};
-    std::set<std::tuple<int,int,int>> unavailableRooms;
-    std::optional<OnlinePoint> interest;std::optional<uint16_t> travelDestination;
+    uint64_t mapCacheBuilds{},pathSearches{};
+    std::optional<uint16_t> travelDestination;
     std::vector<int> travelRoute;
     std::set<int> travelVisitedAreas;
     std::optional<uint16_t> unavailableWaypointArea;
     std::map<std::pair<int,int>,unsigned> failedWalkEdges;
     float travelLegCost(const Context &,int from,int to,std::optional<Vec> start) const;
-    std::optional<OnlinePoint> approachHint,approachFrontier,approachDetour;
+    std::optional<OnlinePoint> approachHint,approachFrontier;
+    struct ApproachObservation {
+        Json owner;
+        std::optional<OnlineUnitKey> unit;
+        uint64_t assignment{},passage{},evidence{};
+        OnlinePoint endpoint{};
+        std::optional<Clock::time_point> observationSince;
+        std::optional<OnlinePoint> relayRecovery;
+        std::shared_ptr<const NavigationSnapshot> relayTerrain;
+    } approachObservation;
+    std::map<std::pair<uint16_t,uint16_t>,Clock::time_point> suppressedHints;
     Json walkIntent;
     Json searchDiagnostics,approachDiagnostics,mobilityDiagnostics,travelDiagnostics;
     struct VaughtClues {
@@ -214,7 +223,6 @@ struct DebugAi::Impl {
         std::vector<OnlinePoint> views;size_t next{};
         bool prepared{},done{};Clock::time_point deadline{},settleUntil{};
     } coldPlainsSearch;
-    std::map<std::pair<uint16_t,uint16_t>,Clock::time_point> directedConnectionRetry;
     std::set<std::pair<OnlineUnitKey,uint64_t>> operatedDoors;
     std::optional<std::pair<OnlineUnitKey,uint64_t>> pendingDoor;
     Clock::time_point doorDeadline{};
@@ -338,6 +346,11 @@ struct DebugAi::Impl {
     std::optional<TravelSubmission> submittedTravel;
     std::map<std::tuple<uint16_t,OnlineUnitKey,uint64_t>,unsigned> travelRetries;
     bool mobilityHold{},mobilityTeleport{};uint64_t mobilityDiscontinuity{};
+    struct TeleportTimingObservation {
+        std::optional<std::tuple<uint64_t,uint32_t,uint64_t,uint64_t,uint64_t,uint64_t,unsigned,int>> key;
+        uint64_t revision{};
+        std::optional<float> seconds;
+    } teleportTiming;
     std::optional<OnlinePoint> mobilityTarget;Vec mobilityFrom;
     std::optional<OnlinePoint> mobilityGoal;uint16_t mobilityArea{};
     std::vector<Vec> mobilityRoute;float mobilityRouteProgress{},mobilityPendingProgress{},mobilityRouteLength{};
@@ -499,6 +512,7 @@ struct DebugAi::Impl {
         bool contains(Vec) const;
     };
     bool teleportAvailable(const Context &,bool resourceReady=true) const;
+    std::optional<float> kiteWalkSeconds(const Context &,Vec destination) const;
     bool selectSkill(Context &,uint16_t,OnlineSkillHand);
     std::optional<uint16_t> battleAura(const Context &) const;
     std::vector<Vec> travelLandingThreats(const Context &) const;
@@ -533,18 +547,18 @@ struct DebugAi::Impl {
     float routeCost(const Context &,const std::vector<int> &,std::optional<Vec> start={}) const;
     void refreshNavigationAttempts(const Context &);
     void recordFrontierAttempt(const Context &,OnlinePoint,std::string outcome,std::string reason={},std::optional<OnlinePoint> relayGoal={});
-    void deferViewpoint(const Context &,OnlinePoint,std::string reason,Json details);
     bool frontierCoolingDown(OnlinePoint,float radius,std::optional<OnlinePoint> relayGoal={}) const;
     bool tryTeleportAcrossExit(Context &,uint16_t);
+    bool approachWalkingConnection(Context &,uint16_t);
     bool travel(Context &,uint16_t,bool allowWaypoint=true);
-    void prefetchExploration(Context &);
-    bool explore(Context &,std::string,bool recoveryOnly=false,ExplorationFocus=ExplorationFocus::Coverage,bool planOnly=false);
+    bool explore(Context &,std::string,bool recoveryOnly=false,ExplorationFocus=ExplorationFocus::Coverage);
     bool approachKnown(Context &,const Selector &);
     void prepareVaughtClues();
     bool approachTerrainClue(Context &,const Selector &);
     bool observeColdPlainsWaypoint(Context &);
-    bool approachMonasteryConnection(Context &,uint16_t);
-    bool approachPoint(Context &,OnlinePoint,std::string,float vicinity=8,bool exploration=false,bool enterUnitRange=false);
+    bool approachPoint(Context &,OnlinePoint,std::string,float vicinity=8,bool exploration=false,std::optional<OnlineUnitKey> interaction={},
+        std::optional<std::vector<DebugExplorationMemory::Cell>> stances={});
+    bool approachEnemy(Context &,const OnlineUnit &,std::string);
     bool openDoor(Context &,bool frontier=false);
     bool approachTownGate(Context &,uint16_t destination);
     bool activateWaypoint(Context &,bool required=false);

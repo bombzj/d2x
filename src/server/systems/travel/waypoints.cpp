@@ -156,6 +156,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         Transition next{actor.area,*request.destination,*prepared.value,actor.areaGeneration,actor.sequence,request.source.id,p->position,{}}; next.kind=Kind::Waypoint;
         next.waypointRevision=access->second.revision;
         state_.transitions[actor.player]=next; auto &mutablePlayer=ports_.players.players_.at(actor.player); mutablePlayer.route.clear(); mutablePlayer.moving=false;
+        mutablePlayer.locomotionSequence=actor.sequence;
         return {DomainStatus::Applied,std::monostate{}};
     }
     if(request.kind==Kind::QuestObject) {

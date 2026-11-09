@@ -2,7 +2,7 @@
 
 AI任务、策略、恢复与验收入口统一见[调试任务AI](DEBUG_AI.md)和[文档分工](../README.md#调试任务ai文档)。内部调试回复若不能解析为JSON，返回明确失败，并在程序错误输出记录长度、错误位置及附近上下文；不因读取诊断而退出游戏，也不把失败解释为操作成功。
 
-`online-status`的`world.cinematic`记录真实S2C61程序号与观察修订，`frontend.page`在61/7通关画面实际生效时为Victory。该状态不提供伪造通知或任务完成指令；最终出口须经正常客户端交互，由服务端决定旅行与通知。
+`frontend.page`在ProtocolReady且当前游戏代次的场景、地图与局内UI就绪、无场景错误时返回`InGame`，不再把后台局前页面的`Loading`当作局内状态；尚未就绪时保留原页面名。`online-status`的`world.cinematic`记录真实S2C61程序号与观察修订，`frontend.page`在61/7通关画面实际生效时优先返回`Victory`。该状态不提供伪造通知或任务完成指令；最终出口须经正常客户端交互，由服务端决定旅行与通知。此上报修正尚未构建／运行验证。
 
 `debug-ai-start`默认加载完整`debug-ai.json`；`scenario=act1`或`act1-5`按幕筛选其中任务并保持配置顺序，`scenario=act1, questNumber=3`按原MPQ A1Q3编号选择马勒斯。其他scenario名称如campaign读取`debug-ai-campaign.json`，没有保留别名；仍可显式传configFile。启动参数`"activateAllWaypoints":true`要求离区前先确认本区传送点已开，完整五幕计划分幕补齐未途经的点。`debug-ai-reload-config`从同一完整文件提取可热改数值，保留计划／技能／移动模式；详细字段见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。不重置现实请求期限，也不改服务端规则。新解析尚未构建／运行。
 
@@ -67,6 +67,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 客户端自主行走
 
+坐标目标可用`exactPoint=true`要求抵达选中的整数格；AI的混合步行／传送中继使用此项，普通坐标目标默认保留一格容差。状态返回`exactPoint`，它不修改原移动碰撞或Host判定。
+
 批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方。各幕任务顺序由配置维护，源码只负责按幕／原资源任务编号选择及具体任务条件图，不再另存一套幕队列。历史Windows Release运行结果不认证本次新解析；实际覆盖和剩余组合以该专题为准。聊天可用`/debug-ai-start act3`、`/debug-ai-start act1 quest4`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和运行边界见该专题。
 
 新增第一幕六任务配方与200毫秒决策，以及`supplies`整计划药剂策略和`goals:[{action:'restock'}]`补给目标，支持低血／低法力饮药、正常货架购买和安全的缺药回城往返；这批源码已通过Windows Release构建并执行实机回归，实际奖励、药剂和补给覆盖见该专题。其他任务／五幕首领的前置覆盖限制见同一专题，不能把通用hunt视为所有任务已完成。
@@ -94,6 +96,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 需要捕捉可能被120帧窗口覆盖的停顿时，启动加`--frame-profile <新路径.jsonl>`；`performance.frameLog`提供路径、已写事件数、最大帧和错误。持久日志另含进程／系统内存、缺页／CPU累计、读写量、当前场景与Graphics资源计数，并单列采集耗时。用同EXE／同资源、无并行构建的原版Host客户端比较AI启停、换区／新单位加载与绘制等待；不能凭进程内存突增先归因AI，也不能把原版网络心跳持续误认为图形主循环没有卡帧。具体字段和限制见[长帧取证](BUILD_AND_RUN.md)。
 
+宿主标准错误新增耗时诊断：`[host-content] submit/bind/ready`按game、request、ticket和level关联区域内容任务，ready拆出queue_ms（排队）、work_ms（后台准备）、delivery_ms（结果完成至宿主取走）及total_ms；`[host-step] blocked/resumed`记录固定帧阻塞起止、tick、待区域请求、重试次数、wait_ms、积欠debt_ms及blocked_stage，单次执行达到40ms也输出slow和busiest子系统；`[host-work]`列达到40ms的具名内容准备／安装或协议发布调用，`[host-pump]`列达到40ms的模拟、准备、事件、发布和清理分段。steady_ms使用进程单调毫秒，与定位上下文同源，不直接等于包日志的相对启动微秒。阻塞重试不逐次刷日志，区域任务日志在队列锁外输出；日志本身仍有格式化和标准错误写出成本。诊断入口保存于既有stderr.log，不增加玩法消息或改变执行顺序；本批仅编辑器诊断／源码及补丁检查，未构建、未运行，不能据此宣称慢传送已消除。
+
 需要核对原服实际消息时，可在启动客户端时指定`--game-packet-log <新.jsonl>`，记录D2X客户端成功入发送队列的C2S和完成分帧、消费之前的S2C；`--host-packet-log <另一新.jsonl>`记录嵌入／TCP/IP宿主完成分帧、校验分派之前的C2S，以及成功入输出队列的S2C（批量输出拆成原包）。两者独立按JSONL记录sequence、相对启动微秒、endpoint、direction、包号、含包头长度和十六进制字节；客户端用gameGeneration区分入局，宿主用connection区分每次游戏字节连接，包含内存房主和TCP客人。握手和离局同样记录；入发送队列不表示对方已执行，收到C2S也不表示事务提交成功。
 
 应用层持有日志文件，network／宿主只有可选字节观察回调，默认关闭。已有文件拒绝覆盖，每文件达到64 MiB或写盘失败明确停止对应连接，不静默丢包。C2S68票据／令牌字段及C2S6C、S2CB3的角色字节置零，`redacted.offset/length`标明原字节范围；保留原长度／分片头，不把置零部分视为实际发包。BNCS／MCP认证内容不记录；未知长度导致不能分帧的TCP块也不在日志中。文件放忽略目录`artifacts/`，不提交。
@@ -114,7 +118,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 当前源码的`server-snapshot`增加`combatMetrics`与`spatial`。`combatMetrics.queueDepth`为完整近战等待数，`targetAttempts`为本步进入目标处理的次数（包括资格拒绝，不等于命中数）；`stages`按系统名输出本步`nanoseconds`、实例累计`calls`／`blocked`，覆盖空间、伙伴、AI、技能、怪物、弹体、效果和战斗。空间在帧事件前、Actor阶段和移动后同步，其耗时相加。`spatial`给出索引tick／generation、活单位数、本步查询数／被精筛候选数／返回数。快照查询不推进随机和玩法，计时仅观察，不参与调度；范围只含已接索引路径。后续同负载采样才能计算p50／p95／p99，不将单步耗时当作性能提升证明。
 
-`online-world.scene.monsters`返回当前已解析怪物的原classId、实际姓名／词缀和最终transform／randomTransform，复用显示姓名与调色路径；不是服务端真值或准入列表。online.navigationMemory只读返回observedCells／targets／connections／waypoints／restored；这是观察与位置提示缓存计数，不表示解锁或真实单位指派。跨进程探索保存覆盖本地角色及Realm路径，规则与侧文件边界见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。
+`online-world.scene.monsters`返回当前已解析怪物的原classId、实际姓名／词缀和最终transform／randomTransform，复用显示姓名与调色路径；不是服务端真值或准入列表。online.navigationMemory只读返回observedCells／targets／connections／waypoints，为本局自然探索与位置提示计数，不表示解锁或真实单位指派；重启按未知重新探索。跨进程只保存原版小地图图元，见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。
 
 `scene.automap.reveal`只读内部开图进度：enabled、state（disabled／running／complete／partial）、reason、rootLevel、roomsCompleted／roomsTotal、borrowed／released、activeRooms及逐level的layer／房间／图元／预设／已匹配出口数。范围是当前连续步行区域；完成后专用生成器销毁，activeRooms归零，借还数应平衡。逐level的complete表示房间遍历完毕，最终状态还要检查是否导出可显示图元；全部零图元返回partial及原因。`automap.revealedCells`仍只统计自然探索，既有`nativeCells`字段统计最终显示图元，含启用时的独立开图叠层；关闭后撤去，不能把该显示数当真实房间引用或存档内容。开图不提供服务端管理命令，普通PD2模式使用BH面板开关；原版无自动调用。细节见[内部开图](../architecture/BH_CODE_ISOLATION.md#内部实现与bh调用边界)。
 
@@ -128,6 +132,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 ```
 
 `online-world.scene.localCast`为本人当前施法表现的skill／age；age=-1表示仍待接近／开始，动作结束或真正中断后为null。`scene.clientMissiles`返回当前视觉队列的id、全局position、age和remaining；负age表示还没到释放帧，队列包含飞行及命中图形，不包含服务端伤害或命中真值。用它核对普通点击后Stop仍保留待释放飞弹、引导停止清理及生命周期；结合截图检查实际原图，不能仅凭服务端missileCount／伤害宣称客户端显示完成。
+
+`online.world.playerRepositions`从既有有界mapEvents中返回本人15冻结的sequence、position、receivedMilliseconds、usedSkill、flags和dead；`world.localUsedSkill`返回当前本地技能及修订，`scene.repositionFadeEndMilliseconds`为现有淡入截止值。三者用于区分收包时技能上下文与稍后绘制状态，不新增游戏事件或修改判据；时间为进程单调时钟，不能直接当日志相对启动微秒。这批输出尚未构建／运行。
 
 JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
 

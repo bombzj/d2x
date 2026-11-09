@@ -22,12 +22,11 @@ struct RemoteMapDisplayState {
     bool multiplayer{};
     bool running{true}; // Session preference survives terrain/act renderer replacement.
     Vec offset;
-    struct RepositionFade {
-        uint64_t gameGeneration{}, areaGeneration{}, revision{}, endMilliseconds{};
-    } repositionFade;
     struct QuestEffects {
         uint64_t gameGeneration{},denOccurrence{};
         uint64_t cairnOccurrence{},forgeOccurrence{},staffOccurrence{};
+        uint64_t taintedSunOccurrence{};
+        std::map<OnlineUnitKey,uint64_t> taintedSunLights;
         std::optional<OnlinePoint> openedTombEntrance;
         uint64_t nihlathakOccurrence{};
         uint64_t anyaOccurrence{};

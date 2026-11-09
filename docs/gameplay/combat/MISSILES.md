@@ -45,7 +45,7 @@ Hit39已接实际房间随机、Levels.mon／isSpawn选择、1.13c普通周界�
 
 原版依据入口为固定D2MOO的`D2Common/src/Units/Missile.cpp`、`D2Game/src/MISSILES/Missiles.cpp`／`MissMode.cpp`、`SKILLS/SkillAma.cpp`／`SkillPal.cpp`及`UNIT/SUnitDmg.cpp`，参数取当前MPQ。各程序、随机消费和全局顺序分别核对；已迁入的单个程序不能代表完整飞弹执行链。
 
-`missiles/rooms`现沿当前房间及原相邻房间数组查询单位，碰撞排序保留等距单位的房间链顺序。单帧几何使用原区域坐标，发布后统一转换弹体及保留路径到目标区域；创建按实际拥有者的当前房间查找，未找到时不消费创建种子。弹体准入／移动／退出接房间单位链，Town／SrcTown分别按当前MPQ判断。原73的ClientSend、真实拥有者、剩余帧和穿刺值进入统一编码与视野准入，后来进入视野的玩家也能同步当前弹体；协议没有飞弹GUID，不虚构RemoveUnit(3)。Holy Bolt治疗在HitByMissile后重新计算，使用弹体种子；HP和Overlay保留各自提交阶段，背压不重复治疗。BaalInferno的玩家法力撤出在普通伤害前作为有序操作执行。
+`missiles/rooms`现沿当前房间及原相邻房间数组查询单位，碰撞排序保留等距单位的房间链顺序。单帧几何使用原区域坐标，发布后统一转换弹体及保留路径到目标区域；创建按实际拥有者的当前房间查找，未找到时不消费创建种子。弹体准入／移动／退出接房间单位链；飞弹位置已经包含PATH半格中心，登记与移动房间链直接使用该坐标，不能再按玩家／怪物脚点加半格。拥有者及接触单位的房间锚点仍需还原半格；这两种输入在`missiles/rooms`与`AreaStore`明确区分，避免合法的区域边缘飞弹在出生登记时被移到界外。Town／SrcTown分别按当前MPQ判断。原73的ClientSend、真实拥有者、剩余帧和穿刺值进入统一编码与视野准入，后来进入视野的玩家也能同步当前弹体；协议没有飞弹GUID，不虚构RemoveUnit(3)。Holy Bolt治疗在HitByMissile后重新计算，使用弹体种子；HP和Overlay保留各自提交阶段，背压不重复治疗。BaalInferno的玩家法力撤出在普通伤害前作为有序操作执行。
 
 `missiles/motion::collisionContacts`沿D2MOO `MissMode::MISSMODE_HandleMissileCollision`先检查碰撞模式／激活门槛及PATH保存步；无接触步或未到激活期不准备单位候选。原碰撞掩码命中首个路径格后才执行只读单位资格／位置过滤，同一次调用内复用候选，仍按原相邻房间链顺序选首个重叠目标。玩家／Actor领域位置不含PATH的半格中心，尺寸配对前按`floor(position+0.5)`转换为单位原生子格，与`AreaStore::patternFootprint`／移动占位及原位置包一致；飞弹保存步已经是PATH格中心，继续按`floor(cell)`取格。不能对单位直接向下取整，否则掩码登记与尺寸筛选可能相差一格并漏掉擦边接触。原尺寸矩阵依据`D2Common_10407_Impl`／1.13c ordinal10389，未扩大命中范围。不跨回调缓存候选或动态占位，不改变碰撞掩码、NextHit、接触／伤害顺序与种子消费。完整画面与实际伤害对齐仍待实机复核。
 

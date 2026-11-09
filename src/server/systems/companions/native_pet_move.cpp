@@ -9,6 +9,7 @@
 #include "server/systems/spatial/system.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "gameplay/units/distance.hpp"
+#include "gameplay/units/coordinates.hpp"
 #include "gameplay/units/direction.hpp"
 #include "gameplay/monsters/projectile_math.hpp"
 #include "core/random.hpp"
@@ -29,19 +30,21 @@ PetLogical petLogical(const AreaState &area,Vec point) {
 }
 bool followNativePet(const Ports &ports,Companion &pet,const PlayerState &owner,const monsters::Actor &body,EntityId target,bool combat,uint64_t tick,const NativePetMovement &options) {
     const auto &area=ports.areas.at(body.area);const auto &ownerArea=ports.areas.at(owner.area);
+    const auto ownerCenter=owner.position+Vec{.5f,.5f};
     const auto ownerPoint=owner.position+ownerArea.definition.origin-area.definition.origin;
-    const int distance=unitCoordinateDistanceWithSize(int(body.position.x),int(body.position.y),int(ownerPoint.x),int(ownerPoint.y),body.rule.size);
+    const auto bodyCell=nativeFeetCell(body.position),ownerCell=nativeFeetCell(ownerPoint);
+    const int distance=unitCoordinateDistanceWithSize(int(bodyCell.x),int(bodyCell.y),int(ownerCell.x),int(ownerCell.y),body.rule.size);
     int count{};for(const auto &[id,entry]:ports.monsters.read().actors) {(void)id;if(entry.owner==owner.player && entry.alive()) ++count;}
     if(options.registeredCount) count=int(ports.monsters.pets(owner.player,true).size());
     const auto bound=std::min((count>>1)+options.spacing,36);
     const bool neutral=!ownerArea.definition.town && !owner.moving && !ports.skills.read().busy(owner.actor,tick);
     if(options.motion<0 && (distance>1 || !neutral || combat) && target && !area.definition.town && distance<=80) return false;
-    const auto ownerLogical=petLogical(ownerArea,owner.position),unitLogical=petLogical(area,body.position);
+    const auto ownerLogical=petLogical(ownerArea,ownerCenter),unitLogical=petLogical(area,body.position+Vec{.5f,.5f});
     int motion=owner.moving?0:2;
     if(ownerLogical.index!=unitLogical.index || distance>bound) motion=1;
     if(distance>50) motion=3;
-    const auto lastWarp=owner.lastTeleportPosition-area.definition.origin;
-    if(unitCoordinateDistance(int(body.position.x),int(body.position.y),int(lastWarp.x),int(lastWarp.y))<28 &&
+    const auto lastWarp=nativeFeetCell(owner.lastTeleportPosition-area.definition.origin);
+    if(unitCoordinateDistance(int(bodyCell.x),int(bodyCell.y),int(lastWarp.x),int(lastWarp.y))<28 &&
        ((motion==1 && distance<30) || motion==2)) motion=4;
     if(distance<=1 && neutral && !combat) motion=5;
     if(options.motion>=0) motion=options.motion;
@@ -51,16 +54,16 @@ bool followNativePet(const Ports &ports,Companion &pet,const PlayerState &owner,
         const bool moved=bool(ports.monsters.requestMove(request));if(moved) pet.nativePetMoving=true;return moved;
     };
     auto random=body.combatRandom;
-    const auto wander=[&](int radius,int velocity=75,int path=13) {const auto point=monsterWanderPoint(ownerPoint,radius,random)-Vec{.5f,.5f};ports.monsters.commitCombatRandom(body.id,random);return move(point,velocity,path);};
+    const auto wander=[&](int radius,int velocity=75,int path=13) {const auto point=monsterWanderPoint(ownerCell,radius,random)-Vec{.5f,.5f};ports.monsters.commitCombatRandom(body.id,random);return move(point,velocity,path);};
     const auto escape=[&](int radius,int path=13) {
         const Vec direction{float((body.position.x>ownerPoint.x)-(body.position.x<ownerPoint.x)),float((body.position.y>ownerPoint.y)-(body.position.y<ownerPoint.y))};
         return move(body.position+direction*float(radius),75,path,radius>5?radius:100);
     };
     if(motion==3) {
-        const auto global=owner.position+ownerArea.definition.origin;
-        const auto room=ports.areas.roomAtPosition(owner.area,owner.position,int(global.x),int(global.y));
+        const auto global=nativeFeetCell(owner.position)+ownerArea.definition.origin;
+        const auto room=ports.areas.roomAtPosition(owner.area,ownerCenter,int(global.x),int(global.y));
         if(!room) return false;
-        const auto *bounds=ownerArea.definition.activation.room(owner.position);if(!bounds) return false;
+        const auto *bounds=ownerArea.definition.activation.room(ownerCenter);if(!bounds) return false;
         int left=int(ownerArea.definition.origin.x)+bounds->x+1,top=int(ownerArea.definition.origin.y)+bounds->y+1;
         int width=bounds->width-1,height=bounds->height-1;
         if(ownerLogical.layout) {
@@ -102,8 +105,8 @@ bool followNativePet(const Ports &ports,Companion &pet,const PlayerState &owner,
         bool straight{};
         for(auto point=owner.movementHistory.rbegin();point!=owner.movementHistory.rend();++point) {
             if(!point->x || !point->y) continue;
-            const auto local=*point-area.definition.origin;
-            if(unitCoordinateDistance(int(body.position.x),int(body.position.y),int(local.x),int(local.y))<=5) continue;
+            const auto local=nativeFeetCell(*point-area.definition.origin);
+            if(unitCoordinateDistance(int(bodyCell.x),int(bodyCell.y),int(local.x),int(local.y))<=5) continue;
             if(move(local,75+velocity) || move(local,75+velocity,15)) return true;
             if(!straight) {straight=true;if(move(local,75+velocity,7)) return true;}
         }
@@ -122,7 +125,7 @@ bool followNativePet(const Ports &ports,Companion &pet,const PlayerState &owner,
         bool crowded{};
         for(const auto &[id,entry]:ports.monsters.read().actors)
             if(id!=body.id && entry.owner==owner.player && entry.alive() && entry.area==body.area &&
-               unitCoordinateDistanceWithSize(int(body.position.x),int(body.position.y),int(entry.position.x),int(entry.position.y),entry.rule.size)<=1) {crowded=true;break;}
+               unitCoordinateDistanceWithSize(int(bodyCell.x),int(bodyCell.y),int(nativeFeetCell(entry.position).x),int(nativeFeetCell(entry.position).y),entry.rule.size)<=1) {crowded=true;break;}
         if(!crowded || (!escape(bound) && !wander(bound))) pet.nextDecision=tick+15;
         return true;
     }
@@ -130,7 +133,8 @@ bool followNativePet(const Ports &ports,Companion &pet,const PlayerState &owner,
         return wander(bound,75,7) || escape(bound,7) || move(owner.routeDestination+ownerArea.definition.origin-area.definition.origin,75,13,40);
     }
     const auto destination=owner.routeDestination+ownerArea.definition.origin-area.definition.origin;
-    const auto heading=nativeDirectionVector(int(destination.x)-int(ownerPoint.x),int(destination.y)-int(ownerPoint.y));
+    const auto goalCell=nativeFeetCell(destination);
+    const auto heading=nativeDirectionVector(int(goalCell.x)-int(ownerCell.x),int(goalCell.y)-int(ownerCell.y));
     auto facing=nativeOverlayDirection(heading.index);
     constexpr std::array<int,8> offsets{4,3,2,1,0,7,6,5};
     for(int attempt=0;attempt<7;++attempt,facing=uint8_t((facing+1)&7)) {

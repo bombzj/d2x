@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/units/coordinates.hpp"
 #include "server/runtime/skill_rules.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/effects.hpp"
@@ -573,7 +574,7 @@ StepStatus System::necroStep(Companion &pet,TickContext tick) {
     if(body->area!=owner->area || missileDistance(body->position,owner->position)>50 || pet.ownerTeleport!=owner->teleportRevision) {
         for(int radius=1;radius<=4;++radius) for(int x=-radius;x<=radius;++x) for(int y=-radius;y<=radius;++y) {
             if(std::max(std::abs(x),std::abs(y))!=radius) continue;
-            if(ports_.monsters.warpPet(pet.actor,context,{std::floor(owner->position.x)+x+.5f,std::floor(owner->position.y)+y+.5f})) {pet.ownerTeleport=owner->teleportRevision;pet.nativePetMoving=false;pet.nextDecision=tick.tick+1;return StepStatus::Complete;}
+            if(ports_.monsters.warpPet(pet.actor,context,nativeFeetCell(owner->position)+Vec{float(x),float(y)})) {pet.ownerTeleport=owner->teleportRevision;pet.nativePetMoving=false;pet.nextDecision=tick.tick+1;return StepStatus::Complete;}
         }
         return StepStatus::Complete;
     }

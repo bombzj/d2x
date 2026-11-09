@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/units/coordinates.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
@@ -15,7 +16,7 @@ StepStatus System::amazonStep(Companion &pet,TickContext tick) {
     if(body->area!=owner->area || missileDistance(body->position,owner->position)>50) {
         for(int radius=1;radius<=4;++radius) for(int x=-radius;x<=radius;++x) for(int y=-radius;y<=radius;++y) {
             if(std::max(std::abs(x),std::abs(y))!=radius) continue;
-            const Vec at{std::floor(owner->position.x)+x+.5f,std::floor(owner->position.y)+y+.5f};
+            const Vec at=nativeFeetCell(owner->position)+Vec{float(x),float(y)};
             if(ports_.monsters.warpPet(pet.actor,context,at)) {pet.nextDecision=tick.tick+1;return StepStatus::Complete;}
         }
         return StepStatus::Complete;

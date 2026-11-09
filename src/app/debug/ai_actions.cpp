@@ -390,7 +390,7 @@ void DebugAi::Impl::executeGoal(Context &c,const Goal &goal) {
         if(!c.combat.monsterTargetEligible(*unit,false)) {
             cancelWalk(c);wait("hunt-target-state","Waiting for the observed target's actual attack eligibility");return;
         }
-        if(!approachPoint(c,*unit->position,"hunt target",2)) explore(c,"reachable approach to "+goal.target->name);
+        approachEnemy(c,*unit,"hunt target");
         return;
     }
     if(goal.interact) {

@@ -4,6 +4,7 @@
 #include "contracts/map.hpp"
 #include <array>
 #include <map>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -12,6 +13,12 @@
 namespace d2x {
 // Original town montage contains diagnostic cells that the client skips.
 bool townAutomapCellVisible(int level, int frame);
+struct TownAutomapPlacement {size_t frame{};Vec offset;};
+std::string townAutomapPath(int level,bool large);
+// Shared by drawing and navigation's visible-map sketch; no collision or presets.
+std::vector<TownAutomapPlacement> townAutomapLayout(const Animation &,int level,int variant,bool large);
+// Sparse actual ink samples in the full-size cell's drawn coordinate space.
+std::vector<Vec> automapInk(const IndexedFrame &);
 // Original D2Client program table, separate from MPQ tile-to-cel selection.
 int nativeAutomapCellGroup(int cel);
 // Automap.txt selects original DC6 cels by LvlTypes, DT1 tile type, style and sequence.
@@ -32,5 +39,6 @@ class AutomapCatalog {
     std::vector<AutomapStamp> stamps(const MapData &, int levelType) const;
     int objectCel(int objectClass) const;
     int npcCel(std::string_view monsterClass) const;
+    std::set<int> entranceCels(int levelType) const;
 };
 } // namespace d2x

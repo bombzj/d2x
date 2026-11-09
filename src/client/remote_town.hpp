@@ -24,9 +24,9 @@ namespace d2x {
 class RemoteTown {
   public:
     struct NavigationRoom {
-        int level{},x{},y{},width{},height{};bool loaded{};size_t exploredTiles{};
+        int level{},x{},y{},width{},height{};bool loaded{};
         // Indices into this navigation snapshot, from the reconstructed RoomEx
-        // near list. Adjacency guides exploration; collision still gates input.
+        // near list. Used for native execution legality, never exploration goals.
         std::vector<size_t> near;
     };
   private:
@@ -41,7 +41,6 @@ class RemoteTown {
     ClassicStrings strings_;
     using Discovery = std::tuple<uint32_t, int, int, int, int>;
     AutomapExploration explored_;
-    AutomapExploration navigationObserved_;
     Vec observationExtent_;
     NavigationWorldKey navigationWorld_;
     using NavigationRevision=std::array<uint64_t,9>;
@@ -51,9 +50,6 @@ class RemoteTown {
     mutable std::set<std::pair<int,int>> navigationDirtyStatic_,navigationDirtyNative_;
     mutable bool navigationFullStatic_{true},navigationFullNative_{true};
     std::string navigationPublicationError_;
-    std::string navigationProfile_;
-    uint32_t navigationObjectSeed_{};
-    bool navigationRestored_{};
     std::map<int,uint32_t> actSeeds_;
     std::map<Discovery, std::set<int>> discoveredCels_;
     using NativeCells = AutomapCells;
@@ -72,6 +68,11 @@ class RemoteTown {
     std::set<int> automapComponent_;
     // Indices are valid only for the current terrain snapshot and seed pair.
     std::vector<uint8_t> automapVisitedTiles_;
+    using AutomapTileKey=std::tuple<int,int,int,int,int,int,bool>;
+    std::set<AutomapTileKey> automapDrawnTiles_;
+    // Immediate scene observations, independent of automap reveal cadence/layer.
+    std::set<AutomapTileKey> observedTerrain_;
+    std::optional<std::pair<int,int>> automapRevealPosition_;
     std::optional<std::pair<uint32_t,std::optional<uint32_t>>> automapVisitedSeeds_;
     bool automapViewportPrepared_{};
     void rememberTile(const OnlineView &, int level, int x, int y, int type, bool wallArray, std::span<const int> cels);
@@ -86,6 +87,7 @@ class RemoteTown {
     std::optional<size_t> nativePlayerRoom_;
     std::optional<OnlinePoint> nativePlayerPosition_;
     std::optional<OnlinePoint> displayPlayerPosition_;
+    std::optional<std::pair<int,int>> automapClientPosition_;
     uint64_t nativeSequence_{};
     std::optional<std::pair<uint32_t,uint64_t>> nativePositionDiscontinuity_;
     uint64_t nativePendingSince_{};
@@ -102,16 +104,18 @@ class RemoteTown {
     std::optional<std::pair<uint16_t,OnlinePoint>> walkingObservation_;
     void rememberWalkingConnection(const OnlineView &);
     std::map<uint16_t,OnlinePoint> knownWaypoints_;
-    mutable std::optional<uint32_t> canyonHintSeed_;
-    mutable std::map<int,OnlinePoint> canyonHints_;
     mutable std::vector<NavigationRoom> navigationRooms_;
     mutable std::map<int,std::vector<int>> navigationConnections_;
-    mutable std::map<uint16_t,size_t> navigationSeen_;
     mutable std::tuple<uint64_t,uint64_t,uint64_t> navigationKey_{};
     mutable bool navigationCached_{};
-    mutable uint64_t navigationObservedRevision_{};
     mutable uint64_t navigationCacheBuilds_{};
     void refreshNavigationCache() const;
+    NativeCells naturalAutomapCells(uint16_t area,std::optional<uint32_t> objectSeed={}) const;
+    struct SketchArt {Animation geometry;std::vector<std::vector<Vec>> ink;};
+    mutable std::map<std::string,SketchArt> sketchArt_;
+    mutable std::tuple<uint64_t,uint64_t,uint16_t,std::optional<std::pair<uint32_t,std::optional<uint32_t>>>> sketchKey_{};
+    mutable std::shared_ptr<const AutomapSketch> sketch_;
+    const SketchArt &sketchArt(const std::string &) const;
     void updateUnitRooms(const OnlineView &);
     OnlineSceneView view_;
     uint64_t gameGeneration_{~uint64_t{}}, areaGeneration_{~uint64_t{}}, revision_{~uint64_t{}};
@@ -128,6 +132,8 @@ class RemoteTown {
     MapSceneView automapScene(const OnlineView &) const;
     void updateAutomapView(const OnlineView &);
     void updateAutomapBase(const OnlineView &);
+    std::optional<OnlinePoint> automapObjectPosition(uint16_t area,std::optional<uint16_t> identity) const;
+    std::vector<OnlinePoint> automapPositions(uint16_t area,const std::set<int> &cels,size_t group,bool object) const;
 
   public:
     explicit RemoteTown(Archives &a, bool reportAutomapRoomsPd2 = false);
@@ -153,19 +159,26 @@ class RemoteTown {
         bool outdoor{};
     };
     std::optional<NavigationObservation> navigationObservation() const;
+    // Complete collision pages published by the client, independent of map art.
+    struct KnownTerrainTile {uint16_t level;int x,y;};
+    std::vector<KnownTerrainTile> knownNavigationTerrain() const;
+    std::vector<std::pair<int,int>> knownNavigationTerrain(uint16_t level) const;
+    std::shared_ptr<const AutomapSketch> navigationSketch(uint16_t level) const;
     struct NavigationWall {int x{},y{};uint32_t key{};};
     // Actual viewport observations in the current terrain snapshot, in world
     // tile coordinates. Room activation and automap reveal do not qualify.
     std::vector<NavigationWall> observedNavigationWalls(uint16_t level) const;
     std::optional<OnlinePoint> knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const;
+    std::optional<OnlinePoint> automapNpcPosition(uint16_t area,uint16_t identity) const;
+    std::optional<OnlinePoint> automapTargetPosition(uint16_t area,uint16_t identity) const;
     std::optional<OnlinePoint> knownConnectionPosition(uint16_t from,uint16_t to) const;
     std::optional<uint16_t> assignedUnitLevel(OnlineUnitKey) const;
     std::optional<OnlinePoint> knownWaypointPosition(uint16_t area) const;
+    std::vector<OnlinePoint> automapEntrancePositions(uint16_t area) const;
     // Fixed authored canyon entrances only; never chooses the true tomb.
-    std::optional<OnlinePoint> fixedCanyonTombPosition(uint16_t destination) const;
     uint64_t navigationRevision() const;
     uint64_t navigationCacheBuilds() const {return navigationCacheBuilds_;}
-    struct NavigationMemory {size_t observedCells{},targets{},connections{},waypoints{};bool restored{};};
+    struct NavigationMemory {size_t observedCells{},targets{},connections{},waypoints{};};
     NavigationMemory navigationMemory() const;
     // The layout's resolved Vis slots override the table's static slots.
     const std::map<int,std::vector<int>> &navigationConnections() const;

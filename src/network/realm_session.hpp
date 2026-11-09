@@ -138,6 +138,8 @@ class RealmSession {
     // Caller validates current MPQ skill and target eligibility. Cast/stop have
     // no generic native ACK; damage, resources and skills remain server-owned.
     bool submit_combat(OnlineCombatCommand command);
+    void set_local_used_skill(uint16_t skill,uint64_t revision,uint64_t actionRevision,OnlineIntentContext);
+    void clear_local_used_skill(uint64_t revision,OnlineIntentContext);
     // Caller maps the destination's Levels.Waypoint index from current MPQ.
     // Zero destination closes the server-opened menu. Never unlocks locally.
     bool use_waypoint(uint16_t destination, uint8_t waypointNumber = 0, std::optional<OnlineIntentContext> context = {});

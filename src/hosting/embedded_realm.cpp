@@ -250,6 +250,12 @@ void EmbeddedRealm::pump(double seconds, bool paused) {
 void EmbeddedRealm::observeGamePackets(hosting::GamePacketObserver observer) {
     impl_->invoke([&] { impl_->host.gamePacketObserver = std::move(observer); });
 }
+bool EmbeddedRealm::singlePlayerContentBlocked() const {
+    if(impl_->worker.joinable() || impl_->lan || impl_->shutdownComplete || !impl_->primary) return false;
+    const auto &service=impl_->primary->connection->service;
+    if(service.tcpIpHost || service.directTcpIp || !service.binding) return false;
+    return impl_->host.host.contentBlocked(service.binding->game);
+}
 std::optional<server::MovementObservation> EmbeddedRealm::singlePlayerMovement() const {
     if(impl_->worker.joinable() || impl_->lan || impl_->shutdownComplete || !impl_->primary) return {};
     if(impl_->primary->connection->service.tcpIpHost || impl_->primary->connection->service.directTcpIp) return {};

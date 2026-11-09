@@ -155,7 +155,8 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
             // Discovery uses the visible original DT1 bounds, independent of
             // map visibility, lighting, fading and the selected warp's texture.
             const auto at = screen({tile.x * 5.f, tile.y * 5.f});
-            if (!shadow && tile.type != 15 && !(tile.flags & 8) && visibleTile(size_t(tile.tile), at) &&
+            if (!shadow && tile.type != 15 && !(tile.flags & (scene.retailAutomap?0x408:8)) &&
+                (!scene.retailAutomap || !tile.wallArray || worldVisibility_.alpha(index)>0) && visibleTile(size_t(tile.tile), at) &&
                 visible(assets_.worldTileSprite(size_t(tile.tile)), at))
                 visibleCells.push_back(index);
         }
@@ -359,14 +360,14 @@ PaletteBlendView &SceneView::prepareWorldLighting(const WorldDrawView &scene, st
     std::vector<SceneLight> lights;
     for (const auto &player : scene.playerLights)
         lights.push_back({player.position, player.radius, sceneLightColor(player.color)});
-    const auto objectLight = [&](int identity, int mode, Vec position) {
+    const auto objectLight = [&](int identity, int mode, Vec position,int overrideRadius=-1) {
         const auto found = assets_.objectLights.find(identity);
         if (found == assets_.objectLights.end()) return;
         const auto &light = found->second;
-        const int radius = light.diameter[size_t(std::clamp(mode, 0, 7))] >> 1;
-        if (radius > 0) lights.push_back({position, radius, light.color, SceneLight::Occlusion::Propagated});
+        const int radius = overrideRadius>=0?overrideRadius:light.diameter[size_t(std::clamp(mode, 0, 7))] >> 1;
+        if (radius > 0) lights.push_back({position, radius, overrideRadius>=0?WHITE:light.color, SceneLight::Occlusion::Propagated});
     };
-    for (const auto &object : scene.objects) objectLight(object.identity,object.mode,object.position);
+    for (const auto &object : scene.objects) objectLight(object.identity,object.mode,object.position,object.lightRadius);
     for (const auto &object : terrain.clientObjects)
         if (object.type==2) objectLight(object.id,0,{float(object.x),float(object.y)});
     for (const auto &monster : scene.monsters) {

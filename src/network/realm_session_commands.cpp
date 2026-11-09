@@ -156,7 +156,6 @@ bool RealmSession::move_to(OnlinePoint target, bool run, std::optional<OnlineInt
         out.u16(target.x);
         out.u16(target.y);
         auto packet=out.release();
-        if(p.duplicateNavigation(packet)) return false;
         p.close_interaction();
         p.sent(p.gs,std::move(packet));
         p.view.world.movementRequest = OnlineMovementRequest{target, {}, run, ++p.view.world.revision};
@@ -193,7 +192,6 @@ bool RealmSession::move_to_unit(OnlineUnitKey target, bool run, std::optional<On
         out.u8(run ? 0x04 : 0x02); out.u32(target.type); out.u32(target.id);
         auto packet=out.release();
         const bool sendStop=stopNpc && target.type==1;
-        if(!sendStop && p.duplicateNavigation(packet)) return false;
         p.close_interaction();
         if(sendStop) p.sent(p.gs,npcStopPacket(target.id,*stopNpc));
         p.sent(p.gs,std::move(packet));
@@ -232,7 +230,6 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
         Writer out;
         out.u8(0x13); out.u32(target.type); out.u32(target.id);
         auto packet=out.release();
-        if(p.duplicateNavigation(packet)) return false;
         if(!retry) p.close_interaction();
         p.sent(p.gs,std::move(packet));
         if (intent == OnlineObjectIntent::Stash) {
@@ -272,7 +269,6 @@ bool RealmSession::interact_npc(uint32_t serverUnitId, std::optional<OnlineInten
         out.u8(0x13); out.u32(1); out.u32(serverUnitId);
         auto packet=out.release();
         const bool sendStop=stopNpc && !retry;
-        if(!sendStop && p.duplicateNavigation(packet)) return false;
         if(!retry) p.close_interaction();
         if(sendStop) p.sent(p.gs,npcStopPacket(serverUnitId,*stopNpc));
         p.sent(p.gs,std::move(packet));
@@ -975,6 +971,25 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         p.fail(OnlineErrorKind::Transport, "Item request could not be queued"); return false;
     }
 }
+void RealmSession::set_local_used_skill(uint16_t skill,uint64_t revision,uint64_t actionRevision,OnlineIntentContext context) {
+    std::lock_guard lock(impl_->mutex);
+    auto &world=impl_->view.world;
+    if(!onlineWorldMatches(context,impl_->view) || !context.player) return;
+    const auto player=world.units.find({0,*context.player});if(player==world.units.end()) return;
+    if(player->second.actionRevision!=actionRevision) return;
+    player->second.usedSkill=skill;
+    world.localUsedSkill=OnlineWorldView::UsedSkill{skill,revision};
+    impl_->snapshotDirty=true;
+}
+void RealmSession::clear_local_used_skill(uint64_t revision,OnlineIntentContext context) {
+    std::lock_guard lock(impl_->mutex);
+    auto &world=impl_->view.world;
+    if(!onlineWorldMatches(context,impl_->view) ||
+       !world.localUsedSkill || world.localUsedSkill->revision!=revision) return;
+    if(context.player) if(const auto player=world.units.find({0,*context.player});player!=world.units.end())
+        player->second.usedSkill.reset();
+    world.localUsedSkill.reset();impl_->snapshotDirty=true;
+}
 bool RealmSession::submit_combat(OnlineCombatCommand command) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
@@ -1116,7 +1131,6 @@ bool RealmSession::use_waypoint(uint16_t destination, uint8_t waypointNumber, st
         Writer out;
         out.u8(0x49); out.u32(*waypoint); out.u32(destination);
         auto packet=out.release();
-        if(p.duplicateNavigation(packet)) return false;
         p.sent(p.gs,std::move(packet));
         p.finish_pickup(OnlineItemRequest::State::Interrupted);
         p.view.world.waypointSource.reset();

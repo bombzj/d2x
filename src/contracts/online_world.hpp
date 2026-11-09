@@ -79,6 +79,7 @@ struct OnlineCombatRequest {
 struct OnlineCombatEvent {
     enum class Kind { Skill, Hit, Action, Overlay, Missile, Sound };
     uint64_t sequence{}, receivedMilliseconds{}; // Client monotonic receipt time, never a wire field.
+    uint64_t worldRevision{};
     uint8_t packet{};
     Kind kind{};
     OnlineUnitKey source;
@@ -129,6 +130,8 @@ struct OnlineUnit {
     std::optional<uint8_t> wireAction, hitClass;
     std::optional<uint8_t> direction; // Native 0..63 path facing.
     std::optional<uint16_t> actionSkill, actionSkillLevel;
+    std::optional<uint16_t> usedSkill;
+    std::optional<uint16_t> stoppedSkill;
     bool nativeMode{}; // 0x0E carries an actual mode, unlike player action packets.
     uint64_t actionRevision{}, hitRevision{};
     uint64_t actionReceivedMilliseconds{}; // Local receipt time, not server action time.
@@ -173,11 +176,15 @@ struct OnlineEquippedItem {
     bool autoAffix{};
 };
 struct OnlineMapEvent {
-    enum class Kind { RevealRoom, HideRoom, PlayerPosition, RemovePlayer, LoadComplete };
+    enum class Kind { RevealRoom, HideRoom, PlayerPosition, RemovePlayer, LoadComplete, PlayerReposition };
     uint64_t sequence{};
     Kind kind{};
     uint8_t level{}; // Only room events have a level; position never guesses one.
     OnlinePoint point{}; // Room tiles or player subtiles, according to kind.
+    uint64_t receivedMilliseconds{};
+    std::optional<uint16_t> usedSkill{};
+    uint8_t repositionFlags{};
+    bool dead{};
 };
 enum class OnlineDeathPhase { Unknown, Alive, Dying, Dead };
 // Native 0x77 authorizes the invitation/open state. The other player's identity
@@ -238,6 +245,8 @@ struct OnlineWorldView {
     std::map<uint32_t, OnlinePet> pets; // Original 0x7A ownership, independent of unit visibility.
     std::map<uint32_t, uint32_t> corpseOwners; // Original 0x8E corpse GUID -> player GUID.
     uint64_t revision{}, areaGeneration{}, interactionGeneration{};
+    struct UsedSkill {uint16_t skill{};uint64_t revision{};};
+    std::optional<UsedSkill> localUsedSkill;
     std::optional<uint8_t> cinematic;
     uint64_t cinematicRevision{};
     std::map<OnlineUnitKey, OnlineUnit> units;

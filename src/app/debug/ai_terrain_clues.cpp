@@ -130,8 +130,8 @@ bool DebugAi::Impl::approachTerrainClue(Context &c,const Selector &selector) {
         for(const auto &wall:branch.walls) if(seen.x-run.x==wall.x && seen.y-run.y==wall.y && seen.key==wall.key)
             run.walls.emplace(wall.x,wall.y,wall.key);
     const auto releaseApproach=[&]() {
-        cancelWalk(c);viewpointRoute.reset();exploring.reset();interest.reset();
-        approachHint.reset();approachFrontier.reset();approachDetour.reset();run.aim.reset();
+        cancelWalk(c);frontierRoute.reset();
+        approachHint.reset();approachFrontier.reset();run.aim.reset();
     };
     for(size_t i=0;i<clues.branches.size();++i) if(std::all_of(clues.branches[i].walls.begin(),clues.branches[i].walls.end(),
         [&](const auto &wall){return run.walls.contains({wall.x,wall.y,wall.key});})) {
@@ -255,32 +255,5 @@ bool DebugAi::Impl::observeColdPlainsWaypoint(Context &c) {
     ++run.next;return false;
 }
 
-bool DebugAi::Impl::approachMonasteryConnection(Context &c,uint16_t destination) {
-    if(!area) return false;
-    const auto highland=definitions->area("Act 1 - Wilderness 6"),gate=definitions->area("Act 1 - Monastery");
-    const auto court=definitions->area("Act 1 - Courtyard 1");
-    if(!((*area==highland && destination==gate) || (*area==gate && (destination==court || destination==highland)))) return false;
-    const auto key=std::pair{*area,destination};
-    if(const auto retry=directedConnectionRetry.find(key);retry!=directedConnectionRetry.end() && Clock::now()<retry->second) return false;
-    const auto edges=c.town.walkingBoundaries();
-    std::optional<RemoteTown::WalkingBoundary> connection;
-    for(const auto &edge:edges) if(edge.destination==destination) {
-        if(connection) return false; // No single verified direction; retain generic exploration.
-        connection=edge;
-    }
-    if(!connection) return false;
-    // DrlgOutPlace::sub_6FD81AD0 attaches Tamoe on a fixed side of
-    // the authored facade. Use the resolved seam, not screen north or a seed.
-    const auto &edge=*connection;
-    const int along=edge.start+(edge.end-edge.start)/2;
-    const int normal=edge.plane+((edge.side==0 || edge.side==3)?-6:6);
-    const int x=edge.side%2?normal:along,y=edge.side%2?along:normal;
-    if(x<0 || y<0 || x>UINT16_MAX || y>UINT16_MAX) return false;
-    const OnlinePoint aim{uint16_t(x),uint16_t(y)};
-    if((c.position-Vec{float(x),float(y)}).length()<=8) return false;
-    travelDiagnostics["terrainStrategy"]="monastery-connection";travelDiagnostics["terrainAim"]={x,y};
-    if(approachPoint(c,aim,"fixed Monastery facade connection",8,true)) return true;
-    directedConnectionRetry[key]=Clock::now()+std::chrono::seconds(5);
-    note("monastery-connection-recovery","Ordinary exit exploration resumes after an unavailable directed approach");return false;
-}
+
 } // namespace d2x

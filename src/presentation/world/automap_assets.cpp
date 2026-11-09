@@ -33,34 +33,14 @@ const Sprite *SceneAssets::automapSprite(int cel, bool large) const {
 const std::vector<TownAutomapCell> &SceneAssets::townAutomapSprites(int level, int variant, bool large) const {
     const auto key = std::tuple{level, variant, large};
     if (const auto found = townAutomapArt.find(key); found != townAutomapArt.end()) return found->second;
-    const char *name = level == 40 ? "act2map" : level == 103 ? "act4map" : level == 109 ? "extnmap" : nullptr;
-    if (!name) return townAutomapArt[key];
-    const int columns = level == 40 ? 5 : level == 103 ? 2 : 3;
-    const int rows = level == 40 ? 4 : 2, count = columns * rows;
-    const int group = level == 40 ? variant - 1 : 0;
-    if (group < 0 || group > (level == 40 ? 1 : 0))
-        throw std::runtime_error("Unsupported original town automap variant");
-    const auto path = std::string("data/global/ui/automap/") + name + (large ? "" : "s") + ".dc6";
-    const auto *art = graphics_.animation(path);
-    if (!art || int(art->frames.size()) != count * (level == 40 ? 2 : 1))
-        throw std::runtime_error("Original town automap frames disagree with layout: " + path);
-    const int width = art->frames[size_t(group * count)].width, height = art->frames[size_t(group * count)].height;
-    // RVA 62760: the town montage is offset from the supplied level center,
-    // then stored as native cells. Mini mode divides those cell coordinates,
-    // rather than halving an already rounded screen position.
-    const Vec anchor = level == 40 ? Vec{53, -81} : level == 103 ? Vec{-3, -50} : Vec{-20, -155};
-    const int factor = large ? 1 : 2;
-    const int nativeWidth = width * factor, nativeHeight = height * factor;
+    const auto path=townAutomapPath(level,large);
+    if(path.empty()) return townAutomapArt[key];
+    const auto *art=graphics_.animation(path);
+    if(!art) throw std::runtime_error("Original town automap image unavailable: "+path);
     std::vector<TownAutomapCell> images;
-    for (int index = 0; index < count; ++index) {
-        if (!townAutomapCellVisible(level, group * count + index)) continue;
-        auto frame = art->frames[size_t(group * count + index)];
-        if (frame.width != width || frame.height != height)
-            throw std::runtime_error("Inconsistent original town automap frame dimensions");
-        frame.y -= frame.height - 1;
-        images.push_back({graphics_.upload(frame, true),
-            Vec{float((index % columns) * nativeWidth - columns * nativeWidth / 2),
-                float((index / columns) * nativeHeight - rows * nativeHeight / 2)} - anchor});
+    for(const auto &cell:townAutomapLayout(*art,level,variant,large)) {
+        auto frame=art->frames[cell.frame];frame.y-=frame.height-1;
+        images.push_back({graphics_.upload(frame,true),cell.offset});
     }
     return townAutomapArt.emplace(key, std::move(images)).first->second;
 }

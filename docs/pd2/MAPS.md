@@ -18,6 +18,8 @@ Levels.MonLvl1及Objects数值空白按原编译类型为零，来源为D2MOO的
 
 `src/hosting/pd2/town_host.cpp::validateArea`允许当前表内的扩展预设布局；仍要求有效幕、正尺寸、唯一LvlPrest及完整原资源，由公共生成器校验。共用NativeMapGenerator按Levels尺寸／Offset／Depend、LvlPrest.Files／Dt1Mask和真实DS1／DT1准备房间、选砖、出口与权威碰撞。LvlPrest.SizeX/Y为0时沿用Levels尺寸；DS1宽／高包含边界格，不能直接当区域tile尺寸。
 
+公共房间输入补载使用已知锚点独立票据，沿用原MapInstance上下文与取消边界；补载不重新安装地图词缀、人口定义或分配实体。尚未安装的扩展区域仍走完整validateArea及内容准备，不能用纯输入包绕过开图资格。扩展区域冷补载／撤销／重入交错尚待运行核对；公共实现见[地图准备](../modules/MAP.md#地图缓存与分帧准备)。
+
 区域归幕使用Levels.Act，预设单位的幕内索引使用文件内DS1.Act，二者不能互相覆盖。202–206的LvlPrest.Populate=0，不套用普通地图密度生成敌人。管理travel只接受当前角色规则内的Levels身份，原版仍为1–136；PD2扩展区域未指定坐标时沿原tile11／固定位置后备与权威空位搜索入场。管理旅行不授予开图、事件、PvP或首领资格。
 
 人口由公共`prepareMonsterRegionRules`／`prepareCombatPopulation`消费目标Levels.NumMon、mon/nmon、MonDen、MonUMin/Max及区域等级；仅准备城镇的`prepareTownRegionRules`不是扩展区域入口。未实现敌对AI仍依项目授权使用沉沦魔载体并保留真实身份；中立控制器不换敌人。特殊首领、事件、词缀和专属掉落没有因此补齐。

@@ -274,7 +274,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 if (!player.route.empty()) { ++pending; continue; }
                 pending = state_.transitions.erase(pending); continue;
             }
-        } else {
+        } else if (transition.kind != Kind::Waypoint) {
             if (!player.route.empty()) { ++pending; continue; }
             if ((player.position - transition.approach).length() > .1f) { pending = state_.transitions.erase(pending); continue; }
         }

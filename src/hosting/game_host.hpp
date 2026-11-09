@@ -11,6 +11,7 @@
 #include <string_view>
 #include <memory>
 #include <functional>
+#include <chrono>
 #include <utility>
 #include <vector>
 
@@ -99,6 +100,9 @@ class GameHost {
         bool paused{};
         std::optional<bool> debugPaused;
         bool resumed{};
+        bool contentBlocked{};
+        std::optional<std::chrono::steady_clock::time_point> blockedSince;
+        uint64_t blockedRetries{};
         std::optional<FixedStepProgress> fixedSteps;
         PlayerId stepOwner;
         std::map<PlayerId, std::shared_ptr<const PlayerSnapshot>> snapshots;
@@ -187,6 +191,7 @@ class GameHost {
     bool pause(GameHandle, bool);
     bool debugPause(GameHandle, std::optional<bool>);
     void advance(double seconds);
+    bool contentBlocked(GameHandle) const;
     // Queue paused stepping; each scheduler turn attempts one fixed frame and
     // returns to protocol publication/IO. No accumulated wall-clock debt.
     bool step(PlayerBinding, uint32_t frames);

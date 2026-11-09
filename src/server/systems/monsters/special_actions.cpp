@@ -149,7 +149,11 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareRoomSpawn(c
         } while(index!=stop);
     } else point=nativeMonsterRingPosition(int(std::floor(global.x)),int(std::floor(global.y)),attempts,data->room->next,clear);
     if(!point || !point->first || !point->second) return finish();
-    data->position=Vec{float(point->first)+.5f,float(point->second)+.5f}-roomArea.origin;
+    // The search validates native integer subtiles. Actor positions are drawing
+    // feet; their room/collision consumers restore the half-cell themselves.
+    // Returning a grid center here would publish into the next subtile.
+    const Vec feet{float(point->first),float(point->second)};
+    data->position=feet-roomArea.origin;
     if(probe) return finish();
     if(state_.actors.size()>=65536 || ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
     auto admission=request;admission.position=*data->position;
@@ -164,7 +168,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareRoomSpawn(c
             // Resolve the actual native room before assigning level-dependent
             // stats. Its registration token also validates the target generation.
             admission.area=destination->area;admission.rule=prototype->second.rule;
-            admission.position=Vec{float(point->first)+.5f,float(point->second)+.5f}-target.definition.origin;
+            admission.position=feet-target.definition.origin;
         }
     }
     data->randomExpected=data->randomNext=ports_.random;data->actor=EntityId{ports_.ids.cursor()};

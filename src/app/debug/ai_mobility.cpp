@@ -10,7 +10,8 @@ bool roomContains(const RemoteTown::NavigationRoom &room,Vec at) {
 }
 }
 DebugAi::Impl::TeleportRooms::TeleportRooms(const Context &c):rooms(c.town.navigationRooms()) {
-    for(const auto &room:rooms) if(room.level==c.town.read().area && roomContains(room,c.position)) {
+    const auto feet=DebugExplorationMemory::playerCell(c.position);
+    for(const auto &room:rooms) if(room.level==c.town.read().area && roomContains(room,{float(feet.first),float(feet.second)})) {
         current=&room;break;
     }
 }
@@ -172,7 +173,9 @@ std::optional<DebugAi::Impl::TeleportApproach> DebugAi::Impl::teleportLanding(Co
     const auto live=c.town.navigationGrid(c.session.read());
     const auto threats=travelLandingThreats(c);
     const float range=float(mobilityPolicy.distance);
+    const auto *knowledge=c.walk.navigationSearch().explorationMemory.area(*area);
     const auto permitted=[&](Vec at) {
+        if(!knowledge || !knowledge->stand(int(at.x),int(at.y))) return false;
         if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535 || !neighborhood.contains(at) ||
             (at-c.position).length()>range || crowdedTravelLanding(threats,at)) return false;
         const auto trial=std::tuple{*area,uint16_t(wanted.x),uint16_t(wanted.y),uint16_t(at.x),uint16_t(at.y)};
@@ -181,65 +184,60 @@ std::optional<DebugAi::Impl::TeleportApproach> DebugAi::Impl::teleportLanding(Co
             c.combat.teleportPathAllowed(*area,live,c.position-offset,at-offset);
     };
     if(permitted(wanted)) return TeleportApproach{wanted,true};
-    // Keep a complete route owned by the destination, independently of the
-    // temporary child landing. Terrain planning excludes live actor masks.
-    std::vector<DebugNavigationSearch::TeleportRoom> rooms;
-    std::vector<size_t> indices(neighborhood.rooms.size(),neighborhood.rooms.size());
-    for(size_t i=0;i<neighborhood.rooms.size();++i) {
-        const auto &room=neighborhood.rooms[i];if(room.level!=area || !room.loaded) continue;
-        indices[i]=rooms.size();rooms.push_back({room.x-origin->x,room.y-origin->y,room.width,room.height,{}});
-    }
-    for(size_t i=0;i<indices.size();++i) if(indices[i]<rooms.size()) {
-        for(const auto near:neighborhood.rooms[i].near)
-            if(near<indices.size() && indices[near]<rooms.size()) rooms[indices[i]].near.push_back(indices[near]);
-    }
-    bool restricted=false;
-    for(size_t row=0;row<definitions->levels.rows().size();++row) if(definitions->levels.number(row,"Id")==area) {
-        restricted=definitions->levels.number(row,"Teleport").value_or(0)==2;break;
-    }
     auto &search=c.walk.navigationSearch();
-    const auto goal=wanted-offset+Vec{.5f,.5f};
-    DebugNavigationSearch::TravelRoute route;
-    if((wanted-c.position).length()<=range && neighborhood.contains(wanted) && map->grid.walkable(goal,playerMovement) &&
-        c.combat.teleportPathAllowed(*area,map->grid,c.position-offset,wanted-offset))
-        route.points.push_back(goal); // Occupancy needs a local adjustment, not a new terrain search.
-    else route=search.teleportRoute(map->grid,rooms,c.position-offset+Vec{.5f,.5f},goal,mobilityPolicy.distance,restricted,offset);
-    const bool completeRoute=!route.points.empty() && (route.points.back()-goal).length()<.1f;
-    bool staticJoin=false;
-    // Prefer the furthest reachable point on this route, not the point with
-    // smallest Euclidean distance to the goal. A detour can move away first.
+    const auto *memory=search.explorationMemory.area(*area);
+    if(!memory) return {};
+    bool restricted=false;
+    for(size_t row=0;row<definitions->levels.rows().size();++row)
+        if(definitions->levels.number(row,"Id")==area) restricted=definitions->levels.number(row,"Teleport").value_or(0)==2;
+    const auto route=search.observedRoute(*area,c.position,mobilityPolicy.distance,restricted,wanted,1);
     for(auto it=route.points.rbegin();it!=route.points.rend();++it) {
-        const Vec anchor=*it+offset-Vec{.5f,.5f};
-        if((anchor-c.position).length()<2 || (anchor-c.position).length()>range || !neighborhood.contains(anchor) ||
-            !map->grid.walkable(*it,playerMovement) ||
-            !c.combat.teleportPathAllowed(*area,map->grid,c.position-offset,anchor-offset)) continue;
-        staticJoin=true;
+        const Vec anchor{float(it->x),float(it->y)};
+        if((anchor-c.position).length()<2 || (anchor-c.position).length()>range) continue;
         std::optional<Vec> landing;float best=std::numeric_limits<float>::max();
-        const bool endpoint=(anchor-wanted).length()<1;
-        // A monster cluster can occupy the entire small endpoint disk.
-        // Look for nearby safe approach floor before falling back to an
-        // earlier relay; combat still checks its real range and shot.
-        const int adjustment=endpoint?std::clamp(int(policy.range),6,18):2;
-        for(int dy=-adjustment;dy<=adjustment;++dy) for(int dx=-adjustment;dx<=adjustment;++dx) {
+        for(int dy=-2;dy<=2;++dy) for(int dx=-2;dx<=2;++dx) {
             const Vec at=anchor+Vec{float(dx),float(dy)};
-            if(Vec{float(dx),float(dy)}.length()>adjustment || (at-c.position).length()<2 ||
-                (endpoint && (at-wanted).length()+1>=(c.position-wanted).length()) || !permitted(at)) continue;
-            const float score=float(dx*dx+dy*dy)+(exploration?
-                DebugNavigationSearch::wallCost(search.wallClearance(map->grid,at-offset+Vec{.5f,.5f}))*.1f:0.f);
-            if(score<best) {best=score;landing=at;}
+            if(!memory->stand(int(at.x),int(at.y)) || !permitted(at)) continue;
+            const float cost=float(dx*dx+dy*dy);
+            if(cost<best) {best=cost;landing=at;}
         }
-        if(landing) {
-            search.rememberTeleportLanding(goal,mobilityPolicy.distance,restricted,*it,*landing-offset+Vec{.5f,.5f});
-            return TeleportApproach{*landing,completeRoute};
-        }
+        if(landing) return TeleportApproach{*landing,true};
     }
-    // Only changed terrain or a displacement off the route invalidates a
-    // retained plan. Crowds and animation/input waits do not change topology.
-    if(!staticJoin && !route.points.empty()) search.discardTeleportRoute(goal,mobilityPolicy.distance,restricted);
+    (void)exploration;
     return {};
 }
+
+std::optional<float> DebugAi::Impl::kiteWalkSeconds(const Context &c,Vec destination) const {
+    if(!c.supplies || !c.supplies->movementSecondsPerUnit || !area ||
+        !std::isfinite(*c.supplies->movementSecondsPerUnit) || *c.supplies->movementSecondsPerUnit<=0) return {};
+    const auto origin=c.town.read().origin;
+    const auto *knowledge=c.walk.navigationSearch().explorationMemory.area(*area);
+    if(!origin || !knowledge) return {};
+    const Vec offset{float(origin->x),float(origin->y)};
+    const auto grid=c.town.navigationGrid(c.session.read());
+    if(!grid.nativeMovementSegment(c.position-offset+Vec{.5f,.5f},destination-offset+Vec{.5f,.5f},playerMovement)) return {};
+    const auto hazards=visibleThreats(c);
+    const auto enemies=travelLandingThreats(c);
+    const auto clearance=[&](Vec at) {
+        float nearest=64;for(const auto enemy:enemies) nearest=std::min(nearest,(at-enemy).length());return nearest;
+    };
+    const float baseline=clearance(c.position),length=(destination-c.position).length();
+    const int samples=std::max(1,int(std::ceil(length*2)));
+    // Only compare a clear direct walk which stays outside observed hazards
+    // and never closes on the observed group. Crossing walls/doors or escaping
+    // a dangerous field keeps Teleport's existing priority.
+    for(int i=0;i<=samples;++i) {
+        const Vec at=c.position+(destination-c.position)*(float(i)/samples);
+        const auto cell=DebugExplorationMemory::playerCell(at);
+        if(knowledge->mask(cell.first,cell.second)==0xffff || !tacticalPositionAllowed(c,at) ||
+            threatClearance(hazards,at)<1 || clearance(at)<baseline) return {};
+    }
+    return length * *c.supplies->movementSecondsPerUnit;
+}
+
 bool DebugAi::Impl::mobility(Context &c) {
     if(mobilityTarget) return observeMobility(c);
+    if(c.walk.openingRouteDoor()) return false;
     const auto now=Clock::now();const auto &world=c.session.read().world;
     if(townExitArea) {
         mobilityHold=now<townExitObserveUntil;
@@ -284,6 +282,16 @@ bool DebugAi::Impl::mobility(Context &c) {
         return false;
     const auto teleport=definitions->skill("Teleport"),charge=definitions->skill("Charge"),vigor=definitions->skill("Vigor");
     const bool canTeleport=teleportAvailable(c);
+    if(canTeleport && combatRun.kitePoint && walkIntent.is_object() &&
+        walkIntent.value("purpose",std::string{})=="combat-kite") {
+        const auto walking=kiteWalkSeconds(c,wanted);
+        mobilityDiagnostics["kiteCost"]={{"walkSeconds",walking?Json(*walking):Json(nullptr)},
+            {"teleportSeconds",teleportTiming.seconds?Json(*teleportTiming.seconds):Json(nullptr)}};
+        if(walking && teleportTiming.seconds && *walking<=*teleportTiming.seconds) {
+            mobilityDiagnostics["skip"]="safe direct kite walk costs no more than the observed Teleport cast";
+            return false;
+        }
+    }
     if(distance<8 && !canTeleport) {mobilityDiagnostics["skip"]="short distance without Teleport";return false;}
     const bool canCharge=!canTeleport && !c.town.read().town && knownSkill(c,charge,true) &&
         (mobilityPolicy.mode=="auto" || mobilityPolicy.mode=="charge");
@@ -335,7 +343,8 @@ bool DebugAi::Impl::mobility(Context &c) {
     }
     const bool directLanding=stagedLanding.has_value();
     if(canTeleport && !directLanding) {
-        mobilityDiagnostics["result"]="no-known-teleport-landing";
+        mobilityDiagnostics={{"decision",decisions},{"area",area.value_or(0)},{"movement","teleport"},
+            {"from",{c.position.x,c.position.y}},{"target",{wanted.x,wanted.y}},{"result","no-known-teleport-landing"}};
         return false;
     }
     if(!canTeleport && mobilityRoute.empty()) {

@@ -243,12 +243,14 @@ void RemoteControl::observeOpening() {
     // receipt-driven continuation, not a timed loop or a longer NPC deadline.
     const bool confirmedArrival=target.type!=5 && opening_->retries>=3;
     if(confirmedArrival && !scene_.interactionReady(view,target)) return;
+    const auto sentCount=view.gameProtocol.sent[0x13];
     const bool sent=target.type==1?session_.interact_npc(target.id,opening_->context):
         session_.interact_map_unit(target,target.type==2?OnlineObjectIntent::Waypoint:OnlineObjectIntent::Operate,opening_->context);
     opening_->next=now+std::chrono::milliseconds(100);
     if(!sent) return;
     const auto &after=session_.read();opening_->context=onlineIntentContext(after);
     opening_->movementRevision=after.world.movementRequest?after.world.movementRequest->revision:0;
+    if(after.gameProtocol.sent[0x13]==sentCount) return;
     ++opening_->retries;
     if(confirmedArrival || (target.type==5 && opening_->retries>=3)) opening_.reset();
 }

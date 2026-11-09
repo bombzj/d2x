@@ -34,7 +34,7 @@ struct WorldDrawItem {
 };
 struct WorldDrawView {
     struct Alert { EntityId unit; Vec position; };
-    struct Object { int identity = -1, mode = 0; Vec position; };
+    struct Object { int identity = -1, mode = 0; Vec position; int lightRadius{-1}; };
     struct Monster { int identity = -1; Vec position; };
     struct PlayerLight { Vec position; int radius; uint32_t color; };
     const Map *map = nullptr;
@@ -44,6 +44,7 @@ struct WorldDrawView {
     // Initializes an independent client presentation stream. This is not a
     // server weather epoch and does not synchronize weather between clients.
     uint32_t weatherSeed{};
+    bool retailAutomap{};
     Vec observer, roomObserver, terrainOrigin;
     uint32_t observerLightColor{}; // Native item_lightcolor, 0 selects white.
     float time = 0, elapsed = 0;

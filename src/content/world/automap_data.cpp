@@ -27,6 +27,44 @@ bool townAutomapCellVisible(int level, int frame) {
     constexpr std::array empty{0, 10, 15, 16, 19, 20, 25, 30, 35, 36, 39};
     return std::find(empty.begin(), empty.end(), frame) == empty.end();
 }
+std::string townAutomapPath(int level,bool large) {
+    const char *name=level==40?"act2map":level==103?"act4map":level==109?"extnmap":nullptr;
+    return name?std::string("data/global/ui/automap/")+name+(large?"":"s")+".dc6":std::string{};
+}
+std::vector<TownAutomapPlacement> townAutomapLayout(const Animation &art,int level,int variant,bool large) {
+    if(townAutomapPath(level,large).empty()) return {};
+    const int columns=level==40?5:level==103?2:3,rows=level==40?4:2,count=columns*rows;
+    const int group=level==40?variant-1:0;
+    if(group<0 || group>(level==40?1:0) || int(art.frames.size())!=count*(level==40?2:1))
+        throw std::runtime_error("Original town automap frames disagree with layout");
+    const int width=art.frames[size_t(group*count)].width,height=art.frames[size_t(group*count)].height;
+    // Original 1.13c RVA 62760; native montage coordinates, also used by mini mode.
+    const Vec anchor=level==40?Vec{53,-81}:level==103?Vec{-3,-50}:Vec{-20,-155};
+    const int factor=large?1:2,nativeWidth=width*factor,nativeHeight=height*factor;
+    std::vector<TownAutomapPlacement> result;
+    for(int i=0;i<count;++i) {
+        const size_t index=size_t(group*count+i);
+        if(!townAutomapCellVisible(level,int(index))) continue;
+        if(art.frames[index].width!=width || art.frames[index].height!=height)
+            throw std::runtime_error("Inconsistent original town automap frame dimensions");
+        result.push_back({index,Vec{float((i%columns)*nativeWidth-columns*nativeWidth/2),
+            float((i/columns)*nativeHeight-rows*nativeHeight/2)}-anchor});
+    }
+    return result;
+}
+std::vector<Vec> automapInk(const IndexedFrame &frame) {
+    std::vector<Vec> result;
+    // One real ink pixel per 4x4 display block. This is a coarse drawing clue,
+    // never a filled polygon, a wall mask, or proof that blank pixels are floor.
+    for(int y=0;y<frame.height;y+=4) for(int x=0;x<frame.width;x+=4) {
+        bool found=false;
+        for(int dy=0;dy<4 && y+dy<frame.height && !found;++dy) for(int dx=0;dx<4 && x+dx<frame.width;++dx)
+            if(frame.pixels[size_t(y+dy)*frame.width+x+dx]) {
+                result.push_back({float(frame.x+x+dx),float(frame.y-frame.height+1+y+dy)});found=true;break;
+            }
+    }
+    return result;
+}
 namespace {
 // D2CMP tile orientations and Automap.txt TileName, as in d2moo D2CMP.h.
 constexpr std::array<std::string_view, 20> tileNames{
@@ -143,6 +181,16 @@ std::vector<AutomapStamp> AutomapCatalog::stamps(const MapData &data, int levelT
 int AutomapCatalog::objectCel(int objectClass) const {
     auto found = objectCels_.find(objectClass);
     return found == objectCels_.end() ? -1 : found->second;
+}
+std::set<int> AutomapCatalog::entranceCels(int levelType) const {
+    std::set<int> entrances,other;
+    for(const auto &[key,rules]:rules_) {
+        if(key.first!=levelType) continue;
+        auto &cels=key.second==10 || key.second==11?entrances:other;
+        for(const auto &rule:rules) for(const int cel:rule.cels) if(cel>=0) cels.insert(cel);
+    }
+    for(const int cel:other) entrances.erase(cel);
+    return entrances;
 }
 int AutomapCatalog::npcCel(std::string_view monsterClass) const {
     auto found = npcCels_.find(monsterClass);

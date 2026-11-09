@@ -1,15 +1,27 @@
 #pragma once
 #include "world/identity.hpp"
+#include "core/math.hpp"
+#include <cstddef>
 #include <cstdint>
 #include <array>
 #include <compare>
 #include <tuple>
 #include <map>
 #include <vector>
-#include <optional>
-#include <string>
 
 namespace d2x {
+// Visible drawing evidence, shared by safe town maps and saved natural maps.
+// Ink is in global world projection space; it grants no collision or walkability.
+struct AutomapSketch {
+    uint64_t revision{};
+    uint16_t area{};
+    size_t primitives{};
+    std::vector<Vec> ink;
+    // Authored service anchors identifiable on a fully visible town layout.
+    // These are clues, not live NPC assignments or collision samples.
+    struct Landmark {uint16_t identity;Vec position;};
+    std::vector<Landmark> townServices;
+};
 // D2Client's six-byte saved cell, in projected client pixels divided by ten.
 struct NativeAutomapCell {
     uint16_t cel{};
@@ -29,20 +41,8 @@ struct AutomapLayer {
     std::vector<uint8_t> seen;
 };
 using AutomapLayers = std::map<RegionId, AutomapLayer>;
-struct NavigationDiscovery {
-    std::string profile;
-    uint32_t seed{},objectSeed{};
-    std::map<int,uint32_t> actSeeds;
-    AutomapLayers observed;
-    // Last actual assignments, without live GUIDs: area/type/class/x/y,
-    // from/to/x/y, and area/x/y. These are hints, never interaction authority.
-    std::vector<std::array<uint16_t,5>> targets;
-    std::vector<std::array<uint16_t,4>> connections;
-    std::vector<std::array<uint16_t,3>> waypoints;
-};
 // Observer discovery only; never grants server room interest or collision.
 struct AutomapDiscovery {
     std::vector<NativeAutomapLayer> nativeLayers;
-    std::optional<NavigationDiscovery> navigation;
 };
 } // namespace d2x

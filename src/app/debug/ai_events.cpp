@@ -212,8 +212,8 @@ bool DebugAi::Impl::worldResultReady(const Context &c,const QuestStep &step) con
 void DebugAi::Impl::waitForWorldResult(Context &c,const QuestStep &step,std::string_view expected) {
     if(!questRun.worldWait) {
         cancelWalk(c);
-        exploring.reset();interest.reset();viewpointRoute.reset();
-        approachHint.reset();approachFrontier.reset();approachDetour.reset();
+        frontierRoute.reset();
+        approachHint.reset();approachFrontier.reset();
         if(!c.town.read().area) return;
         WorldWait pending;pending.area=*c.town.read().area;pending.anchor=c.position;
         if(questRun.encounterArea==pending.area && questRun.encounterPosition)

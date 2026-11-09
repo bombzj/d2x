@@ -34,7 +34,7 @@ Save & Exit发送原0x69，正常退局先取消／归一化交易，并等待�
 
 F11与pipe save调用同一AdminRequest保存接口；Ctrl+F11与pipe load先从持有租约的存档完整准备内容、暂停候选实例和可编码入局状态，成功后经原退局／选角／入局链重建。候选结果保留复用，不再次生成地图；重新选角后文件字节、名称和难度必须与候选匹配，变化明确拒绝。原退局尚未提交时可cancel-load释放候选；关闭宿主同样释放。原服没有这些本地存档操作，不伪造私有D2GS包。两种模式共用游戏控制器与绘制。
 
-本地自动地图是独立观察缓存，其错误不阻断AdminRequest或正常离局的D2S保存；提示明确说明缓存恢复／写入失败，而不代替角色保存结果。旧D2X探索文件保留但不再使用；新探索读写原版.map／.ma0–3，可选.d2xnav0–3另外保存真实视口观察与已指派目标的位置提示，具体种子校验、模式路径和未运行边界见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。
+本地自动地图是独立观察缓存，其错误不阻断AdminRequest或正常离局的D2S保存；提示明确说明缓存恢复／写入失败，而不代替角色保存结果。探索只读写原版.map／.ma0–3，旧D2X自定义探索文件保留但不使用。逐格观察及目标位置提示只在本局积累，重启按未知重新探索，具体种子校验、模式路径和未运行边界见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。
 
 命令行`--load <file.d2s>`进入对应宿主目录并通过原协议选中角色；`--class <MPQ职业名>`创建Hero，`--save <新file.d2s>`指定新目标，可与--load组合另存。省略目标时沿用load路径或saves/quick.d2s。新目标已存在则拒绝，继续已有角色须用--load；不隐式覆盖旧角色。CLI会话名册限定启动文件，普通首页名册仍来自默认saves。
 
@@ -183,7 +183,7 @@ client-settings.json保存客户端走跑、底栏、地图、声音、光照和
 
 OnlineLoginMemory按配置路径隔离：Windows当前用户凭据管理器；Linux配置旁权限0600的.credentials.local，Linux实际运行未认证。密码不写连接JSON、只读会话、日志或角色D2S。
 
-自动地图由客户端hosting/AutomapStore读写原版二进制.map／.ma0–3；本地角色沿已选D2S租约basename，Realm沿客户端保存根目录／Realm／角色名。可选版本1 .d2xnav0–3与原地图共用四seed槽，另外校验协议profile、主／object／幕seed、布局指纹、RLE段与数量／尺寸，保存的提示不含GUID且不能授予解锁；不从旧图元重建观察、不迁移未知版本。四seed轮换、object seed过滤、文件校验及未运行边界统一见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。旧D2X探索格式不再兼容，旧文件保留；角色v96和服务端存储权威不变。
+自动地图由客户端hosting/AutomapStore读写原版二进制.map／.ma0–3；本地角色沿已选D2S租约basename，Realm沿客户端保存根目录／Realm／角色名。自定义导航侧文件格式、读写及恢复入口已移除，旧文件保留；重启不恢复逐格观察或目标位置提示，AI按未知重新探索。四seed轮换、object seed过滤、文件校验及未运行边界统一见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。角色v96和服务端存储权威不变。
 
 原位证据：本地D2MOO PlrSave2、Items／ItemMods、PlrIntro、D2QuestRecord；D2CE ActsInfo只交叉核对重置位；独立@dschu012/d2s只用于既有格式对照，不是运行依赖。固定版本及许可见[资料来源](../resources/THIRD_PARTY.md)。
 

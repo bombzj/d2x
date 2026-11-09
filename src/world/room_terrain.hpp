@@ -49,6 +49,8 @@ class RoomTerrainSession {
   public:
     virtual ~RoomTerrainSession() = default;
     virtual void include(const PreparedRoomTerrain &) = 0;
+    // Rehydrate known room inputs without extending topology or creating rooms.
+    virtual void restore(const PreparedRoomTerrain &) = 0;
     virtual void prepare(RoomTerrainId) = 0;
     virtual void create(RoomTerrainId) = 0;
     virtual void release(RoomTerrainId) = 0;

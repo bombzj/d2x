@@ -2,6 +2,32 @@
 
 本页维护来源、固定版本、原版依据入口与许可；当前实现及缺口见[基线](../../BASELINE.md)和对应专题。原版参考保留版本、函数／地址、条件及关键行为，不依赖临时目录长期存在；构建、自研运行和包身份仅在当次交付中说明。理解规则与调用链优先读本地D2MOO，资源和参数取当前MPQ；发现版本差异、可疑常量或行为矛盾后再定点核对原版DLL，不把反汇编逐条推读作为默认入口。参考附带表不能代替用户资源。客户端正式运行不加载参考仓库或原游戏DLL，也不移植服务端结算。
 
+## 客户端UsedSkill与重定位淡入
+
+本机零售1.13c D2Client MD5 `f5860c629d309b8fc1f96174babcf633`、ImageBase `0x6fab0000`；D2Common MD5 `ee1238806ef6d6d9801d12a09d128fe1`、ImageBase `0x6fd50000`。以下RVA为同版本只读机器码核对，不沿用D2MOO的1.10f地址。
+
+- D2Common ordinal10511／RVA303A0读取Unit+0xA8技能列表的+0x10；ordinal11103／303E0把指定技能指针写到同一位置。对应D2MOO `Units::UNITS_GetUsedSkill／UNITS_SetUsedSkill`和`D2Skills::SKILLS_GetUsedSkillFromSkillList／SKILLS_SetUsedSkillInSkillList`。它不是左右键选择，也不是根据当前绘制动画临时反推的技能。
+- Client A1E72–A1E74在技能起手写UsedSkill；A2041–A2043在客户端起手函数失败时清空。19869–1986C、19E73–19E76在移动入口清空；人物模式处理1C150通过表F8418（每模式12字节）选择推进及结束策略，施法模式10为2／1／3，结束分支1C2D3–1C2FA检查动画完成，1C45F–1C462清空UsedSkill后进入待机。不能把“动画结束”改为无限保留最近一次传送术。全部特殊技能、蓄力／引导与强制动作时序仍须逐项核对，局部调用证据不认证完整客户端模式机。
+- 客户端完成边界与宿主ENDANIM不能当成同一个禁止重入期限。D2MOO `UNITS_IsAtEndOfFrameCycle`普通动画检查当前定点帧＋速度是否到末尾；`SUnit::sub_6FCBCE70`遍历动作标记后再安排ENDANIM。`PlrModes::sub_6FC81890`及`D2GAME_PLRMODES_First`允许符合资格的施法在旧结束事件之前重入，而非统一排队到结束。本机1.13c D2Game（MD5 `978f6f74cd031bce6ecee602cd5988cc`、ImageBase `0x6fc20000`）RVA77E00–77E22及78124–78148调用8E490查询事件1，再比较游戏帧`<=事件帧+5`；780BF调用前一入口，确认参考代码的比较方向，不应误改成`>=ENDANIM`。D2X普通SC共用`normalCastTiming`的完成边界开放重入，仍保留未完成释放／恢复／冷却保护；这只是正常输入节奏的已实现子集，不认证原版全部模式替换。
+- Client AF673把15末字节交给A7E20。本人分支A7ED0–A7ED9先取旧房间（Common ordinal10331），为空则跳过淡入；A7EDC调用10511取UsedSkill、A7EE7调用10858取技能表记录。A7EF0–A7EFE读取`Fog.gdwBitMasks[6]`并检查记录+8的0x40位，命中清传入标志。Fog导出gdwBitMasks的第6项确为0x40；D2MOO `SkillsTbls.cpp`把warp编译为第38位（第二DWORD的第6位），`D2SkillsTxt::dwFlags[2]`始于+4，因此位映射闭合。A7F08–A7F1F仅在标志仍非零且人物类型0时调用10EA0；10EA0–10EAB写GetTickCount()+500，10EC0–10F38按剩余毫秒×255／500，经D2gfx绘制黑色遮罩。该判据不检查传送距离、关卡变化或“此前是否收到15”。
+- 原版房间生命周期：入局59先于03，A7630经A5A60查房间时可能尚无已加载幕；03处理43F90在加载新幕前经Common10868／3C990释放旧幕，逐房间3C870通过11016／66700摘除单位并清房间。05处理ACB70／80220释放图形，07处理AC440读取已有本人房间，不因揭示包自行挂入人物。恢复／复活59及全部移除交错仍未完整核实。
+- 传送术的服务端依据为D2MOO `SkillSor::SKILLS_SrvDo027_Teleport`调用`SUnit::sub_6FCBDFE0(...,0,0)`，后者设置TELEPORTED；`PlrModes::sub_6FC81650`调用`PlrMsg::sub_6FC81CA0(...,1)`，SCmd把此值原样写入15末字节，字段本身仍名unk0x00A。原版Host的实际Join记录确认本人GUID2共38个15、尾字节全为1（初始定位1次、传送落点37次），其中350请求0C→354本人15、357请求0F→361本人15；佣兵GUID12另有38个type1定位，不混入本人统计。不能由flag=1或包数断言异常淡入，也不能只统计0C而忽略连续施法0F。客户端修复和未运行边界见[地图审计](../modules/MAP.md#移动一致性审计边界)。
+- D2MOO同一重定位调用内先经`D2GAME_GetRoom_6FC52070`取得活动房间、`COLLISION_GetFreeCoordinates`寻位，再重置路径、发送目标房间07并设置TELEPORTED，没有本项目的跨调度PendingContent返回。`PlrMsg::sub_6FC81D20`仅在技能flags含4或接收者不是本人时发送技能动作；不能为遮住内容等待引起的晚到15而无条件给本人补4C／4D。零售Skills[54]的CltStFunc／CltDoFunc均为空，亦不能凭空增加客户端预测传送。单机异步准备与表现时钟的协调属于D2X调度适配，不是原版新增的淡入豁免规则。
+
+## 传送与活动房间
+
+D2MOO `DrlgActivate.cpp::DRLGACTIVATE_ChangeClientRoom`先增加新房间引用再减少旧引用；`RoomExPropagateSetStatus`递归有序near图，依次覆盖0／1／2／3级。`ClientInSight`经InitRoomGrids、AddRoomMapTiles创建活动房间；`ClientOutOfSight`检查TILELIB_LOADED与PRESET_UNITS_ADDED；`Untile`仅加载该房间DT1与必要预设单位。三层资源前置不可删除，但不能把最外层的输入需求扩大为整区玩法内容准备。`Game.cpp::GAME_Update`在bHasPendingRoomsUpdates时遍历Act的活动房间链，调用`GAME_PopulateRoom`完成预设单位、休眠恢复、物件和怪物人口；OutOfSight／Untile引用本身不等同活动房间。`DrlgDrlg.cpp::DRLG_UpdateAndFreeInactiveRooms`按活动标记、10次倒计数、实际房间状态及Vis反向出口检查后释放整层；资源补载不能以永久缓存取代此生命周期。
+
+交接记录中的1.13c定点证据：D2Game MD5 `978f6f74cd031bce6ecee602cd5988cc`、ImageBase `0x6fc20000`，公共重定位RVA E19C0在E1A22／E1A39两次调用1280（先空提示，再旧房间提示）；1280只查当前活动房间矩形及邻接活动房间，未调用地图生成／MPQ。该两次尝试与本地D2MOO转录不同；不把它推导为后续碰撞、换房和资源工作全部免费。1.13c的DRLG_Update客户端调用与宿主不导入10715的既有核对见本页地形证据，不能拿bClient=0的7 tick分支充当宿主后台预取。
+
+Host额外进度条尚未定位到本机1.13c具体阶段。D2MOO `Level.cpp::LEVEL_LoadAct`按需分配所需幕；D2Decomp `docs/research/re/net-join.md`的1.14d研究说明TCP/IP Host先建立监听服务，再由本机客户端经TCP连接自己的4000端口，而单机使用本地模式。此版本旁证仅说明初始化／连接链不同，不能证明额外时间用于整幕地图预载，也不能作为增加常驻资源或修改技能时序的依据。D2X的两种准备票据及尚未复测边界见[地图准备](../modules/MAP.md#地图缓存与分帧准备)。
+
+## 自然探索与客户端坐标
+
+本机零售1.13c D2Client MD5 `f5860c629d309b8fc1f96174babcf633`、ImageBase `0x6fab0000`；D2Common MD5 `ee1238806ef6d6d9801d12a09d128fe1`、ImageBase `0x6fd50000`。只读核对Client RVA62AF0：先消费全局初始化倒计数，随后62B32／62B3D经导入读取本人客户端坐标；62B4A–62B7B计算`max(abs(dx),abs(dy))+floor(min(abs(dx),abs(dy))/2)`，小于80退出，达到后保存坐标，62BB2取得邻房数组，62BFD–62C14按Levels.Layer一致性调用62580。该80使用客户端投影像素。Common ordinal10651／RVA30290读取DynamicPath+08，11142／30240读取+0C；本地D2MOO Path::PATH_UpdateClientCoords与Path.h确认这两个字段为dwClientCoordX/Y，16.16精确位置右移11后经DUNGEON_GameToClientCoords执行差除2／和除4。
+
+Client 62580的625B2／62608跳过tile隐藏位8，625B6／6260C检查已绘制位0x20000；全局强制或函数强制参数允许跳过该绘制位门槛。61880在61886检查0x40000已处理位，61891–61896先置位，再选择Automap图元，未产生图元也已处理。自然探索状态与图元存在性须分别维护。绘制隐藏墙的0x408条件、已绘制位设置的全部分支、初始化倒计数／帧序、城镇强制及原automap随机图元流仍需完整运行对照。当前源码接入及限制见[自动地图](../gameplay/world/AUTOMAP.md#揭示与生命周期)，不把静态分支核对扩大为全部原版一致性认证。
+
 ## 原始素材
 
 当前游戏使用用户提供的assets/mpq2资料片五个原始MPQ，名称、摘要与挂载顺序见[MPQ](MPQ.md)。原图、表、字体、DC6／DCC／COF、PL2、TBL与WAV属于Blizzard Entertainment；素材权利独立于代码GPL-3.0。MPQ、导出资源、截图、角色资料与参考仓库不纳入源码提交。
@@ -37,6 +63,7 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 | `reference/dgengine-core/` | `dd600ab` | DGEngine 的通用 2D 引擎组件；不提供 Diablo II 规则或面板布局 |
 | `reference/opendiablo2/` | `7f92c57` | 怪物 `TransLvl + 2`、COF 逐层轮廓阴影、默认 `ohand.dc6` 鼠标及 Units 调色板；另有角色／任务面板参考 |
 | `reference/diablerie/` | `9e42ef2` | COF Shadow／透明字段与半高斜投影交叉参考；MIT；参考附带表不替代当前 MPQ |
+| `reference/d2decomped/` | `d6aa6283c5daa1685896076ab621657afbe3efd2` | [D2Decomp](https://github.com/psi29a/d2decomped)：面向1.14d的跨平台C++23重实现，GPL-3.0-or-later；客户端、五幕规则及`docs/research/re`逆向笔记可交叉参考，不是原程序完整反编译源码；不进入D2X构建或运行依赖 |
 | `reference/pd2-bh/` | `92e9d319f20113b5fbd382ad0fd3df9480116d04` | [PD2官方BH](https://github.com/Project-Diablo-2/BH)：原客户端钩子、MCP局部扩展、物品提示／过滤与PD2核心导出调用；AGPL-3.0；不是完整PD2核心或汉服源码 |
 | `reference/pd2-cn-bh/` | `68f7343342eed668190d464b7111849a6cc0ce89` | [历史BH-CN](https://github.com/weili0677/BH-CN)：2022-12-27的S6汉化分支，原MPQ辅助表读取、输入／物品及大厅改动；AGPL-3.0；不代表当前CN版本 |
 | `reference/pd2-cn-analysis/` | 目标SHA-256见[PD2兼容分析](../pd2/BUILDS.md#已取得的-cn-目标样本) | CN样本的只读分析产物：输入／工具摘要、PE／LLVM、提取表、REA Evidence、静态主补丁及收发长度对照；地址与限制见[DLL取证](PD2_CN_DLL_ANALYSIS.md)，不是公开核心源码，不进入构建或源码提交 |
@@ -46,6 +73,10 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 | `reference/rea-runtime/` | npm `rea-agents@6.7.0`，本地 package-lock；Ghidra 12.1.4 | 实际运行的stdio MCP／Windows Ghidra静态后端，使用Node24.19.0与现有JDK21.0.2；REA MIT、Ghidra Apache-2.0及各自依赖许可。官方Ghidra归档摘要与取证范围见[工具记录](PD2_CN_DLL_ANALYSIS.md#工具证据与复核入口)，不注册全局配置，不进入D2X构建或运行依赖 |
 
 四类主要参考分工：D2MOO核对原服／D2Common规则，OpenD2核对旧格式／协议与菜单，OpenDiablo2核对原图布局／字段，Diablerie交叉核对客户端动画／输入／声音。DGEngine及其core补充DCC／DS1／DT1与图形偏移证据。D2MOO没有完整D2Client，DGEngine偏Diablo I，简化客户端不认证经典版精确行为。
+
+D2Decomp补充现代客户端实现与1.14d研究入口：`apps/d2d`覆盖界面、场景、输入和声音，`components/game`／`rules`／`drlg`覆盖游戏、规则及地图，`components/net`覆盖原版TCP/IP Join；`docs/research/re`按专题保存函数、字段和行为依据，`tools/emu`使用用户自有1.14d程序做Unicorn对照。该快照README声明五幕27项任务可玩，但自研宿主多人及独立服务端尚未开始，原版Join第五幕未完成实机核对；可玩、移植和局部对照不等于完整行为认证。它以1.14d而非D2X当前1.13c为依据，且含可选便利改动、明确不以像素级渲染为目标；采用结论前须核对版本、原函数及当前MPQ，不取代D2MOO和已有1.13c证据。仅查阅本地参考不改变产品许可；实际复制或改造代码须保留GPL来源及相应声明，图标等非GPL素材另行核对。
+
+优先查阅的增量入口是`docs/research/re/automap.md`（已绘制／已处理位及揭示调用链）、`unit-sounds.md`／`sound.md`／`music.md`（动作、事件与声音调度）、`skill-tooltips.md`／`char-panel.md`（客户端数值与布局）以及各幕任务笔记。先对照`deviations.md`和`unverified.md`排除便利改动、渲染近似与未核实推断。原版Join的`apps/d2d/netgame.cpp::NetGame::join`经`components/net/d2gs/exe_tables.hpp`在运行时读取用户1.14d Game.exe的Huffman码长与包长表，不执行该程序；此依赖不符合D2X运行时不加载原程序的边界，只参考其协议研究与状态机，不照搬资源依赖方案。Unicorn工具中存在被替换的辅助函数和隔离上下文，局部通过不能证明完整客户端／宿主时序一致，本次未运行这些工具。
 
 PD2参考用于区分原版共用路径与有源码依据的局部扩展，不加入构建或运行依赖。已确认功能、代码消费者及未知项统一维护于[PD2领域基线](../pd2/README.md)，目标核心／资源摘要及地址解释见[版本与证据](../pd2/BUILDS.md)。初始化、发行与代码隔离见[兼容设计](../architecture/PD2_COMPATIBILITY.md)，具体协议和位流见[DLL取证](PD2_CN_DLL_ANALYSIS.md)。所列公开仓库未提供完整ProjectDiablo.dll核心及PD2_EXT.dll实现，不足以据此重建完整PD2游戏服务；目标协议与资源须按配套版本核实。
 
@@ -112,7 +143,7 @@ D2Client的03处理RVA `ADB50`读取幕号、地图种子、城镇及尾部种�
 
 走跑结束另核对下述同快照D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`，ImageBase `0x6fab0000`）：RVA1C1AE经C3E2调用D2Common ordinal10342（RVA E230，D2MOO `PathMisc::D2Common_10226`），1C2F6–1C2FC消费路径结束标志；1C47B–1C493按城镇选择模式1／5，1C4A1–1C4AC调用ChangeAnimMode。Common ordinal11090／RVA33920在33938比较当前模式，变化时33952存新模式、3395B调用335F0重置动画起点；同模式分支不重置，与D2MOO `UNITS_ChangeAnimMode`／`UNITS_SetAnimStartFrame`一致。Common RVA2FB50–2FB5F另确认人物模式3返回101、其余走跑返回213；2FB40–2FB4F确认怪物按模式15读取原MonStats RunAnimSpeed，否则WalkAnimSpeed，与`UNITS_GetBaseAnimSpeed`一致。FRW150递减、25下限、CharStats跑步临时加成及动画／路径8.8整数缩放参考`UNITS_GetAnimStatBasePercentage`／`UNITS_CharacterStartRunningOrKnockback`／`UNITS_UpdateRunWalkAnimRateAndVelocity`。路径结束无额外200毫秒走跑延迟，实际显示入口及未运行边界见[地图](../modules/MAP.md#走跑动画与路径结束)。原DLL、反汇编与摘录留忽略目录，不修改、提交或分发。
 
-同一原版 1.13c D2Client 的坐标走跑 01／03 经 RVA 29FA0 分派至 149E0，单位走跑 02／04 也进入公共发送函数 143E0。14415 读取 GetTickCount，01–04 均走 14446 的 200ms 分支。间隔不足时，1445E 逐字节比较前一包，内容相同才跳过；内容不同时，14462 起更新缓存，144A1 调用网络发送。该证据覆盖已形成的移动指令，长按鼠标何时产生下一条指令仍由上层输入处理。
+同一原版 1.13c D2Client 的坐标走跑 01／03 经 RVA 29FA0 分派至 149E0，单位走跑 02／04 也进入公共发送函数 143E0。14415 读取 GetTickCount，01–04 均走 14446 的 200ms 分支；144CC的跳转地址表与144D8的索引表另确认13走此分支，49超过05–3A的表范围也走此分支。间隔不足时，1445E逐字节比较前一包，相同从14460跳到144C3直接返回，不更新缓存／时间、不调用网络发送，也没有输入错误分支；内容不同或间隔达到200ms时，14462起更新缓存，1447D存发送时刻，144A1调用网络发送。不能把发送层静默抑制变成上层输入失败或取消本地路径；当前入口与未验收边界见[移动一致性审计](../modules/MAP.md#移动一致性审计边界)。该证据覆盖已形成的请求，不证明服务端受理，长按鼠标何时产生下一条指令仍由上层输入处理。
 
 零体力客户端转换另核对同版D2Client：RVA1C50C检查当前模式3，1C515调用19D80；19D88限定本人，19D90–19D9C读取stat10并仅在零值继续。19DF0–19E2B保留单位目标进入19830，坐标目标分支19E36–19EBA读取原目标并调用2A040重算，19E96–19EAB按城镇选择Walk6／2和待机5／1；成功经2A6C0换模式，失败经19710待机。该函数未显示扣体力，不据缺少本地扣体力代码认定缺陷，也不把服务端RunDrain直接移入客户端。当前转换及剩余范围见[移动审计](../modules/MAP.md#移动一致性审计边界)。
 

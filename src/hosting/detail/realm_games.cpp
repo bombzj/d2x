@@ -1,9 +1,11 @@
 #include "gameplay/character/persistent_character.hpp"
 #include "server/game_messages.hpp"
 #include "server/area_store.hpp"
+#include "server/systems/world/system.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/native_game_wire.hpp"
 #include "content/world/world_catalog.hpp"
+#include <algorithm>
 #include <random>
 #include <cctype>
 namespace d2x::hosting {
@@ -32,12 +34,26 @@ NativeRealmService::PreparedGame NativeRealmService::prepareGuest(PersistentChar
     const auto catalog = sharedWorldCatalog(archives, room.settings.difficulty);
     const auto &level = catalog->level(int(town));
     if (!level.town) throw ProtocolError("Joining character lacks a native entry town");
-    const auto request = host.requestAdmissionTown(room.handle, town);
+    auto request = host.requestAdmissionTown(room.handle, town);
     if (!request) throw ProtocolError("Unable to request the joining character's town");
-    if (*request.value) {
-        auto prepared = prepareWorldArea(archives, *content, {room.settings.mapSeed, level.act, level.id,
-            room.settings.difficulty, room.settings.ladderMonsterStats()});
-        shared.installPreparedArea(room.handle, *request.value, std::move(prepared));
+    while (*request.value) {
+        const auto pending=host.pendingAreas(room.handle);
+        if(!pending) throw ProtocolError("Joining town preparation expired");
+        const auto ticket=std::find_if(pending->begin(),pending->end(),[&](const auto &entry){return entry.request==*request.value;});
+        if(ticket==pending->end()) throw ProtocolError("Joining town preparation ticket is missing");
+        if(ticket->roomInputs.empty()) {
+            auto prepared = prepareWorldArea(archives, *content, {room.settings.mapSeed, level.act, level.id,
+                room.settings.difficulty, room.settings.ladderMonsterStats()});
+            shared.installPreparedArea(room.handle, *request.value, std::move(prepared));
+        } else {
+            auto inputs=generateRoomInputs(archives,{room.settings.mapSeed,ticket->roomInputAct,level.id,
+                room.settings.difficulty,room.settings.ladderMonsterStats(),ticket->pd2Map},ticket->roomInputs);
+            shared.installPreparedRoomInputs(room.handle,*ticket,std::move(inputs));
+        }
+        // A town may already have several immutable reload tickets in flight.
+        // Complete all missing inputs before admitting this synchronous guest.
+        request=host.requestAdmissionTown(room.handle,town);
+        if(!request) throw ProtocolError("Unable to finish the joining character's town");
     }
     // Installing a new town allocates world IDs. Remap the incoming D2S afterwards.
     auto definition = prepareGameCharacter(*content, std::move(saved), room.settings, host.nextEntity(room.handle), shared.items);

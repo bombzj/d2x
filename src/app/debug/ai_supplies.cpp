@@ -223,8 +223,9 @@ bool DebugAi::Impl::drink(Context &c) {
 }
 bool DebugAi::Impl::restock(Context &c) {
     const auto &view=c.session.read();const auto &world=view.world;
+    // A few missing points regenerate; a healer walk costs seconds per town visit.
     const bool injured=world.life && c.supplies && c.supplies->maxLife && *c.supplies->maxLife>0 &&
-        *world.life<*c.supplies->maxLife;
+        uint64_t(*world.life)*100<uint64_t(*c.supplies->maxLife)*90;
     if(healingIssued) {
         if(!healingObserved && (!world.life || !c.supplies || !c.supplies->maxLife || *world.life<*c.supplies->maxLife)) {
             if(Clock::now()>=shopDeadline) throw std::runtime_error("Town healer interaction did not restore observed life; no blind retry");
@@ -265,7 +266,9 @@ bool DebugAi::Impl::restock(Context &c) {
         if(Clock::now()>=shopDeadline) throw std::runtime_error("Owned town portal tome quantity remains unknown");
         wait("supply-book-observation","Waiting for actual backpack tome quantities");return false;
     }
-    const bool portal=supplyPolicy.fillPortalBook && (!stock.books || stock.pages<stock.capacity);
+    // Top up a part-used tome only when the merchant is already visited for potions.
+    const bool portal=supplyPolicy.fillPortalBook && (!stock.books || stock.pages<=stock.capacity/2 ||
+        ((life || mana) && stock.pages<stock.capacity));
     if(!life && !mana && !portal) {
         if(world.npcRequested && supplyNpc && world.npcRequested==supplyNpc->id) c.control.closeNpc();
         shelfReopens=0;shopIssued=false;shelfObserved=false;supplyNpc.reset();return true;
@@ -367,7 +370,8 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
         (world.combatRequest && world.combatRequest->state==OnlineCombatRequest::State::Pending) ||
         travelPhase==TravelPhase::WaypointWait || travelPhase==TravelPhase::CrossWait) return false;
     const auto stock=portalStock(c);
-    const bool needsHealing=world.life && c.supplies && c.supplies->maxLife && *world.life<*c.supplies->maxLife;
+    const bool needsHealing=world.life && c.supplies && c.supplies->maxLife && *c.supplies->maxLife>0 &&
+        uint64_t(*world.life)*100<uint64_t(*c.supplies->maxLife)*90;
     const bool needsHealth=potionCount(c,PotionKind::Life)<unsigned(supplyPolicy.healthCount);
     const bool needsMana=potionCount(c,PotionKind::Mana)<unsigned(supplyPolicy.manaCount);
     const bool needsPortal=supplyPolicy.fillPortalBook && (!stock.known || !stock.books || stock.pages<=stock.capacity/2);

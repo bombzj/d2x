@@ -44,28 +44,13 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         combatSequence = v.world.combatSequence;
         localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
         localCast.reset();
+        usedSkill.reset();
         time = 0;
         nextWoundBloodFrame = 0; woundBloodRandom.clear();druidParticles.clear();
         localObjectKickRevision = 0;
     }
     const auto now = std::chrono::steady_clock::now();
     const auto nowMilliseconds=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
-    auto &repositionFade=mapDisplay.repositionFade;
-    if(repositionFade.gameGeneration!=v.gameGeneration || repositionFade.areaGeneration!=v.world.areaGeneration)
-        repositionFade={v.gameGeneration,v.world.areaGeneration,0,0};
-    if(!pd2 && playerId) if(const auto player=v.world.units.find({0,*playerId});player!=v.world.units.end()) {
-        const auto &unit=player->second;
-        if(unit.repositionRevision && unit.repositionRevision!=repositionFade.revision) {
-            repositionFade.revision=unit.repositionRevision;
-            auto usedSkill=unit.repositionSkill;
-            if(localCast && localCast->started>=0 && time<localCast->started+localCast->duration)
-                usedSkill=localCast->command.skill;
-            const auto skill=usedSkill?skillRows.find(*usedSkill):skillRows.end();
-            const bool warp=skill!=skillRows.end() && skills.number(skill->second,"warp").value_or(0)!=0;
-            if(unit.repositionFlags && !onlinePlayerDead(v.world) && !warp)
-                repositionFade.endMilliseconds=nowMilliseconds+500;
-        }
-    }
     // Refresh the wall-clock anchor while paused and on the resume frame.
     // Menu time must never become world animation/prediction catch-up.
     const float elapsed = paused || wasPaused || lastFrame == std::chrono::steady_clock::time_point{} ? 0.f
@@ -189,6 +174,24 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         missileAnchors.push_back({effectOwner(key),{float(unit.position->x)+.5f,float(unit.position->y)+.5f},key.id,key.type,unitClass(unit).value_or(UINT16_MAX)});
     shared.advanceClientMissiles(suspended ? 0.f : elapsed, map,
         {float(origin.x), float(origin.y)}, missileTargets,missileAnchors);
+    std::erase_if(questEffects.taintedSunLights,[&](const auto &entry) {
+        const auto unit=v.world.units.find(entry.first);
+        return unit==v.world.units.end() || unit->second.assignmentRevision!=entry.second;
+    });
+    for(const auto &effect:shared.takeClientMissileObjectOverlays()) {
+        const auto anchor=std::find_if(missileAnchors.begin(),missileAnchors.end(),[&](const auto &value){return value.id==effect.object;});
+        if(anchor==missileAnchors.end()) continue;
+        const OnlineUnitKey key{anchor->type,anchor->nativeId};
+        if(const auto *overlay=shared.overlayVisual(effect.overlay);overlay && overlay->fps>0)
+            overlayVisuals.push_back({effect.overlay,key,time-effect.age,overlay->frames/overlay->fps});
+        else effectLimitations.insert("Tainted Sun: original altar overlay unavailable");
+        if(const auto unit=v.world.units.find(key);unit!=v.world.units.end()) {
+            bool existingLight=false;
+            for(size_t row=0;row<objects.rows().size();++row) if(objects.number(row,"Id")==unitClass(unit->second))
+                for(const auto *field:{"Lit0","Lit1","Lit2"}) existingLight|=objects.number(row,field).value_or(0)>1;
+            if(!existingLight) questEffects.taintedSunLights.insert_or_assign(key,unit->second.assignmentRevision);
+        }
+    }
     for(const auto owner:shared.takeClientMissileHiddenOwners())
         if(const auto anchor=std::find_if(missileAnchors.begin(),missileAnchors.end(),[&](const auto &value){return value.id==owner;});
            anchor!=missileAnchors.end()) {
@@ -249,6 +252,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     worldScene.level = binding.area.value(); worldScene.palette = binding.palette.value_or(0);
     worldScene.gameGeneration = v.gameGeneration; worldScene.areaGeneration = v.world.areaGeneration;
     worldScene.weatherSeed = v.load.mapSeed.value_or(0);
+    worldScene.retailAutomap=!pd2;
     worldScene.observer = camera;
     const auto lightStat = [&](const auto &attributes, const char *name) -> int32_t {
         if (!monsterText->nativeStats) return 0;
@@ -498,6 +502,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 emitSound(PresentationSoundEvent::Kind::ObjectMode,u,objectElapsed,-1,-1,{},presentation.mode);
             m.objectSoundMode = presentation.mode;
             worldScene.objects.push_back({*unitClass(u), displayed.mode.value_or(0), feet});
+            if(questEffects.taintedSunLights.contains(key)) worldScene.objects.back().lightRadius=18;
             // Invisible trap controllers are intentional MPQ Draw=0 units,
             // not failed resources and not substitutes for visible actors.
             if (!presentation.draw) continue;
@@ -1076,10 +1081,10 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             marker.position = moving->second.position + moving->second.correction;
     }
     shared.drawAutomap(automap);
-    if(!pd2 && nowMilliseconds<repositionFade.endMilliseconds) {
+    if(!pd2 && nowMilliseconds<binding.repositionFadeEndMilliseconds) {
         auto viewport=shared.worldViewport();
         viewport.height=float(std::max(0,H-47));
-        const auto alpha=uint8_t(std::min(uint64_t{500},repositionFade.endMilliseconds-nowMilliseconds)*255/500);
+        const auto alpha=uint8_t(std::min(uint64_t{500},binding.repositionFadeEndMilliseconds-nowMilliseconds)*255/500);
         DrawRectangleRec(viewport,Color{0,0,0,alpha});
     }
     auto &hit = intent.input;

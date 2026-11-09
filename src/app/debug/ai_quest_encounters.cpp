@@ -144,7 +144,13 @@ bool DebugAi::Impl::questRescue(Context &c,const QuestStep &step) {
     }
     if(const auto door=find(c,*step.target)) {
         if(!c.combat.hostile(*door)) throw std::runtime_error("Prison door is not a legitimately attackable native monster");
-        if(!approachPoint(c,*door->position,"assigned prison door",2)) explore(c,"reachable prison gate");
+        if(!c.combat.monsterTargetEligible(*door,false)) {
+            waitForWorldResult(c,step,"Waiting for the observed prison door's actual attack eligibility");return false;
+        }
+        target=door->key;targetAssignment=door->assignmentRevision;
+        // Destructible gates are combat targets. Their occupied centre is not
+        // an approach goal; use the same attack stances as every other hunt.
+        approachEnemy(c,*door,"assigned prison door");
         return false;
     }
     if(world.quests.rescuedBarbsRemaining==0) {
@@ -206,7 +212,7 @@ bool DebugAi::Impl::questEncounter(Context &c,const QuestStep &step) {
             if(distance<nearest) {nearest=distance;enemy=unit;}
         }
         if(enemy) {
-            approachPoint(c,*enemy->position,"remaining assigned encounter hostile",2);return false;
+            approachEnemy(c,*enemy,"remaining assigned encounter hostile");return false;
         }
         waitForWorldResult(c,step,"Encounter witnessed; waiting here for actual enemies, portal or quest state, including witness departure");return false;
     }

@@ -1,51 +1,51 @@
 # D2X — Diablo II: Lord of Destruction
 
-D2X 是用 C++20 重建《暗黑破坏神 II：毁灭之王》1.13c 客户端与游戏服务的开源项目，以还原原版规则和行为为目标，直接读取 MPQ 中的地图、图形、动画、音效和数据表。
+D2X is an open-source C++20 reimplementation of the **Diablo II: Lord of Destruction 1.13c** client and game server. It aims to reproduce the original game's rules and behavior, reading maps, graphics, animations, audio, and data tables directly from the original MPQ archives.
 
-同一客户端提供 Single Player、TCP/IP 和 Battle.net 入口。单机与局域网使用自研宿主，远端联机使用原 D2GS 协议；独立服务端与嵌入宿主复用同一玩法内核。资源加载、网络、玩法、画面表现和存档分别组织，便于对照原版、定位差异和持续完善。
+One client provides Single Player, TCP/IP, and Battle.net modes. Single Player and LAN games use D2X's own host, while remote play uses the original D2GS protocol. The embedded host and dedicated server share the same gameplay core, with separate resource, networking, presentation, and save systems.
 
-**项目仍在开发中，玩法、画面与原版兼容性正在逐项对齐。** 当前能力与已知限制统一维护在[项目基线](BASELINE.md)，详细规则与实现见[文档目录](docs/README.md)。
+**D2X is under active development. Gameplay, visuals, and compatibility with the original game are incomplete.** See the [project baseline](BASELINE.md) for current capabilities and known limitations, and the [documentation index](docs/README.md) for implementation details. Most documentation is currently in Chinese.
 
-项目也在推进 Project Diablo 2（PD2）适配。支持范围取决于具体资源、核心版本与连接方式，见[PD2 能力状态](docs/pd2/STATUS.md)和[版本说明](docs/pd2/BUILDS.md)。
+Project Diablo 2 (PD2) support is also in development. Compatibility depends on the asset set, core version, and connection mode; see [PD2 status](docs/pd2/STATUS.md) and [supported versions](docs/pd2/BUILDS.md).
 
-## 快速开始
+## Quick start
 
-### 准备游戏资源
+### Game assets
 
-请自行提供合法持有的原版资料片 MPQ，资源应来自一致的安装版本。仓库和运行包不包含暴雪游戏素材。
+You must supply MPQ archives from a legally owned copy of Lord of Destruction. Use files from a consistent installation version. Blizzard game assets are not included in this repository or its distribution packages.
 
-将所需 MPQ 放入 `assets/mpq2/`，或在启动时通过 `-Mpq` 指定目录。文件清单及语音、音乐等资源的说明见[MPQ 资源](docs/resources/MPQ.md)。
+Place the required MPQs in `assets/mpq2/`, or specify their directory with `-Mpq` when launching. See the [MPQ guide](docs/resources/MPQ.md) for required files, including speech and music assets.
 
-### Windows 构建与启动
+### Build and run on Windows
 
-需要 CMake 3.25+、支持 C++20 的编译器、Git，以及支持 OpenGL 3.3 的图形驱动。首次配置会下载固定版本的依赖。在仓库根目录执行：
+Requirements: CMake 3.25+, a C++20 compiler, Git, and an OpenGL 3.3-capable graphics driver. The first configuration downloads pinned dependencies. Run from the repository root:
 
 ```powershell
 .\scripts\build.ps1 -Configuration Release
 .\Play.cmd -Mpq assets/mpq2
 ```
 
-进入主菜单后选择游玩方式。联机配置、启动参数和打包方法见[构建与运行](docs/development/BUILD_AND_RUN.md)。PD2 使用 `PlayPD2.cmd`，需先按[PD2 运行与部署](docs/pd2/OPERATIONS.md)准备配套资源与配置。
+Choose a game mode from the main menu. See [build and run](docs/development/BUILD_AND_RUN.md) for network configuration, launch options, and packaging. For PD2, prepare the matching assets and configuration using the [PD2 setup guide](docs/pd2/OPERATIONS.md), then launch `PlayPD2.cmd`.
 
-Windows 已有实际构建与运行记录；Linux 保留 CMake 构建路径，尚未实际编译或运行验证，步骤见[Linux 构建说明](docs/development/BUILD_AND_RUN.md#linux-支持状态)。
+Windows builds have been compiled and run. A Linux CMake build path is provided but has not yet been compiled or run on Linux; see the [Linux build notes](docs/development/BUILD_AND_RUN.md#linux-支持状态).
 
-## 文档导航
+## Documentation
 
-| 想了解的内容 | 入口 |
+| Topic | Guide |
 | --- | --- |
-| 当前能力、限制与开发状态 | [项目基线](BASELINE.md) |
-| 构建、启动、配置与打包 | [构建与运行](docs/development/BUILD_AND_RUN.md) |
-| 独立服务端与 PvPGN 部署 | [服务端指南](docs/development/PVPGN_SERVER.md) |
-| PD2 的使用、差异与版本边界 | [PD2 文档](docs/pd2/README.md) |
-| 代码结构、模块职责与数据流 | [架构速览](docs/architecture/OVERVIEW.md) |
-| 玩法规则、模块说明与原版依据 | [完整文档目录](docs/README.md) |
+| Capabilities, limitations, and development status | [Project baseline](BASELINE.md) |
+| Building, running, configuration, and packaging | [Build and run](docs/development/BUILD_AND_RUN.md) |
+| Dedicated server and PvPGN deployment | [Server guide](docs/development/PVPGN_SERVER.md) |
+| PD2 setup, differences, and version compatibility | [PD2 documentation](docs/pd2/README.md) |
+| Code structure, module responsibilities, and data flow | [Architecture overview](docs/architecture/OVERVIEW.md) |
+| Gameplay rules, modules, and original-game references | [Documentation index](docs/README.md) |
 
-## 参与开发
+## Contributing
 
-开发前请阅读[协作约定](AGENTS.md)、[编码规范](docs/development/CODING.md)和[验证指南](docs/development/TESTING.md)。报告问题时，请说明资源版本、运行方式、复现步骤，以及预期与实际行为。
+Before contributing, read the [contributor guidelines](AGENTS.md), [coding conventions](docs/development/CODING.md), and [validation guide](docs/development/TESTING.md). When reporting an issue, include your asset version, game mode, steps to reproduce, and the expected and actual behavior.
 
-## 许可与致谢
+## License and acknowledgments
 
-源码采用 [GPL-3.0](LICENSE)。游戏素材的权利归各自权利人所有，不随源码许可授予。
+The source code is licensed under the [GNU GPL v3](LICENSE). Game assets belong to their respective rights holders and are not covered by this license.
 
-项目使用并参考了多个开源项目，依赖、代码来源及各自许可见[资料来源与第三方许可](docs/resources/THIRD_PARTY.md)。
+D2X uses and draws on several open-source projects. See [third-party sources and licenses](docs/resources/THIRD_PARTY.md) for dependencies, references, and attribution.

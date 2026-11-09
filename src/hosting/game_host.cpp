@@ -7,6 +7,8 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <iostream>
+#include <sstream>
 #include <utility>
 
 namespace d2x {
@@ -68,7 +70,8 @@ PlayerBinding GameHost::create(server::GameDefinition definition) {
         slots_.emplace_back();
     }
     auto &slot = slots_[index];
-    slot.game = std::move(game); slot.accumulator = 0; slot.paused = slot.resumed = false; slot.debugPaused.reset();slot.fixedSteps.reset();
+    slot.game = std::move(game); slot.accumulator = 0; slot.paused = slot.resumed = slot.contentBlocked = false; slot.debugPaused.reset();slot.fixedSteps.reset();
+    slot.blockedSince.reset();slot.blockedRetries=0;
     slot.generation = nextGeneration_++;
     try { publish(index); }
     catch (...) { slot.game.reset(); slot.snapshots.clear(); throw; }
@@ -194,13 +197,39 @@ void GameHost::observeSteps(std::function<void(const hosting::StepTiming &)> obs
 }
 void GameHost::advanceStep(size_t index) {
     auto &slot=slots_[index];
-    if(!stepObserver_) {slot.game->step();return;}
     const auto before=slot.game->tick();
-    const auto footprints=slot.game->footprintMetrics();
+    const auto footprints=stepObserver_?slot.game->footprintMetrics():server::spatial::FootprintMetrics{};
     const auto started=std::chrono::steady_clock::now();
     slot.game->step();
-    const auto elapsed=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-started).count();
-    stepObserver_({{index,slot.generation},before,slot.game->tick(),uint64_t(elapsed),slot.game->stageMetrics(),
+    slot.contentBlocked=slot.game->tick()==before && !slot.game->pendingAreas().empty();
+    const auto finished=std::chrono::steady_clock::now();
+    const auto elapsed=std::chrono::duration_cast<std::chrono::nanoseconds>(finished-started).count();
+    const bool blocked=slot.game->tick()==before;
+    const bool firstBlocked=blocked && !slot.blockedSince;
+    if(firstBlocked) {slot.blockedSince=started;slot.blockedRetries=0;}
+    if(blocked) ++slot.blockedRetries;
+    if(firstBlocked || (!blocked && slot.blockedSince) || elapsed>=40000000) {
+        std::ostringstream log;
+        log << "[host-step] " << (firstBlocked?"blocked":!blocked && slot.blockedSince?"resumed":"slow")
+            << " steady_ms=" << std::chrono::duration_cast<std::chrono::milliseconds>(finished.time_since_epoch()).count()
+            << " game=" << index << ':' << slot.generation << " tick=" << before << " next_tick=" << slot.game->tick()
+            << " work_ms=" << double(elapsed)/1000000. << " debt_ms=" << slot.accumulator*1000
+            << " wait_ms=" << (slot.blockedSince?std::chrono::duration<double,std::milli>(finished-*slot.blockedSince).count():0.)
+            << " retries=" << slot.blockedRetries << " content=" << slot.contentBlocked << " pending=";
+        for(const auto &request:slot.game->pendingAreas()) log << request.request << ':' << int(request.destination) << ',';
+        const auto &metrics=slot.game->stageMetrics();
+        size_t busiest=0;
+        for(size_t stage=1;stage<metrics.size();++stage)
+            if(metrics[stage].nanoseconds>metrics[busiest].nanoseconds) busiest=stage;
+        for(const auto &stage:server::systemCatalog()) {
+            const auto at=size_t(stage.id);
+            if(at==busiest) log << " busiest=" << stage.name << ':' << double(metrics[at].nanoseconds)/1000000.;
+            if(slot.game->systemSteps()[at]==server::StepStatus::Blocked) log << " blocked_stage=" << stage.name;
+        }
+        std::clog << log.str() << '\n';
+    }
+    if(!blocked) {slot.blockedSince.reset();slot.blockedRetries=0;}
+    if(stepObserver_) stepObserver_({{index,slot.generation},before,slot.game->tick(),uint64_t(elapsed),slot.game->stageMetrics(),
         slot.game->footprintMetrics().since(footprints)});
 }
 void GameHost::advance(double seconds) {
@@ -236,6 +265,9 @@ void GameHost::advance(double seconds) {
         }
         if (changed) publish(index);
     }
+}
+bool GameHost::contentBlocked(GameHandle handle) const {
+    const auto *slot=find(handle);return slot && slot->contentBlocked;
 }
 CommandStatus GameHost::submit(PlayerBinding binding, server::GameCommand command) {
     auto *slot = find(binding.game);

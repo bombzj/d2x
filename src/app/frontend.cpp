@@ -915,7 +915,12 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 {"itemCommands", sharedClients ? sharedClients->queuedItemCommands() : 0},
                 {"waitingItemRequest", waiting ? nlohmann::json(*waiting) : nlohmann::json(nullptr)}};
             constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading", "TcpIp", "JoinHost", "Difficulty", "Victory"};
-            reply["frontend"] = {{"page", session.read().stage==OnlineStage::ProtocolReady && session.read().world.cinematic==7?"Victory":pageNames.at(size_t(page))}, {"notice", notice}, {"minimized", minimized}};
+            const bool inGame = session.read().stage == OnlineStage::ProtocolReady &&
+                scene && sceneGeneration == session.read().gameGeneration &&
+                town.read().available && sceneError.empty() && sharedUi && sharedController;
+            const auto reportedPage = session.read().stage == OnlineStage::ProtocolReady && session.read().world.cinematic == 7
+                ? "Victory" : inGame ? "InGame" : pageNames.at(size_t(page));
+            reply["frontend"] = {{"page", reportedPage}, {"notice", notice}, {"minimized", minimized}};
             reply["frontend"]["debugRevealMap"] = debugMapReveal ? nlohmann::json(*debugMapReveal) : nlohmann::json(nullptr);
             if (sharedUi) {
                 const auto &panels = sharedUi->ui();
@@ -1428,7 +1433,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     mapDisplay.multiplayer = !localConnection || lanConnection;
                     worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,*sharedClients,
                         sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed,
-                        localConnection && !lanConnection && ((!input.focused && !options.noPauseOnFocusLoss) || panels.gameMenuOpen));
+                        localConnection && !lanConnection && ((!input.focused && !options.noPauseOnFocusLoss) || panels.gameMenuOpen ||
+                            (embedded && embedded->singlePlayerContentBlocked())));
                     if(noPickup && !input.showLoot) worldFrame.input.pickup.reset();
                     sharedController->handleWorld(input,worldFrame.input,frameSeconds);
                     scene->drawTargetInfo(view,worldFrame,*sharedUi,combat,sharedController->combatTarget());

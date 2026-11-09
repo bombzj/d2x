@@ -76,13 +76,19 @@ struct System::RoomRuntime {
             }
         }
         bool ready=true;
+        std::map<RegionId,std::vector<RoomTerrainId>> missing;
         for(const auto &[current,remaining]:needed) {
             (void)remaining;const auto &room=rooms.at(current);
             if(terrain(current).resident(room.key)) continue;
-            const auto *source=owner.ports_.areas.find(room.area);
-            const auto *root=owner.ports_.areas.find(rooms.at(id).area);
-            owner.request(room.area,source?source->definition.pd2Map:root?root->definition.pd2Map:nullptr);
+            missing[room.area].push_back(room.key);
             ready=false;
+        }
+        for(auto &[region,inputs]:missing) {
+            const auto *source=owner.ports_.areas.find(region);
+            const auto *root=owner.ports_.areas.find(rooms.at(id).area);
+            const auto result=owner.requestRoomInputs(region,rooms.at(id).act,std::move(inputs),source?source->definition.pd2Map:root?root->definition.pd2Map:nullptr);
+            if(result.status==DomainStatus::Unavailable || result.status==DomainStatus::Conflict)
+                throw std::runtime_error("Cannot prepare native room inputs for level "+std::to_string(int(region)));
         }
         if(!ready) awaitingInputs=true;
         return ready;
@@ -476,10 +482,20 @@ bool System::roomInputsReady(RegionId region) const {
     if(area->definition.roomTerrain) return true;
     bool found=false;
     for(size_t id=0;id<rooms_->rooms.size();++id) {
-        const auto &room=rooms_->rooms[id];if(room.area!=region) continue;
+        const auto &room=rooms_->rooms[id];if(room.area!=region || room.act!=area->definition.act) continue;
         found=true;if(!rooms_->terrain(id).resident(room.key)) return false;
     }
     return found;
+}
+DomainResult<uint64_t> System::requestAreaInputs(RegionId region,std::shared_ptr<const pd2::MapInstance> map) {
+    rooms_->rebuild();
+    std::vector<RoomTerrainId> missing;
+    for(size_t id=0;id<rooms_->rooms.size();++id) {
+        const auto &room=rooms_->rooms[id];
+        if(room.area==region && room.act==ports_.areas.at(region).definition.act && !rooms_->terrain(id).resident(room.key)) missing.push_back(room.key);
+    }
+    if(missing.empty()) return {DomainStatus::Applied,ports_.areas.at(region).generation};
+    return requestRoomInputs(region,ports_.areas.at(region).definition.act,std::move(missing),std::move(map));
 }
 bool System::restoreRoomInputs(const AreaDefinition &prepared) {
     auto &area=ports_.areas.areas_.at(prepared.id);
@@ -496,6 +512,18 @@ bool System::restoreRoomInputs(const AreaDefinition &prepared) {
     if(!act.terrain) return false;
     act.terrain->include(*prepared.roomTerrain);
     act.terrainDirty=true;
+    return true;
+}
+bool System::restoreRoomInputs(const PrepareArea &request,const PreparedRoomTerrain &prepared) {
+    if(prepared.rooms().size()!=request.roomInputs.size() || prepared.act()!=request.roomInputAct || prepared.act()<0 || prepared.act()>=5) return false;
+    for(const auto &link:prepared.rooms())
+        if(std::find(request.roomInputs.begin(),request.roomInputs.end(),link.id)==request.roomInputs.end()) return false;
+    auto &act=rooms_->acts.at(size_t(prepared.act()));
+    if(!act.terrain) return false;
+    for(const auto key:request.roomInputs)
+        if(!rooms_->anchors.contains({prepared.act(),key})) return false;
+    act.terrain->restore(prepared);
+    // Decoding alone does not change tiles, collision, references or random.
     return true;
 }
 void System::refreshRoomTerrain() {
@@ -585,7 +613,11 @@ void System::updateRooms(TickContext tick) {
     rooms_->publish();
     rooms_->releaseLevels(tick.tick);
     for (const auto &act : rooms_->acts) if (act.activation) for (const auto &[id, state] : act.activation->states()) {
-        if (state.status >= 3) continue;
+        // GAME_Update populates the act's actual Room1 chain. OutOfSight and
+        // Untile only need resource inputs, not an entire area's gameplay
+        // definition. Requesting their neighbours here would put the removed
+        // whole-area wait straight back into the frame after a teleport.
+        if (!state.active) continue;
         const auto &room = rooms_->rooms.at(id);
         const auto *area=ports_.areas.find(room.area);
         auto map=area?area->definition.pd2Map:nullptr;
@@ -593,16 +625,9 @@ void System::updateRooms(TickContext tick) {
             const auto *source=ports_.areas.find(rooms_->rooms.at(near).area);
             if(source && source->definition.pd2Map) {map=source->definition.pd2Map;break;}
         }
-        const auto prepare=[&](RegionId destination) {
-            if(ports_.areas.find(destination)) return;
-            // DRLG neighbour prefetch precedes the player's exit command.
-            // A child prepared without its map would later reject that same
-            // immutable context and could never be entered through the warp.
-            request(destination,map);
-        };
-        prepare(room.area);
-        for (const auto near : room.near)
-            prepare(rooms_->rooms.at(near).area);
+        // Preserve the map context when an active neighbour first needs its
+        // definition. Admission/population still waits for this full handoff.
+        if(!area) request(room.area,map);
     }
 }
 bool System::clientRoomsReady(PlayerId id) const {

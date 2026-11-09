@@ -49,7 +49,7 @@ RegionId System::unitArea(EntityId id) const {
 std::optional<Vec> System::unitPosition(const Missile &missile,EntityId id) const {
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto unit=participants.find(id);if(!unit.id()) return {};
-    const auto region=unitArea(id);if(!unit.aliveIn(region) || !ports_.areas.loaded(region,unit.position())) return {};
+    const auto region=unitArea(id);if(!unit.aliveIn(region) || !ports_.areas.loaded(region,unit.position()+Vec{.5f,.5f})) return {};
     const auto *source=ports_.areas.find(missile.area),*target=ports_.areas.find(region);
     if(!source || !target || source->definition.act!=target->definition.act) return {};
     return unit.position()+target->definition.origin-source->definition.origin;
@@ -81,7 +81,7 @@ bool System::creationRoom(Missile &missile) const {
     missile.area=region;missile.generation=target->generation;
     // MISSILES_CreateMissileFromParams searches the actual owner's current
     // room and its neighbours. A distant parent cannot invent a loaded room.
-    return moveToRoom(missile,owner.position());
+    return moveToRoom(missile,owner.position()+Vec{.5f,.5f});
 }
 bool System::townAllowed(const Missile &missile) const {
     const auto *area=ports_.areas.find(missile.area);if(!area || !missile.nativeDamage) return false;

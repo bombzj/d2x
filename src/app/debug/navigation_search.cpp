@@ -201,7 +201,7 @@ struct NavigationCapture {
                     chunks.push_back({{"file",found->second},{"globalOrigin",{column*32,row*32}}});
                 }
             details["format"]="d2x-navigation-capture-v2";
-            details["knowledgePolicy"]="loaded-collision-input-not-explored-archive";
+            details["knowledgePolicy"]="client-acquired-collision-not-automap-visibility";
             details["collision"]={{"encoding","chunk32-uint16-le"},{"order","row-major"},
                 {"width",grid.width+2},{"height",grid.height+2},{"localOrigin",{-1,-1}},
                 {"coordinateOrigin",{originX,originY}},{"unknownMask",65535},{"chunks",std::move(chunks)}};
@@ -246,20 +246,6 @@ nlohmann::json debugMapReadiness(const OnlineSceneView &scene) {
             {"missingTextures",rendering.missingTextures},{"transparentTiles",rendering.transparentTiles},
             {"visibleObservationTiles",rendering.visibleObservationTiles}}}};
 }
-bool debugUnknownFrontier(const Grid &grid,Vec endpoint) {
-    // A known wall is not an observation target. A reachable edge adjacent
-    // to unavailable collision can reveal another ordinary client room.
-    const int x=int(endpoint.x),y=int(endpoint.y);
-    for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx) {
-        if((!dx && !dy) || (dx && dy)) continue;
-        for(int step=1;step<=2;++step) {
-            const auto mask=grid.movementMask(x+dx*step,y+dy*step);
-            if(mask==0xffff) return true;
-            if(mask&playerMovement.mask) break;
-        }
-    }
-    return false;
-}
 // Only value snapshots enter the worker. RemoteTown's collisionSample borrows
 // live terrain and cannot be copied into an asynchronous query.
 class DebugNavigationSearch::Worker {
@@ -288,14 +274,16 @@ class DebugNavigationSearch::Worker {
         }
     }};
   public:
+    struct Performance {
+        std::atomic<uint64_t> completed{},failed{},consumed{},queueUs{},computeUs{},consumeDelayUs{};
+    };
+    std::shared_ptr<Performance> performance=std::make_shared<Performance>();
         std::shared_ptr<NavigationCapture> capture=std::make_shared<NavigationCapture>();
     ~Worker() {
+        observedPlans.clear();estimates.clear();
         for(auto &[key,job]:paths) {(void)key;job.trace->state->cancelled->store(true);}
         for(auto &[key,plan]:teleportPlans) {(void)key;if(plan.job) plan.job->trace->state->cancelled->store(true);}
         for(auto &[key,plan]:teleportPlans) {(void)key;if(plan.continuation) plan.continuation->trace->state->cancelled->store(true);}
-        if(roomPlan && roomPlan->job) roomPlan->job->trace->state->cancelled->store(true);
-        if(viewpointPlan && viewpointPlan->job) viewpointPlan->job->trace->state->cancelled->store(true);
-        if(backtrackPlan && backtrackPlan->job) backtrackPlan->job->trace->state->cancelled->store(true);
         for(auto &plan:candidatePlans) if(plan && plan->job) plan->job->trace->state->cancelled->store(true);
         if(componentJob) componentJob->trace->state->cancelled->store(true);
         thread_.request_stop();wake_.notify_all();
@@ -305,7 +293,10 @@ class DebugNavigationSearch::Worker {
     struct TraceState {
         std::shared_ptr<NavigationCapture> capture;
         uint64_t id{};
-        std::atomic<bool> computed{},consumed{};
+        Clock::time_point queuedAt=Clock::now();
+        Clock::time_point computedAt{}; // Read only after future.get() synchronizes.
+        std::shared_ptr<Performance> performance;
+        std::atomic<bool> started{},computed{},consumed{};
         std::shared_ptr<std::atomic<bool>> cancelled=std::make_shared<std::atomic<bool>>(false);
         ~TraceState()=default;
     };
@@ -328,20 +319,15 @@ class DebugNavigationSearch::Worker {
                 trace->state->capture->trace({{"event","consume-begin"},{"request",trace->state->id}});
             }
             auto result=future.get();
+            if(trace) {
+                ++trace->state->performance->consumed;
+                trace->state->performance->consumeDelayUs+=uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(Clock::now()-trace->state->computedAt).count());
+            }
             if(trace) trace->state->capture->trace({{"event","consumed"},{"request",trace->state->id}});
             return result;
         }
     };
     std::map<Key,Job<Path>> paths;
-    struct RoomTreePlan {
-        std::vector<PlanningRoom> rooms;
-        size_t root{};int level{},range{};Vec origin;
-        uint64_t geometry{};
-        std::shared_ptr<const Grid> snapshot;
-        std::optional<Job<RoomTree>> job;
-        std::optional<RoomTree> result;
-    };
-    std::optional<RoomTreePlan> roomPlan;
     struct CandidatePlan {
         Vec from,origin;uint64_t geometry{};int range{};bool restricted{};
         std::vector<Candidate> candidates;
@@ -351,24 +337,22 @@ class DebugNavigationSearch::Worker {
         std::optional<CandidateRoute> result;
     };
     std::array<std::optional<CandidatePlan>,6> candidatePlans;
-    struct ViewpointPlan {
-        uint64_t geometry{},observation{};
-        Vec from;
-        NavigationViewpointInput input;
-        std::shared_ptr<const Grid> snapshot;
-        std::optional<Job<NavigationExploration>> job;
-        NavigationExploration result;
+    using ObservationKey=std::tuple<uint64_t,uint16_t,uint64_t,uint64_t,uint64_t,int,int,int,bool,int,int,float,uint64_t,bool,
+        std::optional<std::vector<DebugExplorationMemory::Cell>>>;
+    struct ObservationPlan {
+        uint64_t used{};
+        std::optional<Job<DebugExplorationMemory::Plan>> job;
+        std::optional<DebugExplorationMemory::Plan> result;
     };
-    std::optional<ViewpointPlan> viewpointPlan;
-    struct BacktrackPlan {
-        NavigationBacktrackInput input;
-        std::shared_ptr<const Grid> snapshot;
-        std::optional<Job<NavigationBacktrack>> job;
-        NavigationBacktrack result;
+    std::map<ObservationKey,ObservationPlan> observedPlans;
+    using EstimateKey=std::tuple<uint16_t,int,int>;
+    struct Estimate {
+        Vec from,resultFrom;
+        uint64_t revision{},used{};
+        std::optional<Job<DebugExplorationMemory::Plan>> job;
+        std::optional<DebugExplorationMemory::Plan> result;
     };
-    std::optional<BacktrackPlan> backtrackPlan;
-    using PassageCache=NavigationPassageCache;
-    std::shared_ptr<PassageCache> passageCache=std::make_shared<PassageCache>();
+    std::map<EstimateKey,Estimate> estimates;
     std::shared_ptr<NavigationDerivedCache> derivedCache_=std::make_shared<NavigationDerivedCache>();
     using TeleportKey=std::tuple<float,float,int,bool>;
     struct TeleportPlan {
@@ -430,7 +414,7 @@ class DebugNavigationSearch::Worker {
         using T=std::invoke_result_t<F>;
         const unsigned priority=std::is_same_v<T,Path>?0:std::is_same_v<T,CandidateRoute>?1:
             details.value("continuation",false)?3:2;
-        auto trace=std::make_shared<TraceState>();trace->capture=capture;trace->id=++capture->requestSequence;
+        auto trace=std::make_shared<TraceState>();trace->capture=capture;trace->performance=performance;trace->id=++capture->requestSequence;
         if(!capture->directory.empty()) {
             details["request"]=trace->id;
             auto submitted=details;submitted["event"]="submitted";submitted["frame"]=frame;
@@ -438,6 +422,7 @@ class DebugNavigationSearch::Worker {
         }
         const auto queued=std::chrono::steady_clock::now();
         auto task=std::make_shared<std::packaged_task<T()>>([this,priority,work=std::move(work),grid,details=std::move(details),queued,capture=capture,trace,cache=derivedCache_]() mutable {
+            trace->started=true;
             NavigationCacheScope cacheScope(*cache);
             struct CancellationScope {
                 std::shared_ptr<std::atomic<bool>> previous;
@@ -459,8 +444,19 @@ class DebugNavigationSearch::Worker {
                 checkpointAt=Clock::now();
             });
             if(trace->cancelled->load(std::memory_order_relaxed)) throw std::runtime_error("Navigation request cancelled before execution");
+            trace->performance->queueUs+=uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(Clock::now()-queued).count());
+            const auto evaluate=[&] {
+                const auto began=Clock::now();const auto suspendedBefore=suspended;
+                const auto record=[&] {
+                    trace->computedAt=Clock::now();
+                    trace->performance->computeUs+=uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(trace->computedAt-began-(suspended-suspendedBefore)).count());
+                };
+                try {
+                    auto result=work();record();++trace->performance->completed;trace->computed=true;return result;
+                } catch(...) {record();++trace->performance->failed;throw;}
+            };
             if(!grid || capture->directory.empty()) {
-                auto result=work();trace->computed=true;return result;
+                return evaluate();
             }
             const auto started=std::chrono::steady_clock::now();
             details["queueMs"]=std::chrono::duration<double,std::milli>(started-queued).count();
@@ -470,7 +466,7 @@ class DebugNavigationSearch::Worker {
             const auto finish=[&] {capture->disarm(trace->id);};
             try {
                 const auto computeStarted=Clock::now();
-                auto result=work();
+                auto result=evaluate();
                 const double elapsed=std::chrono::duration<double,std::milli>(Clock::now()-computeStarted-suspended).count();
                 trace->computed=true;
                 capture->trace({{"event","computed"},{"request",trace->id},{"computeMs",elapsed},
@@ -490,44 +486,33 @@ class DebugNavigationSearch::Worker {
                     details["selectedCandidate"]=result.found?nlohmann::json(result.candidate):nlohmann::json(nullptr);
                     details["expanded"]=result.expanded;details["points"]=nlohmann::json::array();
                     for(const auto point:result.route.points) details["points"].push_back({point.x,point.y});
-                } else if constexpr(std::is_same_v<T,NavigationExploration> || std::is_same_v<T,NavigationBacktrack>) {
-                    failed=!result.selection.found;details["outcome"]=int(result.selection.route.outcome);
-                    details["travelCost"]=result.selection.travelCost;details["score"]=result.selection.score;
-                    details["costUnit"]=result.selection.costInSeconds?"seconds":"relative";
-                    details["expanded"]=result.selection.expanded;
-                    details["selectedCandidate"]=result.selection.found?nlohmann::json(result.selection.candidate):nlohmann::json(nullptr);
+                } else if constexpr(std::is_same_v<T,DebugExplorationMemory::Plan>) {
+                    failed=result.points.empty();details["expanded"]=result.expanded;
                     details["points"]=nlohmann::json::array();
-                    for(const auto point:result.selection.route.points) details["points"].push_back({point.x,point.y});
-                    if constexpr(std::is_same_v<T,NavigationBacktrack>) {
-                        details["destination"]=result.selection.found?nlohmann::json(result.destination):nlohmann::json(nullptr);
-                        details["candidateCount"]=result.candidates;
-                        details["previous"]=result.tree.previous;details["depth"]=result.tree.depth;
-                    }
-                } else if constexpr(std::is_same_v<T,RoomTree>) {
-                    details["previous"]=result.previous;details["depth"]=result.depth;
-                    failed=std::count_if(result.previous.begin(),result.previous.end(),[&](size_t value) {
-                        return value<result.previous.size();
-                    })<=1;
+                    for(const auto at:result.points) details["points"].push_back({at.x,at.y});
+                    details["direction"]=result.passage;details["travelCost"]=result.cost;
+                    details["observationOutcome"]=result.outcome==DebugExplorationMemory::Plan::Outcome::Goal?"goal":
+                        result.outcome==DebugExplorationMemory::Plan::Outcome::Passage?"need-observation":
+                        result.outcome==DebugExplorationMemory::Plan::Outcome::StartUnavailable?"start-unavailable":
+                        result.outcome==DebugExplorationMemory::Plan::Outcome::ExecutionBlocked?"execution-blocked":"unreachable";
+                    details["outcome"]=int(result.outcome==DebugExplorationMemory::Plan::Outcome::Goal?NavigationOutcome::Complete:
+                        result.outcome==DebugExplorationMemory::Plan::Outcome::Passage?NavigationOutcome::NeedObservation:
+                        result.outcome==DebugExplorationMemory::Plan::Outcome::StartUnavailable?NavigationOutcome::StartBlocked:NavigationOutcome::NoRoute);
                 } else if constexpr(std::is_same_v<T,bool>) failed=!result;
                 nlohmann::json summary{{"event","result"},{"request",trace->id},{"empty",failed}};
-                for(const auto *field:{"outcome","expanded","travelCost","score","costUnit","selectedCandidate","destination"})
+                for(const auto *field:{"outcome","observationOutcome","expanded","travelCost","score","costUnit","selectedCandidate","destination"})
                     if(details.contains(field)) summary[field]=details.at(field);
                 if(details.contains("points")) summary["routePointCount"]=details.at("points").size();
-                if constexpr(std::is_same_v<T,NavigationExploration>) summary["candidateCount"]=result.viewpoints.size();
-                if constexpr(std::is_same_v<T,NavigationBacktrack>) summary["candidateCount"]=result.candidates;
-                if constexpr(std::is_same_v<T,Path> || std::is_same_v<T,TravelRoute> || std::is_same_v<T,CandidateRoute> ||
-                    std::is_same_v<T,NavigationExploration> || std::is_same_v<T,NavigationBacktrack>) {
+                if constexpr(std::is_same_v<T,Path> || std::is_same_v<T,TravelRoute> || std::is_same_v<T,CandidateRoute>) {
                     const auto &points=[&]() -> const std::deque<Vec> & {
                         if constexpr(std::is_same_v<T,Path> || std::is_same_v<T,TravelRoute>) return result.points;
-                        else if constexpr(std::is_same_v<T,CandidateRoute>) return result.route.points;
-                        else return result.selection.route.points;
+                        else return result.route.points;
                     }();
                     if(!points.empty()) summary["endpoint"]={points.back().x,points.back().y};
                     if constexpr(!std::is_same_v<T,Path>) {
                         const auto &route=[&]() -> const NavigationRoute & {
                             if constexpr(std::is_same_v<T,TravelRoute>) return result;
-                            else if constexpr(std::is_same_v<T,CandidateRoute>) return result.route;
-                            else return result.selection.route;
+                            else return result.route;
                         }();
                         float length=0;auto previous=route.origin;
                         for(const auto point:points) {length+=(point-previous).length();previous=point;}
@@ -571,9 +556,6 @@ class DebugNavigationSearch::Worker {
             for(const auto &[key,job]:paths) {(void)key;append(job);}
             if(componentJob) append(*componentJob);
             if(domain) {
-                if(roomPlan && roomPlan->job) append(*roomPlan->job);
-                if(viewpointPlan && viewpointPlan->job) append(*viewpointPlan->job);
-                if(backtrackPlan && backtrackPlan->job) append(*backtrackPlan->job);
                 for(const auto &plan:candidatePlans) if(plan && plan->job) append(*plan->job);
                 for(const auto &[key,plan]:teleportPlans) {
                     (void)key;if(plan.job) append(*plan.job);if(plan.continuation) append(*plan.continuation);
@@ -584,12 +566,9 @@ class DebugNavigationSearch::Worker {
             {"paths",paths.size()},{"teleportPlans",teleportPlans.size()},{"discardedRequests",std::move(discardedRequests)}});
         paths.clear();componentKey.reset();componentJob.reset();component={};unavailableComponent={};otherComponents.clear();
         if(domain) {
+            observedPlans.clear();estimates.clear();
             snapshots={};
-            roomPlan.reset();
-            viewpointPlan.reset();
-            backtrackPlan.reset();
             for(auto &plan:candidatePlans) plan.reset();
-            passageCache=std::make_shared<PassageCache>();
             derivedCache_=std::make_shared<NavigationDerivedCache>();
             teleportPlans.clear();teleportOrigin.reset();
             std::lock_guard lock(mutex_);queue_.clear();
@@ -598,6 +577,47 @@ class DebugNavigationSearch::Worker {
 };
 DebugNavigationSearch::DebugNavigationSearch()=default;
 DebugNavigationSearch::~DebugNavigationSearch()=default;
+void DebugNavigationSearch::setDoorClasses(std::set<uint16_t> classes) {
+    if(doorClasses_==classes) return;
+    doorClasses_=std::move(classes);planningSource_.reset();planningGrid_.reset();
+}
+const Grid &DebugNavigationSearch::planningGrid(const RemoteTown &town,const OnlineView &view) {
+    const auto *map=town.map();
+    if(!map) throw std::runtime_error("AI planning requires an active map");
+    const auto source=town.navigationSnapshot();
+    if(!source || !source->base) return map->grid;
+    std::set<EntityId> doors;
+    for(const auto &[key,unit]:view.world.units)
+        if(key.type==2 && unit.classId && ordinaryDoor(*unit.classId)) doors.insert(EntityId{uint64_t(key.id)+1});
+    if(!planningGrid_ || planningSource_!=source || planningDoors_!=doors) {
+        auto snapshot=std::make_shared<NavigationSnapshot>();
+        snapshot->base=source->base;snapshot->world=source->world;
+        snapshot->width=source->width;snapshot->height=source->height;
+        snapshot->originX=source->originX;snapshot->originY=source->originY;
+        snapshot->publication=source->publication*2+1;
+        for(const auto &obstacle:map->grid.obstacles) if(!doors.contains(obstacle.id))
+            for(int row=std::max(0,obstacle.y);row<std::min(source->height,obstacle.y+obstacle.height);++row)
+                for(int column=std::max(0,obstacle.x);column<std::min(source->width,obstacle.x+obstacle.width);++column)
+                    snapshot->overlay[{column,row}]|=obstacle.mask;
+        planningSource_=source;planningDoors_=std::move(doors);planningSnapshot_=std::move(snapshot);
+        planningGrid_=planningSnapshot_->grid();
+    }
+    return *planningGrid_;
+}
+Grid DebugNavigationSearch::planningCollision(const RemoteTown &town,const OnlineView &view,std::optional<OnlineUnitKey> ignored) {
+    const auto &terrain=planningGrid(town,view);
+    const auto live=town.navigationGrid(view,ignored);
+    if(!planningSnapshot_ || !live.freezeMovement) return live;
+    const auto presence=live.freezeMovement();
+    if(!presence || !presence->base) return live;
+    auto snapshot=std::make_shared<NavigationSnapshot>();
+    snapshot->base=planningSnapshot_;snapshot->world=planningSnapshot_->world;
+    snapshot->width=planningSnapshot_->width;snapshot->height=planningSnapshot_->height;
+    snapshot->originX=planningSnapshot_->originX;snapshot->originY=planningSnapshot_->originY;
+    snapshot->publication=terrain.obstacleRevision*0x100000001b3ULL+presence->publication;
+    snapshot->overlay=presence->overlay;
+    return *snapshot->grid();
+}
 void DebugNavigationSearch::traceDecision(nlohmann::json details) {
     if(!worker_ || worker_->capture->directory.empty()) return;
     details["event"]="decision";details["context"]=context_;details["frame"]=frames_;
@@ -611,9 +631,7 @@ void DebugNavigationSearch::traceDecision(nlohmann::json details) {
     for(const auto &[key,plan]:worker_->teleportPlans) {(void)key;if(plan.job) append(*plan.job);}
     for(const auto &[key,plan]:worker_->teleportPlans) {(void)key;if(plan.continuation) append(*plan.continuation);}
     if(worker_->componentJob) append(*worker_->componentJob);
-    if(worker_->roomPlan && worker_->roomPlan->job) append(*worker_->roomPlan->job);
-    if(worker_->viewpointPlan && worker_->viewpointPlan->job) append(*worker_->viewpointPlan->job);
-    if(worker_->backtrackPlan && worker_->backtrackPlan->job) append(*worker_->backtrackPlan->job);
+    for(const auto &[key,plan]:worker_->observedPlans) {(void)key;if(plan.job) append(*plan.job);}
     for(const auto &plan:worker_->candidatePlans) if(plan && plan->job) append(*plan->job);
     worker_->capture->trace(std::move(details));
 }
@@ -635,18 +653,16 @@ void DebugNavigationSearch::observeExplored(const RemoteTown &town,const OnlineV
     }
     if(now-capture.observedAt<std::chrono::milliseconds(250)) return;
     capture.observedAt=now;
-    const auto observation=town.navigationObservation();
     const auto *map=town.map();const auto &scene=town.read();
-    if(!observation || !map || !scene.area || !scene.origin || !view.load.mapSeed) return;
+    if(!map || !scene.area || !scene.origin || !view.load.mapSeed) return;
     const auto stamp=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    nlohmann::json record{{"format","d2x-explored-collision-v1"},{"unixMs",stamp},{"game",view.gameGeneration},
+    nlohmann::json record{{"format","d2x-acquired-collision-v2"},{"unixMs",stamp},{"game",view.gameGeneration},
         {"level",*scene.area},{"mapSeed",*view.load.mapSeed},{"geometry",context_[2]},
         {"clientPosition",position?nlohmann::json{position->x,position->y}:nlohmann::json(nullptr)},
         {"serverPosition",view.world.playerPosition?nlohmann::json{view.world.playerPosition->x,view.world.playerPosition->y}:nlohmann::json(nullptr)},
         {"cells",nlohmann::json::array()}};
-    for(int row=0;row<observation->height;++row) for(int column=0;column<observation->width;++column) {
-        if(!observation->seen[size_t(row)*observation->width+column]) continue;
-        const int globalX=(observation->tileX+column)*5,globalY=(observation->tileY+row)*5;
+    for(const auto &tile:town.knownNavigationTerrain()) {
+        const int globalX=tile.x*5,globalY=tile.y*5;
         for(int dy=0;dy<5;++dy) for(int dx=0;dx<5;++dx) {
             const int x=globalX+dx,y=globalY+dy;
             const auto mask=map->grid.movementMask(x-scene.origin->x,y-scene.origin->y);
@@ -694,6 +710,7 @@ bool DebugNavigationSearch::prolongedWait() const {
 }
 void DebugNavigationSearch::clear() {
     if(worker_) worker_->reset();
+    planningSource_.reset();planningSnapshot_.reset();planningGrid_.reset();planningDoors_.clear();execution_.reset();
     lastDeferred_={};waitingSince_={};travelAnchors_.clear();walkingRoutes_.clear();results_.clear();
     reachable_.clear();wallDistances_.clear();points_=0;++resets_;
 }
@@ -710,11 +727,9 @@ int DebugNavigationSearch::wallClearance(const Grid &terrain,Vec at) {
         field.fill(wallSearchRadius);
         for(int j=1;j<side-1;++j) for(int i=1;i<side-1;++i) {
             const int column=block.first*wallBlock+i-pad,row=block.second*wallBlock+j-pad;
-            if(column<0 || row<0 || column>=terrain.width || row>=terrain.height || terrain.terrainCollision.empty()) continue;
-            const size_t cell=size_t(row)*terrain.width+column;
-            const int flags=terrain.fullTerrainCollision.empty()?terrain.terrainCollision[cell]:terrain.fullTerrainCollision[cell];
-            const auto object=terrain.objectCollision.empty()?0:terrain.objectCollision[cell];
-            if(flags!=0xffff && (((flags|object)&playerMovement.mask) || terrain.blocked[cell])) field[j*side+i]=0;
+            if(column<0 || row<0 || column>=terrain.width || row>=terrain.height) continue;
+            const auto flags=terrain.movementMask(column,row);
+            if(flags!=0xffff && (flags&playerMovement.mask)) field[j*side+i]=0;
         }
         for(int j=1;j<side-1;++j) for(int i=1;i<side-1;++i) {
             const int k=j*side+i;
@@ -803,6 +818,11 @@ void DebugNavigationSearch::beginFrame(uint64_t game,uint64_t area,uint64_t geom
         travelAnchors_.clear();results_.clear();reachable_.clear();wallDistances_.clear();points_=0;++resets_;
     }
     context_=next;
+    if(worker_) std::erase_if(worker_->observedPlans,[&](const auto &entry) {
+        // A moved origin/replaced target has no consumer. Releasing the ticket
+        // cancels both queued and running work at the next checkpoint.
+        return entry.second.job && frames_>entry.second.used+2;
+    });
     ++frames_;frameQueries_=frameHits_=0;frameMicros_=0;yielded_=false;
     const auto now=Clock::now();
     std::erase_if(travelAnchors_,[&](const auto &entry){return now-entry.second.touched>std::chrono::seconds(60);});
@@ -874,213 +894,236 @@ std::deque<Vec> DebugNavigationSearch::path(const Grid &grid,Vec from,Vec to,boo
     }
     return result;
 }
-DebugNavigationSearch::RoomTree DebugNavigationSearch::roomTree(const Grid &terrain,
-        const std::vector<PlanningRoom> &rooms,size_t root,int level,int range,Vec origin) {
-    if(!worker_) worker_=std::make_unique<Worker>();
-    auto &plan=worker_->roomPlan;
-    const auto currentSnapshot=worker_->freeze(terrain);
-    if(plan && plan->snapshot==currentSnapshot) plan->geometry=context_[2];
-    const bool identity=plan && plan->root==root && plan->level==level && plan->range==range &&
-        plan->origin.x==origin.x && plan->origin.y==origin.y && plan->rooms==rooms;
-    if(!identity) plan.reset();
-    if(plan && plan->job) {
-        if(!plan->job->ready()) defer(true);
-        plan->result=plan->job->get();plan->job.reset();
-        if(plan->snapshot==currentSnapshot) return *plan->result;
-    }
-    if(plan && plan->snapshot==currentSnapshot && plan->result) return *plan->result;
-    auto snapshot=currentSnapshot;
-    const auto geometry=context_[2];
-    plan.emplace();plan->rooms=rooms;plan->root=root;plan->level=level;plan->range=range;
-    plan->origin=origin;plan->geometry=geometry;plan->snapshot=snapshot;
-    const auto cache=worker_->passageCache;
-    auto capturedRooms=nlohmann::json::array();
-    if(!worker_->capture->directory.empty()) for(const auto &room:rooms) capturedRooms.push_back({{"level",room.level},{"x",room.x},{"y",room.y},
-        {"width",room.width},{"height",room.height},{"loaded",room.loaded},{"exploredTiles",room.exploredTiles},{"near",room.near}});
-    plan->job=worker_->schedule([snapshot,rooms,root,level,range,origin,geometry,cache] {
-        return planRoomTree(*snapshot,rooms,root,level,range,origin,geometry,*cache,activeNavigationCancellation);
-    },frames_,snapshot,{{"kind","room-tree"},{"context",context_},{"root",root},{"level",level},{"range",range},
-        {"coordinateOrigin",{origin.x,origin.y}},{"rooms",std::move(capturedRooms)}});
-    defer(true);
+bool DebugNavigationSearch::observationReady(const RemoteTown &town,const OnlineView &view,Vec destination,
+        std::optional<Clock::time_point> &since) {
+    const auto host=view.world.playerPosition;const auto &loading=town.read().mapLoading;
+    if(!host || host->x!=int(destination.x) || host->y!=int(destination.y) ||
+        !town.read().nativeMapReady || loading.pendingEvents || loading.terrainDirty) {since.reset();return false;}
+    const auto now=Clock::now();if(!since) since=now;
+    const auto settle=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*view.latencyMilliseconds.value_or(0)+250,250,2000));
+    return now-*since>=settle;
 }
-NavigationExploration DebugNavigationSearch::exploration(const Grid &terrain,
-    const NavigationViewpointInput &input,uint64_t observationRevision,bool prefetch) {
-    if(!worker_) worker_=std::make_unique<Worker>();
-    auto &plan=worker_->viewpointPlan;
-    const auto currentSnapshot=worker_->freeze(terrain);
-    if(plan && plan->snapshot==currentSnapshot) plan->geometry=context_[2];
-    const auto sameInput=[&] {
-        if(!plan) return false;
-        const auto &old=plan->input;
-        if(old.origin.x!=input.origin.x || old.origin.y!=input.origin.y || old.halfExtent.x!=input.halfExtent.x ||
-            old.halfExtent.y!=input.halfExtent.y || old.teleportRange!=input.teleportRange || old.outdoor!=input.outdoor ||
-            old.mobility!=input.mobility || old.objective!=input.objective || old.cost!=input.cost ||
-            old.restricted!=input.restricted || old.branchScale!=input.branchScale || old.rooms!=input.rooms || old.unseenBands!=input.unseenBands ||
-            old.hub.has_value()!=input.hub.has_value() || old.exclusions.size()!=input.exclusions.size() ||
-            old.boundaries.size()!=input.boundaries.size()) return false;
-        if(old.hub && (old.hub->x!=input.hub->x || old.hub->y!=input.hub->y)) return false;
-        for(size_t index=0;index<old.exclusions.size();++index) {
-            const auto &left=old.exclusions[index],&right=input.exclusions[index];
-            if(left.point.x!=right.point.x || left.point.y!=right.point.y || left.radius!=right.radius) return false;
-        }
-        for(size_t index=0;index<old.boundaries.size();++index) {
-            const auto &left=old.boundaries[index],&right=input.boundaries[index];
-            if(left.side!=right.side || left.plane!=right.plane || left.start!=right.start || left.end!=right.end) return false;
-        }
-        return true;
-    };
-    const bool changed=plan && (plan->snapshot!=currentSnapshot || plan->observation!=observationRevision ||
-        (plan->from-input.from).length()>=2 || !sameInput());
-    if(changed && (!plan->job || plan->input.origin.x!=input.origin.x || plan->input.origin.y!=input.origin.y ||
-        plan->input.teleportRange!=input.teleportRange || plan->input.restricted!=input.restricted ||
-        plan->input.mobility!=input.mobility || plan->input.objective!=input.objective || plan->input.cost!=input.cost)) plan.reset();
-    if(prefetch && plan) return {};
-    if(plan && plan->job) {
-        if(!plan->job->ready()) defer(true);
-        plan->result=plan->job->get();plan->job.reset();
-        if(changed) {
-            auto &selected=plan->result.selection;
-            bool valid=selected.found && (plan->from-input.from).length()<2 &&
-                navigationRouteValid(terrain,input.rooms,selected.route,input.teleportRange,input.restricted);
-            if(valid) {
-                const Vec world=selected.route.points.back()+input.origin-Vec{.5f,.5f};
-                valid=std::none_of(input.exclusions.begin(),input.exclusions.end(),[&](const auto &entry) {
-                    return (entry.point-world).length()<entry.radius;
-                });
-                size_t gain=0;
-                const float margin=input.outdoor?0.f:5.f;
-                const float halfX=std::max(0.f,input.halfExtent.x-margin),halfY=std::max(0.f,input.halfExtent.y-margin);
-                for(auto band=input.unseenBands.lower_bound(int(std::ceil(world.x-world.y-halfX)));
-                    band!=input.unseenBands.end() && band->first<=world.x-world.y+halfX;++band)
-                    gain+=std::upper_bound(band->second.begin(),band->second.end(),world.x+world.y+halfY)-
-                        std::lower_bound(band->second.begin(),band->second.end(),world.x+world.y-halfY);
-                valid=valid && gain>0;
-                if(valid) plan->result.viewpoints.at(selected.candidate).gain=gain;
-            }
-            if(!valid) {plan.reset();return exploration(terrain,input,observationRevision);}
-        }
-        const auto &selected=plan->result.selection;
-        if(selected.route.outcome==NavigationOutcome::ResourceLimited)
-            throw std::runtime_error("Exploration exceeded memory budget; no-route is not established");
-        if(selected.route.outcome==NavigationOutcome::Cancelled) {plan.reset();defer(true);}
-        if(selected.found && !selected.route.points.empty()) {
-            const auto target=selected.route.points.back();const auto from=selected.route.origin;
-            if(input.teleportRange>0) {
-                const std::pair origin{input.origin.x,input.origin.y};
-                if(worker_->teleportOrigin!=origin) {worker_->teleportPlans.clear();worker_->teleportOrigin=origin;}
-                auto &route=worker_->teleportPlans[{target.x,target.y,input.teleportRange,input.restricted}];
-                route.job.reset();route.continuation.reset();route.prepared.reset();route.continuationGeometry=0;
-                route.route=selected.route;route.cursor=0;route.geometry=context_[2];route.used=frames_;route.planned=true;route.landing.reset();
-                route.snapshot=currentSnapshot;route.rooms=input.rooms;route.continuationSnapshot.reset();
-            } else {
-                const Key key{terrain.obstacleRevision,terrain.missileCollisionRevision,bool(terrain.collisionSample),
-                    terrain.width,terrain.height,playerMovement.mask,playerMovement.size,false,true,from.x,from.y,target.x,target.y};
-                const auto existing=results_.find(key);if(existing!=results_.end()) points_-=existing->second.path.size();
-                if(selected.route.points.size()>262144-points_ || results_.size()>=4096) {
-                    results_.clear();reachable_.clear();points_=0;
-                }
-                results_[key]={selected.route.points,frames_};points_+=selected.route.points.size();
-                travelAnchors_[{target.x,target.y}]={from,Clock::now()};
-            }
-        }
-    }
-    if(plan) {
-        auto result=plan->result;
-        if(changed) plan.reset();
-        return result;
-    }
-    const auto snapshot=currentSnapshot;
-    plan.emplace();plan->geometry=context_[2];plan->observation=observationRevision;plan->from=input.from;plan->input=input;plan->snapshot=snapshot;
-    auto exclusions=nlohmann::json::array(),boundaries=nlohmann::json::array(),bands=nlohmann::json::array();
-    if(!worker_->capture->directory.empty()) {
-        for(const auto &entry:input.exclusions) exclusions.push_back({{"point",{entry.point.x,entry.point.y}},{"radius",entry.radius}});
-        for(const auto &entry:input.boundaries) boundaries.push_back({entry.side,entry.plane,entry.start,entry.end});
-        for(const auto &[diagonal,values]:input.unseenBands) bands.push_back({diagonal,values});
-    }
-    plan->job=worker_->schedule([snapshot,input] {return planExploration(*snapshot,input,activeNavigationCancellation);},
-        frames_,snapshot,{{"kind","exploration-plan"},{"context",context_},{"observation",observationRevision},
-            {"from",{input.from.x,input.from.y}},{"coordinateOrigin",{input.origin.x,input.origin.y}},
-            {"halfExtent",{input.halfExtent.x,input.halfExtent.y}},{"unseenBands",std::move(bands)},
-            {"rooms",worker_->capture->directory.empty()?nlohmann::json::array():captureRooms(input.rooms)},
-            {"exclusions",std::move(exclusions)},{"boundaries",std::move(boundaries)},
-            {"hub",input.hub?nlohmann::json{input.hub->x,input.hub->y}:nlohmann::json(nullptr)},
-            {"branchScale",input.branchScale},{"range",input.teleportRange},{"restricted",input.restricted},{"outdoor",input.outdoor},
-            {"mobility",int(input.mobility)},{"objective",int(input.objective)},
-            {"cost",{{"walkUnit",input.cost.walkUnit},{"teleportCast",input.cost.teleportCast},
-                {"observation",input.cost.observation},{"seconds",input.cost.seconds}}}});
-    if(prefetch) return {};
-    defer(true);
+std::vector<DebugExplorationMemory::Cell> DebugNavigationSearch::interactionApproaches(
+        const RemoteTown &town,const OnlineView &view,OnlineUnitKey unit) {
+    std::vector<DebugExplorationMemory::Cell> result;
+    if(!town.read().area) return result;
+    const auto *memory=explorationMemory.area(*town.read().area);if(!memory) return result;
+    const auto &targets=town.read().mapTargets;
+    const auto target=std::find_if(targets.begin(),targets.end(),[&](const auto &entry){return entry.unit==unit;});
+    if(target==targets.end()) return result;
+    // Enumerate actual interaction stances, not a radius around the unit's
+    // possibly solid centre. Knowledge and normal interaction rules both apply.
+    const int width=std::max(4,target->collisionWidth/2+8),height=std::max(4,target->collisionHeight/2+8);
+    for(int y=std::max(0,int(target->position.y)-height);y<=std::min(65535,int(target->position.y)+height);++y)
+        for(int x=std::max(0,int(target->position.x)-width);x<=std::min(65535,int(target->position.x)+width);++x)
+            if(memory->stand(x,y) && town.interactionReady(view,unit,Vec{float(x),float(y)})) result.emplace_back(x,y);
+    return result;
 }
-NavigationBacktrack DebugNavigationSearch::backtrack(const Grid &terrain,const NavigationBacktrackInput &input) {
-    if(!worker_) worker_=std::make_unique<Worker>();
-    auto &plan=worker_->backtrackPlan;
-    const auto snapshot=worker_->freeze(terrain);
-    const auto same=[&] {
-        if(!plan) return false;
-        const auto &old=plan->input;
-        return old.origin.x==input.origin.x && old.origin.y==input.origin.y && old.from.x==input.from.x && old.from.y==input.from.y &&
-            old.rooms==input.rooms && old.routeRooms==input.routeRooms && old.destinations==input.destinations && old.priorities==input.priorities && old.weights==input.weights &&
-            old.root==input.root && old.level==input.level && old.range==input.range && old.restricted==input.restricted &&
-            old.clearing==input.clearing && old.mobility==input.mobility && old.cost==input.cost &&
-            old.exclusions.size()==input.exclusions.size() &&
-            std::equal(old.exclusions.begin(),old.exclusions.end(),input.exclusions.begin(),[](const auto &left,const auto &right) {
-                return left.point.x==right.point.x && left.point.y==right.point.y && left.radius==right.radius;
-            });
+DebugNavigationSearch::WalkingConnection DebugNavigationSearch::walkingConnection(
+        const RemoteTown &town,Vec from,std::optional<uint16_t> destination) {
+    WalkingConnection result;
+    if(!town.read().area) return result;
+    const auto *memory=explorationMemory.area(*town.read().area);
+    Grid known;
+    if(memory) {
+        known.width=memory->width;known.height=memory->height;
+        known.collisionSample=[memory](int x,int y,EntityId) {return memory->mask(x+memory->x,y+memory->y);};
+    }
+    const auto point=[](const auto &edge,int along,int inset) {
+        return edge.side%2?OnlinePoint{uint16_t(edge.plane+(edge.side==1?inset:-inset)),uint16_t(along)}:
+            OnlinePoint{uint16_t(along),uint16_t(edge.plane+(edge.side==2?inset:-inset))};
     };
-    if(!same()) plan.reset();
-    if(plan && plan->job) {
-        if(!plan->job->ready()) defer(true);
-        plan->result=plan->job->get();plan->job.reset();
-    }
-    if(plan) {
-        const auto &selection=plan->result.selection;
-        if(selection.route.outcome==NavigationOutcome::ResourceLimited)
-            throw std::runtime_error("Backtrack memory budget exhausted; no-route is not established");
-        if(selection.route.outcome==NavigationOutcome::Cancelled) {plan.reset();defer(true);}
-        if(plan->snapshot!=snapshot && !(selection.found &&
-            navigationRouteValid(terrain,plan->result.routeRooms,selection.route,input.range,input.restricted))) plan.reset();
-    }
-    if(plan) {
-        plan->snapshot=snapshot;
-        const auto &selection=plan->result.selection;
-        if(selection.found && !selection.route.points.empty()) {
-            const auto target=selection.route.points.back();
-            if(input.range>0) {
-                const std::pair origin{input.origin.x,input.origin.y};
-                if(worker_->teleportOrigin!=origin) {worker_->teleportPlans.clear();worker_->teleportOrigin=origin;}
-                auto &retained=worker_->teleportPlans[{target.x,target.y,input.range,input.restricted}];
-                retained.job.reset();retained.continuation.reset();retained.prepared.reset();retained.continuationSnapshot.reset();
-                retained.continuationGeometry=0;retained.route=selection.route;retained.cursor=0;retained.geometry=context_[2];
-                retained.used=frames_;retained.planned=true;retained.landing.reset();retained.snapshot=snapshot;
-                retained.rooms=plan->result.routeRooms;
-            } else {
-                const auto from=selection.route.origin;
-                const Key key{terrain.obstacleRevision,terrain.missileCollisionRevision,bool(terrain.collisionSample),
-                    terrain.width,terrain.height,playerMovement.mask,playerMovement.size,false,true,from.x,from.y,target.x,target.y};
-                if(const auto found=results_.find(key);found!=results_.end()) points_-=found->second.path.size();
-                if(selection.route.points.size()>262144-points_ || results_.size()>=4096) {results_.clear();reachable_.clear();points_=0;}
-                results_[key]={selection.route.points,frames_};points_+=selection.route.points.size();
-                travelAnchors_[{target.x,target.y}]={from,Clock::now()};
+    float nearest=std::numeric_limits<float>::max();
+    for(const auto &edge:town.walkingBoundaries()) {
+        if(destination && edge.destination!=destination) continue;
+        const auto projection=point(edge,std::clamp(edge.side%2?int(from.y):int(from.x),edge.start,edge.end-1),3);
+        const float span=(Vec{float(projection.x),float(projection.y)}-from).length();
+        // A stable bearing preserves the parent goal while a relay is in flight.
+        if(span<nearest) {nearest=span;result.bearing=point(edge,edge.start+(edge.end-edge.start-1)/2,3);}
+        if(!memory) continue;
+        const auto local=[&](OnlinePoint at) {return Vec{float(int(at.x)-memory->x)+.5f,float(int(at.y)-memory->y)+.5f};};
+        for(int along=edge.start;along<edge.end;++along) {
+            // A seam can run through a sloping bridge. Check adjacent standing
+            // cells, not a six-cell perpendicular ray through both banks.
+            const bool positive=edge.side==0 || edge.side==3;
+            const auto approach=point(edge,along,positive?1:0);
+            const auto owner=memory->terrainLevels.find({approach.x/5,approach.y/5});
+            if(owner==memory->terrainLevels.end() || owner->second!=memory->level ||
+                !memory->stand(approach.x,approach.y)) continue;
+            for(int delta:{0,-1,1}) {
+                if(along+delta<edge.start || along+delta>=edge.end) continue;
+                const auto across=point(edge,along+delta,positive?0:-1);
+                const auto destinationOwner=memory->terrainLevels.find({across.x/5,across.y/5});
+                if(destinationOwner==memory->terrainLevels.end() || destinationOwner->second!=edge.destination ||
+                    !memory->stand(across.x,across.y) ||
+                    !known.nativeMovementSegment(local(approach),local(across),playerMovement)) continue;
+                result.openings.push_back({approach,point(edge,edge.start,0),point(edge,edge.end,0),across,edge.destination});
+                break;
             }
         }
-        return plan->result;
+        // Before the opposite bank is acquired, retain a source-side staging
+        // point. It exposes more collision; it cannot disprove a bent crossing.
+        for(int along=edge.start+1;along<edge.end-1;++along) {
+            const auto approach=point(edge,along,3),lip=point(edge,along,2);
+            const auto across=point(edge,along,edge.side==0 || edge.side==3?0:-1);
+            const auto owner=memory->terrainLevels.find({approach.x/5,approach.y/5});
+            if(owner==memory->terrainLevels.end() || owner->second!=memory->level ||
+                !memory->stand(approach.x,approach.y) || !memory->clear(lip.x,lip.y) ||
+                !known.nativeMovementSegment(local(approach),local(lip),playerMovement)) continue;
+            if(memory->mask(across.x,across.y)!=0xffff) continue;
+            result.openings.push_back({approach,point(edge,edge.start,0),point(edge,edge.end,0),{},edge.destination});
+        }
     }
-    plan.emplace();plan->input=input;plan->snapshot=snapshot;
-    auto rooms=nlohmann::json::array(),exclusions=nlohmann::json::array();
-    if(!worker_->capture->directory.empty()) {
-        for(const auto &room:input.rooms) rooms.push_back({{"level",room.level},{"x",room.x},{"y",room.y},
-            {"width",room.width},{"height",room.height},{"loaded",room.loaded},{"exploredTiles",room.exploredTiles},{"near",room.near}});
-        for(const auto &entry:input.exclusions) exclusions.push_back({{"point",{entry.point.x,entry.point.y}},{"radius",entry.radius}});
+    return result;
+}
+DebugExplorationMemory::Area *DebugNavigationSearch::observeTerrain(const RemoteTown &town,const OnlineView &view,Vec position) {
+    auto *memory=explorationMemory.observe(town,view,planningGrid(town,view),position);
+    if(!memory) {execution_.reset();return nullptr;}
+    const auto live=planningCollision(town,view,{});
+    const auto terrain=town.read().mapLoading.terrainRevision;
+    if(!execution_ || executionArea_!=memory->level || executionRevision_!=live.obstacleRevision || executionTerrain_!=terrain) {
+        auto execution=std::make_shared<DebugExplorationMemory::Execution>();
+        execution->collision=live.freezeMovement?live.freezeMovement():nullptr;
+        if(execution->collision) execution->collisionGrid=execution->collision->grid();
+        const auto landing=town.navigationGrid(view);
+        execution->landingCollision=landing.freezeMovement?landing.freezeMovement():nullptr;
+        if(execution->landingCollision) execution->landingGrid=execution->landingCollision->grid();
+        const auto &source=town.navigationRooms();
+        std::map<size_t,size_t> indices;
+        for(size_t i=0;i<source.size();++i) {
+            const auto &room=source[i];
+            if(!room.loaded || !town.read().origin) continue;
+            const auto owner=memory->terrainLevels.find({room.x/5,room.y/5});
+            if(owner==memory->terrainLevels.end() || owner->second!=room.level) continue;
+            indices[i]=execution->rooms.size();
+            execution->rooms.push_back({room.x,room.y,room.width,room.height,{}});
+        }
+        for(const auto &[old,index]:indices) for(const auto adjacent:source[old].near)
+            if(const auto found=indices.find(adjacent);found!=indices.end()) execution->rooms[index].near.push_back(found->second);
+        execution_=std::move(execution);executionArea_=memory->level;
+        executionRevision_=live.obstacleRevision;executionTerrain_=terrain;
     }
-    const auto cache=worker_->passageCache;
-    plan->job=worker_->schedule([snapshot,input,cache] {return planBacktrack(*snapshot,input,*cache,activeNavigationCancellation);},
-        frames_,snapshot,{{"kind","backtrack-plan"},{"context",context_},{"from",{input.from.x,input.from.y}},
-            {"coordinateOrigin",{input.origin.x,input.origin.y}},{"rooms",std::move(rooms)},{"exclusions",std::move(exclusions)},
-            {"routeRooms",worker_->capture->directory.empty()?nlohmann::json::array():captureRooms(input.routeRooms)},
-            {"destinations",input.destinations},{"priorities",input.priorities},{"weights",input.weights},{"root",input.root},
-            {"level",input.level},{"range",input.range},{"restricted",input.restricted},{"clearing",input.clearing},
-            {"mobility",int(input.mobility)},{"cost",{{"walkUnit",input.cost.walkUnit},{"teleportCast",input.cost.teleportCast},
-                {"observation",input.cost.observation},{"seconds",input.cost.seconds}}}});
+    return memory;
+}
+std::optional<float> DebugNavigationSearch::estimatedRouteCost(uint16_t area,Vec from,Vec target) {
+    const auto *memory=explorationMemory.area(area);if(!memory) return {};
+    if(!worker_) worker_=std::make_unique<Worker>();
+    const Worker::EstimateKey key{area,int(target.x),int(target.y)};
+    if(!worker_->estimates.contains(key) && worker_->estimates.size()>=16) {
+        const auto oldest=std::min_element(worker_->estimates.begin(),worker_->estimates.end(),
+            [](const auto &a,const auto &b){return a.second.used<b.second.used;});
+        worker_->estimates.erase(oldest);
+    }
+    auto &estimate=worker_->estimates[key];estimate.used=frames_;
+    if(estimate.job && estimate.job->ready()) {estimate.result=estimate.job->get();estimate.resultFrom=estimate.from;estimate.job.reset();}
+    std::optional<float> cost;
+    if(estimate.result && !estimate.result->points.empty())
+        cost=estimate.result->cost+(from-estimate.resultFrom).length();
+    // Keep a fixed origin until completion. A changing player position or
+    // ephemeral unit occupancy cannot restart this advisory calculation.
+    if(!estimate.job && (!estimate.result || estimate.revision!=memory->revision || (from-estimate.from).length()>16)) {
+        estimate.from=from;estimate.revision=memory->revision;
+        auto snapshot=std::make_shared<DebugExplorationMemory::Area>(*memory);
+        estimate.job=worker_->schedule([snapshot,from,target] {
+            return DebugExplorationMemory::plan(*snapshot,from,0,false,target,4);
+        },frames_,{},{{"kind","travel-cost-estimate"},{"continuation",true},{"area",area}});
+    }
+    return cost;
+}
+DebugExplorationMemory::Plan DebugNavigationSearch::observedRoute(uint16_t area,Vec from,int range,bool restricted,
+        std::optional<Vec> target,float vicinity,uint64_t committed,bool exploreGoal,
+        std::optional<std::vector<DebugExplorationMemory::Cell>> approaches,std::source_location caller) {
+    lastFile_=std::filesystem::path(caller.file_name()).filename().string();lastLine_=caller.line();
+    const auto *memory=explorationMemory.area(area);if(!memory) return {};
+    if(!target && !committed && memory->commitment) committed=*memory->commitment;
+    if(!worker_) worker_=std::make_unique<Worker>();
+    const auto execution=executionArea_==area?execution_:nullptr;
+    const auto fromCell=DebugExplorationMemory::playerCell(from);
+    const Worker::ObservationKey key{context_[0],area,memory->revision,execution?executionRevision_:0,execution?executionTerrain_:0,
+        fromCell.first,fromCell.second,range,restricted,
+        target?int(target->x):-1,target?int(target->y):-1,vicinity,committed,exploreGoal,approaches};
+    const auto valid=[&](const DebugExplorationMemory::Plan &plan) {
+        const auto began=Clock::now();
+        bool accepted=DebugExplorationMemory::routeValid(*memory,plan,range,restricted,execution.get());
+        // A newly closed door must restore the bypass-first decision, even
+        // though the planning grid still admits its ordinary open operation.
+        if(accepted && range>0 && !plan.doorFallback && execution && execution->landingCollision)
+            for(size_t i=1;i<plan.points.size();++i) {
+                const auto at=plan.points[i];const auto &live=*execution->landingCollision;
+                if(live.mask(int(at.x)-live.originX,int(at.y)-live.originY)!=0xffff &&
+                    !execution->landingAllowed({at.x,at.y})) {accepted=false;break;}
+            }
+        observedValidationMs_+=std::chrono::duration<double,std::milli>(Clock::now()-began).count();
+        if(!accepted) ++observedRejected_;
+        return accepted;
+    };
+    // Moving units elsewhere need not starve an already completed query.
+    // Reuse only the same semantic request, and revalidate every returned edge.
+    for(auto &[old,cached]:worker_->observedPlans) {
+        auto comparable=old;std::get<3>(comparable)=std::get<3>(key);std::get<4>(comparable)=std::get<4>(key);
+        if(old==key || comparable!=key) continue;
+        if(cached.job) {
+            cached.used=frames_;
+            if(!cached.job->ready()) defer(true);
+            cached.result=cached.job->get();cached.job.reset();
+        }
+        if(cached.result && valid(*cached.result)) {
+            ++observedRevalidated_;cached.used=frames_;return *cached.result;
+        }
+    }
+    auto found=worker_->observedPlans.find(key);
+    if(found!=worker_->observedPlans.end()) {
+        auto &plan=found->second;plan.used=frames_;
+        if(plan.result) {++observedHits_;return *plan.result;}
+        if(plan.job && plan.job->ready()) {plan.result=plan.job->get();plan.job.reset();return *plan.result;}
+        defer(true);
+    }
+    for(auto &[old,cached]:worker_->observedPlans) {
+        auto comparable=old;
+        std::get<3>(comparable)=std::get<3>(key);std::get<4>(comparable)=std::get<4>(key);
+        std::get<5>(comparable)=fromCell.first;std::get<6>(comparable)=fromCell.second;
+        if(comparable!=key || !cached.result || cached.result->doorFallback ||
+            (cached.result->outcome!=DebugExplorationMemory::Plan::Outcome::Goal &&
+             (!committed || cached.result->passage!=committed))) continue;
+        const auto &points=cached.result->points;
+        const auto start=std::find_if(points.begin(),points.end(),[&](const auto at){return at.x==fromCell.first && at.y==fromCell.second;});
+        if(start==points.end()) continue;
+        auto suffix=*cached.result;suffix.points.assign(start,points.end());
+        if(!valid(suffix)) continue;
+        suffix.cost=0;suffix.expanded=0;suffix.backtracking=false;
+        for(size_t i=1;i<suffix.points.size();++i) {
+            const auto a=suffix.points[i-1],b=suffix.points[i];
+            const float span=Vec{float(int(b.x)-a.x),float(int(b.y)-a.y)}.length();
+            const auto trail=memory->walked.find({a.x,a.y});
+            const bool walked=trail!=memory->walked.end() && trail->second.contains({b.x,b.y});
+            suffix.cost+=span>=2?8.f+span*.1f:span*(walked?1.f:1.25f);
+        }
+        if(suffix.points.size()>2) {const auto at=suffix.points[std::min(size_t(8),suffix.points.size()-1)];suffix.backtracking=memory->walked.contains({at.x,at.y});}
+        cached.used=frames_;++observedSuffixes_;return suffix;
+    }
+    if(worker_->observedPlans.size()>=64) {
+        const auto oldest=std::min_element(worker_->observedPlans.begin(),worker_->observedPlans.end(),
+            [](const auto &a,const auto &b){return a.second.used<b.second.used;});
+        worker_->observedPlans.erase(oldest);
+    }
+    const auto snapshotStarted=Clock::now();
+    auto snapshot=std::make_shared<DebugExplorationMemory::Area>(*memory);
+    observedSnapshotMs_+=std::chrono::duration<double,std::milli>(Clock::now()-snapshotStarted).count();
+    ++observedQueries_;
+    auto grid=std::make_shared<Grid>();grid->width=memory->width;grid->height=memory->height;
+    grid->collisionSample=[snapshot,execution](int x,int y,EntityId)->uint16_t {
+        const int gx=x+snapshot->x,gy=y+snapshot->y;const auto known=snapshot->mask(gx,gy);
+        if(known==0xffff || !execution || !execution->collision) return known;
+        const auto &live=*execution->collision;const auto mask=execution->collisionGrid->movementMask(gx-live.originX,gy-live.originY);
+        return mask==0xffff?known:mask;
+    };
+    auto &plan=worker_->observedPlans[key];plan.used=frames_;
+    plan.job=worker_->schedule([snapshot,execution,from,range,restricted,target,vicinity,committed,exploreGoal,approaches=std::move(approaches)] {
+        return DebugExplorationMemory::plan(*snapshot,from,range,restricted,target,vicinity,committed,exploreGoal,approaches,execution.get());
+    },frames_,grid,{{"kind","observed-passages"},{"area",area},{"revision",memory->revision},
+        {"executionRevision",execution?executionRevision_:0},{"from",{from.x,from.y}},{"fromCell",fromCell},{"range",range},
+        {"committed",committed},{"exploreTowardTarget",exploreGoal},
+        {"target",target?nlohmann::json{target->x,target->y}:nlohmann::json(nullptr)}});
     defer(true);
 }
 DebugNavigationSearch::CandidateRoute DebugNavigationSearch::selectCandidate(const Grid &terrain,Vec from,
@@ -1460,11 +1503,6 @@ const DebugNavigationSearch::Component &DebugNavigationSearch::connectionCompone
                     !snapshot->nativeMovementSegment(pending[i],at,playerMovement)) continue;
                 result.cells[cell]=1;pending.push_back(at);
             }
-            for(int y=0;y<snapshot->height;++y) for(int x=0;x<snapshot->width;++x) {
-                if(!result.cells[size_t(y)*snapshot->width+x]) continue;
-                const Vec at{float(x)+.5f,float(y)+.5f};
-                if(debugUnknownFrontier(*snapshot,at)) result.frontiers.push_back(at);
-            }
             return result;
         },frames_,snapshot,{{"kind","component"},{"context",context_},{"from",{from.x,from.y}},
             {"mask",playerMovement.mask},{"size",playerMovement.size}});
@@ -1489,11 +1527,38 @@ bool DebugNavigationSearch::reachable(const Grid &grid,Vec from,Vec to,MovementC
     return !path(grid,from,to,false,rule,native,caller).empty();
 }
 nlohmann::json DebugNavigationSearch::snapshot() const {
+    const auto &m=explorationMemory.metrics;
+    nlohmann::json observation{{"observations",m.observations},{"sampledCells",m.sampledCells},{"reusedTiles",m.reusedTiles},
+        {"boundaryCells",m.boundaryCells},{"copiedMaskBytes",m.copiedMaskBytes},{"sampleMs",m.sampleMs},
+        {"boundaryMs",m.boundaryMs},{"observationMs",m.observationMs},{"maxObservationMs",m.maxObservationMs},
+        {"queries",observedQueries_},{"exactHits",observedHits_},{"revalidatedHits",observedRevalidated_},
+        {"suffixHits",observedSuffixes_},{"validationRejected",observedRejected_},
+        {"snapshotMs",observedSnapshotMs_},{"validationMs",observedValidationMs_}};
+    nlohmann::json background=nullptr;
+    if(worker_) {
+        const auto &p=*worker_->performance;
+        background={{"completed",p.completed.load()},{"failed",p.failed.load()},{"consumed",p.consumed.load()},
+            {"queueMs",p.queueUs.load()/1000.0},{"computeMs",p.computeUs.load()/1000.0},
+            {"consumeDelayMs",p.consumeDelayUs.load()/1000.0}};
+    }
+    auto observed=nlohmann::json::array();
+    if(worker_) for(const auto &[key,plan]:worker_->observedPlans) if(plan.job && observed.size()<8) {
+        const auto &trace=*plan.job->trace->state;
+        observed.push_back({{"area",std::get<1>(key)},{"from",{std::get<5>(key),std::get<6>(key)}},
+            {"target",{std::get<9>(key),std::get<10>(key)}},{"range",std::get<7>(key)},
+            {"state",plan.job->ready()?"ready":trace.started.load()?"running":"queued"},
+            {"ageMs",std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-trace.queuedAt).count()}});
+    }
     return {{"frames",frames_},{"queries",queries_},{"cacheHits",hits_},{"reachabilityHits",proofHits_},{"budgetYields",yields_},{"cacheResets",resets_},
     {"captures",worker_?worker_->capture->snapshot():nlohmann::json(nullptr)},
-        {"roomPlanPending",worker_ && worker_->roomPlan && worker_->roomPlan->job.has_value()},
-        {"explorationPlanPending",worker_ && worker_->viewpointPlan && worker_->viewpointPlan->job.has_value()},
-        {"backtrackPlanPending",worker_ && worker_->backtrackPlan && worker_->backtrackPlan->job.has_value()},
+        {"observationPerformance",std::move(observation)},{"backgroundPerformance",std::move(background)},
+        {"observedPlanPending",worker_ && std::any_of(worker_->observedPlans.begin(),worker_->observedPlans.end(),
+            [](const auto &entry){return entry.second.job && !entry.second.job->ready();})},
+        {"observedRequests",std::move(observed)},
+        {"costEstimates",worker_?worker_->estimates.size():0},
+        {"costEstimatePending",worker_ && std::any_of(worker_->estimates.begin(),worker_->estimates.end(),
+            [](const auto &entry){return entry.second.job && !entry.second.job->ready();})},
+        {"rememberedAreas",explorationMemory.areas().size()},
         {"candidatePlanPending",worker_ && std::any_of(worker_->candidatePlans.begin(),worker_->candidatePlans.end(),
             [](const auto &plan){return plan && plan->job.has_value();})},
         {"planner","exact-multi-target"},{"snapshotStorage","shared-32x32-blocks"},

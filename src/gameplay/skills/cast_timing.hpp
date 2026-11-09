@@ -14,7 +14,9 @@ struct PlayerCastSequence {
 // Native player sequence steps; the client supplies art, the server supplies clocks.
 std::optional<PlayerCastSequence> playerCastSequence(int sequence);
 CastTiming playerCastSequenceTiming(const PlayerCastSequence &, int speed);
-// Normal SC timing extracted from the old single-player applySkillCastTiming.
+// SC duration is client completion / ordinary cast reentry, not the later
+// server ENDANIM cleanup from playerActionTimeline. Keep both consumers on
+// this MPQ/FCR-derived boundary so held casts cannot accumulate a tick of lag.
 CastTiming sorceressCastTiming(const CastAnimationTiming &, int fasterCast, bool arc, bool inferno);
 CastTiming normalCastTiming(const CastAnimationTiming &, int fasterCast);
 }

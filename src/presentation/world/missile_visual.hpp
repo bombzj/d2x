@@ -107,6 +107,7 @@ struct ClientMissileVisual {
     int remainingHits{},chainRadius{};
     int slowPercent{};
     EntityId guidance{};bool guidanceSearched{};
+    EntityId relatedMissile;
     // Pair reconstruction and 73 once without merging independent creations.
     uint8_t creationSources{};
     Vec creationPosition, creationDirection;
@@ -135,6 +136,11 @@ struct ClientMissileAnchor {
     uint32_t nativeId{};
     uint8_t type{};
     int identity{-1};
+};
+struct ClientMissileObjectOverlay {
+    EntityId object;
+    int overlay{};
+    float age{};
 };
 // Prepared from imported skill data by SceneAssets; no damage or cast rules.
 struct BlizzardVisual {

@@ -242,7 +242,7 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
             score+=point?std::min(31.f,(Vec{float(point->x),float(point->y)}-c.position).length()/16.f):32.f;
         }
         if(townAction && c.town.read().town) score+=float(node.townOrder)*.01f;
-        if(!here && !townAction && destination && area) {
+        if(ready.size()>1 && !retainWalk && !here && !townAction && destination && area) {
             const auto path=route(c,*area,*destination);const float cost=routeCost(c,path);
             score+=std::isfinite(cost)?std::min(cost,5000.f):5000.f;
         }

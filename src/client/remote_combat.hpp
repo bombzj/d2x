@@ -63,6 +63,8 @@ class RemoteCombat {
   public:
     RemoteCombat(Archives &, RemoteTown &, net::RealmSession &, RemoteInventory &);
     bool submit(OnlineCombatCommand,std::optional<Vec> inputOrigin = {});
+    void setLocalUsedSkill(uint16_t skill,uint64_t revision,uint64_t actionRevision,OnlineIntentContext context) const {session_.set_local_used_skill(skill,revision,actionRevision,context);}
+    void clearLocalUsedSkill(uint64_t revision,OnlineIntentContext context) const {session_.clear_local_used_skill(revision,context);}
     // Local grid coordinates; uses the source level's MPQ Teleport rule.
     bool teleportPathAllowed(uint16_t level,const Grid &,Vec from,Vec to) const;
     void update();

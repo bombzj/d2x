@@ -413,13 +413,17 @@ const RemoteScene::Impl::Art *RemoteScene::Impl::monster(const OnlineUnit &u, bo
             for(int slot=1;slot<=8;++slot) if(monstats.value(row->second,"Skill"+std::to_string(slot))=="QueenDeath") pose=lower(std::string(monstats.value(row->second,"Sk"+std::to_string(slot)+"mode")));
         }
         const bool burrowed=actual==8 && !u.actionSkill && monstats.value(row->second,"AI")=="SandMaggot";
-        const bool submerged=actual==8 && !u.actionSkill && monstats.value(row->second,"AI")=="FrogDemon";
+        const auto usedSkill=u.actionSkill?u.actionSkill:u.stoppedSkill;
+        const auto usedRow=usedSkill?skillRows.find(*usedSkill):skillRows.end();
+        const bool submergeSkill=usedRow!=skillRows.end() && skills.number(usedRow->second,"srvstfunc")==51;
+        const bool submerged=submergeSkill || (actual==8 && !u.actionSkill && monstats.value(row->second,"AI")=="FrogDemon");
         if(burrowed) for(int slot=1;slot<=8;++slot) if(monstats.value(row->second,"Skill"+std::to_string(slot))=="MagottDown") pose=lower(std::string(monstats.value(row->second,"Sk"+std::to_string(slot)+"mode")));
         if(submerged) for(int slot=1;slot<=8;++slot) if(monstats.value(row->second,"Skill"+std::to_string(slot))=="Submerge") pose=lower(std::string(monstats.value(row->second,"Sk"+std::to_string(slot)+"mode")));
         // D2Common COMPOSIT maps MONMODE_KNOCKBACK to the original GH art.
         if(actual==13) pose="gh";
         if (u.actionSkill || pose.starts_with("seq_")) {
             if(u.actionSkill) pose = monsterSkillMode(row->second,*u.actionSkill);
+            else if(submergeSkill) pose=monsterSkillMode(row->second,*usedSkill);
             if (pose.starts_with("seq_")) {
                 ActorAnimationRequest request; request.category = "monsters"; request.mode = pose;
                 if(const auto &hireling=shared.hirelingView();hireling.id.value==u.key.id) {

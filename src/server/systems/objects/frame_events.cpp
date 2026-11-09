@@ -22,7 +22,7 @@ bool usesReliableModeFacts(const ObjectRule &rule) {
     if(rule.initialization==11 || rule.initialization==12 || rule.initialization==38 || rule.initialization==39) return true;
     switch(rule.operation) {
     case 2:return !rule.cycleOperating;
-    case 1:case 3:case 4:case 5:case 7:case 14:case 15:case 18:
+    case 1:case 3:case 4:case 5:case 7:case 14:case 15:case 18:case 24:
     case 30:case 34:case 46:case 48:case 49:case 51:case 52:case 54:
     case 55:case 56:case 66:case 68:return true;
     default:return false; // Waypoint23 retains its native target-flag branch.

@@ -157,7 +157,12 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         }
         return {DomainStatus::Applied,std::monostate{}};
     }
-    if(busy(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
+    // Native PlrModes permits SC reentry while the old ENDANIM is pending.
+    // Keep recovery and unfinished/deferred releases locked; a successful
+    // replacement below cancels the old timeline before installing its own.
+    if(busy(actor.actor,actor.tick) &&
+        (!state_.canRecast(actor.actor,actor.tick) || ports_.effects.recovering(actor.actor,actor.tick)))
+        return {DomainStatus::Conflict,{}};
     const int effectiveRank=source->rank;
     if(effectiveRank<=0 || effectiveRank>255) return {DomainStatus::InvalidRequest,{}};
     // ObjMode calls PLAYERMODE_Change directly, including barrels in town;
@@ -218,6 +223,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     const bool inferno=skill.effect==SkillBehavior::Inferno;
     const bool lightningSequence=bool(skill.arc) || (skill.pd2 && skill.pd2->sequence==12);
     CastTiming timing;
+    std::optional<int> recastDelay;
     std::optional<ActionTimeline> timeline;
     if(pd2StreamSkill(skill)) {
         const auto sequence=playerCastSequence(skill.pd2->sequence);if(!sequence) return {DomainStatus::NotImplemented,{}};
@@ -262,12 +268,19 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
                 const auto sequence=*playerCastSequence(12);
                 std::vector<uint8_t> flags(sequence.frames.size());flags[size_t(sequence.releaseFrame)]=1;
                 timeline=playerActionTimeline(int(sequence.frames.size()),timing.speed,0,flags);
-            } else timeline=playerActionTimeline(animation->second.frames,timing.speed,0,animation->second.events);
+            } else {
+                // Share the client's normal SC completion boundary. ENDANIM
+                // is one tick later and remains responsible for idle cleanup,
+                // not an extra tick of cooldown on every held cast.
+                if(!rules.pd2) recastDelay=timing.duration;
+                timeline=playerActionTimeline(animation->second.frames,timing.speed,0,animation->second.events);
+            }
             const auto action=std::find_if(timeline->events.begin(),timeline->events.end(),[](const auto &event){return event.event==1 || event.event==2;});
             timing.duration=timeline->end;timing.impact=action==timeline->events.end()?timeline->end:action->tick;
         }
     }
     if(const auto *shape=activeShape(rules,ports_.effects.unitStates(actor.actor,actor.tick))) {
+        recastDelay.reset();
         const bool scheduled=timeline.has_value();timeline.reset();
         auto mode=skill.druid?skill.druid->mode:skill.pd2?skill.pd2->mode:std::string{"sc"};
         for(auto &letter:mode) if(letter>='A' && letter<='Z') letter=char(letter-'A'+'a');
@@ -344,6 +357,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     auto preparedUse=state_.prepareUsedSkill(actor.actor,selectedUse);
     auto cast=Cast{actor.actor,uint16_t(selected),actor.tick,actor.sequence,actor.tick+uint64_t(timing.duration),actor.area,unit};
     cast.usesSkillPointer=true;
+    if(recastDelay) cast.recastAt=actor.tick+uint64_t(*recastDelay);
     std::optional<State::PreparedTimeline> preparedTimeline;
     if(timeline) {
         preparedTimeline=state_.prepareTimeline(actor.actor,actor.tick,*timeline);

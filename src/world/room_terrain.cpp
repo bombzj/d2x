@@ -27,6 +27,7 @@ class NativePreparedRoomTerrain final : public PreparedRoomTerrain {
     int actValue{}, difficulty{};
     uint32_t seed{};
     uint64_t mountIdentity{};
+    bool reloadOnly{};
     std::shared_ptr<const WorldCatalog> catalog;
     RetailPresetScan identities;
     std::vector<RoomTerrainLink> links;
@@ -53,7 +54,7 @@ class NativeRoomTerrainSession final : public RoomTerrainSession {
     explicit NativeRoomTerrainSession(const NativePreparedRoomTerrain &source)
         : act_(source.actValue),difficulty_(source.difficulty),seed_(source.seed),mountIdentity_(source.mountIdentity),
           catalog_(source.catalog),identities_(source.identities),tiles_(*catalog_) { include(source); }
-    void include(const PreparedRoomTerrain &value) override {
+    const NativePreparedRoomTerrain &validate(const PreparedRoomTerrain &value) const {
         const auto *source=dynamic_cast<const NativePreparedRoomTerrain *>(&value);
         if (!source || source->actValue!=act_ || source->difficulty!=difficulty_ || source->seed!=seed_ ||
             source->mountIdentity!=mountIdentity_)
@@ -86,6 +87,24 @@ class NativeRoomTerrainSession final : public RoomTerrainSession {
                     std::to_string(!old.link.near.empty() && !input->link.near.empty() && old.link.near!=input->link.near));
             }
         }
+        return *source;
+    }
+    void restore(const PreparedRoomTerrain &value) override {
+        const auto &source=validate(value);
+        if(!source.reloadOnly) throw std::runtime_error("Room input reload requires a selective package");
+        for(const auto &input:source.inputs)
+            if(!inputs_.contains(input->link.id))
+                throw std::runtime_error("Room input reload contains an unknown room");
+        for(const auto &input:source.inputs) {
+            auto &previous=inputs_.at(input->link.id);
+            if(previous) continue;
+            tiles_.restoreRoom(indices_.at(input->link.id),input->room,input->libraries);
+            previous=input;
+        }
+    }
+    void include(const PreparedRoomTerrain &value) override {
+        const auto *source=&validate(value);
+        if(source->reloadOnly) throw std::runtime_error("Selective room inputs cannot extend a DRLG");
         visible_.insert(source->visible.begin(),source->visible.end());
         for (const auto &input : source->inputs) {
             const auto key=input->link.id;
@@ -255,19 +274,31 @@ std::unique_ptr<RoomTerrainSession> NativePreparedRoomTerrain::instantiate() con
 } // namespace
 
 std::shared_ptr<const PreparedRoomTerrain> NativeMapGenerator::prepareRoomTerrain(int level,
-    std::shared_ptr<const WorldCatalog> catalog) {
+    std::shared_ptr<const WorldCatalog> catalog, std::span<const RoomTerrainId> requested) {
     if (side_!=NativeRoomActivation::Side::Server || &*catalog!=&catalog_ || !activation_.states().empty())
         throw std::runtime_error("Room inputs require a pristine server DRLG");
     auto result=std::make_shared<NativePreparedRoomTerrain>(identities_);
     result->actValue=act_;result->difficulty=difficulty_;result->seed=mapSeed_;result->catalog=std::move(catalog);
     result->mountIdentity=archives_.mountIdentity();
+    result->reloadOnly=!requested.empty();
     const auto roots=levelRooms(level);
     std::map<size_t,unsigned> depth;
     std::vector<size_t> queue;
-    for (const auto id : roots) {depth.emplace(id,0);queue.push_back(id);}
+    for (const auto id : roots) {
+        const auto &room=tiles_.rooms().at(id);
+        const RoomTerrainId key{room.level,room.room.x,room.room.y};
+        if(!requested.empty() && std::find(requested.begin(),requested.end(),key)==requested.end()) continue;
+        depth.emplace(id,0);queue.push_back(id);
+    }
+    if(!requested.empty()) {
+        if(depth.size()!=requested.size()) throw std::runtime_error("Room input reload lost its native anchors");
+        // Resolve metadata for identity validation, but decode only the missing
+        // rooms. The receiving DRLG already owns their complete logical graph.
+        for(const auto id:queue) near(id);
+    }
     for (size_t at=0;at<queue.size();++at) {
         const auto id=queue[at];const auto distance=depth.at(id);
-        if (distance>=3) continue;
+        if (!requested.empty() || distance>=3) continue;
         for (const auto other : near(id)) if (depth.emplace(other,distance+1).second) queue.push_back(other);
     }
     std::map<const RetailTileSelector *,std::shared_ptr<RetailTileSelector>> selectors;

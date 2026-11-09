@@ -26,7 +26,7 @@ try {
     }
     & cmake @configureArgs
     if($LASTEXITCODE -ne 0){throw 'CMake configuration failed.'}
-    & cmake --build build --config $Configuration --target $Target --parallel 8
+    & cmake --build build --config $Configuration --target $Target --parallel 4
     $buildExitCode=$LASTEXITCODE
     $inputsAfter=Get-BuildInputState
     $changed=@(@($inputsBefore.Keys)+@($inputsAfter.Keys) | Sort-Object -Unique | Where-Object {

@@ -1,7 +1,9 @@
 #pragma once
 #include <utility>
+#include "exploration_memory.hpp"
 #include "world/navigation.hpp"
 #include "world/navigation_planner.hpp"
+#include "contracts/online_world.hpp"
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -9,6 +11,7 @@
 #include <memory>
 #include <nlohmann/json_fwd.hpp>
 #include <source_location>
+#include <set>
 #include <string>
 #include <tuple>
 
@@ -17,7 +20,6 @@ class RemoteTown;
 struct OnlineView;
 struct OnlineSceneView;
 nlohmann::json debugMapReadiness(const OnlineSceneView &);
-bool debugUnknownFrontier(const Grid &,Vec endpoint);
 // A pending background result is distinct from an empty completed route.
 struct DebugSearchPending {};
 class DebugNavigationSearch {
@@ -56,22 +58,51 @@ class DebugNavigationSearch {
     uint64_t lastDeferredFrame_{};
 
     bool yielded_{};
+    std::set<uint16_t> doorClasses_;
+    std::shared_ptr<const NavigationSnapshot> planningSource_,planningSnapshot_;
+    std::shared_ptr<const Grid> planningGrid_;
+    std::set<EntityId> planningDoors_;
+    std::shared_ptr<const DebugExplorationMemory::Execution> execution_;
+    uint64_t executionRevision_{},executionTerrain_{};
+    uint16_t executionArea_{};
+    uint64_t observedQueries_{},observedHits_{},observedRevalidated_{},observedSuffixes_{},observedRejected_{};
+    double observedSnapshotMs_{},observedValidationMs_{};
   public:
+    DebugExplorationMemory explorationMemory;
+    DebugExplorationMemory::Area *observeTerrain(const RemoteTown &,const OnlineView &,Vec position);
+    // Advisory travel scoring never suspends an executable action.
+    std::optional<float> estimatedRouteCost(uint16_t area,Vec from,Vec target);
+    DebugExplorationMemory::Plan observedRoute(uint16_t area,Vec from,int range=0,bool restricted=false,
+        std::optional<Vec> target={},float vicinity=2,uint64_t committed=0,bool exploreGoal=false,
+        std::optional<std::vector<DebugExplorationMemory::Cell>> approaches={},
+        std::source_location caller=std::source_location::current());
+    std::vector<DebugExplorationMemory::Cell> interactionApproaches(const RemoteTown &,const OnlineView &,OnlineUnitKey);
+    struct WalkingOpening {
+        OnlinePoint point,boundaryStart,boundaryEnd;
+        std::optional<OnlinePoint> crossing; // Empty until the opposite bank is acquired.
+        uint16_t destination{};
+    };
+    struct WalkingConnection {
+        std::optional<OnlinePoint> bearing;
+        std::vector<WalkingOpening> openings;
+    };
+    WalkingConnection walkingConnection(const RemoteTown &,Vec from,std::optional<uint16_t> destination);
+    static bool observationReady(const RemoteTown &,const OnlineView &,Vec destination,
+        std::optional<std::chrono::steady_clock::time_point> &since);
     DebugNavigationSearch();
     ~DebugNavigationSearch();
+    void setDoorClasses(std::set<uint16_t> classes);
+    bool ordinaryDoor(uint16_t identity) const {return doorClasses_.contains(identity);}
+    const Grid &planningGrid(const RemoteTown &,const OnlineView &);
+    Grid planningCollision(const RemoteTown &,const OnlineView &,std::optional<OnlineUnitKey> ignored);
     using TravelRoute=NavigationRoute;
     using TeleportRoom=NavigationRoom;
-    using PlanningRoom=NavigationPlanningRoom;
-    using RoomTree=NavigationRoomTree;
     using Candidate=NavigationTarget;
     using CandidateRoute=NavigationSelection;
     enum class PlanningPurpose {Exploration,Waypoint,Interaction,ExitOpening,ExitFrontier,Backtrack};
-    NavigationExploration exploration(const Grid &,const NavigationViewpointInput &,uint64_t observationRevision,bool prefetch=false);
-    NavigationBacktrack backtrack(const Grid &,const NavigationBacktrackInput &);
     CandidateRoute selectCandidate(const Grid &,Vec from,const std::vector<Candidate> &,
         const std::vector<TeleportRoom> &rooms={},int range=0,bool restricted=false,Vec origin={},
         PlanningPurpose purpose=PlanningPurpose::Exploration);
-    RoomTree roomTree(const Grid &,const std::vector<PlanningRoom> &,size_t root,int level,int range,Vec origin);
     // Local cell centers, static terrain only. Execution checks the current
     // native room neighbourhood and live landing occupancy separately.
     TravelRoute teleportRoute(const Grid &,const std::vector<TeleportRoom> &,Vec from,Vec to,int range,bool restricted,Vec coordinateOrigin);
@@ -81,7 +112,7 @@ class DebugNavigationSearch {
     TravelRoute travelRoute(const Grid &terrain,Vec from,Vec to,bool partial=false,
                             std::source_location caller=std::source_location::current());
     std::deque<Vec> joinTravelRoute(const Grid &terrain,const Grid &live,Vec from,Vec to);
-    struct Component {Bytes cells;std::vector<Vec> frontiers;};
+    struct Component {Bytes cells;};
     const Component &connectionComponent(const Grid &,Vec from);
     bool prolongedWait() const;
     void noteTravelWait();

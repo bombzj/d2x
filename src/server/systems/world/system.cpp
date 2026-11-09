@@ -105,6 +105,7 @@ DomainResult<uint64_t> System::request(RegionId destination,std::shared_ptr<cons
         if(map && area->definition.pd2Map!=map) return {DomainStatus::Conflict,{}};
         activateAct(destination);
         if(roomInputsReady(destination)) return {DomainStatus::Applied, area->generation};
+        return requestAreaInputs(destination,area->definition.pd2Map);
     }
     if (failed_.contains(destination)) {
         // Existing authority is intact after a failed resource reload. A new
@@ -112,7 +113,7 @@ DomainResult<uint64_t> System::request(RegionId destination,std::shared_ptr<cons
         if(!ports_.areas.find(destination)) return {DomainStatus::Unavailable,{}};
         failed_.erase(destination);
     }
-    for (const auto &pending : state_.preparation) if (pending.destination == destination) {
+    for (const auto &pending : state_.preparation) if (pending.destination == destination && pending.roomInputs.empty()) {
         if(pending.pd2Map!=map) return {DomainStatus::Conflict,{}};
         return {DomainStatus::Applied, pending.request};
     }
@@ -122,6 +123,33 @@ DomainResult<uint64_t> System::request(RegionId destination,std::shared_ptr<cons
     state_.preparation.push_back({destination, id, ports_.settings,std::move(map),existing?existing->terrainGeneration:0});
     ++nextRequest_;
     return {DomainStatus::Applied, id};
+}
+DomainResult<uint64_t> System::requestRoomInputs(RegionId destination,int act,std::vector<RoomTerrainId> inputs,
+    std::shared_ptr<const pd2::MapInstance> map) {
+    if(map && !pd2::isMapRegion(int(destination))) map.reset();
+    const auto *existing=ports_.areas.find(destination);
+    if(existing && ((existing->provisionalPd2Map && (!map || existing->definition.pd2Map!=map)) ||
+       (map && existing->definition.pd2Map!=map)))
+        return {DomainStatus::Conflict,{}};
+    if(failed_.contains(destination)) {
+        if(!existing) return {DomainStatus::Unavailable,{}};
+        failed_.erase(destination);
+    }
+    uint64_t pendingId{};
+    for(const auto &pending:state_.preparation) if(pending.destination==destination) {
+        if(pending.pd2Map!=map) return {DomainStatus::Conflict,{}};
+        if(pending.roomInputs.empty()) return {DomainStatus::Applied,pending.request};
+        if(pending.roomInputAct!=act) return {DomainStatus::Conflict,{}};
+        pendingId=pending.request;
+        std::erase_if(inputs,[&](const auto key) {
+            return std::find(pending.roomInputs.begin(),pending.roomInputs.end(),key)!=pending.roomInputs.end();
+        });
+    }
+    if(inputs.empty()) return {DomainStatus::Applied,pendingId};
+    if(state_.preparation.size()>=16 || nextRequest_==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    const auto id=nextRequest_++;
+    state_.preparation.push_back({destination,id,ports_.settings,std::move(map),existing?existing->terrainGeneration:0,std::move(inputs),act});
+    return {DomainStatus::Applied,id};
 }
 DomainResult<uint64_t> System::requestAdmissionTown(RegionId town) {
     if (const auto *area = ports_.areas.find(town)) {
@@ -158,6 +186,14 @@ DomainResult<> System::install(PreparedArea prepared) {
     const auto pending = std::find_if(state_.preparation.begin(), state_.preparation.end(), [&](const auto &p) { return p.request == prepared.request; });
     if (pending == state_.preparation.end() || pending->destination != prepared.definition.id || pending->pd2Map!=prepared.definition.pd2Map)
         return {DomainStatus::Stale, {}};
+    if(!pending->roomInputs.empty()) {
+        const auto *existing=ports_.areas.find(pending->destination);
+        if(!prepared.roomInputs || pending->terrainGeneration!=(existing?existing->terrainGeneration:0) ||
+           !restoreRoomInputs(*pending,*prepared.roomInputs)) return {DomainStatus::Stale,{}};
+        state_.preparation.erase(pending);
+        return {DomainStatus::Applied,std::monostate{}};
+    }
+    if(prepared.roomInputs) return {DomainStatus::Stale,{}};
     AreaStore::validate(prepared.definition);
     if(const auto *existing=ports_.areas.find(prepared.definition.id)) {
         if(pending->terrainGeneration!=existing->terrainGeneration) return {DomainStatus::Stale,{}};

@@ -201,6 +201,7 @@ class SceneView {
     using ClientMissile = ClientMissileVisual;
     std::vector<ClientMissile> clientMissiles_;
     std::vector<EntityId> clientMissileHiddenOwners_;
+    std::vector<ClientMissileObjectOverlay> clientMissileObjectOverlays_;
     uint64_t projectileVisualRandom_ = 0;
     uint64_t nextClientMissile_ = 0;
     void createMissileImpactVisuals(int missileId, Vec position);
@@ -356,6 +357,7 @@ class SceneView {
     void clearClientMissiles();
     const std::vector<ClientMissile> &clientMissiles() const;
     std::vector<EntityId> takeClientMissileHiddenOwners();
+    std::vector<ClientMissileObjectOverlay> takeClientMissileObjectOverlays();
     void retireClientMissileRoom(const std::array<int,3> &room);
     std::optional<int> weaponMissile(std::string_view code) const;
     Vec clientMissilePosition(const ClientMissile &, const Grid &, Vec origin) const;
