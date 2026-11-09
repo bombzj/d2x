@@ -134,6 +134,7 @@ struct ViewState {
     bool bhShowChests = false;
     bool bhAutomapOnJoin = false;
     bool bhShowLkChestLines = false;
+    bool bhQuickCast = false;
     // BH settings overlay (Ctrl+Z).
     bool bhSettingsOpen = false;
     int bhSettingsSelected = 0;
@@ -238,6 +239,9 @@ class SceneView {
     void drawAreaTitle() const;
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker = false, uint32_t owner=UINT32_MAX) const;
+    void drawSkillHotkeyLabels(int skill, Rectangle bounds, std::optional<bool> right = {},
+                               std::optional<uint32_t> owner = {}) const;
+    void drawBoundSkillBar(bool right, Rectangle anchor) const;
     void drawSkillTree(Vec mouse) const;
     void drawQuests(Vec mouse) const;
     void drawQuestNotice() const;

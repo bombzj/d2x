@@ -117,6 +117,71 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool p
     }
     imageAt(image, bounds, picker || available ? WHITE : Color{255, 64, 64, 255});
 }
+void SceneView::drawSkillHotkeyLabels(int skill, Rectangle bounds, std::optional<bool> right,
+                                      std::optional<uint32_t> owner) const {
+    std::string label;
+    const auto &hotkeys = characterView_.skillHotkeys;
+    for (size_t key = 0; key < hotkeys.size(); ++key) {
+        if (hotkeys[key].skill != skill) continue;
+        if (right && hotkeys[key].right != *right) continue;
+        if (owner && hotkeys[key].owner != *owner) continue;
+        auto name = assets_.escapeMenu.bindingName(view_.controls,
+            ControlAction(size_t(ControlAction::Skill1) + key));
+        if (name.empty()) continue;
+        if (!label.empty()) label += " / ";
+        label += name;
+    }
+    if (label.empty()) return;
+    const int width = int(bounds.width) - 6;
+    if (painter_.measure(label, 10) > width) {
+        while (!label.empty() && painter_.measure(label + "...", 10) > width) label.pop_back();
+        label += "...";
+    }
+    painter_.label(label, int(bounds.x + 3), int(bounds.y + bounds.height - 12), 10, gold);
+}
+void SceneView::drawBoundSkillBar(bool right, Rectangle anchor) const {
+    struct Binding {
+        int skill = -1;
+        uint32_t owner = UINT32_MAX;
+        std::string key;
+    };
+    std::vector<Binding> bindings;
+    const auto &hotkeys = characterView_.skillHotkeys;
+    for (size_t key = 0; key < hotkeys.size(); ++key) {
+        if (hotkeys[key].skill == -2 || hotkeys[key].right != right) continue;
+        auto name = assets_.escapeMenu.bindingName(view_.controls,
+            ControlAction(size_t(ControlAction::Skill1) + key));
+        if (name.empty()) continue;
+        bindings.push_back({hotkeys[key].skill, hotkeys[key].owner, std::move(name)});
+    }
+    if (bindings.empty()) return;
+
+    constexpr int columns = 4;
+    constexpr float cellWidth = 48, rowHeight = 35, iconSize = 24;
+    const int rows = (int(bindings.size()) + columns - 1) / columns;
+    const float width = columns * cellWidth;
+    const float x0 = anchor.x + (anchor.width - width) / 2;
+    const float y0 = anchor.y - 5 - rows * rowHeight;
+    for (size_t index = 0; index < bindings.size(); ++index) {
+        const auto &binding = bindings[index];
+        const int column = int(index % columns), row = int(index / columns);
+        const Rectangle icon = {x0 + column * cellWidth + (cellWidth - iconSize) / 2,
+            y0 + row * rowHeight, iconSize, iconSize};
+        drawSkillIcon(binding.skill < 0 ? std::nullopt : std::optional<int>{binding.skill},
+            icon, false, binding.owner);
+        auto label = binding.key;
+        constexpr int labelSize = 8;
+        const float labelWidth = cellWidth - 2;
+        if (painter_.measure(label, labelSize) > labelWidth) {
+            while (!label.empty() && painter_.measure(label + "...", labelSize) > labelWidth)
+                label.pop_back();
+            label += "...";
+        }
+        painter_.label(label, int(x0 + column * cellWidth +
+            (cellWidth - painter_.measure(label, labelSize)) / 2),
+            int(icon.y + icon.height + 1), labelSize, gold);
+    }
+}
 void SceneView::drawControlPanel() const {
     const auto &player = characterView_;
     ClassicHudValues values;
@@ -138,6 +203,8 @@ void SceneView::drawControlPanel() const {
                     assets_.attributeButtons, assets_.miniPanelToggle}, values);
     drawSkillIcon(view_.leftSkill, hudSkillSlot(false),false,player.selectedSkillOwners[player.weaponSet*2]);
     drawSkillIcon(view_.rightSkill, hudSkillSlot(true),false,player.selectedSkillOwners[player.weaponSet*2+1]);
+    drawBoundSkillBar(false, hudSkillSlot(false));
+    drawBoundSkillBar(true, hudSkillSlot(true));
     if (const auto offset = miniPanelOffset(view_, worldViewport())) {
         if (const auto *background = assets_.miniPanel.frame(0, 0))
             imageAt(background, hudMiniPanel(*background, *offset));
@@ -213,18 +280,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
         for (const auto &slot : skillPickerSlots(right)) {
             const auto bounds = slot.bounds;
             drawSkillIcon(slot.skill, bounds, true,slot.owner);
-            const auto &hotkeys = characterView_.skillHotkeys;
-            for (size_t key = 0; key < hotkeys.size(); ++key)
-                if (hotkeys[key].right == right && hotkeys[key].skill == slot.skill.value_or(-1) && hotkeys[key].owner==slot.owner) {
-                    auto label = assets_.escapeMenu.bindingName(view_.controls,
-                        ControlAction(size_t(ControlAction::Skill1) + key));
-                    if (label.empty()) continue;
-                    if (painter_.measure(label, 10) > bounds.width - 6) {
-                        while (!label.empty() && painter_.measure(label + "...", 10) > bounds.width - 6) label.pop_back();
-                        label += "...";
-                    }
-                    painter_.label(label, int(bounds.x + 3), int(bounds.y + bounds.height - 12), 10, gold);
-                }
+            drawSkillHotkeyLabels(slot.skill.value_or(-1), bounds, right, slot.owner);
             if (CheckCollisionPointRec(rv(mouse), bounds)) {
                 hovered.emplace(slot.skill);hoveredOwner=slot.owner;
                 tooltipAnchor = {bounds.x + bounds.width / 2, bounds.y};

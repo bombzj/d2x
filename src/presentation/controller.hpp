@@ -28,6 +28,16 @@ class SceneController {
     bool inventoryRight_ = false;
     bool releaseAfterLoad_ = false;
     bool skillGesture_ = false;
+    struct QuickCastPending {
+        bool active = false;
+        int skill = -1;
+        uint32_t owner = UINT32_MAX;
+        size_t hand = 0;
+        float notBefore = 0;
+        float deadline = 0;
+    };
+    QuickCastPending quickCast_;
+    bool quickCastGesture_ = false;
     size_t lastSkillHotkey_{};
     enum class Gesture { None, Move, Interact, LeftCast, RightCast };
     Gesture gesture_ = Gesture::None;

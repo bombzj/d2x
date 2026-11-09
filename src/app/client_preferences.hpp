@@ -13,6 +13,7 @@ struct ClientPreferences {
     // BH/D2Hackmap display features.
     bool bhRevealMap = false;
     bool bhAlwaysShowLoot = false;
+    bool bhQuickCast = false;
     bool bhShowXpText = false;
     bool bhShowBeltStatus = false;
     bool bhForceLightRadius = false;

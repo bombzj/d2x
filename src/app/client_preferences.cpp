@@ -51,7 +51,7 @@ ClientPreferences loadClientPreferences() {
         ClientPreferences result{setting("running"), setting("miniPanelOpen"), large,
             setting("automapCenterWhenCleared", true),
             setting("automapParty", true), setting("automapNames", true), fade, audio, setting("lighting", true),
-            setting("bhRevealMap"), setting("bhAlwaysShowLoot"),
+            setting("bhRevealMap"), setting("bhAlwaysShowLoot"), setting("bhQuickCast"),
             setting("bhShowXpText"), setting("bhShowBeltStatus"), setting("bhForceLightRadius"),
             setting("bhShowPathLine"), setting("bhShowResistances"), setting("bhShowMonsters"),
             setting("bhShowEnchantments"), setting("bhShowChests"), setting("bhAutomapOnJoin"), setting("bhShowLkChestLines")};
@@ -111,7 +111,7 @@ bool saveClientPreferences(const ClientPreferences &preferences) {
             {"standardResolution", preferences.standardResolution},
             {"customWindowWidth", preferences.customWindowWidth}, {"customWindowHeight", preferences.customWindowHeight},
             {"bhRevealMap", preferences.bhRevealMap}, {"bhAlwaysShowLoot", preferences.bhAlwaysShowLoot},
-            {"bhShowXpText", preferences.bhShowXpText},
+            {"bhQuickCast", preferences.bhQuickCast}, {"bhShowXpText", preferences.bhShowXpText},
             {"bhShowBeltStatus", preferences.bhShowBeltStatus}, {"bhForceLightRadius", preferences.bhForceLightRadius},
             {"bhShowPathLine", preferences.bhShowPathLine}, {"bhShowResistances", preferences.bhShowResistances},
             {"bhShowMonsters", preferences.bhShowMonsters},

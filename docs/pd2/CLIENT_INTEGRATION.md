@@ -116,7 +116,7 @@ PD2专用陷阱的全部效果与实服尸体组合尚未认证。公共尸体�
 
 PD2客户端提供快速施法（Quick Cast）开关。官方BH的General页含“Quick Cast”勾选与热键（[GameSettings.cpp](../../reference/pd2-bh/BH/Modules/GameSettings/GameSettings.cpp)）；历史BH-CN同位置为“快速施法”（[GameSettings.cpp](../../reference/pd2-cn-bh/BH/Modules/GameSettings/GameSettings.cpp)，界面文案按CN汉化记录，不提升为通用规则）。BH.json存有quick_cast的enabled+hotkey，核心侧ProjectDiablo.json的pd2_game_settings.quick_cast为同名开关；两份BH只提供设置界面，热键同步与实际施法触发由PD2核心消费，本地没有该核心的源码证据，按键后施放哪个技能、目标与鼠标语义、与现有技能选择键的互斥及关闭时是否保持原选择行为均未核实，实现前不按界面字面自造。
 
-D2X当前未实现该功能：技能热键只选择技能并提交SelectMouseSkill，施放仍由鼠标键触发，见[手势与输入](../gameplay/ui/CLASSIC_HUD.md#手势与输入)与[技能菜单](../gameplay/ui/CLASSIC_HUD.md#技能菜单)。实现边界：物理键沿`app/input.cpp`换算FrameInput语义位，开关与热键按[客户端偏好](../modules/SAVES.md#客户端偏好凭据与探索)保存；表现层只读状态并提交既有选择／施法命令，不改服务端权威或本地预结算。剩余任务与完成条件见[实施步骤](GAP_PLAN.md#实施步骤)的T16。
+D2X已有基础实现：BH设置开关随客户端偏好保存；开启后按技能槽键先提交该手`SelectMouseSkill`，待该手选择确认即用当前鼠标目标提交既有施放命令，键盘单按即可施放，不要求鼠标键。原包施放包不携带技能ID，因此该手当前选择会被改为所按技能，且选择被拒绝或1秒内未确认时本次快速施法放弃；关闭时仍只选择不施放。表现层不改服务端权威或本地预结算，见[手势与输入](../gameplay/ui/CLASSIC_HUD.md#手势与输入)与[技能菜单](../gameplay/ui/CLASSIC_HUD.md#技能菜单)。物理键沿`app/input.cpp`换算FrameInput语义位。目标／鼠标语义、与引导技能和充能物品来源的完整互斥、以及PD2核心是否恢复按键前选择仍未核实；剩余任务与完成条件见[实施步骤](GAP_PLAN.md#实施步骤)的T16。
 
 ## 当前代码接入范围
 

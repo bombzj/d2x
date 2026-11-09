@@ -308,6 +308,7 @@ void SceneView::drawBhSettings() const {
     const Entry entries[] = {
         {"Reveal Map", view_.bhRevealMap},
         {"Always Show Loot", view_.bhAlwaysShowLoot},
+        {"Quick Cast", view_.bhQuickCast},
         {"XP Text", view_.bhShowXpText},
         {"Belt Status", view_.bhShowBeltStatus},
         {"Full Light Radius", view_.bhForceLightRadius},

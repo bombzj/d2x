@@ -104,6 +104,7 @@ void SceneView::drawSkillTree(Vec mouse) const {
                 : (itemGranted ? assets_.skillLevelBlueFont : reduced ? assets_.characterRedFont : assets_.font);
             drawSkillRank(font, count, bounds, compact);
         }
+        drawSkillHotkeyLabels(id, bounds);
     }
     for (int page = 1; page <= 3; ++page) {
         auto bounds = skillTreeTab(page);

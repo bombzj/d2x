@@ -44,12 +44,36 @@ bool SceneController::handleSkills(const FrameInput &input) {
         } else if (hotkeys[i].skill != -2) {
             auto skill = hotkeys[i].skill;
             if (skill >= 0 && !(view_.characterView().skill(skill,hotkeys[i].owner) && view_.characterView().skill(skill,hotkeys[i].owner)->available)) continue;
-            (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
-                skill < 0 ? std::nullopt : std::optional<int>{skill};
-            characterClient_.submit(SelectMouseSkill{skill, hotkeys[i].right,hotkeys[i].owner});
-            lastSkillHotkey_ = i;
+            const size_t hand = hotkeys[i].right ? 1 : 0;
+            // The native wire normalizes an ordinary attack to skill 0, while
+            // the hotkey projection keeps -1. Compare the confirmed selection
+            // in wire form so a bound attack does not wait forever.
+            const int selectedSkill = skill < 0 ? 0 : skill;
+            const auto &character = view_.characterView();
+            const bool selected = (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) ==
+                    std::optional<int>{selectedSkill} &&
+                character.selectedSkillOwners[character.weaponSet * 2 + hand] == hotkeys[i].owner;
+            if (view_.ui().bhQuickCast) {
+                // Native cast packets carry no skill id, so the bound skill must
+                // be the confirmed selection of that hand before the cast.
+                if (!selected) {
+                    (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
+                        skill < 0 ? std::nullopt : std::optional<int>{skill};
+                    characterClient_.submit(SelectMouseSkill{skill, hotkeys[i].right, hotkeys[i].owner});
+                }
+                // The client rate-limits combat requests to 100 ms, so a fresh
+                // selection must settle before the cast is submitted.
+                quickCast_ = {true, selectedSkill, hotkeys[i].owner, hand,
+                    selected ? inputTime_ : inputTime_ + .11f, inputTime_ + 1.f};
+                lastSkillHotkey_ = i;
+            } else {
+                (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
+                    skill < 0 ? std::nullopt : std::optional<int>{skill};
+                characterClient_.submit(SelectMouseSkill{skill, hotkeys[i].right,hotkeys[i].owner});
+                lastSkillHotkey_ = i;
+                releaseAfterLoad_ = input.leftHeld || input.rightHeld;
+            }
             cancelWorldGesture();
-            releaseAfterLoad_ = input.leftHeld || input.rightHeld;
         }
     }
     if (input.previousSkill || input.nextSkill) {

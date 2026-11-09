@@ -174,7 +174,7 @@ bool SceneController::handleBhSettings(const FrameInput &input) {
         return true;
     }
     if (!ui.bhSettingsOpen) return false;
-    constexpr int options = 12;
+    constexpr int options = 13;
     if (input.escape) { ui.bhSettingsOpen = false; return true; }
     const int navigation = input.menuDelta;
     if (navigation)
@@ -183,16 +183,17 @@ bool SceneController::handleBhSettings(const FrameInput &input) {
         switch (ui.bhSettingsSelected) {
         case 0: ui.bhRevealMap = !ui.bhRevealMap; break;
         case 1: ui.bhAlwaysShowLoot = !ui.bhAlwaysShowLoot; break;
-        case 2: ui.bhShowXpText = !ui.bhShowXpText; break;
-        case 3: ui.bhShowBeltStatus = !ui.bhShowBeltStatus; break;
-        case 4: ui.bhForceLightRadius = !ui.bhForceLightRadius; break;
-        case 5: ui.bhShowPathLine = !ui.bhShowPathLine; break;
-        case 6: ui.bhShowResistances = !ui.bhShowResistances; break;
-        case 7: ui.bhShowMonsters = !ui.bhShowMonsters; break;
-        case 8: ui.bhShowEnchantments = !ui.bhShowEnchantments; break;
-        case 9: ui.bhShowChests = !ui.bhShowChests; break;
-        case 10: ui.bhAutomapOnJoin = !ui.bhAutomapOnJoin; break;
-        case 11: ui.bhShowLkChestLines = !ui.bhShowLkChestLines; break;
+        case 2: ui.bhQuickCast = !ui.bhQuickCast; break;
+        case 3: ui.bhShowXpText = !ui.bhShowXpText; break;
+        case 4: ui.bhShowBeltStatus = !ui.bhShowBeltStatus; break;
+        case 5: ui.bhForceLightRadius = !ui.bhForceLightRadius; break;
+        case 6: ui.bhShowPathLine = !ui.bhShowPathLine; break;
+        case 7: ui.bhShowResistances = !ui.bhShowResistances; break;
+        case 8: ui.bhShowMonsters = !ui.bhShowMonsters; break;
+        case 9: ui.bhShowEnchantments = !ui.bhShowEnchantments; break;
+        case 10: ui.bhShowChests = !ui.bhShowChests; break;
+        case 11: ui.bhAutomapOnJoin = !ui.bhAutomapOnJoin; break;
+        case 12: ui.bhShowLkChestLines = !ui.bhShowLkChestLines; break;
         }
         return true;
     }
@@ -632,6 +633,7 @@ void SceneController::resetInput() {
     pickupClick_ = inventoryClick_ = inventoryRight_ = false;
     temporaryRun_ = false;
     skillGesture_ = false;
+    quickCast_.active = false;
     view_.ui().pointButtonPressed.reset();
     view_.ui().miniPanelPressed.reset();
     view_.ui().characterPressed.reset(); view_.ui().skillTreePressed.reset();
@@ -686,6 +688,7 @@ void SceneController::cancelWorldGesture() {
     gestureSkill_.reset();
     gesturePoint_.reset();
     repeated_ = pendingMove_ = false;
+    quickCastGesture_ = false;
 }
 void SceneController::handleWorld(const FrameInput &input, const WorldInputView &world, float elapsed) {
     inputTime_ += std::clamp(elapsed, 0.f, .25f);
@@ -705,17 +708,40 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
     const bool held = hand ? input.rightHeld : input.leftHeld;
     const auto &valid = world.validCombatTargets[hand];
     const bool invalidTarget = lockedTarget_ && std::find(valid.begin(), valid.end(), lockedTarget_) == valid.end();
-    if (gesture_ != Gesture::None && (!enabled || !held ||
-        (casting && (world.skills[hand] != gestureSkill_ || invalidTarget)))) {
+    if (gesture_ != Gesture::None && (!enabled || (!held && !quickCastGesture_) ||
+        (casting && ((!quickCastGesture_ && world.skills[hand] != gestureSkill_) || invalidTarget)))) {
         cancelWorldGesture();
+        quickCastGesture_ = false;
         // Target/skill changes terminate this press rather than acquiring another target.
     }
-    if (!enabled) return;
+    if (!enabled) { quickCast_.active = false; return; }
     if(world.doorHighlight) {
         ActorControlIntent intent;intent.action=ActorControlIntent::Action::HighlightDoor;intent.target=world.doorHighlight;
         actorClient_.control(intent);
     }
+    if (quickCast_.active) {
+        const size_t qHand = quickCast_.hand;
+        const InputSkillSelection expected{quickCast_.skill,
+            quickCast_.owner == UINT32_MAX ? EntityId{} : EntityId{uint64_t(quickCast_.owner) + 1}};
+        const auto &selected = world.skills[qHand];
+        if (selected && *selected == expected && inputTime_ >= quickCast_.notBefore) {
+            quickCast_.active = false;
+            cancelWorldGesture();
+            gesture_ = qHand ? Gesture::RightCast : Gesture::LeftCast;
+            quickCastGesture_ = true;
+            lockedTarget_ = world.combat;
+            const auto &targets = world.validCombatTargets[qHand];
+            if (lockedTarget_ && std::find(targets.begin(), targets.end(), lockedTarget_) == targets.end())
+                lockedTarget_ = {};
+            gestureSkill_ = expected;
+            nextCast_ = inputTime_;
+        } else if (inputTime_ >= quickCast_.deadline) {
+            // The hand selection was rejected or never confirmed.
+            quickCast_.active = false;
+        }
+    }
     if ((input.rightPressed || input.leftPressed) && world.available && input.insideViewport) {
+        quickCast_.active = false;
         cancelWorldGesture();
         if (input.rightPressed || (!world.pickup && world.combat) || input.standStill) {
             gesture_ = input.rightPressed ? Gesture::RightCast : Gesture::LeftCast;
@@ -747,6 +773,7 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
         intent.target = lockedTarget_; intent.point = world.point;
         intent.stationary = input.standStill; intent.repeat = repeated_;
         if (actorClient_.control(intent)) repeated_ = true;
+        if (quickCastGesture_) { quickCastGesture_ = false; cancelWorldGesture(); }
     } else if (gesture_ == Gesture::Move && world.movementAvailable && inputTime_ >= nextMove_ &&
         (pendingMove_ || input.leftPressed || (input.mouse - gestureMouse_).length() >= 1.f ||
          (gesturePoint_ && std::abs(world.observer.x - gesturePoint_->x) <= 1.f &&
