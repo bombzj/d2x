@@ -137,7 +137,12 @@ void SceneView::drawSkillHotkeyLabels(int skill, Rectangle bounds, std::optional
         while (!label.empty() && painter_.measure(label + "...", 10) > width) label.pop_back();
         label += "...";
     }
-    painter_.label(label, int(bounds.x + 3), int(bounds.y + bounds.height - 12), 10, gold);
+    constexpr int size = 10, labelHeight = 13;
+    const int labelY = int(bounds.y + bounds.height) - labelHeight;
+    DrawRectangleRec({bounds.x + 1, float(labelY), bounds.width - 2, float(labelHeight)},
+        {0, 0, 0, 210});
+    painter_.label(label, int(bounds.x + (bounds.width - painter_.measure(label, size)) / 2),
+        labelY + 1, size, gold);
 }
 void SceneView::drawBoundSkillBar(bool right, Rectangle anchor) const {
     struct Binding {
@@ -157,7 +162,7 @@ void SceneView::drawBoundSkillBar(bool right, Rectangle anchor) const {
     if (bindings.empty()) return;
 
     constexpr int columns = 4;
-    constexpr float cellWidth = 48, rowHeight = 35, iconSize = 24;
+    constexpr float cellWidth = 48, rowHeight = 42, iconSize = 24, labelHeight = 14;
     const int rows = (int(bindings.size()) + columns - 1) / columns;
     const float width = columns * cellWidth;
     const float x0 = anchor.x + (anchor.width - width) / 2;
@@ -170,16 +175,19 @@ void SceneView::drawBoundSkillBar(bool right, Rectangle anchor) const {
         drawSkillIcon(binding.skill < 0 ? std::nullopt : std::optional<int>{binding.skill},
             icon, false, binding.owner);
         auto label = binding.key;
-        constexpr int labelSize = 8;
+        constexpr int labelSize = 10;
         const float labelWidth = cellWidth - 2;
         if (painter_.measure(label, labelSize) > labelWidth) {
             while (!label.empty() && painter_.measure(label + "...", labelSize) > labelWidth)
                 label.pop_back();
             label += "...";
         }
+        const float labelX = x0 + column * cellWidth + (cellWidth - labelWidth) / 2;
+        const float labelY = icon.y + icon.height + 1;
+        DrawRectangleRec({labelX, labelY, labelWidth, labelHeight}, {0, 0, 0, 210});
         painter_.label(label, int(x0 + column * cellWidth +
             (cellWidth - painter_.measure(label, labelSize)) / 2),
-            int(icon.y + icon.height + 1), labelSize, gold);
+            int(labelY + 1), labelSize, gold);
     }
 }
 void SceneView::drawControlPanel() const {
