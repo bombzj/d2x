@@ -54,6 +54,11 @@ struct OnlinePlayerDisplay {
     Vec position; // Displayed global subtiles; never authority or an interaction target.
     bool local{}, visible{}, moving{}, dead{};
 };
+struct OnlineWeatherReposition {
+    uint64_t sequence{};
+    // All entries clear water overlays. A destination also reruns precipitation setup.
+    std::optional<uint16_t> setupLevel;
+};
 struct OnlineSceneView {
     bool noPickup{}; // Client input toggle only; never a server or save field.
     bool available{}, movementAvailable{}, collisionVerified{};
@@ -66,6 +71,7 @@ struct OnlineSceneView {
     std::vector<MissileDisplay> clientMissiles;
     std::optional<uint16_t> localCastSkill;
     uint64_t repositionFadeEndMilliseconds{};
+    std::vector<OnlineWeatherReposition> weatherRepositions;
     float localCastAge = -1;
     bool playerDisplayed{};
     std::optional<Vec> playerDisplayPosition; // Presentation coordinates; never used as authority.

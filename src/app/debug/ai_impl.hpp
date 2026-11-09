@@ -166,6 +166,22 @@ struct DebugAi::Impl {
     };
     std::map<std::pair<uint16_t,uint16_t>,FrontierAttempt> frontierAttempts;
     enum class ExplorationFocus {Coverage,Units,Connection};
+    struct ExperienceLandmark {
+        uint8_t type{};uint16_t identity{};
+        std::optional<int> townVariant;
+        std::vector<OnlinePoint> positions;
+    };
+    struct AreaExperience {
+        std::optional<std::array<int,4>> bounds;
+        std::map<uint16_t,DebugExplorationMemory::Cell> travelDirections;
+        std::vector<ExperienceLandmark> landmarks;
+    };
+    using NavigationExperience=std::map<uint16_t,AreaExperience>;
+    NavigationExperience navigationExperience;
+    NavigationExperience parseExperience(const Json &) const;
+    const AreaExperience *areaExperience(const Context &) const;
+    std::optional<OnlinePoint> experienceHint(const Context &,const Selector &) const;
+    std::optional<DebugExplorationMemory::Cell> experienceDirection(const Context &,ExplorationFocus) const;
     using TerrainMemory=DebugExplorationMemory::Area;
     TerrainMemory *observeTerrain(const Context &);
     struct TerrainLeg {std::optional<OnlinePoint> point;size_t nearest{};bool teleport{};};
@@ -174,11 +190,13 @@ struct DebugAi::Impl {
         uint16_t area{};OnlinePoint target;std::vector<OnlinePoint> path;
         uint64_t passage{},evidence{};size_t bestRemaining{~size_t{}};unsigned stalls{};
         Clock::time_point blockedSince{};std::optional<Clock::time_point> observationSince;
+        ExplorationFocus focus=ExplorationFocus::Coverage;
     };
     std::optional<FrontierRoute> frontierRoute;
     bool frontierWalking(const Context &) const;
     bool exploreFrontier(Context &,const std::string &purpose,bool recoveryOnly,ExplorationFocus);
     std::set<std::tuple<uint16_t,uint8_t,uint16_t,uint16_t,uint16_t>> checkedHints;
+    std::optional<std::array<uint16_t,48>> checkedHintQuestFlags;
     uint64_t mapCacheBuilds{},pathSearches{};
     std::optional<uint16_t> travelDestination;
     std::vector<int> travelRoute;

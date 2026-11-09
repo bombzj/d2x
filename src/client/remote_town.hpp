@@ -29,6 +29,8 @@ class RemoteTown {
         // near list. Used for native execution legality, never exploration goals.
         std::vector<size_t> near;
     };
+    struct KnownTownFrame {int variant{};OnlinePoint origin;int width{},height{};};
+    std::optional<KnownTownFrame> knownTownFrame(uint16_t area) const;
   private:
     Archives &archives_;
     TileLibraryCache libraries_;

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "description": "Reusable full Act I debug preparation, original MPQ only. Fresh normal quests, legal level-99 budgets, vitality-focused attributes, cold skills and Teleport at rank 20, Warmth, actual purchase gold and a reserved unsocketed normal cap. Not natural progression/loot evidence.",
+  "description": "Reusable full Act I debug preparation, original MPQ only. Fresh normal quests, legal level-99 budgets, vitality-focused attributes, cold skills and Teleport at rank 20, Warmth 11 and Frozen Armor 1, actual purchase gold and a reserved unsocketed normal cap. Not natural progression/loot evidence.",
   "characters": [
     {
       "id": "DebugActOne",
@@ -20,7 +20,8 @@
         "Frozen Orb": 20,
         "Cold Mastery": 20,
         "Teleport": 20,
-        "Warmth": 12,
+        "Warmth": 11,
+        "Frozen Armor": 1,
         "Telekinesis": 1,
         "Frost Nova": 1,
         "Ice Blast": 1,

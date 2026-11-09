@@ -296,7 +296,7 @@ void SceneView::drawBhSettings() const {
     if (!view_.bhEnabled || !view_.bhSettingsOpen) return;
     DrawRectangle(0, 0, W, H, {0, 0, 0, 140});
     const int width = 340;
-    const int rows = 13;
+    const int rows = ViewState::bhSettingsCount + 1;
     const int rowHeight = 24;
     const int panelHeight = 44 + rows * rowHeight;
     const Rectangle panel{float((W - width) / 2), float((H - panelHeight) / 2), float(width), float(panelHeight)};
@@ -308,7 +308,6 @@ void SceneView::drawBhSettings() const {
     const Entry entries[] = {
         {"Reveal Map", view_.bhRevealMap},
         {"Always Show Loot", view_.bhAlwaysShowLoot},
-        {"Quick Cast", view_.bhQuickCast},
         {"XP Text", view_.bhShowXpText},
         {"Belt Status", view_.bhShowBeltStatus},
         {"Full Light Radius", view_.bhForceLightRadius},
@@ -319,7 +318,10 @@ void SceneView::drawBhSettings() const {
         {"Show Chests", view_.bhShowChests},
         {"Automap On Join", view_.bhAutomapOnJoin},
         {"LK Chest Lines", view_.bhShowLkChestLines},
+        {"Quick Cast", view_.bhQuickCast},
+        {"Skill Bar", view_.bhSkillBar},
     };
+    static_assert(std::size(entries) == ViewState::bhSettingsCount);
     const int x = int(panel.x) + 20;
     int y = int(panel.y) + 44;
     for (int i = 0; i < int(std::size(entries)); ++i) {

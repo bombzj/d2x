@@ -252,6 +252,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     worldScene.level = binding.area.value(); worldScene.palette = binding.palette.value_or(0);
     worldScene.gameGeneration = v.gameGeneration; worldScene.areaGeneration = v.world.areaGeneration;
     worldScene.weatherSeed = v.load.mapSeed.value_or(0);
+    worldScene.weatherAct = v.load.act.value_or(0);
+    worldScene.weatherRepositions = binding.weatherRepositions;
     worldScene.retailAutomap=!pd2;
     worldScene.observer = camera;
     const auto lightStat = [&](const auto &attributes, const char *name) -> int32_t {
@@ -350,7 +352,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                     hiddenCorpse |= key.type == 1 && ((dead && states.number(row->second,"hide").value_or(0)) || states.number(row->second,"setfunc")==11);
                     shatter |= key.type == 1 && dead && states.number(row->second,"shatter").value_or(0);
                 }
-            if (frozen) {
+            if (frozen && key.type==0) {
                 // Freeze stops prediction as well as animation. The world snapshot
                 // retains the original native position/path throughout.
                 feet=local(*u.position);
@@ -399,7 +401,14 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             std::chrono::steady_clock::now().time_since_epoch()).count());
         const float age = u.actionReceivedMilliseconds && receivedNow >= u.actionReceivedMilliseconds
             ? float(receivedNow - u.actionReceivedMilliseconds) / 1000.f : 0.f;
-        m.animation.observe(u.mode, u.actionRevision, time, age, frozen);
+        const bool monsterKnockback=key.type==1 && u.mode==13 && !u.actionSkill;
+        const auto monsterRow=monsterRows.find(unitClass(u).value_or(UINT16_MAX));
+        const uint8_t knockbackEndMode=monsterRow!=monsterRows.end() &&
+            monstats.value(monsterRow->second,"BaseId")=="sandleaper1"?1:3;
+        const auto animationMode=monsterKnockback && m.finishedMonsterKnockback==u.actionRevision
+            ? std::optional<uint8_t>{knockbackEndMode}:u.mode;
+        const bool localModeChange=m.animation.revision==u.actionRevision && m.animation.mode!=animationMode;
+        m.animation.observe(animationMode, u.actionRevision, time, localModeChange?0.f:age, frozen);
         const bool localLeap=key.type==0 && key.id==playerId && localCast && localCast->started>=0 &&
             (localCast->command.skill==132 || localCast->command.skill==143);
         if(localLeap || (key.type==0 && (u.actionSkill==132 || u.actionSkill==143)) || (key.type==1 && (u.actionSkill==107 || u.actionSkill==352))) {
@@ -428,7 +437,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 if(look.length()>.001f) m.look=look;
             }
         }
-        const bool moving = !frozen && m.pathMoving;
+        bool moving = !frozen && m.pathMoving;
         if (key.type == 0) {
             std::optional<MovementFire> blaze;
             int blazeLevel=1;
@@ -490,6 +499,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             }
         }
         auto displayed = u;
+        if(monsterKnockback && m.finishedMonsterKnockback==u.actionRevision) displayed.mode=knockbackEndMode;
         const bool playerKnockback=key.type==0 && (u.nativeMode?u.mode==19:u.mode==20);
         if(playerKnockback && !m.playerKnockback) {displayed.mode=7;displayed.nativeMode=false;}
         float objectElapsed = m.animation.elapsed(time);
@@ -521,7 +531,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if (key.type == 0 && v.world.corpseOwners.contains(key.id)) {
             displayed.mode = 17; displayed.nativeMode = true; displayed.actionSkill.reset();
         }
-        auto movementMode=locomotionMode(displayed,frozen?walking(displayed):moving,binding.town);
+        auto movementMode=locomotionMode(displayed,frozen?(key.type==1?m.pathMoving:walking(displayed)):moving,binding.town);
         if(movementMode) {
             displayed.mode=*movementMode;
             displayed.nativeMode=key.type==0;
@@ -537,12 +547,25 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             ++unavailable;
             continue;
         }
+        if(monsterKnockback && !frozen && m.finishedMonsterKnockback!=u.actionRevision && visual->finished(m.animation.elapsed(time))) {
+            // Retail 4F613/4F670 -> 4DA60 ends KB on its animation clock,
+            // then enters GH (the SandLeaper base family goes neutral).
+            m.finishedMonsterKnockback=u.actionRevision;
+            m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+            m.route.clear();m.goal.reset();m.pathElapsed=0;m.pathMoving=false;moving=false;
+            feet=m.position+m.correction-Vec{float(origin.x),float(origin.y)};
+            displayed.mode=knockbackEndMode;
+            m.animation.observe(displayed.mode,u.actionRevision,time,0,frozen);
+            visual=monster(displayed,false,shared);
+            movementMode=locomotionMode(displayed,false,binding.town);
+            if(!visual || !visual->animation.available()) {++unavailable;continue;}
+        }
         // Native action notification starts an animation; its end is a display transition,
         // not a change to server life, position or mode. Never freeze a completed cast.
         const bool oneShot = u.actionSkill || (key.type == 0 && (u.nativeMode ?
             (u.mode == 4 || (u.mode && *u.mode >= 7 && *u.mode <= 15) || u.mode == 19) :
             (u.mode == 6 || u.mode == 18 || u.mode == 20))) ||
-            (key.type == 1 && u.mode && *u.mode >= 3 && *u.mode <= 11);
+            (key.type == 1 && displayed.mode && *displayed.mode >= 3 && *displayed.mode <= 11);
         const bool completedAction = playerKnockback?!m.playerKnockback:m.scriptedSequence?m.scriptedSequence->ended:oneShot && visual->finished(m.animation.elapsed(time));
         if(playerId && key==OnlineUnitKey{0,*playerId}) {
             // Same MPQ animation and observed FHR/FBR/FCR clock used to draw

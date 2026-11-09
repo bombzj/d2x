@@ -592,6 +592,7 @@ add_executable(d2x
   src/app/debug/ai.cpp
   src/app/debug/ai_behavior_log.cpp
   src/app/debug/ai_navigation.cpp
+  src/app/debug/ai_experience.cpp
   src/app/debug/ai_terrain_clues.cpp
   src/app/debug/ai_local_travel.cpp
   src/app/debug/ai_execution.cpp

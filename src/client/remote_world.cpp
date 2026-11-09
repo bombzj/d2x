@@ -61,6 +61,7 @@ void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
     if (w.combatEvents.size() > 256) w.combatEvents.pop_front();
 }
 void monsterAction(OnlineWorldView &w, OnlineUnit &u, uint8_t action) {
+    u.movementTargetMissing = false;
     u.stoppedSkill.reset();
     u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
     u.wireAction = action; u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
@@ -817,7 +818,8 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             w.playerPosition=destination;
         } else position(v,u,destination);
         ++u.positionDiscontinuity; // Native correction/teleport must not tween across geometry.
-        u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
+        // 0x15 changes position, not the action clock. Restarting the previous
+        // mode here replays an old block/get-hit animation after every cast.
         r.finish();
         u.destination.reset();
         u.destinationUnit.reset();
@@ -1467,8 +1469,28 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         } else {
             position(v, u, point(r),previousMode); u.destinationUnit = key(r); u.destination.reset();
         }
-        u.pathSteps = r.u8(); u.hitClass = r.u8(); u.pathType = r.u8();
-        u.velocityPercent = int16_t(r.u16()); u.pathDistance = r.u8(); r.finish();
+        u.pathSteps = r.u8(); u.hitClass = r.u8(); const auto pathType = r.u8();
+        const auto velocity = int16_t(r.u16()); u.pathDistance = r.u8(); r.finish();
+        // Retail 4DD09/4EB24: zero retains the existing type/velocity.
+        if (pathType) u.pathType = pathType;
+        if (velocity) u.velocityPercent = velocity;
+        if (pathType && u.wireAction == 20) {
+            u.monsterPathMaxDistance = std::min<uint8_t>(*u.pathDistance, 77);
+            u.monsterPathStopDistance = *u.pathSteps > 0 && *u.pathSteps < 20 ? uint8_t(*u.pathSteps - 1) : 0;
+        }
+        if (p.id == 0x68 && (u.mode == 2 || u.mode == 15)) {
+            // D2Client 1.13c 2A070 resolves the target while consuming the
+            // order. Preserve failure even if assignment arrives before
+            // the next presentation snapshot (4DEC8 enters neutral).
+            const auto target = *u.destinationUnit;
+            if (target.type == 4) {
+                const auto item = w.items.find(target.id);
+                u.movementTargetMissing = item == w.items.end() || item->second.mode != 3;
+            } else {
+                const auto found = w.units.find(target);
+                u.movementTargetMissing = found == w.units.end() || !found->second.position;
+            }
+        }
         // Walking overloads send maximum path distance here, not HP. Knockback sends HP.
         if (u.mode == 13) { u.lifePercent = u.pathDistance; u.lifeCarriesTriggerFlag = false; }
         break;
@@ -1492,7 +1514,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
                 // lightning-ready flag, not a facing direction.
                 u.lifePercent=*event.direction;u.lifeCarriesTriggerFlag=true;
                 event.life=u.lifePercent;event.direction.reset();
-                position(v,u,coordinates);u.destination.reset();
+                // 4E095-4E148 consumes HP/hit class and centers the current
+                // local cell; GH does not use these XY as a correction.
+                u.destination.reset();
             }
         } else {
             u.destinationUnit = key(r); u.destination.reset(); event.target = u.destinationUnit;
@@ -1534,6 +1558,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
         u.destination.reset();
         u.destinationUnit.reset();
+        u.pathType = 2; // AF2E4 -> 4DD1A: the stop's local approach uses Toward.
         break;
     }
     case 0x18:
@@ -1664,7 +1689,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         u.assignmentRevision = w.revision;
         // AC supplies an initial mode and feet, never a movement order.
         u.destination.reset(); u.destinationUnit.reset(); u.pathSteps.reset();
-        u.pathType.reset(); u.pathDistance.reset(); u.velocityPercent.reset();
+        u.movementTargetMissing = false;
+        u.pathType = 2; u.pathDistance.reset(); u.velocityPercent = 75;
+        u.monsterPathMaxDistance = 14; u.monsterPathStopDistance = 0;
         u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
         u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds(); u.nativeMode = true;
         if (!tail.empty()) {

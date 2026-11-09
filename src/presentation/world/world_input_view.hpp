@@ -19,6 +19,7 @@ struct WorldInputView {
     // A held unit cast can continue when the pointer leaves the world surface.
     bool targetingAvailable = false;
     bool castInputBusy = false; // Existing local approach/action clock; channel updates remain allowed.
+    bool quickCastSkillSupported = false, combatRequestReady = false;
     Vec origin, size, observer, point; // Original global subtiles; observer is display-only.
     EntityId interaction, combat, doorHighlight;
     std::optional<ItemHandle> pickup;

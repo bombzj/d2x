@@ -47,5 +47,6 @@ struct FrameInput {
     bool bhSettings = false;
     std::array<bool, 4> belt{};
     std::array<bool, hotbarSlots> skills{};
+    std::array<bool, hotbarSlots> primarySkillPresses{};
 };
 } // namespace d2x

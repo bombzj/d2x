@@ -801,6 +801,36 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         // with skill159. Do46 only stops sequence speed; the actor renderer
         // holds that sequence at its callback frame, without changing authority.
         const bool pd2PoisonEgg=pd2 && function==109;
+        if(function==63 && actor.key.type==1) {
+            // Retail CltDo63 (RVA 58A70) emits at the eater, independently of the corpse GUID.
+            if(releaseTime<0 || !castAnimation || !castAnimation->animation.available()) return;
+            const auto guts=missileNames.find(skills.value(row->second,"cltmissilea"));
+            if(guts==missileNames.end()) return;
+            const auto blood=missileNames.find(skills.value(row->second,"cltmissileb"));
+            const int rank=event.level.value_or(1);
+            const Vec center{float(actor.position->x)+.5f,float(actor.position->y)+.5f};
+            shared.cancelPendingClientMissiles(effectOwner(event.source));
+            missileCastRevisions[event.source]=source->second.actionRevision;
+            auto &random=woundBloodRandom.try_emplace(event.source,initialRandom(event.source.id)).first->second;
+            const auto spray=[&](size_t missile,int count,int spread) {
+                // A2380 draws one starting quadrant, then two offsets per particle.
+                constexpr std::array<Vec,4> rays{{{-16,-16},{-16,16},{16,16},{16,-16}}};
+                unsigned quadrant=limitedRandom(random,4);
+                for(int i=0;i<count;++i) {
+                    const Vec at=center+Vec{float(int(limitedRandom(random,2*spread))-spread),
+                                            float(int(limitedRandom(random,2*spread))-spread)};
+                    const Vec aim=at+rays[quadrant];
+                    quadrant=(quadrant+1)&3;
+                    ClientMissileInitialization init;
+                    init.sourceSkill=*event.skill;
+                    init.nativeDirection=uint8_t(quadrant*16);
+                    launchDo(missile,at,aim,rank,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                }
+            };
+            spray(guts->second,1,2);
+            if(blood!=missileNames.end()) spray(blood->second,5,4);
+            return;
+        }
         if(function==34) {
             // Retail CltDo34 / RVA 2B530 emits one blood missile opposite
             // the facing, with a three-slot spread and CltCalc1 variants.
@@ -1155,6 +1185,9 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             const Vec delta=end-start;start=end;end=end+delta;
         }
         const int level = std::max(1, int(event.level.value_or(1)));
+        // Retail CltDo66 (RVA 58790) uses CltMissileA for an ordinary Rogue shot.
+        const bool rogueShot = function == 66 && actor.key.type == 1 &&
+            skills.value(row->second, "skill") == "RogueMissile";
         auto emit = [&](Vec destination, int index = -1) {
             launchDo(missile->second, start, destination, level, releaseTime-age, {}, event.source, index);
         };
@@ -1369,7 +1402,23 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             init.chainRadius=std::max(1,fixedRadius>0?fixedRadius:*radius);
             launchDo(missile->second,start,end,level,releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
         }
-        else if (!function || function == 1 || function == 2 || function==27 || function==35 || function==95 ||
+        else if(function==60 && actor.key.type==1) {
+            // Retail CltDo60 (RVA 57D50) spaces the rays in integer subtiles.
+            const int dx=int(end.x-start.x),dy=int(end.y-start.y);
+            if(!dx && !dy) return;
+            const auto count=skillCalculation(*event.skill,level,"calc1",event.source);
+            if(!count || *count<1 || *count>64) return;
+            const int sideX=2*((dy<0)-(dy>0)),sideY=2*((dx>0)-(dx<0));
+            int offsetX=dx-sideX*(*count/2),offsetY=dy-sideY*(*count/2);
+            for(int i=0;i<*count;++i) {
+                const Vec origin=start+Vec{float(offsetX/6),float(offsetY/6)};
+                const Vec aim=origin+Vec{float(offsetX),float(offsetY)};
+                launchDo(missile->second,origin,aim,level,releaseTime-age,{},event.source);
+                offsetX+=sideX;
+                offsetY+=sideY;
+            }
+        }
+        else if (!function || function == 1 || function == 2 || function==27 || function==35 || function==95 || rogueShot ||
             (function == 29 && missiles.number(missile->second, "pCltDoFunc") == 19)) emit(end);
         else if(function==58) {
             const auto count=skillCalculation(*event.skill,level,"calc1",event.source);

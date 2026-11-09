@@ -4,6 +4,7 @@
 #include "decision_cadence.hpp"
 #include "navigation_search.hpp"
 #include <chrono>
+#include <deque>
 #include <map>
 #include <nlohmann/json_fwd.hpp>
 #include <optional>
@@ -30,6 +31,20 @@ class DebugAutoWalk {
     std::optional<uint16_t> destination_;
     std::optional<OnlinePoint> point_,segment_,previous_,client_,server_,edgeStart_,edgeEnd_,crossing_;
     std::optional<OnlinePoint> lastFrom_,lastRequest_,lastTarget_;
+    std::optional<Vec> lastPointerFeet_;
+    struct TownLane {
+        OnlinePoint bend,resume,target;
+        bool resuming{};
+    };
+    std::optional<TownLane> townLane_;
+    struct PointerSelection {
+        unsigned request{};
+        OnlinePoint from,target,raw,lane,submitted;
+        Vec feet;
+        std::optional<OnlinePoint> resume;
+        std::string branch;
+    };
+    std::deque<PointerSelection> pointerSelections_;
     std::optional<OnlinePoint> recoveryAnchor_,hostProgressPosition_;
     Clock::time_point hostProgressAt_{};
     uint64_t hostProgressRevision_{};

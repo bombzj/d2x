@@ -2,17 +2,17 @@
 
 AI任务、策略、恢复与验收入口统一见[调试任务AI](DEBUG_AI.md)和[文档分工](../README.md#调试任务ai文档)。内部调试回复若不能解析为JSON，返回明确失败，并在程序错误输出记录长度、错误位置及附近上下文；不因读取诊断而退出游戏，也不把失败解释为操作成功。
 
-`frontend.page`在ProtocolReady且当前游戏代次的场景、地图与局内UI就绪、无场景错误时返回`InGame`，不再把后台局前页面的`Loading`当作局内状态；尚未就绪时保留原页面名。`online-status`的`world.cinematic`记录真实S2C61程序号与观察修订，`frontend.page`在61/7通关画面实际生效时优先返回`Victory`。该状态不提供伪造通知或任务完成指令；最终出口须经正常客户端交互，由服务端决定旅行与通知。此上报修正尚未构建／运行验证。
+`frontend.page`在ProtocolReady且当前游戏代次的场景、地图与局内UI就绪、无场景错误时返回`InGame`，不再把后台局前页面的`Loading`当作局内状态；尚未就绪时保留原页面名。`online-status`的`world.cinematic`记录真实S2C61程序号与观察修订，`frontend.page`在61/7通关画面实际生效时优先返回`Victory`。该状态不提供伪造通知或任务完成指令；最终出口须经正常客户端交互，由服务端决定旅行与通知。
 
-`debug-ai-start`默认加载完整`debug-ai.json`；`scenario=act1`或`act1-5`按幕筛选其中任务并保持配置顺序，`scenario=act1, questNumber=3`按原MPQ A1Q3编号选择马勒斯。其他scenario名称如campaign读取`debug-ai-campaign.json`，没有保留别名；仍可显式传configFile。启动参数`"activateAllWaypoints":true`要求离区前先确认本区传送点已开，完整五幕计划分幕补齐未途经的点。`debug-ai-reload-config`从同一完整文件提取可热改数值，保留计划／技能／移动模式；详细字段见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。不重置现实请求期限，也不改服务端规则。新解析尚未构建／运行。
+`debug-ai-start` 和 `debug-ai-reload-config` 通过同一管道调用任务 AI。配置选择、参数和热重载范围见[调试 AI](DEBUG_AI.md#文件配置与运行中重载)。
 
 PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版／公共规则及必要的版本边界。
 
 直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算；功能范围及缺口见[基线](../../BASELINE.md)，构建／运行方法见[开发指南](BUILD_AND_RUN.md)。
 
-同名Windows管道已被占用等导致创建返回ACCESS_DENIED／PIPE_BUSY／ALREADY_EXISTS时，后启动进程仅记录管道名及Windows错误码，禁用自身管道后继续启动游戏，不接入、关闭或替换已有监听；其他初始化错误仍明确报错。此路径尚未构建／运行验证。需要多实例分别调试时使用不同`-PipeName`；同名情况下`Send-D2XCommand.ps1`仍访问先启动实例，后启动实例的游戏内本地调试聊天不依赖管道。
+同名Windows管道已被占用等导致创建返回ACCESS_DENIED／PIPE_BUSY／ALREADY_EXISTS时，后启动进程仅记录管道名及Windows错误码，禁用自身管道后继续启动游戏，不接入、关闭或替换已有监听；其他初始化错误仍明确报错。需要多实例分别调试时使用不同`-PipeName`；同名情况下`Send-D2XCommand.ps1`仍访问先启动实例，后启动实例的游戏内本地调试聊天不依赖管道。
 
-Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。显式`server-pause`不会因退局自动解除；关闭商店等已受理命令仍需逻辑帧执行，验证正常退出前应`server-resume`或单步推进待办。等待选角阶段及角色租约释放后再停止进程，不能将暂停下的结算超时当作正常退出结果。
+Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。单机原69退局遇到待结算操作时会解除暂停，继续固定步执行；显式暂停的多人实例仍由调试命令控制时钟。等待选角阶段及角色租约释放后再停止进程。
 ## 按任务与权限查找
 
 `online-status.characterUi`只读实际 CharacterView，提供经验／下级门槛、四属性、抗性、防御／格挡、三项当前资源及上限、武器组、余点、左右动作和 skills 的基础／有效等级、树／选择器提示。`server-snapshot.player`另提供权威抗性、格挡、逐手 weapons 的原始8.8伤害、命中、支配及 nativeCombat；missiles 的 minimumDamageRaw／maximumDamageRaw 是技能范围，nativeDamageRaw 才是创建后最终通道范围（如锤的专注加成）。这些出口只序列化既有值，不在调试层重算公式，也不将服务端快照喂给客户端显示。
@@ -50,7 +50,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 图形客户端入局且当前区域已绘制后，管道`debug-weather`与聊天`/debug-weather`共用本地入口。`mode=status`（省略参数时默认）只读状态；`rain`／`snow`立即将目标雨量／雪量设为`density=1..255`（整数，默认255），后续按原25Hz粒子和风向更新并保持强度；`clear`清除当前雨雪及水花并保持无降水；`auto`清除覆盖并随机选取当前区域自然周期的起点，不重新初始化地图或天气随机种子。`density`仅接受于rain／snow。回复中的目标密度设置成功不等于已有实机画面对照。
 
-区域许可仍读取当前MPQ的`Levels.Rain`；下雪还要求第五幕，下雨在第五幕只允许原雨雪混合区109–112，其他幕按Rain许可。当前场景不支持指定类型时明确失败且保留之前的设置。覆盖在本局跨区保留，在不兼容区域不产生降水，状态`modeEffective=false`；回到适用区域重新生效。重新入局恢复auto，不写角色档／客户端偏好，不发聊天或天气包给Host；原版Host、TCP/IP和单机适用同一表现入口，无窗口模式不支持。clear不关闭MPQ Mud允许的独立泥水泡，也不改变昼夜和光照。雷声／闪电尚未接齐，命令不提供这些模式。此入口未构建／运行。
+区域许可仍读取当前MPQ的`Levels.Rain`；下雪还要求第五幕，下雨在第五幕只允许原雨雪混合区109–112，其他幕按Rain许可。当前场景不支持指定类型时明确失败且保留之前的设置。覆盖在本局跨区保留，在不兼容区域不产生降水，状态`modeEffective=false`；回到适用区域重新生效。重新入局恢复auto，不写角色档／客户端偏好，不发聊天或天气包给Host；原版Host、TCP/IP和单机适用同一表现入口，无窗口模式不支持。clear不关闭MPQ Mud允许的独立泥水泡，也不改变昼夜和光照。雷声／闪电尚未接齐，命令不提供这些模式。
 
 ```powershell
 # 正常进入第一幕城镇后开启下雨：
@@ -69,9 +69,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 坐标目标可用`exactPoint=true`要求抵达选中的整数格；AI的混合步行／传送中继使用此项，普通坐标目标默认保留一格容差。状态返回`exactPoint`，它不修改原移动碰撞或Host判定。
 
-批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方。各幕任务顺序由配置维护，源码只负责按幕／原资源任务编号选择及具体任务条件图，不再另存一套幕队列。历史Windows Release运行结果不认证本次新解析；实际覆盖和剩余组合以该专题为准。聊天可用`/debug-ai-start act3`、`/debug-ai-start act1 quest4`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和运行边界见该专题。
-
-新增第一幕六任务配方与200毫秒决策，以及`supplies`整计划药剂策略和`goals:[{action:'restock'}]`补给目标，支持低血／低法力饮药、正常货架购买和安全的缺药回城往返；这批源码已通过Windows Release构建并执行实机回归，实际奖励、药剂和补给覆盖见该专题。其他任务／五幕首领的前置覆盖限制见同一专题，不能把通用hunt视为所有任务已完成。
+批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方。各幕任务顺序由配置维护，源码只负责按幕／原资源任务编号选择及具体任务条件图，不再另存一套幕队列。聊天可用`/debug-ai-start act3`、`/debug-ai-start act1 quest4`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和运行边界见该专题。
 
 `debug-walk`启动异步调试输入，`debug-walk-status`只读进度，`debug-walk-cancel`取消后沿客户端Stop提交停止请求。目标`goal=waypoint`（默认）自动寻找本区已指派传送点并用正常交互打开；`goal=exit`选择本区出口，可给`level`筛目的地，默认只走到附近；没有可点击warp的步行连接读取客户端已重建的逻辑near及原Vis／warp=-1连接（不要求邻层房间已激活），扫描当前已知碰撞的通行开口并选择本层内侧落点，可用于城镇门口，不自动跨区；这种连接不接受interact=true；`goal=point`需要全局subtile的`x/y`；`goal=unit`需要实际`unitId`，`unitType`默认2。`interact`默认在waypoint／unit目标启用，其他目标关闭；`run`默认true，`timeoutSeconds`为5–300，默认120。没有使用服务端管理旅行、坐标写入、私有包或鼠标模拟。
 
@@ -81,7 +79,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 父AI与独立debug-walk共用执行预算计时：观察面板、表现暂停或地图输入不可用期间不消耗导航总预算和移动无进展时间，恢复不因面板停留触发15秒卡住；不延长已经提交给正常客户端的请求现实期限。导航状态另含executionBlocked、executionRemainingMs和suspendedExecutionMs。AI动作的输入占用、结果观察及恢复契约见[动作调度](DEBUG_AI.md)。
 
-显式导航期间调试输入持有后台客户端焦点，窗口未最小化时单机可正常推进；客户端菜单／表现暂停会阻止操作，最小化不执行输入；显式server-pause仍由宿主独立持有，导航不读取宿主暂停真值，无位置进展将按期限失败。人工点击／按键及其他修改客户端状态的调试请求取消导航，让位正常操作。返回`navigation`含state、reason、gameGeneration／areaGeneration、target／unit／segment、clientPosition／serverPosition、targetSource、exitLevel与boundaryStart／boundaryEnd、decisionIntervalMs／decisions／clientMoving，以及moveRequests／interactionRequests／searchRooms（位置为最近一次导航决策采样，停止后实时位置见online-status；前两项为客户端入口受理次数，同目标合并时不等于发包数）；`completed`对传送点表示已收到服务器菜单，其他交互只表示已提交正常请求，不表示奖励或旅行成功。源码入口为[auto_walk.cpp](../../src/app/debug/auto_walk.cpp)，没有新增测试脚本／专用测试程序；构建与实际覆盖见[原版缺口](ORIGINAL_GAPS.md)。
+显式导航期间调试输入持有后台客户端焦点，窗口未最小化时单机可正常推进；客户端菜单／表现暂停会阻止操作，最小化不执行输入；显式server-pause仍由宿主独立持有，导航不读取宿主暂停真值，无位置进展将按期限失败。人工点击／按键及其他修改客户端状态的调试请求取消导航，让位正常操作。返回`navigation`含state、reason、gameGeneration／areaGeneration、target／unit／segment、clientPosition／serverPosition、targetSource、exitLevel与boundaryStart／boundaryEnd、decisionIntervalMs／decisions／clientMoving，以及moveRequests／interactionRequests／searchRooms（位置为最近一次导航决策采样，停止后实时位置见online-status；前两项为客户端入口受理次数，同目标合并时不等于发包数）；`townLane`与`pointerSelections`记录城镇双段续接及最近32次普通短程选点，字段与范围见[现场保持与子导航诊断](DEBUG_AI.md#事件观察与现场保持)。`completed`对传送点表示已收到服务器菜单，其他交互只表示已提交正常请求，不表示奖励或旅行成功。源码入口为[auto_walk.cpp](../../src/app/debug/auto_walk.cpp)，没有新增测试脚本／专用测试程序；构建与实际覆盖见[原版缺口](ORIGINAL_GAPS.md)。
 
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command debug-walk -Arguments @{goal='waypoint'}
@@ -90,15 +88,17 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 .\scripts\Send-D2XCommand.ps1 -Command debug-walk-cancel
 ```
 
-## 原服收包记录
+## 性能与宿主时序
 
-`online-status`和`server-status`另返回`performance`：最近120个已完成呈现帧的`milliseconds`按host、network、client、ai、navigation、debug、scene、present、other和total记录mean／p95／max，`completedFrames`及`over100ms`为本进程累计计数。ai／navigation分别为调试父AI／子行走调度，包含其碰撞和候选处理；present包含垂直同步／限帧等待，host包含嵌入宿主工作，scene包含场景及UI更新／绘制；这是实际墙钟耗时，不是25 Hz权威帧。`performance.navigationSearch`另列父／子共享的新求路数、缓存／可达证明命中、预算让出、移动段复用与实际求路微秒；预算范围及单次公共求路仍为同步调用的边界见[共享寻路预算](DEBUG_AI.md#共享寻路预算)。统计有界保存且不逐帧写磁盘；查询看到上一完整帧为止的帧样本和当前求路计数，暂停或切换场景后须等待窗口刷新再比较。计时拆分和共享预算已构建并观察到缓存命中／预算让出，实际证据见DEBUG_AI与ORIGINAL_GAPS；没有同条件前后提速结论。
+`online-status`和`server-status`另返回`performance`：最近120个已完成呈现帧的`milliseconds`按host、network、client、ai、navigation、debug、scene、present、other和total记录mean／p95／max，`completedFrames`及`over100ms`为本进程累计计数。ai／navigation分别为调试父AI／子行走调度，包含其碰撞和候选处理；present包含垂直同步／限帧等待，host包含嵌入宿主工作，scene包含场景及UI更新／绘制；这是实际墙钟耗时，不是25 Hz权威帧。`performance.navigationSearch`另列父／子共享的新求路数、缓存／可达证明命中、预算让出、移动段复用与实际求路微秒；预算范围及单次公共求路仍为同步调用的边界见[共享寻路预算](DEBUG_AI.md#共享寻路预算)。统计有界保存且不逐帧写磁盘；查询看到上一完整帧为止的帧样本和当前求路计数，暂停或切换场景后须等待窗口刷新再比较。共享预算和缓存的计数含义见[调试 AI](DEBUG_AI.md#共享寻路预算)。
 
 需要捕捉可能被120帧窗口覆盖的停顿时，启动加`--frame-profile <新路径.jsonl>`；`performance.frameLog`提供路径、已写事件数、最大帧和错误。持久日志另含进程／系统内存、缺页／CPU累计、读写量、当前场景与Graphics资源计数，并单列采集耗时。用同EXE／同资源、无并行构建的原版Host客户端比较AI启停、换区／新单位加载与绘制等待；不能凭进程内存突增先归因AI，也不能把原版网络心跳持续误认为图形主循环没有卡帧。具体字段和限制见[长帧取证](BUILD_AND_RUN.md)。
 
-宿主标准错误新增耗时诊断：`[host-content] submit/bind/ready`按game、request、ticket和level关联区域内容任务，ready拆出queue_ms（排队）、work_ms（后台准备）、delivery_ms（结果完成至宿主取走）及total_ms；`[host-step] blocked/resumed`记录固定帧阻塞起止、tick、待区域请求、重试次数、wait_ms、积欠debt_ms及blocked_stage，单次执行达到40ms也输出slow和busiest子系统；`[host-work]`列达到40ms的具名内容准备／安装或协议发布调用，`[host-pump]`列达到40ms的模拟、准备、事件、发布和清理分段。steady_ms使用进程单调毫秒，与定位上下文同源，不直接等于包日志的相对启动微秒。阻塞重试不逐次刷日志，区域任务日志在队列锁外输出；日志本身仍有格式化和标准错误写出成本。诊断入口保存于既有stderr.log，不增加玩法消息或改变执行顺序；本批仅编辑器诊断／源码及补丁检查，未构建、未运行，不能据此宣称慢传送已消除。
+宿主耗时诊断写入标准错误。`[host-content] submit/bind/ready`按game、request、ticket和level关联区域内容任务，ready拆出queue_ms（排队）、work_ms（后台准备）、delivery_ms（结果完成至宿主取走）及total_ms；`[host-step] blocked/resumed`记录固定帧阻塞起止、tick、待区域请求、重试次数、wait_ms、积欠debt_ms及blocked_stage，单次执行达到40ms也输出slow和busiest子系统；`[host-work]`列达到40ms的具名内容准备／安装或协议发布调用，`[host-pump]`列达到40ms的模拟、准备、事件、发布和清理分段。steady_ms使用进程单调毫秒，与定位上下文同源，不直接等于包日志的相对启动微秒。阻塞重试不逐次刷日志，区域任务日志在队列锁外输出；日志本身仍有格式化和标准错误写出成本。诊断启动器将标准错误写入 `stderr.log`。
 
 需要核对原服实际消息时，可在启动客户端时指定`--game-packet-log <新.jsonl>`，记录D2X客户端成功入发送队列的C2S和完成分帧、消费之前的S2C；`--host-packet-log <另一新.jsonl>`记录嵌入／TCP/IP宿主完成分帧、校验分派之前的C2S，以及成功入输出队列的S2C（批量输出拆成原包）。两者独立按JSONL记录sequence、相对启动微秒、endpoint、direction、包号、含包头长度和十六进制字节；客户端用gameGeneration区分入局，宿主用connection区分每次游戏字节连接，包含内存房主和TCP客人。握手和离局同样记录；入发送队列不表示对方已执行，收到C2S也不表示事务提交成功。
+
+## 原服收包记录
 
 应用层持有日志文件，network／宿主只有可选字节观察回调，默认关闭。已有文件拒绝覆盖，每文件达到64 MiB或写盘失败明确停止对应连接，不静默丢包。C2S68票据／令牌字段及C2S6C、S2CB3的角色字节置零，`redacted.offset/length`标明原字节范围；保留原长度／分片头，不把置零部分视为实际发包。BNCS／MCP认证内容不记录；未知长度导致不能分帧的TCP块也不在日志中。文件放忽略目录`artifacts/`，不提交。
 
@@ -133,7 +133,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 `online-world.scene.localCast`为本人当前施法表现的skill／age；age=-1表示仍待接近／开始，动作结束或真正中断后为null。`scene.clientMissiles`返回当前视觉队列的id、全局position、age和remaining；负age表示还没到释放帧，队列包含飞行及命中图形，不包含服务端伤害或命中真值。用它核对普通点击后Stop仍保留待释放飞弹、引导停止清理及生命周期；结合截图检查实际原图，不能仅凭服务端missileCount／伤害宣称客户端显示完成。
 
-`online.world.playerRepositions`从既有有界mapEvents中返回本人15冻结的sequence、position、receivedMilliseconds、usedSkill、flags和dead；`world.localUsedSkill`返回当前本地技能及修订，`scene.repositionFadeEndMilliseconds`为现有淡入截止值。三者用于区分收包时技能上下文与稍后绘制状态，不新增游戏事件或修改判据；时间为进程单调时钟，不能直接当日志相对启动微秒。这批输出尚未构建／运行。
+`online.world.playerRepositions`从既有有界mapEvents中返回本人15冻结的sequence、position、receivedMilliseconds、usedSkill、flags和dead；`world.localUsedSkill`返回当前本地技能及修订，`scene.repositionFadeEndMilliseconds`为现有淡入截止值。三者用于区分收包时技能上下文与稍后绘制状态，不新增游戏事件或修改判据；时间为进程单调时钟，不能直接当日志相对启动微秒。
 
 JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
 
@@ -394,7 +394,7 @@ d2x_assets <MPQ目录> save-info <file.d2s>
 - 每次连接一条请求及一条响应，响应换行后客户端关闭。客户端断线或 15 秒超时后回收连接。请求上限 16 KiB，响应上限 4 MiB，单实例连接。
 - EXE 不指定管道时无监听；Play.cmd 默认显式传入管道参数，可用 `-NoDebugPipe` 关闭。ACL 仅允许启动进程的 Windows 用户，拒绝远程客户端。相同用户的其他进程仍能调用，不能把它当对同用户恶意进程的安全隔离。
 - Win32 管道只在 app 模块，处理非阻塞；JSON 使用 nlohmann/json 3.11.3。命令入口和呈现在客户端线程；RealmSession 的后台 worker 持锁消费原服回包并更新权威副本，界面只读取客户端快照。
-- 该脚本是通用调用入口，未加入专用测试脚本／测试程序。调试接口由用户授权新增。
+- 脚本通过当前用户的管道发送通用命令。
 
 局前 `ui-input` 与游戏内共用帧输入契约；`entryText` 为至多255个可打印ASCII字节，`tab` 切换字段，`wheel` 为有限滚轮增量。`key=1–4`复用腰带列快捷键，`key=belt`／`expand-belt`／`~`切换腰带展开，`f1–f8`选择已绑定技能或绑定选择器悬停项；原 `text` 仍只用于数字输入。局前坐标同样使用逻辑视口，应用转换到800×600原图布局；回执 `frontend.page/notice/minimized` 提供页面、提示和最小化状态，不包含字段内容或密码。测试暂停或窗口最小化时拒绝所有 UI 输入，最小化切换清理已排队输入。恢复窗口或解除表现暂停时保留当前场景的单位朝向，游戏、区域和角色重新分配仍按各自代次重置。
 
@@ -404,11 +404,11 @@ LAN宿主的server-status新增rooms／participants摘要：实例slot／generat
 
 ## 验证边界
 
-只使用已有程序／命令／参考服，不新增测试脚本、用例或专用程序。实际执行在当次交付中说明，长期文档保留当前实现、原版依据与具体缺口。Windows管道不能替代原服协议；跨用户ACL拒绝与Linux实际运行仍待核对。
+验证场景及证据要求见[测试指南](TESTING.md)。Windows 管道用于本机诊断，跨用户 ACL 与 Linux 运行边界仍待核对。
 
-P1源码的healingQueued／manaQueued表示仍有恢复时钟的原药水状态数；连续喝同状态药水合并时长与恢复率，不再按瓶数增长。观察药水须同时核对资源、原state、剩余时长及物品消费。
+`healingQueued`／`manaQueued` 表示仍有恢复时钟的原药水状态数；连续喝同状态药水合并时长与恢复率，不再按瓶数增长。观察药水须同时核对资源、原state、剩余时长及物品消费。
 
-P5 server-snapshot增加chargedSkills（item／revision／skill／rank／charges／maximum）、player.selectedSkillOwners及itemTriggers.pending／deferred。deferred是最近暂缓程序原因，pending是未结算事件数；不修改实际技能或次数。正常施法仍经online-*原包，管理快照不能作为原服行为认证。
+`server-snapshot` 的 `chargedSkills` 列出物品、修订、技能、等级、剩余及最大充能数，`player.selectedSkillOwners` 显示所选技能来源，`itemTriggers.pending／deferred` 显示触发队列状态。deferred是最近暂缓程序原因，pending是未结算事件数；不修改实际技能或次数。正常施法仍经online-*原包，管理快照不能作为原服行为认证。
 
 区域快照的objectDeferred列出尚未实现的原物件预设回调身份（574–582）；这些不是已生成的物件，不参与碰撞或掉落。普通缺失表项仍使内容准备失败。
 

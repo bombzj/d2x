@@ -284,9 +284,9 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
             server::MonsterAttackRule teleport;
             if(const auto attack=rule.attacks.find(4);attack!=rule.attacks.end()) teleport=attack->second;
             // UMod26 assigns MonTeleport in mode4 independently of an A1
-            // damage attack. PD2 caster families may have only skill markers
+            // damage attack. Caster families may have only skill markers
             // in A1; use their real action clock rather than rejecting them.
-            else if(!data.pd2Host || !hosting::pd2::prepareNativeClock(archives,animations,*record,"A1",teleport,true)) return {};
+            else if(!prepareMonsterModeClock(archives,animations,*record,"A1",teleport,true)) return {};
             teleport.action=server::MonsterAttackRule::Action::Teleport;teleport.missile.reset();teleport.rank=1;
             rule.skillActions.emplace(184,std::move(teleport));
             rule.preventHealState=data.states.at("preventheal").definition.id;

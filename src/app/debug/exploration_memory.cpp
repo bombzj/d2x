@@ -18,6 +18,17 @@ using Cell=DebugExplorationMemory::Cell;
 constexpr std::array<Cell,4> normals{{{1,0},{0,1},{-1,0},{0,-1}}};
 float gap(Cell a,Cell b) {return Vec{float(a.first-b.first),float(a.second-b.second)}.length();}
 uint64_t hash(uint64_t value,uint64_t next) {return (value^next)*1099511628211ull;}
+struct PlanStageTimer {
+    using Clock=std::chrono::steady_clock;
+    double *elapsed{};
+    Clock::time_point began=Clock::now();
+    void next(double *stage) {
+        const auto now=Clock::now();
+        if(elapsed) *elapsed+=std::chrono::duration<double,std::milli>(now-began).count();
+        elapsed=stage;began=now;
+    }
+    ~PlanStageTimer() {next(nullptr);}
+};
 }
 DebugExplorationMemory::Cell DebugExplorationMemory::playerCell(Vec position) {
     const auto cell=nativeFeetCell(position);
@@ -270,6 +281,19 @@ void DebugExplorationMemory::defer(Area &m,uint64_t id) {
     if(auto *p=m.passage(id)) {p->deferred=p->evidence;++m.revision;}
     if(m.commitment==id) m.commitment.reset();
 }
+bool DebugExplorationMemory::Execution::requiresDoor(Cell to) const {
+    // Door operations are the difference between two live collision views,
+    // not between remembered ground and an unpublished landing footprint.
+    // Planning and route validation must use this same predicate.
+    if(!collision || !collisionGrid || !landingCollision || !landingGrid) return false;
+    if(!collisionGrid->walkable(Vec{float(to.first-collision->originX)+.5f,
+        float(to.second-collision->originY)+.5f},playerMovement)) return false;
+    for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx)
+        if(nativeCollisionSizeCell(playerMovement.size,dx,dy) &&
+            landingCollision->mask(to.first+dx-landingCollision->originX,
+                to.second+dy-landingCollision->originY)==0xffff) return false;
+    return !landingAllowed(to);
+}
 bool DebugExplorationMemory::Execution::landingAllowed(Cell to) const {
     return landingCollision && landingGrid && landingGrid->walkable(
         Vec{float(to.first-landingCollision->originX)+.5f,float(to.second-landingCollision->originY)+.5f},playerMovement);
@@ -294,8 +318,18 @@ bool DebugExplorationMemory::Execution::castAllowed(Cell from,Cell to,bool restr
     return source<rooms.size() && target<rooms.size() && (source==target ||
         std::find(rooms[source].near.begin(),rooms[source].near.end(),target)!=rooms[source].near.end());
 }
-bool DebugExplorationMemory::routeValid(const Area &m,const Plan &plan,int range,bool restricted,const Execution *execution) {
-    if(plan.points.empty()) return false;
+bool DebugExplorationMemory::routeValid(const Area &m,const Plan &plan,int range,bool restricted,const Execution *execution,RouteRejection *rejection) {
+    const auto reject=[&](const char *reason,size_t point=0) {
+        if(rejection) {
+            *rejection={reason,point};
+            if(point<plan.points.size()) {
+                const auto from=plan.points[point?point-1:0],to=plan.points[point];
+                rejection->from={from.x,from.y};rejection->to={to.x,to.y};
+            }
+        }
+        return false;
+    };
+    if(plan.points.empty()) return reject("empty-plan");
     Grid grid;grid.width=m.width;grid.height=m.height;
     grid.collisionSample=[&](int x,int y,EntityId)->uint16_t {
         const int gx=x+m.x,gy=y+m.y;const auto known=m.mask(gx,gy);
@@ -305,18 +339,31 @@ bool DebugExplorationMemory::routeValid(const Area &m,const Plan &plan,int range
     };
     for(size_t i=0;i<plan.points.size();++i) {
         const auto p=plan.points[i];const Vec to{float(p.x-m.x)+.5f,float(p.y-m.y)+.5f};
-        if(!grid.walkable(to,playerMovement) && (i || range<=0)) return false;
+        if(!grid.walkable(to,playerMovement) && (i || range<=0)) return reject("walking-footprint",i);
         if(!i) continue;
+        if(range>0 && execution && !plan.doorFallback && execution->requiresDoor({p.x,p.y}))
+            return reject("door-bypass-recheck",i);
         const auto q=plan.points[i-1];const Vec from{float(q.x-m.x)+.5f,float(q.y-m.y)+.5f};
         if(grid.nativeMovementSegment(from,to,playerMovement)) continue;
-        if(range<=0 || (to-from).length()>range || (execution && !execution->castAllowed({q.x,q.y},{p.x,p.y},restricted)) ||
-            (!execution && restricted && !grid.interactionSegment(from-Vec{.5f,.5f},to-Vec{.5f,.5f},2,{},0x0804,2))) return false;
+        if(range<=0) return reject("walking-edge",i);
+        if((to-from).length()>range) return reject("cast-range",i);
+        if(execution && !execution->castAllowed({q.x,q.y},{p.x,p.y},restricted)) {
+            if(!rejection) return false;
+            if(!execution->landingAllowed({p.x,p.y})) return reject("cast-landing",i);
+            if(!execution->castRayAllowed({q.x,q.y},{p.x,p.y},restricted)) return reject("cast-ray",i);
+            return reject("cast-room-neighborhood",i);
+        }
+        if(!execution && restricted && !grid.interactionSegment(from-Vec{.5f,.5f},to-Vec{.5f,.5f},2,{},0x0804,2))
+            return reject("known-cast-ray",i);
     }
     return true;
 }
 DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from,int range,bool restricted,
         std::optional<Vec> goal,float vicinity,uint64_t committed,bool exploreGoal,
-        const std::optional<std::vector<Cell>> &approaches,const Execution *execution,bool preferDoorBypass) {
+        const std::optional<std::vector<Cell>> &approaches,const Execution *execution,bool preferDoorBypass,
+        std::optional<Cell> preferredDirection,PlanProfile *profile) {
+    PlanStageTimer timing{profile?&profile->prepareMs:nullptr};
+    if(profile) {++profile->calls;profile->storageCells+=uint64_t(m.width)*m.height;}
     Plan result;if(m.maskBlocks.empty()) {result.outcome=Plan::Outcome::StartUnavailable;return result;}
     if(!goal && !committed && m.commitment) committed=*m.commitment;
     const Cell source=playerCell(from);
@@ -373,7 +420,9 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
     const auto unavailable=[&](Plan::Outcome reason) {
         result.outcome=reason;
         if(execution) {
-            const auto structural=plan(m,from,range,restricted,goal,vicinity,committed,exploreGoal,approaches);
+            timing.next(nullptr);if(profile) ++profile->structuralCalls;
+            const auto structural=plan(m,from,range,restricted,goal,vicinity,committed,exploreGoal,approaches,nullptr,true,preferredDirection,profile);
+            timing.next(profile?&profile->finishMs:nullptr);
             if(!structural.points.empty()) result.outcome=Plan::Outcome::ExecutionBlocked;
         }
         return result;
@@ -381,8 +430,51 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
     if(nearest==std::numeric_limits<float>::max()) return unavailable(Plan::Outcome::StartUnavailable);
     std::map<int,const Passage *> destinations;
     for(const auto &p:m.passages) if((!goal || exploreGoal) && (!committed || p.id==committed) && p.deferred!=p.evidence)
-        for(const auto &at:p.approaches) if(stand(at.first,at.second)) destinations.emplace(index(at),&p);
+        for(const auto &at:p.approaches) if(stand(at.first,at.second)) {
+            auto [entry,fresh]=destinations.emplace(index(at),&p);
+            if(!fresh && p.units && !entry->second->units) entry->second=&p;
+        }
     if(!goal && destinations.empty()) return unavailable(Plan::Outcome::Unreachable);
+    // A collision publication edge does not prove there is a passage beyond
+    // it. First advance into reachable, known ground whose units are unseen;
+    // only then probe data edges. Keep an explicit bearing or active branch's
+    // existing contract. Both choices use the same graph and movement rules.
+    const auto evidenceRank=[&](const Passage &p) {
+        if(goal || committed) return 0;
+        if(p.units) return 0;
+        if(m.expectedBounds) {
+            const auto &b=*m.expectedBounds;
+            const bool outside=std::all_of(p.boundary.begin(),p.boundary.end(),[&](const auto &at) {
+                const int x=at.first+p.direction.first,y=at.second+p.direction.second;
+                return x<b[0] || y<b[1] || x>=b[0]+b[2] || y>=b[1]+b[3];
+            });
+            if(outside) return 2;
+        }
+        // An explicit experience bearing may favor forward probing over an
+        // opposite observation direction; acquired collision still owns every
+        // edge. Unbiased exploration prefers the stronger observation evidence.
+        return preferredDirection?0:1;
+    };
+    std::map<uint64_t,int> evidenceRanks;
+    int preferredRank=2;
+    for(const auto &[at,p]:destinations) {
+        (void)at;
+        const auto [entry,fresh]=evidenceRanks.try_emplace(p->id,0);
+        if(fresh) entry->second=evidenceRank(*p);
+        preferredRank=std::min(preferredRank,entry->second);
+    }
+    // A structural retry cannot reach an explicit empty approach set or an
+    // unknown/non-standing goal. Dynamic blockers must not decide this test.
+    const auto structuralGoal=[&] {
+        if(!goal) return false;
+        if(approaches) return std::any_of(approaches->begin(),approaches->end(),
+            [&](const auto at){return m.stand(at.first,at.second);});
+        const int radius=int(std::ceil(vicinity));
+        for(int y=std::max(m.y,int(goal->y)-radius);y<=std::min(m.y+m.height-1,int(goal->y)+radius);++y)
+            for(int x=std::max(m.x,int(goal->x)-radius);x<=std::min(m.x+m.width-1,int(goal->x)+radius);++x)
+                if((Vec{float(x),float(y)}-*goal).length()<=vicinity && m.stand(x,y)) return true;
+        return false;
+    };
     std::set<int> goalCells;
     if(approaches) for(const auto &at:*approaches)
         if(stand(at.first,at.second)) goalCells.insert(index(at));
@@ -423,6 +515,30 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
             }
         }
     }
+    const auto passagePenalty=[&](Cell at,const Passage &p) {
+        float score=-(sketchDirections.contains(p.id)?6.f:0.f);
+        if(goal) {
+            const Vec toward=*goal-Vec{float(at.first),float(at.second)};
+            const float remaining=toward.length();const auto normal=p.direction;
+            // The hint supplies a bearing, never a traversable edge. Prefer
+            // forward openings; real route cost still permits a needed detour.
+            score+=1.25f*remaining;
+            if(remaining>0) score+=24.f*(1-(toward.x*normal.first+toward.y*normal.second)/remaining);
+        } else if(preferredDirection) {
+            const auto normal=p.direction;
+            const Vec axis=Vec{float(preferredDirection->first),float(preferredDirection->second)}.unit();
+            // Experience supplies a bounded directional preference, not a
+            // synthetic far-away goal that forces an exhaustive search.
+            score+=24.f*(1-axis.x*normal.first-axis.y*normal.second);
+        } else if(m.heading) {
+            const auto heading=*m.heading,direction=p.direction;
+            score+=12.f*(1-(heading.first*direction.first+heading.second*direction.second));
+        }
+        return score;
+    };
+    float minimumPenalty=std::numeric_limits<float>::max();
+    for(const auto &[at,p]:destinations) if(evidenceRanks.at(p->id)==preferredRank)
+        minimumPenalty=std::min(minimumPenalty,passagePenalty(cell(at),*p));
     const size_t count=masks.size();
     std::vector<float> costs(count,std::numeric_limits<float>::max());
     std::vector<int> parent(count,-1);
@@ -430,6 +546,7 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
     // Sampling controls graph density only; all objectives come from openings.
     std::map<Cell,std::vector<int>> landingBuckets;
     std::set<int> landings;
+    timing.next(profile?&profile->landingsMs:nullptr);
     if(range>0) {
         const int stride=std::max(2,range/3);
         for(int y=m.y;y<m.y+m.height;++y) {
@@ -454,34 +571,33 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
         landings.insert(index(start)); // A cast may escape a blocked source.
         for(const int i:landings) {const auto at=cell(i);landingBuckets[{at.first/range,at.second/range}].push_back(i);}
     }
+    if(profile) profile->landingCandidates+=landings.size();
+    timing.next(profile?&profile->searchMs:nullptr);
     using Entry=std::tuple<float,float,int>;
     std::priority_queue<Entry,std::vector<Entry>,std::greater<Entry>> pending;
     const int root=index(start);costs[size_t(root)]=0;pending.emplace(heuristic(start),0,root);
     const bool sourceLanding=!execution || execution->landingAllowed(start);
-    int chosen=-1;float best=std::numeric_limits<float>::max();const Passage *selected=nullptr;
+    int chosen=-1,bestRank=3;float best=std::numeric_limits<float>::max();const Passage *selected=nullptr;
     while(!pending.empty()) {
         navigationWorkCheckpoint();
         const auto [priority,cost,i]=pending.top();pending.pop();(void)priority;
         if(cost!=costs[size_t(i)]) continue;
-        if((!goal || goalCells.empty()) && cost>best+6) break;
-        ++result.expanded;const auto at=cell(i);
+        // A cheap speculative edge cannot terminate the search before a
+        // reachable observation direction has been considered. If none is
+        // reachable, retain the best speculative result from this traversal.
+        // Include the minimum terminal penalty in the Dijkstra lower bound;
+        // a distant hint's absolute distance must not force a full-map scan.
+        if((!goal || goalCells.empty()) && bestRank==preferredRank && cost+minimumPenalty>best) break;
+        ++result.expanded;if(profile) ++profile->expanded;const auto at=cell(i);
         if(goal && goalCells.contains(i)) {
             chosen=i;selected=nullptr;break;
         }
         if(const auto target=destinations.find(i);target!=destinations.end()) {
-            float score=cost-(sketchDirections.contains(target->second->id)?6.f:0.f);
-            if(goal) {
-                const Vec toward=*goal-Vec{float(at.first),float(at.second)};
-                const float remaining=toward.length();const auto normal=target->second->direction;
-                // The hint supplies a bearing, never a traversable edge. Prefer
-                // forward openings; real route cost still permits a needed detour.
-                score+=1.25f*remaining;
-                if(remaining>0) score+=24.f*(1-(toward.x*normal.first+toward.y*normal.second)/remaining);
-            } else if(m.heading) {
-                const auto heading=*m.heading,direction=target->second->direction;
-                score+=12.f*(1-(heading.first*direction.first+heading.second*direction.second));
+            const float score=cost+passagePenalty(at,*target->second);
+            const int rank=evidenceRanks.at(target->second->id);
+            if(rank<bestRank || (rank==bestRank && score<best)) {
+                chosen=i;best=score;selected=target->second;bestRank=rank;
             }
-            if(score<best) {chosen=i;best=score;selected=target->second;}
         }
         const auto relax=[&](int next,float edge) {
             if(cost+edge>=costs[size_t(next)]) return;
@@ -502,6 +618,7 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
             const auto bucket=landingBuckets.find({at.first/range+bx,at.second/range+by});
             if(bucket==landingBuckets.end()) continue;
             for(const int next:bucket->second) {
+                if(profile) ++profile->castCandidates;
                 const auto to=cell(next);const float span=gap(at,to);if(span<2 || span>range || !castAllowed(at,to)) continue;
                 if(next==root && !sourceLanding) continue;
                 const bool rayClear=execution?execution->castRayAllowed(at,to,restricted):
@@ -511,9 +628,12 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
             }
         }
     }
+    timing.next(profile?&profile->finishMs:nullptr);
     if(chosen<0) return unavailable(Plan::Outcome::Unreachable);
-    if(selected && execution && goal) {
-        const auto structural=plan(m,from,range,restricted,goal,vicinity,committed,exploreGoal,approaches);
+    if(selected && execution && structuralGoal()) {
+        timing.next(nullptr);if(profile) ++profile->structuralCalls;
+        const auto structural=plan(m,from,range,restricted,goal,vicinity,committed,exploreGoal,approaches,nullptr,true,preferredDirection,profile);
+        timing.next(profile?&profile->finishMs:nullptr);
         if(structural.outcome==Plan::Outcome::Goal) {result.outcome=Plan::Outcome::ExecutionBlocked;return result;}
     }
     result.outcome=selected?Plan::Outcome::Passage:Plan::Outcome::Goal;
@@ -523,9 +643,7 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
     std::reverse(result.points.begin(),result.points.end());
     if(range>0 && execution && execution->collision && execution->landingCollision) {
         const auto needsDoor=[&](OnlinePoint at) {
-            const auto &walking=*execution->collision;
-            return execution->collisionGrid->walkable(Vec{float(int(at.x)-walking.originX)+.5f,
-                float(int(at.y)-walking.originY)+.5f},playerMovement) && !execution->landingAllowed({at.x,at.y});
+            return execution->requiresDoor({at.x,at.y});
         };
         result.doorFallback=std::any_of(result.points.begin(),result.points.end(),needsDoor);
         // Prefer a legal route around/over closed doors before committing an
@@ -534,8 +652,10 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
         if(preferDoorBypass && result.doorFallback && !needsDoor(result.points.back())) {
             auto bypass=*execution;
             bypass.collision=bypass.landingCollision;bypass.collisionGrid=bypass.landingGrid;
+            timing.next(nullptr);if(profile) ++profile->doorBypassCalls;
             auto alternative=plan(m,from,range,restricted,goal,vicinity,result.passage?result.passage:committed,
-                exploreGoal,approaches,&bypass,false);
+                exploreGoal,approaches,&bypass,false,preferredDirection,profile);
+            timing.next(profile?&profile->finishMs:nullptr);
             if(alternative.outcome==result.outcome && alternative.passage==result.passage && !alternative.points.empty()) {
                 alternative.expanded+=result.expanded;return alternative;
             }

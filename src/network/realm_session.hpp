@@ -150,6 +150,7 @@ class RealmSession {
     const OnlineView &read() const;
     std::chrono::milliseconds request_timeout() const;
     bool item_request_ready() const;
+    bool combat_request_ready() const;
     // Optional (constructor opt-in), bounded, ordered packets for additional consumers.
     // The basic replica in read().world has already consumed supported messages.
     // Taking packets does not mutate the view revision. No auth or tickets are exposed.

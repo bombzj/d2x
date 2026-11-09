@@ -75,6 +75,7 @@ class DebugNavigationSearch {
     DebugExplorationMemory::Plan observedRoute(uint16_t area,Vec from,int range=0,bool restricted=false,
         std::optional<Vec> target={},float vicinity=2,uint64_t committed=0,bool exploreGoal=false,
         std::optional<std::vector<DebugExplorationMemory::Cell>> approaches={},
+        std::optional<DebugExplorationMemory::Cell> preferredDirection={},
         std::source_location caller=std::source_location::current());
     std::vector<DebugExplorationMemory::Cell> interactionApproaches(const RemoteTown &,const OnlineView &,OnlineUnitKey);
     struct WalkingOpening {
@@ -88,6 +89,9 @@ class DebugNavigationSearch {
     };
     WalkingConnection walkingConnection(const RemoteTown &,Vec from,std::optional<uint16_t> destination);
     static bool observationReady(const RemoteTown &,const OnlineView &,Vec destination,
+        std::optional<std::chrono::steady_clock::time_point> &since);
+    static bool passageObservationReady(const RemoteTown &,const OnlineView &,
+        const DebugExplorationMemory::Passage &,Vec destination,
         std::optional<std::chrono::steady_clock::time_point> &since);
     DebugNavigationSearch();
     ~DebugNavigationSearch();
@@ -129,6 +133,8 @@ class DebugNavigationSearch {
     Vec explorationLane(const Grid &terrain,const Grid &collision,Vec from,Vec onRoute,Vec onward,bool walking);
     static constexpr int townClearance=4; // Preferred space at bends, never a collision requirement.
     Vec townWalkLane(const Grid &terrain,const Grid &collision,Vec from,Vec onRoute,Vec onward);
+    // Nearby assigned NPCs can take over a relay through normal unit input.
+    static bool directNpcApproach(const RemoteTown &,const OnlineView &,OnlineUnitKey,Vec from);
     std::deque<Vec> path(const Grid &,Vec from,Vec to,bool partial=false,
                         MovementCollisionRule rule={},bool native=false,
                         std::source_location caller=std::source_location::current());

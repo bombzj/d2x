@@ -1,6 +1,6 @@
 # 第二幕怪物执行边界
 
-更新：2026-10-29。第二幕已有逐身份AI、动画、普通攻击与技能接线；本页登记当前实现、原版依据与缺口。当前MPQ的第二幕Levels三难度候选、Act 2 MonPreset及SuperUniques固定记录，再递归spawn／minion，得到74个enabled、killable、非中立MonStats身份、33类AI。技能槽去重30项，逐项关系见[怪物技能](../skills/MONSTERS.md#第二幕技能逐项台账)。规范见[COMMON](COMMON.md)。
+第二幕已有逐身份AI、动画、普通攻击与技能接线；本页登记当前实现、原版依据与缺口。当前MPQ的第二幕Levels三难度候选、Act 2 MonPreset及SuperUniques固定记录，再递归spawn／minion，得到74个enabled、killable、非中立MonStats身份、33类AI。技能槽去重30项，逐项关系见[怪物技能](../skills/MONSTERS.md#第二幕技能逐项台账)。规范见[COMMON](COMMON.md)。
 
 ## 三难度重新核对
 
@@ -25,7 +25,7 @@
 
 以下是当前MPQ身份，不按族名推断其他幕变体已经实现。共享家族沿用第一幕执行，新增家族的技能值由hosting准备；DesertTurret及GargoyleTrap保留各自机关入口。
 
-| AI | 当前第二幕身份 | 本批范围 |
+| AI | 当前第二幕身份 | 程序与覆盖范围 |
 | --- | --- | --- |
 | SandRaider | sandraider1、2、3 | Fire Hit、S1物理／火伤、颜色蓄力及受伤伙伴集合 |
 | SandMaggot | sandmaggot1、2、3 | 上／下钻、当前生命百分比恢复、产卵、A2毒液 |
@@ -59,7 +59,7 @@
 | FoulCrowNest | crownest3 | 共享Nest序列与NOXP／NOTC子怪 |
 | Vampire | vampire1 | 四槽准备；MPQ掩码3自然开启火球／FireHead和火墙，未开启陨石 |
 | GargoyleTrap | gargoyletrap | 共享原序列、射线及轴向资格 |
-| DesertTurret | firetower | 环境控制器三发原火弹 |
+| DesertTurret | turret1–3／firetower | 环境控制器按动作帧释放原火弹。当前 `desertfireball.ClientSend` 为空，客户端在 `seq_desertturret` 的事件4按 CltDo60 重建，发数和弹体读取当前 `Calc1` 与 `CltMissileA`。零售1.13c D2Client RVA 57D50 用整数散射，逐发起点的两轴分别取对应偏移除6。画面待实机对照 |
 
 MonPreset固定身份包括Radament、Bloodwitch the Wild、Fangskin、Beetleburst、Leatherarm、Coldworm the Burrower、Fire Eye、Dark Elder及Ancient Kaa the Soulless，保留实际SuperUnique及MonStats。Duriel、Summoner任务身份与战斗规则分开持有。不可击杀的横／竖陷阱控制器由环境模块负责，不加入74个身份；飞行弯刀由物件产生，不属于上述候选或主动Skills槽。
 
@@ -73,7 +73,7 @@ MonPreset固定身份包括Radament、Bloodwitch the Wild、Fangskin、Beetlebur
 
 沙虫钻地的MonSeq按原表S1帧11→0组装，已钻地下的末帧保持只应用于完整序列，不传给组成COF；原D2MOO SkillMonst::SKILLS_SrvDo086_MaggotDown在完成边界冻结序列速度，不把组成动画改成零速。客户端此前因错误传播finalFrame拒绝seq_maggotdown，此处已修正；实机范围见[原版缺口](../../development/ORIGINAL_GAPS.md)。
 
-沙虫出土按`SkillMonst::SKILLS_SrvSt44_MaggotUp → SUnit::sub_6FCBDFE0`复用公共`nativeTeleport`落点流程，以实际体型、碰撞掩码0x1c09搜索附近合法位置，再恢复目标资格与占位；下钻清除资格。此前只检验原地，被占用便失败，而Fn015仍按原逻辑推进阶段，可能留下潜地与AI阶段不一致。修复适用于共享程序的第三幕sandmaggot4；85区暂停快照见两只phase1且burrowed=true，但旧日志未记录每次出土失败原因，不能断言各次都由占位造成。当前源码修复未构建／实测，保持无合法位置时失败，不强制穿过碰撞。
+沙虫出土按 `SkillMonst::SKILLS_SrvSt44_MaggotUp → SUnit::sub_6FCBDFE0` 复用 `nativeTeleport`，按实际体型和 `0x1c09` 掩码搜索附近合法格，成功后恢复目标资格与占位。下钻清除资格，找不到合法位置时出土失败。第三幕 `sandmaggot4` 共用此程序，占位与 AI 阶段交错仍待实机对照。
 
 零售客户端对普通分配／模式包中的无技能S1也识别SandMaggot潜地、Vulture空中和FrogDemon潜水，不要求另收到0x0E标记。战斗目标筛选沿既有显示判定排除不可攻击状态，调试导航的临时单位占位查询不为这些非实体状态加地面障碍；不改宿主碰撞或从模式伪造伤害。依据为D2MOO MaggotDown清除目标资格／碰撞、Submerge及对应AI。PD2原有判定保留，新分配包修正只用于lod113c。
 

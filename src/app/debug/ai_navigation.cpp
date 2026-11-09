@@ -202,6 +202,8 @@ bool DebugAi::Impl::walk(Context &c,Json intent) {
         for(const auto &entry:c.town.read().mapTargets) if(entry.unit==key)
             nearbyInteraction=intent.value("interact",false) &&
                 distance(c.position,{float(entry.position.x),float(entry.position.y)})<=6;
+        if(intent.value("interact",false) && DebugNavigationSearch::directNpcApproach(c.town,c.session.read(),key,c.position))
+            nearbyInteraction=true;
         const auto assigned=std::find_if(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &entry){return entry.unit==key;});
         if(assigned!=c.town.read().mapTargets.end() && !continuing && intent.value("interact",false)) {
             const auto &view=c.session.read();
@@ -214,8 +216,8 @@ bool DebugAi::Impl::walk(Context &c,Json intent) {
                 mobilityHold=true;wait("interaction-action-settle","Waiting for the normal skill/action lock before a new unit click");return false;
             }
             // A request-range check says nothing about observed terrain.
-            // Keep the current relay until its result, then follow observed
-            // interaction stances or goal-directed passages before handing off.
+            // A nearby NPC with a checked execution ray may take over now;
+            // other targets still use observed stances or passages.
             if(intent.value("purpose",std::string{})!="door" &&
                 approachPoint(c,assigned->position,"assigned interaction target",6,false,key)) {
                 approachObservation.owner=intent;return false;
@@ -619,7 +621,13 @@ bool DebugAi::Impl::frontierCoolingDown(OnlinePoint point,float radius,std::opti
 }
 DebugAi::Impl::TerrainMemory *DebugAi::Impl::observeTerrain(const Context &c) {
     auto &search=c.walk.navigationSearch();
-    return search.observeTerrain(c.town,c.session.read(),c.position);
+    auto *memory=search.observeTerrain(c.town,c.session.read(),c.position);
+    if(memory) {
+        const auto *experience=areaExperience(c);
+        const auto bounds=experience?experience->bounds:std::nullopt;
+        if(memory->expectedBounds!=bounds) {memory->expectedBounds=bounds;++memory->revision;}
+    }
+    return memory;
 }
 DebugAi::Impl::TerrainLeg DebugAi::Impl::terrainLeg(const Context &c,const std::vector<OnlinePoint> &path) const {
     TerrainLeg result;
@@ -666,6 +674,10 @@ bool DebugAi::Impl::exploreFrontier(Context &c,const std::string &purpose,bool r
     const auto feet=DebugExplorationMemory::playerCell(c.position);
     const bool owned=walkIntent.is_object() && walkIntent.value("purpose",std::string{})=="exploration-frontier";
     if(frontierRoute && frontierRoute->area!=*area) frontierRoute.reset();
+    if(!recoveryOnly && frontierRoute && frontierRoute->focus!=focus) {
+        if(owned && c.walk.active()) {wait("explore-frontier","Finishing the submitted relay before changing exploration purpose");return false;}
+        m.commitment.reset();frontierRoute.reset();
+    }
     if(frontierRoute) {
         const auto *passage=m.passage(frontierRoute->passage);
         const bool stillApproach=passage && std::find(passage->approaches.begin(),passage->approaches.end(),
@@ -707,7 +719,11 @@ bool DebugAi::Impl::exploreFrontier(Context &c,const std::string &purpose,bool r
         {"deferredDirections",std::count_if(m.passages.begin(),m.passages.end(),[](const auto &p){return p.deferred==p.evidence;})},
         {"selected",nullptr}};
     if(!frontierRoute) {
-        auto plan=c.walk.navigationSearch().observedRoute(*area,c.position,teleport?mobilityPolicy.distance:0,restricted);
+        const auto direction=experienceDirection(c,focus);
+        searchDiagnostics["experienceDirection"]=direction?Json(*direction):Json(nullptr);
+        searchDiagnostics["experienceBounds"]=m.expectedBounds?Json(*m.expectedBounds):Json(nullptr);
+        auto plan=c.walk.navigationSearch().observedRoute(*area,c.position,teleport?mobilityPolicy.distance:0,restricted,
+            {},2,0,false,{},direction);
         searchDiagnostics["expandedStandingCells"]=plan.expanded;
         searchDiagnostics["doorFallback"]=plan.doorFallback;
         if(plan.points.empty()) {
@@ -726,16 +742,17 @@ bool DebugAi::Impl::exploreFrontier(Context &c,const std::string &purpose,bool r
                     "Current feet have no usable acquired collision; waiting for client publication":
                     "No reachable pending passage in acquired terrain for "+purpose);return false;
         }
-        frontierRoute=FrontierRoute{*area,plan.points.back(),std::move(plan.points),plan.passage,plan.evidence,~size_t{},0,{},{}};
+        frontierRoute=FrontierRoute{*area,plan.points.back(),std::move(plan.points),plan.passage,plan.evidence,~size_t{},0,{},{},focus};
         if(const auto *p=m.passage(plan.passage)) {m.heading=p->direction;m.commitment=p->id;}
         note(plan.backtracking?"exploration-backtrack":"exploration-direction-selected",Json{
             {"direction",plan.passage},{"target",{frontierRoute->target.x,frontierRoute->target.y}},
+            {"observation",m.passage(plan.passage)->units?"units":"terrain-probe"},
             {"routeCost",plan.cost},{"pathPoints",frontierRoute->path.size()},{"purpose",purpose}}.dump());
     }
     auto &route=*frontierRoute;
     searchDiagnostics["selected"]={route.target.x,route.target.y};searchDiagnostics["direction"]=route.passage;
     if(feet.first==route.target.x && feet.second==route.target.y) {
-        if(!DebugNavigationSearch::observationReady(c.town,c.session.read(),
+        if(!DebugNavigationSearch::passageObservationReady(c.town,c.session.read(),*m.passage(route.passage),
             {float(route.target.x),float(route.target.y)},route.observationSince)) {
             wait("explore-observation","Waiting for confirmed arrival and client collision publication");return false;
         }
@@ -776,7 +793,6 @@ bool DebugAi::Impl::exploreFrontier(Context &c,const std::string &purpose,bool r
     wait("explore-frontier",purpose);
     walk(c,{{"goal","point"},{"x",leg.point->x},{"y",leg.point->y},{"interact",false},{"exploration",true},
         {"purpose","exploration-frontier"},{"exactPoint",true}});
-    (void)focus;
     return false;
 }
 bool DebugAi::Impl::explore(Context &c,std::string purpose,bool recoveryOnly,ExplorationFocus focus) try {
@@ -788,6 +804,14 @@ bool DebugAi::Impl::explore(Context &c,std::string purpose,bool recoveryOnly,Exp
 }
 bool DebugAi::Impl::approachKnown(Context &c,const Selector &selector) {
     if(!area) return false;
+    // A real quest-state change can create/move a town NPC. Absence checked
+    // before that change must not permanently suppress its known service site.
+    // Repeated snapshots with identical bits are not new evidence.
+    const auto &questFlags=c.session.read().world.quests.playerFlags;
+    if(checkedHintQuestFlags!=questFlags) {
+        checkedHintQuestFlags=questFlags;
+        std::erase_if(checkedHints,[](const auto &key){return std::get<1>(key)==1;});
+    }
     std::optional<OnlinePoint> hint;
     if(selector.type==1 && (selector.superUnique || selector.eliteOnly)) {
         // A class-level map hint may belong to an ordinary monster or corpse.
@@ -816,7 +840,12 @@ bool DebugAi::Impl::approachKnown(Context &c,const Selector &selector) {
         }
     } else hint=selector.type==5?c.town.knownConnectionPosition(*area,selector.identity):
         c.town.knownTargetPosition(*area,selector.type,selector.identity);
-    bool townLandmark=false;
+    bool townLandmark=false,experienceLandmark=false;
+    if(!hint) {
+        hint=experienceHint(c,selector);
+        experienceLandmark=hint.has_value();
+        townLandmark=hint.has_value() && selector.type==1;
+    }
     if(!hint && selector.type==1 && !selector.superUnique && !selector.eliteOnly) {
         hint=c.town.automapNpcPosition(*area,selector.identity);townLandmark=hint.has_value();
     }
@@ -826,13 +855,21 @@ bool DebugAi::Impl::approachKnown(Context &c,const Selector &selector) {
     if(checkedHints.contains(key)) return false;
     if(distance(c.position,{float(hint->x),float(hint->y)})<=8) {
         const auto host=c.session.read().world.playerPosition;
-        if(townLandmark && (!host || distance({float(host->x),float(host->y)},c.position)>3 ||
-            c.town.read().mapLoading.pendingEvents || c.town.read().mapLoading.terrainDirty)) {
-            wait("known-target-assignment","Waiting for actual arrival and the town service assignment");return true;
+        if(townLandmark || experienceLandmark) {
+            if(approachHint!=hint) {approachHint=hint;approachObservation.observationSince.reset();}
+            if(c.moving || !host || distance({float(host->x),float(host->y)},c.position)>3) {
+                approachObservation.observationSince.reset();
+                wait("known-target-assignment","Waiting for actual arrival at the known landmark");return true;
+            }
+            if(!DebugNavigationSearch::observationReady(c.town,c.session.read(),
+                {float(host->x),float(host->y)},approachObservation.observationSince)) {
+                wait("known-target-assignment","Waiting for acquired terrain and the landmark assignment");return true;
+            }
         }
         checkedHints.insert(key);note("known-target-not-reassigned",selector.name);return false;
     }
-    return approachPoint(c,*hint,townLandmark?"town map service "+selector.name:selector.name);
+    return approachPoint(c,*hint,experienceLandmark?"configured landmark "+selector.name:
+        townLandmark?"town map service "+selector.name:selector.name);
 }
 bool DebugAi::Impl::approachPoint(Context &c,OnlinePoint hint,std::string purpose,float vicinity,bool exploration,
         std::optional<OnlineUnitKey> interaction,std::optional<std::vector<DebugExplorationMemory::Cell>> stances) try {
@@ -846,6 +883,14 @@ bool DebugAi::Impl::approachPoint(Context &c,OnlinePoint hint,std::string purpos
         std::find(stances->begin(),stances->end(),feet)!=stances->end():
         distance(currentCell,wanted)<=tolerance;
     if(arrived) return false;
+    if(interaction && !c.walk.recoveringMovement() &&
+        DebugNavigationSearch::directNpcApproach(c.town,c.session.read(),*interaction,c.position)) {
+        // Refine a map relay into a real unit click as soon as its approach
+        // is executable. Do this before retaining the active point child.
+        approachDiagnostics={{"decision",decisions},{"purpose",purpose},{"target",{hint.x,hint.y}},
+            {"strategy","direct-npc"},{"result","interaction-ray-confirmed"},{"from",{c.position.x,c.position.y}}};
+        return false;
+    }
     const auto assigned=interaction?c.session.read().world.units.find(*interaction):c.session.read().world.units.end();
     const uint64_t assignment=assigned==c.session.read().world.units.end()?0:assigned->second.assignmentRevision;
     // A map/history hint becoming an actual nearby assignment refines the
@@ -860,8 +905,8 @@ bool DebugAi::Impl::approachPoint(Context &c,OnlinePoint hint,std::string purpos
     auto *memory=observeTerrain(c);if(!memory || !area) {wait("known-target-observation","Waiting for observed terrain");return true;}
     if(sameGoal && approachFrontier && walkIntent.is_object() && walkIntent.value("purpose",std::string{})=="known-target-memory" &&
         walkIntent.value("x",0)==approachFrontier->x && walkIntent.value("y",0)==approachFrontier->y) {
-        // Target motion or entry into the 50-subtile pointer range does not
-        // revoke an in-flight leg. Only actual interaction readiness can.
+        // Range alone cannot revoke a relay. Readiness or the checked nearby
+        // NPC ray above can; otherwise retain the existing observation leg.
         if(c.walk.active()) {wait("known-target-approach",purpose);return true;}
         const auto state=walkState(c);
         if(state=="needs-replan") {
@@ -896,7 +941,7 @@ bool DebugAi::Impl::approachPoint(Context &c,OnlinePoint hint,std::string purpos
         if(!p || p->evidence!=observation.evidence || p->deferred==p->evidence) {
             observation.passage=0;observation.observationSince.reset();
         } else if(feet.first==observation.endpoint.x && feet.second==observation.endpoint.y) {
-            if(!DebugNavigationSearch::observationReady(c.town,c.session.read(),
+            if(!DebugNavigationSearch::passageObservationReady(c.town,c.session.read(),*p,
                 {float(observation.endpoint.x),float(observation.endpoint.y)},observation.observationSince)) {
                 wait("known-target-observation","Waiting for acquired collision toward "+purpose);return true;
             }

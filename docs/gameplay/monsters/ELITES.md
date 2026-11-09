@@ -1,6 +1,6 @@
 # 阶级、精英词缀与超级暗金
 
-更新：2026-10-16。本页负责rank、冠军／暗金／仆从、SuperUnique身份与词缀执行。专用AI归[BOSSES](BOSSES.md)，人口／刷新点归[POPULATION](POPULATION.md)，原包／视觉归[PRESENTATION](PRESENTATION.md)。
+本页维护阶级、冠军／暗金／仆从、超级暗金身份与词缀执行。专用 AI 见[首领](BOSSES.md)，刷新与人口见[人口](POPULATION.md)，消息与绘制见[客户端表现](PRESENTATION.md)。
 
 ## 当前固定身份与准备
 
@@ -12,7 +12,7 @@ hosting准备MonUMod权重、排斥、类型限制、难度常数及不可变数
 
 ## 当前运行效果
 
-当前源码已将生命加成移到实际Actor出生：基础范围投掷与人数加成之后，在定点生命上执行UMod2，再应用Possessed／Berserk修正，复用原整数比例函数。怪物祭坛升级共用实际单位流和当前属性；普通暗金保留RollLimitedRandom(1)，已有八槽时不再掷冠军机会和该限定随机。追加冠军循环仅适用于密度生成及MonPlace3，在领队修饰器完成后决定数量；邪恶瓮、吉得宾及MonPlace2不执行该循环。追加冠军自身的普通party先于其冠军修饰器执行，且不随领队自动晋升为仆从。固定超级暗金保留全局Stacks限制、固定词缀、难度追加、特殊子体和最终任务修饰器。UMod41按原75帧修饰器事件更新AI回调，不伪造速度加成。逐修饰器跨整条minion链的原回调次序、完整属性副作用、原类型位及首领专用初始化仍未全部闭合。
+生命加成在 Actor 出生时计算。基础范围投掷与人数加成之后，在定点生命上执行UMod2，再应用Possessed／Berserk修正，复用原整数比例函数。怪物祭坛升级共用实际单位流和当前属性；普通暗金保留RollLimitedRandom(1)，已有八槽时不再掷冠军机会和该限定随机。追加冠军循环仅适用于密度生成及MonPlace3，在领队修饰器完成后决定数量；邪恶瓮、吉得宾及MonPlace2不执行该循环。追加冠军自身的普通party先于其冠军修饰器执行，且不随领队自动晋升为仆从。固定超级暗金保留全局Stacks限制、固定词缀、难度追加、特殊子体和最终任务修饰器。UMod41按原75帧修饰器事件更新AI回调，不伪造速度加成。逐修饰器跨整条minion链的原回调次序、完整属性副作用、原类型位及首领专用初始化仍未全部闭合。
 
 | 程序 | 权威行为及数据 |
 | --- | --- |
@@ -20,11 +20,15 @@ hosting准备MonUMod权重、排斥、类型限制、难度常数及不可变数
 | 元素／资源 | 元素附伤、Mana Burn、Spectral Hit持久元素stat；真实数值与随机由权威准备／执行 |
 | 多发 | Multishot与原NoMultiShot／NoUniqueMod限制，传播由missiles处理 |
 | 光环／诅咒 | 范围Amplify Damage、友方属性光环、Holy Fire／Freeze／Shock敌对脉冲 |
-| 传送／恢复约束 | 低生命Teleport、PreventHeal复验，不由客户端推算实际落点或恢复 |
+| 传送／恢复约束 | 低生命Teleport、PreventHeal复验；UMod26独立准备真实A1动作时钟，不要求普通A1伤害规则，不由客户端推算实际落点或恢复 |
 | 察觉／等待 | 首次察觉音效与原等待条件 |
 | 受击／死亡事件 | Lightning GH延时／冷却，Cold／Fire死亡事件，独立发生编号与时钟 |
 
 monsters持Spectral Hit累计stat、谱系与死亡连锁，effects/monster_enchantments持每单位光环／诅咒／受击与死亡事件时钟。死亡触发与光环使用不同发生编号，可靠队列重试保留首次计划，具体公共事务要求见[COMMON](COMMON.md)。
+
+UMod26按本地D2MOO `MONSTERUNIQUE_UMod26_Teleport`直接赋予MonTeleport并设置mode4，没有普通A1伤害攻击存在性的前置条件。`hosting/combat_content.cpp`先复用已有A1攻击时钟；缺普通攻击的FetishShaman等家族改经公共`prepareMonsterModeClock`读取当前MPQ的真实A1帧、速度及动作事件。此公共实现也供PD2既有`prepareNativeClock`委托调用，保持其选择事件及ENDANIM后备语义，不伪造时长或跳过词缀。
+
+准备缺少真实资源或规则时，`PreparedModifiers.deferred` 保留原因并暂缓人口续办。`[monster-modifiers] blocked` 输出区域、tick、token、领队身份和原因，权威快照保留失败状态。永久内容失败的通用恢复仍待实现。
 
 特殊休眠恢复与实时出生共用修饰器准备和Actor发布：unique重新消费一次实际单位流后覆盖保存的nameSeed，minion不消费姓名随机；保留保存的词缀身份、阶级和主从链。恢复未完成的实体暂缓对客户端可见，完成后才恢复保存的生命与尸体资格。精英不再因身份被整类禁止压缩；原TYPE_OTHER／MINION寻位、光环初始化、全部特殊AI命令及逐修饰器链顺序仍需完整原版对照，未运行认证。
 

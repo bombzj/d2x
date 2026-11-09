@@ -34,6 +34,8 @@ struct ActorControlIntent {
     std::optional<ItemHandle> item;
     bool right = false, stationary = false, repeat = false, toCursor = false, forceRun = false;
     uint16_t voice{};
+    struct CastSkill { uint16_t id; uint32_t owner; };
+    std::optional<CastSkill> expectedSkill;
 };
 
 struct MoveIntent {

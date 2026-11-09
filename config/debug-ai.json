@@ -233,5 +233,847 @@
       "action": "quest",
       "quest": "eve-of-destruction"
     }
-  ]
+  ],
+  "navigationExperience": {
+    "enabled": true,
+    "areas": [
+      {
+        "area": 1,
+        "landmarks": [
+          {
+            "npc": "akara",
+            "townVariant": 3,
+            "positions": [
+              [
+                122,
+                71
+              ]
+            ]
+          },
+          {
+            "npc": "cain5",
+            "townVariant": 3,
+            "positions": [
+              [
+                74,
+                106
+              ]
+            ]
+          },
+          {
+            "npc": "charsi",
+            "townVariant": 3,
+            "positions": [
+              [
+                24,
+                82
+              ]
+            ]
+          },
+          {
+            "npc": "gheed",
+            "townVariant": 3,
+            "positions": [
+              [
+                25,
+                143
+              ]
+            ]
+          },
+          {
+            "npc": "kashya",
+            "townVariant": 3,
+            "positions": [
+              [
+                78,
+                93
+              ]
+            ]
+          },
+          {
+            "npc": "warriv1",
+            "townVariant": 3,
+            "positions": [
+              [
+                56,
+                100
+              ]
+            ]
+          },
+          {
+            "npc": "akara",
+            "townVariant": 1,
+            "positions": [
+              [
+                212,
+                46
+              ]
+            ]
+          },
+          {
+            "npc": "cain5",
+            "townVariant": 1,
+            "positions": [
+              [
+                164,
+                81
+              ]
+            ]
+          },
+          {
+            "npc": "charsi",
+            "townVariant": 1,
+            "positions": [
+              [
+                114,
+                57
+              ]
+            ]
+          },
+          {
+            "npc": "gheed",
+            "townVariant": 1,
+            "positions": [
+              [
+                116,
+                118
+              ]
+            ]
+          },
+          {
+            "npc": "kashya",
+            "townVariant": 1,
+            "positions": [
+              [
+                171,
+                66
+              ]
+            ]
+          },
+          {
+            "npc": "warriv1",
+            "townVariant": 1,
+            "positions": [
+              [
+                146,
+                75
+              ]
+            ]
+          },
+          {
+            "npc": "akara",
+            "townVariant": 2,
+            "positions": [
+              [
+                192,
+                101
+              ]
+            ]
+          },
+          {
+            "npc": "cain5",
+            "townVariant": 2,
+            "positions": [
+              [
+                144,
+                136
+              ]
+            ]
+          },
+          {
+            "npc": "charsi",
+            "townVariant": 2,
+            "positions": [
+              [
+                94,
+                112
+              ]
+            ]
+          },
+          {
+            "npc": "gheed",
+            "townVariant": 2,
+            "positions": [
+              [
+                98,
+                177
+              ]
+            ]
+          },
+          {
+            "npc": "kashya",
+            "townVariant": 2,
+            "positions": [
+              [
+                155,
+                131
+              ]
+            ]
+          },
+          {
+            "npc": "warriv1",
+            "townVariant": 2,
+            "positions": [
+              [
+                126,
+                130
+              ]
+            ]
+          },
+          {
+            "npc": "akara",
+            "townVariant": 0,
+            "positions": [
+              [
+                192,
+                16
+              ]
+            ]
+          },
+          {
+            "npc": "cain5",
+            "townVariant": 0,
+            "positions": [
+              [
+                144,
+                51
+              ]
+            ]
+          },
+          {
+            "npc": "charsi",
+            "townVariant": 0,
+            "positions": [
+              [
+                94,
+                27
+              ]
+            ]
+          },
+          {
+            "npc": "gheed",
+            "townVariant": 0,
+            "positions": [
+              [
+                95,
+                87
+              ]
+            ]
+          },
+          {
+            "npc": "kashya",
+            "townVariant": 0,
+            "positions": [
+              [
+                153,
+                46
+              ]
+            ]
+          },
+          {
+            "npc": "warriv1",
+            "townVariant": 0,
+            "positions": [
+              [
+                126,
+                45
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "area": 40,
+        "landmarks": [
+          {
+            "npc": "atma",
+            "townVariant": 2,
+            "positions": [
+              [
+                131,
+                44
+              ]
+            ]
+          },
+          {
+            "npc": "cain2",
+            "townVariant": 2,
+            "positions": [
+              [
+                130,
+                86
+              ]
+            ]
+          },
+          {
+            "npc": "drognan",
+            "townVariant": 2,
+            "positions": [
+              [
+                88,
+                26
+              ]
+            ]
+          },
+          {
+            "npc": "elzix",
+            "townVariant": 2,
+            "positions": [
+              [
+                30,
+                96
+              ]
+            ]
+          },
+          {
+            "npc": "fara",
+            "townVariant": 2,
+            "positions": [
+              [
+                115,
+                80
+              ]
+            ]
+          },
+          {
+            "npc": "geglash",
+            "townVariant": 2,
+            "positions": [
+              [
+                148,
+                28
+              ]
+            ]
+          },
+          {
+            "npc": "greiz",
+            "townVariant": 2,
+            "positions": [
+              [
+                28,
+                48
+              ]
+            ]
+          },
+          {
+            "npc": "jerhyn",
+            "townVariant": 2,
+            "positions": [
+              [
+                71,
+                148
+              ]
+            ]
+          },
+          {
+            "npc": "lysander",
+            "townVariant": 2,
+            "positions": [
+              [
+                113,
+                107
+              ]
+            ]
+          },
+          {
+            "npc": "meshif1",
+            "townVariant": 2,
+            "positions": [
+              [
+                213,
+                78
+              ]
+            ]
+          },
+          {
+            "npc": "warriv2",
+            "townVariant": 2,
+            "positions": [
+              [
+                146,
+                200
+              ]
+            ]
+          },
+          {
+            "npc": "atma",
+            "townVariant": 1,
+            "positions": [
+              [
+                131,
+                44
+              ]
+            ]
+          },
+          {
+            "npc": "cain2",
+            "townVariant": 1,
+            "positions": [
+              [
+                130,
+                86
+              ]
+            ]
+          },
+          {
+            "npc": "drognan",
+            "townVariant": 1,
+            "positions": [
+              [
+                88,
+                28
+              ]
+            ]
+          },
+          {
+            "npc": "elzix",
+            "townVariant": 1,
+            "positions": [
+              [
+                26,
+                102
+              ]
+            ]
+          },
+          {
+            "npc": "fara",
+            "townVariant": 1,
+            "positions": [
+              [
+                115,
+                80
+              ]
+            ]
+          },
+          {
+            "npc": "geglash",
+            "townVariant": 1,
+            "positions": [
+              [
+                148,
+                28
+              ]
+            ]
+          },
+          {
+            "npc": "greiz",
+            "townVariant": 1,
+            "positions": [
+              [
+                26,
+                46
+              ]
+            ]
+          },
+          {
+            "npc": "jerhyn",
+            "townVariant": 1,
+            "positions": [
+              [
+                71,
+                148
+              ]
+            ]
+          },
+          {
+            "npc": "lysander",
+            "townVariant": 1,
+            "positions": [
+              [
+                113,
+                107
+              ]
+            ]
+          },
+          {
+            "npc": "meshif1",
+            "townVariant": 1,
+            "positions": [
+              [
+                213,
+                78
+              ]
+            ]
+          },
+          {
+            "npc": "warriv2",
+            "townVariant": 1,
+            "positions": [
+              [
+                146,
+                200
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "area": 50,
+        "bounds": [
+          10000,
+          5000,
+          80,
+          95
+        ],
+        "landmarks": [
+          {
+            "connection": 51,
+            "positions": [
+              [
+                10042,
+                5016
+              ],
+              [
+                10044,
+                5082
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "area": 51,
+        "bounds": [
+          10000,
+          5595,
+          160,
+          160
+        ],
+        "landmarks": [
+          {
+            "connection": 52,
+            "positions": [
+              [
+                10012,
+                5611
+              ],
+              [
+                10144,
+                5737
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "area": 52,
+        "bounds": [
+          10000,
+          6595,
+          160,
+          160
+        ],
+        "landmarks": [
+          {
+            "connection": 53,
+            "positions": [
+              [
+                10012,
+                6610
+              ],
+              [
+                10132,
+                6730
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "area": 53,
+        "bounds": [
+          10000,
+          7595,
+          160,
+          160
+        ],
+        "landmarks": [
+          {
+            "connection": 54,
+            "positions": [
+              [
+                10012,
+                7610
+              ],
+              [
+                10132,
+                7730
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "area": 54,
+        "bounds": [
+          10000,
+          8595,
+          160,
+          160
+        ],
+        "landmarks": [
+          {
+            "object": 298,
+            "positions": [
+              [
+                10073,
+                8668
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "area": 75,
+        "landmarks": [
+          {
+            "npc": "alkor",
+            "townVariant": 0,
+            "positions": [
+              [
+                83,
+                8
+              ]
+            ]
+          },
+          {
+            "npc": "asheara",
+            "townVariant": 0,
+            "positions": [
+              [
+                33,
+                90
+              ]
+            ]
+          },
+          {
+            "npc": "cain3",
+            "townVariant": 0,
+            "positions": [
+              [
+                139,
+                63
+              ]
+            ]
+          },
+          {
+            "npc": "hratli",
+            "townVariant": 0,
+            "positions": [
+              [
+                219,
+                38
+              ]
+            ]
+          },
+          {
+            "npc": "meshif2",
+            "townVariant": 0,
+            "positions": [
+              [
+                111,
+                165
+              ]
+            ]
+          },
+          {
+            "npc": "ormus",
+            "townVariant": 0,
+            "positions": [
+              [
+                118,
+                85
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "area": 103,
+        "landmarks": [
+          {
+            "npc": "cain4",
+            "townVariant": 0,
+            "positions": [
+              [
+                21,
+                28
+              ]
+            ]
+          },
+          {
+            "npc": "halbu",
+            "townVariant": 0,
+            "positions": [
+              [
+                83,
+                23
+              ]
+            ]
+          },
+          {
+            "npc": "jamella",
+            "townVariant": 0,
+            "positions": [
+              [
+                83,
+                58
+              ]
+            ]
+          },
+          {
+            "npc": "tyrael2",
+            "townVariant": 0,
+            "positions": [
+              [
+                20,
+                20
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "area": 109,
+        "landmarks": [
+          {
+            "npc": "cain6",
+            "townVariant": 0,
+            "positions": [
+              [
+                77,
+                86
+              ]
+            ]
+          },
+          {
+            "npc": "drehya",
+            "townVariant": 0,
+            "positions": [
+              [
+                107,
+                114
+              ]
+            ]
+          },
+          {
+            "npc": "larzuk",
+            "townVariant": 0,
+            "positions": [
+              [
+                143,
+                28
+              ]
+            ]
+          },
+          {
+            "npc": "malah",
+            "townVariant": 0,
+            "positions": [
+              [
+                82,
+                30
+              ]
+            ]
+          },
+          {
+            "npc": "nihlathak",
+            "townVariant": 0,
+            "positions": [
+              [
+                76,
+                126
+              ]
+            ]
+          },
+          {
+            "npc": "qual-kehk",
+            "townVariant": 0,
+            "positions": [
+              [
+                58,
+                81
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "area": 110,
+        "travelDirections": [
+          {
+            "to": 111,
+            "direction": [
+              -1,
+              0
+            ]
+          },
+          {
+            "to": 109,
+            "direction": [
+              1,
+              0
+            ]
+          }
+        ]
+      },
+      {
+        "area": 111,
+        "travelDirections": [
+          {
+            "to": 112,
+            "direction": [
+              -1,
+              -1
+            ]
+          },
+          {
+            "to": 110,
+            "direction": [
+              1,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "area": 112,
+        "travelDirections": [
+          {
+            "to": 113,
+            "direction": [
+              -1,
+              -1
+            ]
+          },
+          {
+            "to": 111,
+            "direction": [
+              1,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "area": 117,
+        "travelDirections": [
+          {
+            "to": 118,
+            "direction": [
+              -1,
+              -1
+            ]
+          },
+          {
+            "to": 115,
+            "direction": [
+              1,
+              1
+            ]
+          }
+        ]
+      }
+    ]
+  }
 }

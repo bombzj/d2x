@@ -33,7 +33,7 @@ class NativeMapGenerator {
         std::vector<size_t> rooms;
     };
     std::map<int, Level> levels_;
-    std::map<int,std::vector<std::array<int,3>>> townPresetPositions_;
+    std::map<std::pair<int,int>,std::vector<std::array<int,3>>> townPresetPositions_;
     // Global game-tile buckets; only allocated rooms participate in lookups.
     std::map<std::pair<int,int>, std::vector<size_t>> roomBuckets_;
     std::map<std::pair<int, uint32_t>, std::shared_ptr<RetailTileSelector>> selectors_;
@@ -82,7 +82,9 @@ class NativeMapGenerator {
     // BH LK Chest Lines: resolved preset object classes (Objects.txt Id) with
     // global subtile coordinates; empty until the level is allocated.
     std::vector<std::array<int, 3>> levelPresetObjects(int level) const;
-    const std::vector<std::array<int,3>> &townPresetPositions(int level);
+    // Full town artwork's authored service sites, including object markers.
+    // Resolving a preset does not activate rooms, acquire collision or spawn units.
+    const std::vector<std::array<int,3>> &townPresetPositions(int level,int type=1);
     bool waypointObject(int id) const {return identities_.waypointObject(id);}
     const auto &layout() const { return layout_; }
     const auto &tiles() const { return tiles_; }

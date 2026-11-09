@@ -647,6 +647,29 @@ bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTa
     return true;
 }
 }
+bool prepareMonsterModeClock(Archives &archives,const AnimDataTable &animations,const MonsterRecord &record,
+    std::string_view source,server::MonsterAttackRule &action,bool skillAction) {
+    std::string mode(source);
+    std::transform(mode.begin(),mode.end(),mode.begin(),[](unsigned char c){return char(std::tolower(c));});
+    const auto motion=loadMonsterMotionTiming(animations,record.token,mode,
+        monsterModeWeapon(archives,record.token,mode,record.baseWeapon));
+    if(!motion) return false;
+    const auto marker=std::ranges::find_if(motion->flags,[](uint8_t flag){return flag==1 || flag==2 || flag==4;});
+    if(marker!=motion->flags.end()) {
+        if(!skillAction) return false;
+        const auto clock=loadMonsterActionTiming(animations,record.token,mode,
+            monsterModeWeapon(archives,record.token,mode,record.baseWeapon),*marker);
+        if(!clock) return false;
+        action.duration=animationSecondsTicks(clock->duration);
+        action.release=std::clamp(animationSecondsTicks(clock->impact),1,action.duration);
+        action.animation=AnimationTiming{clock->frames,clock->speed};action.animationAction=clock->actionFrame;
+        action.animationFlags=clock->flags;action.animationEvent=*marker;return true;
+    }
+    // MonMode still runs ENDANIM. An out-of-range marker is not an impact.
+    action.duration=animationSecondsTicks(motion->duration);action.release=action.duration;
+    action.animation=AnimationTiming{motion->frames,motion->speed};action.animationAction=motion->frames;
+    action.animationFlags=motion->flags;return true;
+}
 bool prepareMonsterActionClock(Archives &archives,const AnimDataTable &animations,const DataTable &sequences,
     const MonsterRecord &record,std::string_view mode,int event,server::MonsterAttackRule &action) {
     return clockAction(archives,animations,sequences,record,mode,event,action);

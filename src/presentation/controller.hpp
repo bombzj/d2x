@@ -1,7 +1,9 @@
 #pragma once
 #include "input.hpp"
 #include "world/world_input_view.hpp"
+#include "gameplay/character/intents.hpp"
 #include "gameplay/items/intents.hpp"
+#include <chrono>
 
 namespace d2x {
 class IActorClient;
@@ -29,15 +31,12 @@ class SceneController {
     bool releaseAfterLoad_ = false;
     bool skillGesture_ = false;
     struct QuickCastPending {
-        bool active = false;
-        int skill = -1;
-        uint32_t owner = UINT32_MAX;
-        size_t hand = 0;
-        float notBefore = 0;
-        float deadline = 0;
+        SelectMouseSkill selection;
+        unsigned weaponSet;
+        std::chrono::steady_clock::time_point deadline;
+        bool selectionRequested = false;
     };
-    QuickCastPending quickCast_;
-    bool quickCastGesture_ = false;
+    std::optional<QuickCastPending> quickCast_;
     size_t lastSkillHotkey_{};
     enum class Gesture { None, Move, Interact, LeftCast, RightCast };
     Gesture gesture_ = Gesture::None;
@@ -56,6 +55,7 @@ class SceneController {
     void openGameMenu(Vec mouse);
     bool handleInventory(const FrameInput &input);
     bool handleSkills(const FrameInput &input);
+    void handleQuickCast(const FrameInput &, const WorldInputView &);
     bool handleNpcMenu(const FrameInput &input);
     bool handleNpcDialogue(const FrameInput &input);
     bool handleNpcShop(const FrameInput &input);
@@ -81,5 +81,6 @@ class SceneController {
     void discardBufferedInput(bool focused);
     EntityId combatTarget() const { return lockedTarget_; }
     bool temporaryRun() const { return temporaryRun_; }
+    const SelectMouseSkill *quickCastSelection() const { return quickCast_ ? &quickCast_->selection : nullptr; }
 };
 } // namespace d2x

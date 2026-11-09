@@ -491,8 +491,9 @@ void RemoteScene::stopNpcPath(const OnlineView &view, OnlineUnitKey key) {
     if (!npcPathPosition(view,key)) return;
     auto &pose = impl_->motion.at(key);
     pose.npcClickStopped = true;
+    pose.finishedMonsterMovement = view.world.units.at(key).actionRevision;
     pose.position=pose.pathStep.stop(pose.position+Vec{.5f,.5f})-Vec{.5f,.5f};
-    pose.route.clear(); pose.goal.reset(); pose.pathMoving = false;
+    pose.route.clear(); pose.goal.reset(); pose.pathMoving = false; pose.pathElapsed=0; pose.stopDestination.reset();
 }
 std::optional<Vec> RemoteScene::playerPathPosition(const OnlineView &view) const {
     // Reuse assignment/area/discontinuity checks, but exclude visual correction.

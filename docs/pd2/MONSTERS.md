@@ -2,13 +2,15 @@
 
 本页维护非玩家实体的身份、属性及生命周期差异。版本见[版本与证据](BUILDS.md)；召唤／攻击程序的算法归[技能](SKILLS.md)，区域来源归[地图](MAPS.md)，装备属性归[物品](ITEMS.md)。定义准备和AI执行分别归[怪物模块](../modules/MONSTERS.md)。
 
-公共客户端攻击目标资格现读取当前挂载MonStatsEx→MonStats2.isAtt，不根据零售Hydra名称或编号排除单位；阵营威胁识别仍独立。零售王座所见九头蛇误选修正不能据此认证当前PD2核心所有动态可攻击／选择标志、召唤及悬停组合，仍需对应版本实机核对，公共依据见[怪物表现](../gameplay/monsters/PRESENTATION.md#活体攻击目标与悬停)。
+公共攻击目标资格读取挂载表的 `MonStatsEx → MonStats2.isAtt`。PD2 动态选择、召唤与悬停组合仍待版本对照，公共入口见[怪物选取](../gameplay/monsters/PRESENTATION.md#活体攻击目标与悬停)。
 
-共享绘制另补世界COF中DC6组件的基线换算（DCC保持既有顶边），以及当前Missiles.Trans1／2到原PL2 Screen／Burn的分派，依据本机零售客户端及当前资源，详见[光照与合成](../gameplay/world/LIGHTING.md)。这会影响PD2同类资源消费者，但本轮尚未认证当前核心的专用绘制Hook、全部混合组件与新弹体组合，不把零售TY／UnHolyBolt结果扩大为PD2验收。
+PD2 普通怪物与 NPC 复用零售 1.13c 的[公共客户端动作消费者](../gameplay/monsters/PRESENTATION.md#客户端动作与停步边界)，专用技能位移走各自分支。公共路径与 PD2 专用动作的组合仍待运行对照。
 
-零售Do129的通用拥有者／玩家目标及整数落点补齐只在非PD2规则下启用；PD2保留原有AI／目标门禁及坐标路径，未用本机1.13c结论替代核心专用分支。公共下马输出容量检查按实际三条状态事实预留，已开始的下马死亡继续点随真实跨区迁移更新，不因旧区域或原目标撤出丢失；未据此认证PD2全挂载组合。
+世界 COF 组件和弹体混色使用[公共光照与合成](../gameplay/world/LIGHTING.md)。PD2 核心的专用绘制 Hook、混合组件和新弹体组合仍待核对。
 
-公共消费者另补只读技能`summode`引用与`lob`标量、怪物权威DT结束转DD及死单位重入保留DD、尼拉塞克普通A1／A2准入例外和Shout原动作事件读取。当前证据来自零售第五幕单机及MPQ／D2MOO，未核实当前PD2核心对应差异，不标记PD2运行通过。COF mode3的世界单点光照组件改走原索引PL2 Screen，同样保留PD2组合待核对边界。
+Do129 的拥有者／玩家目标和整数落点适配仅用于零售规则。PD2 沿专用 AI、目标门禁及坐标路径。下马死亡的跨区继续点与状态事实容量复用公共执行，PD2 场景仍待对照。
+
+共享的 `summode`／`lob` 读取、DT／DD 生命周期、尼拉塞克普通攻击准入及 Shout 动作事件依据零售规则。PD2 核心的对应分支仍待核实。
 
 ## 数据范围与新增身份
 
@@ -18,9 +20,9 @@
 
 基础生命、等级、伤害、防御、抗性、速度、组件和人口参数继续读取当前MonStats／MonStats2／MonLvl及区域输入，不为每个地图变种复制原版参数。真实身份、原图、AI程序、技能程序、出生／死亡及掉落是不同的接入条件；只有数据记录不能作为完整怪物实现的证明。
 
-UMod26沿原D2MOO `MONSTERUNIQUE_UMod26_Teleport`独立登记MonTeleport及模式4，不要求存在普通A1伤害。PD2的FetishShaman等只有A1技能标记的家族，词缀准备沿`hosting/pd2/monster_actions::prepareNativeClock`读取真实动作时钟；不能因`rule.attacks`没有4拒绝暗金准备并阻塞人口续办。原有A1攻击家族仍沿其已准备时钟，缺真实动作资源继续拒绝。
+PD2 的 `prepareNativeClock` 委托公共 `prepareMonsterModeClock`，为只有 A1 技能标记的家族读取实际动画事件或 ENDANIM。FetishShaman 等家族的 UMod26 使用这一路径，规则及资源缺失处理见[精英词缀](../gameplay/monsters/ELITES.md#当前运行效果)。
 
-公共任务出生消费者新增nativeResurrected准备标记，经原Admission.resurrected进入怪物的压缩资格；基础Diablo脚本出生准备沿-1／5／10尝试设置该标记。A4Q2公共源码另改为任务tick十次计数、真实Init55落点和整轮失败重试，清场沿实际房间／单位链及scriptDeath继续点，不以开封印玩家全HP伤害代替ModeDeath。此次依据是D2MOO及本机零售1.13c，尚未定点核实当前PD2核心同名分支，不能将公共消费者改变直接标记为PD2等价通过；零售新增Clt16／37–41／59／62／63、FX环境和任务音乐入口均未向PD2显示规则开启。新增源码已构建，行为仍待实测。
+基础 Diablo 出生及 A4Q2 清场使用公共任务消费者，依据 D2MOO 和零售 1.13c。PD2 核心的同名分支仍待核实，零售 Clt16／37–41／59／62／63 及环境、任务音乐分支未对 PD2 启用。
 
 ## MonStats与预设身份
 
@@ -62,8 +64,8 @@ MonStats技能名称按原NAMETOWORD忽略大小写链接，失败编译为-1；
 | 无起手的Do0且有srvmissile | 沿NativeMissile默认发射入口，保留原怪物攻击加成复制；空Do0不视为攻击程序 |
 | 无起手的Do30且存在真实目标状态，排除dark_pact | 沿MonsterCurse的原状态／属性列表、目标筛选和发布生命周期；MonWeaken、MonLowerRes、MonAmplifyDamage等不再因名称不同而落入缺失飞弹分支。Dark Pact另走专用程序，不能当普通诅咒 |
 | St53／Do95 | 沿已有怪物Inferno的实际事件帧、InfernoAnim／InfernoLen和持续发射，不按MegademonInferno等旧名称决定资格 |
-| 无起手Do23／43／68／124 | 分别复用定期状态及移动火迹、ShockWeb原子出生、弹体及本人战吼状态、已有怪物Druid周期状态；按实际回调准备，不为单个首领复制执行器。本批完整场景仍待原版对照 |
-| 无起手Do18／150／162、St31／Do67 | 分别准备真实状态防御技能、怪物Smite、Joust与Charge；状态、等级、模式和动画读当前表。Smite沿公共接触的A2属性与Calc2眩晕；Joust保留实际怪物模式属性，移动／接触／增益分阶段续办；坐标Charge允许空单位目标，释放时沿公共近距离搜索。已构建，尚未完成实机对照，Charge路径及跨帧时序仍受公共动作边界约束 |
+| 无起手Do23／43／68／124 | 分别复用定期状态及移动火迹、ShockWeb原子出生、弹体及本人战吼状态、已有怪物Druid周期状态；按实际回调准备，不为单个首领复制执行器。完整场景仍待原版对照 |
+| 无起手Do18／150／162、St31／Do67 | 分别准备真实状态防御技能、怪物Smite、Joust与Charge；状态、等级、模式和动画读当前表。Smite沿公共接触的A2属性与Calc2眩晕；Joust保留实际怪物模式属性，移动／接触／增益分阶段续办；坐标Charge允许空单位目标，释放时沿公共近距离搜索。Charge 路径与跨帧时序仍待实机对照 |
 
 准备只保留正基础技能等级，加原难度MonsterSkillBonus；施放和释放仍从真实单位属性采样等级。怪物技能程序加入实例的只读程序目录，不添加人物技能树节点，也不授予玩家技能。现有人物定义仅补必要的PD2程序元数据。重复序列事件重建每次回调的求值输入，背压等待同一释放，不重复提交已经出生的飞弹。
 
@@ -121,7 +123,7 @@ FlyingScimitar的普通Fn047已沿D2MOO恢复到公共AI：aip1为靠近概率�
 | 当前编译身份 | 当前核心入口／条件 | 差异与消费者边界 |
 | --- | --- | --- |
 | ubermephisto／704、uberdiablo／705、uberbaal／709 | `0x3579E0`、`0x357B90`、`0x357D40`按MonStats首WORD比较704／705／709 | 在委托原首领AI前另有仆从计数、随机选择和出生；专属数量／位置／所属关系未接入，普通首领AI不包含这层行为 |
-| leoricMapBoss／998 | `0x35D820`比较998且有目标 | `server/systems/ai/pd2/leoric.cpp`已接专用决策和真实属性446写回；五槽动作准备见上表。无目标仍委托原ReanimatedHorde；消费者已构建，完整场景尚未实机对照，不能计为P3完成 |
+| leoricMapBoss／998 | `0x35D820`比较998且有目标 | `server/systems/ai/pd2/leoric.cpp`已接专用决策和真实属性446写回；五槽动作准备见上表。无目标仍委托原ReanimatedHorde；完整场景仍待实机对照 |
 | GuardianOfFate／1064、GuardianOfFateClone／1065 | `0x35A470`比较1064／1065且有目标 | 已接专用CRT决策、FIFO寻位和Blink；909的SrvHit6出生消费者已接，完整场景／生命周期未闭合 |
 | ImperialPalaceBossJerhyn／1168 | `0x357180`比较1168 | Npc回调中拥有计数和独立动作，属于专用控制程序，不能由普通城镇NPC服务或敌对替身代替 |
 
@@ -145,7 +147,7 @@ GuardianOfFate的`0x35A470`使用CRT流，三项AI记忆为延后Blink标记、�
 
 当前召唤依赖550→908GuardianOfFateSummonOrb→909GuardianOfFateSummonHit。909的SrvHit6在安装器3A6D8C挂到3A5360，经39F0A0及当前版本表4A710C绑定配套Game47CF0的预设出生；sHitPar1／2／3为1065／1／67239936，即克隆身份、NU模式及0x4020000的无经验／无掉落标志。三项在当前TXT与BIN一致，不能从错误列名HitPar读空值。hosting按当前SrvHit6依赖准备真实原型；`missiles/pd2/hit.cpp`记录有序出生操作，`monsters/pd2/missile_spawn.cpp`复用原房间搜索、普通预设首次-1及可重试类的4环后备、NativeBirthPublication。半径零也消耗方向／符号抽样，后备继承首次的房间随机；不先探测再重复出生。克隆不自动建立主人／仆从归属，因为该原回调没有这一步。
 
-当前SrvHit6接普通、无附属碰撞物件的NU／S1出生；859→999 Leoric守卫及864→1001攻城兽火山的sHitPar2均为8，按实际S1资源准备birthTicks并沿公共出生等待／模式事实，缺动画明确暂缓。979额外的完整目标位及INITSEEDSET已接，其他未核实模式、特殊预设／暗金ID或部分目标位仍拒绝；当前五个直接调用者见[技能](SKILLS.md#刀刃反射)。出生基础调用对照D2MOO MonsterRegion／MonsterSpawn。Guardian决策、Orb和克隆出生的先前构建及管理准入已观察本体357／493／550及克隆357／493技能，完整战斗场景未验；新补的跨区Blink及出生标志已构建，完整跨区／出生场景尚待验证。Hell集合的空初始化证据及外部配置边界见[传送门控](SKILLS.md#pd2传送落点与怪物blink)；完整休眠重建、全局随机交错及场景死亡／奖励／释放仍未闭合，不据此宣布P3场景完成。
+当前SrvHit6接普通、无附属碰撞物件的NU／S1出生；859→999 Leoric守卫及864→1001攻城兽火山的sHitPar2均为8，按实际S1资源准备birthTicks并沿公共出生等待／模式事实，缺动画明确暂缓。979额外的完整目标位及INITSEEDSET已接，其他未核实模式、特殊预设／暗金ID或部分目标位仍拒绝；当前五个直接调用者见[技能](SKILLS.md#刀刃反射)。出生基础调用对照D2MOO MonsterRegion／MonsterSpawn。Guardian 本体的 357／493／550 和克隆的 357／493 已接入，实际战斗、跨区 Blink 及出生标志的组合仍待核对。Hell集合的空初始化证据及外部配置边界见[传送门控](SKILLS.md#pd2传送落点与怪物blink)；完整休眠重建、全局随机交错及场景死亡／奖励／释放仍未闭合，不据此宣布P3场景完成。
 
 原版MonsterMode的`sub_6FC641D0`在SplEndDeath=1时，将原单位交给`MONSTER_Reinitialize`并继续AI，Fetish Shaman的死亡子体保留GUID及房间登记。重初始化的Baal换类、Overseer变形和死亡换类入口在准备新属性之前传入现有RoomUnitRegistration，经身份校验后复用；不能先准备第二份登记、再在返回后覆盖，否则在真正换类前就因重复GUID中断。普通新生及休眠恢复仍须各自建立新登记。
 
@@ -163,7 +165,7 @@ GuardianOfFate的`0x35A470`使用CRT流，三项AI记忆为延后Blink标记、�
 
 佣兵服务、装备槽／资格及战斗程序是不同能力。CN七槽原请求及当前资格见[佣兵](../gameplay/characters/HIRELINGS.md)，服务回调见[城镇](TOWN.md)；它们不证明自有宿主具备全部PD2佣兵战斗差异。
 
-自有宿主的PD2动作准备独立于原版，入口为`src/hosting/pd2/hirelings.cpp`。身份、等级、装备、雇佣／复活及公共Fn061选择继续复用；当前Hireling表的隐藏技能也准备为实际佣兵的SkillRules，不借主人施法。Mode使用佣兵动画，SQ从MonStats.Skill／SkNmode链接MonSeq；第四幕SC使用当前AnimData的事件2。DefaultChance为零不要求准备不存在的默认攻击钟；罗格默认RogueMissile从SrvMissileA取得飞弹，无武器时保持原生弓动作身份。光环、被动、诅咒、近战、施法及MonWhirlwind分别接所属公共程序。
+自有宿主的PD2动作准备独立于原版，入口为`src/hosting/pd2/hirelings.cpp`。身份、等级、装备、雇佣／复活及公共Fn061选择继续复用；当前Hireling表的隐藏技能也准备为实际佣兵的SkillRules，不借主人施法。Mode使用佣兵动画，SQ从MonStats.Skill／SkNmode链接MonSeq；第四幕SC使用当前AnimData的事件2。DefaultChance为零不要求准备不存在的默认攻击钟；罗格默认RogueMissile从SrvMissileA取得飞弹，无武器时保持原生弓动作身份。本机PD2配置的pd2data.mpq仍将普通射击链接到CltDo66和CltMissileA的rogue1，D2X复用[普通箭客户端分支](../gameplay/characters/HIRELINGS.md#原数据与执行入口)，当前PD2画面待运行对照。光环、被动、诅咒、近战、施法及MonWhirlwind分别接所属公共程序。
 
 当前核心`0x35A030`在加权选择前维护首槽光环，chance0不禁用该槽。`0x356A00`为Hireling Id25／27／29维护Battle Orders：自身或主人缺状态且距离小于30时施放；其余同队玩家／本人伙伴在每100帧的前5帧检查，不新增随机抽取。独立消费者为`companions/pd2/hireling.cpp`。原NodeIndex11资格与复杂伙伴目标组合仍待完整对照；不能将PlayerPets的inactive标记等同于NodeIndex。
 

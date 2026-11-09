@@ -71,8 +71,9 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
     const auto &map = *scene.map;
     const auto &level = assets_.worldLevel(scene.level);
     const bool newGame = worldGameGeneration_ != scene.gameGeneration;
-    if (newGame || worldAreaGeneration_ != scene.areaGeneration) {
-        worldGameGeneration_ = scene.gameGeneration; worldAreaGeneration_ = scene.areaGeneration;
+    const bool newArea = newGame || worldAreaGeneration_ != scene.areaGeneration;
+    if (newArea) {
+        weatherRepositionSequence_ = 0;
         assets_.resetWorldTiles(); worldVisibility_.clear(); lighting_->resetSources();
         if (newGame) {lighting_->resetEnvironment();weather_->reset(scene.weatherSeed);beginWorldGame(scene.gameGeneration);}
     }
@@ -99,9 +100,12 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
         Vec feet{};
         int lightDirection = -1;
         bool alternateLight = false;
+        bool waterFloor = false;
     };
     std::vector<Entry> draw, roofs;
     const auto viewport = worldRenderViewport();
+    auto weatherViewport = worldViewport();
+    weatherViewport.height = std::max(0, H - 47);
     auto visible = [&](const Sprite &image, Vec at) {
         return image.texture.id && at.x + image.x < viewport.x + viewport.width &&
             at.y + image.y < viewport.y + viewport.height &&
@@ -131,6 +135,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
         Entry entry{sceneOrder(feet, pass, wall, layer), &image, at, tint};
         entry.feet = feet;
         entry.alternateLight = alternateLight;
+        entry.waterFloor = type == 0 && (map.terrain.tiles[size_t(index)]->materialFlags & 2);
         entry.lightDirection = type == 0 || type == 15 ? -1 : type == 13 ? -2 :
             map.terrain.tiles[size_t(index)]->lightDirection;
         if (type == 15) {
@@ -226,7 +231,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
         entry.pixelOffset=effect.pixelOffset;
         if (const auto program = assets_.clientMissilePrograms.find(effect.missileId);
             program != assets_.clientMissilePrograms.end() && program->second.localBlood) {
-            entry.heading = effect.direction;
+            if (!effect.nativeDirection) entry.heading = effect.direction;
             if (const auto visual = assets_.projectileVisuals.find(effect.missileId);
                 visual != assets_.projectileVisuals.end() && effect.age * visual->second.fps >= visual->second.frames)
                 entry.orderFlag = 1; // Native ISDEAD blood joins the ground pass.
@@ -275,26 +280,27 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
     auto &palette = prepareWorldLighting(scene, items,
         {minimum.x, minimum.y, maximum.x - minimum.x, maximum.y - minimum.y});
     if (level.rain || level.mud) assets_.prepareWeather(*weather_,scene.palette);
-    weather_->advance(scene.elapsed,level,project(scene.observer+scene.terrainOrigin)*view_.zoom,
-        W,H,lighting_->period(level.act),palette);
-    const auto weatherState=weather_->debugState();
-    assets_.streams.weather(scene.elapsed,weatherState.rainAllowed && !weatherState.snow,weatherState.density);
-    weather_->presentLightning();
-    if (weather_->takeThunder()) assets_.sceneAudio.play("event_thunder_1",uint64_t(view_.animationTime*25.f));
-    for (const auto index:visibleCells) {
-        const auto &instance=map.terrain.instances[index];
-        const auto *tile=map.terrain.tiles.at(size_t(instance.renderTile(scene.time)));
-        if (instance.type==0 && (tile->materialFlags&2)) {
-            const Vec feet{instance.x*5.f,instance.y*5.f};
-            weather_->waterTile(feet+scene.terrainOrigin,screen(feet),viewport);
-        }
+    for (auto event = std::ranges::upper_bound(scene.weatherRepositions, weatherRepositionSequence_,
+             {}, &OnlineWeatherReposition::sequence);
+         event != scene.weatherRepositions.end(); ++event) {
+        weather_->reposition(event->setupLevel ? &assets_.worldLevel(*event->setupLevel) : nullptr);
+        weatherRepositionSequence_ = event->sequence;
     }
-    weather_->finishWaterTiles();
+    const auto loadedAct = newArea ? std::optional{scene.weatherAct} : std::nullopt;
+    weather_->advance(scene.elapsed,level,loadedAct,project(scene.observer+scene.terrainOrigin)*view_.zoom,
+        W,int(weatherViewport.height),lighting_->period(level.act),palette);
+    worldGameGeneration_ = scene.gameGeneration;
+    worldAreaGeneration_ = scene.areaGeneration;
+    const auto weatherState=weather_->debugState();
+    assets_.streams.weather(scene.elapsed,weatherState.precipitationAllowed && !weatherState.snow,weatherState.density);
+    weather_->presentLightning(GetTime());
+    if (weather_->takeThunder()) assets_.sceneAudio.play("event_thunder_1",uint64_t(view_.animationTime*25.f));
+    weather_->beginWaterTiles();
     const PaletteBlendView::TargetScope targetScope(palette);
     bool splashesDrawn=false;
     const auto splashes=[&] {
         if (splashesDrawn) return;
-        weather_->drawSplashes(palette,[&](Vec position) {return screen(position-scene.terrainOrigin);});
+        weather_->drawSplashes(palette,[&](Vec position) {return screen(position-scene.terrainOrigin);},weatherViewport);
         splashesDrawn=true;
     };
     auto paint = [&](auto &entries) {
@@ -304,6 +310,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
             if (entry.order.pass>0 && !splashesDrawn) {terrainBatch.reset();splashes();}
             if (!entry.item) {
                 if (entry.tint.a == 0) continue;
+                if (entry.waterFloor) weather_->waterTile(entry.feet+scene.terrainOrigin);
                 if(!terrainBatch) terrainBatch.emplace(palette);
                 TileLightSamples samples;
                 if (entry.lightDirection == -2) { samples.values[0] = WHITE; samples.count = 1; }
@@ -336,7 +343,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
     paint(draw);
     splashes();
     paint(roofs);
-    weather_->draw(palette,viewport);
+    weather_->draw(palette,weatherViewport);
     EndScissorMode();
     return visibleCells;
 }

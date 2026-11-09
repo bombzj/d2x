@@ -150,8 +150,19 @@ void NativeRealmService::finishPendingLeave() {
     }
     const bool preparedReload = reload.has_value();
     if(!preparedReload) {
-        if(!host.prepareSave(*binding) || !host.exportCharacter(*binding)) return;
         const auto *room=shared.find(binding->game);
+        if(!host.prepareSave(*binding) || !host.exportCharacter(*binding)) {
+            if(room && !room->tcpIp && room->capacity==1) {
+                const auto view=host.read(*binding);
+                if(view && view->paused) {
+                    // Release automatic pause first so clearing the debug
+                    // override cannot suspend and discard accepted commands.
+                    host.pause(binding->game,false);
+                    host.debugPause(binding->game,std::nullopt);
+                }
+            }
+            return;
+        }
         if(room && room->tcpIp && room->tcpIpOwner==binding->player)
             for(auto *guest:shared.peers) if(guest!=this && guest->binding && guest->binding->game==binding->game)
                 if(!host.prepareSave(*guest->binding) || !host.exportCharacter(*guest->binding)) return;

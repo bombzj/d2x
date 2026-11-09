@@ -13,7 +13,6 @@ struct ClientPreferences {
     // BH/D2Hackmap display features.
     bool bhRevealMap = false;
     bool bhAlwaysShowLoot = false;
-    bool bhQuickCast = false;
     bool bhShowXpText = false;
     bool bhShowBeltStatus = false;
     bool bhForceLightRadius = false;
@@ -24,6 +23,8 @@ struct ClientPreferences {
     bool bhShowChests = false;
     bool bhAutomapOnJoin = false;
     bool bhShowLkChestLines = false;
+    bool bhQuickCast = false;
+    bool bhSkillBar = false;
     ControlBindings controls = defaultControlBindings();
     bool standardResolution = false;
     int customWindowWidth = 1280, customWindowHeight = 816;

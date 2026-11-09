@@ -22,6 +22,7 @@ struct ClientMissileInitialization {
     std::optional<uint32_t> seed;
     std::optional<int> sourceSkill; // Explicit native creation skill; absent means unobserved.
     std::optional<int> sourceLevel; // Creation may explicitly override the parent's rank.
+    std::optional<uint8_t> nativeDirection; // Explicit constructor callback facing.
     std::optional<int> animationRate,pixelHeight,ballisticHeight;
     std::optional<ClientMissileGraphics> graphics;
     bool distanceLimited{};

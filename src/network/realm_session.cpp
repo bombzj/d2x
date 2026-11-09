@@ -759,6 +759,13 @@ bool RealmSession::item_request_ready() const {
         Clock::now() >= impl_->nextItem &&
         (!request || request->state != OnlineItemRequest::State::Pending);
 }
+bool RealmSession::combat_request_ready() const {
+    std::lock_guard lock(impl_->mutex);
+    const auto &request = impl_->view.world.combatRequest;
+    return impl_->view.stage == OnlineStage::ProtocolReady && impl_->current_game(snapshot_) &&
+        Clock::now() >= impl_->nextCombat &&
+        (!request || request->state != OnlineCombatRequest::State::Pending);
+}
 std::vector<GamePacket> RealmSession::take_game_packets() {
     std::lock_guard lock(impl_->mutex);
     auto packets = std::move(impl_->worldPackets);

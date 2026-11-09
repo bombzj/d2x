@@ -42,12 +42,17 @@ class DebugExplorationMemory {
         uint64_t discontinuity{};
         std::optional<Cell> heading;
         std::optional<uint64_t> commitment;
+        std::optional<std::array<int,4>> expectedBounds; // Configured experience, never collision or storage bounds.
         std::shared_ptr<const AutomapSketch> sketch;
         uint16_t mask(int globalX,int globalY) const;
         std::vector<uint16_t> flatMasks() const;
         bool clear(int globalX,int globalY) const;
         bool stand(int globalX,int globalY) const;
         Passage *passage(uint64_t);
+    };
+    struct PlanProfile {
+        uint64_t calls{},structuralCalls{},doorBypassCalls{},storageCells{},expanded{},landingCandidates{},castCandidates{};
+        double prepareMs{},landingsMs{},searchMs{},finishMs{};
     };
     struct Plan {
         enum class Outcome {Unreachable, StartUnavailable, ExecutionBlocked, Goal, Passage} outcome=Outcome::Unreachable;
@@ -56,6 +61,7 @@ class DebugExplorationMemory {
         size_t expanded{};
         float cost{};
         bool backtracking{},doorFallback{};
+        PlanProfile profile;
     };
     // Transient execution constraints, never persisted as player terrain.
     struct Execution {
@@ -64,6 +70,7 @@ class DebugExplorationMemory {
         std::shared_ptr<const NavigationSnapshot> landingCollision;
         std::shared_ptr<const Grid> landingGrid; // Real collision, including closed doors.
         std::vector<NavigationRoom> rooms; // Acquired pages, used only for legal cast edges.
+        bool requiresDoor(Cell) const;
         bool landingAllowed(Cell) const;
         bool castRayAllowed(Cell from,Cell to,bool restricted) const;
         bool castAllowed(Cell from,Cell to,bool restricted) const;
@@ -79,9 +86,15 @@ class DebugExplorationMemory {
     // with no walking requirement between them; execution revalidates each cast.
     static Plan plan(const Area &,Vec from,int teleportRange=0,bool restricted=false,
         std::optional<Vec> goal={},float vicinity=2,uint64_t committed=0,bool exploreGoal=false,
-        const std::optional<std::vector<Cell>> &approaches={},const Execution *execution=nullptr,bool preferDoorBypass=true);
+        const std::optional<std::vector<Cell>> &approaches={},const Execution *execution=nullptr,bool preferDoorBypass=true,
+        std::optional<Cell> preferredDirection={},PlanProfile *profile=nullptr);
     static void defer(Area &,uint64_t passage);
-    static bool routeValid(const Area &,const Plan &,int range,bool restricted,const Execution *);
+    struct RouteRejection {
+        const char *reason="none";
+        size_t point{};
+        Cell from{},to{};
+    };
+    static bool routeValid(const Area &,const Plan &,int range,bool restricted,const Execution *,RouteRejection *rejection=nullptr);
   private:
     uint64_t game_{};
     std::optional<uint16_t> current_;

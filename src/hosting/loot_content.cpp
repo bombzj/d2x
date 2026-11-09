@@ -31,8 +31,10 @@
 #include "content/pd2/cube.hpp"
 #include <algorithm>
 #include <array>
+#include <iostream>
 #include <set>
 #include <stdexcept>
+#include <syncstream>
 namespace d2x {
 static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, const ClassicData &data, LootContent &cache) {
     // One source per cycle bounds content work. Rotate stalled sources so a
@@ -316,10 +318,19 @@ void preparePendingLoot(GameHost &host, GameHandle game, Archives &archives, con
                 prepared.minions.emplace(unit.id,std::move(rule));
             }
         } catch(const std::exception &error) {prepared.deferred=error.what();}
+        const auto reportFailure=[&](const std::string &reason) {
+            std::osyncstream(std::cerr)<<"[monster-modifiers] blocked area="<<int(request->area)
+                <<" tick="<<request->tick<<" token="<<request->token
+                <<" leader="<<request->leader.identity.monster<<" reason="<<reason<<'\n';
+        };
+        // This request is consumed once. Surface permanent content failures
+        // here rather than repeating an uninformative population stall.
+        if(!prepared.deferred.empty()) reportFailure(prepared.deferred);
         const auto installed=host.prepareModifiers(game,std::move(prepared));
         if(installed.status==server::DomainStatus::InvalidRequest) {
             server::monsters::PreparedModifiers failure;failure.token=request->token;
             failure.deferred="Native modifier rules failed authority validation";
+            reportFailure(failure.deferred);
             host.prepareModifiers(game,std::move(failure));
         }
         return;

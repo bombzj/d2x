@@ -318,10 +318,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             const ClientPreferences current{sharedClients->running(), panels.miniPanelOpen,
                 panels.automapLarge, panels.automapCenterWhenCleared,
                 panels.automapParty, panels.automapNames, panels.automapFade, panels.audio, panels.lighting,
-                panels.bhRevealMap, panels.bhAlwaysShowLoot, panels.bhQuickCast,
+                panels.bhRevealMap, panels.bhAlwaysShowLoot,
                 panels.bhShowXpText, panels.bhShowBeltStatus, panels.bhForceLightRadius,
                 panels.bhShowPathLine, panels.bhShowResistances, panels.bhShowMonsters,
                 panels.bhShowEnchantments, panels.bhShowChests, panels.bhAutomapOnJoin, panels.bhShowLkChestLines,
+                panels.bhQuickCast, panels.bhSkillBar,
                 panels.controls, preferences.standardResolution,
                 preferences.customWindowWidth, preferences.customWindowHeight};
             if (current != preferences) { preferences = current; preferencesDirty = true; ui.setAudioSettings(preferences.audio); }
@@ -1295,9 +1296,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         initial.standardResolution = preferences.standardResolution;
                         initial.controls = preferences.controls;
                         initial.bhEnabled = pd2Resources;
+                        initial.bhQuickCast = preferences.bhQuickCast;
+                        initial.bhSkillBar = preferences.bhSkillBar;
                         initial.bhRevealMap = preferences.bhRevealMap;
                         initial.bhAlwaysShowLoot = preferences.bhAlwaysShowLoot;
-                        initial.bhQuickCast = preferences.bhQuickCast;
                         initial.bhShowXpText = preferences.bhShowXpText;
                         initial.bhShowBeltStatus = preferences.bhShowBeltStatus;
                         initial.bhForceLightRadius = preferences.bhForceLightRadius;
@@ -1431,10 +1433,17 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     mapDisplay.visible = panels.automap; mapDisplay.large = panels.automapLarge;
                     mapDisplay.right = panels.minimapRight; mapDisplay.offset = panels.automapOffset; mapDisplay.running = sharedClients->running();
                     mapDisplay.multiplayer = !localConnection || lanConnection;
+                    const auto *quickCast = sharedController->quickCastSelection();
+                    const bool rightHand = quickCast && !input.leftPressed && !input.rightPressed ? quickCast->right
+                        : input.rightHeld || input.rightPressed;
                     worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,*sharedClients,
-                        sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed,
+                        sharedController->uiConsumed(),input.mouse,rightHand,
                         localConnection && !lanConnection && ((!input.focused && !options.noPauseOnFocusLoss) || panels.gameMenuOpen ||
                             (embedded && embedded->singlePlayerContentBlocked())));
+                    if (quickCast) {
+                        worldFrame.input.quickCastSkillSupported = scene->supportsQuickCast(std::max(0, quickCast->skill));
+                        worldFrame.input.combatRequestReady = session.combat_request_ready();
+                    }
                     if(noPickup && !input.showLoot) worldFrame.input.pickup.reset();
                     sharedController->handleWorld(input,worldFrame.input,frameSeconds);
                     scene->drawTargetInfo(view,worldFrame,*sharedUi,combat,sharedController->combatTarget());

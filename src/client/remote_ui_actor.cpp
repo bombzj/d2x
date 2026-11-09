@@ -61,7 +61,9 @@ bool RemoteUiClients::Impl::Actor::control(ActorControlIntent intent) {
                 intent.point.x >= 0 && intent.point.y >= 0 && intent.point.x <= UINT16_MAX && intent.point.y <= UINT16_MAX)
                 request.point = OnlinePoint{uint16_t(intent.point.x), uint16_t(intent.point.y)};
             else return false;
-            const bool accepted = o.combat.submit(request,intent.displayOrigin);
+            std::optional<OnlineSkillSelection> expected;
+            if (intent.expectedSkill) expected = OnlineSkillSelection{intent.expectedSkill->id, intent.expectedSkill->owner};
+            const bool accepted = o.combat.submit(request, intent.displayOrigin, expected);
             if (!accepted) o.notice = o.combat.reason();
             return accepted;
         }

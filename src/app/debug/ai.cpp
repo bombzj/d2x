@@ -467,7 +467,8 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
     for(const auto &[key,record]:padObservations) localLinks.push_back({{"area",std::get<0>(key)},{"identity",std::get<1>(key)},
         {"source",{std::get<2>(key),std::get<3>(key)}},{"destination",{record.destination.x,record.destination.y}},{"visits",record.visits}});
     return {{"state",state},{"active",active()},{"phase",phase},{"reason",reason},{"goalIndex",cursor},{"goals",std::move(plan)},
-        {"configuration",{{"file",configurationFile},{"characterClass",configurationClass},{"reload","explicit"}}},
+        {"configuration",{{"file",configurationFile},{"characterClass",configurationClass},{"reload","explicit"},
+            {"navigationExperienceAreas",navigationExperience.size()}}},
         {"behaviorLog",{{"file",behaviorLog.path},{"error",behaviorLog.error}}},
         {"navigationEfficiency",{{"activeMs",navigationEfficiency.activeMs},{"navigationWaitMs",navigationEfficiency.navigationWaitMs},
             {"walkModeMs",navigationEfficiency.modeMs[0]},{"townWalkModeMs",navigationEfficiency.modeMs[1]},
@@ -715,6 +716,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             {"player",player?Impl::Json{player->x,player->y}:Impl::Json(nullptr)},
             { "knowledgePolicy","client-collision-unit-observation-and-automap-independent"},{"terrainLevels",std::move(ownership)},
             {"unitObservationTiles",m.unitObserved},
+            {"experienceBounds",m.expectedBounds?Impl::Json(*m.expectedBounds):Impl::Json(nullptr)},
             { "masks",m.flatMasks()},{"mapSketch",m.sketch?Impl::Json{{"revision",m.sketch->revision},{"primitives",m.sketch->primitives},{"ink",std::move(sketchInk)},{"townServices",std::move(services)}}:Impl::Json(nullptr)},{"frontier",std::move(route)},{"passages",std::move(passages)},{"walkedRoutes",std::move(trails)}};
         const auto file=std::filesystem::path(s.behaviorLog.path).parent_path()/
             ("terrain-"+std::to_string(*s.area)+"-"+std::to_string(s.decisions)+".json");
@@ -799,6 +801,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
         }
         walk.navigationSearch().setDoorClasses(std::move(doorClasses));
         auto plan=s.parse(j);auto policy=s.parseCombat(j.value("combat",Impl::Json::object()));
+        auto experience=s.parseExperience(j.value("navigationExperience",Impl::Json::object()));
         std::set<uint16_t> requiredWaypointAreas;
         if(j.value("activateAllWaypoints",false)) {
             if(name!="debug-ai-start") throw std::invalid_argument("activateAllWaypoints belongs to the initial plan");
@@ -890,7 +893,8 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
                 throw std::invalid_argument("Original Malus pickup requires character level 8");
         }
         if(name=="debug-ai-append") {
-            if(j.contains("combat") || j.contains("mobility") || j.contains("supplies") || j.contains("events")) throw std::invalid_argument("Append inherits the current plan's combat, mobility, supplies and event policies");
+            if(j.contains("combat") || j.contains("mobility") || j.contains("supplies") || j.contains("events") || j.contains("navigationExperience"))
+                throw std::invalid_argument("Append inherits the current plan's combat, mobility, supplies, events and navigation experience");
             if(!s.live() || s.game!=view.gameGeneration) throw std::invalid_argument("No live AI plan to append to");
             if(s.goals.size()+plan.size()>128) throw std::invalid_argument("AI queue exceeds 128 goals including required waypoints");
             s.goals.insert(s.goals.end(),plan.begin(),plan.end());s.note("goals-appended",std::to_string(plan.size()));
@@ -905,6 +909,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             if(view.world.waypointSource) control.useWaypoint(0);
             s.requiredWaypointAreas=std::move(requiredWaypointAreas);s.waypointDepartureArea.reset();s.nearbyWaypointArea.reset();s.missingWaypointAt.reset();
             s.policy=policy;s.mobilityPolicy=mobility;s.supplyPolicy=supplies;s.goals=std::move(plan);s.cursor=0;s.resetStep();s.history.clear();s.sequence=s.decisions=0;
+            s.navigationExperience=std::move(experience);
             s.excursionSkill.reset();s.excursionSkillPrepared=false;
             s.configurationClass=characterClass && *characterClass<classNames.size()?classNames[*characterClass]:"unknown";
             s.eventPolicy=events;
@@ -1006,18 +1011,25 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
     s.phaseReported=false;
     const auto decisionStarted=Impl::Clock::now();
     tickPlan(session,town,walk,control,combat,inventory,supplies,blocked,position,moving);
+    const auto decisionMs=std::chrono::duration<double,std::milli>(Impl::Clock::now()-decisionStarted).count();
     s.efficiencyWaiting=s.phase=="navigation-worker";
     s.efficiencyMode=town.read().town?1:s.mobilityTeleport && s.mobilityTarget?2:0;
     if(!town.read().town && s.searchDiagnostics.is_object() &&
         s.searchDiagnostics.value("area",uint16_t{})==town.read().area)
         s.efficiencyMode=s.searchDiagnostics.value("mobilityClass",0)==2?2:0;
-    const auto decisionMs=std::chrono::duration<double,std::milli>(Impl::Clock::now()-decisionStarted).count();
-    if(s.decisions!=decisions || decisionMs>=10) walk.navigationSearch().traceDecision({
+    if(s.decisions!=decisions || decisionMs>=10) {
+        nlohmann::json detail{
         {"decision",s.decisions},{"goal",s.cursor},{"phase",s.phase},{"reason",s.reason},
         {"elapsedMs",decisionMs},{"blocked",s.inputBlocked},{"area",town.read().area?nlohmann::json(*town.read().area):nlohmann::json(nullptr)},
         {"actionRecoveryBusy",s.actionRecoveryBusy},{"moving",moving},{"walkActive",walk.active()},
         {"searchDecision",s.searchDiagnostics.is_object()?s.searchDiagnostics.value("decision",uint64_t{}):uint64_t{}},
-        {"position",position?nlohmann::json{position->x,position->y}:nlohmann::json(nullptr)}});
+        {"position",position?nlohmann::json{position->x,position->y}:nlohmann::json(nullptr)},
+        {"function","DebugAi::tickPlan"},{"slowThresholdMs",20},{"runtimeSlow",decisionMs>=20}};
+        if(decisionMs>=20) detail["snapshot"]={{"walkIntent",s.walkIntent},{"child",walk.snapshot()},
+            {"search",s.searchDiagnostics},{"approach",s.approachDiagnostics},{"mobility",s.mobilityDiagnostics},
+            {"travel",s.travelDiagnostics}};
+        walk.navigationSearch().traceDecision(std::move(detail));
+    }
     s.tickQuestLog(session.read(),supplies,blocked);
     if(!s.active()) return;
     {

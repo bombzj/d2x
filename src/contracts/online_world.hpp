@@ -136,6 +136,10 @@ struct OnlineUnit {
     uint64_t actionRevision{}, hitRevision{};
     uint64_t actionReceivedMilliseconds{}; // Local receipt time, not server action time.
     std::optional<uint8_t> pathType, pathSteps, pathDistance;
+    // Client PATH_AllocDynamicPath defaults. Ordinary movement packets do
+    // not overwrite these; the knockback preamble does (4DD1F-4DD37).
+    uint8_t monsterPathMaxDistance{14}, monsterPathStopDistance{};
+    bool movementTargetMissing{}; // 0x68 target lookup failed at receipt; later assignment cannot revive this order.
     std::optional<uint8_t> positionCheckMode; // Monster mode before this native position verification.
     std::optional<int16_t> velocityPercent;
     // State stat widths belong to MPQ consumers; the transport retains ordered native messages.

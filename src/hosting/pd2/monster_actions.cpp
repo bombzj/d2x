@@ -54,25 +54,7 @@ bool hasMode(const ClassicData &data,const MonsterRecord &record,std::string_vie
 }
 bool prepareNativeClock(Archives &archives,const AnimDataTable &animations,const MonsterRecord &record,
     std::string_view source,server::MonsterAttackRule &action,bool skillAction) {
-    const auto mode=nativeName(source);
-    const auto motion=loadMonsterMotionTiming(animations,record.token,mode,
-        monsterModeWeapon(archives,record.token,mode,record.baseWeapon));
-    if(!motion) return false;
-    const auto marker=std::ranges::find_if(motion->flags,[](uint8_t flag){return flag==1 || flag==2 || flag==4;});
-    if(marker!=motion->flags.end()) {
-        if(!skillAction) return false;
-        const auto clock=loadMonsterActionTiming(animations,record.token,mode,
-            monsterModeWeapon(archives,record.token,mode,record.baseWeapon),*marker);
-        if(!clock) return false;
-        action.duration=animationSecondsTicks(clock->duration);
-        action.release=std::clamp(animationSecondsTicks(clock->impact),1,action.duration);
-        action.animation=AnimationTiming{clock->frames,clock->speed};action.animationAction=clock->actionFrame;
-        action.animationFlags=clock->flags;action.animationEvent=*marker;return true;
-    }
-    // MonMode still runs ENDANIM. An out-of-range marker is not an impact.
-    action.duration=animationSecondsTicks(motion->duration);action.release=action.duration;
-    action.animation=AnimationTiming{motion->frames,motion->speed};action.animationAction=motion->frames;
-    action.animationFlags=motion->flags;return true;
+    return prepareMonsterModeClock(archives,animations,record,source,action,skillAction);
 }
 void prepareMonsterSkillPrograms(const ClassicData &data,server::SkillRules &rules) {
     const auto &monsters=data.tables.at("monstats"),&skills=data.tables.at("skills");

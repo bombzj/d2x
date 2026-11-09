@@ -49,21 +49,36 @@ void WeatherView::reset(uint32_t seed) {
     if (stage_==2) density_=peak_;
     else if (duration_>0 && stage_==1) density_=(duration_-remaining_)*peak_/duration_;
     else if (duration_>0 && stage_==3) density_=peak_*remaining_/duration_;
-    tick_ = surfaceFrame_ = lastMudFrame_ = 0; remainder_ = 0; cameraKnown_ = false;
+    tick_ = surfaceFrame_ = lastRainFrame_ = lastMudFrame_ = 0;
+    remainder_ = 0; cameraKnown_ = false;
     enabled_ = mud_ = snow_ = largeSnow_ = forcedSnow_ = false;
     minWind_=42;windRange_=170;
     lightning_=secondFlash_=flashPending_=flash_=thunderSoundEnabled_=thunderReady_=false;
     lightningDelay_=-1; thunderSoundTicks_=-1;
+    frameSampleStart_=-1;
+    frameSampleCount_=framesPerSecond_=0;
     debugMode_ = WeatherDebugMode::Auto; debugDensity_ = 255;
-    drops_.clear(); splashes_.clear(); surfaceSteps_.clear();
+    drops_.clear(); splashes_.clear();
+}
+void WeatherView::reposition(const LevelRecord *setupLevel) {
+    splashes_.clear();
+    if (setupLevel && debugMode_ == WeatherDebugMode::Auto)
+        configurePrecipitation(setupLevel->act, setupLevel->id, true);
 }
 void WeatherView::lightning(float delay) {
     if (!lightning_ && lightningDelay_<0) lightningDelay_=std::max(0.f,delay);
 }
-void WeatherView::presentLightning() {
+void WeatherView::presentLightning(double now) {
+    // 5A9D8/806C2: use the completed one-second render count for the flash.
+    if (frameSampleStart_ < 0) frameSampleStart_ = now;
+    if (now - frameSampleStart_ > 1.0) {
+        frameSampleStart_ = now;
+        framesPerSecond_ = frameSampleCount_;
+        frameSampleCount_ = 0;
+    } else ++frameSampleCount_;
     flash_=false;
     if (!lightning_ || !flashPending_) return;
-    flashPending_=false; flash_=true;
+    flashPending_=false; flash_=framesPerSecond_>=10;
     if (!secondFlash_) {thunderTicks_=3;secondFlash_=true;}
     else {
         thunderTicks_=random(1500,500);secondFlash_=false;
@@ -114,11 +129,10 @@ void WeatherView::debugWeather(WeatherDebugMode mode, int density, const LevelRe
     randomizeCycle_=mode==WeatherDebugMode::Auto;
     lightning_=secondFlash_=flashPending_=flash_=thunderSoundEnabled_=thunderReady_=false;
     lightningDelay_=-1;thunderSoundTicks_=-1;
-    drops_.clear(); splashes_.clear(); surfaceSteps_.clear();
+    drops_.clear(); splashes_.clear();
     // Re-enter using the original level setup. Auto starts a fresh natural
     // cycle; an override never changes the MPQ record or a gameplay seed.
-    level_=-1;
-    enterLevel(level);
+    enterLevel(level, true);
 }
 void WeatherView::wind() {
     // D2Client 1.13c 80BE0. These are engine ranges, not MPQ parameters.
@@ -129,7 +143,7 @@ void WeatherView::wind() {
 void WeatherView::initializeCycle() {
     const std::array<int,4> durations{
         random(7500,7500),random(250,250),
-        random(3000,act_==2 || act_==4 ? 9000 : 3000),random(50,125)};
+        random(3000,fullDurationBase_),random(50,125)};
     int offset=random(durations[0]+durations[1]+durations[2]+durations[3]);
     stage_=0;
     while (stage_<3 && offset>=durations[size_t(stage_)]) {
@@ -143,17 +157,20 @@ void WeatherView::initializeCycle() {
         stage_==2?peak_:remaining_*peak_/duration_;
     randomizeCycle_=false;
 }
-void WeatherView::enterLevel(const LevelRecord &level) {
-    if (level_ == level.id) return;
+void WeatherView::enterLevel(const LevelRecord &level, bool initialize) {
+    if (!initialize && level_ == level.id) return;
     level_ = level.id; act_ = level.act;
     cameraKnown_ = false;
-    const bool initializing=randomizeCycle_;
-    if (initializing) initializeCycle();
-    configurePrecipitation(true);
-    if (initializing && stage_==2 && !forcedSnow_) sustainPrecipitation();
-    if (!cycle_.windInitialized) {
-        wind();
-        cycle_.windInitialized=true;
+    if (initialize) splashes_.clear();
+    if (initialize || debugMode_ != WeatherDebugMode::Auto) {
+        const bool randomized = randomizeCycle_;
+        if (randomized) initializeCycle();
+        configurePrecipitation(act_, level_, true);
+        if (randomized && stage_ == 2 && !forcedSnow_) sustainPrecipitation(level_);
+        if (!cycle_.windInitialized) {
+            wind();
+            cycle_.windInitialized = true;
+        }
     }
     if (!level.rain) drops_.clear();
     if (!level.rain || !level.mud)
@@ -162,8 +179,8 @@ void WeatherView::enterLevel(const LevelRecord &level) {
     applyDebugWeather();
     if (debugMode_==WeatherDebugMode::Auto) cycle_={stage_,remaining_,duration_,peak_,cycle_.windInitialized,true};
 }
-void WeatherView::configurePrecipitation(bool entering) {
-    if (act_!=4) {
+void WeatherView::configurePrecipitation(int act, int level, bool forceSnow) {
+    if (act!=4) {
         forcedSnow_=false;
         if (snow_) drops_.clear();
         snow_=false;
@@ -171,27 +188,27 @@ void WeatherView::configurePrecipitation(bool entering) {
         return;
     }
     wind();
-    forcedSnow_=level_==120 || level_==121;
-    if (level_>=109 && level_<=112) largeSnow_=false;
-    else if (level_==117 || forcedSnow_) largeSnow_=true;
+    forcedSnow_=level==120 || level==121;
+    if (level>=109 && level<=112) largeSnow_=false;
+    else if (level==117 || forcedSnow_) largeSnow_=true;
     const int choice=random(100);
-    const bool snow=entering || level_<109 || level_>112 || choice>=25;
+    const bool snow=forceSnow || level<109 || level>112 || choice>=25;
     if (forcedSnow_) {
         stage_=2;
-        sustainPrecipitation();
+        sustainPrecipitation(level);
     }
     if (snow) lightning_=false;
-    if (snow!=snow_ || entering) drops_.clear();
+    if (snow!=snow_ || (snow && forceSnow)) drops_.clear();
     snow_=snow;
 }
-void WeatherView::sustainPrecipitation() {
-    if (level_>=109 && level_<=112) {
+void WeatherView::sustainPrecipitation(int level) {
+    if (level>=109 && level<=112) {
         minWind_=42;windRange_=170;
         peak_=random(56,32);
-    } else if (level_==117) {
+    } else if (level==117) {
         minWind_=170;windRange_=56;
         peak_=random(112,32);
-    } else if (level_==120 || level_==121) {
+    } else if (level==120 || level==121) {
         minWind_=windRange_=28;wind_=targetWind_=28;
         peak_=256;
     } else {
@@ -203,8 +220,8 @@ void WeatherView::sustainPrecipitation() {
 WeatherView::Drop WeatherView::spawn(int width, int height, int period, const PaletteBlendView &palette) {
     Drop drop;
     drop.x = random(width);
-    // Retail reserves 47 pixels for its HUD and another 40 at the top.
-    // Our caller supplies the actual world height, keeping the 40-pixel range.
+    // 80753: full screen height minus 47 at the bottom and 40 at the top.
+    // The caller already excludes the 47-pixel strip.
     const int span = std::max(1,height-40);
     drop.bottom = random(span,40);
     drop.y = random(drop.bottom+20,-20);
@@ -217,7 +234,7 @@ WeatherView::Drop WeatherView::spawn(int width, int height, int period, const Pa
         drop.size = std::clamp(drop.size,0,7);
         drop.rest = 1;
         const int index = (drop.size*12/8) / (period==2 ? 4 : period==1 || period==3 ? 2 : 1);
-        const uint8_t c = uint8_t(120-index*4);
+        const uint8_t c = uint8_t(120+index*80/12);
         drop.color = palette.paletteColor({c,c,c,255});
     } else {
         const int shade = random(12);
@@ -252,20 +269,20 @@ void WeatherView::step(int width, int height, int period, const PaletteBlendView
         const bool forceSustain=forcedSnow_ && phase!=2;
         if (forceSustain) {
             stage_=2;
-            sustainPrecipitation();
+            sustainPrecipitation(level_);
         } else {
             if (remaining_ == 0) {
                 phase = (phase+1)%4;
                 constexpr std::array<int,4> ranges{7500,250,3000,50};
-                const std::array<int,4> minima{7500,250,act_==2 || act_==4 ? 9000 : 3000,125};
+                const std::array<int,4> minima{7500,250,fullDurationBase_,125};
                 remaining_ = duration_ = random(ranges[size_t(phase)],minima[size_t(phase)]);
                 if (!forcedSnow_ || phase==2) {
                     stage_=phase;
                     if (phase==0) density_=0;
                     else if (phase==1) {
-                        configurePrecipitation(false);
+                        configurePrecipitation(act_,level_,false);
                         peak_=random(224,32);
-                    } else if (phase==2) sustainPrecipitation();
+                    } else if (phase==2) sustainPrecipitation(level_);
                     else if (phase==3) lightning_=false;
                 }
             }
@@ -284,10 +301,11 @@ void WeatherView::step(int width, int height, int period, const PaletteBlendView
     if (lightning_ && --thunderTicks_==0) flashPending_=true;
     if (debugMode_==WeatherDebugMode::Auto) cycle_={stage_,remaining_,duration_,peak_,cycle_.windInitialized,true};
 }
-void WeatherView::advance(float elapsed, const LevelRecord &level, Vec cameraPixels,
-    int width, int height, int period, const PaletteBlendView &palette) {
-    enterLevel(level);
-    if (width<=0 || height<=40) return;
+void WeatherView::advance(float elapsed, const LevelRecord &level, std::optional<int> loadedAct, Vec cameraPixels,
+    int width, int worldHeight, int period, const PaletteBlendView &palette) {
+    if (loadedAct) fullDurationBase_ = *loadedAct == 2 || *loadedAct == 4 ? 9000 : 3000;
+    enterLevel(level, loadedAct.has_value() || level_<0);
+    if (width<=0 || worldHeight<=40) return;
     if (cameraKnown_) {
         const int dx=int(cameraPixels.x)-int(camera_.x), dy=int(cameraPixels.y)-int(camera_.y);
         for (auto &drop:drops_) { drop.x-=dx; drop.y-=dy; }
@@ -311,34 +329,36 @@ void WeatherView::advance(float elapsed, const LevelRecord &level, Vec cameraPix
             const auto &art=s.bubble?bubbleArt_[size_t(s.kind)]:rainArt_[size_t(s.kind)];
             return s.ticks/2>=art.count;
         });
-        if (enabled_) step(width,height,std::clamp(period,0,3),palette);
+        if (enabled_) step(width,worldHeight,std::clamp(period,0,3),palette);
         ++surfaceFrame_;
-        const int rainChance=enabled_ && !snow_ && surfaceFrame_%4==0 ? density_*1000/256 : 0;
-        // 14050 uses a separate >25-frame gate for Mud, not every update.
-        const bool bubble= mud_ && surfaceFrame_-lastMudFrame_>25;
-        if (bubble) lastMudFrame_=surfaceFrame_;
-        if (rainChance || bubble) surfaceSteps_.push_back({rainChance,ticks-1-i,bubble});
     }
 }
-void WeatherView::waterTile(Vec position, Vec at, Rectangle viewport) {
-    if (surfaceSteps_.empty() || !CheckCollisionPointRec(rv(at),viewport)) return;
-    // 13E82/14050: only WATER material. Rain3/4 use the weather density
-    // every fourth client frame; Mud uses 100/1000 every 26 client frames.
-    for (const auto &step:surfaceSteps_) {
-        const auto surfaceRandom=[&](int range,int minimum=0) {return minimum+int(limitedRandom(surfaceRandom_,uint32_t(range)));};
-        const int chance=surfaceRandom(1000);
-        if (chance<step.rainChance) {
-            const int y=surfaceRandom(80),half=80-2*std::abs(y-40),x=surfaceRandom(half*2,-half);
-            // Inverse isometric pixel offset (D2's tile diamond is 160x80).
-            splashes_.push_back({position+unproject({float(x),float(y)}),surfaceRandom(2,2),step.age,false});
-        }
-        if (step.mud && chance<100) {
-            const int y=surfaceRandom(80),half=80-2*std::abs(y-40),x=surfaceRandom(half*2,-half);
-            splashes_.push_back({position+unproject({float(x),float(y-30)}),2,step.age,true});
-        }
+void WeatherView::beginWaterTiles() {
+    // 14050 checks elapsed client frames once per floor pass, even after catch-up.
+    splashChance_ = 0;
+    if (surfaceFrame_ - lastRainFrame_ > 3) {
+        lastRainFrame_ = surfaceFrame_;
+        if (enabled_) splashChance_ = density_ * 1000 / 256;
     }
+    bubblePass_ = mud_ && surfaceFrame_ - lastMudFrame_ > 25;
+    if (bubblePass_) lastMudFrame_ = surfaceFrame_;
 }
-void WeatherView::finishWaterTiles() { surfaceSteps_.clear(); }
+void WeatherView::waterTile(Vec position) {
+    if (!splashChance_ && !bubblePass_) return;
+    const auto surfaceRandom = [&](int range) { return int(limitedRandom(surfaceRandom_,uint32_t(range))); };
+    const int chance = surfaceRandom(1000);
+    const auto spot = [&](int rise) {
+        const int y = surfaceRandom(80);
+        const int half = 80 - 2 * std::abs(y - 40);
+        const int x = surfaceRandom(half * 2) - half;
+        return position + unproject({float(x), float(y - rise)});
+    };
+    if (chance < splashChance_) {
+        const auto at = spot(0);
+        splashes_.push_back({at,surfaceRandom(2)+2,0,false});
+    }
+    if (bubblePass_ && chance < 100) splashes_.push_back({spot(30),2,0,true});
+}
 void WeatherView::loadArt(Archives &archives, Graphics &graphics, int palette) {
     if (artPalette_==palette) return;
     for (size_t i=0;i<4;++i) {
@@ -352,14 +372,16 @@ void WeatherView::loadArt(Archives &archives, Graphics &graphics, int palette) {
     }
     artPalette_=palette;
 }
-void WeatherView::drawSplashes(const PaletteBlendView &palette, const std::function<Vec(Vec)> &screen) const {
+void WeatherView::drawSplashes(const PaletteBlendView &palette, const std::function<Vec(Vec)> &screen, Rectangle viewport) const {
     for (const auto &s:splashes_) {
         const auto &art=s.bubble?bubbleArt_[size_t(s.kind)]:rainArt_[size_t(s.kind)];
         if (s.ticks/2>=art.count) continue;
-        palette.draw(art.frame(0,s.ticks/2),screen(s.position));
+        const auto at = screen(s.position);
+        if (CheckCollisionPointRec(rv(at),viewport)) palette.draw(art.frame(0,s.ticks/2),at);
     }
 }
 void WeatherView::draw(const PaletteBlendView &palette, Rectangle viewport) const {
+    if (viewport.width<=0 || viewport.height<=0) return;
     if (flash_) {DrawRectangleRec(viewport,palette.paletteByte(255));return;}
     if (!enabled_) return;
     // 7FE80: software rain is a clipped palette line; snow is two short

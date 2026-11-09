@@ -1,8 +1,8 @@
 # 第三至第五幕怪物逐项接入台账
 
-更新：2026-10-18。第三至第五幕共用本页的逐项清单，各幕页面只列范围和入口。当前源码已登记01至122项，分别维护实现、原版依据与缺口；登记项不等于完整复刻。05／53／56共用的客户端Clt54连续发射已有源码，完整随机与表现仍待核对。未列为已接入的身份以源码准入为准。通用准入／替身和迁入规范见[COMMON](COMMON.md)。
+本页逐项维护第三至第五幕怪物、首领及专用场景程序。各条目记录当前实现、原版依据和未覆盖条件。通用准入及替身规则见[怪物公共规则](COMMON.md)。
 
-常规战役优先范围见[怪物目录](README.md#当前实施范围)；71项UberIzual及109至110项等高级红门事件本轮暂缓，不计入常规战役待补项。
+常规战役优先范围见[怪物目录](README.md#当前实施范围)；71项UberIzual及109至110项等高级红门事件单列于常规战役之外。
 
 ## 逐项接入
 
@@ -65,7 +65,7 @@
 | <a id="entry-46"></a>46 议会成员 | `councilmember1`至`councilmember3`与`baalhighpriest`沿Fn085；远程治疗／Hydra共享截止帧，接战后独立近战／S1／退离阶段；治疗选择邻房链严格最低整数生命百分比，允许原零生命上限单位；Hydra沿St14／Do144及三头Fn086，继承实际施放者技能／被动属性和阵营 | 当前MPQ、AnimData、零售Fn085（19080）、治疗回调（15660）、St14（42AD0）／Do144（43D40）／Fn086（A57E0）静态核对；抽取随机角点后仍沿原单位目标优先取坐标，不把怪物拥有者纳入玩家宠物上限或议会仆从死亡链；子体出生、治疗／召唤中断及房间切换待运行核对 |
 | <a id="entry-47"></a>47 邪恶之母及幼体 | `vilemother1`至`vilemother5`沿Fn068；邻房同一数值类别存活幼体的25距离计数、最大施放尝试、方向预检及近战／接近／绕行分别执行；`vilechild1`至5与`painworm1`至5沿Fn069，首次停顿5帧，随后按自身三难度参数行动 | 当前MPQ、MonSeq、零售Fn068（843F0）／069（7E4D0）及出生选择（7C6E0）／计数（B0DB0）静态核对；`seq_vileres`沿事件2第10帧，St49保存母体加原表偏移，Do91清除预约后按原搜索出生NOXP／NOTC幼体；无原仆从拥有关系 |
 | <a id="entry-48"></a>48 FingerMage | `fingermage1`至`fingermage5`沿Fn070；受击还击、无主人低生命首次九格退离、后续十四格逃离／恢复检查和带诅咒目标的接近分别保留；普通A1属性、自身FingerMageSpider等级与三难度距离／概率读原表 | 当前MPQ与零售Fn070（7E070）、Do101（B5110）静态核对；弹体177按原始构造器创建，循环公式独立于普通攻击加成，SrvDo11在没有自己的目标时读取拥有者当前目标；命中继续既有SrvHit19的首贴／重贴差异 |
-| <a id="entry-49"></a>49 Regurgitator | `regurgitator1`至`regurgitator4`沿Fn071；按邻房链寻找最近软质邪恶尸体，同距后者覆盖；保存真实尸体GUID和接近次数，沿原阶段完成吞尸、近身退离、A2喷吐与十六格退离 | 当前MPQ、AnimData、零售Fn071（83FE0）、尸体筛选（7BB00）与Do108（B5D40）静态核对；S1第6帧事件1删除实际尸体GUID，按其生命上限与原calc1=33回血；阶段2可选移动后立即站立8帧、施放失败仍转阶段4等原分支保留 |
+| <a id="entry-49"></a>49 Regurgitator | `regurgitator1`至`regurgitator4`沿Fn071；按邻房链寻找最近软质邪恶尸体，同距后者覆盖；保存真实尸体GUID和接近次数，沿原阶段完成吞尸、近身退离、A2喷吐与十六格退离 | 当前MPQ、AnimData、零售Fn071（83FE0）、尸体筛选（7BB00）与Do108（B5D40）静态核对；S1第6帧事件1删除实际尸体GUID，按其生命上限与原calc1=33回血；阶段2可选移动后立即站立8帧、施放失败仍转阶段4等原分支保留。客户端按 CltDo63（零售1.13c D2Client RVA 58A70／A2380）在吞尸怪脚边读取 `CltMissileA/B` 创建一团血肉和五团血迹，沿原象限及两轴随机偏移。初始种子使用现有客户端表现流，血肉动画结束后的原房间留存及实际画面待对照 |
 | <a id="entry-50"></a>50 近战DoomKnight | `doomknight1`、`dkfig1`与`dkfig2`沿Fn072；原A1和随机元素附伤按各自MonStats行准备，近战攻击／停顿、非近战接近／停顿分别读取三难度参数；接近使用路径13、一步到达及flags7失败分支 | 当前MPQ及零售Fn072（7DF00）静态核对；无主动技能，不套用远程Abyss／OblivionKnight技能 |
 | <a id="entry-51"></a>51 AbyssKnight | `doomknight2`沿Fn073；低生命且未持骨甲状态时按原概率施放MonBoneArmor，近身普通A1；DoomKnightMissile按实际S3组件选择毒／火／冰／物理弹体，恢复计数、路径2及随机6／7距离接近与绕行分别保留 | 当前MPQ、AnimData、零售Fn073（7DB70）、Do18（428F0）／148（B4C20）静态核对；S1第11帧事件2；MonBoneArmor不增加原表未声明的玩家吸收回调，MonBoneSpirit仅保留Fn073未调用的槽 |
 | <a id="entry-52"></a>52 OblivionKnight | `doomknight3`、`dkmag1`至`dkmag3`沿Fn074；近距Decrepify、寻找近战同伴避让、路径2退离失败后BoneSpirit、独立射击目标与远距绕行分别执行；DoomKnightMissile继续按自身S3组件选弹，Armor／Bestow槽不添加Fn074不存在的施放分支 | 当前MPQ、零售Fn074（84DB0）、Do10（4D270）／112（B5950）静态核对；Do112使用零售五项技能表与实际索引跳转，保留其与参考六项表的差别；Do10沿原目标引导和有符号WORD移位相加初始化，共用诅咒背压继续点，随机诅咒回调与引导目标消失组合待运行核对 |
@@ -114,7 +114,7 @@
 | <a id="entry-95"></a>95 BaalToStairs离场AI | 非敌对的baalcrabstairs接Fn138，保留NPC身份与原不可攻击资格；按邻房链找25距离内首个原563传送门，以Toward7和原速度走近，距离小于MPQ aip1才开放大殿并移除Actor。NPC原生AI与剧情逃离移动明确分工，零生命但未死亡的单位仍可行走 | 依据D2MOO AiThink／AiUtil／AiTactics／Units／A5Q6与当前MPQ。王座五波后的换类和调用见96至97项，完整离场链仍待核对。Clt73到达特效按原回调固定1级 |
 | <a id="entry-96"></a>96 王座Baal原地换类 | 独立的reinitializeBaalToStairs保留GUID／位置／房间登记及MonsterData身份，按新类重建属性／技能／AI并延续单位随机；发布changeclass及shortparam1，建立5帧首次思考。不执行督军Whip专有的强化／UMod33 | 依据D2MOO Monster_Reinitialize／Fn134与当前MPQ的baalcrabstairs准备；由97项王座AI在五波结束后调用。换类与休眠交错仍待核对 |
 | <a id="entry-97"></a>97 王座Baal五波AI | 非敌对原Actor接Fn134，三参数唯一维护波次／标志／截止帧；只查询原邻房内存活同阵营怪物，未清场时按aip1施放Decrepify。清场阶段发送原A4类提示、施放Do141并等待250帧；下一阶段学1级286并向自身Y+13施放原550飞弹，再等待100帧。五波后走96项换类及95项离场；删除任务执行器中的旧计时出生循环及重复波次字段 | 主要依据D2MOO AiThink／AiUtil／SUnitMsg／Event及当前MPQ。负等待在零售Fn134 A8469–A8472得到确认，沿Event将过去时间夹到下一帧。A4只发送原类编号，不删除服务端尸体；客户端尚未据此提前加载图形。五波完整流程、跨房休眠／多人交错仍待核对 |
-| <a id="entry-98"></a>98 BaalTaunt控制倒计时 | SrvDo34按剩余帧数比较Param1并整除所选分支间隔；修正旧实现误用已存活帧数，保留每帧以X坐标重置低种子、抽分支，再创建并立即触发所选控制子弹命中的顺序 | 依据D2MOO MissMode的SrvDo34及当前MPQ baal taunt control（546）；SrvHit58／59沿公共程序，客户端见99项，Actor／AI见100项。完整控制轨迹仍待原版对照 |
+| <a id="entry-98"></a>98 BaalTaunt控制倒计时 | SrvDo34按剩余帧数比较Param1并整除所选分支间隔；每帧以X坐标重置低种子、抽分支，再创建所选控制子弹并立即触发命中 | 依据D2MOO MissMode的SrvDo34及当前MPQ baal taunt control（546）；SrvHit58／59沿公共程序，客户端见99项，Actor／AI见100项。完整控制轨迹仍待原版对照 |
 | <a id="entry-99"></a>99 BaalTaunt客户端控制 | CltSt46在施放开始时按原目标创建MPQ控制飞弹并播放prgsound；CltDo56以X坐标重置低种子、按剩余帧数抽分支与判断间隔，创建子控制弹后立即执行命中并移除控制子体。CltHit62补随机闪电方向，CltHit63复用原毒云方向／速度，读取MPQ原图 | D2MOO缺少客户端实现，定点核对1.13c CltSt46 C4FC0、CltDo56 B70A0、CltHit62 B3720及63 B9BB0。Actor／AI见100项，完整表现及客户端共享随机仍待核对 |
 | <a id="entry-100"></a>100 BaalTaunt AI | baaltaunt沿真实非敌对人口Actor准备Fn136和原284技能，保持零生命但非死亡／不可攻击资格；无目标Idle25，目标离开站立动作则清计数，连续站立思考次数严格超过MPQ aip2后A1施放。按aip1／3决定停顿、走近或调用原空位放置跟随，不套Teleport技能特效 | 依据D2MOO AiThink／AiTactics／SUnit与当前MPQ／AnimData；SrvDo28／34及Hit58／59沿公共程序，客户端见99项。玩家站立资格读取现有移动／动作／恢复状态，真实场景／全模式及多人共享随机仍待核对 |
 | <a id="entry-101"></a>101 HellMeteor服务端控制 | 保留原非敌对／零生命控制Actor，按Fn033从自身单位种子依次抽施放概率、X及Y偏移，不依赖敌人目标；原213技能沿A1事件2调用公共Do28，随机坐标失败不重掷，停顿读取MPQ aip2。坐标Do28开放原无单位目标施放 | 依据D2MOO AiThink／SkillSor与当前MPQ；客户端见112至113项。完整表现／战斗及房间随机交错仍待原版对照 |
@@ -137,7 +137,7 @@
 | <a id="entry-118"></a>118 NpcBarb战场友军 | 当前MPQ均启用的act5barb1／act5barb2保持友军阵营和真实类型，接Fn127、原A1动作／伤害及受伤死亡生命周期；首次思考按头插登记目标组8，使敌人能选中该友军。近战A1后按aip1等待；近距按aip2机会跑向目标，衰老沿原Run→Walk／速度清除；否则先向西探索，只有路径失败才抽一次方向位并依次尝试南／北两条路线，全部失败NU15 | D2MOO Fn127／AiTactics／Targets为依据；因C++实参求值次序不明，定点核对1.13c Fn127（A66E0）确认坐标抽数为X→Y。参数／三难度伤害／动画来自当前MPQ，移动沿既有原生路径；静态核对Actor、A1接收、敌方目标链、首次激活及恢复准入，目标节点登记推进Actor版本。诊断复制wanderTargetOrder。MPQ Align=1对应内部STAT_ALIGNMENT=2（友军），不按同一编号解释。两种身份及三难度组合仍待完整对照；移动完成到AI的同帧时序受公共调度边界约束；城镇守卫act5barb3（Npc）及救援囚犯act5pow（Wussie）不混入本项 |
 | <a id="entry-119"></a>119 王座Baal卸载波次 | Fn134已完成的波次数迁至唯一Actor字段，待出生动作保留expected／next继续点；房间压缩写入该字段，恢复在重新思考前还原。只保留原参数0，临时标志与截止帧重置，不保存整个AI Controller；诊断phase从Actor投影，避免卸载后从第一波重新开始 | D2MOO SUnitInactive Save／RestoreSpecialMonsterParameters对BaseId baalthrone保存GetAiControlParam(1)，AiGeneral确认其对应参数0；Fn134为波次语义。仅改本局房间休眠值，不修改D2S；五波卸载／恢复的完整轨迹仍待核对 |
 | <a id="entry-120"></a>120 Diablo command10恢复 | Diablo首次思考建立的全局command10坐标改由Actor唯一持有，压缩／恢复保留非零坐标；恢复寻位导致位置变化时，不再把新落点误当原控制中心。实际AI函数切换清除该命令及王座参数0；Baal／clone保留既有命令例外，不把其普通参数和命令整体写入休眠记录 | D2MOO SUnitInactive只对指定身份保存／恢复command10，AiThink／AiBaal区分普通重建和持有命令；本项覆盖普通Diablo，BloodRaven／Countess既有home保留，NPC的command10／MapAI恢复见[NPC交互](../npc/INTERACTIONS.md#宿主npc移动与地图动作)。命令建立／清除推进Actor版本，防止旧候选覆盖；仅改变本局房间休眠字段，不修改D2S。移位恢复、门户及战斗仍待核对 |
-| <a id="entry-121"></a>121 Confuse目标查询随机交错 | AI调用的迷乱阵营选择抽数纳入该次Controller随机借用；先目标查询再家族决策，统一在动作前／思考结束发布。若此前动作已发布并消耗单位种子，后续查询从最新单位种子重新借用；修正射击目标查询后仍用旧input.random，以及GoodNpcRanged重采样覆盖查询抽数的路径。独立伙伴目标查询保留原直接推进单位流的接口 | D2MOO AiUtil选择器case3先抽单位种子、临时改阵营、查询后还原为依据；target_query直接consumeRandom与think持有旧randomExpected交叉可使提交Stale并重复该帧。当前修正随机所有权与接续点，不更换目标顺序或随机算法；迷乱战斗／容量背压及逐随机轨迹仍待核对 |
+| <a id="entry-121"></a>121 Confuse目标查询随机交错 | AI调用的迷乱阵营选择抽数纳入该次Controller随机借用；先目标查询再家族决策，统一在动作前／思考结束发布。若此前动作已发布并消耗单位种子，后续查询从最新单位种子重新借用；射击和GoodNpcRanged继续消费目标查询后的随机状态。独立伙伴目标查询保留原直接推进单位流的接口 | D2MOO AiUtil选择器case3先抽单位种子、临时改阵营、查询后还原为依据；target_query直接consumeRandom与think持有旧randomExpected交叉可使提交Stale并重复该帧。当前修正随机所有权与接续点，不更换目标顺序或随机算法；迷乱战斗／容量背压及逐随机轨迹仍待核对 |
 | <a id="entry-122"></a>122 CltDo43附着表现 | 投石机五种`on`弹及共用blade creeper接拥有者跟随：拥有者不存在／死亡即撤出；沿拥有者坐标更新，只推进原单次回绕动画，不执行普通飞弹的寿命递减、碰撞或随机 | D2MOO PATH_UpdateRiderPath／UNITS_UpdateFrame为公共助手依据；缺客户端程序，定点核对1.13c D2Client B2890、A60D0、A5440及Common11121／10759，确认实际导出语义。五类on、blade creeper、拥有者死亡／跨房间及完整原版轨迹仍待核对 |
 
 共用计时器查询不以执行中已取消的计时器抑制后继计时器，避免怪物攻击／施法结束后停住。MonFrenzy的伤害、状态及过期走公共执行器，不增加客户端AI或私有协议；管理生成、补资源和拉开距离不能作为自然战斗或通关依据。

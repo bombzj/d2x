@@ -64,6 +64,7 @@ class RemoteScene {
     int unavailableUnits() const;
     bool playerDisplayed() const;
     bool castInputBusy() const;
+    bool supportsQuickCast(int skill) const;
     std::optional<bool> actionInputBusy() const;
     std::optional<std::pair<uint64_t,float>> observedCastSeconds(uint16_t skill) const;
     std::optional<Vec> playerDisplayPosition(const OnlineView &) const;

@@ -182,8 +182,13 @@ FrameInput pollInput(const Viewport &viewport, const ControlBindings &bindings,b
         input.showLoot = active(ControlAction::ShowItems, true);
         for (size_t slot = 0; slot < input.belt.size(); ++slot)
             input.belt[slot] = active(ControlAction(size_t(ControlAction::Belt1) + slot));
-        for (size_t slot = 0; slot < input.skills.size(); ++slot)
-            input.skills[slot] = active(ControlAction(size_t(ControlAction::Skill1) + slot));
+        for (size_t slot = 0; slot < input.skills.size(); ++slot) {
+            const auto action = ControlAction(size_t(ControlAction::Skill1) + slot);
+            input.skills[slot] = active(action);
+            const auto primary = bindings[action][0];
+            input.primarySkillPresses[slot] = input.skills[slot] && primary &&
+                primary < pressed.size() && pressed[primary];
+        }
     } else {
         input.focused = false;
         input.insideViewport = false;

@@ -131,6 +131,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         -delay, duration, target - start};
     effect.flight = true; effect.level = level;
     effect.sourceSkill=initialization.sourceSkill;
+    effect.nativeDirection=initialization.nativeDirection;
     effect.areaEmission=initialization.areaEmission;
     if(!effect.areaEmission && program.blizzard)
         effect.areaEmission=ClientMissileAreaEmission{program.blizzard->radius,program.blizzard->emissionPeriod};

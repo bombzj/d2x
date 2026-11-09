@@ -3,6 +3,7 @@
 #include "presentation/controller.hpp"
 #include "presentation/scene_view.hpp"
 #include "hud_layout.hpp"
+#include <algorithm>
 
 namespace d2x {
 bool SceneController::handleSkills(const FrameInput &input) {
@@ -44,39 +45,25 @@ bool SceneController::handleSkills(const FrameInput &input) {
         } else if (hotkeys[i].skill != -2) {
             auto skill = hotkeys[i].skill;
             if (skill >= 0 && !(view_.characterView().skill(skill,hotkeys[i].owner) && view_.characterView().skill(skill,hotkeys[i].owner)->available)) continue;
-            const size_t hand = hotkeys[i].right ? 1 : 0;
-            // The native wire normalizes an ordinary attack to skill 0, while
-            // the hotkey projection keeps -1. Compare the confirmed selection
-            // in wire form so a bound attack does not wait forever.
-            const int selectedSkill = skill < 0 ? 0 : skill;
-            const auto &character = view_.characterView();
-            const bool selected = (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) ==
-                    std::optional<int>{selectedSkill} &&
-                character.selectedSkillOwners[character.weaponSet * 2 + hand] == hotkeys[i].owner;
-            if (view_.ui().bhQuickCast) {
-                // Native cast packets carry no skill id, so the bound skill must
-                // be the confirmed selection of that hand before the cast.
-                if (!selected) {
-                    (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
-                        skill < 0 ? std::nullopt : std::optional<int>{skill};
-                    characterClient_.submit(SelectMouseSkill{skill, hotkeys[i].right, hotkeys[i].owner});
-                }
-                // The client rate-limits combat requests to 100 ms, so a fresh
-                // selection must settle before the cast is submitted.
-                quickCast_ = {true, selectedSkill, hotkeys[i].owner, hand,
-                    selected ? inputTime_ : inputTime_ + .11f, inputTime_ + 1.f};
-                lastSkillHotkey_ = i;
-            } else {
-                (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
-                    skill < 0 ? std::nullopt : std::optional<int>{skill};
-                characterClient_.submit(SelectMouseSkill{skill, hotkeys[i].right,hotkeys[i].owner});
-                lastSkillHotkey_ = i;
-                releaseAfterLoad_ = input.leftHeld || input.rightHeld;
+            const SelectMouseSkill selection{skill, hotkeys[i].right, hotkeys[i].owner};
+            quickCast_.reset();
+            lastSkillHotkey_ = i;
+            if (ui.bhEnabled && ui.bhQuickCast && input.primarySkillPresses[i] &&
+                !input.leftPressed && !input.rightPressed && !input.weaponSwap) {
+                quickCast_ = QuickCastPending{selection, view_.characterView().weaponSet,
+                    std::chrono::steady_clock::now() + std::chrono::seconds(1)};
+                cancelWorldGesture();
+                break;
             }
+            (hotkeys[i].right ? ui.rightSkill : ui.leftSkill) =
+                skill < 0 ? std::nullopt : std::optional<int>{skill};
+            characterClient_.submit(selection);
             cancelWorldGesture();
+            releaseAfterLoad_ = input.leftHeld || input.rightHeld;
         }
     }
     if (input.previousSkill || input.nextSkill) {
+        quickCast_.reset();
         // Retail D2Client 3D6D0 cycles sixteen hotkey slots from the last
         // selected slot, skipping left-hand bindings and unavailable owners.
         const int direction = input.previousSkill ? -1 : 1;
@@ -128,5 +115,34 @@ bool SceneController::handleSkills(const FrameInput &input) {
         return true;
     }
     return false;
+}
+void SceneController::handleQuickCast(const FrameInput &input, const WorldInputView &world) {
+    if (!world.combatRequestReady) return;
+    const auto selection = quickCast_->selection;
+    const auto skill = uint16_t(std::max(0, selection.skill));
+    const auto hand = size_t(selection.right);
+    const InputSkillSelection expected{skill, selection.owner == UINT32_MAX
+        ? EntityId{} : EntityId{uint64_t(selection.owner) + 1}};
+    if (world.skills[hand] != expected) {
+        if (quickCast_->selectionRequested) return;
+        if (characterClient_.submit(selection) && world.quickCastSkillSupported)
+            quickCast_->selectionRequested = true;
+        else
+            quickCast_.reset();
+        return;
+    }
+    quickCast_.reset();
+    if (!world.quickCastSkillSupported) return;
+
+    const auto &targets = world.validCombatTargets[hand];
+    ActorControlIntent intent;
+    intent.action = ActorControlIntent::Action::Cast;
+    intent.right = selection.right;
+    intent.point = world.point;
+    if (world.combat && std::find(targets.begin(), targets.end(), world.combat) != targets.end())
+        intent.target = world.combat;
+    intent.stationary = input.standStill;
+    intent.expectedSkill = ActorControlIntent::CastSkill{skill, selection.owner};
+    actorClient_.control(intent);
 }
 } // namespace d2x

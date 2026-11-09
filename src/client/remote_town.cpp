@@ -709,15 +709,15 @@ bool RemoteTown::updateNative(const OnlineView &v) {
                 nativeMap_->tiles().rooms().at(room).level;
             nativePlayerRoom_ = room;
         };
-        auto locatePlayerRoom = [&] {
-            if (!nativePlayerPosition_) return;
+        auto locatePlayerRoom = [&]() -> std::optional<size_t> {
+            if (!nativePlayerPosition_) return {};
             const auto room = nativeMap_->clientRoom(nativePlayerPosition_->x, nativePlayerPosition_->y);
-            if (!room || !nativeMap_->tiles().rooms().at(*room).loaded) return;
             // D2Client 07/08 own the in-sight references. Clients::sub_6FC33020
             // changes CLIENT_IN_ROOM references on the server; repeating that
             // operation here lets a later 08 consume a propagated reference.
             // Coordinates select the snapshot, without acquiring another root.
-            selectRoom(*room);
+            if (room && nativeMap_->tiles().rooms().at(*room).loaded) selectRoom(*room);
+            return room;
         };
         for (const auto &event : world.mapEvents) {
             if (event.sequence <= nativeSequence_) continue;
@@ -743,10 +743,24 @@ bool RemoteTown::updateNative(const OnlineView &v) {
                     if(skills_.number(row,"Id")==*event.usedSkill) {
                         warp=skills_.number(row,"warp").value_or(0)!=0;break;
                     }
-                if(v.protocolProfile=="lod113c" && roomed && !event.dead && event.repositionFlags && !warp)
+                const bool retail = v.protocolProfile == "lod113c" && !event.dead;
+                const bool setup = event.repositionFlags && (!roomed || !warp);
+                if (retail && roomed && setup)
                     view_.repositionFadeEndMilliseconds=event.receivedMilliseconds+500;
                 nativePlayerPosition_=event.point;
-                locatePlayerRoom();
+                const auto destinationRoom = locatePlayerRoom();
+                if (retail) {
+                    // 81720 clears both water effects, then conditionally runs 814F0
+                    // with the destination room already attached.
+                    auto &weather = view_.weatherRepositions;
+                    const auto firstRetained = std::ranges::lower_bound(
+                        weather, world.mapEvents.front().sequence, {}, &OnlineWeatherReposition::sequence);
+                    weather.erase(weather.begin(), firstRetained);
+                    OnlineWeatherReposition reposition{event.sequence, {}};
+                    if (setup && destinationRoom)
+                        reposition.setupLevel = uint16_t(nativeMap_->tiles().rooms().at(*destinationRoom).level);
+                    weather.push_back(reposition);
+                }
                 break;
             }
             case OnlineMapEvent::Kind::RemovePlayer:
@@ -1033,12 +1047,40 @@ std::shared_ptr<const AutomapSketch> RemoteTown::navigationSketch(uint16_t area)
         preparedTownAutomaps_.contains({seed->second,level.act,area}) && result->primitives) {
         // Full town artwork identifies the original service sites. Read the
         // matching MPQ town variant, never infer a live NPC or reveal collision.
-        for(const auto &entry:nativeMap_->townPresetPositions(area)) {
-            const auto row=monsterRows_.find(entry[0]);
+        const auto appendService=[&](int identity,int x,int y) {
+            const auto row=monsterRows_.find(identity);
             if(row==monsterRows_.end() || !monsters_.number(row->second,"npc").value_or(0) ||
-                monsters_.number(row->second,"isAtt").value_or(0) || entry[1]<0 || entry[2]<0 ||
-                entry[1]>UINT16_MAX || entry[2]>UINT16_MAX) continue;
-            result->townServices.push_back({uint16_t(entry[0]),{float(entry[1]),float(entry[2])}});
+                monsters_.number(row->second,"isAtt").value_or(0) || x<0 || y<0 ||
+                x>UINT16_MAX || y>UINT16_MAX) return;
+            result->townServices.push_back({uint16_t(identity),{float(x),float(y)}});
+        };
+        for(const auto &entry:nativeMap_->townPresetPositions(area)) appendService(entry[0],entry[1],entry[2]);
+        std::set<int> directServices;
+        for(const auto &entry:result->townServices) directServices.insert(entry.identity);
+        // D2MOO Objects.InitFn town service markers. The callback identifies
+        // the service; MPQ resolves its class and authored location. These
+        // sites remain hints, even before a quest permits the actual NPC.
+        const auto service=[&](int init)->std::string_view {
+            if(area==1 && init==54) return "cain5";
+            if(area==40 && (init==18 || init==19)) return "jerhyn";
+            if(area==75 && (init==49 || init==50)) return "hratli";
+            if(area==109) switch(init) {
+                case 66:return "drehya";
+                case 68:return "nihlathak";
+                case 70:return "qual-kehk";
+                case 71:return "larzuk";
+            }
+            return {};
+        };
+        for(const auto &entry:nativeMap_->townPresetPositions(area,2)) {
+            const auto object=objectRows_.find(entry[0]);if(object==objectRows_.end()) continue;
+            const auto code=service(objects_.number(object->second,"InitFn").value_or(0));if(code.empty()) continue;
+            for(const auto &[identity,row]:monsterRows_) if(monsters_.value(row,"Id")==code) {
+                // Do not turn a unique direct service into an ambiguous clue
+                // by adding its alternate story marker as another home.
+                if(!directServices.contains(identity)) appendService(identity,entry[1],entry[2]);
+                break;
+            }
         }
     }
     sketchKey_=key;sketch_=std::move(result);return sketch_;
@@ -1046,6 +1088,17 @@ std::shared_ptr<const AutomapSketch> RemoteTown::navigationSketch(uint16_t area)
 std::optional<OnlinePoint> RemoteTown::knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const {
     const auto found=knownTargetPositions_.find({area,type,identity});
     return found==knownTargetPositions_.end()?std::nullopt:std::optional{found->second};
+}
+std::optional<RemoteTown::KnownTownFrame> RemoteTown::knownTownFrame(uint16_t area) const {
+    if(!catalog_ || !nativeMap_ || !catalog_->levels().contains(area)) return {};
+    const auto &level=catalog_->level(area);const auto seed=actSeeds_.find(level.act);
+    if(!level.town || seed==actSeeds_.end() || !preparedTownAutomaps_.contains({seed->second,level.act,area}) ||
+        !nativeMap_->layout().levels.contains(area)) return {};
+    // The whole town drawing is already disclosed. This frame aligns configured
+    // service-site experience with that visible variant; it adds no terrain.
+    const auto &placement=nativeMap_->layout().levels.at(area);
+    return KnownTownFrame{placement.presetVariant.value_or(0),
+        {uint16_t(placement.x*5),uint16_t(placement.y*5)},placement.width*5,placement.height*5};
 }
 std::optional<OnlinePoint> RemoteTown::automapNpcPosition(uint16_t area,uint16_t identity) const {
     const auto sketch=navigationSketch(area);if(!sketch) return {};

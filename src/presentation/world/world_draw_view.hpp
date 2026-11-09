@@ -1,10 +1,12 @@
 #pragma once
+#include "contracts/online_scene.hpp"
 #include "core/entity_id.hpp"
 #include "core/math.hpp"
 #include "world/identity.hpp"
 #include <cstdint>
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace d2x {
@@ -44,6 +46,8 @@ struct WorldDrawView {
     // Initializes an independent client presentation stream. This is not a
     // server weather epoch and does not synchronize weather between clients.
     uint32_t weatherSeed{};
+    int weatherAct{};
+    std::span<const OnlineWeatherReposition> weatherRepositions;
     bool retailAutomap{};
     Vec observer, roomObserver, terrainOrigin;
     uint32_t observerLightColor{}; // Native item_lightcolor, 0 selects white.

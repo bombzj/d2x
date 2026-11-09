@@ -4,7 +4,7 @@ PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版�
 
 本页维护构建、运行与打包方法；功能范围、原版依据及缺口见[项目基线](../../BASELINE.md)与对应专题。实际构建、运行和打包情况在当次交付中说明，不维护包身份或冒烟历史台账。命令按用户有效授权执行，默认不构建、运行或打包。
 
-需要人工操作时留存消息，用根目录`Play-Diagnostic.cmd`；它沿用普通Play的程序和角色目录，打开游戏及默认调试管道，分别记录客户端／嵌入宿主的双向D2GS消息、程序输出和EXE身份。它不自动构建或修改角色。目录、脱敏范围和故障现场读取方式见[原服收包记录](DEBUG_PIPE.md#原服收包记录)。
+常用启动入口见[Windows 运行](#windows-运行)，已有产物的分发方式见[本地分发目录](#当前本地分发目录)。
 
 ## 构建验收要求
 
@@ -14,13 +14,13 @@ PD2专项内容：[运行与部署](../pd2/OPERATIONS.md)。本页保留原版�
 
 若共享结构布局在编译过程中发生改变，应等当前构建结束，再触发所有依赖单元重新编译并冻结产物。对象文件可能在头文件修改后才写完，却已读过旧声明；仅追加一次无工作可做的增量构建，不能证明这些单元的布局一致。
 
-`scripts/build.ps1` 在配置前和编译后比较 `src/`、`cmake/` 与根目录 `CMakeLists.txt` 的文件列表、修改时间和大小。检测到变动时拒绝报告构建成功，并在编译结束后刷新变动文件的时间，确保下一次构建重新处理依赖；结束编辑后再运行脚本。此检测不覆盖绕过脚本直接执行的 CMake／Ninja，也不代替构建期间保持输入稳定。2026-11-03 的入局崩溃转储中，同一 EXE 的 `SceneView` 构造函数将 `worldVisibility_` 初始化于偏移 `0x12348`，绘制函数却使用 `0x12340`，导致 `TileVisibility::clear()` 访问无效树节点；这是编译期间修改共享头后的混合对象布局，不是字体缺失。
+`scripts/build.ps1` 在配置前和编译后比较 `src/`、`cmake/` 与根目录 `CMakeLists.txt` 的文件列表、修改时间和大小。检测到变动时将构建标为失败，并在编译结束后刷新变动文件的时间，让下次构建重新处理依赖。直接调用 CMake／Ninja 时没有这项检测。
 
 ## Linux 支持状态
 
 核心代码使用 C++20、标准文件系统、raylib 和 StormLib。存档替换单独区分 Windows 的 MoveFileExW 与其他系统的 rename；玩法、数据和存档编码不依赖 Win32。两个依赖都有 Linux 构建支持，运行时读取 `assets/mpq2` 的原始 MPQ。CMake 只在 Windows 定义相关宏，只对 MinGW 使用 Windows 静态链接选项。
 
-目前 Windows 已实际编译和运行。Linux 已完成源码及依赖配置检查，但开发机器没有可用的 Linux/WSL 环境，**尚未在 Linux 实际编译或运行**。下面使用 X11 后端；Wayland 桌面需要 XWayland。运行游戏需要图形桌面和支持 OpenGL 3.3 的驱动。
+Windows 是已运行验证的平台。Linux 仍待实际构建与运行验证。下列配置使用 X11，Wayland 桌面需要 XWayland。游戏需要图形桌面及支持 OpenGL 3.3 的驱动。
 
 ## Ubuntu / Debian 构建
 
@@ -46,13 +46,32 @@ cmake --build build --parallel
 
 首次配置时，CMake 会从 GitHub 下载固定版本的 raylib、StormLib、Asio 和 BNCSutil，所以需要网络与 Git。不要复制 Windows 的 `build` 目录给 Linux 继续编译。Linux 图形应用不需要 Wine；联网认证会只读配置中的原版客户端文件。`--hidden` 仍会创建图形上下文，不能据此在无显示服务的服务器上运行。功能范围见基线，Linux验证限制见本页支持状态。
 
-游戏内由原服提供角色、单位和区域状态，客户端重建 MPQ 地形。默认技能菜单悬停后用 `F1–F8` 绑定，`1–4` 饮药，波浪号展开腰带，`I`／`B` 整理库存；ESC→Options→Configure Controls可编辑主／副键和16个技能快捷槽，Accept后全角色共享保存。菜单不暂停联机会话，详细范围见[经典UI](../gameplay/ui/CLASSIC_HUD.md#esc-菜单)。本地读写档与直进区域参数已退出产品入口。
+界面、默认键位与按键配置见[经典 UI](../gameplay/ui/CLASSIC_HUD.md#esc-菜单)。
 
 ## Windows 运行
 
+### 诊断启动与女巫任务 AI
+
+`Play-Diagnostic.cmd` 沿用普通 Play 的程序和角色目录，并为每次启动创建独立诊断目录。包日志、脱敏范围和现场读取见[原服收包记录](DEBUG_PIPE.md#原服收包记录)。
+
+`Play-SOR.cmd` 使用已有的 99 级女巫本地存档，在图形单机中运行任务 AI。默认从普通难度第一幕开始，参数可选单幕或升序范围，首幕决定起始存档。
+
+```powershell
+.\Play-SOR.cmd
+.\Play-SOR.cmd act2-5
+.\Play-SOR.cmd act5
+.\Play-SOR.cmd continue
+```
+
+启动器从 `artifacts/saves/Act{One,Two,Three,Four,Five}Sorc.d2s` 选取一个起始档，复制到新诊断目录的 `saves/`。`continue` 复制最近一次成功启动 AI 的运行中已落盘的 D2S 及现存 `.map`／`.ma0` 至 `.ma3`，沿用原幕范围并从存档对应城镇入局。计划根据角色任务状态恢复。用 Save & Exit 保存进度，供下次启动接续。
+
+启动器要求先关闭已有 D2X 实例。客户端就绪后，通过独立调试管道核对角色与等级，新计划还核对起始城镇，再使用配置快照启动 AI。工作目录和 `client-settings.json` 与普通 Play 共用，失焦时继续运行。需要指定资源目录时可传 `Play-SOR.cmd act2-5 -Mpq <目录>`。
+
+各次启动的配置快照、包日志、程序输出及存档位于 `artifacts/diagnostics/` 的独立子目录。导航输出见[慢搜索导出](DEBUG_AI.md#慢搜索与无路现场导出)，崩溃报告见[崩溃记录](CRASH_REPORTS.md)。进程异常退出时，启动器报告日志目录及可取得的退出码，详细输出见 `stderr.log` 和 `stdout.log`。
+
 ### 单机位置差异日志
 
-显式添加`--movement-diff-log artifacts/movement-diff.jsonl`开启；路径必须不存在，父目录自动创建。默认关闭，仅支持图形客户端本地Single Player，包括正常菜单选角和`--load`快捷入局；显式headless／TCP/IP／远端快捷启动组合会被拒绝，运行中进入其他模式只记录无单机宿主的状态。功能只读状态，不纠正位置、不新增游戏包。新增运行行为尚未实测。
+显式添加`--movement-diff-log artifacts/movement-diff.jsonl`开启；路径必须不存在，父目录自动创建。默认关闭，仅支持图形客户端本地Single Player，包括正常菜单选角和`--load`快捷入局；显式headless／TCP/IP／远端快捷启动组合会被拒绝，运行中进入其他模式只记录无单机宿主的状态。功能只读状态，不纠正位置、不新增游戏包。
 
 每帧在本地场景更新后读取同线程宿主角色轻量状态及客户端路径／显示脚点，坐标统一为全局子格脚点，显示坐标含平滑校正。宿主数据包含真实tick、区域、内部实体及原生GUID、目的点／目标、已接受命令与移动序号、传送代次和走跑／生命／击退状态；不是客户端最近收到的坐标包。commandSequence与acceptedSequence均表示入队受理，executedSequence来自最近命令结果，不能混同；simulationPending和pendingPhase辅助区分模拟续帧、修饰器准备与命令继续，但不是所有准备工作的耗时追踪。tickAgeMs表示本客户端首次观察到该tick以来的时间，不是网络延迟或精确服务端帧相位。重复观察同tick仍保留，hostTickChanges单独统计。
 
@@ -64,7 +83,7 @@ summary另保留peakSample，即全程最大有效路径误差的单个样本，
 
 JSONL由后台线程序列化／写盘，最多8批报告排队、文件限64MiB；队列满丢弃报告并累计droppedReports，达到文件上限或写盘失败向stderr报告并停止写入。文件可能只有部分异常样本或没有末尾summary，不能视作完整覆盖。正常退出等待已排队写入，崩溃／强制结束不能保证内存缓冲落盘。日志含位置和动作轨迹，应放忽略的artifacts目录。
 
-链接d2x及打包时仅补齐缺少的`debug-ai.json`，不覆盖已有运行配置；源码只提供`config/debug-ai.json`这一份完整27任务／七职业策略默认值。`/debug-ai-start`运行默认完整计划，`act1-5`选择五幕，`act1 quest3`按原MPQ A1Q3编号选择马勒斯任务；`/debug-ai-start campaign`与任何自定义名称一样读取独立的`debug-ai-campaign.json`，该文件由用户复制默认配置并自行修改，不随构建提供。相对配置路径先查EXE目录，再查工作目录；旧运行副本若仅含策略、没有goals，须自行更新，程序不静默覆盖或补造任务队列。加载／重载及实际路径诊断见[调试AI](DEBUG_AI.md#文件配置与运行中重载)。新指令与配置整理尚未构建／运行。
+链接 `d2x` 和打包时只补齐缺少的 `debug-ai.json`。启动选择器、命名配置、路径查找与运行中重载见[调试 AI 配置](DEBUG_AI.md#文件配置与运行中重载)。
 
 构建已有EXE后，在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。显式 `--mpq <目录或文件>` 优先；未指定时，依次搜索工作目录本身、EXE 所在目录本身、工作目录的 `assets/mpq2`，再搜索 EXE 所在目录及最多四级父目录中的 `assets/mpq2`。自动定位以 `d2data.mpq`／`D2Data.mpq` 为入口，找到首个目录即停止，挂载该目录全部 MPQ，不递归搜索子目录。无论是否显式 `--mpq`，另在工作目录、EXE 所在目录及其最多五级父目录中查找 `assets/mpq`：其中的补充包最先挂载，优先级低于 `--mpq` 目录，原版成员始终优先，补充包只填补原版未提供的路径；两目录指向同一位置时不重复挂载。工作目录与 EXE 所在目录可以不同。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](../resources/THIRD_PARTY.md) 及 `docs/licenses/`。
 
@@ -168,7 +187,7 @@ PD2专项说明见[运行与部署：CN账号与大厅](../pd2/OPERATIONS.md#运
 
 独立无图形PvPGN游戏服务端使用`d2x_pvpgn`目标，输出`d2x_server.exe`，发行目录为`dist/server`，不覆盖下面的客户端包。配置、独立启停和保存限制统一见[PvPGN服务端](PVPGN_SERVER.md)。原服服务启动脚本不变；默认游戏端口统一4000，同机原D2GS必须先释放该端口。
 
-客户端运行目录固定为 `dist/current/`，入口 `Play.cmd`，根目录放置 `d2x.exe`。下面是显式重新构建Release客户端包的操作示例，不代表当前已交付包的构建类型：
+客户端默认分发目录为 `dist/current/`，运行 `Play.cmd` 启动同目录的 `d2x.exe`。以下命令构建并分发 Release 客户端。
 
 ```powershell
 .\scripts\build.ps1 -Configuration Release -Target d2x
@@ -176,11 +195,13 @@ PD2专项说明见[运行与部署：CN账号与大厅](../pd2/OPERATIONS.md#运
 .\dist\current\Play.cmd -Mpq assets/mpq2
 ```
 
-`build.ps1` 默认只构建`d2x`及其依赖；独立服务端用`-Target d2x_pvpgn`，资源工具用`-Target d2x_assets`，需要全部目标时显式指定`-Target all`。公共头文件仍会使依赖它们的编译单元重新构建；Ninja增量不会因为只选客户端而跳过必要依赖。 事件容器与输出队列的依赖隔离重构会在首次构建重编译公共布局消费者；之后修改单个事件字段只应触发对应载荷的消费者。重构已通过 Windows Release all 构建，Ninja实际依赖中 `facts/object.hpp` 的消费者为三个 cpp；相关边界见[事务与输出](../modules/SERVER_SYSTEMS.md#内容事务与输出)。
+`build.ps1` 默认构建 `d2x` 及其依赖。独立服务端用 `-Target d2x_pvpgn`，资源工具用 `-Target d2x_assets`，全部目标用 `-Target all`。
 
 需要可分发压缩包时，用`package.ps1 -OutputDirectory dist/<新的包名> -Archive`创建全新的包目录及同名ZIP；输出必须位于本项目dist内且尚不存在。压缩只针对这次新目录，避免将dist/current中已有的存档、凭据、截图和诊断文件带入；旧压缩包保留。原MPQ和PD2文件仍由使用者提供，复制的本机配置路径在其他机器上须重新选择。
 
-`package.ps1`复制已构建程序、Play／PlayPD2／诊断入口、运行脚本及说明／许可，默认更新dist/current，不复制MPQ、不删除该目录的存档或截图、不运行程序。PD2配置的复制边界见[打包配置](../pd2/OPERATIONS.md#打包配置)。程序、脚本和文档按长度／SHA256比较，内容相同则跳过复制，并报告复制文件数、字节数与跳过数；连接配置也只在内容变化时更新。同步文档时移除源目录已不存在的说明文件，避免目录调整后留下过期文档。运行目录已有的`artifacts`、旧程序和用户文件不会进入复制清单，也不会被清理，因此整个目录占用不代表本次交付大小。未指定 `-Mpq` 时启动脚本先查运行目录本身和 EXE 同目录，再从运行目录向祖先目录寻找 `assets/mpq2`，因此包留在仓库内可直接双击；移到别处可把完整原 MPQ 放在 `d2x.exe` 旁边，或传实际原资源路径。`-Mpq/-OnlineConfig` 按调用时工作目录解析为绝对路径。程序工作目录为包根，客户端偏好与截图归包，角色持久化由原服处理。整个 `dist/` 忽略Git。示例路径按仓库根作为调用目录；例如从仓库根启动 `dist/current/Play.cmd -Mpq assets/mpq2`，不要把包目录当原资源相对根。
+`package.ps1` 将现有程序、Play／PlayPD2／诊断入口、脚本、文档和许可同步到 `dist/current/`。相同内容按长度及 SHA-256 跳过复制，源文档已删除的条目从分发文档中清除。MPQ 由使用者提供，目录中的存档、截图和诊断产物继续留在原处。PD2 配置范围见[打包配置](../pd2/OPERATIONS.md#打包配置)。
+
+启动脚本以包根为游戏工作目录。未传 `-Mpq` 时先查运行目录和 EXE 同目录，再向上查找 `assets/mpq2`。`-Mpq` 和 `-OnlineConfig` 的相对路径按调用时工作目录解析。从仓库根启动可用 `dist/current/Play.cmd -Mpq assets/mpq2`。客户端偏好与截图保存在包内，角色归属见[存档](../modules/SAVES.md)。`dist/` 由 Git 忽略。
 
 依赖说明依据 [raylib 官方 Linux 构建文档](https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux)、[StormLib 官方源码](https://github.com/ladislav-zezula/StormLib) 及本项目固定版本的 CMake 配置。
 

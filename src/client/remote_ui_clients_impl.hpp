@@ -139,7 +139,7 @@ struct RemoteUiClients::Impl {
     struct Character final : ICharacterClient {
         Impl &o; explicit Character(Impl &owner) : o(owner) {}
         const CharacterView &read() const override;
-        void submit(CharacterIntent c) override;
+        bool submit(CharacterIntent c) override;
     } character{*this};
 
     struct Quests final : IQuestClient {

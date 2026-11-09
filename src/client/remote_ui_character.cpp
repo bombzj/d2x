@@ -8,22 +8,23 @@
 
 namespace d2x {
 const CharacterView &RemoteUiClients::Impl::Character::read() const { return o.characterView; }
-void RemoteUiClients::Impl::Character::submit(CharacterIntent c) {
-            std::visit([&](const auto &v) {
+bool RemoteUiClients::Impl::Character::submit(CharacterIntent c) {
+            return std::visit([&](const auto &v) {
                 using T = std::decay_t<decltype(v)>;
                 OnlineCombatCommand request;
                 if constexpr (std::is_same_v<T, BindSkillHotkey>) {
-                    if (v.index >= o.hotkeys.size() || v.skill < -1) return;
+                    if (v.index >= o.hotkeys.size() || v.skill < -1) return false;
                     request.action = OnlineCombatCommand::Action::BindHotkey;
                     request.owner=v.owner;request.hotkeySlot = uint8_t(v.index); request.skill = uint16_t(std::max(0,v.skill));
                     request.hand = v.right ? OnlineSkillHand::Right : OnlineSkillHand::Left;
                     request.context = o.context;
-                    if (o.combat.submit(request)) {
+                    const bool accepted = o.combat.submit(request);
+                    if (accepted) {
                         o.hotkeys[v.index] = SkillHotkey{v.skill,v.right,v.owner};
                         o.projectedSources.reset();
                     }
                     else o.notice = o.combat.reason();
-                    return;
+                    return accepted;
                 } else if constexpr (std::is_same_v<T, AllocateAttribute>) {
                     request.action = OnlineCombatCommand::Action::SpendAttribute;
                     // Attribute intent order STR/DEX/VIT/ENE; native stat order STR/ENE/DEX/VIT.
@@ -36,7 +37,9 @@ void RemoteUiClients::Impl::Character::submit(CharacterIntent c) {
                     request.hand = v.right ? OnlineSkillHand::Right : OnlineSkillHand::Left;
                 }
                 request.context = o.context;
-                if (!o.combat.submit(request)) o.notice = o.combat.reason();
+                const bool accepted = o.combat.submit(request);
+                if (!accepted) o.notice = o.combat.reason();
+                return accepted;
             }, c);
         }
 // Original private item packets carry the local equipment stat lists. Native NOEQUIP/BROKEN

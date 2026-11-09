@@ -4,7 +4,7 @@
 
 单机专项调试可加`--no-pause-on-focus-loss`，AI完成或取消后也不会因窗口失焦停住已提交请求；ESC菜单及显式暂停保留，见[启动参数](BUILD_AND_RUN.md)。
 
-五幕共27项任务配方，支持任务、旅行与传送点目标；默认保留三项服务奖励。调试角色能力、任务恢复及其他职业／难度的适用范围按当前实现与实际条件判断，不以历史通关认证全部组合。验证方法见[测试指南](TESTING.md)。
+五幕共 27 项任务配方，支持任务、旅行及传送点目标。默认保留三项服务奖励。验证方法见[测试指南](TESTING.md)。
 
 文档分工见[AI文档导航](../README.md#调试任务ai文档)：本页维护指令、策略、任务配方、复用边界和实现入口；[测试指南](TESTING.md)维护验证方法与隔离约定；[调试管道](DEBUG_PIPE.md)维护命令传输及现场读取；[构建运行](BUILD_AND_RUN.md)维护启动；[原版缺口](ORIGINAL_GAPS.md#待验收调试导航)维护能力与组合边界。权威任务规则仍归各幕玩法文档。
 
@@ -24,11 +24,22 @@
 
 探索知识由`DebugNavigationSearch::explorationMemory`唯一持有，父AI与子行走共用，按游戏／区域保留。真实地图与小地图图元分别更新：`RemoteTown::knownNavigationTerrain`只枚举客户端已经取得完整碰撞并发布的地形页，规划读取实际掩码；不受屏幕、小地图范围、图元刷新位移阈值或Layer过滤限制。未加载／未完整发布的页保持未知，原生生成布局及额外reveal不能补出碰撞。连续步行边界两侧已知页一起参与路线和脚点验证，区域归属只限制探索目标，不裁掉起点或角色占地。储存矩形随实际取得的数据增长，不代表已知关卡边界。物件、入口和敌人的实时位置仍来自实际指派，交互需要当前真实单位。
 
-小地图图元是同一知识模型中的独立证据类型：`navigationSketch`统一消费城镇全显和当前种子匹配的自然缓存图元，重进游戏后可先有图元、后有碰撞。城镇原DC6拼图与普通／历史图元均从原图真实笔画抽取稀疏结构提示；城镇布局函数与渲染共用，地标位置提取与显示共用自然图元选择。额外reveal叠层不进入此输入。笔画只给待探通路提供较弱的前方结构偏好，不按笔画像素数量算收益，不将空白填成地面，不把画出的墙线直接写成碰撞；城镇全显布局另将原MPQ对应变体的固定服务站点作为语义地标（`townServices`），由`automapNpcPosition`供找人使用；这不表示该NPC已出生／指派或仍站在原位，不推广到未显示城镇或野外隐藏预设。通用图形识别和完整拓扑配对仍未实现。
+`navigationSketch` 提供已全显城镇和种子匹配的自然缓存图元，额外开图叠层不参与规划。图元笔画只给待探通路提供结构偏好，固定服务地标由 `automapNpcPosition` 提供找人方向。图元选取、城镇变体和地标身份见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。到达地标后等待实际宿主脚点、碰撞发布与单位指派稳定，再判断是否找到。私人任务位变化可使缺席记录失效，内容相同的重复快照不触发重试。通用图形识别和完整拓扑配对仍待实现。
 
-待探对象包括已取得碰撞与未知地形之间的通路，以及已知地形上单位观察范围的边界。单位观察只来自真实07订阅与已加载碰撞页匹配后的空间范围，预加载碰撞和小地图不自动证明单位已观察；08退订保留历史观察，敌人仍按实际死亡或重新指派处理。两类交界共用完整角色站位校验及按方向合并，角色占地已经约束开口宽度，不额外要求三个相邻站位而丢失窄通道；已知墙不产生目标。单位观察方向的站位跨过边界，避免停在已经观察的一侧。开口有稳定身份、方向、可接近站位和局部证据签名。选择比较已知路线成本和方向连续性，不计算新增可见瓦片数。当前分支承诺随开口向前推进；保留方向的重规划使用该通路真实站位集合，同步采用返回的终点，不用旧坐标周围的一格容差代替实际站位；普通坐标目标的规划与抵达使用同一整数脚格及容差；世界小数脚点统一由`playerCell`按`floor(position + 0.5)`转换，与客户端实际路径脚点一致。规划缓存及传送起点邻域也使用同一脚格，不把绘制脚点直接向下取整；只要中继位于不同原生脚格，就不以小数距离不足一格否决。父子导航精确抵达后等待Host同格确认、客户端碰撞发布及单位指派短暂稳定，不等待绘制帧或小地图刷新；受阻／到达而无新观察后暂缓整个方向，只有该方向实际证据改变才能重新尝试，不因时间到期、换相邻点、任务切换或补给往返清空。
+待探通路来自两类交界：
 
-已知目标位置但没有完整观察路线时，仍使用同一个通路规划器：比较到开口的实际路线成本、开口距目标的剩余直线距离和开口朝向，优先朝目标推进；目标位置只提供方向，不补出未知通行边。已选方向沿局部证据保留，实际受阻或需要绕障时才选择侧路／回溯，不退回无目标方向的探索。
+- **地形边界**取已知碰撞与未知地形的交界。角色完整站位和真实开口宽度决定候选，已知墙不产生目标。
+- **单位观察边界**取实际 07 房间订阅与已发布碰撞页匹配后的范围。站位跨到观察边界外，预加载碰撞及小地图图元不计作单位观察。08 退订保留历史，当前敌人按实际死亡和重新指派更新。
+
+两类通路均有稳定身份、方向、站位集合和局部证据。目标选择按实际路线成本和方向连续性排序。没有目标、经验方向或已承诺分支时，先找可跨入已知地面的单位观察通路，再用地形边界作后备。同一站位优先保留单位观察通路。重规划沿已承诺方向重新提取站位；普通坐标的到达、路线缓存及传送起点邻域共用 `playerCell` 的 `floor(position + 0.5)` 脚格换算。
+
+父子导航共用 `passageObservationReady`。地形探查精确抵达后，若终点与整个交界已位于当前 07 订阅和完整碰撞范围，只等消息稳定窗口。其他探查还需 Host 同格确认。这个窗口只决定能否暂缓证据未变的通路，交互、移动、传送、NPC 缺席和任务结果分别确认。受阻或抵达但没有新观察时暂缓整个方向，只有该处证据改变才重新尝试。
+
+已知目标位置但没有完整观察路线时，仍使用同一个通路规划器：比较到开口的实际路线成本、开口距目标的剩余直线距离和开口朝向，优先朝目标推进；目标位置只提供方向，不补出未知通行边。已选方向沿局部证据保留，实际受阻或需要绕障时才选择侧路／回溯，不退回无目标方向的探索。没有已知可站立目标格时，Dijkstra终止下界加入同一优先级开口的最小终点罚分，不再让远处提示的绝对距离迫使搜索遍历全图；选择评分及碰撞规则不变。结构复查只在静态已知地形存在合法目标站位时执行，显式空站位集和未知目标不重复做注定不能到达Goal的搜索。
+
+观察路线缓存先命中当前快照；旧快照的成功路线可跨知识／执行版本复用，但必须保持同一目标、开口终点仍合法且逐边通过当前碰撞校验。落点在原路线节点上时，可复用同一目标或已承诺开口的剩余后缀；首段选择开口到后续承诺该开口允许续接。新版本校验失败后移除旧路线，避免每帧重复扫描历史失败路线；复用结果登记到当前键，缓存仍限64项。目标改变、开口消失／暂缓、落点偏离路线或实际边失效仍重新规划，不能保证每次传送都无需搜索。
+
+门操作判定由`DebugExplorationMemory::Execution::requiresDoor`统一供规划和路线复验使用：同一站位在实时可开门视图中可站立、实际落点的完整角色占地已发布且被阻挡，才要求重新选择绕门路线。角色中心格已发布、十字占地邻格尚未发布不代表关门；远端记忆步行段继续使用已知碰撞，不能把实时窗口边缘当成整条路线失效。传送边仍独立检查完整实时落点、射线和房间邻接，没有放宽未知格落地资格。
 
 单位请求的50子格范围只限制请求资格。父AI保留同一目标已提交的中继，NPC小幅移动、出现真实指派或进入请求范围不抢占中继；实际已满足交互条件可以提前结束接近。中继交还后，先验证通往已观察且满足原交互规则的站位的完整路线，再交接单位交互。NPC、普通物件、入口和传送点共用站位提取；实心中心不作为必须抵达的位置。子导航在尚未提交交互且缺少完整观察路线时返回`needs-observation`，由父级继续向目标探索，不把缺知识解释为`No walking path and no mobility progress`。真实临时占位、执行停滞及交互无回执仍按各自恢复处理。
 
@@ -38,7 +49,7 @@
 
 位置与地形继续复用RemoteTown现有导航记忆：已见NPC／目标位置、入口连接、传送点坐标和房间探索记录按地图配置、各幕种子与布局匹配，跨区保留；坐标只引导重新接近，当前交互仍需真实指派。多只同类怪物不能靠按类型保存的单个坐标代表整个群体。
 
-自然小地图地标作为上述真实观察位置的回退线索：传送点从当前MPQ Objects的OperateFn23与AutoMap图标反解位置，唯一物件图标仅由approachKnown接近消费者使用，不改变knownTargetPosition的真实历史语义。旅行尚无已指派入口或精确连接位置、且目标方向没有已解析步行接缝时，优先接近自然缓存中的楼梯／洞口及入口物件图标；当前接近目标保留，其余按距离排序，8子格内仍无对应指派则本区域／目的地区域组合跳过，无法接近的候选暂缓30秒。共享图标不猜目的地，接近后由实际mapTargets确认；传送点激活与旅行仍检查正常指派、63及回包。原版缓存的量化坐标只提供观察提示，不回填逐tile已探索状态、碰撞或导航侧文件。边界轮廓和场景拓扑推断暂缓，见[导航缺口](ORIGINAL_GAPS.md#实现边界与独立缺口)。本批仅静态检查，未构建／运行。
+已知位置优先使用真实单位观察。自然地图中唯一可辨识的物件图标仅由 `approachKnown` 用于接近，`knownTargetPosition` 保留真实观察语义。旅行缺少已指派入口、精确连接位置和已解析步行接缝时，优先接近自然地图中的入口图元。保留正在接近的候选，其余按距离排序。距候选 8 子格仍无对应指派时，本局跳过该区域／目的地区域组合的这个候选，无法接近的候选暂缓 30 秒。实际 `mapTargets`、单位指派及 63 回包仍负责确认入口和传送点。
 
 动态清场记录统一由`populationMemory`维护。按游戏、区域及幕种子保留真实房间订阅、各GUID最后位置、指派及超级暗金／精英身份，跨任务步骤、补给和同房间计划重启保留；新游戏或该区域种子改变清空。指定超级暗金／精英的历史接近只用身份匹配的敌人记录，不能回退到按class保存的普通同种怪／尸体坐标；没有精确线索则继续探索。死亡模式删除敌人线索，身份替换／已知阵营变化复验；退订不当成死亡。重新订阅同一房间也重新等待250毫秒单位消息，之后清场及精确目标接近失效已重新订阅且不再指派的旧线索。当前单位优先于历史位置，旧位置不能授权攻击、任务完成或断言房间永远无怪；新指派／复活可再次进入记录。记录在AI观察运行期间更新，不持久化动态GUID到导航存档，不推测服务器从未发送的怪物。
 
@@ -48,7 +59,7 @@
 
 清场、猎杀、遭遇战和指定掉落接敌统一调用`approachEnemy`：实际敌人身份提供目标位置，当前技能的近战／远程范围、攻击射线、已知地形和完整实时占位共同筛选接敌站位，再交给同一通路规划器。怪物中心不是站位；取得规划结果不代表抵达或击杀。真正提交仍复验动态落点、危险和技能资格。诊断区分`no-live-relay`、`execution-blocked`与无已知路线，并输出起点、终点及选中中继；没有近程交战目标时更新`clear-awaiting-approach`，不沿用旧赶路提示。
 
-旅行先找本层当前指派的传送点，再使用已见坐标。到达记忆位置后仍无可用指派且有普通路线时，这趟旅行暂缓使用该来源。实际指派可以重新启用它，目标解锁记录保留。同一趟旅行连续两次无法接近同一方向的徒步边界时，把折返成本计入路线比较，可经其他相邻层或已解锁的传送点绕行。诊断`populationMemory`给出当前区域的房间与敌人线索数，`waypointMemory`给出决策用解锁区域及最近完整63修订。静态导航持久化沿原格式，本次不改变存档语义。
+旅行先找本层当前指派的传送点，再使用已见坐标。到达记忆位置后仍无可用指派且有普通路线时，这趟旅行暂缓使用该来源。实际指派可以重新启用它，目标解锁记录保留。同一趟旅行连续两次无法接近同一方向的徒步边界时，把折返成本计入路线比较，可经其他相邻层或已解锁的传送点绕行。诊断`populationMemory`给出当前区域的房间与敌人线索数，`waypointMemory`给出决策用解锁区域及最近完整63修订。图元持久化由[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)负责。
 
 跨幕旅行若当前层无传送点且无已知直接路线，先用普通回城流程取得实际来源。新进程尚未物化目标幕连接、无法估算任何完整路线时，可先到本人已解锁的目标幕传送点观察，再从实际到达区域重新规划；诊断为`observe-destination-act-via-unlocked-waypoint`。有可估算的合法路线时优先按原成本比较，同幕不使用此观察中转，目的地资格仍由实际菜单和Host校验。
 
@@ -100,6 +111,21 @@
 
 不需要逐步给坐标、GUID、施法目标、门或NPC消息编号。入口通过游戏内聊天或现有Send-D2XCommand.ps1发送，任务在游戏主循环中持续执行；命令返回只表示计划已接收。当前位置、目标、进度和失败原因通过status观察。当前支持原版1.13c客户端配置，不将零售任务配方套用到PD2。
 
+### 地图经验配置
+
+`debug-ai.json`的`navigationExperience`在新计划开始时加载，`enabled:false`关闭；未配置的区域使用中性策略。它不是碰撞数据，也不把出生、任务解锁或交互结果预先记为事实。实际已知单位／入口位置优先于经验；经验地标再接入既有观察路线与交互站位流程，到达后等真实指派，检查过但未找到的位置保留本局记录。数值热重载不替换经验；append继承当前计划，修改后重新start。`configuration.navigationExperienceAreas`报告实际加载的区域数。
+
+`areas`按区域分组，每个条目支持：
+
+- `area`：原版区域ID或现有区域名称；同一区域只允许一个条目。
+- `bounds:[x,y,width,height]`：已经核实的固定地图经验范围，单位为世界子格。仅降低朝范围外试探的优先级，不写碰撞、不截断路线、不删除待探方向；实际取得的同区域地形超出范围即停用该区域经验。存储矩形与此字段独立，导出为`experienceBounds`。
+- `travelDirections:[{to,direction:[x,y]}]`：到相邻目标区域的方向偏好，分量为-1、0、1且不能全零。正负号指世界坐标轴，不是屏幕上下；斜向表示两个轴的共同偏好。只用于Connection探索；找传送点、找单位、清场不套用。方向是独立的有界评分，纳入后台缓存键，不生成远处虚拟目标。切换探索用途时先完成已提交中继，再释放旧分支承诺。
+- `landmarks:[{npc|object|connection,positions:[[x,y],...],townVariant?}]`：服务站点、物件或通向指定区域的经验位置。普通位置是世界子格；有`townVariant`时是相对于已全显城镇原点的子格偏移，仅匹配当前可见城镇变体。NPC条目必须带变体，未知变体不套用。多个站点沿已有接近目标保持，再比较距离；配置不保证站点当前有真实单位。
+
+默认配置有14个区域条目：五幕城镇的62条服务站点记录（含变体）；区域50的16×19原生瓦片范围及51–54的32×32范围、固定下行入口与地下三层秘法门户；区域110、111、112、117的往返方向。血腥丘陵沿负x推进，后续三处横／纵变体分别沿负x或负y推进，配置使用共同负向偏好，由真实通路决定实际走哪一轴；返程取正向。其他区域保持中性，不能把未核实的地图规律填写为确定位置。
+
+数据来自当前MPQ的Levels／LvlMaze／LvlPrest和城镇、宫殿DS1；按D2MOO `DRLGMAZE_InitBasicMazeLayout`及`DRLGOUTSIEGE_PlaceBarricadeEntrancesAndExits／PlaceCaves`核对结构。51–54的Levels.SizeX／SizeY=100是预留布局范围，实际四个16×16块形成32×32结构；回程入口会随文件变体小幅变化，默认经验未把它们写成固定坐标。固定入口／门户和城镇站点由资源工具离线核对后写入配置，AI经验模块不读取MPQ或查询本局未观察的预设。客户端`knownTownFrame`仅公开已经全显的城镇图元原点、大小与变体，不物化邻区、不调用整区recipe。默认经验的实际导航收益仍待运行对照。
+
 ### 一条聊天命令安排五幕
 
 默认[debug-ai.json](../../config/debug-ai.json)包含27项完整任务；女巫组优先Frozen Orb，移动能力允许时使用Teleport。入局后运行文件完整计划或只筛选五幕任务：
@@ -109,11 +135,11 @@
 /debug-ai-start act1-5
 ```
 
-两条是独立启动示例。链接与打包只补齐缺少的debug-ai.json，不覆盖已有文件；采用新默认值需自行更新运行副本。用户可复制为`debug-ai-campaign.json`、`debug-ai-farm.json`等，分别用`/debug-ai-start campaign`、`/debug-ai-start farm`选择；所有自定义名称规则相同，没有campaign保留别名，不会叠加默认文件。名称使用ASCII字母、数字、下划线及连字符，文件名大小写按实际文件系统处理，复杂路径用显式configFile。自定义文件不随默认构建提供，既有运行文件保留。运行中查看、暂停、继续分别为`/debug-ai-status`、`/debug-ai-pause`、`/debug-ai-resume`；已有活动计划不能再start，须先cancel并等待已有物品／门户结果。
+命名配置使用 `debug-ai-<名称>.json`，例如 `/debug-ai-start campaign` 读取 `debug-ai-campaign.json`。名称允许 ASCII 字母、数字、下划线与连字符，复杂路径使用显式 `configFile`。运行中用 `/debug-ai-status`、`/debug-ai-pause` 和 `/debug-ai-resume`。替换计划前先取消活动计划并等已有物品／门户操作结算。
 
 重跑任务使用独立工作存档，保留原始基准；角色准备见[可复用女巫基准档](#可复用女巫基准档)。
 
-已有部分进度也可用同一命令：第一至第五幕均按实际条件选择剩余工作。已完成目标按个人记录跳过；本局明确COMPLETEDNOW且无奖励／待奖／主目标资格的目标记为skipped，保留原因并继续，不写任务位或声称领奖。Cain已不可再救同样明确跳过。任务在其他幕时使用正常城镇传送点及实际个人63资格返回该幕，无需手动把人物停在最早任务所在幕；无合法通行资格仍明确失败，不能把导航失败／超时当作本局不可完成。退出重开后，真墓线索、怪物、门及波次按当前房间重建；私人材料／奖励资格保留。需要的个人材料可正常从私人箱／方块取回，任务计划启动时会先收妥真实Cursor；未知形状、满包或未知操作结果保留现场。实现与本批验收范围见[缺口清单](ORIGINAL_GAPS.md#本批验收清单)。
+已有部分进度也可用同一命令：第一至第五幕均按实际条件选择剩余工作。已完成目标按个人记录跳过；本局明确COMPLETEDNOW且无奖励／待奖／主目标资格的目标记为skipped，保留原因并继续，不写任务位或声称领奖。Cain已不可再救同样明确跳过。任务在其他幕时使用正常城镇传送点及实际个人63资格返回该幕，无需手动把人物停在最早任务所在幕；无合法通行资格仍明确失败，不能把导航失败／超时当作本局不可完成。退出重开后，真墓线索、怪物、门及波次按当前房间重建；私人材料／奖励资格保留。需要的个人材料可正常从私人箱／方块取回，任务计划启动时会先收妥真实Cursor；未知形状、满包或未知操作结果保留现场。任务恢复的覆盖范围见[原版缺口](ORIGINAL_GAPS.md#待验收调试导航)。
 
 ### 游戏内聊天入口
 
@@ -149,7 +175,7 @@
 /debug-walk-cancel
 ```
 
-JSON须用双引号，保留聊天原生编码后255字节的输入上限；更长目标队列继续用管道。append继承当前计划策略，不接受命令中的combat／mobility／supplies／events覆盖。无参数的status／pause／resume／cancel不接受附加内容。命令与act／quest编号选择器不区分ASCII大小写；未知`/debug-*`与格式错误在本地报告，不发房间广播或BNCS命令。
+JSON须用双引号，保留聊天原生编码后255字节的输入上限；更长目标队列继续用管道。append继承当前计划策略，不接受命令中的combat／mobility／supplies／events／navigationExperience覆盖。无参数的status／pause／resume／cancel不接受附加内容。命令与act／quest编号选择器不区分ASCII大小写；未知`/debug-*`与格式错误在本地报告，不发房间广播或BNCS命令。
 
 应用在`app/debug/chat_command`解析后共用原DebugAi／DebugAutoWalk入口；聊天只显示状态、目标、阶段、任务内部步骤及原因摘要，完整快照继续用管道。反馈以`[Debug]`标记进入本地顶部消息和M日志，另持最多64条，不写世界／账号聊天副本，不作为服务端完成回执。失败保留输入草稿。打开聊天、消息日志及其编辑／关闭帧保留AI计划并阻止新输入，关闭后继续；显式pause须resume。已有动作和宿主时钟不会因查看聊天而暂停，死亡仍会停止计划。
 
@@ -243,21 +269,29 @@ AI计划存续期间，普通输入仅游戏主画面的Esc解除控制，日志
 
 ### 慢搜索与无路现场导出
 
-启用 `D2X_NAVIGATION_DUMP` 后另写 `capture-*/timeline.jsonl`，记录成功及失败后台作业，不受128次地图转储上限约束，文件32MiB封顶并在captures.error报告。每行有事件sequence、单调steadyUs及对齐行为／帧日志的unixMs；后台请求以request编号关联submitted（种类／参数／帧）、started（queueMs）、computed（仅算法本体computeMs）、result（empty）、returning（workerMs，含诊断排队）、consume-begin／consumed、discarded、cancelled和exception。discarded设置协作取消标记，精确规划及连通枚举在安全点退出；旧普通path调用仍可能稍后完成。reset另记游戏／区域清理或geometry-changed及旧请求数量，未记录的淘汰原因不能猜测。
+拒绝样本另带`sampleFootprint`：失败站位周围3×3行优先的known／walking／landing掩码、左上角、unknownMask及movementMask／movementSize；按原角色占地形状解释，不能仅用中心格判断站位。
 
-decision记录正常AI决策编号、目标索引、阶段／原因、角色脚点、同步elapsedMs和pending请求的ready／computed状态；没有发生决策但tickPlan耗时达到10ms也记录。freeze-begin／freeze-end记录兼容快照物化；snapshot-shared记录不可变发布号、扫描格数、复制块字节及复用块数，这些是发布对象的计数，不是每次请求新复制的字节。returning在future就绪前，returning到consumed包含future发布及前台调度。computed到returning仍含结果元数据准备和排队，不等待完整转储写盘。常驻写线程使用256项／估计64MiB队列，满时明确dropped及incomplete错误；时间线每64事件刷新，异常终止可能丢尾部。日志构造和持有快照仍有开销，不是零扰动测量。
+启用 `D2X_NAVIGATION_DUMP` 后另写 `capture-*/timeline.jsonl`，记录成功及失败后台作业，不受128次地图转储上限约束，每32MiB分卷为timeline.jsonl、timeline-2.jsonl等，最多8卷／256MiB，超限在captures.error报告。每行有事件sequence、单调steadyUs及对齐行为／帧日志的unixMs；后台请求以request编号关联submitted（种类／参数／帧）、started（queueMs）、computed（算法调用经过时间computeMs，扣除优先任务抢占，不含排队与输出）、result（empty）、returning（workerMs，含诊断排队）、consume-begin／consumed、discarded、cancelled和exception。discarded设置协作取消标记，精确规划及连通枚举在安全点退出；旧普通path调用仍可能稍后完成。reset另记游戏／区域清理或geometry-changed及旧请求数量，未记录的淘汰原因不能猜测。
 
-新增导航时间线诊断：`result`对成功和失败均写可用的outcome、expanded、candidateCount、selectedCandidate、travelCost／score／costUnit、endpoint、routePointCount和routeLength（几何折线长度，不是实际移动距离）；旧path只提供点数／端点。`decision`另含actionRecoveryBusy、moving、walkActive和searchDecision，可对齐结果等待与动作恢复，不能把交付延迟全部当作可节省停顿。
+decision记录正常AI决策编号、目标索引、阶段／原因、角色脚点、同步elapsedMs和pending请求的ready／computed状态；elapsedMs只包围DebugAi::tickPlan调用，没有发生决策但调用耗时达到10ms也记录。达到20ms标记runtimeSlow并附带walkIntent、child、search、approach、mobility及travel快照，快照构造在计时结束后。freeze-begin／freeze-end记录兼容快照物化；snapshot-shared记录不可变发布号、扫描格数、复制块字节及复用块数，这些是发布对象的计数，不是每次请求新复制的字节。returning在future就绪前，returning到consumed包含future发布及前台调度。computed到returning仍含结果元数据准备和排队，不等待完整转储写盘。常驻写线程使用256项／估计64MiB队列，满时明确dropped及incomplete错误；时间线每64事件刷新，异常终止可能丢尾部。日志构造和持有快照仍有开销，不是零扰动测量。
+
+导航时间线诊断中，`result`对成功和失败均写可用的outcome、expanded、candidateCount、selectedCandidate、travelCost／score／costUnit、endpoint、routePointCount和routeLength（几何折线长度，不是实际移动距离）；旧path只提供点数／端点。`decision`另含actionRecoveryBusy、moving、walkActive和searchDecision，可对齐结果等待与动作恢复，不能把交付延迟全部当作可节省停顿。
 
 `teleport-route`的submitted／异常清单增加`replan`：新目标、输入域变化或起点变化／路线耗尽，以及旧起点、结果、游标、点数和几何修订；snapshotChanged与roomsChanged分别记录。`teleport-route-transition`记录后缀复验成功／失败、续段采纳／拒绝、离开已完成终点；`teleport-plan-evicted`区分capacity与explicit-discard；`teleport-cache-cleared`记录坐标原点变化。淘汰和reset中的request／continuationRequest／discardedRequests可关联随后discarded；0表示没有对应请求。不是所有旧接口淘汰均有细分原因，不能据此强行归类。传送事件坐标为本地格中心，使用coordinateOrigin换成全局脚点；explicit-discard沿同context最近的原点解释。
 
-效率取证时启动前设置`D2X_NAVIGATION_DUMP`到新的忽略目录，并沿用`--frame-profile`、行为日志及固定EXE／配置／输入角色身份。保留整段events.log、timeline.jsonl、异常清单与块文件、最终AI／walk状态及captures.error／dropped。先按目标完成时间比较，再按request拆分queue／compute／交付；按目标和原因统计重算、弃用、暂缓及解除；观察收益与折返次数只作辅助。完整转储128次及时间线32MiB限制不变，达到限制后的完整性必须单列；本日志不记录全部被拒候选的反事实路线，也不能单独证明另一条路线更快。
+`scripts/play.ps1 -Diagnostic`（包括Play-SOR）自动将`D2X_NAVIGATION_DUMP`设置到本次诊断目录的navigation子目录，并写入run.json；结束后恢复启动脚本原环境值。直接启动EXE仍需自行设置该变量。保留timeline*.jsonl、search／slow-search清单与块文件、frames.jsonl及captures.error／dropped。分析算法性能先按request比较computeMs，再对照分阶段计时和实际输入；queueMs、consumeDelayMs及navigation-worker停留时间不是算法运行时间。达到采样或文件限制后的完整性必须单列；本日志不能单独证明另一条路线更快。
+
+观察通路的`result.profile`记录prepareMs（掩码展开／实时覆盖及目标准备）、landingsMs（落点及桶构造）、searchMs（图搜索）、finishMs（结果整理），并累计calls、structuralCalls、doorBypassCalls、storageCells、expanded、landingCandidates及castCandidates。递归结构检查／绕门搜索计入同一份统计，父调用在递归期间停止自身分阶段计时，避免双计；这些阶段是经过时间，包含优先任务抢占，后者另见computed.suspendedMs。慢查询的plannerInput保存冻结的已知掩码、落点碰撞、房间邻接、通路、已走边、图元提示和目标站位；序列化在独立写线程完成。observed-passages点坐标本身为全局整数脚格，coordinateOrigin用于碰撞块定位，不能再给points加一次原点。
+
+`navigationSearch.observedCompletions`保留最近8次观察查询消费记录，包括request、输入与当前修订、queue／compute／suspended／consumeDelay、结果及profile；`observedRejections`保留最多16个复验拒绝样本，包含首次失败边／点序号、拒绝分类、结果类型与首次采样的中心掩码；中心掩码不是完整角色脚印证明。`observationPerformance.rejectionReasons`按原因累计次数。以上摘要在未启用转储时也可由frames.jsonl或debug-walk-status读取，复验热路径只维护有界样本及计数。
+
+有方向接近的observedRoute不是保证跨每次传送保留的路线：后缀复用要求知识修订、目标、通路承诺等语义键匹配，且当前脚格在旧路径节点中；实时执行修订变化后还会逐边复验。新地形／单位观察／图元、通路承诺变化、路径外落点或任一复验失败都可能触发新查询。普通探索另持frontierRoute，底层teleportRoute另有目的地缓存，不能用它们推断approachPoint不重算。目前仍保留被拒旧结果并可能重复复验，具体失效边由上述诊断定位。
 
 同一环境变量同时启用已探索碰撞归档，每250ms采样一次。目录为 `capture-*/game-<代次>-seed-<种子>/`，按 `level-<区域ID>.jsonl` 分文件，不要求把多个区域填成大矩形。每行 `format=d2x-acquired-collision-v2`，含Unix毫秒、区域、种子、几何修订、clientPosition／serverPosition和增量cells；每格为 `[全局subtile x,全局subtile y,uint16碰撞掩码]`，直接以全局坐标拼接。按行重放、相同坐标后值覆盖前值，截到卡点unixMs即可重建该时刻已累计的地图。`positions.jsonl`另每次记录角色脚点，clientPosition为正常客户端路径脚点，serverPosition为最近原包脚点，可滞后，缺值为null。
 
 归档保存客户端已取得完整碰撞页的非0xffff格，包含当前步行接缝两侧数据，不再按视口或小地图探索掩码筛选。图元先于或晚于碰撞均不影响此输入。离区后的历史格保留最后已知值，不伪造离区后的动态变化；归档不回填AI。此累计归档独立于128次异常快照上限，写盘错误沿captures.error报告。
 
-启动图形客户端前设置环境变量 `D2X_NAVIGATION_DUMP` 为取证根目录。共享导航Worker建立 `capture-<Unix纳秒>/`，由一个常驻监视器每约100ms检查活动请求，超过1000ms时将冻结输入排入异步导出。普通path、传送路线、精确交互站位、观察通路及连通域使用同一入口；完成后若慢计算、慢排队或无可用结果也取证。空结果、需观察和资源受限不自动等于AI卡死或无路。每个Worker最多128次导出，队列拒绝、上限及写盘错误均在captures报告；未设置变量不启动诊断线程。
+启动图形客户端前设置环境变量 `D2X_NAVIGATION_DUMP` 为取证根目录。共享导航Worker建立 `capture-<Unix纳秒>/`，由一个常驻监视器每约100ms检查活动请求，超过1000ms时将冻结输入排入异步导出。普通path、传送路线、精确交互站位、观察通路及连通域使用同一入口；完成后若慢计算、慢排队或无可用结果也取证。空结果、需观察和资源受限不自动等于AI卡死或无路。普通异常导出每个Worker最多128次；计算达到100ms的已完成请求另存slow-search-N.json，按区域（旧接口使用context的区域代次）与查询种类最多8份、每Worker最多512份，避免早期区域耗尽后续区域的慢查询样本。没有碰撞Grid的旅行成本估算仍记录时间线及profile，不生成碰撞转储。队列拒绝及写盘错误在captures报告；未设置变量不启动诊断线程。
 
 普通路径异常包以`search-N.json`清单引用同目录32×32的`chunk-N.u16le`，格式`d2x-navigation-capture-v2`。`knowledgePolicy`标记其碰撞输入边界，只有客户端已取得的完整碰撞页才是地图知识，生成布局或图元不能替代。全球脚点等于本地格中心加coordinateOrigin再减(0.5,0.5)。新通路状态由terrain-v3导出，包含真实观察而非候选视口收益。
 
@@ -304,11 +338,15 @@ decision记录正常AI决策编号、目标索引、阶段／原因、角色脚�
 
 通行接近也调用既有mobility入口，野外可用Teleport／Charge时沿原规划接近洞口、楼梯和门户，已到交互范围或短距离直达时保留正常点击／步行。提前返回的servicePassage负责自己的职业移动续接；等待战斗的旧目标记忆在接近期间挂起，避免误挡传送。已提交进入请求后的换场保护仍有效。
 
-城镇已知目标中继保留仍合法的移动指针至少一个请求间隔，避免每次脚点变化都替换近段。若局部静态碰撞未变，客户端和宿主在至少max(1200ms, 2×walkRetryMs)内均未离开各自4格邻域、双方相距不超过2格且已重复提交至少4次移动，子导航返回needs-replan；父级保留NPC／通路身份，立即从实际脚点重规划，不对整个目标施加3秒冷却。该局部重试停用可选的走道偏移修正，仍按原生碰撞执行；离开8格邻域或局部地形变化后恢复修正。同一局部只提前交接一次，后续仍受原有无进展期限约束。合法绕路按净位移保持进度，不要求直线接近目标；单纯等待动态占路不会累计移动次数。known-target-relay-replan及localRelayRecovery记录交接，交互到达标准不变。
+城镇子导航在短段末端6格内允许边走边接续，用实际小数脚点和已提交段的方向判断前进：尚未接近该段终点的垂直平面时，新指针不能退回平面后方；接近必要拐角后允许原路径的回头弯。它不要求踩准普通中间格，也不以到最终目标的直线距离限制合法绕路。可整段直达的后续路径节点优先合并，指令仍按原短程长度截取并复验整数射线；直线／斜线畅通时不再插入净空中点。目标移动、射线受阻、真实位置纠正及正常交互接管仍可解除保留。`townWalkLane`只调整真实转角，保存偏移点和已验证的接回点；通向接回点的前向射线一旦可走即可提前切入，阶段只向前推进，接回点进入前视范围后恢复普通续段，不要求逐点踩格。可选偏移不能越过接回点后折返；两段均按当前碰撞复验。该约束适用于城镇中继及单位接近，不改变野外父级待探开口选择，也不放宽显式exactPoint／跨界接近点的到达条件。
+
+若局部静态碰撞未变，客户端和宿主在至少max(1200ms, 2×walkRetryMs)内均未离开各自4格邻域、双方相距不超过2格且已重复提交至少4次移动，子导航返回needs-replan；父级保留NPC／通路身份，立即从实际脚点重规划，不对整个目标施加3秒冷却。该局部重试停用可选的走道偏移修正，仍按原生碰撞执行；离开8格邻域或局部地形变化后恢复修正。同一局部只提前交接一次，后续仍受原有无进展期限约束。合法绕路按净位移保持进度，不要求直线接近目标；单纯等待动态占路不会累计移动次数。known-target-relay-replan及localRelayRecovery记录交接，交互到达标准不变。
+
+子导航status的`townLane`记录当前双段修正的bend／resume／target与是否正在接回；`pointerSelections`保留本次子目标最近32次普通短程移动入口受理时的request、整数from、小数feet、target、修正前raw、修正候选lane、实际submitted、resume与branch（route／town-bend／town-lane-continuation／exploration-lane）。宿主滞后保护可能进一步缩短submitted；这些记录不覆盖独立的宿主接回／交互站位分支，也不等于逐包发送记录。结束后保留选点历史供父级快照读取，新子目标清空。连续前视、双段续接与 NPC 直达交接仍待运行对照。
 
 步行恢复归auto_walk，共用于普通地面目标、探索、步行跨区及NPC／物件／门户接近，适用城镇与野外。画面走动与服务端位置进展分别观察；明显分歧时，无宿主进展的观察窗口可跨子目标保留。新的本人位置校验显示服务端已停在所报终点，持续至少2秒（高延迟取更长）无脚点进展，且本地已停或双方间隔着地形碰撞时，可触发恢复；交互连续失败的resyncApproach也进入同一流程。单个旧位置样本或普通移动滞后不单独触发回退。
 
-恢复保留原目标，经已加载碰撞规划短段退回服务端已观察脚点附近，优先双方直线可达的指针，重新走过拐角后续行；不直接改副本位置。期间原包结果及饮药继续处理，父任务、战斗及职业位移暂不替换恢复路线；收到真实纠正后按实际脚点接续。每个子导航最多恢复两轮，保留原总期限及15秒局部无进展上限。客户端与服务端脚点相距超过50子格时，回退短段不再因超出服务端请求范围而全部被筛掉：优先选50子格内且双方直线可达的指针，其次50子格内的，最后才用范围外的短段；范围外请求由服务端按原版用0x15把客户端重设回实际位置，从而解除失配。3秒仍没有任何可用短段即失败交还父级，不再空等15秒。旧逻辑曾在城镇里因两侧相距65子格而每轮空等15秒，连续多轮共约65秒。成因如下：本地预测先行，服务端角色被游走的城镇NPC挡停，属原版正常现象；原版PlrMsg对超出50子格的0x04／0x13物件请求静默丢弃，只有0x01／0x03坐标请求在距上次接受超过25帧时回0x15；而恢复期间AI只发物件交互、不发坐标移动，服务端既不纠正也不再发0x96，客户端也就没有新的0x5F上报。不能把走到图示目标当成交互或换场成功，也不重放消费／领奖。status的movementRecoveries／recoveryAnchor和行为阶段walking-recovery记录次数与接回点，interaction-approach-retry记录单位复试及两套脚点。
+恢复保留原目标，经已加载碰撞规划短段退回服务端已观察脚点附近，优先双方直线可达的指针，重新走过拐角后续行；不直接改副本位置。期间原包结果及饮药继续处理，父任务、战斗及职业位移暂不替换恢复路线；收到真实纠正后按实际脚点接续。每个子导航最多恢复两轮，保留原总期限及15秒局部无进展上限。客户端与服务端脚点相距超过50子格时，回退短段不再因超出服务端请求范围而全部被筛掉：优先选50子格内且双方直线可达的指针，其次50子格内的，最后才用范围外的短段；范围外请求由服务端按原版用0x15把客户端重设回实际位置，从而解除失配。3秒仍没有任何可用短段即失败交还父级，不再空等15秒。原版 PlrMsg 对超出 50 子格的 0x04／0x13 请求静默丢弃，0x01／0x03 坐标请求满足 25 帧间隔时可返回 0x15。恢复因此使用坐标短段，交互和换场仍等实际回包，消费与领奖继续沿各自的结果等待。status的movementRecoveries／recoveryAnchor和行为阶段walking-recovery记录次数与接回点，interaction-approach-retry记录单位复试及两套脚点。
 
 调度先处理实际结果、通行续接及到期重试，再攻击。尚未可用的演出等待允许正常战斗移动；已发起的入口接近不被攻击替换，停稳且客户端已有位置满足交互范围后可原地单次攻击，不追怪／绕圈，下一次通行先行。卷轴真实施放、交杖和物品提交保留各自消费确认，不作为“每秒再消费”的操作。passage-wait／passage-retry日志和status.passageWaits列阶段、次数、下次复试及总剩余时间。第四幕仍用泰瑞尔X+5见证点；城镇间任务门户先跨幕，补给留到下一次出城。补给日志heal／hp／mp／tp区分不足原因。出城前生命低于90%才找治疗者；传送书未过半时只在本次已为药剂进店的情况下顺带补满，不为缺一两页单独开店。
 
@@ -334,7 +372,7 @@ decision记录正常AI决策编号、目标索引、阶段／原因、角色脚�
 
 门、NPC、物件、拾取及门户执行共用原交互几何和动态碰撞。调试AI的路线规划另用只读副本：按当前MPQ的OperateFn 8／61及Selectable0识别普通可开启门，仅撤下这些门的物件占位，保留底层地形、其他物件与城镇动态单位避让；探索记忆、已知目标接近和出口连通使用同一规划语义，不按角色能否传送改变门的可达性。DebugAutoWalk沿规划路线以完整人物占位识别门，接近后通过正常交互开启，观察实际模式后继续原目标，同一门持续关闭12秒明确失败。实际指针、人物路径、传送落点和受限传送射线仍使用原客户端碰撞；不改RemoteTown、RemoteControl、RemoteScene或服务端规则。任务封印、资格阻挡物与不可开启物件不套用普通门例外；门操作不充当物品或旅行结果。无传送过门、长门边界及跨房间撤出重入的组合仍须独立验证，传送角色通过不能替代步行验收。
 
-单位接近先选可达交互周边，再调用正常RemoteControl完成最后跟随和点击，持续移动期间不逐段覆盖。城镇远距接近已指派单位时，沿已知路线寻找进入逐轴 50 子格点击范围的站位。NPC／传送点首击通常在 32 子格内；更远时要求本地和最近 Host 脚点均在原点击范围内，并通过相应行走射线。传送点向中心作行走碰撞射线，最近可走到的终点已在有效操作区时就点击已指派单位，由普通客户端走近；激活及开菜单分别等待服务端确认。局部停住但直线无碰撞时保留最多5秒无进展窗口；碰撞或窗口耗尽后再绕路。NPC打开请求以原会话期限为界，Host仍接近时保留意图；确认无进展才换交互站位，至多两轮，已在范围内可原地有界重点击。结果仍须真实对话／换区，未知服务结果不重放。
+单位接近先选可达交互周边，再调用正常RemoteControl完成最后跟随和点击，持续移动期间不逐段覆盖。已指派NPC在逐轴32子格内且实际行走射线可达时，父级`approachPoint`在保留旧中继之前交接单位目标，子导航在短段选点之前提交正常NPC点击，不等待旧中继完成，也不先绕去开无关门。父／子共用`directNpcApproach`，检查当前执行碰撞（包括其他单位与未开门，只忽略目标NPC自身占位），32子格是既有AI接近范围，不是对话距离；诊断approach.strategy为direct-npc、result为interaction-ray-confirmed。恢复接回、动作锁、必要任务提示等待及Host拐角保护仍保留。城镇远距接近已指派单位时，沿已知路线寻找进入逐轴50子格点击范围的站位；超过32子格时要求本地和最近Host脚点均在原点击范围内，并通过相应行走射线。传送点向中心作行走碰撞射线，最近可走到的终点已在有效操作区时就点击已指派单位，由普通客户端走近；激活及开菜单分别等待服务端确认。局部停住但直线无碰撞时保留最多5秒无进展窗口；碰撞或窗口耗尽后再绕路。NPC打开请求以原会话期限为界，Host仍接近时保留意图；确认无进展才换交互站位，至多两轮，已在范围内可原地有界重点击。结果仍须真实对话／换区，未知服务结果不重放。
 
 子导航消费RemoteControl真实提交时的源位置及代次记录，沿前端本地DynamicPath绑定场景；区域／生成代次更新后重新绑定，旧child取消不代表旅行成功。最终钥匙、资格和碰撞由服务端裁决。
 
@@ -386,7 +424,7 @@ NPC开窗子任务完成只证明当次会话曾打开。原版自动对白最�
 
 赶路／任务期间记住本区横纵各50子格内经过的真实传送点，等当前动作允许时接近。旧坐标用于找回指派，重新走到仍无指派时继续探索。危险避让、任务服务及已提交旅行结果等待优先。已解锁判断统一消费`knownWaypointAreas`；世界模式1／2不能代替个人资格。中性点点击后的实际激活回执增量加入记忆，实际使用菜单时由新63校正；个人历史未知且外观已打开时不宣称本人解锁。只处理已见传送点，不从隐藏预设或城镇拼图猜位置。
 
-探索观察与小地图显示策略分开：AI地形记忆只消费实际绘制确认；小地图的城镇全显与历史图元都提供大结构线索，但不授予AI整区碰撞。07／08订阅和250ms单位等待仅用于敌人记录生命周期。`exploration.frontier`报告通路身份、局部证据、目标、路线点数和无进展次数；`exploration.frontierAttempts`仍用于具体交互／接近的短期输入重试，不能解除通路级暂缓。`exploration-direction-selected`、`exploration-direction-observed`、`exploration-direction-deferred`和`exploration-backtrack`记录选择、观察、暂缓及回走。
+`exploration.frontier` 报告通路身份、局部证据、目标、路线点数和无进展次数。`exploration.frontierAttempts` 记录具体交互／接近的短期重试，通路级暂缓仍按[场景记忆](#场景记忆的归属)解除。`exploration-direction-selected`、`exploration-direction-observed`、`exploration-direction-deferred` 和 `exploration-backtrack` 记录选择、观察、暂缓及回走。
 
 同层传送台只取实际单位指派。普通前沿／回走无可用方案时，可接近已看到的TeleportPad；步行模式按可达性交互，传送模式按已知落点接近。接近预算30秒按执行时间计，实际交互后等待20秒现实时间的本人位置不连续通知，不重放已提交操作或猜测服务端配对。`localTravel`列实际源／落点和使用次数，连续16次未增加观察覆盖／目标记忆则明确阻塞，保留现场。原版Operate27及自研宿主未实现边界见[物件](../gameplay/world/OBJECTS.md#同层传送台边界)。
 
@@ -396,7 +434,7 @@ NPC开窗子任务完成只证明当次会话曾打开。原版自动对白最�
 
 清场完成仍由真实任务状态确认。优先追踪全部实际指派存活敌怪，记录退订前最后位置，并在重新订阅短等后复验；未找到敌人时沿同一待探通路模型继续。探索耗尽只触发真实任务状态查询，不清空知识、不按房间中心巡游。
 
-城镇自动行走优先给转弯留4个子格余量，桥口兼顾两侧，窄路保留原可走点。靠障碍急转保留已提交步段；同区域最近本人路径验证可用于约束转弯，不要求它晚于每条频繁更新的移动指令。短等0.6–2秒后优先找本地脚点与已收Host脚点都可直达的前方中继；没有共同可达点就保留原弯。原无进展期限仍有效，不回走到旧样本位置；本人0x15清掉旧弯。手动点击不变。
+城镇自动行走只在必要转角尝试4子格净空余量，桥口兼顾两侧，窄路保留原可走点；可直走／斜走的射线不为净空增加中点。本地与Host都能沿新射线前进时，不因接近墙面就强制等旧弯走完。靠障碍急转且新射线受阻时保留已提交步段；同区域最近本人路径验证可用于约束转弯，不要求它晚于每条频繁更新的移动指令。短等0.6–2秒后优先找本地脚点与已收Host脚点都可直达的前方中继；没有共同可达点就保留原弯。原无进展期限仍有效，不回走到旧样本位置；本人0x15清掉旧弯。手动点击不变。
 
 上述0.6–2秒是默认转弯宽限，现有`debug-ai.json`的`events`可配置下列自动行走时间，支持启动加载与`debug-ai-reload-config`显式重载，append继承当前值；status的`eventPolicy`给出实际值。单位均为毫秒：
 
@@ -457,7 +495,7 @@ NPC开窗子任务完成只证明当次会话曾打开。原版自动对白最�
 | returnWhenEmpty | true | 野外资源已低且对应药及回复药均用尽时，安全插入回城补给并返回原区域 |
 | fillPortalBook | true | 无书或余量不超过总容量一半时触发城镇自动采购。因其他短缺已进店或显式 restock 时按 Misc.maxstack 补满 |
 
-当前生命／法力读取正常原包，最大值借用同一人物HUD／人物面板的已知投影，未知最大值不猜阈值。`debug-ai-status.supplies.vitals`分别显示原包当前值及`displayMaxLife`／`displayMaxMana`，不将显示上限作为宿主权威真值；既有法力上限投影差异见基准档段落。
+当前生命／法力读取正常原包，最大值借用同一人物HUD／人物面板的已知投影，未知最大值不猜阈值。`debug-ai-status.supplies.vitals`分别显示原包当前值及`displayMaxLife`／`displayMaxMana`，不将显示上限作为宿主权威真值。
 
 只选本人腰带或背包里的已解码药剂，直接通过RemoteInventory.Use使用；不从关闭的箱子／方块取物，不替佣兵喝药。分类读取当前Misc、ItemTypes、pSpell、state与States，先区分rpot，再区分继承的hpot／mpot，避免把回复药当普通红／蓝药。已观察到普通恢复状态时暂不叠喝该类，危急生命例外；没有普通药时才以回复药后备。相同类别按当前表的恢复量常量选强瓶，这只是选择提示，不在客户端计算、应用恢复或职业随机倍率。
 
@@ -605,7 +643,7 @@ NPC开窗子任务完成只证明当次会话曾打开。原版自动对白最�
 
 熔炉非中立状态证明已放入灵魂石，敲击另等开启。必要交谈缺话题时关闭并刷新私人状态，重新收到该NPC提示才重开。有界等待结束仍缺少必要结果时保留失败原因。
 
-任务物件的普通客户端0x13提交一旦被实际记录，父AI在条件重选前就登记待结果状态，不等待子行走下一次更新才报告completed。凭据必须匹配当前目标、游戏／区域代次，且修订号晚于本次导航的interactionRevision基线；02／04靠近请求不能满足此条件。这样材料删除先于物件模式回包时，不会把已消耗材料重新判为领取前置；任务完成仍要求真实模式／任务结果。单机熔炉消息已确认存在删除mss后约45毫秒才收到mode1的顺序，宿主forgePlaced为真、forgeHits为0；不能因AI随后补石失败认定服务端没有放石。新增等待衔接仅做编辑器诊断及补丁格式检查，未构建／运行；分包、跨帧与失败恢复仍待新版实测。
+任务物件的普通客户端0x13提交一旦被实际记录，父AI在条件重选前就登记待结果状态，不等待子行走下一次更新才报告completed。凭据必须匹配当前目标、游戏／区域代次，且修订号晚于本次导航的interactionRevision基线；02／04靠近请求不能满足此条件。这样材料删除先于物件模式回包时，不会把已消耗材料重新判为领取前置；任务完成仍要求真实模式／任务结果。单机熔炉消息已确认存在删除mss后约45毫秒才收到mode1的顺序，宿主forgePlaced为真、forgeHits为0；不能因AI随后补石失败认定服务端没有放石。分包、跨帧与失败恢复仍待运行对照。
 
 任务目标完成后，AI通过界面功能入口打开正常Q任务日志以消除New Entry；无提示时不额外开窗，NPC／库存操作占用时延后并合并请求。现有debug-ai.json的`events.questLogDurationMs`配置自动查看时长，单位毫秒，默认2000，范围0–30000；0禁用自动查看，保留正常New Entry提示及手动Q操作。支持`debug-ai-reload-config`显式重载，status的eventPolicy给出实际值；重载为0会取消待打开请求并关闭AI自动打开的面板，其他时长修改只影响下次打开。计时归AI独立调度，届时调用关闭入口，不阻塞行走、传送、战斗，也不直接处理已阅位或发送已阅消息。正常任务面板动画／回执继续由原客户端流程处理；玩家手动接管面板后不被自动关闭。AI控制期间隐藏普通鼠标手形，暂停、结束或手动查看面板时恢复；手持物品原图保留。
 
@@ -684,7 +722,7 @@ combat = @{
 
 静电场沿当前Skills.aurarangecalc求有效等级半径，沿DifficultyLevels.StaticFieldMin读取资料片难度下限，经典版不使用该下限；依据D2MOO SkillSor::SrvDo020／AuraCallback_StaticField。保留原首领、已学技能、当前安全射程条件，不为静电场额外贴近。先施放一次出城主攻，冷却期间用普通自施法输入穿插；每轮重新判断主攻是否就绪，不设固定三次上限、不重置主攻nextCast，主攻优先于可选绕圈，实际动作恢复门禁仍有效。血量比例达到原难度下限便停止，不另加任意策略下限。
 
-**绝对HP限制**：原版普通怪物同步及当前OnlineUnit只有血量比例，不能用MonStats基础生命冒充现场生命，也不读取宿主隐藏数据。本次未实现绝对HP停用条件，不能宣称已满足该项；未知HP时仅使用原难度比例下限。诊断targetAbsoluteLife=null／staticFieldAbsoluteStop明确说明，staticFieldCasts记录特殊施放；日志static-field-between-primary便于核对穿插。比例存在原包量化误差，接近难度下限时保守停止。
+**绝对HP限制**：原版普通怪物同步及当前OnlineUnit只有血量比例，不能用MonStats基础生命冒充现场生命，也不读取宿主隐藏数据。绝对 HP 停用条件仍缺现场绝对生命输入，当前使用原难度比例下限。诊断targetAbsoluteLife=null／staticFieldAbsoluteStop明确说明，staticFieldCasts记录特殊施放；日志static-field-between-primary便于核对穿插。比例存在原包量化误差，接近难度下限时保守停止。
 
 飞弹躲避借用正常RemoteScene的只读显示缓存：世界位置、当前速度、敌我及剩余寿命，沿实际轨迹作0.35秒规划；危险尺寸取当前Missiles.Size，另加debug余量。纳入正常客户端已重建、当前ClientCol／Size表明可碰撞的敌方飞弹，并保留diablight／diabfire／diabwall／vampirefirewall专门验证，友方、尚未出现或已过期的效果不算危险；不读取服务端隐藏技能／未来轨迹。每轮复验选定落点，优先正常Teleport，落点须为当前已加载／近房间的可站地面；步行后备需完整已知路径且避免继续穿过危险段。躲避释放攻击输入、保留战斗记忆，不能绕过施法动作／资源／原输入门禁。挂起的战斗记忆不独占职业移动；明确的接近／换位／后撤阶段释放攻击后，也可通过同一正常职业移动入口执行，持续攻击仍不抢占。`hazardFeedback`报告观察数、间距与落点，`combatFeedback`列出城技能与静电场等级／半径；普通online快照也列飞弹速度及敌我。此处是基于可见表现的避险策略，未认证全部攻击预兆、视觉缺失、延迟和所有怪物技能。
 
@@ -723,15 +761,17 @@ Do27落点还须属于当前Room1或其活动邻房间；缓存中其他房间�
 
 普通五幕任务无需为可保留服务购买帽子。只有显式测试灌注、镶孔或个性化时才准备合格材料；灌注可能产出带孔稀有帽，不能保证还能打孔，服务仍拒绝当前装备和不合格物品。
 
-可复用配方为[debug-sorceress.json](fixtures/debug-sorceress.json)和[debug-act1.json](fixtures/debug-act1.json)。角色使用独立输入副本，准备与实际运行分开记录。使用独立工作副本、实际购买资金；AI不自动成长或生成这些前提。
+可复用配方为[debug-sorceress.json](fixtures/debug-sorceress.json)和[debug-act1.json](fixtures/debug-act1.json)。角色与资金需预先准备，任务使用独立存档副本。Windows 女巫单机启动和继续方式见[诊断启动](BUILD_AND_RUN.md#诊断启动与女巫任务-ai)。
 
-## 交易的工具配方
+<a id="交易的工具配方"></a>
+
+## 马勒斯任务配方
 
 `scenario='act1', questNumber=3`、`deliver`、显式单项quest与act1计划默认均在马勒斯交回、灌注资格可用时完成。显式useServiceRewards才使用材料继续灌注。取物来自实际架子，已有hdm或已取得资格时不重复取得；交付仅确认恰西实际主题。身份从当前MPQ解析，原规则见[第一幕任务](../gameplay/quests/ACT1.md#原规则证据)。
 
 ## 实现入口与待验收范围
 
-[ai.cpp](../../src/app/debug/ai.cpp)负责解析／队列／绑定，[ai_navigation.cpp](../../src/app/debug/ai_navigation.cpp)负责旅行／探索／门，[exploration_memory.cpp](../../src/app/debug/exploration_memory.cpp)负责唯一观察记忆、通路提取与路线规划，[ai_local_travel.cpp](../../src/app/debug/ai_local_travel.cpp)负责同层传送台接近及实际落点观察，[ai_combat.cpp](../../src/app/debug/ai_combat.cpp)负责效果观察、技能／站位恢复和撤退，[ai_defense.cpp](../../src/app/debug/ai_defense.cpp)负责原表静电场半径与可见飞弹避险，[ai_actions.cpp](../../src/app/debug/ai_actions.cpp)负责物品／回城／交付，[ai_mobility.cpp](../../src/app/debug/ai_mobility.cpp)负责职业移动／技能确认，[ai_supplies.cpp](../../src/app/debug/ai_supplies.cpp)负责药剂／真实购买／补给往返，[ai_quests.cpp](../../src/app/debug/ai_quests.cpp)登记任务／步骤及清场，[ai_act_two.cpp](../../src/app/debug/ai_act_two.cpp)及[ai_act_three.cpp](../../src/app/debug/ai_act_three.cpp)及[ai_act_four.cpp](../../src/app/debug/ai_act_four.cpp)登记第二至第四幕条件图，[ai_quest_later_actions.cpp](../../src/app/debug/ai_quest_later_actions.cpp)处理任务掉落搜寻、机关武器、两次破珠和三次熔炉操作，[ai_quest_graph.cpp](../../src/app/debug/ai_quest_graph.cpp)按事实选择未满足条件，[ai_quest_actions.cpp](../../src/app/debug/ai_quest_actions.cpp)处理正常任务交互／奖励／灌注／交通，[ai_quest_items.cpp](../../src/app/debug/ai_quest_items.cpp)处理技能书、方块和插杖。[RemoteTown](../../src/client/remote_town.hpp)只读暴露已经重建的房间、连接及已指派单位的临时避让查询；[frontend](../../src/app/frontend.cpp)持有唯一输入所有权及调度，并只读提供原UI资源上限与购买报价。
+[ai.cpp](../../src/app/debug/ai.cpp)负责解析／队列／绑定，[ai_navigation.cpp](../../src/app/debug/ai_navigation.cpp)负责旅行／探索／门，[ai_experience.cpp](../../src/app/debug/ai_experience.cpp)负责经验配置解析与地标／方向选择，[exploration_memory.cpp](../../src/app/debug/exploration_memory.cpp)负责唯一观察记忆、通路提取与路线规划，[ai_local_travel.cpp](../../src/app/debug/ai_local_travel.cpp)负责同层传送台接近及实际落点观察，[ai_combat.cpp](../../src/app/debug/ai_combat.cpp)负责效果观察、技能／站位恢复和撤退，[ai_defense.cpp](../../src/app/debug/ai_defense.cpp)负责原表静电场半径与可见飞弹避险，[ai_actions.cpp](../../src/app/debug/ai_actions.cpp)负责物品／回城／交付，[ai_mobility.cpp](../../src/app/debug/ai_mobility.cpp)负责职业移动／技能确认，[ai_supplies.cpp](../../src/app/debug/ai_supplies.cpp)负责药剂／真实购买／补给往返，[ai_quests.cpp](../../src/app/debug/ai_quests.cpp)登记任务／步骤及清场，[ai_act_two.cpp](../../src/app/debug/ai_act_two.cpp)及[ai_act_three.cpp](../../src/app/debug/ai_act_three.cpp)及[ai_act_four.cpp](../../src/app/debug/ai_act_four.cpp)登记第二至第四幕条件图，[ai_quest_later_actions.cpp](../../src/app/debug/ai_quest_later_actions.cpp)处理任务掉落搜寻、机关武器、两次破珠和三次熔炉操作，[ai_quest_graph.cpp](../../src/app/debug/ai_quest_graph.cpp)按事实选择未满足条件，[ai_quest_actions.cpp](../../src/app/debug/ai_quest_actions.cpp)处理正常任务交互／奖励／灌注／交通，[ai_quest_items.cpp](../../src/app/debug/ai_quest_items.cpp)处理技能书、方块和插杖。[RemoteTown](../../src/client/remote_town.hpp)只读暴露已经重建的房间、连接及已指派单位的临时避让查询；[frontend](../../src/app/frontend.cpp)持有唯一输入所有权及调度，并只读提供原UI资源上限与购买报价。
 
 任务通关只说明对应固定程序、角色与种子下的结果，不认证其他组合；待验收组合见[调试导航待验收](ORIGINAL_GAPS.md#待验收调试导航)。自动练级、属性／技能分配及通用装备估值／换装未实现；电影播放器未实现。
 

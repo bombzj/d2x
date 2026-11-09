@@ -135,6 +135,8 @@ struct ViewState {
     bool bhAutomapOnJoin = false;
     bool bhShowLkChestLines = false;
     bool bhQuickCast = false;
+    bool bhSkillBar = false;
+    static constexpr int bhSettingsCount = 14;
     // BH settings overlay (Ctrl+Z).
     bool bhSettingsOpen = false;
     int bhSettingsSelected = 0;
@@ -209,6 +211,7 @@ class SceneView {
     void createBlizzardFall(int missileId, Vec position);
     TileVisibility worldVisibility_;
     uint64_t worldGameGeneration_ = ~uint64_t{}, worldAreaGeneration_ = ~uint64_t{};
+    uint64_t weatherRepositionSequence_{};
     struct LootLabel {
         ItemHandle item;
         std::string text;
@@ -239,8 +242,6 @@ class SceneView {
     void drawAreaTitle() const;
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker = false, uint32_t owner=UINT32_MAX) const;
-    void drawSkillHotkeyLabels(int skill, Rectangle bounds, std::optional<bool> right = {},
-                               std::optional<uint32_t> owner = {}) const;
     void drawBoundSkillBar(bool right, Rectangle anchor) const;
     void drawSkillTree(Vec mouse) const;
     void drawQuests(Vec mouse) const;

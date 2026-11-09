@@ -112,11 +112,13 @@ PD2专用陷阱的全部效果与实服尸体组合尚未认证。公共尸体�
 
 ## 客户端接入：快速施法
 
-来源：本机PD2安装的配置与两份BH设置界面源码；核心行为未核对。
+PD2客户端提供快速施法（Quick Cast）开关。官方BH的General页分别提供Quick Cast和Skill Bar的开关及热键，另有仅在Quick Cast开启时显示技能栏的选项。历史BH-CN将Quick Cast译为“快速施法”。本机`BH.json`保存`quick_cast`的`enabled`与`hotkey`，核心侧`ProjectDiablo.json`使用`pd2_game_settings.quick_cast`。BH设置源码提供配置入口，施法与技能栏的实际运行路径仍需按目标版本核对。[官方BH设置](../../reference/pd2-bh/BH/Modules/GameSettings/GameSettings.cpp) · [历史BH-CN设置](../../reference/pd2-cn-bh/BH/Modules/GameSettings/GameSettings.cpp)
 
-PD2客户端提供快速施法（Quick Cast）开关。官方BH的General页含“Quick Cast”勾选与热键（[GameSettings.cpp](../../reference/pd2-bh/BH/Modules/GameSettings/GameSettings.cpp)）；历史BH-CN同位置为“快速施法”（[GameSettings.cpp](../../reference/pd2-cn-bh/BH/Modules/GameSettings/GameSettings.cpp)，界面文案按CN汉化记录，不提升为通用规则）。BH.json存有quick_cast的enabled+hotkey，核心侧ProjectDiablo.json的pd2_game_settings.quick_cast为同名开关；两份BH只提供设置界面，热键同步与实际施法触发由PD2核心消费，本地没有该核心的源码证据，按键后施放哪个技能、目标与鼠标语义、与现有技能选择键的互斥及关闭时是否保持原选择行为均未核实，实现前不按界面字面自造。
+[PD2汉化Wiki的游戏体验说明](https://wiki.projectdiablo2.cn/wiki/General_Changes)记载主绑定键触发快速施法，副绑定键继续切换技能。目标选取、按住与松开、手位恢复、引导与充能的处理，以及技能栏实际布局仍待按[目标版本](BUILDS.md#目标版本)核对。原协议坐标与单位施法请求只携带目标，技能由对应手的选择决定，接入时需核对选择、施放和恢复的时序。
 
-D2X已有基础实现：BH设置开关随客户端偏好保存；开启后按技能槽键先提交该手`SelectMouseSkill`，待该手选择确认即用当前鼠标目标提交既有施放命令，键盘单按即可施放，不要求鼠标键。原包施放包不携带技能ID，因此该手当前选择会被改为所按技能，且选择被拒绝或1秒内未确认时本次快速施法放弃；关闭时仍只选择不施放。表现层不改服务端权威或本地预结算，见[手势与输入](../gameplay/ui/CLASSIC_HUD.md#手势与输入)与[技能菜单](../gameplay/ui/CLASSIC_HUD.md#技能菜单)。物理键沿`app/input.cpp`换算FrameInput语义位。目标／鼠标语义、与引导技能和充能物品来源的完整互斥、以及PD2核心是否恢复按键前选择仍未核实；剩余任务与完成条件见[实施步骤](GAP_PLAN.md#实施步骤)的T16。
+D2X在PD2单机、TCP/IP及CN客户端的`Ctrl+Z`面板提供Quick Cast和Skill Bar，两个开关独立保存并默认关闭。原版LoD 1.13c使用现有[技能菜单](../gameplay/ui/CLASSIC_HUD.md#技能菜单)与鼠标施放路径。开启Quick Cast时，技能槽主绑定在世界视口提交一次施放，副绑定只选择技能。客户端按手位与来源等待确认及请求间隔，最多保留该输入一秒，执行时重新检查选择与当前光标目标。技能选择器仍用于绑定。当前实现保留施放后的手位选择，引导技能沿用鼠标手势。完整按住与松开、手位恢复及充能组合仍待与目标版本对照。
+
+开启Skill Bar时，左右手绑定分别绘制在对应底栏按钮上方，复用MPQ技能图标和当前键名，最多四列。被面板覆盖的一侧隐藏，技能选择器或模态面板打开时隐藏两侧。布局沿用D2X接入的显示方案，PD2原生布局及仅随Quick Cast显示的选项仍待核对。相关工作见[实施步骤](GAP_PLAN.md#实施步骤)的T16。
 
 ## 当前代码接入范围
 

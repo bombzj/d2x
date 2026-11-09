@@ -367,6 +367,9 @@ void SceneStreams::weather(float dt, bool rainAllowed, int density) {
     auto &state=*impl_;
     if (state.weatherPaused) return;
     if (!rainAllowed || !state.audio.sound) {
+        // 80450/4FAA3 remove the instance when rain is disallowed. The
+        // six-step volume change applies only while the instance is eligible.
+        if (state.rain) state.rain->modulation=0;
         state.retire(state.rain); state.rainVolume=0; state.rainFrames=0;
         return;
     }
@@ -382,8 +385,9 @@ void SceneStreams::weather(float dt, bool rainAllowed, int density) {
     for (int tick=0;tick<ticks;++tick)
         state.rainVolume+=std::clamp(target-state.rainVolume,-6,6);
     if (state.rain) {
+        state.rain->modulation=state.rainVolume;
         if (!state.rainVolume) state.retire(state.rain);
-        else {state.rain->modulation=state.rainVolume;state.rain->update(dt,state.audio);}
+        else state.rain->update(dt,state.audio);
     }
 }
 void SceneStreams::pauseWeather(bool paused) {

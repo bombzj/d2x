@@ -393,10 +393,23 @@ void GameInstance::step() {
                 }
                 const bool trading=systems_.trade.find(player.player)!=nullptr;
                 const bool endsTrade=!preservesAction && (domain==SystemId::Movement || domain==SystemId::Travel || domain==SystemId::Death);
+                const bool inventoryLocked=[&] {
+                    if(!itemRequest || std::holds_alternative<UseItem>(itemRequest->intent)) return false;
+                    if(ground && !ground->drop && player.rules.skills && !player.rules.skills->pd2) {
+                        // Rcv0x16 -> PLRMODES_First(mode=NU, a4=0) checks
+                        // UNINTERRUPTABLE, not the current skill's ENDANIM.
+                        // Nearby pickup is an inventory transaction, not a
+                        // new action. Ground reach/movement and trade/cursor
+                        // permissions remain with their owning domains.
+                        return systems_.effects.unitStates(player.actor,tick_).contains(
+                            player.rules.skills->uninterruptable.id);
+                    }
+                    return systems_.skills.busy(player.actor,tick_);
+                }();
                 if(locked) result=CommandStatus::Conflict;
                 else if (trading && endsTrade && !systems_.trade.cancelFor(player.player,tick_)) result=CommandStatus::QueueFull;
                 else if (trading && !endsTrade && !preservesAction && domain!=SystemId::Inventory && domain!=SystemId::Trade && domain!=SystemId::Social) result=CommandStatus::Conflict;
-                else if (domain == SystemId::Inventory && !std::holds_alternative<UseItem>(std::get<inventory::Request>(command.payload).intent) && systems_.skills.busy(player.actor, tick_)) result = CommandStatus::Conflict;
+                else if (inventoryLocked) result = CommandStatus::Conflict;
                 else result = dispatchCommand(actor, command.payload, systems_);
                 if(result==CommandStatus::Applied && domain==SystemId::Trade)
                     if(const auto *exchange=systems_.trade.find(player.player))

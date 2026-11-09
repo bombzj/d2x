@@ -121,6 +121,8 @@ struct RemoteScene::Impl {
         std::deque<std::pair<float,Vec>> samples; // Recent displayed path; native samples have no timestamps.
         std::optional<Vec> goal;
         uint64_t requestRevision{}, invalidatedRequest{}, actionRevision{};
+        std::optional<uint64_t> finishedMonsterMovement;
+        std::optional<uint64_t> finishedMonsterKnockback;
         uint64_t castRevision{};
         std::optional<CastHandoff> castHandoff;
         bool npcClickStopped{};

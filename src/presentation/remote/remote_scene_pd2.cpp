@@ -15,6 +15,10 @@
 #include <vector>
 
 namespace d2x {
+bool RemoteScene::supportsQuickCast(int skill) const {
+    return impl_->pd2 && impl_->skillRows.contains(skill) && !impl_->channelSkill(skill);
+}
+
 std::optional<int32_t> RemoteScene::Impl::pd2ReplicaFormulaStat(OnlineUnitKey owner,std::string_view name) const {
     if(!pd2) return {};
     if(owner.type==0) {

@@ -284,7 +284,7 @@ void RemoteScene::Impl::plan(Motion &m, Vec goal, const Map &map, Vec origin, Mo
     else if(unit.key.type==1 && target && m.effectivePathType &&
         (*m.effectivePathType==2 || *m.effectivePathType==13 || *m.effectivePathType==15)) m.effectivePathType=13;
     const auto pathType=m.effectivePathType;
-    const bool nativeMonster=unit.key.type==1 && pathType && unit.pathDistance &&
+    const bool nativeMonster=unit.key.type==1 && pathType &&
         (*pathType==1 || *pathType==2 || *pathType==3 || *pathType==5 || *pathType==6 || *pathType==7 || *pathType==12 || *pathType==13 || *pathType==15);
     if(unit.key.type==1 && !nativeMonster) {
         effectLimitations.insert("Native monster path parameters unavailable or unsupported");
@@ -297,12 +297,12 @@ void RemoteScene::Impl::plan(Motion &m, Vec goal, const Map &map, Vec origin, Mo
         for(const auto &entry:sceneBinding->mapTargets) if(entry.unit==*target) {doorOrientation=entry.doorOrientation;break;}
     auto path = unit.key.type==0
         ? grid.nativePlayerPath(m.position - origin + center, goal - origin + center, rule,target?target->type:255,doorOrientation)
-        : nativeMonster ? grid.nativeUnitPath(m.position-origin+center,goal-origin+center,*pathType,*unit.pathDistance,rule,unit.destinationUnit.has_value())
+        : nativeMonster ? grid.nativeUnitPath(m.position-origin+center,goal-origin+center,*pathType,unit.monsterPathMaxDistance,rule,unit.destinationUnit.has_value())
         : grid.path(m.position - origin + center, goal - origin + center, true, rule);
     if(nativeMonster && path.empty() && target && m.actionRevision==unit.actionRevision && pathType==13) {
         m.effectivePathType=15;
         const auto retry=navigationCollision(map.grid,origin,unit.key,target);
-        path=retry.nativeUnitPath(m.position-origin+center,goal-origin+center,15,*unit.pathDistance,rule,true);
+        path=retry.nativeUnitPath(m.position-origin+center,goal-origin+center,15,unit.monsterPathMaxDistance,rule,true);
     }
     for (auto point : path)
         m.route.push_back(point + origin - center);
@@ -523,7 +523,13 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     }
     const auto rule = movementRule(u);
     const bool alive = u.key.type == 0 ? !playerDead(u) : !onlineMonsterCorpse(u);
-    const bool monsterCheck=!pd2 && u.key.type==1 && u.positionCheckMode.has_value();
+    const bool frozenMonster=u.key.type==1 && alive && hasVisualState(u.key,"freeze");
+    const bool ordinaryMonsterWalk=u.key.type==1 && !u.actionSkill && (u.mode==2 || u.mode==15);
+    // The wire action remains in the read-only replica after the local
+    // path has ended. Only a new action may start another ordinary walk.
+    const bool finishedMonsterWalk=ordinaryMonsterWalk &&
+        (m.finishedMonsterMovement==u.actionRevision || u.movementTargetMissing);
+    const bool monsterCheck=u.key.type==1 && u.positionCheckMode.has_value();
     const bool stopSample=monsterCheck && u.mode==1 && !u.actionSkill && u.wireAction==7 &&
         m.actionRevision!=u.actionRevision;
     if(m.actionRevision!=u.actionRevision || m.npcClickStopped || !alive) m.stopDestination.reset();
@@ -571,14 +577,14 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         if(error>tolerance) {
             m.position=target;m.correction={};m.correctionLeft=0;m.pathStep.reset();m.pathElapsed=0;
             m.stopDestination.reset();corrected=true;
-        } else if(stopSample && error>1 && !(u.pathType && u.pathDistance && u.velocityPercent)) {
+        } else if(stopSample && error>1 && !(u.pathType && u.velocityPercent)) {
             // Assignment can be followed by a stop before any walking
             // packet. Reconcile that sample without inventing a path speed.
             const auto displayed=m.position+m.correction;
             m.position=target;
             m.correction=map.grid.segment(target-origin,displayed-origin,{},rule)?displayed-target:Vec{};
             m.correctionLeft=.12f;
-        } else if(stopSample && error>1 && u.pathType && u.pathDistance && u.velocityPercent && !m.npcClickStopped) {
+        } else if(stopSample && error>1 && u.pathType && u.velocityPercent && !m.npcClickStopped) {
             const auto row=monsterRows.find(unitClass(u).value_or(UINT16_MAX));
             if(row!=monsterRows.end()) {
                 const auto extra=monsterExtra.find(monstats.value(row->second,"MonStatsEx"));
@@ -648,6 +654,8 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         // A correction must not carry a sprite through a closed door or wall.
         if (!map.grid.segment(target - origin, displayed - origin, {}, rule)) m.correction = {};
     }
+    if(u.key.type==1 && u.wireAction==6 && m.actionRevision!=u.actionRevision)
+        m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
     // Keep the old native walking destination from restarting motion after
     // the owner starts a cast (the server normally omits its skill packet).
     if (m.castHandoff) activeRequest = false;
@@ -698,7 +706,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         m.runningRevision=request->runningRevision;
     } else if(m.stopDestination) {
         goal=m.stopDestination;m.running=false;
-    } else if (alive && walking(u) && !m.npcClickStopped && !m.castHandoff && !(own && request &&
+    } else if (alive && walking(u) && !finishedMonsterWalk && !m.npcClickStopped && !m.castHandoff && !(own && request &&
                request->revision <= m.invalidatedRequest && u.actionRevision < request->revision)) {
         if (u.destination) goal = Vec{float(u.destination->x), float(u.destination->y)};
         else goal = pointForUnit(u.destinationUnit);
@@ -722,12 +730,12 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
             nativeUnitDistance(position, rule.size, *playerUnitGoal, playerTargetSize) == 0;
     };
     const auto monsterPathArrived = [&](Vec position) {
-        if(u.key.type!=1 || !u.destinationUnit || !u.pathSteps) return false;
+        if(u.key.type!=1 || !u.destinationUnit) return false;
         const auto targetUnit=world().units.find(*u.destinationUnit);
         const auto point=pointForUnit(u.destinationUnit);
         if(targetUnit==world().units.end() || !point) return false;
         const int targetSize=unitSize(targetUnit->second);
-        return targetSize>0 && nativeUnitDistance(position,unitSize(u),*point,targetSize)<=std::max(0,int(*u.pathSteps)-1);
+        return targetSize>0 && nativeUnitDistance(position,unitSize(u),*point,targetSize)<=u.monsterPathStopDistance;
     };
     if (goal && playerPathArrived(m.position)) {
         m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
@@ -754,13 +762,14 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         }
         if (reached) goal.reset();
     }
-    if(goal && monsterPathArrived(m.position)) {
+    if(goal && !frozenMonster && monsterPathArrived(m.position)) {
         m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
         goal.reset();
     }
     if (u.key.type == 1 && u.pathType && (*u.pathType == 8 || *u.pathType == 9 || *u.pathType == 11)) goal.reset();
     const bool playerKnocked=alive && !requested && u.key.type==0 && (u.nativeMode?u.mode==19:u.mode==20);
-    const bool knocked=playerKnocked || (alive && u.key.type==1 && u.mode==13 && u.pathType && (*u.pathType==8 || *u.pathType==11));
+    const bool knocked=playerKnocked || (alive && u.key.type==1 && u.mode==13 &&
+        m.finishedMonsterKnockback!=u.actionRevision && u.pathType && (*u.pathType==8 || *u.pathType==11));
     if(playerKnocked && alive && u.destination) {
         if(m.actionRevision!=u.actionRevision) {
             const Vec center{.5f,.5f};
@@ -801,7 +810,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         // its coordinate is unchanged, just as StartXY/StartID on authority.
         const bool newRequest=requested && request->revision!=m.requestRevision;
         if(newRequest || corrected || m.actionRevision!=u.actionRevision) pathElapsed=frameTime>.1f?0:frameTime;
-        if (changedTarget || corrected || newRequest ||
+        if ((changedTarget && !frozenMonster) || corrected || newRequest ||
             m.actionRevision != u.actionRevision)
             plan(m, *goal, map, origin, rule, speed, u,
                 requested?request->unit:u.destinationUnit);
@@ -847,8 +856,8 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     if (u.key.type <= 1) {
         // Ordinary dynamic paths use the same 25Hz step as authority, while
         // presentation frames only accumulate time for that simulation.
-        if (m.route.empty() || speed<=0) m.pathElapsed = 0;
-        else {
+        if (!frozenMonster && (m.route.empty() || speed<=0)) m.pathElapsed = 0;
+        else if(!frozenMonster) {
             m.pathElapsed += pathElapsed;
             while (m.pathElapsed >= NativePathStep::seconds) {
                 m.pathElapsed -= NativePathStep::seconds;
@@ -870,6 +879,13 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     // same game frame. Keep walking between 25Hz steps, but never add a
     // rendering-time grace period after arrival, collision or cancellation.
     m.pathMoving=!m.route.empty() && speed>0;
+    if(ordinaryMonsterWalk && !m.pathMoving && (!frozenMonster || m.route.empty())) {
+        // Common E259/E325 and ResetMovement: arrival, collision, failed
+        // planning or an unresolved target consume this order permanently.
+        m.finishedMonsterMovement=u.actionRevision;
+        m.route.clear();m.goal.reset();m.pathElapsed=0;
+        m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+    }
     m.playerKnockback=playerKnocked && m.pathMoving;
     if(!m.pathMoving) m.stopDestination.reset();
     m.last = u.position;

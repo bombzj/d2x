@@ -46,6 +46,19 @@ void imageAt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
     const auto &texture = image->texture;
     DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds, {0, 0}, 0, tint);
 }
+void fitSkillHotkeyLabel(std::string &label, const UiPainter &painter, int size, float width) {
+    if (painter.measure(label, size) <= width) return;
+    if (painter.measure("...", size) > width) {
+        label.clear();
+        return;
+    }
+    while (!label.empty() && painter.measure(label + "...", size) > width) {
+        size_t end = label.size() - 1;
+        while (end > 0 && (static_cast<unsigned char>(label[end]) & 0xC0) == 0x80) --end;
+        label.resize(end);
+    }
+    label += "...";
+}
 int durabilityPart(EquipmentSlot slot, const InventoryDefinitionView *definition) {
     // D2Client 1.13c RVA 0x28420: eleven parts per grey/yellow/red group.
     switch (slot) {
@@ -117,77 +130,44 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool p
     }
     imageAt(image, bounds, picker || available ? WHITE : Color{255, 64, 64, 255});
 }
-void SceneView::drawSkillHotkeyLabels(int skill, Rectangle bounds, std::optional<bool> right,
-                                      std::optional<uint32_t> owner) const {
-    std::string label;
-    const auto &hotkeys = characterView_.skillHotkeys;
-    for (size_t key = 0; key < hotkeys.size(); ++key) {
-        if (hotkeys[key].skill != skill) continue;
-        if (right && hotkeys[key].right != *right) continue;
-        if (owner && hotkeys[key].owner != *owner) continue;
-        auto name = assets_.escapeMenu.bindingName(view_.controls,
-            ControlAction(size_t(ControlAction::Skill1) + key));
-        if (name.empty()) continue;
-        if (!label.empty()) label += " / ";
-        label += name;
-    }
-    if (label.empty()) return;
-    const int width = int(bounds.width) - 6;
-    if (painter_.measure(label, 10) > width) {
-        while (!label.empty() && painter_.measure(label + "...", 10) > width) label.pop_back();
-        label += "...";
-    }
-    constexpr int size = 10, labelHeight = 13;
-    const int labelY = int(bounds.y + bounds.height) - labelHeight;
-    DrawRectangleRec({bounds.x + 1, float(labelY), bounds.width - 2, float(labelHeight)},
-        {0, 0, 0, 210});
-    painter_.label(label, int(bounds.x + (bounds.width - painter_.measure(label, size)) / 2),
-        labelY + 1, size, gold);
-}
 void SceneView::drawBoundSkillBar(bool right, Rectangle anchor) const {
+    if (!view_.bhEnabled || !view_.bhSkillBar || view_.blocksInput() || view_.skillPicker ||
+        view_.chatInputOpen || view_.bhSettingsOpen || characterView_.dead) return;
+    constexpr int columns = 4, labelSize = 10;
+    constexpr float cellWidth = 48, rowHeight = 42, iconSize = 24, labelHeight = 14;
+    constexpr float width = columns * cellWidth;
+    const float x = anchor.x + (anchor.width - width) / 2;
+    const auto viewport = worldViewport();
+    if (x < viewport.x || x + width > viewport.x + viewport.width) return;
+
     struct Binding {
-        int skill = -1;
-        uint32_t owner = UINT32_MAX;
-        std::string key;
+        std::optional<int> skill;
+        uint32_t owner;
+        std::string label;
     };
     std::vector<Binding> bindings;
     const auto &hotkeys = characterView_.skillHotkeys;
     for (size_t key = 0; key < hotkeys.size(); ++key) {
-        if (hotkeys[key].skill == -2 || hotkeys[key].right != right) continue;
-        auto name = assets_.escapeMenu.bindingName(view_.controls,
-            ControlAction(size_t(ControlAction::Skill1) + key));
-        if (name.empty()) continue;
-        bindings.push_back({hotkeys[key].skill, hotkeys[key].owner, std::move(name)});
+        const auto &hotkey = hotkeys[key];
+        if (hotkey.skill == -2 || hotkey.right != right) continue;
+        auto label = assets_.escapeMenu.bindingName(view_.controls, ControlAction(size_t(ControlAction::Skill1) + key));
+        if (label.empty()) continue;
+        bindings.push_back({hotkey.skill < 0 ? std::nullopt : std::optional{hotkey.skill}, hotkey.owner, std::move(label)});
     }
-    if (bindings.empty()) return;
 
-    constexpr int columns = 4;
-    constexpr float cellWidth = 48, rowHeight = 42, iconSize = 24, labelHeight = 14;
     const int rows = (int(bindings.size()) + columns - 1) / columns;
-    const float width = columns * cellWidth;
-    const float x0 = anchor.x + (anchor.width - width) / 2;
-    const float y0 = anchor.y - 5 - rows * rowHeight;
+    const float y = anchor.y - 5 - rows * rowHeight;
     for (size_t index = 0; index < bindings.size(); ++index) {
-        const auto &binding = bindings[index];
-        const int column = int(index % columns), row = int(index / columns);
-        const Rectangle icon = {x0 + column * cellWidth + (cellWidth - iconSize) / 2,
-            y0 + row * rowHeight, iconSize, iconSize};
-        drawSkillIcon(binding.skill < 0 ? std::nullopt : std::optional<int>{binding.skill},
-            icon, false, binding.owner);
-        auto label = binding.key;
-        constexpr int labelSize = 10;
-        const float labelWidth = cellWidth - 2;
-        if (painter_.measure(label, labelSize) > labelWidth) {
-            while (!label.empty() && painter_.measure(label + "...", labelSize) > labelWidth)
-                label.pop_back();
-            label += "...";
-        }
-        const float labelX = x0 + column * cellWidth + (cellWidth - labelWidth) / 2;
-        const float labelY = icon.y + icon.height + 1;
-        DrawRectangleRec({labelX, labelY, labelWidth, labelHeight}, {0, 0, 0, 210});
-        painter_.label(label, int(x0 + column * cellWidth +
-            (cellWidth - painter_.measure(label, labelSize)) / 2),
-            int(labelY + 1), labelSize, gold);
+        auto &binding = bindings[index];
+        const float cellX = x + (index % columns) * cellWidth;
+        const float cellY = y + (index / columns) * rowHeight;
+        drawSkillIcon(binding.skill, {cellX + (cellWidth - iconSize) / 2, cellY, iconSize, iconSize}, false, binding.owner);
+        fitSkillHotkeyLabel(binding.label, painter_, labelSize, cellWidth - 2);
+        if (binding.label.empty()) continue;
+        const float labelY = cellY + iconSize + 1;
+        DrawRectangleRec({cellX + 1, labelY, cellWidth - 2, labelHeight}, {0, 0, 0, 210});
+        const float labelX = cellX + (cellWidth - painter_.measure(binding.label, labelSize)) / 2;
+        painter_.label(binding.label, int(labelX), int(labelY + 1), labelSize, gold);
     }
 }
 void SceneView::drawControlPanel() const {
@@ -288,7 +268,22 @@ void SceneView::drawSkillControls(Vec mouse) const {
         for (const auto &slot : skillPickerSlots(right)) {
             const auto bounds = slot.bounds;
             drawSkillIcon(slot.skill, bounds, true,slot.owner);
-            drawSkillHotkeyLabels(slot.skill.value_or(-1), bounds, right, slot.owner);
+            std::string label;
+            const auto &hotkeys = characterView_.skillHotkeys;
+            for (size_t key = 0; key < hotkeys.size(); ++key) {
+                const auto &hotkey = hotkeys[key];
+                if (hotkey.right != right || hotkey.skill != slot.skill.value_or(-1) || hotkey.owner != slot.owner)
+                    continue;
+                const auto name = assets_.escapeMenu.bindingName(view_.controls,
+                    ControlAction(size_t(ControlAction::Skill1) + key));
+                if (name.empty()) continue;
+                if (!label.empty()) label += " / ";
+                label += name;
+            }
+            constexpr int labelSize = 10;
+            fitSkillHotkeyLabel(label, painter_, labelSize, bounds.width - 6);
+            if (!label.empty())
+                painter_.label(label, int(bounds.x + 3), int(bounds.y + bounds.height - 12), labelSize, gold);
             if (CheckCollisionPointRec(rv(mouse), bounds)) {
                 hovered.emplace(slot.skill);hoveredOwner=slot.owner;
                 tooltipAnchor = {bounds.x + bounds.width / 2, bounds.y};

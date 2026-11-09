@@ -434,7 +434,8 @@ bool RemoteCombat::skillDelayActive(uint16_t skill,uint32_t owner) const {
     const auto delay=skillDelayFrames(skill,owner);
     return delay && *delay>0;
 }
-bool RemoteCombat::submit(OnlineCombatCommand command,std::optional<Vec> inputOrigin) {
+bool RemoteCombat::submit(OnlineCombatCommand command, std::optional<Vec> inputOrigin,
+                          std::optional<OnlineSkillSelection> expectedSelection) {
     command.interaction.reset();
     if (!command.context) command.context = onlineIntentContext(session_.read());
     if (!onlineWorldMatches(*command.context, session_.read()))
@@ -457,6 +458,8 @@ bool RemoteCombat::submit(OnlineCombatCommand command,std::optional<Vec> inputOr
         if (command.action == Action::Cast) {
             const auto selected = command.hand == OnlineSkillHand::Left ? world.leftSkill : world.rightSkill;
             if (!selected) return reject("No confirmed skill is selected for this hand");
+            if (expectedSelection && selected != expectedSelection)
+                return reject("The selected skill changed before the cast");
             command.skill = selected->skill;command.owner=selected->owner;
         }
         const auto row = skills_.find(command.skill);
