@@ -698,6 +698,7 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
         gameGeneration_ = world.gameGeneration;
         areaGeneration_ = world.areaGeneration;
         repeated_ = false; // A previous world's cast cannot stop a new world's actor.
+        quickCastRestore_.reset();
         resetInput();
         return;
     }
@@ -705,6 +706,15 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
     const bool lockedCast = casting && lockedTarget_ && world.targetingAvailable;
     const bool enabled = ((world.available && input.insideViewport) || lockedCast) &&
         !uiConsumed() && input.focused && !view_.ui().blocksInput() && !actorClient_.controlledActor().dead;
+    if (quickCastRestore_) {
+        if (input.weaponSwap || quickCastRestore_->weaponSet != view_.characterView().weaponSet) {
+            quickCastRestore_.reset();
+        } else if (enabled && world.combatRequestReady &&
+            std::chrono::steady_clock::now() >= quickCastRestore_->notBefore) {
+            if (characterClient_.submit(quickCastRestore_->selection)) quickCastRestore_.reset();
+            return;
+        }
+    }
     const size_t hand = gesture_ == Gesture::RightCast ? 1 : 0;
     const bool held = hand ? input.rightHeld : input.leftHeld;
     const auto &valid = world.validCombatTargets[hand];

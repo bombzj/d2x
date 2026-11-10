@@ -35,8 +35,15 @@ class SceneController {
         unsigned weaponSet;
         std::chrono::steady_clock::time_point deadline;
         bool selectionRequested = false;
+        SelectMouseSkill restoreSelection;
     };
     std::optional<QuickCastPending> quickCast_;
+    struct QuickCastRestore {
+        SelectMouseSkill selection;
+        unsigned weaponSet;
+        std::chrono::steady_clock::time_point notBefore;
+    };
+    std::optional<QuickCastRestore> quickCastRestore_;
     size_t lastSkillHotkey_{};
     enum class Gesture { None, Move, Interact, LeftCast, RightCast };
     Gesture gesture_ = Gesture::None;
