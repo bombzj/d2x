@@ -56,7 +56,6 @@ ClientPreferences loadClientPreferences() {
             setting("bhShowPathLine"), setting("bhShowResistances"), setting("bhShowMonsters"),
             setting("bhShowEnchantments"), setting("bhShowChests"), setting("bhAutomapOnJoin"), setting("bhShowLkChestLines")};
         result.bhQuickCast = setting("bhQuickCast");
-        result.bhSkillBar = setting("bhSkillBar");
         result.standardResolution = setting("standardResolution");
         const auto dimension = [&](const char *key, int fallback, int minimum) {
             const int value = integer(key, fallback, 16384);
@@ -113,7 +112,7 @@ bool saveClientPreferences(const ClientPreferences &preferences) {
             {"standardResolution", preferences.standardResolution},
             {"customWindowWidth", preferences.customWindowWidth}, {"customWindowHeight", preferences.customWindowHeight},
             {"bhRevealMap", preferences.bhRevealMap}, {"bhAlwaysShowLoot", preferences.bhAlwaysShowLoot},
-            {"bhQuickCast", preferences.bhQuickCast}, {"bhSkillBar", preferences.bhSkillBar},
+            {"bhQuickCast", preferences.bhQuickCast},
             {"bhShowXpText", preferences.bhShowXpText},
             {"bhShowBeltStatus", preferences.bhShowBeltStatus}, {"bhForceLightRadius", preferences.bhForceLightRadius},
             {"bhShowPathLine", preferences.bhShowPathLine}, {"bhShowResistances", preferences.bhShowResistances},

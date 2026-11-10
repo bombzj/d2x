@@ -322,7 +322,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 panels.bhShowXpText, panels.bhShowBeltStatus, panels.bhForceLightRadius,
                 panels.bhShowPathLine, panels.bhShowResistances, panels.bhShowMonsters,
                 panels.bhShowEnchantments, panels.bhShowChests, panels.bhAutomapOnJoin, panels.bhShowLkChestLines,
-                panels.bhQuickCast, panels.bhSkillBar,
+                panels.bhQuickCast,
                 panels.controls, preferences.standardResolution,
                 preferences.customWindowWidth, preferences.customWindowHeight};
             if (current != preferences) { preferences = current; preferencesDirty = true; ui.setAudioSettings(preferences.audio); }
@@ -1297,7 +1297,6 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         initial.controls = preferences.controls;
                         initial.bhEnabled = pd2Resources;
                         initial.bhQuickCast = preferences.bhQuickCast;
-                        initial.bhSkillBar = preferences.bhSkillBar;
                         initial.bhRevealMap = preferences.bhRevealMap;
                         initial.bhAlwaysShowLoot = preferences.bhAlwaysShowLoot;
                         initial.bhShowXpText = preferences.bhShowXpText;

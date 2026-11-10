@@ -131,7 +131,7 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool p
     imageAt(image, bounds, picker || available ? WHITE : Color{255, 64, 64, 255});
 }
 void SceneView::drawBoundSkillBar(bool right, Rectangle anchor) const {
-    if (view_.blocksInput() || view_.skillPicker ||
+    if (!view_.bhEnabled || !view_.bhQuickCast || view_.blocksInput() || view_.skillPicker ||
         view_.chatInputOpen || view_.bhSettingsOpen || characterView_.dead) return;
     constexpr int columns = 4, labelSize = 16;
     constexpr float rowHeight = 46, iconSize = 24, labelHeight = 20;
