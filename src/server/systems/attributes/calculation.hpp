@@ -64,7 +64,7 @@ struct Totals {
     bool equipmentRefreshed{};
     EntityId registeredWeapon; // Candidate value published into the equipment container.
 };
-EquipmentLoadout loadout(const PersistentCharacter &, const ItemCatalog &, const EquipmentRules &);
+EquipmentLoadout loadout(const PersistentCharacter &, const ItemCatalog &, const EquipmentRules &, bool pd2);
 // previous borrows cached passive lists for this synchronous calculation;
 // it is never retained or mutated. Native temporal sources replace the legacy
 // aggregate when supplied, including an explicitly empty source collection.

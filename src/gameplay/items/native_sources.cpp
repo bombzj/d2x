@@ -19,10 +19,17 @@ int32_t baseWeaponDamage(const ItemInstance &item,int32_t base,int32_t inferiorM
 void appendProperties(StatList &part,const StatRuleCatalog &rules,std::span<const ResolvedItemStat> stats) {
     // Use original stat names and encoded rolls. Per-level op inputs must be
     // combined before evaluation, instead of summing rounded per-item outputs.
+    int32_t poisonSources = 0;
+    bool hasPoisonCount = false;
     for(const auto &stat:stats) {
         if(stat.layer<0 || stat.layer>UINT16_MAX) throw std::runtime_error("Invalid native property layer");
         addNativeStat(part,rules,stat.name,stat.rawValue,uint16_t(stat.layer));
+        if(stat.name=="poisonmaxdam" && stat.rawValue>0) ++poisonSources;
+        if(stat.name=="poison_count" && stat.rawValue>0) hasPoisonCount=true;
     }
+    // Native item properties store the poison range and length. Their
+    // runtime lists also carry the count used to average that length.
+    if(!hasPoisonCount) addNativeStat(part,rules,"poison_count",poisonSources);
 }
 }
 NativeEquipmentSources prepareNativeEquipmentSources(const ItemCatalog &items,const StatRuleCatalog &rules,

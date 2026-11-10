@@ -65,6 +65,11 @@ struct CharacterView {
     std::vector<CharacterSkillView> chargedSkills;
     std::array<uint32_t,4> selectedSkillOwners{UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};
     std::set<std::string, std::less<>> unknownStats;
+    std::map<std::string, uint8_t, std::less<>> statColors;
+    uint8_t statColor(std::string_view stat) const {
+        const auto found = statColors.find(stat);
+        return found == statColors.end() ? 0 : found->second;
+    }
     std::string number(std::string_view stat, int64_t value) const {
         return unknownStats.contains(stat) ? "?" : std::to_string(value);
     }

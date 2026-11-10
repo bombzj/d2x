@@ -13,6 +13,7 @@
 
 namespace d2x {
 struct ClassicData;
+struct StatSnapshot;
 // Only complete, observed, active item instances. Slot indices are normalized by
 // the wire adapter; the original NOEQUIP/BROKEN flags decide admission there.
 struct CombatDisplayItem { EquipmentSlot slot; ItemInstance item; };
@@ -31,10 +32,12 @@ struct CombatDisplayEquipment {
     int concentrationDamagePercent = 0;
     std::map<int,int> skillRanks;
     std::optional<KickPanelStats> kick;
+    std::map<std::string,double,std::less<>> playerStats;
 };
 CombatDisplayEquipment projectCombatEquipment(const ClassicData &, EquipmentActor,
     std::span<const CombatDisplayItem>, std::span<const ItemInstance> charms,
     std::span<const ResolvedItemStat> states, const std::map<int,int> &effectiveRanks, const std::map<int,int> &baseRanks,
     const std::set<int> &activeStates, const std::set<int> &accountedPassives={}, int baseDefense=0, int baseAttackRating=0,
-    int baseMinimum=0, int baseMaximum=0, int shieldDefensePercent=0);
+    int baseMinimum=0, int baseMaximum=0, int shieldDefensePercent=0,
+    const StatSnapshot *playerBase=nullptr);
 } // namespace d2x

@@ -326,7 +326,7 @@ void RealmSession::connect_realm(std::unique_ptr<IByteTransport> realmTransport,
     if (!gamePort) throw ProtocolError("Zero native game port");
     p.options.gamePort = gamePort;
     p.directRealm = endpoint;
-    p.view.allowLadderSelection = false;
+    p.view.allowLadderSelection = p.compatibility.profile == ClientProfile::Pd2Local;
     p.mcp.use(std::move(realmTransport)); p.gs.use(std::move(gameTransport));
     p.view.selectedRealm = std::move(name);
     p.realmStartup = preauthenticatedRealmStartup();

@@ -14,6 +14,7 @@
 #include "gameplay/skills/barbarian_passive_spec.hpp"
 #include "gameplay/skills/amazon_passive_spec.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace d2x {
@@ -21,7 +22,7 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
     std::span<const CombatDisplayItem> items,std::span<const ItemInstance> charms,
     std::span<const ResolvedItemStat> states,const std::map<int,int> &ranks,const std::map<int,int> &baseRanks,
     const std::set<int> &activeStates,const std::set<int> &accountedPassives,int baseDefense,int baseRating,int baseMinimum,int baseMaximum,
-    int shieldDefensePercent) {
+    int shieldDefensePercent,const StatSnapshot *playerBase) {
     EquipmentLoadout loadout;
     loadout.requirementPercent=[&](const ItemInstance &item) {
         int value=0;for(const auto &stat:resolveItemStats(data,item,actor.level))
@@ -33,7 +34,14 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
         return itemMaximumDurability(data,item,stats);
     };
     for(const auto &entry:items) loadout.equipped.at(size_t(entry.slot))={&entry.item,data.items.find(entry.item.definition)};
-    for(const auto &item:charms) loadout.backpack.push_back({&item,data.items.find(item.definition)});
+    for(const auto &item:charms) {
+        const EquipmentItem charm{&item,data.items.find(item.definition)};
+        if(!playerBase || loadout.requirements(charm,actor)==InventoryError::None)
+            loadout.backpack.push_back(charm);
+    }
+    // For observed PD2 body items the native assignment has already resolved
+    // requirements. Rechecking with base attributes can drop self-supporting gear.
+    loadout.skipRequirements=playerBase!=nullptr;
     EquipmentContributionSource source{data.equipmentSets,
         [&](const ItemInstance &item,int level){return resolveItemStats(data,item,level);},
         [&](size_t set,size_t bonus,int level) {
@@ -86,10 +94,12 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
     combat.shieldDefensePercent=shieldDefensePercent;
     combat.minimumDamage+=baseMinimum;combat.maximumDamage+=baseMaximum;
     const int rating=baseRating+5*actor.dexterity+mods.attackRating;
-    auto equipment=deriveEquipmentStats(loadout,actor,baseDefense+mods.defense,combat,rating);
+    EquipmentStats equipment;
+    if(!playerBase) equipment=deriveEquipmentStats(loadout,actor,baseDefense+mods.defense,combat,rating);
     std::map<int,int> skillRanks;
     std::optional<KickPanelStats> kick;
-    if(data.profile=="lod-named-txt-v1" && !actor.hireling && data.nativeStats && data.nativeFormulas) {
+    std::map<std::string,double,std::less<>> playerStats;
+    if((playerBase || data.profile=="lod-named-txt-v1") && !actor.hireling && data.nativeStats && data.nativeFormulas) {
         const auto &rules=*data.nativeStats;
         auto sources=prepareNativeEquipmentSources(data.items,rules,contributions,{},
             [&](EntityId id)->const ItemInstance &{
@@ -100,9 +110,13 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
             });
         StatList root;root.ownerKind=StatOwnerKind::Player;root.unitRoot=root.hasOwner=root.hasUnit=true;
         root.contributions=std::move(sources.contributions);
+        if(playerBase) {
+            for(const auto &[key,value]:playerBase->values) writeNativeBaseStat(root.base,rules,key,value);
+        } else {
+            addNativeStat(root,rules,"strength",actor.strength-mods.strength);
+            addNativeStat(root,rules,"dexterity",actor.dexterity-mods.dexterity);
+        }
         addNativeStat(root,rules,"level",actor.level);
-        addNativeStat(root,rules,"strength",actor.strength-mods.strength);
-        addNativeStat(root,rules,"dexterity",actor.dexterity-mods.dexterity);
         addNativeStat(root,rules,"tohit",baseRating);
         addNativeStat(root,rules,"mindamage",baseMinimum);
         addNativeStat(root,rules,"maxdamage",baseMaximum);
@@ -124,9 +138,21 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
             hands.emplace(id,evaluateStatList(rules,*selected,handContext));
         };
         sample({});
-        // Initial 0x94 assigns base levels only. The original client derives
-        // bonuses from its private equipment/state lists, not a required 0x21.
-        for(const auto &[id,skill]:data.nativeFormulas->skills) {
+        if(playerBase) {
+            const auto &unarmed=hands.at(EntityId{});
+            actor.strength=logicalStatValue(unarmed,rules,"strength");
+            actor.dexterity=logicalStatValue(unarmed,rules,"dexterity");
+            mods=nativeCharacterModifiers(unarmed,rules,mods);
+            mods.combat.shieldDefensePercent=shieldDefensePercent;
+            combat=mods.combat;
+            for(const auto &[key,value]:playerBase->values) {
+                (void)value;
+                const auto &rule=rules.definitions.at(key.id);
+                playerStats.emplace(rule.name,std::ldexp(double(unarmed.get(key)),-int(rule.valueShift)));
+            }
+        }
+        // The retail 0x94 assigns base levels only; derive its equipment bonuses.
+        if(!playerBase) for(const auto &[id,skill]:data.nativeFormulas->skills) {
             const auto base=baseRanks.find(id),assigned=ranks.find(id);
             if(base==baseRanks.end() && assigned==ranks.end()) continue;
             const auto rank=resolveNativePlayerSkillRank({id,base==baseRanks.end()?0:base->second,
@@ -147,15 +173,21 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
             hands.erase(EntityId{});
             sample({});
         }
-        for(int index=0;index<equipment.weaponCount;++index)
+        if(playerBase) {
+            for(const auto hand:{weaponHandSlot(false,actor.weaponSet),weaponHandSlot(true,actor.weaponSet)}) {
+                const auto item=loadout.usable(hand,actor);
+                if(item && loadout.find(item->id).definition->equipment.isType("weap")) sample(item->id);
+            }
+        } else for(int index=0;index<equipment.weaponCount;++index)
             if(equipment.weapons[index].item) sample(equipment.weapons[index].item);
         const auto native=deriveNativeEquipmentStats(loadout,actor,
             {rules,hands,itemStats,*data.nativeFormulas,combat,35});
-        equipment.weapons=native.weapons;
-        if(actor.characterClass=="ass" || std::any_of(ranks.begin(),ranks.end(),[&](const auto &rank) {
+        if(playerBase) equipment=native;
+        else equipment.weapons=native.weapons;
+        if(!playerBase && (actor.characterClass=="ass" || std::any_of(ranks.begin(),ranks.end(),[&](const auto &rank) {
                const auto skill=data.nativeFormulas->skills.find(rank.first);
                return rank.second>0 && skill!=data.nativeFormulas->skills.end() && skill->second.number("kick");
-           })) {
+           }))) {
             const auto &unarmed=hands.at(EntityId{});
             const auto stat=[&](std::string_view name){return logicalStatValue(unarmed,rules,name);};
             const auto &boots=native.kickBoots;
@@ -179,6 +211,6 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
         weapon.minimum=int(int64_t(weapon.meleeBaseMinimum)*(100+percent)/100);
         weapon.maximum=int(int64_t(weapon.meleeBaseMaximum)*(100+percent)/100);
     }
-    return {std::move(mods),std::move(equipment),std::move(actor),0,std::move(skillRanks),std::move(kick)};
+    return {std::move(mods),std::move(equipment),std::move(actor),0,std::move(skillRanks),std::move(kick),std::move(playerStats)};
 }
 } // namespace d2x

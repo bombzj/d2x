@@ -15,6 +15,7 @@
 #include "gameplay/skills/druid_spec.hpp"
 #include "content/skills/description_values.hpp"
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <limits>
 
@@ -127,10 +128,10 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
         if(!second.attackRating.empty()) first.attackRating+='\n'+second.attackRating;
         return first;
     }
-    const auto &combat = context.attributes.combat;
     for (int index = 0; index < equipment.weaponCount; ++index) {
         if(selectedWeapon>=0 && index!=selectedWeapon) continue;
         const auto &weapon = equipment.weapons[index];
+        const auto &combat = context.pd2 && weapon.nativeModifiers ? *weapon.nativeModifiers : context.attributes.combat;
         if (leftHand && (!weapon.item || !weapon.leftHand)) continue;
         if ((thrown && !weapon.throwable) || (!thrown && weapon.potion)) return {};
         if (skill && !skill->weapon->smite && !skill->weapon->requiredType.empty() && std::find(weapon.types.begin(), weapon.types.end(), skill->weapon->requiredType) == weapon.types.end())
@@ -151,6 +152,7 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
         }
         if (thrown && weapon.potion && weapon.projectile) {
             const auto &spec = *weapon.projectile;
+            if (context.pd2 && spec.speed <= 0) return {"?", ""};
             if (spec.impact && spec.impact->cloudBurst) {
                 const auto &cloud = spec.impact->cloudBurst->cloud;
                 return {damageText(int64_t(cloud.minimum) * cloud.poisonFrames / 256,
@@ -297,8 +299,10 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
             elementalMaximum = elementalMaximum * bow->sourceDamage / 128;
             if (bow->physicalSkillDamage) skillMinimum = skillMaximum = 0;
         }
+        const uint8_t color=itemMaximum>0?2:0;
         return {damageText(int64_t(minimum) / 256 + elementalMinimum + poisonMinimum + skillMinimum,
-                           int64_t(maximum) / 256 + elementalMaximum + poisonMaximum + skillMaximum), skill && skill->weapon->bow && skill->weapon->bow->guided ? "" : std::to_string(rating)};
+                           int64_t(maximum) / 256 + elementalMaximum + poisonMaximum + skillMaximum),
+                skill && skill->weapon->bow && skill->weapon->bow->guided ? "" : std::to_string(rating),color};
     }
     return {};
 }
@@ -357,13 +361,18 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
     // fixed-point calculator as the picker/tree, including poison totals.
     CharacterActionDisplay result;
     SkillDescriptionValues values(catalog,input,source);
-    if((description.damageProgram==15 || description.damageProgram==16) && description.attackProgram==5 &&
+    // ProjectDiablo replaces these DescDam slots in the target core.
+    constexpr std::array pd2DamagePrograms{11,13,15,16,25,26,27,28};
+    const bool pd2Damage=context.pd2 && std::find(pd2DamagePrograms.begin(),pd2DamagePrograms.end(),
+        description.damageProgram)!=pd2DamagePrograms.end();
+    if(!pd2Damage && (description.damageProgram==15 || description.damageProgram==16) && description.attackProgram==5 &&
        !(entry.spell && entry.spell->pd2))
         return kickPanel(context.kick,catalog,input,values);
     const auto *weapon=entry.spell && entry.spell->weapon?&*entry.spell->weapon:nullptr;
     const bool fireClaws=entry.spell && !entry.spell->pd2 && entry.spell->druid && entry.spell->druid->program==DruidProgram::FireClaws;
     const bool nativeWeapon=weapon && (weapon->bow || fireClaws || (weapon->spear && weapon->spear->kind==SpearSkillSpec::Kind::Power));
-    if((description.damageProgram==5 && !nativeWeapon) || description.damageProgram==8 || description.damageProgram==9 || description.damageProgram==12) {
+    if(pd2Damage) result.damage="?";
+    else if((description.damageProgram==5 && !nativeWeapon) || description.damageProgram==8 || description.damageProgram==9 || description.damageProgram==12) {
         auto physical=values.physicalDamage(true),elemental=values.elementalDamage();
         if(description.damageProgram==9 && !description.missiles[0].empty())
             elemental=values.missileElementalDamage(0,75,DescriptionMastery::Include);
@@ -405,7 +414,7 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
         result.damage="?";
     if(!description.attackProgram) result.attackRating.clear();
     else if(result.attackRating.empty()) {
-        if(!context.weaponValuesKnown) result.attackRating="?";
+        if(!context.weaponValuesKnown || (pd2Damage && description.attackProgram==5)) result.attackRating="?";
         else {
             const auto bonus=values.parameter("toht");
             const int count=context.dualWield && description.attackProgram==2?context.equipment.weaponCount:1;

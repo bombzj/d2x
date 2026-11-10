@@ -968,9 +968,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     {"life", player.hp}, {"maxLife", player.maxLife}, {"mana", player.mana}, {"maxMana", player.maxMana},
                     {"stamina",player.stamina},{"maxStamina",player.maxStamina},{"weaponSet",player.weaponSet},
                     {"unspentAttributes",player.unspentAttributes},{"unspentSkills",player.unspentSkills},
-                    {"unknownStats", player.unknownStats},
-                    {"left", {{"damage", left.damage}, {"rating", left.attackRating}}},
-                    {"right", {{"damage", right.damage}, {"rating", right.attackRating}}}};
+                    {"unknownStats", player.unknownStats}, {"statColors", player.statColors},
+                    {"left", {{"damage", left.damage}, {"rating", left.attackRating}, {"damageColor", left.damageColor}}},
+                    {"right", {{"damage", right.damage}, {"rating", right.attackRating}, {"damageColor", right.damageColor}}}};
                 auto &skills=reply["characterUi"]["skills"]=nlohmann::json::array();
                 for(const auto &[id,skill]:player.skills)
                     skills.push_back({{"id",id},{"name",skill.name},{"baseRank",skill.baseRank},{"effectiveRank",skill.effectiveRank},

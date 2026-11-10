@@ -32,6 +32,10 @@ constexpr bool weaponSlotActive(EquipmentSlot slot, unsigned set) {
             slot != EquipmentSlot::AlternateLeftHand) ||
            slot == weaponHandSlot(false, set) || slot == weaponHandSlot(true, set);
 }
+constexpr bool pd2CharmRowActive(int row, int backpackRows) {
+    constexpr int charmRows = 4;
+    return backpackRows >= charmRows && row >= backpackRows - charmRows && row < backpackRows;
+}
 const char *equipmentSlotCode(EquipmentSlot slot);
 std::optional<EquipmentSlot> equipmentSlotFromCode(std::string_view code);
 struct EquipmentDefinition {

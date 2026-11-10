@@ -145,8 +145,8 @@ SkillRestoreInput skillHandFacts(const PlayerState &player,const PersistentChara
     SkillRestoreInput input;
     input.primaryHandKnown=true;
     input.dualWield=player.definition.code=="bar" || player.definition.code=="ass";
-    const auto view=attributes::loadout(character,*player.rules.items,equipment);
     const auto &rules=*player.rules.character->stats;
+    const auto view=attributes::loadout(character,*player.rules.items,equipment,rules.pd2);
     for(size_t hand=0;hand<input.hands.size();++hand) {
         const auto item=view.equipped[size_t(weaponHandSlot(hand!=0,character.player.weaponSet))];
         SkillHandEquipment value;

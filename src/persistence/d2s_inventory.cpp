@@ -125,11 +125,14 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
     for (bool prefix : {true, false})
         for (auto index : prefix ? source.prefixes : source.suffixes) {
             if (!index) continue;
+            const auto row = index - 1;
             const auto &records = prefix ? content.magicPrefixes : content.magicSuffixes;
-            auto found = std::find_if(records.begin(), records.end(), [&](const auto &entry) { return entry.row == index - 1; });
-            require(found != records.end(), "unknown affix ID");
-            item.affixes.push_back({prefix, int32_t(index - 1), {}});
-            item.requiredLevel = std::max(item.requiredLevel, found->requiredLevel);
+            auto found = std::find_if(records.begin(), records.end(), [&](const auto &entry) { return entry.row == row; });
+            // Old PD2 exports can retain affix identities absent from the
+            // current table. Their rolled effects are stored in the item.
+            require(found != records.end() || (content.pd2Host && source.format < 104),
+                item.definition + " unknown " + (prefix ? "prefix " : "suffix ") + std::to_string(index));
+            item.affixes.push_back({prefix, int32_t(row), {}});
         }
     if (item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted || item.quality == ItemQuality::Tempered) {
         const auto suffixCount = content.tables.at("raresuffix").rows().size();

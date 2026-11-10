@@ -217,8 +217,7 @@ Bytes EmbeddedRealm::selectedTcpIpSave() {
     auto &o = *impl_; auto &service = o.primary->connection->service;
     o.saveReturn();
     if (!service.lease || !service.selected || service.binding) throw std::runtime_error("Select a local character before TCP/IP Join");
-    service.store->load(*service.lease);
-    return service.lease->expected;
+    return service.store->transferableSave(*service.lease);
     });
 }
 std::shared_ptr<hosting::AutomapStore> EmbeddedRealm::selectedAutomapStore() const {

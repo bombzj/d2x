@@ -1,4 +1,5 @@
 #include "d2s_header.hpp"
+#include "initial_character.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -22,11 +23,7 @@ uint32_t checksum(std::span<const uint8_t> bytes) {
     return result;
 }
 void validate(const D2sHeader &header) {
-    if (header.name.empty() || header.name.size() > 15 ||
-        !std::all_of(header.name.begin(), header.name.end(), [](unsigned char letter) {
-            return (letter >= 'A' && letter <= 'Z') || (letter >= 'a' && letter <= 'z') ||
-                   (letter >= '0' && letter <= '9') || letter == '-';
-        }) || header.weaponSet > 1 ||
+    if (!validCharacterName(header.name) || header.weaponSet > 1 ||
         !(header.flags & 0x20) || header.characterClass > 6 || !header.skillCount ||
         header.level == 0 || header.level > 99 || header.difficulty > 2)
         throw std::runtime_error("Invalid Diablo II expansion character header fields");

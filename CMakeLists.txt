@@ -215,7 +215,7 @@ add_library(d2x_persistence
   src/persistence/d2s_codec.cpp src/persistence/save_file.cpp src/persistence/d2s_header.cpp
   src/persistence/d2s_fixed_sections.cpp src/persistence/d2s_stats.cpp
   src/persistence/d2s_items.cpp src/persistence/d2s_inventory.cpp src/persistence/d2s_skills.cpp
-  src/persistence/d2s_quests.cpp src/persistence/pd2_save_profile.cpp
+  src/persistence/d2s_quests.cpp src/persistence/pd2_save_profile.cpp src/persistence/pd2_split_save.cpp
   src/persistence/initial_character.cpp
 )
 target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items d2x_content)

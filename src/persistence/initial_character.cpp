@@ -9,7 +9,7 @@
 namespace d2x {
 bool validCharacterName(std::string_view name) {
     return !name.empty() && name.size() <= 15 && std::all_of(name.begin(), name.end(), [](unsigned char c) {
-        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
     });
 }
 PersistentCharacter createCharacter(const ClassicData &content, std::string name, unsigned index, uint32_t seed, bool hardcore) {

@@ -62,9 +62,9 @@ CN属性0–3与扩展3A控制从0x10开始的分界已核实，普通属性分�
 
 来源：[docs/modules/CLIENT.md](../modules/CLIENT.md)。
 
-PD2使用独立RemoteDisplay缓存，不准备原版宿主程序、装备派生或面板几何，未登记的飞弹程序与公式显示不可用。
+PD2使用独立RemoteDisplay缓存，准备只读技能公式、套装元数据及当前MPQ的属性规则。PD2本地与CN远端共用经典人物面板。玩家`calculateCombatEquipment`将原包基础四项属性与资源上限、同修订的活动装备及孔内物品、护符、套装与状态送入公共StatList。面板读取四项总属性、资源上限、逐手普通武器伤害／命中、防御与格挡，再以当前难度表和上限计算四抗。当前生命、法力、耐力仍独立读取原包。PD2十列八排背包的下四排为有效护符区，客户端和自研宿主共用行资格；仓库、方块及副武器组不贡献当前人物数值。
 
-PD2本地与CN远端的人物面板共用经典布局。`projectObservedAttributes`和玩家`calculateCombatEquipment`目前只对零售配置启用，因此PD2面板的四项属性、资源上限及抗性沿用收到的人物属性值。当前生命、法力、耐力可独立由资源同步包更新，因而可能超过面板显示的上限。需要武器投影的伤害和命中，以及缺少原包值的防御，显示为`?`。物品提示与部分技能公式仍分别消费已解码的装备及状态。CN各属性字段是否携带完整总值、目标版本的套装和护符等贡献仍需同角色对照确认。源码入口见[人物属性投影](../../src/client/remote_ui_character.cpp)、[战斗装备投影](../../src/client/remote_ui_items.cpp)和[面板值投影](../../src/client/character_projection.cpp)。BH的扩展属性面板另见[BH接入设计](../architecture/BH_CODE_ISOLATION.md)。
+缺少装备／状态输入时派生字段显示`?`。PD2单机从已启用的存档装备恢复属性列表，再检查穿戴需求，因此存档中的装备可以继续提供支撑其穿戴的属性。新增穿戴仍检查候选物品加入前的资格。四项属性、资源与抗性的数字颜色沿[共用角色面板](../gameplay/ui/CLASSIC_HUD.md#角色面板)规则。PD2专用伤害程序、按当前生命动态调整的武器伤害及完整实服状态／套装组合仍需逐项对照。源码入口见[战斗装备投影](../../src/client/remote_ui_items.cpp)、[公共战斗显示](../../src/content/character/combat_display.cpp)和[面板值投影](../../src/client/character_projection.cpp)。BH的扩展属性面板另见[BH接入设计](../architecture/BH_CODE_ISOLATION.md)。
 
 <a id="客户端接入技能来源初始化"></a>
 

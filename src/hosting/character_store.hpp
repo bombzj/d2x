@@ -1,6 +1,7 @@
 #pragma once
 #include "core/bytes.hpp"
 #include "hosting/character_directory.hpp"
+#include "persistence/pd2_split_save.hpp"
 #include "resources/atomic_file.hpp"
 #include <filesystem>
 #include <map>
@@ -16,26 +17,29 @@ class CharacterStore {
     struct Lease {
         std::filesystem::path path;
         std::unique_ptr<FileLock> lock;
-        std::vector<uint8_t> expected;
+        CharacterSaveFiles expected;
+        std::optional<CharacterSaveFiles> pending;
         Lease(const Lease &) = delete;
         Lease &operator=(const Lease &) = delete;
         Lease(std::filesystem::path, std::unique_ptr<FileLock>);
     };
     CharacterStore(std::filesystem::path root, const ClassicData &);
     CharacterRosterView list(bool includeQuick = false, std::string_view fileName = {});
-    void install(std::string fileName, const PersistentCharacter &);
+    void install(std::string fileName, const PersistentCharacter &, const Bytes *extendedLayout = nullptr);
     void create(std::string name, unsigned characterClass, uint32_t seed, bool hardcore = false);
     void erase(uint64_t revision, uint64_t id);
     std::unique_ptr<Lease> acquire(uint64_t revision, uint64_t id);
     PersistentCharacter load(Lease &, std::optional<int> gameDifficulty = {});
     void save(Lease &, const PersistentCharacter &);
     void saveBytes(Lease &, Bytes); // Validated native TCP/IP return; preserve original bytes.
+    Bytes transferableSave(Lease &);
   private:
     const ClassicData &content_;
     std::filesystem::path root_;
     uint64_t revision_{};
     std::map<uint64_t, std::filesystem::path> entries_;
-    std::map<uint64_t, std::vector<uint8_t>> versions_;
+    std::map<uint64_t, CharacterSaveFiles> versions_;
+    void checkCurrent(Lease &);
     std::filesystem::path resolve(uint64_t revision, uint64_t id) const;
     std::unique_ptr<Lease> lock(const std::filesystem::path &) const;
 };

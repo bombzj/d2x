@@ -16,7 +16,7 @@ DomainStatus Draft::qualified(EntityId candidate) const {
     state.inventory = edit.inventory;
     state.player.weaponSet = edit.weaponSet;
     const auto totals = attributes::calculate(player.definition, state, catalog, rules, characterRules, candidate, player.transient.modifiers,player.transient.states,player.transient.statSources(),&player.totals);
-    const auto view = attributes::loadout(state, catalog, rules);
+    const auto view = attributes::loadout(state, catalog, rules, characterRules.stats->pd2);
     const auto &item = state.inventory.items.at(candidate);
     const auto *definition = catalog.find(item.definition);
     if (!definition) return DomainStatus::Unavailable;

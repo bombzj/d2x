@@ -60,7 +60,7 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         if (content.profile=="remote-display-txt-v1") program.rules=ClientMissileProgram::Rules::Pd2Cn;
         program.animation={number("animrate"),number("AnimLen"),number("SubStart"),number("SubStop"),number("LoopAnim")!=0,number("SubLoop")!=0};
         program.function = callback("pcltdofunc");
-        if(content.nativeFormulas) {
+        if(content.nativeFormulas && content.profile!="remote-display-txt-v1") {
             const auto skill=content.nativeFormulas->missiles.at(id).reference("skill");
             if(!skill.empty()) program.linkedSkill=content.nativeFormulas->skillIds.at(std::string(skill));
         }

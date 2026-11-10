@@ -6,6 +6,7 @@
 #include "gameplay/items/pd2/pricing.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
 #include "gameplay/skills/spec.hpp"
+#include <stdexcept>
 
 namespace d2x {
 ItemInstance RemoteUiClients::Impl::itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
@@ -82,17 +83,28 @@ std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::observedCombatEquip
         const auto &online=session.read();
         const auto unit=online.world.units.find(key);
         if(unit==online.world.units.end()) return {};
+        StatSnapshot playerBase;
+        const bool pd2Player=data.nativeStats && data.nativeStats->pd2 && key.type==0 && online.load.playerUnitId==key.id;
+        if(pd2Player) {
+            if(!data.nativeFormulas) return {};
+            for(const auto name:{"strength","dexterity","vitality","energy","maxhp","maxmana","maxstamina"}) {
+                const auto id=data.nativeStats->names.at(name);
+                if(id>UINT8_MAX) continue;
+                const auto found=online.world.playerAttributes.find(uint8_t(id));
+                if(found!=online.world.playerAttributes.end()) playerBase.values.emplace(StatKey{id,0},int32_t(found->second));
+            }
+        }
         const CombatEquipmentKey cacheKey{online.gameGeneration,online.world.itemRevision,items.read().revision,
             unit->second.appearanceRevision,unit->second.stateSequence,actor.characterClass,actor.strength,actor.dexterity,actor.level,
-            actor.blockFactor,actor.weaponSet,actor.hireling,defense,rating,minimum,maximum,ranks};
+            actor.blockFactor,actor.weaponSet,actor.hireling,defense,rating,minimum,maximum,ranks,playerBase.values};
         const auto cached=combatEquipment.find(key);
         if(cached!=combatEquipment.end() && cached->second.key==cacheKey) return cached->second.value;
-        auto value=calculateCombatEquipment(key,std::move(actor),ranks,defense,rating,minimum,maximum);
+        auto value=calculateCombatEquipment(key,std::move(actor),ranks,defense,rating,minimum,maximum,pd2Player?&playerBase:nullptr);
         combatEquipment.insert_or_assign(key,CachedCombatEquipment{cacheKey,value});return value;
     }
 std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::calculateCombatEquipment(OnlineUnitKey key,EquipmentActor actor,
-        const std::map<int,int> &ranks,int defense,int rating,int minimum,int maximum) const {
-        if (data.profile != "lod-named-txt-v1" &&
+        const std::map<int,int> &ranks,int defense,int rating,int minimum,int maximum,const StatSnapshot *playerBase) const {
+        if (!playerBase && data.profile != "lod-named-txt-v1" &&
             !(actor.hireling && session.read().protocolProfile=="pd2-local")) return {};
         const auto &world=session.read().world;
         const auto unit=world.units.find(key),end=world.units.end();
@@ -106,8 +118,15 @@ std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::calculateCombatEqui
             const bool worn=wire.mode==1 && wire.body>=1 && wire.body<=10;
             const bool charm=key.type==0 && wire.mode==0 && wire.page==1 && base && base->equipment.isType("char");
             if(!worn && !charm) continue;
+            if(playerBase && charm) {
+                if(!wire.positionKnown) return {};
+                const auto layout=data.playerInventoryLayouts.find(actor.characterClass);
+                if(layout==data.playerInventoryLayouts.end()) return {};
+                if(!pd2CharmRowActive(wire.y,layout->second.grid.rows)) continue;
+            }
             const auto decoded=items.read().items.find(id);
             if(!base || decoded==items.read().items.end() || !decoded->second.decoded || decoded->second.revision!=wire.revision) return {};
+            if(playerBase && worn && !decoded->second.identified) return {};
             auto item=completeItem(wire,decoded->second,SocketLocation{{},0});if(!item) return {};
             if(worn) {
                 auto slot=EquipmentSlot(wire.body-1);
@@ -164,7 +183,14 @@ std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::calculateCombatEqui
                 }
             }
         }
-        auto result=projectCombatEquipment(data,std::move(actor),equipped,charms,stateStats,ranks,baseRanks,states,accounted,defense,rating,minimum,maximum,shieldDefensePercent);
+        CombatDisplayEquipment result;
+        try {
+            result=projectCombatEquipment(data,std::move(actor),equipped,charms,stateStats,ranks,baseRanks,states,accounted,
+                defense,rating,minimum,maximum,shieldDefensePercent,playerBase);
+        } catch(const std::runtime_error &) {
+            if(playerBase) return {};
+            throw;
+        }
         if(result.kick && data.nativeStats) for(const auto &[id,list]:observed->second.states) {
             if(const auto state=data.states.find(list.name);state!=data.states.end()) {
                 if(state->second.damageRed) result.kick->damageColor=1;

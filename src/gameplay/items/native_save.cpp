@@ -45,7 +45,11 @@ void validate(const D2sItem &item, const ItemDefinition &definition, const Nativ
     require(item.code.size() >= 1 && item.code.size() <= 4, "base code");
     require((item.flags & 0x2000000u) == 0, "transient gamble item");
     require(item.mode == 0 || item.mode == 1 || item.mode == 2 || item.mode == 4 || item.mode == 6 || (ground && (item.mode==3 || item.mode==5)), "location");
-    require(bool(item.flags & compact) == content.bases.at(item.code).compact, "compact flag");
+    // CN format 103 retains compact runes inside sockets even when the
+    // current MPQ compiles the loose stackable rune as a complete item.
+    const bool legacySocketRune=content.pd2Host && item.format==103 && item.mode==6 &&
+        (item.flags & compact) && definition.equipment.isType("rune");
+    require(bool(item.flags & compact) == content.bases.at(item.code).compact || legacySocketRune, "compact flag");
     require(item.quality >= 1 && item.quality <= 9, "quality");
     require(item.level >= 1 && item.level <= 127, "item level");
     require(bool(item.flags & earFlag) == bool(item.ear) &&

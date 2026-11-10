@@ -79,8 +79,16 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
             if (equipped.ownerType != owner.type || equipped.owner != owner.id) continue;
             if (equipped.flags & 0x4100u) continue;
             const auto *base = data.items.find(equipped.code);
-            const bool active = (equipped.mode == 1 && equipped.body <= 10) || (equipped.mode == 0 && equipped.page == 1 && base && base->equipment.isType("char"));
+            const bool charm=equipped.mode==0 && equipped.page==1 && base && base->equipment.isType("char");
+            const bool active=(equipped.mode==1 && equipped.body<=10) || charm;
             if (!active) continue;
+            if(charm && data.nativeStats && data.nativeStats->pd2) {
+                const auto cls=actor->second.classId;
+                if(!equipped.positionKnown || !cls || *cls>=data.characters.size()) return {};
+                const auto layout=data.playerInventoryLayouts.find(data.characters[*cls].code);
+                if(layout==data.playerInventoryLayouts.end()) return {};
+                if(!pd2CharmRowActive(equipped.y,layout->second.grid.rows)) continue;
+            }
             // ITEMS_IsCharmUsable also passes ITEMS_CheckRequirements;
             // unidentified charms contribute no equipped stats.
             if (!(equipped.flags & 0x10u)) continue;
@@ -402,6 +410,9 @@ void RemoteUiClients::Impl::projectCharacter() {
             const auto name = costs.value(row, "Stat");
             if (auto value = stat(name)) input.stats.emplace(std::string(name), *value);
         }
+        for (const auto *name : {"strength", "dexterity", "vitality", "energy", "maxstamina", "maxhp", "maxmana"})
+            if (const auto base = input.stats.find(name); base != input.stats.end())
+                input.basePanelStats.emplace(*base);
         input.life = w.life; input.mana = w.mana; input.stamina = w.stamina;
         input.dead = onlinePlayerDead(w); input.running = run; input.town = scene && scene->town;
         input.aliveAfterDeathSave = w.life && !*w.life && w.deathPhase == OnlineDeathPhase::Alive;
@@ -498,6 +509,8 @@ void RemoteUiClients::Impl::projectCharacter() {
                 input.effectiveRanks,0,definition.toHitFactor-35);
             if(input.combatEquipment) {
                 const auto &equipment=*input.combatEquipment;
+                for(const auto &[name,value]:equipment.playerStats)
+                    input.stats.insert_or_assign(name,value);
                 if(data.profile=="lod-named-txt-v1") {
                     for(const auto &[id,rank]:equipment.skillRanks) input.effectiveRanks.insert_or_assign(id,rank);
                 }
@@ -505,7 +518,7 @@ void RemoteUiClients::Impl::projectCharacter() {
                 input.attackTiming=KnownAttackTiming{weapon.fasterAttack,weapon.baseSpeed,equipment.modifiers.combat.attackRate,weapon.itemBaseSpeed,weapon.itemAttackSpeed,bool(weapon.item)};
             }
         }
-        if(input.combatEquipment && stat("vitality") && stat("energy") && stat("maxhp") && stat("maxmana") && stat("maxstamina"))
+        if(data.profile=="lod-named-txt-v1" && input.combatEquipment && stat("vitality") && stat("energy") && stat("maxhp") && stat("maxmana") && stat("maxstamina"))
             for(const auto *name:{"statpts","newskills","experience"}) input.stats.try_emplace(name,0);
         characterView = projectCharacterDisplay(data, input);
         skillFormulaStats=std::move(input.stats);

@@ -401,8 +401,14 @@ bool DebugAi::Impl::restock(Context &c) {
     }
     const auto supplier=ammo?*ammoSupplier:definitions->supplier(*view.load.act,portal);
     const auto npc=find(c,supplier);
-    if(supply.shopIssued && supply.supplyNpc && (!npc || *supply.supplyNpc!=npc->key)) {
-        c.control.closeNpc();cancelWalk(c);supply.shopIssued=false;supply.shelfObserved=false;supply.supplyNpc.reset();supply.shopDeadline={};return false;
+    // Retail healers can return to their service menu after the last line.
+    // Close it before walking to a different supplier; reuse it for the same NPC.
+    const bool changingNpc=world.npcRequested && (!npc || world.npcRequested!=npc->key.id);
+    if(changingNpc || (supply.shopIssued && supply.supplyNpc && (!npc || *supply.supplyNpc!=npc->key))) {
+        if(changingNpc && !c.control.closeNpc()) {
+            wait("supply-npc-close","Waiting to close the previous NPC before approaching the merchant");return false;
+        }
+        cancelWalk(c);supply.shopIssued=false;supply.shelfObserved=false;supply.supplyNpc.reset();supply.shopDeadline={};return false;
     }
     if(!npc) {if(!approachKnown(c,supplier)) explore(c,"supply merchant "+supplier.name);return false;}
     supply.supplyNpc=npc->key;

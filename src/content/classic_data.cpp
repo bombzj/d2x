@@ -609,16 +609,17 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             for (auto &record : data.setItems) {
                 resolveSpecialArt(record);
             }
-            prepareEquipmentSetData(data);
             loadMagicAffixData(data);
             if(originalRules) loadLodTreasureData(data);
         } else {
             loadRemoteItemDisplayData(data, strings);
             loadSocketGemData(data);
         }
+        prepareEquipmentSetData(data);
         data.nativeStats=prepareNativeStatRules(data);
         if (hostRules) loadItemConsumables(data);
         if (originalRules) data.nativeFormulas=prepareSkillFormulaCatalog(data);
+        if (!hostRules) data.nativeFormulas=prepareSkillFormulaCatalog(data, archives.read("data/global/excel/missiles.bin"));
         if (originalRules) loadAssassinSkills(data, archives);
         if (originalRules) loadDruidSkills(data, archives);
         data.nativeMonsterTypes=loadMonsterTypeCatalog(data.tables.at("monstats"),data.tables.at("montype"),data.tables.at("monstats2"));

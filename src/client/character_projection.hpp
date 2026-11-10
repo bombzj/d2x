@@ -17,6 +17,7 @@ struct CharacterProjectionInput {
     std::string name;
     std::optional<size_t> characterClass;
     std::map<std::string, double, std::less<>> stats;
+    std::map<std::string, double, std::less<>> basePanelStats;
     std::optional<float> life, mana, stamina;
     bool dead = false, running = false, town = false, aliveAfterDeathSave = false;
     unsigned weaponSet{};

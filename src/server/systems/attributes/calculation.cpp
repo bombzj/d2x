@@ -35,7 +35,7 @@ const ItemLevelValues &EquipmentRules::at(EntityId id, int level) const {
 }
 }
 namespace d2x::server::attributes {
-EquipmentLoadout loadout(const PersistentCharacter &state, const ItemCatalog &catalog, const EquipmentRules &rules) {
+EquipmentLoadout loadout(const PersistentCharacter &state, const ItemCatalog &catalog, const EquipmentRules &rules, bool pd2) {
     EquipmentLoadout result;
     const int level = state.player.level;
     result.requirementPercent = [&rules, level](const ItemInstance &item) {
@@ -54,8 +54,10 @@ EquipmentLoadout loadout(const PersistentCharacter &state, const ItemCatalog &ca
         const auto *definition = catalog.find(item.definition);
         if (!definition) throw std::runtime_error("Missing item definition");
         if (location->container == state.containers.backpack) {
+            const bool charm=definition->equipment.isType("char");
+            if(pd2 && charm && !pd2CharmRowActive(location->cell.y,container->second.spec.rows)) continue;
             result.backpack.push_back({&item,definition});
-            if(definition->equipment.isType("char")) result.inventory.push_back({&item,definition});
+            if(charm) result.inventory.push_back({&item,definition});
         }
         else if (location->container == state.containers.beltEquipment)
             {result.equipped[size_t(EquipmentSlot::Belt)]={&item,definition};result.inventory.push_back({&item,definition});}
@@ -89,7 +91,7 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
             removedSourceState->inventory.items.try_emplace(part.item,old->second);
         }
     const auto &sourceState=removedSourceState?*removedSourceState:state;
-    auto view = loadout(state, catalog, equipment);
+    auto view = loadout(state, catalog, equipment, rules.stats->pd2);
     const auto base = deriveCharacterAttributes(definition, record.level, record.allocated, temporary);
     EquipmentActor actor{definition.code, base.strength, base.dexterity, record.level, base.blockFactor, record.weaponSet};
     Totals result;
@@ -453,6 +455,17 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
         if(!old) throw std::runtime_error("Missing posted item withdrawal definition");
         if(activationCallbacks.weaponRegistrationChanged) activationCallbacks.weaponRegistrationChanged(old,false);
         withdraw(old);
+    }
+    if (!previous && rules.stats->pd2) {
+        // Restore the equipped lists of a loaded character before checking
+        // requirements. In play those lists can supply their own attributes.
+        for (const auto item : view.inventory) {
+            if (!item || !item.instance->nativeProperties || !item.instance->identified ||
+                (item.instance->nativeFlags & 0x4000u) || !view.find(item.instance->id) ||
+                !candidates.contains(item.instance->id) || !view.quiverReady(item, record.weaponSet)) continue;
+            activationCallbacks.weaponRegistrationChanged(item, true);
+            post(item);
+        }
     }
     result.equipmentRefreshed=refreshEquipment;
     if(refreshEquipment) activation=updateEquipmentActivation(view,record.weaponSet,activationCallbacks,excluded);

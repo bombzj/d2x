@@ -74,6 +74,20 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         if (!stat(input, name) && !(name == "hitpoints" && (input.life || view.dead)) &&
             !(name == "mana" && input.mana) && !(name == "stamina" && input.stamina)) view.unknownStats.insert(std::move(name));
     view.unknownStats.insert("toblock"); // Final block needs shield/dexterity/level, not just native toblock.
+    const bool pd2=data.profile=="remote-display-txt-v1";
+    if(pd2 && !input.combatEquipment) {
+        view.unknownStats.insert(attributeNames.begin(),attributeNames.end());
+        for(const auto *name:{"maxhp","maxmana","maxstamina","armorclass"}) view.unknownStats.insert(name);
+    }
+    if(pd2 && (!input.combatEquipment || !input.difficulty || *input.difficulty>=data.resistancePenalty.size()))
+        view.unknownStats.insert(resistNames.begin(),resistNames.end());
+    // D2Client BD6AD compares the total and base before shifting resources
+    // to whole points. Current resource cells have their own white branch.
+    for (const auto &[name, base] : input.basePanelStats) {
+        if (view.unknownStats.contains(name)) continue;
+        if (const auto total = stat(input, name); total && *total != base)
+            view.statColors.emplace(name, *total > base ? 3 : 1);
+    }
     view.attackUsable = !view.dead && !input.town;
     CharacterAttributes attributes;
     attributes.strength=view.attributes[0];attributes.dexterity=view.attributes[1];
@@ -89,13 +103,34 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         if(input.difficulty && *input.difficulty<data.resistancePenalty.size()) {
             const int bonus[]={mods.fireResist,mods.coldResist,mods.lightningResist,mods.poisonResist};
             const int caps[]={mods.combat.fireMaxResist,mods.combat.coldMaxResist,mods.combat.lightningMaxResist,mods.combat.poisonMaxResist};
+            std::array<bool, 4> resistBlue{}, resistRed{};
+            if (input.shapeStates && !input.shapeStates->active.empty()) {
+                constexpr std::array blueFields{"rfblue", "rcblue", "rlblue", "rpblue"};
+                constexpr std::array redFields{"rfred", "rcred", "rlred", "rpred"};
+                const auto &states = data.tables.at("states");
+                for (size_t row = 0; row < states.rows().size(); ++row) {
+                    const auto id = states.number(row, "id");
+                    if (!id || !input.shapeStates->active.contains(*id)) continue;
+                    for (size_t index = 0; index < resistNames.size(); ++index) {
+                        resistBlue[index] |= states.number(row, blueFields[index]) == 1;
+                        resistRed[index] |= states.number(row, redFields[index]) == 1;
+                    }
+                }
+            }
             for(size_t index=0;index<4;++index) {
                 // The original unit starts with an empty resistance list. Anya
                 // explicitly sends its permanent list with 1D/E/F; an absent
                 // entry stays zero after a complete unit/equipment/state admission.
+                const int cap = std::clamp(75+caps[index],-100,95);
                 view.resistances[index]=std::clamp(integer(input,resistNames[index])+bonus[index]+data.resistancePenalty[*input.difficulty],
-                    -100,std::clamp(75+caps[index],-100,95));
+                    -100,cap);
                 view.unknownStats.erase(resistNames[index]);
+                uint8_t color = resistRed[index] ? 1 : resistBlue[index] ? 3 : 0;
+                // BD933 gives a capped resistance gold unless an active
+                // state already marks it blue.
+                if (view.resistances[index] == cap && color != 3) color = 4;
+                else if (view.resistances[index] < 0) color = 1;
+                if (color) view.statColors.emplace(resistNames[index], color);
             }
         }
         view.physicalResist=mods.combat.physicalResist;view.magicResist=mods.combat.magicResist;
@@ -107,6 +142,7 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         input.fireMastery.value_or(0), input.lightningMastery.value_or(0)};
     display.weaponValuesKnown=input.combatEquipment.has_value();
     display.dualWield=view.classCode=="bar" || view.classCode=="ass";
+    display.pd2=pd2;
     if(input.combatEquipment) {
         display.concentrationDamagePercent=input.combatEquipment->concentrationDamagePercent;
         if(input.combatEquipment->kick) display.kick=&*input.combatEquipment->kick;

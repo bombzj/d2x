@@ -70,11 +70,11 @@ Loading页不再借用游戏选择背景加Logo，改播原版`Loadingscreen.dc6
 
 人物面板保持invchar6前四块原图的320×432布局、侧栏原生图像坐标(80,61)及统一classicPanelScale；原图自带的资源数值格灰色石纹常驻，不覆盖为自绘色块。字段标题读取当前MPQ strchr系列TBL，原font6标签与font16姓名／数值保留白色字形、DC6底部原点和TBL字宽；两行标签按原基线±4像素居中。长角色名按原字节长度切换font8／font6，资源及防御数值≥1000或超过原格宽时切换font8，未知值仍为原font16问号。姓名与经验、属性、左右动作伤害／命中、防御、三种资源、抗性与剩余点数按原格框排布；经验千位分隔，资源最大值在左／当前值在右，抗性数字无百分号。未显示原版没有的格挡／物理抗性等额外行。
 
-剩余点数用skillpoints底图与PL2红色font6两行文案；有已知剩余点时绘制levelsocket和level加点原帧，关闭用buysellbtn第10帧圆圈斜杠图；绘制与命中共用character_panel.hpp坐标。已知负抗性用原PL2红色font16，增减属性及封顶抗性的完整颜色规则仍缺必要输入；伤害／命中／防御等未知值不复制截图或本地伪算。
+剩余点数用skillpoints底图与PL2红色font6两行文案；有已知剩余点时绘制levelsocket和level加点原帧，关闭用buysellbtn第10帧圆圈斜杠图；绘制与命中共用character_panel.hpp坐标。原版与PD2共用面板按D2Client BD6AD比较四项属性及资源上限的基础值与总值，增加用PL2色号3，减少用色号1，当前资源保持白色。BD933对封顶抗性用色号4，已生效状态按States表提供对应抗性的蓝／红色输入，负抗性用色号1。普通攻击的装备毒伤用色号2。伤害与命中优先使用原MPQ紧凑字体，仍超出格宽时按比例缩放横向字宽。
 
 当前源码补属性按钮的level第1帧及关闭按钮第11帧按压状态，按下只记录表现手势，在同一按钮松开并复验已知剩余点数后才提交AllocateAttribute；移出松开、失焦、死亡、模态接管或面板关闭取消手势。失焦、死亡及全部模态组合仍待核对。
 
-依据当前MPQ与本地OpenDiablo2 hero_stats_panel／button，辅以原1.13c D2Client静态RVA BCEA0人物面板、DD5E0标签／DD6F0数值布局表、BD613姓名字体切换、BDB54数值字体切换及原加点记录DD810。灰底常驻由用户原版实测确认，图形仅取MPQ。原版完整像素一致性与状态色仍待核对。
+依据当前MPQ与本地OpenDiablo2 hero_stats_panel／button，辅以原1.13c D2Client静态RVA BCEA0人物面板、DD5E0标签／DD6F0数值布局表、BD613姓名字体切换、BDB54数值字体切换及原加点记录DD810。灰底常驻由用户原版实测确认，图形仅取MPQ。两种模式从`data/global/palette/sky/pal.pl2`加载面板文字色，当前PD2叠加档沿用基础MPQ的该成员。完整像素一致性与其他状态色仍待核对。
 
 ## 技能菜单
 

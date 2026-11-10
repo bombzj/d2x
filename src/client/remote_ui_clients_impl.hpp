@@ -18,6 +18,7 @@
 #include "content/items/item_pricing.hpp"
 #include "content/items/item_properties.hpp"
 #include "gameplay/character/attributes.hpp"
+#include "gameplay/stats/stat_list.hpp"
 #include "contracts/online_scene.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "gameplay/items/gold_limits.hpp"
@@ -98,7 +99,7 @@ struct RemoteUiClients::Impl {
     using EquipmentStatKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,int,unsigned,bool,EquipmentStatUnits>;
     struct CachedEquipmentStat { EquipmentStatKey key; std::optional<int> value; };
     mutable std::map<std::pair<OnlineUnitKey,std::string>,CachedEquipmentStat> equipmentStats;
-    using CombatEquipmentKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,std::string,int,int,int,int,unsigned,bool,int,int,int,int,std::map<int,int>>;
+    using CombatEquipmentKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,std::string,int,int,int,int,unsigned,bool,int,int,int,int,std::map<int,int>,std::map<StatKey,int32_t>>;
     struct CachedCombatEquipment {CombatEquipmentKey key;std::optional<CombatDisplayEquipment> value;};
     mutable std::map<OnlineUnitKey,CachedCombatEquipment> combatEquipment;
 
@@ -194,7 +195,7 @@ struct RemoteUiClients::Impl {
     std::optional<CombatDisplayEquipment> observedCombatEquipment(OnlineUnitKey key,EquipmentActor actor,
         const std::map<int,int> &ranks,int defense=0,int rating=0,int minimum=0,int maximum=0) const;
     std::optional<CombatDisplayEquipment> calculateCombatEquipment(OnlineUnitKey key,EquipmentActor actor,
-        const std::map<int,int> &ranks,int defense,int rating,int minimum,int maximum) const;
+        const std::map<int,int> &ranks,int defense,int rating,int minimum,int maximum,const StatSnapshot *playerBase) const;
     std::optional<std::map<int,int>> observedSkillRanks() const;
     std::optional<unsigned> itemQuote(uint32_t id, OnlineItemAction action) const;
     InventoryItemView projectItem(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const;

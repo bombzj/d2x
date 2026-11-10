@@ -10,6 +10,7 @@
 namespace d2x {
 std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const ClassicData &data, std::span<const uint8_t> missileRecords) {
     if(!data.skills.descriptions) throw std::runtime_error("Missing prepared native calculation sources");
+    const bool pd2=data.pd2Host || data.profile=="remote-display-txt-v1";
     const auto &sources=*data.skills.descriptions;
     std::map<std::string,int16_t,std::less<>> eventIds;
     const auto &events=data.tables.at("events");
@@ -91,12 +92,12 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
     }
     for(const auto &[id,source]:sources.skills) {
         const auto action=source.number("srvdofunc").value_or(0);
-        const bool equipped=data.pd2Host && source.number("aura").value_or(0) &&
+        const bool equipped=pd2 && source.number("aura").value_or(0) &&
             (action==18 || action==23 || action==29 || action==54 || action==124);
         const auto *display=data.skills.find(id);
         const bool playerProgram=display && (!display->classCode.empty() || display->itemSkill ||
             source.number("general").value_or(0) || action==30);
-        const bool prepared = !data.pd2Host || playerProgram || equipped;
+        const bool prepared = !pd2 || playerProgram || equipped;
         auto record=copy(source,prepared);
         // State links belong to the compiled skill record, including skills
         // used only by monsters. Program admission must not erase them.
@@ -112,7 +113,7 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
             auto &linked=result->petTypes.at(type->second).skills;
             if(linked.size()<15) linked.push_back(id);
         }
-        if(data.pd2Host) record.useThrowMastery=pd2SkillUsesThrowMastery(data,source.reference("itypea1"));
+        if(pd2) record.useThrowMastery=pd2SkillUsesThrowMastery(data,source.reference("itypea1"));
         // Keep references for unsupported programs without granting class
         // availability. Equipment-only aura records still own real metadata.
         if(!prepared) {
@@ -130,7 +131,7 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
                     return self(self,types.value(type,"Equiv1")) || self(self,types.value(type,"Equiv2"));
                 throw std::runtime_error("Missing native skill weapon type");
             };
-            if(!data.pd2Host) record.useThrowMastery=skills.value(row,"range")=="rng" && thrown(thrown,skills.value(row,"itypea1"));
+            if(!pd2) record.useThrowMastery=skills.value(row,"range")=="rng" && thrown(thrown,skills.value(row,"itypea1"));
             for(size_t slot=0;slot<record.unitEvents.size();++slot) {
                 const auto suffix=std::to_string(slot+1);
                 const auto name=skills.value(row,"auraevent"+suffix);

@@ -120,7 +120,15 @@ void DebugAi::Impl::configureQuest(Goal &goal) const {
     const auto done=flag(1),fieldDone=flag(0x2003,true);
     switch(goal.questId) {
     case QuestId::DenOfEvil:case QuestId::SistersBurialGrounds:case QuestId::SistersToTheSlaughter: {
-        const auto intro=node("optional-assignment",0,{{flag(0x2007,true)}},{},true);
+        Proof assignment{{flag(0x2007,true)}};
+        if(goal.questId==QuestId::DenOfEvil) {
+            // Akara can assign the quest during restock. Closing that visit
+            // publishes status 1 even if the private flags are still stale.
+            auto assigned=fact(K::Status,1);
+            assigned.quest=goal.questId;
+            assignment.push_back({assigned});
+        }
+        const auto intro=node("optional-assignment",0,std::move(assignment),{},true);
         const auto killed=node("field-objective",1,{{fieldDone}}, {intro},true);
         const auto reward=node("personal-reward",3,{{done}},{killed});
         if(goal.questId==QuestId::SistersToTheSlaughter)

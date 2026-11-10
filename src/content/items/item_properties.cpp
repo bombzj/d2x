@@ -93,7 +93,7 @@ void loadPropertyData(ClassicData &data) {
 }
 std::shared_ptr<const StatRuleCatalog> prepareNativeStatRules(const ClassicData &data) {
     auto rules=std::make_shared<StatRuleCatalog>();
-    rules->pd2=data.pd2Host;
+    rules->pd2=data.pd2Host || data.profile=="remote-display-txt-v1";
     std::map<uint16_t,const ItemStatDefinition*> originals;
     for(const auto &definition:data.itemStats) {
         if(!definition.id || *definition.id<0 || *definition.id>=512) throw std::runtime_error("Invalid native stat identity");

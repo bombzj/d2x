@@ -122,7 +122,7 @@ struct NativeRealmService {
     };
     struct ReloadCandidate {
         PreparedGame game;
-        Bytes expectedFile;
+        CharacterSaveFiles expectedFile;
         std::string name;
         unsigned difficulty{};
     };

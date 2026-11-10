@@ -285,7 +285,8 @@ std::string NativeRealmService::prepareStartup(const std::string &load, const st
         : !load.empty() ? std::filesystem::path(load) : root / "quick.d2s").lexically_normal();
     o.root = destination.parent_path(); o.store = std::make_unique<CharacterStore>(o.root, *o.content);
     PersistentCharacter character;
-    if (!load.empty()) character = loadSave(load, *o.content);
+    CharacterSaveFiles source;
+    if (!load.empty()) character = loadSave(load, *o.content, &source);
     else {
         const auto name = characterClass.empty() ? "Barbarian" : characterClass;
         const auto found = std::find_if(o.content->characters.begin(), o.content->characters.end(), [&](const auto &c) { return c.name == name; });
@@ -293,7 +294,7 @@ std::string NativeRealmService::prepareStartup(const std::string &load, const st
         character = d2x::createCharacter(*o.content, "Hero", unsigned(found - o.content->characters.begin()), uint32_t(std::random_device{}()));
     }
     const bool sameFile = !load.empty() && std::filesystem::exists(destination) && std::filesystem::equivalent(load, destination);
-    if (!sameFile) o.store->install(destination.filename().string(), character);
+    if (!sameFile) o.store->install(destination.filename().string(), character, source.extended ? &*source.extended : nullptr);
     o.startupFile = destination.filename().string();
     return character.player.name;
 }
