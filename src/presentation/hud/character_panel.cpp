@@ -99,7 +99,11 @@ void SceneView::drawCharacter(Vec mouse) const {
     const auto &nameFont = player.name.size() >= 13 ? assets_.characterLabelFont :
         player.name.size() >= 11 ? assets_.characterCompactFont : assets_.font;
     characterText(nameFont, player.name, 13, 25, 161);
-    cell(player.className, 193, 25, 310);
+    auto className = player.className;
+    if (const auto localized = assets_.characterClassNames.find(player.classCode);
+        localized != assets_.characterClassNames.end())
+        className = localized->second;
+    cell(className, 193, 25, 310);
     cell(label("strchrlvl"), 11, 44, 52, true);
     cell(player.number("level", player.level), 13, 59, 53);
     cell(label("strchrexp"), 65, 44, 180, true);

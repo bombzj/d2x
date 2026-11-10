@@ -201,6 +201,11 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content, int ini
         if (value.empty()) throw std::runtime_error(std::string("Original character label is missing: ") + key);
         characterLabels.emplace(key, value);
     }
+    for (const auto &character : content.characters) {
+        const auto localized = uiStrings.find(character.name);
+        characterClassNames.emplace(character.code,
+            localized.empty() ? character.name : std::string(localized));
+    }
     loadClassicFont(uiGraphics_, archives, questFont, "fontformal11");
     globeTextFormats = {content.itemStrings.at("panelhealth"), content.itemStrings.at("panelmana")};
     for (const auto &format : globeTextFormats) {
