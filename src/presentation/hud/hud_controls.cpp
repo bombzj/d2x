@@ -131,14 +131,12 @@ void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool p
     imageAt(image, bounds, picker || available ? WHITE : Color{255, 64, 64, 255});
 }
 void SceneView::drawBoundSkillBar(bool right, Rectangle anchor) const {
-    if (!view_.bhEnabled || !view_.bhSkillBar || view_.blocksInput() || view_.skillPicker ||
+    if (view_.blocksInput() || view_.skillPicker ||
         view_.chatInputOpen || view_.bhSettingsOpen || characterView_.dead) return;
-    constexpr int columns = 4, labelSize = 10;
-    constexpr float cellWidth = 48, rowHeight = 42, iconSize = 24, labelHeight = 14;
-    constexpr float width = columns * cellWidth;
-    const float x = anchor.x + (anchor.width - width) / 2;
+    constexpr int columns = 4, labelSize = 16;
+    constexpr float rowHeight = 46, iconSize = 24, labelHeight = 20;
     const auto viewport = worldViewport();
-    if (x < viewport.x || x + width > viewport.x + viewport.width) return;
+    if (anchor.x < viewport.x || anchor.x + anchor.width > viewport.x + viewport.width) return;
 
     struct Binding {
         std::optional<int> skill;
@@ -155,19 +153,26 @@ void SceneView::drawBoundSkillBar(bool right, Rectangle anchor) const {
         bindings.push_back({hotkey.skill < 0 ? std::nullopt : std::optional{hotkey.skill}, hotkey.owner, std::move(label)});
     }
 
-    const int rows = (int(bindings.size()) + columns - 1) / columns;
+    if (bindings.empty()) return;
+    float cellWidth = 48;
+    for (const auto &binding : bindings)
+        cellWidth = std::max(cellWidth, float(painter_.measure(binding.label, labelSize) + 6));
+    const int visibleColumns = std::max(1, std::min({columns, int(bindings.size()),
+        int(viewport.width / cellWidth)}));
+    const float width = visibleColumns * cellWidth;
+    const float x = std::clamp(anchor.x + (anchor.width - width) / 2,
+        viewport.x, viewport.x + std::max(0.f, viewport.width - width));
+    const int rows = (int(bindings.size()) + visibleColumns - 1) / visibleColumns;
     const float y = anchor.y - 5 - rows * rowHeight;
     for (size_t index = 0; index < bindings.size(); ++index) {
         auto &binding = bindings[index];
-        const float cellX = x + (index % columns) * cellWidth;
-        const float cellY = y + (index / columns) * rowHeight;
+        const float cellX = x + (index % visibleColumns) * cellWidth;
+        const float cellY = y + (index / visibleColumns) * rowHeight;
         drawSkillIcon(binding.skill, {cellX + (cellWidth - iconSize) / 2, cellY, iconSize, iconSize}, false, binding.owner);
-        fitSkillHotkeyLabel(binding.label, painter_, labelSize, cellWidth - 2);
-        if (binding.label.empty()) continue;
         const float labelY = cellY + iconSize + 1;
         DrawRectangleRec({cellX + 1, labelY, cellWidth - 2, labelHeight}, {0, 0, 0, 210});
         const float labelX = cellX + (cellWidth - painter_.measure(binding.label, labelSize)) / 2;
-        painter_.label(binding.label, int(labelX), int(labelY + 1), labelSize, gold);
+        painter_.label(binding.label, int(labelX), int(labelY + 1), labelSize, WHITE);
     }
 }
 void SceneView::drawControlPanel() const {
@@ -280,10 +285,13 @@ void SceneView::drawSkillControls(Vec mouse) const {
                 if (!label.empty()) label += " / ";
                 label += name;
             }
-            constexpr int labelSize = 10;
+            constexpr int labelSize = 16;
             fitSkillHotkeyLabel(label, painter_, labelSize, bounds.width - 6);
-            if (!label.empty())
-                painter_.label(label, int(bounds.x + 3), int(bounds.y + bounds.height - 12), labelSize, gold);
+            if (!label.empty()) {
+                const float labelY = bounds.y + bounds.height - 20;
+                DrawRectangleRec({bounds.x + 1, labelY, bounds.width - 2, 20}, {0, 0, 0, 210});
+                painter_.label(label, int(bounds.x + 3), int(labelY + 1), labelSize, WHITE);
+            }
             if (CheckCollisionPointRec(rv(mouse), bounds)) {
                 hovered.emplace(slot.skill);hoveredOwner=slot.owner;
                 tooltipAnchor = {bounds.x + bounds.width / 2, bounds.y};

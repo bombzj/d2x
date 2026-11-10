@@ -319,7 +319,6 @@ void SceneView::drawBhSettings() const {
         {"Automap On Join", view_.bhAutomapOnJoin},
         {"LK Chest Lines", view_.bhShowLkChestLines},
         {"Quick Cast", view_.bhQuickCast},
-        {"Skill Bar", view_.bhSkillBar},
     };
     static_assert(std::size(entries) == ViewState::bhSettingsCount);
     const int x = int(panel.x) + 20;

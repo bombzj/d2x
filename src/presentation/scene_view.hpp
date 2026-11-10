@@ -136,7 +136,7 @@ struct ViewState {
     bool bhShowLkChestLines = false;
     bool bhQuickCast = false;
     bool bhSkillBar = false;
-    static constexpr int bhSettingsCount = 14;
+    static constexpr int bhSettingsCount = 13;
     // BH settings overlay (Ctrl+Z).
     bool bhSettingsOpen = false;
     int bhSettingsSelected = 0;

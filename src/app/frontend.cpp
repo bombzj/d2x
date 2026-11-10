@@ -1442,8 +1442,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                             (embedded && embedded->singlePlayerContentBlocked())));
                     if (quickCast) {
                         worldFrame.input.quickCastSkillSupported = scene->supportsQuickCast(std::max(0, quickCast->skill));
-                        worldFrame.input.combatRequestReady = session.combat_request_ready();
                     }
+                    // Restoring the previous skill runs after the quick cast
+                    // request has been cleared and still needs the rate gate.
+                    worldFrame.input.combatRequestReady = session.combat_request_ready();
                     if(noPickup && !input.showLoot) worldFrame.input.pickup.reset();
                     sharedController->handleWorld(input,worldFrame.input,frameSeconds);
                     scene->drawTargetInfo(view,worldFrame,*sharedUi,combat,sharedController->combatTarget());

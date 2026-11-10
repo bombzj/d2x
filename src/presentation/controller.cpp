@@ -194,7 +194,6 @@ bool SceneController::handleBhSettings(const FrameInput &input) {
         case 10: ui.bhAutomapOnJoin = !ui.bhAutomapOnJoin; break;
         case 11: ui.bhShowLkChestLines = !ui.bhShowLkChestLines; break;
         case 12: ui.bhQuickCast = !ui.bhQuickCast; break;
-        case 13: ui.bhSkillBar = !ui.bhSkillBar; break;
         }
         return true;
     }
