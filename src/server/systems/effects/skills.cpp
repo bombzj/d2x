@@ -57,6 +57,22 @@ bool System::recovering(EntityId id,uint64_t tick) const {
     return ports_.actions.recovering(id,tick);
 }
 bool System::knockbackActive(EntityId id) const {return ports_.actions.recovery(id).knockback;}
+bool System::concentrationPreventsReaction(const PlayerState &player,uint64_t tick,uint64_t &random) const {
+    const auto &rules=player.rules.skills;
+    if(!rules || rules->pd2 || !rules->formulas || !ports_.actions.busy(player.actor,tick)) return false;
+    const auto used=ports_.actions.usedSkill(player.actor);
+    if(!used) return false;
+    const auto &formulas=*rules->formulas;
+    const auto skill=formulas.skills.find(used->skill);
+    if(skill==formulas.skills.end() || !skill->second.number("interrupt")) return false;
+    const auto aura=formulas.skillIds.find("concentration");
+    if(aura==formulas.skillIds.end()) return false;
+    const auto state=formulas.skills.at(aura->second).auraState;
+    const auto *states=unitEffects(player.actor);
+    if(!states || !states->hasState(state,tick)) return false;
+    const auto chance=stateModifiers(player.actor,state,tick).combat.concentrationChance;
+    return int(rollRandom(random)%100)<chance;
+}
 void System::finishKnockback(EntityId id,uint64_t tick) {
     if(!ports_.actions.recovery(id).knockback) return;
     auto recovery=ports_.actions.prepareRecovery(id);
@@ -75,14 +91,31 @@ DomainResult<> System::block(const ActorContext &actor) {
     // SUNITDMG: repeated successful blocks suppress BL, never the block itself.
     const uint64_t delay=uint64_t(std::max(0,player->totals.character.combat.fasterBlock/8+15));
     if(actor.tick<=recovery.lastBlockTick || actor.tick-recovery.lastBlockTick<=delay) return {DomainStatus::Applied,std::monostate{}};
+    auto random=player->combatRandom;
+    const bool protectedAction=concentrationPreventsReaction(*player,actor.tick,random);
+    if(protectedAction) {
+        const auto paid=ports_.transactions.consumeRandom(actor,player->combatRandom,random);
+        if(!paid) return paid;
+        recovery.lastBlockTick=actor.tick;
+        ports_.actions.commitRecovery(std::move(next));
+        return paid;
+    }
     const auto ended=endMode(actor.actor,actor.tick);if(!ended) return ended;
     HitFact fact{actor.actor,0,actor.area,playerLifePercentage(int64_t(player->persistent.player.hp.raw()),player->totals.character.maxLifeFixed.raw()),false,player->position};
     fact.playerMode=18;
     recovery.lastBlockTick=actor.tick;
     recovery.knockback=false;
     recovery.until=actor.tick+std::min<uint64_t>(timing->durationTicks(),UINT64_MAX-actor.tick);
-    const auto result=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},{fact}});
-    if(!result) return {result.status,{}};
+    if(random==player->combatRandom) {
+        const auto result=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},{fact}});
+        if(!result) return {result.status,{}};
+    } else {
+        transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
+        edit.publicFacts.emplace_back(fact);
+        edit.random=transactions::UnitRandomEdit{player->combatRandom,random};
+        auto prepared=ports_.transactions.prepare(std::move(edit));if(!prepared) return {prepared.status,{}};
+        const auto result=ports_.transactions.commit(std::move(*prepared.value));if(!result) return result;
+    }
     ports_.actions.commitRecovery(std::move(next));
     ports_.skills.interrupt(actor);
     return {DomainStatus::Applied,std::monostate{}};
@@ -102,21 +135,28 @@ DomainResult<> System::missileReaction(EntityId target,EntityId source,bool getH
     if(!knockback && (!getHit || !stunned)) return {DomainStatus::Applied,std::monostate{}};
     const auto timing=reactionTiming(player,knockback?"kb":"gh");
     if(!timing) return {DomainStatus::Applied,std::monostate{}};
+    auto random=player.combatRandom;
+    const ActorContext actor{player.player,target,player.area,area.generation,0,tick};
+    if(concentrationPreventsReaction(player,tick,random))
+        return ports_.transactions.consumeRandom(actor,player.combatRandom,random);
     const auto ended=endMode(target,tick);if(!ended) return ended;
     auto recovery=ports_.actions.prepareRecovery(target);
     recovery.mapped().knockback=knockback;
     recovery.mapped().until=tick+std::min<uint64_t>(timing->durationTicks(),UINT64_MAX-tick);
     HitFact fact{target,0,player.area,playerLifePercentage(player.persistent.player.hp.raw(),player.totals.character.maxLifeFixed.raw()),false,player.position,hitClass};
     fact.playerMode=knockback?20:6;
-    if(knockback) {
-        const auto attackerArea=attacker.player?attacker.player->area:attacker.monster->area;
-        const auto point=attacker.position()+ports_.areas.at(attackerArea).definition.origin-area.definition.origin;
-        const Vec center{.5f,.5f};
-        const auto destination=ports_.spatial.navigationGrid(player.area,player.actor).nativeMovementTarget(
-            player.position+center,knockbackDestination(player.position,point,3)+center,playerMovement)-center;
-        transactions::CharacterEdit edit{{player.player,target,player.area,area.generation,0,tick},player.inventoryRevision,player.characterRevision,player.persistent.player};
-        if(destination.x!=std::floor(player.position.x+.5f) || destination.y!=std::floor(player.position.y+.5f)) {
-            edit.knockback=PointTarget{player.area,area.generation,destination};fact.knockback=destination;
+    if(knockback || random!=player.combatRandom) {
+        transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,player.persistent.player};
+        if(random!=player.combatRandom) edit.random=transactions::UnitRandomEdit{player.combatRandom,random};
+        if(knockback) {
+            const auto attackerArea=attacker.player?attacker.player->area:attacker.monster->area;
+            const auto point=attacker.position()+ports_.areas.at(attackerArea).definition.origin-area.definition.origin;
+            const Vec center{.5f,.5f};
+            const auto destination=ports_.spatial.navigationGrid(player.area,player.actor).nativeMovementTarget(
+                player.position+center,knockbackDestination(player.position,point,3)+center,playerMovement)-center;
+            if(destination.x!=std::floor(player.position.x+.5f) || destination.y!=std::floor(player.position.y+.5f)) {
+                edit.knockback=PointTarget{player.area,area.generation,destination};fact.knockback=destination;
+            }
         }
         edit.publicFacts.emplace_back(fact);
         auto prepared=ports_.transactions.prepare(std::move(edit));if(!prepared) return {prepared.status,{}};
@@ -129,7 +169,9 @@ DomainResult<> System::missileReaction(EntityId target,EntityId source,bool getH
     ports_.skills.interrupt({player.player,target,player.area,area.generation,0,tick});
     return {DomainStatus::Applied,std::monostate{}};
 }
-DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &skill, std::optional<PlayerId> recipient,std::span<const DomainFact> facts) {
+DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &skill, std::optional<PlayerId> recipient,
+                            std::span<const DomainFact> facts,std::optional<std::pair<uint64_t,uint64_t>> random,
+                            std::shared_ptr<missiles::NativeBirthPublication> missileBirth) {
     const auto *caster=ports_.players.find(actor.player);const auto *target=ports_.players.find(recipient.value_or(actor.player));
     if(!caster || !target || !caster->entered || !target->entered || caster->actor!=actor.actor || caster->area!=actor.area ||
         ports_.areas.at(target->area).definition.act!=ports_.areas.at(actor.area).definition.act || caster->persistent.player.hp<=0 || target->persistent.player.hp<=0 || !skill.appliedEffect ||
@@ -139,6 +181,8 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     if((skill.effect==SkillBehavior::Enchant || skill.effect==SkillBehavior::AreaEnchant) && !participants.auraAligned({caster,nullptr},{target,nullptr})) target=caster;
     auto next=state_;auto &recovery=next.players[target->actor];
     auto spec=*skill.appliedEffect;spec.source={CombatEffectSource::Skill,caster->actor,skill.sourceId,skill.rank};
+    const bool infernoRefresh=!caster->rules.skills->pd2 && skill.effect==SkillBehavior::Inferno &&
+        recovery.states.hasState(spec.state.id,actor.tick);
     PlayerResourceTrace resources(*target,actor.tick,target==caster?skill.manaCost:Fixed8{},ports_.areas.statTime(target->area));
     const auto application=applySkillState(recovery.states,skill,spec,*caster->rules.skills->stats,*target->rules.character->states,actor.tick,[&]{resources.sample(recovery.states,true);});
     if(!application.accepted) return {DomainStatus::Conflict,{}};
@@ -152,7 +196,7 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     for(const int state:application.clearedStates) if(!recovery.states.hasState(state,actor.tick)) edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,state,false});
     for(const auto &removed:application.removed) if(removed.effect.spec.state.id>=0 && !recovery.states.hasState(removed.effect.spec.state.id,actor.tick))
         edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,removed.effect.spec.state.id,false});
-    if(installed->spec.state.id>=0) {
+    if(installed->spec.state.id>=0 && !infernoRefresh) {
         auto stats=nativeEffectStats(*caster->rules.skills,installed->spec);
         if(!installed->spec.nativeValues) {
             stats.emplace_back(caster->rules.skills->nativeStats.at("modifierlist_skill"),skill.sourceId);
@@ -162,17 +206,30 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     }
     if(skill.effect==SkillBehavior::BoneArmor && skill.castOverlayId>=0) edit.publicFacts.emplace_back(OverlayFact{target->actor,0,target->area,skill.castOverlayId});
     std::vector<transactions::Change> changesToPrepare;
-    if(target==caster) {edit.charge=skill.charge;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.publicFacts.insert(edit.publicFacts.end(),facts.begin(),facts.end());}
+    if(target==caster) {
+        edit.charge=skill.charge;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};
+        if(random) edit.random=transactions::UnitRandomEdit{random->first,random->second};
+        edit.publicFacts.insert(random?edit.publicFacts.begin():edit.publicFacts.end(),facts.begin(),facts.end());
+    }
     else {
         transactions::CharacterEdit debit{actor,caster->inventoryRevision,caster->characterRevision,caster->persistent.player};
         debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
+        if(random) debit.random=transactions::UnitRandomEdit{random->first,random->second};
         debit.publicFacts.insert(debit.publicFacts.end(),facts.begin(),facts.end());
         changesToPrepare.emplace_back(std::move(debit));
     }
     changesToPrepare.emplace_back(std::move(edit));
     auto prepared=ports_.transactions.prepareGroup(std::move(changesToPrepare));if(!prepared) return {prepared.status,{}};
     auto plans=std::move(*prepared.value);
-    const auto result=plans.size()==1?ports_.transactions.commit(std::move(plans.front())):ports_.transactions.commitCharacters(std::move(plans));if(result) publishPlayers(next.players);
+    if(missileBirth) {
+        if(plans.size()!=1) return {DomainStatus::InvalidRequest,{}};
+        plans.front().missileBirth=std::move(missileBirth);
+    }
+    const auto result=plans.size()==1?ports_.transactions.commit(std::move(plans.front())):ports_.transactions.commitCharacters(std::move(plans));
+    if(result) {
+        publishPlayers(next.players);
+        if(skill.effect==SkillBehavior::ThunderStorm) nativeStormLastGuid_.erase({actor.actor,skill.sourceId});
+    }
     return result;
 }
 DomainResult<float> System::receive(const ActorContext &actor, int64_t raw, DamageType type) {
@@ -285,13 +342,14 @@ DomainResult<> System::nativeMeleeReaction(EntityId target,EntityId source,const
     }
     const bool interruptible=!ports_.skills.uninterruptible(target);
     const auto clock=reactionTiming(*player,"gh"),knockbackClock=hit.knockback?reactionTiming(*player,"kb"):std::optional<AnimationTiming>{};
-    const bool knockback=source && hit.knockback && knockbackClock && interruptible && !(player->knockback && knockbackActive(target));
+    bool knockback=source && hit.knockback && knockbackClock && interruptible && !(player->knockback && knockbackActive(target));
     auto random=player->combatRandom;const auto states=unitEffects(target);
-    const bool getHit=source && hit.getHit.value_or(!hit.softHit) && (amount>0 || hit.stunFrames) && !hit.knockback && clock && interruptible &&
+    bool getHit=source && hit.getHit.value_or(!hit.softHit) && (amount>0 || hit.stunFrames) && !hit.knockback && clock && interruptible &&
         monsterHitRecovery(amount,player->totals.character.maxLifeFixed.raw(),hit.hitClass,false,
             hit.channels[5]>0 && std::all_of(hit.channels.begin(),hit.channels.begin()+5,[](auto n){return n==0;}),true,random,
             player->rules.skills && states && states->hasState(player->rules.skills->stunned.id,tick));
     if(lifeUpdate) *lifeUpdate=interruptible && !hit.knockback && !getHit && (hit.getHit.value_or(!hit.softHit) || hit.softHit);
+    if((getHit || knockback) && concentrationPreventsReaction(*player,tick,random)) getHit=knockback=false;
     if(!getHit && !knockback && random==player->combatRandom) return {DomainStatus::Applied,std::monostate{}};
     if(getHit || knockback) {const auto ended=endMode(target,tick);if(!ended) return ended;}
     const ActorContext actor{player->player,target,player->area,area.generation,0,tick};
@@ -434,13 +492,14 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
     edit.player=resources.record();edit.resourceBase=resources.maximum();edit.petLimitChanges=resources.petLimits();
     edit.transient = projectEffectAttributes(states,actor.tick);
     const auto clock=reactionTiming(*p,"gh");
-    const bool getHit=!deferAction && source && hit.getHit.value_or(!hit.softHit) && (dealt>0 || hit.stunFrames) && edit.player.hp>0 && !hit.knockback && clock &&
+    bool getHit=!deferAction && source && hit.getHit.value_or(!hit.softHit) && (dealt>0 || hit.stunFrames) && edit.player.hp>0 && !hit.knockback && clock &&
         !ports_.skills.uninterruptible(actor.actor) &&
         monsterHitRecovery(dealtFixed,p->totals.character.maxLifeFixed.raw(),hit.hitClass,false,
             hit.channels[5]>0 && std::all_of(hit.channels.begin(),hit.channels.begin()+5,[](auto n){return n==0;}),true,random,
             p->rules.skills && states.hasState(p->rules.skills->stunned.id,actor.tick));
     const auto knockbackClock=hit.knockback?reactionTiming(*p,"kb"):std::optional<AnimationTiming>{};
-    const bool knockback=!deferAction && source && dealt>0 && edit.player.hp>0 && knockbackClock && !ports_.skills.uninterruptible(actor.actor) && !(p->knockback && knockbackActive(actor.actor));
+    bool knockback=!deferAction && source && dealt>0 && edit.player.hp>0 && knockbackClock && !ports_.skills.uninterruptible(actor.actor) && !(p->knockback && knockbackActive(actor.actor));
+    if((getHit || knockback) && concentrationPreventsReaction(*p,actor.tick,random)) getHit=knockback=false;
     if(getHit || knockback) {
         const auto removed=states.endModeEffects({},observe);
         for(const auto &entry:removed) if(entry.effect.spec.state.id>=0 && !states.hasState(entry.effect.spec.state.id,actor.tick))

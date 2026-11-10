@@ -123,6 +123,7 @@ struct RemoteScene::Impl {
         uint64_t requestRevision{}, invalidatedRequest{}, actionRevision{};
         std::optional<uint64_t> finishedMonsterMovement;
         std::optional<uint64_t> finishedMonsterKnockback;
+        std::optional<uint64_t> finishedMonsterDeath;
         uint64_t castRevision{};
         std::optional<CastHandoff> castHandoff;
         bool npcClickStopped{};
@@ -190,7 +191,7 @@ struct RemoteScene::Impl {
     };
     std::map<std::pair<OnlineUnitKey,uint8_t>,BoneArmorVisual> boneArmorVisuals;
     std::map<OnlineUnitKey,uint64_t> boneWallVisualRandom;
-    std::set<OnlineUnitKey> shattered;
+    std::set<OnlineUnitKey> shattered; // PD2 legacy draw path.
     std::map<OnlineUnitKey,int> stateColorShifts;
     uint64_t combatSequence{};
     std::map<std::array<int,3>,uint64_t> denLightRooms;
@@ -202,6 +203,8 @@ struct RemoteScene::Impl {
         float requested{}, started{-1}, duration{};
         uint64_t revision{};
         std::optional<Vec> teleportFacing{};
+        struct ReleaseEffect { OnlineCombatEvent event; float at{}; int delay{}; };
+        std::optional<ReleaseEffect> releaseEffect{};
     };
     std::optional<LocalCast> localCast;
     struct UsedSkill {uint16_t skill{};uint64_t revision{};float started{},duration{};};
@@ -226,7 +229,8 @@ struct RemoteScene::Impl {
     struct MonsterIdentity { bool champion{},unique{},minion{},ghostly{},hireling{}; std::optional<uint16_t> superUnique; uint16_t nameSeed{}; std::vector<uint8_t> modifiers; };
     std::map<OnlineUnitKey,MonsterIdentity> monsterIdentities;
     std::map<OnlineUnitKey,std::pair<int,bool>> monsterTransforms;
-    std::set<OnlineUnitKey> deathCallbacks, preparedDeaths;
+    std::map<OnlineUnitKey,uint64_t> deathCallbacks;
+    std::set<OnlineUnitKey> preparedDeaths;
     RemoteMonsterEffects monsterEffects;
     std::map<int,size_t> superUniqueRows;
     std::map<int,size_t> objectRows; // objects.txt Id -> row (BH Show Chests).
@@ -248,6 +252,7 @@ struct RemoteScene::Impl {
     uint8_t worldDifficulty{};
 
     bool channelSkill(int id) const;
+    bool castInputBusy() const;
     const BoneArmorVisual &boneArmorVisual(const OnlineUnit &,const OnlineCombatStateView &,size_t stateRow,SceneView &);
     bool localCastBlocksMovement() const;
     void emitPd2Stream(Channel &channel,OnlineUnitKey owner,Vec start,Vec target,
@@ -259,6 +264,7 @@ struct RemoteScene::Impl {
     std::optional<Pd2RoyalFire> preparePd2RoyalFire(size_t skillRow,const OnlineCombatEvent &,const OnlineUnit &);
     std::vector<std::string> pd2MapDescription(const OnlinePd2State::MapAttributeReport &) const;
     std::optional<int32_t> skillCalculation(int skill,int level,std::string_view field,OnlineUnitKey owner,int count=0) const;
+    int missileSlowPercent(const RemoteCombat &,OnlineUnitKey) const;
     bool playerDead(const OnlineUnit &u) const;
     Impl(Archives &a, int palette, RemoteMapDisplayState &display, ContentPreparation);
     const Art *character(const OnlineUnit &u, bool moving, bool town, SceneView &shared);
@@ -297,6 +303,7 @@ struct RemoteScene::Impl {
               const OnlineUnit &unit, std::optional<OnlineUnitKey> target={});
     bool displayScriptedSequence(const OnlineUnit &u,Motion &m,const Map &map,Vec origin,MovementCollisionRule collision);
     bool displayPlayerLeap(const OnlineUnit &u,Motion &m,const Map &map,Vec origin);
+    bool displayPlayerWhirlwind(const OnlineUnit &u,Motion &m,const Map &map,Vec origin);
     std::optional<std::pair<int,int>> findPlayerLeapLanding(const OnlineUnit &,Vec start,Vec target,int range,const Map &,Vec origin) const;
     bool displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,const Map &map,Vec origin);
     bool displayPd2MonsterCharge(const OnlineUnit &,Motion &,const Map &,Vec origin);

@@ -43,8 +43,10 @@ DomainResult<> System::advanceBladeShield(BladeShieldPulse &pulse,uint64_t tick)
         if(!radius) throw std::logic_error("Unavailable native Blade Shield progressive range");
         if(!*radius) radius=values.calculation(FormulaDomain::Skill,pulse.skill.sourceId,pulse.skill.rank,"aurarangecalc");
         if(!radius) throw std::logic_error("Unavailable native Blade Shield range");
-        auto base=std::make_shared<const MissileHitDamage>(rollNativeSkillDamage(values,pulse.skill.sourceId,pulse.skill.rank,random));
         const auto &native=rules.formulas->skills.at(pulse.skill.sourceId);
+        auto damage=rollNativeSkillDamage(values,pulse.skill.sourceId,pulse.skill.rank,random);
+        if(!pulse.skill.pd2 && native.number("hitclass")) damage.hitClass=uint8_t(native.number("hitclass"));
+        auto base=std::make_shared<const MissileHitDamage>(std::move(damage));
         auto targets=nativeAuraCandidateRecipients({caster->id(),caster->area(),*radius,uint32_t(native.number("aurafilter")),false,{},NativeAuraTargetMode::OwnerRange,tick});
         const auto rating=values.parameter(FormulaDomain::Skill,pulse.skill.sourceId,pulse.skill.rank,"toht");
         if(!rating) throw std::logic_error("Unavailable native Blade Shield to-hit factor");

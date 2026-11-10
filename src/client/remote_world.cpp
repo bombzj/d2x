@@ -31,6 +31,11 @@ OnlineUnit &unit(OnlineWorldView &w, OnlineUnitKey k) {
 }
 void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
     event.worldRevision=w.revision;
+    if(event.kind==OnlineCombatEvent::Kind::Skill && event.target && event.target->type==1) {
+        const auto corpse=w.units.find(*event.target);
+        if(corpse!=w.units.end() && onlineMonsterCorpse(corpse->second) && corpse->second.position && corpse->second.classId)
+            event.corpseTarget=OnlineCombatEvent::CorpseTarget{*corpse->second.position,*corpse->second.classId};
+    }
     if (event.kind == OnlineCombatEvent::Kind::Skill &&
         (event.packet == 0x4C || event.packet == 0x4D)) {
         // Retail 0x99/0x9A invoke an item-effect skill without changing mode,
@@ -43,6 +48,7 @@ void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
         // their authoritative 0x0E mode and must not emit a spell effect.
         if (event.source.type > 1) return;
         auto &actor = unit(w, event.source);
+        actor.monsterDeath.reset();
         actor.stoppedSkill.reset();
         actor.actionSkill = event.skill; actor.actionSkillLevel = event.level;
         if(actor.key.type==0) actor.usedSkill=event.skill;
@@ -61,6 +67,7 @@ void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
     if (w.combatEvents.size() > 256) w.combatEvents.pop_front();
 }
 void monsterAction(OnlineWorldView &w, OnlineUnit &u, uint8_t action) {
+    if(action!=8 && action!=9) u.monsterDeath.reset();
     u.movementTargetMissing = false;
     u.stoppedSkill.reset();
     u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
@@ -90,7 +97,9 @@ void monsterAction(OnlineWorldView &w, OnlineUnit &u, uint8_t action) {
 void stateMessage(OnlineUnit &u, OnlineStateMessage message, uint64_t revision) {
     if (!u.stateSequence) u.stateGeneration = revision;
     message.sequence = ++u.stateSequence;
-    if (message.kind == OnlineStateMessage::Kind::Snapshot) u.stateMessages.clear();
+    // Keep the messages immediately preceding an explicit DEATH until the
+    // consumer has had a chance to resolve the states observed at that action.
+    if(message.kind==OnlineStateMessage::Kind::Snapshot && !u.monsterDeath) u.stateMessages.clear();
     u.stateMessages.push_back(std::move(message));
     if (u.stateMessages.size() > 64) u.stateMessages.pop_front();
 }
@@ -746,6 +755,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         // object mode handler, not as the server's UNITFLAG_TARGETABLE mask.
         if (u.key.type == 2 && changes == 3) u.objectTargetable = flags != 0;
         const auto mode = r.u32();
+        if(u.key.type==1 && mode<=255 && mode!=0 && mode!=12) u.monsterDeath.reset();
         const bool restart = u.key.type != 2 || !u.mode || *u.mode != mode;
         if (mode <= 255)
             u.mode = uint8_t(mode);
@@ -1497,18 +1507,29 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     case 0x69:
     case 0x6A: {
-        auto &u = unit(w, {1, r.u32()}); monsterAction(w, u, r.u8());
+        auto &u = unit(w, {1, r.u32()});
+        const auto action=r.u8();
+        const bool repeatDeath=action==8 && u.monsterDeath && onlineMonsterCorpse(u);
+        const auto coordinates=p.id==0x69?std::optional{point(r)}:std::nullopt;
+        const auto target=p.id==0x6a?std::optional{key(r)}:std::nullopt;
+        const auto direction=r.u8();
+        const auto hitClass=p.id==0x69?std::optional{r.u8()}:std::nullopt;
+        r.finish();
+        if(repeatDeath) break;
+        monsterAction(w,u,action);
+        if(action==8) u.monsterDeath=OnlineUnit::MonsterDeath{w.revision,u.stateSequence};
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Action;
         event.source = u.key; event.action = u.wireAction;
         if (p.id == 0x69) {
-            const auto coordinates = point(r); event.point = coordinates;
+            event.point = coordinates;
             u.destinationUnit.reset();
             if (u.wireAction == 9) {
                 // MonsterMsg DEAD carries the current position, not a path
                 // target. Keep the corpse there and discard the old walk goal.
-                position(v, u, coordinates); u.destination.reset();
-            } else u.destination = coordinates;
-            event.direction = r.u8(); event.hitClass = r.u8();
+                position(v, u, *coordinates); u.destination.reset();
+            } else if(u.wireAction==8) u.destination.reset();
+            else u.destination = coordinates;
+            event.direction = direction; event.hitClass = hitClass;
             if(u.wireAction==6) {
                 // Retail D2Client RVA 4E095: GH's byte is HP plus the
                 // lightning-ready flag, not a facing direction.
@@ -1519,14 +1540,14 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
                 u.destination.reset();
             }
         } else {
-            u.destinationUnit = key(r); u.destination.reset(); event.target = u.destinationUnit;
-            event.direction = r.u8();
+            u.destinationUnit = target; u.destination.reset(); event.target = target;
+            event.direction = direction;
         }
         // MonsterMsg supplies path facing only for DEATH/DEAD. Other
         // actions leave this byte zero (GH's HP was consumed above).
         if (u.wireAction != 8 && u.wireAction != 9) event.direction.reset();
         u.direction = event.direction;
-        r.finish(); combatEvent(w, std::move(event));
+        combatEvent(w, std::move(event));
         break;
     }
     case 0x6B:
@@ -1554,6 +1575,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         u.lifePercent = r.u8(); u.lifeCarriesTriggerFlag = false;
         r.finish();
         u.mode = 1; u.wireAction = 7; u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
+        u.monsterDeath.reset();
         if(u.actionSkill) u.stoppedSkill=u.actionSkill;
         u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
         u.destination.reset();
@@ -1676,6 +1698,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     case 0xAC: {
         auto &u = unit(w, {1, r.u32()});
+        u.monsterDeath.reset();
         u.stoppedSkill.reset();
         u.classId = r.u16();
         u.equipmentObserved=true;

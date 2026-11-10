@@ -20,6 +20,8 @@ struct SkillDescriptionLine {
 struct SkillDescriptionDefinition {
     int damageProgram{}, attackProgram{};
     std::array<DescriptionFormula,2> damageCalculations;
+    struct ChargeDamage {std::string element;DescriptionFormula minimum,maximum;};
+    std::array<ChargeDamage,3> chargeDamage;
     std::array<SkillDescriptionLine,6> levels;
     std::array<SkillDescriptionLine,4> general;
     std::array<SkillDescriptionLine,7> bonuses;

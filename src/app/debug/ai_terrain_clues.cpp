@@ -9,7 +9,7 @@
 
 namespace d2x {
 void DebugAi::Impl::prepareVaughtClues() {
-    auto &clues=vaughtClues;if(clues.prepared) return;
+    auto &clues=navigation.vaughtClues;if(clues.prepared) return;
     clues.prepared=true;
     try {
         clues.level=definitions->area("Act 5 - Temple Boss");
@@ -112,15 +112,15 @@ void DebugAi::Impl::prepareVaughtClues() {
 
 bool DebugAi::Impl::approachTerrainClue(Context &c,const Selector &selector) {
     if(!area || selector.type!=1 || *area!=definitions->area("Act 5 - Temple Boss")) return false;
-    prepareVaughtClues();const auto &clues=vaughtClues;
+    prepareVaughtClues();const auto &clues=navigation.vaughtClues;
     if(selector.identity!=clues.monster) return false;
-    terrainClueDiagnostics={{"kind","vaught-mural"},{"area",*area}};
-    if(clues.branches.empty()) {terrainClueDiagnostics["status"]=clues.unavailable;return false;}
+    navigation.terrainClueDiagnostics={{"kind","vaught-mural"},{"area",*area}};
+    if(clues.branches.empty()) {navigation.terrainClueDiagnostics["status"]=clues.unavailable;return false;}
     const auto observation=c.town.navigationObservation();const auto &view=c.session.read();
     if(!observation || !view.load.mapSeed || observation->width!=clues.width || observation->height!=clues.height) {
-        terrainClueDiagnostics["status"]="unavailable-observation-or-extent";return false;
+        navigation.terrainClueDiagnostics["status"]="unavailable-observation-or-extent";return false;
     }
-    auto &run=vaughtSearch;
+    auto &run=navigation.vaughtSearch;
     if(run.game!=view.gameGeneration || run.seed!=*view.load.mapSeed || run.objectSeed!=view.load.secondarySeed.value_or(0) ||
         run.x!=observation->tileX || run.y!=observation->tileY) {
         run={};run.game=view.gameGeneration;run.seed=*view.load.mapSeed;run.objectSeed=view.load.secondarySeed.value_or(0);
@@ -130,8 +130,8 @@ bool DebugAi::Impl::approachTerrainClue(Context &c,const Selector &selector) {
         for(const auto &wall:branch.walls) if(seen.x-run.x==wall.x && seen.y-run.y==wall.y && seen.key==wall.key)
             run.walls.emplace(wall.x,wall.y,wall.key);
     const auto releaseApproach=[&]() {
-        cancelWalk(c);frontierRoute.reset();
-        approachHint.reset();approachFrontier.reset();run.aim.reset();
+        cancelWalk(c);navigation.frontierRoute.reset();
+        navigation.approachHint.reset();navigation.approachFrontier.reset();run.aim.reset();
     };
     for(size_t i=0;i<clues.branches.size();++i) if(std::all_of(clues.branches[i].walls.begin(),clues.branches[i].walls.end(),
         [&](const auto &wall){return run.walls.contains({wall.x,wall.y,wall.key});})) {
@@ -144,12 +144,12 @@ bool DebugAi::Impl::approachTerrainClue(Context &c,const Selector &selector) {
             note("terrain-clue-confirmed","vaught direction="+std::to_string(int(direction.x))+","+std::to_string(int(direction.y)));
         }
     }
-    terrainClueDiagnostics["observedPanels"]=run.walls.size();
-    terrainClueDiagnostics["branch"]=run.branch?Json(*run.branch):Json(nullptr);
+    navigation.terrainClueDiagnostics["observedPanels"]=run.walls.size();
+    navigation.terrainClueDiagnostics["branch"]=run.branch?Json(*run.branch):Json(nullptr);
     if(run.conflict || run.exhausted) {
-        terrainClueDiagnostics["status"]=run.conflict?"conflict":"arm-approached-without-assignment";return false;
+        navigation.terrainClueDiagnostics["status"]=run.conflict?"conflict":"arm-approached-without-assignment";return false;
     }
-    if(Clock::now()<run.retryAt) {terrainClueDiagnostics["status"]="local-route-recovery";return false;}
+    if(Clock::now()<run.retryAt) {navigation.terrainClueDiagnostics["status"]="local-route-recovery";return false;}
     const auto worldPoint=[&](Vec tile)->OnlinePoint {
         const int x=int(std::floor((tile.x+run.x)*5)),y=int(std::floor((tile.y+run.y)*5));
         if(x<0 || y<0 || x>UINT16_MAX || y>UINT16_MAX) throw std::runtime_error("Vaught clue outside native coordinates");
@@ -160,7 +160,7 @@ bool DebugAi::Impl::approachTerrainClue(Context &c,const Selector &selector) {
     std::string purpose="Vaught central mural junction";
     if(run.branch) {
         const auto &branch=clues.branches[*run.branch];aim=worldPoint(branch.end);purpose="observed Vaught mural arm";
-        terrainClueDiagnostics["direction"]={branch.direction.x,branch.direction.y};
+        navigation.terrainClueDiagnostics["direction"]={branch.direction.x,branch.direction.y};
     } else if(run.centerChecked) {
         observationIndex=run.view;
         if(!observationIndex) {
@@ -171,33 +171,33 @@ bool DebugAi::Impl::approachTerrainClue(Context &c,const Selector &selector) {
                 if(distance<nearest) {nearest=distance;observationIndex=i;}
             }
         }
-        if(!observationIndex) {terrainClueDiagnostics["status"]="no-visible-clue-fallback";return false;}
+        if(!observationIndex) {navigation.terrainClueDiagnostics["status"]="no-visible-clue-fallback";return false;}
         run.view=observationIndex;aim=worldPoint(clues.branches[*observationIndex].observe);
         purpose="Vaught central wall observation";
     }
-    terrainClueDiagnostics["aim"]={aim.x,aim.y};
+    navigation.terrainClueDiagnostics["aim"]={aim.x,aim.y};
     if((Vec{float(aim.x),float(aim.y)}-c.position).length()<=6) {
         releaseApproach();
         if(run.branch) {run.exhausted=true;note("terrain-clue-arm-reached","Awaiting real unit assignment; ordinary search remains available");}
         else if(observationIndex) {run.checkedViews.insert(*observationIndex);run.view.reset();}
         else run.centerChecked=true;
-        terrainClueDiagnostics["status"]="observe-arrival";
+        navigation.terrainClueDiagnostics["status"]="observe-arrival";
         wait("terrain-clue-observe","Allowing the actual rendered viewport to supply wall observations");return true;
     }
     if(run.aim!=aim) {releaseApproach();run.aim=aim;}
-    terrainClueDiagnostics["status"]=run.branch?"approach-confirmed-arm":"approach-central-observation";
+    navigation.terrainClueDiagnostics["status"]=run.branch?"approach-confirmed-arm":"approach-central-observation";
     if(approachPoint(c,aim,purpose,6,true)) return true;
     run.aim.reset();run.retryAt=Clock::now()+std::chrono::seconds(5);
     if(!run.branch) {
         if(observationIndex) {run.checkedViews.insert(*observationIndex);run.view.reset();}else run.centerChecked=true;
     }
-    terrainClueDiagnostics["status"]="local-route-recovery";
+    navigation.terrainClueDiagnostics["status"]="local-route-recovery";
     note("terrain-clue-route-recovery",purpose);return false;
 }
 bool DebugAi::Impl::observeColdPlainsWaypoint(Context &c) {
-    if(!area || *area!=definitions->area("Act 1 - Wilderness 2") || knownWaypointAreas.contains(*area)) return false;
+    if(!area || *area!=definitions->area("Act 1 - Wilderness 2") || navigation.knownWaypointAreas.contains(*area)) return false;
     const auto &view=c.session.read();if(!view.load.mapSeed) return false;
-    auto &run=coldPlainsSearch;
+    auto &run=navigation.coldPlainsSearch;
     if(run.game!=view.gameGeneration || run.seed!=*view.load.mapSeed) {
         run={};run.game=view.gameGeneration;run.seed=*view.load.mapSeed;
     }
@@ -232,19 +232,19 @@ bool DebugAi::Impl::observeColdPlainsWaypoint(Context &c) {
         run.prepared=true;run.deadline=Clock::now()+std::chrono::seconds(20);
         note("cold-plains-entry-waypoint","Observing the entry block before continuing field travel");
     }
-    terrainClueDiagnostics={{"kind","cold-plains-entry-waypoint"},{"view",run.next},{"views",run.views.size()}};
+    navigation.terrainClueDiagnostics={{"kind","cold-plains-entry-waypoint"},{"view",run.next},{"views",run.views.size()}};
     if((run.next>=run.views.size() && Clock::now()>=run.settleUntil) || Clock::now()>=run.deadline) {
-        if(approachHint && std::find(run.views.begin(),run.views.end(),*approachHint)!=run.views.end()) {
-            cancelWalk(c);approachHint.reset();approachFrontier.reset();
+        if(navigation.approachHint && std::find(run.views.begin(),run.views.end(),*navigation.approachHint)!=run.views.end()) {
+            cancelWalk(c);navigation.approachHint.reset();navigation.approachFrontier.reset();
         }
-        run.done=true;terrainClueDiagnostics["status"]="ordinary-search-fallback";
+        run.done=true;navigation.terrainClueDiagnostics["status"]="ordinary-search-fallback";
         note("cold-plains-waypoint-fallback","Entry observation ended without assignment; ordinary search remains available");return false;
     }
     if(Clock::now()<run.settleUntil) {wait("waypoint-entry-observe","Waiting briefly for normal entry-room unit assignment");return true;}
     const auto aim=run.views[run.next];
-    terrainClueDiagnostics["aim"]={aim.x,aim.y};
+    navigation.terrainClueDiagnostics["aim"]={aim.x,aim.y};
     if((c.position-Vec{float(aim.x),float(aim.y)}).length()<=6) {
-        cancelWalk(c);approachHint.reset();approachFrontier.reset();++run.next;
+        cancelWalk(c);navigation.approachHint.reset();navigation.approachFrontier.reset();++run.next;
         run.settleUntil=Clock::now()+std::chrono::milliseconds(250);
         wait("waypoint-entry-observe","Observing the original entrance-side waypoint block");return true;
     }

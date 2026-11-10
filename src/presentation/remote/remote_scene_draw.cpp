@@ -60,6 +60,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     shared.pauseWorldPresentation(paused);
     const auto previousTick=uint64_t(double(time)*25);
     time += elapsed;
+    combat.advanceLocalSkillClock(uint64_t(double(time)*25)-previousTick);
     // Long window/loading waits skip stale queued casts and audio.
     // Assigned actors and active missiles retain their own lifecycles.
     const bool suspended = elapsed > .25f;
@@ -91,16 +92,15 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     if (!binding.origin || !v.world.playerPosition)
         return intent;
     shared.advanceWorldPresentation(suspended ? 0.f : elapsed);
-    std::erase_if(deathCallbacks,[&](const auto &key) {
-        const auto unit=v.world.units.find(key);
-        return unit==v.world.units.end() || !onlineMonsterCorpse(unit->second);
+    std::erase_if(deathCallbacks,[&](const auto &entry) {
+        const auto unit=v.world.units.find(entry.first);
+        return unit==v.world.units.end() || !unit->second.monsterDeath || unit->second.monsterDeath->revision!=entry.second;
     });
     observeEffects(v, shared, combat, binding.town,map.grid,{float(binding.origin->x),float(binding.origin->y)});
     observeDenLights(v,map,shared,suspended?0.f:elapsed);
     WorldDrawView worldScene;
     observeQuestMissileEffects(v,map,shared,worldScene,suspended?0.f:elapsed);
-    intent.input.castInputBusy = localCast && !channelSkill(localCast->command.skill) &&
-        (localCast->started < 0 || time < localCast->started + localCast->duration);
+    intent.input.castInputBusy = castInputBusy();
     // Decode the real death art when a boss is first visible, before its
     // timed callback. A cold child DCC must not interrupt the native program.
     for(const auto &[key,unit]:v.world.units) {
@@ -139,6 +139,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     std::erase_if(pd2VisualSeeds,[&](const auto &entry) { return !v.world.units.contains(entry.first); });
     const auto origin = *binding.origin;
     std::vector<ClientMissileTarget> missileTargets;
+    const auto modifierLevel=monsterText->nativeStats->names.find("modifierlist_level");
     for (const auto &[key, unit] : v.world.units) {
         if (!unit.position || (key.type != 0 && key.type != 1) ||
             onlineMonsterCorpse(unit)) continue;
@@ -151,18 +152,24 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if(const auto point=unit.verifiedDestination?unit.verifiedDestination:unit.destination)
             missileTargets.back().targetPoint=Vec{float(point->x)+.5f,float(point->y)+.5f};
         missileTargets.back().direction=unit.direction;
+        missileTargets.back().nativeGuid=key.id;
         if(key.type==1 && monsterText->nativeMonsterTypes) if(const auto size=monsterText->nativeMonsterTypes->dimensions.find(unitClass(unit).value_or(UINT16_MAX));size!=monsterText->nativeMonsterTypes->dimensions.end()) missileTargets.back().large=size->second.second;
-        if(key.type==1) if(const auto row=monsterRows.find(unitClass(unit).value_or(UINT16_MAX));row!=monsterRows.end())
+        if(key.type==1) if(const auto row=monsterRows.find(unitClass(unit).value_or(UINT16_MAX));row!=monsterRows.end()) {
             missileTargets.back().undead=monstats.number(row->second,"lUndead").value_or(0)!=0 || monstats.number(row->second,"hUndead").value_or(0)!=0;
+            missileTargets.back().noAura=monstats.number(row->second,"noAura").value_or(0)!=0;
+        }
         if(const auto effects=combat.states().find(key);effects!=combat.states().end() && effects->second.decoded)
             for(const auto &[state,record]:effects->second.states) {
-                (void)record;const auto stateRow=stateRows.find(state);if(stateRow==stateRows.end()) continue;
+                const auto stateRow=stateRows.find(state);if(stateRow==stateRows.end()) continue;
                 for(const auto &[skill,row]:skillRows) if(skills.value(row,"aurastate")==states.value(stateRow->second,"state") &&
                     skills.number(row,"auraeventfunc1")==1) {
-                    const auto missile=missileNames.find(skills.value(row,"srvmissilea"));
+                    const auto missile=missileNames.find(skills.value(row,"cltmissilea"));
                     if(missile!=missileNames.end()) missileTargets.back().retaliation=missiles.number(missile->second,"Id").value_or(-1);
                     if(key.type==0 && key.id==playerId && v.world.playerSkills.contains(uint16_t(skill))) missileTargets.back().retaliationRank=v.world.playerSkills.at(uint16_t(skill));
                     else if(unit.actionSkill==skill) missileTargets.back().retaliationRank=unit.actionSkillLevel.value_or(1);
+                    if(modifierLevel!=monsterText->nativeStats->names.end())
+                        for(const auto &stat:record.stats) if(stat.id==modifierLevel->second && !stat.parameter && stat.value>0)
+                            missileTargets.back().retaliationRank=int(std::min<int64_t>(stat.value,INT32_MAX));
                 }
             }
     }
@@ -171,20 +178,22 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         emitWoundBlood(v,shared,combat,map.grid,{float(origin.x),float(origin.y)});
     std::vector<ClientMissileAnchor> missileAnchors;
     for(const auto &[key,unit]:v.world.units) if(unit.position && key.type<=2)
-        missileAnchors.push_back({effectOwner(key),{float(unit.position->x)+.5f,float(unit.position->y)+.5f},key.id,key.type,unitClass(unit).value_or(UINT16_MAX)});
+        missileAnchors.push_back({effectOwner(key),{float(unit.position->x)+.5f,float(unit.position->y)+.5f},
+            key.id,key.type,unitClass(unit).value_or(UINT16_MAX),missileSlowPercent(combat,key)});
     shared.advanceClientMissiles(suspended ? 0.f : elapsed, map,
         {float(origin.x), float(origin.y)}, missileTargets,missileAnchors);
     std::erase_if(questEffects.taintedSunLights,[&](const auto &entry) {
         const auto unit=v.world.units.find(entry.first);
         return unit==v.world.units.end() || unit->second.assignmentRevision!=entry.second;
     });
-    for(const auto &effect:shared.takeClientMissileObjectOverlays()) {
-        const auto anchor=std::find_if(missileAnchors.begin(),missileAnchors.end(),[&](const auto &value){return value.id==effect.object;});
+    for(const auto &effect:shared.takeClientMissileOverlays()) {
+        const auto anchor=std::find_if(missileAnchors.begin(),missileAnchors.end(),[&](const auto &value){return value.id==effect.unit;});
         if(anchor==missileAnchors.end()) continue;
         const OnlineUnitKey key{anchor->type,anchor->nativeId};
         if(const auto *overlay=shared.overlayVisual(effect.overlay);overlay && overlay->fps>0)
             overlayVisuals.push_back({effect.overlay,key,time-effect.age,overlay->frames/overlay->fps});
-        else effectLimitations.insert("Tainted Sun: original altar overlay unavailable");
+        else effectLimitations.insert("Original missile overlay unavailable: "+std::to_string(effect.overlay));
+        if(anchor->type!=2) continue;
         if(const auto unit=v.world.units.find(key);unit!=v.world.units.end()) {
             bool existingLight=false;
             for(size_t row=0;row<objects.rows().size();++row) if(objects.number(row,"Id")==unitClass(unit->second))
@@ -340,7 +349,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         stateColorShifts.erase(key);int colorPriority=0;
         if (key.type<=1) {
             const bool dead = key.type == 0 ? playerDead(u) : onlineMonsterCorpse(u);
-            if (!dead) shattered.erase(key);
+            if(pd2 && !dead) shattered.erase(key);
             if (const auto snapshot=combat.states().find(key); snapshot!=combat.states().end() && snapshot->second.decoded)
                 for (const auto &[id,state]:snapshot->second.states) {
                     const auto row=stateRows.find(id);
@@ -350,7 +359,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                     const auto shift=states.number(row->second,"colorshift");
                     if(!dead && shift && *shift>=0 && *shift<=128 && priority>colorPriority) {colorPriority=priority;stateColorShifts[key]=*shift;}
                     hiddenCorpse |= key.type == 1 && ((dead && states.number(row->second,"hide").value_or(0)) || states.number(row->second,"setfunc")==11);
-                    shatter |= key.type == 1 && dead && states.number(row->second,"shatter").value_or(0);
+                    shatter |= pd2 && key.type==1 && dead && states.number(row->second,"shatter").value_or(0);
                 }
             if (frozen && key.type==0) {
                 // Freeze stops prediction as well as animation. The world snapshot
@@ -359,7 +368,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 m.position={float(u.position->x),float(u.position->y)};
                 m.correction={}; m.correctionLeft=0; m.route.clear(); m.goal.reset(); m.updatedAt=time;
             }
-            if (shatter && shattered.insert(key).second)
+            if(shatter && shattered.insert(key).second)
                 shared.drawNativeIceShatter(feet+Vec{float(origin.x)+.5f,float(origin.y)+.5f},movementRule(u).size);
             if (hiddenCorpse) continue;
         }
@@ -405,8 +414,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         const auto monsterRow=monsterRows.find(unitClass(u).value_or(UINT16_MAX));
         const uint8_t knockbackEndMode=monsterRow!=monsterRows.end() &&
             monstats.value(monsterRow->second,"BaseId")=="sandleaper1"?1:3;
-        const auto animationMode=monsterKnockback && m.finishedMonsterKnockback==u.actionRevision
-            ? std::optional<uint8_t>{knockbackEndMode}:u.mode;
+        auto animationMode=u.mode;
+        if(monsterKnockback && m.finishedMonsterKnockback==u.actionRevision) animationMode=knockbackEndMode;
+        if(key.type==1 && u.mode==0 && m.finishedMonsterDeath==u.actionRevision) animationMode=12;
         const bool localModeChange=m.animation.revision==u.actionRevision && m.animation.mode!=animationMode;
         m.animation.observe(animationMode, u.actionRevision, time, localModeChange?0.f:age, frozen);
         const bool localLeap=key.type==0 && key.id==playerId && localCast && localCast->started>=0 &&
@@ -499,7 +509,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             }
         }
         auto displayed = u;
-        if(monsterKnockback && m.finishedMonsterKnockback==u.actionRevision) displayed.mode=knockbackEndMode;
+        if(key.type==1) displayed.mode=animationMode;
         const bool playerKnockback=key.type==0 && (u.nativeMode?u.mode==19:u.mode==20);
         if(playerKnockback && !m.playerKnockback) {displayed.mode=7;displayed.nativeMode=false;}
         float objectElapsed = m.animation.elapsed(time);
@@ -560,13 +570,22 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             movementMode=locomotionMode(displayed,false,binding.town);
             if(!visual || !visual->animation.available()) {++unavailable;continue;}
         }
+        if(!pd2 && key.type==1 && displayed.mode==0 && monsterRow!=monsterRows.end() &&
+            monstats.number(monsterRow->second,"SplEndDeath")==1 && visual->finished(m.animation.elapsed(time))) {
+            // Retail 4EE7D advances the special death to DD locally.
+            m.finishedMonsterDeath=u.actionRevision;displayed.mode=12;
+            m.animation.observe(displayed.mode,u.actionRevision,time,0,false);
+            visual=monster(displayed,false,shared);
+            if(!visual || !visual->animation.available()) {++unavailable;continue;}
+        }
         // Native action notification starts an animation; its end is a display transition,
         // not a change to server life, position or mode. Never freeze a completed cast.
         const bool oneShot = u.actionSkill || (key.type == 0 && (u.nativeMode ?
             (u.mode == 4 || (u.mode && *u.mode >= 7 && *u.mode <= 15) || u.mode == 19) :
             (u.mode == 6 || u.mode == 18 || u.mode == 20))) ||
             (key.type == 1 && displayed.mode && *displayed.mode >= 3 && *displayed.mode <= 11);
-        const bool completedAction = playerKnockback?!m.playerKnockback:m.scriptedSequence?m.scriptedSequence->ended:oneShot && visual->finished(m.animation.elapsed(time));
+        const bool completedAction = !onlineMonsterCorpse(u) &&
+            (playerKnockback?!m.playerKnockback:m.scriptedSequence?m.scriptedSequence->ended:oneShot && visual->finished(m.animation.elapsed(time)));
         if(playerId && key==OnlineUnitKey{0,*playerId}) {
             // Same MPQ animation and observed FHR/FBR/FCR clock used to draw
             // this actor; damage alone is not proof of hit recovery. Do not
@@ -758,7 +777,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             playerDisplayed = true;
         WorldDrawItem actorEntry;
         actorEntry.image = image; actorEntry.position = feet; actorEntry.pixelOffset = p-screen(feet);
-        actorEntry.shadow = visual->shadow; actorEntry.orderFlag = visual->order; actorEntry.unit = effectOwner(key);
+        // Retail 4EF19 suppresses the shadow once DT has stopped at its last frame.
+        const bool heldDeath=!pd2 && key.type==1 && displayed.mode==0 && visual->finished(animationElapsed);
+        actorEntry.shadow = visual->shadow && !heldDeath; actorEntry.orderFlag = visual->order; actorEntry.unit = effectOwner(key);
         draw.push_back(actorEntry);
     }
     auto addOverlay = [&](int id, OnlineUnitKey key, float born, bool loop,std::optional<int> frame = {}) {
@@ -871,8 +892,21 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                         if(value.id==rankStat) rank=int(value.value);
                     }
                     if(skill>=0 && rank>0) if(const auto duration=skillCalculation(skill,rank,"auralencalc",key)) {
-                        const int rise=2 * *duration / 5;
-                        worldScene.ambientFade=WorldDrawView::AmbientFade{worldScene.level,5,3 * *duration / 5,rise?rise:25};
+                        const auto &unit=v.world.units.at(key);
+                        std::optional<int> casterLevel;
+                        if(pd2 || (key.type==0 && key.id==playerId)) casterLevel=worldScene.level;
+                        else if(unit.position) {
+                            const int x=int(unit.position->x)-int(origin.x),y=int(unit.position->y)-int(origin.y);
+                            for(const auto &room:map.terrain.rooms) {
+                                if(x<room.x*5 || y<room.y*5 || x>=(room.x+room.width)*5 || y>=(room.y+room.height)*5) continue;
+                                if(casterLevel && *casterLevel!=room.level) {casterLevel.reset();break;}
+                                casterLevel=room.level;
+                            }
+                        }
+                        if(casterLevel==worldScene.level) {
+                            const int rise=2 * *duration / 5;
+                            worldScene.ambientFade=WorldDrawView::AmbientFade{*casterLevel,5,3 * *duration / 5,rise?rise:25,!pd2};
+                        }
                     }
                 }
                 const auto cast=overlayNames.find(states.value(row->second,"castoverlay"));
@@ -1144,7 +1178,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 hit.validCombatTargets[hand].push_back(effectOwner({4,id}));
     }
     shared.updateWorldAudio(time,soundActors,soundEvents,
-        {float(v.world.playerPosition->x)+.5f,float(v.world.playerPosition->y)+.5f});
+        {float(v.world.playerPosition->x)+.5f,float(v.world.playerPosition->y)+.5f},worldScene.terrainOrigin);
     const auto &audioLimitations = shared.soundLimitations();
     effectLimitations.insert(audioLimitations.begin(),audioLimitations.end());
     // The frame's replica belongs to the caller. Diagnostics retain values,

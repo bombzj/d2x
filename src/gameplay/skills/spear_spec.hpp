@@ -4,7 +4,7 @@
 #include <vector>
 
 namespace d2x {
-struct SpearSequenceFrame { int frame = 0; bool secondAttack = false, hit = false; };
+struct SpearSequenceFrame { int frame = 0; bool secondAttack = false, hit = false, sound = false; };
 struct SpearSequence { std::vector<SpearSequenceFrame> frames; };
 struct SpearSkillSpec {
     enum class Kind { Jab, Power, Poison, Impale, Bolt, Charged, Fend, Strike, Fury };

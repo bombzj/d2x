@@ -21,13 +21,23 @@ OnlinePoint point(Vec p) {
     return {uint16_t(x),uint16_t(y)};
 }
 }
-bool DebugAutoWalk::active() const {return state_=="searching" || state_=="moving" || state_=="interacting";}
-nlohmann::json DebugAutoWalk::snapshot() const {return status();}
-void DebugAutoWalk::finish(std::string state,std::string reason,RemoteControl &control) {
-    if(state=="failed") ++failures_;
-    state_=std::move(state);reason_=std::move(reason);control.cancelMovement();segment_.reset();townLane_.reset();recoveryAnchor_.reset();routeDoor_.reset();
+bool DebugAutoWalk::active() const {return state_==DebugWalkState::Searching || state_==DebugWalkState::Moving || state_==DebugWalkState::Interacting;}
+DebugWalkObservation DebugAutoWalk::observe() const {
+    DebugWalkObservation result;
+    result.state=state_;result.failure=failure_;result.reason=reason_;
+    result.gameGeneration=game_;result.areaGeneration=area_;result.interactionRevision=interactionRevision_;
+    result.target=point_;result.crossingTarget=crossing_;result.recoveryAnchor=recoveryAnchor_;result.unit=unit_;
+    if(interactionFrom_) result.submittedInteraction=DebugWalkSubmission{interactionRevision_,interactionDiscontinuity_,*interactionFrom_};
+    result.moveRequests=moves_;result.interactionRequests=interactions_;result.movementRecoveries=movementRecoveries_;
+    result.searchContinuations=cadence_.continuations();return result;
 }
-void DebugAutoWalk::manualInput(RemoteControl &control) {if(active()) finish("cancelled","Manual input took control",control);}
+nlohmann::json DebugAutoWalk::snapshot() const {return status();}
+void DebugAutoWalk::finish(DebugWalkState state,std::string reason,RemoteControl &control,DebugWalkFailure failure) {
+    if(state==DebugWalkState::Failed) ++failures_;
+    failure_=state==DebugWalkState::Failed?failure:DebugWalkFailure::None;
+    state_=state;reason_=std::move(reason);control.cancelMovement();segment_.reset();pointerLane_.reset();recoveryAnchor_.reset();routeDoor_.reset();blockedStep_.reset();
+}
+void DebugAutoWalk::manualInput(RemoteControl &control) {if(active()) finish(DebugWalkState::Cancelled,"Manual input took control",control);}
 nlohmann::json DebugAutoWalk::status() const {
     using Json=nlohmann::json;
     const auto position=[](OnlinePoint p) {return Json{{"x",p.x},{"y",p.y}};};
@@ -36,13 +46,19 @@ nlohmann::json DebugAutoWalk::status() const {
         {"target",position(entry.target)},{"raw",position(entry.raw)},{"lane",position(entry.lane)},
         {"feet",{{"x",entry.feet.x},{"y",entry.feet.y}}},
         {"submitted",position(entry.submitted)},{"resume",entry.resume?position(*entry.resume):Json(nullptr)},{"branch",entry.branch}});
-    return {{"state",state_},{"active",active()},{"reason",reason_},{"gameGeneration",game_},{"areaGeneration",area_},
+    Json obstruction=nullptr;
+    if(blockedStep_) {
+        Json units=Json::array();for(const auto key:blockedStep_->units) units.push_back({{"type",key.type},{"id",key.id}});
+        obstruction={{"from",{blockedStep_->from.x,blockedStep_->from.y}},
+            {"to",{blockedStep_->to.x,blockedStep_->to.y}},{"units",std::move(units)}};
+    }
+    return {{"blockedStep",std::move(obstruction)},{"state",debugWalkName(state_)},{"active",active()},{"reason",reason_},{"gameGeneration",game_},{"areaGeneration",area_},
         {"area",level_?Json(*level_):Json(nullptr)},
         {"target",point_?Json{{"x",point_->x},{"y",point_->y}}:Json(nullptr)},
         {"unit",unit_?Json{{"type",unit_->type},{"id",unit_->id}}:Json(nullptr)},
         {"segment",segment_?Json{{"x",segment_->x},{"y",segment_->y}}:Json(nullptr)},
-        {"townLane",townLane_?Json{{"bend",position(townLane_->bend)},{"resume",position(townLane_->resume)},
-            {"target",position(townLane_->target)},{"resuming",townLane_->resuming}}:Json(nullptr)},
+        {"pointerLane",pointerLane_?Json{{"bend",position(pointerLane_->bend)},{"resume",position(pointerLane_->resume)},
+            {"target",position(pointerLane_->target)},{"resuming",pointerLane_->resuming},{"town",pointerLane_->town}}:Json(nullptr)},
         {"pointerSelections",std::move(selections)},
         {"interactionApproachRetries",approachRetries_},
         {"movementRecoveries",movementRecoveries_},
@@ -73,7 +89,7 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
     if(name!="debug-walk" && name!="debug-walk-status" && name!="debug-walk-cancel") return {};
     if(name=="debug-walk-cancel") {
         if(active()) {
-            finish("cancelled","Cancelled by debug command",control);
+            finish(DebugWalkState::Cancelled,"Cancelled by debug command",control);
             OnlineCombatCommand stop;stop.action=OnlineCombatCommand::Action::Stop;combat.submit(stop);
         }
     } else if(name=="debug-walk") {
@@ -104,47 +120,79 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
         const auto target=kind==Goal::Unit?std::optional{OnlineUnitKey{uint8_t(request.contains("unitType")?integer("unitType",0,5):2),uint32_t(integer("unitId",0,UINT32_MAX))}}:std::nullopt;
         const auto destination=request.contains("level")?std::optional{uint16_t(integer("level",1,136))}:std::nullopt;
         const int timeout=int(request.contains("timeoutSeconds")?integer("timeoutSeconds",5,300):120);
-        const bool run=request.value("run",true),interact=request.value("interact",kind==Goal::Waypoint || kind==Goal::Unit);
-        const bool retainHostProgress=game_==view.gameGeneration && area_==view.world.areaGeneration && level_==scene.area &&
-            hostProgressPosition_==view.world.playerPosition && client_ && view.world.playerPosition &&
-            distance(*client_,*view.world.playerPosition)>8;
-        if(game_!=view.gameGeneration || area_!=view.world.areaGeneration || level_!=scene.area) {
-            passage_.reset();passageTarget_.reset();passageObservationSince_.reset();
-        }
-        control.cancelMovement();goal_=kind;point_=location;unit_=target;destination_=destination;
-        game_=view.gameGeneration;area_=view.world.areaGeneration;level_=scene.area;run_=run;interact_=interact;landmark_=false;
-        localCrossing_=kind==Goal::Exit && request.value("localCrossing",false);
-        exploration_=kind==Goal::Point && !interact && request.value("exploration",false);
-        exactPoint_=kind==Goal::Point && request.value("exactPoint",false);
-        recoverableRelay_=kind==Goal::Point && request.value("recoverableRelay",false);
-        adjustLane_=request.value("adjustLane",true);
-        relayClient_.reset();relayHost_.reset();relayTerrain_.reset();relayProgressAt_={};relayProgressMoves_=0;
-        state_="searching";reason_.clear();segment_.reset();previous_=view.world.playerPosition;visited_.clear();deferredOpenings_.clear();
-        source_=kind==Goal::Point?"explicit-point":kind==Goal::Unit?"assigned-unit":"";
-        client_.reset();server_=view.world.playerPosition;edgeStart_.reset();edgeEnd_.reset();crossing_.reset();exitLevel_.reset();
-        townTurnSince_={};legDiscontinuity_=0;
-        lastFrom_.reset();lastRequest_.reset();lastTarget_.reset();closeApproach_=false;approachRetries_=0;clickedAt_={};decisions_=0;clientMoving_=false;
-        townLane_.reset();pointerSelections_.clear();lastPointerFeet_.reset();
-        resyncApproach_=request.value("resyncApproach",false);
-        recoveryAnchor_.reset();movementRecoveries_=0;
-        routeDoor_.reset();routeDoorSince_={};routeDoorRequest_={};
-        if(!retainHostProgress) {
-            hostProgressPosition_=view.world.playerPosition;hostProgressAt_=Clock::now();hostProgressRevision_=view.world.revision;
-        }
-        changeStance_=request.value("changeStance",false);
-        forceApproach_=request.value("forceApproach",false);
-        waitQuestAlert_=kind==Goal::Unit && target->type==1 && request.value("waitQuestAlert",false);
-        waypointOpening_=kind==Goal::Waypoint || (kind==Goal::Unit && target->type==2 &&
-            (request.value("purpose",std::string{})=="activate-waypoint" || request.value("purpose",std::string{})=="travel-waypoint"));
-        waypointMenu_=kind==Goal::Waypoint || request.value("confirmMenu",false);
-        alertWaitSince_={};
-        moves_=interactions_=searches_=0;interactionFrom_.reset();interactionRevision_=view.world.revision;interactionDiscontinuity_=0;
-        progressAt_=Clock::now();deadline_=progressAt_+std::chrono::seconds(timeout);
-        closestPoint_=std::numeric_limits<float>::max();closestAt_=progressAt_;
-        executionClock_.reset(progressAt_);
-        cadence_.reset();
+        DebugWalkIntent intent;intent.goal=kind;intent.point=location;intent.unit=target;intent.level=destination;intent.timeoutSeconds=timeout;
+        if(request.contains("run")) intent.run=request.at("run").get<bool>();
+        if(request.contains("interact")) intent.interact=request.at("interact").get<bool>();
+        if(kind==Goal::Exit && request.contains("localCrossing")) intent.localCrossing=request.at("localCrossing").get<bool>();
+        if(kind==Goal::Point && !intent.interact.value_or(false) && request.contains("exploration")) intent.exploration=request.at("exploration").get<bool>();
+        if(kind==Goal::Point && request.contains("exactPoint")) intent.exactPoint=request.at("exactPoint").get<bool>();
+        if(kind==Goal::Point && request.contains("recoverableRelay")) intent.recoverableRelay=request.at("recoverableRelay").get<bool>();
+        if(request.contains("adjustLane")) intent.adjustLane=request.at("adjustLane").get<bool>();
+        if(request.contains("resyncApproach")) intent.resyncApproach=request.at("resyncApproach").get<bool>();
+        if(request.contains("changeStance")) intent.changeStance=request.at("changeStance").get<bool>();
+        if(request.contains("forceApproach")) intent.forceApproach=request.at("forceApproach").get<bool>();
+        if(kind==Goal::Unit && target->type==1 && request.contains("waitQuestAlert")) intent.waitQuestAlert=request.at("waitQuestAlert").get<bool>();
+        if(kind!=Goal::Waypoint && request.contains("confirmMenu")) intent.confirmMenu=request.at("confirmMenu").get<bool>();
+        if(kind==Goal::Unit && target->type==2 && request.contains("purpose")) intent.purpose=request.at("purpose").get<std::string>();
+        start(intent,session,town,control);
     }
     return Json{{"ok",true},{"navigation",status()}}.dump();
+}
+void DebugAutoWalk::start(const DebugWalkIntent &request,net::RealmSession &session,RemoteTown &town,RemoteControl &control) {
+    if(active()) throw std::invalid_argument("Cancel the current debug walk before starting another");
+    const auto &view=session.read();
+    // The frontend already bound this scene using the local DynamicPath
+    // position. Updating it here without that position can select the
+    // other side of a walking boundary from a sparse server sample and
+    // make the parent/child cancel and rebind each other indefinitely.
+    const auto &scene=town.read();
+    if(view.stage!=OnlineStage::ProtocolReady || !scene.movementAvailable || !scene.origin ||
+        !view.world.playerPosition || onlinePlayerDead(view.world)) throw std::invalid_argument("Debug walk requires a live player and native map");
+    const auto kind=request.goal;
+    const auto location=request.point;const auto target=request.unit;const auto destination=request.level;
+    const int timeout=request.timeoutSeconds.value_or(120);
+    if(kind==Goal::None || (kind==Goal::Point && !location) || (kind==Goal::Unit && !target) ||
+        (target && target->type>5) || (destination && (*destination<1 || *destination>136)) || timeout<5 || timeout>300)
+        throw std::invalid_argument("Debug walk value outside supported range");
+    const bool run=request.run.value_or(true),interact=request.interact.value_or(kind==Goal::Waypoint || kind==Goal::Unit);
+    const bool retainHostProgress=game_==view.gameGeneration && area_==view.world.areaGeneration && level_==scene.area &&
+        hostProgressPosition_==view.world.playerPosition && client_ && view.world.playerPosition &&
+        distance(*client_,*view.world.playerPosition)>8;
+    if(game_!=view.gameGeneration || area_!=view.world.areaGeneration || level_!=scene.area) {
+        passage_.reset();passageTarget_.reset();passageObservationSince_.reset();
+    }
+    control.cancelMovement();goal_=kind;point_=location;unit_=target;destination_=destination;
+    game_=view.gameGeneration;area_=view.world.areaGeneration;level_=scene.area;run_=run;interact_=interact;landmark_=false;
+    localCrossing_=kind==Goal::Exit && request.localCrossing.value_or(false);
+    exploration_=kind==Goal::Point && !interact && request.exploration.value_or(false);
+    exactPoint_=kind==Goal::Point && request.exactPoint.value_or(false);
+    recoverableRelay_=kind==Goal::Point && request.recoverableRelay.value_or(false);
+    adjustLane_=request.adjustLane.value_or(true);
+    relayClient_.reset();relayHost_.reset();relayTerrain_.reset();relayProgressAt_={};relayProgressMoves_=0;
+    state_=DebugWalkState::Searching;failure_=DebugWalkFailure::None;reason_.clear();segment_.reset();previous_=view.world.playerPosition;visited_.clear();deferredOpenings_.clear();
+    source_=kind==Goal::Point?"explicit-point":kind==Goal::Unit?"assigned-unit":"";
+    client_.reset();server_=view.world.playerPosition;edgeStart_.reset();edgeEnd_.reset();crossing_.reset();exitLevel_.reset();
+    townTurnSince_={};legDiscontinuity_=0;
+    lastFrom_.reset();lastRequest_.reset();lastTarget_.reset();closeApproach_=false;approachRetries_=0;clickedAt_={};decisions_=0;clientMoving_=false;
+    pointerLane_.reset();pointerSelections_.clear();lastPointerFeet_.reset();
+    resyncApproach_=request.resyncApproach.value_or(false);
+    recoveryAnchor_.reset();movementRecoveries_=0;
+    routeDoor_.reset();blockedStep_.reset();routeDoorSince_={};routeDoorRequest_={};
+    if(!retainHostProgress) {
+        hostProgressPosition_=view.world.playerPosition;hostProgressAt_=Clock::now();hostProgressRevision_=view.world.revision;
+    }
+    changeStance_=request.changeStance.value_or(false);
+    forceApproach_=request.forceApproach.value_or(false);
+    waitQuestAlert_=kind==Goal::Unit && target->type==1 && request.waitQuestAlert.value_or(false);
+    waypointOpening_=kind==Goal::Waypoint || (kind==Goal::Unit && target->type==2 &&
+        (request.purpose.value_or(std::string{})=="activate-waypoint" || request.purpose.value_or(std::string{})=="travel-waypoint"));
+    waypointMenu_=kind==Goal::Waypoint || request.confirmMenu.value_or(false);
+    alertWaitSince_={};
+    moves_=interactions_=searches_=0;interactionFrom_.reset();interactionRevision_=view.world.revision;interactionDiscontinuity_=0;
+    progressAt_=Clock::now();deadline_=progressAt_+std::chrono::seconds(timeout);
+    closestPoint_=std::numeric_limits<float>::max();closestAt_=progressAt_;
+    executionClock_.reset(progressAt_);
+    cadence_.reset();
 }
 void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteControl &control,bool blocked,std::optional<Vec> pathPosition,bool pathMoving) {
     if(!active()) return;
@@ -159,11 +207,11 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     if(relayProgressAt_!=Clock::time_point{}) relayProgressAt_+=suspended;
     if(view.gameGeneration!=game_ || view.world.areaGeneration!=area_ || view.stage!=OnlineStage::ProtocolReady ||
         (scene.area && scene.area!=level_)) {
-        finish("cancelled","Game/area changed; start a new navigation intent",control);return;
+        finish(DebugWalkState::Cancelled,"Game/area changed; start a new navigation intent",control);return;
     }
-    if(onlinePlayerDead(view.world)) {finish("failed","Player died",control);return;}
+    if(onlinePlayerDead(view.world)) {finish(DebugWalkState::Failed,"Player died",control);return;}
     if(unit_ && unit_->type==1 && view.world.npcConversation && view.world.npcConversation->source==unit_->id) {
-        finish("completed","Actual NPC conversation opened",control);return;
+        finish(DebugWalkState::Completed,"Actual NPC conversation opened",control);return;
     }
     const auto &submitted=control.interactionSubmission();
     if(unit_ && unit_->type==2 && source_=="native-unit-approach" && submitted && submitted->target==unit_ &&
@@ -172,15 +220,15 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         // blocks movement. The parent owns the object's distinct postcondition.
         interactionFrom_=submitted->position;interactionRevision_=submitted->revision;
         interactionDiscontinuity_=submitted->discontinuity;
-        if(!waypointOpening_) {finish("completed","Normal unit approach submitted the object interaction",control);return;}
+        if(!waypointOpening_) {finish(DebugWalkState::Completed,"Normal unit approach submitted the object interaction",control);return;}
         clickedAt_=now;
     }
     if(unit_ && waypointOpening_ && view.world.waypointSource==unit_->id) {
-        finish("completed","Server waypoint menu opened",control);return;
+        finish(DebugWalkState::Completed,"Server waypoint menu opened",control);return;
     }
     const bool activated=unit_ && waypointOpening_ && clickedAt_!=Clock::time_point{} && view.world.waypointActivation &&
         view.world.waypointActivation->source==unit_->id && view.world.waypointActivation->generation==view.world.interactionGeneration;
-    if(activated && !waypointMenu_) {finish("completed","Server confirmed waypoint activation",control);return;}
+    if(activated && !waypointMenu_) {finish(DebugWalkState::Completed,"Server confirmed waypoint activation",control);return;}
     if(unavailable) return;
     const bool nearEnd=segment_ && pathPosition && (Vec{float(segment_->x),float(segment_->y)}-*pathPosition).length()<=6;
     std::array<uint64_t,24> signals{view.world.areaGeneration,town.navigationRevision(),uint64_t(pathMoving),uint64_t(nearEnd),
@@ -194,8 +242,8 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     const auto mode=nearEnd || !pathMoving?DebugDecisionCadence::Mode::Reaction:DebugDecisionCadence::Mode::Navigation;
     if(!cadence_.due(now,mode,signals,!pathMoving,std::min(deadline_,progressAt_+std::chrono::seconds(15)),
         timing_.walkDecisionMs,timing_.walkReactionMs)) return;
-    if(now>=deadline_) {finish("failed","Debug navigation deadline expired",control);return;}
-    ++decisions_;clientMoving_=pathMoving;
+    if(now>=deadline_) {finish(DebugWalkState::Failed,"Debug navigation deadline expired",control);return;}
+    ++decisions_;clientMoving_=pathMoving;blockedStep_.reset();
     if(unit_ && server_ && view.world.playerPosition && *server_!=*view.world.playerPosition) {
         const auto target=view.world.units.find(*unit_);
         if(target!=view.world.units.end() && target->second.position &&
@@ -314,7 +362,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             relayProgressAt_=now;relayProgressMoves_=moves_;
         } else if(distance(player,*server_)<=2 && moves_-relayProgressMoves_>=4 &&
             now-relayProgressAt_>=std::chrono::milliseconds(std::max(1200,2*timing_.walkRetryMs))) {
-            finish("needs-replan","Town relay repeatedly replaced local pointers without confirmed displacement",control);return;
+            finish(DebugWalkState::NeedsReplan,"Town relay repeatedly replaced local pointers without confirmed displacement",control);return;
         }
     }
     if(goal_==Goal::Point && point_ && !unit_) {
@@ -322,7 +370,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         if(span+1<=closestPoint_) {closestPoint_=span;closestAt_=now;}
         // Bouncing in front of a blocked point keeps moving but never closes in; long detours get longer.
         else if(now-closestAt_>std::chrono::seconds(closestPoint_<=16?8:25) && !recoveryAnchor_) {
-            finish("failed","No closing progress toward the point (closest "+
+            finish(DebugWalkState::Failed,"No closing progress toward the point (closest "+
                 std::to_string(int(closestPoint_))+"): "+(reason_.empty()?control.reason():reason_),control);return;
         }
     }
@@ -343,12 +391,12 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     if(scene.town && segment_ && segment_==lastRequest_ && actor!=view.world.units.end() &&
         actor->second.positionDiscontinuity!=legDiscontinuity_) {
         // A 15 supersedes both the predicted corner and its coalesced pointer.
-        control.cancelMovement();segment_.reset();townLane_.reset();lastRequest_.reset();townTurnSince_={};
+        control.cancelMovement();segment_.reset();pointerLane_.reset();lastRequest_.reset();townTurnSince_={};
     }
     std::optional<Vec> laggingTurnOrigin;
     const auto holdTownTurn=[&](Vec next) {
         laggingTurnOrigin.reset();
-        if(!scene.town || !segment_ || lastRequest_!=segment_ || !lastFrom_ || actor==view.world.units.end() ||
+        if(scene.town!=pointerLane_->town || !segment_ || lastRequest_!=segment_ || !lastFrom_ || actor==view.world.units.end() ||
             actor->second.positionDiscontinuity!=legDiscontinuity_) return false;
         const Vec bend=Vec{float(segment_->x),float(segment_->y)}-offset+Vec{.5f,.5f};
         const Vec approach=Vec{float(lastFrom_->x),float(lastFrom_->y)}-offset+Vec{.5f,.5f};
@@ -394,13 +442,13 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         const Vec host=Vec{float(server_->x),float(server_->y)}-offset+Vec{.5f,.5f};
         if(pathGrid.nativeMovementSegment(host,host,playerMovement)) {
             recoveryAnchor_=server_;resyncApproach_=false;++movementRecoveries_;
-            townLane_.reset();
+            pointerLane_.reset();
             control.cancelMovement();segment_.reset();lastRequest_.reset();townTurnSince_={};
-            source_="walk-rejoin-host";state_="moving";clickedAt_={};
+            source_="walk-rejoin-host";state_=DebugWalkState::Moving;clickedAt_={};
         }
     }
     if(!recoveryAnchor_ && movementRecoveries_>=2 && verifiedStall) {
-        finish("failed","No observed player progress on host after bounded walking recovery",control);return;
+        finish(DebugWalkState::Failed,"No observed player progress on host after bounded walking recovery",control,DebugWalkFailure::NoProgress);return;
     }
     if(recoveryAnchor_) {
         // Keep the original goal. Walk back in collision-checked short legs,
@@ -412,7 +460,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             reason_="Rejoined observed feet; resuming the original walking goal";return;
         }
         if(now-progressAt_>std::chrono::seconds(15)) {
-            finish("failed","No observed player progress while rejoining the blocked walking path",control);return;
+            finish(DebugWalkState::Failed,"No observed player progress while rejoining the blocked walking path",control,DebugWalkFailure::NoProgress);return;
         }
         if(segment_ && pathMoving && distance(player,*segment_)>1) return;
         const Vec anchor=Vec{float(recoveryAnchor_->x),float(recoveryAnchor_->y)}-offset+Vec{.5f,.5f};
@@ -437,7 +485,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         }
         if(!next) {
             if(now-progressAt_>std::chrono::seconds(3)) {
-                finish("failed","No collision-checked return leg toward the observed host position",control);return;
+                finish(DebugWalkState::Failed,"No collision-checked return leg toward the observed host position",control);return;
             }
             reason_="Waiting for a reachable return leg or ordinary server position correction";return;
         }
@@ -463,7 +511,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
              (waypointOpening_ && view.world.waypointRequested==unit_->id));
         const bool waypointUnanswered=waitingAtTarget && waypointOpening_ && now-clickedAt_>=3*settle;
         if(waypointUnanswered && goal_==Goal::Unit) {
-            control.useWaypoint(0);finish("failed","Waypoint opening remained unanswered in range",control);return;
+            control.useWaypoint(0);finish(DebugWalkState::Failed,"Waypoint opening remained unanswered in range",control);return;
         }
         if((waitingAtTarget && !waypointUnanswered) || (unit_->type==1 && view.world.npcPendingConversation && view.world.npcRequested==unit_->id) ||
             now-clickedAt_<settle || now-progressAt_<settle) {
@@ -471,18 +519,18 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         }
         if(unit_->type==1 && view.world.npcRequested==unit_->id) control.closeNpc();
         if(waypointOpening_ && view.world.waypointRequested==unit_->id) control.useWaypoint(0);
-        if(approachRetries_>=2) {finish("failed","Interaction opening had no result after quick clicks and local approaches",control);return;}
+        if(approachRetries_>=2) {finish(DebugWalkState::Failed,"Interaction opening had no result after quick clicks and local approaches",control,DebugWalkFailure::ApproachUnanswered);return;}
         visited_.emplace(player.x,player.y);++approachRetries_;closeApproach_=true;
         forceApproach_=true;
         source_="unit-collision-detour";
-        clickedAt_={};segment_.reset();control.cancelMovement();progressAt_=now;state_="moving";
+        clickedAt_={};segment_.reset();control.cancelMovement();progressAt_=now;state_=DebugWalkState::Moving;
     }
     const auto deferPassage=[&]() {
         if(!point_ || unit_ || landmark_ || !passage_) return false;
         if(knowledge) DebugExplorationMemory::defer(*knowledge,*passage_);
         passage_.reset();passageTarget_.reset();passageObservationSince_.reset();
         visited_.emplace(point_->x,point_->y);point_.reset();segment_.reset();control.cancelMovement();
-        progressAt_=now;state_="searching";reason_="Passage approach stalled; retaining this direction until local evidence changes";
+        progressAt_=now;state_=DebugWalkState::Searching;reason_="Passage approach stalled; retaining this direction until local evidence changes";
         return true;
     };
     const auto openingEvidence=[&](std::pair<int,int> at) {
@@ -501,11 +549,11 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             if(distance(player,*point_)>16) deferredOpenings_[{point_->x,point_->y}]=openingEvidence({point_->x,point_->y});
             else visited_.emplace(point_->x,point_->y);
             point_.reset();segment_.reset();landmark_=false;
-            control.cancelMovement();progressAt_=now;state_="searching";
+            control.cancelMovement();progressAt_=now;state_=DebugWalkState::Searching;
             reason_="Stopped at a walking opening; selecting another opening on the same connection";return;
         }
         const auto detail=reason_.empty()?control.reason():reason_;
-        finish("failed","No observed player progress for 15 seconds: "+detail,control);return;
+        finish(DebugWalkState::Failed,"No observed player progress for 15 seconds: "+detail,control,DebugWalkFailure::NoProgress);return;
     }
     const auto inLevel=[&](OnlinePoint p) {
         const int x=int(p.x)-origin.x,y=int(p.y)-origin.y;
@@ -528,7 +576,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             point_=observedPassage();
             if(!point_) {source_="walking-connection";reason_="Waiting for an observed passage or assigned exit";return;}
         } else {
-            if(interact_) {finish("failed","Walking connections support approach only; there is no warp unit to interact with",control);return;}
+            if(interact_) {finish(DebugWalkState::Failed,"Walking connections support approach only; there is no warp unit to interact with",control);return;}
             std::erase_if(deferredOpenings_,[&](const auto &entry){return openingEvidence(entry.first)!=entry.second;});
             std::vector<DebugExplorationMemory::Cell> approaches;
             for(const auto &opening:connection.openings) {
@@ -542,16 +590,16 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                 approaches.emplace_back(at.x,at.y);
             }
             if(localCrossing_ && approaches.empty()) {
-                finish("failed","Adjacent crossing no longer has a known legal approach",control);return;
+                finish(DebugWalkState::Failed,"Adjacent crossing no longer has a known legal approach",control);return;
             }
             const Vec bearing{float(connection.bearing->x),float(connection.bearing->y)};
             const auto plan=search_.observedRoute(*scene.area,*pathPosition,0,false,bearing,0,0,!localCrossing_,std::move(approaches));
             if(plan.points.empty()) {
                 if(plan.outcome==DebugExplorationMemory::Plan::Outcome::ExecutionBlocked) {
-                    state_="searching";reason_="Known walking connection is temporarily blocked by live occupancy";return;
+                    state_=DebugWalkState::Searching;reason_="Known walking connection is temporarily blocked by live occupancy";return;
                 }
                 if(pathMoving) {reason_="Keeping the moving native path until a safe approach can be planned";return;}
-                finish("failed","Known walking connection has no reachable acquired approach or pending passage",control);return;
+                finish(DebugWalkState::Failed,"Known walking connection has no reachable acquired approach or pending passage",control);return;
             }
             const auto endpoint=plan.points.back();
             if(plan.passage) {
@@ -575,7 +623,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                 if(!staticRouteGrid.walkable({float(int(at.x)-origin.x)+.5f,float(int(at.y)-origin.y)+.5f},playerMovement)) break;
                 point_=at;
             }
-            if(!point_) {state_="searching";reason_="Waiting for resident collision along the acquired connection route";return;}
+            if(!point_) {state_=DebugWalkState::Searching;reason_="Waiting for resident collision along the acquired connection route";return;}
             landmark_=!plan.passage && crossing_ && *point_==endpoint;
             if(landmark_) source_="walking-connection-opening";
             ++searches_;reason_.clear();
@@ -583,12 +631,12 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     }
     if(unit_) {
         const auto target=std::find_if(scene.mapTargets.begin(),scene.mapTargets.end(),[&](const auto &entry){return entry.unit==*unit_;});
-        if(target==scene.mapTargets.end()) {finish("failed","Target is no longer assigned in the client scene",control);return;}
+        if(target==scene.mapTargets.end()) {finish(DebugWalkState::Failed,"Target is no longer assigned in the client scene",control,DebugWalkFailure::TargetWithdrawn);return;}
         point_=target->position;
         if(interact_ && !interactions_ && !forceApproach_ && unit_->type==1 && view.world.npcRequested==unit_->id) {
             // A resumed plan may already have an opening in flight. Give it
             // the same receipt and position checks as a newly submitted click.
-            clickedAt_=now;state_="interacting";reason_="Observing the NPC opening already in flight";return;
+            clickedAt_=now;state_=DebugWalkState::Interacting;reason_="Observing the NPC opening already in flight";return;
         }
         const bool awaitingAlert=waitQuestAlert_ && !interactions_ && !view.world.questAlerts.contains(*unit_);
         if(awaitingAlert && ready(*pathPosition)) {
@@ -631,7 +679,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                     }
                 }
                 if(stance && control.move(*stance,run_,{},pathPosition)) {
-                    townLane_.reset();
+                    pointerLane_.reset();
                     visited_.emplace(stance->x,stance->y);forceApproach_=false;source_="unit-opening-stance";segment_=stance;
                     submittedAt_=now;progressAt_=now;++moves_;return;
                 }
@@ -639,7 +687,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             if(source_=="unit-opening-stance" && (pathMoving || now-submittedAt_<settle)) return;
             if(changeStance_ && localReady) {
                 if(source_!="unit-opening-stance" || !segment_ || player!=*segment_) {
-                    finish("failed","No alternate interaction position reached after confirmed transfer failure",control);return;
+                    finish(DebugWalkState::Failed,"No alternate interaction position reached after confirmed transfer failure",control);return;
                 }
                 changeStance_=false;
             }
@@ -673,9 +721,9 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                 }
                 const bool follow=forceApproach_ || (!waypoint && localArrival && !hostReady);
                 if(!control.interact(*unit_,run_,{},pathPosition,follow)) {reason_=control.reason();return;}
-                townLane_.reset();
+                pointerLane_.reset();
                 forceApproach_=false;
-                source_="native-unit-approach";state_="interacting";++interactions_;progressAt_=now;
+                source_="native-unit-approach";state_=DebugWalkState::Interacting;++interactions_;progressAt_=now;
                 reason_="Normal unit click submitted; waiting for automatic approach and interaction";
                 return;
             }
@@ -692,7 +740,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             }
             // A stopped native approach needs an actual collision detour,
             // not a stale-position backtrack or an unbounded click loop.
-            control.cancelApproach();source_="unit-collision-detour";segment_.reset();state_="moving";
+            control.cancelApproach();source_="unit-collision-detour";segment_.reset();state_=DebugWalkState::Moving;
             reason_="Normal unit approach stopped; planning around current collision";
         }
         // Resource/path verification can leave a stopped local path behind
@@ -716,22 +764,22 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                     // warp. Only the actual scene can confirm the travel result.
                     reason_="Completing the local interaction approach";return;
                 }
-                if(state_=="interacting" && control.approaching()) return;
+                if(state_==DebugWalkState::Interacting && control.approaching()) return;
                 if(interactions_ && now-progressAt_<std::chrono::milliseconds(100)) return;
-                if(interactions_>=3) {finish("failed","Server did not open the requested interaction",control);return;}
+                if(interactions_>=3) {finish(DebugWalkState::Failed,"Server did not open the requested interaction",control,DebugWalkFailure::InteractionUnanswered);return;}
                 const auto submissionRevision=view.world.revision;
                 const auto discontinuity=actor==view.world.units.end()?0:actor->second.positionDiscontinuity;
                 if(!control.interact(*unit_,run_,{},observedInteractionApproach?std::nullopt:pathPosition)) {
                     reason_=control.reason();
                     // No new operation was queued. Keep observing the original deadline.
                     if(reason_=="Interaction is already pending or open") return;
-                    finish("failed",reason_,control);return;
+                    finish(DebugWalkState::Failed,reason_,control);return;
                 }
-                townLane_.reset();
+                pointerLane_.reset();
                 interactionRevision_=submissionRevision;interactionDiscontinuity_=discontinuity;interactionFrom_=observedInteractionApproach?*server_:player;
-                ++interactions_;progressAt_=now;state_="interacting";
+                ++interactions_;progressAt_=now;state_=DebugWalkState::Interacting;
                 if(unit_->type==1 || unit_->type==5 || waypointOpening_) clickedAt_=now;
-                else if(goal_!=Goal::Waypoint) finish("completed",observedInteractionApproach?
+                else if(goal_!=Goal::Waypoint) finish(DebugWalkState::Completed,observedInteractionApproach?
                     "Unit interaction submitted from the observed server approach; verify the server result separately":
                     "Interaction submitted; verify the server result separately",control);
                 return;
@@ -739,21 +787,21 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
         }
     }
     const auto movementTarget=point_;
-    if(townLane_) {
+    if(pointerLane_) {
         // A lane adjustment is a two-leg route, not a fresh clearance vote
         // at every foot sample. Keep its continuation in world coordinates.
-        if(!scene.town || !segment_ || segment_!=lastRequest_ || movementTarget!=townLane_->target) townLane_.reset();
+        if(scene.town!=pointerLane_->town || !segment_ || segment_!=lastRequest_ || movementTarget!=pointerLane_->target) pointerLane_.reset();
         else {
-            const Vec bend=Vec{float(townLane_->bend.x),float(townLane_->bend.y)}-offset+Vec{.5f,.5f};
-            const Vec resume=Vec{float(townLane_->resume.x),float(townLane_->resume.y)}-offset+Vec{.5f,.5f};
+            const Vec bend=Vec{float(pointerLane_->bend.x),float(pointerLane_->bend.y)}-offset+Vec{.5f,.5f};
+            const Vec resume=Vec{float(pointerLane_->resume.x),float(pointerLane_->resume.y)}-offset+Vec{.5f,.5f};
             // Latch the continuation as soon as a forward shortcut clears
             // the corner. Never demand a visit to the optional offset cell.
-            if(pointerClear(resume) && advancesTownPointer(resume)) townLane_->resuming=true;
+            if(pointerClear(resume) && advancesTownPointer(resume)) pointerLane_->resuming=true;
             // At the far end return to ordinary lookahead before stopping
             // on the saved join cell. The same progress guard protects it.
-            if((townLane_->resuming && (resume-from).length()<=6) ||
-                !pointerClear(townLane_->resuming?resume:bend) ||
-                (!townLane_->resuming && !pathGrid.nativeMovementSegment(bend,resume,playerMovement))) townLane_.reset();
+            if((pointerLane_->resuming && (resume-from).length()<=6) ||
+                !pointerClear(pointerLane_->resuming?resume:bend) ||
+                (!pointerLane_->resuming && !pathGrid.nativeMovementSegment(bend,resume,playerMovement))) pointerLane_.reset();
         }
     }
     if(segment_) {
@@ -774,8 +822,8 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     }
     if(!point_ && goal_!=Goal::Exit) {
         point_=observedPassage();
-        if(!point_) {state_="searching";reason_="Waiting for an assigned target or an observed pending passage";return;}
-        ++searches_;state_="searching";
+        if(!point_) {state_=DebugWalkState::Searching;reason_="Waiting for an assigned target or an observed pending passage";return;}
+        ++searches_;state_=DebugWalkState::Searching;
     }
     const bool searching=!unit_ && !landmark_ && (goal_==Goal::Waypoint || goal_==Goal::Exit);
     // A walking boundary is a checked opening, not an interaction rectangle.
@@ -799,21 +847,23 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             const Vec across{float(crossing_->x),float(crossing_->y)};
             if(holdTownTurn(across-offset+Vec{.5f,.5f})) return;
         }
-        if(!interact_) {finish("completed","Reached target vicinity through client movement",control);return;}
+        if(!interact_) {finish(DebugWalkState::Completed,"Reached target vicinity through client movement",control);return;}
     }
     const auto pathTarget=*point_;
     const Vec target{float(int(pathTarget.x)-origin.x)+.5f,float(int(pathTarget.y)-origin.y)+.5f};
     std::deque<Vec> path;
-    if(townLane_) {
-        const auto next=townLane_->resuming?townLane_->resume:townLane_->bend;
+    if(pointerLane_) {
+        const auto next=pointerLane_->resuming?pointerLane_->resume:pointerLane_->bend;
         path.push_back(Vec{float(next.x),float(next.y)}-offset+Vec{.5f,.5f});
     }
     if(path.empty() && localCrossing_ && !unit_) {
-        if(!pointerClear(target)) {finish("failed","Adjacent crossing became obstructed",control);return;}
+        if(!pointerClear(target) && !map.grid.nativeMovementSegment(from,target,playerMovement)) {
+            finish(DebugWalkState::Failed,"Adjacent crossing became obstructed",control);return;
+        }
         path.push_back(target);
     }
     if(path.empty()) path=search_.path(routeGrid,from,target,unit_.has_value(),playerMovement,true);
-    if(!townLane_ && unit_ && (unit_->type==1 || unit_->type==2 || unit_->type==5) && interact_ && (path.empty() ||
+    if(!pointerLane_ && unit_ && (unit_->type==1 || unit_->type==2 || unit_->type==5) && interact_ && (path.empty() ||
         !ready(path.back()+offset-Vec{.5f,.5f}))) {
         // Clipping a path to an object's center can stop at a rectangle's
         // excluded corner. Search actual interaction positions around it;
@@ -862,9 +912,9 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     if(routeDoor_) {
         const auto door=view.world.units.find(*routeDoor_);
         if(door==view.world.units.end() || door->second.mode!=0) {
-            routeDoor_.reset();segment_.reset();lastRequest_.reset();progressAt_=now;
+            routeDoor_.reset();blockedStep_.reset();segment_.reset();lastRequest_.reset();progressAt_=now;
         } else if(now-routeDoorSince_>=std::chrono::seconds(12)) {
-            finish("failed","Door on the planned route remained closed",control);return;
+            finish(DebugWalkState::Failed,"Door on the planned route remained closed",control);return;
         }
     }
     if(!routeDoor_ && nextDoor) {
@@ -881,7 +931,7 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     }
     const bool interactionApproach=unit_ && interact_ && !path.empty() &&
         ready(path.back()+offset-Vec{.5f,.5f});
-    if(!townLane_ && (path.empty() || (unit_ && interact_ && !interactionApproach) ||
+    if(!pointerLane_ && (path.empty() || (unit_ && interact_ && !interactionApproach) ||
         (!searching && !interactionApproach && (path.back()-target).length()>6))) {
         if(pathMoving) {reason_="Keeping the moving native path until a safe new leg is available";return;}
         auto staticPath=search_.path(routeGrid,from,target,unit_.has_value(),playerMovement,true);
@@ -902,17 +952,17 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                 if(observed.points.empty()) {
                     // An assigned pointer with unknown approach terrain is not
                     // an execution failure. Return knowledge ownership to AI.
-                    finish("needs-observation","Target requires further terrain observation before interaction",control);return;
+                    finish(DebugWalkState::NeedsObservation,"Target requires further terrain observation before interaction",control);return;
                 }
             }
             // The parent owns Teleport; if it has not moved us within a few seconds, let it re-plan.
             if(!moves_ && now-progressAt_>std::chrono::seconds(4)) {
-                finish("failed","No walking path and no mobility progress",control);return;
+                finish(DebugWalkState::Failed,"No walking path and no mobility progress",control);return;
             }
             // An opening behind unreconstructed rooms: walk frontiers first instead of idling 15s.
             if(goal_==Goal::Exit && landmark_ && !unit_ && distance(player,pathTarget)>16 && now-progressAt_>std::chrono::seconds(2)) {
                 deferredOpenings_[{pathTarget.x,pathTarget.y}]=openingEvidence({pathTarget.x,pathTarget.y});
-                point_.reset();segment_.reset();landmark_=false;progressAt_=now;state_="searching";
+                point_.reset();segment_.reset();landmark_=false;progressAt_=now;state_=DebugWalkState::Searching;
                 reason_="Walking opening has no reconstructed path yet; exploring toward it first";return;
             }
             reason_="No current walking path; waiting for mobility or collision progress";return;
@@ -924,18 +974,18 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     auto leg=std::find_if(path.begin(),path.end(),[&](Vec p){return point(p+offset)!=player;});
     if(leg==path.end()) {
         if(pathMoving) return;
-        finish("failed","Path produced no reachable movement segment",control);return;
+        finish(DebugWalkState::Failed,"Path produced no reachable movement segment",control,DebugWalkFailure::NoReachableSegment);return;
     }
-    if(scene.town && !townLane_) {
+    if(scene.town && !pointerLane_) {
         // Skip redundant path corners when their continuation is already
         // visible. Validate the whole shortcut before clipping its input;
         // a clear prefix toward a hidden node is not permission to skip a bend.
         for(auto next=std::next(leg);next!=path.end() && pointerClear(*next);++next) leg=next;
     }
-    std::optional<OnlinePoint> planned;bool blockedSegment=false;
-    std::optional<TownLane> plannedLane;
+    std::optional<OnlinePoint> planned,blockedSegment;
+    std::optional<PointerLane> plannedLane;
     OnlinePoint rawPointer{},lanePointer{};
-    std::string pointerBranch=townLane_?"town-lane-continuation":"route";
+    std::string pointerBranch=pointerLane_?"town-lane-continuation":"route";
     for(auto node=leg;node!=path.end() && !planned;++node) {
         const auto delta=*node-from;const float span=delta.length();
         if(span<=0) continue;
@@ -945,12 +995,12 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
             const Vec local{float(int(candidate.x)-origin.x)+.5f,float(int(candidate.y)-origin.y)+.5f};
             if(!pointerClear(local)) {
                 if(!scene.town && map.grid.nativeMovementSegment(from,local,playerMovement) &&
-                    !pathGrid.nativeMovementSegment(from,local,playerMovement)) blockedSegment=true;
+                    !pathGrid.nativeMovementSegment(from,local,playerMovement) && !blockedSegment) blockedSegment=candidate;
                 continue;
             }
             planned=candidate;
             rawPointer=lanePointer=candidate;
-            if(!townLane_ && (scene.town || exploration_)) {
+            if(!pointerLane_ && (scene.town || exploration_)) {
                 const auto after=std::next(node);
                 const auto onward=(local-*node).length()<1 && after!=path.end()?*after:*node;
                 Vec lane=local;
@@ -969,17 +1019,32 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                 lanePointer=lanePoint;
                 if(lanePoint!=player && pointerClear(lane) && advancesTownPointer(lane)) {
                     planned=lanePoint;
-                    if(scene.town && lanePoint!=candidate) plannedLane=TownLane{lanePoint,point(resume+offset),pathTarget};
+                    if(scene.town && lanePoint!=candidate) plannedLane=PointerLane{lanePoint,point(resume+offset),pathTarget,false,true};
                     else if(!scene.town && lanePoint!=candidate) pointerBranch="exploration-lane";
                 }
             }
             break;
         }
     }
+    if(blockedSegment && !pointerLane_) {
+        const Vec start=from+offset-Vec{.5f,.5f},end{float(blockedSegment->x),float(blockedSegment->y)};
+        const Vec endLocal=end-offset+Vec{.5f,.5f};
+        auto units=town.navigationBlockers(view,start,end);
+        if(!units.empty()) {
+            const auto bypass=search_.localObstacleLane(pathGrid,from,endLocal);
+            if(bypass) {
+                const auto bend=point(*bypass+offset);
+                planned=rawPointer=lanePointer=bend;
+                plannedLane=PointerLane{bend,*blockedSegment,pathTarget,false,false};
+                pointerBranch="local-unit-bypass";
+            } else {
+                // Publish the upcoming obstruction even when a shorter prefix
+                // is walkable. The AI may shoot before entering the crowd.
+                blockedStep_=BlockedStep{start,end,std::move(units)};
+            }
+        }
+    }
     if(!planned) {
-        // NativePathStep can be between integer cells while moving. A new
-        // pointer ray may be invalid at that instant without invalidating the
-        // path already in progress; keep judging at the regular cadence.
         if(pathMoving) {reason_="Keeping the moving native path until an integer pointer ray is clear";return;}
         reason_=blockedSegment?"Next movement segment temporarily occupied":"Waiting for a collision-checked integer pointer or mobility recovery";return;
     }
@@ -1039,17 +1104,17 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
     if(!control.move(next,run_,{},pathPosition)) {reason_=control.reason();return;}
     // A host-lag guard may have shortened the input before the selected
     // bend. Do not claim that shortened input completed the two-leg plan.
-    if(plannedLane && next==plannedLane->bend) townLane_=plannedLane;
+    if(plannedLane && next==plannedLane->bend) pointerLane_=plannedLane;
     lastFrom_=player;lastRequest_=next;lastPointerFeet_=*pathPosition;townTurnSince_={};
     legDiscontinuity_=actor==view.world.units.end()?0:actor->second.positionDiscontinuity;
-    segment_=next;lastTarget_=point_;submittedAt_=now;++moves_;reason_.clear();if(!searching) state_="moving";
+    segment_=next;lastTarget_=point_;submittedAt_=now;++moves_;reason_.clear();if(!searching) state_=DebugWalkState::Moving;
     if(pointerSelections_.size()>=32) pointerSelections_.pop_front();
     pointerSelections_.push_back({moves_,player,pathTarget,rawPointer,lanePointer,next,*pathPosition,
-        townLane_?std::optional{townLane_->resume}:std::nullopt,std::move(pointerBranch)});
+        pointerLane_?std::optional{pointerLane_->resume}:std::nullopt,std::move(pointerBranch)});
     } catch(const DebugSearchPending &) {
         // Keep the normal path and all real request/progress deadlines. The
         // cached query prefix resumes next frame; nothing was unreachable.
         cadence_.continueNextFrame();reason_="Waiting for background navigation";
-    } catch(const std::exception &error) {finish("failed",error.what(),control);}
+    } catch(const std::exception &error) {finish(DebugWalkState::Failed,error.what(),control);}
 }
 }

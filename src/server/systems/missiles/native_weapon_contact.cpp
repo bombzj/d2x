@@ -46,6 +46,14 @@ DomainResult<DirectContact> System::nativeWeaponContact(const Spawn &request,std
     hit.missileDamage->lifeStealDivisor=rules.lifeStealDivisor;hit.missileDamage->manaStealDivisor=rules.manaStealDivisor;
     hit.missileDamage->lifeStealOverlay=rules.lifeStealOverlay;hit.missileDamage->manaStealOverlay=rules.manaStealOverlay;
     hit.areaDamage=combat::MissileAreaDamage{};hit.areaDamage->resultFlags=5;hit.areaDamage->hitFlags=0x20;
+    if(!request.skill.pd2 && request.skill.druid && (request.skill.druid->program==DruidProgram::FireClaws ||
+       request.skill.druid->program==DruidProgram::Hunger))
+        hit.areaDamage->hitFlags=2|uint32_t(rules.formulas->skills.at(request.skill.sourceId).number("hitflags"));
+    if(!request.skill.pd2 && request.skill.assassin && request.skill.assassin->program==AssassinProgram::BladeShield) {
+        const auto &row=rules.formulas->skills.at(request.skill.sourceId);
+        hit.areaDamage->resultFlags|=uint16_t(row.number("resultflags"));
+        hit.areaDamage->hitFlags=2|uint32_t(row.number("hitflags"));
+    }
     hit.areaDamage->rolled=std::make_shared<combat::MissileAreaRoll>();
     hit.monsterStates={rules.chilled,rules.poisoned,{}};
     auto prepared=ports_.combat.prepareSpells({std::move(hit)});if(!prepared) return {prepared.status,{}};

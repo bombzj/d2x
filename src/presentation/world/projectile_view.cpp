@@ -24,7 +24,7 @@ void SceneView::createBlizzardFall(int missileId, Vec position) {
     const int frames = (program.fallDistance + program.fallRate - 1) / program.fallRate;
     clientMissiles_.push_back({missileId, position, {}, 0, float(frames) / 25.f, {}});
 }
-void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
+void SceneView::createMissileImpactVisuals(int missileId, Vec position, uint64_t &missileRandom) {
     if (const auto meteor = assets_.meteorVisuals.find(missileId); meteor != assets_.meteorVisuals.end()) {
         const auto &program = meteor->second;
         auto ring = [&](int id, int density, float radius) {
@@ -48,8 +48,8 @@ void SceneView::createMissileImpactVisuals(int missileId, Vec position) {
         // original direction groups, rotate it by a uniformly chosen octant.
         constexpr std::array<std::array<int,5>,3> groups{{{4,0,1,4,5},{4,0,2,4,6},{3,0,3,5,0}}};
         constexpr Vec directions[]{{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}};
-        const auto &group=groups[limitedRandom(projectileVisualRandom_,3)];
-        const int rotation=int(limitedRandom(projectileVisualRandom_,8));
+        const auto &group=groups[limitedRandom(missileRandom,3)];
+        const int rotation=int(limitedRandom(missileRandom,8));
         if(const auto *visual=assets_.ensureProjectile(ejecta->second))
             for(int i=0;i<group[0];++i) clientMissiles_.push_back({ejecta->second,position,{},0,visual->lifetime,directions[(group[i+1]+rotation)&7]});
         return;

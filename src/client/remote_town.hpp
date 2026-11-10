@@ -12,6 +12,7 @@
 #include "client/automap_reveal.hpp"
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <set>
 #include <span>
@@ -32,6 +33,8 @@ class RemoteTown {
     struct KnownTownFrame {int variant{};OnlinePoint origin;int width{},height{};};
     std::optional<KnownTownFrame> knownTownFrame(uint16_t area) const;
   private:
+    void visitNavigationPresence(const OnlineView &,std::optional<OnlineUnitKey>,
+        const std::function<void(OnlineUnitKey,int,int,uint16_t)> &) const;
     Archives &archives_;
     TileLibraryCache libraries_;
     DataTable objects_, monsters_, monsterSizes_, skills_, shrines_, petTypes_;
@@ -146,6 +149,8 @@ class RemoteTown {
     }
     std::optional<Vec> inputOrigin(const OnlineView &) const;
     int monsterSizeX(uint16_t identity) const;
+    // Actual assigned units whose native footprints obstruct this local movement ray.
+    std::vector<OnlineUnitKey> navigationBlockers(const OnlineView &,Vec from,Vec to) const;
     Grid navigationGrid(const OnlineView &,std::optional<OnlineUnitKey> ignored = {}) const;
     std::shared_ptr<const NavigationSnapshot> navigationSnapshot(bool native=false) const;
     const Map *map() const { return map_; }

@@ -267,6 +267,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     drawModes.fill(5);
     std::array<bool, 16> dc6Component{};
     int omitted = 0;
+    const bool monsterDeath = type == "monsters" && (mode == "dt" || mode == "dd");
     static const std::string codes[] = {"hd", "tr", "lg", "ra", "la", "rh", "lh", "sh",
                                         "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"};
     for (int i = 0; i < cof.layers; i++) {
@@ -297,20 +298,10 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
         }
         // Retail D2CMP 1.13c E1D0 returns no cell for an absent component;
         // D2Gdi 65EC/65F3 skips its draw and D2Client 6CACA continues the COF.
-        // This is the shared character path, independent of class or mode.
         // Keep the missing identity in diagnostics; undecodable files still fail.
-        if (!part && type == "chars" &&
+        if (!part && (type == "chars" || monsterDeath) &&
             !archives.contains(path) && !archives.contains(path.substr(0, path.size() - 4) + ".dc6")) {
-            std::cerr << "Missing character component (omitted) " << path << '\n';
-            ++omitted;
-            continue;
-        }
-        // PW's native 1HT death COFs refer to S5 blood, but the current
-        // MPQ only supplies its A1 pixels. Preserve the original body and
-        // omit this absent decorative layer, without borrowing other art.
-        if (!part && type == "monsters" && token == "pw" && c == 12 && gear == "bld" &&
-            (mode == "dt" || mode == "dd") && !archives.contains(path) &&
-            !archives.contains(path.substr(0, path.size() - 4) + ".dc6")) {
+            std::cerr << "Missing COF component (omitted) " << path << '\n';
             ++omitted;
             continue;
         }
@@ -339,7 +330,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     const int directions = cof.directions, frames = cof.frames;
     auto gpu = art.animation(
         directions, frames,
-        [this, cof, parts, componentY, castsShadow, selectable, softAdditive, drawModes, menuPortrait,
+        [this, cof, parts, componentY, castsShadow, selectable, softAdditive, drawModes, menuPortrait, monsterDeath,
          colors = colorMap ? std::make_shared<const std::array<uint8_t, 256>>(*colorMap)
                            : nullptr](size_t offset) {
             const int d = int(offset / cof.frames), f = int(offset % cof.frames);
@@ -361,6 +352,8 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             Sprite result;
             result.translation = colors;
             for (const auto &[c, asset] : parts) {
+                // D2CMP D140 returns no cell beyond the component's frames.
+                if (monsterDeath && f >= asset->count) continue;
                 int dir = d * asset->directions / cof.directions;
                 if (cof.directions == 16 && asset->directions == 8)
                     dir = order8[(cofDirection + 1) / 2 % 8];

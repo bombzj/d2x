@@ -22,6 +22,7 @@
 #include "server/systems/quests/system.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/units/coordinates.hpp"
+#include "world/collision.hpp"
 #include <map>
 #include <vector>
 #include <span>
@@ -194,22 +195,49 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHireling(const ActorContex
         {{},{FrameEventUnit::Monster,actor.id},FrameEventType::AiThink,actor.aiThinkAt}));
     std::map<EntityId,Actor> result;actor.roomAdmission=actor.roomless?ports_.areas.prepareUnplacedRoomUnit(actor.id,1):ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);prepareInitialTimers(actor,owner.tick);result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
 }
-DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &owner,const HydraRules &spec,const SummonCastSpec &summon,const std::array<std::optional<Vec>,3> &positions,uint64_t &random,std::optional<std::array<RegionId,3>> destinationAreas) const {
+DomainResult<HydraBirth> System::prepareHydra(const ActorContext &owner,const HydraRules &spec,const SkillCastSpec &skill,Vec globalTarget,
+    uint64_t &random,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
     const auto *p=ports_.players.findActor(owner.actor);const auto *caster=find(owner.actor);const auto *area=ports_.areas.find(owner.area);
     const bool valid=p?p->player==owner.player && p->entered && p->area==owner.area && p->persistent.player.hp>0:
         caster && caster->alive() && caster->area==owner.area;
-    if(!valid || !area ||
-        area->generation!=owner.areaGeneration || area->definition.town) return {DomainStatus::InvalidActor,{}};
+    if(!valid || !area || !collision || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
     const int difficulty=p?int(p->persistent.difficulty):caster->rule.difficulty;
-    if(state_.actors.size()>65536-3 || ports_.ids.cursor()>UINT32_MAX-3) return {DomainStatus::Capacity,{}};
-    if(!summon.native || spec.defenseRatios.empty()) return {DomainStatus::Unavailable,{}};
-    std::map<EntityId,Actor> prepared; auto cursor=ports_.ids.cursor();
+    if(!skill.summon || !skill.summon->native || skill.hydraFrames<=0 || spec.defenseRatios.empty()) return {DomainStatus::Unavailable,{}};
+    HydraBirth birth;auto cursor=ports_.ids.cursor();
+    std::map<RoomView,RoomRandomLoan> loans;
+    const auto sample=[&](RoomView room,int32_t x,int32_t y) {
+        auto mask=collision(room,x,y);
+        for(const auto &[id,unit]:birth.actors) {
+            (void)id;
+            const auto point=unit.position+ports_.areas.at(unit.area).definition.origin;
+            mask|=nativeCollisionFootprint(unit.rule.collisionPattern,x-int(std::floor(point.x)),y-int(std::floor(point.y)),0x100);
+        }
+        return mask;
+    };
+    constexpr std::array<Vec,3> offsets{{{-1,-1},{0,0},{1,-1}}};
     constexpr MonsterKind kinds[]{MonsterKind::Hydra1,MonsterKind::Hydra2,MonsterKind::Hydra3};
     for(size_t i=0;i<spec.heads.size();++i) {
         const auto &head=spec.heads[i];const auto &definition=head.definition;
-        if(!positions[i]) continue;
-        const Vec position=*positions[i];
-        Actor actor;actor.id=EntityId{cursor++};actor.area=destinationAreas?destinationAreas->at(i):owner.area;actor.position=position;actor.revision=1;
+        const auto global=globalTarget+offsets[i];
+        const auto room=ports_.areas.roomAtPosition(owner.area,p?p->position:caster->position,
+            int(std::floor(global.x)),int(std::floor(global.y)));
+        if(!room) continue;
+        auto loan=loans.find(*room);
+        if(loan==loans.end()) {
+            const auto borrowed=ports_.areas.roomRandom(*room);if(!borrowed) return {borrowed.status,{}};
+            loan=loans.emplace(*room,*borrowed.value).first;
+        }
+        Admission request;request.identity.monster=definition.code;request.identity.spawnKey="hydra.search";
+        request.area=room->area;request.position=global-ports_.areas.at(room->area).definition.origin;
+        request.rule=head.rules.at(size_t(difficulty));request.tick=owner.tick;
+        std::optional<Vec> position;
+        for(const int attempts:{-1,4}) {
+            const auto searched=searchRoomSpawn(request,loan->second,attempts,sample);
+            if(!searched && searched.status!=DomainStatus::Unavailable) return {searched.status,{}};
+            if(searched && *searched.value) {position=**searched.value;break;}
+        }
+        if(!position || state_.actors.size()+birth.actors.size()>=65536 || cursor>=UINT32_MAX) continue;
+        Actor actor;actor.id=EntityId{cursor++};actor.area=room->area;actor.position=*position;actor.revision=1;
         if(p) actor.owner=p->player;
         actor.admissionTick=owner.tick;actor.nativeMinionOwner=owner.actor;
         actor.identity.monster=definition.code;actor.identity.spawnKey="pet."+std::to_string(actor.id.value);actor.identity.origin=SpawnOrigin::Summoned;
@@ -218,7 +246,7 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &
         actor.rule.alignment=p?int(UnitAlignment::Good):int(caster->alignment());
         actor.rule.statGameType=ports_.settings.ladderMonsterStats();actor.combatRandom=childRandom(random);
         actor.components=chooseMonsterComponents(actor.rule.componentCounts,{},actor.combatRandom);
-        auto preparedSummon=summon;auto &program=*preparedSummon.native;program.base=head.base.at(size_t(actor.rule.difficulty));
+        auto preparedSummon=*skill.summon;auto &program=*preparedSummon.native;program.base=head.base.at(size_t(actor.rule.difficulty));
         // Current content is the LoD profile. MONSTERS_Initialize replaces
         // non-boss ratio-unit levels with the expansion area level in N/H.
         if(actor.rule.difficulty && !head.noRatio && !head.boss)
@@ -242,13 +270,16 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &
         actor.petStats.attributes.combat=nativeCombatModifiers(actor.nativeStats->values,*actor.rule.stats,{});
         actor.modeAlive=true;actor.rewardComplete=true;
         actor.riseUntil=actor.busyUntil=owner.tick+uint64_t(definition.riseTicks);
+        actor.nativeMode=actor.riseMode;actor.neutralAt=actor.riseUntil;
+        actor.hydraExpires=owner.tick+uint64_t(skill.hydraFrames);
+        actor.aiThinkAt=owner.tick+25;
         actor.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
-            {{},{FrameEventUnit::Monster,actor.id},FrameEventType::AiThink,owner.tick+25}));
-        actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);
-        prepareInitialTimers(actor,owner.tick);prepared.emplace(actor.id,std::move(actor));
+            {{},{FrameEventUnit::Monster,actor.id},FrameEventType::AiThink,actor.aiThinkAt}));
+        actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position,*room);
+        prepareInitialTimers(actor,owner.tick);birth.actors.emplace(actor.id,std::move(actor));
     }
-    if(prepared.empty()) return {DomainStatus::Unavailable,{}};
-    return {DomainStatus::Applied,std::move(prepared)};
+    for(const auto &[room,loan]:loans) {(void)room;birth.roomRandomLoans.push_back(std::make_shared<const RoomRandomLoan>(loan));}
+    return {DomainStatus::Applied,std::move(birth)};
 }
 ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors,size_t allocatedIds,std::span<const EntityId> restored,std::shared_ptr<EntityIds::Publication> identities,std::span<const EntityId> retired,std::span<const EntityId> presets) const {
     ActorPublication result;result.cursor=ports_.ids.cursor();result.allocatedIds=allocatedIds;
@@ -391,7 +422,9 @@ void System::publishActors(ActorPublication &plan) noexcept {
     size_t order=0;
     while(!plan.actors.empty()) {
         const auto next=order<plan.publicationOrder.size()?plan.actors.find(plan.publicationOrder[order++]):plan.actors.begin();
-        auto node=plan.actors.extract(next);const auto id=node.key();registerPet(node.mapped());const auto live=state_.actors.find(id);
+        auto node=plan.actors.extract(next);const auto id=node.key();const auto live=state_.actors.find(id);
+        if(live==state_.actors.end()) ports_.areas.publishRoomUnit(*node.mapped().roomAdmission);
+        registerPet(node.mapped());
         if(live==state_.actors.end() && node.mapped().wanderTargetOrder) node.mapped().wanderTargetOrder=state_.nextWanderTargetOrder++;
         node.mapped().birthUniquesExpected.reset();node.mapped().birthLimitedUniques.clear();
         node.mapped().initialEffects.reset();
@@ -411,7 +444,7 @@ void System::publishActors(ActorPublication &plan) noexcept {
             live->second=std::move(node.mapped());
             refreshCollision(live->second);
         }
-        else {ports_.areas.publishRoomUnit(*node.mapped().roomAdmission);const auto inserted=state_.actors.insert(std::move(node));refreshCollision(inserted.position->second);}
+        else {const auto inserted=state_.actors.insert(std::move(node));refreshCollision(inserted.position->second);}
         if(const auto callback=plan.prisonerDeaths.find(id);callback!=plan.prisonerDeaths.end())
             ports_.quests.publishPrisonerDeath(callback->second);
     }

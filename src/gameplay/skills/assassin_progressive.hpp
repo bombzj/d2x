@@ -21,6 +21,7 @@ struct AssassinKickInput {
     int32_t offWeaponDamagePercent{},offWeaponMaximumPercent{};
     bool boots{};
     std::optional<int32_t> monsterLevel{};
+    bool wholeDamage{};
 };
 // SkillAss::sub_6FCF7CE0 + D2Common::SKILLS_CalculateKickDamage. The
 // caller supplies stats sampled with weapon damage lists unmerged.

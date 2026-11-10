@@ -30,18 +30,20 @@ struct CharacterProjectionInput {
     std::array<std::optional<SkillHandEquipment>, 2> handEquipment;
     struct ResourceStates { bool bloodMana = false, inferno = false, skillDelay = false; };
     std::optional<ResourceStates> resourceStates;
+    bool localSkillDelay{};
     struct ShapeStates {
         bool restricted = false;
         bool disguised = false;
-        std::set<std::string, std::less<>> active;
+        std::set<int> active;
     };
     std::optional<ShapeStates> shapeStates;
-    std::optional<int> chargedSkill; // This recursion projects a native item owner, not a learned cast.
+    std::optional<ChargedSkill> chargedSource;
     std::optional<int> fireMastery, lightningMastery, coldDamagePercent;
     std::optional<unsigned> difficulty;
     std::optional<KnownAttackTiming> attackTiming;
     std::optional<KnownRecoveryTiming> recoveryTiming;
     std::optional<int> missilePierceChance;
+    std::optional<int> magicArrow,explosiveArrow;
     std::optional<CombatDisplayEquipment> combatEquipment;
 };
 CharacterView projectCharacterDisplay(const ClassicData &, const CharacterProjectionInput &);

@@ -5,6 +5,7 @@
 #include "server/runtime/facts/effects.hpp"
 #include "server/runtime/facts/unit.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "system.hpp"
 #include "server/systems/combat/system.hpp"
 #include "server/systems/reactions/item_triggers.hpp"
@@ -40,11 +41,13 @@
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/skills/common_actions.hpp"
+#include "gameplay/missiles/timing.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/pd2/arithmetic.hpp"
 #include "gameplay/effects/queries.hpp"
 #include "gameplay/skills/targeting.hpp"
+#include "gameplay/stats/modifier_values.hpp"
 #include "server/systems/effects/attribute_projection.hpp"
 #include <algorithm>
 #include <array>
@@ -65,12 +68,22 @@ std::vector<EntityId> volleyTargets(const Ports &ports,const ActorContext &actor
 }
 }
 DomainResult<> System::avoidance(const ActorContext &actor,WeaponAvoidance result,EntityId attacker) {
-    const auto ended=ports_.effects.endMode(actor.actor,actor.tick);if(!ended) return ended;
     const auto &p=*ports_.players.find(actor.player);
+    // Retail damage reaction checks UNINTERRUPTABLE before entering S1.
+    if(!p.rules.skills->pd2 && ports_.effects.unitStates(actor.actor,actor.tick).contains(p.rules.skills->uninterruptable.id))
+        return {DomainStatus::Applied,std::monostate{}};
     if(result==WeaponAvoidance::Evade) {
+        if(!p.rules.skills->pd2) {
+            const auto evade=p.rules.skills->formulas->skillIds.find("evade");
+            if(evade==p.rules.skills->formulas->skillIds.end() || !p.totals.skillRanks.contains(evade->second))
+                return {DomainStatus::Applied,std::monostate{}};
+        } else {
+            const auto ended=ports_.effects.endMode(actor.actor,actor.tick);if(!ended) return ended;
+        }
         const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},{SoundFact{actor.actor,0,actor.area,12}}});
         return {output.status,output?std::optional{std::monostate{}}:std::nullopt};
     }
+    const auto ended=ports_.effects.endMode(actor.actor,actor.tick);if(!ended) return ended;
     const int id=result==WeaponAvoidance::Dodge?13:18;
     const auto rank=p.totals.skillRanks.find(id);if(rank==p.totals.skillRanks.end()) return {DomainStatus::Unavailable,{}};
     const auto animation=p.rules.skills->weaponAnimations.find("s1"+p.totals.equipment.animationClass);
@@ -108,7 +121,9 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         return false;
     };
     if(program.smite && !p.totals.equipment.shield) return {DomainStatus::Unavailable,{}};
-    if(p.persistent.player.mana<skill.manaCost && (program.frenzy || (program.spear && program.spear->attackWithoutMana) || skill.effect==SkillBehavior::PoisonDagger)) return attack(actor,request,0);
+    if(rules.pd2 && p.persistent.player.mana<skill.manaCost &&
+        (program.frenzy || (program.spear && program.spear->attackWithoutMana) || skill.effect==SkillBehavior::PoisonDagger))
+        return attack(actor,request,0);
     // Use data() instead of begin() to match commonAttackWeapon's pointer return type.
     // MSVC 19.44 array iterators are not pointers: mixing them causes C2679, then C3536/C2446.
     const auto *weapon=program.commonAttack?commonAttackWeapon(p.totals.equipment,program.thrown,program.leftHand):std::find_if(p.totals.equipment.weapons.data(),p.totals.equipment.weapons.data()+p.totals.equipment.weaponCount,
@@ -140,7 +155,14 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         const auto victim=participants.find(unit->id);
         if(unit->type>1 || bool(victim.player)!=(unit->type==0) || !victim.aliveIn(actor.area) || !participants.canHarm(actor.actor,unit->id)) return {DomainStatus::InvalidRequest,{}};
         destination=victim.position();target=unit->id;targetType=unit->type;
-        if((program.chargeVelocity>0 || program.whirlwind) && meleeDistance(p.position,2,destination,victim.size())<=weapon->rangeAdder+1) return attack(actor,request,0);
+        if(program.chargeVelocity>0 && !skill.pd2) {
+            if(playerMeleeReach(area.definition.collision,p.position,destination,victim.size(),weapon->rangeAdder))
+                return attack(actor,request,0);
+            if(ports_.effects.unitStates(target,actor.tick).contains(p.rules.skills->uninterruptable.id)) target={};
+        } else if(program.whirlwind && !skill.pd2) {
+            if(playerMeleeReach(area.definition.collision,p.position,destination,victim.size(),weapon->rangeAdder))
+                return attack(actor,request,0);
+        } else if((program.chargeVelocity>0 || program.whirlwind) && meleeDistance(p.position,2,destination,victim.size())<=weapon->rangeAdder+1) return attack(actor,request,0);
         if(!program.whirlwind && program.chargeVelocity==0 && (!weapon->ranged || program.smite) && !program.thrown &&
             !playerMeleeReach(area.definition.collision,p.position,destination,victim.size(),weapon->rangeAdder+int(victim.moving()))) {
             if(request.stationary) return {DomainStatus::Unavailable,{}};
@@ -201,11 +223,8 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         if(sequence.frames.empty()) return {DomainStatus::Unavailable,{}};
         timing.speed=effectiveAttackSpeed(256,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate-30);
         timing.frames=int(sequence.frames.size());timing.startFrame=0;hits=weaponSequenceHitTicks(sequence.frames,timing.speed);
-        sequenceFlags(sequence.frames);
-        if(program.spear->kind==SpearSkillSpec::Kind::Jab) {
-            const bool two=p.totals.equipment.animationClass=="2ht";
-            for(const auto index:two?std::array{1,8,15}:std::array{1,7,13}) flags[size_t(index)]=3;
-        }
+        flags.clear();
+        for(const auto &frame:sequence.frames) flags.push_back(frame.hit?1:frame.sound?3:0);
     }
     const bool strafe=program.bow && program.bow->strafe;
     if(!program.whirlwind && !program.chargeVelocity) {
@@ -219,10 +238,22 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     }
     int volleyDuration=timeline?timeline->end:timing.durationTicks();
     int rewindCount=0;
+    const auto aimed=destination;
+    float whirlwindSpeed=0;
     if(program.whirlwind) {
-        const float speed=float(p.definition.runVelocity)*25.f/16.f*float(std::max(50,p.totals.character.velocityPercent))/100.f;
-        if(speed<=0 || (destination-p.position).length()<.001f || !area.definition.collision.nativeMovementSegment(p.position,destination,{0x804,2})) return {DomainStatus::Unavailable,{}};
-        volleyDuration=int(std::ceil((destination-p.position).length()*25.f/speed))+1;hits={4};
+        if(skill.pd2) {
+            whirlwindSpeed=float(p.definition.runVelocity)*25.f/16.f*float(std::max(50,p.totals.character.velocityPercent))/100.f;
+            if(!area.definition.collision.nativeMovementSegment(p.position,destination,{0x804,2})) return {DomainStatus::Unavailable,{}};
+        } else {
+            constexpr Vec center{.5f,.5f};
+            const auto grid=ports_.spatial.navigationGrid(actor.area,actor.actor);
+            const auto route=grid.nativeUnitPath(p.position+center,destination+center,7,100,{0xc01,playerMovement.size});
+            if(route.empty()) return {DomainStatus::Unavailable,{}};
+            destination=route.back()-center;
+            whirlwindSpeed=float(p.definition.walkVelocity)*25.f/16.f;
+        }
+        if(whirlwindSpeed<=0 || (destination-p.position).length()<.001f) return {DomainStatus::Unavailable,{}};
+        volleyDuration=int(std::ceil((destination-p.position).length()*25.f/whirlwindSpeed))+1;hits={4};
     }
     if(strafe || fend || zeal) {
         const auto targets=volleyTargets(ports_,actor,p,skill);
@@ -314,7 +345,14 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         const auto prepared=startDruidMelee(start,actor);if(!prepared) return prepared;
         druidStart=start.druidMelee;
     }
-    auto cost=ports_.inventory.weaponCost(actor,*weapon,skill,!program.manaOnRelease,strafe,0,attackState?std::optional{attackState->transient}:std::nullopt);if(!cost) return {cost.status,{}};
+    auto startCost=skill;
+    if(!rules.pd2 && id==0 && weapon->ranged) {
+        // SrvSt1 checks the weapon's own magic-arrow stat before requiring ammunition.
+        const auto stats=p.totals.itemFullStats.find(weapon->item);
+        if(stats!=p.totals.itemFullStats.end())
+            startCost.weapon->noAmmo=nativeStatValue(stats->second,*p.rules.character->stats,"item_magicarrow")!=0;
+    }
+    auto cost=ports_.inventory.weaponCost(actor,*weapon,startCost,!program.manaOnRelease,strafe,0,attackState?std::optional{attackState->transient}:std::nullopt);if(!cost) return {cost.status,{}};
     if(attackState) {
         auto change=std::move(cost.value->change);
         auto record=attackState->character;if(!program.manaOnRelease) record.mana-=skill.manaCost;
@@ -329,7 +367,8 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         },change);
         cost=ports_.transactions.prepare(std::move(change));if(!cost) return {cost.status,{}};
     }
-    const auto fact=AttackFact{actor.actor,target,0,targetType,actor.area,p.position,destination,actor.sequence,uint16_t(id),uint8_t(effectiveRank),program.whirlwind};
+    const auto fact=AttackFact{actor.actor,target,0,targetType,actor.area,p.position,
+        program.whirlwind && !skill.pd2?aimed:destination,actor.sequence,uint16_t(id),uint8_t(effectiveRank),program.whirlwind};
     if(auto *edit=std::get_if<transactions::CharacterEdit>(&cost.value->change)) edit->publicFacts.emplace_back(fact);
     else std::get<transactions::InventoryEdit>(cost.value->change).publicFacts.emplace_back(fact);
     Release release{actor,skill,{}, {actor.area,actor.areaGeneration,destination},target,actor.tick+uint64_t(hits.front())};
@@ -342,8 +381,7 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(program.whirlwind) {
         release.whirlwind=true;release.tick=actor.tick+1;release.nextWhirlHit=actor.tick+4;
         release.unit={};
-        release.chargeSpeed=float(p.definition.runVelocity)*25.f/16.f*float(std::max(50,p.totals.character.velocityPercent))/100.f;
-
+        release.chargeSpeed=whirlwindSpeed;
     }
     if(program.smite) release.shield=p.totals.equipment.shield;
     if(program.chargeVelocity>0) {
@@ -352,7 +390,9 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
             release.pd2Execution=std::make_shared<Pd2CastExecution>();
             release.pd2Execution->chargeDistance=unitCoordinateDistance(int(p.position.x),int(p.position.y),int(destination.x),int(destination.y));
         }
-        release.chargeSpeed=float(p.definition.runVelocity)*25.f/16.f*float(program.chargeVelocity+std::max(50,p.totals.character.velocityPercent))/100.f;
+        const int velocityPercent=program.chargeVelocity+std::max(50,p.totals.character.velocityPercent);
+        release.chargeSpeed=skill.pd2?float(p.definition.runVelocity)*25.f/16.f*float(velocityPercent)/100.f:
+            float(nativePercentage(nativeShiftLeft(p.definition.runVelocity,8),velocityPercent,100))*25.f/4096.f;
     }
     auto cast=Cast{actor.actor,uint16_t(id),actor.tick,actor.sequence,actor.tick+uint64_t(volleyDuration),actor.area,target};
     cast.usesSkillPointer=true;
@@ -443,8 +483,9 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         destination=participants.find(selectedTarget).position();
     } else if(secondSwing) {
         const auto target=nativeSkillSuccessor(volleyTargets(ports_,actor,p,pending.skill),ports_.monsters.nativeIdentities().guid(pending.unit),ports_.monsters.nativeIdentities());
-        if(!target) return DomainStatus::Unavailable;
-        selectedTarget=target;destination=participants.find(target).position();
+        if(target) {selectedTarget=target;destination=participants.find(target).position();}
+        else if(pending.skill.pd2 || !pending.skill.weapon->frenzy || !participants.find(selectedTarget).id())
+            return DomainStatus::Unavailable;
     }
     const bool projectile=(found->ranged && !pending.skill.weapon->smite) || pending.skill.weapon->thrown;
     if(projectile && pending.skill.weapon->dualWield) {
@@ -474,14 +515,37 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         if(result==DomainStatus::Applied) {ports_.itemTriggers.commit(std::move(*event.value),true);advanceVolley();}
         return result;
     }
-    if(!pending.manaPaid || (projectile && !strafe && !pending.skill.weapon->noAmmo)) {
-        auto prepared=ports_.inventory.weaponCost(actor,*found,pending.skill,!pending.manaPaid,projectile && !strafe);
+    auto shot=pending.skill;
+    const auto &rules=*p.rules.skills;
+    if(!rules.pd2 && projectile && shot.sourceId==0 && found->ranged) {
+        const auto values=ports_.effects.unitStatValues(actor.actor,actor.tick);
+        if(!values) return DomainStatus::Unavailable;
+        const auto &stats=*p.rules.character->stats;
+        const auto arrow=nativeAttackArrow(nativeStatValue(*values,stats,"item_magicarrow"),
+            nativeStatValue(*values,stats,"item_explosivearrow"));
+        using Kind=NativeAttackArrow::Kind;
+        if(arrow.kind!=Kind::Ordinary) {
+            const auto id=rules.formulas->missileIds.find(arrow.missileName());
+            if(id==rules.formulas->missileIds.end() || !rules.collisions.contains(id->second))
+                return DomainStatus::Unavailable;
+            const auto &row=rules.formulas->missiles.at(id->second);
+            const auto velocity=missileVelocityFixed(row.number("vel"),row.number("vellev"),arrow.rank);
+            if(!velocity) return DomainStatus::Unavailable;
+            shot.missileId=id->second;shot.rank=arrow.rank;
+            shot.missileVelocity=float(*velocity)*25.f/4096.f;
+            shot.missileLifetime=float(nativeMissileFrameCount(nativeAdd(row.number("range"),
+                nativeMultiply(arrow.rank,row.number("levrange")))))/25.f;
+            shot.weapon->noAmmo=arrow.kind==Kind::Magic;
+        }
+    }
+    if(!pending.manaPaid || (projectile && !strafe && !shot.weapon->noAmmo)) {
+        auto prepared=ports_.inventory.weaponCost(actor,*found,shot,!pending.manaPaid,projectile && !strafe);
         if(!prepared) return prepared.status;
         cost=std::move(*prepared.value);
     }
     if(projectile) {
         WeaponSkillDamage snapshot;snapshot.weapon=*found;snapshot.level=p.persistent.player.level;
-        missiles::Spawn request{actor,pending.skill,{},destination,true};request.weapon=snapshot;request.cost=std::move(cost);
+        missiles::Spawn request{actor,shot,{},destination,true};request.weapon=snapshot;request.cost=std::move(cost);
         request.guidedTarget=selectedTarget;
         const auto result=ports_.missiles.spawn(request).status;
         if(result==DomainStatus::Applied) {pending.unit=selectedTarget;ports_.itemTriggers.commit(std::move(*event.value),true);advanceVolley();}

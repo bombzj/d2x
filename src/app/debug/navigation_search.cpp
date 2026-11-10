@@ -874,6 +874,26 @@ Vec DebugNavigationSearch::explorationLane(const Grid &terrain,const Grid &colli
     }
     return best;
 }
+std::optional<Vec> DebugNavigationSearch::localObstacleLane(const Grid &collision,Vec from,Vec onward) const {
+    const Vec forward=onward-from;const float direct=forward.length();
+    if(direct<2) return {};
+    const Vec normal{-forward.y/direct,forward.x/direct};
+    std::optional<Vec> best;float cost=direct+6;
+    // A local bypass has one bend and at most six extra walking cells.
+    // A larger search around enemies belongs to neither the terrain planner
+    // nor this execution decision: expose the actual blocking units instead.
+    for(float fraction:{.25f,.5f,.75f}) for(int shift:{2,4,6}) for(int side:{-1,1}) {
+        const Vec sample=from+forward*fraction+normal*float(shift*side);
+        const Vec at{std::floor(sample.x)+.5f,std::floor(sample.y)+.5f};
+        const float length=(at-from).length()+(onward-at).length();
+        if(length>=cost || !collision.segment(from,at,{},playerMovement) ||
+            !collision.nativeMovementSegment(from,at,playerMovement) ||
+            !collision.segment(at,onward,{},playerMovement) ||
+            !collision.nativeMovementSegment(at,onward,playerMovement)) continue;
+        best=at;cost=length;
+    }
+    return best;
+}
 Vec DebugNavigationSearch::townWalkLane(const Grid &terrain,const Grid &collision,Vec from,Vec onRoute,Vec onward) {
     if((onRoute-from).length()<2 || (onward-onRoute).length()<1) return onRoute;
     // Score both sides of a bend. Sampling just the pointer misses the

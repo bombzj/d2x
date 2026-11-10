@@ -116,6 +116,7 @@ DomainResult<> System::skillAuraState(EntityId source,EntityId target,int skill,
                 if(!effects.writeNativeStats(installed.handle,animation,rules,spec,observe)) throw std::logic_error("Missing native animation source");
             }
         }
+        if(warcry && !pd2) effects.refreshPassiveSkills(observe);
         return installed;
     };
     const auto sourceValue=[&](std::string_view field) {

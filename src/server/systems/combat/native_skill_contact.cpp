@@ -455,7 +455,8 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
                 const auto found=player.persistent.inventory.items.find(impact.weapon->weapon.item);
                 if(found!=player.persistent.inventory.items.end()) {
                     const auto &properties=player.rules.equipment->at(found->first,player.persistent.player.level);
-                    if(properties.maximumDurability && !std::any_of(properties.stats.begin(),properties.stats.end(),
+                    const auto *base=player.rules.items->find(found->second.definition);
+                    if(base && (base->maxStack<=1 || found->second.quantity>0) && properties.maximumDurability && !std::any_of(properties.stats.begin(),properties.stats.end(),
                         [](const auto &stat){return stat.effect=="item_indesctructible" && stat.value;})) {
                         const auto chance=values.calculation(FormulaDomain::Skill,execution.skill,execution.rank,"calc2");
                         const auto amount=values.calculation(FormulaDomain::Skill,execution.skill,execution.rank,"calc3");
@@ -811,7 +812,7 @@ DomainResult<> System::itemMeleeDrain(EntityId source,EntityId target,TickContex
             fresh->getHit=old.getHit;fresh->defense=old.defense;fresh->amount=old.amount;
             fresh->absorbed=old.absorbed;fresh->physical=old.physical;fresh->cold=old.cold;
             fresh->stun=old.stun;fresh->freeze=old.freeze;fresh->poison=old.poison;
-            fresh->hitClass=old.hitClass;fresh->hostile=old.hostile;fresh->sanctuary=old.sanctuary;
+            fresh->hitClass=old.hitClass;fresh->hostile=old.hostile;
             fresh->clearStun=old.clearStun;fresh->receptionPrepared=fresh->defenseCommitted=true;
             copy.monsterContact=std::move(fresh);
         }

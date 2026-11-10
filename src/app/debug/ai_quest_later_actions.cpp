@@ -14,7 +14,7 @@ bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
     Goal leaf;leaf.kind=Kind::Acquire;leaf.item=step.item;
     if(rememberedDrops.contains(step.item) || observedDrop(c,step.item) || pickup) return acquireItem(c,leaf);
     // A withdrawn opportunity cannot turn a different quest into a search.
-    if(goals[cursor].routeDrop==questRun.step && goals[cursor].questId!=step.stateQuest) return false;
+    if(goals[cursor].routeDrop==questState.questRun.step && goals[cursor].questId!=step.stateQuest) return false;
     if(step.witness) {
         if(step.target) if(const auto enemy=find(c,*step.target);enemy && c.combat.hostile(*enemy) &&
             c.combat.monsterTargetEligible(*enemy,false)) {
@@ -26,15 +26,15 @@ bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
         if((Vec{float(point->x),float(point->y)}-c.position).length()>12) {
             approachPoint(c,*point,"timed quest drop source",10);return false;
         }
-        if(questRun.sweepReady==Clock::time_point{}) {cancelWalk(c);questRun.sweepReady=now+std::chrono::seconds(90);}
-        if(now>=questRun.sweepReady) throw std::runtime_error("Timed quest source produced no observed drop; retaining source and scene");
+        if(questState.questRun.sweepReady==Clock::time_point{}) {cancelWalk(c);questState.questRun.sweepReady=now+std::chrono::seconds(90);}
+        if(now>=questState.questRun.sweepReady) throw std::runtime_error("Timed quest source produced no observed drop; retaining source and scene");
         wait("quest-drop-spawn","Holding the actual altar's area while normal combat handles its timed monster");
         continuation=Continuation::WorldResult;return false;
     }
     if(step.searchAreas.empty()) throw std::runtime_error("Quest drop has no verified search areas");
-    if(questRun.materialPhase>=step.searchAreas.size())
+    if(questState.questRun.materialPhase>=step.searchAreas.size())
         throw std::runtime_error("No quest drop observed after the configured normal Act-III areas; no source or ownership fabricated");
-    const auto destination=step.searchAreas[questRun.materialPhase];
+    const auto destination=step.searchAreas[questState.questRun.materialPhase];
     if(area!=destination) {travel(c,destination);return false;}
     // A pure search can approach an assigned leader outside attack range.
     // On another quest only an on-route engagement or a real drop interrupts.
@@ -42,62 +42,87 @@ bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
     float nearest=std::numeric_limits<float>::max();
     if(policy.enabled) for(const auto &[key,unit]:c.session.read().world.units) {
         if(!unit.position || !c.combat.jadeFigurineCandidate(unit) || !c.combat.hostile(unit) ||
-            !c.combat.monsterTargetEligible(unit,false) || bypassedThreats.contains({key,unit.assignmentRevision})) continue;
+            !c.combat.monsterTargetEligible(unit,false) || battle.bypassedThreats.contains({key,unit.assignmentRevision})) continue;
         const auto distance=(Vec{float(unit.position->x),float(unit.position->y)}-c.position).length();
         if(distance<nearest) {nearest=distance;candidate=&unit;}
     }
     if(candidate && approachEnemy(c,*candidate,"observed figurine candidate")) {
-        questRun.sweepReady={};return false;
+        questState.questRun.sweepReady={};return false;
     }
     explore(c,"eligible elites for "+step.item);
     if(phase=="explore-wait" && !c.walk.active()) {
-        if(questRun.sweepReady==Clock::time_point{}) questRun.sweepReady=now+std::chrono::seconds(5);
-        if(now>=questRun.sweepReady) {
-            ++questRun.materialPhase;questRun.sweepReady={};cancelWalk(c);
-            frontierRoute.reset();
+        if(questState.questRun.sweepReady==Clock::time_point{}) questState.questRun.sweepReady=now+std::chrono::seconds(5);
+        if(now>=questState.questRun.sweepReady) {
+            ++questState.questRun.materialPhase;questState.questRun.sweepReady={};cancelWalk(c);
+            navigation.frontierRoute.reset();
             note("quest-drop-search-next-area",std::to_string(destination));
         }
-    } else questRun.sweepReady={};
+    } else questState.questRun.sweepReady={};
     return false;
+}
+bool DebugAi::Impl::questEquipmentRestored(const Context &c) const {
+    const auto &view=c.session.read();
+    for(size_t hand=0;hand<questState.questHandsRestore.size();++hand) {
+        if(!questState.questHandsRestore[hand]) continue;
+        const auto item=view.world.items.find(*questState.questHandsRestore[hand]);
+        if(item==view.world.items.end() || !onlineItemOwnedBy(item->second,view.load.playerUnitId) ||
+            item->second.mode!=1 || item->second.body!=4+hand) return false;
+    }
+    return true;
 }
 bool DebugAi::Impl::questEquipWeapon(Context &c,const QuestStep &step) {
     const auto &view=c.session.read();const auto &world=view.world;
     const auto ours=[&](const OnlineItem &item){return onlineItemOwnedBy(item,view.load.playerUnitId);};
-    const OnlineItem *wanted=nullptr;
-    for(const auto &[id,item]:world.items) if(ours(item) &&
-        (step.item.empty()?questWeaponRestore && id==*questWeaponRestore:item.code==step.item)) {wanted=&item;break;}
-    if(step.item.empty() && !questWeaponRestore) return true;
-    if(!wanted) throw std::runtime_error("Quest weapon / original weapon is no longer actually owned");
-    if(questRun.pending) {
+    if(questState.questRun.pending) {
         checkQuestPending(c);
         const auto &request=world.itemRequest;
-        if(!request || request->sequence!=questRun.pending->sequence) return false;
-        const auto wire=world.items.find(questRun.pending->item);
+        if(!request || request->sequence!=questState.questRun.pending->sequence) return false;
+        const auto wire=world.items.find(questState.questRun.pending->item);
         const auto action=request->command.action;
         const bool observed=wire!=world.items.end() && ours(wire->second) &&
             ((action==OnlineItemAction::Take || action==OnlineItemAction::Unequip)?wire->second.mode==4:
-             action==OnlineItemAction::Equip?wire->second.mode==1 && wire->second.body==4:
+             action==OnlineItemAction::Equip?wire->second.mode==1 && wire->second.body==request->command.body:
              action==OnlineItemAction::Place?wire->second.mode==0 && wire->second.page==1:false);
         if(!observed) {wait("quest-equipment-result","Waiting for actual cursor / active-hand / backpack placement");return false;}
-        questRun.pending.reset();
+        questState.questRun.pending.reset();
     }
-    if(wanted->mode==1 && wanted->body==4) {
-        if(step.item.empty()) questWeaponRestore.reset();
-        return true;
-    }
-    questRun.materialPhase=1;
-    const OnlineItem *cursor=nullptr,*weapon=nullptr;
+    const OnlineItem *cursor=nullptr,*wanted=nullptr;
+    std::array<const OnlineItem *,2> equipped{};
     for(const auto &[id,item]:world.items) if(ours(item)) {
         (void)id;if(item.mode==4) cursor=&item;
-        if(item.mode==1 && item.body==4) weapon=&item;
+        if(item.mode==1 && (item.body==4 || item.body==5)) equipped[item.body-4]=&item;
+        if(!step.item.empty() && item.code==step.item) wanted=&item;
     }
+    size_t hand=0;
+    if(step.item.empty()) {
+        for(;hand<equipped.size();++hand) {
+            if(!questState.questHandsRestore[hand] || (equipped[hand] && equipped[hand]->id==*questState.questHandsRestore[hand])) continue;
+            const auto item=world.items.find(*questState.questHandsRestore[hand]);
+            if(item!=world.items.end() && ours(item->second)) wanted=&item->second;
+            break;
+        }
+        if(hand==equipped.size()) {
+            if(cursor) {questStoreCursor(c,cursor->id);return false;}
+            questState.questHandsRestore={};return true;
+        }
+    }
+    if(!wanted) throw std::runtime_error("Quest weapon / original hand item is no longer actually owned");
+    if(wanted==equipped[hand]) {
+        if(cursor) {questStoreCursor(c,cursor->id);return false;}
+        return true;
+    }
+    if(!step.item.empty() && !questState.questRun.materialPhase) {
+        for(size_t slot=0;slot<equipped.size();++slot)
+            questState.questHandsRestore[slot]=equipped[slot]?std::optional{equipped[slot]->id}:std::nullopt;
+    }
+    questState.questRun.materialPhase=1;
     if(cursor && cursor->id!=wanted->id) {questStoreCursor(c,cursor->id);return false;}
     OnlineItemCommand command;
-    if(weapon) {
-        if(!step.item.empty() && !questWeaponRestore) questWeaponRestore=weapon->id;
-        command.action=OnlineItemAction::Unequip;command.item=weapon->id;command.itemRevision=weapon->revision;
+    if(equipped[hand]) {
+        if(cursor) {questStoreCursor(c,cursor->id);return false;}
+        command.action=OnlineItemAction::Unequip;command.item=equipped[hand]->id;command.itemRevision=equipped[hand]->revision;
     } else if(wanted->mode==4) {
-        command.action=OnlineItemAction::Equip;command.item=wanted->id;command.itemRevision=wanted->revision;command.body=4;
+        command.action=OnlineItemAction::Equip;command.item=wanted->id;command.itemRevision=wanted->revision;command.body=uint8_t(4+hand);
     } else if(wanted->mode==0 && wanted->page==1) {
         command.action=OnlineItemAction::Take;command.item=wanted->id;command.itemRevision=wanted->revision;
     } else throw std::runtime_error("Quest weapon must be accessible in the backpack, cursor or active hand");
@@ -107,22 +132,22 @@ bool DebugAi::Impl::questSmashOrb(Context &c,const QuestStep &step) {
     const auto flags=questFlags(c,QuestId::KhalimsWill);
     if(flags && (*flags&1) && !owned(c,step.item)) return true;
     const auto now=Clock::now();
-    if(questRun.materialPhase>=2) {
-        if(!questRun.pending) {
+    if(questState.questRun.materialPhase>=2) {
+        if(!questState.questRun.pending) {
             QuestPending pending;pending.action=QuestPending::Action::Object;
-            pending.deadline=now+std::chrono::seconds(20);questRun.pending=pending;
+            pending.deadline=now+std::chrono::seconds(20);questState.questRun.pending=pending;
         }
-        if(!questRun.pending->statusRequested && c.control.refreshQuests())
-            questRun.pending->statusRequested=true;
+        if(!questState.questRun.pending->statusRequested && c.control.refreshQuests())
+            questState.questRun.pending->statusRequested=true;
         wait("quest-orb-result","Two original Operate53 clicks submitted; waiting for actual Will consumption and private reward");
         checkQuestPending(c);return false;
     }
-    if(now<questRun.sweepReady) {wait("quest-orb-input","Waiting between the two original orb operations");return false;}
+    if(now<questState.questRun.sweepReady) {wait("quest-orb-input","Waiting between the two original orb operations");return false;}
     if(!step.target) throw std::runtime_error("Compelling Orb identity is missing");
     const auto orb=find(c,*step.target,true);
     if(!orb) {if(!approachKnown(c,*step.target)) explore(c,"the actual Compelling Orb");return false;}
     if(!settleItemInput(c)) return false;
-    const Json intent{{"goal","unit"},{"unitType",orb->key.type},{"unitId",orb->key.id},{"interact",true},{"purpose","quest-orb"}};
+    const DebugWalkIntent intent{.goal=DebugWalkGoal::Unit,.unit=OnlineUnitKey{orb->key.type,orb->key.id},.interact=true,.purpose="quest-orb"};
     if(walk(c,intent)) observeQuestInteraction(c,intent);
     return false;
 }
@@ -144,23 +169,23 @@ bool DebugAi::Impl::Definitions::itemHasType(std::string_view code,std::string_v
 }
 bool DebugAi::Impl::questSmashForge(Context &c,const QuestStep &step) {
     const auto now=Clock::now();const auto flags=questFlags(c,QuestId::HellsForge);
-    if(questRun.materialPhase>=3) {
-        if(!questRun.pending) throw std::runtime_error("Forge hit sequence lost its submitted-result contract");
+    if(questState.questRun.materialPhase>=3) {
+        if(!questState.questRun.pending) throw std::runtime_error("Forge hit sequence lost its submitted-result contract");
         unsigned gems=0,runes=0;
         const auto object=step.target?find(c,*step.target,true):std::nullopt;
         for(const auto &[id,item]:c.session.read().world.items) {
-            if(questRun.rewardBefore.contains(id) || item.mode!=3 || !item.positionKnown || !object || !object->position) continue;
+            if(questState.questRun.rewardBefore.contains(id) || item.mode!=3 || !item.positionKnown || !object || !object->position) continue;
             if((Vec{float(item.groundX),float(item.groundY)}-Vec{float(object->position->x),float(object->position->y)}).length()>24) continue;
             gems+=definitions->itemHasType(item.code,"gem");runes+=definitions->itemHasType(item.code,"rune");
         }
         if(flags && (*flags&3) && !owned(c,"hfh") && gems>=4 && runes>=1) {
             note("quest-forge-drops-observed",std::to_string(gems)+" gems / "+std::to_string(runes)+" runes");return true;
         }
-        if(now>=questRun.pending->deadline) throw std::runtime_error("Forge result incomplete: pending/reward flag, hammer removal and four gems / one rune were not all observed");
-        if(!questRun.pending->statusRequested && c.control.refreshQuests()) questRun.pending->statusRequested=true;
+        if(now>=questState.questRun.pending->deadline) throw std::runtime_error("Forge result incomplete: pending/reward flag, hammer removal and four gems / one rune were not all observed");
+        if(!questState.questRun.pending->statusRequested && c.control.refreshQuests()) questState.questRun.pending->statusRequested=true;
         wait("quest-forge-result","Observing actual hammer consumption and the native sequential reward drops");return false;
     }
-    if(now<questRun.sweepReady) {wait("quest-forge-input","Waiting between native hammer operations");return false;}
+    if(now<questState.questRun.sweepReady) {wait("quest-forge-input","Waiting between native hammer operations");return false;}
     const auto forge=step.target?find(c,*step.target,true):std::nullopt;
     if(!forge) {if(!step.target || !approachKnown(c,*step.target)) explore(c,"actual Hellforge");return false;}
     int mode=forge->mode.value_or(0);
@@ -171,7 +196,7 @@ bool DebugAi::Impl::questSmashForge(Context &c,const QuestStep &step) {
         if(definitions->objects.number(row,"Id")==forge->classId) {mode=objectDisplayMode(definitions->objects,row,mode,age);break;}
     if(mode!=2) {wait("quest-forge-animation","Waiting for the original client ENDANIM before another hammer operation");return false;}
     if(!settleItemInput(c)) return false;
-    const Json intent{{"goal","unit"},{"unitType",forge->key.type},{"unitId",forge->key.id},{"interact",true},{"purpose","quest-forge"}};
+    const DebugWalkIntent intent{.goal=DebugWalkGoal::Unit,.unit=OnlineUnitKey{forge->key.type,forge->key.id},.interact=true,.purpose="quest-forge"};
     if(walk(c,intent)) observeQuestInteraction(c,intent);
     return false;
 }

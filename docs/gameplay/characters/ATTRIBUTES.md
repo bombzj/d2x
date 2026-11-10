@@ -12,6 +12,7 @@
 - 面板动作读取 SkillDesc.DescDam／DescAtt。普通武器路径复用已有装备／施法纯计算；通用法术、持续火焰及毒总量使用与提示相同的 MPQ 固定点求值，祝福之锤使用专注状态的 damagepercent 和 Skills.Param1／8。原程序无伤害／命中行时保留空行，不伪造数值。有DescDam但缺少执行定义且没有支持的显示程序时保留`?`，不将未支持的武器技能误显为空白；光环及已有执行定义的特殊显示不受该回退影响。PD2专项说明见[技能显示：人物伤害剩余输入](../../pd2/SKILL_DISPLAY.md#技能显示人物伤害剩余输入)。
 - 提示复用当前MPQ与纯属性／等级公式；预览不改变副本，不据本地计算补升级或奖励。
 - 武器附带火／电／冰／魔法伤害应用对应支配；技能 physicalFlat 在百分比武器伤害之后计入。双持职业的 DescDam 1／19 和 DescAtt 2 保留逐手行与顺序，不能只返回首手；普通攻击同样保留两手。人物格的长数值与双行数值使用原 MPQ 紧凑字体，避免截掉伤害上限。
+- 原版踢击面板用 `D2Client+30340/+32BF0` 的 DescDam15／16 和 `+2C3D0` 的 DescAtt5。基础踢伤和鞋伤各自取整后应用百分比，虎击读取已观察状态的等级和层数，元素蓄气端点取 `SkillDesc.p1/p2/p3dmmin/dmmax`。神龙摆尾先应用 `calc1`，再从卸下武器伤害列表的投影加入元素，毒伤按原覆盖时长或装备计数处理。命中先用卸下武器列表后的敏捷、`tohit` 和职业因子计算基础值，随后恢复登记武器的列表并应用 `item_tohit_percent`、技能命中及终结技的 `progressive_tohit`。不完整装备或状态保留 `?`。
 
 核对入口：本地 D2MOO `D2Common/src/Units/Units.cpp::UNITS_GetDefense`、`D2Skills.cpp::SKILLS_GetConcentrationDamageBonus`、`D2Game/src/QUESTS/ACT5/A5Q3.cpp::ACT5Q3_UpdateResistances` 和 `UNIT/SUnitMsg.cpp::D2GAME_STATES_SendUnitStates_6FCC58E0`；原1.13c D2Client 的 DescDam／DescAtt 调度表 RVA F5210／F52A0。表值以当前MPQ为准，原DLL及参考仓库不成为运行依赖。
 

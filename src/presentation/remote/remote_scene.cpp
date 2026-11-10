@@ -78,6 +78,13 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
         if(missile!=missileNames.end() && missiles.number(missile->second,"pCltDoFunc")==13)
             missileSkills.emplace(missiles.number(missile->second,"Id").value(),skill);
     }
+    for(const auto &[skill,row]:skillRows) if(skills.number(row,"cltdofunc")==41)
+        for(const auto column:{"cltmissilea","cltmissileb","cltmissilec"}) {
+            const auto start=missileNames.find(skills.value(row,column));
+            if(start==missileNames.end()) continue;
+            const auto active=missileNames.find(missiles.value(start->second,"CltHitSubMissile1"));
+            if(active!=missileNames.end()) missileSkills.emplace(missiles.number(active->second,"Id").value(),skill);
+        }
     constexpr std::array bloodNames{"blood1", "blood2", "bigblood1", "bigblood2"};
     for (size_t index = 0; index < bloodNames.size(); ++index)
         if (const auto found = missileNames.find(bloodNames[index]); found != missileNames.end() &&
@@ -202,10 +209,22 @@ bool RemoteScene::Impl::channelSkill(int id) const {
         (skills.number(row->second,"cltdofunc")==6 && skills.value(row->second,"charclass")=="ass"));
 }
 
+bool RemoteScene::Impl::castInputBusy() const {
+    if(!localCast) return false;
+    const auto skill=localCast->command.skill;
+    if(!channelSkill(skill)) return localCast->started<0 || time<localCast->started+localCast->duration;
+    const auto row=skillRows.find(skill);
+    if(pd2 || !playerId || row==skillRows.end() || skills.value(row->second,"charclass")!="sor" ||
+        skills.number(row->second,"cltdofunc")!=24) return false;
+    // A repeat enters St11 again. Keep the initial sequence action frame
+    // before issuing the first refresh of a newly held Inferno.
+    if(localCast->started<0) return true;
+    const auto channel=channels.find({0,*playerId});
+    return channel!=channels.end() && time<channel->second.releaseAt;
+}
+
 bool RemoteScene::castInputBusy() const {
-    const auto &s=*impl_;
-    return s.localCast && !s.channelSkill(s.localCast->command.skill) &&
-        (s.localCast->started<0 || s.time<s.localCast->started+s.localCast->duration);
+    return impl_->castInputBusy();
 }
 std::optional<bool> RemoteScene::actionInputBusy() const {
     // Channel updates remain input; only ordinary casts/actions defer the

@@ -72,7 +72,12 @@ DomainResult<std::shared_ptr<actions::SkillRelease>> System::startAssassinSkill(
         if(release.skill.assassin) {
             const auto role=release.skill.assassin->program;
             if(role==AssassinProgram::BladeFury) {const auto started=startBladeFury(release,actor);if(!started) return {started.status,{}};}
-            if(role==AssassinProgram::BladeShield) {const auto started=ports_.effects.unitSkill(caster->id(),release.skill,request.tick);if(!started) return {started.status,{}};release.manaPaid=true;}
+            if(role==AssassinProgram::BladeShield) {
+                if(!release.skill.pd2 && release.skill.assassin->missiles[0]<=0) return {DomainStatus::Unavailable,{}};
+                const auto started=ports_.effects.unitSkill(caster->id(),release.skill,request.tick);
+                if(!started) return {started.status,{}};
+                release.manaPaid=true;
+            }
         }
         release.nativeStartPrepared=true;
     }

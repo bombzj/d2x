@@ -305,8 +305,10 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
             const auto burst=plan.targetBursts.at(operation.index);
             if(participants.find(plan.next.owner).id()) {
                 const auto &area=ports_.areas.at(plan.next.area);
+                const bool originalFury=burst.checkNoAura && !(plan.next.rules && plan.next.rules->pd2);
                 const auto recipients=ports_.effects.nativeAuraCandidateRecipients({plan.next.owner,unitArea(plan.next.owner),burst.range,
-                    burst.filter,burst.checkNoAura,plan.next.position+area.definition.origin,effects::NativeAuraTargetMode::TargetRange,tick.tick});
+                    burst.filter,burst.checkNoAura,plan.next.position+area.definition.origin,
+                    originalFury?effects::NativeAuraTargetMode::OwnerRange:effects::NativeAuraTargetMode::TargetRange,tick.tick});
                 const auto previous=plan.operations.size();int index{};
                 for(const auto id:recipients) {
                     if(index++>=burst.count) break;

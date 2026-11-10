@@ -93,8 +93,14 @@ DomainResult<> applyDamageAbsorption(CombatEffectSet &states,std::array<int64_t,
     }
     result.mana=readMana();return {DomainStatus::Applied,std::monostate{}};
 }
+bool System::sanctuaryBypassesResistance(EntityId source,const monsters::Actor &target,uint64_t tick) const {
+    if(!target.rule.undead || !target.rule.formulas || (target.rule.stats && target.rule.stats->pd2)) return false;
+    const auto &formulas=*target.rule.formulas;
+    const auto skill=formulas.skillIds.find("sanctuary");
+    return skill!=formulas.skillIds.end() && unitStates(source,tick).contains(formulas.skills.at(skill->second).auraState);
+}
 DomainResult<UnitReceptionPlan> System::prepareUnitReception(EntityId id,EntityId source,const MonsterHit &hit,uint64_t tick,
-    const std::array<int,6> &pierce,bool bypass,bool sanctuary,bool directDrain) const {
+    const std::array<int,6> &pierce,bool bypass,bool directDrain) const {
     const auto *unit=ports_.monsters.find(id);if(!unit || !unit->alive()) return {DomainStatus::InvalidActor,{}};
     UnitReceptionPlan plan;plan.target=id;plan.tick=tick;
     plan.damage.drain={std::max<int64_t>(0,hit.mana),std::max<int64_t>(0,hit.stamina),directDrain,std::max<int64_t>(0,hit.lifeDrain)};
@@ -141,6 +147,7 @@ DomainResult<UnitReceptionPlan> System::prepareUnitReception(EntityId id,EntityI
             }
         }
     }
+    const bool sanctuary=channels[0]>0 && sanctuaryBypassesResistance(source,*unit,tick);
     plan.damage=receiveDamageChannels(channels,unitDefenses(id,tick),std::move(plan.damage),!unit->hireling,pierce,bypass,sanctuary);
     if(unit->rule.stats && unit->rule.stats->pd2) pd2RathmaReception(plan);
     if(!plan.damage.directionalOverlays.empty()) {

@@ -63,7 +63,7 @@ struct RemoteUiClients::Impl {
     OnlineIntentContext context;
     uint64_t revision{}, generation{~uint64_t{}}, areaGeneration{~uint64_t{}};
     using ProjectionKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,std::optional<uint16_t>,
-        std::optional<uint8_t>,std::optional<OnlinePoint>,bool,bool,std::optional<std::pair<uint32_t,uint64_t>>>;
+        std::optional<uint8_t>,std::optional<OnlinePoint>,bool,bool,bool,std::optional<std::pair<uint32_t,uint64_t>>>;
     std::optional<ProjectionKey> projectedSources;
     bool run{true};
     std::string notice;

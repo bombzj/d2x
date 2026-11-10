@@ -94,8 +94,9 @@ void System::initializePierce(Missile &missile) const {
     if(!values || !base || !rule.damageStats) throw std::logic_error("Missing native missile pierce sources");
     const auto &stats=*rule.damageStats;
     const auto chance=nativeAdd(values->get({stats.names.at("skill_pierce"),0}),values->get({stats.names.at("item_pierce"),0}));
-    const auto index=baseStatValue(stats,*base,{stats.names.at("pierce_idx"),0});
-    if(chance) missile.pierces=missilePierceCount(chance,uint32_t(index));
+    const auto index=player && !(missile.rules && missile.rules->pd2)?ports_.actions.pierceIndex(missile.owner):
+        uint32_t(baseStatValue(stats,*base,{stats.names.at("pierce_idx"),0}));
+    if(chance) missile.pierces=missilePierceCount(chance,index);
 }
 std::shared_ptr<MissileDamageRollState> System::damageRolls(const Missile &missile) const {
     if(!missile.nativeDamage) return {};
@@ -200,7 +201,7 @@ MissileDamageData System::prepareDamage(const Missile &missile,const MissileRule
             weapon=sampled;
             const auto used=ports_.actions.usedSkill(missile.owner);
             const auto current=used?catalog.skills.find(used->skill):catalog.skills.end();
-            const bool throwing=current!=catalog.skills.end() && current->second.useThrowMastery && (!stats.pd2 || sampled.throwable);
+            const bool throwing=current!=catalog.skills.end() && current->second.useThrowMastery && sampled.throwable;
             const auto &selected=throwing?sampled.throwMastery:sampled.meleeMastery;mastery=selected[2];
             equipment=MissileDamageWeapon{sampled.twoHanded,sampled.throwable,player && player->totals.equipment.weaponCount==2,
                 sampled.blunt,int16_t(sampled.strengthBonus),int16_t(sampled.dexterityBonus),selected[1]};

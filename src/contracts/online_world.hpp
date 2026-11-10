@@ -67,6 +67,7 @@ struct OnlineCombatCommand {
     std::optional<OnlineObjectIntent> interaction;
     std::optional<OnlineIntentContext> context;
     uint32_t owner = UINT32_MAX;
+    bool predictedAttack{}; // Local AttackNoMana substitution. The hand selection and wire input stay intact.
 };
 struct OnlineCombatRequest {
     enum class State { Pending, Confirmed, TimedOut, Interrupted, SentNoAck };
@@ -85,6 +86,8 @@ struct OnlineCombatEvent {
     OnlineUnitKey source;
     std::optional<OnlineUnitKey> target;
     std::optional<OnlinePoint> point;
+    struct CorpseTarget {OnlinePoint position;uint16_t classId{};};
+    std::optional<CorpseTarget> corpseTarget; // CltSt21 retains coordinates and class through CltDo.
     std::optional<std::array<uint32_t, 2>> missileDestination; // Native first path point, not spawn origin.
     std::optional<std::array<uint32_t,2>> skillArguments; // A3 raw arguments also carry progressive RNG seeds.
     std::optional<uint8_t> pierce;
@@ -135,6 +138,8 @@ struct OnlineUnit {
     bool nativeMode{}; // 0x0E carries an actual mode, unlike player action packets.
     uint64_t actionRevision{}, hitRevision{};
     uint64_t actionReceivedMilliseconds{}; // Local receipt time, not server action time.
+    struct MonsterDeath {uint64_t revision{},stateSequence{};};
+    std::optional<MonsterDeath> monsterDeath; // Explicit DT, distinct from a DT/DD assignment.
     std::optional<uint8_t> pathType, pathSteps, pathDistance;
     // Client PATH_AllocDynamicPath defaults. Ordinary movement packets do
     // not overwrite these; the knockback preamble does (4DD1F-4DD37).
@@ -315,6 +320,7 @@ struct OnlineWorldView {
     OnlineQuestState quests;
     std::set<OnlineUnitKey> questAlerts; // Original 0x8A hints, not locally inferred quest eligibility.
     uint64_t combatSequence{};
+    uint32_t playerPierceIndex{};
     std::deque<OnlineCombatEvent> combatEvents;
     std::optional<OnlineCombatRequest> combatRequest;
     bool townPortalPending{}; // Enqueued command, not proof that a portal exists.
@@ -384,6 +390,7 @@ struct OnlineWorldView {
         playerBonusSkills.clear();
         itemSkillQuantities.clear();
         playerBaseSkillsAssigned = false;
+        playerPierceIndex = 0;
         leftSkill.reset();
         rightSkill.reset();
         skillHotkeys = {};

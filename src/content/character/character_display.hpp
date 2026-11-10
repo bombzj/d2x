@@ -8,6 +8,7 @@ struct EquipmentStats;
 struct SkillRecord;
 struct SkillDescriptionCatalog;
 struct SkillDescriptionInput;
+struct KickPanelStats;
 struct CharacterDisplayContext {
     const CharacterAttributes &attributes;
     const EquipmentStats &equipment;
@@ -16,6 +17,7 @@ struct CharacterDisplayContext {
     bool weaponValuesKnown = false, spellDamageKnown = false;
     int concentrationDamagePercent = 0;
     bool dualWield = false;
+    const KickPanelStats *kick{};
 };
 CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &context,
     const SkillRecord *skill, int rank = 0, bool available = true);

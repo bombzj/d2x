@@ -83,7 +83,8 @@ DomainStatus System::drainWeaponMelee(Release &pending,const ActorContext &actor
             const auto &player=*ports_.players.find(actor.player);
             const auto target=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(pending.unit);
             bool chosen=false;const auto expected=player.combatRandom;auto random=expected;
-            if(execution.contact->hit && target.monster && target.monster->alive() && target.monster->rule.convertible &&
+            // LoD Do79 checks the allocated contact, including a miss.
+            if((!pending.skill.pd2 || execution.contact->hit) && target.monster && target.monster->alive() && target.monster->rule.convertible &&
                 !target.monster->hireling && !nativeUniqueMonster(target.monster->identity.rank) && target.monster->damageable() &&
                 !ports_.effects.unitStates(target.id(),actor.tick).contains(target.monster->rule.uninterruptableState) &&
                 target.monster->alignment()==UnitAlignment::Evil) {

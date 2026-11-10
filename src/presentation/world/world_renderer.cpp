@@ -83,7 +83,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
     lighting_->setSanctumIntensity(scene.sanctumIntensity);
     if(scene.ambientFade) {
         const auto &fade=*scene.ambientFade;
-        lighting_->beginAmbientFade(fade.level,fade.down,fade.hold,fade.up);
+        lighting_->beginAmbientFade(fade.level,fade.down,fade.hold,fade.up,fade.useNativeRoomPriority);
     }
     lighting_->advance(scene.elapsed, level);
     assets_.prepareWorldTiles(map, scene.palette);
@@ -219,6 +219,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
         if (effect.age < 0 || effect.initialHidden || effect.hiddenUntilCurrentFrame) continue;
         WorldDrawItem entry; entry.missile = effect.missileId;
         entry.suppressMissileLight=effect.suppressLight;
+        entry.missileLightRadius=effect.lightRadius;
         entry.position = clientMissilePosition(effect, map.grid, scene.terrainOrigin) - scene.terrainOrigin;
         entry.heading = effect.flight || effect.direction.length() <= 0 ? effect.velocity : effect.direction;
         if(effect.nativeDirection) {
@@ -387,8 +388,9 @@ PaletteBlendView &SceneView::prepareWorldLighting(const WorldDrawView &scene, st
             const auto found = assets_.projectileVisuals.find(item.missile);
             if (found == assets_.projectileVisuals.end()) continue;
             const auto &light = found->second;
-            if (!item.suppressMissileLight && light.lightRadius > 0 && item.age * 25.f + .00001f >= light.initSteps)
-                lights.push_back({item.position, light.lightRadius, light.lightColor});
+            const auto radius=item.missileLightRadius.value_or(light.lightRadius);
+            if (!item.suppressMissileLight && radius > 0 && item.age * 25.f + .00001f >= light.initSteps)
+                lights.push_back({item.position, radius, light.lightColor});
         } else if (item.overlay >= 0) {
             const auto found = assets_.overlayLights.find(item.overlay);
             if (found == assets_.overlayLights.end()) continue;

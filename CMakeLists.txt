@@ -585,11 +585,14 @@ add_executable(d2x
   src/app/debug/ui_input.cpp src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp
   src/app/debug/server_snapshot.cpp
   src/app/debug/movement_diff.cpp
+  src/app/debug/walk_contract.cpp
   src/app/debug/auto_walk.cpp
   src/app/debug/navigation_search.cpp
   src/app/debug/exploration_memory.cpp
   src/app/debug/chat_command.cpp
   src/app/debug/ai.cpp
+  src/app/debug/ai_lifecycle.cpp
+  src/app/debug/ai_scheduler.cpp
   src/app/debug/ai_behavior_log.cpp
   src/app/debug/ai_navigation.cpp
   src/app/debug/ai_experience.cpp
@@ -598,8 +601,13 @@ add_executable(d2x
   src/app/debug/ai_execution.cpp
   src/app/debug/ai_events.cpp
   src/app/debug/ai_combat.cpp
+  src/app/debug/ai_combat_targets.cpp
+  src/app/debug/ai_attack_strategy.cpp
+  src/app/debug/ai_combat_support.cpp
   src/app/debug/ai_defense.cpp
   src/app/debug/ai_actions.cpp
+  src/app/debug/ai_route_execution.cpp
+  src/app/debug/ai_tactics.cpp
   src/app/debug/ai_mobility.cpp
   src/app/debug/ai_supplies.cpp
   src/app/debug/ai_quests.cpp

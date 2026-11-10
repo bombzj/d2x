@@ -162,6 +162,7 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
             static_cast<SkillEquipmentRule &>(record.restore)=metadata;
             record.restore.inGame=metadata.inGame;record.restore.aura=metadata.aura;record.restore.passive=metadata.passive;
             record.restore.scroll=skills.number(row,"scroll").value_or(0)!=0;
+            record.restore.attackNoMana=metadata.attackNoMana;
             const auto code=skills.value(row,"charclass");
             if(!code.empty()) {
                 bool linked=false;

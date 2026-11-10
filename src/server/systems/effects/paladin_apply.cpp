@@ -53,6 +53,9 @@ AuraDefinition System::evaluateUnitAura(EntityId id,int skill,int rank,uint64_t 
 }
 DomainResult<> System::queueAuraPulse(EntityId source,const AuraDefinition &a,const std::vector<EntityId> &targets,uint64_t occurrence,int64_t damage) {
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    const auto owner=participants.find(source);
+    const bool original=owner.player?owner.player->rules.skills && !owner.player->rules.skills->pd2:
+        owner.monster && owner.monster->rule.stats && !owner.monster->rule.stats->pd2;
     std::map<RegionId,std::vector<EntityId>> rooms;
     for(const auto id:targets) {
         const auto target=participants.find(id);
@@ -65,6 +68,12 @@ DomainResult<> System::queueAuraPulse(EntityId source,const AuraDefinition &a,co
         combat::SpellImpact pulse{source,source,region,DamageType(a.element),damage,std::move(recipients)};
         pulse.occurrence=occurrence;pulse.hitClass=uint8_t(a.hitClass);pulse.reaction=true;pulse.unblockable=true;
         pulse.knockback=(a.resultFlags&8)!=0;pulse.nativeAura=true;
+        if(original) {
+            auto &hit=pulse.monsterHit.emplace();
+            hit.channels[size_t(pulse.type)]=damage;
+            hit.getHit=(a.resultFlags&4)!=0;
+            pulse.softHit=(a.resultFlags&0x4000)!=0;
+        }
         impacts.push_back(std::move(pulse));
     }
     auto plan=ports_.combat.prepareSpells(std::move(impacts));if(!plan) return {plan.status,{}};

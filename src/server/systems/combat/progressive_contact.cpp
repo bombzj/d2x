@@ -191,6 +191,11 @@ DomainResult<bool> System::advanceProgressive(SpellImpact &impact,TickContext ti
                     } else if(ownerRandom!=expected) {
                         const auto result=consume(expected,ownerRandom);if(!result) return {result.status,{}};
                     }
+                } else if(!rules.pd2 && (step.function==37 || step.function==39 || step.function==41 || step.function==143)) {
+                    // The retail callbacks take their seed before looking up the charge missile.
+                    const auto expected=caster->random();auto random=expected;
+                    rollRandom(random);
+                    const auto result=consume(expected,random);if(!result) return {result.status,{}};
                 }
             }
             if(++execution.next<execution.steps.size()) execution.phase=Phase::Write;

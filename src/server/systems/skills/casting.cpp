@@ -99,12 +99,14 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         const auto targeting=definition.spec.pd2 && definition.spec.pd2->doFunction==176?SkillBehavior::Enchant:definition.spec.effect;
         const auto position=corpseBuff && key.type==1 && ports_.monsters.usableCorpse(key.id,actor.area,actor.tick)?
             std::optional{ports_.monsters.find(key.id)->position}:unitPosition(actor,key,targeting);
-        if(!position) return {DomainStatus::InvalidRequest,{}};
-        target.position=*position;
+        const bool tauntRetarget=!definition.spec.pd2 && targeting==SkillBehavior::Taunt && key.type<=1;
+        if(!position && !tauntRetarget) return {DomainStatus::InvalidRequest,{}};
+        target.position=position.value_or(p.position);
     }
-    const bool teleport=definition.spec.effect==SkillBehavior::Teleport;
+    const bool retailHydra=!rules.pd2 && definition.spec.effect==SkillBehavior::Hydra;
+    const bool roomTarget=definition.spec.effect==SkillBehavior::Teleport || retailHydra;
     if(!std::isfinite(target.position.x) || !std::isfinite(target.position.y) ||
-        (!teleport && !inside(area.definition.collision,target.position)) ||
+        (!roomTarget && !inside(area.definition.collision,target.position)) ||
         std::abs(target.position.x-p.position.x)>50 || std::abs(target.position.y-p.position.y)>50)
         return {DomainStatus::InvalidRequest,{}};
     const auto source=selectedSource(p,selected,request.right);
@@ -115,7 +117,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
        selected==channel->second.skill.sourceId && state_.usedSkill(actor.actor)==selectedUse) {
         auto &current=channel->second;
         if(!ports_.events.hasCapacity(3,3)) return {DomainStatus::Capacity,{}};
-        const auto started=startArctic(current,actor);if(!started) return {started.status,{}};
+        const auto started=startInferno(current,actor);if(!started) return {started.status,{}};
         if(*started.value) {const auto result=pd2StreamSkill(current.skill)?activatePd2(current,actor,target.position):activateDruid(current,actor,target.position);if(result!=DomainStatus::Applied) return {result,{}};current.tick=std::min(current.tick,actor.tick+1);}
         else {current.tick=actor.tick+10;current.pulses=0;state_.casts.at(actor.actor).until=actor.tick+15;}
         if((current.target.position-target.position).length()>0 || current.unit!=unit || current.unitType!=type) {
@@ -146,15 +148,26 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         }
         return {DomainStatus::Applied,std::monostate{}};
     }
-    if(auto channel=releases_.find(actor.actor);channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno &&
+    if(auto channel=releases_.find(actor.actor);!rules.pd2 && channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno &&
         selected==channel->second.skill.sourceId && state_.usedSkill(actor.actor)==selectedUse) {
         auto &current=channel->second;
-        if((current.target.position-target.position).length()>0 || current.unit!=unit || current.unitType!=type) {
-            const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
-                {AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,uint16_t(selected),uint8_t(current.skill.rank)}}});
-            if(!output) return {output.status,{}};
-            current.target=target;current.unit=unit;current.unitType=type;
+        const bool retarget=(current.target.position-target.position).length()>0 || current.unit!=unit || current.unitType!=type;
+        const std::array<DomainFact,1> facts{AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,
+            actor.sequence,uint16_t(selected),uint8_t(current.skill.rank)}};
+        const auto started=startInferno(current,actor,retarget?std::span<const DomainFact>{facts}:std::span<const DomainFact>{},target.position);
+        if(!started) return {started.status,{}};
+        auto &cast=state_.casts.at(actor.actor);
+        if(*started.value) {
+            current.tick=actor.tick+1;
+            cast.until=actor.tick+5;
+        } else {
+            const auto sequence=*playerCastSequence(6);
+            const auto timing=playerCastSequenceTiming(sequence,sequence.fixedSpeed);
+            current.tick=actor.tick+uint64_t(timing.impact);
+            cast.until=actor.tick+uint64_t(timing.duration);
         }
+        cast.target=unit;
+        current.target=target;current.unit=unit;current.unitType=type;
         return {DomainStatus::Applied,std::monostate{}};
     }
     // Native PlrModes permits SC reentry while the old ENDANIM is pending.
@@ -170,6 +183,8 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     const bool objectKick=definition.spec.effect==SkillBehavior::Kick && type==2;
     if(area.definition.town && !definition.allowedInTown && !objectKick) return {DomainStatus::Unavailable,{}};
     auto skill=evaluate(p,selected,effectiveRank);
+    if(skill.assassin && skill.assassin->program==AssassinProgram::PsychicHammer && !unit)
+        return {DomainStatus::InvalidRequest,{}};
     if(skill.delayFrames>0 && state_.coolingDown(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
     if(!pd2SkillStartAllowed(p,skill)) return {DomainStatus::Unavailable,{}};
     // SkillNec SrvSt15/21 must succeed before publishing an action or
@@ -190,21 +205,37 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
            !pd2SearchableCorpseClass(corpse->rule.nativeClass) ||
            (skill.corpseSearch->potion && !corpse->rule.softCorpse)) return {DomainStatus::Unavailable,{}};
     }
+    const auto requestedPosition=target.position;
     if(skill.leap) {
-        Vec landing=target.position;
-        const int distance=missileDistance(p.position,landing);
-        if(skill.leap->attack) {
-            if(unit) {const auto m=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(unit);if(m.id() && meleeDistance(p.position,2,m.position(),m.size())<=p.totals.equipment.weapons[0].rangeAdder+1) return attack(actor,request,0);}
-            if(distance) landing=landing+Vec{float(2*(int(landing.x)-int(p.position.x))/distance),float(2*(int(landing.y)-int(p.position.y))/distance)};
-        } else if(distance>skill.leap->range) landing=p.position+(landing-p.position)*(float(skill.leap->range)/float(distance));
-        const int dx=std::clamp(int(p.position.x)-int(landing.x),-2,2),dy=std::clamp(int(landing.y)-int(p.position.y),-2,2);
         std::optional<Vec> chosen;
-        for(const Vec attempt:{landing,landing+Vec{float(dy),float(dx)},landing-Vec{float(dy),float(dx)}}) {
-            const auto candidate=area.definition.collision.nativeSpawn(attempt,1,playerMovement);
-            if(!candidate || (!skill.leap->attack && missileDistance(p.position,*candidate)>skill.leap->range) || !area.definition.collision.collisionSegment(p.position,*candidate,0x804)) continue;
-            bool occupied=false;
-            for(const auto &[id,m]:ports_.monsters.read().actors) { (void)id;if(m.area==actor.area && m.alive() && meleeDistance(*candidate,2,m.position,m.rule.size)<=0) {occupied=true;break;} }
-            if(!occupied) {chosen=candidate;break;}
+        if(!skill.pd2) {
+            const auto occupancy=ports_.spatial.navigationGrid(actor.area,actor.actor);
+            if(skill.leap->attack) {
+                const auto victim=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(unit);
+                if(victim.aliveIn(actor.area) && playerMeleeReach(area.definition.collision,p.position,victim.position(),
+                   victim.size(),p.totals.equipment.weapons[0].rangeAdder)) return attack(actor,request,0);
+                chosen=nativeLeapAttackLanding(area.definition.collision,occupancy,p.position,target.position,playerMovement.size);
+                if(chosen) {
+                    const auto point=*chosen+area.definition.origin;
+                    const auto room=ports_.areas.roomAtPosition(actor.area,p.position,int(point.x),int(point.y));
+                    if(!room || room->area!=actor.area || ports_.areas.at(room->area).definition.town) return {DomainStatus::Unavailable,{}};
+                }
+            } else chosen=nativeLeapLanding(area.definition.collision,occupancy,p.position,target.position,skill.leap->range,playerMovement.size);
+        } else {
+            Vec landing=target.position;
+            const int distance=missileDistance(p.position,landing);
+            if(skill.leap->attack) {
+                if(unit) {const auto m=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(unit);if(m.id() && meleeDistance(p.position,2,m.position(),m.size())<=p.totals.equipment.weapons[0].rangeAdder+1) return attack(actor,request,0);}
+                if(distance) landing=landing+Vec{float(2*(int(landing.x)-int(p.position.x))/distance),float(2*(int(landing.y)-int(p.position.y))/distance)};
+            } else if(distance>skill.leap->range) landing=p.position+(landing-p.position)*(float(skill.leap->range)/float(distance));
+            const int dx=std::clamp(int(p.position.x)-int(landing.x),-2,2),dy=std::clamp(int(landing.y)-int(p.position.y),-2,2);
+            for(const Vec attempt:{landing,landing+Vec{float(dy),float(dx)},landing-Vec{float(dy),float(dx)}}) {
+                const auto candidate=area.definition.collision.nativeSpawn(attempt,1,playerMovement);
+                if(!candidate || (!skill.leap->attack && missileDistance(p.position,*candidate)>skill.leap->range) || !area.definition.collision.collisionSegment(p.position,*candidate,0x804)) continue;
+                bool occupied=false;
+                for(const auto &[id,m]:ports_.monsters.read().actors) { (void)id;if(m.area==actor.area && m.alive() && meleeDistance(*candidate,2,m.position,m.rule.size)<=0) {occupied=true;break;} }
+                if(!occupied) {chosen=candidate;break;}
+            }
         }
         if(!chosen || (*chosen-p.position).length()<.001f) return {DomainStatus::Unavailable,{}};
         target.position=*chosen;if(!skill.leap->attack) unit={};
@@ -218,9 +249,15 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     if(!std::isfinite(skill.manaCost) || skill.manaCost<0 || !std::isfinite(skill.startMana) || skill.startMana<0 ||
         p.persistent.player.mana<std::max(skill.manaCost,skill.startMana)) return {DomainStatus::Unavailable,{}};
     if(skill.effect==SkillBehavior::Telekinesis && (!unit || !within(p.position,target.position,skill.telekinesisRange))) return {DomainStatus::InvalidRequest,{}};
-    if((skill.effect==SkillBehavior::Blizzard || skill.effect==SkillBehavior::Hydra || skill.effect==SkillBehavior::FireWall || skill.effect==SkillBehavior::Meteor) &&
+    if(retailHydra) {
+        const auto point=target.position+area.definition.origin;
+        const auto room=ports_.areas.roomAtPosition(actor.area,p.position,int(std::floor(point.x)),int(std::floor(point.y)));
+        if(!int(point.x) || !int(point.y) || !room || ports_.areas.at(room->area).definition.town) return {DomainStatus::Unavailable,{}};
+    }
+    if((skill.effect==SkillBehavior::Blizzard || (!retailHydra && skill.effect==SkillBehavior::Hydra) ||
+        skill.effect==SkillBehavior::FireWall || skill.effect==SkillBehavior::Meteor) &&
         !area.definition.collision.missileSegment(target.position,target.position,{5,1})) return {DomainStatus::Unavailable,{}};
-    const bool inferno=skill.effect==SkillBehavior::Inferno;
+    const bool inferno=!rules.pd2 && skill.effect==SkillBehavior::Inferno;
     const bool lightningSequence=bool(skill.arc) || (skill.pd2 && skill.pd2->sequence==12);
     CastTiming timing;
     std::optional<int> recastDelay;
@@ -370,13 +407,14 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     std::map<EntityId,Release> preparedRelease;preparedRelease.emplace(actor.actor,std::move(release));
     std::map<EntityId,Cast> preparedCast;preparedCast.emplace(actor.actor,cast);
     auto &staged=preparedRelease.at(actor.actor);
-    const auto action=AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,
+    const auto broadcastPosition=staged.skill.leap && staged.skill.leap->attack && !staged.skill.pd2?requestedPosition:target.position;
+    const auto action=AttackFact{actor.actor,unit,0,type,actor.area,p.position,broadcastPosition,actor.sequence,
         uint16_t(selected),uint8_t(effectiveRank),bool(staged.skill.leap)};
     if(staged.assassinKick || (staged.skill.assassin && staged.skill.assassin->program==AssassinProgram::PsychicHammer)) {
         const auto debit=ports_.transactions.release(actor,p.characterRevision,staged.skill.manaCost,{},staged.skill.charge,{action},{},staged.skill.sourceId);
         if(!debit) return debit;
         staged.manaPaid=true;runtime_->assassinStarts.erase(actor.actor);
-    } else if(inferno) {
+    } else if(retailHydra) {
         const auto debit=ports_.transactions.release(actor,p.characterRevision,staged.skill.manaCost,{},staged.skill.charge,{action},{},staged.skill.sourceId);
         if(!debit) return debit;
         if(staged.skill.charge) {
@@ -386,12 +424,16 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
             removeSkillUse(preparedUse.mapped(),p.totals.clearedSkillUses);
         }
         staged.manaPaid=true;
-    } else if(pd2StreamSkill(staged.skill) || (staged.skill.druid && staged.skill.druid->program==DruidProgram::Arctic)) {
-        const std::array<DomainFact,1> facts{action};const auto started=startArctic(staged,actor,facts);if(!started) return {started.status,{}};
+    } else if(inferno || pd2StreamSkill(staged.skill) || (staged.skill.druid && staged.skill.druid->program==DruidProgram::Arctic)) {
+        const std::array<DomainFact,1> facts{action};
+        const auto started=startInferno(staged,actor,facts,inferno?std::optional{target.position}:std::nullopt);
+        if(!started) return {started.status,{}};
+        if(inferno && *started.value) staged.tick=actor.tick+1;
     } else if(staged.skill.assassin && staged.skill.assassin->program==AssassinProgram::BladeFury) {
         const std::array<DomainFact,1> facts{action};const auto started=startBladeFury(staged,actor,facts);if(!started) return {started.status,{}};
     } else if(staged.skill.assassin && staged.skill.assassin->program==AssassinProgram::BladeShield) {
-        if(!staged.skill.appliedEffect || !staged.skill.appliedEffect->duration || !*staged.skill.appliedEffect->duration || staged.skill.missileId<=0)
+        const int attachment=staged.skill.pd2?staged.skill.missileId:staged.skill.assassin->missiles[0];
+        if(!staged.skill.appliedEffect || !staged.skill.appliedEffect->duration || !*staged.skill.appliedEffect->duration || attachment<=0)
             return {DomainStatus::Unavailable,{}};
         const std::array<DomainFact,1> facts{action};
         const auto installed=ports_.effects.skill(actor,staged.skill,{},facts);if(!installed) return installed;
@@ -483,13 +525,31 @@ StepStatus System::release(TickContext tick,EntityId only) {
         if(valid && !continuing && pending.skill.requiresShield) valid=bool(p->totals.equipment.shield);
         if(valid && !continuing) valid=pd2SkillEquipmentAllowed(*p,pending.skill);
         if(valid && !continuing && pending.unit && !pending.whirlwind && !pending.skill.leap && !(pending.skill.weapon && (pending.skill.weapon->dualWield || pending.skill.effect==SkillBehavior::Zeal || (pending.skill.druid && pending.skill.druid->program==DruidProgram::Fury) || (pending.skill.weapon->bow && pending.skill.weapon->bow->strafe) || (pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend)))) {
-            const bool corpseBuff=pending.skill.pd2 && pending.skill.pd2->doFunction==165;
-            const auto targeting=pending.skill.pd2 && pending.skill.pd2->doFunction==176?SkillBehavior::Enchant:pending.skill.effect;
-            const auto position=corpseBuff && pending.unitType==1 && ports_.monsters.usableCorpse(pending.unit,actor.area,actor.tick)?
-                std::optional{ports_.monsters.find(pending.unit)->position}:unitPosition(actor,{pending.unit,0,pending.unitType},targeting);
-            valid=position.has_value();if(valid) target=*position;
+            const auto &rules=*p->rules.skills;
+            const auto row=rules.formulas->skills.find(pending.skill.sourceId);
+            const bool coordinateMissile=!rules.pd2 && row!=rules.formulas->skills.end() &&
+                !row->second.number("srvdofunc") && rules.formulas->missileIds.contains(row->second.reference("srvmissile"));
+            if(coordinateMissile) {
+                // Retail A28F0 -> 9FA30 resolves aim, not a living victim.
+                // The cast already validated its target before starting.
+                if(const auto position=ports_.monsters.nativeTargetPosition(pending.unit,actor.area)) target=position->first;
+            } else {
+                const bool corpseBuff=pending.skill.pd2 && pending.skill.pd2->doFunction==165;
+                const auto targeting=pending.skill.pd2 && pending.skill.pd2->doFunction==176?SkillBehavior::Enchant:pending.skill.effect;
+                const auto position=corpseBuff && pending.unitType==1 && ports_.monsters.usableCorpse(pending.unit,actor.area,actor.tick)?
+                    std::optional{ports_.monsters.find(pending.unit)->position}:unitPosition(actor,{pending.unit,0,pending.unitType},targeting);
+                valid=position.has_value() || (!pending.skill.pd2 && targeting==SkillBehavior::Taunt);
+                if(position) target=*position;
+            }
         }
-        const bool channel=pending.skill.effect==SkillBehavior::Inferno;
+        const bool channel=valid && !p->rules.skills->pd2 && pending.skill.effect==SkillBehavior::Inferno;
+        if(valid && channel) {
+            const auto *effects=ports_.effects.unitEffects(actor.actor);
+            if(!effects || !effects->findState(p->rules.skills->formulas->infernoState)) {
+                state_.casts.at(actor.actor).until=tick.tick+4;
+                it=releases_.erase(it);continue;
+            }
+        }
         if(!valid) {
             if(pending.assassinKick && pending.assassinKick->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.assassinKick->occurrence);
             if(pending.druidMelee && pending.druidMelee->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.druidMelee->occurrence);
@@ -536,11 +596,13 @@ StepStatus System::release(TickContext tick,EntityId only) {
         auto execution=state_.executingRelease(actor.actor);
         if(pending.delayPublicationUntil) status=DomainStatus::Applied;
         else if(channel) {
-            auto skill=evaluate(*p,pending.skill.sourceId,pending.skill.rank);
-            if(pending.skill.charge) {skill.charge=pending.skill.charge;skill.manaCost=skill.startMana=0;}
-            const bool consume=pending.pulses%2==0;
-            if(consume && p->persistent.player.mana<skill.manaCost) {it=releases_.erase(it);continue;}
-            status=ports_.missiles.spawn({actor,skill,pending.collision,target,!consume}).status;
+            // Do19 advances the used skill even when a flame cannot be born.
+            status=DomainStatus::Applied;
+            if(state_.skillParameter(actor.actor,*used,0)) {
+                const auto born=ports_.missiles.spawnNative(infernoFlame(pending,actor,target));
+                if(!born && born.status!=DomainStatus::Unavailable) status=born.status;
+            }
+            if(status==DomainStatus::Applied) state_.skillParameter(actor.actor,*used,0,1);
         } else status=activate(pending,actor,target);
         }
         if(pending.cancelled && !pending.delayPublicationUntil && (!isDeferred(status) || !pending.nativeCallbackStarted)) {
@@ -594,7 +656,7 @@ StepStatus System::release(TickContext tick,EntityId only) {
             if(pending.leaping && !pending.landed) {pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
             if(pending.leaping && pending.landed && pending.tick>tick.tick) {++it;continue;}
             if(p->rules.skills->pd2 && pending.skill.delayFrames>0) cast.cooldownUntil=tick.tick+uint64_t(pending.skill.delayFrames);
-            if(channel) {if(pending.skill.charge) pending.skill.charge->item=p->persistent.inventory.items.at(pending.skill.charge->item.id).handle();++pending.pulses;pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
+            if(channel) {pending.tick=tick.tick+1;cast.until=tick.tick+5;++it;continue;}
             if(pending.weapon) {
                 pending.manaPaid=true;
                 if(pending.rewindRemaining>0 && --pending.rewindRemaining>0) {

@@ -137,7 +137,7 @@ class RealmSession {
     bool submit_staff(uint32_t source,std::optional<uint32_t> item,std::optional<OnlineIntentContext> context = {});
     // Caller validates current MPQ skill and target eligibility. Cast/stop have
     // no generic native ACK; damage, resources and skills remain server-owned.
-    bool submit_combat(OnlineCombatCommand command);
+    bool submit_combat(OnlineCombatCommand command, std::optional<uint64_t> skillDelayStateSequence = {});
     void set_local_used_skill(uint16_t skill,uint64_t revision,uint64_t actionRevision,OnlineIntentContext);
     void clear_local_used_skill(uint64_t revision,OnlineIntentContext);
     // Caller maps the destination's Levels.Waypoint index from current MPQ.

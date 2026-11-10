@@ -40,6 +40,7 @@ struct WeaponDamage {
     bool twoHanded{};
     int strengthBonus{},dexterityBonus{};
     std::vector<uint16_t> typeLayers;
+    int rawMeleeMinimum{},rawMeleeMaximum{}; // Native endpoints before item_normaldamage and melee clamps.
 };
 struct EquipmentStats {
     // Native inventory registered GUID, distinct from the current skill hand.

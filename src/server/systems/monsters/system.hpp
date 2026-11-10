@@ -198,7 +198,9 @@ struct Actor {
     int stopDistance{}, velocityPercent{75};
     uint8_t pathSteps{};
     uint8_t pathType{13}, pathDistance{5};
-    uint64_t movementRevision{}; // Accepted path starts, not per-frame position changes.
+    uint8_t pathRemaining{}; // Native PATH.nDistance, separate from search distance.
+    unsigned pathPointsConsumed{};
+    uint64_t movementRevision{}; // Accepted path starts and replans, not per-frame position changes.
     uint64_t teleportRevision{};
     int effectVelocity{};
     bool running{};
@@ -271,6 +273,10 @@ struct NativeBirthBatch {
     ComponentPaletteState palettes;
     std::set<size_t> limitedUniques;
 };
+struct HydraBirth {
+    std::map<EntityId,Actor> actors;
+    std::vector<std::shared_ptr<const RoomRandomLoan>> roomRandomLoans;
+};
 struct SkillChildrenExecution {
     std::vector<EntityId> children;
     size_t nextAura{};
@@ -332,7 +338,7 @@ class System {
     DomainResult<> assignBaalSkill(EntityId,std::string_view,std::optional<int>,uint64_t);
     void initializeImpMount(Actor &) const;
     std::optional<Vec> nestBirthPoint(EntityId,Vec,uint64_t &) const;
-    bool recacheHirelingRoom(Actor &);
+    bool recacheMovementRoom(Actor &,Vec previous);
     ComponentPaletteState prepareComponents(Actor &,const ComponentPaletteState *staged=nullptr) const;
     void publishComponents(ComponentPaletteState &) noexcept;
     DomainResult<Actor> prepareAdmissionActor(const Admission &,EntityId,uint64_t &random,ComponentPaletteState &,uint64_t itemCursor=0,const std::set<size_t> *stagedUniques=nullptr,std::shared_ptr<RoomUnitRegistration> room={});
@@ -560,7 +566,8 @@ class System {
     DomainResult<> remove(EntityId);
     DomainResult<> directSound(EntityId,uint16_t);
     void withdrawQuestGroup(RegionId,std::string_view);
-    DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraRules &,const SummonCastSpec &,const std::array<std::optional<Vec>,3> &,uint64_t &random,std::optional<std::array<RegionId,3>> destinationAreas={}) const;
+    DomainResult<HydraBirth> prepareHydra(const ActorContext &,const HydraRules &,const SkillCastSpec &,Vec globalTarget,
+        uint64_t &random,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     DomainResult<> spawnHydra(EntityId,const HydraRules &,const SkillCastSpec &,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<std::map<EntityId,Actor>> prepareHireling(const ActorContext &,const MonsterRule &,std::string_view,Vec,int64_t life,uint64_t random,NativeUnitStats,int birthLevel,NativeBirthBatch &,std::span<const EntityId> retired={}) const;
     DomainResult<std::map<EntityId,Actor>> prepareNativePet(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,std::shared_ptr<PersistentCharacter>,size_t,std::optional<WeaponDamage> = {},std::span<const std::shared_ptr<const StatList>> = {},uint64_t random=0,std::optional<EquipmentStats> = {}) const;

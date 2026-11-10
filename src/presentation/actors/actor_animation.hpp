@@ -38,7 +38,7 @@ struct ActorAnimationRequest {
 struct ActorAnimation {
     GpuAnimation animation;
     float fps = 0, releaseTime = -1;
-    std::vector<float> releaseTimes;
+    std::vector<float> releaseTimes, soundTimes;
     int start = 0, frameCount = 0, holdFrame = -1;
     std::optional<int> durationFrames;
     bool cycle = false, shadow = false;

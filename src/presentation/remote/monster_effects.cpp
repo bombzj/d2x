@@ -1,5 +1,6 @@
 #include "monster_effects.hpp"
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace d2x {
@@ -38,6 +39,20 @@ void RemoteMonsterEffects::observe(const OnlineUnit &unit,Definition definition,
         // explosion is unconditional, alongside the optional fire/ice effect.
         actor.suicide=now-age+4.f/fps;actor.suicideParameter=definition.suicideParameter;
     } else if(actor.mode!=0 && actor.mode!=12) actor.suicide=-1;
+    if(actor.blastTime>=0 && actor.mode!=0) {
+        if(actor.mode==12 && actor.blastTime<now-age)
+            releases_.push_back({unit.key,0,actor.deathBlast});
+        actor.blastTime=-1;
+    }
+    if(*event.action==8 && definition.deathBlast!=DeathBlast::None && fps>0) {
+        // 20D20 / 20E60 compare the integer DT frame to 4.
+        const int rate=std::max(1,int(std::lround(fps*256.f/25.f)));
+        const int tick=(4*256+rate-1)/rate;
+        if(((tick*rate)>>8)==4) {
+            actor.deathBlast=definition.deathBlast;
+            actor.blastTime=now-age+float(tick)/25.f;
+        }
+    }
 }
 std::vector<RemoteMonsterEffects::Release> RemoteMonsterEffects::advance(const OnlineWorldView &world,float now) {
     std::erase_if(actors_,[&](const auto &entry){
@@ -56,6 +71,9 @@ std::vector<RemoteMonsterEffects::Release> RemoteMonsterEffects::advance(const O
             if(actor.suicideParameter==1) releases_.push_back({key,427});
             else if(actor.suicideParameter>=2) releases_.push_back({key,428});
             releases_.push_back({key,426});actor.suicide=-1;
+        }
+        if(actor.blastTime>=0 && now>=actor.blastTime) {
+            releases_.push_back({key,0,actor.deathBlast});actor.blastTime=-1;
         }
     }
     return std::exchange(releases_,{});

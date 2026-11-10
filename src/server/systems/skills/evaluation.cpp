@@ -3,6 +3,7 @@
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "gameplay/skills/passive_stats.hpp"
+#include "gameplay/items/equipment_rules.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/skills/resolve.hpp"
@@ -132,9 +133,37 @@ SkillCastSpec evaluate(const PlayerState &player, int skill, int rank) {
     return result;
 }
 std::optional<SkillUseSource> selectedSource(const PlayerState &player, int skill, bool right) {
-    const auto owner = player.persistent.player.selectedSkillOwners.at(player.persistent.player.weaponSet * 2 + (right ? 1 : 0));
+    const auto &record=player.persistent.player;
+    const auto hand=record.weaponSet*2+(right?1:0);
+    const auto owner=skill==std::max(0,record.selectedSkills.at(hand))?record.selectedSkillOwners.at(hand):UINT32_MAX;
     const auto rank = player.totals.skillRanks.find(skill);
     return resolveSkillUseSource(skill, owner, player.rules.character->innateSkills.contains(skill),
         rank == player.totals.skillRanks.end() ? 0 : rank->second, player.totals.chargedSkills);
+}
+SkillRestoreInput skillHandFacts(const PlayerState &player,const PersistentCharacter &character,
+    const attributes::Totals &totals,const EquipmentRules &equipment) {
+    SkillRestoreInput input;
+    input.primaryHandKnown=true;
+    input.dualWield=player.definition.code=="bar" || player.definition.code=="ass";
+    const auto view=attributes::loadout(character,*player.rules.items,equipment);
+    const auto &rules=*player.rules.character->stats;
+    for(size_t hand=0;hand<input.hands.size();++hand) {
+        const auto item=view.equipped[size_t(weaponHandSlot(hand!=0,character.player.weaponSet))];
+        SkillHandEquipment value;
+        if(item) {
+            const auto &definition=item.definition->equipment;
+            if(item.instance->id==totals.registeredWeapon && definition.isType("weap")) input.primaryHand=hand;
+            value.present=true;value.unusable=(item.instance->nativeFlags&0x4100u)!=0;
+            value.types=definition.types;value.ammunitionType=definition.shoots;
+            value.stackable=item.definition->maxStack>1;value.quantity=item.instance->quantity;
+            input.throwable[hand]=definition.throwable;
+            if(const auto stats=totals.itemFullStats.find(item.instance->id);stats!=totals.itemFullStats.end()) {
+                input.throwable[hand]|=nativeStatValue(stats->second,rules,"item_throwable")!=0;
+                if(!rules.pd2) value.magicArrow=nativeStatValue(stats->second,rules,"item_magicarrow")!=0;
+            }
+        }
+        input.hands[hand]=std::move(value);
+    }
+    return input;
 }
 }

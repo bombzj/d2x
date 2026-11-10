@@ -15,11 +15,19 @@
 #include "server/systems/ai/system.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
 namespace d2x::server::companions {
+namespace {
+uint64_t expirationFrame(const Companion &pet,const monsters::Actor &body) {
+    if(pet.expires==UINT64_MAX || (body.amazonPet && body.amazonPet->decoy && body.rule.stats && !body.rule.stats->pd2))
+        return pet.expires;
+    return pet.expires+1;
+}
+}
 DomainResult<> System::requestAction(Companion &pet,const actions::MonsterCastRequest &request) {
     const auto result=ports_.skills.requestCast(request);
     if(!isDeferred(result.status)) return result;
@@ -49,8 +57,10 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
         pet.pendingHirelingUseSkill=false;
         pet.pendingNecroAction=pet.pendingNecroUseSkill=false;
         pet.pendingAction.reset();
-    } else if(const auto *body=ports_.monsters.find(id);body && body->alive() && tick.tick<pet.nextDecision && tick.tick<=pet.expires && !pet.removeAt) {
-        ports_.monsters.scheduleAi(id,pet.nextDecision);return {DomainStatus::Applied,std::monostate{}};
+    } else if(const auto *body=ports_.monsters.find(id);body && body->alive() && tick.tick<pet.nextDecision &&
+        (body->hydra() || tick.tick<expirationFrame(pet,*body)) && !pet.removeAt) {
+        ports_.monsters.scheduleAi(id,body->hydra()?pet.nextDecision:std::min(pet.nextDecision,expirationFrame(pet,*body)));
+        return {DomainStatus::Applied,std::monostate{}};
     } else if(advancePet(id,tick)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
     found=state_.companions.find(id);
     if(found==state_.companions.end()) return {DomainStatus::Applied,std::monostate{}};
@@ -64,10 +74,11 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
         auto due=std::max(tick.tick+1,found->second.nextDecision);
         const auto special=body->curseControl.ai;
         const auto control=ports_.ai.read().controllers.find(id);
-        const bool nativeNecroControl=body->necroSummon && body->rule.stats && !body->rule.stats->pd2 &&
+        const bool nativePetControl=(body->necroSummon || (body->amazonPet && !body->amazonPet->decoy)) &&
+            body->rule.stats && !body->rule.stats->pd2 &&
             (special==CurseAi::DimVision || special==CurseAi::Terror || special==CurseAi::Taunt ||
              (control!=ports_.ai.read().controllers.end() && !control->second.pending.empty()));
-        if((body->revived() || nativeNecroControl) && body->alive()) {
+        if((body->revived() || nativePetControl) && body->alive()) {
             // A newly accepted owner-follow path belongs to companions until
             // it ends; invoking the family here would overwrite it immediately.
             if(!found->second.nativePetMoving || body->route.empty()) {
@@ -85,7 +96,7 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
             due=std::min(due,deadline);decisionAt=std::min(decisionAt,deadline);
         };
         if(found->second.removeAt) capWake(found->second.removeAt);
-        else if(found->second.expires!=UINT64_MAX) capWake(found->second.expires+1);
+        else if(!body->hydra() && found->second.expires!=UINT64_MAX) capWake(expirationFrame(found->second,*body));
         ports_.monsters.scheduleAi(id,decisionAt,due);
     }
     return {DomainStatus::Applied,std::monostate{}};
@@ -105,69 +116,61 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &requ
         return {DomainStatus::InvalidActor,{}};
     auto skill=caster->monster?skills::evaluate(*p,requested.sourceId,requested.rank):requested;
     if(caster->monster) {skill.manaCost=skill.startMana=0;skill.charge.reset();}
-    if(!skill.summon || !skill.summon->native || skill.hydraLimit<=0 || skill.hydraFrames<=0) return {DomainStatus::Unavailable,{}};
+    if(!skill.summon || !skill.summon->native || skill.hydraFrames<=0) return {DomainStatus::Unavailable,{}};
+    const auto globalTarget=target+area->definition.origin;
+    const auto targetRoom=ports_.areas.roomAtPosition(actor.area,caster->position(),int(std::floor(globalTarget.x)),int(std::floor(globalTarget.y)));
+    if(!int(globalTarget.x) || !int(globalTarget.y) || !targetRoom || ports_.areas.at(targetRoom->area).definition.town)
+        return {DomainStatus::Unavailable,{}};
     const ActorContext owner{p->player,p->actor,p->area,ports_.areas.at(p->area).generation,actor.sequence,actor.tick};
     const auto expectedRandom=ports_.random;
     auto random=expectedRandom;
-    const auto &rules=*program;
-    constexpr std::array<Vec,3> offsets{{{-1,-1},{0,0},{1,-1}}};
-    std::array<std::optional<Vec>,3> positions;
-    std::array<RegionId,3> regions;
-    std::map<RoomView,RoomRandomLoan> loans;
-    const auto collision=ports_.spatial.nativeCollisionSample();
-    const auto sample=[&](RoomView room,int32_t column,int32_t row) {
-        auto mask=collision(room,column,row);
-        for(size_t index=0;index<positions.size();++index) if(positions[index]) {
-            const auto point=*positions[index]+ports_.areas.at(regions[index]).definition.origin;
-            mask|=nativeCollisionFootprint(rules.heads[index].rules.at(size_t(p->persistent.difficulty)).collisionPattern,
-                column-int(std::floor(point.x)),row-int(std::floor(point.y)),0x100);
+    auto prepared=ports_.monsters.prepareHydra(owner,*program,skill,globalTarget,random,ports_.spatial.nativeCollisionSample());
+    if(!prepared) return {prepared.status,{}};
+    auto &birth=*prepared.value;
+    if(birth.actors.empty()) {
+        if(!birth.roomRandomLoans.empty()) {
+            const auto consumed=ports_.transactions.consumeRoomRandom(birth.roomRandomLoans);if(!consumed) return consumed;
         }
-        return mask;
-    };
-    for(size_t index=0;index<positions.size();++index) {
-        const auto center=target+offsets[index],global=center+area->definition.origin;
-        const auto room=ports_.areas.roomAtPosition(actor.area,caster->position(),int(std::floor(global.x)),int(std::floor(global.y)));
-        if(!room || ports_.areas.at(room->area).definition.town) continue;
-        regions[index]=room->area;
-        auto loan=loans.find(*room);
-        if(loan==loans.end()) {
-            const auto borrowed=ports_.areas.roomRandom(*room);if(!borrowed) return {borrowed.status,{}};
-            loan=loans.emplace(*room,*borrowed.value).first;
-        }
-        monsters::Admission request;request.identity.monster=rules.heads[index].definition.code;request.identity.spawnKey="hydra.search";
-        request.area=room->area;request.position=global-ports_.areas.at(room->area).definition.origin;request.rule=rules.heads[index].rules.at(size_t(p->persistent.difficulty));request.tick=actor.tick;
-        auto point=ports_.monsters.searchRoomSpawn(request,loan->second,-1,sample);if(!point) return {point.status,{}};
-        if(!*point.value) point=ports_.monsters.searchRoomSpawn(request,loan->second,4,sample);
-        if(!point) return {point.status,{}};
-        positions[index]=*point.value;
-    }
-    if(std::none_of(positions.begin(),positions.end(),[](const auto &position){return position.has_value();})) {
-        for(const auto &[room,loan]:loans) {(void)room;const auto consumed=ports_.transactions.consumeRoomRandom(loan);if(!consumed) return consumed;}
         return {DomainStatus::Unavailable,{}};
     }
-    auto actors=ports_.monsters.prepareHydra(owner,rules,*skill.summon,positions,random,regions);if(!actors) return {actors.status,{}};
     auto next=state_;
-    for(const auto &[id,monster]:*actors.value) {
-        const auto &head=*std::find_if(rules.heads.begin(),rules.heads.end(),[&](const auto &head) {return head.definition.nativeClass==monster.rule.nativeClass;});
+    std::vector<EntityId> active,retire,order;
+    for(const auto id:ports_.monsters.pets(p->player,true)) {
+        const auto pet=next.companions.find(id);
+        if(pet!=next.companions.end() && pet->second.sourceSkill==uint16_t(skill.sourceId) && !pet->second.removeAt &&
+            ports_.monsters.find(id)->alive()) active.push_back(id);
+    }
+    size_t oldest=0;
+    for(const auto &[id,monster]:birth.actors) {
+        // SummonPet trims the pet list before registering each successful head.
+        while(active.size()-oldest>=size_t(std::max(skill.hydraLimit,1))) {
+            const auto previous=active[oldest++];
+            const auto *body=ports_.monsters.find(previous);
+            if(!body) body=&birth.actors.at(previous);
+            auto &pet=next.companions.at(previous);
+            pet.removeAt=actor.tick+uint64_t(body->rule.deathTicks);pet.release=0;
+            retire.push_back(previous);
+            if(!birth.actors.contains(previous)) order.push_back(previous);
+        }
+        const auto &head=*std::find_if(program->heads.begin(),program->heads.end(),[&](const auto &head) {return head.definition.nativeClass==monster.rule.nativeClass;});
         Companion entry{id,p->player,Kind::Summon,uint16_t(skill.sourceId)};
-        entry.rank=skill.rank;entry.attackSkill=head.definition.attackSkill;entry.expires=actor.tick+uint64_t(skill.hydraFrames);
-        entry.nextDecision=actor.tick+25;next.companions.emplace(id,std::move(entry));
+        entry.rank=skill.rank;entry.attackSkill=head.definition.attackSkill;entry.expires=monster.hydraExpires;
+        entry.nextDecision=monster.aiThinkAt;next.companions.emplace(id,std::move(entry));
+        active.push_back(id);order.push_back(id);
     }
-    size_t count=0;for(const auto &[id,pet]:next.companions) {(void)id;if(pet.owner==p->player && pet.sourceSkill==uint16_t(skill.sourceId) && !pet.removeAt) ++count;}
-    std::vector<EntityId> retire;
-    for(auto &[id,pet]:next.companions) {
-        if(count<=size_t(skill.hydraLimit)) break;
-        if(pet.owner!=p->player || pet.sourceSkill!=uint16_t(skill.sourceId) || pet.removeAt) continue;
-        const auto *monster=ports_.monsters.find(id);if(!monster) continue;
-        pet.removeAt=actor.tick+uint64_t(monster->rule.deathTicks);pet.release=0;retire.push_back(id);--count;
-    }
-    auto units=std::make_shared<effects::AuraUnitPublication>();const auto allocated=actors.value->size();
-    ports_.effects.stageAuraActors(*units,std::move(*actors.value),allocated);
+    auto units=std::make_shared<effects::AuraUnitPublication>();const auto allocated=birth.actors.size();
+    ports_.effects.stageAuraActors(*units,std::move(birth.actors),allocated);
     const auto retired=ports_.monsters.stageRetirements(*units,retire,actor.tick);if(!retired) return retired;
-    transactions::CharacterEdit edit{owner,p->inventoryRevision,p->characterRevision,p->persistent.player};edit.player.mana-=skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.charge=skill.charge;
+    for(const auto id:retire) units->actors->actors.at(id).petUnregistered=true;
+    units->actors->publicationOrder=std::move(order);
+    transactions::CharacterEdit edit{owner,p->inventoryRevision,p->characterRevision,p->persistent.player};
+    if(skill.charge || skill.manaCost>0) {
+        edit.player.mana-=skill.manaCost;
+        edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.charge=skill.charge;
+    }
     auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},units);if(!plan) return {plan.status,{}};
     plan.value->gameRandom=transactions::UnitRandomEdit{expectedRandom,random};
-    for(const auto &[room,loan]:loans) {(void)room;plan.value->roomRandomLoans.push_back(std::make_shared<const RoomRandomLoan>(loan));}
+    plan.value->roomRandomLoans=std::move(birth.roomRandomLoans);
     const auto debit=ports_.transactions.commit(std::move(*plan.value));if(!debit) return debit;
     state_.companions.swap(next.companions);
     return {DomainStatus::Applied,std::monostate{}};
@@ -184,7 +187,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
     std::vector<EntityId> departed;
     for(const auto &[id,pet]:state_.companions) {
         const auto *owner=ports_.players.find(pet.owner);const auto *body=ports_.monsters.find(id);
-        if(owner && owner->entered && body && body->alive() &&
+        if(owner && owner->entered && body && body->alive() && !body->hydra() &&
             (body->area!=owner->area || pet.ownerTeleport!=owner->teleportRevision ||
              !ports_.areas.nearby(owner->area,owner->position,body->area,body->position))) departed.push_back(id);
     }
@@ -220,7 +223,8 @@ StepStatus System::advancePet(EntityId only,TickContext tick) {
         }
         const bool wall=body->implementation==MonsterKind::BoneWall;
         const bool aiDue=tick.tick>=pet.nextDecision && tick.tick>=body->busyUntil;
-        const bool expired=tick.tick>pet.expires && ((!body->hydra() && !wall) || aiDue);
+        const bool expired=body->hydra()?aiDue && nativeNarrow(uint32_t(body->hydraExpires))<nativeNarrow(uint32_t(tick.tick)):
+            tick.tick>=expirationFrame(pet,*body) && (!wall || aiDue);
         if(wall && aiDue && !expired) pet.nextDecision=tick.tick+15;
         // Wall AI owns its lifetime; do not invent an NPC-owner death rule.
         const bool nativeWall=wall && pet.owner==PlayerId{} && body->nativeMinionOwner.has_value();

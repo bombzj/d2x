@@ -4,6 +4,8 @@
 #include "content/items/item_appearance.hpp"
 #include "content/pd2/cube.hpp"
 #include "gameplay/items/pd2/pricing.hpp"
+#include "gameplay/skills/assassin_spec.hpp"
+#include "gameplay/skills/spec.hpp"
 
 namespace d2x {
 ItemInstance RemoteUiClients::Impl::itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
@@ -136,7 +138,7 @@ std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::calculateCombatEqui
         std::map<int,int> baseRanks;
         if(!actor.hireling) for(const auto &[id,rank]:session.read().world.playerBaseSkills) baseRanks.emplace(id,rank);
         int concentration=0;
-        int smiteMinimum=0,smiteMaximum=0;
+        int smiteMinimum=0,smiteMaximum=0,shieldDefensePercent=0;
         for(const auto &[id,list]:observed->second.states) {
             (void)id;
             if(list.name=="concentration") for(const auto &entry:list.stats) for(const auto &cost:data.itemStats)
@@ -155,14 +157,34 @@ std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::calculateCombatEqui
                     SkillDescriptionInput input{skill,rank,baseRanks,ranks,values};input.baseRanksComplete=true;
                     const auto bonus=SkillDescriptionValues(*data.skills.descriptions,input,source->second).parameter("clc1");
                     if(!bonus) return {};
-                    stateStats.push_back({"item_armor_percent","item_armor_percent",*bonus,0,*bonus});
+                    shieldDefensePercent=*bonus;
                     const auto smite=SkillDescriptionValues(*data.skills.descriptions,input,source->second).physicalDamage();
                     if(!smite.minimum || !smite.maximum) return {};
                     smiteMinimum=*smite.minimum;smiteMaximum=*smite.maximum;
                 }
             }
         }
-        auto result=projectCombatEquipment(data,std::move(actor),equipped,charms,stateStats,ranks,baseRanks,states,accounted,defense,rating,minimum,maximum);
+        auto result=projectCombatEquipment(data,std::move(actor),equipped,charms,stateStats,ranks,baseRanks,states,accounted,defense,rating,minimum,maximum,shieldDefensePercent);
+        if(result.kick && data.nativeStats) for(const auto &[id,list]:observed->second.states) {
+            if(const auto state=data.states.find(list.name);state!=data.states.end()) {
+                if(state->second.damageRed) result.kick->damageColor=1;
+                else if(state->second.damageBlue && !result.kick->damageColor) result.kick->damageColor=3;
+                if(state->second.attackRed) result.kick->ratingColor=1;
+                else if(state->second.attackBlue && !result.kick->ratingColor) result.kick->ratingColor=3;
+            }
+            const auto value=[&](int stat) {
+                const auto found=std::find_if(list.stats.begin(),list.stats.end(),[&](const auto &entry){return entry.id==stat && !entry.parameter;});
+                return found==list.stats.end()?0:int(found->value);
+            };
+            const int skill=value(data.nativeStats->names.at("modifierlist_skill"));
+            const int rank=value(data.nativeStats->names.at("modifierlist_level"));
+            const auto *record=data.skills.find(skill);
+            if(rank<=0 || !record || !record->spell || !record->spell->assassin) continue;
+            const auto &program=*record->spell->assassin;
+            if(id!=program.state.id || program.chargeStat<0) continue;
+            const int count=value(program.chargeStat);
+            if(count>0) result.kick->charges.push_back({skill,rank,count,program.progressiveDamage});
+        }
         result.concentrationDamagePercent=concentration;
         result.modifiers.combat.smiteMinimum+=smiteMinimum;result.modifiers.combat.smiteMaximum+=smiteMaximum;
         return result;

@@ -286,7 +286,8 @@ void loadBarbarianSkills(ClassicData &data, Archives &archives) {
     const auto berserkRow=named(skills,"Berserk");formula(skills,berserkRow,"calc1","ln12+(skill('Howl'.blvl) + skill('Shout'.blvl))*par8");
     formula(skills,berserkRow,"calc2","par4-min(((110*lvl)/(lvl+6)*(par4-par3)/100),(par4-par3))");formula(skills,berserkRow,"calc4","100");formula(skills,berserkRow,"aurastatcalc2","-100");
     auto berserk=base(skills,berserkRow);berserk.effect=SkillBehavior::WeaponProjectile;berserk.weapon=WeaponSkillSpec{};
-    auto &raging=*berserk.weapon;raging.requiredType=skills.value(berserkRow,"itypea1");raging.interruptible=false;raging.magicConversionPercent=100;
+    auto &raging=*berserk.weapon;raging.requiredType=skills.value(berserkRow,"itypea1");
+    raging.interruptible=required(skills,berserkRow,"interrupt")!=0;raging.magicConversionPercent=100;
     raging.damagePercent=required(skills,berserkRow,"Param1");raging.damagePerLevel=required(skills,berserkRow,"Param2");
     raging.attackRating=required(skills,berserkRow,"ToHit");raging.attackRatingPerLevel=required(skills,berserkRow,"LevToHit");
     for(const auto name:{"Howl","Shout"}) raging.damageSynergies.emplace(required(skills,named(skills,name),"Id"),required(skills,berserkRow,"Param8"));

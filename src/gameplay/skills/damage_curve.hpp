@@ -11,6 +11,7 @@ int64_t skillLevelBonus(int rank, const std::array<int, 5> &steps);
 int64_t skillDurationBonus(int rank, const std::array<int, 3> &steps);
 // D2Common SKILLS_GetManaCosts / GetElementalLength. Values are native 8-bit fixed mana and 25 Hz frames.
 int64_t skillManaCostFixed(int base, int perLevel, int shift, int rank);
+int32_t skillManaPerSecond(int base, int perLevel, int shift, int rank);
 int64_t skillElementalLength(int base, const std::array<int, 3> &steps, int rank, int64_t bonusPercent = 0);
 int32_t evaluateSkillDamageFixed(const SkillDamageCurve &curve, int rank, int hitShift,
                                 int64_t bonusPercent = 100, int masteryPercent = 0);

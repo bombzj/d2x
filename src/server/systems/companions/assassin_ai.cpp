@@ -18,8 +18,10 @@
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/effects/queries.hpp"
+#include "gameplay/units/distance.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace d2x::server::companions {
@@ -62,16 +64,16 @@ StepStatus System::assassinStep(Companion &pet,TickContext tick) {
             spawn.storedOwner=body->id;
             auto birth=ports_.missiles.prepareNativeBirth(std::span{&spawn,size_t{1}});if(!birth) return isDeferred(birth.status)?StepStatus::Blocked:StepStatus::Complete;
             const auto id=(*birth.value)->first();
-            auto ownerInput=skills::formulaInput(*owner);SkillFormulaValues ownerValues(*owner->rules.skills->formulas,ownerInput);
-            const auto rating=ownerValues.stat("tohit");
-            if(!rating) throw std::logic_error("Missing native blade creeper owner attack rating");
+            const auto ownerInput=skills::formulaInput(*owner);
+            const auto rating=owner->rules.skills->pd2?nativeStatValue(*ownerInput.stats,*ownerInput.statRules,"tohit"):
+                owner->totals.character.baseAttackRating;
             const int percent=nativeStatValue(*ownerInput.stats,*ownerInput.statRules,"item_tohit_percent")+owner->totals.equipment.weapons[0].meleeMastery[0];
             auto publication=std::make_shared<effects::AuraUnitPublication>();
             if(body->revision==UINT64_MAX) return StepStatus::Blocked;
             auto candidate=*body;++candidate.revision;
             std::map<EntityId,monsters::Actor> candidates;candidates.emplace(body->id,std::move(candidate));
             ports_.effects.stageAuraActors(*publication,std::move(candidates),0);
-            ports_.effects.stageAuraSource(*publication,body->id,[rating=*rating,percent,tick=tick.tick](monsters::Actor &unit,const CombatEffectSet &states,const effects::AuraUnitPublication::SourceMutation &mutation) {
+            ports_.effects.stageAuraSource(*publication,body->id,[rating,percent,tick=tick.tick](monsters::Actor &unit,const CombatEffectSet &states,const effects::AuraUnitPublication::SourceMutation &mutation) {
                 attributes::MonsterResourceTrace resources(unit,tick,&states);resources.sample(states,true);
                 resources.observeSourceWrites([&](StatValue write,EntityId item,const StatSnapshot &stats,std::shared_ptr<const StatList> root) {
                     attributes::dispatchMonsterItemAura(unit,resources,write,item,stats,std::move(root),mutation);
@@ -117,10 +119,18 @@ StepStatus System::assassinStep(Companion &pet,TickContext tick) {
         const int maximum=nativeAdd(row.number("param3"),nativeMultiply(rankOf(primary)-1,row.number("param4")))/2;
         const auto corpses=ports_.effects.nativeAuraCandidateRecipients({body->id,body->area,10,4098,false,
             target->position+area.definition.origin,effects::NativeAuraTargetMode::TargetRange,tick.tick},body);
+        const bool pd2=owner->rules.skills->pd2;
+        const auto subtile=[](float coordinate){return int(std::floor(coordinate+.5f));};
         for(const auto candidate:corpses) {
-            if(!ports_.monsters.consumableCorpse(candidate,body->area,tick.tick)) continue;
+            if(!(pd2?ports_.monsters.consumableCorpse(candidate,body->area,tick.tick):ports_.monsters.nativeUsableCorpse(candidate,tick.tick))) continue;
             const auto *corpse=ports_.monsters.find(candidate);
-            if(corpse && candidate!=pet.lastCorpse && missileDistance(corpse->position,target->position)<maximum) {victim=candidate;mode=9;}
+            if(corpse && candidate!=pet.lastCorpse) {
+                const auto at=corpse->position+ports_.areas.at(corpse->area).definition.origin-area.definition.origin;
+                const int distance=pd2?missileDistance(at,target->position):
+                    unitDistanceWithSizes(subtile(at.x),subtile(at.y),corpse->rule.size,
+                        subtile(target->position.x),subtile(target->position.y),target->size);
+                if(distance<maximum) {victim=candidate;mode=9;}
+            }
             break; // sub_6FD15210 returns the first matching corpse only.
         }
         if(victim==target->unit.id) {skill=program.skills[1];mode=14;}

@@ -64,6 +64,7 @@ SkillMetadata loadSkillEligibilityMetadata(const DataTable &table, size_t row, c
     result.inGame = table.number(row, "InGame").value_or(0) != 0;
     result.aura = table.number(row, "aura").value_or(0) != 0;
     result.noAmmo = table.number(row, "noammo").value_or(0) != 0;
+    result.attackNoMana = table.value(row, "AttackNoMana") == "1";
     result.startMana = table.number(row, "startmana").value_or(0);
     result.serverDoFunction = table.number(row, "srvdofunc").value_or(0);
     for (size_t hand = 0; hand < 2; ++hand) {

@@ -990,7 +990,7 @@ void RealmSession::clear_local_used_skill(uint64_t revision,OnlineIntentContext 
         player->second.usedSkill.reset();
     world.localUsedSkill.reset();impl_->snapshotDirty=true;
 }
-bool RealmSession::submit_combat(OnlineCombatCommand command) {
+bool RealmSession::submit_combat(OnlineCombatCommand command, std::optional<uint64_t> skillDelayStateSequence) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
@@ -1049,6 +1049,12 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
         request.beforePoints = world.playerAttributes.at(4);
         out.u8(0x3A); out.u16(uint16_t(command.attribute) | uint16_t((command.count - 1) << 8)); break;
     case Action::Cast: {
+        if(skillDelayStateSequence) {
+            const auto player=world.units.find({0,*p.view.load.playerUnitId});
+            if(player==world.units.end() || player->second.stateSequence!=*skillDelayStateSequence) {
+                p.error(OnlineErrorKind::Input, "Player states changed before the cast could be sent"); return false;
+            }
+        }
         if (command.point.has_value() == command.target.has_value()) {
             p.error(OnlineErrorKind::Input, "Cast needs exactly one coordinate or assigned unit"); return false;
         }

@@ -173,7 +173,7 @@ void LightingView::resetEnvironment() {
     eclipse_ = false;
     denIntensity_.reset();
     sanctumIntensity_.reset();
-    fadeLevel_=-1;fadeFactor_=1;
+    fadeLevel_=-1;fadeFactor_=1;fadeNativeRooms_=false;
 }
 void LightingView::resetSources() { *sources_ = {}; }
 int LightingView::overlayRadius(uint64_t owner, int overlay, float startedAt, int initial, int target) {
@@ -196,10 +196,11 @@ int LightingView::overlayRadius(uint64_t owner, int overlay, float startedAt, in
 void LightingView::finishSources() {
     std::erase_if(sources_->overlays,[&](const auto &entry) { return entry.second.seen != sources_->visit; });
 }
-void LightingView::beginAmbientFade(int level,int down,int hold,int up) {
+void LightingView::beginAmbientFade(int level,int down,int hold,int up,bool useNativeRoomPriority) {
     // D2Client 52450 / 52F10. Unit lights keep their own intensity.
     fadeLevel_=level;fadeFrame_=fadeAngle_=0;fadeFactor_=1;
     fadeDown_=down;fadeRise_=up;fadeTotal_=down+hold+up;
+    fadeNativeRooms_=useNativeRoomPriority;
 }
 void LightingView::setEclipse(bool active) {
     if (eclipse_ == active) return;
@@ -211,6 +212,7 @@ void LightingView::setEclipse(bool active) {
 }
 void LightingView::advance(float dt, const LevelRecord &level) {
     sources_->begin(dt);
+    if(fadeNativeRooms_ && fadeLevel_!=level.id) {fadeLevel_=-1;fadeFactor_=1;}
     if (dt <= 0 || level.act < 0 || level.act >= int(environments_.size())) return;
     frameRemainder_ += dt * 25.f;
     const int frames = int(frameRemainder_ + .000001f);
@@ -220,13 +222,13 @@ void LightingView::advance(float dt, const LevelRecord &level) {
     const int rate = eclipse ? 4 : timeRate;
     const auto &cycles = eclipse ? eclipseCycles : level.act == 3 ? actFourCycles : normalCycles;
     for (int frame = 0; frame < frames; ++frame) {
-        if(fadeLevel_!=level.id || fadeFrame_>fadeTotal_) {fadeLevel_=-1;fadeFactor_=1;}
+        if(!fadeNativeRooms_ && (fadeLevel_!=level.id || fadeFrame_>fadeTotal_)) {fadeLevel_=-1;fadeFactor_=1;}
         if(fadeLevel_>=0) {
             if(fadeFrame_<fadeDown_ || fadeFrame_>=fadeTotal_-fadeRise_) {
                 fadeFactor_=std::clamp(float(std::cos(double(fadeAngle_)*3.14159265358979323846/256.0)),0.f,1.f);
                 fadeAngle_=fadeFrame_<fadeDown_?fadeFrame_*128/fadeDown_:128-(fadeFrame_-fadeTotal_+fadeRise_)*128/fadeRise_;
             } else fadeFactor_=0;
-            ++fadeFrame_;
+            if(++fadeFrame_>fadeTotal_ && fadeNativeRooms_) {fadeLevel_=-1;fadeFactor_=1;}
         }
         // GAME_UpdateProgress -> GAME_UpdateEnvironment: one update per 25 Hz frame.
         ++environment.ticks;
@@ -281,25 +283,28 @@ void LightingView::prepare(const Grid &grid, const LevelRecord &level, Vec playe
     resizeMask(endX - originX + 1, endY - originY + 1);
     if (!lightMap_.id) return;
     origin_ = {float(originX), float(originY)};
-    // A9A20: a nonzero room RGB selects the table, including intensity zero.
-    // An active fade's cached ambient applies to the near rooms too; unit lights
-    // remain independent. Preserve intensity until the palette/shader boundary.
-    const auto roomAmbient = [&](const LevelRecord &roomLevel) {
-        const auto &source = fadeLevel_ >= 0 ? level : roomLevel;
-        const auto &environment = environments_[size_t(std::clamp(source.act, 0, 4))];
-        const bool tableLight = source.lightRed || source.lightGreen || source.lightBlue;
-        Color result = tableLight
-            ? Color{uint8_t(source.lightRed), uint8_t(source.lightGreen), uint8_t(source.lightBlue),
-                    uint8_t(std::clamp(source.lightIntensity, 0, 255))}
+    const auto baseAmbient = [&](const LevelRecord &roomLevel) {
+        const auto &environment = environments_[size_t(std::clamp(roomLevel.act, 0, 4))];
+        const bool tableLight = roomLevel.lightRed || roomLevel.lightGreen || roomLevel.lightBlue;
+        return tableLight
+            ? Color{uint8_t(roomLevel.lightRed), uint8_t(roomLevel.lightGreen), uint8_t(roomLevel.lightBlue),
+                    uint8_t(std::clamp(roomLevel.lightIntensity, 0, 255))}
             : Color{environment.color.r, environment.color.g, environment.color.b,
                     uint8_t(std::clamp(environment.intensity, 0, 255))};
-        // A9A9A -> 524D0: Den overrides room-table light before the
-        // normal fallback. Completion removes this override, not unit lights.
-        if(source.id==8 && denIntensity_)
-            result={255,64,48,uint8_t(std::clamp(*denIntensity_,0,255))};
-        if((source.id==107 || source.id==108) && sanctumIntensity_)
-            result={255,64,48,uint8_t(std::clamp(*sanctumIntensity_,0,255))};
-        result.a = uint8_t(float(result.a) * fadeFactor_);
+    };
+    // 52F10 obtains the fade base from the observer's room with A9A20's
+    // override selection disabled. A9C90 then reads each room independently.
+    auto faded=baseAmbient(level);
+    faded.a=uint8_t(double(faded.a)*fadeFactor_);
+    const auto roomAmbient = [&](const LevelRecord &roomLevel) {
+        const auto &source=fadeLevel_>=0 && !fadeNativeRooms_?level:roomLevel;
+        const bool den=source.id==8,sanctum=source.id==107 || source.id==108;
+        if(fadeNativeRooms_ && !den && !sanctum && fadeLevel_>=0 && fadeFrame_>0 && (faded.r || faded.g || faded.b))
+            return faded;
+        auto result=baseAmbient(source);
+        const auto intensity=den?denIntensity_:sanctum?sanctumIntensity_:std::optional<int>{};
+        if(intensity) result={255,64,48,uint8_t(std::clamp(*intensity,0,255))};
+        if(!fadeNativeRooms_) result.a=uint8_t(float(result.a)*fadeFactor_);
         return result;
     };
     const Color ambient = roomAmbient(level);

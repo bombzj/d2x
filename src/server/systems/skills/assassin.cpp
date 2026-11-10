@@ -26,6 +26,8 @@ DomainResult<bool> System::startBladeFury(Release &pending,const ActorContext &a
     if(!caster || !caster->programs()) return {DomainStatus::InvalidActor,{}};
     const int state=caster->programs()->formulas->infernoState;
     const auto states=ports_.effects.unitEffects(caster->id());const bool warm=states && states->findState(state);
+    if(!warm && caster->player && caster->player->persistent.player.mana<pending.skill.startMana)
+        return {DomainStatus::Unavailable,{}};
     auto cast=pending.skill;CombatEffectSpec effect;
     effect.state=caster->player?caster->player->rules.character->states->at(state):caster->monster->rule.states->at(state);
     effect.source={CombatEffectSource::Skill,caster->id(),cast.sourceId,cast.rank};
@@ -80,15 +82,16 @@ DomainStatus System::activateAssassin(Release &pending,const ActorContext &actor
     }
     if(program.program==AssassinProgram::FireBlast || program.program==AssassinProgram::ShockWeb) {
         const bool shock=program.program==AssassinProgram::ShockWeb;
-        const int count=shock?std::max(formula("prgcalc1"),1):1;
+        const int count=shock?formula("prgcalc1"):1;
+        if(count<=0) return DomainStatus::Unavailable;
         if(count>512) return DomainStatus::Capacity;
         const auto radius=shock?formula("aurarangecalc"):0;
         std::vector<missiles::NativeSpawn> births;births.reserve(size_t(count));
         for(int index=0;index<count;++index) {
             missiles::NativeSpawn spawn{actor.actor,actor.area,actor.areaGeneration,actor.tick,
                 caster->position(),target,pending.skill.missileId,pending.skill.sourceId,pending.skill.rank};
+            spawn.distanceCountdown=shock || !pending.skill.pd2;
             if(shock) {
-                spawn.distanceCountdown=true;
                 if(!index) spawn.ownerLowSeed=uint32_t(int32_t(target.x+ports_.areas.at(actor.area).definition.origin.x));
                 if(count>1 && radius>=2) {spawn.scatterRadius=radius;spawn.minimumTargetDistanceSquared=4;}
             }

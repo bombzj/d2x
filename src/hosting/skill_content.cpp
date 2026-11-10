@@ -162,6 +162,11 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     for(const auto &[key,animation]:data.skills.recoveryTimings) if(key.starts_with(character.appearance))
         prepared->recoveryAnimations.emplace(key.substr(character.appearance.size()),AnimationTiming{animation.frames,animation.speed});
     prepared->shapes=data.skills.shapes;
+    for(const auto &[name,state]:data.states) {
+        (void)name;
+        if(state.restrictSkills) prepared->restrictedSkillStates.insert(state.definition.id);
+        if(state.disguise) prepared->disguiseSkillStates.insert(state.definition.id);
+    }
     const auto &skillTable=data.tables.at("skills");
     for(size_t row=0;row<skillTable.rows().size();++row) if(const auto id=skillTable.number(row,"Id")) {
         SkillShapeRestriction restriction;restriction.mode=skillTable.number(row,"restrict").value_or(0);

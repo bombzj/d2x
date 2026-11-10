@@ -62,6 +62,10 @@ DomainResult<transactions::Plan> System::weaponCost(const ActorContext &actor,co
         if(wear && impale && base && base->maxStack>1 && item.quantity) {
             --item.quantity;++item.revision;
             const bool remove=!item.quantity && !retainsEmptyStack(item,*base,values.stats);
+            if(!remove && item.durability!=values.maximumDurability) {
+                item.durability=values.maximumDurability;
+                edit.changes.push_back({item.id,item.revision,ItemChangeKind::DurabilityChanged,item.location,item.location,item.quantity});
+            }
             edit.changes.push_back({item.id,item.revision,remove?ItemChangeKind::Removed:ItemChangeKind::QuantityChanged,item.location,
                 remove?std::nullopt:std::optional{item.location},item.quantity});
             if(remove) edit.inventory.items.erase(item.id);

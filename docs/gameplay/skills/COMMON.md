@@ -8,11 +8,15 @@
 
 `skills.txt.delay`按当前有效等级求值，单位为25Hz逻辑帧；不受FCR缩短，也不同于飞弹命中NextDelay。D2MOO `Skills.cpp::D2GAME_SKILLS_SetDelay_6FD11C00`安装／续期`STATE_SKILLDELAY`并登记移除事件，`D2Skills.cpp::SKILLS_CheckSkillDelay`在该状态期间阻止所有delay>0的技能；delay=0仍可在动作允许时施放。
 
-原版模式的`skills::release`成功释放后除保留权威截止帧，还通过`effects::apply`发布当前MPQ的skilldelay状态并定时移除；发布背压只续做状态提交，不重放飞弹、伤害或消耗。移动、动作结束及回避动作不清除截止帧。客户端从真实单位状态和delay公式投影`usableNow`／图标红色，`RemoteCombat::submit`同步校验，玩家与AI共用。此前服务端已有截止帧但没有发布此状态，客户端可继续预测被服务端拒绝的施法，画面频率不能直接当作真实伤害频率。
+原版模式的`skills::release`成功释放后除保留权威截止帧，还通过`effects::apply`发布当前MPQ的`skilldelay`状态并定时移除。发布背压只续做状态提交，移动、动作结束及回避动作也不清除截止帧。
 
-AI通过`RemoteCombat::skillDelayFrames／skillDelayActive`与提交入口共用公式及状态查询；此前仅对识别到的冷却豁免备用降级仍不充分，81412075原版Host日志继续出现usableNow=false后换技能。现改为出城前仅按固定资格选择一个攻击技能，出城后暂不可用也不切备用，正延迟等待不计局部无进展预算。`nextCast`从请求起算，仍不能替代服务端成功释放后的共享冷却。
+本地客户端按动画动作帧执行 CltDo。1.13c D2Client `197D0 → A3000 → A2C90` 直接执行本地技能回调，`A2EDE–A2F3D` 在成功后将本地短锁设为 `min(delay,12)` 帧。`72080` 在基础技能状态为可用时叠加这道锁，短锁期间零延迟技能也受限。`skilldelay` 的 States setfunc19／remfunc12 均指向 `71FA0`，收到对应状态通知时清短锁。服务端 `skilldelay` 本身只限制正延迟技能，客户端图标、普通输入和 AI 共用这两层判定，正延迟请求入队前复验副本状态序号。1.14d 的同类短锁见 d2decomped `docs/research/re/skills.md`。
 
-状态发布／投影及公共查询已纳入此前构建；本次出城锁定和冷却计时修复未构建／运行。待验冷却结束后继续主技能、长冷却、换目标／换野外区域不换技能、回城后重新按等级选候选。序列技能门槛及全部多阶段回调尚未逐项认证；PD2规则另见[差异基线](../../pd2/SKILLS.md#当前实现入口)。
+已起手的 LoD 通用坐标弹体（无 `SrvDoFunc` 且有 `SrvMissile`）在释放帧取目标当前坐标，即使目标已进入 DT／DD。D2Client `A1340 → A15C0` 和 D2Game `9FA30 → A28F0` 都通过动态路径取目标坐标，不查目标生命。原路径查不到单位时取路径首点，D2X 当前回退到已保留的瞄点。起手资格及命中对活目标的检查仍由各自入口执行。
+
+AI通过`RemoteCombat::skillDelayFrames／skillDelayActive`与提交入口共用公式及状态查询，直接攻击等冷却结束后才选技及提交。出城时选择主技能，正延迟等待不计局部无进展预算。`nextCast`从请求起算，服务端成功释放后的共享冷却以状态为准。没有正延迟的技能仍可按普通输入条件提交。
+
+待实机核对修复后的客户端释放确认、原版Host上的长冷却、序列和多阶段回调。PD2规则另见[差异基线](../../pd2/SKILLS.md#当前实现入口)。
 
 ## 技能执行路径源码核对
 
@@ -149,7 +153,8 @@ AI通过`RemoteCombat::skillDelayFrames／skillDelayActive`与提交入口共用
 | 计算入口 | 必须保留的语义 |
 | --- | --- |
 | `resolve`、`rank_sources`、`rank_bonus`、`passive` | 基础等级用于协同，来源的有效等级用于施放；安装属性贡献仍归服务端 |
-| `damage_curve` | 原法力定点曲线与MinMana消耗分开；技能元素伤害先HitShift再协同，独立弹体先协同再HitShift，随后应用支配；8.8最小值≤256且首级增量为0时跳过协同 |
+| `damage_curve` | 原法力定点曲线与MinMana消耗分开。Mana／USMC／MPS共用原有符号32位运算，MPS在ManaShift前乘25除2，整点参数末尾算术右移8位。技能元素伤害先HitShift再协同，物理技能和独立弹体先协同再HitShift，随后应用支配。8.8最小值≤256且首级增量为0时跳过协同 |
+| `nativeSkillUseState`、`nativeSkillShapeAllowed` | 原版选择器按禁用、等级、光环／被动、数量／装备、法力、形态、起手法力、物品实际充能、共享延迟的顺序投影。已知技能状态与可用性共用事实，未知输入保留未知原因。形态门槛在客户端和原版宿主共用，动画配置独立 |
 | `cast_timing`、`amazon_sequence`、`weapon_volley` | 原AnimData事件、SC／seq6／seq12及武器序列／回滚；CAST按整数求min(100+120×FCR/(120+FCR),175)，不叠加OtherAnimationRate；Inferno seq6固定速率 |
 | `projectile_path`、`amazon_missile`、combat几何 | 速度、格点、环射／扇形、remaining调度、引导／连锁／分裂等纯值；各端持有候选、时钟、碰撞及创建队列 |
 | `weapon_damage`、`poison`、`avoidance` | 武器六通道／转换、显式随机、毒替换及近远程／移动回避；不因纯函数可用就授权客户端结算 |
@@ -164,7 +169,7 @@ AI通过`RemoteCombat::skillDelayFrames／skillDelayActive`与提交入口共用
 | --- | --- |
 | `rank_bonus::skillRankBonus`、`skillDiminishingBonus`、`skillDiminishingRatioBonus` | 亚马逊被动、圣骑士光环／盾／转换、死灵诅咒／石魔、野蛮人被动／Frenzy／跳跃／尸体搜索／Berserk共用曲线。固定原1.13c D2Common RVA4DC30／ordinal10115确认先截断110×等级/(等级+6)，正等级包装现共用nativeSkillDiminishing；公式的dm78／飞弹等级零分支直接调用原始算子。两条旧函数名只保留调用兼容，不再维护不同数值规则；完整技能流程仍待原版对齐 |
 | `skillRank`、`skillRankSum`、`skillSynergyBonus` | 女巫甲胄／伤害、圣骑士光环／武器、死灵白骨装甲、野蛮人呐喊／武器等统一查询、协同等级求和与加权求和；调用者仍区分基础等级与有效等级 |
-| `damage_curve::skillDurationBonus` | 技能元素长度与骷髅法师弹体长度共用8／16级分段。技能长度入口保留1–255资格，法师内部合成等级不强加这个上限；技能／弹体伤害的HitShift和协同顺序不合并 |
+| `damage_curve::skillLevelBonus`、`skillDurationBonus` | 原1.13c D2Common RVA 4DDB0用2–8、9–16、17–22、23–28、29以上五段乘法和32位相加。技能元素长度与骷髅法师弹体长度共用8／16级分段，法师内部合成等级保留独立范围。原版技能元素最小／最大伤害（5052B／50424）、物理最小／最大伤害（520DD／521EA）、元素时长（4E9EC）及弹体曲线（6A496／6A566／6A636／6B416）使用RVA 11E0比例函数。执行与描述保留比例函数的宽值分支和各自的HitShift顺序 |
 | `evaluateBarbarianPassive`、`evaluateNecromancerPassive` | 六武器精通及四项野蛮人被动的提示／实际贡献，骷髅支配／石魔支配／召唤抵抗的提示／召唤求值读取同一纯结果；死灵提示不再扫描Skills表。参数仍由当前MPQ准备，属性安装与宠物创建由服务端完成 |
 | `attack_timing::animationFrameTicks`、`weaponSequenceTick`、`weaponSequenceHitTicks` | 施法序列、Jab／Impale、双挥／Frenzy／双投的服务端命中与客户端动画共用8.8时钟及事件遍历。施法释放允许第0帧，武器事件仍至少第1 tick；序列内容、手位、动作及Leap Attack阶段保持独立 |
 | `targeting::withinSkillArea` | Static Field、Telekinesis、尸爆／诅咒，连锁／范围／毒云弹体，人物／佣兵／精英光环共用几何。接口显式区分坐标截断、向下取整和连续距离；半径、房间活动、阵营、候选顺序及碰撞仍由调用者提供 |
@@ -178,6 +183,8 @@ AI通过`RemoteCombat::skillDelayFrames／skillDelayActive`与提交入口共用
 公共抽取本身不改变规则语义或D2S v96格式；全部职业、等级、来源及多人组合仍须按具体消费者核对。原函数职责与共享边界见[公共层](../../architecture/REFERENCE_DESIGN.md#6-d2moo的公共层究竟共用什么)，第一幕怪物接入与缺口归[第一幕](../monsters/ACT1.md)。
 
 具体调用点和原版例外在职业逐项台账；数值／模块证据见参考设计的[女巫核对](../../architecture/REFERENCE_DESIGN.md#女巫公共层的原版核对)及[亚马逊核对](../../architecture/REFERENCE_DESIGN.md#亚马逊公共层的原版核对)。
+
+d2decomp的1.14d技能使用状态与原1.13c D2Common RVA 52340／ordinal10787对照。D2Game坐标／单位输入在RVA CDF64–CDFA9／CE63D–CE683读取该状态，只有NoMana、NoQuantity或ShapeRestricted且Skills.AttackNoMana置位时才复验并执行普通攻击。原版宿主在输入入口用实际装备、原始法力或血魔法生命、形态、起手法力和延迟进行该判定，等待近战靠近时保留本次已选的回退。客户端从已知状态作同一判定，普通攻击预测只替换本次动作与目标规则，技能栏选择和发送包继续使用原手位。缺少本人状态或装备明细时保留未知，由宿主裁决。D2Game RVA 9EC80的动作阶段法力检查独立，扣费仍沿Blood Mana及MinMana流程。
 
 ### 诅咒、祭坛与战吼的公共生命周期
 

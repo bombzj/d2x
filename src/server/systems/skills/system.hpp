@@ -18,6 +18,7 @@
 namespace d2x { struct SkillCastSpec; struct MissileCollisionRule; enum class SkillBehavior; }
 namespace d2x::server { struct MonsterAttackRule; struct AttackFact; }
 namespace d2x::server::reactions { class ItemTriggers; }
+namespace d2x::server::missiles { struct NativeSpawn; }
 namespace d2x::server::skills {
 // Internal AI/companion action, not a player identity supplied over the wire.
 using CastRequest = actions::MonsterCastRequest;
@@ -100,7 +101,8 @@ class System {
     DomainStatus activateAssassin(Release &, const ActorContext &, Vec);
     DomainStatus activateDruid(Release &, const ActorContext &, Vec);
     DomainStatus startDruidPeriodic(Release &,const ActorContext &);
-    DomainResult<bool> startArctic(Release &,const ActorContext &,std::span<const DomainFact> facts={});
+    DomainResult<bool> startInferno(Release &,const ActorContext &,std::span<const DomainFact> facts={},std::optional<Vec> infernoTarget={});
+    missiles::NativeSpawn infernoFlame(const Release &,const ActorContext &,Vec) const;
     DomainResult<> startDruidMelee(Release &,const ActorContext &,const MonsterAttackRule *program=nullptr);
     DomainResult<> startWeaponMelee(Release &,const ActorContext &,const MonsterAttackRule *program=nullptr);
     DomainStatus drainWeaponMelee(Release &,const ActorContext &);
@@ -112,7 +114,7 @@ class System {
     DomainStatus allocateAssassinKick(Release &,const ActorContext &,bool held,bool knockback);
     DomainStatus activateUnsupported(Release &, const ActorContext &, Vec);
     std::optional<Vec> unitPosition(const ActorContext &, UnitTarget, SkillBehavior) const;
-    DomainResult<> attack(const ActorContext &, const Request &, int selectedOverride = -1);
+    DomainResult<> attack(const ActorContext &, const Request &, int selectedOverride = -1,bool *fallback=nullptr);
   public:
     explicit System(Ports ports);
     ~System();

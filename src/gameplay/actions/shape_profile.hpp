@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -16,4 +17,14 @@ struct ShapeProfile {
     std::map<uint8_t,ShapeAnimation> animations;
 };
 struct SkillShapeRestriction { int mode{}; std::array<int,3> states{-1,-1,-1}; };
+inline bool nativeSkillShapeAllowed(const SkillShapeRestriction &rule,bool restricted,const std::set<int> &active) {
+    if(rule.mode==0) return !restricted;
+    if(rule.mode!=2) return true;
+    if(!restricted) return false;
+    for(const int state:rule.states) {
+        if(state<0) break;
+        if(active.contains(state)) return true;
+    }
+    return false;
+}
 }

@@ -463,18 +463,6 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
         if(fresh) entry->second=evidenceRank(*p);
         preferredRank=std::min(preferredRank,entry->second);
     }
-    // A structural retry cannot reach an explicit empty approach set or an
-    // unknown/non-standing goal. Dynamic blockers must not decide this test.
-    const auto structuralGoal=[&] {
-        if(!goal) return false;
-        if(approaches) return std::any_of(approaches->begin(),approaches->end(),
-            [&](const auto at){return m.stand(at.first,at.second);});
-        const int radius=int(std::ceil(vicinity));
-        for(int y=std::max(m.y,int(goal->y)-radius);y<=std::min(m.y+m.height-1,int(goal->y)+radius);++y)
-            for(int x=std::max(m.x,int(goal->x)-radius);x<=std::min(m.x+m.width-1,int(goal->x)+radius);++x)
-                if((Vec{float(x),float(y)}-*goal).length()<=vicinity && m.stand(x,y)) return true;
-        return false;
-    };
     std::set<int> goalCells;
     if(approaches) for(const auto &at:*approaches)
         if(stand(at.first,at.second)) goalCells.insert(index(at));
@@ -630,12 +618,10 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
     }
     timing.next(profile?&profile->finishMs:nullptr);
     if(chosen<0) return unavailable(Plan::Outcome::Unreachable);
-    if(selected && execution && structuralGoal()) {
-        timing.next(nullptr);if(profile) ++profile->structuralCalls;
-        const auto structural=plan(m,from,range,restricted,goal,vicinity,committed,exploreGoal,approaches,nullptr,true,preferredDirection,profile);
-        timing.next(profile?&profile->finishMs:nullptr);
-        if(structural.outcome==Plan::Outcome::Goal) {result.outcome=Plan::Outcome::ExecutionBlocked;return result;}
-    }
+    // A reachable observation passage is an executable result. A route in
+    // terrain memory may depend on unloaded cast landings/room adjacency;
+    // it cannot veto the passage that lets execution observe them again.
+    // Structural classification belongs only to the no-route case above.
     result.outcome=selected?Plan::Outcome::Passage:Plan::Outcome::Goal;
     result.cost=costs[size_t(chosen)];
     if(selected) {result.passage=selected->id;result.evidence=selected->evidence;}

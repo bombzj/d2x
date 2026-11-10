@@ -236,11 +236,11 @@ void RealmSession::Impl::sent(ByteStream &stream, Bytes bytes) {
     if (&stream == &gs) compatibility.validateClientPacket(bytes);
     const auto byteCount = bytes.size();
     const size_t idOffset = &stream == &gs ? 0 : &stream == &sid ? 1 : 2;
-    const auto id = bytes.size() > idOffset ? std::optional<uint8_t>{bytes[idOffset]} : std::nullopt;
+    const int id = bytes.size() > idOffset ? int(bytes[idOffset]) : -1;
     Bytes observed;
     if (&stream == &gs && gameRequestObserver) observed = bytes;
     Bytes navigation;
-    if (&stream == &gs && id && ((*id >= 1 && *id <= 4) || *id == 0x13 || *id == 0x49))
+    if (&stream == &gs && ((id >= 1 && id <= 4) || id == 0x13 || id == 0x49))
         navigation = bytes;
     if (!navigation.empty() && duplicateNavigation(navigation)) return;
     if (!stream.send(std::move(bytes)))
@@ -248,9 +248,13 @@ void RealmSession::Impl::sent(ByteStream &stream, Bytes bytes) {
     if (&stream == &gs) {
         lastNavigationPacket = std::move(navigation);
         if (!lastNavigationPacket.empty()) lastNavigationSent = Clock::now();
+        // D2Client advances the local missile seed on skill input.
+        if (compatibility.profile == ClientProfile::Lod113c &&
+            ((id >= 0x05 && id <= 0x0A) || (id >= 0x0C && id <= 0x11)))
+            ++view.world.playerPierceIndex;
     }
     auto &counts = &stream == &sid ? view.sidProtocol : &stream == &mcp ? view.mcpProtocol : view.gameProtocol;
-    if (id) ++counts.sent[*id];
+    if (id >= 0) ++counts.sent[size_t(id)];
     counts.sentBytes += byteCount;
     changed();
     if (!observed.empty()) gameRequestObserver(view.gameGeneration, observed);

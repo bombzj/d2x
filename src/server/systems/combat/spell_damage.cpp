@@ -259,7 +259,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 state_.hitClassCursor=hitClass;
                 continue;
             }
-            if(monsterSource && (!owner || (impact.monsterHit && !impact.weapon))) {
+            if(monsterSource && (!owner || (impact.monsterHit && !impact.weapon && !impact.nativeAura))) {
                 if(!participants.canHarm(source,participant)) {++impact.next;continue;}
                 const PlayerState *player=participant.player;
                 const auto *pet=participant.monster;
@@ -277,6 +277,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     if(!*defended.value) {++impact.next;continue;}
                 }
                 MonsterHit rolled=impact.monsterHit.value_or(MonsterHit{});
+                rolled.softHit|=impact.softHit;
                 rolled.coldFrames=std::max(rolled.coldFrames,impact.coldFrames);rolled.poisonFrames=std::max(rolled.poisonFrames,impact.poisonFrames);
                 rolled.stunFrames=std::max(rolled.stunFrames,impact.stunFrames);rolled.knockback=rolled.knockback || impact.knockback;
                 if(!impact.monsterHit) rolled.channels[size_t(impact.type)]=impact.currentDamage();
@@ -303,6 +304,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     execution->channels=rolled.channels;execution->lifeDrain=std::max<int64_t>(0,rolled.lifeDrain);
                     execution->absorbed=received.absorbed;execution->physical=received.channels[0].dealt;
                     execution->cold=rolled.coldFrames;execution->stun=rolled.stunFrames;execution->hitClass=rolled.hitClass;
+                    if(impact.nativeAura) execution->getHit=rolled.getHit;
                     execution->statuses={impact.source,rolled.burn,rolled.burnFrames};
                     if(rolled.channels[5]>0) execution->poison=PoisonApplication{received.channels[5].dealt,rolled.poisonFrames,impact.monsterStates.poison.id};
                     execution->callbacks=ports_.effects.prepareDamageEvents(impact.source,pet->id,execution->physical,execution->amount,!impact.melee,impact.returnFire,tick.tick,impact.reaction);
@@ -363,7 +365,8 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 impact.coldPierce?impact.coldPierce:sourceModifiers.coldPierce,impact.poisonPierce?impact.poisonPierce:sourceModifiers.poisonPierce};
             if(const auto physical=pd2ItemPierce(ports_,impact,source,tick.tick)) {pierce[0]=physical->at(0);pierce[1]=physical->at(1);}
             int64_t physical=0;std::array<int64_t,6> contactChannels{};
-            const auto received=ports_.effects.unitDamageFixed(target->id,scale(amount),impact.type,tick.tick,pierce[size_t(impact.type)]);
+            const bool sanctuary=impact.type==DamageType::Physical && ports_.effects.sanctuaryBypassesResistance(source.id(),*target,tick.tick);
+            const auto received=ports_.effects.unitDamageFixed(target->id,scale(amount),impact.type,tick.tick,pierce[size_t(impact.type)],false,sanctuary);
             amount=received.dealt;absorbed=received.absorbed;
             contactChannels[size_t(impact.type)]=scale(impact.currentDamage());
             const auto cold=impact.coldFrames;
@@ -380,6 +383,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             auto execution=std::make_shared<MonsterContactExecution>();execution->targetIndex=impact.next;execution->target=target->id;
             execution->channels=contactChannels;execution->pierce=pierce;execution->amount=amount;execution->absorbed=absorbed;execution->physical=physical;
             execution->cold=cold;execution->stun=impact.stunFrames;
+            if(impact.nativeAura && impact.monsterHit) execution->getHit=impact.monsterHit->getHit;
             execution->statuses.source=impact.source;
             if(impact.monsterHit) {execution->statuses.burn=impact.monsterHit->burn;execution->statuses.burnFrames=impact.monsterHit->burnFrames;}
             MonsterHit classification;classification.channels=contactChannels;

@@ -200,7 +200,7 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     if(!execution.receptionPrepared) {
         const bool directDrain=!execution.nativeMissile || (caster.monster && !caster.monster->hireling);
         MonsterHit hit;hit.channels=execution.channels;hit.lifeDrain=execution.lifeDrain;hit.mana=execution.manaDrain;hit.stamina=execution.staminaDrain;
-        auto prepared=ports_.effects.prepareUnitReception(execution.target,impact.source,hit,tick.tick,execution.pierce,execution.bypass,execution.sanctuary,directDrain);
+        auto prepared=ports_.effects.prepareUnitReception(execution.target,impact.source,hit,tick.tick,execution.pierce,execution.bypass,directDrain);
         if(!prepared) return prepared.status;
         execution.defense=std::move(*prepared.value);const auto &received=execution.defense->damage;
         execution.amount=received.dealt;execution.absorbed=received.absorbed;

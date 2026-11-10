@@ -285,7 +285,8 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         : evaluatePhysicalSkillDamageFixed({spec.maximumDamage,spec.maximumPerLevel},rank,spec.hitShift,bonus(false)));
     result.arc = spec.arc;
     if (result.arc && spec.effect == SkillBehavior::ChainLightning)
-        result.arc->count = std::max(1, skillRankBonus({spec.arc->count,spec.arc->countPerLevel},rank) / 5);
+        result.arc->count = input.nativeFormulas?calculation("calc1"):
+            skillRankBonus({spec.arc->count,spec.arc->countPerLevel},rank)/5;
     if (result.arc && spec.weapon && spec.weapon->spear && spec.weapon->spear->kind == SpearSkillSpec::Kind::Strike)
         result.arc->count = std::max(1, skillRankBonus({spec.arc->count,spec.arc->countPerLevel},rank));
     result.meteor = spec.meteor;
@@ -392,6 +393,8 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     }
     result.missileId = spec.missileId;
     result.missileCount = std::min(spec.missileCountLimit,skillRankBonus({spec.missileCount,spec.missileCountPerLevel},rank));
+    if(input.nativeFormulas && spec.effect==SkillBehavior::Teeth)
+        result.missileCount=calculation("calc1");
     if (result.weapon && result.weapon->spear && result.weapon->spear->kind == SpearSkillSpec::Kind::Charged) {
         const auto &program = *result.weapon->spear;
         result.missileCount = program.countBase + rank / program.countDivisor;
@@ -429,8 +432,11 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         cast.novaTurnFrames = orb.novaTurnFrames; cast.novaTurnPeriod = orb.novaTurnPeriod;
         result.frozenOrb = cast;
     }
-    if (spec.effect == SkillBehavior::Inferno)
-        result.missileLifetime = float(std::max(1, (spec.flameFrames + (rank - 1) * spec.flameFramesPerLevel) / 2)) / 25.f;
+    if (spec.effect == SkillBehavior::Inferno) {
+        const int frames=input.nativeFormulas?calculation("calc1"):
+            (spec.flameFrames+(rank-1)*spec.flameFramesPerLevel)/2;
+        result.missileLifetime=float(std::max(1,frames))/25.f;
+    }
     result.missileImpact = spec.missileImpact;
     if (result.missileImpact && result.missileImpact->areaMissile) {
         auto &area = *result.missileImpact->areaMissile;

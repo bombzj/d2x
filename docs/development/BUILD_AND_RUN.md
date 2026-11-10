@@ -50,22 +50,22 @@ cmake --build build --parallel
 
 ## Windows 运行
 
-### 诊断启动与女巫任务 AI
+### 诊断启动与任务 AI
 
 `Play-Diagnostic.cmd` 沿用普通 Play 的程序和角色目录，并为每次启动创建独立诊断目录。包日志、脱敏范围和现场读取见[原服收包记录](DEBUG_PIPE.md#原服收包记录)。
 
-`Play-SOR.cmd` 使用已有的 99 级女巫本地存档，在图形单机中运行任务 AI。默认从普通难度第一幕开始，参数可选单幕或升序范围，首幕决定起始存档。
+`Play-AI.cmd [职业] [幕范围或 continue]` 从源码目录启动图形单机任务 AI。默认职业为 `sor`（女巫），也可选 `ama`（亚马逊）。`pal`、`nec` 等职业尚无准备档。默认计划为普通难度 `act1-5`。可选单幕或升序范围，首幕决定起始存档。
 
 ```powershell
-.\Play-SOR.cmd
-.\Play-SOR.cmd act2-5
-.\Play-SOR.cmd act5
-.\Play-SOR.cmd continue
+.\Play-AI.cmd
+.\Play-AI.cmd act2-5
+.\Play-AI.cmd ama act1-2
+.\Play-AI.cmd ama continue
 ```
 
-启动器从 `artifacts/saves/Act{One,Two,Three,Four,Five}Sorc.d2s` 选取一个起始档，复制到新诊断目录的 `saves/`。`continue` 复制最近一次成功启动 AI 的运行中已落盘的 D2S 及现存 `.map`／`.ma0` 至 `.ma3`，沿用原幕范围并从存档对应城镇入局。计划根据角色任务状态恢复。用 Save & Exit 保存进度，供下次启动接续。
+启动器从本地 `artifacts/saves/` 读取 99 级起始档，女巫使用 `ActOneSorc.d2s` 至 `ActFiveSorc.d2s`，亚马逊使用 `ActOneAmazon.d2s` 至 `ActFiveAmazon.d2s`。每次启动都复制到新诊断目录的 `saves/`。`continue` 按所选职业查找最近一次成功启动 AI 的运行，复制已落盘的 D2S 及现存 `.map`／`.ma0` 至 `.ma3`，沿用原幕范围并从存档对应城镇入局。`Play-AI.cmd continue` 接续女巫，也支持旧启动器留下的女巫运行。计划根据角色任务状态恢复。用 Save & Exit 保存进度，供下次启动接续。
 
-启动器要求先关闭已有 D2X 实例。客户端就绪后，通过独立调试管道核对角色与等级，新计划还核对起始城镇，再使用配置快照启动 AI。工作目录和 `client-settings.json` 与普通 Play 共用，失焦时继续运行。需要指定资源目录时可传 `Play-SOR.cmd act2-5 -Mpq <目录>`。
+启动器要求先关闭已有 D2X 实例。双击时保留启动器控制台和游戏窗口，D2X 复用启动器的控制台，标准输出和错误仍写入本次诊断目录。客户端就绪后，通过独立调试管道核对角色与等级，新计划还核对起始城镇，再使用配置快照启动 AI。工作目录和 `client-settings.json` 与普通 Play 共用，失焦时继续运行。需要指定资源目录时可传 `Play-AI.cmd ama act1-2 -Mpq <目录>`。
 
 各次启动的配置快照、包日志、程序输出及存档位于 `artifacts/diagnostics/` 的独立子目录。导航输出见[慢搜索导出](DEBUG_AI.md#慢搜索与无路现场导出)，崩溃报告见[崩溃记录](CRASH_REPORTS.md)。进程异常退出时，启动器报告日志目录及可取得的退出码，详细输出见 `stderr.log` 和 `stdout.log`。
 

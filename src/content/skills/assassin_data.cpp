@@ -203,7 +203,12 @@ void loadAssassinSkills(ClassicData &data,Archives &archives) {
                 spec.weapon->damagePerLevel=skills.number(row,"Param2").value_or(0);
             }
         }
-        spec.missileId=main.empty()?spec.assassin->missiles[0]:skillTableNumber(missiles,findSkillTableRow(missiles,"Missile",main),"Id");
+        if(!main.empty()) spec.missileId=skillTableNumber(missiles,findSkillTableRow(missiles,"Missile",main),"Id");
+        else if(!data.pd2Host && role==AssassinProgram::BladeShield) {
+            // Retail St28 validates SrvMissileA. Its state and periodic Do54
+            // have no attachment birth, and the generic launcher reads SrvMissile.
+            spec.missileId=-1;
+        } else spec.missileId=spec.assassin->missiles[0];
         if(spec.missileId>=0) {
             const auto source=findSkillTableRow(missiles,"Id",std::to_string(spec.missileId));
             const auto art=missiles.value(source,"CelFile");

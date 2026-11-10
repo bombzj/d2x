@@ -26,6 +26,7 @@ bool missileChangedCell(Vec previous, Vec next);
 std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames);
 std::vector<Vec> chargedBoltPath(Vec origin,Vec target,int distance,uint64_t &random);
 std::vector<Vec> missileChargedBurstDirections(int count);
+std::span<const Vec> meteorFireOffsets();
 // D2Common PathMisc::PATH_ComputePathBlessedHammer (77 distinct native cells).
 std::vector<Vec> blessedHammerPath(Vec origin);
 // Original 64-direction missile ring; shared by local authority and client effects.

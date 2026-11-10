@@ -27,6 +27,7 @@
 #include "gameplay/items/weapon_registration.hpp"
 #include "gameplay/items/pd2/charges.hpp"
 #include "server/systems/actions/state.hpp"
+#include "server/systems/skills/evaluation.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/effects/attribute_projection.hpp"
 #include "server/systems/missiles/native_birth.hpp"
@@ -660,8 +661,7 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
             bool restore=false;
             if(next.totals.equipmentRefreshed) {
                 const auto &rule=player->rules.character->formulas->skills.at(selected.skill).restore;
-                SkillRestoreInput input;
-                input.primaryHandKnown=true;
+                auto input=skills::skillHandFacts(*player,next.persistent,next.totals,*equipment);
                 input.exists=std::find(next.totals.skillOrder.begin(),next.totals.skillOrder.end(),selected)!=next.totals.skillOrder.end();
                 if(selected.owner) {
                     for(const auto &charge:next.totals.chargedSkills) if(charge.item.id==selected.owner && charge.skill==selected.skill) input.level=charge.rank;
@@ -669,22 +669,6 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
                 const auto quantities=inventory::itemSkills(next.persistent,*player->rules.character);
                 input.quantity=0; // Complete inventory observation: absent book/scroll contributes zero.
                 if(const auto quantity=quantities.find(selected.skill);quantity!=quantities.end()) input.quantity=quantity->second;
-                const auto view=attributes::loadout(next.persistent,*player->rules.items,*equipment);
-                input.dualWield=player->definition.code=="bar" || player->definition.code=="ass";
-                for(size_t hand=0;hand<2;++hand) {
-                    const auto item=view.equipped[size_t(weaponHandSlot(hand!=0,next.persistent.player.weaponSet))];
-                    SkillHandEquipment value;
-                    if(item) {
-                        if(item.instance->id==next.totals.registeredWeapon && item.definition->equipment.isType("weap")) input.primaryHand=hand;
-                        value.present=true;value.unusable=(item.instance->nativeFlags&(0x100u|0x4000u))!=0;
-                        value.types=item.definition->equipment.types;value.ammunitionType=item.definition->equipment.shoots;
-                        value.stackable=item.definition->maxStack>1;value.quantity=item.instance->quantity;
-                        input.throwable[hand]=item.definition->equipment.throwable ||
-                            (next.totals.itemFullStats.contains(item.instance->id) &&
-                                nativeStatValue(next.totals.itemFullStats.at(item.instance->id),*player->rules.character->stats,"item_throwable")!=0);
-                    }
-                    input.hands[hand]=std::move(value);
-                }
                 const auto available=skillSelectionRestorable(rule,input);
                 if(!available) return {DomainStatus::Unavailable,{}};
                 restore=*available;

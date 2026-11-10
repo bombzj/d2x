@@ -9,7 +9,8 @@ namespace {
 // Small labels use the original font6, not a reduced font16.
 // Original D2Client label/value records use inclusive horizontal bounds and
 // bottom-origin text baselines. Keep those coordinates and the DC6 offsets.
-void characterText(const ClassicFont &font, const std::string &value, float left, float baseline, float right) {
+void characterText(const ClassicFont &font, const std::string &value, float left, float baseline, float right,
+                   const ClassicFont *secondLineFont = nullptr) {
     if (value.empty()) return;
     // Text records use the logical y=60 origin; DC6 artwork starts at 61.
     // BD64B, for example, puts the name baseline at H-60-455 = 85.
@@ -24,19 +25,20 @@ void characterText(const ClassicFont &font, const std::string &value, float left
     const auto box = characterArtRect(left, baseline - 20, right - left + 1, 40);
     uiScissor(box.x, box.y, box.width, box.height);
     for (size_t row = 0; row < lines.size(); ++row) {
+        const auto &lineFont=row==1 && secondLineFont?*secondLineFont:font;
         float width = 0;
-        for (uint32_t character : utf8Decode(lines[row])) width += font.widthOf(character);
+        for (uint32_t character : utf8Decode(lines[row])) width += lineFont.widthOf(character);
         const auto origin = characterArtRect(left + int(std::max(0.f, (right - left + 1 - width) * .5f)),
             baseline + (float(row) - (float(lines.size()) - 1) * .5f) * lineStep, 0, 0);
         float x = origin.x;
         for (uint32_t character : utf8Decode(lines[row])) {
-            const auto *glyph = font.glyphOf(character);
+            const auto *glyph = lineFont.glyphOf(character);
             if (glyph && character != ' ')
                 DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
                     {x + glyph->x * scale, origin.y + (glyph->y - glyph->texture.height) * scale,
                         glyph->texture.width * scale, glyph->texture.height * scale},
                     {}, 0, WHITE);
-            x += font.widthOf(character) * scale;
+            x += lineFont.widthOf(character) * scale;
         }
     }
     EndScissorMode();
@@ -67,8 +69,8 @@ void SceneView::drawCharacter(Vec mouse) const {
         CheckCollisionPointRec(rv(mouse), characterClose()))), characterClose());
     const auto label = [&](const char *key) -> const std::string & { return assets_.characterLabels.at(key); };
     const auto cell = [&](const std::string &value, float left, float baseline, float right,
-                          bool small = false) {
-        const ClassicFont *font=small?&assets_.characterLabelFont:
+                          bool small = false, uint8_t color = 0) {
+        const ClassicFont *font=color?&assets_.itemTextFonts.at(color):small?&assets_.characterLabelFont:
             value.find('\n')!=std::string::npos?&assets_.characterCompactFont:&assets_.font;
         const auto fits=[&](const ClassicFont &candidate) {
             float width=0;
@@ -79,8 +81,8 @@ void SceneView::drawCharacter(Vec mouse) const {
             }
             return true;
         };
-        if(!small && !fits(*font)) font=&assets_.characterCompactFont;
-        if(!small && !fits(*font)) font=&assets_.characterLabelFont;
+        if(!small && !color && !fits(*font)) font=&assets_.characterCompactFont;
+        if(!small && !fits(*font)) font=color?&assets_.automapTextFonts.at(color):&assets_.characterLabelFont;
         characterText(*font, value, left, baseline, right);
     };
     const auto &player = characterView_;
@@ -121,13 +123,15 @@ void SceneView::drawCharacter(Vec mouse) const {
         const std::string name = skill ? skill->name : "?";
         const auto action = player.actionDisplay(id,owner);
         cell(action.damage.empty() ? name : name + '\n' + label("strchrskm"), 160, damageY, 259, true);
-        cell(action.damage, 261, damageY + 2, 309);
+        if(action.burstColor)
+            characterText(assets_.characterLabelFont,action.damage,261,damageY+2,309,&assets_.automapTextFonts.at(action.burstColor));
+        else cell(action.damage, 261, damageY + 2, 309, false, action.damageColor);
         if (!action.attackRating.empty()) {
             auto caption = label("strchrrat");
             const auto placeholder = caption.find("%s");
             if (placeholder != std::string::npos) caption.replace(placeholder, 2, name);
             cell(caption, 160, ratingY, 269, true);
-            cell(action.attackRating, 273, ratingY + 2, 308);
+            cell(action.attackRating, 273, ratingY + 2, 308, false, action.attackRatingColor);
         }
     };
     actionRows(view_.leftSkill,player.selectedSkillOwners.at(player.weaponSet*2), 97, 159);

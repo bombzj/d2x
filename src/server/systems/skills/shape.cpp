@@ -12,7 +12,12 @@ const ShapeProfile *activeShape(const SkillRules &rules,const std::set<int> &sta
 }
 bool shapeAllowsSkill(const SkillRules &rules,const std::set<int> &states,int skill) {
     const auto found=rules.shapeRestrictions.find(skill);if(found==rules.shapeRestrictions.end()) return false;
-    const auto &restriction=found->second;const auto *shape=activeShape(rules,states);
+    const auto &restriction=found->second;
+    if(!rules.pd2) {
+        const bool restricted=std::any_of(states.begin(),states.end(),[&](int state){return rules.restrictedSkillStates.contains(state);});
+        return nativeSkillShapeAllowed(restriction,restricted,states);
+    }
+    const auto *shape=activeShape(rules,states);
     if(restriction.mode==2) return std::any_of(restriction.states.begin(),restriction.states.end(),[&](int state){return state>=0 && states.contains(state);});
     return restriction.mode==1 || !shape || !shape->restrictSkills;
 }

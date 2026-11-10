@@ -5,6 +5,7 @@
 #include "content/skills/skill_description.hpp"
 #include "content/skills/description_values.hpp"
 #include "content/skills/skill_eligibility.hpp"
+#include "gameplay/actions/shape_profile.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "gameplay/skills/behavior.hpp"
@@ -28,6 +29,7 @@ int integer(const CharacterProjectionInput &input, std::string_view name) {
 CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterProjectionInput &input) {
     CharacterView view;
     view.attackTiming=input.attackTiming;view.missilePierceChance=input.missilePierceChance;
+    view.magicArrow=input.magicArrow;view.explosiveArrow=input.explosiveArrow;
     view.recoveryTiming=input.recoveryTiming;
     view.revision = input.revision; view.actor = input.actor; view.name = input.name;
     view.dead = input.dead; view.running = input.running; view.weaponSet = std::min(input.weaponSet, 1u);
@@ -105,7 +107,10 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         input.fireMastery.value_or(0), input.lightningMastery.value_or(0)};
     display.weaponValuesKnown=input.combatEquipment.has_value();
     display.dualWield=view.classCode=="bar" || view.classCode=="ass";
-    if(input.combatEquipment) display.concentrationDamagePercent=input.combatEquipment->concentrationDamagePercent;
+    if(input.combatEquipment) {
+        display.concentrationDamagePercent=input.combatEquipment->concentrationDamagePercent;
+        if(input.combatEquipment->kick) display.kick=&*input.combatEquipment->kick;
+    }
     attributes.combat.coldSkillDamagePercent = input.coldDamagePercent.value_or(0);
     view.attack = describeCharacterAction(display, nullptr);
     const auto *tree = data.skills.tree(view.classCode);
@@ -159,74 +164,83 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         if (entry.basicAction == BasicSkillAction::Throw || entry.basicAction == BasicSkillAction::LeftHandThrow)
             eligibilityInput.equipmentReady = input.throwReady[entry.basicAction == BasicSkillAction::LeftHandThrow ? 1 : 0];
         if (stat(input, "mana") || input.mana) eligibilityInput.mana = view.mana;
-        std::optional<SkillCastSpec> currentCast;
-        if (!entry.passive && entry.spell && effective > 0 && effective <= 255) {
-            currentCast = resolveSkill(entry.spell->rules(), {effective, input.baseRanks, display.fireMastery,
+        const bool original=data.profile=="lod-named-txt-v1";
+        if (!original && !entry.passive && entry.spell && effective > 0 && effective <= 255) {
+            const auto currentCast = resolveSkill(entry.spell->rules(), {effective, input.baseRanks, display.fireMastery,
                 display.lightningMastery, attributes.combat.coldSkillDamagePercent, attributes.combat.poisonSkillDamagePercent});
-            eligibilityInput.requiredMana = float(std::max(Fixed8{entry.spell->startMana}, currentCast->manaCost));
+            eligibilityInput.requiredMana = float(std::max(Fixed8{entry.spell->startMana}, currentCast.manaCost));
         }
         const auto eligibility = evaluateSkillEligibility(entry, eligibilityInput);
         skill.available = eligibility.available; skill.canAllocate = eligibility.canAllocate;
         skill.usableNow = eligibility.usableNow; skill.pickerEnabled = eligibility.pickerEnabled;
+        NativeSkillUseChecks use{.inGame=entry.inGame,.aura=entry.aura,.passive=entry.passive,
+            .level=innate?std::optional{std::max(1,effective)}:eligibilityInput.effectiveRank};
+        use.equipmentReady=skillEquipmentReady(entry,input.handEquipment);
+        if(eligibilityInput.equipmentReady) use.equipmentReady=eligibilityInput.equipmentReady;
+        if(entry.itemSkill && use.equipmentReady.value_or(true)) {
+            if(!eligibilityInput.itemQuantity) use.equipmentReady.reset();
+            else if(*eligibilityInput.itemQuantity<=0) use.equipmentReady=false;
+        }
+        const bool charged=input.chargedSource && input.chargedSource->skill==id;
+        if(charged) {
+            use.manaReady=input.chargedSource->charges>0;
+            use.itemChargesReady=use.manaReady;
+        }
         if(data.skills.descriptions) {
             const auto &catalog=*data.skills.descriptions;
             if(const auto source=catalog.skills.find(id);source!=catalog.skills.end()) {
-                SkillDescriptionInput delayInput{id,innate?std::optional{std::max(1,effective)}:
-                    skill.effectiveRankKnown?std::optional{effective}:std::nullopt,input.baseRanks,input.effectiveRanks,input.stats};
-                delayInput.baseRanksComplete=input.baseRanksAssigned;
-                SkillDescriptionValues values(catalog,delayInput,source->second);
+                SkillDescriptionInput useInput{id,use.level,input.baseRanks,input.effectiveRanks,input.stats};
+                useInput.baseRanksComplete=input.baseRanksAssigned;
+                SkillDescriptionValues values(catalog,useInput,source->second);
                 if(const auto formula=source->second.formulas.find("delay");formula!=source->second.formulas.end())
                     skill.delayFrames=values.formula(formula->second);
-            }
-        }
-        const bool delayed=data.profile=="lod-named-txt-v1" && input.resourceStates && input.resourceStates->skillDelay &&
-            skill.delayFrames.value_or(0)>0;
-        if(delayed) skill.usableNow=false;
-        // Native picker color uses SKILLS_GetUseState, not town permission or
-        // point-allocation eligibility. AURA exits before equipment/mana checks.
-        skill.pickerTooltipUnavailable = !entry.inGame || !skill.available || entry.passive || view.dead || delayed;
-        if (!entry.aura) {
-            if (data.skills.descriptions && input.shapeStates) {
-                const auto source = data.skills.descriptions->skills.find(id);
-                if (source != data.skills.descriptions->skills.end()) {
-                    const auto restriction = source->second.number("restrict");
-                    if (restriction == 0 && input.shapeStates->restricted)
-                        skill.pickerTooltipUnavailable = true;
-                    else if (restriction == 2) {
-                        bool allowed = false;
-                        if (input.shapeStates->restricted)
-                            for (const auto field : {"state1", "state2", "state3"}) {
-                                const auto state = source->second.reference(field);
-                                if (state.empty()) break;
-                                if (input.shapeStates->active.contains(state)) { allowed = true; break; }
-                            }
-                        if (!allowed) skill.pickerTooltipUnavailable = true;
+                SkillShapeRestriction restriction;
+                restriction.mode=source->second.number("restrict").value_or(0);
+                if(input.shapeStates) {
+                    constexpr std::array fields{"state1","state2","state3"};
+                    for(size_t slot=0;slot<fields.size();++slot) {
+                        const auto name=source->second.reference(fields[slot]);
+                        const auto state=data.states.find(name);
+                        if(state==data.states.end()) break;
+                        restriction.states[slot]=state->second.definition.id;
+                    }
+                    use.shapeReady=nativeSkillShapeAllowed(restriction,input.shapeStates->restricted,input.shapeStates->active);
+                } else if(restriction.mode==0 || restriction.mode==2) use.shapeReady.reset();
+                if(!charged) {
+                    use.manaReady.reset();
+                    if(const auto required=values.mana(false);required && *required<=0) use.manaReady=true;
+                    else if(input.resourceStates) {
+                        if(!input.resourceStates->bloodMana && entry.serverDoFunction==116 && input.shapeStates && input.shapeStates->disguised)
+                            use.manaReady=true;
+                        else if(required && (entry.serverDoFunction!=116 || input.resourceStates->bloodMana || input.shapeStates)) {
+                            const auto resource=input.resourceStates->bloodMana?
+                                (input.life?std::optional<double>{*input.life}:stat(input,"hitpoints")):
+                                (eligibilityInput.mana?std::optional<double>{*eligibilityInput.mana}:std::nullopt);
+                            if(resource) use.manaReady=*resource*256>=*required;
+                        }
                     }
                 }
-            }
-            if (!skill.pickerEnabled) skill.pickerTooltipUnavailable = true;
-            if (const auto ready = skillEquipmentReady(entry, input.handEquipment); ready && !*ready)
-                skill.pickerTooltipUnavailable = true;
-            if (data.skills.descriptions && input.resourceStates) {
-                const auto &catalog = *data.skills.descriptions;
-                const auto source = catalog.skills.find(id);
-                if (source != catalog.skills.end()) {
-                    const auto rank = innate ? std::optional{std::max(1, effective)} :
-                        skill.effectiveRankKnown ? std::optional{effective} : std::nullopt;
-                    SkillDescriptionInput resourceInput{id, rank, input.baseRanks, input.effectiveRanks, input.stats};
-                    SkillDescriptionValues values(catalog, resourceInput, source->second);
-                    const auto resource = input.resourceStates->bloodMana ?
-                        (input.life ? std::optional<double>{*input.life} : stat(input, "hitpoints")) :
-                        (eligibilityInput.mana ? std::optional<double>{*eligibilityInput.mana} : std::nullopt);
-                    if (input.chargedSkill != id && (entry.serverDoFunction != 116 || input.resourceStates->bloodMana ||
-                        (input.shapeStates && !input.shapeStates->disguised)))
-                        if (const auto required = values.mana(false); required && resource && *resource * 256 < *required)
-                            skill.pickerTooltipUnavailable = true;
-                    if (!input.resourceStates->inferno && eligibilityInput.mana && *eligibilityInput.mana < entry.startMana)
-                        skill.pickerTooltipUnavailable = true;
+                if(entry.startMana>0 && (!eligibilityInput.mana || *eligibilityInput.mana<entry.startMana)) {
+                    use.startManaReady.reset();
+                    if(input.resourceStates && input.resourceStates->inferno) use.startManaReady=true;
+                    else if(input.resourceStates && eligibilityInput.mana) use.startManaReady=false;
                 }
             }
         }
+        if(original && input.localSkillDelay) use.delayReady=false;
+        else if(original && skill.delayFrames.value_or(0)>0)
+            use.delayReady=input.resourceStates?std::optional{!input.resourceStates->skillDelay}:std::nullopt;
+        const auto state=nativeSkillUseState(use);
+        if(original) skill.nativeUseState=state;
+        // A later observed failure still proves an unavailable icon when an
+        // earlier unobserved fact makes the exact native reason ambiguous.
+        const bool blocked=!use.equipmentReady.value_or(true) || !use.manaReady.value_or(true) ||
+            !use.shapeReady.value_or(true) || !use.startManaReady.value_or(true) || !use.delayReady.value_or(true);
+        using State=NativeSkillUseState;
+        skill.pickerTooltipUnavailable=!skill.available || view.dead ||
+            (state?*state!=State::Ready && *state!=State::Aura:!entry.aura && blocked);
+        if(original) skill.usableNow=skill.pickerEnabled && !entry.aura && !skill.pickerTooltipUnavailable &&
+            (!input.town || entry.allowedInTown);
         // Native attribute-panel programs and tooltip programs share MPQ
         // formulas, while keeping their distinct display dispatch tables.
         display.spellDamageKnown = input.baseRanksAssigned && effective <= 255 && entry.spell &&
@@ -334,7 +348,7 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         view.skills.emplace(id, std::move(skill));
     }
     for(const auto &charge:input.chargedSkills) {
-        auto source=input;source.chargedSkills.clear();source.effectiveRanks[charge.skill]=charge.rank;source.chargedSkill=charge.skill;
+        auto source=input;source.chargedSkills.clear();source.effectiveRanks[charge.skill]=charge.rank;source.chargedSource=charge;
         auto projected=projectCharacterDisplay(data,source);
         if(const auto *entry=projected.skill(charge.skill)) {
             auto skill=*entry;skill.owner=uint32_t(charge.item.id.value);skill.canAllocate=false;

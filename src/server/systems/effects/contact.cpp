@@ -77,6 +77,7 @@ DomainResult<> System::advanceDamageEvents(NativeContactBatch &batch,uint64_t ti
                 batch.pendingDamage=std::make_shared<combat::SpellImpact>(combat::SpellImpact{batch.target,batch.target,batch.area,DamageType::Physical,batch.thorns,{batch.source}});
                 batch.pendingDamage->occurrence=batch.pendingOccurrence;batch.pendingDamage->reaction=true;
                 batch.pendingDamage->unblockable=true;batch.pendingDamage->hitClass=0x8d;
+                batch.pendingDamage->softHit=true; // Native Thorns result flags 0x4021.
             }
             if(!batch.queued) {const auto queued=ports_.combat.enqueue(*batch.pendingDamage);if(!queued) return queued;batch.queued=true;}
             if(ports_.combat.advanceAuraPulse(batch.target,batch.pendingOccurrence,{tick})==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
@@ -232,16 +233,18 @@ DomainResult<> System::advanceNativeCallback(NativeContactBatch &batch,uint64_t 
     } else if(function==5) {
         if(batch.phase==0) {
             if(batch.physical<=0 || (other.player?other.player->persistent.player.hp<=0:!other.monster->alive() || other.monster->life<=0)) return done();
+            const auto maximum=other.player?other.player->totals.character.maxLifeFixed.raw():nativeChecked(other.monster->maximumLife);
+            if(maximum<=0) return done();
             const auto percent=calculate(callback.event.source.entity,"calc1");if(!percent) return {DomainStatus::Unavailable,{}};
             const auto gain=nativePercentage(nativeChecked(batch.physical),*percent,100);
             DomainResult<> healed;
             if(other.player) {
                 const auto &player=*other.player;const auto &area=ports_.areas.at(player.area);
                 healed=ports_.transactions.resources({player.player,player.actor,player.area,area.generation,0,tick},player.characterRevision,
-                    Fixed8::fromRaw(std::clamp(nativeAdd(player.persistent.player.hp.raw(),gain),1,player.totals.character.maxLifeFixed.raw())),player.persistent.player.mana,player.persistent.player.stamina);
+                    Fixed8::fromRaw(std::clamp(nativeAdd(player.persistent.player.hp.raw(),gain),1,maximum)),player.persistent.player.mana,player.persistent.player.stamina);
             } else {
                 MonsterResourceTrace resources(*other.monster,tick);
-                resources.seedLife(Fixed8::fromRaw(std::clamp(nativeAdd(nativeChecked(other.monster->life),gain),1,nativeChecked(other.monster->maximumLife))));
+                resources.seedLife(Fixed8::fromRaw(std::clamp(nativeAdd(nativeChecked(other.monster->life),gain),1,maximum)));
                 healed=ports_.monsters.commitLife(resources.take())?done():DomainResult<>{DomainStatus::Stale,{}};
             }
             if(!healed) return healed;

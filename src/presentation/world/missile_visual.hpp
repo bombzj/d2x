@@ -12,10 +12,15 @@
 #include <deque>
 #include <vector>
 #include <optional>
+#include <string>
 
 namespace d2x {
 struct ClientMissileAreaEmission {
     int radius{},period{};
+};
+struct ClientMissileReleaseSound {
+    EntityId target;
+    std::string sound;
 };
 struct ClientMissileInitialization {
     enum class Path { None,Charged,Spiral,DiabWall } path{};
@@ -33,6 +38,7 @@ struct ClientMissileInitialization {
     std::optional<ClientMissileAreaEmission> areaEmission;
     std::optional<int> totalFrames,hiddenUntilCurrentFrame;
     std::optional<int> activationDelay;
+    std::optional<ClientMissileReleaseSound> releaseSound;
     std::optional<int> impactCount; // Catapult calc4 fallback, prepared from the cast skill.
     std::optional<int> chainHits,chainRadius;
     std::optional<int32_t> velocityRaw; // Native flag0x10, before slow and 75% scaling.
@@ -43,8 +49,9 @@ struct ClientMissileInitialization {
 struct ClientMissileProgram {
     enum class Rules { Original, Pd2Cn } rules{};
     int function{}, hitFunction{}, velocity{}, velocityPerLevel{}, acceleration{}, maximumVelocity{};
-    int frames{}, framesPerLevel{}, activationDelay{}, explosion{-1};
+    int frames{}, framesPerLevel{}, activationDelay{}, randomStart{}, explosion{-1};
     int linkedSkill{-1}; // Signed Missiles.Skill (native +0x194); blank remains -1.
+    int contactOverlay{-1};
     MissileAnimationRule animation;
     MissileCollisionRule collision;
     bool collide{}, killOnContact{}, explodeOnExpiry{};
@@ -67,6 +74,7 @@ struct ClientMissileProgram {
     std::optional<ArcSpec> chain;
     int chainCountDivisor{1};
     std::optional<MissileTargetBurst> targetBurst;
+    uint32_t targetBurstFilter{};
     bool blessedHammer{},holyBolt{};
     bool deathFlame{}, localBlood{};
 };
@@ -89,6 +97,7 @@ struct ClientMissileVisual {
     int nativeTotalFrames{}, nativeCurrentFrames{},nativeSequenceFrame{};
     std::optional<int> animationRate;
     bool suppressLight{};
+    std::optional<int> lightRadius;
     std::optional<std::array<int,3>> roomAttachment;
     bool initialHidden{};
     std::optional<int> hiddenUntilCurrentFrame;
@@ -113,6 +122,7 @@ struct ClientMissileVisual {
     uint8_t creationSources{};
     Vec creationPosition, creationDirection;
     EntityId soundEmitter;
+    std::optional<ClientMissileReleaseSound> releaseSound;
     uint64_t random = 0; // Presentation stream; A3 may provide a progressive seed explicitly.
     std::deque<Vec> path{};
     std::vector<EntityId> contacts{};
@@ -128,6 +138,8 @@ struct ClientMissileTarget {
     EntityId target; // Observed path target; used by the native owner's-target fallback.
     std::optional<Vec> targetPoint{};
     std::optional<uint8_t> direction{};
+    uint32_t nativeGuid{};
+    bool noAura{};
 };
 // Related-unit lookups also see objects and dead players. These anchors never
 // become contact/damage candidates merely because a client program uses them.
@@ -137,9 +149,10 @@ struct ClientMissileAnchor {
     uint32_t nativeId{};
     uint8_t type{};
     int identity{-1};
+    int slowMissilePercent{};
 };
-struct ClientMissileObjectOverlay {
-    EntityId object;
+struct ClientMissileOverlay {
+    EntityId unit;
     int overlay{};
     float age{};
 };
@@ -153,5 +166,6 @@ struct MeteorVisual {
     int explodeId = -1, explodeDensity = 1;
     int lightId = -1, mediumId = -1, smallId = -1;
     int mediumDensity = 1, smallDensity = 1;
+    std::optional<std::pair<int,int>> nativeFireLength;
 };
 } // namespace d2x

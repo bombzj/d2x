@@ -351,7 +351,8 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
         if(elapsed%period==0) {
             auto range=rule.serverParameters[1];
             if(range<=0) {const auto value=missileSkillFormula(plan,"aurarangecalc");if(!value) throw std::logic_error("Missing Tornado radius");range=std::max(*value,1);}
-            areaImpact(plan,missile.position,range,true,uint32_t(skill->second.number("aurafilter")));
+            const auto filter=uint32_t(skill->second.number("aurafilter"));
+            areaImpact(plan,missile.position,range,true,filter?filter:0x8583u);
         }
     } else if(function==28 && rule.subMissiles[0]>=0) {
         if(skill==rule.damageFormulas->skills.end()) {plan.finished=true;return result;}
@@ -359,7 +360,8 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
         if(range<=0) {const auto value=missileSkillFormula(plan,"aurarangecalc");if(!value) throw std::logic_error("Missing Volcano radius");range=std::max(*value,1);}
         if(period<=0) {const auto value=missileSkillFormula(plan,"calc4");if(!value) throw std::logic_error("Missing Volcano period");period=std::max(*value,1);}
         if(elapsed>rule.serverParameters[2] && elapsed<rule.serverParameters[3] && elapsed%period==0) {
-            uint64_t random=(missile.random&0xffffffff00000000ULL)|uint32_t(missile.parameters[0]);
+            const auto seed=uint32_t(missile.parameters[0]);
+            uint64_t random=missile.rules && missile.rules->pd2?(missile.random&0xffffffff00000000ULL)|seed:initialRandom(seed);
             const auto span=uint32_t(nativeAdd(nativeMultiply(2,range),1));
             const auto x=nativeSubtract(int32_t(limitedRandom(random,span)),range),y=nativeSubtract(int32_t(limitedRandom(random,span)),range);
             missile.parameters[0]=int32_t(uint32_t(random));missile.random=random;plan.damageRolls->random=random;

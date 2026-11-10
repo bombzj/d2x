@@ -184,7 +184,8 @@ void SceneAudio::update(float clock, std::span<const SoundActorView> actors, std
         if (event.kind == Kind::Original) {
             const auto name=event.nativeSound>=0 && size_t(event.nativeSound)<catalog_.sounds().rows().size()?
                 catalog_.sounds().value(size_t(event.nativeSound),"Sound"):std::string_view(event.sound);
-            submit(SoundRule{std::string(name)},0,false);
+            const bool scheduled=event.releaseTime>=0;
+            submit(SoundRule{.sound=std::string(name),.interruptible=scheduled},std::max(0.f,event.releaseTime),scheduled);
         }
         else if(event.kind==Kind::IzualComplete) {
             // 53070 -> 45570: sound-table music slot, immediate start,
@@ -195,9 +196,9 @@ void SceneAudio::update(float clock, std::span<const SoundActorView> actors, std
         else if (event.kind == Kind::ObjectMode) {
             if (const auto *sound = catalog_.object(source->identity,event.mode)) submit(*sound);
         }
-        else if (event.kind == Kind::Cast) {
+        else if (event.kind == Kind::Cast || event.kind == Kind::CastRelease) {
             if (const auto *skill = catalog_.skill(event.skill)) {
-                submit(skill->start);
+                if(event.kind==Kind::Cast) submit(skill->start);
                 if (event.releaseTime >= 0) submit(skill->active,event.releaseTime);
             }
         } else if (event.kind == Kind::LevelUp) submit(SoundRule{"cursor_level_up"});

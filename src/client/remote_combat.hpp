@@ -26,6 +26,8 @@ struct OnlineCombatUnitStates {
     bool decoded{};
     std::string reason;
     std::map<uint8_t, OnlineCombatStateView> states;
+    struct Death {uint64_t revision{};bool shatter{},frozen{},uberMinion{};};
+    std::optional<Death> death;
 };
 // MPQ eligibility and read-only projection of native states. No local combat authority.
 class RemoteCombat {
@@ -45,9 +47,11 @@ class RemoteCombat {
     std::map<OnlineUnitKey, Ownership> unitOwners_;
     std::map<uint16_t, std::array<unsigned, 16>> componentBits_;
     uint64_t game_{~uint64_t{}}, area_{~uint64_t{}};
+    mutable uint64_t localSkillFrame_{}, localSkillDelayUntil_{};
     std::string reason_;
     std::function<std::optional<std::map<int,int>>()> skillRankResolver_;
     std::function<std::optional<int>(uint16_t,uint32_t)> skillDelayResolver_;
+    std::function<std::optional<NativeSkillUseState>(uint16_t,uint32_t)> skillUseResolver_;
     void applyObservedSkillRanks();
     bool reject(std::string);
     std::string_view classCode() const;
@@ -71,6 +75,7 @@ class RemoteCombat {
     void update();
     void setSkillRankResolver(std::function<std::optional<std::map<int,int>>()> resolver) {skillRankResolver_=std::move(resolver);}
     void setSkillDelayResolver(std::function<std::optional<int>(uint16_t,uint32_t)> resolver) {skillDelayResolver_=std::move(resolver);}
+    void setSkillUseResolver(std::function<std::optional<NativeSkillUseState>(uint16_t,uint32_t)> resolver) {skillUseResolver_=std::move(resolver);}
     bool hostile(const OnlineUnit &) const;
     bool hostileSource(const OnlineUnit &) const;
     std::optional<bool> knownHostileSource(const OnlineUnit &) const;
@@ -88,6 +93,9 @@ class RemoteCombat {
     bool skillTargetEligible(const OnlineItem &, uint16_t skill) const;
     std::optional<int> skillDelayFrames(uint16_t skill,uint32_t owner=UINT32_MAX) const;
     bool skillDelayActive(uint16_t skill,uint32_t owner=UINT32_MAX) const;
+    bool localSkillDelayActive() const { return localSkillFrame_<localSkillDelayUntil_; }
+    void advanceLocalSkillClock(uint64_t frames) const { localSkillFrame_+=frames; }
+    void startLocalSkillDelay(int frames) const;
     const auto &skills() const { return catalog_; }
     const auto &states() const { return unitStates_; }
     const auto &reason() const { return reason_; }

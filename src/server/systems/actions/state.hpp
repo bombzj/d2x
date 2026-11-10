@@ -47,6 +47,7 @@ struct State {
         // Player used-skill identity survives action expiry; deleting a source
         // clears the pointer without cancelling already released effects.
         std::map<EntityId,std::optional<NativeSkillSlot>> usedSkills_;
+        std::map<EntityId,uint32_t> pierceIndices_;
         std::vector<EntityId> executingReleases_;
         std::map<EntityId,std::map<NativeSkillSlot,std::array<int32_t,4>>> skillParameters_;
         std::map<EntityId, SkillRelease> &releases();
@@ -90,6 +91,7 @@ struct State {
     WeaponPhase weaponPhase(EntityId actor,uint64_t tick) const;
     void removeUsedSkills(EntityId actor,std::span<const SkillUseRemoval>) noexcept;
     void pruneUsedSkills(const PlayerStore &players);
+    uint32_t pierceIndex(EntityId actor) const;
     int32_t skillParameter(EntityId,NativeSkillSlot,size_t index) const;
     void skillParameter(EntityId,NativeSkillSlot,size_t index,int32_t value);
     void pruneSkillParameters(const std::function<bool(EntityId)> &exists);

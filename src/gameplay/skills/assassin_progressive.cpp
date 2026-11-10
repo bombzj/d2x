@@ -38,7 +38,10 @@ std::pair<int32_t,int32_t> assassinKickRange(const AssassinKickInput &input) {
     // non-player, including hirelings/shadows, before the /4 and /3 split.
     const auto base=std::max(input.monsterLevel?nativeMultiply(*input.monsterLevel,3):
         nativeSubtract(nativeAdd(input.strength,input.dexterity),20),1);
-    auto minimum=nativeShiftLeft(base/4,8),maximum=nativeShiftLeft(base/3,8);
+    // The character panel truncates the base and the boot contribution to
+    // whole damage before applying their separate percentages.
+    const int shift=input.wholeDamage?0:8;
+    auto minimum=nativeShiftLeft(base/4,shift),maximum=nativeShiftLeft(base/3,shift);
     minimum=nativeAdd(minimum,nativePercentage(minimum,input.skillPercent,100));
     maximum=nativeAdd(maximum,nativePercentage(maximum,input.skillPercent,100));
     auto kickMinimum=input.itemKickDamage,kickMaximum=input.itemKickDamage,percent=input.skillPercent;
@@ -53,7 +56,7 @@ std::pair<int32_t,int32_t> assassinKickRange(const AssassinKickInput &input) {
         kickMinimum=nativeAdd(kickMinimum,bootMinimum);kickMaximum=nativeAdd(kickMaximum,bootMaximum);
         percent=nativeAdd(percent,nativeAdd(input.offWeaponMaximumPercent,damagePercent));
     }
-    const auto bootLow=nativeShiftLeft(kickMinimum,8),bootHigh=nativeShiftLeft(kickMaximum,8);
+    const auto bootLow=nativeShiftLeft(kickMinimum,shift),bootHigh=nativeShiftLeft(kickMaximum,shift);
     minimum=nativeAdd(minimum,nativeAdd(bootLow,nativePercentage(bootLow,percent,100)));
     maximum=nativeAdd(maximum,nativeAdd(bootHigh,nativePercentage(bootHigh,percent,100)));
     return {minimum,maximum};

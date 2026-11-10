@@ -13,6 +13,7 @@
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/missiles/native_birth.hpp"
 #include "server/systems/travel/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/effects/corpse_explosion.hpp"
 #include "server/systems/effects/native_area.hpp"
@@ -47,7 +48,8 @@ DomainStatus System::activateWhirlwind(Release &pending,const ActorContext &acto
     const auto &owner=*ports_.players.find(actor.player);
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(pending.motionFrame!=actor.tick) {
-        const auto moved=ports_.movement.leapStep(actor,destination,pending.chargeSpeed,MovementCollisionRule{0x804,2});
+        const auto moved=ports_.movement.leapStep(actor,destination,pending.chargeSpeed,
+            MovementCollisionRule{uint16_t(pending.skill.pd2?0x804:0x401),playerMovement.size});
         if(!moved && isDeferred(moved.status)) return moved.status;
         pending.motionFrame=actor.tick;pending.motionFinished=!moved || *moved.value;
     }
@@ -120,9 +122,8 @@ DomainStatus System::activateLeap(Release &pending,const ActorContext &actor,Vec
     const auto cleared=ports_.effects.removeState(actor,pending.skill.leap->moving.id);if(!cleared) return cleared.status;
     if(pending.skill.leap->attack) {
         const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-        const auto &grid=ports_.areas.at(actor.area).definition.collision;
         auto victim=participants.find(pending.unit);
-        if(!victim.aliveIn(actor.area) || !playerMeleeReach(grid,owner.position,victim.position(),victim.size(),pending.weapon->rangeAdder)) {
+        if(!victim.aliveIn(actor.area) || !participants.canHarm(actor.actor,victim.id())) {
             const auto targets=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,pending.weapon->rangeAdder+4,0x20003,false,{},effects::NativeAuraTargetMode::OwnerRange,actor.tick});
             victim=participants.find(nativeSkillSuccessor(targets,UINT32_MAX,ports_.monsters.nativeIdentities()));
         }
@@ -156,16 +157,24 @@ DomainStatus System::activateCorpseSearch(Release &pending,const ActorContext &a
     if(pending.skill.corpseSearch->potion && !corpse.rule.softCorpse) return DomainStatus::Unavailable;
     // Wait for the original death treasure request to leave this source slot.
     if(ports_.loot.read().pending.contains(pending.unit)) return DomainStatus::Capacity;
-    const auto &program=*pending.skill.corpseSearch;auto random=corpse.combatRandom;
+    const auto &program=*pending.skill.corpseSearch;
+    const bool casterRolls=!pending.skill.pd2;
+    auto random=casterRolls?owner.combatRandom:corpse.combatRandom;
     const bool found=limitedRandom(random,100)<unsigned(program.chance);
     transactions::CharacterEdit payment{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};
     payment.player.mana-=pending.skill.manaCost;payment.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};payment.charge=pending.skill.charge;
+    if(casterRolls) payment.random=transactions::UnitRandomEdit{owner.combatRandom,random};
     payment.publicFacts.emplace_back(StateFact{pending.unit,1,actor.area,program.noSelectState,true});
     DomainResult<> result;
     if(found && !program.potion) {
         LootRequest source;source.source=pending.unit;source.identity=corpse.identity;source.region=actor.area;source.difficulty=owner.persistent.difficulty;
         source.sourceSeed=true;source.rewardModifiers=monsterRewardModifiers(corpse.rule.enchantment);source.monsterPlayerCount=corpse.admittedPlayerCount;source.ignoreNoDrop=true;
-        source.random=random;
+        if(casterRolls) {
+            // Retail Do72 draws a second value, but the DropTC wrapper discards the tier.
+            limitedRandom(random,100);
+            payment.random->next=random;
+        }
+        source.random=casterRolls?corpse.combatRandom:random;
         result=ports_.loot.queue({actor.sequence,source,actor.player,center},std::move(payment));
     } else if(found) {
         const int act=ports_.areas.at(actor.area).definition.act;
@@ -175,20 +184,35 @@ DomainStatus System::activateCorpseSearch(Release &pending,const ActorContext &a
         LootRequest source;source.source=pending.unit;source.identity=corpse.identity;source.region=actor.area;source.difficulty=owner.persistent.difficulty;
         loot::Request request{actor.sequence,source,actor.player,center};request.object=loot::ObjectSource{};
         request.object->reportCompletion=false;
-        request.source.random=random;
+        if(casterRolls) payment.random->next=random;
+        request.source.random=casterRolls?corpse.combatRandom:random;
         request.object->dropCode=program.potions.at(index).at(size_t(column));request.object->dropCount=1;request.object->dropLevel=corpse.rule.level;
         result=ports_.loot.queue(request,std::move(payment));
     } else {
         auto plan=ports_.transactions.prepare(std::move(payment));if(!plan) return plan.status;
         result=ports_.transactions.commit(std::move(*plan.value));
     }
-    if(result) {ports_.monsters.searchCorpse(pending.unit);ports_.monsters.commitCombatRandom(pending.unit,random);}
+    if(result) {
+        ports_.monsters.searchCorpse(pending.unit);
+        if(!casterRolls) ports_.monsters.commitCombatRandom(pending.unit,random);
+    }
     return result.status;
 }
 DomainStatus System::activateGrimWard(Release &pending,const ActorContext &actor,Vec center) {
     if(!ports_.monsters.usableCorpse(pending.unit,actor.area,actor.tick)) return DomainStatus::Unavailable;
     const auto &corpse=*ports_.monsters.find(pending.unit);if(!corpse.rule.softCorpse) return DomainStatus::Unavailable;
-    const auto location=ports_.areas.at(actor.area).definition.collision.nativeSpawn(center,1,{0x1000,2});
+    const auto &area=ports_.areas.at(actor.area).definition;
+    std::optional<Vec> location;
+    if(pending.skill.pd2) location=area.collision.nativeSpawn(center,1,{0x1000,2});
+    else {
+        const auto point=corpse.position+area.origin;
+        const auto room=ports_.areas.roomAtPosition(actor.area,corpse.position,int(point.x),int(point.y));
+        if(room) {
+            const auto free=ports_.areas.nativeFreeCoordinates(*room,int(point.x),int(point.y),2,0x1000,
+                ports_.spatial.nativeCollisionSample(0x1000),{},0,true);
+            if(free) location=free->position+ports_.areas.at(free->room.area).definition.origin-area.origin;
+        }
+    }
     if(!location) return DomainStatus::Unavailable;
     const auto &owner=*ports_.players.find(actor.player);
     auto skill=pending.skill;skill.missileCount=corpse.rule.corpseSize;
@@ -290,15 +314,13 @@ DomainStatus System::activateTeleport(Release &pending, const ActorContext &acto
     return ports_.travel.castTeleport(actor, {actor.area, actor.areaGeneration, target}, pending.skill.manaCost, pending.skill.charge,pending.skill.sourceId).status;
 }
 DomainStatus System::activateHydra(Release &pending, const ActorContext &actor, Vec target) {
-    return ports_.companions.hydra(actor, pending.skill, target).status;
+    auto skill=pending.skill;
+    if(pending.manaPaid) {skill.manaCost=0;skill.charge.reset();}
+    return ports_.companions.hydra(actor,skill,target).status;
 }
 DomainStatus System::activateWarcry(Release &pending,const ActorContext &actor,Vec target) {
     if(pending.skill.pd2) return activatePd2(pending,actor,target);
-    if(!pending.manaPaid) {
-        const auto result=ports_.effects.skill(actor,pending.skill);if(!result) return result.status;
-        pending.manaPaid=true;
-    }
-    return ports_.missiles.spawn({actor,pending.skill,pending.collision,target,true}).status;
+    return ports_.missiles.spawn({actor,pending.skill,pending.collision,target}).status;
 }
 DomainStatus System::activateEffect(Release &pending, const ActorContext &actor, Vec) {
     if(pending.skill.effect==SkillBehavior::AreaEnchant) return activatePd2Enchant(pending,actor);
@@ -408,7 +430,8 @@ DomainStatus System::activateCurse(Release &pending,const ActorContext &actor,Ve
     if(pending.skill.curse && pending.skill.curse->ai==CurseAi::Taunt) {
         const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
         const auto eligible=[&](const monsters::Actor *m) {return m && m->alive() && !m->owner &&
-            skillAiControlAllowed(m->identity.rank,m->rule.switchAi,m->rule.boss) && participants.canHarm(actor.actor,m->id);};
+            skillAiControlAllowed(m->identity.rank,m->rule.switchAi,m->rule.boss) && participants.canHarm(actor.actor,m->id) &&
+            !ports_.effects.unitStates(m->id,actor.tick).contains(m->rule.uninterruptableState);};
         const auto *victim=ports_.monsters.find(pending.unit);
         if(!eligible(victim)) {
             victim=nullptr;int32_t best=INT32_MAX;

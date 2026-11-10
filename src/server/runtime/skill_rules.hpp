@@ -61,6 +61,7 @@ struct SkillRules {
     std::map<int, SkillDefinition> definitions;
     std::map<int,ShapeProfile> shapes;
     std::map<int,SkillShapeRestriction> shapeRestrictions;
+    std::set<int> restrictedSkillStates,disguiseSkillStates;
     std::map<std::string, CastAnimationTiming, std::less<>> animations;
     std::map<std::string, AttackAnimation, std::less<>> weaponAnimations;
     std::map<std::string, AnimationTiming, std::less<>> recoveryAnimations;

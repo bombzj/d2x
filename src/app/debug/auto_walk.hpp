@@ -3,6 +3,7 @@
 #include "action_state.hpp"
 #include "decision_cadence.hpp"
 #include "navigation_search.hpp"
+#include "walk_contract.hpp"
 #include <chrono>
 #include <deque>
 #include <map>
@@ -23,20 +24,27 @@ class RemoteCombat;
 namespace net {class RealmSession;}
 // Explicit debug input driver. Never reads host state or writes replica positions.
 class DebugAutoWalk {
+  public:
+    struct BlockedStep {Vec from,to;std::vector<OnlineUnitKey> units;};
+  private:
+    std::optional<BlockedStep> blockedStep_;
     using Clock=std::chrono::steady_clock;
-    enum class Goal {Point,Unit,Waypoint,Exit} goal_{};
-    std::string state_="idle",reason_,source_;
+    using Goal=DebugWalkGoal;
+    Goal goal_=Goal::Point;
+    DebugWalkState state_=DebugWalkState::Idle;
+    DebugWalkFailure failure_=DebugWalkFailure::None;
+    std::string reason_,source_;
     uint64_t game_{},area_{};
     std::optional<uint16_t> level_;
     std::optional<uint16_t> destination_;
     std::optional<OnlinePoint> point_,segment_,previous_,client_,server_,edgeStart_,edgeEnd_,crossing_;
     std::optional<OnlinePoint> lastFrom_,lastRequest_,lastTarget_;
     std::optional<Vec> lastPointerFeet_;
-    struct TownLane {
+    struct PointerLane {
         OnlinePoint bend,resume,target;
-        bool resuming{};
+        bool resuming{},town{};
     };
-    std::optional<TownLane> townLane_;
+    std::optional<PointerLane> pointerLane_;
     struct PointerSelection {
         unsigned request{};
         OnlinePoint from,target,raw,lane,submitted;
@@ -82,16 +90,19 @@ class DebugAutoWalk {
     uint64_t failures_{};
     bool run_=true,interact_{},landmark_{},clientMoving_{},exploration_{},localCrossing_{},exactPoint_{};
     DebugNavigationSearch search_;
-    void finish(std::string,std::string,RemoteControl &);
+    void finish(DebugWalkState,std::string,RemoteControl &,DebugWalkFailure=DebugWalkFailure::Other);
     nlohmann::json status() const;
   public:
     void setTiming(const DebugWalkTiming &timing) {timing_=timing;cadence_.wake();}
     DebugNavigationSearch &navigationSearch() {return search_;}
     bool active() const;
     bool recoveringMovement() const {return active() && recoveryAnchor_.has_value();}
-    bool blockedByUnit() const {return active() && reason_=="Next movement segment temporarily occupied";}
+    bool blockedByUnit() const {return active() && blockedStep_.has_value();}
+    const std::optional<BlockedStep> &blockedStep() const {return blockedStep_;}
     bool openingRouteDoor() const {return active() && routeDoor_.has_value();}
     uint64_t failureCount() const {return failures_;}
+    DebugWalkObservation observe() const;
+    void start(const DebugWalkIntent &,net::RealmSession &,RemoteTown &,RemoteControl &);
     nlohmann::json snapshot() const;
     std::optional<std::string> command(const nlohmann::json &,net::RealmSession &,RemoteTown &,RemoteControl &,RemoteCombat &);
     void tick(net::RealmSession &,RemoteTown &,RemoteControl &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);

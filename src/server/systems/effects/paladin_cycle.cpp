@@ -424,7 +424,7 @@ StepStatus System::advanceAuraCycle(const ActorContext &actor,const PlayerState 
         if(isDeferred(result.status)) return StepStatus::Blocked;
         if(result) cycle.callbackAffected|=affected;
         if(id==p.actor && !cycle.recipientsPrepared) {
-            if((spec.serverDoFunction==66 || spec.serverDoFunction==81) && area.town) {
+            if((spec.serverDoFunction==66 || spec.serverDoFunction==81 || spec.serverDoFunction==82) && area.town) {
                 cycle.damage=0;cycle.recipientsPrepared=true;cycle.manaCommitted=true;
             }
             if(!cycle.damage) {

@@ -26,7 +26,7 @@ LoD普通人形SC的完成边界重入（`SkillAction::recastAt`）同样暂不�
 
 | 职业／机制 | 当前执行范围及入口 |
 | --- | --- |
-| 女巫 | 当前喷流、Blaze移动留火、传送附加状态、Static Field减抗、Combustion、Meteor／Blizzard、强化范围、Hydra／Lesser Hydra独立召唤定义；投射物按当前SrvHit／SrvDmg推进 |
+| 女巫 | 当前喷流、Blaze移动留火、传送附加状态、Static Field减抗、Combustion、Meteor／Blizzard、强化范围。Hydra／Lesser Hydra使用独立召唤定义及公共逐头出生准备，当前核心的失败／事件顺序仍待核对。投射物按当前SrvHit／SrvDmg推进。 |
 | 亚马逊 | 当前弓／投掷／标枪程序、Exploding Arrow延迟扇形、Lightning Bolt／Fury、Strafe及近战序列；Valkyrie／Decoy读取各自MonStats与隐藏攻击技能 |
 | 死灵 | 当前诅咒槽数、Curse Mastery、Dark Pact、Blood Warp、Desecrate、Poison Strike、尸爆与骨墙／骨牢；骷髅、法师、弓手及四类石魔读取当前身份、MonProp、PetType、隐藏技能和数量／生命公式 |
 | 圣骑士 | Smite盾牌及Holy Shield伤害、额外Crushing Blow、Joust、Charge移动与临时溅射状态、Holy Light友敌分流、Holy Sword装备门槛、Vengeance延迟传播、Sacrifice反伤与死亡爆炸；光环按当前原表准备 |

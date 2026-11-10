@@ -1,6 +1,8 @@
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/units/distance.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "world/navigation.hpp"
+#include "world/native_spawn.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
@@ -39,6 +41,40 @@ bool unitMeleeReach(const Grid &grid,Vec from,int sourceSize,Vec to,int targetSi
 int missileDistance(Vec from, Vec to) {
     return unitCoordinateDistance(int(std::floor(from.x)), int(std::floor(from.y)),
         int(std::floor(to.x)), int(std::floor(to.y)));
+}
+std::optional<Vec> nativeLeapLanding(const Grid &terrain,const Grid &occupancy,Vec from,Vec target,int range,int size) {
+    const int x=int(std::floor(from.x)),y=int(std::floor(from.y));
+    int tx=int(std::floor(target.x)),ty=int(std::floor(target.y));
+    const int distance=std::max(1,unitCoordinateDistance(x,y,tx,ty));
+    if(distance>range) {
+        tx=x+nativeMultiply(tx-x,range)/distance;
+        ty=y+nativeMultiply(ty-y,range)/distance;
+    }
+    const int dx=std::clamp(ty-y,-2,2),dy=std::clamp(x-tx,-2,2);
+    const Vec start{float(x),float(y)};
+    for(const auto &[cx,cy]:{std::pair{tx,ty},std::pair{tx+dx,ty+dy},std::pair{tx-dx,ty-dy}}) {
+        const auto free=nativeSpawnCoordinate(cx,cy,50,[&](int column,int line){return occupancy.walkable(column,line,{0x1c09,size});});
+        if(!free || unitCoordinateDistance(x,y,free->first,free->second)>range) continue;
+        const Vec landing{float(free->first),float(free->second)};
+        if(terrain.collisionSegment(start,landing,0x804)) return landing;
+    }
+    return {};
+}
+std::optional<Vec> nativeLeapAttackLanding(const Grid &terrain,const Grid &occupancy,Vec from,Vec target,int size) {
+    const int x=int(std::floor(from.x)),y=int(std::floor(from.y));
+    const int tx=int(std::floor(target.x)),ty=int(std::floor(target.y));
+    const int distance=unitCoordinateDistance(x,y,tx,ty);
+    if(!distance) return {};
+    const auto clear=[&](int column,int row){return occupancy.walkable(column,row,{0x1c09,size});};
+    int lx=tx+2*(tx-x)/distance,ly=ty+2*(ty-y)/distance;
+    if(!clear(lx,ly)) {
+        const auto free=nativeSpawnCoordinate(tx,ty,50,clear);
+        if(!free) return {};
+        lx=free->first;ly=free->second;
+    }
+    const Vec landing{float(lx),float(ly)};
+    if(!terrain.collisionSegment({float(x),float(y)},landing,0x804)) return {};
+    return landing;
 }
 std::optional<float> missileUnitIntersection(Vec from, Vec to, int missileSize, Vec unit, int unitSize) {
     if (missileSize < 0 || missileSize > 3 || unitSize <= 0 || unitSize > 3) return std::nullopt;

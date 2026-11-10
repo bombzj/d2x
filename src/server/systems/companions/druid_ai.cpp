@@ -16,10 +16,12 @@
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/units/coordinates.hpp"
 #include "gameplay/units/distance.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <cstdlib>
 #include <stdexcept>
 namespace d2x::server::companions {
 struct DruidDecision {
@@ -96,7 +98,26 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
     const Vec ownerPoint=owner->position+ownerArea.definition.origin-area.definition.origin;
     const auto param=[&](size_t index){return program.parameters.at(index).at(size_t(body->rule.difficulty));};
     const auto distance=[&](Vec point,int size=0) {return unitCoordinateDistanceWithSize(int(body->position.x),int(body->position.y),int(point.x),int(point.y),size);};
-    const int ownerDistance=unitDistanceWithSizes(int(body->position.x),int(body->position.y),body->rule.size,int(ownerPoint.x),int(ownerPoint.y),2);
+    const auto bodyCell=nativeFeetCell(body->position);
+    const auto sizedDistance=[&](Vec at,int size) {
+        const auto cell=nativeFeetCell(at);
+        return unitDistanceWithSizes(int(bodyCell.x),int(bodyCell.y),body->rule.size,int(cell.x),int(cell.y),size);
+    };
+    const auto fullDistance=[&](Vec at) {
+        const auto cell=nativeFeetCell(at);
+        const int size=body->rule.size;
+        const int x=std::max(0,std::abs(int(bodyCell.x)-int(cell.x))-size);
+        const int y=std::max(0,std::abs(int(bodyCell.y)-int(cell.y))-size);
+        return unitCoordinateDistance(0,0,x,y);
+    };
+    const bool retail=!owner->rules.skills->pd2;
+    const bool bear=kind==DruidPetDefinition::Ai::Bear;
+    const bool fullFollow=kind==DruidPetDefinition::Ai::Raven || bear;
+    const bool sizedFollow=kind==DruidPetDefinition::Ai::PoisonVine || kind==DruidPetDefinition::Ai::Spirit ||
+        kind==DruidPetDefinition::Ai::SpiritWolf || kind==DruidPetDefinition::Ai::DireWolf ||
+        kind==DruidPetDefinition::Ai::LifeVine || kind==DruidPetDefinition::Ai::ManaVine;
+    const int ownerDistance=fullFollow && retail?fullDistance(ownerPoint):sizedFollow && retail?sizedDistance(ownerPoint,2):
+        unitDistanceWithSizes(int(body->position.x),int(body->position.y),body->rule.size,int(ownerPoint.x),int(ownerPoint.y),2);
     const int velocity=body->rule.nativeVelocity<=0?100:body->petStats.followVelocityBonus;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto point=[&](combat::ParticipantView target) {return target.position()+ports_.areas.at(target.player?target.player->area:target.monster->area).definition.origin-area.definition.origin;};
@@ -104,9 +125,9 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
     const auto follow=[&](EntityId target,bool combat,int motion=-1,int speed=0,bool run=false) {
         return followNativePet(ports_,pet,*owner,*body,target,combat,tick.tick,{program.warpProbeClass,program.warpProbeCollision,motion,speed,6,run,kind==DruidPetDefinition::Ai::SpiritWolf || kind==DruidPetDefinition::Ai::DireWolf});
     };
-    const auto move=[&](Vec destination,EntityId target={},int path=13,int speed=0,bool run=false,int circle=0) {
+    const auto move=[&](Vec destination,EntityId target={},int path=13,int speed=0,bool run=false,int circle=0,uint8_t maximum=100) {
         monsters::MoveRequest request{body->id,{body->area,area.generation,destination},target,0,75+speed,run};
-        request.pathType=uint8_t(path);request.pathDistance=100;request.pathSteps=1;
+        request.pathType=uint8_t(path);request.pathDistance=maximum;request.pathSteps=1;
         if(path==5 || path==6) {request.circleTurn=circle;request.circleDistance=4;}
         const auto moved=ports_.monsters.requestMove(request);if(moved) pet.nativePetMoving=true;
         return bool(moved);
@@ -176,11 +197,11 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
     }
     const bool wolf=kind==DruidPetDefinition::Ai::SpiritWolf || kind==DruidPetDefinition::Ai::DireWolf;
     const bool vine=program.vine;
-    const int radius=wolf?param(3):kind==DruidPetDefinition::Ai::Bear?28:kind==DruidPetDefinition::Ai::Spirit?24:35;
+    const int radius=wolf?param(3):bear?28:kind==DruidPetDefinition::Ai::Spirit?24:35;
     auto acquired=ai::acquireNativeAiTarget({ports_.monsters,ports_.players,ports_.areas,ports_.social},*body,tick,false,false,radius);
     auto target=acquired?participants.find(acquired->unit.id):combat::ParticipantView{};
     const bool acquiredCombat=melee(target);
-    if(wolf || kind==DruidPetDefinition::Ai::Bear) {
+    if(wolf || bear) {
         const auto potential=ai::acquireNativeOwnerTarget({ports_.monsters,ports_.players,ports_.areas,ports_.social},*owner);
         const auto eligible=[&](combat::ParticipantView candidate) {
             if(!candidate.id()) return false;
@@ -193,18 +214,21 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
                 if(area.definition.collision.collisionSegment(body->position,end,0x45)) return true;
             return false;
         };
-        if(target.id() && !eligible(target)) target={};
+        if(target.id() && ((bear && retail && acquired->distance>radius) || !eligible(target))) target={};
         if(!target.id() && potential) {
             const auto candidate=participants.find(potential->unit.id);
-            const int candidateDistance=kind==DruidPetDefinition::Ai::DireWolf?potential->distance:
-                unitCoordinateDistanceWithSize(int(body->position.x),int(body->position.y),int(point(candidate).x),int(point(candidate).y),body->rule.size);
-            if(candidateDistance<radius && (kind==DruidPetDefinition::Ai::SpiritWolf?!eligible(candidate):eligible(candidate))) target=candidate;
+            if(candidate.id()) {
+                const auto at=point(candidate);
+                const int candidateDistance=kind==DruidPetDefinition::Ai::DireWolf?potential->distance:bear && retail?fullDistance(at):
+                    unitCoordinateDistanceWithSize(int(body->position.x),int(body->position.y),int(at.x),int(at.y),body->rule.size);
+                if(candidateDistance<radius && (kind==DruidPetDefinition::Ai::SpiritWolf?!eligible(candidate):eligible(candidate))) target=candidate;
+            }
         }
         if(kind==DruidPetDefinition::Ai::DireWolf && target.id() && ownerDistance>param(3) &&
            unitDistanceWithSizes(int(ownerPoint.x),int(ownerPoint.y),2,int(point(target).x),int(point(target).y),target.size())>param(3)) target={};
     }
     bool combat=acquiredCombat;
-    if(wolf || kind==DruidPetDefinition::Ai::Bear) pet.druidAi[2]=int64_t(owner->actor.value);
+    if(wolf || bear) pet.druidAi[2]=int64_t(owner->actor.value);
     if(wolf && area.definition.town) {if(!follow({},false)) idle(33);return StepStatus::Complete;}
     if(vine && ownerDistance>=param(4) && follow({},false,3)) return StepStatus::Complete;
     if(kind==DruidPetDefinition::Ai::PoisonVine) {
@@ -234,7 +258,12 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
             }
         }
         auto corpseId=findDruidCorpse(ports_.areas,ports_.players,ports_.monsters,ports_.social,body->id,corpseRadius,tick.tick);
-        auto corpse=participants.find(corpseId);if(corpse.id() && distance(point(corpse))>=param(1)) corpse={};
+        auto corpse=participants.find(corpseId);
+        if(corpse.id()) {
+            const auto at=point(corpse);
+            const int corpseDistance=retail?sizedDistance(at,corpse.size()):distance(at);
+            if(corpseDistance>=param(1)) corpse={};
+        }
         const bool reachable=melee(corpse);if(follow(corpse.id(),reachable)) return StepStatus::Complete;
         const bool needsResource=kind==DruidPetDefinition::Ai::LifeVine?owner->persistent.player.hp<owner->totals.character.maxLifeFixed:owner->persistent.player.mana<owner->totals.character.maxManaFixed;
         if(corpse.id() && reachable && needsResource && pet.druidAi[1]+param(0)<int64_t(tick.tick)) {
@@ -244,6 +273,7 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
         if(corpse.id()) move(point(corpse),corpse.id(),7);else idle(param(2));return StepStatus::Complete;
     }
     if(kind==DruidPetDefinition::Ai::Spirit) {
+        if(retail && acquired && acquired->distance>radius) {target={};combat=false;}
         if(combat && target.id() && chance(param(0)) && escape(point(target),6,true)) return StepStatus::Complete;
         if(chance(param(1))) {target={};combat=false;}
         if(ownerDistance>param(2)) {
@@ -259,6 +289,13 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
         return StepStatus::Complete;
     }
     if(wolf) {
+        const auto pursue=[&](combat::ParticipantView victim) {
+            const auto &catalog=*body->rule.formulas;
+            const auto decrepify=catalog.skillIds.find("decrepify");
+            const bool slowed=retail && decrepify!=catalog.skillIds.end() && ports_.effects.unitStates(body->id,tick.tick)
+                .contains(catalog.skills.at(decrepify->second).auraTargetState);
+            return move(point(victim),victim.id(),13,slowed?0:velocity,!slowed);
+        };
         const int teleport=program.skills[kind==DruidPetDefinition::Ai::DireWolf?1:0];
         if(ownerDistance>50 && teleport>=0) return cast(teleport,{},10,pet.druidAi,ownerPoint);
         if(ownerDistance>param(4) && follow({},false,0,100,true)) return StepStatus::Complete;
@@ -270,9 +307,9 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
            (chance(param(2)) || !target.id() || pet.druidAi[0])) {
             const auto corpseId=findDruidCorpse(ports_.areas,ports_.players,ports_.monsters,ports_.social,body->id,10,tick.tick);
             const auto corpse=participants.find(corpseId);
-            if(corpse.id() && distance(point(corpse))<param(3)/2) {
+            if(corpse.id() && (retail?sizedDistance(point(corpse),corpse.size()):distance(point(corpse)))<param(3)/2) {
                 if(melee(corpse)) {auto after=pet.druidAi;after[0]=0;return cast(program.skills[0],corpse.id(),1,after);}
-                if(!combat) {move(point(corpse),corpse.id(),13,velocity,true);pet.druidAi[0]=1;pet.druidAi[1]=int64_t(corpse.id().value);return StepStatus::Complete;}
+                if(!combat) {pursue(corpse);pet.druidAi[0]=1;pet.druidAi[1]=int64_t(corpse.id().value);return StepStatus::Complete;}
                 return cast(0,target.id(),param(0),pet.druidAi);
             }
         } else pet.druidAi[0]=0;
@@ -282,17 +319,22 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
             if(kind==DruidPetDefinition::Ai::SpiritWolf && leash>=param(3)) {
                 if(ownerDistance<=10) idle(15);
                 else move(monsterRadiusApproachPoint(body->position,body->rule.size,ownerPoint,8,6)-Vec{.5f,.5f});
-            } else move(point(target),target.id(),13,velocity,true);
+            } else pursue(target);
         } else if(!chance(param(1)) || !around(10)) idle(15);
         return StepStatus::Complete;
     }
-    if(kind==DruidPetDefinition::Ai::Bear) {
+    if(bear) {
         if(ownerDistance>50) {if(!follow({},false,3)) idle(1);return StepStatus::Complete;}
         if(ownerDistance>28) {if(!follow({},false,0,100)) idle(1);return StepStatus::Complete;}
         if(ownerDistance>18 && owner->moving && follow({},false,0,owner->runningNow?100:0)) return StepStatus::Complete;
-        if(combat && target.id()) return cast(chance(param(2))?program.skills[0]:0,target.id(),param(0),pet.druidAi);
+        if(combat && target.id()) {
+            const int skill=chance(param(2))?program.skills[0]:0;
+            return cast(skill,target.id(),retail && skill>0?1:param(0),pet.druidAi);
+        }
         if(!target.id()) {if(ownerDistance<=16) idle(15);else if(!follow({},false,0)) idle(1);return StepStatus::Complete;}
-        const bool run=chance(param(1));move(point(target),target.id(),13,run?velocity:0);return StepStatus::Complete;
+        const bool accelerate=chance(param(1));
+        move(point(target),target.id(),13,accelerate?velocity:0,false,0,retail && accelerate?40:100);
+        return StepStatus::Complete;
     }
     idle(25);return StepStatus::Complete;
 }

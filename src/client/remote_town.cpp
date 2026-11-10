@@ -28,12 +28,18 @@ int RemoteTown::monsterSizeX(uint16_t identity) const {
     const auto shape=monsterSizeRows_.find(monsters_.value(row->second,"MonStatsEx"));
     return shape==monsterSizeRows_.end()?0:monsterSizes_.number(shape->second,"SizeX").value_or(0);
 }
-Grid RemoteTown::navigationGrid(const OnlineView &online,std::optional<OnlineUnitKey> ignored) const {
-    Grid result;
-    if(!map_ || !view_.origin) return result;
-    const auto *terrain=&map_->grid;const auto origin=*view_.origin;
-    result.width=terrain->width;result.height=terrain->height;
-    auto presence=std::make_shared<std::map<std::pair<int,int>,uint16_t>>();
+void RemoteTown::visitNavigationPresence(const OnlineView &online,std::optional<OnlineUnitKey> ignored,
+        const std::function<void(OnlineUnitKey,int,int,uint16_t)> &visit) const {
+    if(!map_ || !view_.origin) return;
+    const auto origin=*view_.origin;
+    std::set<std::pair<int,int>> observerCells;
+    const auto observer=displayPlayerPosition_?displayPlayerPosition_:online.world.playerPosition;
+    if(observer) {
+        const auto pattern=nativeUnitCollisionPattern(playerMovement.size,false);
+        for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx)
+            if(nativeCollisionFootprint(pattern,dx,dy,1))
+                observerCells.emplace(int(observer->x)-origin.x+dx,int(observer->y)-origin.y+dy);
+    }
     if(online.protocolProfile=="lod113c") for(const auto &[key,unit]:online.world.units) {
         if(key==ignored || !unit.position || (key.type==0 && key.id==online.load.playerUnitId)) continue;
         int size=0;uint16_t mask=0;bool nonblockingPresence=false;
@@ -65,20 +71,36 @@ Grid RemoteTown::navigationGrid(const OnlineView &online,std::optional<OnlineUni
         const auto pattern=nativeUnitCollisionPattern(size,hireling || nonblockingPresence);
         for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx) {
             const auto bits=nativeCollisionFootprint(pattern,dx,dy,mask);
-            if(bits) (*presence)[{int(unit.position->x)-origin.x+dx,int(unit.position->y)-origin.y+dy}]|=bits;
+            const int x=int(unit.position->x)-origin.x+dx,y=int(unit.position->y)-origin.y+dy;
+            // Preserve the same escape from overlapping presence for every consumer.
+            if(bits && !observerCells.contains({x,y})) visit(key,x,y,bits);
         }
     }
-    // A moving NPC can overlap the player's current footprint after a
-    // conversation. Do not let this derived avoidance layer reject every
-    // route at its starting cell: keep the rest of that unit solid, and keep
-    // all terrain/object masks, while allowing a normal input out of overlap.
-    const auto observer=displayPlayerPosition_?displayPlayerPosition_:online.world.playerPosition;
-    if(observer) {
-        const auto pattern=nativeUnitCollisionPattern(playerMovement.size,false);
-        for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx)
-            if(nativeCollisionFootprint(pattern,dx,dy,1))
-                presence->erase({int(observer->x)-origin.x+dx,int(observer->y)-origin.y+dy});
+}
+std::vector<OnlineUnitKey> RemoteTown::navigationBlockers(const OnlineView &online,Vec from,Vec to) const {
+    std::vector<OnlineUnitKey> result;
+    if(!map_ || !view_.origin) return result;
+    std::map<OnlineUnitKey,std::map<std::pair<int,int>,uint16_t>> units;
+    visitNavigationPresence(online,{},[&](OnlineUnitKey key,int x,int y,uint16_t bits) {units[key][{x,y}]|=bits;});
+    const Vec offset{float(view_.origin->x)-.5f,float(view_.origin->y)-.5f};
+    // Test each native footprint independently: overlapping units must all be
+    // attributed, even when removing only one would leave the ray blocked.
+    Grid grid;grid.width=map_->grid.width;grid.height=map_->grid.height;
+    for(const auto &[key,cells]:units) {
+        grid.collisionSample=[&cells](int x,int y,EntityId) {
+            const auto found=cells.find({x,y});return found==cells.end()?uint16_t(0):found->second;
+        };
+        if(!grid.nativeMovementSegment(from-offset,to-offset,playerMovement)) result.push_back(key);
     }
+    return result;
+}
+Grid RemoteTown::navigationGrid(const OnlineView &online,std::optional<OnlineUnitKey> ignored) const {
+    Grid result;
+    if(!map_ || !view_.origin) return result;
+    const auto *terrain=&map_->grid;
+    result.width=terrain->width;result.height=terrain->height;
+    auto presence=std::make_shared<std::map<std::pair<int,int>,uint16_t>>();
+    visitNavigationPresence(online,ignored,[&](OnlineUnitKey,int x,int y,uint16_t bits) {(*presence)[{x,y}]|=bits;});
     // Ephemeral client query only: retain terrain/object authority, add the
     // original cross/square sizes of already assigned living units/other players.
     // No footprint is written into NativeMap or the replicated world.

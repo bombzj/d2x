@@ -1,52 +1,18 @@
 #include "ai_impl.hpp"
-#include "world/collision.hpp"
+#include "ai_combat_observation.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
 namespace d2x {
-namespace {
-Vec position(OnlinePoint p) {return {float(p.x),float(p.y)};}
-OnlinePoint point(Vec p) {
-    if(!std::isfinite(p.x) || !std::isfinite(p.y) || p.x<0 || p.y<0 || p.x>65535 || p.y>65535)
-        throw std::runtime_error("Combat position outside native coordinates");
-    const auto feet=DebugExplorationMemory::playerCell(p);
-    return {uint16_t(feet.first),uint16_t(feet.second)};
-}
-std::optional<uint8_t> life(const OnlineUnit &unit) {
-    if(!unit.lifePercent) return {};
-    // Full life may be 128 in an ordinary ratio packet but only 127 in
-    // the hit format reserving bit 7. Do not manufacture progress when
-    // switching between these two full-life encodings.
-    return uint8_t(std::min(127,int(unit.lifeCarriesTriggerFlag?*unit.lifePercent&0x7f:*unit.lifePercent)));
-}
-}
+using debug_ai::position;
+using debug_ai::life;
 void DebugAi::Impl::releaseCombat(Context &c) {
-    if(combatOwned) {
+    if(battle.combatOwned) {
         OnlineCombatCommand stop;stop.action=OnlineCombatCommand::Action::Stop;
         if(!c.combat.submit(stop)) note("combat-release-unavailable",c.combat.reason());
     }
-    combatOwned=false;combatRun.repeating=false;
-}
-void DebugAi::Impl::prepareCombatSkill(const Context &c) {
-    if(!policy.enabled || (!c.town.read().town && excursionSkillPrepared)) return;
-    const auto qualified=[&](uint16_t skill) {
-        if(!definitions->skillRows.contains(skill) || !knownSkill(c,skill,bool(battleAura(c)))) return false;
-        const auto minimum=policy.minimumSkillLevels.find(skill);
-        const unsigned required=minimum==policy.minimumSkillLevels.end()?1:minimum->second;
-        return std::any_of(c.combat.skills().begin(),c.combat.skills().end(),[&](const auto &entry) {
-            return entry.id==skill && std::max(unsigned(entry.level),entry.innate?1u:0u)>=required;
-        });
-    };
-    // Select by learned/effective rank and hand metadata only. Cooldown,
-    // mana, temporary states and a particular target never select a fallback.
-    std::optional<uint16_t> selected;
-    const auto primary=policy.skill.value_or(definitions->skill("Attack"));
-    if(qualified(primary)) selected=primary;
-    else for(const auto skill:policy.fallbackSkills) if(qualified(skill)) {selected=skill;break;}
-    if(!excursionSkillPrepared || excursionSkill!=selected)
-        note("combat-excursion-skill",selected?std::to_string(*selected):"no qualified configured attack");
-    excursionSkill=selected;excursionSkillPrepared=true;
+    battle.combatOwned=false;battle.combatRun.repeating=false;
 }
 void DebugAi::Impl::observeCombat(Context &c) {
     const auto now=Clock::now();const auto &world=c.session.read().world;
@@ -59,68 +25,43 @@ void DebugAi::Impl::observeCombat(Context &c) {
         const auto key=std::tuple{c.session.read().gameGeneration,player->first.id,player->second.assignmentRevision,
             player->second.appearanceRevision,player->second.stateSequence,world.itemRevision,
             c.supplies->navigationWeaponSet,*c.supplies->navigationFasterCast};
-        if(teleportTiming.key!=key) {
-            teleportTiming.key=key;teleportTiming.seconds.reset();
-            if(sample) teleportTiming.revision=sample->first;
-        } else if(sample && sample->first!=teleportTiming.revision) {
-            teleportTiming.revision=sample->first;
-            if(std::isfinite(sample->second) && sample->second>0) teleportTiming.seconds=sample->second;
+        if(navigation.teleportTiming.key!=key) {
+            navigation.teleportTiming.key=key;navigation.teleportTiming.seconds.reset();
+            if(sample) navigation.teleportTiming.revision=sample->first;
+        } else if(sample && sample->first!=navigation.teleportTiming.revision) {
+            navigation.teleportTiming.revision=sample->first;
+            if(std::isfinite(sample->second) && sample->second>0) navigation.teleportTiming.seconds=sample->second;
         }
-    } else {teleportTiming.key.reset();teleportTiming.seconds.reset();}
-    if(c.supplies && c.supplies->maxLife) combatMaxLife=c.supplies->maxLife;
-    if(world.life && (combatLifeSamples.empty() || now-combatLifeSamples.back().at>=debugInputRetryInterval))
-        combatLifeSamples.push_back({now,*world.life});
-    while(!combatLifeSamples.empty() && (combatLifeSamples.size()>32 || now-combatLifeSamples.front().at>std::chrono::seconds(4)))
-        combatLifeSamples.pop_front();
-    if(!combatTarget) return;
-    const auto unit=world.units.find(*combatTarget);
-    if(unit==world.units.end() || unit->second.assignmentRevision!=combatRun.assignment) return;
+    } else {navigation.teleportTiming.key.reset();navigation.teleportTiming.seconds.reset();}
+    if(c.supplies && c.supplies->maxLife) battle.combatMaxLife=c.supplies->maxLife;
+    if(world.life && (battle.combatLifeSamples.empty() || now-battle.combatLifeSamples.back().at>=debugInputRetryInterval))
+        battle.combatLifeSamples.push_back({now,*world.life});
+    while(!battle.combatLifeSamples.empty() && (battle.combatLifeSamples.size()>32 || now-battle.combatLifeSamples.front().at>std::chrono::seconds(4)))
+        battle.combatLifeSamples.pop_front();
+    if(!battle.combatTarget) return;
+    const auto unit=world.units.find(*battle.combatTarget);
+    if(unit==world.units.end() || unit->second.assignmentRevision!=battle.combatRun.assignment) return;
     const auto health=life(unit->second);
     if(health) {
-        if(combatRun.lastLife && *health>*combatRun.lastLife) combatRun.healingObserved=true;
-        if(!combatRun.bestLife) combatRun.bestLife=health;
-        else if(*health<*combatRun.bestLife) {
-            combatRun.bestLife=health;combatRun.progressAt=combatRun.strategyAt=now;
-            if(combatRun.suspendedAt!=Clock::time_point{}) combatRun.suspendedAt=now;
-            combatRun.repositioned=false;note("combat-net-life-progress",std::to_string(*health));
+        if(battle.combatRun.lastLife && *health>*battle.combatRun.lastLife) battle.combatRun.healingObserved=true;
+        if(!battle.combatRun.bestLife) battle.combatRun.bestLife=health;
+        else if(*health<*battle.combatRun.bestLife) {
+            battle.combatRun.bestLife=health;battle.combatRun.progressAt=battle.combatRun.strategyAt=now;
+            if(battle.combatRun.suspendedAt!=Clock::time_point{}) battle.combatRun.suspendedAt=now;
+            battle.combatRun.repositioned=false;note("combat-net-life-progress",std::to_string(*health));
         }
-        combatRun.lastLife=health;
+        battle.combatRun.lastLife=health;
     }
-    if(unit->second.hitRevision>combatRun.hitRevision) {combatRun.hitRevision=unit->second.hitRevision;++combatRun.hits;}
+    if(unit->second.hitRevision>battle.combatRun.hitRevision) {battle.combatRun.hitRevision=unit->second.hitRevision;++battle.combatRun.hits;}
 }
-bool DebugAi::Impl::approachEnemy(Context &c,const OnlineUnit &enemy,std::string purpose) {
-    if(!enemy.position) return false;
-    auto *knowledge=observeTerrain(c);const auto origin=c.town.read().origin;
-    if(!knowledge || !origin) {wait("combat-observation","Waiting for acquired approach terrain");return true;}
-    const auto skill=excursionSkill.value_or(policy.skill.value_or(definitions->skill("Attack")));
-    const auto row=definitions->skillRows.find(skill);
-    const bool melee=skill==definitions->skill("Attack") ||
-        (row!=definitions->skillRows.end() && definitions->skills.value(row->second,"range")=="h2h");
-    const int range=melee?3:std::min(policy.range,policy.engage);
-    const auto mask=definitions->attackMasks.find(skill);
-    const uint16_t attackMask=mask==definitions->attackMasks.end()?uint16_t(4):mask->second;
-    const Vec target{float(enemy.position->x),float(enemy.position->y)},offset{float(origin->x),float(origin->y)};
-    const auto &terrain=c.town.map()->grid;
-    std::vector<DebugExplorationMemory::Cell> stances;
-    for(int y=std::max(0,int(target.y)-range);y<=std::min(65535,int(target.y)+range);++y)
-        for(int x=std::max(0,int(target.x)-range);x<=std::min(65535,int(target.x)+range);++x) {
-            const Vec at{float(x),float(y)},local=at-offset+Vec{.5f,.5f};
-            if((at-target).length()>range || !knowledge->stand(x,y) ||
-                !terrain.collisionSegment(local,target-offset+Vec{.5f,.5f},attackMask)) continue;
-            stances.emplace_back(x,y);
-        }
-    // A real enemy supplies an identity and an attack perimeter, never a
-    // standable centre. Hunt/clear/drop and rescue gates share this route model.
-    if(approachPoint(c,*enemy.position,std::move(purpose),0,false,{},std::move(stances))) return true;
-    wait("combat-ready","At an observed attack stance; awaiting normal combat selection");return true;
-}
-bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool planningDefense) {
+bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool planningDefense,
+        const RouteCombatTask *task) {
     const auto &view=c.session.read();const auto now=Clock::now();
     if(!policy.enabled || c.town.read().town || view.world.npcRequested || view.world.waypointSource) return false;
-    if(!excursionSkill) throw std::runtime_error("No configured attack met the departure skill requirements");
+    if(!battle.excursionSkill) throw std::runtime_error("No configured attack met the departure skill requirements");
     if(nearbyDefense && (view.world.npcConversation || view.world.waypointRequested || view.world.staffSource ||
         view.world.townPortalPending || onlineHasCursorItem(view.world.items,view.load.playerUnitId))) return false;
-    std::erase_if(bypassedThreats,[&](const auto &entry) {
+    std::erase_if(battle.bypassedThreats,[&](const auto &entry) {
         const auto unit=view.world.units.find(entry.first.first);
         if(unit==view.world.units.end() || unit->second.assignmentRevision!=entry.first.second || onlineMonsterCorpse(unit->second)) return true;
         // Elapsed time alone cannot repair the same failed attack angle.
@@ -132,418 +73,111 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
     });
     const auto *map=c.town.map();const auto origin=c.town.read().origin;
     const Vec offset=origin?position(*origin):Vec{};
-    const auto attackMask=[&](uint16_t skill) {
-        const auto found=definitions->attackMasks.find(skill);
-        return found==definitions->attackMasks.end()?uint16_t(4):found->second;
-    };
-    auto lineMask=attackMask(combatRun.skillIndex<combatRun.skills.size()?combatRun.skills[combatRun.skillIndex]:
-        *excursionSkill);
-    const auto clearLine=[&](Vec from,Vec to) {
-        // Walking WALL also marks ledges occupied by flying monsters. Retail
-        // projectile modes use MISSILE_BARRIER; only mode8 adds WALL.
-        return map && origin && map->grid.collisionSegment(from-offset+Vec{.5f,.5f},to-offset+Vec{.5f,.5f},lineMask);
-    };
-    const QuestStep *step=cursor<goals.size() && goals[cursor].kind==Kind::Quest && questRun.step<goals[cursor].steps.size()?
-        &goals[cursor].steps[questRun.step]:nullptr;
-    const bool targetedDrop=step && step->action==QuestAction::SearchDrop && step->target &&
-        goal.kind==Kind::Quest && step->area==area;
-    const auto objective=!nearbyDefense && (goal.kind==Kind::Hunt || targetedDrop) && goal.target?find(c,*goal.target):std::nullopt;
-    const bool nearObjective=objective && (position(*objective->position)-c.position).length()<=policy.engage;
-    // Permission to fight for a drop is not a requirement to kill every
-    // nearby monster. Only real clear objectives and the active encounter
-    // make an unrelated enemy's defeat a necessary postcondition.
-    const bool clearing=!nearbyDefense && step && goal.area==area && (step->action==QuestAction::Clear ||
-        (step->action==QuestAction::Encounter && step->clearCombat && questRun.encounterPosition &&
-         questRun.encounterArea==area && (position(*questRun.encounterPosition)-c.position).length()<=encounterMovementRadius()));
-    const auto mustClear=[&](const OnlineUnit &unit) {return clearing && (step->action==QuestAction::Clear || encounterEnemy(c,unit));};
-    const auto routeDrop=step?routeDropState(c,goals[cursor]):RouteDrop::None;
-    const bool collecting=step && step->action==QuestAction::SearchDrop && (pickup || observedDrop(c,step->item));
-    const bool seekingElite=!nearbyDefense && routeDrop==RouteDrop::Seek && !clearing && !targetedDrop && !questRun.pending && !questRun.worldWait &&
-        !questTransaction(c) && !objectIssued && !pickup && !portalIssued;
-    const bool fastTravel=(mobilityPolicy.mode=="teleport" || townExitArea || teleportAvailable(c,false)) && !clearing && !nearObjective;
-    if (!nearbyDefense && (collecting || (fastTravel && !seekingElite))) {
-        releaseCombat(c);
-        combatTarget.reset(); retreatPoint.reset(); combatRun = {};
-        combatDiagnostics = {{"status", collecting?"quest-drop-pickup":"travel-skip-optional-combat"}};
-        return false;
-    }
-    std::vector<OnlineUnit> enemies;std::optional<OnlineUnit> chosen,obstructed,elite;
-    float eliteDistance=float(policy.engage);
-    const bool elitesOnly=!nearbyDefense && (fastTravel || (step && goals[cursor].routeDrop==questRun.step));
-    bool defensiveDanger=false;
-    if(nearbyDefense || policy.scope=="defensive") {
-        size_t nearby=0;
-        for(const auto &[key,unit]:view.world.units) {
-            if(key.type==1 && unit.position && c.combat.hostile(unit) && c.combat.monsterTargetEligible(unit,false) &&
-                (position(*unit.position)-c.position).length()<=policy.radius) ++nearby;
-        }
-        if(combatMaxLife && *combatMaxLife>0 && view.world.life) {
-            uint16_t peak=*view.world.life;
-            for(const auto &sample:combatLifeSamples) peak=std::max(peak,sample.life);
-            const auto health=uint64_t(*view.world.life)*100/unsigned(*combatMaxLife);
-            const auto loss=uint64_t(peak-*view.world.life)*100/unsigned(*combatMaxLife);
-            defensiveDanger=nearby>=size_t(policy.crowd) ||
-                (nearby && (health<unsigned(policy.retreatLifePercent) || loss>=unsigned(policy.lifeDropPercent)));
-        } else defensiveDanger=nearby>=size_t(policy.crowd);
-    }
-    float nearest=clearing && step->action==QuestAction::Encounter && questRun.worldWait?
-        float(std::max(policy.engage,2*encounterMovementRadius())):float(policy.engage);
-    float nearestObstructed=nearest;
-    for(const auto &[key,unit]:view.world.units) {
-        if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false) ||
-            (!mustClear(unit) && (!objective || objective->key!=key) && bypassedThreats.contains({key,unit.assignmentRevision}))) continue;
-        if(!defensiveDanger && (nearbyDefense || policy.scope=="defensive") && !mustClear(unit) &&
-            (!objective || objective->key!=key) && !seekingElite) continue;
-        const float distance=(position(*unit.position)-c.position).length();
-        if(nearbyDefense && distance>policy.radius && (planningDefense || key!=combatTarget) &&
-            !(view.load.playerUnitId && unit.destinationUnit==OnlineUnitKey{0,*view.load.playerUnitId})) continue;
-        const bool candidate=seekingElite && distance<=policy.engage && c.combat.jadeFigurineCandidate(unit);
-        if(elitesOnly && !candidate && distance>policy.radius) continue;
-        const bool visible=clearLine(c.position,position(*unit.position));
-        if(passageDefending) {
-            const auto skill=definitions->skillRows.find(*excursionSkill);
-            const bool melee=*excursionSkill==definitions->skill("Attack") ||
-                (skill!=definitions->skillRows.end() && definitions->skills.value(skill->second,"range")=="h2h");
-            if(!visible || distance>(melee?3:policy.range)) continue;
-        }
-        if(candidate && visible && (!elite || distance<eliteDistance)) {elite=unit;eliteDistance=distance;}
-        if(mustClear(unit) && !visible && distance<nearestObstructed) {nearestObstructed=distance;obstructed=unit;}
-        if(distance<=policy.engage && (visible || distance<=policy.radius)) enemies.push_back(unit);
-        const bool byObjective=nearObjective && (key==objective->key ||
-            (position(*unit.position)-position(*objective->position)).length()<=policy.radius);
-        const bool relevant=nearbyDefense || policy.scope=="clear" || mustClear(unit) || byObjective || (policy.scope=="defensive" && distance<=policy.radius);
-        if(!elitesOnly && relevant && (distance<=policy.engage || mustClear(unit)) && visible && distance<nearest) {nearest=distance;chosen=unit;}
-    }
-    // A stance change may leave the acquisition radius, and another enemy
-    // may briefly be nearer. Finish the same valid engagement inside its
-    // existing engage radius; the required objective still takes precedence.
-    if(combatTarget) for(const auto &unit:enemies) if(unit.key==combatTarget &&
-        unit.assignmentRevision==combatRun.assignment && clearLine(c.position,position(*unit.position))) {
-        const bool byObjective=nearObjective && (unit.key==objective->key ||
-            (position(*unit.position)-position(*objective->position)).length()<=policy.radius);
-        if(!elitesOnly && (nearbyDefense || policy.scope=="clear" || mustClear(unit) || byObjective ||
-           (policy.scope=="defensive" && (position(*unit.position)-c.position).length()<=policy.radius))) chosen=unit;
-        if(seekingElite && c.combat.jadeFigurineCandidate(unit)) elite=unit;
-        break;
-    }
-    if(elite) chosen=elite;
-    if(nearObjective && c.combat.monsterTargetEligible(*objective,false)) chosen=objective;
-    // A required clear may retain a real enemy behind a corner. Give the
-    // firing-position recovery the same opportunity as a named hunt target;
-    // navigating to its center alone can leave a ranged actor at the wall.
-    if(!chosen && obstructed) chosen=obstructed;
-    if(!chosen) {
-        if(combatTarget || combatOwned) {
-            releaseCombat(c);retreatPoint.reset();
-            const auto previous=combatTarget?view.world.units.find(*combatTarget):view.world.units.end();
-            if(!defensiveDanger && (nearbyDefense || policy.scope=="defensive") && !clearing && !nearObjective && !seekingElite) {
-                combatTarget.reset();combatRun={};
-                combatDiagnostics={{"status","travel-threat-contained"}};
-                note("combat-defense-released","Nearby pressure no longer requires stopping travel");return false;
-            }
-            if(previous!=view.world.units.end() && previous->second.assignmentRevision==combatRun.assignment &&
-                !onlineMonsterCorpse(previous->second) && c.combat.hostile(previous->second)) {
-                if(combatRun.suspendedAt==Clock::time_point{}) {
-                    combatRun.suspendedAt=now;note("combat-suspended","Retaining the same assigned target's recovery state; releasing input");
-                }
-                combatDiagnostics["status"]="suspended";return false;
-            }
-            cancelWalk(c);combatTarget.reset();combatRun={};note("combat-clear");
-        }
-        combatDiagnostics={{"status",clearing?"clear-awaiting-approach":"no-relevant-target"},
-            {"clearing",clearing},{"engageRadius",policy.engage}};
-        return false;
-    }
-    const bool required=mustClear(*chosen) || (objective && chosen->key==objective->key);
+    CombatSight sight{map && origin?&map->grid:nullptr,offset,combatAttackMask(c,*battle.excursionSkill)};
+    CombatSelection selection;
+    if(!selectCombatTarget(c,goal,nearbyDefense,planningDefense,task,now,sight,selection)) return false;
+    const auto &[enemies,chosen,elite,required]=selection;
     bool boss=false;
     if(const auto id=c.combat.monsterClass(*chosen))
         if(const auto row=findCompiledMonsterRow(definitions->monsters,*id)) boss=definitions->monsters.number(*row,"boss").value_or(0)!=0;
-    unsigned staticRank=0;
-    for(const auto &entry:c.combat.skills()) if(entry.id==definitions->staticFieldSkill) {
-        staticRank=entry.level;
-    }
-    const auto staticRange=definitions->staticRadius(staticRank);
-    std::optional<int> staticFloor;
-    if(!view.load.expansion) staticFloor=0;
-    else if(view.load.difficulty && *view.load.difficulty<definitions->difficulties.rows().size())
-        staticFloor=definitions->difficulties.number(*view.load.difficulty,"StaticFieldMin");
-    if(staticFloor && (*staticFloor<0 || *staticFloor>100)) staticFloor.reset();
-    if(combatTarget!=chosen->key || combatRun.assignment!=chosen->assignmentRevision || combatRun.skills.empty()) {
-        releaseCombat(c);if(!planningDefense) cancelWalk(c);combatTarget=chosen->key;combatRun={};
-        combatRun.assignment=chosen->assignmentRevision;combatRun.progressAt=combatRun.strategyAt=now;
-        combatRun.orbitDirection=(chosen->key.id&1)?1:-1;
-        combatRun.bestLife=combatRun.lastLife=life(*chosen);combatRun.hitRevision=chosen->hitRevision;
-        combatRun.skills.push_back(*excursionSkill);
-        if(travelPhase==TravelPhase::CrossWait && !legUnit) {travelPhase=TravelPhase::Route;legDestination.reset();}
-        note("combat-target",std::to_string(chosen->key.id));
-    }
-    lineMask=attackMask(combatRun.skills[combatRun.skillIndex<combatRun.skills.size()?combatRun.skillIndex:0]);
-    if(combatRun.suspendedAt!=Clock::time_point{}) {
-        const auto suspended=now-combatRun.suspendedAt;
-        combatRun.progressAt+=suspended;combatRun.strategyAt+=suspended;
-        if(combatRun.approachUntil!=Clock::time_point{}) combatRun.approachUntil+=suspended;
-        combatRun.suspendedAt={};combatRun.delayObservedAt=now;
-        note("combat-resumed","Continuing the same assigned target's recovery state");
-    }
+    const auto support=staticFieldOpportunity(c,boss);
+    if(beginEngagement(c,*chosen,planningDefense,task,now)) return true;
     observeCombat(c);
-    auto &run=combatRun;const Vec targetPosition=position(*chosen->position);
-    if(run.waitingForDelay && run.delayObservedAt!=Clock::time_point{}) {
-        const auto elapsed=now-run.delayObservedAt;
-        run.progressAt+=std::min(elapsed,now-run.progressAt);
-        run.strategyAt+=std::min(elapsed,now-run.strategyAt);
-    }
-    run.delayObservedAt=now;
-    const auto delay=c.combat.skillDelayFrames(*excursionSkill);
-    const bool delayed=c.combat.skillDelayActive(*excursionSkill);
-    run.waitingForDelay=delayed || (delay && *delay>0 && now<run.nextCast);
-    bool ray=clearLine(c.position,targetPosition);
+    auto &run=battle.combatRun;const Vec targetPosition=position(*chosen->position);
+    const auto attack=selectAttackStrategy(c,selection,task,boss,now,sight);
+    const auto aura=attack.aura;const auto skill=attack.skill;const auto row=attack.row;
+    const auto window=std::chrono::seconds(policy.noProgressSeconds);
+    bool ray=sight.clear(c.position,targetPosition);
     const auto close=std::count_if(enemies.begin(),enemies.end(),[&](const auto &unit){return (position(*unit.position)-c.position).length()<=policy.radius;});
     const auto healing=potionCount(c,PotionKind::Life)+potionCount(c,PotionKind::Rejuvenation);
     const auto manaPotions=potionCount(c,PotionKind::Mana)+potionCount(c,PotionKind::Rejuvenation);
     int lifePercent=-1,lossPercent=0;
-    if(combatMaxLife && *combatMaxLife>0 && view.world.life) {
-        lifePercent=int(uint64_t(*view.world.life)*100/unsigned(*combatMaxLife));
-        uint16_t peak=*view.world.life;for(const auto &sample:combatLifeSamples) peak=std::max(peak,sample.life);
-        lossPercent=int(uint64_t(peak-*view.world.life)*100/unsigned(*combatMaxLife));
+    if(battle.combatMaxLife && *battle.combatMaxLife>0 && view.world.life) {
+        lifePercent=int(uint64_t(*view.world.life)*100/unsigned(*battle.combatMaxLife));
+        uint16_t peak=*view.world.life;for(const auto &sample:battle.combatLifeSamples) peak=std::max(peak,sample.life);
+        lossPercent=int(uint64_t(peak-*view.world.life)*100/unsigned(*battle.combatMaxLife));
     }
-    combatDiagnostics={{"target",{{"type",chosen->key.type},{"id",chosen->key.id},{"assignment",run.assignment},
+    battle.combatDiagnostics={{"target",{{"type",chosen->key.type},{"id",chosen->key.id},{"assignment",run.assignment},
         {"position",{chosen->position->x,chosen->position->y}},{"life",run.lastLife?Json(*run.lastLife):Json(nullptr)},
         {"bestLife",run.bestLife?Json(*run.bestLife):Json(nullptr)}}},
         {"required",required},{"figurineCandidate",elite && elite->key==chosen->key},{"lineClear",ray},{"lifeFeedbackKnown",run.lastLife.has_value()},
         {"healingObserved",run.healingObserved},{"hitFeedbackCount",run.hits},
         {"playerLifePercent",lifePercent<0?Json(nullptr):Json(lifePercent)},{"recentLifeLossPercent",lossPercent},
         {"mana",view.world.mana?Json(*view.world.mana):Json(nullptr)},{"healingPotions",healing},{"manaPotions",manaPotions},
-        {"closeEnemies",close},{"bossFromTable",boss},{"skillIndex",run.skillIndex},{"skills",run.skills},
+        {"closeEnemies",close},{"groupEnemies",attack.groupEnemies},{"bossFromTable",boss},{"skillIndex",run.skillIndex},{"skills",run.skills},
         {"casts",run.casts},{"noNetProgressMs",std::chrono::duration_cast<std::chrono::milliseconds>(now-run.progressAt).count()},
         {"strategyCasts",run.strategyCasts},
         {"attempts",run.attempts},{"obstacle",run.obstacle},{"status","assess"},
-        {"departureSkill",*excursionSkill},{"staticFieldRank",staticRank},{"staticFieldRadius",staticRange?Json(*staticRange):Json(nullptr)},
-        {"staticFieldCasts",run.staticCasts},{"staticFieldFloorPercent",staticFloor?Json(*staticFloor):Json(nullptr)},
+        {"departureSkill",*battle.excursionSkill},{"staticFieldRank",support.rank},{"staticFieldRadius",support.range?Json(*support.range):Json(nullptr)},
+        {"staticFieldCasts",run.staticCasts},{"staticFieldFloorPercent",support.floorKnown?Json(support.floor):Json(nullptr)},
         {"targetAbsoluteLife",nullptr},{"staticFieldAbsoluteStop","unavailable: native monster life is a ratio"}};
     const auto obstruct=[&](std::string detail) {
         if(!run.lastLife) detail+="; target life feedback unavailable";
-        combatDiagnostics["status"]="blocked";combatDiagnostics["obstacle"]=detail;combatDiagnostics["attempts"]=run.attempts;
-        releaseCombat(c);cancelWalk(c);
+        battle.combatDiagnostics["status"]="blocked";battle.combatDiagnostics["obstacle"]=detail;battle.combatDiagnostics["attempts"]=run.attempts;
+        releaseCombat(c);
+        if(task) throw std::runtime_error("Route combat blocked on assigned unit "+std::to_string(chosen->key.id)+": "+detail);
+        cancelWalk(c);
         // Lack of net life progress is not proof of immunity. Preserve all
         // observations and the actual scene; never skip a required kill.
         if(required) throw std::runtime_error("Combat blocked on assigned unit "+std::to_string(chosen->key.id)+": "+detail+
             "; obstruction, misses, recovery or insufficient feedback remain possible");
-        bypassedThreats[{chosen->key,chosen->assignmentRevision}]={now+std::chrono::seconds(10),c.position,targetPosition};
-        note("unproductive-threat-bypassed",detail);combatTarget.reset();retreatPoint.reset();return false;
+        battle.bypassedThreats[{chosen->key,chosen->assignmentRevision}]={now+std::chrono::seconds(10),c.position,targetPosition};
+        note("unproductive-threat-bypassed",detail);battle.combatTarget.reset();battle.retreatPoint.reset();return false;
     };
     if(!run.waitingForDelay && now-run.progressAt>=std::chrono::seconds(policy.stallTimeoutSeconds))
         return obstruct("local combat execution budget exhausted; last obstacle: "+run.obstacle);
-    if(retreatPoint && !passageDefending) {
-        if(walkState(c)!="failed" && now<retreatUntil && (position(*retreatPoint)-c.position).length()>2 &&
-            tacticalPositionAllowed(c,position(*retreatPoint)) && threatClearance(visibleThreats(c),position(*retreatPoint))>=0) {
-            combatDiagnostics["status"]="retreat";wait("retreat","Following the known safe retreat while observing life and supplies");
-            walkPoint(c,*retreatPoint);mobility(c);return true;
+    if(battle.retreatPoint && !navigation.passageDefending && (!task || task->preferAreaAttack)) {
+        if(c.walk.observe().state!=DebugWalkState::Failed && now<battle.retreatUntil && (position(*battle.retreatPoint)-c.position).length()>2 &&
+            tacticalPositionAllowed(c,position(*battle.retreatPoint)) && threatClearance(visibleThreats(c),position(*battle.retreatPoint))>=0) {
+            battle.combatDiagnostics["status"]="retreat";wait("retreat","Following the known safe retreat while observing life and supplies");
+            walkPoint(c,*battle.retreatPoint);mobility(c);return true;
         }
-        if(walkState(c)=="failed") note("retreat-unavailable",c.walk.snapshot().value("reason",std::string{}));
-        cancelWalk(c);retreatPoint.reset();
+        if(c.walk.observe().state==DebugWalkState::Failed) note("retreat-unavailable",c.walk.observe().reason);
+        cancelWalk(c);battle.retreatPoint.reset();
     }
-    const auto selectPosition=[&](bool retreat,int range)->std::optional<OnlinePoint> {
-        if(!map || !origin) return {};
-        if(!retreat && run.triedPositions.size()>=128) return {};
-        const auto grid=c.town.navigationGrid(view);const auto hazards=visibleThreats(c);
-        const auto safety=[&](Vec at) {
-            float nearestEnemy=(at-targetPosition).length();
-            for(const auto &enemy:enemies) nearestEnemy=std::min(nearestEnemy,(at-position(*enemy.position)).length());
-            return nearestEnemy;
-        };
-        struct Candidate {OnlinePoint point;float score;};std::vector<Candidate> candidates;
-        std::set<std::pair<uint16_t,uint16_t>> unique;
-        const float baseline=safety(c.position);
-        // Short radii are essential in corridors and small boss chambers.
-        for(int radius:retreat?std::vector<int>{2,std::max(2,policy.retreat/2),policy.retreat}:
-            std::vector<int>{2,4,8,std::max(2,range/2),std::max(2,range-2)}) for(int direction=0;direction<16;++direction) {
-            const float angle=float(direction)*6.28318530718f/16;
-            const Vec center=retreat?c.position:targetPosition;
-            const Vec at=center+Vec{std::cos(angle),std::sin(angle)}*float(radius);
-            if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535) continue;
-            const auto destination=point(at);const auto exact=position(destination);
-            if(!unique.emplace(destination.x,destination.y).second || !tacticalPositionAllowed(c,exact) ||
-                !grid.nativeMovementSegment(exact-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},playerMovement) ||
-                threatClearance(hazards,exact)<0) continue;
-            if(!retreat && (run.triedPositions.contains({destination.x,destination.y}) || !clearLine(exact,targetPosition))) continue;
-            const float targetDistance=(exact-targetPosition).length();
-            // Preferred firing range is a score, not a hard exclusion of
-            // the only legal close stance in a narrow chamber or corridor.
-            if(!retreat && (targetDistance>range || targetDistance<(range<=3?1.f:2.f))) continue;
-            if(retreat && safety(exact)<=baseline+1) continue;
-            const float score=(retreat?safety(exact):-std::abs(targetDistance-std::max(2.f,float(range)*.75f))+.1f*safety(exact))-
-                .05f*(exact-c.position).length();
-            candidates.push_back({destination,score});
-        }
-        std::stable_sort(candidates.begin(),candidates.end(),[](const auto &a,const auto &b){return a.score>b.score;});
-        // Cheap ranking precedes full paths. Budget yields preserve the
-        // search cache, and no failed candidate is retried ahead of a better one.
-        for(const auto &candidate:candidates) {
-            const auto destination=candidate.point;const auto exact=position(destination);
-            if(teleportAvailable(c)) {
-                if((exact-c.position).length()<=mobilityPolicy.distance && TeleportRooms(c).contains(exact)) return destination;
-                continue;
-            }
-            const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
-            if(path.empty() || point(path.back()+offset)!=destination || !tacticalPathSafe(c,path,offset,hazards)) continue;
-            return destination;
-        }
-        return {};
-    };
-    const auto selectKitePosition=[&](int range)->std::optional<OnlinePoint> {
-        if(!map || !origin) return {};
-        const auto hazards=visibleThreats(c);const auto grid=c.town.navigationGrid(view);
-        const auto &rooms=c.town.navigationRooms();
-        const auto contains=[](const auto &room,Vec at) {return room.loaded && at.x>=room.x && at.y>=room.y && at.x<room.x+room.width && at.y<room.y+room.height;};
-        const auto source=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && contains(room,c.position);});
-        bool teleport=teleportAvailable(c);
-        if(teleport && c.supplies && c.supplies->skillUsable)
-            if(const auto usable=c.supplies->skillUsable(definitions->skill("Teleport"));usable && !*usable) teleport=false;
-        Vec center=targetPosition;unsigned count=1;
-        for(const auto &enemy:enemies) if(enemy.key!=chosen->key) {center=center+position(*enemy.position);++count;}
-        center={center.x/count,center.y/count};
-        const Vec radial=c.position-center;const float length=radial.length();
-        const Vec tangent=length>0?Vec{-radial.y/length,radial.x/length}:Vec{1,0};
-        const auto clearance=[&](Vec at) {
-            float nearest=(at-targetPosition).length();
-            for(const auto &enemy:enemies) nearest=std::min(nearest,(at-position(*enemy.position)).length());
-            return nearest;
-        };
-        struct Candidate {OnlinePoint point;float score;};std::vector<Candidate> candidates;
-        const float minimum=std::min(float(policy.kiteMinDistance),float(range)*.65f);
-        const float baseline=clearance(c.position),hazardBaseline=threatClearance(hazards,c.position);
-        auto &assessment=combatDiagnostics["kiteAssessment"];
-        assessment={{"enemyClearance",baseline},{"hazardClearance",hazardBaseline},{"desiredClearance",minimum},
-            {"teleportSeconds",teleportTiming.seconds?Json(*teleportTiming.seconds):Json(nullptr)}};
-        // A valid shot with adequate separation beats optional orbiting.
-        // These are AI spacing preferences, not monster reach/damage rules.
-        if(baseline>=minimum && hazardBaseline>=1) {
-            assessment["result"]="hold-effective-position";return {};
-        }
-        assessment["trigger"]=hazardBaseline<1?"observed-hazard":"close-enemies";
-        assessment["result"]="no-improving-position";
-        for(const int radius:{policy.kiteDistance,std::max(3,policy.kiteDistance/2)}) for(int direction=0;direction<16;++direction) {
-            const float angle=float(direction)*6.28318530718f/16;
-            const Vec at=c.position+Vec{std::cos(angle),std::sin(angle)}*float(radius);
-            if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535) continue;
-            const auto destination=point(at);const Vec exact=position(destination),delta=exact-c.position;
-            const float distance=delta.length(),toTarget=(exact-targetPosition).length(),safe=clearance(exact);
-            const float hazardSafety=threatClearance(hazards,exact);
-            if(distance<3 || toTarget>range || safe<minimum || !tacticalPositionAllowed(c,exact) || !clearLine(exact,targetPosition) || threatClearance(hazards,exact)<1 ||
-                !grid.nativeMovementSegment(exact-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},playerMovement)) continue;
-            if(hazardBaseline>=1 && safe<baseline+1) continue;
-            if(hazardBaseline<1 && hazardSafety<hazardBaseline+1) continue;
-            const auto landing=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && contains(room,exact);});
-            if(landing==rooms.end() || (teleport && (source==rooms.end() || (landing!=source &&
-                std::find(source->near.begin(),source->near.end(),size_t(landing-rooms.begin()))==source->near.end())))) continue;
-            const float turn=(delta.x*tangent.x+delta.y*tangent.y)*run.orbitDirection;
-            candidates.push_back({destination,turn*.7f+std::min(safe,float(range))*.5f-
-                std::abs(toTarget-float(range)*.8f)+std::min(threatClearance(hazards,exact),8.f)*.1f-distance*.05f});
-        }
-        std::stable_sort(candidates.begin(),candidates.end(),[](const auto &first,const auto &second){return first.score>second.score;});
-        // Score cheap local observations first. At most four candidates may
-        // consume the shared full-path budget; Teleport validates known landings.
-        for(size_t i=0;i<std::min<size_t>(4,candidates.size());++i) {
-            const auto destination=candidates[i].point;const auto exact=position(destination);
-            const auto record=[&](std::optional<float> walking) {
-                assessment["result"]="improve-safety";assessment["destination"]={destination.x,destination.y};
-                assessment["candidateEnemyClearance"]=clearance(exact);
-                assessment["candidateHazardClearance"]=threatClearance(hazards,exact);
-                assessment["walkSeconds"]=walking?Json(*walking):Json(nullptr);
-                assessment["movement"]=!teleport || (walking && teleportTiming.seconds && *walking<=*teleportTiming.seconds)?"walk":"teleport";
-            };
-            if(teleport) {
-                if(TeleportRooms(c).contains(exact) && (exact-c.position).length()<=mobilityPolicy.distance &&
-                    c.combat.teleportPathAllowed(*area,grid,c.position-offset,exact-offset)) {
-                    record(kiteWalkSeconds(c,exact));return destination;
-                }
-                continue;
-            }
-            const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
-            if(path.empty() || point(path.back()+offset)!=destination || path.size()>size_t(policy.kiteDistance*3+4) ||
-                !tacticalPathSafe(c,path,offset,hazards)) continue;
-            if(std::any_of(path.begin(),path.end(),[&](Vec p) {const Vec at=p+offset;return (at-c.position).length()>2 &&
-                (clearance(at)<std::min(4.f,minimum) || threatClearance(hazards,at)<0);})) continue;
-            float length=0;Vec previous=c.position-offset+Vec{.5f,.5f};
-            for(const auto at:path) {length+=(at-previous).length();previous=at;}
-            record(c.supplies && c.supplies->movementSecondsPerUnit?
-                std::optional<float>{length * *c.supplies->movementSecondsPerUnit}:std::nullopt);
-            return destination;
-        }
-        return {};
-    };
+    const auto localThreats=travelLandingThreats(c);
     const bool singleThreat=(targetPosition-c.position).length()<=policy.engage && (ray || close>0 || lossPercent>=policy.lifeDropPercent);
     const bool lowLife=lifePercent>=0 && lifePercent<=policy.retreatLifePercent;
     const bool falling=lossPercent>=policy.lifeDropPercent;
     const bool scarce=singleThreat && (required || boss) && !healing && lifePercent>=0 && lifePercent<70;
-    if(!passageDefending && (close>=policy.crowd || (singleThreat && (lowLife || falling || scarce))) && now>=retreatReady) {
-        const auto safe=selectPosition(true,policy.range);
-        retreatReady=now+std::chrono::seconds(4);
+    if(!navigation.passageDefending && (!task || task->preferAreaAttack) && (close>=policy.crowd || (singleThreat && (lowLife || falling || scarce))) && now>=battle.retreatReady) {
+        const auto safe=selectCombatPosition(c,selection,sight,localThreats,true,policy.range);
+        battle.retreatReady=now+std::chrono::seconds(4);
         if(safe) {
             releaseCombat(c);cancelWalk(c);run.reposition.reset();run.kitePoint.reset();run.kiteAfterCast=false;
-            retreatPoint=safe;retreatUntil=now+std::chrono::seconds(2);
-            combatDiagnostics["status"]="retreat";note("retreat-started",lowLife?"low life":falling?"observed life loss":scarce?"single threat and scarce healing":"crowd");
+            battle.retreatPoint=safe;battle.retreatUntil=now+std::chrono::seconds(2);
+            battle.combatDiagnostics["status"]="retreat";note("retreat-started",lowLife?"low life":falling?"observed life loss":scarce?"single threat and scarce healing":"crowd");
             walkPoint(c,*safe);mobility(c);return true;
         }
-        run.obstacle="survival pressure with no safe known retreat";combatDiagnostics["obstacle"]=run.obstacle;
+        run.obstacle="survival pressure with no safe known retreat";battle.combatDiagnostics["obstacle"]=run.obstacle;
         if(lifePercent>=0 && lifePercent<=supplyPolicy.criticalLifePercent && !healing) return obstruct(run.obstacle);
     }
-    const auto window=std::chrono::seconds(policy.noProgressSeconds);
-    if(run.reposition && !passageDefending) {
-        const auto state=walkState(c);const bool reached=(position(*run.reposition)-c.position).length()<=1;
-        const bool failed=!reached && (state=="failed" || state=="completed" || now>=run.approachUntil);
+    if(run.reposition && !navigation.passageDefending) {
+        const auto state=c.walk.observe().state;const bool reached=(position(*run.reposition)-c.position).length()<=1;
+        const bool failed=!reached && (state==DebugWalkState::Failed || state==DebugWalkState::Completed || now>=run.approachUntil);
         if(!failed && !reached) {
             if(!c.walk.active()) walkPoint(c,*run.reposition);
-            combatDiagnostics["status"]="reposition";wait("combat-reposition","Changing an observed attack angle through a complete known path");mobility(c);return true;
+            battle.combatDiagnostics["status"]="reposition";wait("combat-reposition","Changing an observed attack angle through a complete known path");mobility(c);return true;
         }
         run.obstacle=failed?"attack position was not reached":"new attack position reached; awaiting effect";
         run.reposition.reset();cancelWalk(c);run.strategyAt=failed?now-window:now;
         if(!failed) run.strategyCasts=0;
     }
-    // Static Field is a special cooldown filler, never a replacement in the
-    // departure attack list. SrvDo020 permits it during a delayed spell's
-    // shared cooldown. Retain nextCast for that primary spell unchanged.
-    const bool staticWindow=!passageDefending && policy.staticField && boss && run.strategyCasts && run.waitingForDelay &&
-        *excursionSkill!=definitions->staticFieldSkill && !battleAura(c) &&
-        staticRange && *staticRange>2 && staticFloor && run.lastLife &&
-        int(*run.lastLife)*100>*staticFloor*128 &&
-        ray && (targetPosition-c.position).length()<=*staticRange-2 &&
-        knownSkill(c,definitions->staticFieldSkill) &&
-        !c.combat.skillDelayActive(definitions->staticFieldSkill);
-    if(staticWindow && (!c.supplies || !c.supplies->castInputBusy.value_or(false)) &&
-        c.supplies && c.supplies->skillUsable && c.supplies->skillUsable(definitions->staticFieldSkill).value_or(false)) {
-        if(view.world.combatRequest && view.world.combatRequest->state==OnlineCombatRequest::State::Pending) return true;
-        if(now-lastAttack<debugInputRetryInterval) return true;
-        releaseCombat(c);cancelWalk(c);run.kitePoint.reset();run.kiteAfterCast=false;
-        const auto hand=knownSkill(c,definitions->staticFieldSkill,true)?OnlineSkillHand::Left:OnlineSkillHand::Right;
-        combatDiagnostics["skill"]=definitions->staticFieldSkill;combatDiagnostics["status"]="static-field-cooldown-fill";
-        if(!selectSkill(c,definitions->staticFieldSkill,hand)) {
-            wait("static-field-select","Selecting Static Field during the primary spell's cooldown");return true;
-        }
-        OnlineCombatCommand cast;cast.action=OnlineCombatCommand::Action::Cast;
-        cast.hand=hand;cast.stationary=true;cast.point=point(c.position);
-        if(submitCombat(c,cast,DebugActionOwner::Combat,"static-field-cast",c.position)) {
-            combatOwned=true;++run.casts;++run.staticCasts;++castRequests;lastAttack=now;
-            if(planningDefense) mobilityHold=true;
-            note("static-field-between-primary",std::to_string(chosen->key.id));
-            wait("static-field-cast","Static Field submitted; primary spell keeps its own cooldown and priority");
-        }
-        return true;
-    }
+    if(cooldownAttack(c,*chosen,attack,support,ray,planningDefense,task,now)) return true;
     // Resume a ready primary from a valid firing position before continuing
     // optional circling. Survival retreats above retain their priority.
     if(!run.waitingForDelay && ray && (targetPosition-c.position).length()<=policy.range) {
         if(run.kitePoint) {cancelWalk(c);run.kitePoint.reset();}
         run.kiteAfterCast=false;
     }
-    if(run.kitePoint && !passageDefending) {
+    if(run.kitePoint && !navigation.passageDefending) {
         const bool reached=(position(*run.kitePoint)-c.position).length()<=2;
         const auto field=visibleThreats(c);
-        const bool failed=!reached && (now>=run.kiteUntil || walkState(c)=="failed" || !tacticalPositionAllowed(c,position(*run.kitePoint)) ||
+        const bool failed=!reached && (now>=run.kiteUntil || c.walk.observe().state==DebugWalkState::Failed || !tacticalPositionAllowed(c,position(*run.kitePoint)) ||
             threatClearance(field,position(*run.kitePoint))<0);
         if(!reached && !failed) {
-            if(!c.walk.active()) walk(c,{{"goal","point"},{"x",run.kitePoint->x},{"y",run.kitePoint->y},{"interact",false},{"purpose","combat-kite"}});
-            combatDiagnostics["status"]="kite";wait("combat-kite","Circling the observed group outside its close threats after the completed cast");mobility(c);return true;
+            if(!c.walk.active()) walk(c,{.goal=DebugWalkGoal::Point,.point=OnlinePoint{run.kitePoint->x,run.kitePoint->y},.interact=false,.purpose="combat-kite"});
+            battle.combatDiagnostics["status"]="kite";wait("combat-kite","Circling the observed group outside its close threats after the completed cast");mobility(c);return true;
         }
         cancelWalk(c);run.kitePoint.reset();
         if(failed) run.orbitDirection=-run.orbitDirection;
@@ -552,143 +186,71 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         return true;
     }
     if(c.supplies && c.supplies->castInputBusy.value_or(false)) {
-        combatDiagnostics["status"]="attack-animation";return true;
+        battle.combatDiagnostics["status"]="attack-animation";return true;
     }
-    const auto aura=battleAura(c);
-    std::optional<size_t> skillRow;
-    const auto qualification=[&](uint16_t skill) {
-        std::string unavailable;
-        skillRow.reset();if(const auto found=definitions->skillRows.find(skill);found!=definitions->skillRows.end()) skillRow=found->second;
-        const auto minimum=policy.minimumSkillLevels.find(skill);
-        const unsigned required=minimum==policy.minimumSkillLevels.end()?1:minimum->second;
-        const bool rank=std::any_of(c.combat.skills().begin(),c.combat.skills().end(),[&](const auto &entry) {
-            return entry.id==skill && std::max(unsigned(entry.level),entry.innate?1u:0u)>=required;
-        });
-        if(!skillRow || !knownSkill(c,skill,bool(aura))) unavailable="skill rank / hand / original table unavailable";
-        else if(!rank) unavailable="effective skill level below configured minLevel="+std::to_string(required);
-        else if(skill!=definitions->staticFieldSkill && !c.combat.skillTargetEligible(*chosen,skill)) unavailable="native target eligibility currently rejects this skill";
-        // The shared native delay is transient, not evidence that this
-        // configured attack failed. Retain its strategy until the state ends.
-        else if(!c.combat.skillDelayActive(skill) && c.supplies && c.supplies->skillUsable) {
-            if(const auto usable=c.supplies->skillUsable(skill);usable && !*usable) unavailable="normal character projection reports unusable skill (resource / equipment / state)";
-        }
-        return unavailable;
-    };
-    const uint16_t skill=*excursionSkill;
-    const auto unavailable=qualification(skill);
+    const auto unavailable=attackQualification(c,*chosen,skill,bool(aura));
     if(!unavailable.empty()) {
         releaseCombat(c);run.obstacle=unavailable;
-        combatDiagnostics["status"]="qualification-wait";
-        combatDiagnostics["obstacle"]=unavailable;
+        battle.combatDiagnostics["status"]="qualification-wait";
+        battle.combatDiagnostics["obstacle"]=unavailable;
         wait("combat-resources","Retaining departure skill; waiting for its actual qualification / resources");return true;
     }
-    const auto row=*skillRow;
     // Use the ordinary stationary left attack whenever the actual skill allows
     // it, leaving the right hand available for movement or the active aura.
     // Right-only attacks still use their permitted hand.
     const auto hand=knownSkill(c,skill,true)?OnlineSkillHand::Left:OnlineSkillHand::Right;
-    lineMask=attackMask(skill);ray=clearLine(c.position,targetPosition);
-    combatDiagnostics["lineClear"]=ray;
-    const int range=skill==definitions->staticFieldSkill && staticRange?std::max(2,*staticRange-2):
-        skill==definitions->skill("Attack") || definitions->skills.value(row,"range")=="h2h"?3:policy.range;
-    if(((pendingWaypoint || (pendingDoor && !nearbyDefense)) && (!ray || (targetPosition-c.position).length()>range)) ||
+    sight.mask=combatAttackMask(c,skill);ray=sight.clear(c.position,targetPosition);
+    battle.combatDiagnostics["lineClear"]=ray;
+    const int range=skill==definitions->staticFieldSkill && support.range?std::max(2,*support.range-2):
+        meleeAttack(c,skill)?3:policy.range;
+    if(((navigation.pendingWaypoint || (navigation.pendingDoor && !nearbyDefense)) && (!ray || (targetPosition-c.position).length()>range)) ||
         (view.world.combatRequest && view.world.combatRequest->state==OnlineCombatRequest::State::Pending)) {
         // A real opening/selection/animation wait has its own contract and
         // deadline. It is not an unsuccessful damage observation window.
-        run.strategyAt=now;combatDiagnostics["status"]="normal-action-wait";
+        run.strategyAt=now;battle.combatDiagnostics["status"]="normal-action-wait";
         wait("combat-action-wait","Observing the current native action before judging attack effectiveness");return true;
     }
-    if(!passageDefending && !run.waitingForDelay && now-run.strategyAt>=window && now>=run.nextCast && run.strategyCasts && ray && (targetPosition-c.position).length()<=range) {
-        if(!run.repositioned) {
-            releaseCombat(c);const auto at=selectPosition(false,range);
+    if(!navigation.passageDefending && !run.waitingForDelay && now-run.strategyAt>=window && now>=run.nextCast && run.strategyCasts && ray && (targetPosition-c.position).length()<=range) {
+        if(!run.repositioned && (!task || task->preferAreaAttack)) {
+            releaseCombat(c);const auto at=selectCombatPosition(c,selection,sight,localThreats,false,range);
             run.repositioned=true;
             if(at) {
                 run.triedPositions.emplace(at->x,at->y);run.reposition=at;run.approachUntil=now+std::chrono::seconds(8);
-                cancelWalk(c);walkPoint(c,*at);combatDiagnostics["status"]="reposition";note("combat-effect-reposition","No new low life value; reassessing line and attack angle");mobility(c);return true;
+                cancelWalk(c);walkPoint(c,*at);battle.combatDiagnostics["status"]="reposition";note("combat-effect-reposition","No new low life value; reassessing line and attack angle");mobility(c);return true;
             }
             run.obstacle=ray?"no different reachable firing position":"blocked line and no reachable clear firing position";
         }
-        return obstruct(run.obstacle.empty()?"no observed net life progress with the departure skill after position reassessment":run.obstacle);
+        if(selectFallbackAttack(c,*chosen,attack,now)) return true;
+        return obstruct(run.obstacle.empty()?"no observed net life progress after configured attack and position reassessment":run.obstacle);
     }
     if((targetPosition-c.position).length()>range || !ray) {
-        if(passageDefending) return false;
+        if(navigation.passageDefending || planningDefense) return false;
         releaseCombat(c);
-        if(!nearbyDefense && !pendingDoor && !pendingWaypoint && openDoor(c)) return true;
-        if(const auto at=selectPosition(false,range)) {
-            run.triedPositions.emplace(at->x,at->y);
-            run.reposition=at;run.approachUntil=now+std::chrono::seconds(8);
-            cancelWalk(c);walkPoint(c,*at);wait("combat-approach","Approaching the combat target");
-            combatDiagnostics["status"]="approach";note("combat-firing-position",std::to_string(at->x)+","+std::to_string(at->y));
-            mobility(c);return true;
-        }
-        run.obstacle=ray?"no usable approach within attack range":"observed line blocked / no usable approach";
-        // Range and line failures belong to navigation. A skill has no
-        // damage evidence until a cast was actually submitted.
-        std::optional<OnlinePoint> next;
-        if(map && origin) {
-            const auto hazards=visibleThreats(c);
-            if(teleportAvailable(c)) {
-                if(const auto approach=teleportLanding(c,targetPosition,false);approach && tacticalPositionAllowed(c,approach->landing) &&
-                    threatClearance(hazards,approach->landing)>=0) next=point(approach->landing);
-            } else {
-                const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},
-                    targetPosition-offset+Vec{.5f,.5f},true,playerMovement,true);
-                if(!path.empty() && tacticalPathSafe(c,path,offset,hazards)) next=point(path.back()+offset);
-            }
-        }
-        if(next && (position(*next)-c.position).length()>1 && run.triedPositions.emplace(next->x,next->y).second) {
-            run.reposition=next;run.approachUntil=now+std::chrono::seconds(8);
-            cancelWalk(c);walkPoint(c,*next);mobility(c);return true;
-        }
-        wait("combat-approach","Waiting for a reachable shot or changed target position");
+        if(!nearbyDefense && !navigation.pendingDoor && !navigation.pendingWaypoint && openDoor(c)) return true;
+        run.obstacle=ray?"outside attack range":"attack ray obstructed";
+        battle.combatDiagnostics["status"]="approach";
+        approachEnemy(c,*chosen,"assigned combat target",range);
+        mobility(c);
         return true;
     }
     run.approachUntil={};
     // Retail St11/Do19 owns the held Inferno / Arctic Blast sequence.
     const bool channelled=definitions->skills.number(row,"srvstfunc")==11 && definitions->skills.number(row,"srvdofunc")==19;
-    const bool rangedKite=!passageDefending && policy.rangedKite && range>3 && skill!=definitions->staticFieldSkill && !channelled;
+    const bool rangedKite=!navigation.passageDefending && (!task || task->preferAreaAttack) && policy.rangedKite && range>3 && skill!=definitions->staticFieldSkill && !channelled;
     if(rangedKite && run.kiteAfterCast && now>=run.nextKite) {
-        const auto destination=selectKitePosition(range);
+        const auto destination=selectKitePosition(c,selection,sight,localThreats,range);
         run.kiteAfterCast=false;run.nextKite=now+std::chrono::milliseconds(policy.kiteIntervalMs);
         if(destination) {
             releaseCombat(c);cancelWalk(c);run.kitePoint=destination;run.kiteUntil=now+std::chrono::seconds(4);
-            combatDiagnostics["status"]="kite";combatDiagnostics["kiteDestination"]={destination->x,destination->y};
-            note("combat-kite-selected",combatDiagnostics["kiteAssessment"].dump());
-            walk(c,{{"goal","point"},{"x",destination->x},{"y",destination->y},{"interact",false},{"purpose","combat-kite"}});
+            battle.combatDiagnostics["status"]="kite";battle.combatDiagnostics["kiteDestination"]={destination->x,destination->y};
+            note("combat-kite-selected",battle.combatDiagnostics["kiteAssessment"].dump());
+            walk(c,{.goal=DebugWalkGoal::Point,.point=OnlinePoint{destination->x,destination->y},.interact=false,.purpose="combat-kite"});
             mobility(c);return true;
         }
-        if(combatDiagnostics["kiteAssessment"].value("result",std::string{})=="hold-effective-position")
-            note("combat-kite-held",combatDiagnostics["kiteAssessment"].dump());
-        else {run.orbitDirection=-run.orbitDirection;note("combat-kite-unavailable",combatDiagnostics["kiteAssessment"].dump());}
+        if(battle.combatDiagnostics["kiteAssessment"].value("result",std::string{})=="hold-effective-position")
+            note("combat-kite-held",battle.combatDiagnostics["kiteAssessment"].dump());
+        else {run.orbitDirection=-run.orbitDirection;note("combat-kite-unavailable",battle.combatDiagnostics["kiteAssessment"].dump());}
     }
-    if(aura && !selectSkill(c,*aura,OnlineSkillHand::Right)) {wait("combat-aura","Waiting for the normal battle aura selection");return true;}
-    if(!selectSkill(c,skill,hand)) {wait("combat-select","Waiting for normal attack skill selection");return true;}
-    combatDiagnostics["skill"]=skill;combatDiagnostics["hand"]=hand==OnlineSkillHand::Left?"left":"right";
-    combatDiagnostics["skillDelayFrames"]=delay?Json(*delay):Json(nullptr);
-    combatDiagnostics["status"]=delayed?"native-skill-delay":"attack";
-    if(delayed || now<run.nextCast || (c.supplies && c.supplies->castInputBusy.value_or(false)) ||
-        (view.world.combatRequest && view.world.combatRequest->state==OnlineCombatRequest::State::Pending)) return true;
-    // A one-shot from the current feet leaves the travel child and its exit
-    // intent intact. Actual evasive movement still owns its ordinary child.
-    if(!planningDefense) cancelWalk(c);
-    OnlineCombatCommand cast;cast.action=OnlineCombatCommand::Action::Cast;
-    cast.hand=hand;cast.target=chosen->key;cast.stationary=true;
-    if(skill==definitions->staticFieldSkill) {cast.target.reset();cast.point=point(c.position);}
-    // Same held pointer as the ordinary controller. Skills with a known
-    // positive native delay use separate clicks, not a synthetic channel.
-    cast.repeat=!nearbyDefense && !rangedKite && run.repeating && ((delay && *delay<=0) || definitions->skills.value(row,"delay").empty());
-    if(submitCombat(c,cast,DebugActionOwner::Combat,"combat-cast",c.position)) {
-        if(!run.strategyCasts) run.strategyAt=now;
-        ++run.strategyCasts;
-        if(planningDefense) mobilityHold=true;
-        combatOwned=true;run.repeating=true;++run.casts;++castRequests;lastAttack=now;
-        run.kiteAfterCast=rangedKite;
-        run.nextCast=now+(delay && *delay>0?std::chrono::milliseconds(int64_t(*delay)*40):debugInputRetryInterval);
-        wait("combat-cast","Observing actual life effect after a normal attack input");
-    } else {
-        run.obstacle=c.combat.reason();combatDiagnostics["obstacle"]=run.obstacle;
-        run.nextCast=now+debugInputRetryInterval;
-    }
-    return true;
+    return submitDirectAttack(c,*chosen,attack,nearbyDefense,planningDefense,rangedKite,hand,now);
 }
 } // namespace d2x

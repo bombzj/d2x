@@ -6,6 +6,7 @@
 #include "gameplay/items/equipment_combat.hpp"
 #include "gameplay/items/native_sources.hpp"
 #include "gameplay/items/native_equipment_stats.hpp"
+#include "gameplay/combat/unit_values.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/skills/passive.hpp"
 #include "gameplay/skills/rank_sources.hpp"
@@ -19,7 +20,8 @@ namespace d2x {
 CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentActor actor,
     std::span<const CombatDisplayItem> items,std::span<const ItemInstance> charms,
     std::span<const ResolvedItemStat> states,const std::map<int,int> &ranks,const std::map<int,int> &baseRanks,
-    const std::set<int> &activeStates,const std::set<int> &accountedPassives,int baseDefense,int baseRating,int baseMinimum,int baseMaximum) {
+    const std::set<int> &activeStates,const std::set<int> &accountedPassives,int baseDefense,int baseRating,int baseMinimum,int baseMaximum,
+    int shieldDefensePercent) {
     EquipmentLoadout loadout;
     loadout.requirementPercent=[&](const ItemInstance &item) {
         int value=0;for(const auto &stat:resolveItemStats(data,item,actor.level))
@@ -81,10 +83,12 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
     }
     if(actor.hireling) {actor.strength+=mods.strength;actor.dexterity+=mods.dexterity;}
     auto combat=mods.combat;
+    combat.shieldDefensePercent=shieldDefensePercent;
     combat.minimumDamage+=baseMinimum;combat.maximumDamage+=baseMaximum;
     const int rating=baseRating+5*actor.dexterity+mods.attackRating;
     auto equipment=deriveEquipmentStats(loadout,actor,baseDefense+mods.defense,combat,rating);
     std::map<int,int> skillRanks;
+    std::optional<KickPanelStats> kick;
     if(data.profile=="lod-named-txt-v1" && !actor.hireling && data.nativeStats && data.nativeFormulas) {
         const auto &rules=*data.nativeStats;
         auto sources=prepareNativeEquipmentSources(data.items,rules,contributions,{},
@@ -131,11 +135,41 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
                 nativeShrineSkillBonus(*data.nativeFormulas,activeStates),assigned!=ranks.end() && assigned->second>0);
             if(rank) skillRanks.emplace(id,*rank);
         }
+        // The native panel reads item_tohit_percent after the effective
+        // Penetrate list has been installed. A base skill assignment does
+        // not necessarily include the corresponding state stat packet.
+        for(const auto &[id,rank]:skillRanks) {
+            const auto *skill=data.skills.find(id);
+            if(!skill || accountedPassives.contains(id)) continue;
+            const auto &amazon=skill->passiveContribution.amazon;
+            if(!amazon || amazon->stat!=AmazonPassiveStat::Rating) continue;
+            addNativeStat(root,rules,"item_tohit_percent",amazonPassiveValue(*amazon,rank));
+            hands.erase(EntityId{});
+            sample({});
+        }
         for(int index=0;index<equipment.weaponCount;++index)
             if(equipment.weapons[index].item) sample(equipment.weapons[index].item);
         const auto native=deriveNativeEquipmentStats(loadout,actor,
             {rules,hands,itemStats,*data.nativeFormulas,combat,35});
         equipment.weapons=native.weapons;
+        if(actor.characterClass=="ass" || std::any_of(ranks.begin(),ranks.end(),[&](const auto &rank) {
+               const auto skill=data.nativeFormulas->skills.find(rank.first);
+               return rank.second>0 && skill!=data.nativeFormulas->skills.end() && skill->second.number("kick");
+           })) {
+            const auto &unarmed=hands.at(EntityId{});
+            const auto stat=[&](std::string_view name){return logicalStatValue(unarmed,rules,name);};
+            const auto &boots=native.kickBoots;
+            kick.emplace();
+            kick->physical={stat("strength"),stat("dexterity"),0,stat("item_kickdamage"),
+                boots.minimum,boots.maximum,boots.strengthBonus,boots.dexterityBonus,
+                stat("damagepercent"),stat("item_maxdamage_percent"),boots.equipped,{},true};
+            kick->baseAttackRating=unitAttackRating(stat("dexterity"),stat("tohit"),character->toHitFactor);
+            // DescAtt5 restores the registered hand after reading the base AR.
+            const auto &registered=hands.at(native.registeredWeapon.value_or(EntityId{}));
+            kick->attackRatingPercent=logicalStatValue(registered,rules,"item_tohit_percent");
+            kick->progressiveRating=logicalStatValue(registered,rules,"progressive_tohit");
+            kick->elements=nativeCombatModifiers(unarmed,rules,combat);
+        }
     }
     if(actor.hireling && !equipment.weapons[0].item) {
         auto &weapon=equipment.weapons[0];
@@ -145,6 +179,6 @@ CombatDisplayEquipment projectCombatEquipment(const ClassicData &data,EquipmentA
         weapon.minimum=int(int64_t(weapon.meleeBaseMinimum)*(100+percent)/100);
         weapon.maximum=int(int64_t(weapon.meleeBaseMaximum)*(100+percent)/100);
     }
-    return {std::move(mods),std::move(equipment),std::move(actor),0,std::move(skillRanks)};
+    return {std::move(mods),std::move(equipment),std::move(actor),0,std::move(skillRanks),std::move(kick)};
 }
 } // namespace d2x

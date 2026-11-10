@@ -741,7 +741,7 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
             const auto *hydra=caster && caster->programs()?caster->programs()->hydraProgram(pending.request.skill):nullptr;
             if(!at || !hydra) {specialResult={DomainStatus::Unavailable,{}};break;}
             const auto skill=evaluateNativeSkill(*caster,ports_.effects,pending.request.skill,pending.attack.rank,tick.tick);
-            specialResult=ports_.monsters.spawnHydra(source->id,*hydra,skill,*at,tick.tick,ports_.spatial.nativeCollisionSample());break;
+            specialResult=ports_.companions.hydra({{},source->id,source->area,pending.generation,0,tick.tick},skill,*at);break;
         }
         case MonsterAttackRule::Action::Heal:
         case MonsterAttackRule::Action::BurrowDown: {

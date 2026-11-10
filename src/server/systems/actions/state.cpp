@@ -120,6 +120,11 @@ void State::skillParameter(EntityId actor,NativeSkillSlot skill,size_t index,int
 void State::pruneSkillParameters(const std::function<bool(EntityId)> &exists) {std::erase_if(skillParameters_,[&](const auto &entry){return !exists(entry.first);});}
 void State::pruneUsedSkills(const PlayerStore &players) {
     std::erase_if(usedSkills_,[&](const auto &entry){return players.findActor(entry.first)==nullptr;});
+    std::erase_if(pierceIndices_,[&](const auto &entry){return players.findActor(entry.first)==nullptr;});
+}
+uint32_t State::pierceIndex(EntityId actor) const {
+    const auto found=pierceIndices_.find(actor);
+    return found==pierceIndices_.end()?0:found->second;
 }
 bool State::recovering(EntityId actor, uint64_t tick) const {
     return recovery(actor).until > tick;

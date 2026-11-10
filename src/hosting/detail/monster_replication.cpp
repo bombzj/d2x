@@ -219,6 +219,10 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
         // even when its target, parameters and destination have not changed.
         if(!baseline.empty() && baseline.front()==uint8_t(ServerMessage::NpcMoveUnit))
             std::fill(baseline.begin()+6,baseline.begin()+10,uint8_t{});
+        // NU carries life, but regeneration is not a new stop order. Life
+        // updates retain their AB/0C/hireling-stat publication above.
+        if(!baseline.empty() && baseline.front()==uint8_t(ServerMessage::NpcReposition))
+            baseline.back()=0;
         if (motion.empty()) entry->second.motion.clear();
         else if (fresh || baseline != entry->second.motion || (monster.moving && monster.movementRevision!=entry->second.movementRevision)) {
             packets.push_back(std::move(motion));entry->second.motion=std::move(baseline);

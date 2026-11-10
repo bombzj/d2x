@@ -10,7 +10,7 @@ namespace d2x::server::skills {
 struct Pd2VengeanceTimers;
 struct System::Runtime {
     std::shared_ptr<Pd2VengeanceTimers> pd2Vengeance;
-    struct Pending { ActorContext actor; Request request; };
+    struct Pending { ActorContext actor; Request request; bool fallback{}; };
     std::map<PlayerId,Pending> pending;
     struct ImpEjection {EntityId rider;std::optional<Vec> landing;bool prepared{},interrupted{},kill{},complete{};};
     std::map<EntityId,ImpEjection> impEjections;

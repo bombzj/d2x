@@ -10,6 +10,14 @@
 #include <limits>
 
 namespace d2x {
+std::span<const Vec> meteorFireOffsets() {
+    // Retail SrvHit14 and CltHit18 share these ordered subtile offsets.
+    static constexpr Vec offsets[]{{2,-2},{-2,-2},{0,2},{0,5},{-3,3},{0,3},
+        {3,3},{-1,2},{1,1},{-1,-1},{2,-1},{-4,-2},{-3,-2},{-1,-3},{0,-4},
+        {1,-3},{3,-3},{4,-2}};
+    return offsets;
+}
+
 uint32_t pd2MissilePathSeed(uint32_t previous,uint32_t type,uint32_t id) {
     // Current 0x37E710/770/780: the low twenty bits are an identity-derived
     // hash; the high twelve bits count initializations and wrap to one.
@@ -70,7 +78,7 @@ uint64_t missileChainSuccessor(uint64_t hit, std::span<const uint64_t> eligible)
     return next?next:first;
 }
 Vec blizzardOffset(uint32_t globalX,int elapsed,int radius,bool client,uint64_t &random) {
-    random=(random&0xffffffff00000000ULL)|uint32_t(globalX+uint32_t(elapsed));
+    random=initialRandom(globalX+uint32_t(elapsed));
     const auto range=nativeSubtract(radius,1);
     const auto span=uint32_t(nativeMultiply(2,range));
     Vec offset{float(nativeSubtract(int32_t(limitedRandom(random,span)),range)),

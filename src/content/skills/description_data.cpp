@@ -44,10 +44,10 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
         } else {
             static const std::set<std::string,std::less<>> scalars{
                 "emin","emax","elen","mindam","maxdam","mindamage","maxdamage","hitshift",
-                "mana","lvlmana","manashift","minmana","tohit","levtohit","srcdam",
-                "noratio","hcidx","level","level(n)","level(h)","passive","aura","kick","immediate","periodic","seqnum","weapsel",
+                "mana","lvlmana","manashift","minmana","startmana","tohit","levtohit","srcdam",
+                "noratio","hcidx","level","level(n)","level(h)","passive","aura","kick","immediate","periodic","interrupt","seqnum","weapsel",
                 "intown","lob","srvstfunc","srvdofunc","cltstfunc","usemanaondo","decquant","aurafilter","targetpet","targetally","pcltdofunc","pclthitfunc",
-                "aitype","aibonus","attackrank","reqlevel","progressive","useattackrate","restrict","nocostinstate",
+                "aitype","aibonus","attackrank","reqlevel","progressive","finishing","useattackrate","restrict","nocostinstate",
                 "srcdamage","srcmissdmg","holy","missileskill","half2hsrc","applymastery","explosion",
                 "alwaysexplode","collidekill","pierce","collidefriend","lastcollide","collidetype","collision","activate","town","srctown","psrvdofunc","psrvhitfunc","psrvdmgfunc","tohit","gethit","softhit","knockback","hitclass","nexthit","nextdelay","returnfire","candestroy","size","vel","vellev","accel","maxvel","canslow","clientsend","subloop","substart","substop","hitflags","resultflags"};
             // Skills.Range is a targeting token (h2h/rng/both/none), whereas
@@ -93,6 +93,11 @@ SkillDescriptionDefinition description(const DataTable &table,size_t row,const C
     result.damageProgram=table.number(row,"descdam").value_or(0);
     result.attackProgram=table.number(row,"descatt").value_or(0);
     for(size_t slot=0;slot<2;++slot) result.damageCalculations[slot]=compileDescriptionFormula(table.value(row,"ddam calc"+std::to_string(slot+1)));
+    for(size_t slot=0;slot<result.chargeDamage.size();++slot) {
+        const auto prefix="p"+std::to_string(slot+1)+"dm";
+        result.chargeDamage[slot]={lower(table.value(row,prefix+"elem")),
+            compileDescriptionFormula(table.value(row,prefix+"min")),compileDescriptionFormula(table.value(row,prefix+"max"))};
+    }
     for (size_t slot=0;slot<result.levels.size();++slot) result.levels[slot]=line(table,row,"desc",int(slot+1),strings);
     for (size_t slot=0;slot<result.general.size();++slot) result.general[slot]=line(table,row,"dsc2",int(slot+1),strings);
     for (size_t slot=0;slot<result.bonuses.size();++slot) result.bonuses[slot]=line(table,row,"dsc3",int(slot+1),strings);

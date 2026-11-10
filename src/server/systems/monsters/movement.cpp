@@ -15,6 +15,7 @@
 #include "server/systems/objects/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 #include "system_detail.hpp"
@@ -58,28 +59,19 @@ std::optional<MotionTarget> System::nativeTargetIdentity(EntityId id,RegionId re
     if(!nativeTargetPosition(id,region)) return {};
     return MotionTarget{id,uint8_t(ports_.players.findActor(id)?0:find(id)?1:2)};
 }
-bool System::recacheHirelingRoom(Actor &actor) {
-    if(!actor.hireling) return true;
+bool System::recacheMovementRoom(Actor &actor,Vec previous) {
     constexpr Vec center{.5f,.5f};
     const auto &source=ports_.areas.at(actor.area);
     if(source.definition.activation.room(actor.position+center)) return true;
-    Vec navigationOrigin;
-    const auto navigation=source.definition.collision.linkedNavigation(navigationOrigin);
-    const AreaState *destination=nullptr;Vec offset;
-    for(const auto &[region,candidate]:ports_.areas.all()) {
-        (void)region;
-        if(candidate.definition.act!=source.definition.act ||
-            std::none_of(navigation.navigationSources.begin(),navigation.navigationSources.end(),
-                [&](const auto &entry){return entry.grid==&candidate.definition.collision;})) continue;
-        const Vec translation=source.definition.origin-candidate.definition.origin;
-        if(!candidate.definition.activation.room(actor.position+translation+center)) continue;
-        if(destination) return false;
-        destination=&candidate;offset=translation;
-    }
-    if(!destination) return false;
+    const auto global=actor.position+source.definition.origin+center;
+    const auto room=ports_.areas.roomAtPosition(actor.area,previous+center,
+        int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
+    if(!room) return false;
+    const auto &destination=ports_.areas.at(room->area);
+    const auto offset=source.definition.origin-destination.definition.origin;
     // PATH_RecacheRoomAtCoordIfNeeded moves room ownership without restarting
     // the path or treating a continuous level boundary as a pet teleport.
-    actor.area=destination->definition.id;
+    actor.area=destination.definition.id;
     actor.position=actor.pathStep.translate(actor.position+center,offset)-center;
     actor.movementGoal=actor.movementGoal+offset;
     for(auto &point:actor.route) point=point+offset;
@@ -135,6 +127,8 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     actor.route = std::move(route); actor.movementTarget = request.circleTurn?EntityId{}:request.target;
     actor.pathSteps=uint8_t(request.pathSteps);
     actor.pathType=pathType;actor.pathDistance=pathDistance;
+    // MonsterMode initializes PATH.nDistance independently of max distance.
+    actor.pathRemaining=20;actor.pathPointsConsumed=0;
     actor.movementGoal = goal;
     actor.stopDistance = request.pathSteps>0?request.pathSteps-1:request.stopDistance;
     actor.velocityPercent = request.velocityPercent; actor.running = request.running; actor.moving = true;
@@ -262,6 +256,10 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             if(actor.revision==UINT64_MAX) throw std::overflow_error("Monster death mode revision exhausted");
             recordNativeMode(actor,12);++actor.revision;
         }
+        if(actor.hydra() && actor.alive() && actor.nativeMode==actor.riseMode && actor.neutralAt && tick.tick>=*actor.neutralAt) {
+            if(actor.revision==UINT64_MAX) throw std::overflow_error("Hydra birth mode revision exhausted");
+            recordNativeMode(actor,1);actor.neutralAt.reset();++actor.revision;
+        }
         if(!actor.nativeAiResetTracked) {
             if(actor.curseControl.ai!=CurseAi::None && actor.curseControl.until<=tick.tick) actor.curseControl={};
             if(actor.attractionUntil<=tick.tick) actor.attractionTarget={};
@@ -332,6 +330,11 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         if (arrived(actor.position)) { stop(id);recordNativeMode(actor,1);continue; }
         const auto identity=actor.movementTarget?nativeTargetIdentity(actor.movementTarget,actor.area):std::nullopt;
         if(identity && nativeUnitTargetMoved(actor.movementGoal,target->first,identity->type)) {
+            if(!actor.pathRemaining) {stop(id);recordNativeMode(actor,1);continue;}
+            // Common D820 checks the old budget, then deducts consumed points.
+            actor.pathRemaining=uint8_t(actor.pathRemaining-std::min<unsigned>(actor.pathRemaining,actor.pathPointsConsumed));
+            actor.pathPointsConsumed=0;
+            actor.movementRevision=++actor.revision;
             auto type=actor.pathType;
             if(type==2 || type==13 || type==15) type=13;
             const Vec center{.5f,.5f};
@@ -358,19 +361,22 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         while (!actor.route.empty() && remaining > 0) {
             const Vec delta = actor.route.front() - actor.position;
             const float distance = delta.length();
-            if (distance == 0) { actor.route.pop_front(); continue; }
+            if (distance == 0) { actor.route.pop_front(); ++actor.pathPointsConsumed; continue; }
             constexpr Vec center{.5f,.5f};
             const auto previousStep=actor.pathStep;
             const auto step=actor.pathStep.advance(movementGrid,actor.position+center,actor.route.front()+center,
                 remaining,collision);
             const Vec next=step.position-center;
             const auto previous=actor.position;actor.position=next;
-            if(!recacheHirelingRoom(actor)) {actor.position=previous;actor.pathStep=previousStep;collisionMove.rollback();break;}
+            if(!recacheMovementRoom(actor,previous)) {
+                actor.position=previous;actor.pathStep=previousStep;
+                collisionMove.rollback();actor.route.clear();break;
+            }
             ports_.areas.moveRoomUnit(id,actor.area,actor.position);refreshCollision(actor);
             actor.moving=actor.moving || step.travelled>0;++actor.revision;
             if(step.blocked) {actor.route.clear();break;}
             if(!step.reached) break;
-            remaining-=step.travelled;actor.route.pop_front();
+            remaining-=step.travelled;actor.route.pop_front();++actor.pathPointsConsumed;
             if(step.travelled>0) break; // D2Common_10226: one nonzero path point per frame.
         }
         collisionMove.commit();

@@ -306,6 +306,8 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
             result.animation.appendSample(base->animation,facing,sample.frame);
         }
         for(const int tick:weaponSequenceHitTicks(sequence.frames,speed)) result.releaseTimes.push_back(float(tick)/25.f);
+        for(size_t index=0;index<sequence.frames.size();++index)
+            if(sequence.frames[index].sound) result.soundTimes.push_back(float(weaponSequenceTick(int(index),speed))/25.f);
         result.releaseTime=result.releaseTimes.front();result.durationFrames=WeaponAttackTiming{"sq",int(sequence.frames.size()),speed,0,0,true}.durationTicks();return result;
     }
     if (const auto sequence=playerCastSequence(request.playerSequence); sequence && request.category == "chars") {
@@ -364,9 +366,10 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
     for (size_t index = 0; index < rows->second.size(); ++index) {
         const auto event = sequences_.number(rows->second[index], "event").value_or(0);
         if (event == 1 || event == 2 || event == 4) result.releaseTimes.push_back(float(weaponSequenceTick(int(index),sequenceSpeed))/25.f);
+        else if(event==3) result.soundTimes.push_back(float(weaponSequenceTick(int(index),sequenceSpeed))/25.f);
     }
     if (!result.releaseTimes.empty()) result.releaseTime = result.releaseTimes.front();
-    if(request.finalFrame) {result.start=result.animation.count-1;result.frameCount=1;result.fps=0;result.releaseTime=-1;result.releaseTimes.clear();result.holdFrame=-1;}
+    if(request.finalFrame) {result.start=result.animation.count-1;result.frameCount=1;result.fps=0;result.releaseTime=-1;result.releaseTimes.clear();result.soundTimes.clear();result.holdFrame=-1;}
     return result;
 }
 const ActorAnimation *ActorAnimationCatalog::resolve(Graphics &graphics, int palette, const ActorAnimationRequest &request) {

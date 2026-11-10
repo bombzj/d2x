@@ -53,16 +53,15 @@ DomainResult<bool> System::redeemUnitCorpse(EntityId source,EntityId corpse,int 
         if(!result) throw std::logic_error("Missing native Redemption formula");
         return *result;
     };
-    // Native callback draws the chance before evaluating Calc1. Nested Rand
-    // calls share that actual unit's stream, and Calc3 observes the HP write.
-    const auto chanceDraw=skipChance?0:rollRandom(random)%100;
+    // Retail evaluates Calc1 before drawing from the same unit seed.
+    const auto redeemRoll=[&](int chance) {return int(rollRandom(random)%100)<chance;};
     DomainResult<> committed;
     if(owner.player) {
         const auto &player=*owner.player;
         const auto actor=ActorContext{player.player,source,region,ports_.areas.at(region).generation,0,tick};
         PlayerResourceTrace resources(player,tick,{},ports_.areas.statTime(region));
         const auto input=[&]{return skills::formulaInput(player,resources.record(),resources.totals(),draw);};
-        if(!skipChance && chanceDraw>=uint32_t(evaluate(input(),"calc1"))) {
+        if(!skipChance && !redeemRoll(evaluate(input(),"calc1"))) {
             const auto result=ports_.transactions.consumeRandom(actor,expected,random);
             return result?DomainResult<bool>{DomainStatus::Applied,false}:DomainResult<bool>{result.status,{}};
         }
@@ -83,7 +82,7 @@ DomainResult<bool> System::redeemUnitCorpse(EntityId source,EntityId corpse,int 
             auto shadow=unit;shadow.life=resources.read().life.raw();shadow.maximumLife=resources.read().maximum.raw();shadow.nativeStats=resources.read().intrinsic;
             return evaluate(skills::formulaInput(shadow,resources.values(sources),draw),field);
         };
-        if(!skipChance && chanceDraw>=uint32_t(value("calc1"))) {
+        if(!skipChance && !redeemRoll(value("calc1"))) {
             const auto result=ports_.monsters.consumeRandom(source,expected,random);
             return result?DomainResult<bool>{DomainStatus::Applied,false}:DomainResult<bool>{result.status,{}};
         }

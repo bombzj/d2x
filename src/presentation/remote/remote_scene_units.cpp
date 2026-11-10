@@ -79,9 +79,12 @@ const RemoteScene::Impl::Art *RemoteScene::Impl::character(const OnlineUnit &u, 
                 const auto extra=monsterExtra.find(monstats.value(monster->second,"MonStatsEx"));if(extra==monsterExtra.end()) continue;
                 if(meleeDistance({float(u.position->x),float(u.position->y)},2,{float(target.position->x),float(target.position->y)},monstats2.number(extra->second,"SizeX").value_or(0))<=*reach) ++count;
             }
-            if(skills.number(row->second,"srvdofunc")==13) {
-                const auto *known=shared.characterView().skill(*u.actionSkill);
-                const int rank=u.actionSkillLevel.value_or(u.key.id==playerId && known && known->effectiveRankKnown?known->effectiveRank:1);
+            const auto *known=shared.characterView().skill(*u.actionSkill);
+            const int rank=u.actionSkillLevel.value_or(u.key.id==playerId && known && known->effectiveRankKnown?known->effectiveRank:1);
+            if(!pd2 && skills.number(row->second,"srvstfunc")==9) {
+                const auto cap=skillCalculation(*u.actionSkill,rank,"calc1",u.key);
+                if(cap) request.repeatCount=std::max(1,std::min(count,*cap));
+            } else if(skills.number(row->second,"srvdofunc")==13) {
                 request.repeatCount=std::max(1,std::min(skills.number(row->second,"Param6").value_or(0),skills.number(row->second,"Param5").value_or(0)+rank-1));
             } else request.repeatCount=std::max(1,std::min(count,skills.number(row->second,"calc1").value_or(0)));
             request.rollbackPercent=skills.number(row->second,"Param2").value_or(0);
@@ -335,7 +338,8 @@ const RemoteScene::Impl::Art *RemoteScene::Impl::monster(const OnlineUnit &u, bo
             if(const auto shift=stateColorShifts.find(u.key);shift!=stateColorShifts.end()) request.stateColorShift=shift->second;
             request.monsterUnit=true;
             request.monsterKick=*cls==6;
-            request.mode=moving && mode==1?"wl":modes[mode];request.finalFrame=mode==12;
+            request.mode=moving && mode==1?"wl":modes[mode];
+            request.finalFrame=mode==12;
             if(request.monsterKick && request.mode=="a1") request.mode="kk";
             if(u.actionSkill && mode!=0 && mode!=3 && mode!=6 && mode!=12 && mode!=13) {
                 const auto monsterRow=monsterRows.find(unitClass(u).value_or(UINT16_MAX));
@@ -416,13 +420,15 @@ const RemoteScene::Impl::Art *RemoteScene::Impl::monster(const OnlineUnit &u, bo
         const auto usedSkill=u.actionSkill?u.actionSkill:u.stoppedSkill;
         const auto usedRow=usedSkill?skillRows.find(*usedSkill):skillRows.end();
         const bool submergeSkill=usedRow!=skillRows.end() && skills.number(usedRow->second,"srvstfunc")==51;
-        const bool submerged=submergeSkill || (actual==8 && !u.actionSkill && monstats.value(row->second,"AI")=="FrogDemon");
+        const bool submerged=actual!=0 && actual!=12 &&
+            (submergeSkill || (actual==8 && !u.actionSkill && monstats.value(row->second,"AI")=="FrogDemon"));
         if(burrowed) for(int slot=1;slot<=8;++slot) if(monstats.value(row->second,"Skill"+std::to_string(slot))=="MagottDown") pose=lower(std::string(monstats.value(row->second,"Sk"+std::to_string(slot)+"mode")));
         if(submerged) for(int slot=1;slot<=8;++slot) if(monstats.value(row->second,"Skill"+std::to_string(slot))=="Submerge") pose=lower(std::string(monstats.value(row->second,"Sk"+std::to_string(slot)+"mode")));
         // D2Common COMPOSIT maps MONMODE_KNOCKBACK to the original GH art.
         if(actual==13) pose="gh";
-        if (u.actionSkill || pose.starts_with("seq_")) {
-            if(u.actionSkill) pose = monsterSkillMode(row->second,*u.actionSkill);
+        const bool skillPose=u.actionSkill && actual!=0 && actual!=12;
+        if (skillPose || pose.starts_with("seq_")) {
+            if(skillPose) pose = monsterSkillMode(row->second,*u.actionSkill);
             else if(submergeSkill) pose=monsterSkillMode(row->second,*usedSkill);
             if (pose.starts_with("seq_")) {
                 ActorAnimationRequest request; request.category = "monsters"; request.mode = pose;

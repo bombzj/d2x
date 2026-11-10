@@ -548,6 +548,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         return true;
     });
     std::erase_if(stormLast_,[&](const auto &entry){return !ports_.players.findActor(entry.first.first);});
+    std::erase_if(nativeStormLastGuid_,[&](const auto &entry){return !ports_.players.findActor(entry.first.first);});
     std::erase_if(stormPulses_,[&](const auto &entry){
         if(ports_.frameEvents.find(entry.first)) return false;
         if(entry.second.projectile) ports_.missiles.removeTransient(entry.second.projectile);

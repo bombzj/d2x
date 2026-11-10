@@ -131,7 +131,7 @@ void RemoteUiClients::Impl::update(const OnlineSceneView &binding, std::optional
         }
         const auto &online=session.read();
         const ProjectionKey sources{online.revision,items.read().revision,generation,areaGeneration,
-            binding.area,binding.palette,binding.origin,binding.town,run,
+            binding.area,binding.palette,binding.origin,binding.town,run,combat.localSkillDelayActive(),
             binding.npcConversation?std::optional{std::pair{binding.npcConversation->source,binding.npcConversation->revision}}:std::nullopt};
         if(!projectedSources || *projectedSources!=sources) {
             ++revision;
@@ -167,8 +167,12 @@ RemoteUiClients::RemoteUiClients(Archives &a,net::RealmSession &s,RemoteInventor
         const auto *entry=state->characterView.skill(skill,owner);
         return entry?entry->delayFrames:std::nullopt;
     });
+    c.setSkillUseResolver([state=impl_.get()](uint16_t skill,uint32_t owner)->std::optional<NativeSkillUseState> {
+        const auto *entry=state->characterView.skill(skill,owner);
+        return entry?entry->nativeUseState:std::nullopt;
+    });
 }
-RemoteUiClients::~RemoteUiClients(){impl_->combat.setSkillRankResolver({});impl_->combat.setSkillDelayResolver({});}
+RemoteUiClients::~RemoteUiClients(){impl_->combat.setSkillRankResolver({});impl_->combat.setSkillDelayResolver({});impl_->combat.setSkillUseResolver({});}
 size_t RemoteUiClients::queuedItemCommands() const { return impl_->transactions.size(); }
 std::optional<uint64_t> RemoteUiClients::waitingItemRequest() const { return impl_->waiting; }
 std::optional<unsigned> RemoteUiClients::itemQuote(uint32_t item, OnlineItemAction action) const {

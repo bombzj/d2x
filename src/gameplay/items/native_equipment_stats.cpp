@@ -109,8 +109,10 @@ EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &loadout,const 
             unitAttackRating(stat("dexterity"),stat("tohit"),input.attackRatingClassFactor);
         weapon.attackRatingPercent=nativeAdd(stat("item_tohit_percent"),weapon.meleeMastery[0]);
         weapon.attackRating=enhanced(weapon.baseAttackRating,weapon.attackRatingPercent);
-        const auto low=nativeShiftLeft(stat(twoHands?"secondary_mindamage":"mindamage"),8);
-        const auto high=nativeShiftLeft(stat(twoHands?"secondary_maxdamage":"maxdamage"),8);
+        weapon.rawMeleeMinimum=stat(twoHands?"secondary_mindamage":"mindamage");
+        weapon.rawMeleeMaximum=stat(twoHands?"secondary_maxdamage":"maxdamage");
+        const auto low=nativeShiftLeft(weapon.rawMeleeMinimum,8);
+        const auto high=nativeShiftLeft(weapon.rawMeleeMaximum,8);
         const auto normal=nativeShiftLeft(stat("item_normaldamage"),8);
         weapon.meleeBaseMinimum=nativeAdd(low,normal);weapon.meleeBaseMaximum=nativeAdd(high,normal);
         if(weapon.meleeBaseMinimum<1) weapon.meleeBaseMinimum=256;
@@ -138,6 +140,7 @@ EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &loadout,const 
     else {
         auto &fists=result.weapons[0];
         fists.nativeModifiers=std::make_shared<const CombatModifiers>(nativeCombatModifiers(unarmed,input.rules,input.procedures));
+        fists.rawMeleeMinimum=common("mindamage");fists.rawMeleeMaximum=common("maxdamage");
         const auto normal=nativeShiftLeft(common("item_normaldamage"),8);
         fists.meleeBaseMinimum=nativeAdd(nativeShiftLeft(std::max(1,common("mindamage")),8),normal);
         fists.meleeBaseMaximum=nativeAdd(nativeShiftLeft(std::max(2,common("maxdamage")),8),normal);

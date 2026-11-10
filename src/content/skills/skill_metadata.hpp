@@ -15,6 +15,7 @@ struct SkillMetadata : SkillEquipmentRule {
     std::vector<int> prerequisites;
     bool leftAllowed = false, passive = false, allowedInTown = false;
     bool inGame = false, aura = false;
+    bool attackNoMana = false;
     int startMana = 0, serverDoFunction = 0;
     // Native paired hand groups, not a per-skill weapon/shield switch.
     bool itemSkill = false; // Scroll/Book SrvDo113; availability requires native quantity.

@@ -132,6 +132,7 @@ class DebugNavigationSearch {
     int wallClearance(const Grid &terrain,Vec at);
     Vec explorationLane(const Grid &terrain,const Grid &collision,Vec from,Vec onRoute,Vec onward,bool walking);
     static constexpr int townClearance=4; // Preferred space at bends, never a collision requirement.
+    std::optional<Vec> localObstacleLane(const Grid &collision,Vec from,Vec onward) const;
     Vec townWalkLane(const Grid &terrain,const Grid &collision,Vec from,Vec onRoute,Vec onward);
     // Nearby assigned NPCs can take over a relay through normal unit input.
     static bool directNpcApproach(const RemoteTown &,const OnlineView &,OnlineUnitKey,Vec from);

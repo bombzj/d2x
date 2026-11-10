@@ -50,7 +50,26 @@ void SceneView::deferTooltip(std::vector<ItemTextLine> lines, ItemQuality qualit
     deferredTooltip_.priceLabel = std::string(priceLabel);
     deferredTooltip_.anchor = anchor;
 }
-void SceneView::updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events, Vec listener) {
+void SceneView::updateWorldAudio(float clock, std::vector<SoundActorView> &actors,
+                                std::vector<PresentationSoundEvent> &events, Vec listener, Vec terrainOrigin) {
+    for(auto &effect:clientMissiles_) {
+        if(effect.age<0 || !effect.releaseSound) continue;
+        auto &release=*effect.releaseSound;
+        if(!release.sound.empty()) {
+            const auto target=std::ranges::find(actors,release.target,&SoundActorView::id);
+            const bool attachToMissile=target==actors.end();
+            const auto source=attachToMissile?effect.soundEmitter:target->id;
+            events.push_back({.kind=PresentationSoundEvent::Kind::Original,.source=source,
+                .age=effect.age,.sound=std::move(release.sound)});
+            if(!attachToMissile) {
+                effect.releaseSound.reset();
+                continue;
+            }
+            release.sound.clear();
+        }
+        actors.push_back({.id=effect.soundEmitter,.position=effect.pos,.alive=false,
+            .audible=worldContains(screen(effect.pos-terrainOrigin))});
+    }
     assets_.sceneAudio.update(clock,actors,events,listener);
 }
 void SceneView::playUiSound(std::string_view sound) { assets_.sceneAudio.play(sound, uint64_t(GetTime() * 25)); }
@@ -119,7 +138,7 @@ const SkillOverlayVisual *SceneView::overlayVisual(int id) { return assets_.ensu
 void SceneView::clearClientMissiles() {
     clientMissiles_.clear();
     clientMissileHiddenOwners_.clear();
-    clientMissileObjectOverlays_.clear();
+    clientMissileOverlays_.clear();
     assets_.sceneAudio.reset();
 }
 const std::vector<SceneView::ClientMissile> &SceneView::clientMissiles() const { return clientMissiles_; }
@@ -128,9 +147,9 @@ std::vector<EntityId> SceneView::takeClientMissileHiddenOwners() {
     result.swap(clientMissileHiddenOwners_);
     return result;
 }
-std::vector<ClientMissileObjectOverlay> SceneView::takeClientMissileObjectOverlays() {
-    std::vector<ClientMissileObjectOverlay> result;
-    result.swap(clientMissileObjectOverlays_);
+std::vector<ClientMissileOverlay> SceneView::takeClientMissileOverlays() {
+    std::vector<ClientMissileOverlay> result;
+    result.swap(clientMissileOverlays_);
     return result;
 }
 void SceneView::retireClientMissileRoom(const std::array<int,3> &room) {

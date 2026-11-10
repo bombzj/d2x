@@ -32,6 +32,7 @@ struct WorldDrawItem {
     std::optional<int> missileFrame;
     std::optional<int> overlayFrame;
     bool suppressMissileLight{};
+    std::optional<int> missileLightRadius;
     bool behindUnit{};
 };
 struct WorldDrawView {
@@ -55,7 +56,7 @@ struct WorldDrawView {
     std::optional<bool> eclipse;
     std::optional<int> denIntensity; // Retail level-8 ambient override; absence uses Levels/environment.
     std::optional<int> sanctumIntensity; // Retail 107/108 ambient override after FX12.
-    struct AmbientFade {int level,down,hold,up;};
+    struct AmbientFade {int level,down,hold,up;bool useNativeRoomPriority{};};
     std::optional<AmbientFade> ambientFade;
     std::optional<size_t> selectedExit;
     EntityId groundHighlight;

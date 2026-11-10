@@ -2,7 +2,7 @@
 
 PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版／公共规则及必要的版本边界。
 
-更新：2026-10-22。自研服务端已接入66–95共30项技能（27项主动、3项被动）。本页维护当前实现、原版依据与缺口；规则来自当前MPQ，master的纯求值与D2MOO作为执行线索，旧单机会话执行器没有迁回客户端。
+更新：2026-11-09。自研服务端已接入66–95共30项技能（27项主动、3项被动）。本页维护当前实现、原版依据与缺口；规则来自当前MPQ，master的纯求值与D2MOO作为执行线索，旧单机会话执行器没有迁回客户端。
 
 骷髅支配、石魔支配及召唤抵抗的提示与实际召唤共用`evaluateNecromancerPassive`，法师元素长度、降低抵抗递减、范围与AI资格复用[公共函数](COMMON.md#公共函数抽取)。参数在content从当前MPQ准备，客户端被动提示不再逐次查表。完整技能组合仍待原版对齐，存档校验以[SAVES](../../modules/SAVES.md)为准。
 
@@ -10,18 +10,40 @@ PD2专项内容：[职业技能](../../pd2/CLASS_SKILLS.md)。本页保留原版
 
 骨甲的StateFact与其他防御状态共用`nativeEffectStats`，从实际安装列表读取吸收池及modifierlist_skill／modifierlist_level；不再另造只有两个吸收字段的包。D2MOO SkillSor::SKILLS_SrvDo018_DefensiveBuff明确写入来源元数据，原版2级骨甲有限对照为bonearmor／bonearmormax各23040、来源技能68／等级2；护盾受击后的余量仍以唯一效果列表为准。
 
-| 技能ID／名称 | 权威执行与客户端入口 |
+按技能 ID 记录本地 d2decomped 对照、原版 1.13c 静态入口和当前 MPQ 的执行依据。对照结论限于表列路径。
+
+| 技能 ID／名称 | 原版对照与当前执行 |
 | --- | --- |
-| 66伤害加深、71微暗灵视、72削弱、76攻击反噬、77恐惧、81迷乱、82偷取生命、86吸引、87衰老、91降低抵抗 | curse_resolve准备等级／范围／持续／贡献；effects/necro安装诅咒及原状态属性。ai/system处理失明、逃跑、混乱和诱引；combat提交接触后反伤与生命吸取。原CltDo30、States及Overlay只生成表现。 |
-| 67牙、84骨矛、93骨魂 | missiles/launch／programs负责扇形、穿透及追踪；骨魂区分单位目标和坐标落点后搜索，周期／范围／寿命来自Missiles。客户端复用CltDo17／18、弹体CltDo7／18及原拖尾。 |
-| 68白骨装甲 | effects/skills在物理抗性结算前消耗固定点护盾，发原bonearmor／bonearmormax状态属性，耗尽移除；客户端消费原前／后环和施加图形。 |
-| 73淬毒匕首、83毒爆、92剧毒新星 | 匕首复用原武器资格、命中／耐久／消耗，毒率与装备毒率叠加、持续时间按原来源合并，无魔法退回普攻。毒爆消耗可用尸体，生成原毒云；新星64方向、首次碰撞消失。毒伤和寿命由combat／monsters持有，CltDo33／25及原毒云只生成图形。 |
-| 74尸爆 | 玩家、物品触发与死亡卫哨共用effects/corpse_explosion；原基础生命表、等级修正、物理／元素比例与两种半径来自MPQ。尸体消耗／隐藏、种子与玩家费用同笔发布，单个伤害结构按原房间顺序逐目标同步推进；原CltDo32重建图形，完整来源组合仍待对齐。 |
-| 70骷髅复生、80复生骷髅法师 | 主人原Calc／Passive／Aura／SumSkill采样，公共召唤来源安装及raw生命；hosting准备原MonStats、组件、动作与飞弹曲线；companions消耗尸体、管理数量／同行／攻击。法师发射按自身当前技能等级采样raw元素伤害与时长，保留四种元素组件。 |
-| 75黏土石魔、85鲜血石魔、90钢铁石魔、94火焰石魔 | 四种石魔共用上限及原始召唤来源。黏土减速、鲜血吸取、铁魔材料／反伤、火魔吸收／Holy Fire分别保留过程策略；材料在基础与技能加值前投递，后续属性、生命增长和召唤抵抗按原顺序准备。火魔死亡爆炸已迁出伙伴AI，进入UMod31四帧事件及同步联系；完整事件组合与结算仍待对齐。 |
-| 78骨墙、88骨牢 | 原BoneWall生命／寿命／动作与墙段参数；骨墙根及两侧生长、骨牢12个原偏移，按碰撞和占用检查位置。墙段参与玩家／怪物移动阻挡及敌人低Threat目标选择。 |
-| 95重生 | 检查MonStats2.revive、原AI资格、普通尸体及死亡完成；保留原单位ID、真实身份／组件和已准备家族AI。原基础生命重掷、主人等级限制、精通贡献、速度和寿命；无奖励、不可再消费，原revive状态／归属／图形。 |
-| 69支配骷髅、79支配石魔、89召唤抗性 | 有效精通／抗性和基础协同在出生时分别求值。零售现存召唤保留出生贡献；技能／状态回调只按PlayerPets更新数量，不轮询重掷HP／精通／抵抗或材料。PD2属性刷新独立保留。被动不产生独立施法动作。 |
+| 66 Amplify Damage | d2decomped 的物抗修正与原 SrvDo30 `505D0` 和 `damageresist=-par5` 一致，免疫对象只取五分之一。原 CltDo30 `C8B40` 创建 `cursecenter`，按 `max(2,AuraRangeCalc-3)` 投放表列图形，客户端已改用原中心程序。 |
+| 67 Teeth | d2decomped 与原 SrvDo8 `4D420`／CltDo17 `15DA0` 都使用整数横向扇形，当前 Calc3 为空时所有牙走中段。服务端直接取 `min(ln12,24)` 并从整数施法格朝扇形目标发射，伤害和命中延迟仍取各自表。 |
+| 68 Bone Armor | d2decomped 的 8.8 物理吸收与原 SrvDo18 `428F0`／Event22 `4DFE0` 对应，原表两槽安装相同最大值与当前值。客户端 setfunc6 `73230` 读取池量三等分切换骨片，现有执行已保留耗尽撤出和两端表现分工。 |
+| 69 Skeleton Mastery | d2decomped 在召唤时读取支配，原 D2Game `4F9B6` 也从召唤技能的 PassiveCalc 槽对出生单位写值。当前骷髅、法师和重生按各自表引用取主人有效等级，分别使用四个 Param，提示按同一参数求值。 |
+| 70 Raise Skeleton | d2decomped 的 Do31 尸体召唤对应原 SrvSt15 `4EF20`／SrvDo31 `518B0`。当前先删尸体，再用冻结坐标尝试 S1 出生、PetMax 和盾组件，CltDo31 `C88A0` 在尸体处呈现。跨职业来源的原圣骑士自伤分支尚未接入。 |
+| 71 Dim Vision | d2decomped 的普通怪物 Special10 与原 SrvDo30 的 dimvision 特例一致，按 AiCurseDiv 缩短，AI 在近战、20%近步和待机之间选择。原 CltDo30 不读取 CltMissileC，已撤掉额外施法者飞弹，落点走诅咒中心。 |
+| 72 Weaken | d2decomped 使用诅咒属性降低物理攻击，原 Do30 `50661` 读技能范围、持续期与连续 AuraStat 槽。当前 MPQ 是 `damagepercent=-33`，与怪物随机诅咒的独立数值分开。客户端按共用诅咒中心生成表列 `curseweaken`。 |
+| 73 Poison Dagger | 原 SrvSt16 `4F7D0` 先建带毒近战记录，SrvDo32 `4F920` 再处理目标耐久，符合 d2decomped 的阶段划分。当前匕首资格、原表毒率／毒长、物品毒与 `AttackNoMana` 均走共用武器路径。 |
+| 74 Corpse Explosion | 原 SrvDo55 `4F4D0` 先隐藏尸体，再按基础 HP、尸体种子和等级比例准备一份伤害。d2decomped 的半物理／半火同源，D2X 保留物理截短与元素向上取整的两个半径。客户端与尼拉塞克的技能351共用 CltSt21 `C8330`／CltDo32 `C8CE0`，起手保留尸体坐标及类型，按 MPQ 尺寸和 `A2380` 的方向与散布生成碎块，再生成爆炸及等级2红光。目标音效在释放时定位到尸体，目标已移除则挂到爆炸弹体。客户端随机流保持连续，原始种子的逐次一致性尚未运行核对。 |
+| 75 Clay Golem | d2decomped 的主人贡献和减速对应原 SrvDo56 `51750`、Event27 `4EF70`。原表读取 `item_slow=dm34`、支配命中和血魔基础等级协同；当前 S1 出生、共用石魔名册、受近战时减速及数值上限沿各自原入口。 |
+| 76 Iron Maiden | d2decomped 的物理近战反伤对应 Event4 `4F090`。当前按诅咒列表来源算 Calc1，玩家及雇佣兵按目标类型选 Calc2／3，使用原 HitClass。原回调的邪恶鲜血石魔反伤后追加治疗仍未接入。 |
+| 77 Terror | 原 Do30 用 `4DF80` 专判状态 56，难度缩短持续期，目标切换 Special11。d2decomped 的逃离 30 子格、不能逃离时备选动作和现有 AI 入口一致。客户端表列 `curseterror` 经诅咒中心生成。 |
+| 78 Bone Wall | d2decomped 的根段与两条控制飞弹对应原 SrvDo60 `50FE0`，`51211` 先求 Calc2 再除 2，大于 1 才发两侧。当前表 `par34` 取 Param3，Do13 仅跨格尝试生长，成功才减段数；S1 和寿命按各段出生读取原表。 |
+| 79 Golem Mastery | d2decomped 的出生时支配取值与原 `4FA18`–`4FA34` 的召唤槽写入一致。当前四种石魔分别引用 `ln12`、`dm34`、`ln56`，客户端支配提示沿同一参数；召唤后不会轮询重写已装载贡献。 |
+| 80 Raise Skeletal Mage | 原 Do31 `518B0` 与 d2decomped 同为先删尸体、再出生；现有独立名册和 `SumSkill` 公式给法师安装 338 等级。原 SrvDo149 `B4B10`／CltDo95 `588B0` 用四种元素索引选择飞弹，D2X 权威按本体等级求 raw 伤害，客户端按可见组件选择。 |
+| 81 Confuse | d2decomped 的邪恶怪物筛选和目标改写对应原 SrvDo61 `51A90`。持续期按 AiCurseDiv，原状态写入后转中立并登记目标节点，保留原家族 AI。客户端使用共用 CltDo30；完整目标列表与全局调度边界见下文。 |
+| 82 Life Tap | d2decomped 的受击者回调与原 Event5 `4E760` 的近战／飞弹两槽一致。D2X 从命中记录的 8.8 物理伤害取 Calc1 治疗实际攻击者，保留原 `steallife` 图层；补上原最大生命必须为正的检查。 |
+| 83 Poison Explosion | 原 SrvDo63 `50190` 先置 CorpseNoSelect 再生成一组毒云，d2decomped 的定点发射及现有保留尸体的服务器路径一致。原 CltDo33 `C8710` 先建尸体图，再建等级 2 的绿光，尸体图创建成功才发毒云；客户端已按该顺序执行。 |
+| 84 Bone Spear | 原通用飞弹构造 `A28F0` 从施法者整数格向整数目标发射；d2decomped 的直线穿透与 MPQ 的 CollideKill／NextHit 均为空一致。已移除服务端多余起点偏移，客户端仍走表列 CltDo18 骨矛拖尾。 |
+| 85 Blood Golem | d2decomped 归在 NecroPet 通用 AI，专用分摊以原 Do56 和 Event23 `4E5F0`／Event26 `4E500` 为准。当前表对邪恶目标按 Drain 和物伤求治疗，先给主人 Param3 份额，再回填石魔与主人；Param5=0。非玩家主人和无主人回调仍待补齐。 |
+| 86 Attract | d2decomped 的单目标入口对应原 SrvDo59 `51C60`。当前先核验邪恶目标并转中立，摘旧主从，再登记附近怪物的目标与 AI 重置，最后按原抗性及列表资格安装状态；其他诅咒不能覆盖。客户端沿共用范围图。 |
+| 87 Decrepify | d2decomped 的共用诅咒处理对应原 Do30 `505D0`。当前四槽各取 Param5=-50，分别修改移动、物伤、物抗和攻速，速度由原 stat 标志刷新；免疫物抗分支和怪物随机诅咒表独立。客户端读取 `cursedecrepify`。 |
+| 88 Bone Prison | d2decomped 的十二段与原 SrvDo62 `51E70` 的两个整数偏移表相符。现有 NU 出生模式、首个成功段链接、UMod15 及 Calc1 生命协同分别沿原规则。客户端显示实际出生单位，技能无单独 CltDo。 |
+| 89 Summon Resist | d2decomped 识别召唤抵抗被动，原 D2Common 被动槽写入与当前 `passive_summon_resist=dm12` 一致。出生回调独立安装抗性，火／电／冰分别跳过已有吸收的元素，毒抗照常安装；客户端提示同取 dm12。 |
+| 90 Iron Golem | d2decomped 识别材料召唤及反伤属性。原 SrvSt20 `4EDD0` 与 Do57 `51540` 复验地面、金属、鉴定和归属，成功出生后才装备材料，再写基础与被动。当前材料先投递、PetMax=1，荆棘和 Fade 取表；完整材料回调及保存边界见下文。 |
+| 91 Lower Resist | d2decomped 的共用诅咒路径与原 Do30、SkillNec 的单位基础抗性检查对应。当前 `-dm56` 只作用于火、电、冰、毒，每一项独立判断免疫并按原五分之一折算。客户端图形和四项抗性提示各走原表。 |
+| 92 Poison Nova | d2decomped 的普通环与原 SrvDo22 `43AA0`／CltDo25 `73CB0` 一致，当前是完整 64 向，独立于怪物的 16 向 PrimePoisonNova。原表碰撞即终止且 NextDelay=4，毒率和毒长分开；人物面板以 DescDam5 显示总毒伤。 |
+| 93 Bone Spirit | d2decomped 的单位追踪与坐标搜索对应原 SrvDo10 `4D270`／CltDo18 `15C40`。坐标构造的 0x400 只改 CurrentFrame，保留原表 TotalFrames=128 供周期使用；两端修正这一帧值分离，服务端也按整数格瞄准。 |
+| 94 Fire Golem | d2decomped 的 Holy Fire、火吸收和死亡爆炸分别对应原 Do56、当前召唤槽及 UMod31 `265E0`。已保留 Holy Fire 上限 30、抗性与吸收分槽，以及四帧后 100 物理＋100 火焰、半径 6 的原伤害回调；独立死亡图形时序仍待核对。 |
+| 95 Revive | d2decomped 的等级限制、支配贡献及 Calc2 到期对应原 SrvSt21 `4ED60`／SrvDo58 `51340`。D2X 保留实际 GUID 和家族，按当前尸体等级重投生命，再限制到主人等级；原空位失败仍进入属性分支。CltDo31 在原尸体坐标呈现，完整家族调度仍待运行对照。 |
 
 ## 状态、归属与保存
 

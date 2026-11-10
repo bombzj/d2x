@@ -43,7 +43,7 @@
 | 原随机 | [D2Seed.h](../../reference/d2moo/source/D2Common/include/D2Seed.h)：SEED_RollRandomNumber／LimitedRandomNumber | 双字种子／范围 → 下一种子／结果 | 优先直接适配；流归属、派生时点由调用者决定 |
 | 整数比例 | [MonsterUnique.cpp](../../reference/d2moo/source/D2Game/src/MONSTER/MonsterUnique.cpp#L234)：MONSTERUNIQUE_CalculatePercentage | 有符号数／比例／分母 → 原分支结果 | 在 D2Game 也可共享；不可无依据统一成宽乘除 |
 | 技能参数／公式 | [D2Skills.cpp](../../reference/d2moo/source/D2Common/src/D2Skills.cpp)：SKILLS_GetSpecialParamValue／EvaluateSkillFormula | 程序＋等级／stat 查询输入 → 整数值 | 拆出显式参数环境；避免用万能单位指针 |
-| 技能数值曲线 | [D2Skills.h](../../reference/d2moo/source/D2Common/include/D2Skills.h)：GetManaCosts、GetMin／MaxElemDamage、GetElementalLength 等 | 原定义＋来源等级＋协同／支配 → 原单位数值 | 耗蓝计算与实际扣蓝、技能伤害与飞弹伤害不混用 |
+| 技能数值曲线 | [D2Skills.h](../../reference/d2moo/source/D2Common/include/D2Skills.h)：GetManaCosts、GetMin／MaxElemDamage、GetElementalLength 等 | 原定义＋来源等级＋协同／支配 → 原单位数值 | 协同保留1.13c的ApplyRatio及各自缩放顺序。耗蓝资格与实际扣蓝分属各自调用阶段 |
 | 飞弹伤害继承 | [Units/Missile.h](../../reference/d2moo/source/D2Common/include/Units/Missile.h)：CalculateDamageData／CalculateFinalDamage／CalculateMasteryBonus | 原飞弹／技能规则＋发射来源数值 → 分通道伤害数据 | 将查属性和写弹体 stat 分离；保存 SrcDamage 与继承顺序 |
 | 飞弹公式／寿命 | [Units/Missile.cpp](../../reference/d2moo/source/D2Common/src/Units/Missile.cpp)：公式、曲线及 remaining 访问 | 定义＋局部帧／等级／上下文 → 数值／相位 | 原 current、total、remaining 语义不能按名字猜；随机公式显式传流 |
 | 动画模式／速率 | [Units.cpp](../../reference/d2moo/source/D2Common/src/Units/Units.cpp)：UNITS_UpdateAnimRateAndVelocity 及模式分支 | 形态、原模式、武器上下文、速率属性、元数据 → 动画／移动速率 | 拆出选择与计算；模式准入和写位置不属于纯计算 |

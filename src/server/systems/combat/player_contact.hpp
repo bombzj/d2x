@@ -71,6 +71,6 @@ struct MonsterContactExecution {
     reactions::ItemEventPlan itemEvents;
     int leechOverlay{-1};
     uint8_t hitClass{};
-    bool receptionPrepared{},defenseCommitted{},callbacksPrepared{},callbacksComplete{},hostile{},clearStun{},stunPrepared{},sanctuary{},fillEventComplete{},meleeEventComplete{},damageCommitted{},monsterModifierComplete{};
+    bool receptionPrepared{},defenseCommitted{},callbacksPrepared{},callbacksComplete{},hostile{},clearStun{},stunPrepared{},fillEventComplete{},meleeEventComplete{},damageCommitted{},monsterModifierComplete{};
 };
 }

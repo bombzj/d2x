@@ -75,6 +75,7 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         program.localBlood = number("LocalBlood") != 0;
         program.clientSend=number("ClientSend")!=0;
         program.activationDelay=number("Activate");
+        program.randomStart=number("RandStart");
         program.deathFlame=table.value(row,"Missile")=="andycolumnfire";
         const auto serverHitFunction=table.value(row,"pSrvHitFunc");
         program.holyBolt=!serverHitFunction.starts_with('*') && number("pSrvHitFunc")==7;
@@ -98,6 +99,21 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         }
         // Retail *16 is WORD 64952, outside the callback table; it is not 16.
         program.hitFunction = callback("pclthitfunc");
+        if(program.rules==ClientMissileProgram::Rules::Original && (program.hitFunction==25 || program.hitFunction==26)) {
+            uint32_t filter{};
+            if(content.nativeFormulas)
+                if(const auto skill=content.nativeFormulas->skills.find(program.linkedSkill);skill!=content.nativeFormulas->skills.end())
+                    filter=uint32_t(skill->second.number("aurafilter"));
+            program.targetBurstFilter=filter?filter:program.hitFunction==26?0xA683u:0xA783u;
+        }
+        if(program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==10) {
+            const auto name=table.value(row,"ProgOverlay");
+            if(const auto overlays=content.tables.find("overlay");overlays!=content.tables.end() && !name.empty()) {
+                const auto &records=overlays->second;
+                for(size_t index=0;index<records.rows().size();++index)
+                    if(records.value(index,"overlay")==name) {program.contactOverlay=int(index);break;}
+            }
+        }
         program.velocity = number("Vel"); program.velocityPerLevel = number("VelLev");
         program.acceleration = number("Accel"); program.maximumVelocity = number("MaxVel") << 8;
         program.frames = number("Range"); program.framesPerLevel = number("LevRange");
@@ -125,6 +141,13 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         }
         for (size_t i = 0; i < program.hitChildren.size(); ++i)
             program.hitChildren[i] = linked(row, "CltHitSubMissile" + std::to_string(i + 1));
+        if(program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==31) {
+            // B05B0 uses a native class dispatch, not CltHitSubMissile.
+            const auto parent=table.value(row,"Missile");
+            const auto melt=names.find(parent=="icebreaksmall"?"icebreaksmallmelt":"icebreaklargemelt");
+            if(melt!=names.end() && (parent=="icebreaksmall" || parent=="icebreakmedium" ||
+                parent=="icebreaklarge" || parent=="catapult cold explosion")) program.hitChildren[0]=melt->second;
+        }
         // D2Client BB070 reads Missiles +0x88 (SHitCalc1), then falls back
         // to the parent range. PD2 Blaze supplies a constant fire duration.
         if(program.rules==ClientMissileProgram::Rules::Pd2Cn && program.hitFunction==12)
@@ -155,11 +178,17 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         }
         if (const auto child=missileRows_.find(program.children[0]); child!=missileRows_.end())
             program.childServerSent=table.number(child->second,"ClientSend").value_or(0)!=0;
+        if(program.rules==ClientMissileProgram::Rules::Original && program.hitFunction==29)
+            program.childServerSent=number("pSrvHitFunc")==26;
         if (program.function==9 && program.hitFunction==18) {
             const auto light=missileRows_.find(program.hitChildren[1]);
-            meteorVisuals.emplace(id,MeteorVisual{light==missileRows_.end()?0:table.number(light->second,"Range").value_or(0),
+            MeteorVisual meteor{light==missileRows_.end()?0:table.number(light->second,"Range").value_or(0),
                 program.hitChildren[0],program.hitParameters[0],program.hitChildren[1],program.hitChildren[2],program.hitChildren[3],
-                program.hitParameters[1],program.hitParameters[2]});
+                program.hitParameters[1],program.hitParameters[2],{}};
+            if(content.nativeFormulas)
+                if(const auto skill=content.nativeFormulas->skills.find(program.linkedSkill);skill!=content.nativeFormulas->skills.end())
+                    meteor.nativeFireLength=std::pair{skill->second.number("param3"),skill->second.number("param4")};
+            meteorVisuals.emplace(id,meteor);
         }
         if(program.function==55) if(const auto cloud=names.find("ancient death cloud");cloud!=names.end()) program.children[0]=cloud->second;
         clientMissilePrograms.emplace(id, program);

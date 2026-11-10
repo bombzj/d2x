@@ -13,7 +13,9 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
 #include "gameplay/skills/aura_resolve.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "core/native_unit_ids.hpp"
 #include <algorithm>
 #include <utility>
 
@@ -78,13 +80,12 @@ DomainResult<> System::stormEvent(const FrameEvent &event,uint64_t tick) {
             ports_.frameEvents.cancel(event.handle);stormPulses_.erase(event.handle);return {DomainStatus::Applied,std::monostate{}};
         }
         pulse.skill=skills::evaluate(*player,event.customId,effect->spec.source.level);pulse.area=player->area;
-        const auto last=stormLast_[{event.owner.unit,event.customId}];EntityId next,fallback;
-        for(const auto candidate:nativeAuraCandidateRecipients({player->actor,player->area,pulse.skill.stormRadius,0xA783,false,{},NativeAuraTargetMode::OwnerRange,tick})) {
-            if(candidate.value>uint32_t(last.value) && (!next || candidate<next)) next=candidate;
-            if(candidate.value<=uint32_t(last.value) && (!fallback || candidate<fallback)) fallback=candidate;
-        }
-        pulse.target=next?next:fallback;
+        const auto last=nativeStormLastGuid_.find({event.owner.unit,event.customId});
+        const auto &identities=ports_.monsters.nativeIdentities();
+        const auto candidates=nativeAuraCandidateRecipients({player->actor,player->area,pulse.skill.stormRadius,0xA783,false,{},NativeAuraTargetMode::OwnerRange,tick});
+        pulse.target=nativeSkillSuccessor(candidates,last==nativeStormLastGuid_.end()?UINT32_MAX:last->second,identities);
         if(pulse.target) {
+            pulse.targetGuid=identities.guid(pulse.target);
             const auto target=participants.find(pulse.target);pulse.position=target.position();
             pulse.area=target.player?target.player->area:target.monster->area;
         }
@@ -121,7 +122,7 @@ DomainResult<> System::stormEvent(const FrameEvent &event,uint64_t tick) {
             const auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},pulse.area},pulse.notices});
             if(!result) return {result.status,{}};
         }
-        stormLast_[{event.owner.unit,event.customId}]=pulse.target;
+        nativeStormLastGuid_[{event.owner.unit,event.customId}]=pulse.targetGuid;
         pulse.notified=true;
     }
     if(!pulse.rescheduled) {

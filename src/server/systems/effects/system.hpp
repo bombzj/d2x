@@ -39,6 +39,7 @@ namespace d2x {struct WeaponSkillDamage;struct AssassinCharge;}
 namespace d2x {struct AuraSkillSpec;}
 namespace d2x::server::monsters {struct Actor;struct ActorPublication;}
 namespace d2x::server::combat {struct SpellImpact;}
+namespace d2x::server::missiles {class NativeBirthPublication;}
 namespace d2x::server::attributes {class MonsterResourceTrace;}
 namespace d2x::server::effects {
 struct Pd2SacrificeTimers;
@@ -218,6 +219,7 @@ class System {
     struct StormPulse {
         SkillCastSpec skill;
         EntityId target,projectile;
+        uint32_t targetGuid{UINT32_MAX};
         RegionId area{};Vec position;
         std::vector<DomainFact> notices;
         std::shared_ptr<NativeAreaPulse> damage;
@@ -226,6 +228,7 @@ class System {
     };
     std::map<FrameEventHandle,StormPulse> stormPulses_;
     std::map<std::pair<EntityId,int>,EntityId> stormLast_;
+    std::map<std::pair<EntityId,int>,uint32_t> nativeStormLastGuid_;
     DomainResult<> stormEvent(const FrameEvent &,uint64_t);
     DomainResult<> bladeShieldEvent(const FrameEvent &,uint64_t);
     DomainResult<> advanceBladeShield(BladeShieldPulse &,uint64_t);
@@ -381,7 +384,9 @@ class System {
     DomainResult<> endMode(EntityId,uint64_t tick,std::optional<uint64_t> activeRevision={});
     void scheduleModeEnd(EntityId,uint64_t tick);
     DomainResult<> modeEndEvent(EntityId,uint64_t tick);
-    DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {},std::span<const DomainFact> facts={});
+    DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {},
+                         std::span<const DomainFact> facts={},std::optional<std::pair<uint64_t,uint64_t>> random={},
+                         std::shared_ptr<missiles::NativeBirthPublication> missileBirth={});
     DomainResult<> bladeShield(const ActorContext &,const SkillCastSpec &,std::shared_ptr<BladeShieldPulse> &);
     bool bladeShieldStarted(const std::shared_ptr<BladeShieldPulse> &) const;
     DomainResult<> mindBlast(const ActorContext &,const SkillCastSpec &,Vec,std::shared_ptr<MindBlastPulse> &);
@@ -415,7 +420,9 @@ class System {
     std::optional<StatSnapshot> unitStatValues(EntityId,uint64_t tick,std::optional<EntityId> weapon = {},std::shared_ptr<const StatList> mode = {}) const;
     int unitCurseResistance(EntityId,uint64_t tick) const;
     CharacterModifiers stateModifiers(EntityId,int state,uint64_t tick) const;
+    bool concentrationPreventsReaction(const PlayerState &,uint64_t tick,uint64_t &random) const;
     int unitDefense(EntityId,uint64_t tick) const;
+    bool sanctuaryBypassesResistance(EntityId source,const monsters::Actor &target,uint64_t tick) const;
     int unitResistance(EntityId,DamageType,uint64_t tick,int pierce = 0) const;
     int unitRawResistance(EntityId,DamageType,uint64_t tick) const;
     FixedDamageResult unitDamageFixed(EntityId,int64_t,DamageType,uint64_t,int pierce = 0,bool bypass = false,bool sanctuary = false) const;
@@ -429,7 +436,7 @@ class System {
     DomainResult<PlayerReceptionPlan> preparePlayerReception(const ActorContext &,EntityId,const MonsterHit &,const PlayerHitAdjustment & = {}) const;
     DomainResult<> commitPlayerReception(PlayerReceptionPlan &&);
     DomainResult<UnitReceptionPlan> prepareUnitReception(EntityId target,EntityId source,const MonsterHit &,uint64_t,
-        const std::array<int,6> &pierce={},bool bypass=false,bool sanctuary=false,bool directDrain=true) const;
+        const std::array<int,6> &pierce={},bool bypass=false,bool directDrain=true) const;
     DomainResult<> commitUnitReception(UnitReceptionPlan &);
     DomainResult<ReceivedDamage> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {}, const PlayerHitAdjustment & = {},const DamageReception *preparedReception=nullptr,bool deferAction=false,bool successfulHit=true);
     PlayerMessageFact deathMessage(EntityId actor) const;

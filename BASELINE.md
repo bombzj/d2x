@@ -25,7 +25,7 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | 连接／宿主 | 单机、TCP/IP、原服连接及独立游戏服务；按房间难度恢复各角色自己的出生幕和传送点；无窗口原协议诊断入口可组装房主及多个真实客端 | 完整故障恢复；[联网](docs/modules/NETWORK.md)、[独立服务](docs/development/PVPGN_SERVER.md)、[无窗口入口](docs/development/BUILD_AND_RUN.md#无窗口协议客户端) |
 | 地图／世界 | 五幕地图生成及客户端房间重建；宿主逐房间物化、缺失输入按房间补载，并已核对原版瓦片／静态碰撞及房间调用链；跨区寻路、常驻碰撞格与逐子格占位、多人出生／旅行／复活寻位、探索缓存及常见环境物件 | 原版混合客户端、多人交错、单位随机／恢复／资源回收及特殊内容；[地图](docs/modules/MAP.md)、[物件](docs/gameplay/world/OBJECTS.md) |
 | 物品／成长 | 库存、装备、掉落、商店、合成、角色成长及死亡／尸体；掉落双流、冻结批次、逐操作属性及指定词缀；HC创建、永久死亡、模式隔离及授权回收 | 原版同帧出生／逐件落点时序、全来源／属性组合、复杂争用与多尸体；[物品](docs/gameplay/items/README.md)、[人物](docs/modules/CHARACTER.md)、[对照存档](docs/development/CHARACTER_REFERENCE_FIXTURES.md) |
-| 战斗／技能 | 普攻、法术、状态、武器效果及PvP；女巫、亚马逊、圣骑士、死灵、野蛮人技能；刺客蓄气／陷阱／伙伴施法及德鲁伊变形／召唤已有执行入口；尸体技能起手资格与选取 | 全技能与来源组合、完整双持与触发组合、完整PvP规则；[死灵](docs/gameplay/skills/NECROMANCER.md)、[刺客](docs/gameplay/skills/ASSASSIN.md)、[阵营](docs/gameplay/combat/FACTIONS.md) |
+| 战斗／技能 | 普攻、法术、状态、武器效果及PvP；女巫、亚马逊、圣骑士、死灵、野蛮人技能；刺客蓄气／陷阱／伙伴施法及德鲁伊变形／召唤已有执行入口；尸体技能起手资格与选取 | 全技能与来源组合、完整双持与触发组合、完整PvP规则；[女巫](docs/gameplay/skills/SORCERESS.md)、[死灵](docs/gameplay/skills/NECROMANCER.md)、[刺客](docs/gameplay/skills/ASSASSIN.md)、[阵营](docs/gameplay/combat/FACTIONS.md) |
 | 怪物／伙伴 | 第一、二幕家族及第三至第五幕逐项程序；NPC休眠命令、光环与修饰器重建；零售死灵召唤回调 | 全局交错／逐随机及全难度组合；本机1.13c的Uber默认AI、高级方块门保留空分支，不新增Realm World Event触发或替换规则；[怪物目录](docs/gameplay/monsters/README.md#当前实施范围)、[逐项台账](docs/gameplay/monsters/ACT3.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
 | NPC／任务 | 城镇服务、NPC原MapAI移动与动作、交谈暂停；Cain／Anya退场、熔炉、邪恶洞窟、Nihlathak、混沌清场等任务演出；五幕个人任务主流程、组队任务及奖励保存；任务日志已阅回执 | 完整剧情时序／退场表现、机关和特殊多人任务；[NPC交互](docs/gameplay/npc/INTERACTIONS.md#宿主npc移动与地图动作)、[NPC／任务](docs/modules/NPC_QUEST.md)、[任务](docs/gameplay/quests/SYSTEM.md) |
 | 多人／表现 | 组队、聊天、交易、敌意及共享收益；物品提示、自动地图、区域标题、消息日志、局内聊天与IME、头顶消息、ESC各级菜单与设置；包裹拿放、快捷键、方块、鉴定、堆叠与金币输入 | 完整像素／状态对齐、特殊任务事件、硬核权限组合、完整本地化／输入法组合；[UI](docs/gameplay/ui/CLASSIC_HUD.md)、[包裹](docs/gameplay/items/INVENTORY_UI.md#操作)、[自动地图](docs/gameplay/world/AUTOMAP.md)、[物品提示](docs/gameplay/items/PRESENTATION.md#物品属性提示) |
@@ -42,7 +42,7 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | 天气 | 客户端雨雪四阶段、风向、水花、雷电及循环雨声；Act 1河流物件；第五幕雪区规则 | **开局阶段按用户授权随机选取，是产品调整，不是原版规则**；没有服务端天气同步，同局各客户端可能不一致；声音空间定位、环境声与原版音画对照；[天气](docs/gameplay/world/LIGHTING.md#天气与河流水面)、[河流](docs/modules/MAP.md#act-1河流与天气) |
 | 首领绘制 | 五幕首领原COF及组件资源，墨菲斯托雾气、王座巴尔护罩、都瑞尔死亡血迹与透明混色 | 缺失原图（如41的DD）及完整画面对照；[首领绘制](docs/gameplay/monsters/BOSSES.md#五幕首领绘制) |
 | 移动一致性 | 角色本地／权威动作隔离、落地位置修正保留动作时钟、重复坐标请求、权威范围与超界反馈、出口／门户目标准备、跑步耗体力与零体力转换；5F目标资格、怪物路径与开门碰撞、逐帧击退 | 客户端资源更新与转换时序、动态碰撞历史、IDAStar0／16、专用AI／伙伴路径、技能位移；按角色→NPC／怪物→其他位移顺序推进；[移动一致性审计](docs/modules/MAP.md#移动一致性审计边界) |
-| 调试任务 AI | 五幕 27 项任务配方与传送点目标，按私人任务状态恢复；按客户端已知碰撞与单位观察范围规划，使用地图图元、经验方向及城镇服务地标辅助探索 | 自动练级、通用装备选择及跨地图、职业与恢复组合待补；[配置与策略](docs/development/DEBUG_AI.md)、[待验收清单](docs/development/ORIGINAL_GAPS.md#待验收调试导航) |
+| 调试任务 AI | 五幕 27 项任务配方与传送点目标，按私人任务状态恢复；按客户端已知碰撞与单位观察范围规划；局部执行区分步行清路、传送途经和空挡入战，清路只将当前阻挡列为攻击目标；父子导航使用类型契约，导航／战斗／补给／任务状态分属唯一对象，选敌、攻击、辅助和站位分开实现；使用地图图元、经验方向及城镇服务地标辅助探索 | 自动练级、通用装备选择待补；类型接口、状态、策略拆分及交接修正已通过Windows Release构建，运行行为仍待验收；局部执行及跨地图、职业与恢复组合待实机验收；[配置与策略](docs/development/DEBUG_AI.md)、[待验收清单](docs/development/ORIGINAL_GAPS.md#待验收调试导航) |
 
 ## 保存边界
 

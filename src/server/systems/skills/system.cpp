@@ -13,6 +13,8 @@
 #include "druid_melee.hpp"
 #include "weapon_melee.hpp"
 #include "gameplay/skills/use_source.hpp"
+#include "gameplay/skills/damage_curve.hpp"
+#include "evaluation.hpp"
 #include "server/player_store.hpp"
 #include "server/runtime/skill_rules.hpp"
 #include "server/area_store.hpp"
@@ -113,7 +115,7 @@ void System::cancel(PlayerId player, EntityId actor) {
     }
     ports_.combat.cancel(actor);
 }
-DomainResult<> System::attack(const ActorContext &actor, const Request &request,int selectedOverride) {
+DomainResult<> System::attack(const ActorContext &actor, const Request &request,int selectedOverride,bool *fallback) {
     const auto *player = ports_.players.find(actor.player);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0)
         return {DomainStatus::InvalidActor, {}};
@@ -123,9 +125,49 @@ DomainResult<> System::attack(const ActorContext &actor, const Request &request,
     // by an unset hand. Match the selected-skill wire projection on reentry.
     const auto selected = selectedOverride >= 0 ? selectedOverride :
         std::max(0, player->persistent.player.selectedSkills.at(player->persistent.player.weaponSet * 2 + (request.right ? 1 : 0)));
-    if(!player->rules.skills || !shapeAllowsSkill(*player->rules.skills,ports_.effects.unitStates(actor.actor,actor.tick),selected)) return {DomainStatus::Unavailable,{}};
+    if(!player->rules.skills) return {DomainStatus::Unavailable,{}};
+    const auto &rules=*player->rules.skills;
+    const auto states=ports_.effects.unitStates(actor.actor,actor.tick);
     const auto itemSkills=inventory::itemSkills(*player);
-    if(player->rules.skills && player->rules.skills->auras.contains(int(selected)))
+    if(!rules.pd2) {
+        const auto row=rules.formulas->skills.find(selected);
+        if(row==rules.formulas->skills.end()) return {DomainStatus::Unavailable,{}};
+        const auto &rule=row->second.restore;
+        const auto source=selectedSource(*player,selected,request.right);
+        const int rank=source?source->rank:0;
+        NativeSkillUseChecks checks{.inGame=rule.inGame,.aura=rule.aura,.passive=rule.passive,.level=rank};
+        if(rule.inGame && rank>0 && !rule.aura && !rule.passive) {
+            auto hands=skillHandFacts(*player,player->persistent,player->totals,*player->rules.equipment);
+            const auto count=itemSkills.find(selected);
+            hands.quantity=count==itemSkills.end()?0:count->second;
+            checks.equipmentReady=nativeSkillEquipmentReady(rule,hands);
+            if(!source->charged) {
+                const auto &record=player->persistent.player;
+                const bool blood=states.contains(player->rules.character->bloodManaState);
+                const bool exempt=row->second.number("srvdofunc")==116 &&
+                    std::any_of(states.begin(),states.end(),[&](int id){return rules.disguiseSkillStates.contains(id);});
+                const auto required=skillManaCostFixed(row->second.number("mana"),row->second.number("lvlmana"),
+                    row->second.number("manashift"),rank);
+                checks.manaReady=blood?record.hp.raw()>=required:exempt || record.mana.raw()>=required;
+            }
+            checks.shapeReady=shapeAllowsSkill(rules,states,selected);
+            checks.startManaReady=player->persistent.player.mana>=Fixed8{row->second.number("startmana")} ||
+                states.contains(rules.formulas->infernoState);
+            if(states.contains(rules.skillDelay.id)) {
+                auto input=formulaInput(*player);SkillFormulaValues values(*rules.formulas,input);
+                const auto delay=values.calculation(FormulaDomain::Skill,selected,rank,"delay");
+                if(delay) checks.delayReady=*delay<=0;
+                else checks.delayReady.reset();
+            }
+        }
+        const auto state=nativeSkillUseState(checks);
+        if(selected!=0 && state && nativeSkillFallsBackToAttack(*state,rule.attackNoMana)) {
+            if(fallback) *fallback=true;
+            return attack(actor,request,0);
+        }
+        if(state!=NativeSkillUseState::Ready) return {DomainStatus::Unavailable,{}};
+    } else if(!shapeAllowsSkill(rules,states,selected)) return {DomainStatus::Unavailable,{}};
+    if(rules.auras.contains(int(selected)))
         return request.right ? applied() : DomainResult<>{DomainStatus::InvalidRequest,{}};
     if(itemSkills.contains(selected)) {
         if(busy(player->actor,actor.tick)) return {DomainStatus::Conflict,{}};
@@ -144,10 +186,10 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if(!player->rules.skills || !player->rules.skills->formulas) return {DomainStatus::Unavailable,{}};
         if(const auto result=ports_.effects.setNativeSkillState(actor.actor,player->rules.skills->formulas->infernoState,false,actor.tick);!result) return result;
         const auto channel=releases_.find(actor.actor);
-        if(channel!=releases_.end() && (channel->second.skill.effect==SkillBehavior::Inferno || pd2StreamSkill(channel->second.skill) ||
+        if(channel!=releases_.end() && (pd2StreamSkill(channel->second.skill) ||
            (channel->second.skill.druid && channel->second.skill.druid->program==DruidProgram::Arctic))) {releases_.erase(channel);state_.interrupt(actor.actor,actor.tick);}
-        // Original Rcv0x12 clears STATE_INFERNO only. A released mouse must
-        // not cancel an ordinary attack's approach or pending action.
+        // Retail Inferno's remove-state callback stops Do19 when the list
+        // expires. Rcv0x12 only clears the state bit.
         return applied();
     }
     if (request.action == Action::Select || request.action == Action::Bind) {
@@ -187,9 +229,14 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         return result;
     }
     if (request.action != Action::Cast) return {};
+    // Native skill input advances this per-unit seed before mode execution.
+    // Approaches, repeated releases and triggered skills do not advance it.
+    if(request.target && player->rules.skills && !player->rules.skills->pd2)
+        ++state_.pierceIndices_[actor.actor];
     if(ports_.effects.recovering(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
-    const auto result = attack(actor, request);
-    if (result.status == DomainStatus::Conflict) { pending_[actor.player] = {actor, request}; return applied(); }
+    bool fallback=false;
+    const auto result = attack(actor,request,-1,&fallback);
+    if (result.status == DomainStatus::Conflict) { pending_[actor.player] = {actor, request,fallback}; return applied(); }
     if (pending_.erase(actor.player) && !result) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
     return result;
 }
@@ -243,7 +290,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     state_.pruneSkillParameters([&](EntityId id){return ports_.players.findActor(id) || ports_.monsters.find(id);});
     for (auto it = pending_.begin(); it != pending_.end();) {
         auto actor = it->second.actor; actor.tick = tick.tick;
-        const auto result = attack(actor, it->second.request);
+        auto &pending=it->second;
+        const auto result = attack(actor,pending.request,pending.fallback?0:-1,&pending.fallback);
         if (result.status == DomainStatus::Conflict || isDeferred(result.status)) {
             blocked|=isDeferred(result.status);++it;
         }

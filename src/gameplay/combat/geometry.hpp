@@ -12,6 +12,8 @@ int meleeDistance(Vec from, int fromSize, Vec to, int toSize);
 bool playerMeleeReach(const Grid &, Vec from, Vec to, int targetSize, int rangeAdder);
 bool unitMeleeReach(const Grid &,Vec from,int sourceSize,Vec to,int targetSize,int range,int rangeBonus=0);
 int missileDistance(Vec from, Vec to);
+std::optional<Vec> nativeLeapLanding(const Grid &terrain,const Grid &occupancy,Vec from,Vec target,int range,int size);
+std::optional<Vec> nativeLeapAttackLanding(const Grid &terrain,const Grid &occupancy,Vec from,Vec target,int size);
 Vec knockbackDestination(Vec target, Vec source, int distance);
 std::optional<float> missileUnitIntersection(Vec from, Vec to, int missileSize, Vec unit, int unitSize);
 } // namespace d2x

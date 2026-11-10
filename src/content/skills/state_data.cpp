@@ -47,6 +47,8 @@ CombatStateCatalog loadCombatStates(const DataTable &states) {
         record.definition.meleeOnly=flag("meleeonly");
         record.restrictSkills=(states.number(row,"restrict").value_or(0)&1)!=0;
         record.disguise=(states.number(row,"disguise").value_or(0)&1)!=0;
+        record.damageBlue=states.number(row,"damblue")==1;record.damageRed=states.number(row,"damred")==1;
+        record.attackBlue=states.number(row,"attblue")==1;record.attackRed=states.number(row,"attred")==1;
         if (!result.emplace(std::string(name), std::move(record)).second)
             throw std::runtime_error("Duplicate States.txt name");
     }

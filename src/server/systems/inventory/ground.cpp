@@ -165,30 +165,44 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
             (at->container!=player->persistent.containers.backpack && at->container!=player->persistent.containers.stash) ||
             definition->equipment.isType("gold")) return {DomainStatus::InvalidRequest,{}};
     }
+    auto record = player->persistent.player;
+    const auto cursor = ContainerLocation{player->persistent.containers.cursor, {}};
+    const auto refuseTelekinesis=[&](uint16_t sound,bool refresh) -> DomainResult<> {
+        transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,record};
+        edit.skillPayment=transactions::SkillManaPayment{telekinesis->manaCost,telekinesis->sourceId};
+        edit.charge=telekinesis->charge;
+        if(sound) edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,sound});
+        if(refresh) {
+            edit.publicFacts.emplace_back(GroundRemoveFact{source.id});
+            edit.publicFacts.emplace_back(GroundDropFact{source,false});
+        }
+        auto plan=ports_.transactions.prepare(std::move(edit));
+        return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
+    };
+    if(telekinesis) {
+        if(request.drop || request.cursor || telekinesis->effect!=SkillBehavior::Telekinesis || record.mana<telekinesis->manaCost) return {DomainStatus::InvalidRequest,{}};
+        const auto *position=std::get_if<GroundLocation>(&source.location);
+        if(!position || position->region!=actor.area) return {DomainStatus::InvalidRequest,{}};
+        const int x=int(position->position.x)-int(player->position.x),y=int(position->position.y)-int(player->position.y);
+        if(x*x+y*y>telekinesis->telekinesisRange*telekinesis->telekinesisRange) return {DomainStatus::InvalidRequest,{}};
+        record.mana-=telekinesis->manaCost;
+        const auto &type=definition->equipment;
+        // Retail Do21 rejects the type before calling the pickup routine.
+        if(!type.isType("scro") && !type.isType("gold") && !type.isType("tpot") && !type.isType("misl") && !type.isType("poti") && !type.isType("key"))
+            return refuseTelekinesis(0x13,false);
+        if(std::any_of(player->persistent.inventory.items.begin(),player->persistent.inventory.items.end(),
+            [&](const auto &entry){return entry.second.location==ItemLocation{cursor};})) return refuseTelekinesis(0,false);
+    }
     if (!request.drop) {
         const auto status = canReceiveQuestItem(*player, *definition, *ports_.definitions, unsigned(player->persistent.difficulty));
-        if (status != DomainStatus::Applied) return {status, {}};
+        if (status != DomainStatus::Applied)
+            return telekinesis?refuseTelekinesis(0x13,true):DomainResult<>{status,{}};
     }
     auto world = ports_.items.read();
     if (world.revision == UINT64_MAX || (request.drop && world.world.items.size() >= 4096)) return {DomainStatus::Capacity, {}};
     auto equipment = std::make_shared<EquipmentRules>(*player->rules.equipment);
-    auto record = player->persistent.player;
-    if(telekinesis) {
-        if(request.drop || request.cursor || telekinesis->effect!=SkillBehavior::Telekinesis || record.mana<telekinesis->manaCost) return {DomainStatus::InvalidRequest,{}};
-        const auto &type=definition->equipment;
-        if(!type.isType("scro") && !type.isType("gold") && !type.isType("tpot") && !type.isType("misl") && !type.isType("poti") && !type.isType("key")) {
-            const auto *position=std::get_if<GroundLocation>(&source.location);
-            if(!position || position->region!=actor.area) return {DomainStatus::InvalidRequest,{}};
-            const int x=int(position->position.x)-int(player->position.x),y=int(position->position.y)-int(player->position.y);
-            if(x*x+y*y>telekinesis->telekinesisRange*telekinesis->telekinesisRange) return {DomainStatus::InvalidRequest,{}};
-            transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,record};
-            edit.player.mana-=telekinesis->manaCost;edit.skillPayment=transactions::SkillManaPayment{telekinesis->manaCost,telekinesis->sourceId};edit.charge=telekinesis->charge;edit.publicFacts.emplace_back(SoundFact{actor.actor,0,actor.area,0x13});
-            auto plan=ports_.transactions.prepare(std::move(edit));return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
-        }
-        record.mana-=telekinesis->manaCost;
-    }
-    const auto cursor = ContainerLocation{player->persistent.containers.cursor, {}};
     detail::Draft draft(*player, *ports_.definitions, *equipment, *player->rules.character);
+    bool pickupRemainder=false;
     if (request.drop) {
         if (source.location != ItemLocation{cursor}) return {DomainStatus::InvalidRequest, {}};
         const auto position = ports_.items.placement({player->area, player->position}, world.world);
@@ -204,8 +218,6 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
         const auto *position = std::get_if<GroundLocation>(&source.location);
         if (!position || position->region != player->area || nativeUnitDistance(player->position,2,position->position,1)>50 || draft.at(cursor))
             return {DomainStatus::InvalidRequest, {}};
-        const int dx=int(position->position.x)-int(player->position.x),dy=int(position->position.y)-int(player->position.y);
-        if(telekinesis && dx*dx+dy*dy>telekinesis->telekinesisRange*telekinesis->telekinesisRange) return {DomainStatus::InvalidRequest,{}};
         if (!telekinesis && !nativePickupReach(area->definition.collision,player->position,position->position,source.id)) {
             const auto status = ports_.movement.execute(actor, {MovementAction::Move, position->position, true,{},MotionTarget{source.id,4},
                 InteractionTarget{source.id,position->position,position->position,1,1,4,false,true}});
@@ -241,9 +253,13 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
                     const unsigned cap=unsigned(record.level)*10000;
                     const auto amount=std::min(remaining,int64_t(cap>record.gold?cap-record.gold:0));
                     record.gold=unsigned(std::max<int64_t>(0,int64_t(record.gold)+amount));remaining-=amount;
-                    if(remaining==source.quantity) return {DomainStatus::Conflict,{}};
+                    if(remaining==source.quantity)
+                        return telekinesis?refuseTelekinesis(1,false):DomainResult<>{DomainStatus::Conflict,{}};
                     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
-                    if(telekinesis) edit.charge=telekinesis->charge;
+                    if(telekinesis) {
+                        edit.charge=telekinesis->charge;
+                        edit.skillPayment=transactions::SkillManaPayment{telekinesis->manaCost,telekinesis->sourceId};
+                    }
                     edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,1});
                     edit.publicFacts.emplace_back(GroundRemoveFact{source.id});
                     if(remaining) {
@@ -260,7 +276,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
             }
             const auto capacity = unsigned(record.level) * 10000;
             const auto amount = std::min(source.quantity, capacity > record.gold ? capacity - record.gold : 0);
-            if (!amount) return {DomainStatus::Conflict, {}};
+            if (!amount) return telekinesis?refuseTelekinesis(1,false):DomainResult<>{DomainStatus::Conflict,{}};
             record.gold += amount;
             world.world.items.erase(source.id);
             if (amount != source.quantity) {
@@ -273,14 +289,16 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
         } else {
             if(definition->opensCube) for(const auto &[id,owned]:player->persistent.inventory.items) {
                 (void)id;const auto *at=std::get_if<ContainerLocation>(&owned.location);
-                if(owned.definition==source.definition && at && player->persistent.inventory.containers.at(at->container).spec.kind!=ContainerKind::Corpse) return {DomainStatus::Conflict,{}};
+                    if(owned.definition==source.definition && at && player->persistent.inventory.containers.at(at->container).spec.kind!=ContainerKind::Corpse)
+                        return telekinesis?refuseTelekinesis(0x13,true):DomainResult<>{DomainStatus::Conflict,{}};
             }
             if (world.equipment.items.at(source.id).singleCarry)
                 for (const auto &[id, existing] : player->persistent.inventory.items) {
                     (void)id;
                     const auto *at = std::get_if<ContainerLocation>(&existing.location);
                     if (at && player->persistent.inventory.containers.at(at->container).spec.kind != ContainerKind::Corpse &&
-                        existing.quality == ItemQuality::Unique && existing.specialRow == source.specialRow) return {DomainStatus::Conflict, {}};
+                        existing.quality == ItemQuality::Unique && existing.specialRow == source.specialRow)
+                        return telekinesis?refuseTelekinesis(0x13,true):DomainResult<>{DomainStatus::Conflict,{}};
                 }
             equipment->items.insert_or_assign(source.id, world.equipment.items.at(source.id));
             equipment->includeSets(world.equipment);
@@ -314,8 +332,10 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
                     draft.edit.changes.push_back({item.id, item.revision, ItemChangeKind::Created, {}, item.location, item.quantity});
                     world.world.items.erase(source.id);
                 } else {
-                    if (item.quantity == source.quantity && item.charges == source.charges) return {DomainStatus::Conflict, {}};
+                    if (item.quantity == source.quantity && item.charges == source.charges)
+                        return telekinesis?refuseTelekinesis(0x17,true):DomainResult<>{DomainStatus::Conflict,{}};
                     auto &left = world.world.items.at(source.id); left.quantity = item.quantity; left.charges = item.charges; ++left.revision;
+                    pickupRemainder=true;
                     draft.edit.inventory.items.erase(current);
                     equipment->items.erase(source.id);
                 }
@@ -328,7 +348,11 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
         std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
     edit.equipment = std::move(equipment); edit.character = std::move(record);if(telekinesis) edit.charge=telekinesis->charge;
     if(telekinesis) edit.skillPayment=transactions::SkillManaPayment{telekinesis->manaCost,telekinesis->sourceId};
-    if(!request.drop && !request.cursor) edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,1});
+    if(telekinesis && pickupRemainder) {
+        edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,0x17});
+        edit.publicFacts.emplace_back(GroundRemoveFact{source.id});
+        edit.publicFacts.emplace_back(GroundDropFact{world.world.items.at(source.id),false});
+    } else if(!request.drop && !request.cursor) edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,1});
     if(!request.drop && source.definition=="hdm" && edit.inventory.items.contains(source.id)) {
         auto &quest=edit.character->quests.at(size_t(player->persistent.difficulty)).at(questIndex(QuestId::ToolsOfTheTrade));
         if(!(quest.flags & toolsPickupNarrated)) {

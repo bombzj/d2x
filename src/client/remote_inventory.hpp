@@ -26,13 +26,13 @@ class RemoteInventory {
     OnlineDecodedItem decode(const OnlineItem &) const;
     bool isType(const OnlineItem &, std::string_view) const;
     int baseNumber(const OnlineItem &, std::string_view) const;
-    EquipmentDefinition equipmentDefinition(const OnlineItem &) const;
     bool reject(std::string);
   public:
     explicit RemoteInventory(Archives &, net::protocol::ClientProfile = net::protocol::ClientProfile::Lod113c);
     void update(const OnlineView &);
     const OnlineInventoryView &read() const { return view_; }
     OnlineStashLayout stashLayout() const { return stashLayout_; }
+    EquipmentDefinition equipmentDefinition(const OnlineItem &) const;
     const std::string &reason() const { return reason_; }
     bool submit(net::RealmSession &, OnlineItemCommand);
     bool submitQuestItem(net::RealmSession &,uint32_t source,std::optional<uint32_t> item,

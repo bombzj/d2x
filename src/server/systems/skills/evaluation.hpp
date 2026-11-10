@@ -9,7 +9,9 @@ namespace d2x {
 struct SkillCastSpec;
 struct ChargedSkill;
 struct CharacterRecord;
+struct PersistentCharacter;
 namespace server { struct PlayerState; }
+namespace server { struct EquipmentRules; }
 namespace server::monsters {struct Actor;}
 namespace server::attributes {struct Totals;}
 }
@@ -22,4 +24,5 @@ uint64_t periodicTick(const PlayerState &, int skill, int rank, uint64_t tick);
 uint64_t periodicDuration(const PlayerState &, int skill, int rank, uint64_t tick);
 SkillCastSpec evaluate(const PlayerState &, int skill, int rank);
 std::optional<SkillUseSource> selectedSource(const PlayerState &, int skill, bool right);
+SkillRestoreInput skillHandFacts(const PlayerState &,const PersistentCharacter &,const attributes::Totals &,const EquipmentRules &);
 }

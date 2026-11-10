@@ -17,6 +17,7 @@
 #include "gameplay/skills/native_damage.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/event_frame.hpp"
+#include "gameplay/units/coordinates.hpp"
 #include "core/random.hpp"
 #include <stdexcept>
 namespace d2x::server::skills {
@@ -77,6 +78,8 @@ DomainResult<> System::activeStateEvent(const FrameEvent &event,uint64_t tick) {
         const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {return low>=high?low:
             nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));};
         auto input=caster->formulaInput(ports_.effects,tick,draw);SkillFormulaValues values(*rules.formulas,input);
+        if(!rules.pd2 && program.activeFunction==146 && (definition->second.spec.missileId<=0 ||
+           !input.referenceRanks || !input.referenceRanks->effective.contains(event.customId))) return finish();
         const auto radius=values.calculation(FormulaDomain::Skill,event.customId,event.customParameter,"aurarangecalc");
         if(!radius || *radius<=0) return finish();
         if(!execution.rescheduled) {
@@ -88,25 +91,34 @@ DomainResult<> System::activeStateEvent(const FrameEvent &event,uint64_t tick) {
             ports_.frameEvents.publish(std::move(next));execution.rescheduled=true;
         }
         if(area.definition.town) return finish();
-        execution.area={caster->id(),caster->area(),caster->position(),*radius,event.customId,event.customParameter,
-            uint32_t(native.number("aurafilter")),uint32_t(native.number("hitflags")),uint16_t(native.number("resultflags"))};
+        const auto filter=uint32_t(native.number("aurafilter"));
+        const auto center=rules.pd2?caster->position():nativeFeetCell(caster->position());
+        execution.area={caster->id(),caster->area(),center,*radius,event.customId,event.customParameter,
+            !rules.pd2 && !filter?0x8583u:filter,uint32_t(native.number("hitflags")),uint16_t(native.number("resultflags"))};
         if(program.activeFunction==145) execution.area.damage=rollNativeSkillDamage(values,event.customId,event.customParameter,random);
         else if(program.activeFunction==146) {
             const bool equipped=rules.pd2 && input.stats && input.stats->get({rules.stats->names.at("item_skillonequip"),uint16_t(event.customId)})>0;
             if((!equipped && (!input.referenceRanks || !input.referenceRanks->effective.contains(event.customId))) || definition->second.spec.missileId<=0) return finish();
             random=initialRandom(uint32_t(state_.skillParameter(caster->id(),{event.customId,EntityId{event.payload}},0)));
             execution.nextParameter=int(rollRandom(random)%1000000);
+            const auto worldPosition=caster->position()+area.definition.origin;
+            const auto worldCenter=rules.pd2?worldPosition:nativeFeetCell(worldPosition);
+            const auto span=uint32_t(nativeAdd(nativeMultiply(*radius,2),1));
             for(int attempt=0;attempt<5;++attempt) {
-                const int x=nativeAdd(int(caster->position().x+area.definition.origin.x),nativeSubtract(int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeMultiply(*radius,2),1)))),*radius));
-                const int y=nativeAdd(int(caster->position().y+area.definition.origin.y),nativeSubtract(int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeMultiply(*radius,2),1)))),*radius));
+                const int x=nativeAdd(int(worldCenter.x),nativeSubtract(int32_t(limitedRandom(random,span)),*radius));
+                const int y=nativeAdd(int(worldCenter.y),nativeSubtract(int32_t(limitedRandom(random,span)),*radius));
                 const Vec destination{float(x)-area.definition.origin.x,float(y)-area.definition.origin.y};
-                if(!area.definition.collision.collisionSegment(caster->position(),destination,0x45)) continue;
+                const auto &collision=area.definition.collision;
+                const bool clear=rules.pd2?collision.collisionSegment(caster->position(),destination,0x45):
+                    collision.interactionSegment(destination,center,0,{},0x805,0);
+                if(!clear) continue;
                 const auto room=ports_.areas.roomAtPosition(caster->area(),caster->position(),x,y);if(!room) continue;
                 const auto &targetArea=ports_.areas.at(room->area);
                 const Vec point{float(x)-targetArea.definition.origin.x,float(y)-targetArea.definition.origin.y};
                 if(!targetArea.definition.collision.missileSegment(point,point,{1,1})) continue;
                 execution.missile=missiles::NativeSpawn{caster->id(),room->area,targetArea.generation,tick,point,point,definition->second.spec.missileId,event.customId,event.customParameter};
-                execution.missile->copyMonsterAttackBonus=true;break;
+                execution.missile->copyMonsterAttackBonus=rules.pd2;
+                break;
             }
         } else return finish();
         execution.random=std::pair{caster->random(),random};execution.prepared=true;

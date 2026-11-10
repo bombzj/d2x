@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <string_view>
 #include <stdexcept>
+#include <utility>
 namespace d2x {
 std::optional<bool> skillEquipmentReady(const SkillEquipmentRule &skill,
     const std::array<std::optional<SkillHandEquipment>, 2> &hands) {
@@ -39,10 +40,15 @@ std::optional<bool> skillEquipmentReady(const SkillEquipmentRule &skill,
         if (!found) return false;
         if(item.unusable) return skill.basicAction==BasicSkillAction::Attack;
         if (item.ammunitionType.empty() || skill.noAmmo) return true;
+        const bool attack=skill.basicAction==BasicSkillAction::Attack;
+        if(attack && item.magicArrow==true) return true;
         if (!other) return {};
-        if (!isType(*other, item.ammunitionType)) return false;
-        if (!other->stackable) return true;
-        return other->quantity ? std::optional{*other->quantity > 0} : std::nullopt;
+        const bool unknownWeaponArrow=attack && !item.magicArrow;
+        if (!isType(*other, item.ammunitionType)) return unknownWeaponArrow?std::nullopt:std::optional{false};
+        if ((attack && other->magicArrow==true) || !other->stackable ||
+            (other->quantity && *other->quantity>0)) return true;
+        if(unknownWeaponArrow || (attack && !other->magicArrow) || !other->quantity) return {};
+        return false;
     };
     const auto rightA = matches(0, 0);
     if (!rightA) return {};
@@ -52,11 +58,14 @@ std::optional<bool> skillEquipmentReady(const SkillEquipmentRule &skill,
     return *rightB ? matches(1, 0) : std::optional{false};
 }
 std::optional<bool> skillSelectionRestorable(const SkillRestoreRule &rule,const SkillRestoreInput &input) {
-    if(input.primaryHand && *input.primaryHand>=2) throw std::invalid_argument("Invalid native primary hand");
     if(!input.exists) return false;
     if(!rule.inGame) return true; // DISABLED precedes the native level test.
     if(input.level<=0) return false;
     if(rule.aura || rule.passive) return true;
+    return nativeSkillEquipmentReady(rule,input);
+}
+std::optional<bool> nativeSkillEquipmentReady(const SkillRestoreRule &rule,const SkillRestoreInput &input) {
+    if(input.primaryHand && *input.primaryHand>=2) throw std::invalid_argument("Invalid native primary hand");
     if(rule.scroll) {
         if(!input.quantity) return {};
         if(*input.quantity<=0) return false;
@@ -67,14 +76,14 @@ std::optional<bool> skillSelectionRestorable(const SkillRestoreRule &rule,const 
         const auto &item=*hands[hand];
         return item.present && !item.unusable && std::find(item.types.begin(),item.types.end(),"weap")!=item.types.end();
     };
-    std::optional<size_t> equipped;
-    for(size_t hand=0;hand<2;++hand) {
-        const auto usable=weapon(hand);if(!usable) return {};
-        if(*usable) {equipped=hand;break;}
-    }
     const bool special=rule.basicAction==BasicSkillAction::Throw || rule.basicAction==BasicSkillAction::LeftHandThrow ||
         rule.basicAction==BasicSkillAction::LeftHandSwing;
     if(special) {
+        std::optional<size_t> equipped;
+        for(size_t hand=0;hand<2;++hand) {
+            const auto usable=weapon(hand);if(!usable) return {};
+            if(*usable) {equipped=hand;break;}
+        }
         if(!equipped) return false;
         if(!input.primaryHandKnown && !input.primaryHand) return {};
         size_t hand=*equipped;const bool main=input.primaryHand && hand==*input.primaryHand;
@@ -93,5 +102,36 @@ std::optional<bool> skillSelectionRestorable(const SkillRestoreRule &rule,const 
     auto equipment=static_cast<const SkillEquipmentRule &>(rule);
     if(special) equipment.basicAction=BasicSkillAction::None;
     return skillEquipmentReady(equipment,hands);
+}
+std::optional<NativeSkillUseState> nativeSkillUseState(const NativeSkillUseChecks &checks) {
+    using State=NativeSkillUseState;
+    if(!checks.inGame) return State::Disabled;
+    if(!checks.level) return {};
+    if(*checks.level<=0) return State::NoLevel;
+    if(checks.aura) return State::Aura;
+    if(checks.passive) return State::Passive;
+    for(const auto &[failure,ready]:std::array{
+        std::pair{State::NoQuantity,checks.equipmentReady},std::pair{State::NoMana,checks.manaReady},
+        std::pair{State::ShapeRestricted,checks.shapeReady},std::pair{State::NoMana,checks.startManaReady},
+        std::pair{State::NoQuantity,checks.itemChargesReady},std::pair{State::Delayed,checks.delayReady}}) {
+        if(!ready) return {};
+        if(!*ready) return failure;
+    }
+    return State::Ready;
+}
+bool nativeSkillFallsBackToAttack(NativeSkillUseState state,bool attackNoMana) {
+    using State=NativeSkillUseState;
+    return attackNoMana && (state==State::NoMana || state==State::NoQuantity || state==State::ShapeRestricted);
+}
+NativeAttackArrow nativeAttackArrow(int magicArrow,int explosiveArrow) {
+    using Kind=NativeAttackArrow::Kind;
+    if(magicArrow>0) return {Kind::Magic,magicArrow};
+    if(explosiveArrow>0) return {Kind::Explosive,explosiveArrow};
+    return {};
+}
+std::string_view NativeAttackArrow::missileName() const {
+    if(kind==Kind::Magic) return "magicarrow";
+    if(kind==Kind::Explosive) return "explodingarrow";
+    return {};
 }
 }

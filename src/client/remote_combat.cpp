@@ -424,6 +424,7 @@ std::optional<int> RemoteCombat::skillDelayFrames(uint16_t skill,uint32_t owner)
 bool RemoteCombat::skillDelayActive(uint16_t skill,uint32_t owner) const {
     const auto &view=session_.read();
     if(view.protocolProfile!="lod113c" || !view.load.playerUnitId) return false;
+    if(localSkillDelayActive()) return true;
     const OnlineUnitKey playerKey{0,*view.load.playerUnitId};
     const auto unit=view.world.units.find(playerKey);
     const auto observed=unitStates_.find(playerKey);
@@ -433,6 +434,11 @@ bool RemoteCombat::skillDelayActive(uint16_t skill,uint32_t owner) const {
         [](const auto &state){return state.second.name=="skilldelay";})) return false;
     const auto delay=skillDelayFrames(skill,owner);
     return delay && *delay>0;
+}
+void RemoteCombat::startLocalSkillDelay(int frames) const {
+    // Retail A2EDE-A2F3D: the local action callback caps the delay at 12 ticks.
+    if(frames>0 && session_.read().protocolProfile=="lod113c")
+        localSkillDelayUntil_=localSkillFrame_+uint64_t(std::min(frames,12));
 }
 bool RemoteCombat::submit(OnlineCombatCommand command, std::optional<Vec> inputOrigin,
                           std::optional<OnlineSkillSelection> expectedSelection) {
@@ -447,6 +453,7 @@ bool RemoteCombat::submit(OnlineCombatCommand command, std::optional<Vec> inputO
     scene_.update(session_.read(),inputOrigin);
     update();
     const auto &world = session_.read().world;
+    std::optional<uint64_t> skillDelayStateSequence;
     using Action = OnlineCombatCommand::Action;
     if (command.action == Action::BindHotkey && command.hotkeySlot >= world.skillHotkeys.size())
         return reject("Hotkey slot is outside the native range");
@@ -508,8 +515,38 @@ bool RemoteCombat::submit(OnlineCombatCommand command, std::optional<Vec> inputO
             if (!eligibility.canSelect(command.hand == OnlineSkillHand::Left, metadata))
                 return reject("Server has not reported an available active skill for this hand");
             if (command.action == Action::Cast) {
-                if(skillDelayActive(command.skill,command.owner))
+                auto castRow=row;
+                uint16_t castSkill=command.skill;
+                command.predictedAttack=false;
+                if(session_.read().protocolProfile=="lod113c" && skillUseResolver_) {
+                    const auto state=skillUseResolver_(command.skill,command.owner);
+                    if(state && *state!=NativeSkillUseState::Ready) {
+                        if(*state==NativeSkillUseState::Delayed)
+                            return reject("Skill is waiting for the native casting delay to expire");
+                        if(!command.skill || !nativeSkillFallsBackToAttack(*state,metadata.attackNoMana))
+                            return reject("Skill is not currently usable");
+                        const auto attackState=skillUseResolver_(0,UINT32_MAX);
+                        if(attackState && *attackState!=NativeSkillUseState::Ready)
+                            return reject("Ordinary attack is not currently usable");
+                        castRow=skills_.find(0);
+                        if(castRow==skills_.end() || !skillMetadata_.contains(0))
+                            return reject("Ordinary attack is absent from current MPQ");
+                        castSkill=0;command.predictedAttack=true;
+                    }
+                }
+                if(!command.predictedAttack && skillDelayActive(command.skill,command.owner))
                     return reject("Skill is waiting for the native casting delay to expire");
+                if(!command.predictedAttack && session_.read().protocolProfile=="lod113c" &&
+                    skillDelayFrames(command.skill,command.owner).value_or(0)>0) {
+                    const auto id=session_.read().load.playerUnitId;
+                    const auto player=id?world.units.find({0,*id}):world.units.end();
+                    if(player==world.units.end()) return reject("Skill requires an assigned player");
+                    const auto observed=unitStates_.find(player->first);
+                    if(player->second.stateSequence && (observed==unitStates_.end() || !observed->second.decoded ||
+                        observed->second.sequence!=player->second.stateSequence))
+                        return reject("Skill is waiting for the native player states");
+                    skillDelayStateSequence=player->second.stateSequence;
+                }
                 const auto &binding = scene_.read();
                 if (!binding.nativeMapReady)
                     return reject("Skill is waiting for the active map: " + binding.nativeMapReason);
@@ -519,11 +556,11 @@ bool RemoteCombat::submit(OnlineCombatCommand command, std::optional<Vec> inputO
                 // resource sample is not the current pointer origin. This
                 // hint never updates the replica or the server's coordinates.
                 const auto player=inputOrigin?OnlinePoint{uint16_t(std::floor(inputOrigin->x+.5f)),uint16_t(std::floor(inputOrigin->y+.5f))}:*world.playerPosition;
-                if (!eligibility.usableNow)
+                if (facts.dead || (facts.town && !skillMetadata_.at(castSkill).allowedInTown))
                     return reject(facts.town ? "Skill cannot be cast in town" : "Skill is not currently usable");
                 if (command.point.has_value() == command.target.has_value()) return reject("Specify exactly one point or unit target");
-                if(command.point && tables_.at("skills").number(row->second,"TargetCorpse").value_or(0) &&
-                   tables_.at("skills").number(row->second,"SearchEnemyNear").value_or(0)) {
+                if(command.point && tables_.at("skills").number(castRow->second,"TargetCorpse").value_or(0) &&
+                   tables_.at("skills").number(castRow->second,"SearchEnemyNear").value_or(0)) {
                     // Retail D2Client 51650: circle radius 9, then strictly
                     // nearest UNITS_GetDistanceToCoordinates below 10.
                     // PD2 CN patches the initial best distance at 517EF to 7.
@@ -532,20 +569,20 @@ bool RemoteCombat::submit(OnlineCombatCommand command, std::optional<Vec> inputO
                         net::protocol::ClientProfile::Pd2CnNormal20261020).id?7:10;
                     for(const auto key:scene_.nearbyUnits(session_.read(),center,9)) {
                         const auto &candidate=world.units.at(key);
-                        if(!skillTargetEligible(candidate,command.skill)) continue;
+                        if(!skillTargetEligible(candidate,castSkill)) continue;
                         const auto position=*candidate.position;
                         const int distance=unitCoordinateDistance(center.x,center.y,position.x,position.y);
                         if(distance<nearest) {nearest=distance;command.target=key;}
                     }
                     if(command.target) command.point.reset();
                 }
-                if (tables_.at("skills").number(row->second,"TargetCorpse").value_or(0) && !command.target)
+                if (tables_.at("skills").number(castRow->second,"TargetCorpse").value_or(0) && !command.target)
                     return reject("This skill requires a selectable corpse");
-                if (tables_.at("skills").number(row->second,"srvstfunc")==20 &&
-                    tables_.at("skills").number(row->second,"srvdofunc")==57 &&
+                if (tables_.at("skills").number(castRow->second,"srvstfunc")==20 &&
+                    tables_.at("skills").number(castRow->second,"srvdofunc")==57 &&
                     (!command.target || command.target->type!=4))
                     return reject("Iron Golem requires an identified metal item on the ground");
-                if (metadata.itemSkill && tables_.at("skills").value(row->second, "range") == "none") {
+                if (!command.predictedAttack && metadata.itemSkill && tables_.at("skills").value(castRow->second, "range") == "none") {
                     // SrvDo113 invokes pSpell at the player's position. A pointer
                     // over the map edge must not prevent a self item action.
                     command.target.reset();
@@ -554,18 +591,18 @@ bool RemoteCombat::submit(OnlineCombatCommand command, std::optional<Vec> inputO
                 auto point = command.point;
                 if (command.target && command.target->type == 4) {
                     const auto item = world.items.find(command.target->id);
-                    if (item == world.items.end() || !skillTargetEligible(item->second, command.skill))
+                    if (item == world.items.end() || !skillTargetEligible(item->second, castSkill))
                         return reject("Skill cannot target this assigned ground item");
                     point = OnlinePoint{item->second.groundX, item->second.groundY};
                 } else if (command.target) {
                     const auto target = world.units.find(*command.target);
                     if (target == world.units.end() || !target->second.position)
                         return reject("Target has no assigned native position");
-                    if(!skillTargetEligible(target->second,command.skill))
+                    if(!skillTargetEligible(target->second,castSkill))
                         return reject("MPQ target categories, native alignment or corpse state do not permit this target");
                     point = target->second.position;
-                    if (target->first.type == 2 && tables_.at("skills").number(row->second, "srvstfunc") == 12 &&
-                        tables_.at("skills").number(row->second, "srvdofunc") == 21) {
+                    if (target->first.type == 2 && tables_.at("skills").number(castRow->second, "srvstfunc") == 12 &&
+                        tables_.at("skills").number(castRow->second, "srvdofunc") == 21) {
                         const auto object = std::find_if(binding.mapTargets.begin(), binding.mapTargets.end(),
                             [&](const auto &entry) { return entry.unit == target->first; });
                         if (object != binding.mapTargets.end()) {
@@ -576,7 +613,7 @@ bool RemoteCombat::submit(OnlineCombatCommand command, std::optional<Vec> inputO
                 }
                 if (std::abs(int(player.x) - point->x) > 50 || std::abs(int(player.y) - point->y) > 50)
                     return reject("Cast exceeds the native 50-subtile request range");
-                const bool teleport=tables_.at("skills").number(row->second,"srvdofunc")==27;
+                const bool teleport=tables_.at("skills").number(castRow->second,"srvdofunc")==27;
                 if(teleport && binding.area) {
                     const auto mode=teleportModes_.find(*binding.area);
                     if(mode==teleportModes_.end() || !mode->second) return reject("Teleport is unavailable in this level");
@@ -594,7 +631,7 @@ bool RemoteCombat::submit(OnlineCombatCommand command, std::optional<Vec> inputO
             }
         }
     }
-    if (!session_.submit_combat(command)) return reject(session_.read().error ? session_.read().error->message : "Combat request is unavailable");
+    if (!session_.submit_combat(command,skillDelayStateSequence)) return reject(session_.read().error ? session_.read().error->message : "Combat request is unavailable");
     reason_.clear(); return true;
 }
 void RemoteCombat::applyObservedSkillRanks() {
@@ -614,6 +651,7 @@ void RemoteCombat::update() {
         // and replaced state streams are retired below; real gaps still fail.
         if (game_ != view.gameGeneration) {
             unitStates_.clear(); unitOwners_.clear(); changedClasses_.clear();
+            localSkillFrame_=localSkillDelayUntil_=0;
         }
         game_ = view.gameGeneration; area_ = world.areaGeneration;
     }
@@ -686,6 +724,20 @@ void RemoteCombat::update() {
         if (!unit.stateSequence) continue;
         auto &output = unitStates_[key];
         output.generation = unit.stateGeneration;
+        if(!unit.monsterDeath || (output.death && output.death->revision!=unit.monsterDeath->revision))
+            output.death.reset();
+        const auto captureDeath=[&](uint64_t sequence) {
+            if(!unit.monsterDeath || output.death || !output.decoded || sequence!=unit.monsterDeath->stateSequence) return;
+            auto &death=output.death.emplace();
+            death.revision=unit.monsterDeath->revision;
+            for(const auto &[id,state]:output.states) {
+                const auto row=states_.at(id);
+                death.shatter|=tables_.at("states").number(row,"shatter").value_or(0)!=0;
+                death.frozen|=state.name=="freeze";
+                death.uberMinion|=state.name=="uberminion";
+            }
+        };
+        captureDeath(output.sequence);
         if (output.sequence == unit.stateSequence) continue;
         const auto previous = output.sequence;
         output.sequence = unit.stateSequence;
@@ -721,15 +773,31 @@ void RemoteCombat::update() {
                     if (row == states_.end()) throw std::runtime_error("Unknown state in current MPQ");
                     output.states[id] = {id, std::string(tables_.at("states").value(row->second, "state")), std::move(values)};
                 };
-                if (message.kind == OnlineStateMessage::Kind::Disable) output.states.erase(message.state);
-                else if (message.kind == OnlineStateMessage::Kind::Snapshot) {
-                    net::protocol::BitReader bits(message.packed);
-                    for (;;) { const auto id = uint8_t(bits.read(8)); if (id == 255) break;
-                        state(id, bits.read(1) ? stats(bits) : std::vector<OnlineItemStat>{}); }
-                } else {
-                    if (message.packed.empty()) {
-                        if (!output.states.contains(message.state)) state(message.state, {});
-                    } else { net::protocol::BitReader bits(message.packed); state(message.state, stats(bits)); }
+                try {
+                    if (message.kind == OnlineStateMessage::Kind::Disable) output.states.erase(message.state);
+                    else if (message.kind == OnlineStateMessage::Kind::Snapshot) {
+                        net::protocol::BitReader bits(message.packed);
+                        for (;;) { const auto id = uint8_t(bits.read(8)); if (id == 255) break;
+                            state(id, bits.read(1) ? stats(bits) : std::vector<OnlineItemStat>{}); }
+                    } else {
+                        if (message.packed.empty()) {
+                            if (!output.states.contains(message.state)) state(message.state, {});
+                        } else { net::protocol::BitReader bits(message.packed); state(message.state, stats(bits)); }
+                    }
+                    if(localSkillDelayActive()) {
+                        const auto &table=tables_.at("states");
+                        if(message.kind==OnlineStateMessage::Kind::Snapshot) {
+                            if(std::ranges::any_of(output.states,[](const auto &entry){return entry.second.name=="skilldelay";}))
+                                localSkillDelayUntil_=0;
+                        } else if(const auto row=states_.find(message.state);row!=states_.end() && table.value(row->second,"state")=="skilldelay") {
+                            // States setfunc19 and remfunc12 both call 71FA0.
+                            localSkillDelayUntil_=0;
+                        }
+                    }
+                    captureDeath(message.sequence);
+                } catch (const std::exception &error) {
+                    // A later AA snapshot can recover from an undecodable delta.
+                    output.states.clear(); output.decoded=false; output.reason=error.what();
                 }
             }
             if (expected != unit.stateSequence + 1) {

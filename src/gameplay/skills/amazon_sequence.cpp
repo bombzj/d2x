@@ -8,8 +8,11 @@ SpearSequence amazonWeaponSequence(int sequence, std::string_view weapon) {
     if (sequence == 1) {
         constexpr int one[]{5,6,8,9,10,11,13,6,8,9,10,11,13,6,8,9,10,13};
         constexpr int both[]{2,7,9,10,12,13,15,4,6,9,10,12,13,15,4,6,9,10,11,13,15};
-        for (int i=0; i<(two?21:18); ++i)
-            result.frames.push_back({two?both[i]:one[i],two?((i>=7 && i<=10)||i>=14):((i>=7 && i<=9)||i>=13),two?(i==3||i==10||i==17):(i==3||i==9||i==15)});
+        for (int i=0; i<(two?21:18); ++i) {
+            const bool sound=two?(i==1 || i==8 || i==15):(i==1 || i==7 || i==13);
+            result.frames.push_back({two?both[i]:one[i],two?((i>=7 && i<=10)||i>=14):((i>=7 && i<=9)||i>=13),
+                two?(i==3||i==10||i==17):(i==3||i==9||i==15),sound});
+        }
     } else if (sequence == 8) {
         constexpr int frames[]{0,1,1,1,2,2,2,3,3,4,4,5,6,7,8,9,10,11,12,13,14,15,16,17};
         for(int i=0;i<(two?24:21);++i) result.frames.push_back({frames[i],false,i==(two?15:13)});

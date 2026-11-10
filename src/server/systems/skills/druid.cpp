@@ -3,6 +3,7 @@
 #include "server/runtime/facts/skills.hpp"
 #include "server/systems/actions/release.hpp"
 #include "native_caster.hpp"
+#include "evaluation.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/missiles/system.hpp"
@@ -15,13 +16,26 @@
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/units/coordinates.hpp"
+#include "gameplay/units/distance.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <array>
 #include <stdexcept>
 #include <vector>
 
 namespace d2x::server::skills {
-DomainResult<bool> System::startArctic(Release &pending,const ActorContext &actor,std::span<const DomainFact> facts) {
+missiles::NativeSpawn System::infernoFlame(const Release &pending,const ActorContext &actor,Vec target) const {
+    const auto &player=*ports_.players.find(actor.player);
+    auto input=formulaInput(player);
+    SkillFormulaValues values(*player.rules.skills->formulas,input);
+    const auto &skill=pending.skill;
+    missiles::NativeSpawn spawn{actor.actor,actor.area,actor.areaGeneration,actor.tick,player.position,target,
+        skill.missileId,skill.sourceId,skill.rank};
+    spawn.totalFrames=std::max(1,values.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,"calc1").value());
+    return spawn;
+}
+DomainResult<bool> System::startInferno(Release &pending,const ActorContext &actor,std::span<const DomainFact> facts,std::optional<Vec> infernoTarget) {
     const auto caster=nativeCaster(ports_.players,ports_.monsters,actor.actor);
     if(!caster || !caster->programs()) return {DomainStatus::InvalidActor,{}};
     const auto &rules=*caster->programs();const auto state=rules.formulas->infernoState;
@@ -32,9 +46,18 @@ DomainResult<bool> System::startArctic(Release &pending,const ActorContext &acto
     effect.source={CombatEffectSource::Skill,actor.actor,skill.sourceId,skill.rank};effect.duration=warm?6:20;
     effect.nativeState=effect.nativeDirectAllocation=true;effect.nativeValues.emplace();effect.stacking=EffectStacking::ReuseState;
     effect.nativeExpiration=NativeStateExpiration::EvenZeroDuration;skill.appliedEffect=std::move(effect);skill.nativeEffectWrites.clear();
-    const auto installed=caster->monster?ports_.effects.unitSkill(actor.actor,skill,actor.tick):ports_.effects.skill(actor,skill,{},facts);
+    const NativeSkillSlot slot{skill.sourceId,skill.charge?skill.charge->item.id:EntityId{}};
+    std::shared_ptr<missiles::NativeBirthPublication> flame;
+    if(warm && infernoTarget && state_.skillParameter(actor.actor,slot,0)) {
+        const std::array births{infernoFlame(pending,actor,*infernoTarget)};
+        auto prepared=ports_.missiles.prepareNativeBirth(births);
+        if(!prepared && prepared.status!=DomainStatus::Unavailable) return {prepared.status,{}};
+        if(prepared) flame=std::move(*prepared.value);
+    }
+    const auto installed=caster->monster?ports_.effects.unitSkill(actor.actor,skill,actor.tick):
+        ports_.effects.skill(actor,skill,{},facts,{},std::move(flame));
     if(!installed) return {installed.status,{}};
-    if(!warm) state_.skillParameter(actor.actor,{pending.skill.sourceId,pending.skill.charge?pending.skill.charge->item.id:EntityId{}},0,0);
+    if(!warm || infernoTarget) state_.skillParameter(actor.actor,slot,0,warm?1:0);
     pending.manaPaid=true;
     if(pending.skill.charge && caster->player) pending.skill.charge->item=caster->player->persistent.inventory.items.at(pending.skill.charge->item.id).handle();
     return {DomainStatus::Applied,warm};
@@ -92,27 +115,39 @@ DomainStatus System::activateDruid(Release &pending,const ActorContext &actor,Ve
         if(missile==rules.formulas->missiles.end()) return DomainStatus::Unavailable;
         const int size=missile->second.number("size");
         const auto &area=ports_.areas.at(actor.area);
-        if(!int(target.x+area.definition.origin.x) || !int(target.y+area.definition.origin.y) ||
+        const auto at=nativeFeetCell(target+area.definition.origin);
+        if(!int(at.x) || !int(at.y) ||
            !area.definition.collision.missileSegment(target,target,{5,size})) return DomainStatus::Unavailable;
+        if(program.program==DruidProgram::Fissure && !rules.pd2) {
+            const auto from=nativeFeetCell(caster->position()+area.definition.origin);
+            if(unitCoordinateDistance(int(from.x),int(from.y),int(at.x),int(at.y))>100) return DomainStatus::Unavailable;
+        }
         auto &spawn=append(target,target,pending.skill.missileId);
         if(program.program==DruidProgram::Volcano) {
-            auto random=caster->random();const auto rolled=rollRandom(random);
+            auto random=caster->random();
+            const auto rolled=rules.pd2?rollRandom(random):limitedRandom(random,256);
             spawn.ownerSeedEdit=std::pair{caster->random(),random};spawn.finalParameters=std::array{nativeNarrow(rolled),0};
-        } else spawn.copyMonsterAttackBonus=true;
+        }
         break;
     }
     case DruidProgram::ShockWave: {
         const int count=formula("calc1");if(count<=0) return DomainStatus::Unavailable;
         if(count>512) return DomainStatus::Capacity;
-        for(const auto destination:missileFanTargets(caster->position(),target,count,{0,1}))
-            append(caster->position(),destination,pending.skill.missileId);
+        const int delay=formula("calc2");
+        for(const auto destination:missileFanTargets(nativeFeetCell(caster->position()),nativeFeetCell(target),count,{}))
+            append(caster->position(),destination,pending.skill.missileId).activateFrame=delay;
         break;
     }
     default:return DomainStatus::NotImplemented;
     }
     std::vector<DomainFact> extra;
-    if(program.program==DruidProgram::Volcano && !births.empty() && births.front().finalParameters)
-        extra.emplace_back(SkillPulseFact{actor.actor,{},uint8_t(caster->monster?1:0),1,actor.area,pending.skill.sourceId,pending.skill.rank,target,uint8_t((*births.front().finalParameters)[0]),uint32_t(int(target.x+ports_.areas.at(actor.area).definition.origin.x)),uint32_t(int(target.y+ports_.areas.at(actor.area).definition.origin.y))});
+    if(program.program==DruidProgram::Volcano && !births.empty() && births.front().finalParameters) {
+        const auto worldTarget=target+ports_.areas.at(actor.area).definition.origin;
+        const auto at=rules.pd2?worldTarget:nativeFeetCell(worldTarget);
+        const auto seed=uint8_t((*births.front().finalParameters)[0]);
+        extra.emplace_back(SkillPulseFact{actor.actor,{},uint8_t(caster->monster?1:0),1,actor.area,
+            pending.skill.sourceId,pending.skill.rank,target,seed,uint32_t(int(at.x)),uint32_t(int(at.y))});
+    }
     auto prepared=ports_.missiles.prepareNativeBirth(births,0,extra);if(!prepared) return prepared.status;
     if(caster->monster) return ports_.missiles.commitNativeBirth(std::move(*prepared.value)).status;
     const auto *player=caster->player;

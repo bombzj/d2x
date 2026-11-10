@@ -17,6 +17,7 @@
 #include "gameplay/skills/rank_sources.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/skills/passive_stats.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/amazon_passive_spec.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
@@ -661,8 +662,27 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
     result.character.baseAttackRating=result.equipment.weapons[0].baseAttackRating;
     result.character.attackRating=result.equipment.weapons[0].attackRating;
     const auto stat=[&](std::string_view name){return logicalStatValue(result.nativeStats,*rules.stats,name);};
+    int shieldDefense=result.equipment.shield?modifiers.combat.shieldDefensePercent:0;
+    if(result.equipment.shield && !rules.stats->pd2 && temporarySources) {
+        const auto holyShield=rules.formulas->skillIds.find("holy shield");
+        if(holyShield!=rules.formulas->skillIds.end()) {
+            const int state=rules.formulas->skills.at(holyShield->second).auraState;
+            for(const auto &source:*temporarySources) if(source.source.definition==state && source.rawValues && states.contains(state)) {
+                const auto &values=*source.rawValues;
+                const auto skill=values.find({rules.stats->names.at("modifierlist_skill"),0});
+                const auto rank=values.find({rules.stats->names.at("modifierlist_level"),0});
+                shieldDefense=0;
+                if(skill!=values.end() && rank!=values.end() && rank->second>0 && rules.formulas->skills.contains(skill->second)) {
+                    formulaContext.actor=result.statSources.get();formulaContext.stats=&result.nativeStats;
+                    SkillFormulaValues formulas(*rules.formulas,formulaContext);
+                    shieldDefense=formulas.calculation(FormulaDomain::Skill,skill->second,rank->second,"calc1").value_or(0);
+                }
+                break;
+            }
+        }
+    }
     result.character.defense = unitDefense(result.character.dexterity,stat("armorclass"),stat("item_armor_percent"),stat("skill_armor_percent"),
-        result.equipment.shield?modifiers.combat.shieldDefensePercent:0,stat("armor_override_percent"));
+        shieldDefense,stat("armor_override_percent"));
     result.equipment.defense=result.character.defense;
     if(result.auraResources) result.auraResources=ResourceValues{sampledResources.hp,sampledResources.mana,sampledResources.stamina};
     return result;

@@ -211,7 +211,7 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
         areaImpact(plan,missile.position,range,true);
         const auto frames=missile.skill.rank>0?nativeAdd(skill->second.number("param3"),
             nativeMultiply(nativeSubtract(missile.skill.rank,1),skill->second.number("param4"))):0;
-        constexpr std::array<Vec,18> offsets{Vec{2,-2},Vec{-2,-2},Vec{0,2},Vec{0,5},Vec{-3,3},Vec{0,3},Vec{3,3},Vec{-1,2},Vec{1,1},Vec{-1,-1},Vec{2,-1},Vec{-4,-2},Vec{-3,-2},Vec{-1,-3},Vec{0,-4},Vec{1,-3},Vec{3,-3},Vec{4,-2}};
+        const auto offsets=meteorFireOffsets();
         if(child>=0) for(size_t index=0;index<offsets.size();index+=size_t(std::max(rule.hitParameters[1],1)))
             planNativeChild(plan,child,missile.position+offsets[index],{},std::max(frames,0));
         return 1;
@@ -373,15 +373,17 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
         const auto &area=ports_.areas.at(missile.area);
         const auto targets=ports_.effects.nativeAuraCandidateRecipients({missile.owner,unitArea(missile.owner),rule.serverParameters[1],0xA783u|3u,false,
             missile.position+area.definition.origin,effects::NativeAuraTargetMode::TargetRange,missile.executionTick});
-        EntityId selected;
-        for(const auto id:targets) if(unitPosition(missile,id) && (!selected || id<selected)) selected=id;
+        // Retail Hit10 searches with previous GUID -1, then discards a dead winner.
+        const auto selected=nativeSkillSuccessor(targets,UINT32_MAX,ports_.ids.nativeIdentities());
+        const auto point=unitPosition(missile,selected);
         const auto &row=rule.damageFormulas->missiles.at(missile.definition);
         const auto frames=nativeAdd(row.number("range"),nativeMultiply(row.number("levrange"),nativeSubtract(missile.skill.rank,1)));
+        missile.nativeTotalFrames=nativeMissileFrameCount(frames);
         missile.setCurrentFrame(frames);
-        if(selected) {
+        if(point) {
             missile.guidance=selected;missile.parameters[0]=5;
-            const auto point=*unitPosition(missile,selected);missile.pathTarget=point;++missile.pathRevision;
-            if(missileDistance(missile.position,point)>=25) return 4;
+            missile.pathTarget=*point;++missile.pathRevision;
+            if(missileDistance(missile.position,*point)>=25) return 4;
         } else {
             const auto packed=uint32_t(missile.parameters[1]);
             missile.pathTarget=missile.position+Vec{float(int16_t(packed)),float(int16_t(packed>>16))};
@@ -458,10 +460,12 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
         plan.addManaDrain(target,std::clamp(rule.hitParameters[0],1,100));return 2;
     }
     case 47: {
-        const auto *unit=ports_.monsters.find(target);
-        if(!unit || !rule.damageTypes) return 2;
-        const auto dimensions=rule.damageTypes->dimensions.find(unit->rule.nativeClass);
-        if(dimensions==rule.damageTypes->dimensions.end() || !dimensions->second.second) return 2;
+        if(target || (missile.rules && missile.rules->pd2)) {
+            const auto *unit=ports_.monsters.find(target);
+            if(!unit || !rule.damageTypes) return 2;
+            const auto dimensions=rule.damageTypes->dimensions.find(unit->rule.nativeClass);
+            if(dimensions==rule.damageTypes->dimensions.end() || !dimensions->second.second) return 2;
+        }
         auto range=rule.hitParameters[0];
         if(range<=0) {const auto value=missileSkillFormula(plan,"aurarangecalc");if(!value) return 1;range=std::max(*value,1);}
         areaImpact(plan,missile.position,range,true);

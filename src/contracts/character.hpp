@@ -14,6 +14,7 @@
 #include <set>
 
 namespace d2x {
+enum class NativeSkillUseState : uint8_t;
 struct CharacterSkillView {
     int id = -1, page = 0, row = 0, column = 0;
     int listRow = -1, listPool = 0, iconCell = -1;
@@ -23,6 +24,7 @@ struct CharacterSkillView {
     bool passive = false, leftAllowed = false, available = false, canAllocate = false, usableNow = false;
     bool pickerEnabled = false; // Selection permission; independent of town casting permission and red tint.
     std::optional<int> delayFrames; // Current MPQ formula at this skill source's effective rank.
+    std::optional<NativeSkillUseState> nativeUseState;
     CharacterActionDisplay action;
     std::vector<std::string> treeTooltip, pickerTooltip;
     bool treeTooltipUnavailable = false; // Native tree's unavailable branch: red body and requirement/max-level line.
@@ -51,6 +53,7 @@ struct CharacterView {
     std::optional<KnownAttackTiming> attackTiming;
     std::optional<KnownRecoveryTiming> recoveryTiming;
     std::optional<int> missilePierceChance;
+    std::optional<int> magicArrow,explosiveArrow;
     bool dead = false, running = false, blueStamina = false, attackUsable = false, hasSkillTree = false;
     unsigned weaponSet = 0;
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};

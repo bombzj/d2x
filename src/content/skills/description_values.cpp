@@ -191,12 +191,9 @@ DescriptionNumber SkillDescriptionValues::parameter(const SkillDescriptionSource
     if (token=="mps" || token=="usmc" || token=="mana") {
         const auto base=source.number("mana"), perLevel=source.number("lvlmana"), shift=source.number("manashift");
         if (!base || !perLevel || !shift || *shift<0 || *shift>15) return {};
-        auto value=number(skillManaCostFixed(*base,*perLevel,*shift,*rank));
-        if (token=="usmc") return value;
-        if (token=="mana") return scale(value,1,256);
-        // 1.13c RVA 51298 multiplies the entire level-adjusted cost by25
-        // before dividing by2, unlike the older D2MOO 1.10f transcription.
-        return number((25*(int64_t(*base)+int64_t(*rank-1)*(*perLevel))/2)*(int64_t(1)<<*shift)/256);
+        if (token=="mps") return skillManaPerSecond(*base,*perLevel,*shift,*rank);
+        const auto value=skillManaCostFixed(*base,*perLevel,*shift,*rank);
+        return number(token=="usmc"?value:value>>8);
     }
     if (!missile && (token=="me3o" || token=="me3y")) {
         // The shipped 1.13c raw descriptor callback divides (paramId-43/44)

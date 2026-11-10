@@ -19,7 +19,8 @@
     [string]$Lang='',
     [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName='d2x-debug',
     [switch]$NoDebugPipe,
-    [string]$SorceressScenario=''
+    [Alias('SorceressScenario')][string]$AiScenario='',
+    [string]$AiClass='sor'
 )
 $ErrorActionPreference='Stop'
 function Get-DiagnosticSha256([string]$Path) {
@@ -45,40 +46,52 @@ if($ClientProfile){$ClientProfile=$ExecutionContext.SessionState.Path.GetUnresol
 if($HostSaves){$HostSaves=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HostSaves)}
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $diagnosticParent=Join-Path $projectRoot 'artifacts/diagnostics'
-$previousSorceressRun=$null
-if($SorceressScenario){
+$previousAiRun=$null
+if($AiScenario){
+    $AiClass=$AiClass.ToLowerInvariant()
+    $saveSuffix=switch($AiClass){
+        'sor' {'Sorc'}
+        'ama' {'Amazon'}
+        default {throw "No prepared AI saves for class '$AiClass'. Available classes: sor, ama."}
+    }
     if(-not $Diagnostic -or $ClientProfile -or $HostLan -or $Lan -or $HostSaves -or
         $OnlineCharacter -or $OnlinePlay -or $OnlineCreateGame -or $OnlineJoinGame -or
         $Hidden -or $PSBoundParameters.ContainsKey('PipeName')){
-        throw 'Play-SOR requires graphical Single Player with its own save directory and diagnostic pipe.'
+        throw 'Play-AI requires graphical Single Player with its own save directory and diagnostic pipe.'
     }
     if(Get-Process -Name d2x -ErrorAction SilentlyContinue){
-        throw 'A D2X instance is already running. Close it before starting Play-SOR.'
+        throw 'A D2X instance is already running. Close it before starting Play-AI.'
     }
-    if($SorceressScenario -eq 'continue'){
-        $previousSorceressRun=Get-ChildItem -LiteralPath $diagnosticParent -Directory -ErrorAction SilentlyContinue |
-            Where-Object {Test-Path -LiteralPath (Join-Path $_.FullName 'sorceress-start.json') -PathType Leaf} |
-            Sort-Object Name -Descending | Select-Object -First 1
-        if(-not $previousSorceressRun){throw 'No previous Play-SOR run to continue.'}
-        $previousInfo=Get-Content -LiteralPath (Join-Path $previousSorceressRun.FullName 'run.json') -Raw | ConvertFrom-Json
-        $SorceressScenario=[string]$previousInfo.scenario
+    if($AiScenario -eq 'continue'){
+        $runs=Get-ChildItem -LiteralPath $diagnosticParent -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending
+        foreach($run in $runs){
+            $started=Test-Path -LiteralPath (Join-Path $run.FullName 'ai-start.json') -PathType Leaf
+            $legacy=$AiClass -eq 'sor' -and (Test-Path -LiteralPath (Join-Path $run.FullName 'sorceress-start.json') -PathType Leaf)
+            if(-not ($started -or $legacy)){continue}
+            $previousInfo=Get-Content -LiteralPath (Join-Path $run.FullName 'run.json') -Raw | ConvertFrom-Json
+            if(-not $legacy -and $previousInfo.aiClass -ne $AiClass){continue}
+            $previousAiRun=$run
+            $AiScenario=[string]$previousInfo.scenario
+            break
+        }
+        if(-not $previousAiRun){throw "No previous Play-AI run for '$AiClass' to continue."}
     }
-    if($SorceressScenario -notmatch '^act([1-5])(?:-([1-5]))?$' -or
+    if($AiScenario -notmatch '^act([1-5])(?:-([1-5]))?$' -or
         ($Matches[2] -and [int]$Matches[2] -lt [int]$Matches[1])){
         throw 'Choose act1 through act5, an ascending range such as act2-5, or continue.'
     }
     $startAct=[int]$Matches[1]-1
-    $SorceressScenario=$SorceressScenario.ToLowerInvariant()
+    $AiScenario=$AiScenario.ToLowerInvariant()
     $actNames=@('One','Two','Three','Four','Five')
-    $sorceressName="Act$($actNames[$startAct])Sorc"
-    $sorceressTown=@(1,40,75,103,109)[$startAct]
-    $sorceressSource=if($previousSorceressRun){
-        Join-Path $previousSorceressRun.FullName "saves/$sorceressName.d2s"
+    $aiName="Act$($actNames[$startAct])$saveSuffix"
+    $aiTown=@(1,40,75,103,109)[$startAct]
+    $aiSaveSource=if($previousAiRun){
+        Join-Path $previousAiRun.FullName "saves/$aiName.d2s"
     }else{
-        Join-Path $projectRoot "artifacts/saves/$sorceressName.d2s"
+        Join-Path $projectRoot "artifacts/saves/$aiName.d2s"
     }
-    if(-not (Test-Path -LiteralPath $sorceressSource -PathType Leaf)){
-        throw "Missing 99 Sorceress save: $sorceressSource"
+    if(-not (Test-Path -LiteralPath $aiSaveSource -PathType Leaf)){
+        throw "Missing level-99 AI save for '$AiClass': $aiSaveSource"
     }
     $NoPauseOnFocusLoss=$true
 }
@@ -94,15 +107,15 @@ if($Diagnostic){
     $HostPacketLog=Join-Path $diagnosticRoot 'host-packets.jsonl'
     $frameProfile=Join-Path $diagnosticRoot 'frames.jsonl'
     $startupProfile=Join-Path $diagnosticRoot 'startup.tsv'
-    if($SorceressScenario){
-        $PipeName="d2x-sor-$runName"
+    if($AiScenario){
+        $PipeName="d2x-ai-$AiClass-$runName"
         $HostSaves=Join-Path $diagnosticRoot 'saves'
         New-Item -ItemType Directory -Path $HostSaves | Out-Null
-        $sorceressSave=Join-Path $HostSaves "$sorceressName.d2s"
-        Copy-Item -LiteralPath $sorceressSource -Destination $sorceressSave
-        if($previousSorceressRun){
+        $aiSave=Join-Path $HostSaves "$aiName.d2s"
+        Copy-Item -LiteralPath $aiSaveSource -Destination $aiSave
+        if($previousAiRun){
             foreach($extension in 'map','ma0','ma1','ma2','ma3'){
-                $automap=Join-Path (Split-Path -Parent $sorceressSource) "$sorceressName.$extension"
+                $automap=Join-Path (Split-Path -Parent $aiSaveSource) "$aiName.$extension"
                 if(Test-Path -LiteralPath $automap -PathType Leaf){
                     Copy-Item -LiteralPath $automap -Destination $HostSaves
                 }
@@ -148,7 +161,7 @@ try{
     if($Lan){$arguments+=@('--lan',$Lan)}
     if($PSBoundParameters.ContainsKey('GamePort')){$arguments+=@('--game-port',"$GamePort")}
     if($HostSaves){$arguments+=@('--host-saves',$HostSaves)}
-    if($SorceressScenario){$arguments+=@('--load',$sorceressSave)}
+    if($AiScenario){$arguments+=@('--load',$aiSave)}
     if($OnlineConfig){$arguments+=@('--online-config',$OnlineConfig)}
     if($OnlineCharacter){$arguments+=@('--online-character',$OnlineCharacter)}
     if($OnlinePlay){$arguments+=@('--online-play',$OnlinePlay)}
@@ -169,11 +182,11 @@ try{
         $binaryHash=Get-DiagnosticSha256 $exe
         $aiConfig=Join-Path (Split-Path -Parent $exe) 'debug-ai.json'
         if(-not (Test-Path -LiteralPath $aiConfig -PathType Leaf)){$aiConfig=Join-Path $projectRoot 'debug-ai.json'}
-        if($SorceressScenario){
+        if($AiScenario){
             $sourceConfig=Join-Path $projectRoot 'config/debug-ai.json'
             if(Test-Path -LiteralPath $sourceConfig -PathType Leaf){$aiConfig=$sourceConfig}
             if(-not (Test-Path -LiteralPath $aiConfig -PathType Leaf)){
-                throw 'Play-SOR requires config/debug-ai.json or a debug-ai.json beside the executable.'
+                throw 'Play-AI requires config/debug-ai.json or a debug-ai.json beside the executable.'
             }
         }
         $aiConfigHash=''
@@ -195,24 +208,26 @@ try{
             aiLog='Written under ai-*/events.log when an AI plan starts; the initial config snapshot does not capture later reloads or custom config files.'
             note=$(if($ClientProfile){'D2GS only; SID/MCP authentication payloads are excluded and game tickets are redacted.'}else{'Protocol traces redact tickets and opaque save transfers; authoritative inventory remains available through the debug pipe.'})
         }
-        if($SorceressScenario){
-            $runInfo.scenario=$SorceressScenario
-            $runInfo.saveSource=$sorceressSource
-            $runInfo.save=$sorceressSave
-            $runInfo.initialSaveSha256=Get-DiagnosticSha256 $sorceressSave
-            if($previousSorceressRun){$runInfo.continuedFrom=$previousSorceressRun.FullName}
+        if($AiScenario){
+            $runInfo.aiClass=$AiClass
+            $runInfo.scenario=$AiScenario
+            $runInfo.saveSource=$aiSaveSource
+            $runInfo.save=$aiSave
+            $runInfo.initialSaveSha256=Get-DiagnosticSha256 $aiSave
+            if($previousAiRun){$runInfo.continuedFrom=$previousAiRun.FullName}
         }
         $runInfo | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $diagnosticRoot 'run.json') -Encoding utf8
         Write-Host "Diagnostic logs: $diagnosticRoot"
         Write-Host "Frame, navigation runtime and startup profiling enabled. AI behavior logging starts with your AI plan."
         if($movementDiffLog){Write-Host "Movement comparison enabled for local Single Player."}
         else{Write-Host "Movement comparison omitted for explicit remote/TCP startup."}
-        if($SorceressScenario){
+        if($AiScenario){
             # Start-Process joins arguments into a Windows command line.
             $quotedArguments=foreach($argument in $arguments){
                 '"' + ($argument -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"'
             }
-            $process=Start-Process -FilePath $exe -ArgumentList $quotedArguments -WorkingDirectory $projectRoot -PassThru `
+            # Keep the launcher console. The game creates its own graphical window.
+            $process=Start-Process -FilePath $exe -ArgumentList $quotedArguments -WorkingDirectory $projectRoot -NoNewWindow -PassThru `
                 -RedirectStandardOutput (Join-Path $diagnosticRoot 'stdout.log') `
                 -RedirectStandardError (Join-Path $diagnosticRoot 'stderr.log')
             # Windows PowerShell needs the handle cached before a redirected process exits.
@@ -232,21 +247,21 @@ try{
                     Start-Sleep -Milliseconds 250
                 }
                 if(-not $ready){throw "The game did not become ready. Last status: $lastStatus"}
-                if($status.characterUi.name -ne $sorceressName -or $status.characterUi.level -ne 99){
-                    throw "Expected level-99 $sorceressName."
+                if($status.characterUi.name -ne $aiName -or $status.characterUi.level -ne 99){
+                    throw "Expected level-99 $aiName."
                 }
-                if(-not $previousSorceressRun -and $status.online.scene.area -ne $sorceressTown){
-                    throw "Expected $sorceressName in starting town $sorceressTown, got area $($status.online.scene.area)."
+                if(-not $previousAiRun -and $status.online.scene.area -ne $aiTown){
+                    throw "Expected $aiName in starting town $aiTown, got area $($status.online.scene.area)."
                 }
                 $start=& $sendCommand -PipeName $PipeName -Command debug-ai-start -Arguments @{
-                    scenario=$SorceressScenario; configFile=$aiConfigSnapshot
+                    scenario=$AiScenario; configFile=$aiConfigSnapshot
                 }
                 if($start.ai.state -ne 'running'){throw "The AI did not start: $($start.ai.reason)"}
-                $start | ConvertTo-Json -Depth 45 | Set-Content -LiteralPath (Join-Path $diagnosticRoot 'sorceress-start.json') -Encoding utf8
-                Write-Host "Started $SorceressScenario for $sorceressName. AI log: $($start.ai.behaviorLog.file)"
+                $start | ConvertTo-Json -Depth 45 | Set-Content -LiteralPath (Join-Path $diagnosticRoot 'ai-start.json') -Encoding utf8
+                Write-Host "Started $AiScenario for $aiName. AI log: $($start.ai.behaviorLog.file)"
             }catch{
                 if(-not $process.HasExited){[void]$process.CloseMainWindow()}
-                throw "Play-SOR startup failed. $($_.Exception.Message) Logs: $diagnosticRoot"
+                throw "Play-AI startup failed. $($_.Exception.Message) Logs: $diagnosticRoot"
             }
             $process.WaitForExit()
             $exitCode=$process.ExitCode

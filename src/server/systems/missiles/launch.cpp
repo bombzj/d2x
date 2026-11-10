@@ -87,15 +87,17 @@ Missile System::make(const Spawn &r, Vec origin, Vec direction, int id, int fram
             if(!values) throw std::logic_error("Missing native missile attack-bonus source");
             damage.attackBonus=values->get({unit->rule.stats->names.at("tohit"),0});
         }
-        if(r.weapon && !r.weapon->weapon.potion && r.skill.weapon) {
-            damage.data.damagePercent=nativeAdd(damage.data.damagePercent,r.skill.weapon->damagePercent);
+        if(r.weapon && r.skill.weapon) {
             const auto source=rules.formulas->skills.find(r.skill.sourceId);
             const int program=source==rules.formulas->skills.end()?0:source->second.number("srvdofunc");
+            if(!r.weapon->weapon.potion || (!rules.pd2 && program==74))
+                damage.data.damagePercent=nativeAdd(damage.data.damagePercent,r.skill.weapon->damagePercent);
             // Native missile accuracy does not automatically add a skill's
             // ToHitFactor. Only the actual launch initializer writes TOHIT.
-            if(program==74) damage.attackBonus=nativeAdd(damage.attackBonus,r.skill.weapon->attackRating);
-            else if(program==3 || program==5) {
-                const bool throwing=r.skill.weapon->useThrowMastery && (!rules.pd2 || r.weapon->weapon.throwable);
+            if(program==74 && (!rules.pd2 || !r.weapon->weapon.potion))
+                damage.attackBonus=nativeAdd(damage.attackBonus,r.skill.weapon->attackRating);
+            else if(!r.weapon->weapon.potion && (program==3 || program==5)) {
+                const bool throwing=r.skill.weapon->useThrowMastery && r.weapon->weapon.throwable;
                 if(throwing) {
                     damage.attackBonus=nativeAdd(damage.attackBonus,r.weapon->weapon.throwMastery[0]);
                     damage.data.damagePercent=nativeAdd(damage.data.damagePercent,r.weapon->weapon.throwMastery[1]);
@@ -137,13 +139,11 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random,uint64_t *o
         break;
     }
     case SkillBehavior::Teeth:
-        for(const auto target:missileFanTargets(origin,r.target,s.missileCount,direction))
-            add(cell(origin),target-origin,s.missileId,frames,s.missileVelocity,Program::Projectile);
+        for(const auto target:missileFanTargets(cell(origin),cell(r.target),s.missileCount,direction))
+            add(cell(origin),target-cell(origin),s.missileId,frames,s.missileVelocity,Program::Projectile);
         break;
-    case SkillBehavior::BoneSpirit: {
-        const int life=r.guidedTarget?frames:std::max(1,int(std::lround(direction.length()/std::max(.001f,s.missileVelocity)*25.f)));
-        add(cell(origin),direction,s.missileId,life,s.missileVelocity,Program::Spirit);break;
-    }
+    case SkillBehavior::BoneSpirit:
+        add(cell(origin),cell(r.target)-cell(origin),s.missileId,frames,s.missileVelocity,Program::Spirit);break;
     case SkillBehavior::WeaponProjectile:
         if(r.weapon && r.weapon->weapon.potion) {
             const auto &projectile=*r.weapon->weapon.projectile;
@@ -164,6 +164,8 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random,uint64_t *o
             const int first=(int(targets.size())-central)/2;
             for(size_t arrow=0;arrow<targets.size();++arrow) {
                 auto &missile=add(cell(origin),targets[arrow]-origin,id,frames,s.missileVelocity,Program::Projectile);
+                // SrvDo8 passes Calc2 with constructor flag 0x800.
+                missile.nativeActivateFrame=nativeMissileFrameCount(nativeSubtract(missile.nativeTotalFrames,s.weapon->bow->activateFrames));
                 // SrvDo008's outer missiles suppress item damage events. Leech
                 // still belongs to their physical channel, unlike CB and OW.
                 if(missile.weapon && (int(arrow)<first || int(arrow)>=first+central)) {
@@ -176,28 +178,28 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random,uint64_t *o
             add(cell(origin),direction,id,frames,s.missileVelocity,Program::Projectile);
         }
         break;
-    case SkillBehavior::FireBolt: case SkillBehavior::Fireball: case SkillBehavior::IceBolt: case SkillBehavior::IceBlast:
-    case SkillBehavior::HolyBolt:
-    case SkillBehavior::BoneSpear:
-    case SkillBehavior::Inferno: case SkillBehavior::ChillingArmor: case SkillBehavior::Hydra:
+    case SkillBehavior::ChillingArmor: case SkillBehavior::Hydra:
         add(origin + direction.unit() * .7f, direction, s.missileId, frames, s.missileVelocity, Program::Projectile); break;
     case SkillBehavior::ChargedBolt:
         for (int i=0; i<s.missileCount; ++i) {
-            add(cell(origin),direction,s.missileId,frames,s.missileVelocity,Program::Charged,i);
+            add(cell(origin),cell(r.target)-cell(origin),s.missileId,frames,s.missileVelocity,Program::Charged,i);
         } break;
     case SkillBehavior::Howl: case SkillBehavior::Shout: case SkillBehavior::BattleCry: case SkillBehavior::BattleOrders: case SkillBehavior::WarCry: case SkillBehavior::BattleCommand:
     case SkillBehavior::FrostNova: case SkillBehavior::Nova: case SkillBehavior::PoisonNova:
         for (int i=0; i<64; ++i) add(cell(origin), missileRingDirection(i), s.missileId, frames, s.missileVelocity, Program::Ring);
         break;
-    case SkillBehavior::GlacialSpike:
-        add(cell(origin), direction, s.missileId, frames, s.missileVelocity, Program::Projectile); break;
+    case SkillBehavior::FireBolt: case SkillBehavior::Fireball: case SkillBehavior::IceBolt: case SkillBehavior::IceBlast:
+    case SkillBehavior::GlacialSpike: case SkillBehavior::Inferno: case SkillBehavior::BoneSpear: case SkillBehavior::HolyBolt:
+        add(cell(origin),cell(r.target)-cell(origin),s.missileId,frames,s.missileVelocity,Program::Projectile); break;
     case SkillBehavior::FrozenOrb:
         add(cell(origin), {std::floor(r.target.x)-std::floor(origin.x),std::floor(r.target.y)-std::floor(origin.y)}, s.missileId,
             s.frozenOrb->lifetimeFrames, s.missileVelocity, Program::Orb); break;
     case SkillBehavior::Blizzard:
         add(cell(r.target), {}, s.missileId, frames, 0, Program::Blizzard); break;
-    case SkillBehavior::Lightning: case SkillBehavior::ChainLightning: {
-        auto &missile=add(cell(origin),direction,s.missileId,frames,s.missileVelocity,Program::Arc);
+    case SkillBehavior::Lightning:
+        add(cell(origin),cell(r.target)-cell(origin),s.missileId,frames,s.missileVelocity,Program::Arc);break;
+    case SkillBehavior::ChainLightning: {
+        auto &missile=add(cell(origin),cell(r.target)-cell(origin),s.missileId,frames,s.missileVelocity,Program::Arc);
         missile.remainingHits=s.arc->count;missile.parameters[0]=s.arc->count;break;
     }
     case SkillBehavior::FireWall: {
@@ -272,11 +274,19 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
     auto ownerRandom=nativeOwner?nativeOwner->combatRandom:r.cost && r.cost->random?r.cost->random->next:p->combatRandom;
     auto launched = launch(r,random,&ownerRandom); if (launched.empty()) return {DomainStatus::NotImplemented,{}};
     std::erase_if(launched,[&](auto &missile){return missile.creationRejected || !creationRoom(missile) || !townAllowed(missile);});
-    if(launched.empty()) return {DomainStatus::Unavailable,{}};
+    const bool applyWarcry=!nativeOwner && !r.free && !r.cost && !r.skill.pd2 && r.skill.warcry && r.skill.appliedEffect;
+    if(launched.empty()) {
+        if(!applyWarcry) return {DomainStatus::Unavailable,{}};
+        const auto applied=ports_.effects.skill(r.actor,r.skill,{}, {},std::pair{ownerExpected,ownerRandom});
+        if(!applied) return {applied.status,{}};
+        ports_.random=random;
+        return {DomainStatus::Applied,EntityId{}};
+    }
     if (launched.size()>UINT32_MAX-ports_.ids.cursor()) return {DomainStatus::Capacity,{}};
     auto identity=ports_.ids.cursor();for(auto &missile:launched) missile.id=EntityId{identity++};
     auto facts = visuals(launched);
-    if(r.skill.heaven && r.guidedTarget && r.skill.hitOverlayId>=0) facts.emplace_back(OverlayFact{r.guidedTarget,1,r.actor.area,r.skill.hitOverlayId});
+    if(r.skill.heaven && r.guidedTarget && r.skill.hitOverlayId>=0)
+        facts.emplace_back(OverlayFact{r.guidedTarget,uint8_t(ports_.players.findActor(r.guidedTarget)?0:1),r.actor.area,r.skill.hitOverlayId});
     if (!ports_.events.hasCapacity(facts.size()+1,2)) return {DomainStatus::Capacity,{}};
     std::map<EntityId,Missile> prepared; auto cursor = ports_.ids.cursor();
     for (auto &m : launched) { m.id=EntityId{cursor++}; prepared.emplace(m.id,std::move(m)); }
@@ -288,8 +298,8 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
     // Ordinary missile release changes mana and the owner's random cursor,
     // not equipment/passive sources. Publish those with the prepared visuals
     // in one resource transaction; charged items retain their full item edit.
-    const bool resourcePayment=!nativeOwner && !cost && !r.deathTrigger && !r.skill.charge && (!r.free || ownerRandom!=p->combatRandom);
-    if(!nativeOwner && !cost && !resourcePayment && (!r.free || ownerRandom!=p->combatRandom)) {
+    const bool resourcePayment=!nativeOwner && !cost && !applyWarcry && !r.deathTrigger && !r.skill.charge && (!r.free || ownerRandom!=p->combatRandom);
+    if(!nativeOwner && !cost && !applyWarcry && !resourcePayment && (!r.free || ownerRandom!=p->combatRandom)) {
         transactions::CharacterEdit edit{r.actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
         if(!r.free) {edit.player.mana-=r.skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{r.skill.manaCost,r.skill.sourceId};edit.charge=r.skill.charge;}
         edit.random=transactions::UnitRandomEdit{ownerExpected,ownerRandom};
@@ -297,11 +307,12 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
         cost=std::move(*transaction.value);
     } else if(cost) cost->random=transactions::UnitRandomEdit{ownerExpected,ownerRandom};
     const auto released=nativeOwner?ports_.monsters.consumeRandom(nativeOwner->id,ownerExpected,ownerRandom):
+        applyWarcry?ports_.effects.skill(r.actor,r.skill,{},facts,std::pair{ownerExpected,ownerRandom}):
         resourcePayment?ports_.transactions.release(r.actor,p->characterRevision,r.free?Fixed8{}:r.skill.manaCost,
             {},{},std::move(facts),transactions::UnitRandomEdit{ownerExpected,ownerRandom},r.free?-1:r.skill.sourceId):
         cost?ports_.transactions.commit(std::move(*cost)):DomainResult<>{DomainStatus::Applied,std::monostate{}};
     if (!released) return {released.status,{}};
-    if(resourcePayment) facts.clear();
+    if(resourcePayment || applyWarcry) facts.clear();
     if (!facts.empty()) ports_.events.publish({0,r.actor.tick,{}, {AudienceKind::Area,{},r.actor.area},std::move(facts)});
     ports_.ids.publish(*allocation);
     state_.missiles.merge(prepared);publishTimers(timers);ports_.random=random;

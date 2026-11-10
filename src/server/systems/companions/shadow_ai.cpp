@@ -116,7 +116,7 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
         auto input=skills::formulaInput(*body,*sampled);SkillFormulaValues values(catalog,input);
         const auto rank=input.referenceRanks->effective.find(skill);
         pet.assassinAi[0]=int64_t(tick.tick)+18+values.calculation(FormulaDomain::Skill,skill,
-            rank==input.referenceRanks->effective.end()?1:std::max(1,rank->second),"auralencalc").value_or(0)/3;
+            rank==input.referenceRanks->effective.end()?1:std::max(1,rank->second),pd2Warrior?"auralencalc":"delay").value_or(0)/3;
     };
     bool approaching{},attemptedCast{};
     const auto use=[&](const ShadowDecision::Choice &choice)->DomainStatus {
@@ -303,7 +303,7 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
                 return name.empty()?0:resistances->get({body->rule.stats->names.at(std::string(name)),0});
             };
             auto sampled=ports_.effects.unitStatValues(body->id,tick.tick);auto input=skills::formulaInput(*body,*sampled);
-            int chargeBonus{};decision.choices={{0,decision.target,true}};
+            int chargeBonus{},bestScore{};decision.choices={{0,decision.target,true}};
             for(const int id:body->nativeSkillOrder) {
                 const auto rank=input.referenceRanks->effective.find(id);if(rank==input.referenceRanks->effective.end() || rank->second<=0) continue;
                 const auto &row=catalog.skills.at(id);int value{},base=resistance(row)/-10+row.number("reqlevel")/4+rank->second+row.number("aibonus");
@@ -346,7 +346,10 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
                     if((life<50 || closeSelf>3) && nearestOwner && closeOwner<4 && squared(body->position,point(participants.find(nearestOwner)))>25) {skillTarget=nearestOwner;value=base+20+random();}
                     else if(distance>=25) value=base+(distance>324?10:0)+random();
                 }
-                if(value>0 && decision.choices.size()<48) decision.choices.push_back({id,skillTarget,true});
+                if(value>bestScore && decision.choices.size()<48) {
+                    decision.choices.push_back({id,skillTarget,true});
+                    if(!owner->rules.skills->pd2) bestScore=value;
+                }
             }
             std::reverse(decision.choices.begin(),decision.choices.end());decision.next=0;decision.phase=Phase::Candidates;continue;
         }

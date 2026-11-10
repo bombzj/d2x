@@ -19,6 +19,7 @@
 #include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace d2x::server::skills {
@@ -78,6 +79,20 @@ DomainResult<> System::startAssassinKick(Release &pending,const ActorContext &ac
         return DomainResult<>{status,{}};
     };
     if(role==AssassinProgram::DragonFlight) {
+        if(!pending.skill.pd2) {
+            const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+            const auto target=participants.find(pending.unit);
+            if(!target.aliveIn(actor.area) || !participants.canHarm(actor.actor,pending.unit) || ports_.areas.at(actor.area).definition.town)
+                return fail(DomainStatus::Unavailable);
+            auto input=caster->formulaInput(ports_.effects,actor.tick);
+            SkillFormulaValues values(*caster->programs()->formulas,input);
+            const auto range=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"aurarangecalc");
+            if(!range) throw std::logic_error("Missing original Dragon Flight start range");
+            const auto from=caster->position(),to=target.position();
+            const auto subtile=[](float coordinate){return int(std::floor(coordinate+.5f));};
+            const auto dx=subtile(to.x)-subtile(from.x),dy=subtile(to.y)-subtile(from.y);
+            if(dx*dx+dy*dy>nativeMultiply(*range,*range)) return fail(DomainStatus::Unavailable);
+        }
         kick.phase=AssassinKickExecution::Phase::FlightTeleport;kick.startPrepared=true;
         return done();
     }
@@ -140,13 +155,16 @@ DomainStatus System::activateAssassinKick(Release &pending,const ActorContext &a
     for(;;) {
         if(kick.phase==Phase::FlightTeleport) {
             const auto &area=ports_.areas.at(actor.area).definition;
-            if(!area.teleportMode || (area.teleportMode==2 && !area.collision.collisionSegment(caster->position(),targetPosition,0x804)))
+            const auto size=caster->monster?caster->monster->rule.size:2;
+            if(!area.teleportMode || (area.teleportMode==2 && !(pending.skill.pd2?
+                area.collision.collisionSegment(caster->position(),targetPosition,0x804):
+                area.collision.interactionSegment(caster->position(),targetPosition,2,{},0x804,size))))
                 return DomainStatus::Unavailable;
             const auto global=targetPosition+area.origin;
             const auto room=ports_.areas.roomAtPosition(actor.area,caster->position(),int(global.x),int(global.y));
             if(!room) return DomainStatus::Unavailable;
             const auto sample=ports_.spatial.nativeCollisionSample(0x1c09);
-            const auto free=ports_.areas.nativeFreeCoordinates(*room,int(global.x),int(global.y),caster->monster?caster->monster->rule.size:2,0x1c09,sample);
+            const auto free=ports_.areas.nativeFreeCoordinates(*room,int(global.x),int(global.y),size,0x1c09,sample);
             if(!free || free->room.area!=actor.area) return DomainStatus::Unavailable;
             const auto moved=caster->monster?ports_.monsters.teleport(caster->id(),free->position,actor.tick,0,true):
                 ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,free->position},Fixed8{});
@@ -214,7 +232,9 @@ DomainStatus System::activateAssassinKick(Release &pending,const ActorContext &a
             const auto mastery=values.stat("passive_fire_mastery");
             if(!percent || !mastery) throw std::logic_error("Missing native Dragon Tail fire calculation");
             effects::NativeAreaSpec area;area.source=caster->id();area.area=actor.area;area.center=targetPosition;
-            area.skill=pending.skill.sourceId;area.rank=pending.skill.rank;area.filter=0x8583;area.resultFlags=1;area.hitFlags=9;
+            area.skill=pending.skill.sourceId;area.rank=pending.skill.rank;area.filter=0x8583;
+            area.resultFlags=pending.skill.pd2?1:9;
+            area.hitFlags=pending.skill.pd2?9:0;
             area.radius=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"aurarangecalc").value_or(0);
             area.damage.channels[2]=nativePercentage(kick.copiedPhysical,nativeAdd(*percent,*mastery),100);
             pending.nativeCallbackStarted=true;

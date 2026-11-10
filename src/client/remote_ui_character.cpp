@@ -274,6 +274,8 @@ void RemoteUiClients::Impl::projectSkillUseFacts(CharacterProjectionInput &input
         if (actor == online.world.units.end()) return;
         if (actor->second.equipmentObserved) {
             constexpr std::array<uint8_t, 2> bodies{4, 5};
+            const bool original=data.profile=="lod-named-txt-v1";
+            const auto level=stat("level");
             for (size_t hand = 0; hand < bodies.size(); ++hand) {
                 const auto equipped = std::find_if(online.world.items.begin(), online.world.items.end(),
                     [&](const auto &entry) {
@@ -293,8 +295,17 @@ void RemoteUiClients::Impl::projectSkillUseFacts(CharacterProjectionInput &input
                 facts.ammunitionType = base->equipment.shoots;
                 facts.stackable = base->maxStack > 1;
                 const auto decoded = items.read().items.find(wire.id);
-                if (decoded != items.read().items.end() && decoded->second.decoded && decoded->second.revision == wire.revision)
+                if(original) facts.magicArrow.reset();
+                if (decoded != items.read().items.end() && decoded->second.decoded && decoded->second.revision == wire.revision) {
                     facts.quantity = decoded->second.quantity;
+                    if(original && level)
+                        if(const auto item=completeItem(wire,decoded->second,SocketLocation{{},0})) {
+                            int64_t magicArrow{};
+                            for(const auto &value:resolveItemStats(data,*item,int(*level)))
+                                if(value.name=="item_magicarrow" && !value.layer) magicArrow+=value.value;
+                            facts.magicArrow=magicArrow!=0;
+                        }
+                }
                 input.handEquipment[hand] = std::move(facts);
             }
         }
@@ -303,8 +314,9 @@ void RemoteUiClients::Impl::projectSkillUseFacts(CharacterProjectionInput &input
             observed->second.sequence == actor->second.stateSequence) {
             CharacterProjectionInput::ShapeStates shape;
             for (const auto &[name, state] : data.states) {
+                (void)name;
                 if (!observed->second.states.contains(state.definition.id)) continue;
-                shape.active.insert(name);
+                shape.active.insert(state.definition.id);
                 shape.restricted |= state.restrictSkills;
                 shape.disguised |= state.disguise;
             }
@@ -380,6 +392,7 @@ void RemoteUiClients::Impl::projectCharacter() {
         const auto &online = session.read(); const auto &w = online.world;
         CharacterProjectionInput input;
         input.revision = revision; input.name = online.selectedCharacter;
+        input.localSkillDelay=combat.localSkillDelayActive();
         input.actor = online.load.playerUnitId ? itemId(*online.load.playerUnitId) : EntityId{};
         if (online.load.playerUnitId)
             if (const auto it = w.units.find({0, *online.load.playerUnitId}); it != w.units.end() && it->second.classId)
@@ -409,6 +422,10 @@ void RemoteUiClients::Impl::projectCharacter() {
         input.difficulty = online.load.difficulty;
         projectSkillUseFacts(input);
         if(const auto level=stat("level")) {
+            if(data.profile=="lod-named-txt-v1") {
+                input.magicArrow=knownEquipmentStat("item_magicarrow",int(*level));
+                input.explosiveArrow=knownEquipmentStat("item_explosivearrow",int(*level));
+            }
             if(const auto itemPierce=knownSelfEquipmentStat("item_pierce",int(*level));itemPierce && w.playerBaseSkillsAssigned) {
                 int chance=*itemPierce;
                 for(const auto &[skillId,record]:data.skills.skills) if(record.passiveContribution.amazon && record.passiveContribution.amazon->stat==AmazonPassiveStat::Pierce) {

@@ -203,10 +203,10 @@ class SceneView {
     using ClientMissile = ClientMissileVisual;
     std::vector<ClientMissile> clientMissiles_;
     std::vector<EntityId> clientMissileHiddenOwners_;
-    std::vector<ClientMissileObjectOverlay> clientMissileObjectOverlays_;
+    std::vector<ClientMissileOverlay> clientMissileOverlays_;
     uint64_t projectileVisualRandom_ = 0;
     uint64_t nextClientMissile_ = 0;
-    void createMissileImpactVisuals(int missileId, Vec position);
+    void createMissileImpactVisuals(int missileId, Vec position, uint64_t &missileRandom);
     void createIceShatter(Vec position, int size);
     void createBlizzardFall(int missileId, Vec position);
     TileVisibility worldVisibility_;
@@ -315,7 +315,8 @@ class SceneView {
     const ExitView *exitAt(Vec mouse) const;
     SceneView(Archives &, const ClassicData &, WeatherCycleState &, const IActorClient &, IInventoryClient &,
                 ICharacterClient &, IQuestClient &, INpcClient &, IMapClient &, const AudioSettings & = {});
-    void updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events, Vec listener);
+    void updateWorldAudio(float clock, std::vector<SoundActorView> &actors,
+                          std::vector<PresentationSoundEvent> &events, Vec listener, Vec terrainOrigin);
     void updateAreaTitle(uint64_t game,int level,const std::optional<std::array<uint8_t,37>> &availability);
     void playUiSound(std::string_view sound);
     int soundPeriod() const;
@@ -361,7 +362,7 @@ class SceneView {
     void clearClientMissiles();
     const std::vector<ClientMissile> &clientMissiles() const;
     std::vector<EntityId> takeClientMissileHiddenOwners();
-    std::vector<ClientMissileObjectOverlay> takeClientMissileObjectOverlays();
+    std::vector<ClientMissileOverlay> takeClientMissileOverlays();
     void retireClientMissileRoom(const std::array<int,3> &room);
     std::optional<int> weaponMissile(std::string_view code) const;
     Vec clientMissilePosition(const ClientMissile &, const Grid &, Vec origin) const;

@@ -87,7 +87,7 @@ DebugAi::Impl::NavigationExperience DebugAi::Impl::parseExperience(const Json &v
 }
 const DebugAi::Impl::AreaExperience *DebugAi::Impl::areaExperience(const Context &c) const {
     if(!area) return nullptr;
-    const auto found=navigationExperience.find(*area);if(found==navigationExperience.end()) return nullptr;
+    const auto found=navigation.navigationExperience.find(*area);if(found==navigation.navigationExperience.end()) return nullptr;
     const auto &profile=found->second;
     if(profile.bounds) if(const auto *memory=c.walk.navigationSearch().explorationMemory.area(*area)) {
         const auto &b=*profile.bounds;
@@ -108,8 +108,8 @@ std::optional<OnlinePoint> DebugAi::Impl::experienceHint(const Context &c,const 
             const int x=int(offset.x)+(town?town->origin.x:0),y=int(offset.y)+(town?town->origin.y:0);
             if(x>65535 || y>65535 || (town && (offset.x>=town->width || offset.y>=town->height))) continue;
             const OnlinePoint at{uint16_t(x),uint16_t(y)};
-            if(checkedHints.contains({*area,selector.type,selector.identity,at.x,at.y})) continue;
-            if(approachHint==at) return at; // Keep an already submitted relay.
+            if(navigation.checkedHints.contains({*area,selector.type,selector.identity,at.x,at.y})) continue;
+            if(navigation.approachHint==at) return at; // Keep an already submitted relay.
             const float span=(Vec{float(x),float(y)}-c.position).length();
             if(span<closest) {closest=span;result=at;}
         }
@@ -117,9 +117,9 @@ std::optional<OnlinePoint> DebugAi::Impl::experienceHint(const Context &c,const 
     return result;
 }
 std::optional<DebugExplorationMemory::Cell> DebugAi::Impl::experienceDirection(const Context &c,ExplorationFocus focus) const {
-    if(focus!=ExplorationFocus::Connection || !legDestination) return {};
+    if(focus!=ExplorationFocus::Connection || !navigation.legDestination) return {};
     const auto *profile=areaExperience(c);if(!profile) return {};
-    const auto found=profile->travelDirections.find(*legDestination);
+    const auto found=profile->travelDirections.find(*navigation.legDestination);
     if(found==profile->travelDirections.end()) return {};
     return found->second;
 }

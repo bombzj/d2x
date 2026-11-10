@@ -92,12 +92,12 @@ std::vector<DebugAi::Impl::VisualThreat> DebugAi::Impl::visibleThreats(const Con
         return !hazard.unitSource && threatClearance({&hazard, 1}, c.position) < 0;
     });
     const auto &world = c.session.read().world;
-    bool vulnerable = combatMaxLife && *combatMaxLife > 0 && world.life &&
-        uint64_t(*world.life) * 100 <= uint64_t(*combatMaxLife) * policy.retreatLifePercent;
-    if (combatMaxLife && *combatMaxLife > 0 && world.life)
-        for (const auto &sample : combatLifeSamples)
+    bool vulnerable = battle.combatMaxLife && *battle.combatMaxLife > 0 && world.life &&
+        uint64_t(*world.life) * 100 <= uint64_t(*battle.combatMaxLife) * policy.retreatLifePercent;
+    if (battle.combatMaxLife && *battle.combatMaxLife > 0 && world.life)
+        for (const auto &sample : battle.combatLifeSamples)
             vulnerable |= sample.life > *world.life && uint64_t(sample.life - *world.life) * 100 >=
-                uint64_t(*combatMaxLife) * policy.lifeDropPercent;
+                uint64_t(*battle.combatMaxLife) * policy.lifeDropPercent;
     if (incoming < 3 && !vulnerable)
         std::erase_if(hazards, [](const auto &hazard) { return !hazard.dangerous; });
     return hazards;
@@ -119,18 +119,18 @@ bool DebugAi::Impl::avoidHazards(Context &c) {
     const auto safety=[&](Vec at) {return threatClearance(hazards,at);};
     const float current=safety(c.position);
     const auto sources=std::count_if(hazards.begin(),hazards.end(),[](const auto &threat){return threat.unitSource;});
-    hazardDiagnostics={{"dangerousHostileMissiles",hazards.size()-size_t(sources)},{"unitThreatSources",sources},{"clearance",current},{"status","clear"}};
-    hazardDiagnostics["unitThreats"]=Json::array();
+    battle.hazardDiagnostics={{"dangerousHostileMissiles",hazards.size()-size_t(sources)},{"unitThreatSources",sources},{"clearance",current},{"status","clear"}};
+    battle.hazardDiagnostics["unitThreats"]=Json::array();
     for(const auto &hazard:hazards) if(hazard.unitSource)
-        hazardDiagnostics["unitThreats"].push_back({hazard.id,hazard.from.x,hazard.from.y});
-    if(hazardDodge) {
-        const bool reached=(Vec{float(hazardDodge->x),float(hazardDodge->y)}-c.position).length()<=3;
-        const Vec destination{float(hazardDodge->x),float(hazardDodge->y)};
-        if(!reached && now<hazardDodgeUntil && walkState(c)!="failed" && safety(destination)>=1) {
-            if(!c.walk.active()) walk(c,{{"goal","point"},{"x",hazardDodge->x},{"y",hazardDodge->y},{"interact",false},{"purpose","combat-evade"}});
-            mobility(c);wait("combat-evade","Moving to the selected observed safe position");hazardDiagnostics["status"]="evading";return true;
+        battle.hazardDiagnostics["unitThreats"].push_back({hazard.id,hazard.from.x,hazard.from.y});
+    if(battle.hazardDodge) {
+        const bool reached=(Vec{float(battle.hazardDodge->x),float(battle.hazardDodge->y)}-c.position).length()<=3;
+        const Vec destination{float(battle.hazardDodge->x),float(battle.hazardDodge->y)};
+        if(!reached && now<battle.hazardDodgeUntil && c.walk.observe().state!=DebugWalkState::Failed && safety(destination)>=1) {
+            if(!c.walk.active()) walk(c,{.goal=DebugWalkGoal::Point,.point=OnlinePoint{battle.hazardDodge->x,battle.hazardDodge->y},.interact=false,.purpose="combat-evade"});
+            mobility(c);wait("combat-evade","Moving to the selected observed safe position");battle.hazardDiagnostics["status"]="evading";return true;
         }
-        cancelWalk(c);hazardDodge.reset();
+        cancelWalk(c);battle.hazardDodge.reset();
     }
     if(hazards.empty() || current>=0) return false;
     const auto *map=c.town.map();const auto origin=c.town.read().origin;
@@ -164,15 +164,16 @@ bool DebugAi::Impl::avoidHazards(Context &c) {
         const float score=clearance-.1f*float(radius);
         if(score>best) {best=score;selected=point;}
     }
-    if(!selected) {hazardDiagnostics["status"]="no-observed-safe-position";return false;}
+    if(!selected) {battle.hazardDiagnostics["status"]="no-observed-safe-position";return false;}
     releaseCombat(c);cancelWalk(c);
-    combatRun.kitePoint.reset();combatRun.kiteAfterCast=false;
-    if(combatTarget && combatRun.suspendedAt==Clock::time_point{}) combatRun.suspendedAt=now;
-    hazardDodge=selected;hazardDodgeUntil=now+std::chrono::seconds(2);
-    hazardDiagnostics["status"]="evading";hazardDiagnostics["destination"]={selected->x,selected->y};
+    battle.retreatPoint.reset();battle.combatRun.reposition.reset();
+    battle.combatRun.kitePoint.reset();battle.combatRun.kiteAfterCast=false;
+    if(battle.combatTarget && battle.combatRun.suspendedAt==Clock::time_point{}) battle.combatRun.suspendedAt=now;
+    battle.hazardDodge=selected;battle.hazardDodgeUntil=now+std::chrono::seconds(2);
+    battle.hazardDiagnostics["status"]="evading";battle.hazardDiagnostics["destination"]={selected->x,selected->y};
     note("hazard-dodge-selected",std::to_string(selected->x)+","+std::to_string(selected->y)+
         " missiles="+std::to_string(hazards.size()-size_t(sources))+" units="+std::to_string(sources));
-    walk(c,{{"goal","point"},{"x",selected->x},{"y",selected->y},{"interact",false},{"purpose","combat-evade"}});
+    walk(c,{.goal=DebugWalkGoal::Point,.point=OnlinePoint{selected->x,selected->y},.interact=false,.purpose="combat-evade"});
     mobility(c);return true;
 }
 } // namespace d2x

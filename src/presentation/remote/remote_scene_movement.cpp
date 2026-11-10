@@ -1,4 +1,5 @@
 #include "remote_scene_impl.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include "gameplay/rules/pd2_phasing.hpp"
 #include "gameplay/skills/cast_timing.hpp"
 
@@ -6,22 +7,11 @@ namespace d2x {
 
 std::optional<std::pair<int,int>> RemoteScene::Impl::findPlayerLeapLanding(
     const OnlineUnit &u,Vec start,Vec target,int range,const Map &map,Vec origin) const {
-    const int x=int(std::floor(start.x)),y=int(std::floor(start.y));
-    int tx=int(std::floor(target.x)),ty=int(std::floor(target.y));
-    const int distance=std::max(1,unitCoordinateDistance(x,y,tx,ty));
-    if(distance>range) {tx=x+nativeMultiply(tx-x,range)/distance;ty=y+nativeMultiply(ty-y,range)/distance;}
-    const int dx=std::clamp(ty-y,-2,2),dy=std::clamp(x-tx,-2,2);
     const auto collision=navigationCollision(map.grid,origin,u.key);
-    const auto clear=[&](int column,int line) {
-        // Linked collision rooms already return FFFF for unavailable cells.
-        return collision.walkable(Vec{float(column),float(line)}-origin,{0x1c09,unitSize(u)});
-    };
-    for(const auto &[cx,cy]:{std::pair{tx,ty},std::pair{tx+dx,ty+dy},std::pair{tx-dx,ty-dy}}) {
-        const auto free=nativeSpawnCoordinate(cx,cy,50,clear);
-        if(free && unitCoordinateDistance(x,y,free->first,free->second)<=range &&
-           map.grid.collisionSegment(Vec{float(x),float(y)}-origin,Vec{float(free->first),float(free->second)}-origin,0x804)) return free;
-    }
-    return {};
+    const auto landing=nativeLeapLanding(map.grid,collision,start-origin,target-origin,range,unitSize(u));
+    if(!landing) return {};
+    const auto point=*landing+origin;
+    return std::pair{int(point.x),int(point.y)};
 }
 bool RemoteScene::Impl::displayPlayerLeap(const OnlineUnit &u,Motion &m,const Map &map,Vec origin) {
     const bool controlled=u.key.id==playerId;
@@ -68,25 +58,36 @@ bool RemoteScene::Impl::displayPlayerLeap(const OnlineUnit &u,Motion &m,const Ma
             rank=known->effectiveRank;
         }
         if(!destination || rank<1) return false;
-        const auto range=skillCalculation(*skill,rank,"aurarangecalc",u.key);
+        const bool leapAttack=!pd2 && skills.number(row->second,"cltdofunc")==44;
+        const auto range=leapAttack?std::optional<int>{}:skillCalculation(*skill,rank,"aurarangecalc",u.key);
         std::optional<int> speed;
         if(pd2) speed=skillCalculation(*skill,rank,"calc2",u.key);
         else if(u.classId && *u.classId<characterRows.size()) speed=charstats.number(characterRows[*u.classId],"RunVelocity");
-        if(!range || !speed || *range<1 || (!pd2 && *speed<=0)) {
+        if((!leapAttack && (!range || *range<1)) || !speed || (!pd2 && *speed<=0)) {
             effectLimitations.insert("Original leap range or velocity unresolved");return false;
         }
-        // Retail CltSt29/C66A0 uses the range formula, then three rotated
-        // candidates with the original free-coordinate search and 804 ray.
         const int x=int(std::floor(m.position.x)),y=int(std::floor(m.position.y));
-        const auto landing=findPlayerLeapLanding(u,m.position,Vec{float(destination->x),float(destination->y)},*range,map,origin);
-        if(!landing) {effectLimitations.insert("Original leap landing unavailable");return false;}
+        const Vec point{float(destination->x),float(destination->y)};
+        Vec landing;
+        if(leapAttack) {
+            const auto collision=navigationCollision(map.grid,origin,u.key);
+            const auto localPoint=nativeLeapAttackLanding(map.grid,collision,m.position-origin,point-origin,unitSize(u));
+            if(!localPoint || !map.activation.room(*localPoint)) {
+                effectLimitations.insert("Original Leap Attack landing unavailable");return false;
+            }
+            landing=*localPoint+origin;
+        } else {
+            const auto found=findPlayerLeapLanding(u,m.position,point,*range,map,origin);
+            if(!found) {effectLimitations.insert("Original leap landing unavailable");return false;}
+            landing={float(found->first),float(found->second)};
+        }
         // Retail C5F20 uses CharStats.RunVelocity. PD2 CltDo97 instead
         // uses Calc2*41+2560, with its native minimum of 2560.
         const int velocity=pd2?std::max(2560,nativeAdd(nativeMultiply(*speed,41),2560)):nativeShiftLeft(*speed,8);
-        const int travel=std::max(1,unitCoordinateDistance(x,y,landing->first,landing->second));
+        const int travel=std::max(1,unitCoordinateDistance(x,y,int(landing.x),int(landing.y)));
         const auto graphics=ClientMissileGraphics::leap(travel,velocity);if(!graphics) return false;
         Motion::PlayerLeap run;run.revision=revision;run.position=m.position;run.skill=*skill;run.started=started;
-        run.destination={float(landing->first),float(landing->second)};
+        run.destination=landing;
         run.velocity=float(velocity)*25.f/4096.f;run.nextTick=time+NativePathStep::seconds;
         // Retail C65B0/C7C80: distance-dependent gravity and zero initial
         // height; flight ticks use the common native graphics accumulator.
@@ -308,6 +309,44 @@ void RemoteScene::Impl::plan(Motion &m, Vec goal, const Map &map, Vec origin, Mo
         m.route.push_back(point + origin - center);
 }
 
+bool RemoteScene::Impl::displayPlayerWhirlwind(const OnlineUnit &u,Motion &m,const Map &map,Vec origin) {
+    if(pd2 || u.key.type!=0 || playerDead(u) || !hasVisualState(u.key,"whirlwind") || !hasVisualState(u.key,"skill_move"))
+        return false;
+    const bool local=u.key.id==playerId && localCast && localCast->started>=0;
+    const auto skill=local?std::optional<int>{localCast->command.skill}:
+        u.actionSkill?std::optional<int>{*u.actionSkill}:std::nullopt;
+    const auto row=skill?skillRows.find(*skill):skillRows.end();
+    if(row==skillRows.end() || skills.number(row->second,"cltdofunc")!=45) return false;
+    const auto revision=local?localCast->revision:u.actionRevision;
+    if(m.invalidatedSkillMovement==revision) return false;
+    const auto grid=navigationCollision(map.grid,origin,u.key);
+    constexpr Vec center{.5f,.5f};
+    if(!m.scriptedSequence || m.scriptedSequence->revision!=revision) {
+        const auto target=local?localCast->command.target:u.destinationUnit;
+        auto point=local?localCast->command.point:u.destination;
+        if(target) point=targetPosition(*target);
+        if(!point || !u.classId || *u.classId>=characterRows.size()) return false;
+        const int speed=charstats.number(characterRows[*u.classId],"WalkVelocity").value_or(0);
+        const Vec aim{float(point->x),float(point->y)};
+        const auto route=grid.nativeUnitPath(m.position-origin+center,aim-origin+center,7,100,{0xc01,unitSize(u)});
+        if(route.empty() || speed<=0) return false;
+        m.scriptedSequence=Motion::ScriptedSequence{};
+        auto &run=*m.scriptedSequence;
+        run.revision=revision;run.nextTick=time+NativePathStep::seconds;
+        run.destination=route.back()+origin-center;run.velocity=float(speed)*25.f/16.f;run.moving=true;
+        m.look=(run.destination-m.position).unit();
+        m.route.clear();m.goal.reset();m.pathStep.reset();m.correction={};m.correctionLeft=0;
+    }
+    auto &run=*m.scriptedSequence;
+    while(run.moving && time>=run.nextTick) {
+        const auto step=m.pathStep.advance(grid,m.position-origin+center,run.destination-origin+center,
+            run.velocity*NativePathStep::seconds,{0x401,unitSize(u)});
+        m.position=step.position+origin-center;
+        run.moving=!step.reached && !step.blocked;
+        run.nextTick+=NativePathStep::seconds;
+    }
+    return true;
+}
 bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,const Map &map,Vec origin,MovementCollisionRule collision) {
     const auto skill=u.actionSkill?skillRows.find(*u.actionSkill):skillRows.end();
     if(pd2 && u.key.type==1 && skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==114)
@@ -556,7 +595,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         m.pathStep.reset(); m.pathElapsed=0;
         m.effectivePathType.reset();m.staminaExhausted=false;m.runningRevision=0;m.requestedRunning=false;
         m.route.clear(); m.samples.clear(); m.goal.reset(); m.pathMoving = false;
-        if(pd2 || m.playerLeap) {
+        if(pd2 || m.playerLeap || (u.key.type==0 && m.scriptedSequence)) {
             m.invalidatedSkillMovement=own && localCast?localCast->revision:u.actionRevision;
             if(own && localCast && (m.playerLeap || m.pd2PlayerCharge)) localCast.reset();
             m.playerLeap.reset();m.pd2PlayerCharge.reset();m.scriptedSequence.reset();
@@ -611,9 +650,14 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         m.castRevision = localCast->revision;
         m.position = displayed; m.correction = {}; m.correctionLeft = 0;
         m.route.clear(); m.goal.reset(); m.pathMoving = false;
+    } else if (u.key.type==1 && u.mode==0 && m.actionRevision!=u.actionRevision) {
+        // Death interrupts the path at the current displayed cell.
+        m.position=m.position+m.correction;
+        m.correction={};m.correctionLeft=0;m.pathStep.reset();m.pathElapsed=0;
+        m.route.clear();m.goal.reset();m.pathMoving=false;m.scriptedSequence.reset();
     } else if (u.key.type == 1 && !walking(u) && m.actionRevision != u.actionRevision &&
                m.positionRevision == u.positionRevision) {
-        // Target-only monster actions (including 4C/4D skills and DEATH)
+        // Target-only monster actions (including 4C/4D skills)
         // stop the path without supplying a current position. Keep the
         // continuous feet instead of returning to the last native sample.
         // Fresh position samples, including DEAD, still reconcile below.
@@ -664,7 +708,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         m.requestRevision=request?request->revision:0;
         return m.position+m.correction;
     }
-    if(displayScriptedSequence(u,m,map,origin,rule)) {
+    if(displayPlayerWhirlwind(u,m,map,origin) || displayScriptedSequence(u,m,map,origin,rule)) {
         m.pathMoving=m.scriptedSequence && m.scriptedSequence->moving;
         m.actionRevision=u.actionRevision;m.last=u.position;m.positionRevision=u.positionRevision;m.discontinuity=u.positionDiscontinuity;
         return m.position+m.correction;

@@ -237,7 +237,7 @@ std::optional<std::pair<int32_t,int32_t>> SkillFormulaValues::physicalRange(int 
         for(size_t i=0;i<steps.size();++i) steps[i]=source.number(std::string(maximum?"maxlevdam":"minlevdam")+std::to_string(i+1));
         value=nativeAdd(value,nativeAdd(source.number(maximum?"maxdam":"mindam"),nativeNarrow(skillLevelBonus(rank,steps))));
         const auto bonus=calculation(FormulaDomain::Skill,source,rank,"dmgsympercalc");if(!bonus) return {};
-        value=nativeAdd(value,nativeMultiplyDivide(value,*bonus,100));
+        value=nativeAdd(value,nativePercentage(value,*bonus,100));
         return nativeShiftLeft(value,unsigned(shift));
     };
     const auto minimum=range(false),maximum=range(true);
@@ -258,7 +258,7 @@ RuleNumber SkillFormulaValues::damage(FormulaDomain domain,const SkillFormulaRec
     if(missile || !elemental || maximum || value>256 || curve.perLevel[0]) {
         const auto bonus=calculation(domain,source,rank,elemental?"edmgsympercalc":"dmgsympercalc");
         if(!bonus) return {};
-        value=nativeAdd(value,nativeMultiplyDivide(value,*bonus,100));
+        value=nativeAdd(value,nativePercentage(value,*bonus,100));
     }
     if(missile || !elemental) value=nativeShiftLeft(value,unsigned(shift));
     if(mastery && input_.actor) {
@@ -323,11 +323,10 @@ RuleNumber SkillFormulaValues::parameter(FormulaDomain domain,const SkillFormula
         if(token=="mana" || token=="usmc" || token=="mps") {
             if(rank<=0) return 0;
             const auto shift=source.number("manashift");if(shift<0 || shift>15) return {};
-            auto value=nativeAdd(source.number("mana"),nativeMultiply(nativeSubtract(rank,1),source.number("lvlmana")));
-            // Original 1.13c RVA 51298: 25 multiplies the entire adjusted mana.
-            if(token=="mps") value=nativeDivide(nativeMultiply(value,25),2);
-            value=nativeShiftLeft(value,unsigned(shift));
-            return token=="usmc"?value:value>>8;
+            const auto base=source.number("mana"),perLevel=source.number("lvlmana");
+            if(token=="mps") return skillManaPerSecond(base,perLevel,shift,rank);
+            const auto value=skillManaCostFixed(base,perLevel,shift,rank);
+            return token=="usmc"?RuleNumber{int32_t(value)}:RuleNumber{int32_t(value>>8)};
         }
         if(token=="macr" || token=="madm" || token=="math") {
             if(rank<=0) return 0;
@@ -354,7 +353,7 @@ RuleNumber SkillFormulaValues::parameter(FormulaDomain domain,const SkillFormula
         if(!missile && rank<=0) return 0;
         std::array<int,3> steps{};for(size_t i=0;i<steps.size();++i) steps[i]=source.number("elevlen"+std::to_string(i+1));
         auto value=nativeAdd(source.number("elen"),nativeNarrow(skillDurationBonus(rank,steps)));
-        if(!missile) {const auto bonus=calculation(domain,source,rank,"elensympercalc");if(!bonus) return {};value=nativeAdd(value,nativeMultiplyDivide(value,*bonus,100));}
+        if(!missile) {const auto bonus=calculation(domain,source,rank,"elensympercalc");if(!bonus) return {};value=nativeAdd(value,nativePercentage(value,*bonus,100));}
         return value;
     }
     if(!missile && token.size()==4 && ((token[0]=='m' && token[1]>='1' && token[1]<='3') || token=="me3o" || token=="me3y")) {

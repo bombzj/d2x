@@ -49,13 +49,15 @@ StepStatus System::advanceUnitAuraCycle(const ActorContext &actor,EntityId id,Pa
             cycle.damage.value_or(0),cycle.progress,target==id);
         if(isDeferred(result.status)) return StepStatus::Blocked;
         if(target==id && !cycle.recipientsPrepared) {
+            const bool townSuppressesPulse=area.definition.town &&
+                (a.serverDoFunction==66 || a.serverDoFunction==81 || a.serverDoFunction==82);
             if(!cycle.damage) {
                 const auto after=evaluateUnitAura(id,cycle.skill,cycle.rank,tick);
                 cycle.aura.minimumDamage=after.minimumDamage;cycle.aura.maximumDamage=after.maximumDamage;cycle.aura.radius=after.radius;
-                if((a.serverDoFunction==66 || a.serverDoFunction==81) && area.definition.town) cycle.damage=0;
+                if(townSuppressesPulse) cycle.damage=0;
                 else {const auto rolled=rollAuraDamage(id,a,tick);if(!rolled) return StepStatus::Blocked;cycle.damage=*rolled.value;}
             }
-            if(!((a.serverDoFunction==66 || a.serverDoFunction==81) && area.definition.town)) {
+            if(!townSuppressesPulse) {
                 auto recipients=auraCandidateRecipients(id,a,m->area,tick);
                 cycle.targets.insert(cycle.targets.end(),recipients.begin(),recipients.end());
             }

@@ -43,6 +43,7 @@ class LightingView {
     std::optional<int> sanctumIntensity_;
     int fadeLevel_{-1},fadeFrame_{},fadeDown_{},fadeRise_{},fadeTotal_{},fadeAngle_{};
     float fadeFactor_{1};
+    bool fadeNativeRooms_{};
     Vec origin_{};
     Color ambient_{};
     struct Sources;
@@ -63,7 +64,7 @@ class LightingView {
     void setEclipse(bool active);
     void setDenIntensity(std::optional<int> intensity) { denIntensity_=intensity; }
     void setSanctumIntensity(std::optional<int> intensity) { sanctumIntensity_=intensity; }
-    void beginAmbientFade(int level,int down,int hold,int up);
+    void beginAmbientFade(int level,int down,int hold,int up,bool useNativeRoomPriority);
     void prepare(const Grid &grid, const LevelRecord &level, Vec player, int radius, Color playerColor,
                  std::span<const SceneLight> lights, std::span<const SceneLightRegion> regions,
                  Rectangle worldBounds);

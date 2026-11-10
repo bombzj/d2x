@@ -400,7 +400,6 @@ void System::resetAiFunctionMemory(EntityId id) {
     unit.aiHomeCommand.reset();unit.baalThroneWave=0;++unit.revision;
 }
 void System::registerPet(Actor &unit) noexcept {
-    publishInitialAi(unit);
     if(!unit.owner || unit.conversion || unit.rule.petType<=0 || unit.petRegistrationOrder || unit.petUnregistered) return;
     if(state_.nextPetRegistrationOrder==UINT64_MAX) std::terminate();
     unit.petRegistrationOrder=state_.nextPetRegistrationOrder++;

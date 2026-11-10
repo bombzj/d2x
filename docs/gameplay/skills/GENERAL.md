@@ -6,7 +6,7 @@
 
 | ID／技能 | 原程序与数据依据 | 当前实现 |
 | --- | --- | --- |
-| 0 Attack | SrvSt1／SrvDo1、CltSt1／CltDo1；SrcDam128，range=both | 空手／普通近战与弓弩统一进入 skills.weapon；公共武器六通道与命中计算，missiles／combat 执行。弓弩读取物品映射的 arrow／bolt，释放时消耗对应箭袋／弩矢 |
+| 0 Attack | SrvSt1／SrvDo1、CltSt1／CltDo1；SrcDam128，range=both | 空手／普通近战与弓弩统一进入 skills.weapon；公共武器六通道与命中计算，missiles／combat 执行。弓弩按装备属性选择魔法箭、爆裂箭或普通箭／弩矢 |
 | 1 Kick | 隐藏通用程序；SrvSt2／SrvDo2、KK，SkillDesc.ListRow=-1；Objects.OperateFn5 | 各职业操作普通木桶时自动调用，保持左右键选择；KK使用原AnimData，破坏／掉落仍归objects／loot。单位目标按St02固定伤害及击退执行，当前MinDam空值编译为0；不使用刺客踢腿／靴伤公式 |
 | 2 Throw | SrvSt65／SrvDo3、CltSt2／CltDo2；itypea1=thro | 选择当前主武器，必须真实可投掷；弹体和数量来自物品，TH释放时原子扣一件 |
 | 3 Unsummon | SrvSt3／SrvDo4、CltSt3；PetType.unsummon | companions 检查本人归属、原PetType许可和当前存活单位；释放时复验，退役不产生敌人经验／掉落，原7A删除归属并保留死亡显示直到移除 |
@@ -28,6 +28,12 @@ Kick不是其他职业可学习或应展示在选择器中的踢腿技能；刺�
 通用攻击的服务端释放tick取当前MPQ AnimData动作帧；客户端预测动作不证明服务端接受或命中。`loadSkillAnimations`按CharacterDefinition.appearance读取角色COF／AnimData，不使用技能树图标token；刺客ai／as、德鲁伊dz／dr不可混用。原依据为D2MOO D2Composit::COMPOSIT_GetCof使用PlrType类token，以及Units::UNITS_SetAnimActionFrame／UNITS_GetEventFrameInfo消费动画事件；全部职业／武器动作组合仍待原版对齐。
 
 Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀、弓／弩和六种投掷药瓶；不依物品名字猜等级。普通投掷按真实武器计算，弓弩按shoots匹配活动组的箭袋。开始时检查可用弹药，释放时重新选择并复验同一物品／手位／武器类型及数量；最后一发药瓶删除物品，普通投掷武器保留零数量以供补充。最后一件删除后不再读取失效物品；扣费与背压的公共要求见COMMON。
+
+### 普通射击的装备弹体
+
+原1.13c D2Common RVA 50D40／ordinal10709先取拥有者的正值 `item_magicarrow`，其次取正值 `item_explosivearrow`，其值作为弹体等级。弹体行由当前MPQ的magicarrow／explodingarrow链接。原版D2Game SrvSt1 RVA A1630→9EB80读取武器本件的魔法箭属性以豁免起手箭量检查。SrvDo1 RVA A2C40在释放时重新选弹体，只有magicarrow跳过扣箭，explodingarrow与普通射击仍原子扣箭。魔法转换及爆炸命中继续由各自Missiles程序处理，手位仍保留普通攻击。
+
+D2Client CltDo1 RVA A2230使用同一选择函数。D2X客户端从已解码的本人装备读取这两项属性，按词缀等级创建对应弹体。远端没有完整装备时沿用已观察的弓／弩信息。完整多人状态和释放帧换装组合仍待核对。
 
 药瓶遵循SrcDamage=0与原SrvHit2／3：火瓶采用原Missiles固定物理／火通道及范围；毒瓶生成原毒云子弹体并执行毒伤／期限。`rollPotionDamage`不继承装备元素、武器增强伤害或致命概率。地面目标不在沿途撞到单位时提前触发，地形或寿命结束时执行一次原命中程序。
 
@@ -74,7 +80,7 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 | St32／39＋Do2（含佣兵Bash／Stun） | 起手Alloc，动作兑现；St32独立calc3速率列表随模式撤出，calc2在接收后只改物理分量，不重算缓存总伤害／暴击 |
 | Vengeance St35＋Do2 | 独立物理预填、三元素共同基数分别精通／轮转／冷长度，随后才Fill目标AC与装备元素，不再掷普通Fill暴击 |
 | Sacrifice St29＋Do64 | 用已分配物理与目标当前HP算反噬，在目标Drain之前提交，已删除伤害后FollowUp反噬 |
-| Conversion St32＋Do79 | 成功位、身份／AI资格及源种子机会判定先于Drain；转换成功撤出联系，失败才Drain |
+| Conversion St32＋Do79 | LoD检查已分配的联系、身份／AI资格和施放者种子；未命中也可能转换。转换成功撤出联系，失败才Drain |
 | Jab／Impale／PowerStrike／ChargedStrike／LightningStrike | 起手分配／Do兑现；Impale专用耐久／数量机会在Alloc前，普通Drain磨损另算；专用子弹体按原回调出生 |
 | Zeal／Fend／Fury、DoubleSwing／Frenzy | 分别读取公式、候选和手位；Do70执行期投递速率，不提前给起手加50；Frenzy读取前击成功参数，回绕保留联系游标 |
 | Charge／Whirlwind／LeapAttack | Charge按原怪物class切模式属性，hitclass70／overlay147；WW每次尝试切手并读取所选武器的原间隔；LeapAttack保留落地查找、成功门控、overlay和清晕 |
