@@ -92,6 +92,8 @@ Skills.skilldesc关联SkillDesc的IconCel／ListRow／ListPool及当前职业图
 
 ## 传送点与菜单
 
+PD2 Quick Cast临时选择绑定技能并提交施放后，至少等待150毫秒，再在战斗请求可用时恢复该手原技能及来源。失焦保留已排定的恢复；重新选技能、切换武器组、新局或换区取消旧恢复。
+
 传送点菜单读取当前MPQ的800borderframe、waygatebackground、waygateicons及expwaygatetabs。地点取Levels.Waypoint，旅行须有原0x63菜单和历史解锁位。当前位置显示蓝色传送门，点击当前或未激活地点不会提交旅行。启动期间点击／ON动画的原版依据与时序缺口见[物件](../world/OBJECTS.md#自研传送点)。
 
 零售1.13c D2Client RVA `0xAAFBF`选择D2Win字体1，对应字体名表RVA `0x1C588`的font16。标题和地名按当前语言的DC6字形、TBL字宽及原基线绘制。标题在面板(160,48)居中，本幕有其他可用目的地时读取TBL 3990，否则读取3991。九行地名左端为80，首行基线84，行距35。图标底锚和点击区取自D2Client RVA `0xDE6D8`的逐行记录。静止状态下，可旅行地点用原字色0，当前位置用蓝色3，未激活地点用灰色5。关闭按钮悬停文案读取TBL 4130。绘制与命中入口为`presentation/hud/waypoint_view.cpp`。多语言、不同窗口比例及按压态仍待实机对照。

@@ -46,12 +46,23 @@ bool SceneController::handleSkills(const FrameInput &input) {
             auto skill = hotkeys[i].skill;
             if (skill >= 0 && !(view_.characterView().skill(skill,hotkeys[i].owner) && view_.characterView().skill(skill,hotkeys[i].owner)->available)) continue;
             const SelectMouseSkill selection{skill, hotkeys[i].right, hotkeys[i].owner};
+            const auto &character = view_.characterView();
+            const auto index = character.weaponSet * 2 + size_t(selection.right);
+            auto restore = SelectMouseSkill{character.selectedSkills[index], selection.right,
+                character.selectedSkillOwners[index]};
+            if (quickCastRestore_ && quickCastRestore_->weaponSet == character.weaponSet &&
+                quickCastRestore_->selection.right == selection.right)
+                restore = quickCastRestore_->selection;
+            if (quickCast_ && quickCast_->weaponSet == character.weaponSet &&
+                quickCast_->selection.right == selection.right)
+                restore = quickCast_->restoreSelection;
             quickCast_.reset();
+            quickCastRestore_.reset();
             lastSkillHotkey_ = i;
             if (ui.bhEnabled && ui.bhQuickCast && input.primarySkillPresses[i] &&
                 !input.leftPressed && !input.rightPressed && !input.weaponSwap) {
                 quickCast_ = QuickCastPending{selection, view_.characterView().weaponSet,
-                    std::chrono::steady_clock::now() + std::chrono::seconds(1)};
+                    std::chrono::steady_clock::now() + std::chrono::seconds(1), false, restore};
                 cancelWorldGesture();
                 break;
             }
@@ -63,6 +74,7 @@ bool SceneController::handleSkills(const FrameInput &input) {
         }
     }
     if (input.previousSkill || input.nextSkill) {
+        quickCastRestore_.reset();
         quickCast_.reset();
         // Retail D2Client 3D6D0 cycles sixteen hotkey slots from the last
         // selected slot, skipping left-hand bindings and unavailable owners.
@@ -90,6 +102,7 @@ bool SceneController::handleSkills(const FrameInput &input) {
             for (const auto &slot : view_.skillPickerSlots(right))
                 if (CheckCollisionPointRec(rv(input.mouse), slot.bounds)) {
                     (right ? ui.rightSkill : ui.leftSkill) = slot.skill;
+                    quickCastRestore_.reset();
                     characterClient_.submit(SelectMouseSkill{slot.skill.value_or(-1), right, slot.owner});
                     break;
                 }
@@ -131,6 +144,7 @@ void SceneController::handleQuickCast(const FrameInput &input, const WorldInputV
             quickCast_.reset();
         return;
     }
+    const auto pending = *quickCast_;
     quickCast_.reset();
     if (!world.quickCastSkillSupported) return;
 
@@ -144,5 +158,7 @@ void SceneController::handleQuickCast(const FrameInput &input, const WorldInputV
     intent.stationary = input.standStill;
     intent.expectedSkill = ActorControlIntent::CastSkill{skill, selection.owner};
     actorClient_.control(intent);
+    quickCastRestore_ = QuickCastRestore{pending.restoreSelection, pending.weaponSet,
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(150)};
 }
 } // namespace d2x
