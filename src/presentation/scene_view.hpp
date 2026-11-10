@@ -15,6 +15,7 @@
 #include "presentation/world/tile_visibility.hpp"
 #include "presentation/world/weather_debug.hpp"
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -100,6 +101,8 @@ struct ViewState {
     Vec shopConfirmAt;
     int shopConfirmChoice = 0;
     std::optional<ItemHandle> shopSalePending;
+    uint64_t shopRejectionRevision{}, shopRejectionDismissed{};
+    Vec shopRejectionAt;
     EntityId waypointSource;
     int waypointAct = 0;
     float animationTime = 0;
@@ -155,6 +158,14 @@ class SceneView {
     IMapClient &mapClient_;
     mutable MapSceneView mapView_;
     NpcConversationView npcView_;
+    using NpcSpeechClock = std::chrono::steady_clock;
+    NpcSpeechClock::time_point npcSpeechOpened_;
+    struct NpcScrollClock {
+        uint32_t start, last, average = 0, interpolated = 0;
+        uint16_t repeats = 0;
+    };
+    std::optional<NpcScrollClock> npcScrollClock_;
+    std::optional<unsigned> akaraGossipChoice_;
     NpcSceneView npcScene_;
     mutable ShopView shopView_;
     mutable HirelingView hirelingView_;
@@ -232,6 +243,7 @@ class SceneView {
     void drawNpcDialogue() const;
     void displayNpcDialogue(EntityId object, std::string speaker, std::string text);
     void advanceNpcDialogue(float dt);
+    unsigned chooseAkaraGossip();
     void drawNpcMenu(Vec mouse) const;
     void drawNpcShop(Vec mouse) const;
     void drawWaypointMenu(Vec mouse) const;
@@ -428,6 +440,7 @@ class SceneView {
     void notice(std::string text, bool error = false);
     void openNpcDialogue(EntityId object, std::string speaker, std::string text, std::optional<uint32_t> stringId = {});
     bool npcSpeechFinished() const;
+    bool canSkipNpcSpeech() const;
     void cancelNpcDialogue();
     void openNpcMenu(EntityId object, std::string speaker, bool firstIntroduction);
     bool startNpcTalk();
@@ -442,6 +455,7 @@ class SceneView {
     void scrollNpcDialogue(int amount);
     bool closeNpcDialogue();
     std::optional<uint32_t> clickNpcShop(Vec mouse, bool directBuy = false);
+    bool handleNpcShopRejection(Vec mouse, bool confirm, bool click);
     std::optional<RegionId> clickWaypointMenu(Vec mouse);
     void scrollNpcShop(int pages);
     bool showNextNpcGossip();

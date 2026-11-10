@@ -15,14 +15,14 @@ void DebugAi::Impl::releaseCombat(Context &c) {
     battle.combatOwned=false;battle.combatRun.repeating=false;
 }
 void DebugAi::Impl::observeCombat(Context &c) {
-    const auto now=Clock::now();const auto &world=c.session.read().world;
+    const auto now=Clock::now();const auto &world=c.observation.read().world;
     // Reuse only an actually observed animation, under the same player,
     // equipment and state inputs. A stale current-cast object cannot refresh
     // the estimate after those inputs change.
-    const auto player=world.units.find({0,c.session.read().load.playerUnitId.value_or(0)});
+    const auto player=world.units.find({0,c.observation.read().load.playerUnitId.value_or(0)});
     if(c.supplies && c.supplies->navigationFasterCast && c.supplies->observedCastSeconds && player!=world.units.end()) {
         const auto sample=c.supplies->observedCastSeconds(definitions->skill("Teleport"));
-        const auto key=std::tuple{c.session.read().gameGeneration,player->first.id,player->second.assignmentRevision,
+        const auto key=std::tuple{c.observation.read().gameGeneration,player->first.id,player->second.assignmentRevision,
             player->second.appearanceRevision,player->second.stateSequence,world.itemRevision,
             c.supplies->navigationWeaponSet,*c.supplies->navigationFasterCast};
         if(navigation.teleportTiming.key!=key) {
@@ -56,7 +56,7 @@ void DebugAi::Impl::observeCombat(Context &c) {
 }
 bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool planningDefense,
         const RouteCombatTask *task) {
-    const auto &view=c.session.read();const auto now=Clock::now();
+    const auto &view=c.observation.read();const auto now=Clock::now();
     if(!policy.enabled || c.town.read().town || view.world.npcRequested || view.world.waypointSource) return false;
     if(!battle.excursionSkill) throw std::runtime_error("No configured attack met the departure skill requirements");
     if(nearbyDefense && (view.world.npcConversation || view.world.waypointRequested || view.world.staffSource ||
@@ -141,7 +141,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
     const bool falling=lossPercent>=policy.lifeDropPercent;
     const bool scarce=singleThreat && (required || boss) && !healing && lifePercent>=0 && lifePercent<70;
     if(!navigation.passageDefending && (!task || task->preferAreaAttack) && (close>=policy.crowd || (singleThreat && (lowLife || falling || scarce))) && now>=battle.retreatReady) {
-        const auto safe=selectCombatPosition(c,selection,sight,localThreats,true,policy.range);
+        const auto safe=selectCombatPosition(c,selection,sight,localThreats,true,combatRange(c,skill));
         battle.retreatReady=now+std::chrono::seconds(4);
         if(safe) {
             releaseCombat(c);cancelWalk(c);run.reposition.reset();run.kitePoint.reset();run.kiteAfterCast=false;
@@ -166,7 +166,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
     if(cooldownAttack(c,*chosen,attack,support,ray,planningDefense,task,now)) return true;
     // Resume a ready primary from a valid firing position before continuing
     // optional circling. Survival retreats above retain their priority.
-    if(!run.waitingForDelay && ray && (targetPosition-c.position).length()<=policy.range) {
+    if(!run.waitingForDelay && ray && (targetPosition-c.position).length()<=combatRange(c,skill)) {
         if(run.kitePoint) {cancelWalk(c);run.kitePoint.reset();}
         run.kiteAfterCast=false;
     }
@@ -202,7 +202,8 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
     sight.mask=combatAttackMask(c,skill);ray=sight.clear(c.position,targetPosition);
     battle.combatDiagnostics["lineClear"]=ray;
     const int range=skill==definitions->staticFieldSkill && support.range?std::max(2,*support.range-2):
-        meleeAttack(c,skill)?3:policy.range;
+        combatRange(c,skill);
+    battle.combatDiagnostics["attackRange"]=range;
     if(((navigation.pendingWaypoint || (navigation.pendingDoor && !nearbyDefense)) && (!ray || (targetPosition-c.position).length()>range)) ||
         (view.world.combatRequest && view.world.combatRequest->state==OnlineCombatRequest::State::Pending)) {
         // A real opening/selection/animation wait has its own contract and

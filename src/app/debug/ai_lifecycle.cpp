@@ -57,7 +57,7 @@ void DebugAi::Impl::resetStep() {
     behaviorLog.endPhase();phaseReported=false;
     navigation.resetStep();submissionWaits.clear();battle.resetStep();continuation=Continuation::None;
     phase.clear();reason.clear();target.reset();targetAssignment=0;
-    objectIssued=portalIssued=portalAttempted=portalUsed=greetingIssued=false;
+    objectIssued=portalIssued=portalAttempted=portalUsed=false;
     pickup.reset();pickupApproaches.clear();oldPortals.clear();actionDeadline={};actionWaitSubmitted=false;
 }
 void DebugAi::Impl::suspendExecution(Context &c,Clock::duration suspended) {
@@ -85,7 +85,7 @@ void DebugAi::Impl::suspendExecution(Context &c,Clock::duration suspended) {
     supply.suspend(suspended);
 }
 void DebugAi::Impl::observeArea(Context &c,Clock::time_point now) {
-    auto &town=c.town;const auto &view=c.session.read();
+    auto &town=c.town;const auto &view=c.observation.read();
     if(area!=town.read().area || areaGeneration!=view.world.areaGeneration) {
         const bool leavingTown=area && area==view.load.townArea && town.read().area && town.read().area!=view.load.townArea;
         if(town.read().town) battle.excursionSkillPrepared=false;

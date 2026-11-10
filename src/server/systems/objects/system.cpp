@@ -258,7 +258,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if(object.mode!=2) return {DomainStatus::Applied,std::monostate{}};
         return ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
     }
-    if(area->definition.act==4 && ((rule.operation>=62 && rule.operation<=67) || rule.operation==70 || rule.operation==72)) {
+    if(area->definition.act==4 && ((rule.operation>=62 && rule.operation<=67) || rule.operation==69 || rule.operation==70 || rule.operation==72)) {
         if(rule.operation==65 && object.mode) return {DomainStatus::Conflict,{}};
         if((rule.operation==66 || rule.operation==70) && object.mode!=2) return {DomainStatus::Conflict,{}};
         const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
@@ -300,7 +300,8 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         return result;
     }
     if(rule.operation==6 || rule.operation==9 || rule.operation==10 || rule.operation==12 || (rule.operation==21 && object.definition==108)) {
-        if(object.mode || object.pending) return {DomainStatus::Conflict,{}};
+        const bool readableTome = rule.operation == 6 && area->definition.questObjectMessages.contains(6);
+        if((object.mode && !readableTome) || object.pending) return {DomainStatus::Conflict,{}};
         Object *cainControl=nullptr;
         if(rule.operation==9) {
             const auto control=state_.objects.find(ports_.quests.read().actOne.cainInvisibleObject);
@@ -317,7 +318,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
                 if(cainControl->area!=actor.area) collision(cainControl->area);
             }
             if(rule.operation==12 || rule.operation==21) object.pending=true;
-            else {
+            else if (!object.mode) {
                 // A1Q4 Operate09 changes to OPERATING without scheduling
                 // ENDANIM; lit stones keep that mode until a quest restore.
                 object.mode=1;object.until=rule.operation==9?0:actor.tick+std::max(uint64_t{1},rule.openingTicks);

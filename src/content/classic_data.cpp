@@ -443,6 +443,41 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
         data.khalimRecipe = loadKhalimRecipeContent(data.items, data.tables);
         data.hirelingLayout = loadHirelingLayout(data.tables.at("inventory"));
         data.itemStrings = strings.entries();
+        if (originalRules) {
+            // Numeric titles used by retail 1.13c NPC menus and transaction results.
+            for (const int id : {923,924,925,926,927,928,930,931,932,933,934,935,937,938,939,
+                                 0x8B7,0xD1C,0xD1D,0xD1E,0xD20,0xD21,0xD22,0xD23,0xD35,0xD40,0xD43,
+                                 0xD46,0xD47,0xD48,0xD4B,0xE8C,3714,3715,3716,3717,3718,3719,
+                                 22618,22622,22627,22633,22637,22641})
+                data.npcTalkLabels.emplace(id, strings.find(id));
+            for (int id = 11; id <= 23; ++id)
+                data.npcLocalSpeech.emplace(id, strings.speech(id));
+            for (const int id : {126,254,338}) data.npcLocalSpeech.emplace(id, strings.speech(id));
+            // D2Client F37A8: first row per NPC, with nonempty introductions and no_intro clear.
+            struct Introduction { uint16_t npc, generic, alternate; uint8_t playerClass; };
+            constexpr Introduction introductions[] = {
+                {148,11,12,1}, {154,36,37,4}, {147,45,46,2}, {150,24,25,0}, {155,0,1,3},
+                {177,285,286,1}, {199,203,204,2}, {200,230,231,4}, {198,190,190,7},
+                {201,253,253,7}, {202,274,274,7}, {178,263,264,3}, {210,241,242,0},
+                {245,458,458,7}, {246,666,666,7}, {251,664,664,7}, {252,490,491,0},
+                {253,465,466,1}, {254,501,502,2}, {255,514,515,3}, {406,263,264,3},
+                {257,263,264,3}, {264,478,479,4}, {297,453,453,7}, {367,664,664,7}, {405,664,664,7},
+                {511,20025,20026,0}, {512,20014,20014,7}, {513,20037,20038,1}, {514,20053,20054,6},
+                {515,20065,20067,5}, {521,664,664,7}, {520,20003,20003,7}, {527,20014,20014,7},
+                {537,20014,20014,7}, {538,20014,20014,7}, {539,20014,20014,7},
+            };
+            for (const auto &entry : introductions) {
+                auto &byClass = data.npcTalkIntroductions[entry.npc];
+                byClass.fill(entry.generic);
+                if (entry.playerClass < 7) byClass[entry.playerClass] = entry.alternate;
+            }
+            // 49130 has three expansion class overrides by row index.
+            data.npcTalkIntroductions.at(513)[4] = 20039;
+            data.npcTalkIntroductions.at(514)[2] = 20055;
+            data.npcTalkIntroductions.at(515)[3] = 20066;
+            for (const auto &[npc, choices] : data.npcTalkIntroductions)
+                for (auto id : choices) data.npcLocalSpeech.try_emplace(id, strings.speech(id));
+        }
         // The native tooltip uses numeric TBL IDs; the ethereal entry shares key "X".
         data.itemStrings["itemEthereal"] = strings.find(22745);
         data.itemStrings["itemEnhancedDamage"] = strings.find(10023);

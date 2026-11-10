@@ -13,12 +13,17 @@ bool debug_ai::CombatSight::clear(Vec from,Vec to) const {
     return grid && grid->collisionSegment(from-offset+Vec{.5f,.5f},to-offset+Vec{.5f,.5f},mask);
 }
 
+int DebugAi::Impl::combatRange(const Context &c,uint16_t skill) const {
+    if(meleeAttack(c,skill)) return 3;
+    const auto configured=policy.skillRanges.find(skill);
+    return configured==policy.skillRanges.end()?policy.range:configured->second;
+}
 int DebugAi::Impl::routeAttackRange(const Context &c) const {
     const auto primary=battle.excursionSkill.value_or(definitions->skill("Attack"));
-    int range=meleeAttack(c,primary)?3:policy.range;
+    int range=combatRange(c,primary);
     if(policy.groupSkill && attackRankQualified(c,*policy.groupSkill,bool(battleAura(c))) &&
         !meleeAttack(c,*policy.groupSkill) && c.supplies && c.supplies->skillUsable &&
-        c.supplies->skillUsable(*policy.groupSkill).value_or(false)) range=std::max(range,policy.range);
+        c.supplies->skillUsable(*policy.groupSkill).value_or(false)) range=std::max(range,combatRange(c,*policy.groupSkill));
     return range;
 }
 std::optional<OnlinePoint> DebugAi::Impl::selectCombatLanding(const Context &c,OnlinePoint center,
@@ -27,10 +32,10 @@ std::optional<OnlinePoint> DebugAi::Impl::selectCombatLanding(const Context &c,O
     const auto origin=c.town.read().origin;
     const auto *memory=c.walk.navigationSearch().explorationMemory.area(*area);
     if(!origin || !memory) return {};
-    const auto &view=c.session.read();const Vec offset{float(origin->x),float(origin->y)};
+    const auto &view=c.observation.read();const Vec offset{float(origin->x),float(origin->y)};
     const auto grid=c.town.navigationGrid(view);const TeleportRooms rooms(c);
     const auto hazards=visibleThreats(c);const auto enemies=travelLandingThreats(c);
-    const int range=meleeAttack(c,*battle.excursionSkill)?3:policy.range;
+    const int range=combatRange(c,*battle.excursionSkill);
     const auto mask=definitions->attackMasks.find(*battle.excursionSkill);
     const uint16_t attackMask=mask==definitions->attackMasks.end()?uint16_t(4):mask->second;
     const Vec destination{float(center.x),float(center.y)},forward=destination-c.position;
@@ -70,7 +75,7 @@ bool DebugAi::Impl::approachEnemy(Context &c,const OnlineUnit &enemy,std::string
     const auto skill=attackRange && battle.combatTarget==enemy.key && battle.combatRun.skillIndex<battle.combatRun.skills.size()?
         battle.combatRun.skills[battle.combatRun.skillIndex]:battle.excursionSkill.value_or(policy.skill.value_or(definitions->skill("Attack")));
     const bool melee=meleeAttack(c,skill);
-    const int range=attackRange?attackRange:melee?3:std::min(policy.range,policy.engage);
+    const int range=attackRange?attackRange:std::min(combatRange(c,skill),policy.engage);
     const auto mask=definitions->attackMasks.find(skill);
     const uint16_t attackMask=skill==definitions->skill("Attack") && !melee?4:
         mask==definitions->attackMasks.end()?4:mask->second;
@@ -93,7 +98,7 @@ bool DebugAi::Impl::approachEnemy(Context &c,const OnlineUnit &enemy,std::string
 }
 std::optional<OnlinePoint> DebugAi::Impl::selectCombatPosition(Context &c,const CombatSelection &selection,
         const CombatSight &sight,std::span<const Vec> localThreats,bool retreat,int range) {
-    const auto &view=c.session.read();const Vec offset=sight.offset;
+    const auto &view=c.observation.read();const Vec offset=sight.offset;
     const auto &chosen=selection.chosen;const Vec targetPosition=position(*chosen->position);
     auto &run=battle.combatRun;
     if(!sight.grid) return {};
@@ -145,7 +150,7 @@ std::optional<OnlinePoint> DebugAi::Impl::selectCombatPosition(Context &c,const 
 }
 std::optional<OnlinePoint> DebugAi::Impl::selectKitePosition(Context &c,const CombatSelection &selection,
         const CombatSight &sight,std::span<const Vec> localThreats,int range) {
-    const auto &view=c.session.read();const Vec offset=sight.offset;
+    const auto &view=c.observation.read();const Vec offset=sight.offset;
     const auto &chosen=selection.chosen;const Vec targetPosition=position(*chosen->position);
     auto &run=battle.combatRun;
     const auto &enemies=selection.enemies;

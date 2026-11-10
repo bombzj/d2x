@@ -49,9 +49,9 @@ inline uint8_t nativeBody(EquipmentSlot slot) {
 using namespace remote_ui_impl_detail;
 struct RemoteUiClients::Impl {
     net::RealmSession &session;
-    RemoteInventory &items;
+    IOnlineInventory &items;
     RemoteCombat &combat;
-    RemoteControl &control;
+    IOnlineControl &control;
     std::shared_ptr<const ClassicData> sharedData;
     const ClassicData &data;
     struct ObservedStat { uint8_t id; int shift; bool signedValue; };

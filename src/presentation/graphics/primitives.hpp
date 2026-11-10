@@ -48,6 +48,7 @@ struct ClassicFont {
     int widthOf(uint32_t code) const;
     int textWidth(std::string_view line) const;
     void drawBaseline(std::string_view line, Vec at, float scale, Color tint = WHITE) const;
+    void drawBaselineRows(std::string_view line, Vec at, int skipBottom, int rows) const;
     const Sprite *glyphFrame(uint16_t frame) const;
     const Sprite *glyphOf(uint32_t code) const;
 };

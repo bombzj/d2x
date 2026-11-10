@@ -64,6 +64,8 @@ CN属性0–3与扩展3A控制从0x10开始的分界已核实，普通属性分�
 
 PD2使用独立RemoteDisplay缓存，不准备原版宿主程序、装备派生或面板几何，未登记的飞弹程序与公式显示不可用。
 
+PD2本地与CN远端的人物面板共用经典布局。`projectObservedAttributes`和玩家`calculateCombatEquipment`目前只对零售配置启用，因此PD2面板的四项属性、资源上限及抗性沿用收到的人物属性值。当前生命、法力、耐力可独立由资源同步包更新，因而可能超过面板显示的上限。需要武器投影的伤害和命中，以及缺少原包值的防御，显示为`?`。物品提示与部分技能公式仍分别消费已解码的装备及状态。CN各属性字段是否携带完整总值、目标版本的套装和护符等贡献仍需同角色对照确认。源码入口见[人物属性投影](../../src/client/remote_ui_character.cpp)、[战斗装备投影](../../src/client/remote_ui_items.cpp)和[面板值投影](../../src/client/character_projection.cpp)。BH的扩展属性面板另见[BH接入设计](../architecture/BH_CODE_ISOLATION.md)。
+
 <a id="客户端接入技能来源初始化"></a>
 
 ## 客户端接入：技能来源初始化

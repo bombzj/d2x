@@ -65,7 +65,11 @@ struct Dispatch {
         return status(systems.objects.execute(actor, request).status);
     }
     CommandStatus operator()(const npc::Request &request) const {
-        return status(systems.npc.execute(actor, request).status);
+        const auto *end = std::get_if<EndNpcConversation>(&request.intent);
+        const bool talking = end && systems.npc.conversation(actor.player);
+        const auto result = systems.npc.execute(actor, request);
+        if (result && talking) systems.merchant.endConversation(actor.player, end->target);
+        return status(result.status);
     }
     CommandStatus operator()(const merchant::Request &request) const {
         return status(systems.merchant.execute(actor, request).status);

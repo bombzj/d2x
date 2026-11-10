@@ -1,7 +1,27 @@
 #include "content/monsters/monster_identity.hpp"
+#include "content/npc/vendor_stock.hpp"
+#include "contracts/online_npc_speech.hpp"
 #include "remote_ui_clients_impl.hpp"
 
 namespace d2x {
+namespace {
+int retailNpcTopicLabel(uint32_t message) {
+    // D2Client 1.13c RVA E1400. Group adjacent messages with the same TBL title.
+    struct Range { uint16_t first, last, title; };
+    static constexpr Range ranges[] = {
+        {64,80,3714}, {81,96,3715}, {97,126,3717}, {127,145,3718}, {146,165,3716}, {166,184,3719},
+        {304,334,923}, {335,339,924}, {340,372,925}, {373,395,926}, {397,407,926}, {408,429,927},
+        {430,452,928}, {527,542,933}, {543,548,931}, {549,570,930}, {571,593,932}, {594,627,934},
+        {628,635,935}, {637,663,935}, {670,677,937}, {678,680,939}, {681,685,938}, {20000,20001,938},
+        {20002,20002,22641}, {20077,20095,22618}, {20096,20115,22622}, {20116,20136,22627},
+        {20137,20137,22633}, {20139,20152,22633}, {20153,20168,22637}, {20169,20180,22641},
+    };
+    const auto found = std::ranges::find_if(ranges, [message](const auto &range) {
+        return message >= range.first && message <= range.last;
+    });
+    return found == std::end(ranges) ? 0xE8C : found->title;
+}
+}
 const NpcConversationView &RemoteUiClients::Impl::Npc::read(EntityId) const { return o.npcView; }
 const NpcSceneView &RemoteUiClients::Impl::Npc::scene() const { return o.npcScene; }
 const ShopView &RemoteUiClients::Impl::Npc::shop(EntityId, bool) const { return o.shopView; }
@@ -57,15 +77,15 @@ void RemoteUiClients::Impl::Npc::submit(NpcIntent c) {
                     const auto raw=v.npc.value?v.npc.value-1:0;
                     const auto unit=o.session.read().world.units.find({1,uint32_t(raw)});
                     if(unit!=o.session.read().world.units.end() && unit->second.classId)
-                        o.control.greetNpc(uint16_t(*unit->second.classId),o.context);
+                        o.control.acknowledgeNpcGreeting(uint16_t(*unit->second.classId),o.context);
                     return;
                 }
                 else if constexpr (std::is_same_v<T, TalkToNpc>) {
                     if (v.action == TalkToNpc::Action::Acknowledge && v.message && *v.message <= UINT16_MAX) {
                         const auto &conversation = o.session.read().world.npcConversation;
                         const auto topic = uint16_t(*v.message);
-                        if (!conversation || conversation->acknowledged.contains(topic)) return;
-                        o.control.acknowledgeNpc(topic, o.context);
+                        if (!conversation || v.target!=EntityId{(uint64_t{conversation->type}<<32)+conversation->source+1}) return;
+                        o.control.acknowledgeNpc(topic, o.context, v.dismissAfterSpeech);
                     } else if (v.action == TalkToNpc::Action::Trade) {
                         request.action = OnlineItemAction::TradeOpen; o.enqueue(request);
                     }
@@ -132,6 +152,20 @@ void RemoteUiClients::Impl::projectInteractions() {
         }
         if(scene && scene->npcConversation) {
             const auto &d=*scene->npcConversation; npcView.npc=npcId(d.source); npcView.valid=true; npcView.speaker=d.speaker;
+            npcView.retailSpeech = (d.type == 1 || d.type == 2) && online.protocolProfile == "lod113c";
+            const bool retailNpc = d.type == 1 && npcView.retailSpeech;
+            std::optional<uint32_t> localIntroduction;
+            const auto talkLabel = [&](int id) -> std::string {
+                const auto label = data.npcTalkLabels.find(id);
+                return label == data.npcTalkLabels.end() ? std::string{} : label->second;
+            };
+            const auto addLocalTopic = [&](int label, uint16_t id) {
+                const auto text = data.npcLocalSpeech.find(id);
+                if (text == data.npcLocalSpeech.end() || text->second.empty()) return false;
+                npcView.textTopics.try_emplace(id, text->second);
+                npcView.talkEntries.push_back({talkLabel(label), {NpcMenuAction::TextTopic, {}, id}});
+                return true;
+            };
             if(d.type==2) {
                 npcView.npc=EntityId{(uint64_t{2}<<32)+d.source+1};
                 for(const auto &m:d.messages) if(!m.acknowledged && !m.text.empty()) {npcView.scrollMessage=m.stringId;npcView.introduction=m.text;break;}
@@ -139,11 +173,13 @@ void RemoteUiClients::Impl::projectInteractions() {
             if(scene->origin) npcView.position={float(int(d.position.x)-scene->origin->x),float(int(d.position.y)-scene->origin->y)};
             for(const auto &m:d.messages) if(!m.text.empty()) {
                 if(m.menu==0 && !m.acknowledged && !npcView.introduction) npcView.introduction=m.text;
-                else if(m.menu==1 || m.menu==2) {
+                else if(m.menu==2 || (!npcView.retailSpeech && m.menu==1)) {
                     npcView.textTopics.emplace(m.stringId,m.text);
-                    auto title=m.text.substr(0,m.text.find('\n'));
-                    if(title.size()>40) title=title.substr(0,40)+"...";
-                    npcView.talkEntries.push_back({title,{NpcMenuAction::TextTopic,{},m.stringId}});
+                    if (!npcView.retailSpeech) {
+                        auto title=m.text.substr(0,m.text.find('\n'));
+                        if(title.size()>40) title=title.substr(0,40)+"...";
+                        npcView.talkEntries.push_back({std::move(title),{NpcMenuAction::TextTopic,{},m.stringId}});
+                    }
                 }
             }
             auto add=[&](std::string label,NpcMenuAction action) {
@@ -155,13 +191,35 @@ void RemoteUiClients::Impl::projectInteractions() {
             };
             // Native servers send quest/intro text in 27; ordinary gossip is
             // local MPQ presentation and must not generate a quest ACK (31).
-            if(d.type==1 && online.protocolProfile=="lod113c") {
+            std::optional<uint16_t> npcClass;
+            if(retailNpc) {
+                npcView.talkTitle = talkLabel(0xD35);
                 const auto unit=w.units.find({1,d.source});
-                if(unit!=w.units.end() && unit->second.classId &&
-                   w.quests.npcReturnGreetings.contains(*unit->second.classId))
-                    npcView.returnGreetingClass=uint16_t(*unit->second.classId);
+                if (unit != w.units.end()) npcClass = unit->second.classId;
+                if (npcClass && w.quests.npcReturnGreetings.contains(*npcClass))
+                    npcView.returnGreetingClass = npcClass;
+                const auto player = online.load.playerUnitId ? w.units.find({0, *online.load.playerUnitId}) : w.units.end();
+                const auto playerClass = player != w.units.end() ? player->second.classId.value_or(7) : 7;
+                if (npcClass) {
+                    if (const auto intro = data.npcTalkIntroductions.find(*npcClass); intro != data.npcTalkIntroductions.end()) {
+                        const auto id = intro->second[playerClass < 7 ? playerClass : 7];
+                        if (addLocalTopic(0xD47, id)) localIntroduction = id;
+                    }
+                }
+                if (npcClass == 148) {
+                    const bool sorceress = playerClass == 1;
+                    // F27B8: row 13 is Sorceress-only, 14–22 are unrestricted,
+                    // and 23 requires private quest slot 6 bit 0 to be clear.
+                    const bool andarialComplete = w.quests.playerFlags && ((*w.quests.playerFlags)[6] & 1u);
+                    for (int id = 13; id <= 23; ++id) {
+                        const auto speech = data.npcLocalSpeech.find(id);
+                        npcView.gossip.push_back(speech == data.npcLocalSpeech.end() ? std::string{} : speech->second);
+                        if ((id != 13 || sorceress) && (id != 23 || !andarialComplete))
+                            npcView.akaraGossipEligible |= uint16_t(1u << (id - 13));
+                    }
+                }
             }
-            if(d.type==1) for(size_t turn=0;;++turn) {
+            if(d.type==1 && npcView.gossip.empty()) for(size_t turn=0;;++turn) {
                 const auto *speech=gossipSpeech(data.npcDialogues,d.speaker,turn,mapView.act);
                 if(!speech || speech->text.empty()) break;
                 std::string text=speech->text;
@@ -170,10 +228,29 @@ void RemoteUiClients::Impl::projectInteractions() {
                 if(std::find(npcView.gossip.begin(),npcView.gossip.end(),text)!=npcView.gossip.end()) break;
                 npcView.gossip.push_back(std::move(text));
             }
-            if(!npcView.gossip.empty()) npcView.talkEntries.push_back({menu("NPCGossipMenu","Gossip"),{NpcMenuAction::Gossip,{}}});
+            if(!npcView.gossip.empty()) npcView.talkEntries.push_back({
+                retailNpc ? talkLabel(0xD43) : menu("NPCGossipMenu","Gossip"),{NpcMenuAction::Gossip,{}}});
+            if (retailNpc) {
+                for (const auto &[id, text] : npcView.textTopics) {
+                    if (localIntroduction == id) continue;
+                    npcView.talkEntries.push_back({talkLabel(retailNpcTopicLabel(id)), {NpcMenuAction::TextTopic, {}, id}});
+                    if (const auto next = retailNpcSpeechFollowup(uint16_t(id))) {
+                        if (const auto speech = data.npcLocalSpeech.find(*next); speech != data.npcLocalSpeech.end())
+                            npcView.cainRescueFollowup = speech->second;
+                    }
+                }
+                if (npcClass == 201) addLocalTopic(0xD40, 254);
+                if (npcClass == 265 || npcClass == 244 || npcClass == 245 || npcClass == 246 || npcClass == 520) {
+                    const bool hasCube = online.load.playerUnitId && std::ranges::any_of(w.items, [&](const auto &entry) {
+                        const auto &item = entry.second;
+                        return onlineItemOwnedBy(item, online.load.playerUnitId) && item.mode != 4 && item.code == "box";
+                    });
+                    if (hasCube) addLocalTopic(0x8B7, 338);
+                }
+            }
             if(!npcView.textTopics.empty() || !npcView.gossip.empty()) {
                 add(menu("TalkMenu","Talk"),NpcMenuAction::Talk);
-                npcView.talkEntries.push_back({menu("Back","Back"),{NpcMenuAction::Back,{}}});
+                npcView.talkEntries.push_back({retailNpc ? talkLabel(0xD48) : menu("Back","Back"),{NpcMenuAction::Back,{}}});
             }
             const auto identity=npcIdentity();
             if(identity=="kashya" || identity=="greiz" || identity=="asheara" || identity=="qual-kehk" || identity=="tyrael") {
@@ -181,7 +258,8 @@ void RemoteUiClients::Impl::projectInteractions() {
                 if(w.deadHirelingName && w.hirelingReviveCost) add(menu("hireresurrect","Resurrect")+": " + std::to_string(*w.hirelingReviveCost),NpcMenuAction::Resurrect);
             }
             if(data.vendors.contains(identity) && identity!="nihlathak") add(menu("NPCMenuTrade","Trade"),NpcMenuAction::Trade);
-            if(identity=="gheed" || identity=="elzix" || identity=="alkor" || identity=="jamella" || identity=="drehya" || identity=="nihlathak") add(menu("gamble","Gamble"),NpcMenuAction::Gamble);
+            if(npcCanGamble(identity))
+                add(retailNpc ? talkLabel(0xD46) : menu("gamble","Gamble"),NpcMenuAction::Gamble);
             if(identity.starts_with("cain")) add(menu("NPCIdentify1","Identify Items"),NpcMenuAction::Identify);
             // Original S2C 0x28 personal quest records, never local reward
             // authority. SUnitNpc accepts the corresponding RewardPending bit.
@@ -227,6 +305,18 @@ void RemoteUiClients::Impl::projectInteractions() {
         const auto identity=npcIdentity();
         shopView.gamble=w.shopGamble;
         shopView.available=npcView.valid && (identity=="nihlathak" || data.vendors.contains(identity));
+        if (online.protocolProfile=="lod113c" && w.shopGamble && w.tradeResult && w.itemRequest &&
+            w.itemRequest->state==OnlineItemRequest::State::Rejected && w.itemRequest->command.action==OnlineItemAction::Buy &&
+            w.itemRequest->command.gamble && w.shopSource==w.itemRequest->command.npc) {
+            // Retail D2Client 4B420 maps 2A result 7..16 to TBL messages.
+            static constexpr int labels[]{0xD1E,0xD1E,0xD21,0xD1C,0xD20,0xD22,0xD21,0xD21,0xD23,0xD1D};
+            const auto result=w.tradeResult->result;
+            const auto message=data.npcTalkLabels.find(result>=7 && result<=16 ? labels[result-7] : 0xD21);
+            const auto proceed=data.npcTalkLabels.find(0xD4B);
+            if (message!=data.npcTalkLabels.end() && proceed!=data.npcTalkLabels.end() &&
+                !message->second.empty() && !proceed->second.empty())
+                shopView.rejection=ShopView::Rejection{w.tradeResult->revision,message->second,proceed->second};
+        }
         shopView.repairAvailable=!w.shopGamble && (identity=="charsi" || identity=="fara" || identity=="hratli" || identity=="halbu" || identity=="larzuk");
         if(w.shopSource) for(const auto &[id,native]:w.items) {
             if(native.ownerType!=1 || native.owner!=w.shopSource || native.action!=11) continue;

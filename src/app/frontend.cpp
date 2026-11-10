@@ -19,6 +19,7 @@
 #include "app/debug/movement_diff.hpp"
 #include "app/debug/navigation_search.hpp"
 #include "client/remote_town.hpp"
+#include "client/online_actions.hpp"
 #include "client/pd2/automap.hpp"
 #include "client/remote_control.hpp"
 #include "client/remote_inventory.hpp"
@@ -48,6 +49,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <nlohmann/json.hpp>
 #include <rlgl.h>
@@ -257,11 +259,12 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     };
     auto hostFrame = std::chrono::steady_clock::now();
     RemoteControl control(town, session);
+    const OnlineObservation observation([&]() -> const OnlineView & { return session.read(); });
     DebugAutoWalk debugWalk;
     const auto packetDirectory=std::filesystem::path(options.gamePacketLog).parent_path();
     DebugAi debugAi(archives,options.gamePacketLog.empty()?std::filesystem::path("logs"):
         packetDirectory.empty()?std::filesystem::path("."):packetDirectory);
-    RemoteInventory inventory(archives, options.protocolProfile);
+    RemoteInventory inventory(archives, session, options.protocolProfile);
     if (options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020)
         session.configure_stash(inventory.stashLayout());
     RemoteCombat combat(archives, town, session, inventory);
@@ -333,7 +336,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             sharedUi->notice("Client settings could not be saved. Changes are active; saving will be retried.", true);
         preferencesRetryAt = GetTime() + 2;
     };
-    std::optional<std::pair<uint64_t, uint32_t>> displayedNpc;
+    std::optional<std::tuple<uint64_t, uint8_t, uint32_t>> displayedNpc;
+    bool displayedNpcAutomatic=false;
     uint32_t displayedWaypoint{};
     bool displayedWaypointKnown{};
     std::unique_ptr<RemoteScene> scene;
@@ -412,8 +416,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 {"lightning",weather.lightning},{"thunderSoundFrames",weather.thunderSoundFrames},
                 {"particles",weather.particles},{"splashes",weather.splashes}}}}.dump();
         }
-        if(auto ai=debugAi.command(command,session,town,debugWalk,control,combat,inventory)) return ai;
-        return debugWalk.command(command,session,town,control,combat);
+        if(command.at("command").get<std::string>()=="debug-ai-start") {
+            inventory.update(session.read());combat.update();
+        }
+        if(auto ai=debugAi.command(command,observation,town,debugWalk,control,combat)) return ai;
+        return debugWalk.command(command,observation,town,control,combat);
     };
     auto debugChatOwnsInput=[&] {
         return sharedUi && (sharedUi->ui().chatInputOpen || sharedUi->ui().messageLogOpen);
@@ -424,7 +431,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             // ordinary Escape handling without changing AI ownership.
             const bool mainView=sharedUi && !sharedUi->ui().blocksInput() &&
                 !debugInspectionOpen(sharedUi->ui(),false) && !sharedUi->ui().questOpen && !sharedUi->ui().skillPicker;
-            if(input.escape && mainView) debugAi.manualInput(session,debugWalk,control,combat);
+            if(input.escape && mainView) debugAi.manualInput(debugWalk,control,combat);
             else if(debugAi.active()) input.focused=true;
         } else if(debugWalk.active()) {
             if(debugInputTakesControl(input,debugChatOwnsInput(),debugQuestInspectionInput(input,sharedUi?&sharedUi->ui():nullptr)))
@@ -697,14 +704,12 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             } catch (const std::exception &error) { notice = error.what(); }
         }
         if (session.read().world.playerTrade.active()) control.cancelMovement();
-        inventory.update(session.read());
-        combat.update();
         if (sceneGeneration != session.read().gameGeneration) {
             syncPreferences(true);
             debugInputs.clear();
             presentationPaused = false;
             sharedController.reset(); sharedUi.reset(); sharedClients.reset();
-            displayedNpc.reset(); displayedWaypoint = 0; displayedWaypointKnown = false;
+            displayedNpc.reset(); displayedNpcAutomatic=false; displayedWaypoint = 0; displayedWaypointKnown = false;
             scene.reset();
             sceneError.clear();
             sceneGeneration = session.read().gameGeneration;
@@ -764,6 +769,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         control.tick(!minimized && scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
             scene && scene->actionInputBusy().value_or(scene->castInputBusy()));
+        // Publish client projections after control continuations, before input
+        // consumers observe them. AI has no replica-update capability.
+        inventory.update(session.read());
+        combat.update();
         DebugAi::SuppliesView aiSupplies;
         if(sharedUi) {
             aiSupplies.openQuestLog=[&]{return sharedUi->openQuestLogPreview();};
@@ -794,17 +803,21 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 if(!player.unknownStats.contains("maxmana") && player.maxMana>0) aiSupplies.maxMana=player.maxMana;
             }
             aiSupplies.buyQuote=[&](uint32_t item){return sharedClients->itemQuote(item,OnlineItemAction::Buy);};
+            aiSupplies.submitStaff=[&](uint32_t source,uint32_t item,uint64_t revision) {
+                return sharedClients->inventory().submitStaff(EntityId{(uint64_t{2}<<32)+source+1},
+                    ItemHandle{EntityId{uint64_t(item)+1},revision});
+            };
         }
         frameTiming.mark(FrontendTimings::Client);
         debugWalk.navigationSearch().beginFrame(session.read().gameGeneration,session.read().world.areaGeneration,town.navigationRevision());
         debugWalk.navigationSearch().observeExplored(town,session.read(),
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt);
-        debugAi.tick(session,town,debugWalk,control,combat,inventory,aiSupplies,
+        debugAi.tick(observation,town,debugWalk,control,combat,inventory,aiSupplies,
             minimized || presentationPaused || (sharedUi && (sharedUi->ui().gameMenuOpen || debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory()))),
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
             scene && std::ranges::any_of(scene->players(),[](const auto &player){return player.local && player.moving;}));
         frameTiming.mark(FrontendTimings::Ai);
-        debugWalk.tick(session,town,control,debugAi.controlsMovement() || minimized || presentationPaused ||
+        debugWalk.tick(observation,town,control,debugAi.controlsMovement() || minimized || presentationPaused ||
             (sharedUi && (sharedUi->ui().blocksInput() || ((debugAi.hasPlan() || debugWalk.active()) && debugInspectionOpen(sharedUi->ui(),debugAi.controlsInventory())))),
             !minimized && scene ? scene->playerPathPosition(session.read()) : std::nullopt,
             scene && std::ranges::any_of(scene->players(),[](const auto &player){return player.local && player.moving;}));
@@ -1341,39 +1354,49 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     }
                     if (town.read().npcConversation) {
                         const auto &dialog = *town.read().npcConversation;
-                        const auto interaction = std::pair<uint64_t, uint32_t>{native.interactionGeneration, dialog.source};
+                        const auto interaction = std::tuple{native.interactionGeneration, dialog.type, dialog.source};
                         const bool newConversation = displayedNpc != interaction;
                         if (displayedNpc && newConversation) sharedUi->cancelNpcDialogue();
                         displayedNpc = interaction;
-                        // Retire an automatic subtitle once the shared session
-                        // acknowledges it, regardless of who issued the command.
-                        if (!panels.dialogueFromMenu && panels.dialogueTextTopic &&
-                            std::ranges::any_of(dialog.messages, [&](const auto &message) {
-                                return message.menu == 0 && message.stringId == *panels.dialogueTextTopic && message.acknowledged;
-                            })) sharedUi->cancelNpcDialogue();
-                        {
-                            // 1.13c selects type 0 for automatic speech; type 2 is a
-                            // selectable topic and must leave the service menu open.
-                            // Acknowledging a message changes the acknowledged set,
-                            // not necessarily the native conversation revision.
-                            if (panels.dialogue.empty() && !panels.shopOpen && !panels.hireListOpen) for (const auto &message : dialog.messages)
-                                if (!message.acknowledged && message.menu == 0 && !message.text.empty()) {
-                                    sharedUi->openNpcDialogue(EntityId{(uint64_t{dialog.type} << 32) + dialog.source + 1},dialog.speaker,message.text,message.stringId);
-                                    panels.dialogueTextTopic = message.stringId;
+                        const bool retailNpc=dialog.type==1 && view.protocolProfile=="lod113c";
+                        const bool returnedToMenu=retailNpc && !newConversation && displayedNpcAutomatic && !dialog.automaticSpeech;
+                        displayedNpcAutomatic=dialog.automaticSpeech.has_value();
+                        const auto openSpeech=[&](const OnlineNpcText &speech) {
+                            sharedUi->openNpcDialogue(EntityId{(uint64_t{dialog.type}<<32)+dialog.source+1},
+                                dialog.speaker,speech.text,speech.stringId);
+                            panels.dialogueTextTopic=speech.stringId;
+                        };
+                        if(retailNpc) {
+                            const auto &speech=dialog.automaticSpeech;
+                            if(!panels.dialogueFromMenu && panels.dialogueTextTopic &&
+                                (!speech || panels.dialogueTextTopic!=speech->stringId)) sharedUi->cancelNpcDialogue();
+                            if(speech && panels.dialogue.empty() && !panels.shopOpen && !panels.hireListOpen)
+                                openSpeech(*speech);
+                        } else {
+                            if (!panels.dialogueFromMenu && panels.dialogueTextTopic &&
+                                std::ranges::any_of(dialog.messages, [&](const auto &message) {
+                                    return message.menu == 0 && message.stringId == *panels.dialogueTextTopic && message.acknowledged;
+                                })) sharedUi->cancelNpcDialogue();
+                            if (panels.dialogue.empty() && !panels.shopOpen && !panels.hireListOpen) {
+                                for (const auto &message : dialog.messages) {
+                                    if (message.acknowledged || message.menu != 0 || message.text.empty()) continue;
+                                    openSpeech(message);
                                     break;
                                 }
+                            }
                         }
                         // Normal commands may originate from debug AI / pipe
                         // as well as the menu controller. Render the actual
                         // merchant shelf consistently for every input source.
-                        if (newConversation && dialog.type == 1 && panels.dialogue.empty() && !native.shopSource)
+                        if ((newConversation || returnedToMenu) && dialog.type == 1 && !dialog.automaticSpeech &&
+                            panels.dialogue.empty() && !native.shopSource)
                             sharedUi->openNpcMenu(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,false);
                         if(native.shopSource==dialog.source && !panels.shopOpen) {
                             sharedUi->cancelNpcDialogue();panels.npcMenu=true;
                             sharedUi->openNpcShop(native.shopGamble);
                         }
                     } else if (displayedNpc && !native.npcRequested) {
-                        displayedNpc.reset(); sharedUi->cancelNpcDialogue();
+                        displayedNpc.reset(); displayedNpcAutomatic=false; sharedUi->cancelNpcDialogue();
                         if(panels.shopOpen) sharedUi->closeNpcShop();
                         panels.shopOpen = panels.hireListOpen = false;
                     }

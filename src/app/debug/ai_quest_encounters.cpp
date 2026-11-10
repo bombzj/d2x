@@ -6,7 +6,7 @@
 
 namespace d2x {
 bool DebugAi::Impl::questReceiveRewards(Context &c,const QuestStep &step) {
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     auto codes=step.rewardCodes;
     if(step.stateQuest==QuestId::RescueOnMountArreat) if(const auto flags=questFlags(c,*step.stateQuest))
         codes.resize(std::min(codes.size(),size_t(*flags&0x80?1:*flags&0x40?2:3)));
@@ -43,7 +43,7 @@ bool DebugAi::Impl::questReceiveRewards(Context &c,const QuestStep &step) {
     wait("quest-reward-inventory","Waiting for the actually created reward items; no repeated reward topic");checkQuestPending(c);return false;
 }
 bool DebugAi::Impl::questService(Context &c,const QuestStep &step) {
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     const bool socket=step.stateQuest==QuestId::SiegeOnHarrogath;
     const auto flags=questFlags(c,*step.stateQuest);
     const auto transformed=[&](uint32_t id) {
@@ -104,7 +104,7 @@ bool DebugAi::Impl::questService(Context &c,const QuestStep &step) {
     return false;
 }
 bool DebugAi::Impl::questRescue(Context &c,const QuestStep &step) {
-    const auto &world=c.session.read().world;const auto flags=questFlags(c,*step.stateQuest);
+    const auto &world=c.observation.read().world;const auto flags=questFlags(c,*step.stateQuest);
     if(flags && (*flags&0x2003)) return true;
     const auto status=world.quests.statuses[questDefinition(*step.stateQuest).nativeSlot];
     if(status==12) throw std::runtime_error("Original prisoner rescue reports failure; dead prisoners are not counted as saved");
@@ -163,8 +163,8 @@ bool DebugAi::Impl::questRescue(Context &c,const QuestStep &step) {
     return false;
 }
 bool DebugAi::Impl::questEncounter(Context &c,const QuestStep &step) {
-    if(const auto portal=find(c,*step.target,true);portal && portal->mode && *portal->mode!=0 && c.town.permitsInteraction(c.session.read(),portal->key) &&
-        (!step.status || c.session.read().world.quests.statuses[questDefinition(*step.stateQuest).nativeSlot]==step.status)) return true;
+    if(const auto portal=find(c,*step.target,true);portal && portal->mode && *portal->mode!=0 && c.town.permitsInteraction(c.observation.read(),portal->key) &&
+        (!step.status || c.observation.read().world.quests.statuses[questDefinition(*step.stateQuest).nativeSlot]==step.status)) return true;
     const auto witness=step.witness?find(c,*step.witness,true):std::nullopt;
     if(witness) {
         questState.questRun.encounterWitness=std::pair{witness->key,witness->assignmentRevision};
@@ -205,7 +205,7 @@ bool DebugAi::Impl::questEncounter(Context &c,const QuestStep &step) {
         }
         questState.questRun.encounterAnchored=true;
         std::optional<OnlineUnit> enemy;float nearest=std::numeric_limits<float>::max();
-        for(const auto &[key,unit]:c.session.read().world.units) {
+        for(const auto &[key,unit]:c.observation.read().world.units) {
             (void)key;
             if(!step.clearCombat || !encounterEnemy(c,unit)) continue;
             const float distance=(Vec{float(unit.position->x),float(unit.position->y)}-c.position).length();

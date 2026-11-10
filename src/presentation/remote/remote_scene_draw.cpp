@@ -700,7 +700,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if (!image || !visible(*image, p))
             continue;
         if (player) { player->visible = true; player->reason.clear(); }
-        const bool unitHit = !surface && [&] {
+        const bool speechNpc = !pd2 && key.type == 1 && !shared.ui().dialogue.empty() &&
+            shared.ui().dialogueObject == effectOwner(key) && shared.worldContains(mouse) && !hudSurface(mouse);
+        const bool unitHit = (!surface || speechNpc) && [&] {
             bool multiPiece = key.type == 0;
             // Retail 510F0 converts the pointer to native world coordinates
             // with Y-8. A68E0/A6730's raw path rectangles therefore acquire
@@ -740,6 +742,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             // anchor; only component frames follow graphics/height offsets.
             return spriteHit(image,p,mouse,multiPiece,ground);
         }();
+        if (speechNpc) intent.input.pointerOnSpeechNpc = unitHit;
         if (player && !player->local && !player->dead && !surface && !waypointOpen &&
             !v.world.npcConversation && unitHit) {
             const float distance = (p - mouse).length();

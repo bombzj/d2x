@@ -13,7 +13,7 @@ std::optional<uint16_t> DebugAi::Impl::battleAura(const Context &c) const {
 }
 bool DebugAi::Impl::maintainArmor(Context &c) {
     if (Clock::now() < battle.nextArmorAttempt) return false;
-    const auto &view = c.session.read();
+    const auto &view = c.observation.read();
     if (!view.load.playerUnitId || view.world.npcRequested || view.world.waypointSource) return false;
     std::optional<uint16_t> selected;
     for (const auto name : {"Shiver Armor", "Chilling Armor", "Frozen Armor"}) {
@@ -46,7 +46,7 @@ bool DebugAi::Impl::maintainArmor(Context &c) {
     return true;
 }
 DebugAi::Impl::StaticFieldOpportunity DebugAi::Impl::staticFieldOpportunity(const Context &c,bool boss) const {
-    const auto &view=c.session.read();
+    const auto &view=c.observation.read();
     unsigned staticRank=0;
     for(const auto &entry:c.combat.skills()) if(entry.id==definitions->staticFieldSkill) {
         staticRank=entry.level;
@@ -60,7 +60,7 @@ DebugAi::Impl::StaticFieldOpportunity DebugAi::Impl::staticFieldOpportunity(cons
 }
 bool DebugAi::Impl::cooldownAttack(Context &c,const OnlineUnit &chosen,const AttackStrategy &attack,
         const StaticFieldOpportunity &opportunity,bool ray,bool planningDefense,const RouteCombatTask *task,Clock::time_point now) {
-    const auto &view=c.session.read();auto &run=battle.combatRun;
+    const auto &view=c.observation.read();auto &run=battle.combatRun;
     const auto skill=attack.skill;const auto aura=attack.aura;
     const auto boss=opportunity.boss;const auto staticRange=opportunity.range;
     const auto staticFloorKnown=opportunity.floorKnown;const auto staticFloor=opportunity.floor;

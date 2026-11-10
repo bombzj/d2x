@@ -122,6 +122,9 @@ struct ClassicData {
     std::map<std::string, std::string, std::less<>> hirelingStrings;
     std::map<std::string, int, std::less<>> hirelingNameIds;
     std::map<std::string, std::string, std::less<>> itemStrings;
+    std::map<int, std::string> npcTalkLabels;
+    std::map<int, std::string> npcLocalSpeech;
+    std::map<uint16_t, std::array<uint16_t, 8>> npcTalkIntroductions; // Index 7 is the generic fallback.
     std::vector<HirelingDefinition> hirelings;
     std::map<int, PetPortraitDefinition> petPortraits;
     HirelingLayout hirelingLayout;

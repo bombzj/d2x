@@ -6,7 +6,7 @@
 namespace d2x {
 void DebugAi::Impl::observeLocalPad(Context &c) {
     if(!navigation.localPad || !navigation.localPad->waiting) return;
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     const auto actor=view.load.playerUnitId?world.units.find({0,*view.load.playerUnitId}):world.units.end();
     if(c.town.read().area==navigation.localPad->area && world.playerPosition && actor!=world.units.end() &&
         actor->second.positionDiscontinuity>navigation.localPad->discontinuity && actor->second.positionRevision>navigation.localPad->requestRevision) {
@@ -31,7 +31,7 @@ void DebugAi::Impl::observeLocalPad(Context &c) {
         throw std::runtime_error("Submitted local teleport pad has no actual relocation result; operation is not replayed");
 }
 bool DebugAi::Impl::exploreLocalPad(Context &c) {
-    const auto &view=c.session.read();const auto now=Clock::now();
+    const auto &view=c.observation.read();const auto now=Clock::now();
     if(navigation.localPad) {
         if(navigation.localPad->waiting) {wait("local-pad-result","Waiting for the actual same-level relocation");return true;}
         const auto unit=view.world.units.find(navigation.localPad->unit);
@@ -76,7 +76,7 @@ bool DebugAi::Impl::exploreLocalPad(Context &c) {
         if(!canTeleport && !c.town.interactionReady(view,entry.unit,c.position)) {
             const auto path=c.walk.navigationSearch().path(grid,from,at-offset+Vec{.5f,.5f},true,playerMovement,true);
             // A disconnected platform can be reached with normal Teleport or
-            // after further observation. Lack of a walking path is not proof
+            // after further observation.read(). Lack of a walking path is not proof
             // that an actually assigned transport object is unusable.
             if(path.empty() || !c.town.interactionReady(view,entry.unit,path.back()+offset-Vec{.5f,.5f})) score+=200;
         }

@@ -1,4 +1,5 @@
 #include "realm_session_impl.hpp"
+#include "contracts/online_npc_speech.hpp"
 
 namespace d2x {
 namespace net {
@@ -224,6 +225,17 @@ void RealmSession::Impl::handle_game(Packet packet) {
             changed();
         }
     }
+    // Retail placement handlers send 0x37 only for a new local item whose
+    // wire flags include IFLAG_TARGET and whose identified bit is clear.
+    std::optional<uint32_t> newPurchase;
+    if (compatibility.profile == ClientProfile::Lod113c && packet.body.size() >= 7 &&
+        ((packet.id == 0x9C && (packet.body[0] == 4 || packet.body[0] == 14)) ||
+         (packet.id == 0x9D && packet.body[0] == 6))) {
+        Reader placement(packet.body);
+        placement.take(3);
+        const auto id = placement.u32();
+        if (!view.world.items.contains(id)) newPurchase = id;
+    }
     try {
         if (packet.id != 0x01 && packet.id != 0x02 && packet.id != 0x03 &&
             packet.id != 0x05 && packet.id != 0xAF)
@@ -231,6 +243,15 @@ void RealmSession::Impl::handle_game(Packet packet) {
     } catch (const ProtocolError &error) {
         fail(OnlineErrorKind::Protocol, error.what(), packet.id);
         return;
+    }
+    if (newPurchase && view.load.playerUnitId) {
+        const auto item = view.world.items.find(*newPurchase);
+        if (item != view.world.items.end() && item->second.ownerType == 0 &&
+            item->second.owner == *view.load.playerUnitId && (item->second.flags & 0x12u) == 0x02u) {
+            Writer identify;
+            identify.u8(0x37); identify.u32(*newPurchase);
+            sent(gs, identify.release());
+        }
     }
     // Non-final movies are currently skipped. Native D2Client 1.13c
     // RVA 89E38 still sends 48 when its movie returns (including a skip).
@@ -512,6 +533,8 @@ void RealmSession::Impl::handle_game(Packet packet) {
         init.u8(0x2F); init.u32(1); init.u32(view.world.npcConversation->source);
         sent(gs, init.release());
         initializedNpc = view.world.npcConversation->source;
+        if (compatibility.profile == ClientProfile::Lod113c)
+            start_npc_speech(*view.world.npcConversation);
     }
     if (packet.id == 0x82 && portalRequest && view.load.playerUnitId) {
         for (const auto &[key, entry] : view.world.units)
@@ -578,6 +601,21 @@ void RealmSession::Impl::pump_game() {
             fail(OnlineErrorKind::Transport, std::move(message));
             return;
         }
+    }
+}
+
+void RealmSession::Impl::send_npc_message(uint32_t source,uint16_t stringId) {
+    Writer out;
+    out.u8(0x31); out.u32(source); out.u16(stringId); out.u16(0);
+    sent(gs, out.release());
+}
+
+void RealmSession::Impl::start_npc_speech(OnlineNpcConversation &conversation, std::optional<uint16_t> previous) {
+    auto topic = previous ? retailNpcSpeechFollowup(*previous) : std::nullopt;
+    if (!topic) topic = nextAutomaticNpcSpeech(conversation);
+    if (topic) {
+        send_npc_message(conversation.source,*topic);
+        conversation.playingSpeech=topic;
     }
 }
 

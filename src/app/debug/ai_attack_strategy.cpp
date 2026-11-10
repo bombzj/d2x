@@ -16,7 +16,7 @@ bool DebugAi::Impl::attackRankQualified(const Context &c,uint16_t skill,bool lef
 }
 void DebugAi::Impl::prepareCombatSkill(const Context &c) {
     if(!policy.enabled || (!c.town.read().town && battle.excursionSkillPrepared)) return;
-    const auto &view=c.session.read();
+    const auto &view=c.observation.read();
     const auto actor=view.world.units.find({0,view.load.playerUnitId.value_or(0)});
     std::array<std::optional<SkillHandEquipment>,2> hands;
     if(actor!=view.world.units.end() && actor->second.equipmentObserved) {
@@ -52,7 +52,7 @@ bool DebugAi::Impl::meleeAttack(const Context &c,uint16_t skill) const {
         const auto row=definitions->skillRows.find(skill);
         return row!=definitions->skillRows.end() && definitions->skills.value(row->second,"range")=="h2h";
     }
-    const auto &view=c.session.read();
+    const auto &view=c.observation.read();
     for(const auto &[id,item]:view.world.items)
         if(item.mode==1 && (item.body==4 || item.body==5) && !(item.flags&0x4100u) &&
             onlineItemOwnedBy(item,view.load.playerUnitId) && !c.inventory.equipmentDefinition(item).shoots.empty()) return false;
@@ -87,7 +87,7 @@ bool DebugAi::Impl::beginEngagement(Context &c,const OnlineUnit &chosen,bool pla
         note("combat-resumed","Continuing the same assigned target's recovery state");
     }
     if(!task && !planningDefense && !battle.combatRun.entryAssessed && teleportAvailable(c) &&
-        (position(*chosen.position)-c.position).length()<=policy.range) {
+        (position(*chosen.position)-c.position).length()<=combatRange(c,*battle.excursionSkill)) {
         battle.combatRun.entryAssessed=true;
         if(beginCombatEntry(c,chosen)) return true;
     }
@@ -120,7 +120,7 @@ DebugAi::Impl::AttackStrategy DebugAi::Impl::selectAttackStrategy(Context &c,con
     if(hasGroup && run.skillIndex<firstFallback && !run.groupExhausted && !boss) {
         const auto group=run.skills[1];
         sight.mask=combatAttackMask(c,group);
-        const auto range=meleeAttack(c,group)?3:policy.range;
+        const auto range=combatRange(c,group);
         if((targetPosition-c.position).length()<=range && sight.clear(c.position,targetPosition) && attackQualification(c,*chosen,group,bool(aura)).empty()) {
             groupEnemies=std::count_if(enemies.begin(),enemies.end(),[&](const auto &enemy) {
                 const auto at=position(*enemy.position);
@@ -167,7 +167,7 @@ bool DebugAi::Impl::selectFallbackAttack(Context &c,const OnlineUnit &chosen,con
 }
 bool DebugAi::Impl::submitDirectAttack(Context &c,const OnlineUnit &chosen,const AttackStrategy &attack,
         bool nearbyDefense,bool planningDefense,bool rangedKite,OnlineSkillHand hand,Clock::time_point now) {
-    const auto &view=c.session.read();auto &run=battle.combatRun;
+    const auto &view=c.observation.read();auto &run=battle.combatRun;
     const auto aura=attack.aura;const auto skill=attack.skill;const auto row=attack.row;
     const auto delay=attack.delay;const bool delayed=attack.delayed;
     battle.combatDiagnostics["skill"]=skill;battle.combatDiagnostics["hand"]=hand==OnlineSkillHand::Left?"left":"right";

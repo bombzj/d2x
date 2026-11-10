@@ -30,6 +30,7 @@ class SceneController {
     bool inventoryRight_ = false;
     bool releaseAfterLoad_ = false;
     bool skillGesture_ = false;
+    bool pendingForcedNpcSkip_ = false;
     struct QuickCastPending {
         SelectMouseSkill selection;
         unsigned weaponSet;
@@ -65,6 +66,7 @@ class SceneController {
     void handleQuickCast(const FrameInput &, const WorldInputView &);
     bool handleNpcMenu(const FrameInput &input);
     bool handleNpcDialogue(const FrameInput &input);
+    void finishRetailNpcSpeech(bool dismiss);
     bool handleNpcShop(const FrameInput &input);
     bool handleHirelingList(const FrameInput &input);
     bool handleHirelingPanel(const FrameInput &input);

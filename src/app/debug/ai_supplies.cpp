@@ -114,8 +114,8 @@ DebugAi::Impl::PortalStock DebugAi::Impl::portalStock(const Context &c) const {
         maximum=unsigned(std::max(0,definitions->misc.number(row,"maxstack").value_or(0)));break;
     }
     if(!maximum) throw std::runtime_error("Current MPQ has no verified town portal tome capacity");
-    for(const auto &[id,item]:c.session.read().world.items) {
-        if(item.code!="tbk" || !onlineItemOwnedBy(item,c.session.read().load.playerUnitId)) continue;
+    for(const auto &[id,item]:c.observation.read().world.items) {
+        if(item.code!="tbk" || !onlineItemOwnedBy(item,c.observation.read().load.playerUnitId)) continue;
         if(!item.positionKnown) {stock.known=false;continue;}
         if(item.mode!=0 || item.page!=1) continue; // Only usable backpack books, never stash/cube contents.
         ++stock.books;stock.capacity+=maximum;
@@ -130,7 +130,7 @@ DebugAi::Impl::QuiverStock DebugAi::Impl::quiverStock(const Context &c) const {
     if(!battle.excursionSkill) return stock;
     const auto row=definitions->skillRows.find(*battle.excursionSkill);
     if(row==definitions->skillRows.end() || definitions->skills.number(row->second,"noammo").value_or(0)) return stock;
-    const auto &view=c.session.read();
+    const auto &view=c.observation.read();
     std::array<const OnlineItem *,2> hands{};
     for(const auto &[id,item]:view.world.items)
         if(item.mode==1 && (item.body==4 || item.body==5) && onlineItemOwnedBy(item,view.load.playerUnitId))
@@ -174,7 +174,7 @@ DebugAi::Impl::QuiverStock DebugAi::Impl::quiverStock(const Context &c) const {
 void DebugAi::Impl::observeQuiver(Context &c) {
     if(!supply.quiverTransfer || !supply.quiverTransfer->sequence) return;
     const auto &pending=*supply.quiverTransfer;
-    const auto &view=c.session.read();const auto &request=view.world.itemRequest;
+    const auto &view=c.observation.read();const auto &request=view.world.itemRequest;
     if(!request || request->sequence!=pending.sequence)
         throw std::runtime_error("Ammunition inventory request was replaced");
     const auto item=view.world.items.find(pending.item);
@@ -194,7 +194,7 @@ bool DebugAi::Impl::reloadQuiver(Context &c) {
     if(supply.quiverTransfer && supply.quiverTransfer->sequence) {
         wait("quiver-result","Waiting for the actual owned quiver position");return true;
     }
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     const auto stock=quiverStock(c);
     if(!supply.quiverTransfer) {
         if(!stock.empty() || stock.equipped || !stock.reserve ||
@@ -213,7 +213,7 @@ bool DebugAi::Impl::reloadQuiver(Context &c) {
         releaseCombat(c);cancelWalk(c);
         OnlineItemCommand take;take.action=OnlineItemAction::Take;take.item=stock.reserve->id;take.itemRevision=stock.reserve->revision;
         if(submitItem(c,take,"quiver-take",DebugActionOwner::Supply))
-            supply.quiverTransfer=QuiverTransfer{take.item,stock.body,c.session.read().world.itemRequest->sequence,false,Clock::now()+std::chrono::seconds(12)};
+            supply.quiverTransfer=QuiverTransfer{take.item,stock.body,c.observation.read().world.itemRequest->sequence,false,Clock::now()+std::chrono::seconds(12)};
         return true;
     }
     const auto item=world.items.find(supply.quiverTransfer->item);
@@ -223,16 +223,16 @@ bool DebugAi::Impl::reloadQuiver(Context &c) {
     OnlineItemCommand equip;equip.action=OnlineItemAction::Equip;equip.item=item->first;
     equip.itemRevision=item->second.revision;equip.body=stock.body;
     if(submitItem(c,equip,"quiver-equip",DebugActionOwner::Supply)) {
-        supply.quiverTransfer->sequence=c.session.read().world.itemRequest->sequence;
+        supply.quiverTransfer->sequence=c.observation.read().world.itemRequest->sequence;
         supply.quiverTransfer->equipping=true;supply.quiverTransfer->deadline=Clock::now()+std::chrono::seconds(12);
     }
     return true;
 }
 unsigned DebugAi::Impl::potionCount(const Context &c,PotionKind kind) const {
     unsigned count=0;
-    for(const auto &[id,item]:c.session.read().world.items) {
+    for(const auto &[id,item]:c.observation.read().world.items) {
         (void)id;
-        if(!item.positionKnown || !onlineItemOwnedBy(item,c.session.read().load.playerUnitId) || !(item.mode==2 || (item.mode==0 && item.page==1))) continue;
+        if(!item.positionKnown || !onlineItemOwnedBy(item,c.observation.read().load.playerUnitId) || !(item.mode==2 || (item.mode==0 && item.page==1))) continue;
         const auto decoded=c.inventory.read().items.find(item.id);
         if(decoded==c.inventory.read().items.end() || !decoded->second.decoded) continue;
         const auto found=definitions->potions.find(item.code);
@@ -241,12 +241,12 @@ unsigned DebugAi::Impl::potionCount(const Context &c,PotionKind kind) const {
     return count;
 }
 bool DebugAi::Impl::recovering(const Context &c,std::optional<uint8_t> state) const {
-    if(!state || !c.session.read().load.playerUnitId) return false;
-    const auto player=c.combat.states().find({0,*c.session.read().load.playerUnitId});
+    if(!state || !c.observation.read().load.playerUnitId) return false;
+    const auto player=c.combat.states().find({0,*c.observation.read().load.playerUnitId});
     return player!=c.combat.states().end() && player->second.decoded && player->second.states.contains(*state);
 }
 bool DebugAi::Impl::observePotion(Context &c) {
-    const auto &world=c.session.read().world;const auto now=Clock::now();
+    const auto &world=c.observation.read().world;const auto now=Clock::now();
     if(supply.lastPotion.is_object() && supply.lastPotion.value("consumed",false) && !supply.lastPotion.value("recoveryObserved",false) &&
         !supply.lastPotion.value("observationClosed",false)) {
         const auto code=supply.lastPotion.at("code").get<std::string>();const auto p=definitions->potions.find(code);
@@ -272,7 +272,7 @@ bool DebugAi::Impl::observePotion(Context &c) {
         }
     } else {
         const auto item=world.items.find(request.item);
-        if(item==world.items.end() || !onlineItemOwnedBy(item->second,c.session.read().load.playerUnitId)) {
+        if(item==world.items.end() || !onlineItemOwnedBy(item->second,c.observation.read().load.playerUnitId)) {
             ++supply.drinks;supply.lastPotion={{"item",request.item},{"code",request.code},{"consumed",true},{"recoveryObserved",false},
                 {"lifeBefore",request.life?Json(*request.life):Json(nullptr)},{"manaBefore",request.mana?Json(*request.mana):Json(nullptr)}};
             note("potion-consumption-observed",request.code);supply.potionRequest.reset();
@@ -290,7 +290,7 @@ bool DebugAi::Impl::drink(Context &c) {
     if(!supplyPolicy.enabled || supply.potionRequest || !c.supplies || Clock::now()<supply.nextPotion) return false;
     if(c.town.read().town && supplyPolicy.buy) return false;
     if(questState.questRun.pending && questState.questRun.pending->sequence) return false;
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     if(onlineHasCursorItem(world.items,view.load.playerUnitId)) return false;
     const bool lowLife=world.life && c.supplies->maxLife && *c.supplies->maxLife>0 &&
         uint64_t(*world.life)*100<uint64_t(*c.supplies->maxLife)*supplyPolicy.lifePercent;
@@ -332,12 +332,12 @@ bool DebugAi::Impl::drink(Context &c) {
     if (!use || use->item != selected->id || use->itemRevision != selected->revision) return false;
     if(!submitItem(c,*use,"potion-use",DebugActionOwner::Potion)) return false;
     PotionRequest pending;pending.item=selected->id;pending.code=selected->code;pending.kind=definitions->potions.at(selected->code).kind;
-    pending.life=world.life;pending.mana=world.mana;pending.sequence=c.session.read().world.itemRequest->sequence;
+    pending.life=world.life;pending.mana=world.mana;pending.sequence=c.observation.read().world.itemRequest->sequence;
     pending.deadline=Clock::now()+std::chrono::seconds(12);supply.potionRequest=pending;
     note("potion-use-submitted",selected->code);navigation.mobilityHold=true;return true;
 }
 bool DebugAi::Impl::restock(Context &c) {
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     // A few missing points regenerate; a healer walk costs seconds per town visit.
     const bool injured=world.life && c.supplies && c.supplies->maxLife && *c.supplies->maxLife>0 &&
         uint64_t(*world.life)*100<uint64_t(*c.supplies->maxLife)*90;
@@ -346,8 +346,10 @@ bool DebugAi::Impl::restock(Context &c) {
             if(Clock::now()>=supply.shopDeadline) throw std::runtime_error("Town healer interaction did not restore observed life; no blind retry");
             wait("supply-heal-wait","Waiting for actual life recovery from the normal healer conversation");return false;
         }
-        if(world.npcRequested) c.control.closeNpc();
-        supply.healingIssued=false;supply.healingObserved=false;supply.supplyNpc.reset();supply.shopDeadline={};note("town-healing-observed");return false;
+        if(supply.supplyNpc && world.npcRequested==supply.supplyNpc->id) {
+            if(!prepareNpcService(c,*supply.supplyNpc,DebugActionOwner::Supply)) return false;
+        }
+        supply.healingIssued=false;supply.healingObserved=false;supply.shopDeadline={};note("town-healing-observed");return false;
     }
     if(injured) {
         if(!view.load.act || !c.town.read().town) throw std::runtime_error("Town recovery requires the native town");
@@ -409,7 +411,7 @@ bool DebugAi::Impl::restock(Context &c) {
         if (!prepareNpcService(c, npc->key, DebugActionOwner::Supply)) return false;
         OnlineItemCommand open;open.action=OnlineItemAction::TradeOpen;open.npc=npc->key.id;
         if(submitItem(c,open,"supply-shop",DebugActionOwner::Supply)) {
-            supply.shopIssued=true;supply.shelfObserved=false;supply.shopGeneration=c.session.read().world.interactionGeneration;
+            supply.shopIssued=true;supply.shelfObserved=false;supply.shopGeneration=c.observation.read().world.interactionGeneration;
             supply.shopDeadline=Clock::now()+std::chrono::seconds(12);cancelWalk(c);note("supply-shop-submitted",supplier.name);
         }
         return false;
@@ -487,7 +489,7 @@ bool DebugAi::Impl::restock(Context &c) {
     if(!submitItem(c,buy,"supply-buy",DebugActionOwner::Supply)) return false;
     PotionRequest pending;pending.buying=true;pending.portalSupply=portal;pending.item=best->id;pending.code=best->code;pending.kind=kind;
     pending.quiverSupply=ammo;
-    pending.beforeCount=before;pending.expectedGain=expectedGain;pending.tradeRevision=trade;pending.sequence=c.session.read().world.itemRequest->sequence;
+    pending.beforeCount=before;pending.expectedGain=expectedGain;pending.tradeRevision=trade;pending.sequence=c.observation.read().world.itemRequest->sequence;
     pending.deadline=Clock::now()+std::chrono::seconds(12);supply.potionRequest=pending;
     note(ammo?"quiver-purchase-submitted":buy.multibuy?"supply-multibuy-submitted":"potion-purchase-submitted",best->code);return false;
 }
@@ -502,7 +504,7 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
         if(step.action==QuestAction::Portal && step.area &&
             std::find(actTownLevels.begin(),actTownLevels.end(),*step.area)!=actTownLevels.end()) return false;
     }
-    const auto &world=c.session.read().world;
+    const auto &world=c.observation.read().world;
     if(supply.potionRequest || objectIssued || pickup || portalAttempted || portalIssued || navigation.pendingDoor || navigation.mobilityTarget ||
         world.npcRequested || world.waypointSource || world.waypointRequested || world.townPortalPending ||
         world.storage.kind!=OnlineStorageKind::None || world.storage.requested!=OnlineStorageKind::None ||
@@ -547,8 +549,8 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
     supply.supplyOrigin=c.town.read().area;
     // Do not return to the field only to execute an already queued trip to
     // this same town (including delivery/find goals whose area is the town).
-    if(goal.kind==Kind::ReturnTown || (goal.area && goal.area==c.session.read().load.townArea))
-        supply.supplyOrigin=c.session.read().load.townArea;
+    if(goal.kind==Kind::ReturnTown || (goal.area && goal.area==c.observation.read().load.townArea))
+        supply.supplyOrigin=c.observation.read().load.townArea;
     supply.supplyStarted=Clock::now();supply.supplyDeadline=supply.supplyStarted+std::chrono::seconds(600);
     // Passive scene observation can be re-established after returning;
     // submitted quest operations above can never be abandoned this way.
@@ -580,7 +582,7 @@ bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
             if(now>=supply.supplyPortalDeadline) throw std::runtime_error("Return portal was used but the original supply area was not observed");
             wait("supply-return-wait","Waiting for the original area's native scene");return true;
         }
-        const auto &view=c.session.read();
+        const auto &view=c.observation.read();
         if(waypointBeforeDeparture(c)) return true;
         if(c.town.read().town) for(const auto &entry:c.town.read().mapTargets) {
             const auto u=view.world.units.find(entry.unit);
@@ -599,7 +601,7 @@ bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
 }
 bool DebugAi::Impl::supplyCombat(Context &c,const Goal &goal) {
     if(!supplyPolicy.enabled) return combat(c,goal);
-    const auto &world=c.session.read().world;
+    const auto &world=c.observation.read().world;
     const bool noRejuvenation=!potionCount(c,PotionKind::Rejuvenation);
     const bool dry=noRejuvenation && c.supplies &&
         ((!potionCount(c,PotionKind::Mana) && world.mana && c.supplies->maxMana && *c.supplies->maxMana>0 &&

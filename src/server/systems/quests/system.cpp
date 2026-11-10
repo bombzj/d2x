@@ -12,6 +12,7 @@
 #include "server/systems/effects/system.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
 #include "gameplay/quest/catalog.hpp"
+#include "gameplay/quest/forgotten_tower.hpp"
 #include "gameplay/quest/prelude_rules.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
@@ -45,6 +46,7 @@ void System::rebindObject(EntityId previous,EntityId current) {
     for(auto &portal:state_.actFive.rescuePortals) if(portal.object==previous) portal.object=current;
     for(auto &[player,reader]:state_.actFive.ancientAltarReaders) {(void)player;if(reader.altar==previous) reader.altar=current;}
     for(auto &[player,reader]:state_.actFive.frozenAnyaReaders) {(void)player;if(reader.object==previous) reader.object=current;}
+    for(auto &[player,reader]:state_.objectReaders) {(void)player;if(reader.object==previous) reader.object=current;}
     for(auto &ancient:state_.actFive.ancients) if(ancient.statue==previous) ancient.statue=current;
     if(state_.actOne.cairnPending && state_.actOne.cairnPending->owner==previous) state_.actOne.cairnPending->owner=current;
     if(state_.actOne.cainInvisibleObject==previous) state_.actOne.cainInvisibleObject=current;
@@ -204,11 +206,36 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         if(!request.npc || !request.message) return {DomainStatus::InvalidRequest,{}};
         return submitStaff(actor,*request.npc,request.item.value_or(EntityId{}),*request.message);
     }
+    if (request.action == Action::ReadObjectScroll) {
+        if (p->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
+        const auto reader = state_.objectReaders.find(actor.player);
+        if (reader == state_.objectReaders.end()) return {DomainStatus::Stale, {}};
+        const auto &reading = reader->second;
+        if (reading.actor != actor.actor || reading.area != actor.area ||
+            reading.generation != actor.areaGeneration || reading.message != request.message ||
+            (request.npc && reading.object != *request.npc))
+            return {DomainStatus::Stale, {}};
+        const bool tome = reading.message == 127 && request.quest == QuestId::ForgottenTower;
+        const bool ancients = reading.message == 20169 && request.quest == QuestId::RiteOfPassage;
+        if (!tome && !ancients) return {DomainStatus::InvalidRequest, {}};
+        auto record = p->persistent.player;
+        auto &quest = record.quests.at(size_t(ports_.settings.difficulty))[questIndex(request.quest)];
+        if (tome) {
+            if (unavailable(actor.player, record, request.quest)) return {DomainStatus::Conflict, {}};
+            towerAdvance(quest, TowerStage::TomeRead);
+        } else {
+            if (quest.stage != 4) return {DomainStatus::Stale, {}};
+            quest.flags |= 32; // Existing saved QFLAG_ENTERAREA representation.
+        }
+        const auto result = commit(actor, std::move(record));
+        if (result) state_.objectReaders.erase(reader);
+        return result;
+    }
     if(request.action==Action::ReadJournal) {
-        if(!request.npc || request.message!=396) return {DomainStatus::InvalidRequest,{}};
+        if(request.message!=396) return {DomainStatus::InvalidRequest,{}};
         const auto source=state_.actTwo.journals.find(actor.player);
-        if(source==state_.actTwo.journals.end() || source->second!=*request.npc) return {DomainStatus::Stale,{}};
-        const auto result=operateActTwo(actor,*request.npc,0,42,p->position);
+        if(source==state_.actTwo.journals.end() || (request.npc && source->second!=*request.npc)) return {DomainStatus::Stale,{}};
+        const auto result=operateActTwo(actor,source->second,0,42,p->position);
         if(isDeferred(result.status)) {
             state_.actTwo.journalReads.insert_or_assign(actor.player,actor);
             return {DomainStatus::Applied,std::monostate{}};
@@ -217,11 +244,11 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         return result;
     }
     if(request.action==Action::ReadFrozenAnya) {
-        if(!request.npc || request.message!=20131 || int(actor.area)!=114 || p->persistent.player.hp<=0) return {DomainStatus::InvalidRequest,{}};
+        if(request.message!=20131 || int(actor.area)!=114 || p->persistent.player.hp<=0) return {DomainStatus::InvalidRequest,{}};
         auto &world=state_.actFive;
         if(world.anyaThawed) {world.frozenAnyaReaders.erase(actor.player);return {DomainStatus::Applied,std::monostate{}};}
         const auto reader=world.frozenAnyaReaders.find(actor.player);
-        if(reader==world.frozenAnyaReaders.end() || reader->second.object!=*request.npc ||
+        if(reader==world.frozenAnyaReaders.end() || (request.npc && reader->second.object!=*request.npc) ||
             reader->second.actor!=actor.actor || reader->second.generation!=actor.areaGeneration) return {DomainStatus::Stale,{}};
         auto record=p->persistent.player;
         auto &q=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::PrisonOfIce)];
@@ -233,11 +260,11 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         return {DomainStatus::Applied,std::monostate{}};
     }
     if(request.action==Action::ReadAncientAltar) {
-        if(!request.npc || request.message!=20002 || int(actor.area)!=120 || p->persistent.player.hp<=0) return {DomainStatus::InvalidRequest,{}};
+        if(request.message!=20002 || int(actor.area)!=120 || p->persistent.player.hp<=0) return {DomainStatus::InvalidRequest,{}};
         const auto reader=state_.actFive.ancientAltarReaders.find(actor.player);
-        if(reader==state_.actFive.ancientAltarReaders.end() || reader->second.altar!=*request.npc ||
+        if(reader==state_.actFive.ancientAltarReaders.end() || (request.npc && reader->second.altar!=*request.npc) ||
            reader->second.actor!=actor.actor || reader->second.generation!=actor.areaGeneration) return {DomainStatus::Stale,{}};
-        const auto result=readAncientAltar(actor,*request.npc);
+        const auto result=readAncientAltar(actor,reader->second.altar);
         if(result) state_.actFive.ancientAltarReaders.erase(actor.player);
         return result;
     }
@@ -273,7 +300,22 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
     if(result && *request.message==76 && credited(actor.player,QuestId::DenOfEvil)) state_.actOne.burialOffer=true;
     return result;
 }
+DomainResult<> System::offerObjectReading(const ActorContext &actor, EntityId source, uint16_t message) {
+    auto readers = state_.objectReaders;
+    readers.insert_or_assign(actor.player, State::ObjectReading{actor.actor, source, actor.area, actor.areaGeneration, message});
+    const auto sent = ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
+        {NpcMessagesFact{source,{{0,message}},2}}});
+    if (sent) state_.objectReaders.swap(readers);
+    return {sent.status, sent ? std::optional{std::monostate{}} : std::nullopt};
+}
 StepStatus System::step(TickContext tick,FrameFacts &) {
+    std::erase_if(state_.objectReaders, [&](const auto &entry) {
+        const auto *player = ports_.players.find(entry.first);
+        const auto &reading = entry.second;
+        const auto *area = ports_.areas.find(reading.area);
+        return !player || !player->entered || player->persistent.player.hp <= 0 ||
+            player->actor != reading.actor || player->area != reading.area || !area || area->generation != reading.generation;
+    });
     if(!stepResuming_) {
         stepCursor_=0;stepBlocked_=false;
         std::erase_if(state_.credited,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || state_.creditedActors.at(entry.first)!=p->actor;});

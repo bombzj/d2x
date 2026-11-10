@@ -332,6 +332,8 @@ void itemPacket(OnlineView &v, const Packet &p, bool pd2) {
     }
     // 0x9C inventory packets may precede 0x0B; their player is this connection.
     if (!item.owner && item.ownerType == 0 && v.load.playerUnitId) item.owner = v.load.playerUnitId;
+    if (p.id == 0x9C && item.action == 11 && !pd2 && v.world.shopRequested &&
+        bool(item.flags & 0x2000000u) != v.world.shopGamble) return;
     if (p.id == 0x9C && item.action == 11 && v.world.shopRequested &&
         v.world.npcRequested == v.world.shopRequested) {
         item.ownerType = 1; item.owner = v.world.shopRequested;
@@ -1120,18 +1122,33 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             if (i < count) messages.push_back({id, menu});
         }
         r.finish();
+        if (target.type == 2 && profile == protocol::ClientProfile::Lod113c) {
+            if (messages.empty() || messages.front().menu == 3) break;
+            // 7DF47 distinguishes overhead text. 7DF88 reads only the first scroll slot.
+            messages.resize(1);
+        }
         if ((target.type == 1 && w.npcRequested == target.id) || (target.type==2 && w.units.contains(target))) {
             w.questAlerts.erase(target);
+            if (target.type == 1 && profile == protocol::ClientProfile::Lod113c) {
+                // Retail D2Client 7DEA4/7DEAF rebuilds the text list by prepending
+                // each wire entry, then sorts it by unsigned string ID.
+                std::reverse(messages.begin(), messages.end());
+                std::stable_sort(messages.begin(), messages.end(), [](const auto &a, const auto &b) {
+                    return a.stringId < b.stringId;
+                });
+            }
             // A new conversation waits for NPC-context 28. Native speech
             // refreshes use 27/29 only and replace the already active list.
-            const bool active=target.type==1 && w.npcConversation && w.npcConversation->source==target.id;
+            const bool active=target.type==1 && w.npcConversation && w.npcConversation->type==1 &&
+                w.npcConversation->source==target.id;
             auto &current=target.type==1 && !active?w.npcPendingConversation:w.npcConversation;
-            if (!current || current->source != target.id)
-                current = OnlineNpcConversation{target.id, 0, {}, {}};
+            if (!current || current->source != target.id || current->type != target.type)
+                current = OnlineNpcConversation{target.id, 0, {}, {}, target.type, {}};
             auto &conversation = *current;
             conversation.type=target.type;
             conversation.messages = std::move(messages);
-            conversation.acknowledged.clear();
+            if (!active || profile != protocol::ClientProfile::Lod113c)
+                conversation.acknowledged.clear();
             conversation.revision = w.revision;
         }
         break;

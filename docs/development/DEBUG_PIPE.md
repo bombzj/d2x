@@ -79,7 +79,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 父AI与独立debug-walk共用执行预算计时：观察面板、表现暂停或地图输入不可用期间不消耗导航总预算和移动无进展时间，恢复不因面板停留触发15秒卡住；不延长已经提交给正常客户端的请求现实期限。导航状态另含executionBlocked、executionRemainingMs和suspendedExecutionMs。AI动作的输入占用、结果观察及恢复契约见[动作调度](DEBUG_AI.md)。
 
-显式导航期间调试输入持有后台客户端焦点，窗口未最小化时单机可正常推进；客户端菜单／表现暂停会阻止操作，最小化不执行输入；显式server-pause仍由宿主独立持有，导航不读取宿主暂停真值，无位置进展将按期限失败。人工点击／按键及其他修改客户端状态的调试请求取消导航，让位正常操作。返回`navigation`含state、reason、gameGeneration／areaGeneration、target／unit／segment、clientPosition／serverPosition、targetSource、exitLevel与boundaryStart／boundaryEnd、decisionIntervalMs／decisions／clientMoving，以及moveRequests／interactionRequests／searchRooms（位置为最近一次导航决策采样，停止后实时位置见online-status；前两项为客户端入口受理次数，同目标合并时不等于发包数）；`townLane`与`pointerSelections`记录城镇双段续接及最近32次普通短程选点，字段与范围见[现场保持与子导航诊断](DEBUG_AI.md#事件观察与现场保持)。`completed`对传送点表示已收到服务器菜单，其他交互只表示已提交正常请求，不表示奖励或旅行成功。源码入口为[auto_walk.cpp](../../src/app/debug/auto_walk.cpp)，没有新增测试脚本／专用测试程序；构建与实际覆盖见[原版缺口](ORIGINAL_GAPS.md)。
+显式导航期间调试输入持有后台客户端焦点，窗口未最小化时单机可正常推进；客户端菜单／表现暂停会阻止操作，最小化不执行输入；显式server-pause仍由宿主独立持有，导航不读取宿主暂停真值，无位置进展将按期限失败。人工点击／按键及其他修改客户端状态的调试请求取消导航，让位正常操作。返回`navigation`含state、reason、gameGeneration／areaGeneration、target／unit／segment、clientPosition／serverPosition、targetSource、exitLevel与boundaryStart／boundaryEnd、decisionIntervalMs／decisions／clientMoving，以及moveRequests／interactionRequests／searchRooms（位置为最近一次导航决策采样，停止后实时位置见online-status；前两项为客户端入口受理次数，同目标合并时不等于发包数）；`townLane`与`pointerSelections`记录城镇双段续接及最近32次普通短程选点，字段与范围见[现场保持与子导航诊断](DEBUG_AI.md#事件观察与现场保持)。`completed`对传送点表示已收到服务器菜单，其他交互只表示已提交正常请求，不表示奖励或旅行成功。源码入口为[auto_walk.cpp](../../src/app/debug/auto_walk.cpp)，没有新增测试脚本／专用测试程序；调试导航组合边界见[AI验收范围](DEBUG_AI.md#待验收调试导航)。
 
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command debug-walk -Arguments @{goal='waypoint'}
@@ -269,7 +269,7 @@ $spec.preview=$false
 | `online-interact` | unitId、unitType（默认2，支持1／2／5）、run（NPC靠近默认true）；目标必须在scene.mapTargets中。近处发原0x13；远处先按真实GUID发02／04，本地普通单位路径到达后才13，交互资格及菜单仍由服务端确认；accepted不代表已操作、交谈打开或换区 |
 | `online-town-portal` | 无参数；要求存活／原生地图可移动／非城镇及原服已报告可用卷轴或书技能、右技能。选原右技能并施放，后续world.townPortalPending及实际type2门户回包给出等待／分配状态；不发放卷轴 |
 | `online-npc-interact` | unitId、run（默认true）；online-interact的type1入口。只接MPQ允许交谈的实际NPC，远处先靠近；等待scene.npcConversation |
-| `online-npc-message` | stringId（0–65535）、可选npcRevision；读取当前原27／28的NPC或物件阅读消息，不依赖激活后可能消失的可点击目标。必须为服务端当前列表且未确认，版本不符拒绝。复用任务AI的RealmSession确认入口发0x31，acknowledged只表示入队，不是任务成功回执 |
+| `online-npc-message` | stringId（0–65535）、可选npcRevision。复用客户端对白功能入口。零售NPC传当前自动对白的编号结束该条，31已在播放开始时提交。零售NPC的menu2评论只在Talk界面本地播放。物件阅读使用当前首个滚动编号，原生需要确认的读文在结束时以FFFFFFFF为目标发31。受理只表示客户端操作提交 |
 | `online-npc-close` | 无参数；取消尚在靠近的交谈意图，或发0x30关闭当前NPC。取消靠近意图不会传送角色或撤销已提交的服务端寻路 |
 | `online-npc-travel` | 无参数；要求当前scene.npcConversation.travelLabel与travelDestination来自瓦瑞夫／马席夫真实身份和任务资格；发原0x38 action=0、NPC、目的地并结束临时交谈，随后查询实际幕／位置 |
 | `online-staff-update` | cancel布尔（默认false）；要求已收到原0x58的插杖来源，提交时只使用实际本人Cursor物品GUID，发送原0x44 state3；cancel发送state2。入队不代表材料消耗或古墓开墙，应核对库存、0x58结果和权威机关 |

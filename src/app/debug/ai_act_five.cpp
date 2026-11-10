@@ -154,7 +154,7 @@ void DebugAi::Impl::configureActFiveQuest(Goal &goal,QuestId id) const {
     s.resultWaitSeconds=90;
     const auto farewell=node("tyrael-final-dialogue",s,{{flag(baal,0x81)}},{slain});
     // A5Q6 creates the final portal at NPCDEACTIVATE, after normal listening
-    // closes. Keep that callback separate from the object's observation.
+    // closes. Keep that callback separate from the object's observation.read().
     s={};s.action=QuestAction::Encounter;s.stateQuest=baal;s.area=chamber;s.target=exit;
     s.witness=definitions->selector(Json{{"monster","tyrael3"}});
     auto exitReady=fact(K::ObjectOpened);exitReady.value=exit.identity;exitReady.area=chamber;exitReady.any=true;

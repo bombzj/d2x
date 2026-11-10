@@ -292,6 +292,24 @@ void ClassicFont::drawBaseline(std::string_view line, Vec at, float scale, Color
         at.x += widthOf(code) * scale;
     }
 }
+void ClassicFont::drawBaselineRows(std::string_view line, Vec at, int skipBottom, int rows) const {
+    if (skipBottom < 0 || rows <= 0) return;
+    for (const auto code : utf8Decode(line)) {
+        if (code != ' ') {
+            if (const auto *glyph = glyphOf(code)) {
+                const auto &texture = glyph->texture;
+                const int height = std::min(rows, texture.height - skipBottom);
+                if (height > 0) {
+                    const float sourceY = float(texture.height - skipBottom - height);
+                    DrawTexturePro(texture, {0, sourceY, float(texture.width), float(height)},
+                        {at.x + glyph->x, at.y + glyph->y + 1 - skipBottom - height,
+                         float(texture.width), float(height)}, {}, 0, WHITE);
+                }
+            }
+        }
+        at.x += widthOf(code);
+    }
+}
 const Sprite *ClassicFont::glyphFrame(uint16_t frame) const {
     if (!graphics || !source || frame >= source->frames.size()) return nullptr;
     auto found = sprites.find(frame);

@@ -11,12 +11,12 @@
 
 namespace d2x {
 class Archives;
+class OnlineObservation;
 class DebugAutoWalk;
 class RemoteTown;
-class RemoteControl;
-class RemoteCombat;
-class RemoteInventory;
-namespace net {class RealmSession;}
+class IOnlineControl;
+class IOnlineCombat;
+class IOnlineInventory;
 // High-level debug input orchestration. Owns intentions and observations only.
 class DebugAi {
     struct Impl;
@@ -32,6 +32,7 @@ class DebugAi {
         unsigned navigationWeaponSet{};
         std::function<std::optional<bool>(uint16_t)> skillUsable;
         std::function<std::optional<unsigned>(uint32_t)> buyQuote;
+        std::function<bool(uint32_t source,uint32_t item,uint64_t itemRevision)> submitStaff;
         std::function<bool()> openQuestLog;
         std::function<void()> closeQuestLog;
         std::span<const OnlineSceneView::MissileDisplay> missiles;
@@ -43,13 +44,13 @@ class DebugAi {
     bool controlsMovement() const;
     bool controlsInventory() const;
     // Player input releases a live AI plan only through Escape in the game view.
-    void manualInput(net::RealmSession &,DebugAutoWalk &,RemoteControl &,RemoteCombat &);
-    std::optional<std::string> command(const nlohmann::json &,net::RealmSession &,RemoteTown &,
-        DebugAutoWalk &,RemoteControl &,RemoteCombat &,RemoteInventory &);
-    void tick(net::RealmSession &,RemoteTown &,DebugAutoWalk &,RemoteControl &,RemoteCombat &,
-        RemoteInventory &,const SuppliesView &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
+    void manualInput(DebugAutoWalk &,IOnlineControl &,IOnlineCombat &);
+    std::optional<std::string> command(const nlohmann::json &,const OnlineObservation &,const RemoteTown &,
+        DebugAutoWalk &,IOnlineControl &,IOnlineCombat &);
+    void tick(const OnlineObservation &,const RemoteTown &,DebugAutoWalk &,IOnlineControl &,IOnlineCombat &,
+        IOnlineInventory &,const SuppliesView &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
   private:
-    void tickPlan(net::RealmSession &,RemoteTown &,DebugAutoWalk &,RemoteControl &,RemoteCombat &,
-        RemoteInventory &,const SuppliesView &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
+    void tickPlan(const OnlineObservation &,const RemoteTown &,DebugAutoWalk &,IOnlineControl &,IOnlineCombat &,
+        IOnlineInventory &,const SuppliesView &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
 };
 }

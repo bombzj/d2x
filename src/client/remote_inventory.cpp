@@ -1,5 +1,6 @@
 #include "gameplay/items/quality_rules.hpp"
 #include "content/monsters/monster_identity.hpp"
+#include "content/npc/vendor_stock.hpp"
 #include "remote_inventory.hpp"
 #include "client/inventory_actions.hpp"
 #include "content/pd2_stash.hpp"
@@ -15,19 +16,6 @@
 #include <stdexcept>
 
 namespace d2x {
-bool RemoteInventory::submitQuestItem(net::RealmSession &session,uint32_t source,std::optional<uint32_t> item,
-                                     std::optional<OnlineIntentContext> context) {
-    update(session.read());
-    const auto &view=session.read();
-    if(view.world.staffSource!=source) return reject("Quest item panel source changed");
-    if(item) {
-        const auto wire=view.world.items.find(*item);const auto decoded=view_.items.find(*item);
-        if(wire==view.world.items.end() || !onlineItemOwnedBy(wire->second,view.load.playerUnitId) ||
-            wire->second.mode!=4 || decoded==view_.items.end() || !decoded->second.decoded)
-            return reject("Quest item is not the current decoded cursor item");
-    }
-    return session.submit_staff(source,item,context.value_or(onlineIntentContext(view)));
-}
 using net::protocol::BitReader;
 std::optional<OnlinePoint> firstBackpackSpace(const OnlineView &view, const OnlineInventoryView &inventory, uint32_t movingItem) {
     const auto moving = inventory.items.find(movingItem);
@@ -54,7 +42,8 @@ std::optional<OnlinePoint> firstBackpackSpace(const OnlineView &view, const Onli
     }
     return {};
 }
-RemoteInventory::RemoteInventory(Archives &archives, net::protocol::ClientProfile profile) : profile_(profile), strings_(archives) {
+RemoteInventory::RemoteInventory(Archives &archives, net::RealmSession &session, net::protocol::ClientProfile profile)
+    : session_(session), profile_(profile), strings_(archives) {
     for (const char *name : {"weapons", "armor", "misc", "itemtypes", "itemstatcost", "inventory", "belts", "books", "charstats", "bodylocs", "npc", "monstats", "hireling"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));
     characters_=loadCharacterDefinitions(tables_.at("charstats"));
@@ -394,16 +383,16 @@ void RemoteInventory::update(const OnlineView &online) {
         throw std::runtime_error("Unsupported PD2 belt capacity for native four-bit slots");
 }
 bool RemoteInventory::reject(std::string reason) { reason_ = std::move(reason); return false; }
-bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand command) {
+bool RemoteInventory::submit(OnlineItemCommand command) {
     if (command.action == OnlineItemAction::StorageRename)
         return reject("Stash rename is unavailable on the current CN service; no request was sent");
-    const bool pd2Items = session.read().remoteLobbyOnly;
+    const bool pd2Items = session_.read().remoteLobbyOnly;
     const bool pd2Equipment = profile_ != net::protocol::ClientProfile::Lod113c;
     if (pd2Items && (!onlinePd2ItemAction(command.action) ||
         (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 2 && command.page != 3 && command.page != 4)))
         return reject("This item operation is unavailable for the selected client profile");
-    update(session.read());
-    const auto &online = session.read();
+    update(session_.read());
+    const auto &online = session_.read();
     if (!command.context) command.context = onlineIntentContext(online);
     if (!onlineInteractionMatches(*command.context, online))
         return reject("Queued item intent belongs to a previous game, area or interaction");
@@ -416,11 +405,12 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     if (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending && command.action != OnlineItemAction::StorageClose)
         return reject("Wait for the pending item request's server update or timeout");
     auto send = [&] {
-        if (!session.submit_item(command)) return reject(session.read().error ? session.read().error->message : "Item command is rate limited");
+        if (!session_.submit_item(command)) return reject(session_.read().error ? session_.read().error->message : "Item command is rate limited");
         reason_.clear(); return true;
     };
     auto npcIdentity = [&]() -> std::string_view {
-        if (!world.npcConversation || world.npcRequested != world.npcConversation->source) return {};
+        if (!world.npcConversation || world.npcConversation->playingSpeech ||
+            world.npcRequested != world.npcConversation->source) return {};
         if (command.npc && command.npc != world.npcConversation->source) return {};
         command.npc = world.npcConversation->source;
         const auto unit = world.units.find({1, command.npc});
@@ -449,7 +439,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             return send();
         }
         if (command.gamble) {
-            if (identity != "gheed" && identity != "elzix" && identity != "alkor" && identity != "jamella" && identity != "drehya" && identity != "nihlathak")
+            if (!npcCanGamble(identity))
                 return reject("This original NPC does not offer gambling");
         } else if (!vendor || identity == "nihlathak") return reject("Current MPQ and original rules do not identify a normal trader");
         if (command.action == OnlineItemAction::TradeOpen) return send();
@@ -929,7 +919,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             }
         }
     }
-    if (!session.submit_item(command)) return reject(online.error ? online.error->message : "Item command is rate limited");
+    if (!session_.submit_item(command)) return reject(online.error ? online.error->message : "Item command is rate limited");
     reason_.clear(); return true;
 }
 } // namespace d2x

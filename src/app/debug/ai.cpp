@@ -41,7 +41,7 @@ nlohmann::json reloadPolicyNumbers(const nlohmann::json &config) {
         "kiteMinDistance","hazardLookaheadMs","hazardPadding"});
     copy("mobility",{"distance"});
     copy("supplies",{"lifePercent","manaPercent","criticalLifePercent","healthCount","manaCount","quiverCount","intervalMs"});
-    copy("events",{"waitSeconds","initialWaitMs","doorInitialWaitMs","scrollInitialWaitMs","questLogDurationMs","waypointCloseDelayMs","encounterRadius","standoffMin","standoffMax",
+    copy("events",{"waitSeconds","initialWaitMs","doorInitialWaitMs","scrollInitialWaitMs","questLogDurationMs","waypointCloseDelayMs","npcDialogueCloseDelayMs","encounterRadius","standoffMin","standoffMax",
         "walkDecisionMs","walkReactionMs","walkRequestIntervalMs","walkRetryMs","townTurnBaseMs","townTurnMinMs","townTurnMaxMs"});
     return result;
 }
@@ -303,7 +303,7 @@ DebugAi::Impl::CombatPolicy DebugAi::Impl::parseCombat(const Json &j) const {
     const auto candidate=[&](const Json &value) {
         if(value.is_object()) for(const auto &[key,entry]:value.items()) {
             (void)entry;
-            if(key!="skill" && key!="minLevel") throw std::invalid_argument("Unknown combat skill option: "+key);
+            if(key!="skill" && key!="minLevel" && key!="range") throw std::invalid_argument("Unknown combat skill option: "+key);
         }
         const auto id=definitions->skill(value.is_object()?value.at("skill"):value);
         const auto minimum=unsigned(value.is_object()?integer(value,"minLevel",1,1,255):1);
@@ -314,6 +314,12 @@ DebugAi::Impl::CombatPolicy DebugAi::Impl::parseCombat(const Json &j) const {
         const auto [found,inserted]=p.minimumSkillLevels.emplace(id,minimum);
         if(!inserted && found->second!=minimum)
             throw std::invalid_argument("Duplicate combat skill has different minLevel: "+std::to_string(id));
+        if(value.is_object() && value.contains("range")) {
+            const auto range=integer(value,"range",16,2,30);
+            const auto [entry,added]=p.skillRanges.emplace(id,range);
+            if(!added && entry->second!=range)
+                throw std::invalid_argument("Duplicate combat skill has different range: "+std::to_string(id));
+        }
         return id;
     };
     if(j.contains("skill")) p.skill=candidate(j.at("skill"));
@@ -360,7 +366,7 @@ DebugAi::Impl::EventPolicy DebugAi::Impl::parseEvents(const Json &j) const {
     if(!j.is_object()) throw std::invalid_argument("events must be an object");
     for(const auto &[key,value]:j.items()) {
         (void)value;
-        if(key!="waitSeconds" && key!="initialWaitMs" && key!="doorInitialWaitMs" && key!="scrollInitialWaitMs" && key!="questLogDurationMs" && key!="waypointCloseDelayMs" && key!="encounterRadius" && key!="standoffMin" && key!="standoffMax" &&
+        if(key!="waitSeconds" && key!="initialWaitMs" && key!="doorInitialWaitMs" && key!="scrollInitialWaitMs" && key!="questLogDurationMs" && key!="waypointCloseDelayMs" && key!="npcDialogueCloseDelayMs" && key!="encounterRadius" && key!="standoffMin" && key!="standoffMax" &&
             key!="walkDecisionMs" && key!="walkReactionMs" && key!="walkRequestIntervalMs" && key!="walkRetryMs" &&
             key!="townTurnBaseMs" && key!="townTurnMinMs" && key!="townTurnMaxMs")
             throw std::invalid_argument("Unknown event policy: "+key);
@@ -371,6 +377,7 @@ DebugAi::Impl::EventPolicy DebugAi::Impl::parseEvents(const Json &j) const {
     p.scrollInitialWaitMs=integer(j,"scrollInitialWaitMs",1000,0,30000);
     p.questLogDurationMs=integer(j,"questLogDurationMs",2000,0,30000);
     p.waypointCloseDelayMs=integer(j,"waypointCloseDelayMs",300,0,30000);
+    p.npcDialogueCloseDelayMs=integer(j,"npcDialogueCloseDelayMs",500,0,30000);
     p.walkDecisionMs=integer(j,"walkDecisionMs",160,1,5000);
     p.walkReactionMs=integer(j,"walkReactionMs",40,1,5000);
     p.walkRequestIntervalMs=integer(j,"walkRequestIntervalMs",200,0,5000);
@@ -395,7 +402,7 @@ void DebugAi::Impl::note(std::string event,std::string detail) {
     while(history.size()>128) history.pop_front();
 }
 void DebugAi::Impl::observeDiagnostics(const Context &c) {
-    const auto &view=c.session.read();
+    const auto &view=c.observation.read();
     const auto &alerts=view.world.questAlerts;
     if(alerts!=loggedQuestAlerts) {
         const auto describe=[&](const OnlineUnitKey &key) {
@@ -427,6 +434,7 @@ void DebugAi::Impl::observeDiagnostics(const Context &c) {
     Json detail{{"stationaryMs",std::chrono::duration_cast<std::chrono::milliseconds>(now-stallWatch.since).count()},
         {"phase",phase},{"reason",reason},{"walk",debugWalkName(c.walk.observe().state)},{"walkActive",c.walk.active()},{"walkIntent",navigation.walkIntent},
         {"child",c.walk.snapshot()},{"actions",full.value("actions",Json(nullptr))},
+        {"routeExecution",routeExecutionSnapshot()},{"combat",battle.combatDiagnostics},
         {"questProgress",full.value("questProgress",Json(nullptr))},{"travel",full.value("travel",Json(nullptr))},
         {"exploration",full.value("exploration",Json(nullptr))},{"populationMemory",full.value("populationMemory",Json(nullptr))},
         {"search",navigation.searchDiagnostics},{"approach",navigation.approachDiagnostics},{"mobility",navigation.mobilityDiagnostics},{"travelDiagnostics",navigation.travelDiagnostics}};
@@ -480,6 +488,7 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"doorInitialWaitMs",eventPolicy.doorInitialWaitMs},{"scrollInitialWaitMs",eventPolicy.scrollInitialWaitMs},{"retryMs",1000},{"encounterRadius",eventPolicy.encounterRadius},
             {"questLogDurationMs",eventPolicy.questLogDurationMs},
             {"waypointCloseDelayMs",eventPolicy.waypointCloseDelayMs},
+            {"npcDialogueCloseDelayMs",eventPolicy.npcDialogueCloseDelayMs},
             {"walkDecisionMs",eventPolicy.walkDecisionMs},{"walkReactionMs",eventPolicy.walkReactionMs},
             {"walkRequestIntervalMs",eventPolicy.walkRequestIntervalMs},{"walkRetryMs",eventPolicy.walkRetryMs},
             {"townTurnBaseMs",eventPolicy.townTurnBaseMs},{"townTurnMinMs",eventPolicy.townTurnMinMs},{"townTurnMaxMs",eventPolicy.townTurnMaxMs},
@@ -507,7 +516,7 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"departureSkill",battle.excursionSkill?Json(*battle.excursionSkill):Json(nullptr)},
             {"selectionMode","departure"},
             {"groupSkill",policy.groupSkill?Json(*policy.groupSkill):Json(nullptr)},
-            {"fallbackSkills",policy.fallbackSkills},{"minimumSkillLevels",policy.minimumSkillLevels},{"noProgressSeconds",policy.noProgressSeconds},
+            {"fallbackSkills",policy.fallbackSkills},{"minimumSkillLevels",policy.minimumSkillLevels},{"skillRanges",policy.skillRanges},{"noProgressSeconds",policy.noProgressSeconds},
             {"stallTimeoutSeconds",policy.stallTimeoutSeconds},{"retreatLifePercent",policy.retreatLifePercent},{"lifeDropPercent",policy.lifeDropPercent},
             {"scope",policy.scope},{"staticField",policy.staticField},{"avoidHazards",policy.avoidHazards},
             {"rangedKite",policy.rangedKite},{"kiteIntervalMs",policy.kiteIntervalMs},{"kiteDistance",policy.kiteDistance},
@@ -559,7 +568,7 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
         {"actions",actionDiagnostics},{"navigationDiagnostics",{{"search",navigation.searchDiagnostics},{"approach",navigation.approachDiagnostics},{"mobility",navigation.mobilityDiagnostics},{"travel",navigation.travelDiagnostics},{"terrainClue",navigation.terrainClueDiagnostics}}},
         {"castRequests",castRequests},{"navigationGoals",moveGoals},{"interactions",interactions},{"history",history}};
 }
-void DebugAi::Impl::stop(DebugAutoWalk &walk,RemoteControl &control,RemoteCombat &combat) {
+void DebugAi::Impl::stop(DebugAutoWalk &walk,IOnlineControl &control,IOnlineCombat &combat) {
     walk.manualInput(control);control.cancelMovement();
     OnlineCombatCommand command;command.action=OnlineCombatCommand::Action::Stop;
     try {if(!combat.submit(command)) note("stop-unavailable",combat.reason());}
@@ -573,13 +582,13 @@ void DebugAi::Impl::cancelWalk(Context &c) {
 void DebugAi::Impl::finish(std::string value,std::string detail,Context &c) {
     // Failure stops movement, so it cannot rely on the normal move-to-close
     // path to dismiss the conversation opened by this AI's current action.
-    if(value=="failed" && c.session.read().stage==OnlineStage::ProtocolReady && c.session.read().gameGeneration==game &&
-        c.session.read().world.npcRequested && bool(navigation.walkIntent) && (navigation.walkIntent.unit?navigation.walkIntent.unit->type:-1)==1 &&
-        (navigation.walkIntent.unit?navigation.walkIntent.unit->id:uint32_t{})==*c.session.read().world.npcRequested) {
+    if(value=="failed" && c.observation.read().stage==OnlineStage::ProtocolReady && c.observation.read().gameGeneration==game &&
+        c.observation.read().world.npcRequested && bool(navigation.walkIntent) && (navigation.walkIntent.unit?navigation.walkIntent.unit->type:-1)==1 &&
+        (navigation.walkIntent.unit?navigation.walkIntent.unit->id:uint32_t{})==*c.observation.read().world.npcRequested) {
         if(c.control.closeNpc()) note("failed-dialogue-closed","Released the AI's NPC conversation before stopping");
         else note("failed-dialogue-close-rejected","Client did not accept closing the current conversation");
     }
-    if(c.session.read().stage==OnlineStage::ProtocolReady && c.session.read().gameGeneration==game)
+    if(c.observation.read().stage==OnlineStage::ProtocolReady && c.observation.read().gameGeneration==game)
         stop(c.walk,c.control,c.combat);
     else {
         // The old game's stop must neither affect a new game nor replace a
@@ -602,12 +611,12 @@ void DebugAi::Impl::advance(Context &c,std::string evidence,bool skipped) {
         {"newObservedTiles",navigationEfficiency.observedTiles-goalEfficiencyStart.observedTiles}}.dump());
     releaseCombat(c);
     questState.questPlanDiagnostics=nullptr;
-    if(c.session.read().world.npcRequested) c.control.closeNpc();
-    if(c.session.read().world.waypointSource) c.control.useWaypoint(0);
+    if(c.observation.read().world.npcRequested) c.control.closeNpc();
+    if(c.observation.read().world.waypointSource) c.control.useWaypoint(0);
     if(skipped) goals.at(cursor).skipReason=evidence;
     if(!skipped && goals.at(cursor).kind==Kind::Quest && eventPolicy.questLogDurationMs>0) {
-        questState.questLogPending=true;questState.questLogGame=c.session.read().gameGeneration;
-        questState.questLogConnection=c.session.read().connectionGeneration;
+        questState.questLogPending=true;questState.questLogGame=c.observation.read().gameGeneration;
+        questState.questLogConnection=c.observation.read().connectionGeneration;
     }
     cancelWalk(c);behaviorLog.endPhase();note(skipped?"goal-skipped":"goal-completed",std::move(evidence));++cursor;resetStep();questState.questRun={};navigation.padTransfersWithoutDiscovery=0;
     if(cursor==goals.size()) {
@@ -639,7 +648,8 @@ DebugAi::~DebugAi() {
 }
 bool DebugAi::active() const {return impl_->active();}
 bool DebugAi::hasPlan() const {return impl_->live();}
-bool DebugAi::controlsMovement() const {return impl_->active() && (impl_->navigation.mobilityHold || impl_->actionRecoveryBusy || impl_->supply.quiverTransfer ||
+bool DebugAi::controlsMovement() const {return impl_->active() && (Impl::Clock::now()<impl_->npcDialogueReadyAt() ||
+    impl_->navigation.mobilityHold || impl_->actionRecoveryBusy || impl_->supply.quiverTransfer ||
     (impl_->navigation.routeExecution && impl_->navigation.routeExecution->phase!=Impl::RouteExecution::Phase::Resume &&
      (impl_->navigation.walkIntent==impl_->navigation.routeExecution->intent ||
       (!impl_->battle.hazardDodge && !impl_->battle.retreatPoint && !impl_->battle.combatRun.reposition && !impl_->battle.combatRun.kitePoint))));}
@@ -652,24 +662,24 @@ bool DebugAi::controlsInventory() const {
     const auto action=s.goals[s.cursor].steps[s.questState.questRun.step].action;
     return s.questState.questRun.initialInventory || s.questState.questRun.recoveringItem || action==Impl::QuestAction::Combine || action==Impl::QuestAction::SubmitStaff || action==Impl::QuestAction::Imbue || action==Impl::QuestAction::EquipWeapon;
 }
-void DebugAi::Impl::cancel(DebugAutoWalk &walk,RemoteControl &control,RemoteCombat &combat,std::string why) {
+void DebugAi::Impl::cancel(DebugAutoWalk &walk,IOnlineControl &control,IOnlineCombat &combat,std::string why) {
     if(!live()) return;
     stop(walk,control,combat);behaviorLog.endPhase();state="cancelled";
     reason=std::move(why);note(state,reason);behaviorLog.close();
 }
-void DebugAi::manualInput(net::RealmSession &,DebugAutoWalk &walk,RemoteControl &control,RemoteCombat &combat) {
+void DebugAi::manualInput(DebugAutoWalk &walk,IOnlineControl &control,IOnlineCombat &combat) {
     impl_->cancel(walk,control,combat,"Escape released AI control");
 }
-std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::RealmSession &session,RemoteTown &town,
-        DebugAutoWalk &walk,RemoteControl &control,RemoteCombat &combat,RemoteInventory &) {
+std::optional<std::string> DebugAi::command(const nlohmann::json &raw,const OnlineObservation &observation,const RemoteTown &town,
+        DebugAutoWalk &walk,IOnlineControl &control,IOnlineCombat &combat) {
     const auto name=raw.at("command").get<std::string>();if(!name.starts_with("debug-ai-")) return {};
     auto &s=*impl_;const auto now=Impl::Clock::now();
     auto request=raw;
     if(name=="debug-ai-reload-config" && !request.contains("configFile") && !s.configurationFile.empty()) request["configFile"]=s.configurationFile;
     std::optional<uint16_t> characterClass;
-    if(session.read().load.playerUnitId) {
-        const auto player=session.read().world.units.find({0,*session.read().load.playerUnitId});
-        if(player!=session.read().world.units.end()) characterClass=player->second.classId;
+    if(observation.read().load.playerUnitId) {
+        const auto player=observation.read().world.units.find({0,*observation.read().load.playerUnitId});
+        if(player!=observation.read().world.units.end()) characterClass=player->second.classId;
     }
     const auto j=name=="debug-ai-start" || name=="debug-ai-append" || name=="debug-ai-reload-config"?configuredAiRequest(request,characterClass):request;
     if(name=="debug-ai-status") return Impl::Json{{"ok",true},{"ai",s.snapshot()}}.dump();
@@ -691,7 +701,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             {"kind",p.units?"unit-observation":"terrain-observation"},
             {"boundary",p.boundary},{"approaches",p.approaches},{"evidence",p.evidence},{"deferred",p.deferred==p.evidence}});
         for(const auto &[at,edges]:m.walked) trails.push_back({{"from",at},{"to",edges}});
-        const auto player=session.read().world.playerPosition;
+        const auto player=observation.read().world.playerPosition;
         auto sketchInk=Impl::Json::array(),services=Impl::Json::array(),ownership=Impl::Json::array();
         if(m.sketch) for(const auto pixel:m.sketch->ink) sketchInk.push_back({pixel.x,pixel.y});
         if(m.sketch) for(const auto &entry:m.sketch->townServices)
@@ -726,14 +736,14 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
         }
     } else if(name=="debug-ai-resume") {
         if(s.state!="paused") throw std::invalid_argument("AI is not paused");
-        if(s.game!=session.read().gameGeneration) throw std::invalid_argument("AI plan belongs to a previous game");
-        if(s.areaGeneration!=session.read().world.areaGeneration || s.area!=town.read().area)
+        if(s.game!=observation.read().gameGeneration) throw std::invalid_argument("AI plan belongs to a previous game");
+        if(s.areaGeneration!=observation.read().world.areaGeneration || s.area!=town.read().area)
             throw std::invalid_argument("Paused AI area changed; cancel and start a new high-level plan");
         // Tick accounts only suspended execution budgets. Native requests
         // and their real-time deadlines keep running during an explicit pause.
         s.cadence.wake();s.state="running";s.note("resumed",std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(now-s.pausedAt).count())+"ms paused");
     } else if(name=="debug-ai-reload-config") {
-        if(!s.live() || s.game!=session.read().gameGeneration || !s.definitions) throw std::invalid_argument("No live AI plan in this game to configure");
+        if(!s.live() || s.game!=observation.read().gameGeneration || !s.definitions) throw std::invalid_argument("No live AI plan in this game to configure");
         for(const auto &[key,value]:j.items()) {
             (void)value;
             if(key!="command" && key!="configFile" && key!="combat" && key!="mobility" && key!="supplies" && key!="events")
@@ -748,7 +758,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             j.value("combat",Impl::Json::object())));
         nextCombat.enabled=p.enabled;nextCombat.scope=p.scope;nextCombat.skill=p.skill;nextCombat.fallbackSkills=p.fallbackSkills;
         nextCombat.groupSkill=p.groupSkill;
-        nextCombat.minimumSkillLevels=p.minimumSkillLevels;
+        nextCombat.minimumSkillLevels=p.minimumSkillLevels;nextCombat.skillRanges=p.skillRanges;
         nextCombat.aura=p.aura;nextCombat.staticField=p.staticField;nextCombat.avoidHazards=p.avoidHazards;
         auto nextMobilityPolicy=s.parseMobility(policyNumbers({{"distance",s.mobilityPolicy.distance}},j.value("mobility",Impl::Json::object())));
         nextMobilityPolicy.mode=s.mobilityPolicy.mode;nextMobilityPolicy.vigor=s.mobilityPolicy.vigor;
@@ -761,6 +771,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             {"initialWaitMs",s.eventPolicy.initialWaitMs},{"doorInitialWaitMs",s.eventPolicy.doorInitialWaitMs},{"scrollInitialWaitMs",s.eventPolicy.scrollInitialWaitMs},
             {"questLogDurationMs",s.eventPolicy.questLogDurationMs},
             {"waypointCloseDelayMs",s.eventPolicy.waypointCloseDelayMs},
+            {"npcDialogueCloseDelayMs",s.eventPolicy.npcDialogueCloseDelayMs},
             {"walkDecisionMs",s.eventPolicy.walkDecisionMs},{"walkReactionMs",s.eventPolicy.walkReactionMs},
             {"walkRequestIntervalMs",s.eventPolicy.walkRequestIntervalMs},{"walkRetryMs",s.eventPolicy.walkRetryMs},
             {"townTurnBaseMs",s.eventPolicy.townTurnBaseMs},{"townTurnMinMs",s.eventPolicy.townTurnMinMs},{"townTurnMaxMs",s.eventPolicy.townTurnMaxMs},
@@ -772,7 +783,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
         s.configurationFile=j.value("configFile",std::string{});
         s.note("config-reloaded",j.value("configFile",std::string("inline policy")));
     } else if(name=="debug-ai-start" || name=="debug-ai-append") {
-        const auto &view=session.read();
+        const auto &view=observation.read();
         if(view.protocolProfile!=net::protocol::clientCompatibility(net::protocol::ClientProfile::Lod113c).id)
             throw std::invalid_argument("Debug task recipes currently support the retail 1.13c profile only");
         if(view.stage!=OnlineStage::ProtocolReady || onlinePlayerDead(view.world) || !town.read().nativeMapReady)
@@ -830,7 +841,6 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
         if((!supplyPolicy.enabled || !supplyPolicy.buy) && std::any_of(plan.begin(),plan.end(),[](const auto &g){return g.kind==Impl::Kind::Restock;}))
             throw std::invalid_argument("restock requires supplies.enabled and supplies.buy");
         if(name=="debug-ai-start" && policy.enabled && !policy.skill) {
-            combat.update();
             for(const auto name:{"Frozen Orb","Fire Ball","Zeal","Attack"}) {
                 const auto id=s.definitions->skill(name);
                 if(std::any_of(combat.skills().begin(),combat.skills().end(),[&](const auto &v){return v.id==id && (v.level || v.innate) && !v.passive;})) {
@@ -842,7 +852,6 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
         if(!fighting && std::any_of(plan.begin(),plan.end(),[](const auto &g){return g.kind==Impl::Kind::Hunt || g.kind==Impl::Kind::Quest;}))
             throw std::invalid_argument("Hunt/quest goals require combat to be enabled");
         if(name=="debug-ai-start" && policy.enabled && policy.skill) {
-            combat.update();
             const bool available=std::any_of(combat.skills().begin(),combat.skills().end(),[&](const auto &v) {
                 const bool configured=v.id==policy.skill || std::find(policy.fallbackSkills.begin(),policy.fallbackSkills.end(),v.id)!=policy.fallbackSkills.end();
                 const auto minimum=policy.minimumSkillLevels.find(v.id);
@@ -852,12 +861,11 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             if(!available) throw std::invalid_argument("No configured combat attack meets its minimum effective skill level; learn a candidate or configure a usable fallback");
         }
         if(name=="debug-ai-start" && policy.aura) {
-            combat.update();
             if(std::none_of(combat.skills().begin(),combat.skills().end(),[&](const auto &v){return v.id==policy.aura && v.level && !v.passive;}))
                 throw std::invalid_argument("Configured battle aura is not currently learned");
         }
         if(name=="debug-ai-start" && policy.enabled) {
-            combat.update();bool aura=policy.aura.has_value();
+            bool aura=policy.aura.has_value();
             for(const auto candidate:{"Fanaticism","Concentration","Might"}) {
                 const auto id=s.definitions->skill(candidate);
                 aura=aura || std::any_of(combat.skills().begin(),combat.skills().end(),[&](const auto &v){return v.id==id && v.level && !v.passive;});
@@ -900,6 +908,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,net::Realm
             s.battle.excursionSkill.reset();s.battle.excursionSkillPrepared=false;
             s.configurationClass=characterClass && *characterClass<classNames.size()?classNames[*characterClass]:"unknown";
             s.eventPolicy=events;
+            s.npcDialogueDisplay.reset();
             walk.setTiming(events);
             s.rememberedDrops.clear();
             s.questState.summitTrialKills.reset();
@@ -952,10 +961,10 @@ void DebugAi::Impl::tickQuestLog(const OnlineView &view,const SuppliesView &supp
         questState.questLogPending=false;questState.questLogCloseAt=now+std::chrono::milliseconds(eventPolicy.questLogDurationMs);
     }
 }
-void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &walk,RemoteControl &control,
-        RemoteCombat &combat,RemoteInventory &inventory,const SuppliesView &supplies,bool blocked,std::optional<Vec> position,bool moving) {
+void DebugAi::tick(const OnlineObservation &observation,const RemoteTown &town,DebugAutoWalk &walk,IOnlineControl &control,
+        IOnlineCombat &combat,IOnlineInventory &inventory,const SuppliesView &supplies,bool blocked,std::optional<Vec> position,bool moving) {
     auto &s=*impl_;
-    s.tickQuestLog(session.read(),supplies,blocked);
+    s.tickQuestLog(observation.read(),supplies,blocked);
     if(!s.live()) return;
     const auto sampledAt=Impl::Clock::now();
     if(s.efficiencySampleAt!=Impl::Clock::time_point{} && s.efficiencyExecuting) {
@@ -965,12 +974,12 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
     }
     s.efficiencySampleAt=sampledAt;
     s.efficiencyExecuting=s.active() && !blocked && position && town.read().nativeMapReady &&
-        session.read().stage==OnlineStage::ProtocolReady;
+        observation.read().stage==OnlineStage::ProtocolReady;
     const auto observed=town.navigationMemory().observedCells;
     if(observed>s.efficiencyObserved) s.navigationEfficiency.observedTiles+=observed-s.efficiencyObserved;
     s.efficiencyObserved=observed;
-    const auto self=session.read().world.units.find({0,session.read().load.playerUnitId.value_or(0)});
-    const auto discontinuity=self==session.read().world.units.end()?0:self->second.positionDiscontinuity;
+    const auto self=observation.read().world.units.find({0,observation.read().load.playerUnitId.value_or(0)});
+    const auto discontinuity=self==observation.read().world.units.end()?0:self->second.positionDiscontinuity;
     if(position && s.efficiencyPosition && s.efficiencyArea==town.read().area) {
         if(discontinuity!=s.efficiencyDiscontinuity) ++s.navigationEfficiency.relocations;
         else if(moving) s.navigationEfficiency.walkingDistance+=(*position-*s.efficiencyPosition).length();
@@ -981,7 +990,7 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
         const auto feet=DebugExplorationMemory::playerCell(*position);
         local=OnlinePoint{uint16_t(feet.first),uint16_t(feet.second)};
     }
-    s.behaviorLog.observe(town.read().area,local,session.read().world.playerPosition);
+    s.behaviorLog.observe(town.read().area,local,observation.read().world.playerPosition);
     if(s.observedWalkFailures!=walk.failureCount()) {
         s.observedWalkFailures=walk.failureCount();
         if(bool(s.navigation.walkIntent)) {
@@ -996,7 +1005,7 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
     const auto decisions=s.decisions;
     s.phaseReported=false;
     const auto decisionStarted=Impl::Clock::now();
-    tickPlan(session,town,walk,control,combat,inventory,supplies,blocked,position,moving);
+    tickPlan(observation,town,walk,control,combat,inventory,supplies,blocked,position,moving);
     const auto decisionMs=std::chrono::duration<double,std::milli>(Impl::Clock::now()-decisionStarted).count();
     s.efficiencyWaiting=s.phase=="navigation-worker";
     s.efficiencyMode=town.read().town?1:s.navigation.mobilityTeleport && s.navigation.mobilityTarget?2:0;
@@ -1016,16 +1025,16 @@ void DebugAi::tick(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &wa
             {"travel",s.navigation.travelDiagnostics},{"routeExecution",s.routeExecutionSnapshot()},{"combat",s.battle.combatDiagnostics}};
         walk.navigationSearch().traceDecision(std::move(detail));
     }
-    s.tickQuestLog(session.read(),supplies,blocked);
+    s.tickQuestLog(observation.read(),supplies,blocked);
     if(!s.active()) return;
     {
         const Vec at=position.value_or(Vec{});
-        Impl::Context c{session,town,walk,control,combat,inventory,at,moving,&supplies};
+        Impl::Context c{observation,town,walk,control,combat,inventory,at,moving,&supplies};
         s.observeDiagnostics(c);
         if(position && !s.inputBlocked) s.observeTerrain(c);
     }
     if(s.inputBlocked) {
-        const auto why=session.read().stage!=OnlineStage::ProtocolReady?"Protocol not ready":
+        const auto why=observation.read().stage!=OnlineStage::ProtocolReady?"Protocol not ready":
             blocked?"Frontend input suspended":!position?"Local position unavailable":"Area or reconstructed map unavailable";
         s.behaviorLog.phase(s.cursor,"input-blocked",why);
     }

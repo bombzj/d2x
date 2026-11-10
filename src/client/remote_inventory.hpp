@@ -1,4 +1,5 @@
 #pragma once
+#include "client/online_actions.hpp"
 #include "contracts/online.hpp"
 #include "content/string_table.hpp"
 #include "content/character/character_attributes.hpp"
@@ -8,7 +9,8 @@
 
 namespace d2x {
 struct EquipmentDefinition;
-class RemoteInventory {
+class RemoteInventory : public IOnlineInventory {
+    net::RealmSession &session_;
     std::map<std::string, DataTable, std::less<>> tables_;
     std::vector<CharacterDefinition> characters_;
     struct Base { std::string table; size_t row{}; };
@@ -28,14 +30,12 @@ class RemoteInventory {
     int baseNumber(const OnlineItem &, std::string_view) const;
     bool reject(std::string);
   public:
-    explicit RemoteInventory(Archives &, net::protocol::ClientProfile = net::protocol::ClientProfile::Lod113c);
+    RemoteInventory(Archives &, net::RealmSession &, net::protocol::ClientProfile = net::protocol::ClientProfile::Lod113c);
     void update(const OnlineView &);
-    const OnlineInventoryView &read() const { return view_; }
+    const OnlineInventoryView &read() const override { return view_; }
     OnlineStashLayout stashLayout() const { return stashLayout_; }
-    EquipmentDefinition equipmentDefinition(const OnlineItem &) const;
-    const std::string &reason() const { return reason_; }
-    bool submit(net::RealmSession &, OnlineItemCommand);
-    bool submitQuestItem(net::RealmSession &,uint32_t source,std::optional<uint32_t> item,
-                         std::optional<OnlineIntentContext> context = {});
+    EquipmentDefinition equipmentDefinition(const OnlineItem &) const override;
+    const std::string &reason() const override { return reason_; }
+    bool submit(OnlineItemCommand) override;
 };
 } // namespace d2x

@@ -34,10 +34,17 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     const auto rows = decodeTable(archives.read("data/global/excel/objects.txt"));
     const DataTable objectTable(archives.read("data/global/excel/objects.txt"));
     const DataTable missiles(archives.read("data/global/excel/missiles.txt"));
-    if(request.act==4) {
+    if(request.act==4 || (!content.pd2Host && (request.level==4 || request.level==74))) {
         ClassicStrings strings(archives);
-        if(!strings.speech(20131).empty()) area.questObjectMessages.emplace(67,20131);
-        if(!strings.speech(20002).empty()) area.questObjectMessages.emplace(65,20002);
+        if (request.act == 0) {
+            if (!strings.speech(127).empty()) area.questObjectMessages.emplace(6, 127);
+        } else if (request.act == 1) {
+            if (!strings.speech(396).empty()) area.questObjectMessages.emplace(42, 396);
+        } else {
+            if(!strings.speech(20131).empty()) area.questObjectMessages.emplace(67,20131);
+            if(!strings.speech(20002).empty()) area.questObjectMessages.emplace(65,20002);
+            if (!content.pd2Host && !strings.speech(20169).empty()) area.questObjectMessages.emplace(69, 20169);
+        }
     }
     const DataTable groups(archives.read("data/global/excel/objgroup.txt"));
     const auto &monsters=content.tables.at("monstats");

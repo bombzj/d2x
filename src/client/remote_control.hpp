@@ -1,4 +1,5 @@
 #pragma once
+#include "client/online_actions.hpp"
 #include "client/remote_town.hpp"
 #include "network/realm_session.hpp"
 #include <chrono>
@@ -6,15 +7,7 @@
 
 namespace d2x {
 // MPQ eligibility and command sequencing. No local movement, NPC rules or D2S authority.
-class RemoteControl {
-  public:
-    struct InteractionSubmission {
-        OnlineUnitKey target;
-        OnlineIntentContext context;
-        uint64_t revision{},discontinuity{},combatSequence{};
-        OnlinePoint position{};
-    };
-  private:
+class RemoteControl : public IOnlineControl {
     RemoteTown &scene_;
     net::RealmSession &session_;
     struct Approach {
@@ -62,7 +55,7 @@ class RemoteControl {
   public:
     RemoteControl(RemoteTown &scene, net::RealmSession &session) : scene_(scene), session_(session) {}
     void bindPlayerMovementMode(std::function<std::optional<uint8_t>()> mode) { playerMovementMode_=std::move(mode); }
-    bool setRunning(bool run, const OnlineIntentContext &context) {
+    bool setRunning(bool run, const OnlineIntentContext &context) override {
         return session_.set_running_animation(run,context,playerMovementMode_?playerMovementMode_():std::nullopt);
     }
     void bindNpcPath(std::function<std::optional<OnlinePoint>(OnlineUnitKey)> position,
@@ -72,44 +65,45 @@ class RemoteControl {
         stopNpcPath_ = std::move(stop);
         npcFollowRange_ = std::move(followRange);
     }
-    bool move(OnlinePoint, bool run, std::optional<OnlineIntentContext> context = {}, std::optional<Vec> requestOrigin = {});
+    bool move(OnlinePoint, bool run, std::optional<OnlineIntentContext> context = {}, std::optional<Vec> requestOrigin = {}) override;
     bool moveToUnit(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {},
-                    std::optional<Vec> displayOrigin = {}, std::optional<OnlinePoint> stopNpc = {});
+                    std::optional<Vec> displayOrigin = {}, std::optional<OnlinePoint> stopNpc = {}) override;
     bool interact(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {},
-                  std::optional<Vec> displayOrigin = {}, bool followUntilServerArrival = false);
-    bool townPortal();
-    const OnlineQuestState &quests() const { return session_.read().world.quests; }
+                  std::optional<Vec> displayOrigin = {}, bool followUntilServerArrival = false) override;
+    bool townPortal() override;
+    const OnlineQuestState &quests() const override { return session_.read().world.quests; }
     // Reuse a private snapshot newer than the caller's observed revision;
     // otherwise join/request a refresh. Accepted is not completion.
-    bool refreshQuests(std::optional<uint64_t> newerThan = {});
-    bool closeNpc(std::optional<OnlineIntentContext> context = {});
-    bool acknowledgeNpc(uint16_t topic,std::optional<OnlineIntentContext> context = {});
-    bool greetNpc(uint16_t identity,std::optional<OnlineIntentContext> context = {});
-    bool npcTravel(uint32_t destination,std::optional<OnlineIntentContext> context = {});
-    bool useWaypoint(uint16_t destination,uint8_t number = 0,std::optional<OnlineIntentContext> context = {});
-    void cancelApproach() {
+    bool refreshQuests(std::optional<uint64_t> newerThan = {}) override;
+    bool closeNpc(std::optional<OnlineIntentContext> context = {}) override;
+    bool acknowledgeNpc(uint16_t topic, std::optional<OnlineIntentContext> context = {},
+                        bool dismissAfterSpeech = false) override;
+    bool acknowledgeNpcGreeting(uint16_t identity,std::optional<OnlineIntentContext> context = {}) override;
+    bool npcTravel(uint32_t destination,std::optional<OnlineIntentContext> context = {}) override;
+    bool useWaypoint(uint16_t destination,uint8_t number = 0,std::optional<OnlineIntentContext> context = {}) override;
+    void cancelApproach() override {
         if (approach_) movement_.reset();
         approach_.reset();
     }
-    void cancelMovement() { movement_.reset(); approach_.reset(); }
+    void cancelMovement() override { movement_.reset(); approach_.reset(); }
     void tick(std::optional<Vec> displayOrigin = {}, std::optional<Vec> pathPosition = {}, bool actionBusy = false);
-    const std::string &reason() const { return reason_; }
-    const std::optional<InteractionSubmission> &interactionSubmission() const {return interactionSubmission_;}
-    std::optional<OnlineIntentContext> intentContext() const {
+    const std::string &reason() const override { return reason_; }
+    const std::optional<InteractionSubmission> &interactionSubmission() const override {return interactionSubmission_;}
+    std::optional<OnlineIntentContext> intentContext() const override {
         if (approach_) return approach_->context;
         return movement_ ? std::optional{movement_->context} : std::nullopt;
     }
-    std::optional<OnlineUnitKey> approaching() const {
+    std::optional<OnlineUnitKey> approaching() const override {
         return approach_ ? std::optional{approach_->target} : std::nullopt;
     }
-    bool awaitingServerArrival() const {return approach_ && approach_->awaitServerRange;}
-    std::optional<OnlinePoint> movementGoal() const {
+    bool awaitingServerArrival() const override {return approach_ && approach_->awaitServerRange;}
+    std::optional<OnlinePoint> movementGoal() const override {
         return movement_ ? std::optional{movement_->goal} : std::nullopt;
     }
-    std::optional<OnlinePoint> movementSegment() const {
+    std::optional<OnlinePoint> movementSegment() const override {
         return movement_ ? movement_->segment : std::nullopt;
     }
-    std::optional<OnlineUnitKey> movementTarget() const {
+    std::optional<OnlineUnitKey> movementTarget() const override {
         return movement_ ? movement_->unit : std::nullopt;
     }
 };

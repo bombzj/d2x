@@ -12,7 +12,7 @@ bool RemoteUiClients::Impl::Inventory::selectStoragePage(unsigned page) {
     command.action = OnlineItemAction::StoragePage; command.page = page;
     command.sharedStash = o.inventoryView.storageShared;
     command.context = onlineIntentContext(o.session.read());
-    if (!o.items.submit(o.session, command)) { o.notice = o.items.reason(); return false; }
+    if (!o.items.submit(command)) { o.notice = o.items.reason(); return false; }
     o.context = onlineIntentContext(o.session.read());
     return true;
 }
@@ -23,7 +23,7 @@ bool RemoteUiClients::Impl::Inventory::selectSharedStorage(bool shared) {
     OnlineItemCommand command;
     command.action = OnlineItemAction::StoragePage; command.page = 1; command.sharedStash = shared;
     command.context = onlineIntentContext(o.session.read());
-    if (!o.items.submit(o.session, command)) { o.notice = o.items.reason(); return false; }
+    if (!o.items.submit(command)) { o.notice = o.items.reason(); return false; }
     o.context = onlineIntentContext(o.session.read());
     return true;
 }
@@ -33,7 +33,7 @@ bool RemoteUiClients::Impl::Inventory::submitStorage(OnlineItemCommand command) 
     if (command.action == OnlineItemAction::StorageIndex &&
         !onlineInteractionMatches(o.context, o.session.read())) return false;
     command.context = onlineIntentContext(o.session.read());
-    if (!o.items.submit(o.session, command)) { o.notice = o.items.reason(); return false; }
+    if (!o.items.submit(command)) { o.notice = o.items.reason(); return false; }
     o.context = onlineIntentContext(o.session.read());
     return true;
 }
@@ -107,15 +107,23 @@ bool RemoteUiClients::Impl::Inventory::markStorageIndex(unsigned kind) {
 }
 
 bool RemoteUiClients::Impl::Inventory::submitStaff(EntityId source,std::optional<ItemHandle> item) {
-            if(source!=o.inventoryView.staffSource) return false;
-            if(item) {
-                const auto *value=o.inventoryView.item(item->id);
-                if(!value || value->revision!=item->revision || (o.inventoryView.pd2Sacrifice?
-                    std::find(o.inventoryView.pd2SacrificeItems.begin(),o.inventoryView.pd2SacrificeItems.end(),item->id)==o.inventoryView.pd2SacrificeItems.end():
-                    value->definition!=o.data.staffRecipe.output)) return false;
-            }
-            return o.items.submitQuestItem(o.session,uint32_t(source.value-1),item?std::optional{guid(item->id)}:std::nullopt,o.context);
-        }
+    const auto &view=o.session.read();
+    if(!source || source!=o.inventoryView.staffSource || view.world.staffSource!=guid(source)) return false;
+    std::optional<uint32_t> nativeItem;
+    if(item) {
+        nativeItem=guid(item->id);
+        const auto wire=view.world.items.find(*nativeItem);
+        const auto *value=o.inventoryView.item(item->id);
+        if(wire==view.world.items.end() || !onlineItemOwnedBy(wire->second,view.load.playerUnitId) ||
+            wire->second.mode!=4 || wire->second.revision!=item->revision ||
+            !value || value->revision!=item->revision) return false;
+        if(o.inventoryView.pd2Sacrifice) {
+            const auto &eligible=o.inventoryView.pd2SacrificeItems;
+            if(std::find(eligible.begin(),eligible.end(),item->id)==eligible.end()) return false;
+        } else if(value->definition!=o.data.staffRecipe.output) return false;
+    }
+    return o.session.submit_staff(guid(source),nativeItem,o.context);
+}
 InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &intent) const {
             if (o.inventoryView.dead || o.inventoryView.readOnly) return InventoryError::AccessDenied;
             if (o.inventoryView.storagePagePending && !std::holds_alternative<CloseStorage>(intent))
@@ -472,7 +480,7 @@ void RemoteUiClients::Impl::inventoryCommand(InventoryIntent intent) {
                 // and must not leave a coordinator wait in front of a new cube open.
                 transactions.clear(); waiting.reset(); waitingContext.reset();
                 c.action = OnlineItemAction::StorageClose; c.context = onlineIntentContext(session.read());
-                if (!items.submit(session, c)) notice = items.reason();
+                if (!items.submit(c)) notice = items.reason();
                 context = onlineIntentContext(session.read());
                 return;
             } else if constexpr (std::is_same_v<T, MoveItem>) { moveItem(v.item,v.destination); return; }

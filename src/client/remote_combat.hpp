@@ -1,4 +1,5 @@
 #pragma once
+#include "client/online_actions.hpp"
 #include "client/remote_town.hpp"
 #include "network/realm_session.hpp"
 #include "resources/data_table.hpp"
@@ -11,26 +12,8 @@
 
 namespace d2x {
 class RemoteInventory;
-struct OnlineCombatSkillView {
-    uint16_t id{}, base{}, bonus{}, level{};
-    std::string name;
-    bool left{}, passive{}, inTown{}, classSkill{}, innate{};
-};
-struct OnlineCombatStateView {
-    uint8_t id{};
-    std::string name;
-    std::vector<OnlineItemStat> stats;
-};
-struct OnlineCombatUnitStates {
-    uint64_t sequence{}, generation{};
-    bool decoded{};
-    std::string reason;
-    std::map<uint8_t, OnlineCombatStateView> states;
-    struct Death {uint64_t revision{};bool shatter{},frozen{},uberMinion{};};
-    std::optional<Death> death;
-};
 // MPQ eligibility and read-only projection of native states. No local combat authority.
-class RemoteCombat {
+class RemoteCombat : public IOnlineCombat {
     RemoteTown &scene_;
     RemoteInventory &inventory_;
     net::RealmSession &session_;
@@ -67,37 +50,37 @@ class RemoteCombat {
   public:
     RemoteCombat(Archives &, RemoteTown &, net::RealmSession &, RemoteInventory &);
     bool submit(OnlineCombatCommand, std::optional<Vec> inputOrigin = {},
-                std::optional<OnlineSkillSelection> expectedSelection = {});
+                std::optional<OnlineSkillSelection> expectedSelection = {}) override;
     void setLocalUsedSkill(uint16_t skill,uint64_t revision,uint64_t actionRevision,OnlineIntentContext context) const {session_.set_local_used_skill(skill,revision,actionRevision,context);}
     void clearLocalUsedSkill(uint64_t revision,OnlineIntentContext context) const {session_.clear_local_used_skill(revision,context);}
     // Local grid coordinates; uses the source level's MPQ Teleport rule.
-    bool teleportPathAllowed(uint16_t level,const Grid &,Vec from,Vec to) const;
+    bool teleportPathAllowed(uint16_t level,const Grid &,Vec from,Vec to) const override;
     void update();
     void setSkillRankResolver(std::function<std::optional<std::map<int,int>>()> resolver) {skillRankResolver_=std::move(resolver);}
     void setSkillDelayResolver(std::function<std::optional<int>(uint16_t,uint32_t)> resolver) {skillDelayResolver_=std::move(resolver);}
     void setSkillUseResolver(std::function<std::optional<NativeSkillUseState>(uint16_t,uint32_t)> resolver) {skillUseResolver_=std::move(resolver);}
-    bool hostile(const OnlineUnit &) const;
-    bool hostileSource(const OnlineUnit &) const;
-    std::optional<bool> knownHostileSource(const OnlineUnit &) const;
+    bool hostile(const OnlineUnit &) const override;
+    bool hostileSource(const OnlineUnit &) const override;
+    std::optional<bool> knownHostileSource(const OnlineUnit &) const override;
     bool pd2ChargeTargetEligible(const OnlineUnit &source,const OnlineUnit &target) const;
     uint8_t ownershipTransform(const OnlineUnit &) const;
     std::optional<OnlineUnitKey> storedOwner(const OnlineUnit &) const;
-    std::optional<uint16_t> monsterClass(const OnlineUnit &) const;
-    std::optional<uint16_t> superUnique(const OnlineUnit &) const;
-    bool eliteMonster(const OnlineUnit &) const;
-    bool jadeFigurineCandidate(const OnlineUnit &) const;
+    std::optional<uint16_t> monsterClass(const OnlineUnit &) const override;
+    std::optional<uint16_t> superUnique(const OnlineUnit &) const override;
+    bool eliteMonster(const OnlineUnit &) const override;
+    bool jadeFigurineCandidate(const OnlineUnit &) const override;
     const std::vector<OnlineItemStat> *monsterPropertyStats(const OnlineUnit &) const;
     bool corpseSelectable(const OnlineUnit &) const;
-    bool monsterTargetEligible(const OnlineUnit &, bool targetCorpse) const;
-    bool skillTargetEligible(const OnlineUnit &, uint16_t skill) const;
-    bool skillTargetEligible(const OnlineItem &, uint16_t skill) const;
-    std::optional<int> skillDelayFrames(uint16_t skill,uint32_t owner=UINT32_MAX) const;
-    bool skillDelayActive(uint16_t skill,uint32_t owner=UINT32_MAX) const;
+    bool monsterTargetEligible(const OnlineUnit &, bool targetCorpse) const override;
+    bool skillTargetEligible(const OnlineUnit &, uint16_t skill) const override;
+    bool skillTargetEligible(const OnlineItem &, uint16_t skill) const override;
+    std::optional<int> skillDelayFrames(uint16_t skill,uint32_t owner=UINT32_MAX) const override;
+    bool skillDelayActive(uint16_t skill,uint32_t owner=UINT32_MAX) const override;
     bool localSkillDelayActive() const { return localSkillFrame_<localSkillDelayUntil_; }
     void advanceLocalSkillClock(uint64_t frames) const { localSkillFrame_+=frames; }
     void startLocalSkillDelay(int frames) const;
-    const auto &skills() const { return catalog_; }
-    const auto &states() const { return unitStates_; }
-    const auto &reason() const { return reason_; }
+    const std::vector<OnlineCombatSkillView> &skills() const override { return catalog_; }
+    const std::map<OnlineUnitKey, OnlineCombatUnitStates> &states() const override { return unitStates_; }
+    const std::string &reason() const override { return reason_; }
 };
 }

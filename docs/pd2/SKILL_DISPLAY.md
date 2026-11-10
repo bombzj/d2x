@@ -89,7 +89,9 @@ Combustion 的 TXT 与 BIN 均为 HitShift7、EMin24／EMax56，即未加成首�
 
 来源：[docs/gameplay/characters/ATTRIBUTES.md](../gameplay/characters/ATTRIBUTES.md)。
 
-PD2的ddam calc1附加百分比及武器掌握helper仍未完整接入。
+本地2ff6核心的初始化调用点`3447B6`进入`3AE5D0`，向原`D2Client+F5210`的DescDam分派表写入8个PD2函数指针，槽号为11、13、15、16、25、26、27、28。`272700`经`31D400`解析该表，目标记录含`F5210`。配套D2Client的磁盘摘要与本机零售1.13c相同，原分派器仍通过该表调用伤害程序。旧9c2b样本的同组写入另见[旧核心程序表](../resources/pd2-core/PROGRAM_TABLES.md#init-3a9c80)，2ff6身份见[版本基线](BUILDS.md#安装更新与运行边界)。该证据覆盖伤害程序挂接，四项属性、资源上限、抗性与防御的原生取值仍待逐项核对。
+
+D2X沿用共用面板，PD2的ddam calc1附加百分比及武器掌握helper仍未完整接入。基础属性与装备派生的客户端范围见[客户端显示缓存](CLIENT_INTEGRATION.md#客户端接入显示缓存)。
 
 41d49的2EF620实际按输入模式在普通绑定表与PlayerData+5BE的16项第二绑定表间选择，后者的辅助WORD非零选择另一技能手位，物品来源GUID仍需在执行时重新解析。393C40接收2E/sub4并更新这张表；原9c2b文档中的2ED970／298D20不能直接当作17d5或41d49入口。2BE450／2EE550的输入模式切换及原ControllerSkillSelect资源也参与消费者，因此剩余工作是第二输入模式的选择、绑定、来源撤销与执行闭环，不能简单扩成32个普通键盘槽或覆盖原16槽。D2X当前仍仅保存第二表报告，未宣称这条执行链已完成。
 

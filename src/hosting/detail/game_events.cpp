@@ -391,8 +391,12 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 if(!npc->activate) peer.questProjection[{uint8_t(ServerMessage::GameQuests),0}]=delta.back();
             }
         } else if (const auto *merchant = server::factIf<server::MerchantFact>(&fact)) {
-            if (merchant->refreshShop) peer.shopItems.clear();
-            else delta.push_back(encodeServerPacket(ServerMessage::MerchantResult,[&](auto &out) {out.u8(merchant->operation);out.u8(merchant->result);out.u32(0);out.u32(merchant->result==2?UINT32_MAX:wireId(merchant->item));out.u32(merchant->gold);}));
+            if (merchant->refreshShop) { peer.shopItems.clear(); peer.gambleShopItems.clear(); }
+            else delta.push_back(encodeServerPacket(ServerMessage::MerchantResult,[&](auto &out) {
+                out.u8(merchant->operation);out.u8(merchant->result);out.u32(0);
+                const bool withoutItem=merchant->result==2 || merchant->result>=7;
+                out.u32(withoutItem?UINT32_MAX:wireId(merchant->item));out.u32(merchant->gold);
+            }));
         } else if (const auto *waypoint=server::factIf<server::WaypointFact>(&fact)) {
             std::array<uint16_t,8> history{}; history[0]=0x102; history[1]=1; const auto &levels=content->tables.at("levels");
             for(const auto region:waypoint->unlocked) for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Id")==int(region)) {

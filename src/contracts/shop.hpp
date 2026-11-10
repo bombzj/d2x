@@ -21,6 +21,7 @@ struct ShopOfferView {
 };
 // Visible stock and current display prices only; no rolls, seed or hidden gamble outcome.
 struct ShopView {
+    struct Rejection { uint64_t revision; std::string message, continueLabel; };
     uint64_t revision = 0;
     EntityId actor, npc;
     bool gamble = false, available = false, repairAvailable = false;
@@ -30,5 +31,6 @@ struct ShopView {
     std::optional<unsigned> repairAllPrice;
     std::array<std::string, 4> tabLabels;
     std::vector<ShopOfferView> offers;
+    std::optional<Rejection> rejection;
 };
 } // namespace d2x

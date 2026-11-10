@@ -33,7 +33,7 @@ bool DebugAi::Impl::beginTeleportTransit(Context &c,OnlinePoint next) {
     RouteExecution task;task.intent=navigation.walkIntent;task.area=*area;task.step=questState.questRun.step;
     task.landing=next;task.position=next;
     task.deadline=Clock::now()+std::chrono::seconds(eventPolicy.waitSeconds);
-    for(const auto &[key,unit]:c.session.read().world.units)
+    for(const auto &[key,unit]:c.observation.read().world.units)
         if(key.type==1 && unit.position && c.combat.hostile(unit) && c.combat.monsterTargetEligible(unit,false) &&
             (Vec{float(unit.position->x),float(unit.position->y)}-destination).length()<4)
             task.combat.targets.emplace(key,unit.assignmentRevision);
@@ -52,13 +52,17 @@ bool DebugAi::Impl::beginTeleportTransit(Context &c,OnlinePoint next) {
 }
 bool DebugAi::Impl::beginWalkingPassage(Context &c) {
     if((navigation.routeExecution && navigation.routeExecution->phase!=RouteExecution::Phase::Resume) || !area || !policy.enabled || !battle.excursionSkill || c.town.read().town ||
-        teleportAvailable(c) || !c.walk.active() || !c.walk.blockedStep() || !bool(navigation.walkIntent) ||
+        !c.walk.active() || !c.walk.blockedStep() || !bool(navigation.walkIntent) ||
         navigation.pendingDoor || c.walk.openingRouteDoor() || navigation.pendingWaypoint || questState.questRun.pending || pickup ||
         supply.supplyStage!=SupplyStage::None || Clock::now()>=goalDeadline ||
         !canInput(c,DebugActionOwner::Combat,DebugMotion|DebugSkill)) return false;
     if(supplyPolicy.enabled && quiverStock(c).empty()) return false;
     const auto purpose=navigation.walkIntent.purpose.value_or(std::string{});
     if(purpose.starts_with("combat-") || purpose=="route-relocation") return false;
+    // A caster can still be executing an obstructed walking segment. Prefer
+    // a legal travel cast now; owning Teleport alone must not disable clearing
+    // the actual blockers when that next cast cannot execute.
+    if(teleportAvailable(c) && canInput(c,DebugActionOwner::Mobility,DebugMotion|DebugSkill) && mobility(c)) return true;
     const auto &step=*c.walk.blockedStep();
     RouteExecution task;task.mode=RouteExecution::Mode::WalkingPassage;task.phase=RouteExecution::Phase::Engage;
     task.intent=navigation.walkIntent;task.area=*area;task.step=questState.questRun.step;task.segmentFrom=step.from;task.segmentTo=step.to;
@@ -68,9 +72,9 @@ bool DebugAi::Impl::beginWalkingPassage(Context &c) {
     if(!origin || !map) return false;
     const CombatSight sight{&map->grid,{float(origin->x),float(origin->y)},combatAttackMask(c,*battle.excursionSkill)};
     bool inRange=false;
-    for(const auto key:c.town.navigationBlockers(c.session.read(),c.position,step.to)) {
-        const auto found=c.session.read().world.units.find(key);
-        if(found==c.session.read().world.units.end()) continue;
+    for(const auto key:c.town.navigationBlockers(c.observation.read(),c.position,step.to)) {
+        const auto found=c.observation.read().world.units.find(key);
+        if(found==c.observation.read().world.units.end()) continue;
         const auto &unit=found->second;
         if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false)) continue;
         task.combat.targets.emplace(key,unit.assignmentRevision);
@@ -130,8 +134,8 @@ bool DebugAi::Impl::resumeRouteExecution(Context &c,const Goal &goal) {
         navigation.mobilityHold=false;
         wait("route-local-recovery","Letting the tactical child rejoin observed feet before another input");return true;
     }
-    const bool combatPending=c.session.read().world.combatRequest &&
-        c.session.read().world.combatRequest->state==OnlineCombatRequest::State::Pending;
+    const bool combatPending=c.observation.read().world.combatRequest &&
+        c.observation.read().world.combatRequest->state==OnlineCombatRequest::State::Pending;
     // Observe submitted operations before any completion/cancellation or new
     // tactical input. Inventory ownership also protects the local child.
     if(navigation.mobilityTarget || combatPending ||
@@ -157,7 +161,7 @@ bool DebugAi::Impl::resumeRouteExecution(Context &c,const Goal &goal) {
         navigation.mobilityHold=true;
     }
     if(task.phase==RouteExecution::Phase::Relocate) {
-        const auto host=c.session.read().world.playerPosition;
+        const auto host=c.observation.read().world.playerPosition;
         const Vec position{float(task.position.x),float(task.position.y)};
         if(task.relocated && !navigation.mobilityTarget && host && (position-c.position).length()<=4 &&
             (position-Vec{float(host->x),float(host->y)}).length()<=4) {
@@ -176,7 +180,7 @@ bool DebugAi::Impl::resumeRouteExecution(Context &c,const Goal &goal) {
             const auto origin=c.town.read().origin;
             if(origin && !navigation.mobilityTarget) {
                 const Vec offset{float(origin->x)-.5f,float(origin->y)-.5f};
-                const auto grid=c.town.navigationGrid(c.session.read());
+                const auto grid=c.town.navigationGrid(c.observation.read());
                 if(!grid.walkable(position-offset,playerMovement) ||
                     crowdedTravelLanding(travelLandingThreats(c),position) || threatClearance(visibleThreats(c),position)<0) {
                     const auto replacement=selectCombatLanding(c,task.landing,task.combat,task.mode==RouteExecution::Mode::TeleportTransit);
@@ -199,15 +203,15 @@ bool DebugAi::Impl::resumeRouteExecution(Context &c,const Goal &goal) {
         const auto origin=c.town.read().origin;
         if(!origin) return true;
         const Vec offset{float(origin->x)-.5f,float(origin->y)-.5f};
-        const auto grid=c.town.navigationGrid(c.session.read());
+        const auto grid=c.town.navigationGrid(c.observation.read());
         if(grid.nativeMovementSegment(c.position-offset,task.segmentTo-offset,playerMovement))
             return complete("Actual movement ray is clear; no further kill is required");
         // Refresh only collision contributors. Moved-away, dead and reassigned
         // actors leave the scope before another cast can be submitted.
         task.combat.targets.clear();
-        for(const auto key:c.town.navigationBlockers(c.session.read(),c.position,task.segmentTo)) {
-            const auto unit=c.session.read().world.units.find(key);
-            if(unit!=c.session.read().world.units.end() && key.type==1 && c.combat.hostile(unit->second) &&
+        for(const auto key:c.town.navigationBlockers(c.observation.read(),c.position,task.segmentTo)) {
+            const auto unit=c.observation.read().world.units.find(key);
+            if(unit!=c.observation.read().world.units.end() && key.type==1 && c.combat.hostile(unit->second) &&
                 c.combat.monsterTargetEligible(unit->second,false))
                 task.combat.targets.emplace(key,unit->second.assignmentRevision);
         }
@@ -220,13 +224,13 @@ bool DebugAi::Impl::resumeRouteExecution(Context &c,const Goal &goal) {
         const auto before=castRequests;
         const bool acting=combat(c,goal,true,true,&task.combat);
         if(castRequests!=before) {
-            const auto &request=c.session.read().world.combatRequest;
+            const auto &request=c.observation.read().world.combatRequest;
             task.attackSequence=request?request->sequence:0;task.phase=RouteExecution::Phase::AwaitCast;
             note("route-transit-attack",routeExecutionSnapshot().dump());
         } else if(!acting) return complete("Observed landing targets no longer offer an actionable attack");
         return true;
     }
-    const auto &request=c.session.read().world.combatRequest;
+    const auto &request=c.observation.read().world.combatRequest;
     if(request && request->sequence==task.attackSequence && request->state==OnlineCombatRequest::State::Pending) {
         wait("route-transit-attack-wait","Observing the one submitted skill result");return true;
     }

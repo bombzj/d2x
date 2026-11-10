@@ -79,7 +79,7 @@ bool DebugAi::Impl::servicePassage(Context &c,const Goal &goal,bool prepared) {
         struct Reset {bool &flag;~Reset(){flag=false;}} reset{navigation.passageDefending};
         const auto approach=navigation.submittedTravel?std::optional{navigation.submittedTravel->unit}:
             activating?questState.questRun.pending->unit:navigation.pendingDoor?std::optional{navigation.pendingDoor->first}:std::nullopt;
-        const bool approachSettled=!approach || c.town.interactionReady(c.session.read(),*approach);
+        const bool approachSettled=!approach || c.town.interactionReady(c.observation.read(),*approach);
         const auto creation=navigation.passageWaits.find(Passage::CreatePortal);
         const bool creationSettled=creation==navigation.passageWaits.end() || creation->second.attempts>0;
         if(approachSettled && creationSettled && canInput(c,Owner::Combat,DebugMotion|DebugSkill)) {
@@ -90,7 +90,7 @@ bool DebugAi::Impl::servicePassage(Context &c,const Goal &goal,bool prepared) {
     return true;
 }
 void DebugAi::Impl::observePopulation(const Context &c) {
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     if(navigation.populationMemoryGame!=view.gameGeneration) {
         navigation.populationMemoryGame=view.gameGeneration;navigation.populationMemoryRevision=0;navigation.populationMemory.clear();
     }
@@ -172,7 +172,7 @@ bool DebugAi::Impl::encounterEnemy(const Context &c,const OnlineUnit &unit) cons
         });
 }
 bool DebugAi::Impl::worldResultReady(const Context &c,const QuestStep &step) const {
-    const auto &goal=goals.at(cursor);const auto &world=c.session.read().world;
+    const auto &goal=goals.at(cursor);const auto &world=c.observation.read().world;
     if(!goal.requirements.empty() && questRequirementSatisfied(c,goal,questState.questRun.step)) return true;
     switch(step.action) {
     case QuestAction::Talk:
@@ -193,17 +193,17 @@ bool DebugAi::Impl::worldResultReady(const Context &c,const QuestStep &step) con
             for(size_t row=0;row<definitions->objects.rows().size();++row)
                 if(definitions->objects.number(row,"Id")==step.target->identity &&
                     (definitions->objects.number(row,"OperateFn")==34 || definitions->objects.number(row,"OperateFn")==66) &&
-                    c.town.projectedObjectMode(c.session.read(),portal->key)==1) return false;
-            return c.town.permitsInteraction(c.session.read(),portal->key);
+                    c.town.projectedObjectMode(c.observation.read(),portal->key)==1) return false;
+            return c.town.permitsInteraction(c.observation.read(),portal->key);
         }
         if(step.cinematic) return false;
         return std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &target) {
             return target.interaction==OnlineMapInteraction::Portal && target.destination==step.area &&
-                c.town.permitsInteraction(c.session.read(),target.unit);
+                c.town.permitsInteraction(c.observation.read(),target.unit);
         });
     case QuestAction::Encounter:
         if(step.target) if(const auto portal=find(c,*step.target,true))
-            return portal->mode && *portal->mode!=0 && c.town.permitsInteraction(c.session.read(),portal->key) &&
+            return portal->mode && *portal->mode!=0 && c.town.permitsInteraction(c.observation.read(),portal->key) &&
                 (!step.status || world.quests.statuses[questDefinition(step.stateQuest.value_or(goal.questId)).nativeSlot]==step.status);
         return false;
     default:return false;
@@ -221,7 +221,7 @@ void DebugAi::Impl::waitForWorldResult(Context &c,const QuestStep &step,std::str
         if(step.action==QuestAction::Encounter && step.clearCombat && step.witness && step.residualRange) {
             pending.residualRange=step.residualRange;pending.witnessSize=c.town.monsterSizeX(step.witness->identity);
             pending.inspectResidualAt=Clock::now()+std::chrono::seconds(2);
-            pending.soundSequence=c.session.read().world.combatSequence;
+            pending.soundSequence=c.observation.read().world.combatSequence;
         }
         pending.seconds=step.resultWaitSeconds?step.resultWaitSeconds:unsigned(eventPolicy.waitSeconds);
         pending.deadline=Clock::now()+std::chrono::seconds(pending.seconds);pending.expected=expected;
@@ -282,7 +282,7 @@ bool DebugAi::Impl::approachWorldTrigger(Context &c,const QuestStep &step) {
     const auto *map=c.town.map();const auto origin=c.town.read().origin;
     if(map && origin && room!=rooms.end()) {
         const Vec offset{float(origin->x),float(origin->y)};
-        const auto grid=c.town.navigationGrid(c.session.read());
+        const auto grid=c.town.navigationGrid(c.observation.read());
         const auto &component=c.walk.navigationSearch().connectionComponent(map->grid,c.position-offset+Vec{.5f,.5f});
         std::optional<OnlinePoint> best;float score=std::numeric_limits<float>::max();
         // Sample only actual same-room terrain connected to this bank. Do
@@ -316,7 +316,7 @@ void DebugAi::Impl::observeWorldWait(Context &c) {
     }
     bool progress=false;
     if(pending.residualRange && step.stageSound && questState.questRun.encounterWitness) {
-        const auto &world=c.session.read().world;
+        const auto &world=c.observation.read().world;
         const auto [key,revision]=*questState.questRun.encounterWitness;
         const auto witness=world.units.find(key);
         if(witness!=world.units.end() && witness->second.assignmentRevision==revision)
@@ -327,7 +327,7 @@ void DebugAi::Impl::observeWorldWait(Context &c) {
             }
         pending.soundSequence=world.combatSequence;
     }
-    if(step.action==QuestAction::Encounter && step.clearCombat) for(const auto &[key,unit]:c.session.read().world.units) {
+    if(step.action==QuestAction::Encounter && step.clearCombat) for(const auto &[key,unit]:c.observation.read().world.units) {
         const auto identity=std::pair{key,unit.assignmentRevision};
         auto found=pending.enemies.find(identity);
         if(found==pending.enemies.end()) {
@@ -389,7 +389,7 @@ std::optional<OnlinePoint> DebugAi::Impl::encounterStance(Context &c,OnlinePoint
     const auto *map=c.town.map();const auto origin=c.town.read().origin;
     if(!map || !origin) return {};
     const Vec offset{float(origin->x),float(origin->y)},center{float(anchor.x),float(anchor.y)};
-    const auto grid=c.town.navigationGrid(c.session.read());const auto hazards=visibleThreats(c);
+    const auto grid=c.town.navigationGrid(c.observation.read());const auto hazards=visibleThreats(c);
     struct Candidate {OnlinePoint point;float score;};std::vector<Candidate> candidates;
     for(const int radius:{eventPolicy.standoffMin,(eventPolicy.standoffMin+eventPolicy.standoffMax)/2,eventPolicy.standoffMax})
         for(int direction=0;direction<16;++direction) {

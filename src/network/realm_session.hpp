@@ -121,7 +121,8 @@ class RealmSession {
     bool highlight_door(uint32_t object, std::optional<OnlineIntentContext> context = {});
     bool set_running_animation(bool run, std::optional<OnlineIntentContext> context = {}, std::optional<uint8_t> localMode = {});
     bool confirm_npc_voice(uint16_t nativeClass, std::optional<OnlineIntentContext> context = {});
-    bool acknowledge_npc_message(uint16_t stringId, std::optional<OnlineIntentContext> context = {});
+    bool acknowledge_npc_message(uint16_t stringId, std::optional<OnlineIntentContext> context = {},
+                                 bool dismissAfterSpeech = false);
     bool acknowledge_quest_log(uint16_t nativeSlot, uint64_t gameGeneration);
     bool request_quests(uint64_t gameGeneration); // Original 0x40 status/private-record query.
     bool npc_travel(uint32_t parameter, std::optional<OnlineIntentContext> context = {}); // Original action 0, NPC-dependent parameter.

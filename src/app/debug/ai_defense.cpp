@@ -67,15 +67,15 @@ std::vector<DebugAi::Impl::VisualThreat> DebugAi::Impl::visibleThreats(const Con
         if(!missile.hostile || missile.age<0 || missile.remaining<=0 || size==definitions->hazardSizes.end() ||
             (missile.position-c.position).length()>64) continue;
         bool boss = false;
-        if (missile.source) if (const auto unit = c.session.read().world.units.find(*missile.source);
-            unit != c.session.read().world.units.end() && unit->first.type == 1) {
+        if (missile.source) if (const auto unit = c.observation.read().world.units.find(*missile.source);
+            unit != c.observation.read().world.units.end() && unit->first.type == 1) {
             const auto row = findCompiledMonsterRow(definitions->monsters, c.combat.monsterClass(unit->second).value_or(UINT16_MAX));
             boss = row && definitions->monsters.number(*row, "boss").value_or(0);
         }
         hazards.push_back({missile.id,missile.position,missile.position+missile.velocity*
             std::min(float(policy.hazardLookaheadMs)/1000.f,missile.remaining),float(size->second+policy.hazardPadding),false,boss || definitions->dangerousMissiles.contains(missile.id)});
     }
-    for(const auto &[key,unit]:c.session.read().world.units) {
+    for(const auto &[key,unit]:c.observation.read().world.units) {
         // Temporary target rejection (Submerge, roosting, attached) is not
         // evidence of an active damaging field. Such actors' real missiles
         // are still observed above; ordinary combat handles them on return.
@@ -91,7 +91,7 @@ std::vector<DebugAi::Impl::VisualThreat> DebugAi::Impl::visibleThreats(const Con
     const auto incoming = std::count_if(hazards.begin(), hazards.end(), [&](const auto &hazard) {
         return !hazard.unitSource && threatClearance({&hazard, 1}, c.position) < 0;
     });
-    const auto &world = c.session.read().world;
+    const auto &world = c.observation.read().world;
     bool vulnerable = battle.combatMaxLife && *battle.combatMaxLife > 0 && world.life &&
         uint64_t(*world.life) * 100 <= uint64_t(*battle.combatMaxLife) * policy.retreatLifePercent;
     if (battle.combatMaxLife && *battle.combatMaxLife > 0 && world.life)
@@ -135,7 +135,7 @@ bool DebugAi::Impl::avoidHazards(Context &c) {
     if(hazards.empty() || current>=0) return false;
     const auto *map=c.town.map();const auto origin=c.town.read().origin;
     if(!map || !origin) return false;
-    const auto grid=c.town.navigationGrid(c.session.read());const Vec offset{float(origin->x),float(origin->y)};
+    const auto grid=c.town.navigationGrid(c.observation.read());const Vec offset{float(origin->x),float(origin->y)};
     const auto &rooms=c.town.navigationRooms();
     const auto inside=[](const auto &room,Vec at){return room.loaded && at.x>=room.x && at.y>=room.y && at.x<room.x+room.width && at.y<room.y+room.height;};
     const auto source=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && inside(room,c.position);});
@@ -152,7 +152,7 @@ bool DebugAi::Impl::avoidHazards(Context &c) {
         if(teleport && !c.combat.teleportPathAllowed(*area,grid,c.position-offset,exact-offset)) continue;
         const float clearance=safety(exact);if(clearance<2) continue;
         bool occupied=false;
-        for(const auto &[key,unit]:c.session.read().world.units) if(key.type==1 && unit.position && c.combat.hostileSource(unit) && !onlineMonsterCorpse(unit) &&
+        for(const auto &[key,unit]:c.observation.read().world.units) if(key.type==1 && unit.position && c.combat.hostileSource(unit) && !onlineMonsterCorpse(unit) &&
             (!c.combat.hostile(unit) || c.combat.monsterTargetEligible(unit,false)) &&
             (exact-Vec{float(unit.position->x),float(unit.position->y)}).length()<4) {occupied=true;break;}
         if(occupied) continue;

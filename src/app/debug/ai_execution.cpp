@@ -4,8 +4,20 @@
 #include <stdexcept>
 
 namespace d2x {
+void DebugAi::Impl::observeNpcDialogue(const OnlineView &view,Clock::time_point now) {
+    const auto &dialogue=view.world.npcConversation;
+    if(!dialogue || dialogue->type!=1 || view.world.npcRequested!=dialogue->source) {
+        npcDialogueDisplay.reset();return;
+    }
+    const auto context=onlineIntentContext(view);
+    const auto speech=view.protocolProfile=="lod113c"?dialogue->playingSpeech:nextAutomaticNpcSpeech(*dialogue);
+    if(!npcDialogueDisplay || npcDialogueDisplay->context!=context || (speech && npcDialogueDisplay->speech!=speech))
+        npcDialogueDisplay=NpcDialogueDisplay{context,speech,now};
+    else npcDialogueDisplay->speech=speech;
+}
+
 bool DebugAi::Impl::decisionDue(const Context &c,Clock::time_point now) {
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     using Mode=DebugDecisionCadence::Mode;
     const bool missiles=c.supplies && std::any_of(c.supplies->missiles.begin(),c.supplies->missiles.end(),[](const auto &m){return m.hostile && m.age>=0 && m.remaining>0;});
     const bool closeThreat=!actionRecoveryBusy && !c.town.read().town && std::any_of(world.units.begin(),world.units.end(),[&](const auto &entry) {
@@ -47,6 +59,7 @@ bool DebugAi::Impl::decisionDue(const Context &c,Clock::time_point now) {
     if(navigation.pendingWaypoint) include(navigation.waypointDeadline);
     if(navigation.closeWaypoint && world.waypointSource==navigation.closeWaypoint && navigation.observedWaypointMenu==navigation.closeWaypoint)
         include(navigation.waypointMenuOpenedAt+std::chrono::milliseconds(eventPolicy.waypointCloseDelayMs));
+    include(npcDialogueReadyAt());
     if(!inputBlocked) {include(battle.combatRun.nextCast);include(supply.nextPotion);}
     if(!cadence.due(now,mode,signals,urgent,deadline,eventPolicy.walkDecisionMs)) return false;
     decisionLife=world.life;return true;
@@ -80,22 +93,23 @@ bool DebugAi::Impl::submitItem(Context &c,const OnlineItemCommand &command,std::
     const unsigned inputs=owner==DebugActionOwner::Potion && command.action==OnlineItemAction::Use?
         unsigned(DebugItem):unsigned(DebugItem|DebugInteraction);
     const auto result=submitInput(c,owner,key,inputs,
-        [&]{return c.inventory.submit(c.session,command);},[&]{return c.inventory.reason();});
+        [&]{return c.inventory.submit(command);},[&]{return c.inventory.reason();});
     if(result==DebugSubmitResult::Expired) throw std::runtime_error("Normal item input was not accepted: "+action+"; "+submissionWaits.at(owner).reason);
     return result==DebugSubmitResult::Accepted;
 }
 bool DebugAi::Impl::prepareNpcService(Context &c, OnlineUnitKey npc, DebugActionOwner owner) {
-    const auto &conversation = c.session.read().world.npcConversation;
+    const auto &conversation = c.observation.read().world.npcConversation;
     if (!conversation || conversation->type != npc.type || conversation->source != npc.id) {
         wait("npc-service-open","Waiting for the current NPC service conversation");
         walk(c,{.goal=DebugWalkGoal::Unit,.unit=OnlineUnitKey{npc.type,npc.id},.interact=true});
         return false;
     }
-    const auto automatic = nextAutomaticNpcSpeech(*conversation);
+    const auto automatic = c.observation.read().protocolProfile=="lod113c"?
+        conversation->playingSpeech:nextAutomaticNpcSpeech(*conversation);
     if (!automatic) return true;
     const auto result = submitInput(c, owner, "npc-service-speech", DebugInteraction | DebugMenu,
         [&]{return c.control.acknowledgeNpc(*automatic);},
-        [&]{return c.session.read().error ? c.session.read().error->message : std::string{};});
+        [&]{return c.observation.read().error ? c.observation.read().error->message : std::string{};});
     if (result == DebugSubmitResult::Expired) throw std::runtime_error("Unable to finish the NPC's automatic speech");
     if (result == DebugSubmitResult::Accepted) {
         cancelWalk(c);
@@ -116,9 +130,9 @@ bool DebugAi::Impl::questWaitRequiresInput(const Context &c) const {
         (goals[cursor].steps[questState.questRun.step].topics.empty() || pending.refreshIssued)) return true;
     if(pending.action==QuestPending::Action::Introduction) return !pending.statusRequested;
     if(pending.action==QuestPending::Action::Object && pending.unit && cursor<goals.size() &&
-        questState.questRun.step<goals[cursor].steps.size() && c.session.read().world.npcConversation &&
-        c.session.read().world.npcConversation->source==pending.unit->id) {
-        const auto &step=goals[cursor].steps[questState.questRun.step];const auto &conversation=*c.session.read().world.npcConversation;
+        questState.questRun.step<goals[cursor].steps.size() && c.observation.read().world.npcConversation &&
+        c.observation.read().world.npcConversation->source==pending.unit->id) {
+        const auto &step=goals[cursor].steps[questState.questRun.step];const auto &conversation=*c.observation.read().world.npcConversation;
         for(const auto &message:conversation.messages) if(!conversation.acknowledged.contains(message.stringId) &&
             std::find(step.topics.begin(),step.topics.end(),message.stringId)!=step.topics.end()) return true;
     }
@@ -168,7 +182,7 @@ void DebugAi::Impl::observePickup(const Context &c) {
     if(owned(c,pickup->code)) {
         pickup->observed=true;note("pickup-ownership-observed",pickup->code);return;
     }
-    const auto &request=c.session.read().world.itemRequest;
+    const auto &request=c.observation.read().world.itemRequest;
     if(request && (request->sequence!=pickup->sequence || request->command.item!=pickup->item ||
         request->state==OnlineItemRequest::State::Rejected || request->state==OnlineItemRequest::State::Interrupted ||
         request->state==OnlineItemRequest::State::TimedOut))
@@ -220,7 +234,7 @@ std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c
     if(questState.questRun.worldWait) result.push_back({Owner::Goal,"world-result",0,0,
         "relevant scene fact / encounter progress","retain scene; no interaction replay",questState.questRun.worldWait->deadline});
     if(navigation.travelPhase==TravelPhase::WaypointWait || (navigation.travelPhase==TravelPhase::CrossWait && navigation.legUnit) ||
-        portalUsed || (portalIssued && c.session.read().world.townPortalPending) || supply.supplyPortalUsed)
+        portalUsed || (portalIssued && c.observation.read().world.townPortalPending) || supply.supplyPortalUsed)
         result.push_back({supply.supplyStage==SupplyStage::None?Owner::Goal:Owner::Supply,"area-transfer",
             DebugMotion|DebugSkill|DebugInteraction|DebugMenu,0,"actual destination scene","shared initial wait / one-second source-scene retry",
             supply.supplyPortalUsed?supply.supplyPortalDeadline:actionDeadline});
@@ -266,7 +280,7 @@ void DebugAi::Impl::describeActions(const Context &c) {
         actionDiagnostics["allowed"][ownerName(owner)]=canInput(c,owner,inputs);
 }
 void DebugAi::Impl::observeActions(Context &c) {
-    const auto &view=c.session.read();const auto now=Clock::now();
+    const auto &view=c.observation.read();const auto now=Clock::now();
     std::string failure;
     const auto observe=[&](auto action) {
         try {action();} catch(const std::exception &e) {if(failure.empty()) failure=e.what();}

@@ -73,7 +73,7 @@ void NativeRealmService::publishAreas(RegionId region, std::vector<Bytes> packet
         sendGame(encodeServerPacket(ServerMessage::Environment,[&](auto &out) {
             out.u32(uint32_t(environment->cycle));out.u32(uint32_t(environment->ticks));out.u8(environment->eclipse?1:0);
         }));
-        peer.areas.clear(); peer.rooms.clear(); peer.warps.clear(); peer.visible.clear(); peer.monsters.clear(); peer.missiles.clear(); peer.pets.clear(); peer.petVitals.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcQuestAlerts.clear(); peer.shopItems.clear(); peer.shopOwner = {}; peer.states.clear();
+        peer.areas.clear(); peer.rooms.clear(); peer.warps.clear(); peer.visible.clear(); peer.monsters.clear(); peer.missiles.clear(); peer.pets.clear(); peer.petVitals.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcQuestAlerts.clear(); peer.shopItems.clear(); peer.gambleShopItems.clear(); peer.shopOwner = {}; peer.states.clear();
     }
     std::set<RegionId> desired{region};
     const auto rooms = host.visibleRooms(*binding);
@@ -310,12 +310,29 @@ void NativeRealmService::publishNpcs() {
 }
 void NativeRealmService::publishShop() {
     const auto stock=host.shop(*binding); std::set<EntityId> next; std::vector<Bytes> packets;
+    const auto previousOwner=peer.shopOwner;
     if (stock) {
         auto projection=*stock;
         for (const auto &[id,item] : stock->inventory.items) { (void)item; next.insert(id); if (peer.shopItems.contains(id)) projection.inventory.items.erase(id); }
         packets=nativeShopItems(*content,projection); peer.shopOwner=stock->player.id;
+        if (!content->pd2Host) for (const auto &packet : packets) {
+            if (packet[0]!=0x9C || packet[1]!=11) continue;
+            net::protocol::Reader in(packet);
+            in.take(4);
+            const auto id=identities().entity(in.u32(),4);
+            if (projection.inventory.items.at(id).nativeFlags&0x2000000u)
+                peer.gambleShopItems.insert_or_assign(id,packet);
+        }
     }
-    for (const auto id : peer.shopItems) if (!next.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(wireId(id));}));
+    for (const auto id : peer.shopItems) if (!next.contains(id)) {
+        auto gamble=peer.gambleShopItems.extract(id);
+        if (stock && stock->player.id==previousOwner && !gamble.empty()) {
+            // REMOVEFROMSHOP names the original offer and its shelf cell.
+            auto &removal=gamble.mapped();
+            removal[1]=12;
+            packets.push_back(std::move(removal));
+        } else packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(wireId(id));}));
+    }
     if (!packets.empty()) sendGameBatch(std::move(packets));
     peer.shopItems.swap(next);
 }

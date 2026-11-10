@@ -116,7 +116,7 @@ bool DebugAi::Impl::approachTerrainClue(Context &c,const Selector &selector) {
     if(selector.identity!=clues.monster) return false;
     navigation.terrainClueDiagnostics={{"kind","vaught-mural"},{"area",*area}};
     if(clues.branches.empty()) {navigation.terrainClueDiagnostics["status"]=clues.unavailable;return false;}
-    const auto observation=c.town.navigationObservation();const auto &view=c.session.read();
+    const auto observation=c.town.navigationObservation();const auto &view=c.observation.read();
     if(!observation || !view.load.mapSeed || observation->width!=clues.width || observation->height!=clues.height) {
         navigation.terrainClueDiagnostics["status"]="unavailable-observation-or-extent";return false;
     }
@@ -196,7 +196,7 @@ bool DebugAi::Impl::approachTerrainClue(Context &c,const Selector &selector) {
 }
 bool DebugAi::Impl::observeColdPlainsWaypoint(Context &c) {
     if(!area || *area!=definitions->area("Act 1 - Wilderness 2") || navigation.knownWaypointAreas.contains(*area)) return false;
-    const auto &view=c.session.read();if(!view.load.mapSeed) return false;
+    const auto &view=c.observation.read();if(!view.load.mapSeed) return false;
     auto &run=navigation.coldPlainsSearch;
     if(run.game!=view.gameGeneration || run.seed!=*view.load.mapSeed) {
         run={};run.game=view.gameGeneration;run.seed=*view.load.mapSeed;

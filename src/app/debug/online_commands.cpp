@@ -256,7 +256,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
             messages.push_back({{"stringId", message.stringId}, {"menu", message.menu},
                 {"text", message.text}, {"acknowledged", message.acknowledged}});
         result["scene"]["npcConversation"] = {{"source", dialog.source}, {"revision", dialog.revision},
-            {"speaker", dialog.speaker}, {"travelLabel", dialog.travelLabel}, {"messages", messages}};
+            {"speaker", dialog.speaker}, {"travelLabel", dialog.travelLabel}, {"messages", messages},
+            {"playingSpeech", dialog.automaticSpeech ? Json(dialog.automaticSpeech->stringId) : Json()}};
     }
     result["scene"]["automap"] = {{"visible", scene.automapVisible}, {"large", scene.automapLarge},
         {"stamps", scene.automapStamps.size()}, {"towns", scene.automapTowns.size()},
@@ -813,7 +814,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                 if (!scene.nativeMapReady || !scene.movementAvailable)
                     return Json{{"ok", false}, {"error", scene.nativeMapReason}}.dump();
             }
-            accepted = inventory.submit(session, intent);
+            accepted = inventory.submit(intent);
             if (!accepted) return Json{{"ok", false}, {"accepted", false}, {"error", inventory.reason()}}.dump();
             if (intent.action == OnlineItemAction::Pickup) control.cancelMovement();
             else control.cancelApproach();
@@ -888,7 +889,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             if(!value.is_number_integer()) throw std::invalid_argument("NPC stringId must be an integer");
             const auto id=value.get<int64_t>();
             if(id<0 || id>UINT16_MAX) throw std::invalid_argument("NPC stringId is outside the native range");
-            accepted=session.acknowledge_npc_message(uint16_t(id));
+            accepted=control.acknowledgeNpc(uint16_t(id));
             control.cancelMovement();mutation=true;
         } else if (command == "online-npc-travel" || command=="online-npc-respec") {
             const auto scene = sceneSnapshot();

@@ -50,6 +50,10 @@ Confirmation confirmation(const ShopView &shop, uint32_t slot,
 Rectangle confirmationBounds(const OriginalMenu &painter, Vec anchor, const Confirmation &menu) {
     return painter.bounds(anchor,{0,0,float(W),float(H)},menu.title,menu.rows);
 }
+Rectangle rejectionBounds(const OriginalMenu &painter, Vec anchor, const ShopView::Rejection &rejection) {
+    return painter.bounds(anchor,{0,0,float(W),float(H)},rejection.message,
+        std::span<const std::string>{&rejection.continueLabel,1});
+}
 struct Placement { const ShopOfferView *offer; int page; Rectangle bounds; };
 std::vector<Placement> placements(const ShopView &shop, int category, float cellSize) {
     std::vector<Placement> result;
@@ -118,6 +122,7 @@ bool SceneView::openNpcShop(bool gamble) {
     view_.shopPage = 0;
     view_.shopConfirm.reset();
     view_.shopSalePending.reset();
+    view_.shopRejectionRevision = view_.shopRejectionDismissed = 0;
     view_.inventory.cancelGesture();
     view_.inventory.open = true;
     view_.inventory.cubeOpen = false;
@@ -218,6 +223,19 @@ std::optional<uint32_t> SceneView::clickNpcShop(Vec mouse, bool directBuy) {
         }
     return {};
 }
+bool SceneView::handleNpcShopRejection(Vec mouse, bool confirm, bool click) {
+    const auto &rejection=shopView().rejection;
+    if (!rejection || rejection->revision==view_.shopRejectionDismissed) return false;
+    if (view_.shopRejectionRevision!=rejection->revision) {
+        view_.shopRejectionRevision=rejection->revision;
+        view_.shopRejectionAt=mouse;
+        view_.shopConfirm.reset();
+    }
+    const auto box=rejectionBounds(originalMenu_,view_.shopRejectionAt,*rejection);
+    if (confirm || (click && originalMenu_.hit(box,true,1,mouse)==0))
+        view_.shopRejectionDismissed=rejection->revision;
+    return true;
+}
 void SceneView::drawNpcShop(Vec mouse) const {
     auto panel = panelBounds();
     drawPanelFrame(false);
@@ -287,11 +305,23 @@ void SceneView::drawNpcShop(Vec mouse) const {
                        std::to_string(maximumPage(items) + 1),
                        int(panel.x + 36 * scale()), int(panel.y + 416 * scale()), 11, gold);
     }
-    if (hovered && !view_.shopConfirm && !view_.inventory.drag) {
+    const bool showRejection=shop.rejection && view_.shopRejectionRevision==shop.rejection->revision &&
+        view_.shopRejectionDismissed!=shop.rejection->revision;
+    if (hovered && !showRejection && !view_.shopConfirm && !view_.inventory.drag) {
         if (const auto *detail = npcClient_.inspectShopOffer(view_.dialogueObject, hovered->slot, view_.shopGamble))
             deferTooltip(detail->tooltip, detail->quality, {mouse.x + 170, mouse.y}, detail->priceKnown ? std::optional<unsigned>{detail->price} : std::nullopt, assets_.characterLabels.at("Cost"));
     }
-    if (view_.shopConfirm) {
+    if (showRejection) {
+        const auto &rejection=*shop.rejection;
+        const auto box=rejectionBounds(originalMenu_,view_.shopRejectionAt,rejection);
+        DrawRectangleRec(box,{0,0,0,150});
+        originalMenu_.drawBorder(box);
+        const auto &font=assets_.itemTextFonts[1];
+        font.drawBaseline(rejection.message,{box.x+int((box.width-font.textWidth(rejection.message)+1)/2)+1,box.y+21},1);
+        const auto row=originalMenu_.row(box,true,0);
+        originalMenu_.label(rejection.continueLabel,{box.x,row.y,box.width,row.height},
+            originalMenu_.hit(box,true,1,mouse)==0 ? 3 : 0);
+    } else if (view_.shopConfirm) {
         const auto menu = confirmation(shop,*view_.shopConfirm,assets_.characterLabels);
         const auto box = confirmationBounds(originalMenu_,view_.shopConfirmAt,menu);
         const int hovered = originalMenu_.hit(box,true,menu.rows.size(),mouse);

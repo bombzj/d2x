@@ -35,7 +35,7 @@ class GameInstance {
         PlayerId player; GameCommand command;
         bool awaitingCrafting{};
         uint64_t awaitingQuest{};
-        bool retryingNpcAcknowledgement{};
+        bool retryingScrollAcknowledgement{};
         CommandStatus dispatchedResult{CommandStatus::Unavailable};
     };
     std::deque<Pending> commands_;

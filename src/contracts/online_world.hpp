@@ -173,8 +173,9 @@ struct OnlineNpcConversation {
     uint32_t source{};
     uint64_t revision{};
     std::vector<OnlineNpcMessage> messages;
-    std::set<uint16_t> acknowledged; // Enqueued 0x31 requests; never quest completion.
+    std::set<uint16_t> acknowledged; // Finished automatic lines or submitted topics.
     uint8_t type=1;
+    std::optional<uint16_t> playingSpeech; // Retail 31 already sent; playback is still active.
 };
 struct OnlineEquippedItem {
     uint32_t id{}, owner{};

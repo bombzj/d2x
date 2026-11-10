@@ -46,7 +46,7 @@ bool RemoteUiClients::Impl::Actor::control(ActorControlIntent intent) {
                 OnlineItemCommand request; request.action = OnlineItemAction::Pickup;
                 request.item = guid(intent.item->id); request.itemRevision = intent.item->revision;
                 request.toCursor = intent.toCursor; request.context = o.context;
-                const bool accepted = o.items.submit(o.session, request);
+                const bool accepted = o.items.submit(request);
                 if (!accepted) o.notice = o.items.reason();
                 return accepted;
             }

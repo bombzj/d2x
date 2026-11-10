@@ -120,7 +120,11 @@ void SceneView::questMusic(std::string_view music,int endFrames,int resumeBlock)
     assets_.streams.questCue(music,0,endFrames,{},0,resumeBlock);
 }
 void SceneView::beginWorldGame(uint64_t generation) {
-    if(questAudioGameGeneration_!=generation) {questAudioGameGeneration_=generation;assets_.streams.resetQuestCue();}
+    if(questAudioGameGeneration_!=generation) {
+        questAudioGameGeneration_=generation;
+        assets_.streams.resetQuestCue();
+        akaraGossipChoice_.reset();
+    }
 }
 const std::set<std::string, std::less<>> &SceneView::soundLimitations() const { return assets_.sceneAudio.limitations(); }
 void SceneView::updateChat(const OnlineSocialView &social,const OnlineSocialView &account) { chat_.update(social,account); }

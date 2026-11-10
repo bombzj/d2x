@@ -111,6 +111,9 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
     auto record=p->persistent.player;auto &book=record.quests.at(size_t(ports_.settings.difficulty));
     if(operation==6 && definition==8) {
         if(unavailable(actor.player,record,QuestId::ForgottenTower)) return {DomainStatus::Conflict,{}};
+        const auto &messages = ports_.areas.at(actor.area).definition.questObjectMessages;
+        if (const auto message = messages.find(operation); message != messages.end())
+            return offerObjectReading(actor, source, message->second);
         if(!towerAdvance(book.at(questIndex(QuestId::ForgottenTower)),TowerStage::TomeRead)) return {DomainStatus::Applied,std::monostate{}};
         return commit(actor,std::move(record));
     }

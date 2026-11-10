@@ -222,6 +222,8 @@ struct RealmSession::Impl {
     void pump_mcp();
     void pump_game();
     void close_interaction();
+    void send_npc_message(uint32_t source,uint16_t stringId);
+    void start_npc_speech(OnlineNpcConversation &, std::optional<uint16_t> previous = {});
     void restore_portal_skill();
     void tick();
 };

@@ -1,4 +1,5 @@
 #include "client/npc_client.hpp"
+#include "contracts/online_npc_speech.hpp"
 #include "presentation/controller.hpp"
 #include "presentation/scene_view.hpp"
 
@@ -64,10 +65,53 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
     }
     return false;
 }
+void SceneController::finishRetailNpcSpeech(bool dismiss) {
+    auto &ui = view_.ui();
+    if (ui.dialogueFromMenu) {
+        const auto &conversation = npcClient_.read(ui.dialogueObject);
+        if (conversation.valid && ui.dialogueTextTopic && !conversation.cainRescueFollowup.empty()) {
+            if (const auto next = retailNpcSpeechFollowup(uint16_t(*ui.dialogueTextTopic))) {
+                view_.openNpcDialogue(ui.dialogueObject, conversation.speaker, conversation.cainRescueFollowup, next);
+                ui.dialogueTextTopic = next;
+                ui.dialogueFromMenu = true;
+                return;
+            }
+        }
+        view_.cancelNpcDialogue();
+        ui.npcMenu = ui.npcTopics = conversation.valid;
+    } else if (ui.dialogueTextTopic) {
+        npcClient_.submit(TalkToNpc{ui.dialogueObject, TalkToNpc::Action::Acknowledge,
+            ui.dialogueTextTopic, dismiss});
+        view_.cancelNpcDialogue();
+    } else {
+        view_.cancelNpcDialogue();
+        npcClient_.submit(EndNpcConversation{ui.dialogueObject});
+    }
+}
 bool SceneController::handleNpcDialogue(const FrameInput &input) {
     auto &ui = view_.ui();
     if (!ui.dialogue.empty()) {
         const bool finished = view_.npcSpeechFinished();
+        if (view_.npcView().retailSpeech) {
+            const bool forced = input.escape || (input.insideViewport && input.leftPressed);
+            // The retail speech overlay consumes keyboard input, including Page Up/Down.
+            const auto key = input.controlKeyPressed;
+            const bool skip = input.menuSelect || input.pageDelta ||
+                (key >= 8 && key <= 0xDF && key != 0x73);
+            if (view_.canSkipNpcSpeech()) {
+                if (forced) {
+                    // 7ED30 checks the selected unit before running the forced callback.
+                    pendingForcedNpcSkip_ = true;
+                    return true;
+                }
+                if (skip) {
+                    finishRetailNpcSpeech(false);
+                    return true;
+                }
+            }
+            if (finished) finishRetailNpcSpeech(false);
+            return true;
+        }
         if (ui.dialogueTextTopic && (finished || input.escape || (input.insideViewport && input.leftPressed))) {
             const bool returnToMenu = ui.dialogueFromMenu;
             npcClient_.submit(TalkToNpc{ui.dialogueObject, TalkToNpc::Action::Acknowledge, ui.dialogueTextTopic});

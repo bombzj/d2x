@@ -18,10 +18,10 @@ struct DebugWalkTiming {
   int townTurnBaseMs=200,townTurnMinMs=600,townTurnMaxMs=2000;
 };
 struct Grid;
+class OnlineObservation;
 class RemoteTown;
-class RemoteControl;
-class RemoteCombat;
-namespace net {class RealmSession;}
+class IOnlineControl;
+class IOnlineCombat;
 // Explicit debug input driver. Never reads host state or writes replica positions.
 class DebugAutoWalk {
   public:
@@ -90,7 +90,7 @@ class DebugAutoWalk {
     uint64_t failures_{};
     bool run_=true,interact_{},landmark_{},clientMoving_{},exploration_{},localCrossing_{},exactPoint_{};
     DebugNavigationSearch search_;
-    void finish(DebugWalkState,std::string,RemoteControl &,DebugWalkFailure=DebugWalkFailure::Other);
+    void finish(DebugWalkState,std::string,IOnlineControl &,DebugWalkFailure=DebugWalkFailure::Other);
     nlohmann::json status() const;
   public:
     void setTiming(const DebugWalkTiming &timing) {timing_=timing;cadence_.wake();}
@@ -102,10 +102,10 @@ class DebugAutoWalk {
     bool openingRouteDoor() const {return active() && routeDoor_.has_value();}
     uint64_t failureCount() const {return failures_;}
     DebugWalkObservation observe() const;
-    void start(const DebugWalkIntent &,net::RealmSession &,RemoteTown &,RemoteControl &);
+    void start(const DebugWalkIntent &,const OnlineObservation &,const RemoteTown &,IOnlineControl &);
     nlohmann::json snapshot() const;
-    std::optional<std::string> command(const nlohmann::json &,net::RealmSession &,RemoteTown &,RemoteControl &,RemoteCombat &);
-    void tick(net::RealmSession &,RemoteTown &,RemoteControl &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
-    void manualInput(RemoteControl &);
+    std::optional<std::string> command(const nlohmann::json &,const OnlineObservation &,const RemoteTown &,IOnlineControl &,IOnlineCombat &);
+    void tick(const OnlineObservation &,const RemoteTown &,IOnlineControl &,bool blocked,std::optional<Vec> pathPosition,bool pathMoving);
+    void manualInput(IOnlineControl &);
 };
 }

@@ -13,6 +13,7 @@ struct TalkToNpc {
     EntityId target;
     enum class Action { Talk, Acknowledge, Trade, Initialize } action = Action::Talk;
     std::optional<uint32_t> message;
+    bool dismissAfterSpeech = false;
 };
 struct ClaimAkaraRespec { EntityId target; };
 struct ImbueItem { EntityId npc; ItemHandle item; };

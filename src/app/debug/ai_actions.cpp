@@ -13,7 +13,7 @@ Vec position(OnlinePoint p) {return {float(p.x),float(p.y)};}
 }
 std::optional<OnlineUnit> DebugAi::Impl::find(const Context &c,const Selector &selector,bool corpses) const {
     std::optional<OnlineUnit> best;float nearest=std::numeric_limits<float>::max();
-    for(const auto &[key,unit]:c.session.read().world.units) {
+    for(const auto &[key,unit]:c.observation.read().world.units) {
         if(key.type!=selector.type || !unit.position || !unit.classId) continue;
         const auto identity=key.type==1?c.combat.monsterClass(unit):unit.classId;
         if(identity!=selector.identity || (key.type==1 && !corpses && onlineMonsterCorpse(unit))) continue;
@@ -28,9 +28,9 @@ std::optional<OnlineUnit> DebugAi::Impl::find(const Context &c,const Selector &s
     return best;
 }
 bool DebugAi::Impl::owned(const Context &c,std::string_view code) const {
-    for(const auto &[id,item]:c.session.read().world.items) {
+    for(const auto &[id,item]:c.observation.read().world.items) {
         (void)id;
-        if(item.code==code && onlineItemOwnedBy(item,c.session.read().load.playerUnitId) &&
+        if(item.code==code && onlineItemOwnedBy(item,c.observation.read().load.playerUnitId) &&
             (item.mode==0 || item.mode==1 || item.mode==2 || item.mode==4)) return true;
     }
     return false;
@@ -44,7 +44,7 @@ bool DebugAi::Impl::settleItemInput(Context &c) {
     // observing the normal animation and wait for a quiet interval before sending one
     // inventory request; never use a rejected/unknown request as a retry loop.
     const auto now=Clock::now();const auto cast=std::max(battle.lastAttack,navigation.mobilityDeadline-std::chrono::seconds(3));
-    const auto &view=c.session.read();
+    const auto &view=c.observation.read();
     const auto player=view.load.playerUnitId?view.world.units.find({0,*view.load.playerUnitId}):view.world.units.end();
     const auto milliseconds=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
     // Hit recovery may start after our last cast. The normal action receipt
@@ -131,7 +131,7 @@ bool DebugAi::Impl::approachPickup(Context &c,const OnlineItem &item) {
 }
 const OnlineItem *DebugAi::Impl::observedDrop(const Context &c,std::string_view code,bool landedOnly) const {
     const OnlineItem *best=nullptr;float nearest=std::numeric_limits<float>::max();
-    for(const auto &[id,item]:c.session.read().world.items) {
+    for(const auto &[id,item]:c.observation.read().world.items) {
         if(item.code!=code || !item.positionKnown || (item.mode!=3 && (landedOnly || item.mode!=5))) continue;
         const float d=(Vec{float(item.groundX),float(item.groundY)}-c.position).length();
         if(!best || (item.mode==3 && best->mode!=3) || (item.mode==best->mode && d<nearest)) {
@@ -142,7 +142,7 @@ const OnlineItem *DebugAi::Impl::observedDrop(const Context &c,std::string_view 
 }
 void DebugAi::Impl::observeDrops(const Context &c,const Goal &goal) {
     if(!area) return;
-    const auto &world=c.session.read().world;
+    const auto &world=c.observation.read().world;
     std::erase_if(rememberedDrops,[&](const auto &entry) {
         const auto item=world.items.find(entry.second.id);
         return owned(c,entry.first) || (item!=world.items.end() && (item->second.code!=entry.first ||
@@ -174,7 +174,7 @@ void DebugAi::Impl::observeDrops(const Context &c,const Goal &goal) {
 }
 bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
     if(owned(c,goal.item)) return true;
-    const auto now=Clock::now();const auto &world=c.session.read().world;
+    const auto now=Clock::now();const auto &world=c.observation.read().world;
     if(pickup) {
         wait("pickup-wait","Waiting for actual item ownership");return false;
     }
@@ -185,7 +185,7 @@ bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
         if(ground.mode==5) {wait("pickup-landing","Drop observed; waiting for the assigned item to land");return false;}
         OnlineItemCommand take;take.action=OnlineItemAction::Pickup;take.item=ground.id;take.itemRevision=ground.revision;
         if(submitItem(c,take,"item-pickup")) {
-            pickup=PickupReceipt{goal.item,ground.id,c.session.read().world.itemRequest->sequence,now+std::chrono::seconds(12)};note("pickup-submitted",goal.item);
+            pickup=PickupReceipt{goal.item,ground.id,c.observation.read().world.itemRequest->sequence,now+std::chrono::seconds(12)};note("pickup-submitted",goal.item);
         } else wait("pickup-blocked",c.inventory.reason());
         return false;
     }
@@ -211,7 +211,7 @@ bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
             return false;
         }
         if(drop.inspectSince==Clock::time_point{}) drop.inspectSince=now;
-        const auto grace=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*c.session.read().latencyMilliseconds.value_or(0)+500,1000,3000));
+        const auto grace=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*c.observation.read().latencyMilliseconds.value_or(0)+500,1000,3000));
         cancelWalk(c);
         if(now-drop.inspectSince<grace) {wait("pickup-reobserve","Waiting at the recorded drop for a fresh ground assignment");return false;}
         note("quest-drop-no-longer-present",goal.item+" #"+std::to_string(drop.id));rememberedDrops.erase(found);
@@ -242,7 +242,7 @@ void DebugAi::Impl::returnTown(Context &c) {
 bool DebugAi::Impl::reachTown(Context &c) {
     if(c.town.read().town) return true;
     if(!portalIssued && waypointBeforeDeparture(c)) return false;
-    const auto &view=c.session.read();const auto now=Clock::now();
+    const auto &view=c.observation.read();const auto now=Clock::now();
     if(!view.load.townArea) throw std::runtime_error("Current native act has no assigned town");
     // An unlocked waypoint already within interaction approach is cheaper
     // than casting a portal beside it. Continue a chosen return route across
@@ -323,7 +323,7 @@ bool DebugAi::Impl::reachTown(Context &c) {
     return travel(c,*view.load.townArea);
 }
 void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
-    const auto &view=c.session.read();const auto slot=goal.questSlot;
+    const auto &view=c.observation.read();const auto slot=goal.questSlot;
     if(view.world.quests.playerFlags && ((*view.world.quests.playerFlags)[slot]&3) && !owned(c,goal.item)) {
         if(view.world.npcRequested) c.control.closeNpc();
         advance(c,"Item consumed and actual native reward flag observed: "+goal.quest);return;
@@ -336,15 +336,15 @@ void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
         wait("delivery-approach","Opening the actual delivery NPC conversation");
         walk(c,{.goal=DebugWalkGoal::Unit,.unit=OnlineUnitKey{1,npc->key.id},.interact=true});return;
     }
-    wait("delivery-dialogue","Acknowledging only actually offered automatic text or the verified Malus topic");
-    if(!greetingIssued && npc->classId) {greetingIssued=c.control.greetNpc(*npc->classId);if(greetingIssued)return;}
+    wait("delivery-dialogue","Waiting for the delivery NPC's automatic dialogue and reward");
     const auto conversation=*view.world.npcConversation;
-    const auto automatic = nextAutomaticNpcSpeech(conversation);
+    const auto automatic = view.protocolProfile=="lod113c"?conversation.playingSpeech:nextAutomaticNpcSpeech(conversation);
     for(const auto &message:conversation.messages) {
         if (automatic && *automatic != message.stringId) continue;
         // D2MOO A1Q3 ScrollMessage 163 deletes hdm and sets REWARDPENDING.
         // It is acknowledged only when the real NPC offered it to this client.
-        if((message.menu==0 || std::find(goal.topics.begin(),goal.topics.end(),message.stringId)!=goal.topics.end()) &&
+        if((automatic || (view.protocolProfile!="lod113c" && message.menu==2 &&
+            std::find(goal.topics.begin(),goal.topics.end(),message.stringId)!=goal.topics.end())) &&
             !conversation.acknowledged.contains(message.stringId)) {
             if(c.control.acknowledgeNpc(message.stringId)) {
                 ++interactions;setActionDeadline(std::chrono::seconds(12));note("npc-topic-acknowledged",std::to_string(message.stringId));
@@ -393,8 +393,8 @@ void DebugAi::Impl::executeGoal(Context &c,const Goal &goal) {
         return;
     }
     if(goal.interact) {
-        if(c.session.read().world.npcConversation && c.session.read().world.npcConversation->type==1 &&
-            c.session.read().world.npcConversation->source==unit->key.id) {
+        if(c.observation.read().world.npcConversation && c.observation.read().world.npcConversation->type==1 &&
+            c.observation.read().world.npcConversation->source==unit->key.id) {
             advance(c,"Assigned NPC conversation observed");return;
         }
         walk(c,{.goal=DebugWalkGoal::Unit,.unit=OnlineUnitKey{unit->key.type,unit->key.id},.interact=true});return;

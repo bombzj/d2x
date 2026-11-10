@@ -2,6 +2,7 @@
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/npc.hpp"
 #include "server/runtime/facts/quest_signals.hpp"
+#include "server/runtime/facts/unit.hpp"
 #include "detail.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -205,10 +206,23 @@ DomainResult<> System::operateActFive(const ActorContext &actor,EntityId source,
         return result;
     }
     if(operation>=62 && operation<=64 && int(actor.area)==120) {
+        if (ports_.areas.at(actor.area).definition.questObjectMessages.contains(69)) {
+            const auto sent = ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
+                {SoundFact{actor.actor,0,actor.area,19}}});
+            return {sent.status, sent ? std::optional{std::monostate{}} : std::nullopt};
+        }
         if(book[questIndex(QuestId::RiteOfPassage)].stage<4) return {DomainStatus::Conflict,{}};
         book[questIndex(QuestId::RiteOfPassage)].flags|=32;
         if(!unavailable(actor.player,record,QuestId::EveOfDestruction)) book[questIndex(QuestId::EveOfDestruction)].stage=std::max(book[questIndex(QuestId::EveOfDestruction)].stage,2u);
         return commit(actor,std::move(record));
+    }
+    if (operation == 69) {
+        const auto &messages = ports_.areas.at(actor.area).definition.questObjectMessages;
+        const auto message = messages.find(operation);
+        if (message == messages.end()) return {DomainStatus::Unavailable, {}};
+        const auto &quest = book[questIndex(QuestId::RiteOfPassage)];
+        if (quest.stage != 4 || (quest.flags & 32)) return {DomainStatus::Applied, std::monostate{}};
+        return offerObjectReading(actor, source, message->second);
     }
     if(operation==66 || operation==70 || operation==72) return ports_.travel.useSpecial(actor,{travel::Kind::QuestObject,{source,0,2},{}});
     return {DomainStatus::NotImplemented,{}};

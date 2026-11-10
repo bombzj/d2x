@@ -507,6 +507,7 @@ bool SceneController::handleDeath(const FrameInput &input) {
 }
 bool SceneController::handle(const FrameInput &input, float elapsed) {
     worldBlocked_ = true;
+    pendingForcedNpcSkip_ = false;
     if (handleDeath(input)) return true;
     auto &ui = view_.ui();
     if(ui.hirelingOpen && !view_.hirelingView().active) {ui.hirelingOpen=false;ui.inventory.cancelGesture();}
@@ -701,6 +702,8 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
         resetInput();
         return;
     }
+    if (pendingForcedNpcSkip_ && !view_.ui().dialogue.empty() && !world.pointerOnSpeechNpc)
+        finishRetailNpcSpeech(true);
     const bool casting = gesture_ == Gesture::LeftCast || gesture_ == Gesture::RightCast;
     const bool lockedCast = casting && lockedTarget_ && world.targetingAvailable;
     const bool enabled = ((world.available && input.insideViewport) || lockedCast) &&

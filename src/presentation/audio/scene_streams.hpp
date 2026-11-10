@@ -28,8 +28,9 @@ class SceneStreams {
     void questCue(std::string_view music,int startFrames,int endFrames,std::string_view voice,int voiceFrames,int resumeBlock);
     std::optional<std::string> advanceQuestCue(float dt,bool playerAlive);
     void resetQuestCue();
-    void speak(std::string_view text, std::optional<uint32_t> stringId = {});
+    void speak(std::string_view text, std::optional<uint32_t> stringId = {}, bool retailSpeech = false);
     unsigned speechScrollRate() const;
+    bool speechReady() const;
     void stopSpeech();
     std::optional<bool> speechFinished() const; // No value when this line has no audio stream.
 };

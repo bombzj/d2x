@@ -36,7 +36,8 @@
       "sorceress": {
         "skill": {
           "skill": "Frozen Orb",
-          "minLevel": 1
+          "minLevel": 1,
+          "range": 12
         },
         "fallbackSkills": [
           "Ice Blast",
@@ -105,6 +106,7 @@
     "scrollInitialWaitMs": 1000,
     "questLogDurationMs": 2000,
     "waypointCloseDelayMs": 300,
+    "npcDialogueCloseDelayMs": 500,
     "walkDecisionMs": 160,
     "walkReactionMs": 40,
     "walkRequestIntervalMs": 200,

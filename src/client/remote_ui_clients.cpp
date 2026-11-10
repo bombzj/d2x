@@ -102,7 +102,7 @@ void RemoteUiClients::Impl::pump() {
             if (!price) { notice = "The current server item has no complete transaction quote."; transactions.clear(); return; }
             c.amount = *price;
         }
-        if (!items.submit(session,c)) { notice = items.reason(); transactions.clear(); return; }
+        if (!items.submit(c)) { notice = items.reason(); transactions.clear(); return; }
         const auto &sent = session.read();
         if (c.action == OnlineItemAction::TradeOpen) {
             shopView.gamble = sent.world.shopGamble;

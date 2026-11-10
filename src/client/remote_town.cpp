@@ -632,6 +632,10 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             for (const auto &message : conversation.messages)
                 dialog.messages.push_back({message.stringId, message.menu,
                     std::string(strings_.speech(message.stringId)), conversation.acknowledged.contains(message.stringId)});
+            if (conversation.playingSpeech) {
+                const auto topic=*conversation.playingSpeech;
+                dialog.automaticSpeech=OnlineNpcText{topic,0,std::string(strings_.speech(topic)),false};
+            }
             const auto &unit = v.world.units.at(target->unit);
             const auto id = conversation.type==1?monsters_.value(monsterRows_.at(*unit.classId), "Id"):std::string_view{};
             auto rewarded = [&](size_t slot) {

@@ -46,6 +46,7 @@ struct OnlineNpcDialogView {
     std::optional<uint32_t> travelDestination;
     std::string respecLabel;
     uint8_t type=1;
+    std::optional<OnlineNpcText> automaticSpeech;
 };
 struct OnlinePlayerDisplay {
     uint32_t id{};

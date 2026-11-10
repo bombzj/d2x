@@ -194,7 +194,7 @@ bool GameInstance::pendingSynchronousCommand(PlayerId id,uint64_t sequence) cons
     return systems_.inventory.pendingGoldCommand(id,sequence) || systems_.travel.pendingPortalCommand(id,sequence) ||
         systems_.crafting.pendingTransmute(id,sequence) ||
         std::any_of(commands_.begin(),commands_.end(),[&](const auto &pending) {
-            return pending.player==id && (pending.awaitingCrafting || pending.awaitingQuest || pending.retryingNpcAcknowledgement) && (!sequence || pending.command.sequence==sequence);
+            return pending.player==id && (pending.awaitingCrafting || pending.awaitingQuest || pending.retryingScrollAcknowledgement) && (!sequence || pending.command.sequence==sequence);
         });
 }
 bool GameInstance::enter(PlayerId id, bool active) {
@@ -436,8 +436,11 @@ void GameInstance::step() {
         if(result==CommandStatus::QueueFull && !dispatched) {
             const auto *request=std::get_if<npc::Request>(&command.payload);
             const auto *talk=request?std::get_if<TalkToNpc>(&request->intent):nullptr;
-            if(talk && talk->action==TalkToNpc::Action::Acknowledge) {
-                pending.retryingNpcAcknowledgement=true;
+            const auto *quest=std::get_if<quests::Request>(&command.payload);
+            const bool readScroll = quest && (quest->action==quests::Action::ReadObjectScroll ||
+                quest->action==quests::Action::ReadAncientAltar || quest->action==quests::Action::ReadFrozenAnya);
+            if((talk && talk->action==TalkToNpc::Action::Acknowledge) || readScroll) {
+                pending.retryingScrollAcknowledgement=true;
                 inventoryWaiting=true;break;
             }
         }

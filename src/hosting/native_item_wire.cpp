@@ -16,6 +16,7 @@ namespace d2x {
 namespace {
 using net::protocol::BitWriter;
 constexpr uint32_t itemNewFlag = 0x1;
+constexpr uint32_t itemBoughtFlag = 0x2; // IFLAG_TARGET on the initial purchase placement.
 constexpr uint32_t itemQuantityFlag = 0x20;
 constexpr uint32_t duplicatedSourceFlag = 0x08000000;
 constexpr uint32_t beltRepositionFlags = itemNewFlag | 0x400; // IFLAG_UNK1.
@@ -513,14 +514,15 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
                 std::find(switchSlots.begin(), switchSlots.end(), EquipmentSlot(destination->cell.x)) != switchSlots.end()) continue;
             if(change.kind==ItemChangeKind::DurabilityChanged) result.push_back(itemStat(change.item,72,state.inventory.items.at(change.item).durability));
             const auto action = change.kind == ItemChangeKind::QuantityChanged ? ItemAction::Quantity : ItemAction::Properties;
-            emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value));
+            emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value), {}, {},
+                change.gamblePurchase ? itemNewFlag : 0);
             continue;
         }
         if (change.kind == ItemChangeKind::Created) {
             const auto destination = kind(state, change.after);
             const auto action = destination == ContainerKind::Cursor ? ItemAction::Cursor : destination == ContainerKind::Belt ? ItemAction::PutBelt : equipment(destination) ? ItemAction::Equip : ItemAction::Put;
             emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value), {}, {},
-                equipment(destination) ? itemNewFlag : 0); continue;
+                (equipment(destination) ? itemNewFlag : 0) | (change.gamblePurchase ? itemBoughtFlag : 0)); continue;
         }
         if (change.kind != ItemChangeKind::Moved) throw std::logic_error("Unsupported inventory delta");
         const auto from = kind(state, change.before), to = kind(state, change.after);

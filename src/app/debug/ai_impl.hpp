@@ -1,5 +1,7 @@
 #pragma once
 #include "ai.hpp"
+#include "client/online_actions.hpp"
+#include "client/remote_town.hpp"
 #include "ai_navigation_state.hpp"
 #include "ai_battle_state.hpp"
 #include "ai_combat_strategy.hpp"
@@ -8,9 +10,6 @@
 #include "ai_behavior_log.hpp"
 #include "auto_walk.hpp"
 #include "action_state.hpp"
-#include "client/remote_combat.hpp"
-#include "client/remote_control.hpp"
-#include "client/remote_inventory.hpp"
 #include "content/monsters/monster_identity.hpp"
 #include "resources/data_table.hpp"
 #include "gameplay/quest/catalog.hpp"
@@ -141,6 +140,7 @@ struct DebugAi::Impl {
         int radius=6,crowd=4,retreat=8,engage=18;
         std::vector<uint16_t> fallbackSkills;
         std::map<uint16_t,unsigned> minimumSkillLevels;
+        std::map<uint16_t,int> skillRanges;
         int noProgressSeconds=6,stallTimeoutSeconds=90,retreatLifePercent=45,lifeDropPercent=10;
         bool rangedKite=true;
         int kiteIntervalMs=900,kiteDistance=6,kiteMinDistance=8,hazardLookaheadMs=350,hazardPadding=3;
@@ -148,7 +148,7 @@ struct DebugAi::Impl {
     struct MobilityPolicy {std::string mode="auto";bool vigor=true;int distance=24;} mobilityPolicy;
     struct EventPolicy : DebugWalkTiming {
         int waitSeconds=90,initialWaitMs=1000,doorInitialWaitMs=250,scrollInitialWaitMs=1000;
-        int questLogDurationMs=2000,waypointCloseDelayMs=300;
+        int questLogDurationMs=2000,waypointCloseDelayMs=300,npcDialogueCloseDelayMs=500;
         int encounterRadius=32,standoffMin=8,standoffMax=24;
     } eventPolicy;
     struct SupplyPolicy {
@@ -156,8 +156,10 @@ struct DebugAi::Impl {
         int lifePercent=60,manaPercent=35,criticalLifePercent=25,healthCount=4,manaCount=4,quiverCount=3,intervalMs=1500;
     } supplyPolicy;
     struct Context {
-        net::RealmSession &session;RemoteTown &town;DebugAutoWalk &walk;RemoteControl &control;
-        RemoteCombat &combat;RemoteInventory &inventory;Vec position;bool moving{};const SuppliesView *supplies{};
+        // Direct reads of client map/collision/automap data are intentional;
+        // automation need not recover that information from rendered pixels.
+        const OnlineObservation &observation;const RemoteTown &town;DebugAutoWalk &walk;IOnlineControl &control;
+        IOnlineCombat &combat;IOnlineInventory &inventory;Vec position;bool moving{};const SuppliesView *supplies{};
     };
     struct VisualThreat {int id{};Vec from,to;float radius{};bool unitSource{}, dangerous{};};
     std::vector<VisualThreat> visibleThreats(const Context &) const;
@@ -186,7 +188,7 @@ struct DebugAi::Impl {
     std::set<OnlineUnitKey> loggedQuestAlerts;
     void observeDiagnostics(const Context &);
     void goalStarted();
-    void cancel(DebugAutoWalk &,RemoteControl &,RemoteCombat &,std::string);
+    void cancel(DebugAutoWalk &,IOnlineControl &,IOnlineCombat &,std::string);
     std::optional<uint16_t> area;std::optional<OnlineUnitKey> target;
     uint64_t targetAssignment{};
     bool resumeExplorationReturn(Context &);
@@ -214,6 +216,16 @@ struct DebugAi::Impl {
     DebugExecutionClock executionClock;
     DebugDecisionCadence cadence;
     std::optional<uint16_t> decisionLife;
+    struct NpcDialogueDisplay {
+        OnlineIntentContext context;
+        std::optional<uint16_t> speech;
+        Clock::time_point openedAt;
+    };
+    std::optional<NpcDialogueDisplay> npcDialogueDisplay;
+    void observeNpcDialogue(const OnlineView &,Clock::time_point);
+    Clock::time_point npcDialogueReadyAt() const {
+        return npcDialogueDisplay?npcDialogueDisplay->openedAt+std::chrono::milliseconds(eventPolicy.npcDialogueCloseDelayMs):Clock::time_point{};
+    }
     bool decisionDue(const Context &,Clock::time_point);
     Json actionDiagnostics;
     std::map<DebugActionOwner,DebugSubmissionWait> submissionWaits;
@@ -243,8 +255,9 @@ struct DebugAi::Impl {
     std::optional<OnlinePoint> selectKitePosition(Context &,const CombatSelection &,const CombatSight &,std::span<const Vec>,int range);
     void prepareCombatSkill(const Context &);
     bool meleeAttack(const Context &,uint16_t) const;
+    int combatRange(const Context &,uint16_t) const;
     bool attackRankQualified(const Context &,uint16_t,bool left) const;
-    bool objectIssued{},portalIssued{},portalAttempted{},portalUsed{},greetingIssued{};
+    bool objectIssued{},portalIssued{},portalAttempted{},portalUsed{};
     struct PickupReceipt {std::string code;uint32_t item;uint64_t sequence;Clock::time_point deadline;bool observed{};};
     std::optional<PickupReceipt> pickup;std::set<uint32_t> oldPortals;
     struct RememberedDrop {uint32_t id{};uint16_t area{};OnlinePoint position{};Clock::time_point inspectSince{};};
@@ -328,6 +341,8 @@ struct DebugAi::Impl {
     bool questTransaction(const Context &) const;
     void questStepDone(Context &,std::string);
     void quest(Context &,const Goal &);
+    bool finishAutomaticNpcSpeech(Context &,const Goal &);
+    void trackNpcQuestReward(const OnlineWorldView &,const Goal &,const QuestStep &);
     bool questTalk(Context &,const Goal &,const QuestStep &);
     bool questJournalTalk(Context &,const QuestStep &);
     bool quietQuestNpc(Context &,const OnlineUnit &);
@@ -384,7 +399,7 @@ struct DebugAi::Impl {
     struct TeleportApproach {Vec landing;bool completeRoute{};};
     std::optional<TeleportApproach> teleportLanding(Context &,Vec wanted,bool exploration,bool directOnly=false) const;
     bool mobility(Context &);
-    void stop(DebugAutoWalk &,RemoteControl &,RemoteCombat &);
+    void stop(DebugAutoWalk &,IOnlineControl &,IOnlineCombat &);
     void finish(std::string,std::string,Context &);
     void advance(Context &,std::string,bool skipped=false);
     void resetStep();

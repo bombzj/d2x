@@ -107,6 +107,8 @@ struct Stream {
     bool musicVolume = false, looping = false;
     std::atomic<bool> releasing{}, failed{}, finished{}, paused{}, started{};
     float fadeIn = 0, fadeOut = 0;
+    int speechFadeTicks = 0;
+    std::chrono::steady_clock::time_point releaseTime;
     std::array<int, 3> blocks{-1, -1, -1};
     std::mutex waitMutex;
     std::condition_variable_any wake;
@@ -128,7 +130,10 @@ struct Stream {
     }
     void stop() {
         pending->cancelled = true;
-        releasing = true;
+        if (!releasing) {
+            releaseTime = std::chrono::steady_clock::now();
+            releasing = true;
+        }
         wake.notify_all();
     }
     void unavailable(const std::string &message) {
@@ -175,21 +180,33 @@ struct Stream {
             PlayMusicStream(music);
             started = true;
             auto previous = std::chrono::steady_clock::now();
+            std::optional<int> releaseGain;
             while (!stop.stop_requested()) {
                 const auto now = std::chrono::steady_clock::now();
                 const float dt = std::chrono::duration<float>(now - previous).count();
                 previous = now;
-                const bool isPaused = paused && !releasing;
+                const bool releaseRequested = releasing;
+                const bool isPaused = paused && !releaseRequested;
                 if (isPaused != wasPaused) {
                     if (isPaused) PauseMusicStream(music); else ResumeMusicStream(music);
                     wasPaused = isPaused;
                 }
                 if (!isPaused) {
-                    envelope = releasing ? std::max(0.f, envelope - (fadeOut > 0 ? dt / fadeOut : 1.f))
-                        : std::min(1.f, envelope + (fadeIn > 0 ? dt / fadeIn : 1.f));
+                    int gain;
+                    if (releaseRequested && speechFadeTicks) {
+                        if (!releaseGain) releaseGain = int(modulation.load() * envelope);
+                        const auto ticks = std::clamp<int64_t>(
+                            std::chrono::duration_cast<std::chrono::milliseconds>(now - releaseTime).count() / 40,
+                            0, speechFadeTicks);
+                        gain = *releaseGain - int(*releaseGain * ticks / speechFadeTicks);
+                    } else {
+                        envelope = releaseRequested ? std::max(0.f, envelope - (fadeOut > 0 ? dt / fadeOut : 1.f))
+                            : std::min(1.f, envelope + (fadeIn > 0 ? dt / fadeIn : 1.f));
+                        gain = int(modulation.load() * envelope);
+                    }
                     SetMusicVolume(music, originalSoundGain(volume, master, musicVolume ? musicGain.load() : 100,
-                        int(modulation.load() * envelope)));
-                    if (releasing && envelope <= 0) break;
+                        gain));
+                    if (releaseRequested && (speechFadeTicks ? gain <= 0 : envelope <= 0)) break;
                     UpdateMusicStream(music);
                     cursor = int(GetMusicTimePlayed(music) * music.stream.sampleRate);
                     if (!looping && !IsMusicStreamPlaying(music)) break;
@@ -204,6 +221,19 @@ struct Stream {
     }
 };
 struct Speech { std::string sound; unsigned rate; };
+int retailScrollSound(uint32_t stringId) {
+    // Numeric D2Client DF398 entries for object readings and special Talk rows.
+    switch (stringId) {
+    case 127: return 4215;
+    case 254: return 4065;
+    case 338: return 3681;
+    case 396: return 4216;
+    case 20002: return 4378;
+    case 20131: return 4406;
+    case 20169: return 4379;
+    default: return 0;
+    }
+}
 }
 struct SceneStreams::Impl {
     Archives &archives;
@@ -212,6 +242,7 @@ struct SceneStreams::Impl {
     std::map<int, int> songs, checkpoints;
     std::map<std::string, Speech, std::less<>> speeches;
     std::map<uint32_t, Speech> speechIds;
+    std::optional<ClassicStrings> speechStrings;
     unsigned scrollRate = 8;
     std::unique_ptr<Stream> song, speech;
     std::unique_ptr<Stream> rain;
@@ -246,7 +277,7 @@ struct SceneStreams::Impl {
                 auto environment = environmentSongs.find(levels.number(row, "SoundEnv").value_or(0));
                 if (environment != environmentSongs.end()) songs.emplace(*id, environment->second);
             }
-        const ClassicStrings strings(archives);
+        const auto &strings = speechStrings.emplace(archives);
         for (const auto &[group, entries] : content->npcDialogues)
             for (const auto &entry : entries) {
                 const auto raw = strings.find(entry.stringKey);
@@ -266,7 +297,8 @@ struct SceneStreams::Impl {
     void unavailable(const std::string &message) {
         if (limitations.insert(message).second) std::cerr << "Original audio unavailable: " << message << '\n';
     }
-    std::unique_ptr<Stream> load(size_t row, const std::string &root, int modulation = 255, int resume = 0) {
+    std::unique_ptr<Stream> load(size_t row, const std::string &root, int modulation = 255, int resume = 0,
+                                 bool retailSpeech = false) {
         const auto &table = catalog.sounds();
         const auto path = root + std::string(table.value(row, "FileName"));
         if (!IsAudioDeviceReady()) { unavailable("audio device"); return {}; }
@@ -280,6 +312,8 @@ struct SceneStreams::Impl {
         stream->looping = table.number(row, "Loop").value_or(0) != 0;
         stream->fadeIn = table.number(row, "Fade In").value_or(0) / 25.f;
         stream->fadeOut = table.number(row, "Fade Out").value_or(0) / 25.f;
+        // 7C9F0 passes a four-tick minimum to 88230, which takes max with Fade Out.
+        if (retailSpeech) stream->speechFadeTicks = std::max(4, table.number(row, "Fade Out").value_or(0));
         stream->resumeFrame = resume;
         for (size_t index = 0; index < stream->blocks.size(); ++index) {
             const int block = table.number(row, "Block " + std::to_string(index + 1)).value_or(-1);
@@ -468,7 +502,7 @@ void SceneStreams::resetQuestCue() {
     if(!impl_->quest && !impl_->questSong) return;
     impl_->retire(impl_->questSong);impl_->quest.reset();impl_->requestedSong.reset();
 }
-void SceneStreams::speak(std::string_view text, std::optional<uint32_t> stringId) {
+void SceneStreams::speak(std::string_view text, std::optional<uint32_t> stringId, bool retailSpeech) {
     stopSpeech();
     auto &state = *impl_;
     const Speech *line = nullptr;
@@ -481,16 +515,42 @@ void SceneStreams::speak(std::string_view text, std::optional<uint32_t> stringId
         if (found != state.speeches.end()) line = &found->second;
     }
     state.scrollRate = line && line->rate ? line->rate : 8;
+    if (retailSpeech && stringId && state.speechStrings) {
+        // Numeric lookup is independent of whether Sounds.txt has a voice for the line.
+        const auto raw = state.speechStrings->find(int(*stringId));
+        if (!raw.empty()) {
+            state.scrollRate = 8;
+            if (npcTblSpeech(raw).size() < raw.size()) {
+                unsigned rate{};
+                if (std::from_chars(raw.data(), raw.data()+raw.size(), rate).ec == std::errc{})
+                    state.scrollRate = uint16_t(rate);
+            }
+        }
+    }
     if (state.audio.speech == NpcSpeechMode::TextOnly) return;
+    if (const int sound = retailSpeech && stringId ? retailScrollSound(*stringId) : 0) {
+        const auto &table = state.catalog.sounds();
+        for (size_t row = 0; row < table.rows().size(); ++row) {
+            if (table.number(row, "Index") != sound) continue;
+            state.speech = state.load(row, "data/local/sfx/", 255, 0, true);
+            return;
+        }
+        state.unavailable("speech sound " + std::to_string(sound));
+        return;
+    }
     if (!line || line->sound.empty()) {
         state.unavailable("unresolved NPC speech identity"); return;
     }
     const auto &sound = line->sound;
     const auto row = state.catalog.soundRow(sound);
     if (!row) { state.unavailable(sound); return; }
-    state.speech = state.load(*row, "data/local/sfx/");
+    state.speech = state.load(*row, "data/local/sfx/", 255, 0, retailSpeech);
 }
 unsigned SceneStreams::speechScrollRate() const { return impl_->scrollRate; }
+bool SceneStreams::speechReady() const {
+    const auto &speech = impl_->speech;
+    return !impl_->audio.sound || !speech || speech->started || speech->failed || speech->finished;
+}
 void SceneStreams::stopSpeech() {
     impl_->retire(impl_->speech);
 }

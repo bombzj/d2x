@@ -102,9 +102,12 @@ RequestResult CloseNpc(GameplayContext &context, net::protocol::Reader &in) {
 RequestResult NpcMessage(GameplayContext &context, net::protocol::Reader &in) {
     const auto id=in.u32(); const auto text=in.u16(), reserved=in.u16(); in.finish();
     if(reserved) return {RequestStatus::Rejected};
-    if(text==396) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadJournal,QuestId::ArcaneSanctuary,context.entity(id,2),text});
-    if(text==20002) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadAncientAltar,QuestId::RiteOfPassage,context.entity(id,2),text});
-    if(text==20131) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadFrozenAnya,QuestId::PrisonOfIce,context.entity(id,2),text});
+    const auto reading = id == UINT32_MAX ? std::optional<EntityId>{} : std::optional{context.entity(id,2)};
+    if(text==396) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadJournal,QuestId::ArcaneSanctuary,reading,text});
+    if(text==20002) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadAncientAltar,QuestId::RiteOfPassage,reading,text});
+    if(text==20131) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadFrozenAnya,QuestId::PrisonOfIce,reading,text});
+    if(text==127) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadObjectScroll,QuestId::ForgottenTower,reading,text});
+    if(text==20169) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadObjectScroll,QuestId::RiteOfPassage,reading,text});
     return submitGameplay(context,server::npc::Request{TalkToNpc{context.entity(id,1),TalkToNpc::Action::Acknowledge,text}});
 }
 RequestResult BuyItem(GameplayContext &context, net::protocol::Reader &in) {

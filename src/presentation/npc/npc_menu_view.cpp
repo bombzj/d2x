@@ -72,6 +72,7 @@ bool SceneView::startNpcTopic(QuestId quest) {
 bool SceneView::startNpcTextTopic(uint32_t topic) {
     const auto found=npcView_.textTopics.find(topic);
     if (!view_.npcMenu || found==npcView_.textTopics.end()) return false;
+    if (npcView_.akaraGossipEligible && (topic == 11 || topic == 12)) chooseAkaraGossip();
     openNpcDialogue(view_.dialogueObject,view_.dialogueSpeaker,found->second,topic);
     view_.dialogueTextTopic = topic;
     view_.dialogueFromMenu = true;
@@ -79,16 +80,18 @@ bool SceneView::startNpcTextTopic(uint32_t topic) {
 }
 std::optional<NpcMenuSelection> SceneView::clickNpcMenu(Vec mouse) const {
     const auto &options = view_.npcTopics ? npcView_.talkEntries : npcView_.services;
+    const auto &title = view_.npcTopics && npcView_.retailSpeech ? npcView_.talkTitle : view_.dialogueSpeaker;
     const auto box = npcMenuBounds(originalMenu_, npcView_.valid ? screen(npcView_.position) : Vec{W/2.f,H/2.f},
-        worldViewport(), view_.dialogueSpeaker, labels(options));
+        worldViewport(), title, labels(options));
     if (!CheckCollisionPointRec(rv(mouse), box)) return {};
-    const int row = originalMenu_.hit(box, !view_.dialogueSpeaker.empty(), options.size(), mouse);
+    const int row = originalMenu_.hit(box, !title.empty(), options.size(), mouse);
     return row < 0 ? NpcMenuSelection{} : options[size_t(row)].selection;
 }
 void SceneView::drawNpcMenu(Vec mouse) const {
     const auto &options = view_.npcTopics ? npcView_.talkEntries : npcView_.services;
+    const auto &title = view_.npcTopics && npcView_.retailSpeech ? npcView_.talkTitle : view_.dialogueSpeaker;
     d2x::drawNpcMenu(originalMenu_, npcView_.valid ? screen(npcView_.position) : Vec{W / 2.f, H / 2.f},
-        worldViewport(),view_.dialogueSpeaker, labels(options), mouse, view_.dialogueStatus);
+        worldViewport(),title, labels(options), mouse, view_.dialogueStatus);
 }
 void drawNpcMenu(const OriginalMenu &menu, Vec point, Rectangle viewport, std::string_view name,
     std::span<const std::string> options, Vec mouse, std::string_view status) {

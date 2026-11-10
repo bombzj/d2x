@@ -4,7 +4,7 @@
 
 namespace d2x {
 bool DebugAi::Impl::recoverQuestInventory(Context &c,const QuestStep *step) {
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     if(questState.questRun.pending) {
         const auto action=questState.questRun.pending->action;
         const bool recovery=action==QuestPending::Action::RecoverOpen || action==QuestPending::Action::RecoverTake ||
@@ -96,12 +96,12 @@ bool DebugAi::Impl::questItemRequest(Context &c,OnlineItemCommand command,QuestP
     const uint32_t item=command.item;
     if(!submitItem(c,command,"quest-item-request")) return false;
     QuestPending p;p.action=action;p.item=item;
-    if(c.session.read().world.itemRequest) p.sequence=c.session.read().world.itemRequest->sequence;
+    if(c.observation.read().world.itemRequest) p.sequence=c.observation.read().world.itemRequest->sequence;
     p.deadline=Clock::now()+std::chrono::seconds(20);questState.questRun.pending=p;
     cancelWalk(c);note(std::move(event),std::to_string(item));return true;
 }
 bool DebugAi::Impl::questUseItem(Context &c,const QuestStep &step) {
-    const auto &world=c.session.read().world;
+    const auto &world=c.observation.read().world;
     const auto points=world.playerAttributes.find(5);
     const uint32_t available=points==world.playerAttributes.end()?0:points->second;
     if(questState.questRun.pending) {
@@ -141,7 +141,7 @@ bool DebugAi::Impl::questUseItem(Context &c,const QuestStep &step) {
     questItemRequest(c,use,QuestPending::Action::Use,"quest-item-use-submitted");return false;
 }
 bool DebugAi::Impl::questCombine(Context &c,const QuestStep &step) {
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     const auto output=accessibleItem(c,step.item);
     const auto cube=accessibleItem(c,step.produced);
     const std::vector<std::string> ingredients=step.ingredients.empty()?std::vector<std::string>{"msf","vip"}:step.ingredients;
@@ -209,7 +209,7 @@ bool DebugAi::Impl::questCombine(Context &c,const QuestStep &step) {
     questItemRequest(c,transmute,QuestPending::Action::Transmute,"quest-cube-transmute-submitted");return false;
 }
 bool DebugAi::Impl::questSubmitStaff(Context &c,const QuestStep &step) {
-    const auto &world=c.session.read().world;
+    const auto &world=c.observation.read().world;
     const auto flags=questFlags(c,QuestId::HoradricStaff);
     if(flags && (*flags&1) && !owned(c,step.item)) {
         note("quest-staff-consumed","Actual staff submission flag and item removal observed");return true;
@@ -244,7 +244,9 @@ bool DebugAi::Impl::questSubmitStaff(Context &c,const QuestStep &step) {
     }
     if(item->mode!=4) throw std::runtime_error("Staff submission requires the actual completed staff on Cursor");
     const auto before=world.staffRevision;
-    if(!c.inventory.submitQuestItem(c.session,*world.staffSource,item->id)) {wait("quest-staff-submit","Normal staff UI submission was not accepted");return false;}
+    if(!c.supplies->submitStaff || !c.supplies->submitStaff(*world.staffSource,item->id,item->revision)) {
+        wait("quest-staff-submit","The client did not accept the staff submission");return false;
+    }
     QuestPending p;p.action=QuestPending::Action::SubmitStaff;p.item=item->id;p.beforeRevision=before;
     p.deadline=Clock::now()+std::chrono::seconds(30);questState.questRun.pending=p;
     note("quest-staff-submit-submitted",std::to_string(item->id));return false;

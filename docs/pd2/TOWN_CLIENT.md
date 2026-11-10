@@ -18,7 +18,7 @@ PD2与CN的NPC、物件、佣兵和城镇服务客户端边界；权威经济规
 
 ## 城镇服务：商店与金币
 
-客户端对白确认／关闭／问候、NPC旅行及传送点选择已统一由RemoteControl承接UI与调试AI；任务刷新与Q面板共用客户端入口，AI不直接调用会话发送命令。保留当前服务资格及协议配置，本次接口调整未构建／未实服回归，不扩大下述认证范围。
+客户端对白确认／关闭、NPC旅行及传送点选择由手动操作与调试AI共用RemoteControl。返程问候由共享菜单在播放成功后确认。任务刷新与Q面板共用客户端入口，交易复用绑定当前会话的RemoteInventory。物件OperateFn76的献祭提交经 `IInventoryClient::submitStaff` 校验当前来源、光标物品修订及已投影的献祭资格。自动对白排序、开始时发31及末条结束的菜单返回目前只按LoD 1.13c接入，PD2对应分支仍待定点核对。共享接口已通过Windows Release构建，PD2实服回归待验收。
 
 来源：[docs/gameplay/npc/TRADE.md](../gameplay/npc/TRADE.md)。
 

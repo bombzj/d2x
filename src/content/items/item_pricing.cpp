@@ -1,5 +1,6 @@
 #include "item_pricing.hpp"
 #include "gameplay/items/state.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "item_properties.hpp"
 #include <algorithm>
 #include <limits>
@@ -320,9 +321,18 @@ std::optional<unsigned> itemGamblePrice(const ClassicData &data, std::string_vie
         const int64_t quantity = std::max(1, (table.number(row, "minstack").value_or(0) + table.number(row, "maxstack").value_or(0)) / 2);
         const int64_t weighted = exceptional * exceptionalCost + elite * eliteCost + quantity * *definition->base.cost * (10000 - exceptional - elite);
         level = std::max(5, level);
-        amount = ((2 * level + 1) / 3 + 20) * (weighted / 10000 + int64_t(250) * (level + std::max(0, *definition->base.level - 45) - *definition->base.level / 2) / 3) / 15;
+        const int multiplier = (2 * level + 1) / 3 + 20;
+        const int levelCost = 250 * (level + std::max(0, *definition->base.level - 45) - *definition->base.level / 2) / 3;
+        amount = data.pd2Host ? multiplier * (weighted / 10000 + levelCost) / 15 :
+            nativeMultiply(multiplier, nativeNarrow(weighted) / 10000 + levelCost) / 15;
     }
-    if (format) amount -= amount * std::clamp(reducedPrices, 0, 99) / 100;
+    if (format) {
+        if (data.pd2Host) amount -= amount * std::clamp(reducedPrices, 0, 99) / 100;
+        else {
+            const auto price = nativeNarrow(amount);
+            amount = nativeSubtract(price, nativePercentage(price, std::min(reducedPrices, 99), 100));
+        }
+    }
     if (amount < 0 || amount > std::numeric_limits<unsigned>::max()) return {};
     return unsigned(amount);
 }

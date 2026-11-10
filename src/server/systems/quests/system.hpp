@@ -36,6 +36,8 @@ struct State {
     std::string deferred;
     std::map<EntityId,bool> completed;
     std::map<EntityId,int> objectModes;
+    struct ObjectReading { EntityId actor, object; RegionId area; uint64_t generation; uint16_t message; };
+    std::map<PlayerId, ObjectReading> objectReaders;
 };
 struct Ports { const PlayerStore &players; AreaStore &areas; population::System &population; monsters::System &monsters; npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; loot::System &loot; effects::System &effects; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; objects::System &objects; const spatial::System &spatial; };
 struct Dialogue {QuestId quest; NpcMessage message;};
@@ -108,6 +110,7 @@ class System {
     std::optional<Dialogue> actFiveDialogue(const ActorContext &,const NpcRule &) const;
     DomainResult<> acknowledgeActFive(const ActorContext &,const Request &,const NpcRule &);
     DomainResult<> operateActFive(const ActorContext &,EntityId,int,int,Vec);
+    DomainResult<> offerObjectReading(const ActorContext &, EntityId, uint16_t);
     void resetAncients();
     DomainResult<> readAncientAltar(const ActorContext &,EntityId);
     void orderStones();

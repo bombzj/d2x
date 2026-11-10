@@ -40,6 +40,7 @@ void sortGambleSelection(std::vector<const ItemDefinition *> &items) {
     if(!items.empty()) sort(sort,0,ptrdiff_t(items.size())-1);
 }
 }
+// Retail D2Client 1.13c F3BA0 entries with menu string 0xD46.
 bool npcCanGamble(std::string_view npc) { return npc=="gheed" || npc=="elzix" || npc=="alkor" || npc=="jamella" || npc=="nihlathak" || npc=="drehya"; }
 void generateGambleStock(const ClassicData &data,unsigned playerLevel,
     int difficulty,uint64_t &seed,const GambleItemSource &create) {

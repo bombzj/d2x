@@ -20,6 +20,7 @@ class IInventoryClient {
     virtual bool depositAllStorageMaterials() { return false; }
     virtual bool markStorageIndex(unsigned) { return false; }
     virtual std::optional<Cell> beltSpace(std::string_view code) const = 0;
+    // Shared action for the confirmed quest-item receptacle. Empty item cancels it.
     virtual bool submitStaff(EntityId source,std::optional<ItemHandle> item) = 0;
 };
 } // namespace d2x

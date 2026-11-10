@@ -7,7 +7,7 @@
 #include "server/runtime/npc_rules.hpp"
 namespace d2x::server::merchant {
 struct Offer { ItemInstance item; EquipmentValues equipment; bool permanent{}; std::string displayCode; int storePage{-1};Cell cell;uint64_t propertyRandom{}; };
-struct Stock { uint64_t revision = 1; std::map<EntityId, Offer> offers; RegionId area{}; EquipmentRules setRules; bool generated{}; uint64_t conversation{}, refreshAt{}; bool refreshPending{}; int columns{},rows{}; };
+struct Stock { uint64_t revision = 1; std::map<EntityId, Offer> offers; RegionId area{}; EquipmentRules setRules; bool generated{}; uint64_t conversation{}, refreshAt{}; bool refreshPending{}; int columns{},rows{}; bool retainOnClose{}; };
 std::optional<Cell> shelfPosition(const Stock &,const ItemDefinition &,const ItemCatalog &,int page);
 struct Pending { ActorContext actor; Request request; uint64_t token{}, conversation{}; };
 struct ShopSession { EntityId npc; uint64_t conversation{}; };
@@ -31,6 +31,7 @@ struct Prepared {
     int columns{},rows{};
     int resalePage{-1};
     bool resaleDuplicate{};
+    bool retailGamble{};
 };
 struct State { std::map<EntityId,Stock> stocks; std::map<std::pair<PlayerId,EntityId>,Stock> gambles; std::map<PlayerId,Pending> pending; std::map<PlayerId,ShopSession> opened; std::set<PlayerId> gambling; uint64_t next = 1; std::string deferred; std::map<PlayerId,EntityId> bought;std::set<EntityId> sharedGheeds; };
 struct Ports { const PlayerStore &players; npc::System &npc; items::System &items; transactions::System &transactions; EventOutbox &events; uint64_t &random; const ItemCatalog *definitions; const GameSettings &settings; loot::System &loot;uint32_t &pd2Random; };
@@ -42,6 +43,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<> execute(const ActorContext &,const Request &);
+    void endConversation(PlayerId, EntityId npc);
     std::vector<Preparation> pending() const;
     DomainResult<> install(Prepared);
     std::optional<PersistentCharacter> shop(PlayerId) const;

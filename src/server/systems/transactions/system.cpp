@@ -5,6 +5,7 @@
 #include "server/runtime/facts/combat.hpp"
 #include "server/runtime/facts/effects.hpp"
 #include "server/runtime/facts/inventory.hpp"
+#include "server/runtime/facts/npc.hpp"
 #include "server/runtime/facts/quest_signals.hpp"
 #include "server/runtime/facts/resources.hpp"
 #include "server/runtime/facts/social.hpp"
@@ -835,10 +836,13 @@ DomainResult<> System::commit(Plan plan) {
         const auto *trade=factIf<TradeFact>(&fact);
         const auto *ended=factIf<ItemSpellEndFact>(&fact);
         const auto *quest=factIf<QuestStatusFact>(&fact);
+        const auto *merchant=factIf<MerchantFact>(&fact);
         // Native ItemMode cancels targeting while the source still exists on
         // the client, before the inventory removal receipt in this same batch.
-        // Trade's agreement reset and lock likewise precede its item receipts.
-        if((edit && quest && quest->flags==2) || (ended && !ended->afterInventory) || (targeting && targeting->cursor<0) || (trade && (trade->action==6 || trade->action==14)))
+        // Trade's agreement reset, lock and the retail gamble result likewise
+        // precede their item receipts.
+        if((edit && quest && quest->flags==2) || (ended && !ended->afterInventory) || (targeting && targeting->cursor<0) ||
+            (trade && (trade->action==6 || trade->action==14)) || (merchant && merchant->beforeInventory))
             batch.facts.insert(batch.facts.begin()+targetingPrefix++,fact);
         else batch.facts.push_back(fact);
     }

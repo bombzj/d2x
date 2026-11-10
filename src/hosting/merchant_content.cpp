@@ -49,6 +49,7 @@ std::vector<int> factors(const VendorDefinition &vendor,const DifficultyQuests &
 server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Preparation source) {
     using namespace server::merchant;
     Prepared result; result.source=std::move(source); const auto &request=result.source.pending.request;
+    result.retailGamble=request.gamble && !data.pd2Host;
     const auto &character=result.source.character; const auto &c=character.containers;
     if (result.source.npc.code.empty()) { result.deferred="NPC conversation expired"; return result; }
     if (request.action==Action::IdentifyAll) {
@@ -140,17 +141,29 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
         for (auto &offer : result.offers) offer.equipment=rules->items.at(offer.item.id);
         return result;
     }
+    if (request.action==Action::Buy && request.gamble) {
+        const auto offer=request.item ? result.source.stock.offers.find(request.item->id) : result.source.stock.offers.end();
+        if (offer!=result.source.stock.offers.end()) {
+            const auto &item=offer->second.item;
+            const auto &displayCode=offer->second.displayCode;
+            const bool mapGheed=data.pd2Host && result.source.npc.pd2EventGheed;
+            const auto price=mapGheed ? std::optional<unsigned>{pd2MapGamblePrice(result.source.reducedPrices)} :
+                itemGamblePrice(data,displayCode.empty()?item.definition:displayCode,
+                    character.player.level,item.nativeFormat,result.source.reducedPrices);
+            if (price) {
+                result.prices.emplace(item.id,*price);
+                if (mapGheed) hosting::pd2::prepareGheedPurchase(data,result);
+                return result;
+            }
+        }
+        result.deferred="Item is not eligible for this vendor service";
+        return result;
+    }
     const auto &vendor=data.vendors.at(result.source.npc.code);
     const bool repair=request.action==Action::Repair || request.action==Action::RepairAll, sale=request.action==Action::Sell;
     const auto discounts=factors(vendor,character.player.quests.at(size_t(result.source.difficulty)),repair,sale);
     const auto quote=[&](const ItemInstance &item) {
-        const auto hiddenBase=result.source.stock.offers.contains(item.id)?result.source.stock.offers.at(item.id).displayCode:std::string{};
-        std::optional<unsigned> price;
-        if(data.pd2Host && request.gamble && result.source.npc.pd2EventGheed)
-            price=pd2MapGamblePrice(result.source.reducedPrices);
-        else if(request.gamble)
-            price=itemGamblePrice(data,hiddenBase.empty()?item.definition:hiddenBase,character.player.level,item.nativeFormat,result.source.reducedPrices);
-        else price=itemTradePrice(data,item,vendor,repair,discounts,sale?0:result.source.reducedPrices,sale,result.source.difficulty);
+        auto price=itemTradePrice(data,item,vendor,repair,discounts,sale?0:result.source.reducedPrices,sale,result.source.difficulty);
         // ProjectDiablo 2E8140 caps each repair after all discounts.
         if(data.pd2Host && repair && price) price=std::min(*price,250000u);
         if (price && (!repair || *price)) result.prices.emplace(item.id,*price);
@@ -203,8 +216,6 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
         }
     }
     if (request.item && !repair && !result.prices.contains(request.item->id)) result.deferred="Item is not eligible for this vendor service";
-    if(data.pd2Host && result.source.npc.pd2EventGheed && request.action==Action::Buy && request.gamble && result.deferred.empty())
-        hosting::pd2::prepareGheedPurchase(data,result);
     if(!result.repairs.empty()) {auto projection=character;projection.inventory.items=result.repairs;result.equipment=prepareEquipmentRules(data,projection);}
     return result;
 }

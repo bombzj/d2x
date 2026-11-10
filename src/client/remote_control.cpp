@@ -34,16 +34,17 @@ bool RemoteControl::closeNpc(std::optional<OnlineIntentContext> context) {
     if(accepted) questRefreshDeadline_={}; // NPCDEACTIVATE can change private state.
     return accepted;
 }
-bool RemoteControl::acknowledgeNpc(uint16_t topic,std::optional<OnlineIntentContext> context) {
+bool RemoteControl::acknowledgeNpc(uint16_t topic, std::optional<OnlineIntentContext> context, bool dismissAfterSpeech) {
     const auto &view=session_.read();const auto &conversation=view.world.npcConversation;
     if(!conversation || conversation->acknowledged.contains(topic) ||
-        std::none_of(conversation->messages.begin(),conversation->messages.end(),[&](const auto &line){return line.stringId==topic;}))
+        (conversation->playingSpeech!=topic &&
+            std::none_of(conversation->messages.begin(),conversation->messages.end(),[&](const auto &line){return line.stringId==topic;})))
         return reject("The requested NPC speech is not currently offered");
-    const bool accepted=session_.acknowledge_npc_message(topic,context.value_or(onlineIntentContext(view)));
+    const bool accepted=session_.acknowledge_npc_message(topic,context.value_or(onlineIntentContext(view)),dismissAfterSpeech);
     if(accepted) questRefreshDeadline_={};
     return accepted;
 }
-bool RemoteControl::greetNpc(uint16_t identity,std::optional<OnlineIntentContext> context) {
+bool RemoteControl::acknowledgeNpcGreeting(uint16_t identity,std::optional<OnlineIntentContext> context) {
     const auto &view=session_.read();const auto &conversation=view.world.npcConversation;
     if(!conversation || conversation->type!=1) return reject("No current NPC conversation");
     const auto npc=view.world.units.find({1,conversation->source});
@@ -53,7 +54,8 @@ bool RemoteControl::greetNpc(uint16_t identity,std::optional<OnlineIntentContext
 bool RemoteControl::npcTravel(uint32_t destination,std::optional<OnlineIntentContext> context) {
     const auto &view=session_.read();const auto &conversation=scene_.read().npcConversation;
     const auto &current=view.world.npcConversation;
-    if(!conversation || !current || conversation->source!=current->source || conversation->revision!=current->revision ||
+    if(!conversation || !current || current->playingSpeech ||
+        conversation->source!=current->source || conversation->revision!=current->revision ||
         (destination?conversation->travelDestination!=destination:conversation->respecLabel.empty()))
         return reject("The requested NPC service is not currently offered");
     return session_.npc_travel(destination,context.value_or(onlineIntentContext(view)));

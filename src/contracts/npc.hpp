@@ -31,11 +31,15 @@ struct NpcConversationView {
     EntityId actor, npc;
     Vec position;
     bool valid = false;
+    bool retailSpeech = false;
     std::string speaker;
     std::optional<std::string> introduction;
+    std::string talkTitle;
+    std::string cainRescueFollowup;
     std::vector<NpcTopicView> topics;
     std::map<uint32_t, std::string> textTopics;
     std::vector<std::string> gossip;
+    uint16_t akaraGossipEligible = 0; // Bit i selects the retail Akara gossip row 13+i.
     std::vector<NpcMenuEntry> services, talkEntries;
     std::map<NpcMenuAction, std::string> serviceHints;
 };

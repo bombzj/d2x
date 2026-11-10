@@ -20,6 +20,7 @@ struct WorldInputView {
     bool targetingAvailable = false;
     bool castInputBusy = false; // Existing local approach/action clock; channel updates remain allowed.
     bool quickCastSkillSupported = false, combatRequestReady = false;
+    bool pointerOnSpeechNpc = false;
     Vec origin, size, observer, point; // Original global subtiles; observer is display-only.
     EntityId interaction, combat, doorHighlight;
     std::optional<ItemHandle> pickup;

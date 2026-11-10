@@ -10,6 +10,17 @@ Bytes npcStopPacket(uint32_t id, OnlinePoint observed) {
     out.u8(0x59); out.u32(1); out.u32(id); out.u32(observed.x); out.u32(observed.y);
     return out.release();
 }
+bool retailNpcMenuAfterSpeech(uint16_t npcClass) {
+    // D2Client 45C50 and 4B37D-4B3C6. All menu records with the final
+    // flag clear are also in this exclusion list.
+    switch (npcClass) {
+    case 146: case 251: case 266: case 331: case 377: case 378:
+    case 406: case 408: case 521: case 527: case 537: case 538: case 539:
+        return false;
+    default:
+        return true;
+    }
+}
 }
 bool RealmSession::resurrect(std::optional<OnlineIntentContext> context) {
     std::lock_guard lock(impl_->mutex);
@@ -357,31 +368,50 @@ bool RealmSession::close_npc(std::optional<OnlineIntentContext> context) {
         p.fail(OnlineErrorKind::Transport, "NPC close request could not be queued"); return false;
     }
 }
-bool RealmSession::acknowledge_npc_message(uint16_t stringId, std::optional<OnlineIntentContext> context) {
+bool RealmSession::acknowledge_npc_message(uint16_t stringId, std::optional<OnlineIntentContext> context, bool dismissAfterSpeech) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require_intent(context.value_or(onlineIntentContext(snapshot_)), true)) return false;
     auto &conversation = p.view.world.npcConversation;
-    const auto automatic = conversation && conversation->type == 1 ? nextAutomaticNpcSpeech(*conversation) : std::nullopt;
+    const bool retailNpc = p.compatibility.profile == ClientProfile::Lod113c && conversation && conversation->type == 1;
+    const bool retailObject = p.compatibility.profile == ClientProfile::Lod113c && conversation && conversation->type == 2;
+    const auto automatic = retailNpc ? conversation->playingSpeech :
+        conversation && conversation->type == 1 ? nextAutomaticNpcSpeech(*conversation) : std::nullopt;
     if (automatic && *automatic != stringId) {
         p.error(OnlineErrorKind::Input, "Finish the current NPC speech before selecting another topic"); return false;
     }
+    if (retailNpc && !automatic) {
+        p.error(OnlineErrorKind::Input, "Optional retail NPC topics are played locally"); return false;
+    }
     if (!conversation || !p.view.world.playerPosition || onlinePlayerDead(p.view.world) ||
-        !std::any_of(conversation->messages.begin(), conversation->messages.end(),
-            [&](const auto &message) { return message.stringId == stringId; }) ||
+        (conversation->playingSpeech != stringId &&
+            !std::any_of(conversation->messages.begin(), conversation->messages.end(),
+                [&](const auto &message) { return message.stringId == stringId; })) ||
         conversation->acknowledged.contains(stringId)) {
         p.error(OnlineErrorKind::Input, "No unacknowledged server NPC message matches this ID"); return false;
     }
     try {
-        Writer out;
-        out.u8(0x31); out.u32(conversation->source); out.u16(stringId); out.u16(0);
-        p.sent(p.gs, out.release());
-        conversation->acknowledged.insert(stringId);
-        // D2Client 48290 -> 48150 -> 47B20. The last automatic line sends
-        // its acknowledgement and ends this NPC interaction, in wire order.
-        if (automatic && !nextAutomaticNpcSpeech(*conversation)) p.close_interaction();
-        ++p.view.world.revision; p.view.error.reset(); p.changed(); return true;
+        if (conversation->playingSpeech) {
+            // Retail 4B230: retire the playing line, then acknowledge only
+            // the next line as it begins. A refreshed 27 may omit this line.
+            conversation->acknowledged.insert(stringId);
+            conversation->playingSpeech.reset();
+            p.start_npc_speech(*conversation, stringId);
+            const auto npc=p.view.world.units.find({1,conversation->source});
+            if (!conversation->playingSpeech && (dismissAfterSpeech || npc==p.view.world.units.end() ||
+                !npc->second.classId || !retailNpcMenuAfterSpeech(*npc->second.classId))) p.close_interaction();
+        } else if (retailObject) {
+            if (retailObjectSpeechAcknowledged(stringId)) p.send_npc_message(UINT32_MAX, stringId);
+            conversation.reset();
+        } else {
+            p.send_npc_message(conversation->source,stringId);
+            conversation->acknowledged.insert(stringId);
+            if (automatic && !nextAutomaticNpcSpeech(*conversation)) p.close_interaction();
+        }
+        ++p.view.world.revision;
+        if (p.view.world.npcConversation) p.view.world.npcConversation->revision=p.view.world.revision;
+        p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Transport, "NPC message could not be queued"); return false;
     }
@@ -913,6 +943,10 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             for (size_t offset = 0; offset < bytes.size(); offset += 3)
                 p.sent(p.gs, {bytes[offset], bytes[offset + 1], bytes[offset + 2]});
         } else p.sent(p.gs, out.release());
+        // The retail gamble menu opens locally, before any 9C stock arrives.
+        const bool retailGambleOpen = command.action == OnlineItemAction::TradeOpen && command.gamble &&
+            p.compatibility.profile == ClientProfile::Lod113c;
+        if (retailGambleOpen) world.shopSource = command.npc;
         if (command.action == OnlineItemAction::StorageMaterials) {
             // Native 0x11B60/0x27850 also changes the local view without an ACK.
             world.cnMaterialsOpen = command.amount != 0;
@@ -930,7 +964,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         }
         // Retail 4F/24 has no generic result packet: an unmatched recipe or
         // the 1.13c empty portal output may legitimately change nothing.
-        const bool noReply=command.reusableUse || command.questClue ||
+        const bool noReply=command.reusableUse || command.questClue || retailGambleOpen ||
             (command.action==OnlineItemAction::Transmute && p.compatibility.profile==ClientProfile::Lod113c);
         world.itemRequest = OnlineItemRequest{++p.itemSequence, command,
             noReply ? OnlineItemRequest::State::SentNoAck : OnlineItemRequest::State::Pending};

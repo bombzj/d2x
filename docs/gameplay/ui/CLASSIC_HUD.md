@@ -116,7 +116,7 @@ ESC先关闭面板／对白，无面板时打开游戏菜单。`hud/escape_menu`
 
 声音／画面页保留原标签、档位、滑条和骷髅滑块；无后端控件按原菜单记录初值灰显，不能把该初值当成后端已生效。缺原图报错，不生成替代图形。按键编辑仍缺专项实机回归，不能据代码接入或数值场景入局认定真实画面、实体键盘及重启保存已验证。
 
-Sound、Music与NPC Speech接入真实音频和客户端偏好。两条滑块均为0–100、每档5的21位置，原265像素行程；左右键每次一档、端点钳制，鼠标须从原滑条内按下，随后可拖出并钳制；Enter不改变滑块。Sound是总音量，影响已播放及后续效果音、循环飞弹、语音和音乐；Music仅额外衰减Sounds的Music Vol通道。按原整数顺序计算音量，移除旧固定0.45增益。NPC Speech按Audio Only／Text Only／Audio + Text循环，左右键反向／正向；前者隐藏字幕、语音结束沿既有对白确认路径结束，后两者分别禁止语音／同时显示播放。“仅语音”不会因总音量为0或缺少语音资源而自动显示文字；需要对白框时使用Text Only或Audio + Text，偏好跨局和重启保存。取消、切换对白和退局释放语音流。默认Sound=100、Music=50、NPC Speech=Audio + Text；启动先应用偏好再播放。
+Sound、Music与NPC Speech接入真实音频和客户端偏好。两条滑块均为0–100、每档5的21位置，原265像素行程。左右键每次一档并按端点钳制，鼠标须从原滑条内按下，随后可拖出并钳制。Enter不改变滑块。Sound是总音量，影响已播放及后续效果音、循环飞弹、语音和音乐。Music仅额外衰减Sounds的Music Vol通道，音量按原整数顺序计算。NPC Speech按Audio Only／Text Only／Audio + Text循环，左右键反向／正向。零售对白的自然结束以滚动时钟为准。Audio Only隐藏NPC字幕，物件阅读开启读文绘制。Text Only禁用语音，Audio + Text开启两者。取消、切换对白和退局释放语音流。默认Sound=100、Music=50、NPC Speech=Audio + Text，启动先应用已保存的偏好再播放。语音启动门槛和版本边界见[交谈与对白](../npc/INTERACTIONS.md#交谈与对白)。
 
 局前主菜单、登录、Realm、选角／创建角色、TCP/IP及大厅共用原MPQ的`data/global/music/introedit.wav`，由独立流循环播放并应用Sound／Music偏好；它不是Sounds的`music_options`，不沿用`common/options.wav`的音量和五秒淡入。原D2Sound.dll包含该独立曲目，OpenDiablo2的BGMTitle与Diablerie的MainMenu也指向同一成员。先应用客户端偏好，再按需创建后台播放器；局前页面切换不重启曲目，最小化仍维护缓冲。连接游戏、加载、入局及离局交换阶段清理菜单曲和残留淡出流，返回局前重新播放，避免与场景曲叠播。指定1.13c完整MPQ下启动音乐已由用户试听确认恢复，不代表全部页面切换均已验收。ESC菜单保留场景音乐，打开／Esc关闭使用`cursor_switch`，普通项目激活使用`cursor_select`，键盘切行和实际设置值变化使用`cursor_pass`；返回游戏不叠加关闭声，声音页不重复播放通用点击声。原1.13c D2Client VA `0x6FB15180–0x6FB1522D`区分普通项Sounds 2与值切换Sounds 1，`0x6FB14EE0–0x6FB14FB7`导航使用Sounds 1。局前按钮与底栏扩展按钮按下使用`cursor_button_click`，属性／技能加点的有效按下使用`cursor_point_drop`；声音不改变释放提交／取消规则。
 

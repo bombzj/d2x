@@ -161,7 +161,7 @@ void DebugAi::Impl::configureQuest(Goal &goal) const {
     }
 }
 std::optional<uint16_t> DebugAi::Impl::questFlags(const Context &c,QuestId id) const {
-    const auto &flags=c.session.read().world.quests.playerFlags;
+    const auto &flags=c.observation.read().world.quests.playerFlags;
     return flags?std::optional{(*flags)[questDefinition(id).nativeSlot]}:std::nullopt;
 }
 bool DebugAi::Impl::questFinished(const Context &c,const Goal &goal) const {
@@ -185,23 +185,23 @@ bool DebugAi::Impl::questFinished(const Context &c,const Goal &goal) const {
     if((goal.questId==QuestId::KhalimsWill || goal.questId==QuestId::BlackenedTemple ||
         goal.questId==QuestId::Guardian || goal.questId==QuestId::HellsForge) && !questEquipmentRestored(c)) return false;
     if(goal.questId==QuestId::Guardian)
-        return c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[23]&1);
+        return c.observation.read().world.quests.playerFlags && ((*c.observation.read().world.quests.playerFlags)[23]&1);
     if(goal.questId==QuestId::TerrorsEnd)
-        return c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[28]&1);
+        return c.observation.read().world.quests.playerFlags && ((*c.observation.read().world.quests.playerFlags)[28]&1);
     if(goal.questId==QuestId::SevenTombs)
-        return c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[15]&1);
+        return c.observation.read().world.quests.playerFlags && ((*c.observation.read().world.quests.playerFlags)[15]&1);
     // Native Act-I change record (slot 7) is separate from Andariel's reward.
     return goal.questId!=QuestId::SistersToTheSlaughter ||
-        (c.session.read().world.quests.playerFlags && ((*c.session.read().world.quests.playerFlags)[7]&1));
+        (c.observation.read().world.quests.playerFlags && ((*c.observation.read().world.quests.playerFlags)[7]&1));
 }
 bool DebugAi::Impl::questTransaction(const Context &c) const {
     if(cursor>=goals.size() || goals[cursor].kind!=Kind::Quest || supply.supplyStage!=SupplyStage::None) return false;
     if(questState.questRun.pending && questState.questRun.pending->sequence) return true;
-    if(questState.questRun.recoveringItem && (onlineHasCursorItem(c.session.read().world.items,c.session.read().load.playerUnitId) ||
-        c.session.read().world.storage.kind!=OnlineStorageKind::None)) return true;
+    if(questState.questRun.recoveringItem && (onlineHasCursorItem(c.observation.read().world.items,c.observation.read().load.playerUnitId) ||
+        c.observation.read().world.storage.kind!=OnlineStorageKind::None)) return true;
     if(questState.questRun.step>=goals[cursor].steps.size()) return false;
     const auto action=goals[cursor].steps[questState.questRun.step].action;
-    const auto &world=c.session.read().world;
+    const auto &world=c.observation.read().world;
     return (action==QuestAction::Imbue && questState.questRun.materialPhase>0) ||
         (action==QuestAction::Service && questState.questRun.materialPhase>0) ||
         (action==QuestAction::EquipWeapon && questState.questRun.materialPhase>0) ||
@@ -212,10 +212,10 @@ void DebugAi::Impl::questStepDone(Context &c,std::string evidence) {
     if(cursor<goals.size() && questState.questRun.step<goals[cursor].steps.size() &&
         goals[cursor].steps[questState.questRun.step].publishesTombSymbol && questState.questRun.pending &&
         questState.questRun.pending->refreshIssued && questState.questRun.pending->statusRequested && questState.tombSymbol && *questState.tombSymbol<7)
-        questState.journalReadGame=c.session.read().gameGeneration;
+        questState.journalReadGame=c.observation.read().gameGeneration;
     releaseCombat(c);
-    if(c.session.read().world.npcRequested) c.control.closeNpc();
-    if(c.session.read().world.waypointSource) c.control.useWaypoint(0);
+    if(c.observation.read().world.npcRequested) c.control.closeNpc();
+    if(c.observation.read().world.waypointSource) c.control.useWaypoint(0);
     cancelWalk(c);note("quest-step-completed",std::move(evidence));
     if(cursor<goals.size() && !goals[cursor].requirements.empty()) {
         auto observations=std::move(questState.questRun.observations);
@@ -231,7 +231,7 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
     if(supply.supplyStage!=SupplyStage::None) return true;
     const auto flags=questFlags(c,goal.questId);
     if(!flags) {wait("quest-state","Waiting for actual native character quest flags");return false;}
-    if(questState.questRun.initialInventory || questState.questRun.recoveringItem || (!questState.questRun.initialized && onlineHasCursorItem(c.session.read().world.items,c.session.read().load.playerUnitId)))
+    if(questState.questRun.initialInventory || questState.questRun.recoveringItem || (!questState.questRun.initialized && onlineHasCursorItem(c.observation.read().world.items,c.observation.read().load.playerUnitId)))
         if(!canInput(c,DebugActionOwner::Goal,DebugAllInputs) || !recoverQuestInventory(c)) return false;
     if(!questState.questRun.pending && !questTransaction(c)) {
         // D2MOO D2C_OriginalQuestFlags: COMPLETEDNOW means this player
@@ -240,7 +240,7 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
         // QUESTS_RefreshStatus also reports status 12 for a game whose
         // objective finished without this player's PRIMARYGOALDONE. A late
         // join need not have been present for SetCompletionFlag's 0x4000.
-        const auto status=c.session.read().world.quests.statuses[goal.questSlot];
+        const auto status=c.observation.read().world.quests.statuses[goal.questSlot];
         if(((*flags&0x4000) || status==12) && !(*flags&0x2003)) {
             advance(c,std::string(status==12?"Native quest status 12 excludes this character in this game: ":
                 "Native COMPLETEDNOW excludes this character in this game: ")+goal.quest,true);return false;
@@ -251,7 +251,7 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
     }
     if(!questState.questRun.initialized) {
         questState.questSpawnAnchor.reset();
-        const auto &clue=c.session.read().world.quests;
+        const auto &clue=c.observation.read().world.quests;
         const auto arcane=questFlags(c,QuestId::ArcaneSanctuary);
         // StatusCallback includes the real tomb offset for an already-read
         // journal. The zero field sent for unrelated progress is insufficient.
@@ -263,7 +263,7 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
             advance(c,std::string((*flags&1)?"Already completed native quest: ":
                 "Quest objectives completed; unused service reward retained: ")+goal.quest);return false;
         }
-        if(c.session.read().load.act!=questDefinition(goal.questId).act) {
+        if(c.observation.read().load.act!=questDefinition(goal.questId).act) {
             if(!goal.questTown) throw std::runtime_error("Quest recipe has no verified native town");
             if(!canInput(c,DebugActionOwner::Goal,DebugAllInputs)) return false;
             if(!navigation.waypointMemoryRevision && navigation.knownWaypointAreas.empty()) {
@@ -310,7 +310,7 @@ DebugAi::Impl::Goal DebugAi::Impl::questLeaf(const Goal &goal) const {
 }
 void DebugAi::Impl::checkQuestPending(const Context &c) const {
     if(!questState.questRun.pending) return;
-    const auto &p=*questState.questRun.pending;const auto &request=c.session.read().world.itemRequest;
+    const auto &p=*questState.questRun.pending;const auto &request=c.observation.read().world.itemRequest;
     if(p.resultObserved) return;
     if(p.sequence && request) {
         if(p.sequence!=request->sequence) throw std::runtime_error("Quest item operation was replaced before its result was observed");
@@ -322,10 +322,10 @@ void DebugAi::Impl::checkQuestPending(const Context &c) const {
 void DebugAi::Impl::observeQuestResult(Context &c) {
     if(!questState.questRun.pending || cursor>=goals.size() || goals[cursor].kind!=Kind::Quest || questState.questRun.step>=goals[cursor].steps.size()) return;
     auto &pending=*questState.questRun.pending;if(pending.resultObserved) return;
-    const auto &goal=goals[cursor];const auto &step=goal.steps[questState.questRun.step];const auto &world=c.session.read().world;
+    const auto &goal=goals[cursor];const auto &step=goal.steps[questState.questRun.step];const auto &world=c.observation.read().world;
     const auto flags=questFlags(c,step.stateQuest.value_or(goal.questId));
     const auto item=world.items.find(pending.item);
-    const bool ours=item!=world.items.end() && onlineItemOwnedBy(item->second,c.session.read().load.playerUnitId);
+    const bool ours=item!=world.items.end() && onlineItemOwnedBy(item->second,c.observation.read().load.playerUnitId);
     const auto unit=pending.unit?world.units.find(*pending.unit):world.units.end();
     // Operate66 sends private sound 19 for a denied neutral door. Correlate
     // it with this exact submission, even if the reply preceded this AI tick.
@@ -333,7 +333,7 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
         goal.questId==QuestId::EveOfDestruction && area==step.sourceArea &&
         unit!=world.units.end() && unit->second.classId==547 && unit->second.mode==0 &&
         unit->second.assignmentRevision==pending.assignment && pending.unit) {
-        const auto player=c.session.read().load.playerUnitId;
+        const auto player=c.observation.read().load.playerUnitId;
         if(player && std::any_of(world.combatEvents.begin(),world.combatEvents.end(),[&](const auto &event) {
             return event.sequence>pending.beforeRevision && event.packet==0x2c && event.source==OnlineUnitKey{0,*player} && event.auxiliary==19;
         })) {
@@ -387,7 +387,7 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
         if(step.produced=="rin" && questState.questRun.rewardTracked) {
             const bool reward=std::any_of(world.items.begin(),world.items.end(),[&](const auto &entry) {
                 const auto &[id,ring]=entry;return ring.code=="rin" && !questState.questRun.rewardBefore.contains(id) &&
-                    (onlineItemOwnedBy(ring,c.session.read().load.playerUnitId) || ring.mode==3);
+                    (onlineItemOwnedBy(ring,c.observation.read().load.playerUnitId) || ring.mode==3);
             });
             observed=observed && reward;
         }
@@ -407,7 +407,7 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
         else if(step.action==QuestAction::Portal) {
             if(step.witness) {
                 const auto entrance=step.target?find(c,*step.target,true):std::nullopt;
-                observed=entrance && c.town.permitsInteraction(c.session.read(),entrance->key);
+                observed=entrance && c.town.permitsInteraction(c.observation.read(),entrance->key);
             } else observed=unit!=world.units.end() && unit->second.assignmentRevision==pending.assignment &&
                 unit->second.mode && *unit->second.mode!=0 &&
                 std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &target) {
@@ -437,7 +437,7 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
                 const auto wire=world.items.find(id);
                 if(wire!=world.items.end() && wire->second.code==step.item &&
                     (questState.questRun.material==id || !questState.questRun.materialBefore.contains(id)) && entry.decoded && entry.quality==6 &&
-                    onlineItemOwnedBy(wire->second,c.session.read().load.playerUnitId)) {observed=true;break;}
+                    onlineItemOwnedBy(wire->second,c.observation.read().load.playerUnitId)) {observed=true;break;}
             }
         break;
     case QuestPending::Action::Service:
@@ -457,7 +457,7 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
     }
     else if(step.action==QuestAction::Portal && pending.action==QuestPending::Action::Object && pending.unit &&
         unit!=world.units.end() && unit->second.assignmentRevision==pending.assignment && unit->second.mode==0 &&
-        !inputBlocked && !actionRecoveryBusy && !c.moving && c.town.permitsInteraction(c.session.read(),*pending.unit) &&
+        !inputBlocked && !actionRecoveryBusy && !c.moving && c.town.permitsInteraction(c.observation.read(),*pending.unit) &&
         retryPassage(Passage::Door,"activate assigned entrance")) {
         releaseCombat(c);cancelWalk(c);questState.questRun.pending.reset();
     }
@@ -471,15 +471,15 @@ void DebugAi::Impl::observeQuestInteraction(Context &c,const DebugWalkIntent &in
         if(questState.questRun.step>=goals[cursor].steps.size() || goals[cursor].steps[questState.questRun.step].action!=(forge?QuestAction::SmashForge:QuestAction::SmashOrb) ||
             questState.questRun.materialPhase>=hits) throw std::runtime_error("Unexpected extra quest weapon operation");
         if(forge && !questState.questRun.materialPhase) {
-            questState.questRun.rewardBefore.clear();for(const auto &[id,item]:c.session.read().world.items) {(void)item;questState.questRun.rewardBefore.insert(id);}
+            questState.questRun.rewardBefore.clear();for(const auto &[id,item]:c.observation.read().world.items) {(void)item;questState.questRun.rewardBefore.insert(id);}
         }
         const auto now=Clock::now();++questState.questRun.materialPhase;++interactions;
         questState.questRun.sweepReady=now+std::chrono::milliseconds(600);
         if(questState.questRun.materialPhase==hits) {
             QuestPending pending;pending.action=QuestPending::Action::Object;
             pending.unit=OnlineUnitKey{intent.unit.value().type,intent.unit.value().id};
-            const auto unit=c.session.read().world.units.find(*pending.unit);
-            if(unit!=c.session.read().world.units.end()) pending.assignment=unit->second.assignmentRevision;
+            const auto unit=c.observation.read().world.units.find(*pending.unit);
+            if(unit!=c.observation.read().world.units.end()) pending.assignment=unit->second.assignmentRevision;
             pending.deadline=now+std::chrono::seconds(forge?40:20);questState.questRun.pending=pending;
         }
         note(forge?"quest-forge-operation-submitted":"quest-orb-operation-submitted",std::to_string(questState.questRun.materialPhase));cancelWalk(c);return;
@@ -492,8 +492,8 @@ void DebugAi::Impl::observeQuestInteraction(Context &c,const DebugWalkIntent &in
         p.beforeRevision=sent && sent->target==*p.unit?sent->combatSequence:UINT64_MAX;
     }
     if(p.action==QuestPending::Action::Portal) rememberTravel(c,*p.unit);
-    const auto unit=c.session.read().world.units.find(*p.unit);
-    if(unit!=c.session.read().world.units.end()) p.assignment=unit->second.assignmentRevision;
+    const auto unit=c.observation.read().world.units.find(*p.unit);
+    if(unit!=c.observation.read().world.units.end()) p.assignment=unit->second.assignmentRevision;
     const auto now=Clock::now();p.deadline=now+std::chrono::seconds(30);
     if(p.action==QuestPending::Action::Portal) {
         const auto &step=goals[cursor].steps.at(questState.questRun.step);
@@ -583,12 +583,12 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
     case QuestAction::Clear: {
         auto &population=navigation.populationMemory[*area];
         const auto flags=state;
-        if((flags && (*flags&0x2002)) || (c.session.read().world.quests.denRemaining==0 &&
-            c.session.read().world.quests.statuses[goal.questSlot]==5)) {done=true;break;}
-        const auto remaining=c.session.read().world.quests.denRemaining;
+        if((flags && (*flags&0x2002)) || (c.observation.read().world.quests.denRemaining==0 &&
+            c.observation.read().world.quests.statuses[goal.questSlot]==5)) {done=true;break;}
+        const auto remaining=c.observation.read().world.quests.denRemaining;
         if(remaining!=questState.questRun.denRemaining) {questState.questRun.denRemaining=remaining;note("den-counter-observed",remaining?std::to_string(*remaining):"unknown");}
         std::optional<OnlineUnit> enemy;float nearest=std::numeric_limits<float>::max();
-        for(const auto &[key,unit]:c.session.read().world.units) if(key.type==1 && unit.position && c.combat.hostile(unit) && c.combat.monsterTargetEligible(unit,false)) {
+        for(const auto &[key,unit]:c.observation.read().world.units) if(key.type==1 && unit.position && c.combat.hostile(unit) && c.combat.monsterTargetEligible(unit,false)) {
             const float distance=(Vec{float(unit.position->x),float(unit.position->y)}-c.position).length();
             if(distance<nearest) {nearest=distance;enemy=unit;}
         }
@@ -601,7 +601,7 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
         }
         // Retirement is not death. Reobserve a last assigned hostile after
         // its room left the subscription, rather than blindly sweeping rooms.
-        const auto &world=c.session.read().world;const auto &rooms=c.town.navigationRooms();
+        const auto &world=c.observation.read().world;const auto &rooms=c.town.navigationRooms();
         std::optional<OnlinePoint> remembered;float distance=std::numeric_limits<float>::max();
         for(auto it=population.enemies.begin();it!=population.enemies.end();) {
             const auto unit=world.units.find(it->first);const auto point=it->second.position;

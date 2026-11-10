@@ -3,8 +3,7 @@
 
 namespace d2x {
 void DebugAi::Impl::prepareDecision(Context &c) {
-    const auto &view=c.session.read();const auto &supplies=*c.supplies;
-    c.inventory.update(view);c.combat.update();
+    const auto &view=c.observation.read();const auto &supplies=*c.supplies;
     prepareCombatSkill(c);
     supply.supplyVitals={{"life",view.world.life?Json(*view.world.life):Json(nullptr)},
         {"mana",view.world.mana?Json(*view.world.mana):Json(nullptr)},
@@ -22,8 +21,8 @@ void DebugAi::Impl::prepareDecision(Context &c) {
     }
 }
 bool DebugAi::Impl::recoverSessionInput(Context &c,Clock::time_point now) {
-    auto &session=c.session;auto &town=c.town;auto &walk=c.walk;auto &control=c.control;auto &combat=c.combat;
-    const auto &view=session.read();
+    const auto &observation=c.observation;auto &town=c.town;auto &walk=c.walk;auto &control=c.control;auto &combat=c.combat;
+    const auto &view=observation.read();
     if(!view.error || view.error->kind!=OnlineErrorKind::Timeout) navigation.npcOpeningRecovery=false;
     const auto &item=view.world.itemRequest;
     const bool shelfTimeout=supply.shopIssued && !supply.potionRequest && !supply.shelfObserved && supply.supplyNpc &&
@@ -66,7 +65,7 @@ bool DebugAi::Impl::recoverSessionInput(Context &c,Clock::time_point now) {
                 if(navigation.npcOpenRetries>=2) {finish("failed",view.error->message,c);return true;}
                 ++navigation.npcOpenRetries;note("npc-open-retry","Opening only; no quest topic or item operation is replayed");
                 auto intent=navigation.walkIntent;cancelWalk(c);navigation.walkIntent=intent;
-                intent.forceApproach=true;intent.resyncApproach=navigation.npcOpenRetries==2;walk.start(intent,session,town,control);
+                intent.forceApproach=true;intent.resyncApproach=navigation.npcOpenRetries==2;walk.start(intent,observation,town,control);
                 navigation.npcOpeningRecovery=true;return true;
             }
             const bool returning=cursor<goals.size() && (questLeaf(goals[cursor]).kind==Kind::ReturnTown ||
@@ -85,7 +84,7 @@ bool DebugAi::Impl::recoverSessionInput(Context &c,Clock::time_point now) {
     return false;
 }
 void DebugAi::Impl::dispatchActions(Context &c,const Goal &goal,Clock::time_point now) {
-    auto &town=c.town;auto &walk=c.walk;auto &control=c.control;const auto &view=c.session.read();
+    auto &town=c.town;auto &walk=c.walk;auto &control=c.control;const auto &view=c.observation.read();
     if(inputBlocked) return;
     const bool travelSatisfied=goal.kind==Kind::Travel && goal.area &&
         (goal.requiredWaypoint?navigation.knownWaypointAreas.contains(*goal.area):goal.area==area);
@@ -176,10 +175,10 @@ void DebugAi::Impl::dispatchActions(Context &c,const Goal &goal,Clock::time_poin
     if(canInput(c,Owner::Mobility,DebugMotion|DebugSkill)) mobility(c);
     describeActions(c);
 }
-void DebugAi::tickPlan(net::RealmSession &session,RemoteTown &town,DebugAutoWalk &walk,RemoteControl &control,
-        RemoteCombat &combat,RemoteInventory &inventory,const SuppliesView &supplies,bool blocked,std::optional<Vec> position,bool moving) {
+void DebugAi::tickPlan(const OnlineObservation &observation,const RemoteTown &town,DebugAutoWalk &walk,IOnlineControl &control,
+        IOnlineCombat &combat,IOnlineInventory &inventory,const SuppliesView &supplies,bool blocked,std::optional<Vec> position,bool moving) {
     auto &s=*impl_;
-    const auto now=Impl::Clock::now();const auto &view=session.read();
+    const auto now=Impl::Clock::now();const auto &view=observation.read();
     const bool recovering=supplies.actionInputBusy.value_or(supplies.castInputBusy.value_or(false));
     // Resume on the first frontend frame that observes animation recovery,
     // without paying another 40/80/160-ms decision interval. Potion safety
@@ -190,8 +189,9 @@ void DebugAi::tickPlan(net::RealmSession &session,RemoteTown &town,DebugAutoWalk
     s.inputBlocked=blocked || !s.active() || !position || !town.read().nativeMapReady || !town.read().area || view.stage!=OnlineStage::ProtocolReady;
     const auto suspended=s.executionClock.sample(now,s.inputBlocked);
     const Vec observed=position.value_or(view.world.playerPosition?Vec{float(view.world.playerPosition->x),float(view.world.playerPosition->y)}:Vec{});
-    Impl::Context c{session,town,walk,control,combat,inventory,observed,moving,&supplies};
+    Impl::Context c{observation,town,walk,control,combat,inventory,observed,moving,&supplies};
     s.suspendExecution(c,suspended);
+    s.observeNpcDialogue(view,now);
     if(!s.decisionDue(c,now)) return;
     ++s.decisions;
     try {
@@ -216,6 +216,13 @@ void DebugAi::tickPlan(net::RealmSession &session,RemoteTown &town,DebugAutoWalk
             s.describeActions(c);return;
         }
         if(s.recoverSessionInput(c,now)) return;
+        // Quest and supply actions can both acknowledge speech or leave the
+        // conversation, including by submitting their next movement request.
+        if(now<s.npcDialogueReadyAt()) {
+            if(s.canInput(c,DebugActionOwner::Potion,DebugItem) && s.drink(c)) {s.describeActions(c);return;}
+            s.wait("npc-dialogue-close-delay","Waiting for the configured NPC dialogue display time");return;
+        }
+        if(s.finishAutomaticNpcSpeech(c,goal)) return;
         s.dispatchActions(c,goal,now);
     } catch(const DebugSearchPending &) {
         s.cadence.continueNextFrame();s.wait("navigation-worker","Waiting for background navigation");

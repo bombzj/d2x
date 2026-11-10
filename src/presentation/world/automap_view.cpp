@@ -17,12 +17,14 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
     // mini side. Resolution/mode changes also force it, even with Center off.
     if (automapLayout_ && *automapLayout_ != layout) view_.automapOffset = {};
     automapLayout_ = layout;
-    // D2Client 1.13c RVA 5F9F0 / 60250: mini origin/culling uses thirds,
-    // but its actual CelDraw crop is a fixed 280 by 226 inclusive rectangle.
+    // D2Client 1.13c RVA 5F9F0 / 60250 uses thirds for the mini origin and
+    // unit bounds. Extend the native crop by the same growth on larger views.
     const Vec miniOrigin{right ? float(W * 2 / 3) : 0.f,
         right ? 78.f : W >= 800 && H >= 600 ? 0.f : 96.f};
+    const float miniWidth = float(280 + std::max(0, W / 3 - 800 / 3));
+    const float miniHeight = float(226 + std::max(0, H / 3 - 600 / 3));
     const Rectangle area = large ? Rectangle{0, 0, float(W), float(H)}
-        : Rectangle{right ? float(W - 281) : 0.f, right ? 57.f : miniOrigin.y - 21, 280, 226};
+        : Rectangle{right ? W - miniWidth - 1 : 0.f, right ? 57.f : miniOrigin.y - 21, miniWidth, miniHeight};
     const float sideShift = large && leftPanel != rightPanel ? (leftPanel ? W / 4 : -W / 4) : 0;
     const AutomapProjection projection(W,H,large,miniOrigin,sideShift,map.observer,view_.automapOffset);
     auto onMap = [&](Vec world) { return projection.cell(world); };

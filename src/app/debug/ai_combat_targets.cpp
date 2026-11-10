@@ -5,7 +5,7 @@ namespace d2x {
 using debug_ai::position;
 bool DebugAi::Impl::selectCombatTarget(Context &c,const Goal &goal,bool nearbyDefense,bool planningDefense,
         const RouteCombatTask *task,Clock::time_point now,const CombatSight &sight,CombatSelection &selection) {
-    const auto &view=c.session.read();
+    const auto &view=c.observation.read();
     const QuestStep *step=cursor<goals.size() && goals[cursor].kind==Kind::Quest && questState.questRun.step<goals[cursor].steps.size()?
         &goals[cursor].steps[questState.questRun.step]:nullptr;
     const bool targetedDrop=step && step->action==QuestAction::SearchDrop && step->target &&
@@ -56,7 +56,7 @@ bool DebugAi::Impl::selectCombatTarget(Context &c,const Goal &goal,bool nearbyDe
     float nearest=clearing && step->action==QuestAction::Encounter && questState.questRun.worldWait?
         float(std::max(policy.engage,2*encounterMovementRadius())):float(policy.engage);
     float nearestObstructed=nearest;
-    const int localAttackRange=task && task->preferAreaAttack?routeAttackRange(c):meleeAttack(c,*battle.excursionSkill)?3:policy.range;
+    const int localAttackRange=task && task->preferAreaAttack?routeAttackRange(c):combatRange(c,*battle.excursionSkill);
     for(const auto &[key,unit]:view.world.units) {
         // A navigation interruption attacks only the observed obstruction
         // captured for this leg, never every nearby/on-screen monster.

@@ -44,6 +44,8 @@ bool SceneController::handleHirelingList(const FrameInput &input) {
 bool SceneController::handleNpcShop(const FrameInput &input) {
     auto &ui = view_.ui();
     if (ui.shopOpen) {
+        if (view_.handleNpcShopRejection(input.mouse, input.enter || input.escape,
+            input.insideViewport && input.leftPressed)) return true;
         auto repairItemAt = [&]() -> const InventoryItemView * {
             const auto &inventory = view_.inventoryView();
             EntityId id;

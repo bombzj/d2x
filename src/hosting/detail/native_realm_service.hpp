@@ -98,6 +98,7 @@ struct NativeRealmService {
         std::map<EntityId, EntityId> corpseOwners;
         std::map<int,int> itemSkills;
         std::set<EntityId> shopItems;
+        std::map<EntityId, Bytes> gambleShopItems;
         std::set<EntityId> inventoryRefresh;
         std::map<EntityId,uint16_t> npcQuestAlerts;
         std::map<std::pair<uint8_t,uint16_t>,Bytes> questProjection;

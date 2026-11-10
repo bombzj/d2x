@@ -1,8 +1,6 @@
 #include "auto_walk.hpp"
+#include "client/online_actions.hpp"
 #include "client/remote_town.hpp"
-#include "client/remote_control.hpp"
-#include "client/remote_combat.hpp"
-#include "network/realm_session.hpp"
 #include "world/interaction_geometry.hpp"
 #include "world/navigation_snapshot.hpp"
 #include <algorithm>
@@ -32,12 +30,12 @@ DebugWalkObservation DebugAutoWalk::observe() const {
     result.searchContinuations=cadence_.continuations();return result;
 }
 nlohmann::json DebugAutoWalk::snapshot() const {return status();}
-void DebugAutoWalk::finish(DebugWalkState state,std::string reason,RemoteControl &control,DebugWalkFailure failure) {
+void DebugAutoWalk::finish(DebugWalkState state,std::string reason,IOnlineControl &control,DebugWalkFailure failure) {
     if(state==DebugWalkState::Failed) ++failures_;
     failure_=state==DebugWalkState::Failed?failure:DebugWalkFailure::None;
     state_=state;reason_=std::move(reason);control.cancelMovement();segment_.reset();pointerLane_.reset();recoveryAnchor_.reset();routeDoor_.reset();blockedStep_.reset();
 }
-void DebugAutoWalk::manualInput(RemoteControl &control) {if(active()) finish(DebugWalkState::Cancelled,"Manual input took control",control);}
+void DebugAutoWalk::manualInput(IOnlineControl &control) {if(active()) finish(DebugWalkState::Cancelled,"Manual input took control",control);}
 nlohmann::json DebugAutoWalk::status() const {
     using Json=nlohmann::json;
     const auto position=[](OnlinePoint p) {return Json{{"x",p.x},{"y",p.y}};};
@@ -82,8 +80,8 @@ nlohmann::json DebugAutoWalk::status() const {
         {"executionRemainingMs",std::max<int64_t>(0,std::chrono::duration_cast<std::chrono::milliseconds>(deadline_-Clock::now()).count())},
         {"excludedOpenings",goal_==Goal::Exit?Json(visited_):Json::array()}};
 }
-std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,net::RealmSession &session,
-        RemoteTown &town,RemoteControl &control,RemoteCombat &combat) {
+std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,const OnlineObservation &observation,
+        const RemoteTown &town,IOnlineControl &control,IOnlineCombat &combat) {
     using Json=nlohmann::json;
     const auto name=request.at("command").get<std::string>();
     if(name!="debug-walk" && name!="debug-walk-status" && name!="debug-walk-cancel") return {};
@@ -94,7 +92,7 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
         }
     } else if(name=="debug-walk") {
         if(active()) throw std::invalid_argument("Cancel the current debug walk before starting another");
-        const auto &view=session.read();
+        const auto &view=observation.read();
         // The frontend already bound this scene using the local DynamicPath
         // position. Updating it here without that position can select the
         // other side of a walking boundary from a sparse server sample and
@@ -134,13 +132,13 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
         if(kind==Goal::Unit && target->type==1 && request.contains("waitQuestAlert")) intent.waitQuestAlert=request.at("waitQuestAlert").get<bool>();
         if(kind!=Goal::Waypoint && request.contains("confirmMenu")) intent.confirmMenu=request.at("confirmMenu").get<bool>();
         if(kind==Goal::Unit && target->type==2 && request.contains("purpose")) intent.purpose=request.at("purpose").get<std::string>();
-        start(intent,session,town,control);
+        start(intent,observation,town,control);
     }
     return Json{{"ok",true},{"navigation",status()}}.dump();
 }
-void DebugAutoWalk::start(const DebugWalkIntent &request,net::RealmSession &session,RemoteTown &town,RemoteControl &control) {
+void DebugAutoWalk::start(const DebugWalkIntent &request,const OnlineObservation &observation,const RemoteTown &town,IOnlineControl &control) {
     if(active()) throw std::invalid_argument("Cancel the current debug walk before starting another");
-    const auto &view=session.read();
+    const auto &view=observation.read();
     // The frontend already bound this scene using the local DynamicPath
     // position. Updating it here without that position can select the
     // other side of a walking boundary from a sparse server sample and
@@ -194,10 +192,10 @@ void DebugAutoWalk::start(const DebugWalkIntent &request,net::RealmSession &sess
     executionClock_.reset(progressAt_);
     cadence_.reset();
 }
-void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteControl &control,bool blocked,std::optional<Vec> pathPosition,bool pathMoving) {
+void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &town,IOnlineControl &control,bool blocked,std::optional<Vec> pathPosition,bool pathMoving) {
     if(!active()) return;
     try {
-    const auto now=Clock::now();const auto &view=session.read();const auto &scene=town.read();
+    const auto now=Clock::now();const auto &view=observation.read();const auto &scene=town.read();
     const bool unavailable=blocked || !scene.movementAvailable || !scene.origin || !view.world.playerPosition || !town.map() || !pathPosition;
     const auto suspended=executionClock_.sample(now,unavailable);
     deadline_+=suspended;progressAt_+=suspended;hostProgressAt_+=suspended;closestAt_+=suspended;
@@ -709,10 +707,10 @@ void DebugAutoWalk::tick(net::RealmSession &session,RemoteTown &town,RemoteContr
                     return pointerClear(targetPoint);
                 }
                 if(!waypoint) return routeGrid.nativeMovementSegment(from,targetPoint,playerMovement);
-                // The pad itself may be solid. The last clear cell on the
-                // walking ray must already satisfy the ordinary object check.
+                // The pad itself may be solid. The integer ray locates the
+                // last clear cell, but can skip cells crossed from precise feet.
                 const auto end=routeGrid.nativeMovementTarget(from,targetPoint,playerMovement);
-                return ready(end+offset-Vec{.5f,.5f});
+                return ready(end+offset-Vec{.5f,.5f}) && routeGrid.segment(from,end,{},playerMovement);
             };
             if(localArrival || directApproach()) {
                 if(!hostReady && holdTownTurn(pathGrid.nativeMovementTarget(from,targetPoint,playerMovement))) return;

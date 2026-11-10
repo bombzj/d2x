@@ -40,7 +40,7 @@ bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
     // On another quest only an on-route engagement or a real drop interrupts.
     const OnlineUnit *candidate=nullptr;
     float nearest=std::numeric_limits<float>::max();
-    if(policy.enabled) for(const auto &[key,unit]:c.session.read().world.units) {
+    if(policy.enabled) for(const auto &[key,unit]:c.observation.read().world.units) {
         if(!unit.position || !c.combat.jadeFigurineCandidate(unit) || !c.combat.hostile(unit) ||
             !c.combat.monsterTargetEligible(unit,false) || battle.bypassedThreats.contains({key,unit.assignmentRevision})) continue;
         const auto distance=(Vec{float(unit.position->x),float(unit.position->y)}-c.position).length();
@@ -61,7 +61,7 @@ bool DebugAi::Impl::questSearchDrop(Context &c,const QuestStep &step) {
     return false;
 }
 bool DebugAi::Impl::questEquipmentRestored(const Context &c) const {
-    const auto &view=c.session.read();
+    const auto &view=c.observation.read();
     for(size_t hand=0;hand<questState.questHandsRestore.size();++hand) {
         if(!questState.questHandsRestore[hand]) continue;
         const auto item=view.world.items.find(*questState.questHandsRestore[hand]);
@@ -71,7 +71,7 @@ bool DebugAi::Impl::questEquipmentRestored(const Context &c) const {
     return true;
 }
 bool DebugAi::Impl::questEquipWeapon(Context &c,const QuestStep &step) {
-    const auto &view=c.session.read();const auto &world=view.world;
+    const auto &view=c.observation.read();const auto &world=view.world;
     const auto ours=[&](const OnlineItem &item){return onlineItemOwnedBy(item,view.load.playerUnitId);};
     if(questState.questRun.pending) {
         checkQuestPending(c);
@@ -173,7 +173,7 @@ bool DebugAi::Impl::questSmashForge(Context &c,const QuestStep &step) {
         if(!questState.questRun.pending) throw std::runtime_error("Forge hit sequence lost its submitted-result contract");
         unsigned gems=0,runes=0;
         const auto object=step.target?find(c,*step.target,true):std::nullopt;
-        for(const auto &[id,item]:c.session.read().world.items) {
+        for(const auto &[id,item]:c.observation.read().world.items) {
             if(questState.questRun.rewardBefore.contains(id) || item.mode!=3 || !item.positionKnown || !object || !object->position) continue;
             if((Vec{float(item.groundX),float(item.groundY)}-Vec{float(object->position->x),float(object->position->y)}).length()>24) continue;
             gems+=definitions->itemHasType(item.code,"gem");runes+=definitions->itemHasType(item.code,"rune");

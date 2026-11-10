@@ -28,7 +28,7 @@ bool DebugAi::Impl::knownSkill(const Context &c,uint16_t id,bool left) const {
     });
 }
 bool DebugAi::Impl::selectSkill(Context &c,uint16_t skill,OnlineSkillHand hand) {
-    const auto &world=c.session.read().world;
+    const auto &world=c.observation.read().world;
     const auto selected=hand==OnlineSkillHand::Left?world.leftSkill:world.rightSkill;
     if(selected && selected->skill==skill && selected->owner==UINT32_MAX) return true;
     const auto now=Clock::now();
@@ -50,7 +50,7 @@ bool DebugAi::Impl::teleportAvailable(const Context &c,bool resourceReady) const
     return false;
 }
 bool DebugAi::Impl::observeMobility(Context &c) {
-    const auto now=Clock::now();const auto &world=c.session.read().world;
+    const auto now=Clock::now();const auto &world=c.observation.read().world;
     // Observe the crossing independently of the movement chosen for it.
     // A walking child must be able to unlock field casting with its receipt.
     if(navigation.townExitArea && world.playerPosition) {
@@ -69,7 +69,7 @@ bool DebugAi::Impl::observeMobility(Context &c) {
         // Observe the normal path's relocation/progress. Casting acceptance
         // never writes coordinates or proves arrival at the intended endpoint.
         const Vec target{float(navigation.mobilityTarget->x),float(navigation.mobilityTarget->y)};
-        const auto player=world.units.find({0,c.session.read().load.playerUnitId.value_or(0)});
+        const auto player=world.units.find({0,c.observation.read().load.playerUnitId.value_or(0)});
         const bool progress=navigation.mobilityTeleport?player!=world.units.end() && player->second.positionDiscontinuity!=navigation.mobilityDiscontinuity:
             (c.position-target).length()<3 || (c.position-navigation.mobilityFrom).length()>3;
         if(progress) {
@@ -108,7 +108,7 @@ bool DebugAi::Impl::observeMobility(Context &c) {
 std::vector<Vec> DebugAi::Impl::travelLandingThreats(const Context &c) const {
     std::vector<Vec> result;
     if(!policy.enabled || c.town.read().town) return result;
-    for(const auto &[key,enemy]:c.session.read().world.units)
+    for(const auto &[key,enemy]:c.observation.read().world.units)
         if(key.type==1 && enemy.position && c.combat.hostileSource(enemy) && !onlineMonsterCorpse(enemy) &&
             (!c.combat.hostile(enemy) || c.combat.monsterTargetEligible(enemy,false)))
             result.push_back({float(enemy.position->x),float(enemy.position->y)});
@@ -127,7 +127,7 @@ std::optional<DebugAi::Impl::TeleportApproach> DebugAi::Impl::teleportLanding(Co
     const TeleportRooms neighborhood(c);
     if(!neighborhood.current) return {};
     const Vec offset{float(origin->x),float(origin->y)};
-    const auto live=c.town.navigationGrid(c.session.read());
+    const auto live=c.town.navigationGrid(c.observation.read());
     const float range=float(mobilityPolicy.distance);
     const auto *knowledge=c.walk.navigationSearch().explorationMemory.area(*area);
     const auto permitted=[&](Vec at) {
@@ -140,7 +140,7 @@ std::optional<DebugAi::Impl::TeleportApproach> DebugAi::Impl::teleportLanding(Co
             c.combat.teleportPathAllowed(*area,live,c.position-offset,at-offset);
     };
     if(permitted(wanted)) return TeleportApproach{wanted,true};
-    if(directOnly) return {}; // A local stance cannot be replaced by a route relay.
+    if(directOnly) return {}; // A local stance or final walking segment needs its own endpoint.
     auto &search=c.walk.navigationSearch();
     const auto *memory=search.explorationMemory.area(*area);
     if(!memory) return {};
@@ -164,7 +164,7 @@ std::optional<float> DebugAi::Impl::kiteWalkSeconds(const Context &c,Vec destina
     const auto *knowledge=c.walk.navigationSearch().explorationMemory.area(*area);
     if(!origin || !knowledge) return {};
     const Vec offset{float(origin->x),float(origin->y)};
-    const auto grid=c.town.navigationGrid(c.session.read());
+    const auto grid=c.town.navigationGrid(c.observation.read());
     if(!grid.nativeMovementSegment(c.position-offset+Vec{.5f,.5f},destination-offset+Vec{.5f,.5f},playerMovement)) return {};
     const auto hazards=visibleThreats(c);
     const auto enemies=travelLandingThreats(c);
@@ -188,7 +188,7 @@ std::optional<float> DebugAi::Impl::kiteWalkSeconds(const Context &c,Vec destina
 bool DebugAi::Impl::mobility(Context &c) {
     if(navigation.mobilityTarget) return observeMobility(c);
     if(c.walk.openingRouteDoor()) return false;
-    const auto now=Clock::now();const auto &world=c.session.read().world;
+    const auto now=Clock::now();const auto &world=c.observation.read().world;
     if(navigation.townExitArea) {
         navigation.mobilityHold=now<navigation.townExitObserveUntil;
         wait("mobility-town-exit",navigation.mobilityHold?"Waiting briefly for the host's field position while the crossing completes":
@@ -221,15 +221,24 @@ bool DebugAi::Impl::mobility(Context &c) {
     Vec delta=wanted-c.position;float distance=delta.length();
     const bool assignedApproach=bool(childUnit) && world.units.contains(*childUnit);
     if(assignedApproach && bool(navigation.walkIntent) && navigation.walkIntent.interact.value_or(false) &&
-        c.town.interactionReady(c.session.read(),*childUnit,c.position))
+        c.town.interactionReady(c.observation.read(),*childUnit,c.position))
         return false; // A normal click is already possible; do not spend a cast on the object's center.
     const auto *map=c.town.map();const auto origin=c.town.read().origin;if(!map || !origin || distance<1) return false;
     const Vec offset{float(origin->x),float(origin->y)};
     // Walk a few clear cells to the same objective. A nearby point across a
     // wall can still warrant a cast, as can a deliberate defensive escape.
-    if(distance<8 && !combatMovement && !encounterMove &&
-        map->grid.nativeMovementSegment(c.position-offset+Vec{.5f,.5f},wanted-offset+Vec{.5f,.5f},playerMovement))
-        return false;
+    const bool shortApproach=distance<8 && !combatMovement && !encounterMove;
+    if(shortApproach) {
+        // Walking is an execution choice, not a property of terrain alone.
+        // A confirmed Teleport may land beside its requested point while an
+        // assigned monster still occupies the last one or two walking cells.
+        const auto live=c.town.navigationGrid(c.observation.read(),childUnit);
+        const bool clear=live.nativeMovementSegment(c.position-offset+Vec{.5f,.5f},wanted-offset+Vec{.5f,.5f},playerMovement);
+        navigation.mobilityDiagnostics={{"decision",decisions},{"area",area.value_or(0)},
+            {"from",{c.position.x,c.position.y}},{"target",{wanted.x,wanted.y}},
+            {"shortWalkClear",clear},{"result",clear?"short-live-walk":"short-walk-occupied"}};
+        if(clear) return false;
+    }
     const auto teleport=definitions->skill("Teleport"),charge=definitions->skill("Charge"),vigor=definitions->skill("Vigor");
     const bool canTeleport=teleportAvailable(c);
     if(canTeleport && battle.combatRun.kitePoint && bool(navigation.walkIntent) &&
@@ -262,7 +271,7 @@ bool DebugAi::Impl::mobility(Context &c) {
             // An authored portal/door center can be solid or beyond a chasm.
             // Choose a real standing cell in its normal interaction perimeter,
             // rather than requiring a walking route to that center first.
-            const auto grid=c.town.navigationGrid(c.session.read());
+            const auto grid=c.town.navigationGrid(c.observation.read());
             const int width=std::clamp(entry->collisionWidth/2+4,4,16),height=std::clamp(entry->collisionHeight/2+4,4,16);
             std::optional<Vec> perimeter;float best=std::numeric_limits<float>::max();
             for(int y=std::max(0,int(entry->position.y)-height);y<=std::min(65535,int(entry->position.y)+height);++y)
@@ -270,7 +279,7 @@ bool DebugAi::Impl::mobility(Context &c) {
                     const Vec at{float(x),float(y)},local=at-offset+Vec{.5f,.5f};
                     const float span=(at-c.position).length();
                     if(span<1 || span>mobilityPolicy.distance || !neighborhood.contains(at) || crowdedLanding(at) ||
-                        !grid.walkable(local,playerMovement) || !c.town.interactionReady(c.session.read(),key,at)) continue;
+                        !grid.walkable(local,playerMovement) || !c.town.interactionReady(c.observation.read(),key,at)) continue;
                     if(span<best) {best=span;perimeter=at;}
                 }
             if(perimeter) {wanted=*perimeter;distance=(wanted-c.position).length();}
@@ -287,7 +296,7 @@ bool DebugAi::Impl::mobility(Context &c) {
     std::optional<Vec> stagedLanding;
     bool completeTeleportRoute=false;
     if(canTeleport) {
-        if(const auto approach=teleportLanding(c,wanted,exploration,encounterMove)) {
+        if(const auto approach=teleportLanding(c,wanted,exploration,encounterMove || shortApproach)) {
             if(!encounterMove || (approach->landing-wanted).length()<1) stagedLanding=approach->landing;
             completeTeleportRoute=approach->completeRoute;
         }
@@ -297,7 +306,8 @@ bool DebugAi::Impl::mobility(Context &c) {
     const bool directLanding=stagedLanding.has_value();
     if(canTeleport && !directLanding) {
         navigation.mobilityDiagnostics={{"decision",decisions},{"area",area.value_or(0)},{"movement","teleport"},
-            {"from",{c.position.x,c.position.y}},{"target",{wanted.x,wanted.y}},{"result","no-known-teleport-landing"}};
+            {"from",{c.position.x,c.position.y}},{"target",{wanted.x,wanted.y}},
+            {"shortApproach",shortApproach},{"result","no-known-teleport-landing"}};
         return false;
     }
     if(!canTeleport && navigation.mobilityRoute.empty()) {
@@ -313,6 +323,7 @@ bool DebugAi::Impl::mobility(Context &c) {
     }
     navigation.mobilityDiagnostics={{"decision",decisions},{"area",area.value_or(0)},{"movement",canTeleport?"teleport":"charge"},
         {"from",{c.position.x,c.position.y}},{"target",{wanted.x,wanted.y}},
+        {"shortApproach",shortApproach},
         {"goalOccupied",occupiedGoal},{"stagedLanding",stagedLanding?Json{stagedLanding->x,stagedLanding->y}:Json(nullptr)},
         {"completeTeleportRoute",completeTeleportRoute},
         {"routeLength",navigation.mobilityRouteLength},{"confirmedRouteProgress",navigation.mobilityRouteProgress},
@@ -413,7 +424,7 @@ bool DebugAi::Impl::mobility(Context &c) {
     navigation.mobilityPendingProgress=selectedProgress;
     ++navigation.mobilityTrials[{area.value_or(0),uint16_t(wanted.x),uint16_t(wanted.y),cast.point->x,cast.point->y}];
     navigation.mobilityTeleport=canTeleport;
-    const auto player=world.units.find({0,c.session.read().load.playerUnitId.value_or(0)});
+    const auto player=world.units.find({0,c.observation.read().load.playerUnitId.value_or(0)});
     navigation.mobilityDiscontinuity=player==world.units.end()?0:player->second.positionDiscontinuity;
     navigation.mobilityDeadline=now+std::chrono::seconds(3);navigation.mobilityHold=true;
     note(canTeleport?"teleport-submitted":"charge-submitted",std::to_string(cast.point->x)+","+std::to_string(cast.point->y));return true;
