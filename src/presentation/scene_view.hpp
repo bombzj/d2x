@@ -83,6 +83,8 @@ struct ViewState {
     float hirelingPortraitHoverTime = 0;
     bool hirelingPortraitCanFeed = false;
     int hireListScroll = 0;
+    struct HirelingConfirmation { uint32_t slot; uint64_t offerRevision; };
+    std::optional<HirelingConfirmation> hirelingConfirmation;
     bool questOpen = false;
     bool questAutoPreview = false, hidePointer = false;
     bool partyOpen = false;
@@ -455,6 +457,7 @@ class SceneView {
     void scrollNpcDialogue(int amount);
     bool closeNpcDialogue();
     std::optional<uint32_t> clickNpcShop(Vec mouse, bool directBuy = false);
+    int hirelingConfirmationAt(Vec mouse) const;
     bool handleNpcShopRejection(Vec mouse, bool confirm, bool click);
     std::optional<RegionId> clickWaypointMenu(Vec mouse);
     void scrollNpcShop(int pages);

@@ -54,8 +54,12 @@ DomainResult<bool> System::replaceHireling(const ActorContext &actor,HirelingRec
     if(auto container=candidate.inventory.containers.find(candidate.containers.hirelingEquipment);container!=candidate.inventory.containers.end())
         container->second.registeredWeapon={};
     auto pending=hirelingReplacements_.find(actor.player);
+    // Paid offers prepare the selected mercenary with an empty loadout. The
+    // NPC service and final edit recheck the live player, including gold and
+    // equipment. Updates to the old mercenary's life do not invalidate this content.
     if(pending==hirelingReplacements_.end() || !sameHirelingIdentity(record,pending->second.source.record) ||
-        pending->second.source.inventoryRevision!=player->inventoryRevision || pending->second.characterRevision!=player->characterRevision) {
+        pending->second.request.has_value()!=request.has_value() || pending->second.source.inventoryRevision!=player->inventoryRevision ||
+        (!request && pending->second.characterRevision!=player->characterRevision)) {
         if(nextHirelingReplacement_==UINT64_MAX) return {DomainStatus::Capacity,{}};
         HirelingPreparation source{actor,record,candidate.difficulty,player->inventoryRevision,candidate,player->rules.items,player->rules.equipment,0,nextHirelingReplacement_++};
         hirelingReplacements_.insert_or_assign(actor.player,HirelingReplacement{std::move(source),player->characterRevision,std::move(request),{}});
@@ -74,7 +78,8 @@ DomainResult<bool> System::replaceHireling(const ActorContext &actor,HirelingRec
         const auto consumed=ports_.transactions.consumeRoomRandom(publication.rooms,std::move(failure));
         return consumed?DomainResult<bool>{DomainStatus::Applied,false}:DomainResult<bool>{consumed.status,{}};
     }
-    candidate.player.hireling.hp=Fixed8::fromRaw(nativeChecked(publication.units->actors->actors.begin()->second.life));
+    const auto &[hireling,body]=*publication.units->actors->actors.begin();
+    candidate.player.hireling.hp=Fixed8::fromRaw(nativeChecked(body.life));
     const auto wallet=std::min(candidate.player.gold,price);candidate.player.gold-=wallet;candidate.player.bankGold-=price-wallet;
     transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(candidate.inventory),std::move(changes),candidate.player.weaponSet};
     edit.character=candidate.player;
@@ -85,7 +90,7 @@ DomainResult<bool> System::replaceHireling(const ActorContext &actor,HirelingRec
             if(offer.name!=*request->offer && ports_.npc.hirelingAvailable(list.source.seller,list.source.rosterRevision,offer.name,offer.record.seed))
                 remaining.offers.emplace_back(offer.name,offer.record.seed);
         edit.facts.emplace_back(std::move(remaining));
-        edit.facts.emplace_back(MerchantFact{request->npc,{},0,5,candidate.player.gold});
+        edit.facts.emplace_back(MerchantFact{request->npc,hireling,0,5,candidate.player.gold});
     }
     auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},publication.units);
     if(!plan) return {plan.status,{}};

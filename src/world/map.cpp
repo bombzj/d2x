@@ -173,11 +173,8 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
             throw std::runtime_error("Native offline terrain disagrees with its planned bounds");
         *this = std::move(snapshot.map);
         terrain.path = terrain.name = recipe.ds1;
-        for (const auto &room : terrain.rooms)
-            rooms.push_back({room.x * 5, room.y * 5, room.width * 5, room.height * 5,
-                !room.preset || catalog.presets().at(room.preset).populate});
+        grid.fullTerrainCollision = std::move(snapshot.collision);
         spawn = grid.inspectionArrival();
-        activation = RoomLayout(grid.width, grid.height, rooms);
         return;
     }
     const auto &ds1 = recipe.ds1;
@@ -416,6 +413,7 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
         throw std::runtime_error("No walkable floor in " + ds1);
     spawn = grid.inspectionArrival();
     activation = RoomLayout(grid.width, grid.height, rooms);
+    grid.navigationRooms=std::make_shared<const std::vector<RoomBounds>>(activation.rooms());
     std::cout << "Map " << ds1 << ": " << terrain.data.width << "x" << terrain.data.height << ", " << terrain.tiles.size()
               << " tiles, " << terrain.unresolved << " unresolved cells\n";
 }

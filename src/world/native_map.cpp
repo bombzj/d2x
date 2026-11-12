@@ -445,6 +445,13 @@ NativeMapSnapshot NativeMapGenerator::snapshot(int currentLevel, bool continuous
         roomIndices.emplace(index, terrain.rooms.size());
         const auto &room = tiles_.rooms().at(index);
         const auto &r = room.room;
+        const auto &level = catalog_.level(room.level);
+        // Publish the same loaded rooms to terrain, native path searches and
+        // landing/position checks. Their subcell bounds share this snapshot's
+        // origin, including rooms across a continuous level boundary.
+        result.map.rooms.push_back({(r.x - x) * 5, (r.y - y) * 5, r.width * 5, r.height * 5,
+            !r.preset || catalog_.presets().at(r.preset).populate,
+            level.generation == GenerationKind::Maze || (r.preset && (r.flags & 0x00080000) != 0)});
         terrain.rooms.push_back({room.level, r.x - x, r.y - y, r.width, r.height,
             r.preset, r.file, r.mapX - x, r.mapY - y, {}, r.flags, {}, {}, room.singleLogicalRegion});
         auto &output = terrain.rooms.back();
@@ -590,6 +597,8 @@ NativeMapSnapshot NativeMapGenerator::snapshot(int currentLevel, bool continuous
         result.map.grid.blocked[index] = (flags & 0x09) != 0;
         result.map.grid.lightBlocked[index] = (flags & 0x22) != 0;
     }
+    result.map.activation = RoomLayout(result.map.grid.width, result.map.grid.height, result.map.rooms);
+    result.map.grid.navigationRooms = std::make_shared<const std::vector<RoomBounds>>(result.map.activation.rooms());
     return result;
 }
 } // namespace d2x

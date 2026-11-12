@@ -514,12 +514,24 @@ std::optional<RemoteScene::MovementObservation> RemoteScene::unitMovementObserva
     if(!position) return {};
     MovementObservation result{};
     result.position=*position;
+    if(const auto footprint=impl_->unitFootprint(unit->second)) {
+        result.collisionPattern=uint8_t(footprint->first);
+        result.collisionMask=footprint->second;
+    }
     const auto pose=impl_->motion.find(key);
     if(pose!=impl_->motion.end() && pose->second.last &&
         pose->second.assignmentRevision==unit->second.assignmentRevision &&
         pose->second.discontinuity==unit->second.positionDiscontinuity) {
         result.predicted=true;
         result.moving=pose->second.pathMoving;
+        result.plannedFrom=pose->second.plannedFrom;
+        result.plannedGoal=pose->second.plannedGoal;
+        result.plannedEnd=pose->second.plannedEnd;
+        result.pathType=pose->second.effectivePathType;
+        result.collisionReplans=pose->second.collisionReplans;
+        result.pathResult=pose->second.pathResult;
+        result.positionCheckResult=pose->second.positionCheckResult;
+        result.stopApproach=pose->second.stopDestination.has_value();
         if(!pose->second.route.empty()) {
             result.next=pose->second.route.front();
             result.end=pose->second.route.back();
@@ -534,6 +546,7 @@ void RemoteScene::stopNpcPath(const OnlineView &view, OnlineUnitKey key) {
     pose.finishedMonsterMovement = view.world.units.at(key).actionRevision;
     pose.position=pose.pathStep.stop(pose.position+Vec{.5f,.5f})-Vec{.5f,.5f};
     pose.route.clear(); pose.goal.reset(); pose.pathMoving = false; pose.pathElapsed=0; pose.stopDestination.reset();
+    impl_->syncCollision(view.world.units.at(key));
 }
 std::optional<Vec> RemoteScene::playerPathPosition(const OnlineView &view) const {
     // Reuse assignment/area/discontinuity checks, but exclude visual correction.

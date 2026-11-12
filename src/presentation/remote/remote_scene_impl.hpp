@@ -116,6 +116,9 @@ struct RemoteScene::Impl {
         std::deque<Vec> route;
         NativePathStep pathStep;
         std::optional<uint8_t> effectivePathType;
+        std::optional<Vec> plannedFrom, plannedGoal, plannedEnd;
+        uint64_t collisionReplans{};
+        std::string pathResult, positionCheckResult;
         float pathElapsed{};
         std::optional<Vec> stopDestination;
         std::deque<std::pair<float,Vec>> samples; // Recent displayed path; native samples have no timestamps.
@@ -235,6 +238,21 @@ struct RemoteScene::Impl {
     std::map<int,size_t> superUniqueRows;
     std::map<int,size_t> objectRows; // objects.txt Id -> row (BH Show Chests).
     std::map<OnlineUnitKey, Motion> motion;
+    struct CollisionBody {
+        int x{},y{};
+        NativeCollisionPattern pattern{NativeCollisionPattern::None};
+        uint16_t mask{};
+        uint64_t assignment{};
+        bool operator==(const CollisionBody &) const = default;
+    };
+    struct CollisionBits {uint16_t set{},cleared{};};
+    mutable std::map<std::pair<int,int>,CollisionBits> collisionCells;
+    mutable std::map<OnlineUnitKey,CollisionBody> collisionBodies;
+    std::map<std::pair<int,int>,RoomBounds> collisionRooms;
+    double movementClock{};
+    uint64_t movementFrame{};
+    bool advancingMovement{};
+    float movementElapsed{};
     uint64_t gameGeneration{~uint64_t{}}, areaGeneration{~uint64_t{}};
     float time{};
     std::chrono::steady_clock::time_point lastFrame{};
@@ -296,11 +314,16 @@ struct RemoteScene::Impl {
     std::optional<uint8_t> locomotionMode(const OnlineUnit &u,bool moving,bool town) const;
     std::optional<MovementTiming> playerTiming(const OnlineUnit &u,bool running,const RemoteUiClients &clients);
     int unitSize(const OnlineUnit &u) const;
+    std::optional<std::pair<NativeCollisionPattern,uint16_t>> unitFootprint(const OnlineUnit &unit) const;
     MovementCollisionRule movementRule(const OnlineUnit &u) const;
+    void writeCollision(const CollisionBody &,bool occupied,const RoomBounds *onlyRoom=nullptr) const;
+    void syncCollision(const OnlineUnit &) const;
+    void prepareCollision(const Map &,OnlinePoint);
+    void advanceMovement(const Map &,OnlinePoint,const RemoteUiClients &);
     Grid navigationCollision(const Grid &terrain,Vec origin,OnlineUnitKey self,
                              std::optional<OnlineUnitKey> target={}) const;
     void plan(Motion &m, Vec goal, const Map &map, Vec origin, MovementCollisionRule rule, float speed,
-              const OnlineUnit &unit, std::optional<OnlineUnitKey> target={});
+              const OnlineUnit &unit, std::optional<OnlineUnitKey> target={}, bool continuation=false);
     bool displayScriptedSequence(const OnlineUnit &u,Motion &m,const Map &map,Vec origin,MovementCollisionRule collision);
     bool displayPlayerLeap(const OnlineUnit &u,Motion &m,const Map &map,Vec origin);
     bool displayPlayerWhirlwind(const OnlineUnit &u,Motion &m,const Map &map,Vec origin);

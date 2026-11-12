@@ -15,6 +15,9 @@ void recordNativeMode(Actor &unit,uint8_t mode) {
     if(unit.nativeMode!=1) unit.nativeAiState=unit.nativeAiState>=16?uint8_t(unit.nativeAiState-16):
         unit.nativeAiState==13 && unit.nativeMode==3?13:unit.nativeMode;
     unit.nativeMode=mode;
+    // MonsterMode::D2GAME_ModeChange_6FC65220 resets the path type and
+    // search distance on entry to GH. This records state, not a new walk.
+    if(mode==3) {unit.pathType=0;unit.pathDistance=0;}
 }
 void System::neutralMode(EntityId id) {
     stop(id);

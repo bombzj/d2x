@@ -44,8 +44,10 @@ struct HirelingOfferView {
 // Bound player's offered candidates; no seeds, native hireling records or other players.
 struct HirelingListView {
     uint64_t revision = 0;
+    uint64_t offerRevision = 0;
     EntityId actor, npc;
     unsigned gold = 0;
+    bool replacing = false, hirePending = false, hired = false;
     std::string cancelLabel;
     std::vector<HirelingOfferView> offers;
 };

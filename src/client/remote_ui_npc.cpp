@@ -66,7 +66,9 @@ void RemoteUiClients::Impl::Npc::submit(NpcIntent c) {
                     return;
                 }
                 else if constexpr (std::is_same_v<T, HireMercenary>) {
-                    if(v.slot>UINT16_MAX || !o.session.hireling_service(OnlineHirelingAction::Hire,uint16_t(v.slot),o.context)) o.notice="Hireling offer changed or a request is pending.";
+                    if(v.npc!=o.hirelingList.npc || v.slot>UINT16_MAX ||
+                        !o.session.hireling_service(OnlineHirelingAction::Hire,uint16_t(v.slot),o.context))
+                        o.notice="Hireling offer changed or a request is pending.";
                     return;
                 }
                 else if constexpr (std::is_same_v<T, ResurrectHireling>) {
@@ -445,13 +447,18 @@ void RemoteUiClients::Impl::projectHireling() {
     }
 void RemoteUiClients::Impl::projectHirelingList() {
         hirelingList={};hirelingList.revision=revision;hirelingList.actor=characterView.actor;
-        hirelingList.gold=inventoryView.gold;
+        hirelingList.gold=inventoryView.gold+inventoryView.bankGold;
         const auto cancel=data.itemStrings.find("Cancel");
         hirelingList.cancelLabel=cancel==data.itemStrings.end()?"Cancel":cancel->second;
         const auto &online=session.read();const auto &world=online.world;const auto &service=world.hirelingService;
-        if(!service.source || !service.listReceived || !world.npcConversation || service.source!=world.npcConversation->source ||
+        if(!service.source || !world.npcConversation || service.source!=world.npcConversation->source ||
             service.interaction!=world.interactionGeneration || !online.load.difficulty) return;
         hirelingList.npc=npcId(*service.source);
+        hirelingList.offerRevision=service.revision;
+        hirelingList.replacing=world.hireling.has_value() || world.deadHirelingName.has_value();
+        hirelingList.hirePending=service.pending==OnlineHirelingAction::Hire;
+        hirelingList.hired=service.completed==OnlineHirelingAction::Hire && service.result==5;
+        if(!service.listReceived) return;
         const auto npc=world.units.find({1,*service.source});
         if(npc==world.units.end() || !npc->second.classId) return;
         for(const auto &[name,seed]:service.offers) {

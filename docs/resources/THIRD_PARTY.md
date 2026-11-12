@@ -2,6 +2,12 @@
 
 本页维护来源、固定版本、原版依据入口与许可；当前实现及缺口见[基线](../../BASELINE.md)和对应专题。原版参考保留版本、函数／地址、条件及关键行为，不依赖临时目录长期存在；构建、自研运行和包身份仅在当次交付中说明。理解规则与调用链优先读本地D2MOO，资源和参数取当前MPQ；发现版本差异、可疑常量或行为矛盾后再定点核对原版DLL，不把反汇编逐条推读作为默认入口。参考附带表不能代替用户资源。客户端正式运行不加载参考仓库或原游戏DLL，也不移植服务端结算。
 
+## 普通移动时钟与宠物后备路径
+
+本机1.13c D2Client MD5 `f5860c629d309b8fc1f96174babcf633`（ImageBase `0x6fab0000`）：RVA A8110按单位表调用A4DA0，A4DA0从桶0遍历至127并沿Unit+E4链推进；A65F3–A662A按GUID降序插入桶链，普通同步玩家先于同步怪物。2B1E0分派玩家1C150／怪物4F4A0。该证据支持普通路径的逐tick、逐桶顺序，不能替代专用本地单位、飞弹、收包和图形回调全链核对。
+
+同版本D2Game MD5 `978f6f74cd031bce6ecee602cd5988cc`（ImageBase `0x6fc20000`）：AI表Fn067入口RVA1E900，分到1E640近战／1E3D0法师。无目标／城镇分支1E853–1E857和1E579–1E581以宠物为唯一单位参数调用F29B0；F29B0读取该单位DynamicPath坐标并在自身周围抽点。PetMove的1CD8D／1D0C5／1D109／1D2CB及PETAI的1D549／1D805／1D842／1DA2A也调用F29B0；motion5的1D310／1DA82调用F2870，保留主人体坐标。D2MOO将前述分支转录成WanderToTarget(owner)，与本机指令不同；D2Decomp的pet-ai描述可作旁证。宿主全局顺序以D2MOO Game::GAME_UpdateProgress、Event::EVENT_IterateEvents为依据：待处理房间在事件前，发布及休眠维护在后；普通近战按SUnit目标身份、SUnitDmg距离／碰撞资格执行，不以LevelID相等代替距离。源码接入和未认证边界见[移动审计](../modules/MAP.md#移动一致性审计边界)、[死灵](../gameplay/skills/NECROMANCER.md)、[佣兵](../gameplay/characters/HIRELINGS.md)。
+
 ## 客户端UsedSkill与重定位淡入
 
 本机零售1.13c D2Client MD5 `f5860c629d309b8fc1f96174babcf633`、ImageBase `0x6fab0000`；D2Common MD5 `ee1238806ef6d6d9801d12a09d128fe1`、ImageBase `0x6fd50000`。以下RVA为同版本只读机器码核对，不沿用D2MOO的1.10f地址。
@@ -130,6 +136,8 @@ REA属于开发期分析工具，不进入D2X构建或玩法依赖。上述快�
 本人位置纠偏另核对同一D2Game（MD5 `978f6f74cd031bce6ecee602cd5988cc`，ImageBase `0x6fc20000`）：RVA4A6E0的4A768–4A777只写第一个失效纠偏记录并返回；本地D2MOO `CLIENTS_NotifyWarpAttempt`缺少该退出，不能照抄其填满五槽的行为。4A660检查五条记录的2250帧有效期；CFE67初始化125帧，CFE75–CFE7A只允许`Game+6A == 0`进入长冷却，CFE7C–CFE94推进玩家单位+20／+24种子，表FB170为50%／1500、25%／3000、25%／4500帧。D2X单机nativeGameType=1、TCP/IP=2，不适用该长冷却。原DLL与反汇编仅只读取证；源码及未运行边界见[本人位置回包](../modules/MAP.md#本人位置回包)。
 
 普通路径重算定点核对同快照D2Common（MD5 `ee1238806ef6d6d9801d12a09d128fe1`，ImageBase `0x6fd50000`）：RVA36230对应D2Common_10142，362B6–362C6读取既有定点坐标的整数部分，3644E／36459清路径索引／点数，不将位置重置为整数中心；普通新命令入口参考D2MOO `PlrModes::StartXY／StartID→sub_6FC7F600`。RVA DB70的DC07–DC31确认活目标相对tPrevTargetCoord任一轴大于5才立即重算；DC46–DC61的路径耗尽／final坐标分支也适用于物件，与本地D2MOO转录把该分支只放在活目标内不同。原二进制与反汇编留忽略目录`artifacts/single-movement-sync-analysis-20261103/original-path-update-disassembly.txt`；不据局部修正认证全部路径生命周期。
+
+IDAStar0／16补齐以同一Common的RVA70650／70840／708F0／70BB0／70E40为准：房间高度、最大FScore、缓存代价比较以及新子节点方向基准均按指令纠正D2MOO转录，算法／随机消费边界见[移动审计](../modules/MAP.md#移动一致性审计边界)。d2decomped参考的是1.14d，其components/rules/monsters.hpp与tools/emu/moves.py用于交叉理解Toward／Straight／AStar和追踪资格，本轮没有运行其模拟器，也没有将GPL实现复制进D2X。1.13c DB70的DC46公共耗尽判断与其描述相符，不采用D2MOO把非活体目标直接送入每帧重算的转录结构。Common 34F50确认搜索距离写入前夹到77；Stream #10018／#11112的本机Client／Game导入和Common直接引用检查均为空，不能仅凭导出名推断现有技能在用类型16。
 
 城镇技能资格定点核对同快照D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）：RVA19350–193A9读取技能记录，19382经C1F0调用D2Common ordinal10331（UNITS_GetRoom），1938D–19395检查Skills的InTown位并经C208调用ordinal10057。该Common导出RVA3C390读取Room1的RoomEx／level后判城镇，与D2MOO `DUNGEON_IsRoomInTown`相符；没有在此分支读取独立“启用技能”网络位。服务端对应`SKILLS/Skills.cpp`的技能执行入口同样以实际单位房间和InTown拒绝城镇施法。实机出城包型与预测差异的范围见[调试导航缺口](../development/DEBUG_AI.md#待验收调试导航)；这不认证全部输入／边界时序。
 

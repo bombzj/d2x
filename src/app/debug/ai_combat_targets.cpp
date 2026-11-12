@@ -23,7 +23,7 @@ bool DebugAi::Impl::selectCombatTarget(Context &c,const Goal &goal,bool nearbyDe
     const bool collecting=step && step->action==QuestAction::SearchDrop && (pickup || observedDrop(c,step->item));
     const bool seekingElite=!nearbyDefense && routeDrop==RouteDrop::Seek && !clearing && !targetedDrop && !questState.questRun.pending && !questState.questRun.worldWait &&
         !questTransaction(c) && !objectIssued && !pickup && !portalIssued;
-    const bool fastTravel=(mobilityPolicy.mode=="teleport" || navigation.townExitArea || teleportAvailable(c,false)) && !clearing && !nearObjective;
+    const bool fastTravel=(mobilityPolicy.mode=="teleport" || teleportAvailable(c,false)) && !clearing && !nearObjective;
     const bool walkingTransit=c.walk.active() && bool(navigation.walkIntent) && !clearing && !nearObjective &&
         !battle.retreatPoint && !battle.combatRun.reposition && !battle.combatRun.kitePoint &&
         !navigation.walkIntent.purpose.value_or(std::string{}).starts_with("combat-");

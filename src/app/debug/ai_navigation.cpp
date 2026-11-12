@@ -982,9 +982,13 @@ bool DebugAi::Impl::approachPoint(Context &c,OnlinePoint hint,std::string purpos
     auto *memory=observeTerrain(c);if(!memory || !area) {wait("known-target-observation","Waiting for observed terrain");return true;}
     if(sameGoal && navigation.approachFrontier && bool(navigation.walkIntent) && navigation.walkIntent.purpose.value_or(std::string{})=="known-target-memory" &&
         (navigation.walkIntent.point?navigation.walkIntent.point->x:0)==navigation.approachFrontier->x && (navigation.walkIntent.point?navigation.walkIntent.point->y:0)==navigation.approachFrontier->y) {
-        // Range alone cannot revoke a relay. Readiness or the checked nearby
-        // NPC ray above can; otherwise retain the existing observation leg.
-        if(c.walk.active()) {wait("known-target-approach",purpose);return true;}
+        // Extend a geometric relay before its last few cells, while the
+        // current native path is still moving. Observation and interaction
+        // endpoints retain their own arrival/receipt requirements.
+        const bool extend=c.walk.active() && !interaction && !navigation.approachObservation.passage &&
+            *navigation.approachFrontier!=navigation.approachObservation.endpoint &&
+            distance(currentCell,{float(navigation.approachFrontier->x),float(navigation.approachFrontier->y)})<=6;
+        if(c.walk.active() && !extend) {wait("known-target-approach",purpose);return true;}
         const auto child=c.walk.observe();const auto state=child.state;
         if(state==DebugWalkState::NeedsReplan) {
             navigation.approachObservation.relayRecovery=OnlinePoint{uint16_t(feet.first),uint16_t(feet.second)};
@@ -993,7 +997,8 @@ bool DebugAi::Impl::approachPoint(Context &c,OnlinePoint hint,std::string purpos
             note("known-target-relay-replan",Json{{"target",{hint.x,hint.y}},
                 {"direction",navigation.approachObservation.passage},{"walk",c.walk.snapshot()}}.dump());
         }
-        const bool failed=state==DebugWalkState::Failed;cancelWalk(c);
+        const bool failed=state==DebugWalkState::Failed;
+        if(!extend) cancelWalk(c);
         if(failed) {
             auto &observation=navigation.approachObservation;
             const auto at=c.observation.read().world.playerPosition.value_or(OnlinePoint{uint16_t(feet.first),uint16_t(feet.second)});
@@ -1131,13 +1136,103 @@ bool DebugAi::Impl::tryTeleportAcrossExit(Context &c,uint16_t to) {
     return true;
 }
 bool DebugAi::Impl::approachWalkingConnection(Context &c,uint16_t destination) {
-    observeTerrain(c);
+    const auto *memory=observeTerrain(c);
     const auto connection=c.walk.navigationSearch().walkingConnection(c.town,c.position,destination);
     if(!connection.bearing) return false;
+    const auto origin=c.town.read().origin;
+    if(!memory || !origin) return true;
+    const Vec offset{float(origin->x),float(origin->y)};
+    const auto live=c.town.navigationGrid(c.observation.read());
+    const auto feet=DebugExplorationMemory::playerCell(c.position);
+    const Vec startCell{float(feet.first),float(feet.second)};
+    const auto local=[&](OnlinePoint at) {return Vec{float(at.x),float(at.y)}-offset+Vec{.5f,.5f};};
+    const auto inDestination=[&](OnlinePoint at) {
+        const auto owner=memory->terrainLevels.find({at.x/5,at.y/5});
+        return owner!=memory->terrainLevels.end() && owner->second==destination;
+    };
+    // The seam is an alternative set of openings, not a mandatory exact
+    // waypoint. As soon as a local crossing is executable, click acquired
+    // floor beyond it without first stopping on the source-side cell.
+    std::vector<OnlinePoint> crossings;
+    for(const auto &opening:connection.openings) if(opening.crossing) {
+        const int dx=int(opening.crossing->x)-opening.point.x,dy=int(opening.crossing->y)-opening.point.y;
+        for(int depth:{2,1}) {
+            const int x=int(opening.crossing->x)+dx*depth,y=int(opening.crossing->y)+dy*depth;
+            if(x<0 || y<0 || x>65535 || y>65535) continue;
+            const OnlinePoint at{uint16_t(x),uint16_t(y)};
+            if(distance(startCell,{float(x),float(y)})>18 || !inDestination(at) ||
+                !memory->stand(x,y) || !live.nativeMovementSegment(local(*opening.crossing),local(at),playerMovement)) continue;
+            crossings.push_back(at);
+        }
+    }
+    const bool crossingIntent=navigation.walkIntent.purpose.value_or(std::string{})=="walking-connection-crossing" &&
+        navigation.walkIntent.level==destination;
+    std::stable_sort(crossings.begin(),crossings.end(),[&](OnlinePoint a,OnlinePoint b) {
+        const bool retainedA=crossingIntent && navigation.walkIntent.point==a;
+        const bool retainedB=crossingIntent && navigation.walkIntent.point==b;
+        if(retainedA!=retainedB) return retainedA;
+        return distance(c.position,{float(a.x),float(a.y)})<distance(c.position,{float(b.x),float(b.y)});
+    });
+    const Vec from=c.position-offset+Vec{.5f,.5f};
+    for(const auto at:crossings) {
+        const auto path=live.nativePlayerPath(from,local(at),playerMovement);
+        if(path.empty()) continue;
+        const auto end=path.back()+offset;
+        if(end.x<0 || end.y<0 || end.x>=65536 || end.y>=65536) continue;
+        const OnlinePoint reached{uint16_t(end.x),uint16_t(end.y)};
+        // A native coordinate path may stop one cell short. Its actual last
+        // cell must still cross the boundary, not stop beside an occupied lip.
+        if(!inDestination(reached) || distance({float(reached.x),float(reached.y)},{float(at.x),float(at.y)})>1) continue;
+        if(!crossingIntent || navigation.walkIntent.point!=at || !c.walk.active()) {
+            note("walking-connection-route",Json{{"destination",destination},{"from",{c.position.x,c.position.y}},
+                {"target",{at.x,at.y}},{"nativeEndpoint",{reached.x,reached.y}},{"reselected",crossingIntent}}.dump());
+            if(!c.walk.active()) cancelWalk(c);
+        }
+        navigation.travelDiagnostics["result"]="live-walking-crossing";
+        navigation.travelDiagnostics["crossingTarget"]={at.x,at.y};
+        navigation.travelPhase=TravelPhase::WalkExit;
+        wait("travel-crossing","Walking through a currently clear opening to "+std::to_string(destination));
+        walk(c,{.goal=DebugWalkGoal::Point,.point=at,.level=destination,.interact=false,
+            .purpose="walking-connection-crossing",.routeRelay=true});
+        return true;
+    }
     std::vector<DebugExplorationMemory::Cell> stances;
-    for(const auto &opening:connection.openings) stances.emplace_back(opening.point.x,opening.point.y);
-    navigation.travelDiagnostics["connectionOpenings"]=stances.size();
+    const bool blockedApproach=c.walk.blockedByUnit() && navigation.approachFrontier &&
+        navigation.walkIntent.purpose.value_or(std::string{})=="known-target-memory" &&
+        navigation.walkIntent.point==navigation.approachFrontier &&
+        *navigation.approachFrontier==navigation.approachObservation.endpoint;
+    const auto residentFootprint=[&](Vec position) {
+        for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx)
+            if(nativeCollisionSizeCell(playerMovement.size,dx,dy) &&
+                live.movementMask(int(position.x)+dx,int(position.y)+dy)==0xffff) return false;
+        return true;
+    };
+    for(const auto &opening:connection.openings) {
+        // The child already tried a local native bypass. Its endpoint can
+        // be empty while the way to it is blocked; reconsider other openings
+        // now instead of retaining that point until the child times out.
+        if(blockedApproach && opening.point==navigation.approachFrontier) continue;
+        const auto at=local(opening.point);
+        // Only current, resident occupancy can veto an approach. This
+        // execution choice never marks an opening as impassable terrain.
+        const bool resident=distance(c.position,{float(opening.point.x),float(opening.point.y)})<=18 &&
+            residentFootprint(at) && (!opening.crossing || residentFootprint(local(*opening.crossing)));
+        if(resident && (!live.walkable(at,playerMovement) || (opening.crossing &&
+            !live.nativeMovementSegment(at,local(*opening.crossing),playerMovement)))) continue;
+        stances.emplace_back(opening.point.x,opening.point.y);
+    }
+    navigation.travelDiagnostics["connectionOpenings"]=connection.openings.size();
+    navigation.travelDiagnostics["availableConnectionOpenings"]=stances.size();
     navigation.travelDiagnostics["connectionBearing"]={connection.bearing->x,connection.bearing->y};
+    if(!connection.openings.empty() && stances.empty()) {
+        wait("walking-connection-blocked","All observed openings are currently occupied; waiting for a clear route");
+        return true;
+    }
+    if(crossingIntent || blockedApproach) {
+        cancelWalk(c);navigation.approachFrontier.reset();
+        navigation.suppressedHints.erase({connection.bearing->x,connection.bearing->y});
+        note("walking-connection-replan","Selecting another observed opening from current unit occupancy");
+    }
     const auto purpose="walking connection to "+std::to_string(destination);
     const bool pending=approachPoint(c,*connection.bearing,purpose,0,false,{},std::move(stances));
     // Preserve normal failed-edge recovery when the shared planner proves no
@@ -1332,7 +1427,7 @@ bool DebugAi::Impl::travel(Context &c,uint16_t destination,bool allowWaypoint) {
             cancelWalk(c);navigation.travelPhase=TravelPhase::Route;navigation.legUnit.reset();note("exit-assignment-withdrawn");return false;
         }
         if(!warp && tryTeleportAcrossExit(c,*navigation.legDestination)) return false;
-        if(!warp && !c.walk.active() && approachWalkingConnection(c,*navigation.legDestination)) return false;
+        if(!warp && approachWalkingConnection(c,*navigation.legDestination)) return false;
         if(!warp && bool(navigation.walkIntent) && navigation.walkIntent.goal==DebugWalkGoal::Exit && c.walk.observe().state==DebugWalkState::Failed) {
             auto &failures=navigation.failedWalkEdges[{*area,*navigation.legDestination}];
             failures=std::min(failures+1,16u);
@@ -1490,9 +1585,9 @@ bool DebugAi::Impl::travel(Context &c,uint16_t destination,bool allowWaypoint) {
     const auto connection=travelLeg(c,*area,*navigation.legDestination,c.position);
     if(connection.unit) {navigation.legUnit=connection.unit;navigation.travelPhase=TravelPhase::WarpExit;return false;}
     if(approachTownGate(c,*navigation.legDestination) || openDoor(c)) return false;
-    if(approachKnown(c,Selector{5,*navigation.legDestination,"known connection to "+std::to_string(*navigation.legDestination)})) return false;
     const auto edges=c.town.walkingBoundaries();
     const bool walkingEdge=std::any_of(edges.begin(),edges.end(),[&](const auto &edge){return edge.destination==navigation.legDestination;});
+    if(!walkingEdge && approachKnown(c,Selector{5,*navigation.legDestination,"known connection to "+std::to_string(*navigation.legDestination)})) return false;
     if(!walkingEdge) {
         auto hints=c.town.automapEntrancePositions(*area);
         std::stable_sort(hints.begin(),hints.end(),[&](OnlinePoint first,OnlinePoint second) {

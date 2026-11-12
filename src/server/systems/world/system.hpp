@@ -125,5 +125,6 @@ class System {
     bool prepareClientRoom(RegionId, Vec);
     void changeClientRoom(PlayerId, uint64_t tick); // Current entered player, including initial admission.
     StepStatus step(TickContext, FrameFacts &);
+    StepStatus maintainRooms(TickContext);
 };
 }

@@ -238,6 +238,7 @@ struct OnlineHirelingService {
     uint64_t interaction{}, revision{};
     std::map<uint16_t,uint32_t> offers;
     std::optional<OnlineHirelingAction> pending;
+    std::optional<OnlineHirelingAction> completed;
     uint64_t requestedMilliseconds{};
     bool listReceived{};
     std::optional<uint8_t> result;

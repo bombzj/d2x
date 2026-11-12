@@ -99,6 +99,7 @@ Grid System::navigationGrid(RegionId region,EntityId self,EntityId target) const
     Grid view;
     view.width=terrain->width;view.height=terrain->height;
     view.neighbours=terrain->neighbours;
+    view.navigationRooms=terrain->navigationRooms;
     view.obstacleRevision=terrain->obstacleRevision;view.missileCollisionRevision=terrain->missileCollisionRevision;
     Vec navigationOrigin;auto navigation=terrain->linkedNavigation(navigationOrigin);
     auto query=std::make_shared<CollisionQuery>(ports_.areas,self,target,targetFootprint(target));

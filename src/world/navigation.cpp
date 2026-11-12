@@ -20,13 +20,13 @@ int nativeDirectionIndex(int dx, int dy) {
     dx = std::clamp(dx, -2, 2);
     return dy < -1 ? 5 * dx + 10 : std::min(dy, 2) + 5 * dx + 12;
 }
-std::optional<Vec> preparedPlayerTarget(const Grid &grid, Vec from, Vec to, MovementCollisionRule rule) {
+std::optional<Vec> preparedPathTarget(const Grid &grid, Vec from, Vec to, MovementCollisionRule rule) {
     const int sx = int(std::floor(from.x)), sy = int(std::floor(from.y));
     int x = int(std::floor(to.x)), y = int(std::floor(to.y));
     if (grid.movementClear(x, y, rule)) return to;
-    // Straight's 0x1000 policy in D2MOO Path::D2Common_10142 and
+    // Types 0/1/7's 0x1000 policy in D2MOO Path::D2Common_10142 and
     // PathMisc::PATH_PreparePathTargetForPathUpdate (MIT; docs/licenses/D2MOO.txt).
-    // Three cardinal rays start at the obstructed target, towards the player.
+    // Three cardinal rays start at the obstructed target, towards the unit.
     constexpr std::array<std::array<int, 3>, 25> priorities{{
         {4,6,-1},{4,6,-1},{4,2,6},{4,2,-1},{4,2,-1},
         {6,4,-1},{4,6,-1},{4,2,6},{4,2,-1},{2,4,-1},
@@ -284,6 +284,30 @@ bool Grid::navigationContains(Vec point) const {
     return point.x >= 0 && point.y >= 0 && point.x < view.width && point.y < view.height &&
         view.movementMask(int(std::floor(point.x)), int(std::floor(point.y))) != 0xffff;
 }
+std::optional<RoomBounds> Grid::navigationRoom(Vec point) const {
+    if(!std::isfinite(point.x) || !std::isfinite(point.y)) return {};
+    if(!neighbours.empty()) {
+        Vec origin;const auto view=linkedNavigation(origin);
+        auto room=view.navigationRoom(point-origin);
+        if(room) {room->x+=int(origin.x);room->y+=int(origin.y);}
+        return room;
+    }
+    const auto lookup=[](const Grid &grid,Vec local)->std::optional<RoomBounds> {
+        if(!grid.navigationRooms || local.x<0 || local.y<0 || local.x>=grid.width || local.y>=grid.height ||
+           grid.movementMask(int(std::floor(local.x)),int(std::floor(local.y)))==0xffff) return {};
+        // RoomLayout gives later rectangles ownership of shared cells.
+        for(auto room=grid.navigationRooms->rbegin();room!=grid.navigationRooms->rend();++room)
+            if(local.x>=room->x && local.y>=room->y && local.x<room->x+room->width && local.y<room->y+room->height)
+                return *room;
+        return {};
+    };
+    if(navigationSources.empty()) return lookup(*this,point);
+    for(const auto &source:navigationSources) {
+        auto room=lookup(*source.grid,point+Vec{float(source.offsetX),float(source.offsetY)});
+        if(room) {room->x-=source.offsetX;room->y-=source.offsetY;return room;}
+    }
+    return {};
+}
 uint64_t Grid::navigationRevision() const {
     if (neighbours.empty()) return obstacleRevision*0x100000001b3ULL+missileCollisionRevision;
     Vec origin; const auto view = linkedNavigation(origin);
@@ -383,20 +407,41 @@ std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule r
         if(*doorOrientation==1) to.y+=std::floor(from.y)>=std::floor(to.y)?2.f:-2.f;
         else to.x+=std::floor(from.x)>=std::floor(to.x)?2.f:-2.f;
     }
-    const auto target = preparedPlayerTarget(*this, from, to, rule);
-    return target ? nativeUnitPath(from,*target,7,73,rule,targetType!=255,targetType==2 || targetType==4?2:1)
-                  : std::deque<Vec>{};
+    return nativeUnitPath(from,to,7,73,rule,targetType!=255,targetType==2 || targetType==4?2:1);
 }
-std::deque<Vec> Grid::nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t maxDistance, MovementCollisionRule rule, bool unitTarget, uint8_t targetTolerance) const {
+std::deque<Vec> Grid::nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t maxDistance, MovementCollisionRule rule, bool unitTarget, uint8_t targetTolerance, const NativePathSearch *search) const {
     const CollisionQueryScope collisionScope{*this};
     if (!neighbours.empty()) {
         Vec origin; const auto view = linkedNavigation(origin);
-        auto route = view.nativeUnitPath(from - origin, to - origin, type, maxDistance, rule, unitTarget, targetTolerance);
+        auto translated=search?std::optional{*search}:std::nullopt;
+        if(translated) {
+            translated->startRoom.x-=int(origin.x);translated->startRoom.y-=int(origin.y);
+            if(translated->targetRoom) {translated->targetRoom->x-=int(origin.x);translated->targetRoom->y-=int(origin.y);}
+        }
+        auto route = view.nativeUnitPath(from - origin, to - origin, type, maxDistance, rule, unitTarget, targetTolerance,
+            translated?&*translated:nullptr);
         for (auto &point : route) point = point + origin;
         return route;
     }
     if (rule.size<0 || rule.size>3 || !navigationContains(from) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
         to.x < 0 || to.y < 0 || to.x >= width || to.y >= height) return {};
+    // Common 10142 rejects a same-cell destination and either axis >100
+    // before preparing the target. PATH_SetNewDistance clamps to 77.
+    const int deltaX=int(std::floor(to.x))-int(std::floor(from.x));
+    const int deltaY=int(std::floor(to.y))-int(std::floor(from.y));
+    if((!deltaX && !deltaY) || std::abs(deltaX)>100 || std::abs(deltaY)>100) return {};
+    maxDistance=std::min(maxDistance,uint8_t(77));
+    // Common 1.13c 36408-36440 applies this before dispatching IDAStar,
+    // AStar or Straight, including NPC paths. Preparing only player paths
+    // lets authority send a partial endpoint from an obstructed NPC goal;
+    // the client then traces a different ray to that endpoint.
+    if(type==0 || type==1 || type==7) {
+        const auto target=preparedPathTarget(*this,from,to,rule);
+        if(!target) return {};
+        to=*target;
+    }
+    if(type==0 || type==16)
+        return search?nativeIdaStarPath(from,to,type,rule,targetTolerance,*search):std::deque<Vec>{};
     if(type==1) return nativeAStarPath(from,to,rule,unitTarget);
     if(type==15) return nativeWallFollowPath(from,to,unitTarget?std::max(uint8_t(40),maxDistance):maxDistance,rule);
     if(type==5 || type==6) return nativeMonsterCirclePath(from,to,maxDistance,type==5?1:-1,rule);

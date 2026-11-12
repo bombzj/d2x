@@ -209,10 +209,13 @@ struct NavigationState {
         std::optional<float> seconds;
     } teleportTiming;
     std::optional<OnlinePoint> mobilityTarget;Vec mobilityFrom;
+    // First field cast after leaving town: a failed attempt yields to one
+    // ordinary walking cell, rather than imposing a stationary cooldown.
+    std::optional<uint16_t> departureArea;
+    std::optional<OnlinePoint> departureRetryFrom;
     std::optional<OnlinePoint> mobilityGoal;uint16_t mobilityArea{};
     std::vector<Vec> mobilityRoute;float mobilityRouteProgress{},mobilityPendingProgress{},mobilityRouteLength{};
     Clock::time_point mobilityDeadline{},nextMobility{},lastSelection{},exitRetryAt{};
-    std::optional<uint16_t> townExitArea;Clock::time_point townExitObserveUntil{};
     std::map<std::tuple<uint16_t,uint16_t,uint16_t,uint16_t,uint16_t>,unsigned> mobilityTrials;
     struct RouteCombatTask {
         std::map<OnlineUnitKey,uint64_t> targets;

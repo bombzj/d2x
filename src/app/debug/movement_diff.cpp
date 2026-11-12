@@ -70,8 +70,15 @@ Json encode(const NpcSample &sample) {
             entry["position"]=point(client->position);
             entry["positionSource"]=client->predicted?"path":"packet";
             entry["cell"]=Json::array({std::floor(client->position.x+.5f),std::floor(client->position.y+.5f)});
+            entry["collisionMask"]=client->collisionMask;
+            entry["collisionPattern"]=client->collisionPattern?Json(*client->collisionPattern):Json(nullptr);
             entry["next"]=point(client->next);entry["end"]=point(client->end);
             entry["moving"]=client->predicted?Json(client->moving):Json(nullptr);
+            entry["pathType"]=client->pathType?Json(*client->pathType):Json(nullptr);
+            entry["plannedFrom"]=point(client->plannedFrom);entry["plannedGoal"]=point(client->plannedGoal);
+            entry["plannedEnd"]=point(client->plannedEnd);
+            entry["pathResult"]=client->pathResult;entry["collisionReplans"]=client->collisionReplans;
+            entry["positionCheckResult"]=client->positionCheckResult;entry["stopApproach"]=client->stopApproach;
             result["positionError"]=distance(client->position,host.position);
         }
     }

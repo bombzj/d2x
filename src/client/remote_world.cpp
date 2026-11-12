@@ -1192,6 +1192,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     case 0x81: {
         const auto type=r.u8();const auto monsterClass=r.u16();const auto owner=r.u32(),id=r.u32(),seed=r.u32(),name=r.u32();r.finish();
         if(type==7 && owner==v.load.playerUnitId) {
+            if(w.hireling && w.hireling->id!=id) {
+                const auto old=w.hireling->id;
+                w.pets.erase(old);
+                removeRemotePlayerItems(w,old,1);
+            }
             if(!w.hireling || w.hireling->id!=id) w.hireling=OnlineHireling{id,owner,seed,name,monsterClass,{}};
             else {w.hireling->seed=seed;w.hireling->name=name;w.hireling->monsterClass=monsterClass;}
             // PlayerPets uses 0x81 instead of 0x7A to assign the owner's hireable.
@@ -1226,8 +1231,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         result.revision = w.revision; w.tradeResult = result;
         auto &service=w.hirelingService;
         if(service.pending && *service.pending!=OnlineHirelingAction::List && service.interaction==w.interactionGeneration) {
+            service.completed=service.pending;
             service.result=result.result;service.pending.reset();service.revision=w.revision;
-            if(result.result==5) {service.offers.clear();service.listReceived=false;}
+            if(service.completed==OnlineHirelingAction::Hire && result.result==5) {service.offers.clear();service.listReceived=false;}
         }
         // Wallet replication uses 0x19 / 0x1D-E-F. Applying this receipt as well
         // would count a following positive gold increment twice on a sale.

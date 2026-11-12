@@ -62,13 +62,13 @@ struct MonsterRecord {
     bool switchAi = false;
     bool castsShadow = false, corpseSelectable = false, revivable = false, soft = false;
     bool demon = false, undead = false, ownsParty = false, primeEvil = false;
-    bool flying = false;
+    bool flying = false, opensDoors = false;
     int corpseSize = 1;
     std::array<std::string, 2> minions;
     MovementCollisionRule movementRule() const {
         // PATH_AllocDynamicPath: Wraith's small pattern ignores walls, flying
         // uses barriers. Door opening still requires a separate object action.
-        return monsterMovementCollision(base == "wraith1", flying, false, collisionSize);
+        return monsterMovementCollision(base == "wraith1", flying, opensDoors, collisionSize);
     }
     MovementCollisionRule spawnRule() const {
         // MonsterSpawn uses MonStats2.spawnCol and CheckMaskWithSize, not

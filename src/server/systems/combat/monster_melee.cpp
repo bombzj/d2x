@@ -20,7 +20,7 @@ DomainResult<> System::monsterMelee(EntityId source,EntityId target,const Monste
         if(!unit || !unit->alive() || !caster || !caster->programs()) return {DomainStatus::InvalidActor,{}};
         const auto &rules=*caster->programs();
         const Participants participants{ports_.players,ports_.monsters,ports_.social};
-        if(!participants.find(target).aliveIn(unit->area) || !participants.canHarm(source,target)) return {DomainStatus::Unavailable,{}};
+        if(!ports_.monsters.targetPosition(target,unit->area) || !participants.canHarm(source,target)) return {DomainStatus::Unavailable,{}};
         const auto stats=ports_.effects.unitStatValues(source,tick.tick,
             unit->petWeapon && unit->petWeapon->item?std::optional{unit->petWeapon->item}:std::nullopt,program.modeStats);
         if(!stats) return {DomainStatus::Unavailable,{}};

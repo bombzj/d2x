@@ -428,7 +428,7 @@ struct DebugAi::Impl {
     void advance(Context &,std::string,bool skipped=false);
     void resetStep();
     void suspendExecution(Context &,Clock::duration);
-    void observeArea(Context &,Clock::time_point);
+    void observeArea(Context &);
     void prepareDecision(Context &);
     bool recoverSessionInput(Context &,Clock::time_point);
     void dispatchActions(Context &,const Goal &,Clock::time_point);

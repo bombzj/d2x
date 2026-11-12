@@ -9,7 +9,7 @@ namespace d2x::server {
 std::string_view Simulation::pendingPhase() const {
     constexpr std::array names{"environment","events","domains","rooms","population","actors","companions","skills",
         "movement","items","effects","combat","state-removals","trade","tail","death","services","objects",
-        "object-removals","modifiers","quests","quest-births","tower","publication","object-publication","unit-sounds"};
+        "object-removals","modifiers","quests","quest-births","tower","publication","object-publication","unit-sounds","room-maintenance"};
     return frame_?names.at(size_t(phase_)):"idle";
 }
 bool Simulation::step(TickContext tick, GameSystems &systems) {
@@ -35,7 +35,21 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
             run(SystemId::Attributes,[&]{return systems.attributes.refreshEnvironment(tick);});
             if(steps_[size_t(SystemId::Attributes)]==StepStatus::Blocked) return false;
         }
-        phase_=Phase::Events;
+        phase_=Phase::Domains;
+    }
+    if(phase_==Phase::Domains) {
+    run(SystemId::Social,[&]{systems.social.step(tick);return StepStatus::Complete;});
+    phase_=Phase::Rooms;
+    }
+    if(phase_==Phase::Rooms) {
+    run(SystemId::World,[&]{return systems.world.step(tick,facts_);});
+    if(systems.world.retiringRoom() || systems.world.awaitingRoomInputs()) return false;
+    phase_=Phase::Population;
+    }
+    if(phase_==Phase::Population) {
+    run(SystemId::Population,[&]{return systems.population.step(tick,facts_);});
+    if(steps_[size_t(SystemId::Population)]!=StepStatus::Complete) return false;
+    phase_=Phase::Events;
     }
     if(phase_==Phase::Events) {
         run(SystemId::Spatial,[&]{return systems.spatial.step(tick,facts_);});
@@ -60,24 +74,7 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
             completedNativeEvent_=0;
             return true;
         })) return false;
-        phase_=Phase::Domains;
-    }
-    if(phase_==Phase::Domains) {
-    run(SystemId::Social,[&]{systems.social.step(tick);return StepStatus::Complete;});
-    phase_=Phase::Rooms;
-    }
-    if(phase_==Phase::Rooms) {
-    run(SystemId::World,[&]{return systems.world.step(tick,facts_);});
-    if(systems.world.retiringRoom() || systems.world.awaitingRoomInputs()) return false;
-    // Retired actors can restore with the same GUID in Population. Their old
-    // dynamic-path seed must disappear before that new admission exists.
-    systems.missiles.releaseRetiredSources();
-    phase_=Phase::Population;
-    }
-    if(phase_==Phase::Population) {
-    run(SystemId::Population,[&]{return systems.population.step(tick,facts_);});
-    if(steps_[size_t(SystemId::Population)]!=StepStatus::Complete) return false;
-    phase_=Phase::Actors;
+        phase_=Phase::Actors;
     }
     if(phase_==Phase::Actors) {
     run(SystemId::Attributes,[&]{return systems.attributes.step(tick,facts_);});
@@ -182,6 +179,13 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
         if(steps_[size_t(SystemId::Monsters)]!=StepStatus::Complete) return false;
         run(SystemId::Replication,[&]{return systems.replication.flushUnitSounds(tick);});
         if(steps_[size_t(SystemId::Replication)]!=StepStatus::Complete) return false;
+        phase_=Phase::RoomMaintenance;
+    }
+    if(phase_==Phase::RoomMaintenance) {
+        run(SystemId::World,[&]{return systems.world.maintainRooms(tick);});
+        if(steps_[size_t(SystemId::World)]!=StepStatus::Complete) return false;
+        // Retired GUIDs can be restored by the next frame's Population.
+        systems.missiles.releaseRetiredSources();
     }
     phase_=Phase::Environment;frame_.reset();return true;
 }

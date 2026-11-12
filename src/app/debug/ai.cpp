@@ -538,7 +538,9 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"settlingRooms",population==navigation.populationMemory.end()?0:population->second.settlingRooms.size()},
             {"currentHostileHints",population==navigation.populationMemory.end()?0:population->second.enemies.size()}}},
         {"mobility",{{"mode",mobilityPolicy.mode},{"vigor",mobilityPolicy.vigor},{"distance",mobilityPolicy.distance},
-            {"waitingForPosition",navigation.mobilityTarget.has_value()}}},
+            {"waitingForPosition",navigation.mobilityTarget.has_value()},
+            {"departureArea",navigation.departureArea?Json(*navigation.departureArea):Json(nullptr)},
+            {"departureRetryFrom",navigation.departureRetryFrom?Json{navigation.departureRetryFrom->x,navigation.departureRetryFrom->y}:Json(nullptr)}}},
         {"supplies",{{"enabled",supplyPolicy.enabled},{"buy",supplyPolicy.buy},{"returnWhenEmpty",supplyPolicy.returnWhenEmpty},
             {"lifePercent",supplyPolicy.lifePercent},{"manaPercent",supplyPolicy.manaPercent},{"criticalLifePercent",supplyPolicy.criticalLifePercent},
             {"quiverCount",supplyPolicy.quiverCount},
@@ -942,7 +944,6 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,const Onli
             s.battle.combatLifeSamples.clear();s.battle.combatMaxLife.reset();
             s.battle.lastAttack={};s.battle.retreatUntil={};s.battle.retreatReady={};
             s.navigation.mobilityTarget.reset();s.navigation.mobilityHold=false;s.navigation.nextMobility={};s.navigation.lastSelection={};s.battle.nextArmorAttempt={};
-            s.navigation.townExitArea.reset();s.navigation.townExitObserveUntil={};
             s.supply.resetPlan();
             s.questState.resetPlan();s.battle.bypassedThreats.clear();
             s.questState.questRun.initialInventory=s.goals.front().kind==Impl::Kind::Quest &&

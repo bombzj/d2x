@@ -29,6 +29,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
     if (!binding || peer.phase != GamePhase::Entered) return;
     std::set<EntityId> visible;
     std::vector<Bytes> packets;
+    std::vector<Bytes> petAssignments;
     std::map<EntityId,Bytes> pets;
     std::map<EntityId,Bytes> petVitals;
     const auto recipient=host.read(*binding);
@@ -39,7 +40,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
         const auto prior=peer.pets.find(pet.id);
         if(prior==peer.pets.end() || prior->second!=packet) {
             if(prior!=peer.pets.end()) {auto removal=prior->second;removal[1]=0;packets.push_back(std::move(removal));}
-            packets.push_back(packet);
+            petAssignments.push_back(packet);
         }
         pets.emplace(pet.id,std::move(packet));
         // SCmd::sub_6FC3E200 sends monster 0x7F only to its owner, independently
@@ -50,7 +51,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
             });
             const auto previous=peer.petVitals.find(pet.id);
             if(prior==peer.pets.end() || prior->second!=pets.at(pet.id) || previous==peer.petVitals.end() || previous->second!=vitals)
-                packets.push_back(vitals);
+                petAssignments.push_back(vitals);
             petVitals.emplace(pet.id,std::move(vitals));
         }
     }
@@ -64,6 +65,15 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
             monsterProjection=MonsterProjection{recipient,host.visibleMonsters(*binding)};
         monsters=&monsterProjection->monsters;
     } else transient=host.visibleMonsters(*binding);
+    // Replacement retires the old hireable before publishing the new identity.
+    // A normal room exit or death can leave the same hireable registered.
+    const auto previousHireling=peer.hireling.actor;
+    if(previousHireling && peer.monsters.contains(previousHireling) &&
+        std::ranges::any_of(*monsters,[&](const auto &unit){return unit.hireling && unit.id!=previousHireling;})) {
+        packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(1);out.u32(wireId(previousHireling));}));
+        peer.monsters.erase(previousHireling);
+    }
+    packets.insert(packets.end(),std::make_move_iterator(petAssignments.begin()),std::make_move_iterator(petAssignments.end()));
     for (const auto &monster : *monsters) {
         visible.insert(monster.id);
         const auto origin = shared.terrain.at(binding->game).at(monster.area).origin;

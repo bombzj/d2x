@@ -68,7 +68,7 @@ std::optional<int> logicalRegion(const AreaStore &areas,RegionId source,Vec obse
 }
 bool walkNear(const Ports &ports,const monsters::Actor &body,Vec center,unsigned radius,uint8_t path=13) {
     auto random=body.combatRandom;
-    const auto point=monsterWanderPoint(center,int(radius),random);
+    const auto point=monsterWanderPoint(nativeFeetCell(center),int(radius),random)-Vec{.5f,.5f};
     ports.monsters.commitCombatRandom(body.id,random);
     monsters::MoveRequest request{body.id,{body.area,ports.areas.at(body.area).generation,point},{},0,75,false};
     request.pathSteps=1;request.pathType=path;request.pathDistance=body.pathDistance;
@@ -76,7 +76,7 @@ bool walkNear(const Ports &ports,const monsters::Actor &body,Vec center,unsigned
 }
 bool escapeFrom(const Ports &ports,const monsters::Actor &body,Vec target,unsigned radius,uint8_t path=13) {
     monsters::MoveRequest request{body.id,{body.area,ports.areas.at(body.area).generation,
-        monsterRetreatPoint(body.position,target,int(radius))},{},0,75,false};
+        monsterRetreatPoint(nativeFeetCell(body.position),nativeFeetCell(target),int(radius))-Vec{.5f,.5f}},{},0,75,false};
     request.pathSteps=1;request.pathType=path;request.pathDistance=radius>5?uint8_t(radius):body.pathDistance;
     return bool(ports.monsters.requestMove(request));
 }
@@ -105,7 +105,7 @@ void followOwnerNear(const Ports &ports,Companion &pet,const PlayerState &owner,
     if(rollRandom(random)&1) x=-x;
     if(rollRandom(random)&1) y=-y;
     ports.monsters.commitCombatRandom(body.id,random);
-    move(current+Vec{float(x),float(y)});
+    move(nativeFeetCell(body.position)+area.definition.origin+Vec{float(x),float(y)});
 }
 void followOwnerTrail(const Ports &ports,Companion &pet,const PlayerState &owner,
                       const monsters::Actor &body,int distance) {
@@ -128,9 +128,7 @@ void followOwnerTrail(const Ports &ports,Companion &pet,const PlayerState &owner
         if(move(*it,13,100,135,false) || move(*it,15,100,135,true)) return;
         if(!straight) {straight=true;if(move(*it,7,100,135,true)) return;}
     }
-    // This is the final native PETAI motion-1 WanderToTarget branch, not an
-    // extra search/teleport policy invented for failed bridge paths.
-    const auto ownerWorld=nativeFeetCell(owner.position)+ports.areas.at(owner.area).definition.origin;
+    // Retail PETAI motion-1 fallback calls WalkCloseToUnit, around the pet.
     const unsigned radius=unsigned(std::max(distance/4,4));
     int x=0,y=0;auto random=body.combatRandom;
     if(rollRandom(random)&1) {x=int(radius);y=int(limitedRandom(random,radius));}
@@ -138,7 +136,7 @@ void followOwnerTrail(const Ports &ports,Companion &pet,const PlayerState &owner
     if(rollRandom(random)&1) x=-x;
     if(rollRandom(random)&1) y=-y;
     ports.monsters.commitCombatRandom(body.id,random);
-    move(ownerWorld+Vec{float(x),float(y)},13,100,90,false);
+    move(bodyWorld+Vec{float(x),float(y)},13,100,90,false);
 }
 }
 std::optional<HirelingExperienceAward> System::experience(PlayerId owner,const monsters::Actor &victim) const {
@@ -188,7 +186,7 @@ DomainResult<> System::install(PreparedHireling prepared) {
     if(pending!=hirelingReplacements_.end() && pending->second.source.token==prepared.source.token && sameHirelingIdentity(pending->second.source.record,prepared.source.record)) {
         const auto *owner=ports_.players.find(prepared.source.actor.player);
         if(!owner || owner->actor!=pending->second.source.actor.actor || owner->inventoryRevision!=pending->second.source.inventoryRevision ||
-            owner->characterRevision!=pending->second.characterRevision || prepared.source.inventoryRevision!=owner->inventoryRevision)
+            (!pending->second.request && owner->characterRevision!=pending->second.characterRevision) || prepared.source.inventoryRevision!=owner->inventoryRevision)
             return {DomainStatus::Stale,{}};
         prepared.source=pending->second.source;pending->second.prepared=std::move(prepared);
         return {DomainStatus::Applied,std::monostate{}};
@@ -276,7 +274,7 @@ StepStatus System::synchronizeHirelings(TickContext tick) {
         const auto *player=ports_.players.find(id);
         if(!player || !player->entered || player->persistent.player.hp<=0 || player->actor!=pending.source.actor.actor ||
             player->area!=pending.source.actor.area || ports_.areas.at(player->area).generation!=pending.source.actor.areaGeneration ||
-            player->inventoryRevision!=pending.source.inventoryRevision || player->characterRevision!=pending.characterRevision) {
+            player->inventoryRevision!=pending.source.inventoryRevision || (!pending.request && player->characterRevision!=pending.characterRevision)) {
             hirelingReplacements_.erase(id);continue;
         }
         if(!pending.prepared) {blocked=true;continue;}
@@ -388,7 +386,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
     if(maintained && *maintained.value) return StepStatus::Complete;
     const int minimumDistance=pet.attackBias>16 && pet.attackBias<20?pet.attackBias:16;
     const int maximumDistance=pet.attackBias>16 && pet.attackBias<20?pet.attackBias*2:prepared.follow;
-    if(body->area!=p->area || distanceToOwner>maximumDistance) {
+    if(distanceToOwner>maximumDistance) {
         followOwnerTrail(ports_,pet,*p,*body,distanceToOwner);
         pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;
     }

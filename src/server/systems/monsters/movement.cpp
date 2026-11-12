@@ -27,10 +27,12 @@ int movementPercent(const Actor &actor,uint64_t) {
 }
 std::optional<std::pair<Vec,int>> System::targetPosition(EntityId id,RegionId area) const {
     for(const auto &[key,p]:ports_.players.all()) {
-        (void)key;if(p.actor==id && p.entered && p.area==area && p.persistent.player.hp>0) return std::pair{p.position,2};
+        (void)key;if(p.actor==id && p.entered && p.persistent.player.hp>0) return nativeTargetPosition(id,area);
     }
     const auto *m=find(id);
-    if(m && m->area==area && m->alive() && m->damageable()) return std::pair{m->position,m->rule.size};
+    // Native unit identity and range are independent of the level seam.
+    // Return coordinates in the caller's area, retaining live-target checks.
+    if(m && m->alive() && m->damageable()) return nativeTargetPosition(id,area);
     return {};
 }
 std::optional<std::pair<Vec,int>> System::nativeTargetPosition(EntityId id,RegionId region) const {
@@ -58,6 +60,23 @@ std::optional<std::pair<Vec,int>> System::nativeTargetPosition(EntityId id,Regio
 std::optional<MotionTarget> System::nativeTargetIdentity(EntityId id,RegionId region) const {
     if(!nativeTargetPosition(id,region)) return {};
     return MotionTarget{id,uint8_t(ports_.players.findActor(id)?0:find(id)?1:2)};
+}
+std::optional<NativePathSearch> System::pathSearch(const Actor &actor,Vec target) const {
+    const auto &area=ports_.areas.at(actor.area).definition;
+    constexpr Vec center{.5f,.5f};
+    const auto *start=area.activation.room(actor.position+center);
+    if(!start) return {};
+    const auto global=target+area.origin+center;
+    const auto room=ports_.areas.roomAtPosition(actor.area,actor.position+center,
+        int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
+    if(!room) return {};
+    const auto &destination=ports_.areas.at(room->area).definition;
+    const auto *end=destination.activation.room(global-destination.origin);
+    if(!end) return {};
+    auto bounds=*end;
+    bounds.x+=int(destination.origin.x-area.origin.x);
+    bounds.y+=int(destination.origin.y-area.origin.y);
+    return NativePathSearch{*start,bounds};
 }
 bool System::recacheMovementRoom(Actor &actor,Vec previous) {
     constexpr Vec center{.5f,.5f};
@@ -95,21 +114,23 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     }
     uint8_t pathType=request.circleTurn?1:request.pathType;
     // MonsterMode's default obstacle-search distance is 5; pet tactics supply
-    // their own 40/100 bounds. Circling is
+    // their own bounds (PATH_SetNewDistance clamps requests to 77). Circling is
     // published as AStar to its computed last point by SCmd, not as pursuit.
     if(request.circleTurn && (request.circleDistance<1 || request.circleDistance>UINT8_MAX))
         return {DomainStatus::InvalidRequest,{}};
     // AiTactics::sub_6FCD0E80 passes its circle radius through velocity
-    // parameters into PATH_SetMaxDistance; SCmd publishes that same value.
-    const uint8_t pathDistance=request.circleTurn?uint8_t(request.circleDistance):request.pathDistance;
-    if((pathType!=1 && pathType!=2 && pathType!=3 && pathType!=5 && pathType!=6 && pathType!=7 && pathType!=12 && pathType!=13 && pathType!=15) || !pathDistance)
+    // parameters into PATH_SetNewDistance; SCmd publishes the clamped value.
+    const uint8_t pathDistance=std::min(uint8_t(77),request.circleTurn?uint8_t(request.circleDistance):request.pathDistance);
+    if((pathType!=0 && pathType!=1 && pathType!=2 && pathType!=3 && pathType!=5 && pathType!=6 && pathType!=7 && pathType!=12 && pathType!=13 && pathType!=15) || (!pathDistance && pathType!=0))
         return {DomainStatus::InvalidRequest,{}};
     const Vec center{.5f,.5f};
+    const auto search=pathType==0?pathSearch(actor,request.destination.position):std::nullopt;
+    if(pathType==0 && !search) return {DomainStatus::Unavailable,{}};
     auto pathGrid=ports_.spatial.navigationGrid(actor.area,actor.id,
-        !request.circleTurn && (pathType==1 || pathType==7 || pathType==15)?request.target:EntityId{});
+        !request.circleTurn && (pathType==0 || pathType==1 || pathType==7 || pathType==15)?request.target:EntityId{});
     // A retained WallFollow path still needs its unit-target search bound.
-    auto route = request.circleTurn?pathGrid.nativeMonsterCirclePath(actor.position+center,request.destination.position+center,request.circleDistance,request.circleTurn,collision):
-        pathGrid.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision,bool(request.target));
+    auto route = request.circleTurn?pathGrid.nativeMonsterCirclePath(actor.position+center,request.destination.position+center,pathDistance,request.circleTurn,collision):
+        pathGrid.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision,bool(request.target),1,search?&*search:nullptr);
     if(route.empty() && !request.circleTurn && (pathType==2 || pathType==7 || pathType==13)) {
         // MonsterMode retries failed Toward paths with WallFollow. The
         // solver raises its search bound to 40 for a live unit target.
@@ -130,7 +151,7 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     // MonsterMode initializes PATH.nDistance independently of max distance.
     actor.pathRemaining=20;actor.pathPointsConsumed=0;
     actor.movementGoal = goal;
-    actor.stopDistance = request.pathSteps>0?request.pathSteps-1:request.stopDistance;
+    actor.stopDistance = request.pathSteps>0?(request.pathSteps<20?request.pathSteps-1:0):request.stopDistance;
     actor.velocityPercent = request.velocityPercent; actor.running = request.running; actor.moving = true;
     if(!actor.airborne) {actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;}
     ++actor.revision;
@@ -344,9 +365,10 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             auto type=actor.pathType;
             if(type==2 || type==13 || type==15) type=13;
             const Vec center{.5f,.5f};
+            const auto search=type==0?pathSearch(actor,target->first):std::nullopt;
             auto pathGrid=ports_.spatial.navigationGrid(actor.area,actor.id,
-                type==1 || type==7 || type==15?actor.movementTarget:EntityId{});
-            auto route=pathGrid.nativeUnitPath(actor.position+center,target->first+center,type,actor.pathDistance,collision,true);
+                type==0 || type==1 || type==7 || type==15?actor.movementTarget:EntityId{});
+            auto route=pathGrid.nativeUnitPath(actor.position+center,target->first+center,type,actor.pathDistance,collision,true,1,search?&*search:nullptr);
             if(route.empty() && type==13) {
                 type=15;
                 pathGrid=ports_.spatial.navigationGrid(actor.area,actor.id,actor.movementTarget);

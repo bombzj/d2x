@@ -57,7 +57,7 @@ bool DebugAi::Impl::selectSkill(Context &c,uint16_t skill,OnlineSkillHand hand) 
     return false; // A queued selection is never a confirmed hand assignment.
 }
 bool DebugAi::Impl::teleportAvailable(const Context &c,bool resourceReady) const {
-    return area && !navigation.townExitArea && !c.town.read().town && travelMobility(c,*area,resourceReady).first>0;
+    return area && !c.town.read().town && travelMobility(c,*area,resourceReady).first>0;
 }
 std::pair<int,bool> DebugAi::Impl::travelMobility(const Context &c,int level,bool resourceReady) const {
     // Price each leg in its own level: being in town does not prevent a
@@ -79,18 +79,11 @@ std::pair<int,bool> DebugAi::Impl::travelMobility(const Context &c,int level,boo
 }
 bool DebugAi::Impl::observeMobility(Context &c) {
     const auto now=Clock::now();const auto &world=c.observation.read().world;
-    // Observe the crossing independently of the movement chosen for it.
-    // A walking child must be able to unlock field casting with its receipt.
-    if(navigation.townExitArea && world.playerPosition) {
-        const auto at=*world.playerPosition;
-        const auto &rooms=c.town.navigationRooms();
-        if(std::any_of(rooms.begin(),rooms.end(),[&](const auto &room) {
-            return room.level==*navigation.townExitArea && at.x>=room.x && at.x<room.x+room.width &&
-                at.y>=room.y && at.y<room.y+room.height &&
-                world.rooms.contains({uint8_t(room.level),uint16_t(room.x/5),uint16_t(room.y/5)});
-        })) {
-            navigation.townExitArea.reset();
-            note("town-exit-position-observed","Server position now belongs to the field; travel casting is eligible");
+    if(navigation.departureRetryFrom) {
+        const auto feet=DebugExplorationMemory::playerCell(c.position);
+        if(feet.first!=navigation.departureRetryFrom->x || feet.second!=navigation.departureRetryFrom->y) {
+            navigation.departureRetryFrom.reset();
+            note("town-exit-retry-ready","Walking advanced one native cell; recheck normal Teleport eligibility");
         }
     }
     if(navigation.mobilityTarget) {
@@ -110,6 +103,7 @@ bool DebugAi::Impl::observeMobility(Context &c) {
             const bool releaseRelay=relocated && navigation.walkIntent.routeRelay &&
                 navigation.walkIntent.point==navigation.mobilityTarget;
             if(relocated) {
+                navigation.departureArea.reset();navigation.departureRetryFrom.reset();
                 auto &search=c.walk.navigationSearch();
                 const DebugExplorationMemory::Cell requested{navigation.mobilityTarget->x,navigation.mobilityTarget->y};
                 search.observeTeleportLanding(requested,DebugExplorationMemory::playerCell(at));
@@ -143,7 +137,13 @@ bool DebugAi::Impl::observeMobility(Context &c) {
         }
         if(now>=navigation.mobilityDeadline) {
             note("mobility-no-progress","No confirmed displacement; reconsider the next movement input");
-            navigation.mobilityTarget.reset();navigation.nextMobility=now+std::chrono::seconds(3);return false;
+            if(navigation.mobilityTeleport && navigation.departureArea==area) {
+                const auto feet=DebugExplorationMemory::playerCell(c.position);
+                navigation.departureRetryFrom=OnlinePoint{uint16_t(feet.first),uint16_t(feet.second)};
+                navigation.nextMobility=now;
+                note("town-exit-walk-retry","No displacement; continue the route for one cell before retrying Teleport");
+            } else navigation.nextMobility=now+std::chrono::seconds(3);
+            navigation.mobilityTarget.reset();navigation.mobilityHold=false;return false;
         }
         navigation.mobilityHold=true;wait("mobility-wait","Waiting for normal skill movement/position feedback");return true;
     }
@@ -197,7 +197,7 @@ std::optional<DebugAi::Impl::TeleportApproach> DebugAi::Impl::teleportLanding(Co
 
 bool DebugAi::Impl::recoverExplorationLanding(Context &c,const DebugExplorationMemory::Area &memory) {
     if(navigation.mobilityTarget) return true;
-    if(c.moving || Clock::now()<navigation.nextMobility || !teleportAvailable(c) ||
+    if(c.moving || navigation.departureRetryFrom || Clock::now()<navigation.nextMobility || !teleportAvailable(c) ||
         !canInput(c,DebugActionOwner::Mobility,DebugMotion|DebugSkill)) return false;
     const auto feet=DebugExplorationMemory::playerCell(c.position);
     const int range=mobilityPolicy.distance;
@@ -250,14 +250,12 @@ std::optional<float> DebugAi::Impl::kiteWalkSeconds(const Context &c,Vec destina
 
 bool DebugAi::Impl::mobility(Context &c) {
     if(navigation.mobilityTarget) return observeMobility(c);
+    if(navigation.departureRetryFrom) {
+        navigation.mobilityDiagnostics["skip"]="walking one cell after an unsuccessful departure cast";
+        return false;
+    }
     if(c.walk.openingRouteDoor()) return false;
     const auto now=Clock::now();const auto &world=c.observation.read().world;
-    if(navigation.townExitArea) {
-        navigation.mobilityHold=now<navigation.townExitObserveUntil;
-        wait("mobility-town-exit",navigation.mobilityHold?"Waiting briefly for the host's field position while the crossing completes":
-            "Walking into the field until the host position confirms the crossing");
-        return navigation.mobilityHold;
-    }
     const bool encounterMove=navigation.routeExecution && navigation.routeExecution->phase==RouteExecution::Phase::Relocate;
     const bool combatMovement=encounterMove || (!battle.combatOwned && (battle.retreatPoint || battle.combatRun.reposition || battle.combatRun.kitePoint || battle.hazardDodge || phase=="combat-approach"));
     const bool combatActive=battle.combatTarget && battle.combatRun.suspendedAt==Clock::time_point{} && !combatMovement;
@@ -363,7 +361,7 @@ bool DebugAi::Impl::mobility(Context &c) {
             completeTeleportRoute=approach->completeRoute;
         }
     }
-    if(canTeleport && stagedLanding && !combatMovement &&
+    if(canTeleport && stagedLanding && !combatMovement && navigation.departureArea!=area &&
         beginTeleportTransit(c,{uint16_t(stagedLanding->x),uint16_t(stagedLanding->y)})) return true;
     const bool directLanding=stagedLanding.has_value();
     if(canTeleport && !directLanding) {
@@ -460,10 +458,11 @@ bool DebugAi::Impl::submitMobilityCast(Context &c,Vec wanted,Vec landing,bool te
     const auto now=Clock::now();const auto &world=c.observation.read().world;
     const auto skill=definitions->skill(teleport?"Teleport":"Charge");
     const auto hand=teleport?OnlineSkillHand::Right:OnlineSkillHand::Left;
-    // Once a valid Teleport landing is chosen, preserve that movement intent
-    // through skill selection, animation recovery and the native input rate
-    // limit. A walking tick here would replace the cast between two landings.
-    const bool ownsApproach=teleport;
+    // Between Teleport landings retain the cast intent through selection
+    // and input pacing. The first field cast instead allows the departure
+    // walk to continue until a cast is actually submitted.
+    const bool departure=teleport && navigation.departureArea==area;
+    const bool ownsApproach=teleport && (!departure || navigation.routeExecution.has_value());
     if(teleport && c.supplies && c.supplies->castInputBusy.value_or(false)) {
         navigation.mobilityHold=true;wait("mobility-animation","Waiting for the current normal cast animation to release input");return true;
     }
@@ -479,12 +478,27 @@ bool DebugAi::Impl::submitMobilityCast(Context &c,Vec wanted,Vec landing,bool te
     OnlineCombatCommand cast;cast.action=OnlineCombatCommand::Action::Cast;
     cast.hand=hand;cast.point=OnlinePoint{uint16_t(std::floor(landing.x)),uint16_t(std::floor(landing.y))};
     cast.stationary=true;cast.repeat=false;
+    bool attempted=false;
     const auto submitted=submitInput(c,DebugActionOwner::Mobility,"mobility-cast:"+std::to_string(skill),DebugSkill,
-        [&]{return c.combat.submit(cast,c.position);},[&]{return c.combat.reason();});
-    if(submitted==DebugSubmitResult::Waiting) {navigation.mobilityHold=ownsApproach;return ownsApproach;}
+        [&]{attempted=true;return c.combat.submit(cast,c.position);},[&]{return c.combat.reason();});
+    if(submitted==DebugSubmitResult::Waiting) {
+        if(departure && attempted) {
+            const auto feet=DebugExplorationMemory::playerCell(c.position);
+            navigation.departureRetryFrom=OnlinePoint{uint16_t(feet.first),uint16_t(feet.second)};
+            note("town-exit-cast-unavailable",submissionWaits.at(DebugActionOwner::Mobility).reason);
+            submissionWaits.erase(DebugActionOwner::Mobility);
+        }
+        navigation.mobilityHold=ownsApproach;return ownsApproach;
+    }
     if(submitted==DebugSubmitResult::Expired) {
         note("mobility-unavailable",submissionWaits.at(DebugActionOwner::Mobility).reason);
-        submissionWaits.erase(DebugActionOwner::Mobility);navigation.nextMobility=now+std::chrono::seconds(3);return false;
+        submissionWaits.erase(DebugActionOwner::Mobility);
+        if(departure) {
+            const auto feet=DebugExplorationMemory::playerCell(c.position);
+            navigation.departureRetryFrom=OnlinePoint{uint16_t(feet.first),uint16_t(feet.second)};
+            navigation.nextMobility=now;
+        } else navigation.nextMobility=now+std::chrono::seconds(3);
+        return false;
     }
     c.control.cancelMovement();
     ++castRequests;navigation.mobilityFrom=c.position;navigation.mobilityTarget=cast.point;

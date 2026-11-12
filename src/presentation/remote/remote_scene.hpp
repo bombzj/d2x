@@ -74,6 +74,13 @@ class RemoteScene {
         Vec position;
         std::optional<Vec> next, end;
         bool predicted{}, moving{};
+        std::optional<Vec> plannedFrom, plannedGoal, plannedEnd;
+        std::optional<uint8_t> pathType;
+        uint64_t collisionReplans{};
+        std::string pathResult, positionCheckResult;
+        bool stopApproach{};
+        std::optional<uint8_t> collisionPattern;
+        uint16_t collisionMask{};
     };
     std::optional<MovementObservation> unitMovementObservation(const OnlineView &, OnlineUnitKey) const;
     std::optional<int> npcFollowRange(const OnlineView &, OnlineUnitKey) const;

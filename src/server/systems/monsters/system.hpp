@@ -37,6 +37,7 @@
 #include <span>
 #include <stdexcept>
 #include "world/native_path_step.hpp"
+#include "world/navigation.hpp"
 #include <deque>
 #include <map>
 #include <memory>
@@ -340,6 +341,7 @@ class System {
     void initializeImpMount(Actor &) const;
     std::optional<Vec> nestBirthPoint(EntityId,Vec,uint64_t &) const;
     bool recacheMovementRoom(Actor &,Vec previous);
+    std::optional<NativePathSearch> pathSearch(const Actor &,Vec target) const;
     ComponentPaletteState prepareComponents(Actor &,const ComponentPaletteState *staged=nullptr) const;
     void publishComponents(ComponentPaletteState &) noexcept;
     DomainResult<Actor> prepareAdmissionActor(const Admission &,EntityId,uint64_t &random,ComponentPaletteState &,uint64_t itemCursor=0,const std::set<size_t> *stagedUniques=nullptr,std::shared_ptr<RoomUnitRegistration> room={});

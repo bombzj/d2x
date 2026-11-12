@@ -8,7 +8,7 @@
 
 namespace d2x {
 struct NativeMapSnapshot {
-    Map map;
+    Map map; // Terrain, activation and navigation share the same loaded rooms and local origin.
     int tileX{}, tileY{};
     std::vector<uint16_t> collision; // Complete native flags, including unseen cells.
     std::vector<int> levels;

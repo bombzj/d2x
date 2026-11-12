@@ -14,6 +14,7 @@ void NavigationState::resetStep() {
     legDestination.reset();legUnit.reset();waypointDestination.reset();exitRetryAt={};npcOpenRetries=0;
     npcOpeningRecovery=false;navigationRetries.clear();connectionStalls.clear();submittedTravel.reset();travelRetries.clear();passageWaits.clear();
     mobilityTrials.clear();mobilityGoal.reset();mobilityRoute.clear();mobilityRouteProgress=mobilityPendingProgress=mobilityRouteLength=0;
+    departureArea.reset();departureRetryFrom.reset();
 }
 void NavigationState::suspend(Clock::duration elapsed) {
     // Appearance time follows the world; only active execution budgets pause.
@@ -88,7 +89,7 @@ void DebugAi::Impl::suspendExecution(Context &c,Clock::duration suspended) {
     battle.suspend(suspended);
     supply.suspend(suspended);
 }
-void DebugAi::Impl::observeArea(Context &c,Clock::time_point now) {
+void DebugAi::Impl::observeArea(Context &c) {
     auto &town=c.town;const auto &view=c.observation.read();
     if(area!=town.read().area || areaGeneration!=view.world.areaGeneration) {
         // Consume a successful ordinary crossing before clearing its leg.
@@ -99,8 +100,8 @@ void DebugAi::Impl::observeArea(Context &c,Clock::time_point now) {
             navigation.failedWalkEdges.erase({*area,*town.read().area});
         const bool leavingTown=area && area==view.load.townArea && town.read().area && town.read().area!=view.load.townArea;
         if(town.read().town) battle.excursionSkillPrepared=false;
+        navigation.departureArea.reset();navigation.departureRetryFrom.reset();
         supply.quiverTopUpDeferred=false;
-        navigation.townExitArea.reset();
         navigation.deferredWaypoint.reset();
         questState.summitTrialKills.reset();navigation.waypointDepartureArea.reset();navigation.nearbyWaypointArea.reset();navigation.missingWaypointAt.reset();
         battle.hazardDodge.reset();battle.hazardDiagnostics=nullptr;navigation.passageWaits.clear();
@@ -108,9 +109,7 @@ void DebugAi::Impl::observeArea(Context &c,Clock::time_point now) {
         navigation.frontierRoute.reset();
         navigation.landingRecovery.reset();
         cancelWalk(c);area=town.read().area;areaGeneration=view.world.areaGeneration;navigation.frontierAttempts.clear();
-        if(leavingTown && teleportAvailable(c,false)) {
-            navigation.townExitArea=area;navigation.townExitObserveUntil=now+std::chrono::milliseconds(1500);
-        }
+        if(leavingTown && teleportAvailable(c,false)) navigation.departureArea=area;
         navigation.checkedHints.clear();navigation.approachHint.reset();navigation.approachFrontier.reset();
         pickupApproaches.clear();
         continuation=Continuation::None;

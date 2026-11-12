@@ -324,7 +324,7 @@ DomainResult<> System::startWhirlwindMotion(EntityId source,Vec target) {
     ports_.areas.setNativePatternMask(actor.area,route.back(),actor.rule.collisionPattern,0x100,true);
     actor.skillMotion=Actor::SkillMotion{route.back(),UINT64_MAX,actor.interruption,monsterMovementSpeed(actor.rule.nativeVelocity,100),false,std::move(route)};
     actor.skillMotion->eventDriven=true;actor.skillMotion->collision=MovementCollisionRule{0x401,actor.rule.size};
-    actor.pathStep.reset();actor.movementTarget={};actor.movementGoal=target;actor.pathType=7;actor.pathDistance=100;actor.pathSteps=1;
+    actor.pathStep.reset();actor.movementTarget={};actor.movementGoal=target;actor.pathType=7;actor.pathDistance=77;actor.pathSteps=1;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::startDiabloRun(EntityId source,Vec target,int32_t velocity) {

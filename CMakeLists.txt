@@ -28,7 +28,7 @@ target_link_libraries(d2x_hash PUBLIC d2x_core)
 add_library(d2x_navigation
   src/world/navigation_snapshot.cpp
   src/world/navigation_planner.cpp
-  src/world/navigation.cpp src/world/navigation_astar.cpp src/world/navigation_wall_follow.cpp
+  src/world/navigation.cpp src/world/navigation_astar.cpp src/world/navigation_idastar.cpp src/world/navigation_wall_follow.cpp
   src/world/native_path_step.cpp src/world/room_activation.cpp
   src/world/native_room_activation.cpp src/world/interaction_geometry.cpp
 )

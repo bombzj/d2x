@@ -34,6 +34,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         areaGeneration = v.world.areaGeneration;
         denLightRooms.clear();
         motion.clear();
+        collisionCells.clear();collisionBodies.clear();collisionRooms.clear();movementClock=0;movementFrame=0;
         monsterIdentities.clear();
         monsterTransforms.clear();
         deathCallbacks.clear(); preparedDeaths.clear();
@@ -58,13 +59,14 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     lastFrame = now;
     wasPaused = paused;
     shared.pauseWorldPresentation(paused);
-    const auto previousTick=uint64_t(double(time)*25);
-    time += elapsed;
-    combat.advanceLocalSkillClock(uint64_t(double(time)*25)-previousTick);
+    const auto previousTick=uint64_t(movementClock*25);
+    movementClock+=double(elapsed);
+    time=float(movementClock);
+    combat.advanceLocalSkillClock(uint64_t(movementClock*25)-previousTick);
     // Long window/loading waits skip stale queued casts and audio.
     // Assigned actors and active missiles retain their own lifecycles.
     const bool suspended = elapsed > .25f;
-    const auto clientTicks=suspended?1:uint64_t(double(time)*25)-previousTick;
+    const auto clientTicks=suspended?1:uint64_t(movementClock*25)-previousTick;
     if (suspended) {
         // Monster point paths (67) carry endpoints, not current positions.
         // Clearing motion here would restart them at a stale 68/6D sample
@@ -89,9 +91,12 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 combatSequence=std::min(combatSequence,event.sequence-1);
         localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
     }
-    if (!binding.origin || !v.world.playerPosition)
+    if (!binding.origin || !v.world.playerPosition) {
+        movementFrame=uint64_t(movementClock*25);
         return intent;
+    }
     shared.advanceWorldPresentation(suspended ? 0.f : elapsed);
+    prepareCollision(map,*binding.origin);
     std::erase_if(deathCallbacks,[&](const auto &entry) {
         const auto unit=v.world.units.find(entry.first);
         return unit==v.world.units.end() || !unit->second.monsterDeath || unit->second.monsterDeath->revision!=entry.second;
@@ -138,6 +143,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     std::erase_if(blazeTrails,[&](const auto &entry) { return !v.world.units.contains(entry.first); });
     std::erase_if(pd2VisualSeeds,[&](const auto &entry) { return !v.world.units.contains(entry.first); });
     const auto origin = *binding.origin;
+    advanceMovement(map,origin,clients);
     std::vector<ClientMissileTarget> missileTargets;
     const auto modifierLevel=monsterText->nativeStats->names.find("modifierlist_level");
     for (const auto &[key, unit] : v.world.units) {

@@ -320,17 +320,10 @@ StepStatus System::think(EntityId id,TickContext tick,bool walkEnded) {
             (kind==MonsterAiKind::AncientMadawc && !monster.movementTarget);
         if(!blind && !rescheduled && !timedMovement && !monster.burrowed && !monster.airborne &&
            controller.pursuing && !monster.route.empty()) {
-            if(monster.movementTarget && tick.tick>=controller.nextPath) {
-                const auto destination=ports_.monsters.nativeTargetPosition(monster.movementTarget,monster.area);
-                if(!destination) {ports_.monsters.stop(id);controller.pursuing=false;}
-                else if(destination->first.x!=monster.movementGoal.x || destination->first.y!=monster.movementGoal.y) {
-                    const auto moved=ports_.monsters.requestMove({id,{monster.area,area.generation,destination->first},
-                        monster.movementTarget,monster.stopDistance,monster.velocityPercent,monster.running,
-                        monster.pathSteps,0,0,monster.pathType,monster.pathDistance});
-                    if(!moved) {ports_.monsters.stop(id);controller.pursuing=false;}
-                }
-                controller.nextPath=tick.tick+18;
-            }
+            // Common DB70/D820 owns pursuit while WALK/RUN is active.
+            // advanceMode checks target loss, integer movement >5 and the
+            // remaining path budget. An AI timer must not restart the order
+            // for smaller target motion or replenish its 20-point budget.
             controller.nextDecision=tick.tick+1;continue;
         }
         if(monster.rule.ai.kind==MonsterAiKind::GoodNpcRanged) {

@@ -133,6 +133,20 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             state_.spellTargets-=impact.targets.size();it=state_.spells.erase(it);continue;
         }
         const auto source = participants.find(impact.source);
+        // AllocCombat follows the target identity across adjacent levels.
+        // Damage, reactions and audience use the victim's actual area; reach
+        // still compares both positions in the attacker's coordinate system.
+        // A committed contact keeps its original transaction boundary.
+        if(source.monster && impact.nativeSkill && impact.nativeSkill->melee &&
+           impact.phase==ImpactPhase::Contact && !impact.playerContact && !impact.monsterContact && impact.next<impact.targets.size()) {
+            const auto target=participants.find(impact.targets[impact.next]);
+            if(target.id()) {
+                const auto targetArea=target.player?target.player->area:target.monster->area;
+                if(ports_.areas.at(source.monster->area).definition.act==ports_.areas.at(targetArea).definition.act)
+                    impact.area=targetArea;
+                else impact.next=impact.targets.size();
+            }
+        }
         if((impact.missileDamage || impact.allocatedMissile) && !source.id() && impact.phase==ImpactPhase::Contact && !impact.playerContact && !impact.monsterContact)
             impact.next=impact.targets.size();
         if(!impact.missileDamage && !impact.allocatedMissile && impact.phase==ImpactPhase::Contact && !impact.playerContact && !impact.monsterContact && participants.bind(source)!=impact.binding) {state_.spellTargets-=impact.targets.size();it=state_.spells.erase(it);continue;}

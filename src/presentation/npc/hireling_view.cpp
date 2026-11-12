@@ -9,6 +9,20 @@ namespace d2x {
 constexpr std::array<EquipmentSlot, 7> hirelingEquipmentOrder{EquipmentSlot::Head, EquipmentSlot::Torso,
     EquipmentSlot::RightHand, EquipmentSlot::LeftHand, EquipmentSlot::Belt, EquipmentSlot::Feet, EquipmentSlot::Gloves};
 namespace {
+struct HirelingConfirmationMenu {
+    const std::string &title;
+    std::array<std::string, 2> choices;
+    Rectangle bounds;
+};
+HirelingConfirmationMenu hirelingConfirmationMenu(const OriginalMenu &menu,
+    const std::map<std::string,std::string,std::less<>> &labels, Rectangle viewport) {
+    const auto &title = labels.at("VerifyTransaction9");
+    std::array choices{labels.at("VerifyTransaction1"), labels.at("VerifyTransaction2")};
+    const auto height = menu.size(title, choices).y;
+    const auto bounds = menu.bounds({viewport.x + viewport.width/2, viewport.y + (viewport.height-height)/2},
+        viewport, title, choices);
+    return {title, std::move(choices), bounds};
+}
 enum class HirelingTextAlign { Left, Center, Right };
 void hirelingText(const ClassicFont &font,const std::string &value,float left,float baseline,float right,HirelingTextAlign align) {
     std::vector<std::string> lines;std::istringstream input(value);std::string line;
@@ -35,9 +49,27 @@ Rectangle SceneView::hirelingSlotBounds(size_t index) const {
     const auto &box = inventoryView_.hirelingSlots.at(index);
     return hirelingArtRect(float(box[0]), float(box[1]), float(box[2] - box[0]), float(box[3] - box[1]));
 }
+int SceneView::hirelingConfirmationAt(Vec mouse) const {
+    const auto menu = hirelingConfirmationMenu(originalMenu_, assets_.characterLabels, worldViewport());
+    return originalMenu_.hit(menu.bounds, true, menu.choices.size(), mouse);
+}
 void SceneView::drawHirelingList(Vec mouse) const {
     if (!view_.hireListOpen) return;
     const auto &list = hirelingListView();
+    if (view_.hirelingConfirmation) {
+        const auto menu = hirelingConfirmationMenu(originalMenu_, assets_.characterLabels, worldViewport());
+        originalMenu_.draw(menu.bounds, menu.title, menu.choices,
+            originalMenu_.hit(menu.bounds, true, menu.choices.size(), mouse));
+        return;
+    }
+    if (list.hirePending) {
+        const auto &text = assets_.characterLabels.at("TransactionResults1");
+        const auto viewport = worldViewport();
+        const auto box = originalMenu_.bounds({viewport.x + viewport.width/2, viewport.y + viewport.height/2},
+            viewport, text, {});
+        originalMenu_.draw(box, text, {});
+        return;
+    }
     const auto p = hirelingListBounds();
     DrawRectangleRec(p, {0, 0, 0, 210});
     DrawRectangleLinesEx(p, 1, gold);

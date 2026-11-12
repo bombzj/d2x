@@ -9,7 +9,25 @@ namespace d2x {
 bool SceneController::handleHirelingList(const FrameInput &input) {
     auto &ui = view_.ui();
     if (ui.hireListOpen) {
-        const auto *offers = &view_.hirelingListView().offers;
+        const auto &list = view_.hirelingListView();
+        if (list.npc == ui.dialogueObject && list.hired) {
+            ui.hireListOpen = false;
+            ui.hirelingConfirmation.reset();
+            ui.npcMenu = view_.npcView().valid && view_.npcView().npc == ui.dialogueObject;
+            return true;
+        }
+        if (list.hirePending) return true;
+        if (const auto confirmation = ui.hirelingConfirmation) {
+            if (list.npc != ui.dialogueObject || list.offerRevision != confirmation->offerRevision || input.escape) {
+                ui.hirelingConfirmation.reset();
+            } else if (input.insideViewport && input.leftPressed) {
+                const auto choice = view_.hirelingConfirmationAt(input.mouse);
+                if (choice >= 0) ui.hirelingConfirmation.reset();
+                if (choice == 0) npcClient_.submit(HireMercenary{ui.dialogueObject, confirmation->slot});
+            }
+            return true;
+        }
+        const auto &offers = list.offers;
         const auto cancel = hirelingListCancel();
         if (input.escape || (input.insideViewport && input.leftPressed &&
             CheckCollisionPointRec(rv(input.mouse), cancel))) {
@@ -17,7 +35,7 @@ bool SceneController::handleHirelingList(const FrameInput &input) {
             npcClient_.submit(EndNpcConversation{ui.dialogueObject});
             return true;
         }
-        const int maximum = offers ? std::max(0, int(offers->size()) - hirelingVisibleRows) : 0;
+        const int maximum = std::max(0, int(offers.size()) - hirelingVisibleRows);
         ui.hireListScroll = std::clamp(ui.hireListScroll + input.pageDelta - input.quantityDelta, 0, maximum);
         if (input.insideViewport && input.leftPressed) {
             const auto bar = hirelingScrollBounds();
@@ -27,11 +45,13 @@ bool SceneController::handleHirelingList(const FrameInput &input) {
                 else if (local > 320) ++ui.hireListScroll;
                 else ui.hireListScroll = int(std::clamp((local - 10) / 310.f, 0.f, 1.f) * maximum + .5f);
                 ui.hireListScroll = std::clamp(ui.hireListScroll, 0, maximum);
-            } else if (offers) for (int row = 0; row < hirelingVisibleRows; ++row) {
+            } else if (list.npc == ui.dialogueObject) for (int row = 0; row < hirelingVisibleRows; ++row) {
                 const int index = ui.hireListScroll + row;
-                if (index >= int(offers->size())) break;
+                if (index >= int(offers.size())) break;
                 if (CheckCollisionPointRec(rv(input.mouse), hirelingListRow(row))) {
-                    npcClient_.submit(HireMercenary{ui.dialogueObject, offers->at(size_t(index)).slot});
+                    const auto slot = offers.at(size_t(index)).slot;
+                    if (list.replacing) ui.hirelingConfirmation = ViewState::HirelingConfirmation{slot, list.offerRevision};
+                    else npcClient_.submit(HireMercenary{ui.dialogueObject, slot});
                     break;
                 }
             }

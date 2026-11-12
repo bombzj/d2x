@@ -194,6 +194,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats, Monst
         m.ownsParty = n("setboss") != 0 || m.base == "tentaclehead1";
         m.demon = n("demon") != 0;
         m.flying = n("flying") != 0;
+        m.opensDoors = n("opendoors") != 0;
         m.undead = n("lUndead") != 0 || n("hUndead") != 0;
         auto extra = extendedRows.find(stats.value(row, "MonStatsEx"));
         if (extra == extendedRows.end())

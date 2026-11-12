@@ -116,7 +116,11 @@ bool System::addAllocatedPhysical(EntityId source,uint64_t occurrence,int32_t am
 DomainResult<bool> System::sampleNativeSkillAccuracy(const ActorContext &actor,const SkillCastSpec &skill,const WeaponDamage &weapon,EntityId victim,std::shared_ptr<NativeSkillContact> &cursor) {
     const Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto source=participants.find(actor.actor),target=participants.find(victim);
-    if(!source.aliveIn(actor.area) || !target.aliveIn(actor.area) || !participants.canHarm(actor.actor,victim)) return {DomainStatus::Unavailable,{}};
+    if(!target.id()) return {DomainStatus::Unavailable,{}};
+    const auto targetArea=target.player?target.player->area:target.monster->area;
+    if(!source.aliveIn(actor.area) || !target.aliveIn(targetArea) ||
+       ports_.areas.at(actor.area).definition.act!=ports_.areas.at(targetArea).definition.act ||
+       !participants.canHarm(actor.actor,victim)) return {DomainStatus::Unavailable,{}};
     const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
     if(!caster || !caster->programs()) return {DomainStatus::InvalidActor,{}};
     if(!cursor) cursor=std::make_shared<NativeSkillContact>();
@@ -894,6 +898,7 @@ bool System::nativeMeleeReach(const SpellImpact &impact,int range) const {
     if(!source.id() || !target.id()) return false;
     const auto sourceArea=source.player?source.player->area:source.monster->area,targetArea=target.player?target.player->area:target.monster->area;
     const auto &area=ports_.areas.at(sourceArea);
+    if(area.definition.act!=ports_.areas.at(targetArea).definition.act) return false;
     const auto point=target.position()+ports_.areas.at(targetArea).definition.origin-area.definition.origin;
     return unitMeleeReach(area.definition.collision,source.position(),source.size(),point,target.size(),
         source.player?source.player->totals.equipment.weapons[0].rangeAdder:source.monster->rule.meleeRange,range<0?(source.player?1:3):range);

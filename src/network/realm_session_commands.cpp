@@ -480,13 +480,13 @@ bool RealmSession::hireling_service(OnlineHirelingAction action, std::optional<u
     if (action==OnlineHirelingAction::Resurrect && !world.deadHirelingName) return false;
     try {
         Writer out;
-        if(action==OnlineHirelingAction::List) {out.u8(0x38);out.u32(3);out.u32(conversation->source);out.u32(0);}
+        if(action==OnlineHirelingAction::List) {out.u8(0x38);out.u32(3);out.u32(conversation->source);out.u32(*state.view.load.playerUnitId);}
         else if(action==OnlineHirelingAction::Hire) {out.u8(0x36);out.u32(conversation->source);out.u32(*name);}
         else {out.u8(0x62);out.u32(conversation->source);}
         state.sent(state.gs,out.release());
         if(action==OnlineHirelingAction::List) {service.offers.clear();service.listReceived=false;}
         service.source=conversation->source;service.interaction=world.interactionGeneration;
-        service.pending=action;service.requestedMilliseconds=now;service.result.reset();
+        service.pending=action;service.requestedMilliseconds=now;service.completed.reset();service.result.reset();
         state.view.error.reset();state.changed();return true;
     } catch(const std::exception &) {state.fail(OnlineErrorKind::Transport,"Hireling request could not be queued");return false;}
 }

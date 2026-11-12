@@ -164,6 +164,7 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     // Never hand its activation-dependent tile choices, collision or logical
     // floor selections to the authority. Actual create operations supply them.
     Grid dormant(area.collision.width,area.collision.height);
+    dormant.navigationRooms=area.collision.navigationRooms;
     const auto cells=size_t(dormant.width)*dormant.height;
     dormant.fullTerrainCollision.assign(cells,0xffff);
     std::fill(dormant.terrainCollision.begin(),dormant.terrainCollision.end(),0xff);

@@ -54,7 +54,9 @@ bool followNativePet(const Ports &ports,Companion &pet,const PlayerState &owner,
         const bool moved=bool(ports.monsters.requestMove(request));if(moved) pet.nativePetMoving=true;return moved;
     };
     auto random=body.combatRandom;
-    const auto wander=[&](int radius,int velocity=75,int path=13) {const auto point=monsterWanderPoint(ownerCell,radius,random)-Vec{.5f,.5f};ports.monsters.commitCombatRandom(body.id,random);return move(point,velocity,path);};
+    // Retail 1.13c PetMove calls F29B0 (WalkCloseToUnit) for motions
+    // 0/1/2/4. D2MOO's WanderToTarget(owner) transcription differs here.
+    const auto wander=[&](int radius,int velocity=75,int path=13,bool aroundOwner=false) {const auto point=monsterWanderPoint(aroundOwner?ownerCell:bodyCell,radius,random)-Vec{.5f,.5f};ports.monsters.commitCombatRandom(body.id,random);return move(point,velocity,path);};
     const auto escape=[&](int radius,int path=13) {
         const Vec direction{float((body.position.x>ownerPoint.x)-(body.position.x<ownerPoint.x)),float((body.position.y>ownerPoint.y)-(body.position.y<ownerPoint.y))};
         return move(body.position+direction*float(radius),75,path,radius>5?radius:100);
@@ -93,8 +95,9 @@ bool followNativePet(const Ports &ports,Companion &pet,const PlayerState &owner,
         if(!destination) return false;
         const auto cell=*destination+ownerArea.definition.origin;
         const auto point=ports.areas.nativeFreeCoordinates(*room,int(cell.x),int(cell.y),body.rule.size,0x1c09,ports.spatial.nativeCollisionSample(0x1c09));
-        if(!point || point->room.area!=owner.area) return false;
-        const ActorContext context{owner.player,owner.actor,owner.area,ownerArea.generation,0,tick};
+        if(!point) return false;
+        const auto &destinationArea=ports.areas.at(point->room.area);
+        const ActorContext context{owner.player,owner.actor,point->room.area,destinationArea.generation,0,tick};
         if(!ports.monsters.warpPet(body.id,context,point->position)) return false;
         pet.nextDecision=tick+5;return true;
     }
@@ -130,7 +133,7 @@ bool followNativePet(const Ports &ports,Companion &pet,const PlayerState &owner,
         return true;
     }
     if(motion==5) {
-        return wander(bound,75,7) || escape(bound,7) || move(owner.routeDestination+ownerArea.definition.origin-area.definition.origin,75,13,40);
+        return wander(bound,75,7,true) || escape(bound,7) || move(owner.routeDestination+ownerArea.definition.origin-area.definition.origin,75,13,40);
     }
     const auto destination=owner.routeDestination+ownerArea.definition.origin-area.definition.origin;
     const auto goalCell=nativeFeetCell(destination);

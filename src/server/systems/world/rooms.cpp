@@ -577,7 +577,6 @@ void System::updateRooms(TickContext tick) {
     rooms_->rebuild();
     rooms_->awaitingInputs=false;
     rooms_->currentTick=tick.tick;
-    if(rooms_->retirement && !rooms_->activation(rooms_->retirement->room).retire(rooms_->retirement->room)) return;
     auto previous = rooms_->clients;
     std::set<PlayerId> departed;
     for(const auto &[player,registered]:rooms_->clientRooms) {(void)registered;departed.insert(player);}
@@ -605,13 +604,7 @@ void System::updateRooms(TickContext tick) {
         rooms_->clients.erase(id);
     }
     for(const auto id:departed) {rooms_->changeClientRooms(id,{},tick.tick);rooms_->clientRooms.erase(id);}
-    for (auto &act : rooms_->acts) if (act.activation && act.advancedTick!=tick.tick) {
-        act.activation->update(tick.tick, [&](size_t room) { return rooms_->retirement.has_value() || rooms_->retain(room, tick.tick); });
-        if(rooms_->retirement) return;
-        act.advancedTick=tick.tick;
-    }
     rooms_->publish();
-    rooms_->releaseLevels(tick.tick);
     for (const auto &act : rooms_->acts) if (act.activation) for (const auto &[id, state] : act.activation->states()) {
         // GAME_Update populates the act's actual Room1 chain. OutOfSight and
         // Untile only need resource inputs, not an entire area's gameplay
@@ -629,6 +622,19 @@ void System::updateRooms(TickContext tick) {
         // definition. Admission/population still waits for this full handoff.
         if(!area) request(room.area,map);
     }
+}
+StepStatus System::maintainRooms(TickContext tick) {
+    // GAME_UpdateProgress creates/populates pending rooms before events, but
+    // retires inactive rooms after client publication. Never retire a due
+    // actor early merely because both operations use the same room runtime.
+    if(rooms_->retirement && !rooms_->activation(rooms_->retirement->room).retire(rooms_->retirement->room)) return StepStatus::Blocked;
+    for(auto &act:rooms_->acts) if(act.activation && act.advancedTick!=tick.tick) {
+        act.activation->update(tick.tick,[&](size_t room) {return rooms_->retirement.has_value() || rooms_->retain(room,tick.tick);});
+        if(rooms_->retirement) return StepStatus::Blocked;
+        act.advancedTick=tick.tick;
+    }
+    rooms_->publish();rooms_->releaseLevels(tick.tick);
+    return StepStatus::Complete;
 }
 bool System::clientRoomsReady(PlayerId id) const {
     if(rooms_->dirty) return false;

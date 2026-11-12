@@ -478,7 +478,8 @@ StepStatus System::nativeNecroStep(Companion &pet,TickContext tick) {
     const auto &program=*owner->rules.skills;
     const auto &area=ports_.areas.at(body->area);const auto &ownerArea=ports_.areas.at(owner->area);
     const auto ownerPoint=owner->position+ownerArea.definition.origin-area.definition.origin;
-    const auto distance=[&](Vec point) {return unitCoordinateDistanceWithSize(int(body->position.x),int(body->position.y),int(point.x),int(point.y),body->rule.size);};
+    const auto bodyCell=nativeFeetCell(body->position);
+    const auto distance=[&](Vec point) {const auto cell=nativeFeetCell(point);return unitCoordinateDistanceWithSize(int(bodyCell.x),int(bodyCell.y),int(cell.x),int(cell.y),body->rule.size);};
     const auto idle=[&] {ports_.monsters.neutralMode(body->id);pet.nextDecision=tick.tick+10;};
     const auto follow=[&](const PlayerState &leader,EntityId target,bool combat,int motion=-1,int velocity=0,int spacing=7,bool suppress=false) {
         return followNativePet(ports_,pet,leader,*body,target,combat,tick.tick,
@@ -517,8 +518,9 @@ StepStatus System::nativeNecroStep(Companion &pet,TickContext tick) {
         // AiUtil::sub_6FCF14D0 accepts any of three rays, including the two
         // perpendicular offsets. WALL | MISSILE_BARRIER | DOOR is 0x805.
         const auto point=target->position;const int range=distance(point),offset=range<3?2:range<11?3:range<25?4:3;
-        const int x=((int(body->position.x)>int(point.x))-(int(body->position.x)<int(point.x)))*offset;
-        const int y=((int(body->position.y)>int(point.y))-(int(body->position.y)<int(point.y)))*offset;
+        const auto cell=nativeFeetCell(point);
+        const int x=((int(bodyCell.x)>int(cell.x))-(int(bodyCell.x)<int(cell.x)))*offset;
+        const int y=((int(bodyCell.y)>int(cell.y))-(int(bodyCell.y)<int(cell.y)))*offset;
         const auto clear=[&](Vec to) {return area.definition.collision.missileSegment(body->position,to,{0x805,1});};
         if(!clear(point) && !clear(point+Vec{float(-y),float(x)}) && !clear(point+Vec{float(y),float(-x)})) target.reset();
     }
@@ -536,8 +538,12 @@ StepStatus System::nativeNecroStep(Companion &pet,TickContext tick) {
     };
     if(!target || area.definition.town) {
         auto random=ports_.monsters.find(body->id)->combatRandom;
-        const auto point=monsterWanderPoint(ownerPoint,4,random)-Vec{.5f,.5f};
-        ports_.monsters.commitCombatRandom(body->id,random);move(point);return StepStatus::Complete;
+        // Retail 1.13c 1E853/1E579 use the pet's own coordinates (F29B0),
+        // despite the older D2MOO WanderToTarget(owner) transcription.
+        const auto point=monsterWanderPoint(bodyCell,4,random)-Vec{.5f,.5f};
+        ports_.monsters.commitCombatRandom(body->id,random);
+        if(!move(point)) pet.cancelAi=true;
+        return StepStatus::Complete;
     }
     if(mage || combat) {
         if(chance(80)) {
@@ -554,7 +560,17 @@ StepStatus System::nativeNecroStep(Companion &pet,TickContext tick) {
             auto random=ports_.monsters.find(body->id)->combatRandom;const int turn=(rollRandom(random)&255)<128?1:-1;
             ports_.monsters.commitCombatRandom(body->id,random);move(target->position,target->unit.id,3,turn);
         } else idle();
-    } else move(target->position,target->unit.id,12);
+    } else if(!move(target->position,target->unit.id,12)) {
+        // WalkToTargetUnitWithFlags(7): a failed chase consumes the native
+        // 70% local-wander / 30% NU10 branch, rather than retrying every tick.
+        if(!chance(70)) idle();
+        else {
+            auto random=ports_.monsters.find(body->id)->combatRandom;
+            const auto point=monsterWanderPoint(bodyCell,4,random)-Vec{.5f,.5f};
+            ports_.monsters.commitCombatRandom(body->id,random);
+            if(!move(point,{},12)) pet.cancelAi=true;
+        }
+    }
     return StepStatus::Complete;
 }
 StepStatus System::necroStep(Companion &pet,TickContext tick) {

@@ -4,7 +4,7 @@
 
 公共攻击目标资格读取挂载表的 `MonStatsEx → MonStats2.isAtt`。PD2 动态选择、召唤与悬停组合仍待版本对照，公共入口见[怪物选取](../gameplay/monsters/PRESENTATION.md#活体攻击目标与悬停)。
 
-PD2 普通怪物与 NPC 复用零售 1.13c 的[公共客户端动作消费者](../gameplay/monsters/PRESENTATION.md#客户端动作与停步边界)，专用技能位移走各自分支。公共路径与 PD2 专用动作的组合仍待运行对照。
+PD2 普通怪物与 NPC 复用零售 1.13c 的[公共客户端动作消费者](../gameplay/monsters/PRESENTATION.md#客户端动作与停步边界)，专用技能位移走各自分支。公共路径的AStar／Straight受阻目标准备、客户端怪物碰撞续算和MonStats.opendoors寻路掩码统一修正也由这些消费者使用；这不是新增PD2核心规则。公共IDAStar0／16算法及类型0房间输入已补，在线地图快照现统一提供实际已加载房间的activation／navigationRooms，供公共位置校验、求路及既有跳跃房间检查使用；不新增房间或放宽落点资格，尚未构建／运行。搜索距离夹到77、显式steps限1–19；普通追踪移除AI额外18帧重启，保留原>5格及预算重算，专用timedMovement分支不受此修改；并未找到零售Stream更新／命中的实际技能调用者，不因此新增PD2技能路由。原版DLL纠正的转录条件及消费者范围见[移动一致性审计](../modules/MAP.md#移动一致性审计边界)。公共客户端普通路径现使用常驻Set／Reset碰撞和全局25Hz逐轮推进；宿主房间物化／事件／休眠维护分段，公共活体目标及怪物近战接触支持同幕跨区坐标。共享PetMove／佣兵后备中心依1.13c纠正，零售Fn067专用分支不改写PD2的necroStep。以上为公共消费者修正，未构建／运行，PD2核心专用时钟、位移、召唤AI与碰撞占位仍未逐项认证。公共路径与 PD2 专用动作的组合仍待运行对照。
 
 世界 COF 组件和弹体混色使用[公共光照与合成](../gameplay/world/LIGHTING.md)。PD2 核心的专用绘制 Hook、混合组件和新弹体组合仍待核对。
 

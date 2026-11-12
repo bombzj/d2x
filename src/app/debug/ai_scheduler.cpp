@@ -208,7 +208,7 @@ void DebugAi::tickPlan(const OnlineObservation &observation,const RemoteTown &to
         }
         if(onlinePlayerDead(view.world)) {s.finish("failed","Player died; AI never fabricates resurrection",c);return;}
         if(view.world.playerTrade.active()) {s.finish("cancelled","Player trade took control",c);return;}
-        s.observeArea(c,now);
+        s.observeArea(c);
         if(s.cursor>=s.goals.size()) {s.finish("completed","All goal postconditions observed",c);return;}
         s.prepareDecision(c);
         s.navigation.mobilityHold=false;

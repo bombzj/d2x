@@ -28,14 +28,9 @@ struct AreaGenerator::Impl {
         const auto &level = catalog.level(request.level);
         auto snapshot = generator.snapshot(request.level, false);
         snapshot.map.grid.fullTerrainCollision = std::move(snapshot.collision);
-        // snapshot() carries native terrain rooms; the host also needs their exact
-        // subcell footprints and MPQ Populate flags for interest and population.
-        for (const auto &room : snapshot.map.terrain.rooms)
-            snapshot.map.rooms.push_back({room.x * 5, room.y * 5, room.width * 5, room.height * 5,
-                !room.preset || catalog.presets().at(room.preset).populate,
-                level.generation==GenerationKind::Maze || (room.preset && (room.flags&0x00080000)!=0)});
+        // The shared snapshot publishes loaded subcell rooms and their MPQ
+        // flags for both the client and authority; do not append them again.
         if (snapshot.map.rooms.empty()) throw std::runtime_error("Prepared native map lacks authored room footprints");
-        snapshot.map.activation = RoomLayout(snapshot.map.grid.width, snapshot.map.grid.height, snapshot.map.rooms);
         GeneratedArea result;
         result.roomTerrain=std::move(roomTerrain);
         result.request = request; result.origin = {float(snapshot.tileX * 5), float(snapshot.tileY * 5)};

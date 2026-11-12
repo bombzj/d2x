@@ -192,6 +192,7 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content, int ini
             "strchrstat", "strchrrema", "StrSklTree1", "StrSklTree2", "StrSklTree3",
             "Level", "StrSkill42", "cost", "ItemDesc1s", "NPCRepairItems", "Cost", "stash", "Sell",
             "VerifyTransaction1", "VerifyTransaction2", "VerifyTransaction3", "VerifyTransaction5",
+            "VerifyTransaction9", "TransactionResults1",
             "strDropGoldHowMuch", "strBankGoldDeposit", "strBankGoldWithdraw", "GoldMax",
             "strlvlup", "strnewskl", "panelstamina", "panelexp", "panelmini", "panelcmini",
             "RunOn", "RunOff", "minipanelspecial", "minipanelchar", "minipanelinv", "minipaneltree", "minipanelautomap",

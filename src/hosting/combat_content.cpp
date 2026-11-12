@@ -169,7 +169,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.curseable=record->curseable;rule.switchAi=record->switchAi;rule.revivable=record->revivable;
     rule.stateTarget=record->stateTarget;rule.noAura=record->noAura;
     rule.primeEvil=data.tables.at("monstats").number(record->sourceRow,"primeevil").value_or(0)!=0;
-    rule.opensDoors=data.tables.at("monstats").number(record->sourceRow,"opendoors").value_or(0)!=0;
+    rule.opensDoors=record->opensDoors;
     rule.threat=data.tables.at("monstats").number(record->sourceRow,"threat").value_or(0);
     rule.introduction=data.tables.at("monstats").number(record->sourceRow,"boss").value_or(0)!=0 || identity.rank==MonsterRank::Unique || identity.rank==MonsterRank::SuperUnique;
     const auto suffix=request.difficulty==0?"":request.difficulty==1?"(N)":"(H)";

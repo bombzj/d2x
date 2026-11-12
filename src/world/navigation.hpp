@@ -11,6 +11,15 @@
 #include <vector>
 namespace d2x {
 class NavigationSnapshot;
+// IDAStar uses the actual start/target rooms, not the whole level's grid.
+// Coordinates share the path's grid origin. Only type 16 consumes random.
+// Common allocates a zero initial score for monsters/missiles (players: 70).
+struct NativePathSearch {
+    RoomBounds startRoom{};
+    std::optional<RoomBounds> targetRoom;
+    uint8_t initialFScore{};
+    uint64_t *random{};
+};
 struct Grid {
     int width = 0, height = 0;
     Bytes blocked;
@@ -45,6 +54,9 @@ struct Grid {
         int offsetX, offsetY, side, plane, start, end;
     };
     std::vector<BoundaryNeighbour> neighbours;
+    // Authored room rectangles shared by immutable terrain and derived views.
+    // IDAStar needs these across level links; bounds alone are not a room.
+    std::shared_ptr<const std::vector<RoomBounds>> navigationRooms;
     // Ephemeral read-only room lookup used by navigation, never authority or
     // imported terrain. Offsets convert a view cell to each owning grid.
     struct NavigationSource { const Grid *grid; int offsetX, offsetY; };
@@ -81,6 +93,7 @@ struct Grid {
     uint16_t nativeMovementMask(int x,int y,EntityId ignored={}) const;
     Grid linkedNavigation(Vec &origin) const;
     bool navigationContains(Vec point) const;
+    std::optional<RoomBounds> navigationRoom(Vec point) const;
     uint64_t navigationRevision() const;
     bool movementClear(int x, int y, MovementCollisionRule rule, EntityId ignored = {}) const;
     bool walkable(int x, int y) const {
@@ -107,9 +120,12 @@ struct Grid {
     // 18 cells. Inputs/outputs use grid cell centers; callers own route state.
     std::deque<Vec> nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule = playerMovement, uint8_t targetType = 255, std::optional<int> doorOrientation = {}) const;
     std::deque<Vec> nativeAStarPath(Vec from, Vec to, MovementCollisionRule rule, bool unitTarget = false) const;
-    // Native ordinary unit paths: AStar(1), Toward(2/13), Straight(7), WallFollow(15).
+    // Native dynamic paths, including IDAStar(0) and MissileStream(16).
+    // IDAStar requires explicit room data; stream also requires its unit seed.
+    // Types 0/1/7 prepare blocked targets before dispatch (path flag 0x1000).
     // maxDistance bounds Toward's obstacle search, not its unobstructed ray.
-    std::deque<Vec> nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t maxDistance, MovementCollisionRule rule, bool unitTarget = false, uint8_t targetTolerance = 1) const;
+    std::deque<Vec> nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t maxDistance, MovementCollisionRule rule, bool unitTarget = false, uint8_t targetTolerance = 1, const NativePathSearch *search = nullptr) const;
+    std::deque<Vec> nativeIdaStarPath(Vec from, Vec to, uint8_t type, MovementCollisionRule rule, uint8_t targetTolerance, const NativePathSearch &search) const;
     std::deque<Vec> nativeWallFollowPath(Vec from, Vec to, uint8_t maxDistance, MovementCollisionRule rule) const;
     std::deque<Vec> nativeMonsterCirclePath(Vec from,Vec target,int distance,int turn,MovementCollisionRule rule) const;
     bool collisionSegment(Vec a, Vec b, uint16_t mask) const;
