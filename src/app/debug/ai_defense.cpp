@@ -7,6 +7,49 @@
 #include <stdexcept>
 
 namespace d2x {
+bool DebugAi::Impl::defendWhileWaiting(Context &c,const Goal &goal) {
+    const auto &view=c.observation.read();const auto &world=view.world;
+    if(!active() || !policy.enabled || c.town.read().town || c.moving || navigation.mobilityHold ||
+        navigation.mobilityTarget || !battle.excursionSkill || meleeAttack(c,*battle.excursionSkill) ||
+        (navigation.routeExecution && navigation.routeExecution->phase!=RouteExecution::Phase::Resume) ||
+        world.npcRequested || world.npcConversation || world.waypointRequested || world.waypointSource || world.staffSource ||
+        world.storage.kind!=OnlineStorageKind::None || world.storage.requested!=OnlineStorageKind::None ||
+        onlineHasCursorItem(world.items,view.load.playerUnitId) ||
+        (world.combatRequest && world.combatRequest->state==OnlineCombatRequest::State::Pending) ||
+        (world.itemRequest && world.itemRequest->state==OnlineItemRequest::State::Pending)) return false;
+    // Reuse passage arbitration: only a stationary shot may interrupt a
+    // passive transfer wait. Inventory transactions and native actions retain
+    // their existing locks. This scope never starts a chase or a new path job.
+    const bool previous=navigation.passageDefending;navigation.passageDefending=true;
+    struct Restore {bool &flag;bool previous;~Restore(){flag=previous;}} restore{navigation.passageDefending,previous};
+    if(!canInput(c,DebugActionOwner::Combat,DebugSkill)) return false;
+    const auto *map=c.town.map();const auto origin=c.town.read().origin;
+    if(!map || !origin) return false;
+    const CombatSight sight{&map->grid,{float(origin->x),float(origin->y)},combatAttackMask(c,*battle.excursionSkill)};
+    const int radius=std::min(policy.waitDefenseRadius,combatRange(c,*battle.excursionSkill));
+    RouteCombatTask scope;scope.optionalDefense=true;
+    for(const auto &[key,unit]:world.units) {
+        if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false)) continue;
+        const Vec at{float(unit.position->x),float(unit.position->y)};
+        if((at-c.position).length()<=radius && sight.clear(c.position,at)) scope.targets.emplace(key,unit.assignmentRevision);
+    }
+    if(scope.targets.empty()) return false;
+    const auto waitingFor=phase;
+    // Borrow combat for this stationary defense only. Retain its target and
+    // recovery history, but yield the engagement even when no shot is ready
+    // or a search yields. Native action recovery still protects an accepted
+    // shot; sending Stop here would interrupt it.
+    struct SuspendDefense {
+        debug_ai::CombatState &state;
+        ~SuspendDefense() {
+            if(state.combatTarget && state.combatRun.suspendedAt==Clock::time_point{})
+                state.combatRun.suspendedAt=Clock::now();
+        }
+    } suspendDefense{battle};
+    const bool acting=combat(c,goal,true,true,&scope);
+    battle.combatDiagnostics["waitingDefense"]={{"radius",radius},{"targets",scope.targets.size()},{"waitingFor",waitingFor}};
+    return acting;
+}
 void DebugAi::Impl::Definitions::loadCombatObservations() {
     const auto attack=skill("Attack");
     for(size_t row=0;row<skills.rows().size();++row) {
@@ -138,18 +181,17 @@ bool DebugAi::Impl::avoidHazards(Context &c) {
     const auto grid=c.town.navigationGrid(c.observation.read());const Vec offset{float(origin->x),float(origin->y)};
     const auto &rooms=c.town.navigationRooms();
     const auto inside=[](const auto &room,Vec at){return room.loaded && at.x>=room.x && at.y>=room.y && at.x<room.x+room.width && at.y<room.y+room.height;};
-    const auto source=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && inside(room,c.position);});
     const bool teleport=teleportAvailable(c);float best=current;std::optional<OnlinePoint> selected;
+    const TeleportTargets targets(c);
     for(const int radius:{8,12,18}) for(int direction=0;direction<16;++direction) {
         const float angle=float(direction)*6.28318530718f/16;
         const Vec at=c.position+Vec{std::cos(angle),std::sin(angle)}*float(radius);
         if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535) continue;
         const OnlinePoint point{uint16_t(at.x),uint16_t(at.y)};const Vec exact{float(point.x),float(point.y)},local=exact-offset+Vec{.5f,.5f};
-        if(!tacticalPositionAllowed(c,exact) || !grid.nativeMovementSegment(local,local,playerMovement)) continue;
+        if(!tacticalPositionAllowed(c,exact) || (teleport?!targets.permits(c,exact,mobilityPolicy.distance):
+            !grid.nativeMovementSegment(local,local,playerMovement))) continue;
         const auto landing=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && inside(room,exact);});
         if(landing==rooms.end()) continue;
-        if(teleport && (source==rooms.end() || (landing!=source && std::find(source->near.begin(),source->near.end(),size_t(landing-rooms.begin()))==source->near.end()))) continue;
-        if(teleport && !c.combat.teleportPathAllowed(*area,grid,c.position-offset,exact-offset)) continue;
         const float clearance=safety(exact);if(clearance<2) continue;
         bool occupied=false;
         for(const auto &[key,unit]:c.observation.read().world.units) if(key.type==1 && unit.position && c.combat.hostileSource(unit) && !onlineMonsterCorpse(unit) &&

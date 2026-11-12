@@ -39,7 +39,7 @@ bool DebugAi::Impl::servicePassage(Context &c,const Goal &goal,bool prepared) {
     const bool assignedEntrance=navigation.travelPhase==TravelPhase::WarpExit && navigation.legUnit.has_value();
     const bool clearing=goal.kind==Kind::Quest && questState.questRun.step<goal.steps.size() && goal.steps[questState.questRun.step].clearCombat;
     const bool opening=questState.questRun.worldWait.has_value() && !clearing;
-    if(!navigation.pendingDoor && !portalIssued && !supply.supplyPortalUsed && !transfer && !opening && !questEntrance && !assignedEntrance) return false;
+    if(!navigation.pendingDoor && !portalIssued && !transfer && !opening && !questEntrance && !assignedEntrance) return false;
     using Owner=DebugActionOwner;
     // Passage continuation runs before optional combat, even when a combat
     // child is still active. Consumptive operations keep their own receipts.
@@ -56,7 +56,7 @@ bool DebugAi::Impl::servicePassage(Context &c,const Goal &goal,bool prepared) {
         else executeGoal(c,goal);
         if(!active() || cursor!=previous) return true;
     }
-    const bool stillWaiting=navigation.pendingDoor || portalIssued || supply.supplyPortalUsed || questState.questRun.worldWait || questEntrance || assignedEntrance ||
+    const bool stillWaiting=navigation.pendingDoor || portalIssued || questState.questRun.worldWait || questEntrance || assignedEntrance ||
         navigation.passageWaits.contains(Passage::Transfer) ||
         (navigation.submittedTravel && ((navigation.travelPhase==TravelPhase::CrossWait && navigation.legUnit) ||
          (questState.questRun.pending && questState.questRun.pending->action==QuestPending::Action::Portal)));
@@ -74,7 +74,7 @@ bool DebugAi::Impl::servicePassage(Context &c,const Goal &goal,bool prepared) {
     // approach settles, allow a single attack; the next passage attempt wins.
     if(!c.moving && !c.walk.active()) {
         const bool activating=questEntrance && questState.questRun.pending && questState.questRun.pending->action==QuestPending::Action::Object;
-        const bool stationary=transfer || navigation.pendingDoor || portalIssued || supply.supplyPortalUsed || activating;
+        const bool stationary=transfer || navigation.pendingDoor || portalIssued || activating;
         navigation.passageDefending=stationary;
         struct Reset {bool &flag;~Reset(){flag=false;}} reset{navigation.passageDefending};
         const auto approach=navigation.submittedTravel?std::optional{navigation.submittedTravel->unit}:
@@ -84,7 +84,9 @@ bool DebugAi::Impl::servicePassage(Context &c,const Goal &goal,bool prepared) {
         const bool creationSettled=creation==navigation.passageWaits.end() || creation->second.attempts>0;
         if(approachSettled && creationSettled && canInput(c,Owner::Combat,DebugMotion|DebugSkill)) {
             if(!stationary && avoidHazards(c)) return true;
-            combat(c,goal,true,stationary);
+            // Ranged waiting defense is scheduled after the continuation,
+            // with its own small radius and no crowd/life-loss threshold.
+            if(!battle.excursionSkill || meleeAttack(c,*battle.excursionSkill)) combat(c,goal,true,stationary);
         }
     }
     return true;
@@ -93,7 +95,20 @@ void DebugAi::Impl::observePopulation(const Context &c) {
     const auto &view=c.observation.read();const auto &world=view.world;
     if(navigation.populationMemoryGame!=view.gameGeneration) {
         navigation.populationMemoryGame=view.gameGeneration;navigation.populationMemoryRevision=0;navigation.populationMemory.clear();
+        navigation.openedObjects.clear();navigation.targetSearches.clear();navigation.activeTargetSearch.reset();
+        navigation.searchSeeds.clear();
+        navigation.targetSearchDiagnostics=nullptr;navigation.searchEventSequence=0;
     }
+    if(area) {
+        auto [seed,fresh]=navigation.searchSeeds.try_emplace(*area,view.load.mapSeed);
+        if(!fresh && seed->second!=view.load.mapSeed) {
+            seed->second=view.load.mapSeed;
+            std::erase_if(navigation.openedObjects,[&](const auto &entry){return entry.first.first==*area;});
+            std::erase_if(navigation.targetSearches,[&](const auto &entry){return entry.second.area==*area;});
+            navigation.activeTargetSearch.reset();
+        }
+    }
+    observeSearchEvents(c);
     const auto now=Clock::now();
     // Seeing map tiles does not imply that their units have been assigned.
     // Keep settled subscriptions after 08 releases the room, so walking away
@@ -132,7 +147,7 @@ void DebugAi::Impl::observePopulation(const Context &c) {
         for(auto &[level,memory]:navigation.populationMemory) {
             (void)level;
             const auto previous=memory.enemies.find(key);if(previous==memory.enemies.end()) continue;
-            if(dead || previous->second.assignment!=unit.assignmentRevision || previous->second.identity!=unit.classId)
+            if(dead || previous->second.assignment!=unit.assignmentRevision || previous->second.identity!=c.combat.monsterClass(unit))
                 memory.enemies.erase(previous);
         }
         if(dead || !unit.position) continue;
@@ -146,23 +161,24 @@ void DebugAi::Impl::observePopulation(const Context &c) {
             const auto previous=memory.enemies.find(key);if(previous==memory.enemies.end()) continue;
             if(level!=room->level || c.combat.knownHostileSource(unit)==false) memory.enemies.erase(previous);
         }
-        if(hostile) navigation.populationMemory[uint16_t(room->level)].enemies[key]={point,unit.assignmentRevision,unit.classId,
-            c.combat.superUnique(unit),c.combat.eliteMonster(unit)};
+        if(hostile) navigation.populationMemory[uint16_t(room->level)].enemies[key]={point,unit.assignmentRevision,c.combat.monsterClass(unit),
+            c.combat.superUnique(unit),c.combat.eliteMonster(unit),now};
     }
 }
 int DebugAi::Impl::encounterMovementRadius() const {
     const auto &pending=questState.questRun.worldWait;
-    return pending && pending->residualRange && Clock::now()>=pending->inspectResidualAt?
+    return pending && pending->residualRange?
         std::max(eventPolicy.encounterRadius,pending->residualRange+2*pending->witnessSize):eventPolicy.encounterRadius;
 }
 bool DebugAi::Impl::encounterEnemy(const Context &c,const OnlineUnit &unit) const {
     if(!unit.position || unit.key.type!=1 || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false)) return false;
     if(questState.questRun.encounterArea!=c.town.read().area || !questState.questRun.encounterPosition) return false;
+    if(c.town.assignedUnitLevel(unit.key)!=questState.questRun.encounterArea) return false;
     const auto anchor=*questState.questRun.encounterPosition;
     const int dx=std::abs(int(unit.position->x)-anchor.x),dy=std::abs(int(unit.position->y)-anchor.y);
     if(std::hypot(dx,dy)<=eventPolicy.encounterRadius) return true;
     const auto &pending=questState.questRun.worldWait;
-    if(!pending || !pending->residualRange || Clock::now()<pending->inspectResidualAt) return false;
+    if(!pending || !pending->residualRange) return false;
     // AIUTIL_GetDistanceToCoordinates_FullUnitSize uses the throne witness's SizeX.
     const int x=std::abs(dx-pending->witnessSize),y=std::abs(dy-pending->witnessSize);
     return std::max(x,y)+std::min(x,y)/2<pending->residualRange &&
@@ -185,8 +201,8 @@ bool DebugAi::Impl::worldResultReady(const Context &c,const QuestStep &step) con
     case QuestAction::Portal:
         if(step.cinematic && world.cinematic==step.cinematic) return true;
         if(step.area==c.town.read().area) return !step.cinematic;
-        if(step.walkingTrigger && !teleportAvailable(c)) {
-            const auto trigger=find(c,step.walkingTrigger->target,true);
+        if(step.proximityTrigger) {
+            const auto trigger=find(c,step.proximityTrigger->target,true);
             if(!trigger || trigger->mode!=2) return false;
         }
         if(step.target) if(const auto portal=find(c,*step.target,true)) {
@@ -220,7 +236,7 @@ void DebugAi::Impl::waitForWorldResult(Context &c,const QuestStep &step,std::str
             pending.anchor={float(questState.questRun.encounterPosition->x),float(questState.questRun.encounterPosition->y)};
         if(step.action==QuestAction::Encounter && step.clearCombat && step.witness && step.residualRange) {
             pending.residualRange=step.residualRange;pending.witnessSize=c.town.monsterSizeX(step.witness->identity);
-            pending.inspectResidualAt=Clock::now()+std::chrono::seconds(2);
+            pending.clearanceRevision=++navigation.searchEventSequence;
             pending.soundSequence=c.observation.read().world.combatSequence;
         }
         pending.seconds=step.resultWaitSeconds?step.resultWaitSeconds:unsigned(eventPolicy.waitSeconds);
@@ -251,8 +267,8 @@ void DebugAi::Impl::waitAtWorldEvent(Context &c,const QuestStep &step,OnlinePoin
     }
 }
 bool DebugAi::Impl::approachWorldTrigger(Context &c,const QuestStep &step) {
-    if(!step.walkingTrigger || teleportAvailable(c) || !area || (step.sourceArea && step.sourceArea!=area)) return false;
-    const auto &rule=*step.walkingTrigger;
+    if(!step.proximityTrigger || !area || (step.sourceArea && step.sourceArea!=area)) return false;
+    const auto &rule=*step.proximityTrigger;
     const auto trigger=find(c,rule.target,true);
     // The server advances this object through QUESTFN, not silent ENDANIM.
     if(trigger && trigger->mode==2) return false;
@@ -279,29 +295,25 @@ bool DebugAi::Impl::approachWorldTrigger(Context &c,const QuestStep &step) {
         waitAtWorldEvent(c,step,{uint16_t(c.position.x+.5f),uint16_t(c.position.y+.5f)},
             "Waiting inside the observed proximity trigger for the server to open the passage",1);return true;
     }
-    const auto *map=c.town.map();const auto origin=c.town.read().origin;
-    if(map && origin && room!=rooms.end()) {
-        const Vec offset{float(origin->x),float(origin->y)};
-        const auto grid=c.town.navigationGrid(c.observation.read());
-        const auto &component=c.walk.navigationSearch().connectionComponent(map->grid,c.position-offset+Vec{.5f,.5f});
-        std::optional<OnlinePoint> best;float score=std::numeric_limits<float>::max();
-        // Sample only actual same-room terrain connected to this bank. Do
-        // not aim at the blocked bridge center or assume a fixed map layout.
-        const int radius=rule.distance+size/2+1;
-        for(int y=std::max(room->y,int(marker->y)-radius);y<std::min(room->y+room->height,int(marker->y)+radius+1);++y)
-            for(int x=std::max(room->x,int(marker->x)-radius);x<std::min(room->x+room->width,int(marker->x)+radius+1);++x) {
-                const Vec at{float(x),float(y)},local=at-offset+Vec{.5f,.5f};
-                if(x<0 || y<0 || x>65535 || y>65535 || !inside(at) || local.x<0 || local.y<0 || local.x>=grid.width || local.y>=grid.height ||
-                    size_t(local.y)*grid.width+int(local.x)>=component.cells.size() ||
-                    !component.cells[size_t(local.y)*grid.width+int(local.x)] ||
-                    !grid.nativeMovementSegment(local,local,playerMovement) || frontierCoolingDown({uint16_t(x),uint16_t(y)},1)) continue;
-                const float distance=questState.questRun.worldWait && at.x==questState.questRun.worldWait->anchor.x && at.y==questState.questRun.worldWait->anchor.y?
-                    -1.f:(at-c.position).length();
-                if(distance<score) {score=distance;best=OnlinePoint{uint16_t(x),uint16_t(y)};}
-            }
-        if(best) {waitAtWorldEvent(c,step,*best,"Approaching the observed passage proximity trigger",.5f);return true;}
+    const auto origin=c.town.read().origin;
+    if(!origin || room==rooms.end()) {
+        waitAtWorldEvent(c,step,*marker,"Approaching the observed passage trigger room");return true;
     }
-    waitAtWorldEvent(c,step,*marker,"Waiting for a reachable approach to the observed passage trigger");return true;
+    const Vec offset{float(origin->x),float(origin->y)};
+    const auto grid=c.town.navigationGrid(c.observation.read());
+    std::vector<DebugExplorationMemory::Cell> stances;
+    // Either travel mode must first reach the same server trigger. Plan to
+    // legal cells around it, since the unopened bridge center can be solid.
+    const int radius=rule.distance+size/2+1;
+    for(int y=std::max({0,room->y,int(marker->y)-radius});y<std::min({65536,room->y+room->height,int(marker->y)+radius+1});++y)
+        for(int x=std::max({0,room->x,int(marker->x)-radius});x<std::min({65536,room->x+room->width,int(marker->x)+radius+1});++x) {
+            const Vec at{float(x),float(y)};
+            if(inside(at) && grid.walkable(at-offset+Vec{.5f,.5f},playerMovement) &&
+                !frontierCoolingDown({uint16_t(x),uint16_t(y)},1)) stances.emplace_back(x,y);
+        }
+    if(!battle.retreatPoint && !battle.combatRun.reposition && !battle.combatRun.kitePoint)
+        approachPoint(c,*marker,"observed passage proximity trigger",0,false,{},std::move(stances));
+    return true;
 }
 void DebugAi::Impl::observeWorldWait(Context &c) {
     if(!questState.questRun.worldWait || cursor>=goals.size() || questState.questRun.step>=goals[cursor].steps.size()) return;
@@ -322,7 +334,7 @@ void DebugAi::Impl::observeWorldWait(Context &c) {
         if(witness!=world.units.end() && witness->second.assignmentRevision==revision)
             for(const auto &event:world.combatEvents) if(event.sequence>pending.soundSequence && event.kind==OnlineCombatEvent::Kind::Sound &&
                 event.packet==0x2c && event.source==key && event.auxiliary==*step.stageSound) {
-                pending.inspectResidualAt=Clock::now();
+                pending.clearanceRevision=++navigation.searchEventSequence;
                 if(pending.lastProgress!="witness stage sound") {progress=true;pending.lastProgress="witness stage sound";}
             }
         pending.soundSequence=world.combatSequence;
@@ -333,10 +345,12 @@ void DebugAi::Impl::observeWorldWait(Context &c) {
         if(found==pending.enemies.end()) {
             if(!encounterEnemy(c,unit) || pending.enemies.size()>=256) continue;
             found=pending.enemies.emplace(identity,WorldWait::Enemy{}).first;
+            if(pending.residualRange) pending.clearanceRevision=++navigation.searchEventSequence;
             progress=true;pending.lastProgress="new hostile assigned in encounter";
         }
         auto &enemy=found->second;
         if(!enemy.dead && onlineMonsterCorpse(unit)) {
+            if(pending.residualRange) pending.clearanceRevision=++navigation.searchEventSequence;
             enemy.dead=true;progress=true;pending.lastProgress="actual encounter corpse";
         }
         if(unit.lifePercent) {
@@ -387,30 +401,47 @@ bool DebugAi::Impl::tacticalPathSafe(const Context &c,const std::deque<Vec> &pat
 }
 std::optional<OnlinePoint> DebugAi::Impl::encounterStance(Context &c,OnlinePoint anchor) {
     const auto *map=c.town.map();const auto origin=c.town.read().origin;
-    if(!map || !origin) return {};
+    auto &diagnostics=questState.questRun.encounterStanceDiagnostics;
+    diagnostics={{"anchor",{anchor.x,anchor.y}},{"from",{c.position.x,c.position.y}},{"result","terrain-unavailable"}};
+    if(!map || !origin || !area) return {};
+    const auto *memory=observeTerrain(c);if(!memory) return {};
     const Vec offset{float(origin->x),float(origin->y)},center{float(anchor.x),float(anchor.y)};
-    const auto grid=c.town.navigationGrid(c.observation.read());const auto hazards=visibleThreats(c);
-    struct Candidate {OnlinePoint point;float score;};std::vector<Candidate> candidates;
-    for(const int radius:{eventPolicy.standoffMin,(eventPolicy.standoffMin+eventPolicy.standoffMax)/2,eventPolicy.standoffMax})
-        for(int direction=0;direction<16;++direction) {
-            const float angle=float(direction)*6.28318530718f/16;
-            const Vec at{std::floor(center.x+radius*std::cos(angle)),std::floor(center.y+radius*std::sin(angle))};
-            if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535 || !tacticalPositionAllowed(c,at) ||
-                frontierCoolingDown({uint16_t(at.x),uint16_t(at.y)},2) ||
-                !grid.nativeMovementSegment(at-offset+Vec{.5f,.5f},at-offset+Vec{.5f,.5f},playerMovement) ||
-                !map->grid.collisionSegment(at-offset+Vec{.5f,.5f},center-offset+Vec{.5f,.5f},4) || threatClearance(hazards,at)<0) continue;
-            candidates.push_back({{uint16_t(at.x),uint16_t(at.y)},(at-c.position).length()});
+    const auto hazards=visibleThreats(c);
+    std::vector<DebugExplorationMemory::Cell> candidates;
+    size_t sampled=0,unknown=0,blocked=0,cooling=0,occluded=0,dangerous=0;
+    const int minimum=eventPolicy.standoffMin,maximum=eventPolicy.standoffMax;
+    // These are final observation goals, not single-cast escape landings.
+    // Inspect known floor throughout the annulus, including narrow lanes
+    // between the old radial samples. Dynamic occupancy belongs to execution.
+    for(int y=std::max(0,int(anchor.y)-maximum);y<=std::min(65535,int(anchor.y)+maximum);++y)
+        for(int x=std::max(0,int(anchor.x)-maximum);x<=std::min(65535,int(anchor.x)+maximum);++x) {
+            const int dx=x-anchor.x,dy=y-anchor.y,squared=dx*dx+dy*dy;
+            if(squared<minimum*minimum || squared>maximum*maximum) continue;
+            ++sampled;const Vec at{float(x),float(y)};
+            if(!tacticalPositionAllowed(c,at)) {++unknown;continue;}
+            if(!memory->stand(x,y)) {++blocked;continue;}
+            if(frontierCoolingDown({uint16_t(x),uint16_t(y)},2)) {++cooling;continue;}
+            if(!map->grid.collisionSegment(at-offset+Vec{.5f,.5f},center-offset+Vec{.5f,.5f},4)) {++occluded;continue;}
+            if(threatClearance(hazards,at)<0) {++dangerous;continue;}
+            candidates.emplace_back(x,y);
         }
-    std::stable_sort(candidates.begin(),candidates.end(),[](const auto &a,const auto &b){return a.score<b.score;});
-    for(const auto &candidate:candidates) {
-        const Vec at{float(candidate.point.x),float(candidate.point.y)};
-        if(teleportAvailable(c)) {
-            if((at-c.position).length()<=mobilityPolicy.distance && TeleportRooms(c).contains(at)) return candidate.point;
-            continue;
-        }
-        const auto path=c.walk.navigationSearch().path(map->grid,c.position-offset+Vec{.5f,.5f},at-offset+Vec{.5f,.5f},false,playerMovement,true);
-        if(!path.empty() && (path.back()-(at-offset+Vec{.5f,.5f})).length()<1 && tacticalPathSafe(c,path,offset,hazards)) return candidate.point;
-    }
-    return {};
+    const auto [range,restricted]=travelMobility(c,*area,false);
+    diagnostics["sampled"]=sampled;diagnostics["outsideLoadedScene"]=unknown;diagnostics["blockedFloor"]=blocked;
+    diagnostics["cooling"]=cooling;diagnostics["occluded"]=occluded;diagnostics["dangerous"]=dangerous;
+    diagnostics["candidates"]=candidates.size();diagnostics["teleportRange"]=range;
+    diagnostics["result"]=candidates.empty()?"no-safe-known-floor":"planning";
+    if(candidates.empty()) return {};
+    // The common route planner validates walking, legal multi-cast relays
+    // and (for walkers) observed transport links. A Partial endpoint is only
+    // a relay; keep its final objective as the encounter's retained stance.
+    const auto plan=c.walk.navigationSearch().observedRoute(*area,c.position,range,restricted,center,0,0,false,
+        std::move(candidates),{},range==0);
+    std::optional<OnlinePoint> stance;
+    if(!plan.points.empty()) stance=plan.objective.value_or(plan.points.back());
+    diagnostics["expanded"]=plan.expanded;diagnostics["routePoints"]=plan.points.size();
+    diagnostics["result"]=stance?"route-selected":plan.outcome==DebugExplorationMemory::Plan::Outcome::StartUnavailable?
+        "start-unavailable":plan.outcome==DebugExplorationMemory::Plan::Outcome::ExecutionBlocked?"execution-blocked":"no-known-route";
+    diagnostics["selected"]=stance?Json{stance->x,stance->y}:Json(nullptr);
+    return stance;
 }
 } // namespace d2x

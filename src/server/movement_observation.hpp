@@ -4,8 +4,20 @@
 #include "core/math.hpp"
 #include "world/identity.hpp"
 #include <string>
+#include <optional>
+#include <vector>
 
 namespace d2x::server {
+struct NpcMovementObservation {
+    uint32_t guid{};
+    int nativeClass{};
+    Vec position, goal;
+    std::optional<Vec> next, end;
+    std::optional<Vec> collisionCell;
+    uint16_t collisionMask{};
+    uint8_t collisionPattern{}, mode{}, pathType{};
+    bool moving{};
+};
 struct MovementObservation {
     GameHandle game;
     EntityId actor;
@@ -19,5 +31,8 @@ struct MovementObservation {
     uint64_t executedSequence{};
     bool simulationPending{};
     std::string pendingPhase;
+    uint32_t mapSeed{};
+    std::optional<Vec> next, end;
+    std::vector<NpcMovementObservation> npcs;
 };
 }

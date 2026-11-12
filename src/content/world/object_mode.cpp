@@ -51,6 +51,19 @@ int objectDisplayMode(const DataTable &objects, size_t row, int mode, float elap
 }
 
 ObjectPresentation objectPresentation(const DataTable &objects, size_t row, int mode, float elapsed) {
+    const bool draw=objects.number(row,"Draw").value_or(0)!=0;
+    if(mode==3 && objects.number(row,"Id").value_or(0)==189 && objects.number(row,"Mode4").value_or(0)) {
+        // Retail D2Client RVA 25822 decrements the S1 counter and enters S2
+        // when it goes below zero, including when CycleAnim3 is set.
+        const int frames=objects.number(row,"FrameCnt3").value_or(0);
+        const int speed=objects.number(row,"FrameDelta3").value_or(0);
+        const int start=objects.number(row,"Start3").value_or(0);
+        if(frames>1 && speed>0 && start>=0 && start<frames) {
+            const float end=float(int64_t(start)*256/speed+1)/25.f;
+            if(elapsed>=end) return {4,elapsed-end,draw};
+        }
+        return {mode,elapsed,draw};
+    }
     auto end = objectEndAnimation(objects, row, mode);
     if(!end && mode==1 && !objects.number(row,"IsDoor").value_or(0) &&
         !objects.number(row,"CycleAnim1").value_or(0) && objects.number(row,"Mode2").value_or(0)) {
@@ -65,7 +78,6 @@ ObjectPresentation objectPresentation(const DataTable &objects, size_t row, int 
         }
     }
     const bool opened = end && elapsed >= *end;
-    return {opened ? 2 : mode, opened ? elapsed - *end : elapsed,
-            objects.number(row, "Draw").value_or(0) != 0};
+    return {opened ? 2 : mode, opened ? elapsed - *end : elapsed, draw};
 }
 } // namespace d2x

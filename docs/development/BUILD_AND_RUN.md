@@ -54,18 +54,18 @@ cmake --build build --parallel
 
 `Play-Diagnostic.cmd` 沿用普通 Play 的程序和角色目录，并为每次启动创建独立诊断目录。包日志、脱敏范围和现场读取见[原服收包记录](DEBUG_PIPE.md#原服收包记录)。
 
-`Play-AI.cmd [职业] [幕范围或 continue]` 从源码目录启动图形单机任务 AI。默认职业为 `sor`（女巫），也可选 `ama`（亚马逊）。`pal`、`nec` 等职业尚无准备档。默认计划为普通难度 `act1-5`。可选单幕或升序范围，首幕决定起始存档。
+`debug-AI.cmd [职业] [幕范围或 continue]` 从源码目录启动图形单机任务 AI。默认职业为 `sor`（女巫），也可选 `ama`（亚马逊）。`pal`、`nec` 等职业尚无准备档。默认计划为普通难度 `act1-5`。可选单幕或升序范围，首幕决定起始存档。
 
 ```powershell
-.\Play-AI.cmd
-.\Play-AI.cmd act2-5
-.\Play-AI.cmd ama act1-2
-.\Play-AI.cmd ama continue
+.\debug-AI.cmd
+.\debug-AI.cmd act2-5
+.\debug-AI.cmd ama act1-2
+.\debug-AI.cmd ama continue
 ```
 
-启动器从本地 `artifacts/saves/` 读取 99 级起始档，女巫使用 `ActOneSorc.d2s` 至 `ActFiveSorc.d2s`，亚马逊使用 `ActOneAmazon.d2s` 至 `ActFiveAmazon.d2s`。每次启动都复制到新诊断目录的 `saves/`。`continue` 按所选职业查找最近一次成功启动 AI 的运行，复制已落盘的 D2S 及现存 `.map`／`.ma0` 至 `.ma3`，沿用原幕范围并从存档对应城镇入局。`Play-AI.cmd continue` 接续女巫，也支持旧启动器留下的女巫运行。计划根据角色任务状态恢复。用 Save & Exit 保存进度，供下次启动接续。
+启动器从本地 `artifacts/saves/` 读取 99 级起始档，女巫使用 `ActOneSorc.d2s` 至 `ActFiveSorc.d2s`，亚马逊使用 `ActOneAmazon.d2s` 至 `ActFiveAmazon.d2s`。每次启动都复制到新诊断目录的 `saves/`。`continue` 按启动时间选取所选职业最近一次可续档的运行，跳过缺少有效运行记录、合法幕范围或对应存档的目录。启动器复制已落盘的 D2S 及现存 `.map`／`.ma0` 至 `.ma3`，沿用原幕范围并从存档对应城镇入局。`debug-AI.cmd continue` 接续女巫，也支持旧启动器留下的女巫运行。计划根据角色任务状态恢复。用 Save & Exit 保存进度，供下次启动接续。
 
-启动器要求先关闭已有 D2X 实例。双击时保留启动器控制台和游戏窗口，D2X 复用启动器的控制台，标准输出和错误仍写入本次诊断目录。客户端就绪后，通过独立调试管道核对角色与等级，新计划还核对起始城镇，再使用配置快照启动 AI。工作目录和 `client-settings.json` 与普通 Play 共用，失焦时继续运行。需要指定资源目录时可传 `Play-AI.cmd ama act1-2 -Mpq <目录>`。
+启动器要求先关闭已有 D2X 实例。双击时保留启动器控制台和游戏窗口，D2X 复用启动器的控制台，标准输出和错误仍写入本次诊断目录。客户端就绪后，通过独立调试管道核对角色与等级，新计划还核对起始城镇，再使用配置快照启动 AI。工作目录和 `client-settings.json` 与普通 Play 共用，失焦时继续运行。需要指定资源目录时可传 `debug-AI.cmd ama act1-2 -Mpq <目录>`。
 
 各次启动的配置快照、包日志、程序输出及存档位于 `artifacts/diagnostics/` 的独立子目录。导航输出见[慢搜索导出](DEBUG_AI.md#慢搜索与无路现场导出)，崩溃报告见[崩溃记录](CRASH_REPORTS.md)。进程异常退出时，启动器报告日志目录及可取得的退出码，详细输出见 `stderr.log` 和 `stdout.log`。
 
@@ -74,6 +74,8 @@ cmake --build build --parallel
 显式添加`--movement-diff-log artifacts/movement-diff.jsonl`开启；路径必须不存在，父目录自动创建。默认关闭，仅支持图形客户端本地Single Player，包括正常菜单选角和`--load`快捷入局；显式headless／TCP/IP／远端快捷启动组合会被拒绝，运行中进入其他模式只记录无单机宿主的状态。功能只读状态，不纠正位置、不新增游戏包。
 
 每帧在本地场景更新后读取同线程宿主角色轻量状态及客户端路径／显示脚点，坐标统一为全局子格脚点，显示坐标含平滑校正。宿主数据包含真实tick、区域、内部实体及原生GUID、目的点／目标、已接受命令与移动序号、传送代次和走跑／生命／击退状态；不是客户端最近收到的坐标包。commandSequence与acceptedSequence均表示入队受理，executedSequence来自最近命令结果，不能混同；simulationPending和pendingPhase辅助区分模拟续帧、修饰器准备与命令继续，但不是所有准备工作的耗时追踪。tickAgeMs表示本客户端首次观察到该tick以来的时间，不是网络延迟或精确服务端帧相位。重复观察同tick仍保留，hostTickChanges单独统计。
+
+同一开关采集附近NPC的双端位置，记录格式为schema 2。以当前区域的宿主活动NPC为候选，按原生怪物GUID配对客户端指派，保留距任一玩家脚点16子格内最近的6个NPC，`nearbyNpcCount`报告截断前数量。`npcs`记录双方脚点、路线首尾点、客户端收包坐标和动作修订、宿主实际登记的碰撞脚印。客户端`positionSource`区分预测路径与封包坐标后备，尚未指派时`client`为空。玩家采样也记录地图种子和双方当前路线首尾点。NPC差值随现有玩家异常窗口落盘，反映采样时刻两端的观测差异，不能单凭差值判定碰撞分叉。
 
 每五秒更新窗口和本进程累计统计：按有效相邻帧间时长加权的均值／RMS、1/16子格桶近似P95（64子格及以上溢出）、路径／显示最大误差、平均有向偏差、双方位移量、超过2／5子格时长及最长连续时长、一端运动状态／位移而另一端停住的时长、区域不一致时长、有效覆盖率与长帧／跳过原因。大于100ms的帧间隔不参与加权误差或连续偏离累计，帧数仍记录。未取得客户端脚点、暂停／最小化、死亡及身份不匹配不作普通误差统计。换局／换区／位置不连续／传送／生死边界断开连续统计，并保留200ms过渡样本，不做延迟补偿。
 

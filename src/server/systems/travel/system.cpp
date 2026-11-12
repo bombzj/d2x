@@ -220,6 +220,13 @@ DomainResult<> System::castTeleport(const ActorContext &actor,PointTarget target
     return teleport(actor,{free->room.area,destination.generation,free->position},manaCost,charge,skill);
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    std::erase_if(padTransfers_,[&](const auto &entry) {
+        const auto &plan=entry.second;const auto *player=ports_.players.find(entry.first);
+        const auto *area=ports_.areas.find(plan.actor.area);
+        return !player || !player->entered || player->actor!=plan.actor.actor || player->area!=plan.actor.area ||
+            player->persistent.player.hp<=0 || player->locomotionSequence!=plan.locomotion ||
+            !area || area->generation!=plan.actor.areaGeneration;
+    });
     std::erase_if(portalCreations_,[&](const auto &entry) {
         const auto &actor=entry.second.actor;const auto *player=ports_.players.find(entry.first);
         const auto *area=ports_.areas.find(actor.area);
@@ -289,13 +296,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (transition.kind == Kind::Waypoint) {
             if(transition.arrivalGeneration) ports_.world.activate(transition.to,transition.arrival);
         }
-        else if (transition.kind == Kind::Npc || actFiveEntry) ports_.world.activate(transition.to, targetDefinition.spawn);
         else if (transition.kind == Kind::Exit) {
             for (const auto &exit : targetDefinition.exits) if (exit.destination == transition.from)
                 ports_.world.activate(transition.to, exit.arrival);
         } else if (transition.kind == Kind::QuestObject) {
             if(transition.arrivalGeneration) ports_.world.activate(transition.to,transition.arrival);
-        } else ports_.world.activate(transition.to, arrival);
+        } else if(transition.kind!=Kind::Npc && !actFiveEntry) ports_.world.activate(transition.to, arrival);
         if(transition.kind==Kind::Npc) {
             const ActorContext actor{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick};
             // The original client closes30 before travel38. An accepted
@@ -308,12 +314,6 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 (npc->rule.code=="warriv1" && book.at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::PassageReady)) ||
                 (npc->rule.code=="meshif1" && book.at(questIndex(QuestId::SevenTombs)).stage<uint32_t(TombsStage::PassageGranted)) ||
                 (npc->rule.code=="meshif2" && !player.persistent.player.completedActs.at(size_t(player.persistent.difficulty)).at(1))) {pending=state_.transitions.erase(pending);continue;}
-            if(!transition.arrivalGeneration) {
-                const auto spawn=ports_.world.nativeActSpawnLocationEx(transition.to,0,2);
-                if(!spawn || spawn->area!=transition.to) {pending=state_.transitions.erase(pending);continue;}
-                transition.arrival=spawn->position;transition.arrivalGeneration=destination->generation;
-            }
-            arrival=transition.arrival;
         }
         std::optional<Vec> exitWalk;
         if(transition.kind==Kind::NativeObjectPortal) {
@@ -328,9 +328,14 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             arrival=target->second.position;
         }
         if(transition.kind==Kind::SpecialPortal && (!ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to) || std::none_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.fieldId==transition.source || entry.second.townId==transition.source;}))) {pending=state_.transitions.erase(pending);continue;}
-        if(actFiveEntry) {
+        if(transition.kind==Kind::Npc || actFiveEntry) {
+            // Native act spawning requires an active destination room. Freeze
+            // the selected tile across asynchronous loading, then run the same
+            // free-coordinate query; missing room input is not a failed warp.
             if(!transition.arrivalGeneration) {
-                const auto anchor=ports_.world.nativeActSpawnLocation(transition.to,5);
+                // SUnitNpc passes tile0 east/sailing onward and tile5 on return.
+                const int tile=actFiveEntry || source->definition.act>targetDefinition.act?5:0;
+                const auto anchor=ports_.world.nativeActSpawnLocation(transition.to,tile);
                 if(!anchor) {pending=state_.transitions.erase(pending);continue;}
                 transition.arrival=*anchor;transition.arrivalGeneration=destination->generation;
             }

@@ -49,6 +49,16 @@ const OnlineUnit *RemoteScene::Impl::questNearbyUnit(const OnlineView &view,cons
 void RemoteScene::Impl::observeQuestMissileEffects(const OnlineView &view,const Map &map,SceneView &shared,WorldDrawView &scene,float elapsed) {
     if(pd2) return;
     auto &quest=mapDisplay.questEffects;
+    if(!quest.cairnArtworkPrepared && sceneBinding && sceneBinding->area==4 &&
+        questNearbyUnit(view,map,2,17)) {
+        quest.cairnArtworkPrepared=true;
+        if(const auto row=missileRows.find(288);row!=missileRows.end()) {
+            shared.projectileVisual(288);
+            const auto child=missileNames.find(missiles.value(row->second,"CltSubMissile1"));
+            if(child!=missileNames.end())
+                if(const auto id=missiles.number(child->second,"Id")) shared.projectileVisual(*id);
+        }
+    }
     const auto taintedSun=view.world.questEffectOccurrences[6];
     if(quest.taintedSunOccurrence!=taintedSun) {
         const auto count=taintedSun>=quest.taintedSunOccurrence?taintedSun-quest.taintedSunOccurrence:taintedSun;
@@ -132,7 +142,7 @@ void RemoteScene::Impl::observeQuestMissileEffects(const OnlineView &view,const 
             if(row!=missileRows.end()) {
                 const int fade=missiles.number(row->second,"Param1").value_or(0);
                 const int total=missiles.number(row->second,"Range").value_or(0);
-                if(fade>0 && fade<=total/2) scene.ambientFade=WorldDrawView::AmbientFade{4,fade,total-2*fade,fade};
+                if(fade>0 && fade<=total/2) scene.ambientFade=WorldDrawView::AmbientFade{4,fade,total-2*fade,fade,true};
             }
         } else if(effect==14) {
             initialization.parameters=std::array<int32_t,2>{int32_t(target->key.id),0};
@@ -191,25 +201,21 @@ void RemoteScene::Impl::observeDenLights(const OnlineView &view,const Map &map,S
         quest.denFrames+=std::max(0.f,elapsed)*25.f;
         if(quest.denFrames>=30) quest.denComplete=true;
     }
-    if(*sceneBinding->area!=8) {
-        for(const auto &[room,revision]:denLightRooms) {(void)revision;shared.retireClientMissileRoom(room);}
-        denLightRooms.clear();return;
-    }
-    struct Room {std::array<int,3> key;uint64_t revision;const RoomBounds *bounds;};
+    struct Room {std::array<int,3> key;uint64_t revision;const MapTerrain::PreparedRoom *bounds;};
     std::vector<Room> rooms;
     const auto origin=*sceneBinding->origin;
     for(const auto &[key,revision]:view.world.roomAssignmentRevisions) {
         const auto [level,x,y]=key;if(level!=8) continue;
-        const auto bounds=std::find_if(map.rooms.begin(),map.rooms.end(),[&](const auto &room) {
-            return room.x+int(origin.x)==int(x)*5 && room.y+int(origin.y)==int(y)*5;
+        const auto bounds=std::find_if(map.terrain.rooms.begin(),map.terrain.rooms.end(),[&](const auto &room) {
+            return room.level==8 && room.x+int(origin.x)/5==int(x) && room.y+int(origin.y)/5==int(y);
         });
-        if(bounds!=map.rooms.end()) rooms.push_back({{level,x,y},revision,&*bounds});
+        if(bounds!=map.terrain.rooms.end()) rooms.push_back({{level,x,y},revision,&*bounds});
     }
     std::erase_if(denLightRooms,[&](const auto &entry) {
         if(std::any_of(rooms.begin(),rooms.end(),[&](const auto &room){return room.key==entry.first && room.revision==entry.second;})) return false;
         shared.retireClientMissileRoom(entry.first);return true;
     });
-    if(!quest.denComplete) return;
+    if(!quest.denComplete || rooms.empty()) return;
     // Retail 53550 creates class 287; it is an engine identity, while its art,
     // lifetime, animation and light remain current MPQ data.
     if(!missileRows.contains(287) || !shared.projectileVisual(287)) {
@@ -219,14 +225,15 @@ void RemoteScene::Impl::observeDenLights(const OnlineView &view,const Map &map,S
     // interleaving with packet89 still requires original-client comparison.
     std::sort(rooms.begin(),rooms.end(),[](const auto &left,const auto &right){return left.revision>right.revision;});
     const OnlineUnitKey player{0,*view.load.playerUnitId};
-    auto &random=pd2VisualSeeds.try_emplace(player,Pd2VisualSeed{initialRandom(player.id),0}).first->second.random;
+    if(!quest.denRandom) quest.denRandom=initialRandom(player.id);
+    auto &random=*quest.denRandom;
     for(const auto &room:rooms) {
         if(!denLightRooms.contains(room.key)) {
             auto [plan,inserted]=quest.denRooms.try_emplace(room.key,RemoteMapDisplayState::QuestEffects::DenRoom{room.revision,quest.seconds,{}});
             if(inserted) {
                 for(int attempt=0;attempt<25 && plan->second.positions.size()<3;++attempt) {
-                    const int x=room.bounds->x+int(limitedRandom(random,uint32_t(room.bounds->width)));
-                    const int y=room.bounds->y+int(limitedRandom(random,uint32_t(room.bounds->height)));
+                    const int x=room.bounds->x*5+int(limitedRandom(random,uint32_t(room.bounds->width*5)));
+                    const int y=room.bounds->y*5+int(limitedRandom(random,uint32_t(room.bounds->height*5)));
                     if(map.grid.nativeMovementMask(x,y)&5) continue;
                     plan->second.positions.push_back({float(x)+float(origin.x)+.5f,float(y)+float(origin.y)+.5f});
                 }

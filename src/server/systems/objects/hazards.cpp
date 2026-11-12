@@ -66,6 +66,10 @@ void System::initialize(Object &object,uint64_t tick,uint64_t &random,uint64_t &
         rule.trap=limitedRandom(controlRandom,1000)<333?3:0;
     }
     if(rule.initialization==8) object.mode=2;
+    if(rule.initialization==45) {
+        object.collisionReleased=object.mode==2;
+        if(!object.mode) object.hazardAt=tick+20;
+    }
     if(rule.initialization==12 && !object.mode) {object.mode=1;object.until=tick+rule.openingTicks;}
     if(rule.initialization==11 && object.mode==1) object.until=tick+rule.openingTicks;
     if(rule.initialization==11) object.portalDestination=uint8_t(ports_.areas.at(object.area).definition.townRegion);

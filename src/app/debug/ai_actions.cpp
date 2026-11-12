@@ -225,6 +225,7 @@ bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
     if(goal.sourceObject) {
         const auto source=find(c,Selector{2,*goal.sourceObject,"item source"},true);
         if(source) {
+            targetSearchObserved(c);
             target=source->key;targetAssignment=source->assignmentRevision;
             wait("item-source","Operating the actual assigned item source");
             if(walk(c,{.goal=DebugWalkGoal::Unit,.unit=OnlineUnitKey{source->key.type,source->key.id},.interact=true})) {
@@ -233,7 +234,9 @@ bool DebugAi::Impl::acquireItem(Context &c,const Goal &goal) {
             return false;
         }
     }
-    if(goal.sourceObject && approachKnown(c,Selector{2,*goal.sourceObject,"item source"})) return false;
+    if(goal.sourceObject) {
+        searchTarget(c,Selector{2,*goal.sourceObject,"item source"},goal.search?&*goal.search:nullptr);return false;
+    }
     explore(c,"item "+goal.item,false,ExplorationFocus::Units);return false;
 }
 void DebugAi::Impl::returnTown(Context &c) {
@@ -241,23 +244,29 @@ void DebugAi::Impl::returnTown(Context &c) {
 }
 bool DebugAi::Impl::reachTown(Context &c) {
     if(c.town.read().town) return true;
-    if(!portalIssued && waypointBeforeDeparture(c)) return false;
+    const bool awaitingTransfer=navigation.legDestination && navigation.legDestination!=area &&
+        (navigation.travelPhase==TravelPhase::WaypointWait || navigation.travelPhase==TravelPhase::CrossWait);
+    if(!portalIssued && !awaitingTransfer && waypointBeforeDeparture(c)) return false;
     const auto &view=c.observation.read();const auto now=Clock::now();
     if(!view.load.townArea) throw std::runtime_error("Current native act has no assigned town");
-    // An unlocked waypoint already within interaction approach is cheaper
-    // than casting a portal beside it. Continue a chosen return route across
-    // frames, but never replace a portal request that is already submitted.
-    const bool nearbyWaypoint=area && navigation.knownWaypointAreas.contains(*area) && area!=navigation.unavailableWaypointArea &&
-        std::any_of(c.town.read().mapTargets.begin(),c.town.read().mapTargets.end(),[&](const auto &entry) {
-            if(entry.interaction!=OnlineMapInteraction::Waypoint || c.town.assignedUnitLevel(entry.unit)!=area || (position(entry.position)-c.position).length()>16) return false;
-            const auto unit=view.world.units.find(entry.unit);
-            return unit!=view.world.units.end() && !(navigation.deferredWaypoint && navigation.deferredWaypoint->unit==entry.unit &&
-                navigation.deferredWaypoint->assignment==unit->second.assignmentRevision && now<navigation.deferredWaypoint->retryAt);
-        });
-    if(!portalIssued && navigation.knownWaypointAreas.contains(*view.load.townArea) &&
-        (navigation.travelDestination==view.load.townArea || nearbyWaypoint)) {
-        wait("return-waypoint","Using the nearby unlocked waypoint or continuing the selected town return route");
-        return travel(c,*view.load.townArea);
+    if(!portalIssued && area) {
+        if(navigation.travelDestination==view.load.townArea && navigation.travelPhase!=TravelPhase::Route)
+            return travel(c,*view.load.townArea);
+        // A far waypoint can be cheap for Teleport and expensive on foot.
+        // Price it, observed portals and ordinary exits with the same leg
+        // model used by travel; never prefer an old blue portal by identity.
+        float cost=routeCost(c,route(c,*area,*view.load.townArea));
+        // Unknown destinations can be inspected through the actual menu.
+        // Do not spend a scroll merely because the full 63 has not arrived.
+        if((navigation.knownWaypointAreas.contains(*view.load.townArea) || !navigation.waypointMemoryRevision) && area!=navigation.unavailableWaypointArea &&
+            !(navigation.deferredWaypoint && now<navigation.deferredWaypoint->retryAt)) {
+            const auto source=c.town.knownWaypointPosition(*area);
+            if(source) cost=std::min(cost,navigationCost(c,*area,c.position,source)+16);
+        }
+        if(cost<=48 || portalAttempted || c.town.read().townPortalSkills.empty()) {
+            wait("return-route","Following the priced exit, portal or waypoint route to town");
+            return travel(c,*view.load.townArea);
+        }
     }
     if(portalIssued) {
         if(portalUsed) {
@@ -289,14 +298,6 @@ bool DebugAi::Impl::reachTown(Context &c) {
         retryPassage(Passage::CreatePortal,"look for the assigned own portal; do not repeat scroll consumption");
         wait("town-portal-wait","Waiting for a newly assigned own portal");return false;
     }
-    if(!portalAttempted) for(const auto &entry:c.town.read().mapTargets)
-        if(entry.interaction==OnlineMapInteraction::Portal && entry.destination==view.load.townArea) {
-            const auto unit=view.world.units.find(entry.unit);
-            if(unit!=view.world.units.end() && unit->second.portalOwner==view.load.playerUnitId) {
-                portalAttempted=portalIssued=true;oldPortals.clear();setActionDeadline(std::chrono::seconds(12));
-                note("existing-own-portal-observed");return false;
-            }
-        }
     // A scroll/tome is a real resource. If none is available, use normal
     // walking/known unlocked waypoints rather than granting one.
     if(!portalAttempted && !c.town.read().townPortalSkills.empty()) {
@@ -330,7 +331,8 @@ void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
     }
     if(!owned(c,goal.item)) throw std::runtime_error("No required item is owned and no delivery reward flag confirms completion");
     const auto npc=find(c,*goal.target);
-    if(!npc) {if(!approachKnown(c,*goal.target)) explore(c,"delivery NPC "+goal.target->name,false,ExplorationFocus::Units);return;}
+    if(!npc) {searchTarget(c,*goal.target,goal.search?&*goal.search:nullptr);return;}
+    targetSearchObserved(c);
     const auto now=Clock::now();
     if(!view.world.npcConversation || view.world.npcConversation->type!=1 || view.world.npcConversation->source!=npc->key.id) {
         wait("delivery-approach","Opening the actual delivery NPC conversation");
@@ -356,7 +358,7 @@ void DebugAi::Impl::deliver(Context &c,const Goal &goal) {
     if(now>=actionDeadline) throw std::runtime_error("NPC did not confirm item consumption and reward readiness");
 }
 void DebugAi::Impl::executeGoal(Context &c,const Goal &goal) {
-    if(navigation.localPad && navigation.localPad->waiting) {wait("local-pad-result","Waiting for the actual same-level relocation");return;}
+    if(navigation.localPad && exploreLocalPad(c)) return;
     if(goal.kind==Kind::Quest) {quest(c,goal);return;}
     if (goal.requiredWaypoint && goal.area && navigation.knownWaypointAreas.contains(*goal.area)) {
         advance(c, "Personal waypoint activation observed"); return;
@@ -380,7 +382,8 @@ void DebugAi::Impl::executeGoal(Context &c,const Goal &goal) {
     case Kind::Find: case Kind::Hunt: break;
     }
     const auto unit=find(c,*goal.target,goal.kind==Kind::Hunt || !goal.interact);
-    if(!unit) {target.reset();if(!approachKnown(c,*goal.target)) explore(c,goal.target->name,false,ExplorationFocus::Units);return;}
+    if(!unit) {target.reset();searchTarget(c,*goal.target,goal.search?&*goal.search:nullptr);return;}
+    targetSearchObserved(c);
     target=unit->key;targetAssignment=unit->assignmentRevision;
     if(goal.kind==Kind::Hunt) {
         if(onlineMonsterCorpse(*unit)) {advance(c,"Assigned target death mode observed: "+goal.target->name);return;}

@@ -116,6 +116,23 @@ std::optional<OnlinePoint> DebugAi::Impl::experienceHint(const Context &c,const 
     }
     return result;
 }
+std::optional<OnlinePoint> DebugAi::Impl::experienceWaypointHint(const Context &c) const {
+    const auto *profile=areaExperience(c);if(!profile) return {};
+    std::optional<OnlinePoint> result;float closest=std::numeric_limits<float>::max();
+    for(const auto &hint:profile->landmarks) {
+        if(hint.type!=2) continue;
+        bool waypoint=false;
+        for(size_t row=0;row<definitions->objects.rows().size();++row)
+            if(definitions->objects.number(row,"Id")==hint.identity) {
+                waypoint=definitions->objects.number(row,"OperateFn")==23;break;
+            }
+        if(!waypoint) continue;
+        const auto at=experienceHint(c,Selector{2,hint.identity,"waypoint"});if(!at) continue;
+        const float span=(Vec{float(at->x),float(at->y)}-c.position).length();
+        if(span<closest) {closest=span;result=at;}
+    }
+    return result;
+}
 std::optional<DebugExplorationMemory::Cell> DebugAi::Impl::experienceDirection(const Context &c,ExplorationFocus focus) const {
     if(focus!=ExplorationFocus::Connection || !navigation.legDestination) return {};
     const auto *profile=areaExperience(c);if(!profile) return {};

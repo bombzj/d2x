@@ -37,6 +37,11 @@ class System {
         std::optional<Portal> portal;
     };
     std::map<PlayerId,PortalCreation> portalCreations_;
+    struct PadTransfer {
+        ActorContext actor;EntityId source,target;uint64_t sourceRevision{},targetRevision{},locomotion{};
+        RoomView counterpart;PointTarget landing;
+    };
+    std::map<PlayerId,PadTransfer> padTransfers_;
     std::map<EntityId,NativeLinkPosition> nativeLinks_;
     struct NativePortalLanding {
         NativeLinkPosition anchor;std::optional<NativeLinkPosition> landing;
@@ -66,6 +71,7 @@ class System {
     DomainResult<SpecialPortalPlan> prepareNativePermanentPortal(RegionId,Vec,int destination,uint64_t tick,int definition=60);
     DomainResult<> linkNativePortal(EntityId source,uint64_t tick);
     DomainResult<> useNativeObjectPortal(const ActorContext &,EntityId,std::optional<int> remoteRange={});
+    DomainResult<> useTeleportPad(const ActorContext &,EntityId);
     void commitSpecialPortal(SpecialPortalPlan) noexcept;
     std::optional<Vec> portalPosition(const ActorContext &,EntityId) const;
     std::optional<std::pair<RegionId,Vec>> nativePortalPosition(EntityId) const;

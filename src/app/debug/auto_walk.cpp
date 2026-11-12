@@ -33,7 +33,7 @@ nlohmann::json DebugAutoWalk::snapshot() const {return status();}
 void DebugAutoWalk::finish(DebugWalkState state,std::string reason,IOnlineControl &control,DebugWalkFailure failure) {
     if(state==DebugWalkState::Failed) ++failures_;
     failure_=state==DebugWalkState::Failed?failure:DebugWalkFailure::None;
-    state_=state;reason_=std::move(reason);control.cancelMovement();segment_.reset();pointerLane_.reset();recoveryAnchor_.reset();routeDoor_.reset();blockedStep_.reset();
+    state_=state;reason_=std::move(reason);control.cancelMovement();segment_.reset();nativeSegment_=false;pointerLane_.reset();recoveryAnchor_.reset();routeDoor_.reset();blockedStep_.reset();
 }
 void DebugAutoWalk::manualInput(IOnlineControl &control) {if(active()) finish(DebugWalkState::Cancelled,"Manual input took control",control);}
 nlohmann::json DebugAutoWalk::status() const {
@@ -53,8 +53,10 @@ nlohmann::json DebugAutoWalk::status() const {
     return {{"blockedStep",std::move(obstruction)},{"state",debugWalkName(state_)},{"active",active()},{"reason",reason_},{"gameGeneration",game_},{"areaGeneration",area_},
         {"area",level_?Json(*level_):Json(nullptr)},
         {"target",point_?Json{{"x",point_->x},{"y",point_->y}}:Json(nullptr)},
+        {"searchHint",searchHint_?Json{{"x",searchHint_->x},{"y",searchHint_->y}}:Json(nullptr)},
         {"unit",unit_?Json{{"type",unit_->type},{"id",unit_->id}}:Json(nullptr)},
         {"segment",segment_?Json{{"x",segment_->x},{"y",segment_->y}}:Json(nullptr)},
+        {"nativeSegment",segment_.has_value() && nativeSegment_},
         {"pointerLane",pointerLane_?Json{{"bend",position(pointerLane_->bend)},{"resume",position(pointerLane_->resume)},
             {"target",position(pointerLane_->target)},{"resuming",pointerLane_->resuming},{"town",pointerLane_->town}}:Json(nullptr)},
         {"pointerSelections",std::move(selections)},
@@ -119,6 +121,8 @@ std::optional<std::string> DebugAutoWalk::command(const nlohmann::json &request,
         const auto destination=request.contains("level")?std::optional{uint16_t(integer("level",1,136))}:std::nullopt;
         const int timeout=int(request.contains("timeoutSeconds")?integer("timeoutSeconds",5,300):120);
         DebugWalkIntent intent;intent.goal=kind;intent.point=location;intent.unit=target;intent.level=destination;intent.timeoutSeconds=timeout;
+        if(request.contains("searchHintX") || request.contains("searchHintY"))
+            intent.searchHint=OnlinePoint{uint16_t(integer("searchHintX",0,UINT16_MAX)),uint16_t(integer("searchHintY",0,UINT16_MAX))};
         if(request.contains("run")) intent.run=request.at("run").get<bool>();
         if(request.contains("interact")) intent.interact=request.at("interact").get<bool>();
         if(kind==Goal::Exit && request.contains("localCrossing")) intent.localCrossing=request.at("localCrossing").get<bool>();
@@ -150,16 +154,18 @@ void DebugAutoWalk::start(const DebugWalkIntent &request,const OnlineObservation
     const auto location=request.point;const auto target=request.unit;const auto destination=request.level;
     const int timeout=request.timeoutSeconds.value_or(120);
     if(kind==Goal::None || (kind==Goal::Point && !location) || (kind==Goal::Unit && !target) ||
-        (target && target->type>5) || (destination && (*destination<1 || *destination>136)) || timeout<5 || timeout>300)
+        (target && target->type>5) || (destination && (*destination<1 || *destination>136)) || timeout<5 || timeout>300 ||
+        (request.searchHint && kind!=Goal::Waypoint && kind!=Goal::Exit))
         throw std::invalid_argument("Debug walk value outside supported range");
     const bool run=request.run.value_or(true),interact=request.interact.value_or(kind==Goal::Waypoint || kind==Goal::Unit);
     const bool retainHostProgress=game_==view.gameGeneration && area_==view.world.areaGeneration && level_==scene.area &&
         hostProgressPosition_==view.world.playerPosition && client_ && view.world.playerPosition &&
         distance(*client_,*view.world.playerPosition)>8;
-    if(game_!=view.gameGeneration || area_!=view.world.areaGeneration || level_!=scene.area) {
+    if(game_!=view.gameGeneration || area_!=view.world.areaGeneration || level_!=scene.area || searchHint_!=request.searchHint) {
         passage_.reset();passageTarget_.reset();passageObservationSince_.reset();
     }
     control.cancelMovement();goal_=kind;point_=location;unit_=target;destination_=destination;
+    searchHint_=request.searchHint;
     game_=view.gameGeneration;area_=view.world.areaGeneration;level_=scene.area;run_=run;interact_=interact;landmark_=false;
     localCrossing_=kind==Goal::Exit && request.localCrossing.value_or(false);
     exploration_=kind==Goal::Point && !interact && request.exploration.value_or(false);
@@ -170,7 +176,7 @@ void DebugAutoWalk::start(const DebugWalkIntent &request,const OnlineObservation
     state_=DebugWalkState::Searching;failure_=DebugWalkFailure::None;reason_.clear();segment_.reset();previous_=view.world.playerPosition;visited_.clear();deferredOpenings_.clear();
     source_=kind==Goal::Point?"explicit-point":kind==Goal::Unit?"assigned-unit":"";
     client_.reset();server_=view.world.playerPosition;edgeStart_.reset();edgeEnd_.reset();crossing_.reset();exitLevel_.reset();
-    townTurnSince_={};legDiscontinuity_=0;
+    legDiscontinuity_=0;
     lastFrom_.reset();lastRequest_.reset();lastTarget_.reset();closeApproach_=false;approachRetries_=0;clickedAt_={};decisions_=0;clientMoving_=false;
     pointerLane_.reset();pointerSelections_.clear();lastPointerFeet_.reset();
     resyncApproach_=request.resyncApproach.value_or(false);
@@ -186,7 +192,7 @@ void DebugAutoWalk::start(const DebugWalkIntent &request,const OnlineObservation
         (request.purpose.value_or(std::string{})=="activate-waypoint" || request.purpose.value_or(std::string{})=="travel-waypoint"));
     waypointMenu_=kind==Goal::Waypoint || request.confirmMenu.value_or(false);
     alertWaitSince_={};
-    moves_=interactions_=searches_=0;interactionFrom_.reset();interactionRevision_=view.world.revision;interactionDiscontinuity_=0;
+    moves_=interactions_=searches_=0;nativeSegment_=false;interactionFrom_.reset();interactionRevision_=view.world.revision;interactionDiscontinuity_=0;
     progressAt_=Clock::now();deadline_=progressAt_+std::chrono::seconds(timeout);
     closestPoint_=std::numeric_limits<float>::max();closestAt_=progressAt_;
     executionClock_.reset(progressAt_);
@@ -201,7 +207,6 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
     deadline_+=suspended;progressAt_+=suspended;hostProgressAt_+=suspended;closestAt_+=suspended;
     if(clickedAt_!=Clock::time_point{}) clickedAt_+=suspended;
     if(alertWaitSince_!=Clock::time_point{}) alertWaitSince_+=suspended;
-    if(townTurnSince_!=Clock::time_point{}) townTurnSince_+=suspended;
     if(relayProgressAt_!=Clock::time_point{}) relayProgressAt_+=suspended;
     if(view.gameGeneration!=game_ || view.world.areaGeneration!=area_ || view.stage!=OnlineStage::ProtocolReady ||
         (scene.area && scene.area!=level_)) {
@@ -283,6 +288,7 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
         if(!knowledge || !scene.area) return {};
         if(!bearing && goal_==Goal::Waypoint) if(const auto hint=town.knownWaypointPosition(*scene.area))
             bearing=Vec{float(hint->x),float(hint->y)};
+        if(!bearing && searchHint_) bearing=Vec{float(searchHint_->x),float(searchHint_->y)};
         if(passage_) {
             const auto *p=knowledge->passage(*passage_);
             if(!p || p->evidence!=passageEvidence_ || p->deferred==p->evidence) {passage_.reset();passageTarget_.reset();passageObservationSince_.reset();}
@@ -304,18 +310,17 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
         }
         if(!next || player==*passageTarget_) {
             if(player==*passageTarget_ && DebugNavigationSearch::passageObservationReady(town,view,*knowledge->passage(*passage_),
-                {float(passageTarget_->x),float(passageTarget_->y)},passageObservationSince_)) {
+                *passageTarget_,pathMoving,passageObservationSince_)) {
                 DebugExplorationMemory::defer(*knowledge,*passage_);passage_.reset();passageTarget_.reset();passageObservationSince_.reset();
             }
             return {};
         }
         source_="observed-passage";return next;
     };
-    const auto planningCollision=scene.town?search_.planningCollision(town,view,unit_):Grid{};
-    const auto &executionPlanning=scene.town?planningCollision:staticRouteGrid;
+    const auto &executionPlanning=staticRouteGrid;
     Grid routeGrid;routeGrid.width=executionPlanning.width;routeGrid.height=executionPlanning.height;
-    // Planning and execution share acquired collision; map art never fills
-    // missing pages. Keep live town blockers on top of static knowledge.
+    // Long routes use acquired terrain/objects; map art never fills missing
+    // pages. Live units belong to pointer validation and the local bypass.
     routeGrid.obstacleRevision=(uint64_t{1}<<63)|(knowledge?knowledge->revision:0);
     routeGrid.missileCollisionRevision=executionPlanning.obstacleRevision;
     routeGrid.collisionSample=[knowledge,origin,&executionPlanning](int x,int y,EntityId ignored)->uint16_t {
@@ -374,54 +379,25 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
     }
     const auto ready=[&](Vec at) {
         if(!unit_ || !town.interactionReady(view,*unit_,at)) return false;
+        if(!closeApproach_) return true;
         // A later host arrival makes this same standing point useful again.
         // Keep the existing bounded recovery count instead of walking into
         // the unit merely because the local point was clicked earlier.
         if(point(at+Vec{.5f,.5f})==player && town.interactionReady(view,*unit_)) return true;
-        return !closeApproach_ || std::none_of(visited_.begin(),visited_.end(),[&](const auto &p) {
+        return std::none_of(visited_.begin(),visited_.end(),[&](const auto &p) {
             return point(at+Vec{.5f,.5f})==OnlinePoint{uint16_t(p.first),uint16_t(p.second)};
         });
     };
     const auto settle=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*view.latencyMilliseconds.value_or(0)+200,600,2000));
-    const auto townTurnWait=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*view.latencyMilliseconds.value_or(0)+timing_.townTurnBaseMs,
-        timing_.townTurnMinMs,timing_.townTurnMaxMs));
     const auto actor=view.load.playerUnitId?view.world.units.find({0,*view.load.playerUnitId}):view.world.units.end();
+    // A control call can republish the read-only view and invalidate its unit
+    // iterators. Associate a submitted leg with the pre-input observation.
+    const auto discontinuity=actor==view.world.units.end()?0:actor->second.positionDiscontinuity;
     if(scene.town && segment_ && segment_==lastRequest_ && actor!=view.world.units.end() &&
-        actor->second.positionDiscontinuity!=legDiscontinuity_) {
+        discontinuity!=legDiscontinuity_) {
         // A 15 supersedes both the predicted corner and its coalesced pointer.
-        control.cancelMovement();segment_.reset();pointerLane_.reset();lastRequest_.reset();townTurnSince_={};
+        control.cancelMovement();segment_.reset();pointerLane_.reset();lastRequest_.reset();
     }
-    std::optional<Vec> laggingTurnOrigin;
-    const auto holdTownTurn=[&](Vec next) {
-        laggingTurnOrigin.reset();
-        if(scene.town!=pointerLane_->town || !segment_ || lastRequest_!=segment_ || !lastFrom_ || actor==view.world.units.end() ||
-            actor->second.positionDiscontinuity!=legDiscontinuity_) return false;
-        const Vec bend=Vec{float(segment_->x),float(segment_->y)}-offset+Vec{.5f,.5f};
-        const Vec approach=Vec{float(lastFrom_->x),float(lastFrom_->y)}-offset+Vec{.5f,.5f};
-        const Vec in=(bend-approach).unit(),out=(next-bend).unit();
-        if((next-bend).length()<1 || in.x*out.x+in.y*out.y>.85f ||
-            search_.wallClearance(map.grid,bend)>DebugNavigationSearch::townClearance+1) return false;
-        // Keep the submitted leg through the inside corner. The latest host
-        // sample behind it may need a little longer than the displayed feet.
-        const bool early=pathMoving && !pointerClear(next);
-        const auto &unit=actor->second;
-        const Vec host=Vec{float(server_->x),float(server_->y)}-offset+Vec{.5f,.5f};
-        // Pointer updates can outpace native verification. Requiring a sample
-        // newer than this leg disables the bend guard on every replacement.
-        // An unchanged-area verification still constrains a safe turn; it
-        // never becomes a request to walk back to that sampled position.
-        const bool behind=unit.pathVerificationRevision && unit.positionRevision==unit.pathVerificationRevision &&
-            distance(*server_,*segment_)>1 && distance(*server_,*segment_)<=50 &&
-            !map.grid.nativeMovementSegment(host,next,playerMovement);
-        if(!early && !behind) return false;
-        if(townTurnSince_==Clock::time_point{}) townTurnSince_=now;
-        if(now-townTurnSince_>=townTurnWait) {
-            if(behind) laggingTurnOrigin=host;
-            return false;
-        }
-        reason_=behind?"Keeping the town bend while the latest host position cannot reach the next leg":
-            "Finishing the town bend before turning";return true;
-    };
     // Recovery belongs to walking, not to a particular interaction. A fresh
     // verification plus stopped host progress can expose a missed bend before
     // the predicted player reaches an NPC, portal or ordinary ground goal.
@@ -434,14 +410,15 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
         actor->second.verifiedDestination && distance(*server_,*actor->second.verifiedDestination)<=1 &&
         !view.world.npcRequested && !view.world.waypointRequested &&
         now-hostProgressAt_>=std::max(2*settle,std::chrono::milliseconds(2000)) &&
-        (!pathMoving || !map.grid.nativeMovementSegment(
-            Vec{float(server_->x),float(server_->y)}-offset+Vec{.5f,.5f},from,playerMovement));
+        (scene.town?(!pathMoving && now-progressAt_>=settle):
+            (!pathMoving || !map.grid.nativeMovementSegment(
+                Vec{float(server_->x),float(server_->y)}-offset+Vec{.5f,.5f},from,playerMovement)));
     if(!recoveryAnchor_ && movementRecoveries_<2 && (failedOpening || verifiedStall)) {
         const Vec host=Vec{float(server_->x),float(server_->y)}-offset+Vec{.5f,.5f};
         if(pathGrid.nativeMovementSegment(host,host,playerMovement)) {
             recoveryAnchor_=server_;resyncApproach_=false;++movementRecoveries_;
             pointerLane_.reset();
-            control.cancelMovement();segment_.reset();lastRequest_.reset();townTurnSince_={};
+            control.cancelMovement();segment_.reset();lastRequest_.reset();
             source_="walk-rejoin-host";state_=DebugWalkState::Moving;clickedAt_={};
         }
     }
@@ -453,7 +430,7 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
         // including the bends, rather than issuing one long ray to old feet.
         if(distance(player,*recoveryAnchor_)<=2 || (server_ && distance(player,*server_)<=2)) {
             recoveryAnchor_.reset();control.cancelMovement();segment_.reset();lastRequest_.reset();lastFrom_.reset();
-            forceApproach_=unit_.has_value();source_="walk-rejoined";townTurnSince_={};
+            forceApproach_=unit_.has_value();source_="walk-rejoined";
             progressAt_=hostProgressAt_=now;hostProgressRevision_=view.world.revision;
             reason_="Rejoined observed feet; resuming the original walking goal";return;
         }
@@ -491,7 +468,7 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
         control.cancelMovement();
         if(!control.move(*next,run_,{},pathPosition)) {reason_=control.reason();return;}
         lastFrom_=player;lastRequest_=segment_=next;lastTarget_=recoveryAnchor_;
-        legDiscontinuity_=actor==view.world.units.end()?0:actor->second.positionDiscontinuity;
+        legDiscontinuity_=discontinuity;
         submittedAt_=now;++moves_;reason_="Returning through the blocked walking bend";return;
     }
     if(clickedAt_!=Clock::time_point{} && unit_ && (unit_->type==1 || unit_->type==5 || waypointOpening_)) {
@@ -551,7 +528,16 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
             reason_="Stopped at a walking opening; selecting another opening on the same connection";return;
         }
         const auto detail=reason_.empty()?control.reason():reason_;
-        finish(DebugWalkState::Failed,"No observed player progress for 15 seconds: "+detail,control,DebugWalkFailure::NoProgress);return;
+        if(unit_ && source_=="native-unit-approach" && !interactionFrom_ && clickedAt_==Clock::time_point{}) {
+            // The retained click has not submitted its operation. Its native
+            // local path stalled: recover with the observed long route once,
+            // rather than restarting the same unit request in a new child.
+            control.cancelApproach();segment_.reset();pointerLane_.reset();nativeSegment_=false;
+            forceApproach_=false;source_="unit-collision-detour";state_=DebugWalkState::Moving;progressAt_=now;
+            reason_="Native unit approach stalled before interaction; continuing the observed route";
+        } else {
+            finish(DebugWalkState::Failed,"No observed player progress for 15 seconds: "+detail,control,DebugWalkFailure::NoProgress);return;
+        }
     }
     const auto inLevel=[&](OnlinePoint p) {
         const int x=int(p.x)-origin.x,y=int(p.y)-origin.y;
@@ -642,16 +628,15 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
             if(now-alertWaitSince_<settle) {reason_="In talk range; allowing the NPC quest alert to arrive";return;}
         } else alertWaitSince_={};
         if(interact_ && (unit_->type==1 || unit_->type==2 || unit_->type==5) && (!interactions_ || forceApproach_ || source_=="unit-opening-stance")) {
-            // Stage around collision until a direct ordinary approach is
-            // available, then click the real unit. NPCs, doors and entrances
-            // share this chain; the client owns its final path and arrival.
+            // Hand off only when the normal local unit path can finish its
+            // retained click. Request range alone cannot prove a long detour;
+            // solid centres do not require a separate straight-ray gate.
             const Vec targetPoint{float(int(point_->x)-origin.x)+.5f,float(int(point_->y)-origin.y)+.5f};
             // A failed unit click can leave local feet beside the target
             // while the host is still on the other side of its collision.
             // Choose an ordinary approach point visible from both positions.
             const bool localReady=town.interactionReady(view,*unit_,*pathPosition);
-            const bool hostReady=town.interactionReady(view,*unit_);
-            if(forceApproach_ && localReady && (!hostReady || changeStance_) && server_) {
+            if(forceApproach_ && localReady && server_ && (changeStance_ || !town.interactionReady(view,*unit_))) {
                 const Vec host{float(int(server_->x)-origin.x)+.5f,float(int(server_->y)-origin.y)+.5f};
                 std::optional<OnlinePoint> stance;
                 float best=std::numeric_limits<float>::max();
@@ -691,35 +676,13 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
             }
             const bool localArrival=ready(*pathPosition);
             const bool waypoint=target->interaction==OnlineMapInteraction::Waypoint;
-            const auto directApproach=[&] {
-                // Pointer range is not route knowledge, including portals and
-                // exits with solid centres; their observed perimeter is planned below.
-                if(awaitingAlert) return false;
-                if(distance(player,*point_)>32) {
-                    // Beyond the conservative staging distance, only hand
-                    // off a town click when both observed feet are in range.
-                    if(!scene.town || interactions_ || forceApproach_ || (!waypoint && target->interaction!=OnlineMapInteraction::Npc) ||
-                        !server_ || std::abs(pathPosition->x-point_->x)>50 || std::abs(pathPosition->y-point_->y)>50 ||
-                        std::abs(int(server_->x)-point_->x)>50 || std::abs(int(server_->y)-point_->y)>50) return false;
-                }
-                if(target->interaction==OnlineMapInteraction::Npc) {
-                    if(distance(player,*point_)<=32) return DebugNavigationSearch::directNpcApproach(town,view,*unit_,*pathPosition);
-                    return pointerClear(targetPoint);
-                }
-                if(!waypoint) return routeGrid.nativeMovementSegment(from,targetPoint,playerMovement);
-                // The pad itself may be solid. The integer ray locates the
-                // last clear cell, but can skip cells crossed from precise feet.
-                const auto end=routeGrid.nativeMovementTarget(from,targetPoint,playerMovement);
-                return ready(end+offset-Vec{.5f,.5f}) && routeGrid.segment(from,end,{},playerMovement);
-            };
-            if(localArrival || directApproach()) {
-                if(!hostReady && holdTownTurn(pathGrid.nativeMovementTarget(from,targetPoint,playerMovement))) return;
-                if(laggingTurnOrigin) {
-                    reason_="Keeping the town bend before handing off the unit approach";return;
-                }
-                const bool follow=forceApproach_ || (!waypoint && localArrival && !hostReady);
+            // Long routes remain with the parent's observation planner.
+            // A local ray to the centre is neither required by a unit click
+            // nor a substitute for the client's native player path.
+            if(localArrival || (!awaitingAlert && town.nativeInteractionApproach(view,*unit_,*pathPosition))) {
+                const bool follow=forceApproach_ || (!scene.town && !waypoint && localArrival && !town.interactionReady(view,*unit_));
                 if(!control.interact(*unit_,run_,{},pathPosition,follow)) {reason_=control.reason();return;}
-                pointerLane_.reset();
+                pointerLane_.reset();segment_.reset();lastRequest_.reset();
                 forceApproach_=false;
                 source_="native-unit-approach";state_=DebugWalkState::Interacting;++interactions_;progressAt_=now;
                 reason_="Normal unit click submitted; waiting for automatic approach and interaction";
@@ -733,11 +696,12 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
                 clickedAt_=now;interactionFrom_=player;interactionRevision_=view.world.revision;
                 reason_="Normal unit approach submitted its opening click";return;
             }
-            if(now-progressAt_<(pathMoving?2*settle:settle)) {
+            if(control.approaching()==unit_) {
                 reason_=control.awaitingServerArrival()?"Waiting for host interaction range":"Waiting for native unit approach progress";return;
             }
-            // A stopped native approach needs an actual collision detour,
-            // not a stale-position backtrack or an unbounded click loop.
+            // The ordinary control has ended its bounded approach without an
+            // opening. Only now return to observed-route recovery; a short
+            // pause in native walking must not cancel its retained click.
             control.cancelApproach();source_="unit-collision-detour";segment_.reset();state_=DebugWalkState::Moving;
             reason_="Normal unit approach stopped; planning around current collision";
         }
@@ -746,7 +710,7 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
         // unit13 and owns its approach; submit through the same control
         // entry using that observed origin, without relocating prediction or
         // treating the old position sample as an interaction receipt.
-        const bool observedInteractionApproach=!closeApproach_ && (unit_->type==2 || unit_->type==5) && !pathMoving &&
+        const bool observedInteractionApproach=!scene.town && !closeApproach_ && (unit_->type==2 || unit_->type==5) && !pathMoving &&
             now-progressAt_>=std::chrono::milliseconds(100) && distance(player,*server_)>8 &&
             town.interactionReady(view,*unit_);
         if(interact_ && (ready(*pathPosition) || observedInteractionApproach)) {
@@ -766,7 +730,6 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
                 if(interactions_ && now-progressAt_<std::chrono::milliseconds(100)) return;
                 if(interactions_>=3) {finish(DebugWalkState::Failed,"Server did not open the requested interaction",control,DebugWalkFailure::InteractionUnanswered);return;}
                 const auto submissionRevision=view.world.revision;
-                const auto discontinuity=actor==view.world.units.end()?0:actor->second.positionDiscontinuity;
                 if(!control.interact(*unit_,run_,{},observedInteractionApproach?std::nullopt:pathPosition)) {
                     reason_=control.reason();
                     // No new operation was queued. Keep observing the original deadline.
@@ -804,6 +767,12 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
     }
     if(segment_) {
         if(now-submittedAt_<std::chrono::milliseconds(timing_.walkRequestIntervalMs)) return;
+        // Native coordinate movement owns every bend of its retained path.
+        // Its destination ray may remain blocked while it walks around a unit.
+        if(nativeSegment_ && pathMoving && lastRequest_==segment_ && lastTarget_==movementTarget &&
+            control.movementGoal()==segment_) {
+            search_.reuseSegment();reason_="Following the normal client local detour";return;
+        }
         const Vec oldLocal{float(int(segment_->x)-origin.x)+.5f,float(int(segment_->y)-origin.y)+.5f};
         // Observe the target/interaction above first. A still-moving pointer
         // for that same target needs only its NEXT ray checked, not AStar.
@@ -832,7 +801,7 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
         if(searching) {
             if(source_=="observed-passage" && knowledge && passage_ && passageTarget_ && player==*passageTarget_) {
                 if(!DebugNavigationSearch::passageObservationReady(town,view,*knowledge->passage(*passage_),
-                    {float(passageTarget_->x),float(passageTarget_->y)},passageObservationSince_)) {
+                    *passageTarget_,pathMoving,passageObservationSince_)) {
                     reason_="Waiting for confirmed arrival and client collision publication at the passage";return;
                 }
                 const auto *p=knowledge->passage(*passage_);
@@ -840,10 +809,6 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
                 passage_.reset();passageTarget_.reset();passageObservationSince_.reset();
             }
             point_.reset();segment_.reset();return;
-        }
-        if(scene.town && goal_==Goal::Exit && !unit_ && crossing_) {
-            const Vec across{float(crossing_->x),float(crossing_->y)};
-            if(holdTownTurn(across-offset+Vec{.5f,.5f})) return;
         }
         if(!interact_) {finish(DebugWalkState::Completed,"Reached target vicinity through client movement",control);return;}
     }
@@ -981,6 +946,7 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
         for(auto next=std::next(leg);next!=path.end() && pointerClear(*next);++next) leg=next;
     }
     std::optional<OnlinePoint> planned,blockedSegment;
+    bool plannedNative=false;
     std::optional<PointerLane> plannedLane;
     OnlinePoint rawPointer{},lanePointer{};
     std::string pointerBranch=pointerLane_?"town-lane-continuation":"route";
@@ -992,7 +958,7 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
             if(candidate==player) continue;
             const Vec local{float(int(candidate.x)-origin.x)+.5f,float(int(candidate.y)-origin.y)+.5f};
             if(!pointerClear(local)) {
-                if(!scene.town && map.grid.nativeMovementSegment(from,local,playerMovement) &&
+                if(map.grid.nativeMovementSegment(from,local,playerMovement) &&
                     !pathGrid.nativeMovementSegment(from,local,playerMovement) && !blockedSegment) blockedSegment=candidate;
                 continue;
             }
@@ -1029,51 +995,65 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
         const Vec endLocal=end-offset+Vec{.5f,.5f};
         auto units=town.navigationBlockers(view,start,end);
         if(!units.empty()) {
-            const auto bypass=search_.localObstacleLane(pathGrid,from,endLocal);
+            const auto nativeDetourTarget=[&](Vec to) -> std::optional<OnlinePoint> {
+                auto goal=point(to+offset);
+                const Vec startCell{float(player.x),float(player.y)};
+                const Vec delta=Vec{float(goal.x),float(goal.y)}-startCell;
+                const float span=delta.length();float reach=span;
+                // Native Straight's AStar fallback is bounded in integer
+                // feet. Clipping from fractional feet can round outside it.
+                while((Vec{float(goal.x),float(goal.y)}-startCell).length()>18 && reach>0) {
+                    reach-=1;
+                    goal=point(startCell+delta*(reach/span)+Vec{.5f,.5f});
+                }
+                to=Vec{float(goal.x),float(goal.y)}-offset+Vec{.5f,.5f};
+                if(distance(goal,player)<2 || !pathGrid.walkable(to,playerMovement)) return {};
+                const auto detour=pathGrid.nativePlayerPath(from,to,playerMovement);
+                if(detour.empty()) return {};
+                const auto last=point(detour.back()+offset);
+                // Ordinary coordinate paths may finish one cell short. A
+                // clipped prefix at the obstruction is not a usable detour.
+                return distance(last,goal)<=1 && distance(last,player)>=2?std::optional{goal}:std::nullopt;
+            };
+            auto bypass=nativeDetourTarget(endLocal);
+            // The first blocked cell may itself be occupied. Rejoin the
+            // existing route beyond the obstruction, within the same local
+            // lookahead; never put dynamic occupancy in terrain memory.
+            bool reachedLookahead=false;
+            if(!bypass) for(auto node=leg;node!=path.end() && !reachedLookahead;++node) {
+                const Vec delta=*node-from;const float span=delta.length();
+                reachedLookahead=span>=18;
+                if(span<2) continue;
+                const auto candidate=point(from+delta*(std::min(18.f,span)/span)+offset);
+                if(candidate==player || candidate==*blockedSegment) continue;
+                const Vec local{float(int(candidate.x)-origin.x)+.5f,float(int(candidate.y)-origin.y)+.5f};
+                if(pointerClear(local)) continue; // A directly reachable prefix is already handled above.
+                bypass=nativeDetourTarget(local);
+                if(bypass) break;
+            }
             if(bypass) {
-                const auto bend=point(*bypass+offset);
-                planned=rawPointer=lanePointer=bend;
-                plannedLane=PointerLane{bend,*blockedSegment,pathTarget,false,false};
-                pointerBranch="local-unit-bypass";
+                // Submit the original local destination, as manual input
+                // does. The common native path may need more than one bend.
+                planned=rawPointer=lanePointer=*bypass;plannedNative=true;
+                plannedLane.reset();
+                pointerBranch="native-unit-detour";
             } else {
                 // Publish the upcoming obstruction even when a shorter prefix
-                // is walkable. The AI may shoot before entering the crowd.
+                // is walkable. Combat separately requires an actual hostile;
+                // town and neutral obstructions can only wait or move around.
                 blockedStep_=BlockedStep{start,end,std::move(units)};
             }
         }
     }
     if(!planned) {
         if(pathMoving) {reason_="Keeping the moving native path until an integer pointer ray is clear";return;}
-        reason_=blockedSegment?"Next movement segment temporarily occupied":"Waiting for a collision-checked integer pointer or mobility recovery";return;
+        reason_=blockedStep_?"Observed units block the next walking segment; no local bypass is currently clear":
+            blockedSegment?"Next movement segment temporarily occupied":"Waiting for a collision-checked integer pointer or mobility recovery";return;
     }
-    auto next=*planned;
+    const auto next=*planned;
     const Vec nextLocal=Vec{float(next.x),float(next.y)}-offset+Vec{.5f,.5f};
     if(!advancesTownPointer(nextLocal)) {
         search_.reuseSegment();reason_="Keeping forward progress along the current town leg";return;
-    }
-    if(holdTownTurn(nextLocal)) return;
-    if(laggingTurnOrigin) {
-        // After the brief grace prefer a shorter forward input visible from
-        // both feet. Never walk back to the packet position to reconcile it.
-        const Vec delta=nextLocal-from;
-        bool commonPointer=false;
-        for(int n=int(delta.length())-1;n>=2;--n) {
-            const auto sample=from+delta.unit()*float(n);
-            const Vec at{std::floor(sample.x)+.5f,std::floor(sample.y)+.5f};
-            if(pointerClear(at) && pathGrid.nativeMovementSegment(*laggingTurnOrigin,at,playerMovement) &&
-                pathGrid.nativeMovementSegment(at,nextLocal,playerMovement)) {
-                next=point(at+offset);commonPointer=true;break;
-            }
-        }
-        if(!commonPointer) {
-            // No safe shared continuation exists yet. Replacing the bend
-            // anyway makes the host clip its path against the inside wall.
-            reason_="Keeping the town bend until a forward pointer is reachable from both observed positions";
-            return;
-        }
-        if(!advancesTownPointer(Vec{float(next.x),float(next.y)}-offset+Vec{.5f,.5f})) {
-            reason_="Waiting for a shared forward continuation around the town corner";return;
-        }
     }
     if(segment_ && pathMoving) {
         if(next==*segment_) return;
@@ -1100,11 +1080,10 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
         reason_="Waiting before retrying the same temporarily stopped native path";return;
     }
     if(!control.move(next,run_,{},pathPosition)) {reason_=control.reason();return;}
-    // A host-lag guard may have shortened the input before the selected
-    // bend. Do not claim that shortened input completed the two-leg plan.
+    nativeSegment_=plannedNative;
     if(plannedLane && next==plannedLane->bend) pointerLane_=plannedLane;
-    lastFrom_=player;lastRequest_=next;lastPointerFeet_=*pathPosition;townTurnSince_={};
-    legDiscontinuity_=actor==view.world.units.end()?0:actor->second.positionDiscontinuity;
+    lastFrom_=player;lastRequest_=next;lastPointerFeet_=*pathPosition;
+    legDiscontinuity_=discontinuity;
     segment_=next;lastTarget_=point_;submittedAt_=now;++moves_;reason_.clear();if(!searching) state_=DebugWalkState::Moving;
     if(pointerSelections_.size()>=32) pointerSelections_.pop_front();
     pointerSelections_.push_back({moves_,player,pathTarget,rawPointer,lanePointer,next,*pathPosition,

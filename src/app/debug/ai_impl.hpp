@@ -69,7 +69,18 @@ struct DebugAi::Impl {
     enum class Kind {Travel,Find,Hunt,Acquire,ReturnTown,Deliver,Restock,Quest};
     using PotionKind=debug_ai::PotionKind;
     struct Potion {PotionKind kind{};int strength{};bool bulkBelt{};std::optional<uint8_t> state;};
-    struct Selector {uint8_t type{};uint16_t identity{};std::string name;std::optional<uint16_t> superUnique{};bool eliteOnly{};};
+    struct Selector {uint8_t type{};uint16_t identity{};std::string name;std::optional<uint16_t> superUnique{};bool eliteOnly{},npc{};};
+    // Authored search knowledge, never a claim that a unit exists or floor is passable.
+    struct TargetSearchKnowledge {
+        std::optional<Selector> anchor;
+        std::vector<uint16_t> openedObjects;
+        std::optional<float> radius;
+        Vec offset;
+        std::optional<Vec> direction;
+        std::vector<DebugExplorationMemory::Cell> candidateRooms;
+        bool returnViaWaypoint{};
+        unsigned waitMs{},timeoutSeconds{};
+    };
     enum class QuestAction {Talk,Clear,Hunt,Acquire,ReadScroll,Stones,Operate,Portal,ReturnTown,Imbue,ActTravel,Travel,UseItem,Combine,SubmitStaff,SearchDrop,EquipWeapon,SmashOrb,SmashForge,Service,Rescue,Encounter};
     struct QuestStep {
         QuestAction action{};std::optional<uint16_t> area;std::optional<Selector> target,witness,spawnSource;
@@ -88,7 +99,8 @@ struct DebugAi::Impl {
         unsigned resultWaitSeconds{},initialWaitMs{};int residualRange{};std::optional<uint8_t> stageSound;
         std::optional<Vec> witnessOffset;
         struct ProximityTrigger {Selector target;int distance{};};
-        std::optional<ProximityTrigger> walkingTrigger;
+        std::optional<ProximityTrigger> proximityTrigger;
+        std::optional<TargetSearchKnowledge> search;
     };
     struct QuestFact {
         enum class Kind {Item,BackpackItem,Flags,Area,TrueTombArea,TombClue,Waypoint,Corpse,BookUsed,PortalObserved,JournalRead,ActChange,Equipped,EquipmentRestored,ObjectOpened,GroundItem,MonsterObserved,Status,Cinematic,InitiallyRewarded,CairnOrder,SummitPassage,RequirementObserved} kind{};
@@ -110,6 +122,7 @@ struct DebugAi::Impl {
         std::optional<uint16_t> questTown;
         std::vector<QuestRequirement> requirements;std::vector<size_t> roots;
         std::optional<size_t> routeDrop; // Collect a requested quest drop while pursuing another root.
+        std::optional<TargetSearchKnowledge> search;
     };
     struct Definitions {
         DataTable monsters,objects,skills,levels,misc,weapons,armor,types,states,npcs,superuniques,missiles,difficulties;
@@ -137,7 +150,7 @@ struct DebugAi::Impl {
     };
     struct CombatPolicy {
         bool enabled=true,staticField=true,avoidHazards=true;std::string scope="defensive";std::optional<uint16_t> skill,groupSkill,aura;int range=16;
-        int radius=6,crowd=4,retreat=8,engage=18;
+        int radius=6,crowd=4,retreat=8,engage=18,waitDefenseRadius=10;
         std::vector<uint16_t> fallbackSkills;
         std::map<uint16_t,unsigned> minimumSkillLevels;
         std::map<uint16_t,int> skillRanges;
@@ -192,9 +205,11 @@ struct DebugAi::Impl {
     std::optional<uint16_t> area;std::optional<OnlineUnitKey> target;
     uint64_t targetAssignment{};
     bool resumeExplorationReturn(Context &);
+    bool beginExplorationReturn(Context &,OnlinePoint destination);
     NavigationExperience parseExperience(const Json &) const;
     const AreaExperience *areaExperience(const Context &) const;
     std::optional<OnlinePoint> experienceHint(const Context &,const Selector &) const;
+    std::optional<OnlinePoint> experienceWaypointHint(const Context &) const;
     std::optional<DebugExplorationMemory::Cell> experienceDirection(const Context &,ExplorationFocus) const;
     using TerrainMemory=DebugExplorationMemory::Area;
     TerrainMemory *observeTerrain(const Context &);
@@ -202,7 +217,8 @@ struct DebugAi::Impl {
     TerrainLeg terrainLeg(const Context &,const std::vector<OnlinePoint> &path) const;
     bool frontierWalking(const Context &) const;
     bool exploreFrontier(Context &,const std::string &purpose,bool recoveryOnly,ExplorationFocus);
-    float travelLegCost(const Context &,int from,int to,std::optional<Vec> start) const;
+    struct TravelLeg {float cost{};std::optional<Vec> arrival;std::optional<OnlineUnitKey> unit;};
+    TravelLeg travelLeg(const Context &,int from,int to,std::optional<Vec> start) const;
     static constexpr auto passageRetryInterval=std::chrono::seconds(1);
     static std::string_view passageName(Passage);
     PassageWait &beginPassage(Passage,std::chrono::milliseconds,Clock::time_point);
@@ -356,6 +372,7 @@ struct DebugAi::Impl {
     bool questSubmitStaff(Context &,const QuestStep &);
     bool questItemRequest(Context &,OnlineItemCommand,QuestPending::Action,std::string);
     bool questStoreCursor(Context &,uint32_t);
+    bool serviceInventoryWork(Context &);
     void checkQuestPending(const Context &) const;
     void waitForWorldResult(Context &,const QuestStep &,std::string_view);
     void waitAtWorldEvent(Context &,const QuestStep &,OnlinePoint,std::string_view,float vicinity=8);
@@ -377,13 +394,18 @@ struct DebugAi::Impl {
     bool settleItemInput(Context &);
     bool maintainArmor(Context &);
     bool knownSkill(const Context &,uint16_t,bool left=false) const;
-    struct TeleportRooms {
+    // Acquired terrain/objects and native room eligibility, without actor occupancy.
+    struct TeleportTargets {
         const std::vector<RemoteTown::NavigationRoom> &rooms;
         const RemoteTown::NavigationRoom *current{};
-        TeleportRooms(const Context &);
+        std::shared_ptr<const Grid> terrain;
+        Vec offset;
+        TeleportTargets(const Context &);
         bool contains(Vec) const;
+        bool permits(const Context &,Vec,int range) const;
     };
     bool teleportAvailable(const Context &,bool resourceReady=true) const;
+    std::pair<int,bool> travelMobility(const Context &,int level,bool resourceReady=true) const;
     std::optional<float> kiteWalkSeconds(const Context &,Vec destination) const;
     bool selectSkill(Context &,uint16_t,OnlineSkillHand);
     std::optional<uint16_t> battleAura(const Context &) const;
@@ -398,6 +420,8 @@ struct DebugAi::Impl {
     std::optional<OnlinePoint> selectCombatLanding(const Context &,OnlinePoint,const RouteCombatTask &,bool transit) const;
     struct TeleportApproach {Vec landing;bool completeRoute{};};
     std::optional<TeleportApproach> teleportLanding(Context &,Vec wanted,bool exploration,bool directOnly=false) const;
+    bool recoverExplorationLanding(Context &,const DebugExplorationMemory::Area &);
+    bool submitMobilityCast(Context &,Vec wanted,Vec landing,bool teleport,float progress);
     bool mobility(Context &);
     void stop(DebugAutoWalk &,IOnlineControl &,IOnlineCombat &);
     void finish(std::string,std::string,Context &);
@@ -423,9 +447,10 @@ struct DebugAi::Impl {
     bool canInput(const Context &,DebugActionOwner,unsigned) const;
     void describeActions(const Context &);
     void wait(std::string p,std::string why) {phaseReported=true;phase=std::move(p);reason=std::move(why);}
-    std::vector<int> route(const Context &,int from,int to) const;
+    std::vector<int> route(const Context &,int from,int to,std::optional<Vec> start={}) const;
     float navigationCost(const Context &,int level,std::optional<Vec> start,std::optional<OnlinePoint> target) const;
     bool exploreLocalPad(Context &);
+    bool followLocalPadRoute(Context &,const DebugExplorationMemory::Plan &);
     void observeLocalPad(Context &);
     float routeCost(const Context &,const std::vector<int> &,std::optional<Vec> start={}) const;
     void refreshNavigationAttempts(const Context &);
@@ -436,6 +461,15 @@ struct DebugAi::Impl {
     bool travel(Context &,uint16_t,bool allowWaypoint=true);
     bool explore(Context &,std::string,bool recoveryOnly=false,ExplorationFocus=ExplorationFocus::Coverage);
     bool approachKnown(Context &,const Selector &);
+    TargetSearchKnowledge parseSearchKnowledge(const Json &,TargetSearchKnowledge) const;
+    void configureSearchKnowledge(std::vector<Goal> &,const Json &) const;
+    void observeSearchEvents(const Context &);
+    bool searchTrigger(Context &,const TargetSearchKnowledge &,Clock::time_point &,uint64_t &);
+    void searchTarget(Context &,const Selector &,const TargetSearchKnowledge *knowledge=nullptr);
+    void searchArea(Context &,std::string key,std::string purpose,const TargetSearchKnowledge &,
+                    std::optional<Vec> center={},Clock::time_point readyAt={},uint64_t event=0,bool awaitingAppearance=false,bool coverageOnly=false);
+    void searchWorldTarget(Context &,const QuestStep &,OnlinePoint);
+    void targetSearchObserved(Context &);
     void prepareVaughtClues();
     bool approachTerrainClue(Context &,const Selector &);
     bool observeColdPlainsWaypoint(Context &);
@@ -450,6 +484,7 @@ struct DebugAi::Impl {
     void observePopulation(const Context &);
     std::optional<OnlineUnit> find(const Context &,const Selector &,bool corpses=false) const;
     bool owned(const Context &,std::string_view) const;
+    bool defendWhileWaiting(Context &,const Goal &);
     bool combat(Context &,const Goal &,bool nearbyDefense=false,bool planningDefense=false,
         const RouteCombatTask *task=nullptr);
     bool avoidHazards(Context &);

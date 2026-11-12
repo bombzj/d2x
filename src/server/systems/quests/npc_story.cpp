@@ -37,7 +37,7 @@ DomainResult<> System::npcPortalEvent(EntityId id,uint64_t tick) {
         int mode=object->second.mode;auto updates=portal.anya?story.anyaPortalUpdates:story.cainPortalUpdates;
         if(mode==1) mode=2;
         else if(mode==2) {
-            const bool close=portal.town?(++updates>5 || (!portal.anya && story.cainTownActivated)):
+            const bool close=portal.town?++updates>5:
                 portal.anya?story.anyaDeparted:story.cainDeparted;
             if(close) mode=3;
         } else if(mode==3) mode=4;
@@ -58,7 +58,7 @@ DomainResult<bool> System::spawnNpcBluePortal(bool anya,bool town,RegionId regio
     const auto point=global-ports_.areas.at(room->area).definition.origin;
     const auto born=ports_.objects.admit({189,room->area,point,{},{},1,tick,*room});
     if(!born) return isDeferred(born.status)?DomainResult<bool>{born.status,{}}:DomainResult<bool>{DomainStatus::Applied,false};
-    portals.push_back({*born.value,room->area,global,anya,town,tick+25,0});
+    portals.push_back({*born.value,room->area,anya,town,tick+25,0});
     const auto scheduled=ports_.objects.setNativeMode(*born.value,1,tick);if(!scheduled) return {scheduled.status,{}};
     return {DomainStatus::Applied,true};
 }
@@ -122,6 +122,7 @@ void System::registerNpcStoryObject(EntityId id,RegionId region,int definition,i
     auto &story=state_.npcStory;
     if(!story.markers.insert(id).second) return;
     const auto &area=ports_.areas.at(region).definition;
+    if(initialization==38) state_.actTwo.tyraelDoor=id;
     if(int(region)==40 && initialization==19) story.guard=position+area.origin+Vec{1,0};
     if(int(region)==40 && initialization==30) {story.blockerId=id;story.blocker=position+area.origin;}
     if(int(region)==75 && initialization==39) story.ormusAltar=id;
@@ -519,14 +520,15 @@ DomainResult<NpcAiResult> System::npcThink(EntityId id,uint64_t tick) {
         }
         escape.phase=next;return finish();
     }
-    if(code=="cain5" && int(unit->area)==1 && state_.actOne.cainRescued && !story.cainTownActivated) {
-        for(auto it=story.bluePortals.rbegin();it!=story.bluePortals.rend();++it) {
-            const auto &portal=*it;
+    if(code=="cain5" && int(unit->area)==1 && state_.actOne.cainRescued) {
+        for(const auto &portal:story.bluePortals) {
             if(portal.anya || !portal.town) continue;
             const auto object=ports_.objects.read().objects.find(portal.object);
             if(object==ports_.objects.read().objects.end() || object->second.mode>=3) continue;
-            if(coordinateDistance(global,portal.position)>2) return walk(portal.position);
-            story.cainTownActivated=true;break;
+            // Retail 604C0 reads past the quest buffer and the arrival
+            // callback never supplies that target. Keep the observed town
+            // pose until the portal's sixth ON update starts closing it.
+            return done({true,false,false,1,{}});
         }
     }
     if(code=="drehya" && int(unit->area)==109 && story.anyaPortalPending && !state_.actFive.anyaPortal) {

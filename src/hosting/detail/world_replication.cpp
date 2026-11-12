@@ -96,7 +96,12 @@ void NativeRealmService::publishAreas(RegionId region, std::vector<Bytes> packet
         if(!definition) throw std::logic_error("Visible native area is missing");
         auto exits=definition->exits;
         std::erase_if(exits, [&](const auto &exit) {
-            if (!host.visiblePoint(*binding, next, exit.position)) return true;
+            // SUNIT_SpawnPresetUnit attaches a warp to its DRLG source
+            // room. LvlWarp offsets only affect the unit coordinates.
+            if (exit.rooms) {
+                const server::RoomView owner{next,exit.rooms->sourceX,exit.rooms->sourceY};
+                if (std::find(rooms.begin(),rooms.end(),owner)==rooms.end()) return true;
+            } else if (!host.visiblePoint(*binding,next,exit.position)) return true;
             warps.insert(exit.id);
             return peer.warps.contains(exit.id);
         });

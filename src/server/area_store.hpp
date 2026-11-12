@@ -279,6 +279,11 @@ class AreaStore {
     void publishRoomUnit(RoomUnitRegistration &) noexcept;
     bool validateRoomUnit(const RoomUnitRegistration &,EntityId) const;
     bool hasRoomUnit(EntityId id) const noexcept {return roomUnits_.contains(id);}
+    std::optional<NativeFootprint> unitBodyFootprint(EntityId id) const noexcept {
+        const auto unit=roomUnits_.find(id);
+        if(unit==roomUnits_.end() || !unit->second.body.mask) return {};
+        return unit->second.body;
+    }
     std::optional<RegionId> roomUnitRegion(EntityId id,uint8_t kind) const noexcept {
         const auto unit=roomUnits_.find(id);
         return unit!=roomUnits_.end() && unit->second.kind==kind && unit->second.room?
@@ -288,6 +293,7 @@ class AreaStore {
     void removeRoomUnit(EntityId) noexcept;
     void setMissileMask(RegionId,Vec,int size,bool occupied) noexcept;
     void setNativePatternMask(RegionId,Vec,NativeCollisionPattern,uint16_t mask,bool occupied) noexcept;
+    std::optional<RoomView> roomOfUnit(EntityId) const;
     std::vector<EntityId> roomUnitOrder(RoomView) const;
     void recordMonsterDeath(EntityId) noexcept;
     std::array<EntityId,4> roomLastDead(RoomView) const noexcept;

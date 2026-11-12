@@ -27,6 +27,13 @@ class DebugExplorationMemory {
         std::set<Cell> boundary;
         std::vector<Cell> approaches;
         std::optional<uint64_t> deferred;
+        Cell approachFor(Cell edge) const;
+        Cell edgeFor(Cell approach) const;
+    };
+    struct Transport {
+        uint16_t identity{};Cell source,from,to;
+        bool enabled=true;
+        bool operator==(const Transport &) const = default;
     };
     struct Area {
         int x{},y{},width{},height{}; // Storage bounds of observed data, not level bounds.
@@ -34,10 +41,11 @@ class DebugExplorationMemory {
         std::map<Cell,std::shared_ptr<const MaskBlock>> maskBlocks;
         uint16_t level{};
         std::map<Cell,uint16_t> terrainLevels; // Known page ownership, for area-local objectives only.
-        std::set<Cell> unitObserved; // Received unit-subscription footprints, in native tiles.
+        std::set<Cell> unitObserved; // Entered, subscribed room footprints, in native tiles; not assignment proof.
         uint64_t revision{},nextPassage{1},sample{},geometry{};
         std::vector<Passage> passages;
         std::map<Cell,std::set<Cell>> walked;
+        std::vector<Transport> transports; // Directed links established by an actual own-unit relocation.
         std::optional<Cell> previous;
         uint64_t discontinuity{};
         std::optional<Cell> heading;
@@ -49,21 +57,27 @@ class DebugExplorationMemory {
         bool clear(int globalX,int globalY) const;
         bool stand(int globalX,int globalY) const;
         Passage *passage(uint64_t);
+        const Passage *passage(uint64_t) const;
     };
     struct PlanProfile {
         uint64_t calls{},structuralCalls{},doorBypassCalls{},storageCells{},expanded{},landingCandidates{},castCandidates{};
         double prepareMs{},landingsMs{},searchMs{},finishMs{};
     };
     struct Plan {
-        enum class Outcome {Unreachable, StartUnavailable, ExecutionBlocked, Goal, Passage} outcome=Outcome::Unreachable;
+        // Partial advances toward a known objective through resident cast
+        // pages; its endpoint does not complete that objective or passage.
+        enum class Outcome {Unreachable, StartUnavailable, ExecutionBlocked, Goal, Passage, Partial} outcome=Outcome::Unreachable;
         std::vector<OnlinePoint> points;
+        std::optional<OnlinePoint> objective; // Final known endpoint behind a Partial route.
         uint64_t passage{},evidence{};
         size_t expanded{};
         float cost{};
         bool backtracking{},doorFallback{};
+        std::optional<Transport> transport; // First operation on this route; never a walk/cast edge.
         PlanProfile profile;
     };
-    // Transient execution constraints, never persisted as player terrain.
+    // Resident terrain/object constraints and cast adjacency. Unit occupancy
+    // is checked only by the local executor, never by a long-route query.
     struct Execution {
         std::shared_ptr<const NavigationSnapshot> collision;
         std::shared_ptr<const Grid> collisionGrid;
@@ -71,6 +85,7 @@ class DebugExplorationMemory {
         std::shared_ptr<const Grid> landingGrid; // Real collision, including closed doors.
         std::vector<NavigationRoom> rooms; // Acquired pages, used only for legal cast edges.
         bool requiresDoor(Cell) const;
+        bool landingClear(Cell) const;
         bool landingAllowed(Cell) const;
         bool castRayAllowed(Cell from,Cell to,bool restricted) const;
         bool castAllowed(Cell from,Cell to,bool restricted) const;
@@ -89,6 +104,7 @@ class DebugExplorationMemory {
         const std::optional<std::vector<Cell>> &approaches={},const Execution *execution=nullptr,bool preferDoorBypass=true,
         std::optional<Cell> preferredDirection={},PlanProfile *profile=nullptr);
     static void defer(Area &,uint64_t passage);
+    static std::vector<Cell> teleportReturnAnchors(const Area &,Cell from,int range);
     struct RouteRejection {
         const char *reason="none";
         size_t point{};

@@ -39,6 +39,7 @@ void to_json(nlohmann::json &out,const DebugWalkIntent &intent) {
     if(!intent) {out=nullptr;return;}
     out={{"goal",debugWalkName(intent.goal)}};
     if(intent.point) {out["x"]=intent.point->x;out["y"]=intent.point->y;}
+    if(intent.searchHint) {out["searchHintX"]=intent.searchHint->x;out["searchHintY"]=intent.searchHint->y;}
     if(intent.unit) {out["unitType"]=intent.unit->type;out["unitId"]=intent.unit->id;}
     const auto put=[&](const char *key,const auto &value) {if(value) out[key]=*value;};
     put("level",intent.level);put("interact",intent.interact);put("run",intent.run);
@@ -51,6 +52,7 @@ void to_json(nlohmann::json &out,const DebugWalkIntent &intent) {
     put("activation",intent.activation);put("directTeleport",intent.directTeleport);
     put("itemId",intent.itemId);put("groundX",intent.groundX);put("groundY",intent.groundY);
     put("timeoutSeconds",intent.timeoutSeconds);
+    if(intent.routeRelay) out["routeRelay"]=true;
     if(intent.prepared) out["command"]="debug-walk";
 }
 } // namespace d2x

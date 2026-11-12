@@ -314,8 +314,14 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         if (frozen(id,tick.tick) || actor.stunnedUntil>tick.tick) continue;
         if (!actor.alive() || tick.tick < actor.busyUntil) continue;
         if (actor.route.empty()) continue;
+        const auto finishWalk=[&] {
+            // MonsterMode::sub_6FC63680 dispatches AITHINK at WALK/RUN end.
+            // Leave the callback pending until the current mode event commits.
+            actor.walkEndAiPending=actor.nativeMode==2 || actor.nativeMode==15;
+            recordNativeMode(actor,1);
+        };
         const auto target=actor.movementTarget ? nativePathTarget(ports_.players,*this,actor.movementTarget,actor.area) : std::optional(std::pair{actor.movementGoal, 0});
-        if(!target) {stop(id);continue;}
+        if(!target) {stop(id);finishWalk();continue;}
         auto collision=(actor.airborne || actor.submerged)?MovementCollisionRule{0,1}:actor.rule.collision;
         if(collision.mask && actor.rule.stats && actor.rule.stats->pd2) {
             const auto states=ports_.effects.unitStates(actor.id,tick.tick);
@@ -327,10 +333,10 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             if (!actor.movementTarget) return false;
             return meleeDistance(position,actor.rule.size,target->first,target->second)<=actor.stopDistance;
         };
-        if (arrived(actor.position)) { stop(id);recordNativeMode(actor,1);continue; }
+        if (arrived(actor.position)) { stop(id);finishWalk();continue; }
         const auto identity=actor.movementTarget?nativeTargetIdentity(actor.movementTarget,actor.area):std::nullopt;
         if(identity && nativeUnitTargetMoved(actor.movementGoal,target->first,identity->type)) {
-            if(!actor.pathRemaining) {stop(id);recordNativeMode(actor,1);continue;}
+            if(!actor.pathRemaining) {stop(id);finishWalk();continue;}
             // Common D820 checks the old budget, then deducts consumed points.
             actor.pathRemaining=uint8_t(actor.pathRemaining-std::min<unsigned>(actor.pathRemaining,actor.pathPointsConsumed));
             actor.pathPointsConsumed=0;
@@ -351,7 +357,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             if(actor.route.empty()) {
                 actor.position=actor.pathStep.stop(actor.position+center)-center;
                 ports_.areas.moveRoomUnit(id,actor.area,actor.position);
-                actor.moving=false;actor.running=false;recordNativeMode(actor,1);++actor.revision;continue;
+                actor.moving=false;actor.running=false;finishWalk();++actor.revision;continue;
             }
         }
         AreaStore::CollisionMove collisionMove{ports_.areas,actor.id,actor.area};
@@ -380,12 +386,11 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             if(step.travelled>0) break; // D2Common_10226: one nonzero path point per frame.
         }
         collisionMove.commit();
-        // Path exhaustion/collision returns FALSE from D2Common_10226 and
-        // leaves WALK/RUN in this frame; do not publish a stale chase target.
+        // D2Common_10226 reports path exhaustion or collision to the WALK/RUN callback.
         if(actor.route.empty()) {
             actor.position=actor.pathStep.stop(actor.position+Vec{.5f,.5f})-Vec{.5f,.5f};
             ports_.areas.moveRoomUnit(id,actor.area,actor.position);
-            recordNativeMode(actor,1);actor.moving=false;actor.running=false;
+            actor.moving=false;actor.running=false;finishWalk();
         }
     }
     return blocked ? StepStatus::Blocked : StepStatus::Complete;

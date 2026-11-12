@@ -15,7 +15,7 @@ class MovementDiff {
     explicit MovementDiff(const std::string &path);
     ~MovementDiff();
     bool enabled() const {return bool(impl_);}
-    void record(const std::optional<server::MovementObservation> &,const OnlineView &,
+    void record(std::optional<server::MovementObservation>,const OnlineView &,
         const RemoteScene *,std::optional<int> area,bool suspended) noexcept;
 };
 }

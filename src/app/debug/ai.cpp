@@ -36,13 +36,13 @@ nlohmann::json reloadPolicyNumbers(const nlohmann::json &config) {
         result[section]=Json::object();
         for(const auto key:keys) if(values.contains(key)) result[section][key]=values.at(key);
     };
-    copy("combat",{"range","crowdRadius","crowdCount","retreatDistance","engageRadius","noProgressSeconds",
+    copy("combat",{"range","crowdRadius","crowdCount","retreatDistance","engageRadius","waitDefenseRadius","noProgressSeconds",
         "stallTimeoutSeconds","retreatLifePercent","lifeDropPercent","rangedKite","kiteIntervalMs","kiteDistance",
         "kiteMinDistance","hazardLookaheadMs","hazardPadding"});
     copy("mobility",{"distance"});
     copy("supplies",{"lifePercent","manaPercent","criticalLifePercent","healthCount","manaCount","quiverCount","intervalMs"});
     copy("events",{"waitSeconds","initialWaitMs","doorInitialWaitMs","scrollInitialWaitMs","questLogDurationMs","waypointCloseDelayMs","npcDialogueCloseDelayMs","encounterRadius","standoffMin","standoffMax",
-        "walkDecisionMs","walkReactionMs","walkRequestIntervalMs","walkRetryMs","townTurnBaseMs","townTurnMinMs","townTurnMaxMs"});
+        "walkDecisionMs","walkReactionMs","walkRequestIntervalMs","walkRetryMs"});
     return result;
 }
 nlohmann::json classCombat(nlohmann::json combat,std::optional<uint16_t> characterClass) {
@@ -224,7 +224,7 @@ DebugAi::Impl::Selector DebugAi::Impl::Definitions::selector(const Json &j) cons
         const auto row=findCompiledMonsterRow(monsters,id);
         if(!row || monsters.number(*row,"interact").value_or(0)==0) throw std::invalid_argument("NPC identity has no native interaction");
     }
-    return {1,id,v.dump()};
+    return {1,id,v.dump(),{},false,j.contains("npc")};
 }
 std::vector<DebugAi::Impl::Goal> DebugAi::Impl::parse(const Json &request) {
     std::optional<ActSelection> acts;
@@ -287,6 +287,12 @@ std::vector<DebugAi::Impl::Goal> DebugAi::Impl::parse(const Json &request) {
             goal.quest="tools-of-the-trade";goal.questSlot=questDefinition(QuestId::ToolsOfTheTrade).nativeSlot;
             goal.topics={163};
         } else throw std::invalid_argument("Unknown high-level AI action: "+action);
+        if(entry.contains("search")) {
+            if(goal.kind!=Kind::Find && goal.kind!=Kind::Hunt && goal.kind!=Kind::Acquire && goal.kind!=Kind::Deliver)
+                throw std::invalid_argument("search applies to find/hunt/acquire/deliver; use searchKnowledge for quest requirements");
+            goal.search=parseSearchKnowledge(entry.at("search"),{});
+            if(goal.search->radius && !goal.search->anchor) throw std::invalid_argument("Bounded goal search requires an anchor");
+        }
         result.push_back(std::move(goal));
     }
     if(result.empty()) throw std::invalid_argument("No configured quest matches the selected act or original MPQ quest number");
@@ -344,6 +350,7 @@ DebugAi::Impl::CombatPolicy DebugAi::Impl::parseCombat(const Json &j) const {
     p.range=integer(j,"range",16,2,30);p.radius=integer(j,"crowdRadius",6,2,16);
     p.crowd=integer(j,"crowdCount",4,2,20);p.retreat=integer(j,"retreatDistance",8,3,20);
     p.engage=integer(j,"engageRadius",18,4,30);
+    p.waitDefenseRadius=integer(j,"waitDefenseRadius",10,1,30);
     p.rangedKite=j.value("rangedKite",true);
     p.kiteIntervalMs=integer(j,"kiteIntervalMs",900,200,5000);
     p.kiteDistance=integer(j,"kiteDistance",6,3,14);
@@ -364,6 +371,7 @@ DebugAi::Impl::MobilityPolicy DebugAi::Impl::parseMobility(const Json &j) const 
 }
 DebugAi::Impl::EventPolicy DebugAi::Impl::parseEvents(const Json &j) const {
     if(!j.is_object()) throw std::invalid_argument("events must be an object");
+    // Legacy townTurn keys remain accepted for saved diagnostic configs.
     for(const auto &[key,value]:j.items()) {
         (void)value;
         if(key!="waitSeconds" && key!="initialWaitMs" && key!="doorInitialWaitMs" && key!="scrollInitialWaitMs" && key!="questLogDurationMs" && key!="waypointCloseDelayMs" && key!="npcDialogueCloseDelayMs" && key!="encounterRadius" && key!="standoffMin" && key!="standoffMax" &&
@@ -382,11 +390,6 @@ DebugAi::Impl::EventPolicy DebugAi::Impl::parseEvents(const Json &j) const {
     p.walkReactionMs=integer(j,"walkReactionMs",40,1,5000);
     p.walkRequestIntervalMs=integer(j,"walkRequestIntervalMs",200,0,5000);
     p.walkRetryMs=integer(j,"walkRetryMs",1000,0,30000);
-    p.townTurnBaseMs=integer(j,"townTurnBaseMs",200,0,30000);
-    p.townTurnMinMs=integer(j,"townTurnMinMs",600,0,30000);
-    p.townTurnMaxMs=integer(j,"townTurnMaxMs",2000,0,30000);
-    if(p.townTurnMinMs>p.townTurnMaxMs)
-        throw std::invalid_argument("events.townTurnMinMs must not exceed townTurnMaxMs");
     if(std::max({p.initialWaitMs,p.doorInitialWaitMs,p.scrollInitialWaitMs})>=p.waitSeconds*1000)
         throw std::invalid_argument("Initial passage wait must be shorter than its total wait budget");
     p.encounterRadius=integer(j,"encounterRadius",32,12,64);
@@ -437,7 +440,7 @@ void DebugAi::Impl::observeDiagnostics(const Context &c) {
         {"routeExecution",routeExecutionSnapshot()},{"combat",battle.combatDiagnostics},
         {"questProgress",full.value("questProgress",Json(nullptr))},{"travel",full.value("travel",Json(nullptr))},
         {"exploration",full.value("exploration",Json(nullptr))},{"populationMemory",full.value("populationMemory",Json(nullptr))},
-        {"search",navigation.searchDiagnostics},{"approach",navigation.approachDiagnostics},{"mobility",navigation.mobilityDiagnostics},{"travelDiagnostics",navigation.travelDiagnostics}};
+        {"search",navigation.searchDiagnostics},{"targetSearch",navigation.targetSearchDiagnostics},{"approach",navigation.approachDiagnostics},{"mobility",navigation.mobilityDiagnostics},{"travelDiagnostics",navigation.travelDiagnostics}};
     behaviorLog.event(cursor,"stall-snapshot",detail.dump());
 }
 DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
@@ -475,6 +478,9 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
     Json localLinks=Json::array();
     for(const auto &[key,record]:navigation.padObservations) localLinks.push_back({{"area",std::get<0>(key)},{"identity",std::get<1>(key)},
         {"source",{std::get<2>(key),std::get<3>(key)}},{"destination",{record.destination.x,record.destination.y}},{"visits",record.visits}});
+    Json failedConnections=Json::array();
+    for(const auto &[edge,failures]:navigation.failedWalkEdges)
+        failedConnections.push_back({{"from",edge.first},{"to",edge.second},{"failures",failures}});
     return {{"state",state},{"active",active()},{"phase",phase},{"reason",reason},{"goalIndex",cursor},{"goals",std::move(plan)},
         {"configuration",{{"file",configurationFile},{"characterClass",configurationClass},{"reload","explicit"},
             {"navigationExperienceAreas",navigation.navigationExperience.size()}}},
@@ -491,12 +497,12 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"npcDialogueCloseDelayMs",eventPolicy.npcDialogueCloseDelayMs},
             {"walkDecisionMs",eventPolicy.walkDecisionMs},{"walkReactionMs",eventPolicy.walkReactionMs},
             {"walkRequestIntervalMs",eventPolicy.walkRequestIntervalMs},{"walkRetryMs",eventPolicy.walkRetryMs},
-            {"townTurnBaseMs",eventPolicy.townTurnBaseMs},{"townTurnMinMs",eventPolicy.townTurnMinMs},{"townTurnMaxMs",eventPolicy.townTurnMaxMs},
             {"standoffMin",eventPolicy.standoffMin},{"standoffMax",eventPolicy.standoffMax}}},
         {"worldWait",questState.questRun.worldWait?Json{{"area",questState.questRun.worldWait->area},
             {"anchor",{questState.questRun.worldWait->anchor.x,questState.questRun.worldWait->anchor.y}},{"expected",questState.questRun.worldWait->expected},
             {"progress",questState.questRun.worldWait->progress},{"lastProgress",questState.questRun.worldWait->lastProgress},
             {"residualRange",questState.questRun.worldWait->residualRange},{"movementRadius",encounterMovementRadius()},
+            {"clearanceRevision",questState.questRun.worldWait->clearanceRevision},
             {"trackedEnemies",questState.questRun.worldWait->enemies.size()},{"clock","execution"},
             {"waitRemainingMs",std::max<int64_t>(0,std::chrono::duration_cast<std::chrono::milliseconds>(questState.questRun.worldWait->deadline-Clock::now()).count())}}:Json(nullptr)},
         {"gameGeneration",game},{"area",area?Json(*area):Json(nullptr)},{"decisionIntervalMs",cadence.intervalMs()},{"decisions",decisions},
@@ -518,6 +524,7 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"groupSkill",policy.groupSkill?Json(*policy.groupSkill):Json(nullptr)},
             {"fallbackSkills",policy.fallbackSkills},{"minimumSkillLevels",policy.minimumSkillLevels},{"skillRanges",policy.skillRanges},{"noProgressSeconds",policy.noProgressSeconds},
             {"stallTimeoutSeconds",policy.stallTimeoutSeconds},{"retreatLifePercent",policy.retreatLifePercent},{"lifeDropPercent",policy.lifeDropPercent},
+            {"waitDefenseRadius",policy.waitDefenseRadius},
             {"scope",policy.scope},{"staticField",policy.staticField},{"avoidHazards",policy.avoidHazards},
             {"rangedKite",policy.rangedKite},{"kiteIntervalMs",policy.kiteIntervalMs},{"kiteDistance",policy.kiteDistance},
             {"kiteMinDistance",policy.kiteMinDistance},{"hazardLookaheadMs",policy.hazardLookaheadMs},{"hazardPadding",policy.hazardPadding},
@@ -545,10 +552,18 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
             {"quest",goals[cursor].quest},{"step",questState.questRun.step},{"steps",goals[cursor].steps.size()},
             {"encounterAnchor",questState.questRun.encounterPosition?Json{questState.questRun.encounterPosition->x,questState.questRun.encounterPosition->y}:Json(nullptr)},
             {"encounterAnchored",questState.questRun.encounterAnchored},
+            {"encounterStandoff",questState.questRun.encounterStandoff?Json{questState.questRun.encounterStandoff->x,questState.questRun.encounterStandoff->y}:Json(nullptr)},
+            {"encounterStance",questState.questRun.encounterStanceDiagnostics},
+            {"inventoryWork",{{"state",std::array{"idle","running","done","failed"}[size_t(questState.questRun.inventoryWork.state())]},
+                {"kind",questState.questRun.inventoryWork.kind()==InventoryWorkflow::Kind::Combine?"combine":"store"},{"reason",questState.questRun.inventoryWork.reason()},
+                {"completedOperations",questState.questRun.inventoryWork.completedOperations()},
+                {"remainingPlacements",questState.questRun.inventoryWork.remainingPlacements()}}},
             {"mode",goals[cursor].requirements.empty()?"steps":"conditions"},
             {"condition",questState.questRun.step<goals[cursor].requirements.size()?Json(goals[cursor].requirements[questState.questRun.step].name):Json(nullptr)},
             {"action",questState.questRun.step<goals[cursor].steps.size()?Json(std::array{"talk","clear","hunt","acquire","read-scroll","stones","operate","portal","return-town","imbue","act-travel","travel","use-item","combine","submit-staff","search-drop","equip-weapon","smash-orb","smash-forge","service","rescue","encounter"}[size_t(goals[cursor].steps[questState.questRun.step].action)]):Json(nullptr)},
             {"pending",questState.questRun.pending?Json{{"action",unsigned(questState.questRun.pending->action)},{"item",questState.questRun.pending->item},
+                {"operationPending",questState.questRun.pending->operationPending},
+                {"operationMode",questState.questRun.pending->operationMode?Json(*questState.questRun.pending->operationMode):Json(nullptr)},
                 {"sequence",questState.questRun.pending->sequence},{"unit",questState.questRun.pending->unit?Json(questState.questRun.pending->unit->id):Json(nullptr)}}:Json(nullptr)},
             {"clearStatusQueries",questState.questRun.sweeps},{"materialPhase",questState.questRun.materialPhase}}:Json(nullptr)},
         {"exploration",{{"model","observed-passages"},{"frontierAttempts",std::move(attempts)},
@@ -564,7 +579,8 @@ DebugAi::Impl::Json DebugAi::Impl::snapshot() const {
                 {"source",{navigation.localPad->source.x,navigation.localPad->source.y}},{"discontinuityBefore",navigation.localPad->discontinuity},
                 {"requestRevision",navigation.localPad->requestRevision}}:Json(nullptr)}}},
         {"questPlan",questState.questPlanDiagnostics},{"rememberedDrops",drops},
-        {"routeExecution",routeExecutionSnapshot()},
+        {"routeExecution",routeExecutionSnapshot()},{"targetSearch",navigation.targetSearchDiagnostics},
+        {"failedConnections",std::move(failedConnections)},
         {"actions",actionDiagnostics},{"navigationDiagnostics",{{"search",navigation.searchDiagnostics},{"approach",navigation.approachDiagnostics},{"mobility",navigation.mobilityDiagnostics},{"travel",navigation.travelDiagnostics},{"terrainClue",navigation.terrainClueDiagnostics}}},
         {"castRequests",castRequests},{"navigationGoals",moveGoals},{"interactions",interactions},{"history",history}};
 }
@@ -751,7 +767,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,const Onli
         }
         const auto &p=s.policy;
         auto nextCombat=s.parseCombat(policyNumbers({{"range",p.range},{"crowdRadius",p.radius},{"crowdCount",p.crowd},
-            {"retreatDistance",p.retreat},{"engageRadius",p.engage},{"noProgressSeconds",p.noProgressSeconds},
+            {"retreatDistance",p.retreat},{"engageRadius",p.engage},{"waitDefenseRadius",p.waitDefenseRadius},{"noProgressSeconds",p.noProgressSeconds},
             {"stallTimeoutSeconds",p.stallTimeoutSeconds},{"retreatLifePercent",p.retreatLifePercent},{"lifeDropPercent",p.lifeDropPercent},
             {"rangedKite",p.rangedKite},{"kiteIntervalMs",p.kiteIntervalMs},{"kiteDistance",p.kiteDistance},
             {"kiteMinDistance",p.kiteMinDistance},{"hazardLookaheadMs",p.hazardLookaheadMs},{"hazardPadding",p.hazardPadding}},
@@ -774,7 +790,6 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,const Onli
             {"npcDialogueCloseDelayMs",s.eventPolicy.npcDialogueCloseDelayMs},
             {"walkDecisionMs",s.eventPolicy.walkDecisionMs},{"walkReactionMs",s.eventPolicy.walkReactionMs},
             {"walkRequestIntervalMs",s.eventPolicy.walkRequestIntervalMs},{"walkRetryMs",s.eventPolicy.walkRetryMs},
-            {"townTurnBaseMs",s.eventPolicy.townTurnBaseMs},{"townTurnMinMs",s.eventPolicy.townTurnMinMs},{"townTurnMaxMs",s.eventPolicy.townTurnMaxMs},
             {"encounterRadius",s.eventPolicy.encounterRadius},{"standoffMin",s.eventPolicy.standoffMin},{"standoffMax",s.eventPolicy.standoffMax}},
             j.value("events",Impl::Json::object())));
         s.policy=std::move(nextCombat);s.mobilityPolicy=std::move(nextMobilityPolicy);s.supplyPolicy=std::move(nextSupply);
@@ -800,6 +815,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,const Onli
         walk.navigationSearch().setDoorClasses(std::move(doorClasses));
         auto plan=s.parse(j);auto policy=s.parseCombat(j.value("combat",Impl::Json::object()));
         auto experience=s.parseExperience(j.value("navigationExperience",Impl::Json::object()));
+        s.configureSearchKnowledge(plan,j.value("searchKnowledge",Impl::Json::object()));
         std::set<uint16_t> requiredWaypoints;
         if(j.value("activateAllWaypoints",false)) {
             if(name!="debug-ai-start") throw std::invalid_argument("activateAllWaypoints belongs to the initial plan");
@@ -905,6 +921,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,const Onli
             s.navigation.requiredWaypointAreas=std::move(requiredWaypoints);s.navigation.waypointDepartureArea.reset();s.navigation.nearbyWaypointArea.reset();s.navigation.missingWaypointAt.reset();
             s.policy=policy;s.mobilityPolicy=mobility;s.supplyPolicy=supplies;s.goals=std::move(plan);s.cursor=0;s.resetStep();s.history.clear();s.sequence=s.decisions=0;
             s.navigation.navigationExperience=std::move(experience);
+            s.navigation.targetSearches.clear();s.navigation.activeTargetSearch.reset();s.navigation.targetSearchDiagnostics=nullptr;
             s.battle.excursionSkill.reset();s.battle.excursionSkillPrepared=false;
             s.configurationClass=characterClass && *characterClass<classNames.size()?classNames[*characterClass]:"unknown";
             s.eventPolicy=events;
@@ -916,7 +933,8 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,const Onli
             s.navigation.handledWaypointTimeout.reset();
             s.navigation.padTransfersWithoutDiscovery=0;
             if(s.game!=view.gameGeneration) {
-                s.questState.journalReadGame.reset();s.navigation.padObservations.clear();s.navigation.padArrival.reset();s.questState.questHandsRestore={};
+                s.navigation.failedWalkEdges.clear();
+                s.questState.journalReadGame.reset();s.navigation.padObservations.clear();s.navigation.failedPads.clear();s.navigation.padArrival.reset();s.questState.questHandsRestore={};
                 s.navigation.padProgressCells=s.navigation.padProgressTargets=s.navigation.padTransfersWithoutDiscovery=0;
             }
             s.castRequests=s.moveGoals=s.interactions=0;s.game=view.gameGeneration;s.areaGeneration=view.world.areaGeneration;s.area=town.read().area;

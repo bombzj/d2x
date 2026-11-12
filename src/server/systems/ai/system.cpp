@@ -83,7 +83,7 @@ StepStatus System::step(TickContext, FrameFacts &) {
     });
     return StepStatus::Complete;
 }
-StepStatus System::think(EntityId id,TickContext tick) {
+StepStatus System::think(EntityId id,TickContext tick,bool walkEnded) {
     const auto *actor=ports_.monsters.find(id);if(!actor) return StepStatus::Complete;
     const auto &monster=*actor;
     if(const auto previous=state_.controllers.find(id);previous!=state_.controllers.end() && previous->second.admissionRevision!=monster.admissionRevision)
@@ -150,7 +150,8 @@ StepStatus System::think(EntityId id,TickContext tick) {
             controller.observedAiThinkRevision=monster.aiThinkRevision;controller.nextDecision=monster.aiThinkAt;
         }
         controller.nextDecision=ports_.monsters.resumeAi(id,tick.tick,controller.nextDecision);
-        if (monster.busyUntil > tick.tick || ports_.monsters.frozen(id,tick.tick) || monster.stunnedUntil>tick.tick || ports_.skills.busy(id,tick.tick) || controller.nextDecision > tick.tick) continue;
+        if (monster.busyUntil > tick.tick || ports_.monsters.frozen(id,tick.tick) || monster.stunnedUntil>tick.tick || ports_.skills.busy(id,tick.tick) ||
+            (!walkEnded && controller.nextDecision > tick.tick)) continue;
         controller.actor = id; controller.nextDecision = tick.tick + uint64_t(monster.rule.decisionTicks);
         controller.random=controller.randomExpected=monster.combatRandom;controller.randomPublished=false;sampled=true;
         const auto &area=ports_.areas.at(monster.area);

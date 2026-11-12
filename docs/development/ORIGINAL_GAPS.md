@@ -12,11 +12,28 @@
 | --- | --- | --- |
 | 原生特殊出生 | 附魔原型、单地板记录异常及部分动态碰撞／出生失败分配顺序仍需原版核对；缺少真实原型时不能用任意类或模拟地图兜底 | [原生出生](../../src/server/systems/monsters/special_actions.cpp) · [人口](../gameplay/monsters/POPULATION.md) |
 | 非玩家特殊召唤 | Fire Golem／德鲁伊召唤等后续AI涉及PlayerData；需核实本机合法非玩家调用与原失败分支，不能以玩家替身或自造跟随补齐 | [触发施放](../../src/server/systems/skills/casting.cpp) · [装备技能](../gameplay/skills/ITEM_SKILLS.md) |
-| 同层传送台 | 自研物件执行尚无Operate27；按本房间单位链／邻室原序配对同类对端、size3／mask0x1C09寻位、实际搬移后的07／本人位置及背压继续点仍缺。原版Host客户端交互通过不代表自研已实现 | [物件](../gameplay/world/OBJECTS.md#同层传送台边界) · [执行入口](../../src/server/systems/objects/system.cpp) |
+| 同层传送台 | Operate27已按本房间单位链／邻室原序配对，接入两次原生寻位、权威搬移、07／15及内容／输出背压续接。尚未构建／实机验证，待对照多对端顺序、阻塞落点、重订阅、网络延迟及混合客户端 | [物件](../gameplay/world/OBJECTS.md#同层传送台边界) · [执行入口](../../src/server/systems/objects/system.cpp) |
 | 全局交错与失败继续点 | 混合出生、事件队列1／2、装备／状态／伤害回调与房间压缩的原逐发生顺序尚未完整闭合；逐入口比较随机、身份与已提交前缀，仅修复有证据的差异 | [执行计划](../architecture/MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤) · [内核](../modules/SERVER_SYSTEMS.md) |
 | 经典模式／Ladder | 经典非资料片仍拒绝；战网天梯建角／选角／房间过滤及GS入局已接，自研GS保留身份并按普通规则执行，新增路径未运行。赛季／排名及自研天梯专属规则未支持，不能以普通规则准入认证完整原Realm天梯 | [存档](../modules/SAVES.md) · [联网](../modules/NETWORK.md) |
 
 开放玩法入口的技能／飞弹／状态／物品／怪物／环境传递依赖仍缺完整可达闭包，不能根据表行数或零散NotImplemented数目给出完整率。逐程序发现的新缺实现应补到上表；已接的跨区弹体和女武神装备命中效果只核对剩余组合，不重新列成未实现功能。
+
+## 原版 Host 与 D2X 服务端差异
+
+对照使用零售 1.13c TCP/IP Host 和 D2X 单机，均为普通难度，使用同一份资料片女巫存档的独立副本。对话比较同一任务阶段和消息字段。地图及移动两局种子不同，需同种子、同房间激活顺序和同一操作复核。
+
+| 已修源码，待原版对照验收 | 修正范围 | 待验收 |
+| --- | --- | --- |
+| 第二幕马席夫渡船话题 450 | `menu=0`，独立冻结清入区位前的私人回执 | 核对 241／450 两条确认、`0x5D`／`0x28`、再次交谈／保存及实际渡船。多人状态过滤仍待核对。[第二幕消息对照](../gameplay/quests/ACT2.md#已确认的原版消息差异) |
+| 第三幕墨菲斯托升桥和红门 | 分离红门 ENDANIM 和升桥 QUESTFN，两次升桥都要求同室近距玩家 | 原版再次观测到桥的两条 `0x0E` 从 mode 1 到 2，间隔约 1.08 秒，客户端随后正常经红门进入第四幕。D2X 服务端仍需核对模式包、碰撞释放、多人晚指派和房间压缩重入。[后三幕任务](../gameplay/quests/ACT3_5.md#墨菲斯托升桥与红门) |
+| 女伯爵楼梯的指派范围 | `0x09` 改按 warp 原生成房间的可见集合筛选 | 原版先见西房 `0x07`，进房后才收到楼梯 `0x09`。仍需同种子、同路径核对房间订阅、预设单位出生与指派顺序。[房间揭示与楼梯指派](../modules/NETWORK.md#房间揭示与楼梯指派) |
+| 凯恩出笼后玩家立即回营地 | 普通怪物 WALK／RUN 结束沿 `sub_6FC63680` 同帧交接 AI。牢笼开笼后改用原模式 S1（3）并发布可靠模式更新 | 零售 Host 样本中，玩家先用自己的蓝门回城，开笼约 6 秒后收到同坐标的 `cain5` 和演出门 189。修复前的 D2X 样本中，野外退场要等玩家重进崔斯特瑞姆。复测立即回营地、原地看完、房间休眠重入与普通怪物走跑结束。[剧情 NPC](../gameplay/npc/INTERACTIONS.md#宿主npc移动与地图动作) |
+
+| 权威侧待核对 | 已有证据与下一步 |
+| --- | --- |
+| 泰瑞尔通道开启时序 | 原版Host先发class153的mode1并按12帧ENDANIM释放碰撞。D2X已接死亡回调→公共setNativeMode→FrameCnt1事件→静默mode2，删除逐帧直接开门，补齐Init38晚初始化／恢复及FX8。Windows Release 单机已实测首次开门时等待碰撞变化，随后通过并完成泰瑞尔任务。原版房间续档时门已打开；首次开门的逐包顺序、逐帧碰撞、输出背压、晚指派和休眠恢复仍待对照；[证据与边界](../gameplay/quests/ACT2.md#已确认的原版消息差异) |
+| 兵营空白砖、都瑞尔入口旁的碰撞 | 原版同种子导出及实机操作确认阻挡，D2X 联机客户端当时采样为可通行。兵营仅重放 `0x07/0x08` 时两套静态生成结果一致。需同种子采集 D2X 权威房间物化、碰撞及交互射线，区分服务端地形和客户端活动格投影。[地图首差对照](../gameplay/world/MAPS.md#实机首差与合成调用边界) |
+| 步行结束时的位置采样 | 原版按资源检查发布 `0x96`，可同时携带途中位置及已接受终点。原版和 D2X 源码在停步后都沿同一资源／位移门槛采样，尚缺同走跑终点、资源状态和检查相位的对照。调试 AI 的探查等待已独立修正。[本人位置回包](../modules/MAP.md#本人位置回包) |
 
 ## 待核对多人入场
 
@@ -30,9 +47,9 @@
 
 | 项目 | 剩余范围 | 入口 |
 | --- | --- | --- |
-| 原CltDo | 24（Cairn Stones）、31（Horadric Staff）、33／34（Tainted Sun）、35（女王死亡）、44（Distraction父控制）、53（Tiger Fury）、61（Overseer控制）、64／65／66（Baal末段／Worldstone）；14／67为未被当前表引用的非空原入口，不能改为空函数 | [客户端程序](../../src/presentation/world/client_missile_program.hpp) |
+| 原CltDo | 23／24／31已接，待运行对照房间交错、视觉种子和完整音画。33／34（Tainted Sun）、35（女王死亡）、44（Distraction父控制）、53（Tiger Fury）、61（Overseer控制）、64／65／66（Baal末段／Worldstone）；14／67为未被当前表引用的非空原入口 | [客户端程序](../../src/presentation/world/client_missile_program.hpp) |
 | 原创建来源／输入 | Clt57根553自然创建来源、Clt44实际主人UsedSkill、各程序的原单位／房间链及视觉种子初始化未齐；不得从状态或名称自造根控制器 | [怪物表现](../gameplay/monsters/PRESENTATION.md) |
-| packet89与终局 | FX1 广播、邻房石柱控制飞弹和环境渐暗已接，待实机验收。非空FX3／6／19及经典FX13的后续消费者未齐；Worldstone上游仍缺。保留本机空项2／4／5／7／8／9／10／11／15／18 | [第一幕](../gameplay/quests/ACT1.md) · [后三幕](../gameplay/quests/ACT3_5.md) |
+| packet89与终局 | FX0／1／3已接，待实机核对光照、绘制及音效。FX3都瑞尔图形预载、FX6／19及经典FX13的后续消费者未齐；Worldstone上游仍缺。保留本机空项2／4／5／7／8／9／10／11／15／18 | [第一幕](../gameplay/quests/ACT1.md) · [第二幕](../gameplay/quests/ACT2.md) · [后三幕](../gameplay/quests/ACT3_5.md) |
 | 音画／输入外围 | 原单槽音频后端及完整恢复／混音、完整天气和彩光、部分3D声音／画面设置、当前实际缺少的组件资源（包括已观察的死灵法师mode18组件缺失与装备表现提示）；频道／账号／影片及完整认证恢复仍有缺口 | [UI](../gameplay/ui/CLASSIC_HUD.md) · [联网](../modules/NETWORK.md) |
 
 NPC交谈前暂停、563初始模式／预加载及UnHolyBolt视觉仍需分别核对原行为；入口见[NPC交互](../gameplay/npc/INTERACTIONS.md)、[后三幕任务](../gameplay/quests/ACT3_5.md)、[人物](../modules/CHARACTER.md)。任务历史位／PRIMARYGOALDONE保存与5D时序归下文任务核对；电影播放器归上表音画外围。

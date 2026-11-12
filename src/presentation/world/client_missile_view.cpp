@@ -54,7 +54,8 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         for (const int child:program.children) if (child>=0 && !assets_.ensureProjectile(child)) return false;
     if((program.function==24 || program.function==31) && program.rules!=ClientMissileProgram::Rules::Original) return false;
     if(program.function==31) for(const int child:{150,339,340}) if(!assets_.ensureProjectile(child)) return false;
-    if(program.function==21 || program.function==22 || program.function==24 || program.function==29)
+    if(program.function==24 && program.children[0]>0 && !assets_.ensureProjectile(program.children[0])) return false;
+    if(program.function==21 || program.function==22 || program.function==29)
         for(const int child:program.children) if(child>=0 && !assets_.ensureProjectile(child)) return false;
     if ((program.function == 4 || program.function==45) && (program.children[0] < 0 || program.parameters[0] < 0 ||
         program.parameters[1] < 0 || program.parameters[1] > 256 || program.parameters[2] < 0 ||
@@ -789,7 +790,6 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
             auto animation=program.animation;animation.loop=true;animation.subLoop=false;
             if(effect.animationRate) animation.rate=nativeMultiply(*effect.animationRate,4);
             while(effect.frame<lastFrame) {
-                if(!effect.frame) assets_.sceneAudio.playRegistered("missile-release:"+std::to_string(effect.missileId),uint64_t(view_.animationTime*25.f));
                 effect.nativeSequenceFrame=advanceMissileAnimation(effect.nativeSequenceFrame,effect.nativeCurrentFrames,animation);
                 ++effect.frame;
             }
@@ -860,7 +860,6 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                 const auto chance=uint32_t(nativeAdd(base,program.parameters[2]>0?nativeMultiply(program.parameters[2],effect.nativeCurrentFrames)/4:0));
                 lightningTrail=rollRandom(effect.random)%100<chance;
             }
-            if (!frame) assets_.sceneAudio.playRegistered("missile-release:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
             switch (program.function) {
             case 33: {
                 constexpr std::array<std::array<int,3>,5> bands{{{350,10,1},{300,5,1},{200,4,1},{175,3,1},{0,100,0}}};
@@ -977,9 +976,11 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                 break;
             }
             case 24: {
-                // LoD BB8F0: sky strikes, then room-local stone-to-stone arcs.
+                // LoD BB8F0: scattered strikes, then strikes above the stones.
                 const int current=effect.nativeCurrentFrames,margin=program.parameters[0];
+                if(!relatedOwner(effect)) break;
                 const auto bolt=[&](Vec at) {
+                    if(program.children[0]<=0) return;
                     const auto child=assets_.clientMissilePrograms.find(program.children[0]);
                     if(child==assets_.clientMissilePrograms.end()) return;
                     ClientMissileInitialization init;init.sourceSkill=effect.sourceSkill;
@@ -994,27 +995,23 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
                     elapsedFrames%program.parameters[1]==0) {
                     const auto at=effect.pos+blizzardOffset(uint32_t(std::floor(effect.pos.x)),elapsedFrames,
                         program.parameters[2],true,effect.random);
-                    if(grid.missileSegment(at-origin,at-origin,{4,1})) bolt(at);
+                    const auto local=at-origin;
+                    if(!(grid.nativeMovementMask(int(std::floor(local.x)),int(std::floor(local.y)))&4)) bolt(at);
                 }
                 if(current>=margin+125 || current<=margin) break;
                 const auto room=std::find_if(map.terrain.rooms.begin(),map.terrain.rooms.end(),[&](const auto &r) {
                     const auto p=effect.pos-origin;return p.x>=r.x*5 && p.y>=r.y*5 && p.x<(r.x+r.width)*5 && p.y<(r.y+r.height)*5;
                 });
                 if(room==map.terrain.rooms.end()) break;
-                if(!effect.nativeParameters) effect.nativeParameters=std::array<int32_t,2>{};
+                // BBAAF–BBAF9 leaves source Y zero and overwrites source
+                // stone Y in the target X slot. B3175 rejects that origin
+                // outside the loaded rooms. Only the vertical bolts survive
+                // in the original Stony Field.
                 for(const auto &stone:anchors) {
                     const auto p=stone.position-origin;
                     if(stone.type!=2 || stone.identity<17 || stone.identity>=22 || p.x<room->x*5 || p.y<room->y*5 ||
                         p.x>=(room->x+room->width)*5 || p.y>=(room->y+room->height)*5) continue;
                     bolt(stone.position);
-                    if(current%8 || program.children[1]<0) continue;
-                    const auto previous=std::find_if(anchors.begin(),anchors.end(),[&](const auto &a) {
-                        return a.type==2 && a.nativeId==uint32_t((*effect.nativeParameters)[0]);
-                    });
-                    if(previous==anchors.end()) {(*effect.nativeParameters)[0]=int32_t(stone.nativeId);continue;}
-                    ClientMissileInitialization init;init.sourceSkill=effect.sourceSkill;init.distanceLimited=true;
-                    emit(program.children[1],stone.position,previous->position-stone.position,effect,childAge,-1,0,-1,init);
-                    if(limitedRandom(effect.random,4)==0) (*effect.nativeParameters)[0]=int32_t(stone.nativeId);
                 }
                 break;
             }
@@ -1873,6 +1870,8 @@ void SceneView::advanceClientMissiles(float dt, const Map &map, Vec origin,
         clientMissiles_.push_back(std::move(pending.front()));pending.pop_front();
     }
     {
+        // Travel groups start through syncEmitters. The one-shot audio path
+        // discards them, so queuing it on missile birth only adds worker jobs.
         std::vector<SoundEmitter> sounds;
         for (const auto &effect : clientMissiles_) {
             if (effect.age < 0 || !effect.soundEmitter) continue;

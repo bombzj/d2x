@@ -68,6 +68,12 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 
 未覆盖高难度弹窗、损坏／大存档、磁盘故障恢复、异常断线、八人、跨机器或Linux；也未重新认证PvPGN后端。没有新增测试脚本或专用程序。
 
+### 房间揭示与楼梯指派
+
+D2MOO `DRLGROOMTILE_AddWarp` 在源房间建立 type 5 预设，`SUNIT_SpawnPresetUnit`／`SUNIT_Add` 将单位加入该房间链。LvlWarp 偏移只参与坐标，`LEVEL_AddClient` 的单位指派走房间链。D2Decomp 的 `drlg.md` 与 `net-packets.md` 分别记录了预设来源和 `0x09` 字段。D2X 的 [publishAreas](../../src/hosting/detail/world_replication.cpp) 以生成记录的源房间判断 `0x09` 可见性，保留原坐标及对应的撤出包。
+
+普通难度零售 1.13c 高塔地牢样本中，西房 `0x07`（17308）早于下层楼梯 `0x09`（18004）。需同种子比较预设出生、房间订阅及重新指派，才能判断两包间隔由哪个阶段产生。
+
 ## 流程与入口
 
 普通施法、光环、受击、药剂及再生的当前生命／法力／耐力默认由`publishMotion`的18／95／96检查同步；LifeFact／ManaFact／ResourcesFact保留领域诊断，不另编码1D／1E／1F。人物／库存／组事务共用这一默认边界，不依赖技能ID或费用标记。定点权威值、费用、再生与伤害计算不因发包合流改变；最大资源及应显式同步的其他属性继续编码。

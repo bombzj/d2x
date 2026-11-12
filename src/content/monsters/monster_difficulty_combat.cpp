@@ -11,7 +11,8 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel, std::optional<int> forcedLevel,bool ladderStats,MonsterStatPurpose purpose) {
     const bool npc=purpose==MonsterStatPurpose::NativeNpc;
     const bool zeroDefaults=purpose!=MonsterStatPurpose::Combatant;
-    if (difficulty < 0 || difficulty > 2 || areaLevel < (npc?0:1)) return std::nullopt;
+    const int minimumLevel = npc ? 0 : 1;
+    if (difficulty < 0 || difficulty > 2) return std::nullopt;
     static constexpr std::array suffix{"", "(N)", "(H)"};
     const std::string ending = suffix[size_t(difficulty)];
     // Compiled MonStats blanks are zero. Service NPCs are living native
@@ -19,10 +20,12 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     // Idle destructibles also retain compiled zero fields, with a real combat level.
     const auto nativeLevel = zeroDefaults?std::optional{stats.number(row,"Level"+ending).value_or(0)}:stats.number(row,"Level"+ending);
     const bool noRatio = stats.number(row, "noRatio").value_or(0) != 0;
-    if (!nativeLevel || *nativeLevel < (npc?0:1)) return std::nullopt;
+    if (!nativeLevel || *nativeLevel < minimumLevel) return std::nullopt;
     const bool boss = stats.number(row, "boss").value_or(0) != 0;
     const int level = forcedLevel.value_or(difficulty == 0 || noRatio || boss ? *nativeLevel : areaLevel);
-    if(levels.rows().empty()) return std::nullopt;
+    // Restoring an existing monster uses its unit level even in an area
+    // without a population level. Validate the level selected for MonLvl.
+    if (level < minimumLevel || levels.rows().empty()) return std::nullopt;
     // Common DATATBLS_CalculateMonsterStatsByLevel clamps only the ratio
     // lookup to the final compiled MonLvl record; STAT_LEVEL stays unchanged.
     const int ratioLevel=std::min(level,int(levels.rows().size())-1);

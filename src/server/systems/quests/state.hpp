@@ -54,9 +54,11 @@ struct ActTwoState {
     bool sunNoticePending{},sunCallbackPending{};
     bool sunScheduled{}, dark{}, altarDestroyed{}, journalRead{}, tombOpen{}, durielSlain{}, tyraelPortal{};
     uint64_t sunAt{}, tombAt{};
-    bool tombEffectPending{};
+    bool tombEffectPending{}, tombRestored{};
+    struct TombOpeningRooms {EntityId orifice;Vec orificePosition,entrancePosition;};
+    std::optional<TombOpeningRooms> tombOpeningRooms;
     RegionId tomb{};
-    EntityId radament{};
+    EntityId radament{},tyraelDoor{};
     Vec bookPosition;
     std::optional<uint16_t> tombOffset;
     std::map<PlayerId,std::tuple<RegionId,bool,uint64_t>> observed;
@@ -94,6 +96,7 @@ struct ActThreeState {
     uint64_t gidbinnAt{};
     bool gidbinnSpawned{},gidbinnDropped{};
     bool flailDropped{},cubeDropped{},orbSmashed{},mephistoSlain{},soulstoneDropped{};
+    bool mephistoBridgeRaised{}; // Init45 restores OPENED once raising starts.
     unsigned orbHits{};
     uint64_t sewerAt{};
     bool orbSequenceStarted{},orbFxPending{};

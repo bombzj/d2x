@@ -204,6 +204,7 @@ bool DebugAi::Impl::questFinished(const Context &c,const Goal &goal) const {
 }
 bool DebugAi::Impl::questTransaction(const Context &c) const {
     if(cursor>=goals.size() || goals[cursor].kind!=Kind::Quest || supply.supplyStage!=SupplyStage::None) return false;
+    if(questState.questRun.inventoryWork.active()) return true;
     if(questState.questRun.pending && questState.questRun.pending->sequence) return true;
     if(questState.questRun.recoveringItem && (onlineHasCursorItem(c.observation.read().world.items,c.observation.read().load.playerUnitId) ||
         c.observation.read().world.storage.kind!=OnlineStorageKind::None)) return true;
@@ -239,7 +240,7 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
     if(supply.supplyStage!=SupplyStage::None) return true;
     const auto flags=questFlags(c,goal.questId);
     if(!flags) {wait("quest-state","Waiting for actual native character quest flags");return false;}
-    if(questState.questRun.initialInventory || questState.questRun.recoveringItem || (!questState.questRun.initialized && onlineHasCursorItem(c.observation.read().world.items,c.observation.read().load.playerUnitId)))
+    if(questState.questRun.inventoryWork.active() || questState.questRun.initialInventory || questState.questRun.recoveringItem || (!questState.questRun.initialized && onlineHasCursorItem(c.observation.read().world.items,c.observation.read().load.playerUnitId)))
         if(!canInput(c,DebugActionOwner::Goal,DebugAllInputs) || !recoverQuestInventory(c)) return false;
     if(!questState.questRun.pending && !questTransaction(c)) {
         // D2MOO D2C_OriginalQuestFlags: COMPLETEDNOW means this player
@@ -298,7 +299,7 @@ bool DebugAi::Impl::prepareQuest(Context &c,const Goal &goal) {
 DebugAi::Impl::Goal DebugAi::Impl::questLeaf(const Goal &goal) const {
     if(goal.kind!=Kind::Quest || questState.questRun.step>=goal.steps.size() || supply.supplyStage!=SupplyStage::None) return goal;
     const auto &step=goal.steps[questState.questRun.step];Goal leaf;
-    leaf.area=step.area;leaf.target=step.target;leaf.item=step.item;leaf.sourceObject=step.source;
+    leaf.area=step.area;leaf.target=step.target;leaf.item=step.item;leaf.sourceObject=step.source;leaf.search=step.search;
     if(goal.questTown && step.area==goal.questTown && area!=goal.questTown &&
         step.action!=QuestAction::Portal && step.action!=QuestAction::ActTravel) {
         leaf.kind=Kind::ReturnTown;return leaf;
@@ -335,6 +336,14 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
     const auto item=world.items.find(pending.item);
     const bool ours=item!=world.items.end() && onlineItemOwnedBy(item->second,c.observation.read().load.playerUnitId);
     const auto unit=pending.unit?world.units.find(*pending.unit):world.units.end();
+    if(pending.operationPending && pending.unit && unit!=world.units.end() &&
+        unit->second.assignmentRevision==pending.assignment &&
+        ((unit->second.mode && unit->second.mode!=pending.operationMode) ||
+         (world.npcConversation && world.npcConversation->type==2 && world.npcConversation->source==pending.unit->id) ||
+         world.staffSource==pending.unit->id)) {
+        pending.operationPending=false;
+        note("quest-object-operation-observed",std::to_string(pending.unit->id));
+    }
     // Operate66 sends private sound 19 for a denied neutral door. Correlate
     // it with this exact submission, even if the reply preceded this AI tick.
     if(pending.action==QuestPending::Action::Object && step.action==QuestAction::Portal &&
@@ -455,7 +464,7 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
         break;
     }
     if(observed) {
-        pending.resultObserved=true;
+        pending.resultObserved=true;pending.operationPending=false;
         if(step.action==QuestAction::Portal && pending.action==QuestPending::Action::Object) navigation.passageWaits.erase(Passage::Door);
         note("quest-pending-result-observed");
     }
@@ -502,6 +511,12 @@ void DebugAi::Impl::observeQuestInteraction(Context &c,const DebugWalkIntent &in
     if(p.action==QuestPending::Action::Portal) rememberTravel(c,*p.unit);
     const auto unit=c.observation.read().world.units.find(*p.unit);
     if(unit!=c.observation.read().world.units.end()) p.assignment=unit->second.assignmentRevision;
+    if(p.action==QuestPending::Action::Object && p.unit->type==2) {
+        const auto &sent=c.control.interactionSubmission();
+        if(!sent || sent->target!=*p.unit || !onlineWorldMatches(sent->context,c.observation.read()))
+            throw std::runtime_error("Quest object has no matching normal interaction submission");
+        p.assignment=sent->targetAssignment;p.operationPending=true;p.operationMode=sent->targetMode;
+    }
     const auto now=Clock::now();p.deadline=now+std::chrono::seconds(30);
     if(p.action==QuestPending::Action::Portal) {
         const auto &step=goals[cursor].steps.at(questState.questRun.step);
@@ -628,20 +643,17 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
             if(distance<=2) {wait("clear-target-ready","Waiting for the observed remaining hostile's attackable state");break;}
             if(approachPoint(c,*remembered,"last observed remaining hostile",2)) break;
         }
-        explore(c,"unexplored passages that may reveal remaining hostiles");
-        if(phase=="explore-wait" && !c.walk.active() && Clock::now()>=questState.questRun.sweepReady) {
-            // Refresh the authoritative counter without erasing empty-room
-            // knowledge and walking the same clear rooms every two seconds.
-            c.control.refreshQuests();
-            questState.questRun.sweepReady=Clock::now()+std::chrono::seconds(5);++questState.questRun.sweeps;
-            note("clear-status-requested",std::to_string(questState.questRun.sweeps));
+        if(!questState.questRun.sweeps && c.control.refreshQuests()) {
+            ++questState.questRun.sweeps;note("clear-status-requested","Confirming the counter before the finite search");
         }
+        searchArea(c,"clear:"+std::to_string(goal.questSlot),"remaining hostiles",{});
         break;
     }
     case QuestAction::Hunt: {
         const auto flags=state;
         if(step.flags && flags && (*flags&step.flags)==step.flags) {done=true;break;}
         const auto unit=find(c,*step.target,true);
+        if(unit) targetSearchObserved(c);
         if(unit && (onlineMonsterCorpse(*unit) || c.combat.monsterTargetEligible(*unit,false))) questState.questRun.worldWait.reset();
         if(unit && onlineMonsterCorpse(*unit)) {
             if(step.flags && (!flags || (*flags&step.flags)!=step.flags)) {
@@ -658,16 +670,8 @@ void DebugAi::Impl::quest(Context &c,const Goal &goal) {
             done=true;break;
         }
         if(!unit) {
-            if(step.witness && questState.questSpawnAnchor && questState.questSpawnAnchor->first==area) {
-                if(!questState.questRun.encounterAnchored && approachPoint(c,questState.questSpawnAnchor->second,"observed quest birth anchor",8)) break;
-                const auto anchor=questState.questSpawnAnchor->second;
-                if((Vec{float(anchor.x),float(anchor.y)}-c.position).length()>10) {
-                    explore(c,"reachable approach to the observed quest birth anchor");break;
-                }
-                questState.questRun.encounterAnchored=true;
-                waitForWorldResult(c,step,"Waiting at the actually observed birth anchor for the original boss assignment");break;
-            }
-            if(!approachKnown(c,*step.target)) explore(c,step.target->name,false,ExplorationFocus::Units);
+            questState.questRun.worldWait.reset();navigation.passageWaits.erase(Passage::WorldEvent);
+            searchTarget(c,*step.target,step.search?&*step.search:nullptr);
             break;
         }
         if(!c.combat.hostile(*unit)) throw std::runtime_error("Quest hunt target is not an actual hostile");

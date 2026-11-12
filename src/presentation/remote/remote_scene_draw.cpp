@@ -303,8 +303,6 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     std::map<OnlineUnitKey, size_t> soundActorsByKey;
     for (const auto &[key, unit] : v.world.units) {
         if (key.type > 2 || !unit.position || !unitClass(unit)) continue;
-        if (!pd2 && key.type == 2 && unitClass(unit) == 100 && (unit.mode == 1 || unit.mode == 2))
-            questEffects.openedTombEntrance = unit.position;
         SoundActorView source;
         source.id = effectOwner(key); source.identity = *unitClass(unit);
         source.kind = key.type == 0 ? SoundActorKind::Player :
@@ -664,29 +662,6 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             audio.audible = shared.worldContains(screen(feet));
         }
         const float runClock=m.scriptedSequence?float(m.scriptedSequence->animation.frame)/256.f/25.f:0;
-        if (!pd2 && key.type == 2 && unitClass(u) == 152) {
-            // The live orifice can stay in OP even after submission. The
-            // entrance at the A2Q6 spawn offset distinguishes it from a lease.
-            const auto &entrance = questEffects.openedTombEntrance;
-            const bool opened = entrance && entrance->x == u.position->x - 13 && entrance->y == u.position->y + 3;
-            if (opened && std::none_of(shared.clientMissiles().begin(), shared.clientMissiles().end(),
-                [&](const auto &effect) {
-                    return effect.missileId == 338 && std::floor(effect.creationPosition.x) == u.position->x &&
-                        std::floor(effect.creationPosition.y) == u.position->y;
-                }) && shared.projectileVisual(338)) {
-                // HA's three MPQ modes all depict the empty base. Seat one
-                // still frame behind its lip after the actual FX3 body expires.
-                WorldDrawItem staff;
-                staff.position = feet;
-                staff.pixelOffset = unitScreenOffset + visual->offset;
-                staff.orderFlag = visual->order;
-                staff.missile = 338;
-                staff.missileFrame = 0;
-                staff.behindUnit = true;
-                staff.suppressMissileLight = true;
-                draw.push_back(staff);
-            }
-        }
         const auto ground = screen(feet) + unitScreenOffset;
         const auto p = ground + visual->offset+m.riderOffset+
               (m.scriptedSequence && m.scriptedSequence->leapGraphics?m.scriptedSequence->leapGraphics->offset():Vec{})+

@@ -64,6 +64,8 @@ Nihlathak自然死亡的A5Q4新增原FX17与本人附着声音82：冻结当次�
 
 执行入口为`act_three.cpp`、`act_four.cpp`、`act_five.cpp`、`ancients.cpp`、`baal.cpp`；hosting的`quest_world_content.cpp`准备战斗组，`quest_content.cpp`准备奖励。原中立NPC只从已准备规则准入。囚犯逃离记账归npc、移动与时钟归monsters／ai，救援蓝门归objects及任务QUESTFN，玩家门户归travel；公共资格／事务／原协议与保存边界分别见[任务系统](SYSTEM.md)和[存档](../../modules/SAVES.md#任务槽与奖励语义)。
 
+泰瑞尔出生沿Baal死亡→当前MPQ `baalfx control`（Range650）→SrvDo36剩余帧≤100／SrvHit57到期回调→A5Q6出生入口。`QUESTS_GetFreePosition`先在死亡位置偏移(-5,-5)附近按size5／mask0x400预选，再按`SpawnMonster(...,4,66)`执行怪物出生搜索；其中4是搜索轮数，原半径依次3、6、9、12，不是步行寻位半径。`world::spawnQuestNpc`复用`monsters::searchRoomSpawn`的房间边界、原房间随机与MonStats2出生碰撞，通过原NPC准入登记；背压时不提交搜索随机数，不重复生成。E5025174单机卡点的宿主确认Baal已死、无活动／休眠Tyrael；预选点(15127,5910)的旧半径4搜索无合法位置，原第二轮半径6已有合法地面，旧实现错误缩小范围导致出生失败。Windows Release 构建通过。单机从本轮击杀前存档重跑，巴尔死亡后观察到泰瑞尔指派，完成对话、使用红门并确认第五幕任务完成。原死亡位置与搜索环未重现。
+
 第五幕本轮补缺依据：A5Q2囚犯距离使用原10397单位距离，保留整数坐标／房间链及`<15`；Fn134的286读取当前Skills.lob，经原构造flag0x400按距离设置CurrentFrame，不能把Missiles.Range60当作到点倒计时。A5Q6的20175先提交CUSTOM3，再由NPCDEACTIVATE按各玩家位置寻位生成单个565，普通回城蓝门不提交CUSTOM6；native-05最终出口另经正常13实见warp109及0x61/7。新源码在最终旅行提交中原子发布CUSTOM6、Travel及类型化Cinematic，复用PlayerData.nativeBusy；客户端记录真实61/7并显示原endgame2通关界面，电影播放器未接，single-34候选E16B32DA已实际收到6107、显示Slayer并正常OK保存退局（死后为取图暂停／恢复AI）。单机与原版Host六任务主线均已分段实见奖励、五波／巴尔死亡及幕末20175／565，原版的最终进门为单独操作采样，细节见[调试AI](../../development/DEBUG_AI.md#第五幕任务配方)。
 
 ## 恢复与投影例外
@@ -85,8 +87,15 @@ Nihlathak自然死亡的A5Q4新增原FX17与本人附着声音82：冻结当次�
 - Anya解冻已接原两次任务定时、真实野外NPC走位／蓝门退场及城镇准入，红门由NPC位置请求；Ormus／Alkor动作、Hratli／Natalya迁移与任务MapAI转交见[NPC专用剧情](../npc/INTERACTIONS.md#宿主npc移动与地图动作)。正常返城蓝门已按A1Q4／A5Q3拆为Objects189独立出生和25帧QUESTFN，城镇标记晚到时不补造另一端，Fn031命令3恢复及原出生失败分支分别保留；源码已构建，行为仍待实测，Fn031末尾已接原直接DD模式12及目标／碰撞／事件撤出，保留尸体至正常房间生命周期，不走DT杀敌奖励；协议表现、完整城镇时序和通关演出仍待对照。熔炉改由物件QUESTFN在当前MPQ FrameCnt3后逐件掉落四批宝石（档位0／1／1／2），每批按砸碎时冻结的人数执行；本批至少一件成功才在20帧后进入下一批，整批失败则不续时钟，最后一批结束才尝试一枚难度符文。每次先消费QUESTS独立随机选择代码，再走共用原生物品双种子／分配／落点／可靠输出继续点；不预掷后续批次，不依赖参与者仍在线。依据D2MOO A4Q3::OperateFunction49／CreateReward；放石使用FrameCnt1的OP→ON，砸碎先进入SPECIAL1=3及FX14，首个QUESTFN再切到SPECIAL2=4。新增源码已构建，行为仍待实测，少生／失败、背压、休眠重建和逐随机轨迹仍待验收。
 - 古代人三人专用AI／技能已接。雕像各自20帧QUESTFN、放置失败10帧重试和死亡后任务定时恢复已补源码，祭坛原文20002确认后启动。零售雕像Operate62–64播放声音19。完成试炼后，隐形古代人Operate69按资格提供20169，读文结束才设置已存档的ENTERAREA位。死亡云及89／18事件见[怪物台账75至79项](../monsters/ACT3.md#逐项接入)。重置按任务组撤销实体，原随机词缀筛选与召唤／效果清理的全部边界仍待补。
 - 原版1.13c Mephisto后HellGate342实见`0→1`原0E更新，重新指派时为2；自研当前直接投影为2，模式演进时序仍待对齐。Operate46准入已按D2MOO允许非零，不能与必须mode2的下水道Operate44混用。Guardian同局原版完成字为`2861`，本轮自研为`2801`，原跨幕字分别`2001`／`0001`；奖励／到103已实测，残余历史位仍需个人模型／原包／D2S一并对齐。客户端补Operate46的FrameCnt1／25静默ENDANIM，显示、选取和碰撞共用投影，原始副本mode1保持不变；依据A3Q6_Callback08_MonsterKilled，修复未构建、未实测。
-- 原版升桥由Quests.cpp的OBJECT_MEPHISTOBRIDGE每24帧检查：红门已开启、玩家在桥的同一房间且D2Common_10399<18，桥逐次0→1→2，最后释放碰撞。AI从MPQ Init45／SizeX及真实指派位置选择可达触发点，步行等服务端mode2，传送可用时跳过；共用事件等待，不固定桥坐标或把视觉动画结束当作通路开启。该AI路径未构建、未实测，不代表自研宿主升桥时序已对齐。
 - 三难度、原D2GS对照、多人／跨机器、Linux及完整存档异常分支仍缺完整核对。任务主流程接入不等于P8完整战役完成。
+
+### 墨菲斯托升桥与红门
+
+普通难度零售 1.13c TCP/IP 中，红门 342 指派为 mode 2 时，桥 341 仍为 mode 0。桥随后收到两个 `0x0E`，mode 1 至 2 的包间隔约 1.085 秒。桥开放后，玩家沿桥走到红门并由正常单位交互切入区域 103。
+
+[第三幕服务端任务](../../../src/server/systems/quests/act_three.cpp)按 D2MOO `A3Q6_Callback08_MonsterKilled` 启动在场红门 342 的 mode 1，ENDANIM 在 MPQ `FrameCnt1` 后进入 mode 2。后来指派的红门按 Init44 读取本局任务状态，104 区入口直接开启。Operate46 使用红门本身的非零模式和现有个人任务资格。
+
+[物件帧事件](../../../src/server/systems/objects/frame_events.cpp)按 Init45 在创建后 20 帧首次检查，其后每 24 帧检查一次。红门任务状态已开启且桥的实际房间链上有 `D2Common_10399<18` 的玩家时，桥由 0 进 1，下一次仍满足条件才由 1 进 2 并释放碰撞。两步均发布 `0x0E`。已开始升桥后重新生成按 Init45 直接恢复 mode 2。D2MOO `Quests.cpp` 的 QUESTFN 分支与 D2Decomp 的 `quests-act3.md` 相符。仍需在 D2X 核对碰撞及模式包、多人晚指派、离开距离阈值后重返和压缩重入。
 
 ## 原版依据与限制
 

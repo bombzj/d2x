@@ -177,6 +177,16 @@ StepStatus System::actTwoStep(TickContext tick) {
             state_.actTwo.summonerEffectPending=false;
         }
         if(int(m.area)==73 && m.identity.monster=="duriel" && !state_.actTwo.durielSlain) {
+            // A2Q6_Callback08 opens the currently registered Init38 object in
+            // this death callback. Later Init38 births start OPENED directly.
+            if(!ports_.events.hasCapacity(1)) return StepStatus::Blocked;
+            const auto door=ports_.objects.read().objects.find(state_.actTwo.tyraelDoor);
+            if(door!=ports_.objects.read().objects.end()) {
+                const auto opened=ports_.objects.setNativeMode(door->first,1,tick.tick,true);
+                if(!opened) return isDeferred(opened.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+            }
+            if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Game,{},{}},{QuestEffectFact{8}}}))
+                throw std::logic_error("Preflighted Duriel death effect publication rejected");
             // CUSTOM1 is kill permission; PrimaryGoalDone and CompletedNow
             // are assigned later, when Tyrael opens the return portal.
             shareProgress(QuestId::SevenTombs,uint32_t(TombsStage::DurielSlain),
@@ -211,7 +221,15 @@ StepStatus System::actTwoStep(TickContext tick) {
             const auto object=objects.find(entrance->id);
             if(object!=objects.end() && object->second.area==state_.actTwo.tomb &&
                 object->second.rule.operation==43 && object->second.mode!=0) {
-                ports_.world.openTombWall(state_.actTwo.tomb);state_.actTwo.tombOpen=true;
+                auto &tomb=state_.actTwo;
+                ports_.world.openTombWall(tomb.tomb);
+                tomb.tombOpen=true;
+                if(tomb.tombOpeningRooms) {
+                    const auto &rooms=*tomb.tombOpeningRooms;
+                    ports_.world.retainControllerUnitRoom(rooms.orifice,tomb.tomb,rooms.orificePosition,false);
+                    ports_.world.retainControllerUnitRoom(rooms.orifice,tomb.tomb,rooms.entrancePosition,false);
+                    tomb.tombOpeningRooms.reset();
+                }
             }
         }
     }
@@ -238,7 +256,11 @@ StepStatus System::actTwoStep(TickContext tick) {
             }
         }
         const auto &items=p.rules.character->actTwo;auto &staff=book.at(questIndex(QuestId::HoradricStaff));
-        if(staff.stage>=uint32_t(StaffStage::Submitted) && !state_.actTwo.tombAt && !state_.actTwo.tombOpen && area.definition.staffTomb && int(p.area)==*area.definition.staffTomb && !area.definition.openedTombWall.empty()) {state_.actTwo.tomb=p.area;state_.actTwo.tombAt=tick.tick;}
+        if(staff.stage>=uint32_t(StaffStage::Submitted) && !state_.actTwo.tombAt && !state_.actTwo.tombOpen && area.definition.staffTomb && int(p.area)==*area.definition.staffTomb && !area.definition.openedTombWall.empty()) {
+            state_.actTwo.tomb=p.area;
+            state_.actTwo.tombAt=tick.tick;
+            state_.actTwo.tombRestored=true;
+        }
         if(staff.stage<uint32_t(StaffStage::Submitted)) {
             if(detail::actTwoCarried(p,items.staff,ports_.settings.difficulty)) staff.stage=uint32_t(StaffStage::Assembled);
             else if(detail::actTwoCarried(p,items.scroll,ports_.settings.difficulty) || detail::actTwoCarried(p,items.shaft,ports_.settings.difficulty) || detail::actTwoCarried(p,items.amulet,ports_.settings.difficulty) || detail::actTwoCarried(p,items.cube,ports_.settings.difficulty)) staff.stage=std::max(staff.stage,uint32_t(StaffStage::ArtifactsFound));

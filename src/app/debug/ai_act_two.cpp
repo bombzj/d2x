@@ -64,7 +64,8 @@ void DebugAi::Impl::configureActTwoQuest(Goal &goal,QuestId id) const {
     const auto cainAdvice=node("journal-asks-cain-about-artifacts",advice,{},{},true);
     auto scrollStep=advice;scrollStep.journalTalkStatus=1; // qstsa2q21
     const auto scrollTalk=node("journal-asks-cain-about-scroll",scrollStep,explained(8),{},true);
-    QuestStep combine;combine.action=QuestAction::Combine;combine.stateQuest=QuestId::HoradricStaff;combine.item="hst";combine.produced="box";
+    QuestStep combine;combine.action=QuestAction::Combine;combine.stateQuest=QuestId::HoradricStaff;combine.area=town;combine.item="hst";combine.produced="box";
+    combine.ingredients={"msf","vip"};
     auto readyStaff=item("hst");readyStaff.kind=Kind::BackpackItem;
     const auto staff=node("staff-ready",combine,{{readyStaff},{submitted}},{cube,shaft,amulet,cainAdvice,scrollTalk});
 

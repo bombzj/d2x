@@ -171,17 +171,54 @@ bool DebugAi::Impl::questEncounter(Context &c,const QuestStep &step) {
         // The scene anchor stays fixed when the witness starts departing.
         if(!questState.questRun.encounterPosition || questState.questRun.encounterArea!=area) {
             questState.questRun.encounterPosition=witness->position;questState.questRun.encounterStandoff.reset();questState.questRun.encounterAnchored=false;
+            questState.questRun.encounterStanceDiagnostics=nullptr;
         }
         questState.questRun.encounterArea=area;
     }
     if(!questState.questRun.encounterWitness || questState.questRun.encounterArea!=area) {
         // Reach the actual encounter before treating peripheral monsters as
         // its required clear. Ordinary defensive combat still protects travel.
+        if(step.witness && step.search) {
+            searchTarget(c,*step.witness,&*step.search);return false;
+        }
         if(step.witness && approachKnown(c,*step.witness)) return false;
         if(approachKnown(c,*step.target)) return false;
         explore(c,"actual encounter witness and portal");return false;
     }
     if(questState.questRun.encounterWitness) {
+        // Clearance belongs to the encounter from its first observation, not
+        // only after an idle timeout. Keep pursuing a required enemy before
+        // returning to the waiting stance, even outside that smaller ring.
+        if(step.clearCombat && !questState.questRun.worldWait)
+            waitForWorldResult(c,step,"Clearing the observed encounter range before awaiting its next stage");
+        std::optional<OnlineUnit> enemy;float nearest=std::numeric_limits<float>::max();
+        for(const auto &[key,unit]:c.observation.read().world.units) {
+            (void)key;
+            if(!step.clearCombat || !encounterEnemy(c,unit)) continue;
+            const float distance=(Vec{float(unit.position->x),float(unit.position->y)}-c.position).length();
+            if(distance<nearest) {nearest=distance;enemy=unit;}
+        }
+        if(enemy) {
+            approachEnemy(c,*enemy,"remaining assigned encounter hostile");return false;
+        }
+        if(step.clearCombat && step.residualRange && questState.questRun.encounterPosition && questState.questRun.worldWait) {
+            const auto anchor=*questState.questRun.encounterPosition;
+            const auto &pending=*questState.questRun.worldWait;
+            TargetSearchKnowledge clearance;
+            // A conservative observation disk around the native sized-distance
+            // test. It grants neither enemy presence nor a completed wave.
+            clearance.radius=float(step.residualRange+2*pending.witnessSize);
+            clearance.timeoutSeconds=pending.seconds;
+            const auto key="encounter-clearance:"+std::to_string(cursor)+":"+std::to_string(questState.questRun.step);
+            // Actual combat progress renews the event's inactivity budget;
+            // the same sweep must not expire independently while fighting.
+            if(auto previous=navigation.targetSearches.find(std::to_string(*area)+":"+key);previous!=navigation.targetSearches.end())
+                previous->second.deadline=pending.deadline;
+            searchArea(c,key,"encounter clearance coverage",clearance,Vec{float(anchor.x),float(anchor.y)},
+                {},pending.clearanceRevision,false,true);
+            const auto coverage=navigation.targetSearches.find(std::to_string(*area)+":"+key);
+            if(coverage==navigation.targetSearches.end() || !coverage->second.coverageComplete) return false;
+        }
         // Clearing a remote enemy or evading missiles can retire the actual
         // witness from the active replica. Return to its observed position,
         // without requiring it to be assigned again or searching elsewhere.
@@ -194,26 +231,14 @@ bool DebugAi::Impl::questEncounter(Context &c,const QuestStep &step) {
             const auto stance=questState.questRun.encounterStandoff;
             // Observe from nearby floor, never occupy the witness's feet or
             // its short departure path to the awaited portal.
-            if(stance && (Vec{float(stance->x),float(stance->y)}-c.position).length()>1) {
-                if(!approachPoint(c,*stance,"observed encounter standoff",1)) {
-                    questState.questRun.encounterStandoff.reset();
-                    waitForWorldResult(c,step,"Observed encounter stance could not be reached; waiting for a usable approach");
-                }
-                return false;
+            // false means arrived, not a failed path. Use the same native
+            // feet domain as the planner; a relay never anchors the scene.
+            if(stance && approachPoint(c,*stance,"observed encounter standoff",0)) return false;
+            if(!stance) {
+                waitForWorldResult(c,step,"No safe known standoff or executable route near the observed encounter; see encounterStance");return false;
             }
-            if(!stance) {waitForWorldResult(c,step,"No safe known standoff near the observed encounter; retaining the scene");return false;}
         }
         questState.questRun.encounterAnchored=true;
-        std::optional<OnlineUnit> enemy;float nearest=std::numeric_limits<float>::max();
-        for(const auto &[key,unit]:c.observation.read().world.units) {
-            (void)key;
-            if(!step.clearCombat || !encounterEnemy(c,unit)) continue;
-            const float distance=(Vec{float(unit.position->x),float(unit.position->y)}-c.position).length();
-            if(distance<nearest) {nearest=distance;enemy=unit;}
-        }
-        if(enemy) {
-            approachEnemy(c,*enemy,"remaining assigned encounter hostile");return false;
-        }
         waitForWorldResult(c,step,"Encounter witnessed; waiting here for actual enemies, portal or quest state, including witness departure");return false;
     }
     if(approachKnown(c,*step.target)) return false;

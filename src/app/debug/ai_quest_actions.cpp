@@ -1,5 +1,4 @@
 #include "ai_impl.hpp"
-#include "client/inventory_actions.hpp"
 #include "contracts/online_npc_speech.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -38,15 +37,11 @@ bool DebugAi::Impl::questStoreCursor(Context &c,uint32_t id) {
     if(wire->second.mode==0 && (wire->second.page==1 || wire->second.page==5)) return true;
     if(wire->second.mode!=4) return wire->second.mode==1 || wire->second.mode==2;
     if(questState.questRun.pending && questState.questRun.pending->action==QuestPending::Action::Place) {checkQuestPending(c);return false;}
-    const auto cell = firstBackpackSpace(view, c.inventory.read(), id);
-    if(!cell) throw std::runtime_error("No verified backpack space for the quest item/reward");
-    OnlineItemCommand place;place.action=OnlineItemAction::Place;place.item=id;place.itemRevision=wire->second.revision;
-    place.page=0;place.x=uint8_t(cell->x);place.y=uint8_t(cell->y);
-    if(!settleItemInput(c)) return false;
-    if(!submitItem(c,place,"quest-place")) return false;
-    QuestPending p;p.action=QuestPending::Action::Place;p.item=id;p.sequence=c.observation.read().world.itemRequest->sequence;
-    p.deadline=Clock::now()+std::chrono::seconds(12);questState.questRun.pending=p;note("quest-item-place-submitted",std::to_string(id));return false;
+    auto &work=questState.questRun.inventoryWork;
+    if(!work.active()) work.store(id,view,{{"tsc","isc"}});
+    return serviceInventoryWork(c);
 }
+
 bool DebugAi::Impl::quietQuestNpc(Context &c,const OnlineUnit &npc) {
     if(npc.position && approachPoint(c,*npc.position,"quest NPC alert",4)) {
         questState.questRun.missingTopicSince={};
@@ -267,8 +262,9 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         }
         if(approachKnown(c,*step.target)) return false;
         if(step.optional) {note("optional-quest-npc-not-exposed",step.target->name);return true;}
-        explore(c,"quest NPC "+step.target->name,false,ExplorationFocus::Units);return false;
+        searchTarget(c,*step.target,step.search?&*step.search:nullptr);return false;
     }
+    targetSearchObserved(c);
     if(!world.npcConversation || world.npcConversation->type!=1 || world.npcConversation->source!=npc->key.id) {
         if(world.npcRequested!=npc->key.id && !world.questAlerts.contains(npc->key)) {
             if(step.optional) return quietQuestNpc(c,*npc);
@@ -456,13 +452,16 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
     if(!unit) {
         if(step.spawnSource && questState.questSpawnAnchor && questState.questSpawnAnchor->first==area) {
             const auto anchor=questState.questSpawnAnchor->second;
-            waitAtWorldEvent(c,step,anchor,"Waiting at the assigned birth marker for the actual quest object");return false;
+            searchWorldTarget(c,step,anchor);return false;
         }
-        if(approachKnown(c,*selector)) return false;
-        if(step.optional) {note("optional-quest-object-not-exposed","Direct tower entry is permitted by A1Q5");return true;}
-        explore(c,selector->name,false,ExplorationFocus::Units);return false;
+        if(step.optional) {
+            if(approachKnown(c,*selector)) return false;
+            note("optional-quest-object-not-exposed","Direct tower entry is permitted by A1Q5");return true;
+        }
+        searchTarget(c,*selector,step.search?&*step.search:nullptr);return false;
     }
     wait("quest-object","Approaching and operating the actual quest object");
+    targetSearchObserved(c);
     const DebugWalkIntent intent{.goal=DebugWalkGoal::Unit,.unit=OnlineUnitKey{unit->key.type,unit->key.id},.interact=true,.purpose="quest-object"};
     if(walk(c,intent)) observeQuestInteraction(c,intent);
     return false;
@@ -505,7 +504,11 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
     if(approachWorldTrigger(c,step)) return false;
     if(questState.questRun.worldWait && !worldResultReady(c,step)) {
         const auto anchor=questState.questRun.worldWait->anchor;
-        waitAtWorldEvent(c,step,{uint16_t(anchor.x),uint16_t(anchor.y)},questState.questRun.worldWait->expected,questState.questRun.worldWait->vicinity);return false;
+        if(!step.target || !find(c,*step.target,true)) {
+            questState.questRun.worldWait.reset();navigation.passageWaits.erase(Passage::WorldEvent);
+            searchWorldTarget(c,step,{uint16_t(anchor.x),uint16_t(anchor.y)});
+        } else waitAtWorldEvent(c,step,{uint16_t(anchor.x),uint16_t(anchor.y)},questState.questRun.worldWait->expected,questState.questRun.worldWait->vicinity);
+        return false;
     }
     for(const auto &target:c.town.read().mapTargets) if((target.interaction==OnlineMapInteraction::Portal ||
         (step.target && (target.interaction==OnlineMapInteraction::Door || target.interaction==OnlineMapInteraction::Exit))) &&
@@ -514,6 +517,7 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
             return u!=c.observation.read().world.units.end() && u->second.classId==step.target->identity;
         }()))) {
         wait("quest-portal","Using the actually assigned quest portal");
+        targetSearchObserved(c);
         bool activation=false;
         auto interactionUnit=target.unit;
         const auto unit=c.observation.read().world.units.find(target.unit);
@@ -548,13 +552,13 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
         const auto hint=portal?portal->position:c.town.knownTargetPosition(*area,step.target->type,step.target->identity);
         if(hint) {
             const OnlinePoint anchor=portal?OnlinePoint{uint16_t(c.position.x+.5f),uint16_t(c.position.y+.5f)}:*hint;
-            waitAtWorldEvent(c,step,anchor,portal?"Waiting for the assigned quest portal to become selectable":
-                "Waiting for the quest portal to be reassigned at its observed position");
+            if(portal) waitAtWorldEvent(c,step,anchor,"Waiting for the assigned quest portal to become selectable");
+            else searchWorldTarget(c,step,anchor);
             return false;
         }
     }
     if(area && step.area) if(const auto hint=c.town.knownConnectionPosition(*area,*step.area)) {
-        waitAtWorldEvent(c,step,*hint,"Waiting for the real portal assignment at its observed position");return false;
+        searchWorldTarget(c,step,*hint);return false;
     }
     if(step.sourceArea && c.town.read().area!=step.sourceArea) {
         travel(c,*step.sourceArea);return false;
@@ -566,12 +570,14 @@ bool DebugAi::Impl::questPortal(Context &c,const QuestStep &step) {
             const Vec at=Vec{float(marker->x),float(marker->y)}+step.witnessOffset.value_or(Vec{});
             if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535) throw std::runtime_error("Quest event anchor is outside native coordinates");
             const OnlinePoint birth{uint16_t(at.x),uint16_t(at.y)};
-            waitAtWorldEvent(c,step,birth,"Waiting for the actual selectable portal beside "+step.witness->name,
-                step.witnessOffset?3.f:8.f);
+            searchWorldTarget(c,step,birth);
             return false;
         }
     }
-    explore(c,"the actual assigned quest portal",false,ExplorationFocus::Units);return false;
+    if(step.witness) searchTarget(c,*step.witness);
+    else if(step.target) searchTarget(c,*step.target,step.search?&*step.search:nullptr);
+    else if(step.area) searchTarget(c,Selector{5,*step.area,"quest portal destination"},step.search?&*step.search:nullptr);
+    return false;
 }
 bool DebugAi::Impl::questImbue(Context &c,const Goal &goal,const QuestStep &step) {
     const auto &view=c.observation.read();const auto &world=view.world;const auto flags=questFlags(c,goal.questId);

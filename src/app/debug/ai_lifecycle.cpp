@@ -2,17 +2,22 @@
 
 namespace d2x::debug_ai {
 void NavigationState::resetStep() {
-    explorationReturn.reset();routeExecution.reset();localPad.reset();frontierRoute.reset();
+    if(activeTargetSearch && targetSearchDiagnostics.is_object()) targetSearchDiagnostics["result"]="inactive";
+    activeTargetSearch.reset();
+    explorationReturn.reset();routeExecution.reset();localPad.reset();frontierRoute.reset();landingRecovery.reset();
+    padObservationSource.reset();padObservationSince.reset();
     searchDiagnostics=nullptr;approachDiagnostics=nullptr;mobilityDiagnostics=nullptr;travelDiagnostics=nullptr;
     terrainClueDiagnostics=nullptr;vaughtSearch.aim.reset();frontierAttempts.clear();checkedHints.clear();
     walkIntent={};approachHint.reset();approachFrontier.reset();approachObservation={};
     operatedDoors.clear();pendingDoor.reset();doorDeadline={};pendingWaypoint.reset();closeWaypoint.reset();waypointDeadline={};
     travelDestination.reset();travelRoute.clear();travelVisitedAreas.clear();travelPhase=TravelPhase::Route;
     legDestination.reset();legUnit.reset();waypointDestination.reset();exitRetryAt={};npcOpenRetries=0;
-    npcOpeningRecovery=false;navigationRetries.clear();submittedTravel.reset();travelRetries.clear();passageWaits.clear();
+    npcOpeningRecovery=false;navigationRetries.clear();connectionStalls.clear();submittedTravel.reset();travelRetries.clear();passageWaits.clear();
     mobilityTrials.clear();mobilityGoal.reset();mobilityRoute.clear();mobilityRouteProgress=mobilityPendingProgress=mobilityRouteLength=0;
 }
 void NavigationState::suspend(Clock::duration elapsed) {
+    // Appearance time follows the world; only active execution budgets pause.
+    if(activeTargetSearch) if(auto found=targetSearches.find(*activeTargetSearch);found!=targetSearches.end()) found->second.deadline+=elapsed;
     for(auto &[kind,pending]:passageWaits) {(void)kind;pending.retryAt+=elapsed;pending.deadline+=elapsed;}
     if(routeExecution) routeExecution->deadline+=elapsed;
     if(localPad && !localPad->waiting) localPad->deadline+=elapsed;
@@ -30,7 +35,7 @@ void CombatState::suspend(Clock::duration elapsed) {
     if(combatRun.nextKite!=Clock::time_point{}) combatRun.nextKite+=elapsed;
 }
 void SupplyState::resetPlan() {
-    supplyStage=SupplyStage::None;supplyOrigin.reset();supplyPortalUsed=false;
+    supplyStage=SupplyStage::None;supplyOrigin.reset();
     potionRequest.reset();nextPotion={};shelfReopens=0;shopIssued=false;shelfObserved=false;
     healingIssued=false;healingObserved=false;supplyNpc.reset();shopDeadline={};drinks=purchases=0;
     lastPotion=nullptr;supplyVitals=nullptr;quiverTransfer.reset();quiverTopUpDeferred=false;
@@ -77,7 +82,6 @@ void DebugAi::Impl::suspendExecution(Context &c,Clock::duration suspended) {
     }
     if(const auto found=navigation.passageWaits.find(Passage::Transfer);found!=navigation.passageWaits.end()) {
         if(navigation.travelPhase==TravelPhase::CrossWait || portalUsed) actionDeadline=found->second.deadline;
-        if(supply.supplyPortalUsed) supply.supplyPortalDeadline=found->second.deadline;
     }
     if(portalIssued && !portalUsed) if(const auto found=navigation.passageWaits.find(Passage::CreatePortal);found!=navigation.passageWaits.end())
         actionDeadline=found->second.deadline;
@@ -87,6 +91,12 @@ void DebugAi::Impl::suspendExecution(Context &c,Clock::duration suspended) {
 void DebugAi::Impl::observeArea(Context &c,Clock::time_point now) {
     auto &town=c.town;const auto &view=c.observation.read();
     if(area!=town.read().area || areaGeneration!=view.world.areaGeneration) {
+        // Consume a successful ordinary crossing before clearing its leg.
+        // A portal/waypoint arrival does not validate the walking connection.
+        if(area && town.read().area && area!=town.read().area && navigation.legDestination==town.read().area &&
+            (navigation.travelPhase==TravelPhase::WalkExit ||
+             (navigation.travelPhase==TravelPhase::CrossWait && !navigation.legUnit)))
+            navigation.failedWalkEdges.erase({*area,*town.read().area});
         const bool leavingTown=area && area==view.load.townArea && town.read().area && town.read().area!=view.load.townArea;
         if(town.read().town) battle.excursionSkillPrepared=false;
         supply.quiverTopUpDeferred=false;
@@ -96,6 +106,7 @@ void DebugAi::Impl::observeArea(Context &c,Clock::time_point now) {
         battle.hazardDodge.reset();battle.hazardDiagnostics=nullptr;navigation.passageWaits.clear();
         navigation.routeExecution.reset();
         navigation.frontierRoute.reset();
+        navigation.landingRecovery.reset();
         cancelWalk(c);area=town.read().area;areaGeneration=view.world.areaGeneration;navigation.frontierAttempts.clear();
         if(leavingTown && teleportAvailable(c,false)) {
             navigation.townExitArea=area;navigation.townExitObserveUntil=now+std::chrono::milliseconds(1500);

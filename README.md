@@ -27,7 +27,7 @@ Requirements: CMake 3.25+, a C++20 compiler, Git, and an OpenGL 3.3-capable grap
 
 Choose a game mode from the main menu. See [build and run](docs/development/BUILD_AND_RUN.md) for network configuration, launch options, and packaging. For PD2, prepare the matching assets and configuration using the [PD2 setup guide](docs/pd2/OPERATIONS.md), then launch `PlayPD2.cmd`.
 
-With prepared local saves, `Play-AI.cmd` runs the Sorceress task AI by default. Use `Play-AI.cmd ama act1-2` for an Amazon run through Acts I–II. See the [task AI launcher guide](docs/development/BUILD_AND_RUN.md#诊断启动与任务-ai) for save paths and resume options.
+With prepared local saves, `debug-AI.cmd` runs the Sorceress task AI by default. Use `debug-AI.cmd ama act1-2` for an Amazon run through Acts I–II. See the [task AI launcher guide](docs/development/BUILD_AND_RUN.md#诊断启动与任务-ai) for save paths and resume options.
 
 Windows builds have been compiled and run. A Linux CMake build path is provided but has not yet been compiled or run on Linux; see the [Linux build notes](docs/development/BUILD_AND_RUN.md#linux-支持状态).
 

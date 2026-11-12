@@ -258,6 +258,10 @@ void NativeRealmHost::publishEvents(GameHandle game) {
                     out.u16(uint16_t((int(destination.origin.y)+room->y)/5));
                     out.u8(uint8_t(position->area));
                 }));
+                if(position->operatedRoom) roomPackets.push_back(encodeServerPacket(ServerMessage::RevealRoom,[&](auto &out) {
+                    const auto &room=*position->operatedRoom;
+                    out.u16(room.x);out.u16(room.y);out.u8(uint8_t(room.area));
+                }));
                 if(position->notifyOwner) roomPackets.push_back(nativeReposition(*position,destination.origin,peer->identities()));
                 peer->peer.lastMotion.clear();
             }

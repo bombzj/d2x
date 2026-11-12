@@ -506,6 +506,26 @@ std::optional<int> RemoteScene::npcFollowRange(const OnlineView &view, OnlineUni
     // D2Client 2B090 -> 2AEA0 -> 29E80: retained 13 uses melee reach.
     return impl_->equippedWeaponReach(actor->second).first + (target.pathMoving ? 1 : 0);
 }
+std::optional<RemoteScene::MovementObservation> RemoteScene::unitMovementObservation(const OnlineView &view, OnlineUnitKey key) const {
+    if(impl_->gameGeneration!=view.gameGeneration || impl_->areaGeneration!=view.world.areaGeneration) return {};
+    const auto unit=view.world.units.find(key);
+    if(unit==view.world.units.end() || !unit->second.position) return {};
+    const auto position=impl_->localUnitPosition(key,false);
+    if(!position) return {};
+    MovementObservation result{*position};
+    const auto pose=impl_->motion.find(key);
+    if(pose!=impl_->motion.end() && pose->second.last &&
+        pose->second.assignmentRevision==unit->second.assignmentRevision &&
+        pose->second.discontinuity==unit->second.positionDiscontinuity) {
+        result.predicted=true;
+        result.moving=pose->second.pathMoving;
+        if(!pose->second.route.empty()) {
+            result.next=pose->second.route.front();
+            result.end=pose->second.route.back();
+        }
+    }
+    return result;
+}
 void RemoteScene::stopNpcPath(const OnlineView &view, OnlineUnitKey key) {
     if (!npcPathPosition(view,key)) return;
     auto &pose = impl_->motion.at(key);

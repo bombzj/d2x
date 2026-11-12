@@ -259,6 +259,7 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
         nativeLoadComplete_ = false;
         nextNativeUpdateMilliseconds_ = 0;
         nextObjectTransition_.reset();
+        nextNavigationTransition_.reset();
         nativeErrors_.clear();
         nativeReason_.clear();
         catalog_.reset();
@@ -405,6 +406,7 @@ std::vector<OnlineUnitKey> RemoteTown::nearbyUnits(const OnlineView &v,OnlinePoi
 }
 void RemoteTown::updateMapTargets(const OnlineView &v) {
     nextObjectTransition_.reset();
+    nextNavigationTransition_.reset();
     const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
     view_.town = view_.area && catalog_->level(*view_.area).town;
@@ -467,6 +469,9 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             end && age < *end && unit.actionReceivedMilliseconds) {
             const uint64_t deadline = unit.actionReceivedMilliseconds + uint64_t(std::ceil(*end * 1000.f));
             if (!nextObjectTransition_ || deadline < *nextObjectTransition_) nextObjectTransition_ = deadline;
+            if(number("SizeX")>0 && number("SizeY")>0 &&
+                ((number("HasCollision"+std::to_string(mode))!=0)!=(number("HasCollision2")!=0)) &&
+                (!nextNavigationTransition_ || deadline<*nextNavigationTransition_)) nextNavigationTransition_=deadline;
         }
         if (unit.mode && *unit.mode < 8) {
             const auto suffix = std::to_string(mode);
@@ -1155,7 +1160,17 @@ std::optional<OnlinePoint> RemoteTown::automapObjectPosition(uint16_t area,std::
         if(identity?object==*identity:objects_.number(row,"OperateFn")==23) continue;
         cels.erase(automap_.objectCel(object));
     }
-    const auto positions=automapPositions(area,cels,2,true);
+    auto positions=automapPositions(area,cels,2,true);
+    if(!identity && positions.empty()) {
+        // Waypoint artwork also comes from Automap.txt terrain rules (including
+        // Act I/III towns). Its identity does not depend on the local object's
+        // AutoMap field. Terrain cells use their own projection, not (+1,-3).
+        for(const size_t group:{size_t{0},size_t{1}})
+            for(const auto at:automapPositions(area,cels,group,false))
+                if(std::none_of(positions.begin(),positions.end(),[&](OnlinePoint old) {
+                    return std::abs(int(old.x)-at.x)<=2 && std::abs(int(old.y)-at.y)<=2;
+                })) positions.push_back(at);
+    }
     if(positions.size()!=1) return {};
     return positions.front();
 }
@@ -1278,6 +1293,36 @@ bool RemoteTown::permitsInteraction(const OnlineView &v, OnlineUnitKey target) c
         v.stage == OnlineStage::ProtocolReady &&
         std::any_of(view_.mapTargets.begin(), view_.mapTargets.end(),
             [&](const auto &entry) { return entry.unit == target; });
+}
+bool RemoteTown::nativeInteractionApproach(const OnlineView &v,OnlineUnitKey target,Vec from) const {
+    if((target.type!=1 && target.type!=2 && target.type!=5) || !permitsInteraction(v,target) ||
+        !map_ || !view_.origin || !std::isfinite(from.x) || !std::isfinite(from.y) ||
+        from.x<0 || from.y<0 || from.x>UINT16_MAX || from.y>UINT16_MAX) return false;
+    const auto assigned=v.world.units.find(target);
+    if(assigned==v.world.units.end() || !assigned->second.position) return false;
+    const auto entry=std::find_if(view_.mapTargets.begin(),view_.mapTargets.end(),[&](const auto &value){return value.unit==target;});
+    const Vec destination{float(entry->position.x),float(entry->position.y)};
+    if(std::abs(destination.x-from.x)>50 || std::abs(destination.y-from.y)>50) return false;
+    if(interactionReady(v,target,from)) return true;
+    const auto occupied=navigationGrid(v,target);
+    Grid collision;collision.width=occupied.width;collision.height=occupied.height;
+    // A normal unit path removes its target's footprint, including an
+    // object's own collision, while keeping every other wall/object/unit.
+    const EntityId object=target.type==2?EntityId{uint64_t(target.id)+1}:EntityId{};
+    collision.collisionSample=[&occupied,object](int x,int y,EntityId ignored) {
+        return occupied.movementMask(x,y,ignored?ignored:object);
+    };
+    const Vec offset{float(view_.origin->x)-.5f,float(view_.origin->y)-.5f};
+    const auto path=collision.nativePlayerPath(from-offset,destination-offset,playerMovement,target.type,entry->doorOrientation);
+    // Native Straight may return a clipped prefix. It authorizes the local
+    // handoff only if its endpoint can actually finish the retained click.
+    return !path.empty() && interactionReady(v,target,path.back()+offset,true);
+}
+uint64_t RemoteTown::navigationTransitionRemainingMilliseconds() const {
+    if(!nextNavigationTransition_) return 0;
+    const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+    return now<*nextNavigationTransition_?*nextNavigationTransition_-now:0;
 }
 std::optional<int> RemoteTown::projectedObjectMode(const OnlineView &v,OnlineUnitKey target) const {
     const auto unit=v.world.units.find(target);

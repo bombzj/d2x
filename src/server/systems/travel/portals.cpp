@@ -86,6 +86,9 @@ bool System::pendingPortalCommand(PlayerId player,uint64_t sequence) const {
     return found!=portalCreations_.end() && (!sequence || found->second.actor.sequence==sequence);
 }
 void System::collectEntityReferences(std::set<EntityId> &retained) const {
+    for(const auto &[player,pending]:padTransfers_) {
+        (void)player;retained.insert(pending.actor.actor);retained.insert(pending.source);retained.insert(pending.target);
+    }
     for(const auto &[player,pending]:portalCreations_) {
         (void)player;retained.insert(pending.actor.actor);retained.insert(pending.item.id);
         if(pending.portal) {retained.insert(pending.portal->fieldId);retained.insert(pending.portal->townId);}

@@ -195,6 +195,9 @@ bool RemoteControl::submitInteraction(OnlineUnitKey target, const OnlineIntentCo
     const auto player=before.world.playerPosition.value_or(OnlinePoint{});
     const auto origin=scene_.inputOrigin(before).value_or(Vec{float(player.x),float(player.y)});
     InteractionSubmission submitted;submitted.target=target;submitted.context=onlineIntentContext(before);
+    if(const auto unit=before.world.units.find(target);unit!=before.world.units.end()) {
+        submitted.targetAssignment=unit->second.assignmentRevision;submitted.targetMode=unit->second.mode;
+    }
     submitted.combatSequence=before.world.combatSequence;
     submitted.position={uint16_t(std::clamp(std::lround(origin.x),0l,long(UINT16_MAX))),
         uint16_t(std::clamp(std::lround(origin.y),0l,long(UINT16_MAX)))};
@@ -217,7 +220,13 @@ bool RemoteControl::submitInteraction(OnlineUnitKey target, const OnlineIntentCo
         : entry->interaction == OnlineMapInteraction::Waypoint ? OnlineObjectIntent::Waypoint : OnlineObjectIntent::Operate;
     if (!session_.interact_map_unit(target, intent, context)) return reject(session_.read().error ? session_.read().error->message : "Interaction is already pending or open");
     remember();
-    if(target.type==5 || intent==OnlineObjectIntent::Waypoint) {
+    if(entry->interaction==OnlineMapInteraction::TeleportPad) {
+        const auto &view=session_.read();const auto now=std::chrono::steady_clock::now();
+        const auto grace=std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*view.latencyMilliseconds.value_or(0)+200,600,2000));
+        opening_=Opening{target,onlineIntentContext(view),view.world.movementRequest?view.world.movementRequest->revision:0,0,
+            now+grace,now+3*grace,
+            Opening::Pad{view.world.units.at(target).assignmentRevision,submitted.discontinuity,view.world.combatSequence}};
+    } else if(target.type==5 || intent==OnlineObjectIntent::Waypoint) {
         const auto &view=session_.read();const auto now=std::chrono::steady_clock::now();
         opening_=Opening{target,onlineIntentContext(view),view.world.movementRequest?view.world.movementRequest->revision:0,0,
             now+std::chrono::milliseconds(100),now+std::chrono::seconds(target.type==5?1:15)};
@@ -228,6 +237,32 @@ void RemoteControl::observeOpening() {
     if(!opening_) return;
     const auto &view=session_.read();const auto &world=view.world;const auto now=std::chrono::steady_clock::now();
     const auto target=opening_->target;
+    if(opening_->pad) {
+        const auto &pad=*opening_->pad;
+        const auto unit=world.units.find(target),actor=world.units.find({0,view.load.playerUnitId.value_or(0)});
+        // A pad is repeatable only for the retained source intent. Any own-unit
+        // relocation (even a same-coordinate correction), new input or new
+        // assignment ends this bounded retry; never click the arrival pad.
+        if(view.stage!=OnlineStage::ProtocolReady || !onlineInteractionMatches(opening_->context,view) ||
+            onlinePlayerDead(world) || unit==world.units.end() || actor==world.units.end() ||
+            unit->second.assignmentRevision!=pad.assignment || actor->second.positionDiscontinuity!=pad.discontinuity ||
+            world.combatSequence!=pad.combatSequence ||
+            !world.movementRequest || world.movementRequest->revision!=opening_->movementRevision ||
+            !scene_.permitsInteraction(view,target) || now>=opening_->deadline) {opening_.reset();return;}
+        // The original approach may still finish between position samples;
+        // retry only once actual server position satisfies normal interaction.
+        if(now<opening_->next || !scene_.interactionReady(view,target)) return;
+        const bool sent=session_.interact_map_unit(target,OnlineObjectIntent::Operate,opening_->context);
+        const auto &after=session_.read();
+        opening_->next=now+std::chrono::milliseconds(std::clamp<uint64_t>(2ULL*after.latencyMilliseconds.value_or(0)+200,600,2000));
+        if(sent) {
+            opening_->context=onlineIntentContext(after);
+            opening_->movementRevision=after.world.movementRequest?after.world.movementRequest->revision:0;
+            reason_="Retrying the unchanged teleport pad source ("+std::to_string(opening_->retries+1)+"/2)";
+            if(++opening_->retries>=2) opening_.reset();
+        }
+        return;
+    }
     // Only the opening click is repeatable. A conversation (including its
     // pending assignment), area change, new intent or retired unit ends it.
     // Never replay a menu selection, transaction, object operation or portal.

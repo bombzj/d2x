@@ -25,6 +25,8 @@ class RemoteControl : public IOnlineControl {
         uint64_t movementRevision{};
         unsigned retries{};
         std::chrono::steady_clock::time_point next, deadline;
+        struct Pad {uint64_t assignment{},discontinuity{},combatSequence{};};
+        std::optional<Pad> pad{};
     };
     std::optional<Opening> opening_;
     std::optional<InteractionSubmission> interactionSubmission_;

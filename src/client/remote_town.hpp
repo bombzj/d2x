@@ -125,6 +125,7 @@ class RemoteTown {
     OnlineSceneView view_;
     uint64_t gameGeneration_{~uint64_t{}}, areaGeneration_{~uint64_t{}}, revision_{~uint64_t{}};
     std::optional<uint64_t> nextObjectTransition_;
+    std::optional<uint64_t> nextNavigationTransition_;
     bool reportAutomapRoomsPd2_{};
     bool automapPlayerPresentPd2_{};
     OnlinePoint automapPositionPd2_{};
@@ -193,9 +194,14 @@ class RemoteTown {
     // Native player-room / active-neighbor order, then room-unit prepend order.
     std::vector<OnlineUnitKey> nearbyUnits(const OnlineView &, OnlinePoint center, int radius) const;
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
+    // Read-only preview of the normal local unit path, not just request range
+    // or a ray to its centre. Long-range observation planning stays outside.
+    bool nativeInteractionApproach(const OnlineView &,OnlineUnitKey target,Vec from) const;
     bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}, bool approaching = false,
                           std::optional<OnlinePoint> targetPath = {}, std::optional<int> followRange = {}) const;
     std::optional<int> projectedObjectMode(const OnlineView &,OnlineUnitKey) const;
+    // Remaining time until an observed ENDANIM changes object collision.
+    uint64_t navigationTransitionRemainingMilliseconds() const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices,Vec observationExtent={});
     // Observer-only overlay; does not enter discovery, navigation or live DRLG.
     void updateAutomapReveal(const OnlineView &, bool enabled, AutomapPresetCellSelector);

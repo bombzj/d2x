@@ -6,7 +6,11 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 
 ## 同层传送台边界
 
-客户端将当前Objects.OperateFn=27的真实指派物件识别为TeleportPad，经普通交互请求操作。D2MOO的ObjMode::OBJECTS_OperateFunction27_TeleportPad按本房间单位链、再按相邻房间原序寻找同类对端，以size=3／mask=0x1C09寻位，实际搬移后发送07房间及本人位置通知；配对不能按最近距离或隐藏预设猜测。调试AI只学习实际收到的同层本人跳转。自研objects::System::operate尚无Operate27分支，不能把原版Host可用视作自研宿主已支持；对端顺序、寻位、07及背压提交仍待补齐和对照。
+客户端按当前Objects.OperateFn=27识别真实指派的TeleportPad，经共享RemoteControl接近并发送普通13；不预先计算或改写服务端落点。objects::System::execute现将Operate27交给travel::System::useTeleportPad：先遍历本房间真实单位链，再按原roomNear顺序遍历活动邻室，取同一Objects行的首个其他物件。复用AreaStore原生寻位，先以size3／mask0x1C09在对端找空位，再按公共SUNIT搬移的size2重新寻位；不按最近距离配对、不使用隐藏预设、不扣技能法力，也不受技能Teleport的地图许可限制。内容等待和输出背压保留本次配对及落点，复验人物移动意图、对象身份和区域代次后，原子发布搬移事实并更新权威位置、房间归属、路径及位置历史。宿主按原序发落点房间07、Operate27额外的对端房间07，再发本人15（flags1）；相同房间的两次07也保留。客户端沿既有07／15处理更新房间、实际位置与不连续序号。
+
+依据：D2Decomped components/game/world/objects.cpp的OperateFn27分支（1.14d FUN_00581bf0）只作配对与权威分工旁证，其nearest_free和同伴搬移不照搬。D2MOO ObjMode::OBJECTS_OperateFunction27_TeleportPad及SUnit::sub_6FCBDFE0给出原调用链；本机零售1.13c D2Game.dll（MD5 978f6f74cd031bce6ecee602cd5988cc）RVA6BE40–6BEF6确认房间链顺序，6BD60–6BE32确认size3、两次搬移参数0及额外07，E19C0／E1A4C–E1A65确认第二次size2寻位。新实现尚未构建、未作实机及混合客户端对照。
+
+客户端传送台恢复是输入策略：按clamp(2×RTT+200ms,600ms,2000ms)观察间隔，来源传送台、指派身份、输入意图及本人不连续序号均不变，且权威位置已满足交互范围时最多补点两次；新移动／战斗／换区／重定位终止重试。它只重试原传送台，不套用其他消耗物件、任务操作或门户。AI在三个观察间隔加500ms后仍无实际搬移则停用本次指派并继续其他路线，不再固定等待20秒后终止任务。具备且区域允许传送的角色不规划传送台；步行角色只将实际使用确认的有向连接加入观察路线图。
 
 ## 世界悬停与点击选取
 

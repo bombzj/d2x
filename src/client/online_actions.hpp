@@ -49,6 +49,7 @@ class IOnlineControl {
         OnlineIntentContext context;
         uint64_t revision{},discontinuity{},combatSequence{};
         OnlinePoint position{};
+        uint64_t targetAssignment{};std::optional<uint8_t> targetMode;
     };
     virtual ~IOnlineControl() = default;
     virtual bool setRunning(bool run, const OnlineIntentContext &context) = 0;

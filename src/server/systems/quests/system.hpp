@@ -97,6 +97,7 @@ class System {
     std::optional<Dialogue> actOneDialogue(const ActorContext &,const NpcRule &) const;
     std::optional<Dialogue> actTwoDialogue(const ActorContext &,const NpcRule &) const;
     DomainResult<> acknowledgeActTwo(const ActorContext &,const Request &,const NpcRule &);
+    DomainResult<> acknowledgeMeshifPassage(const ActorContext &,CharacterRecord);
     DomainResult<> operateActTwo(const ActorContext &,EntityId,int,int,Vec);
     DomainResult<> submitStaff(const ActorContext &,EntityId,EntityId,unsigned);
     std::optional<Dialogue> actThreeDialogue(const ActorContext &,const NpcRule &) const;
@@ -165,6 +166,7 @@ class System {
     void registerTownCain(EntityId);
     bool cainTownRequested() const;
     std::optional<int> initialObjectMode(RegionId,EntityId,int definition,int operation,int initialization,uint64_t tick) const;
+    void markMephistoBridgeRaised() {state_.actThree.mephistoBridgeRaised=true;}
     std::array<uint16_t,48> gameFlags() const;
     bool pendingGoals(PlayerId) const;
     QuestFact projection(PlayerId player,const CharacterRecord &record,RegionId area,bool fullStatus=true) const { auto result=fact(player,record,area);result.fullStatus=fullStatus;return result; }

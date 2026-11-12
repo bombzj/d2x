@@ -48,16 +48,18 @@ DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,T
         if(event.type==FrameEventType::RemoveState) return systems.effects.frameEvent(event,tick.tick);
         if(event.type==FrameEventType::PeriodicStats) return systems.effects.frameEvent(event,tick.tick);
         break;
-    case FrameEventUnit::Monster:
-        if(event.type==FrameEventType::AiThink) {
-            if(const auto *unit=systems.monsters.find(event.owner.unit);unit && unit->rule.trap!=MonsterRule::Trap::None && unit->rule.ai.kind!=MonsterAiKind::TrappedSoul)
-                return systems.objects.trapEvent(event.owner.unit,tick.tick);
-            if(systems.companions.read().companions.contains(event.owner.unit)) return systems.companions.think(event.owner.unit,tick);
-            return systems.ai.think(event.owner.unit,tick)==StepStatus::Blocked?
+    case FrameEventUnit::Monster: {
+        const auto think=[&](EntityId id,bool walkEnded) {
+            if(const auto *unit=systems.monsters.find(id);unit && unit->rule.trap!=MonsterRule::Trap::None && unit->rule.ai.kind!=MonsterAiKind::TrappedSoul)
+                return systems.objects.trapEvent(id,tick.tick);
+            if(systems.companions.read().companions.contains(id)) return systems.companions.think(id,tick);
+            return systems.ai.think(id,tick,walkEnded)==StepStatus::Blocked?
                 DomainResult<>{DomainStatus::Capacity,{}}:DomainResult<>{DomainStatus::Applied,std::monostate{}};
-        }
+        };
+        if(event.type==FrameEventType::AiThink) return think(event.owner.unit,false);
         if(event.type==FrameEventType::ModeChange) {
-            const auto moved=systems.monsters.modeEvent(event,tick.tick);if(!moved) return moved;
+            const auto moved=systems.monsters.modeEvent(event,tick.tick,[&](EntityId id){return think(id,true);});
+            if(!moved) return moved;
             return event.payload?systems.skills.monsterActionEvent(event,tick.tick):moved;
         }
         if(event.type==FrameEventType::MonsterModifier) return systems.monsters.modifierEvent(event,tick.tick,systems.spatial.nativeCollisionSample());
@@ -67,6 +69,7 @@ DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,T
         if(event.type==FrameEventType::PeriodicStats) return systems.effects.frameEvent(event,tick.tick);
         if(event.type==FrameEventType::AiReset) return systems.monsters.resetAiSelector(event.owner.unit,event.payload,tick.tick);
         break;
+    }
     case FrameEventUnit::Missile:
         if(event.type==FrameEventType::ModeChange) return systems.missiles.frameEvent(event.owner.unit,tick);
         break;

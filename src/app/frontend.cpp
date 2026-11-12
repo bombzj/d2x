@@ -628,8 +628,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     debug::MovementDiff movementDiff(options.movementDiffLog);
     const auto recordMovementDiff=[&](bool suspended) {
         if(!movementDiff.enabled()) return;
-        const auto host=localConnection && !lanConnection && embedded?embedded->singlePlayerMovement():std::nullopt;
-        movementDiff.record(host,session.read(),scene.get(),town.read().area,suspended);
+        auto host=localConnection && !lanConnection && embedded?embedded->singlePlayerMovement():std::nullopt;
+        movementDiff.record(std::move(host),session.read(),scene.get(),town.read().area,suspended);
     };
     std::optional<OnlineView> frontendView;
     const auto refreshFrontendView = [&]() -> const OnlineView & {
@@ -793,6 +793,13 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 const auto *entry=player.skill(skill);
                 if(!entry || !entry->effectiveRankKnown) return {};
                 return entry->available && entry->usableNow;
+            };
+            aiSupplies.skillFieldUsable=[&](uint16_t skill)->std::optional<bool> {
+                const auto &player=sharedClients->character().read();
+                if(!session.read().load.playerUnitId || player.actor.value!=uint64_t(*session.read().load.playerUnitId)+1) return {};
+                const auto *entry=player.skill(skill);
+                if(!entry || !entry->effectiveRankKnown) return {};
+                return entry->available && entry->pickerEnabled && !entry->pickerTooltipUnavailable;
             };
             const auto &player=sharedClients->character().read();
             aiSupplies.navigationFasterCast=player.fasterCast;

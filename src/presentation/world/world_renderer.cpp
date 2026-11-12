@@ -242,7 +242,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene,OnlineSceneV
     for (const auto &item : items) {
         const auto at = screen(item.position) + item.pixelOffset;
         if (item.image && !visible(*item.image, at)) continue;
-        int layer = item.ground || item.behindUnit ? 1 : item.missile >= 0 ? 3 : 2;
+        int layer = item.ground ? 1 : item.missile >= 0 ? 3 : 2;
         if (item.overlay >= 0) {
             const auto visual = assets_.spellOverlays.find(item.overlay);
             if (visual == assets_.spellOverlays.end()) continue;

@@ -51,9 +51,12 @@ std::optional<int> System::initialObjectMode(RegionId region,EntityId id,int def
     switch(initialization) {
     case 4:if(completed(QuestId::ForgottenTower)) return 5;break;
     case 6:if(completed(QuestId::SearchForCain) || state_.actOne.restoreCairnStones) return 2;break;
-    case 7:return state_.actOne.cainRescued?5:0;
+    case 7:return state_.actOne.cainRescued?3:0;
     case 9:return completed(QuestId::SearchForCain) || state_.actOne.cainRescued?1:0;
     case 15:return completed(QuestId::ToolsOfTheTrade)?2:0;
+    case 38:return completed(QuestId::SevenTombs) || state_.actTwo.durielSlain?2:0;
+    case 44:return int(region)==104 || state_.actThree.mephistoSlain?2:0;
+    case 45:return state_.actThree.mephistoBridgeRaised?2:0;
     default:break;
     }
     return objectMode(region,id,definition,operation,tick);

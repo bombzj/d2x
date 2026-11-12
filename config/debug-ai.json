@@ -3,6 +3,7 @@
     "engageRadius": 24,
     "range": 18,
     "crowdRadius": 8,
+    "waitDefenseRadius": 10,
     "crowdCount": 3,
     "retreatDistance": 8,
     "retreatLifePercent": 70,
@@ -111,15 +112,12 @@
     "walkReactionMs": 40,
     "walkRequestIntervalMs": 200,
     "walkRetryMs": 1000,
-    "townTurnBaseMs": 200,
-    "townTurnMinMs": 600,
-    "townTurnMaxMs": 2000,
     "encounterRadius": 32,
     "standoffMin": 8,
     "standoffMax": 24
   },
   "mobility": {
-    "distance": 48,
+    "distance": 30,
     "mode": "auto"
   },
   "supplies": {
@@ -242,12 +240,52 @@
       "quest": "eve-of-destruction"
     }
   ],
+  "searchKnowledge": {
+    "throne-waves-and-baal-departure": {
+      "anchor": { "object": 563 },
+      "offset": [0, 6],
+      "radius": 64,
+      "timeoutSeconds": 180
+    },
+    "summoner-death": {
+      "anchor": { "object": 402 },
+      "candidateRooms": [[7, 0], [-7, 0], [0, 7], [0, -7]],
+      "returnViaWaypoint": true
+    },
+    "current-game-tomb-clue": {
+      "anchor": { "object": 402 },
+      "candidateRooms": [[7, 0], [-7, 0], [0, 7], [0, -7]],
+      "returnViaWaypoint": true
+    },
+    "canyon-portal-reading": {
+      "anchor": { "object": 402 },
+      "candidateRooms": [[7, 0], [-7, 0], [0, 7], [0, -7]],
+      "returnViaWaypoint": true
+    },
+    "seal-boss-dead-Infector of Souls": { "waitMs": 5000, "radius": 128, "timeoutSeconds": 180 },
+    "seal-boss-dead-Lord De Seis": { "waitMs": 5000, "radius": 128, "timeoutSeconds": 180 },
+    "seal-boss-dead-Grand Vizier of Chaos": { "waitMs": 5000, "radius": 128, "timeoutSeconds": 180 },
+    "diablo-dead": { "waitMs": 16000, "radius": 32, "timeoutSeconds": 90 },
+    "tristram-arrival": { "waitMs": 5000, "radius": 32, "timeoutSeconds": 90 },
+    "canyon-arrival": { "waitMs": 2000, "radius": 32, "timeoutSeconds": 90 },
+    "duriel-lair-arrival": { "waitMs": 15000, "radius": 16, "timeoutSeconds": 30 }
+  },
   "navigationExperience": {
     "enabled": true,
     "areas": [
       {
+        "area": 131,
+        "landmarks": [
+          { "object": 563, "positions": [[15090, 5005]] }
+        ]
+      },
+      {
         "area": 1,
         "landmarks": [
+          { "object": 119, "townVariant": 0, "positions": [[114, 9]] },
+          { "object": 119, "townVariant": 1, "positions": [[179, 49]] },
+          { "object": 119, "townVariant": 2, "positions": [[119, 94]] },
+          { "object": 119, "townVariant": 3, "positions": [[84, 69]] },
           {
             "npc": "akara",
             "townVariant": 3,
@@ -493,6 +531,8 @@
       {
         "area": 40,
         "landmarks": [
+          { "object": 156, "townVariant": 1, "positions": [[69, 84]] },
+          { "object": 156, "townVariant": 2, "positions": [[69, 84]] },
           {
             "npc": "atma",
             "townVariant": 2,
@@ -834,6 +874,7 @@
       {
         "area": 75,
         "landmarks": [
+          { "object": 237, "townVariant": 0, "positions": [[159, 49]] },
           {
             "npc": "alkor",
             "townVariant": 0,
@@ -899,6 +940,7 @@
       {
         "area": 103,
         "landmarks": [
+          { "object": 398, "townVariant": 0, "positions": [[44, 19]] },
           {
             "npc": "cain4",
             "townVariant": 0,
@@ -944,6 +986,7 @@
       {
         "area": 109,
         "landmarks": [
+          { "object": 429, "townVariant": 0, "positions": [[114, 69]] },
           {
             "npc": "cain6",
             "townVariant": 0,

@@ -1,6 +1,7 @@
 #pragma once
 #include "contracts/online_world.hpp"
 #include "core/math.hpp"
+#include "client/inventory_workflow.hpp"
 #include <chrono>
 #include <array>
 #include <map>
@@ -19,12 +20,15 @@ struct QuestState {
         std::optional<OnlineUnitKey> unit;uint64_t assignment{},sequence{},beforeRevision{};
         uint32_t item{};Clock::time_point deadline{};
         bool refreshIssued{},statusRequested{},resultObserved{};
+        // A sent object 13 may still own a host-side approach. Its first
+        // observed effect releases motion before any longer quest/world wait.
+        bool operationPending{};std::optional<uint8_t> operationMode;
     };
     // Passive scene observation is not a submitted operation. It may be
     // interrupted, but only relevant new facts renew its inactivity budget.
     struct WorldWait {
         uint16_t area{};Vec anchor;float vicinity=8;Clock::time_point deadline{};
-        Clock::time_point inspectResidualAt{};uint64_t soundSequence{};int residualRange{},witnessSize{};
+        uint64_t soundSequence{},clearanceRevision{1};int residualRange{},witnessSize{};
         unsigned seconds{},progress{};std::string expected,lastProgress;
         struct Enemy {std::optional<uint8_t> bestLife;bool dead{};};
         std::map<std::pair<OnlineUnitKey,uint64_t>,Enemy> enemies;
@@ -51,6 +55,8 @@ struct QuestState {
         std::optional<std::pair<OnlineUnitKey,uint64_t>> encounterWitness;
         std::optional<OnlinePoint> encounterPosition;
         std::optional<OnlinePoint> encounterStandoff;
+        InventoryWorkflow inventoryWork;
+        Json encounterStanceDiagnostics;
         std::optional<uint16_t> encounterArea;
         bool encounterAnchored{};
         Clock::time_point witnessUntil{};

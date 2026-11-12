@@ -10,11 +10,12 @@
 #include "server/systems/population/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/world/system.hpp"
+#include "world/interaction_geometry.hpp"
 #include <algorithm>
 
 namespace d2x::server::objects {
 bool usesReliableModeFacts(const ObjectRule &rule) {
-    if(rule.chest || rule.shrine || rule.operation==9 || rule.initialization==13) return true;
+    if(rule.chest || rule.shrine || rule.operation==9 || rule.operation==10 || rule.initialization==13 || rule.initialization==45) return true;
     // These native programs schedule silent ENDANIM. Retain their OP fact
     // even if several server frames elapse before hosting publishes snapshots.
     // The corresponding client projection lives in content/world/object_mode.
@@ -40,13 +41,14 @@ StepStatus System::publishChanges(TickContext tick) {
         const int before=previous->second.second;
         // Native ENDANIM writes ON silently. The preceding OP fact is already
         // retained even when hosting advances several frames before delivery.
-        const bool silentEnd=before==1 && object.mode==2 && object.rule.operation!=9 && object.rule.initialization!=13;
+        const bool silentEnd=before==1 && object.mode==2 && object.rule.operation!=9 &&
+            object.rule.initialization!=13 && object.rule.initialization!=45;
         if(before!=object.mode && !silentEnd) {
             const auto shrine=object.rule.shrine && (object.rule.subClass&1) && !(object.rule.subClass&4)
                 ?std::optional<int>{object.rule.shrine->code}:std::nullopt;
-            // Operate09 preserves the original selectable unit flag. The
-            // 1.13c monolith update carries selection=1 even in mode OP.
-            const uint8_t selection=object.rule.operation==9?uint8_t(object.rule.selectable[0]):
+            // Retail 1.13c monolith and gibbet updates preserve the original
+            // selection flag through their quest-controlled mode changes.
+            const uint8_t selection=(object.rule.operation==9 || object.rule.operation==10)?uint8_t(object.rule.selectable[0]):
                 shrine && object.mode==1?1:object.rule.operation!=18 && object.rule.selectable[size_t(object.mode)]?2:0;
             const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},object.area},
                 {ObjectFact{id,object.operatorActor,object.area,object.revision,object.position,object.mode,
@@ -63,6 +65,7 @@ namespace {
 FrameEventType hazardEvent(const Object &object) {
     switch(object.rule.initialization) {
     case 24:return FrameEventType::StatRegeneration;
+    case 45:return FrameEventType::MonsterModifier; // A3Q6 bridge QUESTFN.
     case 51:return FrameEventType::PeriodicStats;
     case 58:return FrameEventType::PeriodicSkills;
     case 59:return FrameEventType::MonsterModifier;
@@ -121,7 +124,7 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
     bool changed=false;
     if(event.type==FrameEventType::EndAnimation && object.until==event.payload) {
         ports_.quests.finishAncientObjectAnimation(object.id);
-        if(object.mode==1) {object.mode=object.rule.operation==10 && int(object.area)==38?5:2;changed=true;}
+        if(object.mode==1) {object.mode=object.rule.operation==10 && int(object.area)==38?3:2;changed=true;}
         object.until=object.rule.operation==61?object.until+13-std::min(object.rule.openingTicks,object.until+13):0;
     } else if(event.type==FrameEventType::ActiveState && object.reset==event.payload) {
         object.mode=0;object.reset=0;object.operatorActor={};changed=true;
@@ -164,12 +167,29 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
         const auto result=ports_.quests.prisonerPortalEvent(object.id,tick);if(!result) return result;
     } else if(event.type==FrameEventType::MonsterModifier && object.rule.operation==10 && int(object.area)==38) {
         const auto result=ports_.quests.cainBirthEvent(object.id,tick);if(!result) return result;
-        object.mode=5;object.until=0;changed=true;
+        object.mode=3;object.until=0;changed=true;
     } else if(event.type==FrameEventType::MonsterModifier && object.rule.initialization>=63 && object.rule.initialization<=65) {
         const auto result=ports_.quests.ancientStatueEvent(object.id,tick);if(!result) return result;
         if(const auto mode=ports_.quests.objectMode(object.area,object.id,object.definition,object.rule.operation,tick);mode && *mode!=object.mode) {
             object.mode=*mode;changed=true;
         }
+    } else if(event.type==FrameEventType::MonsterModifier && object.rule.initialization==45 && object.hazardAt==event.payload) {
+        if(object.mode<2 && ports_.quests.read().actThree.mephistoSlain) {
+            if(const auto room=ports_.areas.roomOfUnit(object.id)) {
+                const auto units=ports_.areas.roomUnitOrder(*room);
+                const bool nearbyPlayer=std::any_of(units.begin(),units.end(),[&](EntityId id) {
+                    const auto *player=ports_.players.findActor(id);
+                    return player && nativeUnitDistance(player->position,2,object.position,object.rule.width)<18;
+                });
+                if(nearbyPlayer) {
+                    ++object.mode;
+                    if(object.mode==1) ports_.quests.markMephistoBridgeRaised();
+                    else object.collisionReleased=true;
+                    changed=true;
+                }
+            }
+        }
+        object.hazardAt=object.mode<2?tick+24:0;
     } else if(event.type==FrameEventType::MonsterModifier && object.rule.initialization==59 && object.hazardAt==event.payload) {
         if(object.mode==1) {object.mode=2;++object.revision;collision(object.area);}
         DomainResult<> result{DomainStatus::Applied,std::monostate{}};

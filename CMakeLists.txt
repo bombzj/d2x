@@ -388,6 +388,7 @@ add_library(d2x_server
   src/server/systems/travel/position_sync.cpp src/server/systems/travel/waypoints.cpp
   src/server/systems/travel/portals.cpp src/server/systems/social/system.cpp
   src/server/systems/travel/native_object_portal.cpp
+  src/server/systems/travel/teleport_pad.cpp
   src/server/systems/travel/pd2/maps.cpp
   src/server/systems/travel/pd2/teleport.cpp
   src/server/systems/social/party.cpp src/server/systems/trade/system.cpp
@@ -513,7 +514,7 @@ target_link_libraries(d2x_character_host PUBLIC d2x_host d2x_game_content d2x_ne
 include(cmake/Networking.cmake)
 
 add_library(d2x_client
-  src/client/inventory_view.cpp src/client/automap_exploration.cpp src/client/automap_cells.cpp
+  src/client/inventory_view.cpp src/client/inventory_workflow.cpp src/client/automap_exploration.cpp src/client/automap_cells.cpp
   src/client/character_projection.cpp src/client/quest_projection.cpp
   src/client/pet_projection.cpp
 )
@@ -596,6 +597,7 @@ add_executable(d2x
   src/app/debug/ai_behavior_log.cpp
   src/app/debug/ai_navigation.cpp
   src/app/debug/ai_experience.cpp
+  src/app/debug/ai_target_search.cpp
   src/app/debug/ai_terrain_clues.cpp
   src/app/debug/ai_local_travel.cpp
   src/app/debug/ai_execution.cpp

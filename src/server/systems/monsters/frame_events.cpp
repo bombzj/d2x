@@ -63,7 +63,7 @@ void System::roomClientsChanged(RoomView room,bool present,uint64_t tick) {
         publishActors(publication);
     }
 }
-DomainResult<> System::modeEvent(const FrameEvent &event,uint64_t tick) {
+DomainResult<> System::modeEvent(const FrameEvent &event,uint64_t tick,const std::function<DomainResult<>(EntityId)> &walkEndAi) {
     if(tick<event.due) return {DomainStatus::Applied,std::monostate{}};
     if(advanceMode(event.owner.unit,{tick})==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
     const auto *unit=find(event.owner.unit);
@@ -76,6 +76,11 @@ DomainResult<> System::modeEvent(const FrameEvent &event,uint64_t tick) {
         return reinitializeAfterDeath(unit->id,tick);
     }
     if(!unit || (!unit->alive() && !unit->delayedDeathSource && tick>=unit->busyUntil)) ports_.frameEvents.cancel(event.handle);
+    if(unit && unit->walkEndAiPending) {
+        const auto result=walkEndAi(event.owner.unit);
+        if(!result) return result;
+        if(auto live=state_.actors.find(event.owner.unit);live!=state_.actors.end()) live->second.walkEndAiPending=false;
+    }
     return {DomainStatus::Applied,std::monostate{}};
 }
 void System::scheduleAi(EntityId id,uint64_t due,uint64_t notBefore) {

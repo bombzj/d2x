@@ -29,7 +29,7 @@ bool DebugAi::Impl::decisionDue(const Context &c,Clock::time_point now) {
     const bool urgent=lostLife || onlinePlayerDead(world) || game!=view.gameGeneration || areaGeneration!=world.areaGeneration;
     auto mode=inputBlocked?Mode::Suspended:actionRecoveryBusy || missiles || battle.hazardDodge?Mode::Reaction:
         battle.combatTarget || closeThreat || (navigation.routeExecution && navigation.routeExecution->phase!=RouteExecution::Phase::Resume) || c.walk.blockedByUnit()?Mode::Combat:c.moving || c.walk.active()?Mode::Navigation:
-        questState.questRun.pending || questState.questRun.worldWait || supply.potionRequest || supply.quiverTransfer || navigation.mobilityTarget || navigation.pendingDoor || navigation.pendingWaypoint || navigation.closeWaypoint?Mode::Waiting:Mode::Idle;
+        questState.questRun.pending || questState.questRun.inventoryWork.active() || questState.questRun.worldWait || supply.potionRequest || supply.quiverTransfer || navigation.mobilityTarget || navigation.pendingDoor || navigation.pendingWaypoint || navigation.closeWaypoint?Mode::Waiting:Mode::Idle;
     std::array<uint64_t,24> signals{view.gameGeneration,world.areaGeneration,uint64_t(view.stage),uint64_t(inputBlocked),
         uint64_t(world.life.value_or(0))|(uint64_t(world.mana.value_or(0))<<16),world.quests.revision,world.itemRevision,
         world.combatRequest?world.combatRequest->revision:0,world.interactionGeneration,world.cinematicRevision,
@@ -48,7 +48,11 @@ bool DebugAi::Impl::decisionDue(const Context &c,Clock::time_point now) {
     auto deadline=supply.supplyStage==SupplyStage::None?goalDeadline:supply.supplyDeadline;
     const auto include=[&](Clock::time_point at) {if(at!=Clock::time_point{} && at>now && (deadline==Clock::time_point{} || at<deadline)) deadline=at;};
     if(questState.questRun.pending && !questState.questRun.pending->resultObserved) include(questState.questRun.pending->deadline);
+    include(questState.questRun.inventoryWork.deadline());
     if(questState.questRun.worldWait) include(questState.questRun.worldWait->deadline);
+    if(navigation.activeTargetSearch) if(const auto found=navigation.targetSearches.find(*navigation.activeTargetSearch);found!=navigation.targetSearches.end()) {
+        include(found->second.readyAt);include(found->second.deadline);
+    }
     for(const auto &[kind,pending]:navigation.passageWaits) {(void)kind;include(pending.retryAt);include(pending.deadline);}
     if(pickup && !pickup->observed) include(pickup->deadline);
     if(supply.potionRequest) include(supply.potionRequest->deadline);
@@ -219,25 +223,32 @@ std::vector<DebugActionContract> DebugAi::Impl::actionContracts(const Context &c
         supply.quiverTransfer->sequence?supply.quiverTransfer->deadline:Clock::time_point{}});
     if(navigation.localPad && navigation.localPad->waiting) result.push_back({Owner::Goal,"local-pad-transfer",
         DebugMotion|DebugSkill|DebugInteraction|DebugMenu,0,"new own-unit relocation in the same level",
-        "fail without replaying the submitted pad",navigation.localPad->deadline});
+        "normal client retries only at the unchanged source; then defer the pad",navigation.localPad->deadline});
     if(questState.questRun.pending || questTransaction(c)) {
         const bool atomic=questTransaction(c);
         const bool journal=questState.questRun.pending && cursor<goals.size() && questState.questRun.step<goals[cursor].steps.size() &&
             goals[cursor].steps[questState.questRun.step].publishesTombSymbol;
         const bool portal=questState.questRun.pending && questState.questRun.pending->action==QuestPending::Action::Portal;
-        result.push_back({Owner::Goal,atomic?"quest-transaction":journal?"journal-reading":portal?"quest-portal-transfer":"quest-result",
-            atomic?unsigned(DebugAllInputs):(journal || portal)?unsigned(DebugMotion|DebugSkill|DebugInteraction|DebugMenu):unsigned(DebugItem|DebugInteraction|DebugMenu),0,
+        const bool actTravel=questState.questRun.pending && questState.questRun.pending->action==QuestPending::Action::Travel;
+        const bool operating=questState.questRun.pending && questState.questRun.pending->operationPending &&
+            !questState.questRun.pending->resultObserved;
+        // NPC travel closes its dialogue before the destination is ready.
+        // Keep its motion/skill ownership: a new cast cancels the host transfer.
+        // Object 13 can retain an approach on the host. A cast submitted
+        // before its first effect replaces that approach, not its outcome.
+        result.push_back({Owner::Goal,atomic?"quest-transaction":operating?"quest-object-operation":journal?"journal-reading":portal?"quest-portal-transfer":actTravel?"quest-act-transfer":"quest-result",
+            atomic?unsigned(DebugAllInputs):(operating || journal || portal || actTravel)?unsigned(DebugMotion|DebugSkill|DebugInteraction|DebugMenu):unsigned(DebugItem|DebugInteraction|DebugMenu),0,
             questWaitRequiresInput(c)?"normal follow-up query input":"native quest / inventory result",
             portal?"bounded normal portal retry in the confirmed source scene":"observe result; query only at the registered continuation; never replay service",
-            questState.questRun.pending?questState.questRun.pending->deadline:Clock::time_point{},questState.questRun.pending && questState.questRun.pending->resultObserved});
+            questState.questRun.pending?questState.questRun.pending->deadline:questState.questRun.inventoryWork.deadline(),questState.questRun.pending && questState.questRun.pending->resultObserved});
     }
     if(questState.questRun.worldWait) result.push_back({Owner::Goal,"world-result",0,0,
         "relevant scene fact / encounter progress","retain scene; no interaction replay",questState.questRun.worldWait->deadline});
     if(navigation.travelPhase==TravelPhase::WaypointWait || (navigation.travelPhase==TravelPhase::CrossWait && navigation.legUnit) ||
-        portalUsed || (portalIssued && c.observation.read().world.townPortalPending) || supply.supplyPortalUsed)
+        portalUsed || (portalIssued && c.observation.read().world.townPortalPending))
         result.push_back({supply.supplyStage==SupplyStage::None?Owner::Goal:Owner::Supply,"area-transfer",
             DebugMotion|DebugSkill|DebugInteraction|DebugMenu,0,"actual destination scene","shared initial wait / one-second source-scene retry",
-            supply.supplyPortalUsed?supply.supplyPortalDeadline:actionDeadline});
+            actionDeadline});
     if(supply.shopIssued) result.push_back({Owner::Supply,"merchant",DebugItem|DebugInteraction|DebugMenu,0,
         "same interaction's shelf / transaction","reopen unconfirmed shelf once; never repeat a pending purchase",supply.shopDeadline});
     if(supply.healingIssued) result.push_back({Owner::Supply,"town-healing",DebugMotion|DebugInteraction|DebugMenu,0,
@@ -292,6 +303,10 @@ void DebugAi::Impl::observeActions(Context &c) {
     observe([&]{observePickup(c);});
     observe([&]{observePotion(c);});
     observe([&]{observeQuiver(c);});
+    observe([&]{
+        auto &work=questState.questRun.inventoryWork;const auto before=work.completedOperations();work.observe(view);
+        if(work.completedOperations()!=before) note("inventory-workflow-result-observed",std::to_string(work.completedOperations()));
+    });
     observe([&]{observeCombat(c);});
     observeWaypointMemory(c);
     observePopulation(c);
@@ -360,10 +375,6 @@ void DebugAi::Impl::observeActions(Context &c) {
             if(navigation.travelPhase==TravelPhase::CrossWait && navigation.legUnit && recoverTravel(c)) navigation.travelPhase=TravelPhase::WarpExit;
             else failure="Submitted travel's destination was not observed";
         }
-    }
-    if(supply.supplyPortalUsed && supply.supplyOrigin!=c.town.read().area) {
-        if(recoverTravel(c)) supply.supplyPortalUsed=false;
-        else if(now>=supply.supplyPortalDeadline) failure="Return portal was used but the original supply area was not observed";
     }
     if(!failure.empty()) throw std::runtime_error(failure);
 }

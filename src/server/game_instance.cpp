@@ -22,6 +22,11 @@ std::optional<MovementObservation> GameInstance::movementObservation(PlayerId id
     result.actor=player->actor;result.nativeGuid=native->guid;result.area=player->area;result.tick=tick_;
     result.position=player->position+area->definition.origin;
     result.destination=player->routeDestination+area->definition.origin;
+    result.mapSeed=settings_.mapSeed;
+    if(!player->route.empty()) {
+        result.next=player->route.front()+area->definition.origin;
+        result.end=player->route.back()+area->definition.origin;
+    }
     result.teleportRevision=player->teleportRevision;result.commandSequence=player->acceptedSequence;
     result.movementSequence=player->movementSequence;
     result.executedSequence=player->result.sequence;result.simulationPending=simulationPending_;
@@ -30,6 +35,28 @@ std::optional<MovementObservation> GameInstance::movementObservation(PlayerId id
     if(player->movementTarget) {result.target=player->movementTarget->id;result.targetType=player->movementTarget->type;}
     result.moving=player->moving;result.running=player->runningNow;
     result.alive=player->persistent.player.hp>0;result.knockback=player->knockback.has_value();
+    for(const auto &[entity,npc]:systems_.monsters.read().actors) {
+        if(!npc.questNpc || !npc.alive() || npc.area!=player->area || !areas_.roomUnitRegion(entity,1)) continue;
+        const auto identity=nativeEntities_.find(entity);
+        if(!identity) continue;
+        auto &sample=result.npcs.emplace_back();
+        sample.guid=identity->guid;
+        sample.nativeClass=npc.rule.nativeClass;
+        sample.position=npc.position+area->definition.origin;
+        sample.goal=npc.movementGoal+area->definition.origin;
+        sample.mode=npc.nativeMode;
+        sample.pathType=npc.pathType;
+        sample.moving=npc.moving;
+        if(!npc.route.empty()) {
+            sample.next=npc.route.front()+area->definition.origin;
+            sample.end=npc.route.back()+area->definition.origin;
+        }
+        if(const auto body=areas_.unitBodyFootprint(entity)) {
+            sample.collisionCell=Vec{float(body->x),float(body->y)};
+            sample.collisionMask=body->mask;
+            sample.collisionPattern=uint8_t(body->pattern);
+        }
+    }
     return result;
 }
 std::vector<MissileFact> GameInstance::visibleMissiles(PlayerId id) const { return systems_.missiles.visible(id); }

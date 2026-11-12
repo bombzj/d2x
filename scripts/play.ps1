@@ -31,6 +31,12 @@ function Get-DiagnosticSha256([string]$Path) {
         finally{$digest.Dispose()}
     }finally{$stream.Dispose()}
 }
+function Get-AiStartAct([string]$Scenario) {
+    if($Scenario -match '^act([1-5])(?:-([1-5]))?$' -and
+        (-not $Matches[2] -or [int]$Matches[2] -ge [int]$Matches[1])){
+        return [int]$Matches[1]-1
+    }
+}
 if($Pd2Local -and -not $ClientProfile){throw '-Pd2Local requires -ClientProfile.'}
 if($HostLan -and $Lan){throw 'Choose either -HostLan or -Lan.'}
 if($ClientProfile -and ($Mpq -or $OnlineConfig)){
@@ -57,32 +63,51 @@ if($AiScenario){
     if(-not $Diagnostic -or $ClientProfile -or $HostLan -or $Lan -or $HostSaves -or
         $OnlineCharacter -or $OnlinePlay -or $OnlineCreateGame -or $OnlineJoinGame -or
         $Hidden -or $PSBoundParameters.ContainsKey('PipeName')){
-        throw 'Play-AI requires graphical Single Player with its own save directory and diagnostic pipe.'
+        throw 'debug-AI requires graphical Single Player with its own save directory and diagnostic pipe.'
     }
     if(Get-Process -Name d2x -ErrorAction SilentlyContinue){
-        throw 'A D2X instance is already running. Close it before starting Play-AI.'
+        throw 'A D2X instance is already running. Close it before starting debug-AI.'
     }
+    $actNames=@('One','Two','Three','Four','Five')
     if($AiScenario -eq 'continue'){
-        $runs=Get-ChildItem -LiteralPath $diagnosticParent -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending
+        $latestStart=[DateTime]::MinValue
+        $runs=Get-ChildItem -LiteralPath $diagnosticParent -Directory -ErrorAction SilentlyContinue
         foreach($run in $runs){
             $started=Test-Path -LiteralPath (Join-Path $run.FullName 'ai-start.json') -PathType Leaf
             $legacy=$AiClass -eq 'sor' -and (Test-Path -LiteralPath (Join-Path $run.FullName 'sorceress-start.json') -PathType Leaf)
             if(-not ($started -or $legacy)){continue}
-            $previousInfo=Get-Content -LiteralPath (Join-Path $run.FullName 'run.json') -Raw | ConvertFrom-Json
-            if(-not $legacy -and $previousInfo.aiClass -ne $AiClass){continue}
+            $manifest=Get-Item -LiteralPath (Join-Path $run.FullName 'run.json') -ErrorAction SilentlyContinue
+            if(-not $manifest -or $manifest.PSIsContainer){continue}
+            try{
+                $previousInfo=Get-Content -LiteralPath $manifest.FullName -Raw | ConvertFrom-Json
+            }catch{
+                Write-Verbose "Skipping unreadable AI run metadata at '$($manifest.FullName)': $($_.Exception.Message)"
+                continue
+            }
+            $previousClass=$previousInfo.aiClass
+            if(-not $previousClass -and $legacy){$previousClass='sor'}
+            if($previousClass -ne $AiClass){continue}
+            $previousAct=Get-AiStartAct $previousInfo.scenario
+            if($null -eq $previousAct){continue}
+            $previousSave=Join-Path $run.FullName "saves/Act$($actNames[$previousAct])$saveSuffix.d2s"
+            if(-not (Test-Path -LiteralPath $previousSave -PathType Leaf)){continue}
+            $startedAt=$manifest.LastWriteTimeUtc
+            $recordedStart=[DateTimeOffset]::MinValue
+            if([DateTimeOffset]::TryParse([string]$previousInfo.startedAtUtc,[ref]$recordedStart)){
+                $startedAt=$recordedStart.UtcDateTime
+            }
+            if($previousAiRun -and $startedAt -le $latestStart){continue}
+            $latestStart=$startedAt
             $previousAiRun=$run
             $AiScenario=[string]$previousInfo.scenario
-            break
         }
-        if(-not $previousAiRun){throw "No previous Play-AI run for '$AiClass' to continue."}
+        if(-not $previousAiRun){throw "No previous debug-AI run with a saved character for '$AiClass' to continue."}
     }
-    if($AiScenario -notmatch '^act([1-5])(?:-([1-5]))?$' -or
-        ($Matches[2] -and [int]$Matches[2] -lt [int]$Matches[1])){
+    $startAct=Get-AiStartAct $AiScenario
+    if($null -eq $startAct){
         throw 'Choose act1 through act5, an ascending range such as act2-5, or continue.'
     }
-    $startAct=[int]$Matches[1]-1
     $AiScenario=$AiScenario.ToLowerInvariant()
-    $actNames=@('One','Two','Three','Four','Five')
     $aiName="Act$($actNames[$startAct])$saveSuffix"
     $aiTown=@(1,40,75,103,109)[$startAct]
     $aiSaveSource=if($previousAiRun){

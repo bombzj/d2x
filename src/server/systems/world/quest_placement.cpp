@@ -2,11 +2,38 @@
 #include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "server/systems/monsters/system.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
 namespace d2x::server::world {
+DomainResult<EntityId> System::spawnQuestNpc(RegionId region,std::string_view code,Vec position,int attempts) {
+    if(!std::isfinite(position.x) || !std::isfinite(position.y)) return {DomainStatus::InvalidRequest,{}};
+    const auto *area=ports_.areas.find(region);if(!area) return {DomainStatus::Unavailable,{}};
+    for(const auto &npc:area->definition.npcs) if(npc.rule.code==code)
+        return ports_.monsters.find(npc.id)?DomainResult<EntityId>{DomainStatus::Applied,npc.id}:DomainResult<EntityId>{DomainStatus::Stale,{}};
+    const auto rule=area->definition.questNpcs.find(code);
+    if(rule==area->definition.questNpcs.end() || !rule->second.combat) return {DomainStatus::Unavailable,{}};
+    const auto global=position+area->definition.origin;
+    const auto room=ports_.areas.roomAtPosition(region,position,int(std::floor(global.x)),int(std::floor(global.y)));
+    if(!room || room->area!=region) return {DomainStatus::Unavailable,{}};
+    auto loan=ports_.areas.roomRandom(*room);if(!loan) return {loan.status,{}};
+    monsters::Admission request;request.identity.monster=code;request.identity.spawnKey="quest.npc";
+    request.area=region;request.position=position;request.rule=*rule->second.combat;
+    const auto placed=ports_.monsters.searchRoomSpawn(request,*loan.value,attempts,ports_.spatial.nativeCollisionSample());
+    if(!placed) return {placed.status,{}};
+    if(!ports_.areas.validateRoomRandom(*loan.value)) return {DomainStatus::Stale,{}};
+    if(!*placed.value) {
+        ports_.areas.publishRoomRandom(*loan.value);return {DomainStatus::Unavailable,{}};
+    }
+    // Keep NPC registration/admission shared with the other quest births.
+    // A deferred admission must retry with the same unconsumed room seed.
+    const auto admitted=admitQuestNpc(region,code,**placed.value,0);
+    if(isDeferred(admitted.status) || admitted.status==DomainStatus::Stale) return admitted;
+    ports_.areas.publishRoomRandom(*loan.value);
+    return admitted;
+}
 bool System::nativeProtectedSpawnPosition(RegionId region,Vec position) {
     const auto &area=ports_.areas.at(region).definition;
     const auto protectedAt=[&](Vec arrival) {

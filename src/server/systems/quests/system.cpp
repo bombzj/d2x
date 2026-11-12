@@ -39,6 +39,7 @@ void System::rebindObject(EntityId previous,EntityId current) {
     if(state_.npcStory.anyaTownObject==previous) state_.npcStory.anyaTownObject=current;
     for(auto &portal:state_.npcStory.bluePortals) if(portal.object==previous) portal.object=current;
     if(state_.npcStory.cainCage==previous) state_.npcStory.cainCage=current;
+    if(state_.actTwo.tyraelDoor==previous) state_.actTwo.tyraelDoor=current;
     if(auto mode=state_.objectModes.extract(previous);!mode.empty()) {mode.key()=current;state_.objectModes.insert(std::move(mode));}
     if(state_.actThree.gidbinnAltar==previous) state_.actThree.gidbinnAltar=current;
     if(state_.actFive.ancientAltar==previous) state_.actFive.ancientAltar=current;

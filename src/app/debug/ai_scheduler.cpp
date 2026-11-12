@@ -162,7 +162,7 @@ void DebugAi::Impl::dispatchActions(Context &c,const Goal &goal,Clock::time_poin
     if(resumeAction(c,goal,leaf)) {describeActions(c);return;}
     if(canInput(c,Owner::Supply,DebugAllInputs) && autoSupply(c,leaf)) {describeActions(c);return;}
     if(!navigation.pendingWaypoint && !navigation.closeWaypoint && !questState.questRun.worldWait && !questState.questRun.encounterAnchored &&
-        !portalIssued && !supply.supplyPortalUsed &&
+        !portalIssued &&
         (!town.read().town || (leaf.kind!=Kind::ReturnTown && leaf.kind!=Kind::Restock)) &&
         canInput(c,Owner::Waypoint,DebugMotion|DebugInteraction|DebugMenu) && activateWaypoint(c)) {describeActions(c);return;}
     if(canInput(c,Owner::Combat,DebugMotion|DebugSkill) && ((leaf.kind==Kind::ReturnTown || leaf.kind==Kind::Restock)?
@@ -194,6 +194,9 @@ void DebugAi::tickPlan(const OnlineObservation &observation,const RemoteTown &to
     s.observeNpcDialogue(view,now);
     if(!s.decisionDue(c,now)) return;
     ++s.decisions;
+    const auto beforeGoal=s.cursor,beforeStep=s.questState.questRun.step;
+    const auto beforeMoves=s.moveGoals,beforeCasts=s.castRequests,beforeInteractions=s.interactions;
+    const auto beforeWalkMoves=walk.observe().moveRequests;
     try {
         if(view.gameGeneration!=s.game) {
             s.finish("cancelled","Game changed",c);return;
@@ -228,5 +231,13 @@ void DebugAi::tickPlan(const OnlineObservation &observation,const RemoteTown &to
         s.cadence.continueNextFrame();s.wait("navigation-worker","Waiting for background navigation");
         s.describeActions(c);
     } catch(const std::exception &e) {s.finish("failed",e.what(),c);}
+    // Always try the original continuation first. A passive wait or a yielded
+    // navigation job can use the idle input slot, without delaying a ready leg.
+    if(s.active() && s.cursor==beforeGoal && s.questState.questRun.step==beforeStep && s.cursor<s.goals.size() &&
+        s.moveGoals==beforeMoves && s.castRequests==beforeCasts && s.interactions==beforeInteractions &&
+        walk.observe().moveRequests==beforeWalkMoves) {
+        try {s.defendWhileWaiting(c,s.goals[s.cursor]);s.describeActions(c);}
+        catch(const std::exception &e) {s.finish("failed",e.what(),c);}
+    }
 }
 } // namespace d2x

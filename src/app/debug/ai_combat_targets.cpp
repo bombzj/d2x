@@ -34,6 +34,7 @@ bool DebugAi::Impl::selectCombatTarget(Context &c,const Goal &goal,bool nearbyDe
         return false;
     }
     auto &[enemies,chosen,elite,required]=selection;std::optional<OnlineUnit> obstructed;
+    const bool waitingDefense=task && task->optionalDefense;
     float eliteDistance=float(policy.engage);
     const bool elitesOnly=!nearbyDefense && (fastTravel || (step && goals[cursor].routeDrop==questState.questRun.step));
     bool defensiveDanger=false;
@@ -55,6 +56,7 @@ bool DebugAi::Impl::selectCombatTarget(Context &c,const Goal &goal,bool nearbyDe
     }
     float nearest=clearing && step->action==QuestAction::Encounter && questState.questRun.worldWait?
         float(std::max(policy.engage,2*encounterMovementRadius())):float(policy.engage);
+    if(waitingDefense) nearest=float(policy.waitDefenseRadius)+1;
     float nearestObstructed=nearest;
     const int localAttackRange=task && task->preferAreaAttack?routeAttackRange(c):combatRange(c,*battle.excursionSkill);
     for(const auto &[key,unit]:view.world.units) {
@@ -62,7 +64,7 @@ bool DebugAi::Impl::selectCombatTarget(Context &c,const Goal &goal,bool nearbyDe
         // captured for this leg, never every nearby/on-screen monster.
         if(task && (!task->targets.contains(key) || task->targets.at(key)!=unit.assignmentRevision)) continue;
         if(key.type!=1 || !unit.position || !c.combat.hostile(unit) || !c.combat.monsterTargetEligible(unit,false) ||
-            (!task && !mustClear(unit) && (!objective || objective->key!=key) && battle.bypassedThreats.contains({key,unit.assignmentRevision}))) continue;
+            ((!task || waitingDefense) && !mustClear(unit) && (!objective || objective->key!=key) && battle.bypassedThreats.contains({key,unit.assignmentRevision}))) continue;
         if(!task && !defensiveDanger && (nearbyDefense || policy.scope=="defensive") && !mustClear(unit) &&
             (!objective || objective->key!=key) && !seekingElite) continue;
         const float distance=(position(*unit.position)-c.position).length();
@@ -74,11 +76,11 @@ bool DebugAi::Impl::selectCombatTarget(Context &c,const Goal &goal,bool nearbyDe
         if((navigation.passageDefending || planningDefense) && (!visible || distance>localAttackRange)) continue;
         if(candidate && visible && (!elite || distance<eliteDistance)) {elite=unit;eliteDistance=distance;}
         if(mustClear(unit) && !visible && distance<nearestObstructed) {nearestObstructed=distance;obstructed=unit;}
-        if(distance<=policy.engage && (visible || distance<=policy.radius)) enemies.push_back(unit);
+        if((waitingDefense || distance<=policy.engage) && (visible || distance<=policy.radius)) enemies.push_back(unit);
         const bool byObjective=nearObjective && (key==objective->key ||
             (position(*unit.position)-position(*objective->position)).length()<=policy.radius);
         const bool relevant=nearbyDefense || policy.scope=="clear" || mustClear(unit) || byObjective || (policy.scope=="defensive" && distance<=policy.radius);
-        if(!elitesOnly && relevant && (distance<=policy.engage || mustClear(unit)) && visible && distance<nearest) {nearest=distance;chosen=unit;}
+        if(!elitesOnly && relevant && (waitingDefense || distance<=policy.engage || mustClear(unit)) && visible && distance<nearest) {nearest=distance;chosen=unit;}
     }
     // A stance change may leave the acquisition radius, and another enemy
     // may briefly be nearer. Finish the same valid engagement inside its

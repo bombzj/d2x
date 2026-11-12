@@ -20,6 +20,9 @@ std::string_view debugWalkName(DebugWalkState);
 struct DebugWalkIntent {
     DebugWalkGoal goal=DebugWalkGoal::None;
     std::optional<OnlinePoint> point{};
+    // Search bearing only; real assignments and acquired collision still
+    // determine the target, route and completion.
+    std::optional<OnlinePoint> searchHint{};
     std::optional<OnlineUnitKey> unit{};
     std::optional<uint16_t> level{};
     std::optional<bool> interact{},run{},exploration{},exactPoint{},recoverableRelay{},adjustLane{};
@@ -30,6 +33,9 @@ struct DebugWalkIntent {
     std::optional<uint32_t> itemId{};
     std::optional<uint16_t> groundX{},groundY{};
     std::optional<int> timeoutSeconds{};
+    // A confirmed Teleport releases this relay to its parent for continuation;
+    // actual goal arrival and interaction still require their own observations.
+    bool routeRelay{};
     bool prepared{};
     explicit operator bool() const {return goal!=DebugWalkGoal::None;}
     bool operator==(const DebugWalkIntent &) const = default;

@@ -25,9 +25,9 @@ struct RemoteMapDisplayState {
     struct QuestEffects {
         uint64_t gameGeneration{},denOccurrence{};
         uint64_t cairnOccurrence{},forgeOccurrence{},staffOccurrence{};
+        bool cairnArtworkPrepared{};
         uint64_t taintedSunOccurrence{};
         std::map<OnlineUnitKey,uint64_t> taintedSunLights;
-        std::optional<OnlinePoint> openedTombEntrance;
         uint64_t nihlathakOccurrence{};
         uint64_t anyaOccurrence{};
         uint64_t sanctumOccurrence{},sanctumEndOccurrence{};
@@ -37,6 +37,7 @@ struct RemoteMapDisplayState {
         float denFrames{-1};
         float seconds{};
         bool denComplete{};
+        std::optional<uint64_t> denRandom;
         struct DenRoom {uint64_t revision{};float born{};std::vector<Vec> positions;};
         std::map<std::array<int,3>,DenRoom> denRooms;
     } questEffects;
@@ -69,6 +70,12 @@ class RemoteScene {
     std::optional<std::pair<uint64_t,float>> observedCastSeconds(uint16_t skill) const;
     std::optional<Vec> playerDisplayPosition(const OnlineView &) const;
     std::optional<OnlinePoint> npcPathPosition(const OnlineView &, OnlineUnitKey) const;
+    struct MovementObservation {
+        Vec position;
+        std::optional<Vec> next, end;
+        bool predicted{}, moving{};
+    };
+    std::optional<MovementObservation> unitMovementObservation(const OnlineView &, OnlineUnitKey) const;
     std::optional<int> npcFollowRange(const OnlineView &, OnlineUnitKey) const;
     void stopNpcPath(const OnlineView &, OnlineUnitKey);
     std::optional<Vec> playerPathPosition(const OnlineView &) const;

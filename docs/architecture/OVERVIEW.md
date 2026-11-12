@@ -55,6 +55,7 @@ PD2专项内容：[客户端接入](../pd2/CLIENT_INTEGRATION.md)。本页保留
 | network/byte_transport、tcp_stream、memory_transport | IByteTransport字节流；TCP与有锁有界内存FIFO；连接代次隔离旧字节 |
 | network/realm_session、protocol | 唯一MCP／D2GS编码、解码、握手、worker、客户端稳定快照；原服另有账号认证 |
 | client/remote_* | 两种服务端共用的世界／库存副本、地图、请求、预测与I*Client投影 |
+| client/inventory_workflow | 独立物品工作模块，持合成／收纳任务、整理计划及操作回执；只读客户端库存和MPQ已解码尺寸，产出普通物品命令，由调用者走客户端功能入口提交；不读取Host、不写副本或发包 |
 | client/online_actions | 手动输入与调试AI共用的移动／战斗／库存功能接口及只读观察入口；不暴露会话、投影更新、动画状态写入或解析器绑定，具体生命周期由前端和Remote适配器管理 |
 | content/character/combat_display、content/skills/description_*、skill_description | 原包已观察装备／状态及MPQ准备的只读数值、描述程序；复用gameplay纯计算，不持有权威运行态，未知输入不默认成功 |
 | presentation | 唯一RealmFrontend、SceneController、SceneView、RemoteScene及原资源／面板／动画／声音 |

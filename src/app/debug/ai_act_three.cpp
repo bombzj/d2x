@@ -96,7 +96,7 @@ void DebugAi::Impl::configureActThreeQuest(Goal &goal,QuestId id) const {
     QuestStep advice;advice.action=QuestAction::Talk;advice.stateQuest=khalim;advice.area=town;
     advice.target=definitions->selector(Json{{"npc","cain3"}});advice.journalTalkStatus=7;
     const auto cainAdvice=node("journal-asks-cain-about-relics",advice,{},{},true);
-    s={};s.action=QuestAction::Combine;s.stateQuest=khalim;s.item="qf2";s.produced="box";s.ingredients={"qey","qbr","qhr","qf1"};
+    s={};s.action=QuestAction::Combine;s.stateQuest=khalim;s.area=town;s.item="qf2";s.produced="box";s.ingredients={"qey","qbr","qhr","qf1"};
     const auto will=node("khalims-will-owned",s,{{item("qf2")},{orbDone}},{cube,eye,brain,heart,flail,cainAdvice});
     s={};s.action=QuestAction::EquipWeapon;s.stateQuest=khalim;s.item="qf2";s.area=councilArea;
     auto equipped=item("qf2");equipped.kind=K::Equipped;
@@ -115,11 +115,11 @@ void DebugAi::Impl::configureActThreeQuest(Goal &goal,QuestId id) const {
     // satisfy D2Common_10399 < 18 before the bridge advances (24-frame ticks).
     for(size_t row=0;row<definitions->objects.rows().size();++row) if(definitions->objects.number(row,"InitFn")==45) {
         const auto bridge=definitions->objects.number(row,"Id");
-        if(!bridge || *bridge<0 || *bridge>UINT16_MAX || s.walkingTrigger)
+        if(!bridge || *bridge<0 || *bridge>UINT16_MAX || s.proximityTrigger)
             throw std::runtime_error("Ambiguous original Mephisto bridge marker");
-        s.walkingTrigger=QuestStep::ProximityTrigger{Selector{2,uint16_t(*bridge),"Mephisto bridge"},18};
+        s.proximityTrigger=QuestStep::ProximityTrigger{Selector{2,uint16_t(*bridge),"Mephisto bridge"},18};
     }
-    if(!s.walkingTrigger) throw std::runtime_error("Missing original Mephisto bridge Init45 marker");
+    if(!s.proximityTrigger) throw std::runtime_error("Missing original Mephisto bridge Init45 marker");
     auto changed=fact(K::ActChange);changed.value=23;
     const auto passage=node("act-four-arrival",s,{{changed}},{mephisto});
     switch(id) {

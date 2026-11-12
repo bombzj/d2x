@@ -30,7 +30,10 @@ DomainResult<> System::setNativeMode(EntityId id,int mode,uint64_t tick,bool ani
     auto &object=found->second;
     if(mode<0 || mode>=8) return {DomainStatus::InvalidRequest,{}};
     if(object.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
-    object.mode=mode;object.until=animate?tick+object.rule.openingTicks:0;
+    // A2Q6/A3Q6 death callbacks schedule the raw FrameCnt1, without +1.
+    const auto delay=object.rule.initialization==38 || object.rule.initialization==44?
+        object.rule.frameTicks[1]:object.rule.openingTicks;
+    object.mode=mode;object.until=animate?tick+delay:0;
     ++object.revision;collision(object.area,synchronizeTimers);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::linkNativePortals(EntityId source,EntityId destination,bool mutual,uint64_t tick) {

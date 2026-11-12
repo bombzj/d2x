@@ -31,6 +31,9 @@ class DebugAi {
         std::optional<int> navigationFasterCast;
         unsigned navigationWeaponSet{};
         std::function<std::optional<bool>(uint16_t)> skillUsable;
+        // Observed skill/resource eligibility before the current town gate;
+        // advisory future field legs only, never an input authorization.
+        std::function<std::optional<bool>(uint16_t)> skillFieldUsable;
         std::function<std::optional<unsigned>(uint32_t)> buyQuote;
         std::function<bool(uint32_t source,uint32_t item,uint64_t itemRevision)> submitStaff;
         std::function<bool()> openQuestLog;

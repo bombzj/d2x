@@ -228,6 +228,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (remoteRange) {const int dx=int(point->x)-int(player->position.x),dy=int(point->y)-int(player->position.y);if(dx*dx+dy*dy>*remoteRange * *remoteRange) return {DomainStatus::InvalidRequest,{}};}
     if (object.pending || object.specialPending || object.revision == UINT64_MAX) return {DomainStatus::Conflict, {}};
     if(!remoteRange) ports_.movement.execute(actor,{MovementAction::Stop,{},false});
+    if(rule.operation==27) return ports_.travel.useTeleportPad(actor,object.id);
     if(rule.operation==15) return ports_.travel.useSpecial(actor,{travel::Kind::Portal,{object.id,object.revision,2},{}},remoteRange);
     if((rule.operation==77 || rule.operation==80) && object.nativePortalOwner)
         return ports_.travel.useNativeObjectPortal(actor,object.id,remoteRange);
@@ -532,9 +533,10 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
         }
         // A2Q6_Timer_UpdateObjects creates the real entrance in OP without
         // scheduling ENDANIM. Operate43 accepts it immediately in that mode.
-        if(source.questSpawn) {object.mode=ports_.quests.read().actTwo.tombOpen?2:1;object.until=0;}
+        const auto &tomb=ports_.quests.read().actTwo;
+        if(source.questSpawn) {object.mode=tomb.tombOpen || tomb.tombRestored?2:1;object.until=0;}
+        if(source.rule.operation==25 && tomb.tomb==region && (tomb.tombOpen || tomb.tombRestored)) object.mode=2;
         if(source.rule.operation==23 && area.definition.town) object.mode=2;
-        if(source.rule.operation==10 && int(region)==38 && ports_.quests.read().actOne.cainRescued) object.mode=5;
         if(source.rule.operation==9 && int(region)==4 && ports_.quests.read().actOne.restoreCairnStones) object.mode=2;
         initialize(object,tick.tick,random,controlRandom);
         if(object.pd2Portal) {object.mode=object.pd2Portal->sourceMode;object.until=0;}
@@ -624,7 +626,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(object.rule.operation==25) {
             const auto &quest=ports_.quests.read().actTwo;
             const bool leased=std::any_of(quest.orifices.begin(),quest.orifices.end(),[&](const auto &entry){return entry.second==id;});
-            const int mode=(quest.tombAt && quest.tomb==object.area) || leased?1:0; // Native lease and submission both use OPERATING.
+            const bool submitted=quest.tombAt && quest.tomb==object.area;
+            // A live submission leaves OP. Init21 restores a reopened orifice to ON.
+            const int mode=submitted && (quest.tombRestored || object.mode==2)?2:submitted || leased?1:0;
             if(object.mode!=mode) {object.mode=mode;object.until=0;++object.revision;changed.insert(object.area);}
         }
         if(object.definition==318 && int(object.area)==40) {
@@ -632,7 +636,6 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const bool opened=ports_.quests.read().npcStory.palaceOpen;
             if(opened && object.mode!=2) {object.mode=2;++object.revision;changed.insert(object.area);}
         }
-        if(object.definition==153 && int(object.area)==73 && ports_.quests.read().actTwo.durielSlain && object.mode!=2) {object.mode=2;++object.revision;changed.insert(object.area);}
         if(object.rule.operation==9 && int(object.area)==4 && ports_.quests.read().actOne.restoreCairnStones && object.mode!=2) {
             object.mode=2;object.until=0;++object.revision;changed.insert(object.area);
         }

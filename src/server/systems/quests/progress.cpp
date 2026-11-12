@@ -133,7 +133,8 @@ void System::initialize(const CharacterRecord &creator) {
     state_.actThree.khalimIntroAvailable=!state_.actThree.orbSmashed &&
         ((khalim.flags&(khalimAssigned|khalimWillExplained)) ||
          book[questIndex(QuestId::GoldenBird)].stage>=uint32_t(GoldenBirdStage::Rewarded));
-    state_.actThree.mephistoSlain=book[questIndex(QuestId::Guardian)].stage>=4;
+    state_.actThree.mephistoSlain=book[questIndex(QuestId::Guardian)].stage>=4 ||
+        creator.completedActs.at(size_t(ports_.settings.difficulty)).at(2);
     state_.actThree.figurineEnabled=(state_.initialFlags[questDefinition(QuestId::GoldenBird).nativeSlot]&0x8000)==0;
     if(const auto *player=ports_.players.find({1})) {
         const auto &items=player->rules.character->laterQuests;

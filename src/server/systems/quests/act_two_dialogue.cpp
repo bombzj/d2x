@@ -2,7 +2,9 @@
 #include "detail.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/npc/system.hpp"
+#include "server/systems/transactions/system.hpp"
 #include "server/systems/travel/system.hpp"
+#include "server/runtime/facts/quest_signals.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include <algorithm>
@@ -25,7 +27,7 @@ std::optional<Dialogue> System::actTwoDialogue(const ActorContext &actor,const N
     if(npc.code=="tyrael1" && tombs<uint32_t(TombsStage::TyraelRescued) &&
        (tombs==uint32_t(TombsStage::DurielSlain) || state_.actTwo.durielSlain)) return emit(QuestId::SevenTombs,302);
     if(npc.code=="jerhyn" && tombs==uint32_t(TombsStage::TyraelRescued)) return emit(QuestId::SevenTombs,442);
-    if(npc.code=="meshif1" && tombs==uint32_t(TombsStage::JerhynConfirmed)) return emit(QuestId::SevenTombs,450,2);
+    if(npc.code=="meshif1" && tombs==uint32_t(TombsStage::JerhynConfirmed)) return emit(QuestId::SevenTombs,450);
     if(npc.code=="atma" && available(QuestId::RadamentsLair)) {
         const auto radament=stage(QuestId::RadamentsLair);
         if((!radament && !state_.started.contains(QuestId::RadamentsLair)) || radament==uint32_t(RadamentStage::Slain)) return emit(QuestId::RadamentsLair,radament?334:304,radament?1:0);
@@ -68,6 +70,48 @@ std::optional<Dialogue> System::actTwoDialogue(const ActorContext &actor,const N
     if(available(QuestId::RadamentsLair) && npc.code=="atma" && stage(QuestId::RadamentsLair)<uint32_t(RadamentStage::Slain)) return emit(QuestId::RadamentsLair,stage(QuestId::RadamentsLair)==1?310:317,2);
     return {};
 }
+DomainResult<> System::acknowledgeMeshifPassage(const ActorContext &actor,CharacterRecord record) {
+    const auto &player=*ports_.players.find(actor.player);
+    const auto difficulty=size_t(ports_.settings.difficulty);
+    auto &book=record.quests.at(difficulty);
+    const auto quest=QuestId::SevenTombs;
+    const auto index=questIndex(quest);
+    book[index].stage=uint32_t(TombsStage::PassageGranted);
+
+    // A2Q6 publishes the reward bit before clearing ENTERAREA. Later
+    // queries and saves see the cleared bit from the character transaction.
+    auto receipt=fact(actor.player,record,actor.area);
+    auto &wireRecord=receipt.record.quests.at(difficulty)[index].nativeRecord;
+    wireRecord=uint16_t(wireRecord.value()|0x10);
+    receipt.publication=QuestPublication::Private;
+    std::vector<DomainFact> facts;
+    if(receipt.credited[index]) facts.emplace_back(QuestStatusFact{quest,6});
+    facts.emplace_back(std::move(receipt));
+
+    std::vector<ItemChange> removed;
+    const auto &staff=book[questIndex(QuestId::HoradricStaff)];
+    if(staff.nativeRecord.value_or(actTwoLegacyRecord(QuestId::HoradricStaff,staff))&1) {
+        const auto &codes=player.rules.character->actTwo;
+        for(const auto &code:{codes.shaft,codes.amulet,codes.staff}) {
+            const auto *item=detail::actTwoCarried(player,code,int(difficulty));
+            if(!item) continue;
+            if(item->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+            removed.push_back({item->id,item->revision+1,ItemChangeKind::Removed,item->location,{},0});
+        }
+    }
+    if(removed.empty()) {
+        transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,std::move(record)};
+        edit.facts=std::move(facts);
+        auto plan=ports_.transactions.prepare(std::move(edit));
+        return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
+    }
+    auto inventory=player.persistent.inventory;
+    for(const auto &change:removed) inventory.items.erase(change.item);
+    transactions::InventoryEdit edit{actor,player.inventoryRevision,player.characterRevision,std::move(inventory),std::move(removed),record.weaponSet};
+    edit.character=std::move(record);edit.facts=std::move(facts);
+    auto plan=ports_.transactions.prepare(std::move(edit));
+    return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
+}
 DomainResult<> System::acknowledgeActTwo(const ActorContext &actor,const Request &request,const NpcRule &) {
     const auto *p=ports_.players.find(actor.player);auto record=p->persistent.player;
     auto &book=record.quests.at(size_t(ports_.settings.difficulty));auto &q=book.at(questIndex(request.quest));
@@ -99,7 +143,7 @@ DomainResult<> System::acknowledgeActTwo(const ActorContext &actor,const Request
         q.stage=std::max(q.stage,uint32_t(TombsStage::TyraelRescued));break;
     }
     case 442: q.stage=uint32_t(TombsStage::JerhynConfirmed);break;
-    case 450: q.stage=uint32_t(TombsStage::PassageGranted);break;
+    case 450: return acknowledgeMeshifPassage(actor,std::move(record));
     default:
         if(request.quest==QuestId::TaintedSun && q.stage==uint32_t(SunStage::AltarDestroyed)) q.stage=uint32_t(SunStage::Confirmed);
         else if(request.quest==QuestId::Summoner && q.stage==uint32_t(SummonerStage::Slain)) q.stage=uint32_t(SummonerStage::Confirmed);

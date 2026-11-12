@@ -179,9 +179,7 @@ bool DebugAi::Impl::resumeRouteExecution(Context &c,const Goal &goal) {
             // Teleport. Recheck the exact stop, never substitute a route relay.
             const auto origin=c.town.read().origin;
             if(origin && !navigation.mobilityTarget) {
-                const Vec offset{float(origin->x)-.5f,float(origin->y)-.5f};
-                const auto grid=c.town.navigationGrid(c.observation.read());
-                if(!grid.walkable(position-offset,playerMovement) ||
+                if(!TeleportTargets(c).permits(c,position,mobilityPolicy.distance) ||
                     crowdedTravelLanding(travelLandingThreats(c),position) || threatClearance(visibleThreats(c),position)<0) {
                     const auto replacement=selectCombatLanding(c,task.landing,task.combat,task.mode==RouteExecution::Mode::TeleportTransit);
                     if(!replacement) return complete("Current assignments no longer offer the selected local firing gap");

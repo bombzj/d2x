@@ -33,7 +33,7 @@ std::optional<OnlinePoint> DebugAi::Impl::selectCombatLanding(const Context &c,O
     const auto *memory=c.walk.navigationSearch().explorationMemory.area(*area);
     if(!origin || !memory) return {};
     const auto &view=c.observation.read();const Vec offset{float(origin->x),float(origin->y)};
-    const auto grid=c.town.navigationGrid(view);const TeleportRooms rooms(c);
+    const auto grid=c.town.navigationGrid(view);const TeleportTargets targets(c);
     const auto hazards=visibleThreats(c);const auto enemies=travelLandingThreats(c);
     const int range=combatRange(c,*battle.excursionSkill);
     const auto mask=definitions->attackMasks.find(*battle.excursionSkill);
@@ -45,11 +45,9 @@ std::optional<OnlinePoint> DebugAi::Impl::selectCombatLanding(const Context &c,O
     for(int y=std::max(0,int(center.y)-range);y<=std::min(65535,int(center.y)+range);++y)
         for(int x=std::max(0,int(center.x)-range);x<=std::min(65535,int(center.x)+range);++x) {
             const Vec at{float(x),float(y)},delta=at-c.position;const float span=delta.length();
-            if(span>mobilityPolicy.distance || !memory->stand(x,y) || !rooms.contains(at) ||
-                !tacticalPositionAllowed(c,at) || threatClearance(hazards,at)<0 ||
-                !grid.walkable(at-offset+Vec{.5f,.5f},playerMovement)) continue;
+            if(!memory->stand(x,y) || !targets.permits(c,at,mobilityPolicy.distance) ||
+                !tacticalPositionAllowed(c,at) || threatClearance(hazards,at)<0) continue;
             if(transit && (span<2 || span>=forward.length() || delta.x*forward.x+delta.y*forward.y<=0)) continue;
-            if(span>=2 && !c.combat.teleportPathAllowed(*area,grid,c.position-offset,at-offset)) continue;
             float clearance=float(range);
             for(const auto enemy:enemies) clearance=std::min(clearance,(at-enemy).length());
             // A firing stance needs room to remain there. Merely being less
@@ -104,6 +102,7 @@ std::optional<OnlinePoint> DebugAi::Impl::selectCombatPosition(Context &c,const 
     if(!sight.grid) return {};
     if(!retreat && run.triedPositions.size()>=128) return {};
     const auto grid=c.town.navigationGrid(view);const auto hazards=visibleThreats(c);
+    const bool teleport=teleportAvailable(c);const TeleportTargets targets(c);
     const auto safety=[&](Vec at) {
         float nearestEnemy=(at-targetPosition).length();
         for(const auto enemy:localThreats) nearestEnemy=std::min(nearestEnemy,(at-enemy).length());
@@ -121,7 +120,8 @@ std::optional<OnlinePoint> DebugAi::Impl::selectCombatPosition(Context &c,const 
         if(at.x<0 || at.y<0 || at.x>65535 || at.y>65535) continue;
         const auto destination=point(at);const auto exact=position(destination);
         if(!unique.emplace(destination.x,destination.y).second || !tacticalPositionAllowed(c,exact) ||
-            !grid.nativeMovementSegment(exact-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},playerMovement) ||
+            (teleport?!targets.permits(c,exact,mobilityPolicy.distance):
+                !grid.nativeMovementSegment(exact-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},playerMovement)) ||
             threatClearance(hazards,exact)<0) continue;
         if(!retreat && (run.triedPositions.contains({destination.x,destination.y}) || !sight.clear(exact,targetPosition))) continue;
         const float targetDistance=(exact-targetPosition).length();
@@ -138,10 +138,7 @@ std::optional<OnlinePoint> DebugAi::Impl::selectCombatPosition(Context &c,const 
     // search cache, and no failed candidate is retried ahead of a better one.
     for(const auto &candidate:candidates) {
         const auto destination=candidate.point;const auto exact=position(destination);
-        if(teleportAvailable(c)) {
-            if((exact-c.position).length()<=mobilityPolicy.distance && TeleportRooms(c).contains(exact)) return destination;
-            continue;
-        }
+        if(teleport) return destination;
         const auto path=c.walk.navigationSearch().path(*sight.grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
         if(path.empty() || point(path.back()+offset-Vec{.5f,.5f})!=destination || !tacticalPathSafe(c,path,offset,hazards)) continue;
         return destination;
@@ -156,9 +153,9 @@ std::optional<OnlinePoint> DebugAi::Impl::selectKitePosition(Context &c,const Co
     const auto &enemies=selection.enemies;
     if(!sight.grid) return {};
     const auto hazards=visibleThreats(c);const auto grid=c.town.navigationGrid(view);
+    const TeleportTargets targets(c);
     const auto &rooms=c.town.navigationRooms();
     const auto contains=[](const auto &room,Vec at) {return room.loaded && at.x>=room.x && at.y>=room.y && at.x<room.x+room.width && at.y<room.y+room.height;};
-    const auto source=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && contains(room,c.position);});
     bool teleport=teleportAvailable(c);
     if(teleport && c.supplies && c.supplies->skillUsable)
         if(const auto usable=c.supplies->skillUsable(definitions->skill("Teleport"));usable && !*usable) teleport=false;
@@ -193,12 +190,12 @@ std::optional<OnlinePoint> DebugAi::Impl::selectKitePosition(Context &c,const Co
         const float distance=delta.length(),toTarget=(exact-targetPosition).length(),safe=clearance(exact);
         const float hazardSafety=threatClearance(hazards,exact);
         if(distance<3 || toTarget>range || safe<minimum || !tacticalPositionAllowed(c,exact) || !sight.clear(exact,targetPosition) || threatClearance(hazards,exact)<1 ||
-            !grid.nativeMovementSegment(exact-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},playerMovement)) continue;
+            (teleport?!targets.permits(c,exact,mobilityPolicy.distance):
+                !grid.nativeMovementSegment(exact-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},playerMovement))) continue;
         if(hazardBaseline>=1 && safe<baseline+1) continue;
         if(hazardBaseline<1 && hazardSafety<hazardBaseline+1) continue;
         const auto landing=std::find_if(rooms.begin(),rooms.end(),[&](const auto &room){return room.level==area && contains(room,exact);});
-        if(landing==rooms.end() || (teleport && (source==rooms.end() || (landing!=source &&
-            std::find(source->near.begin(),source->near.end(),size_t(landing-rooms.begin()))==source->near.end())))) continue;
+        if(landing==rooms.end()) continue;
         const float turn=(delta.x*tangent.x+delta.y*tangent.y)*run.orbitDirection;
         candidates.push_back({destination,turn*.7f+std::min(safe,float(range))*.5f-
             std::abs(toTarget-float(range)*.8f)+std::min(threatClearance(hazards,exact),8.f)*.1f-distance*.05f});
@@ -216,11 +213,7 @@ std::optional<OnlinePoint> DebugAi::Impl::selectKitePosition(Context &c,const Co
             assessment["movement"]=!teleport || (walking && navigation.teleportTiming.seconds && *walking<=*navigation.teleportTiming.seconds)?"walk":"teleport";
         };
         if(teleport) {
-            if(TeleportRooms(c).contains(exact) && (exact-c.position).length()<=mobilityPolicy.distance &&
-                c.combat.teleportPathAllowed(*area,grid,c.position-offset,exact-offset)) {
-                record(kiteWalkSeconds(c,exact));return destination;
-            }
-            continue;
+            record(kiteWalkSeconds(c,exact));return destination;
         }
         const auto path=c.walk.navigationSearch().path(*sight.grid,c.position-offset+Vec{.5f,.5f},exact-offset+Vec{.5f,.5f},false,playerMovement,true);
         if(path.empty() || point(path.back()+offset-Vec{.5f,.5f})!=destination || path.size()>size_t(policy.kiteDistance*3+4) ||

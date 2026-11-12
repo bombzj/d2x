@@ -34,6 +34,14 @@ DebugExplorationMemory::Cell DebugExplorationMemory::playerCell(Vec position) {
     const auto cell=nativeFeetCell(position);
     return {int(cell.x),int(cell.y)};
 }
+DebugExplorationMemory::Cell DebugExplorationMemory::Passage::approachFor(Cell edge) const {
+    const int step=units?1:-1;
+    return {edge.first+step*direction.first,edge.second+step*direction.second};
+}
+DebugExplorationMemory::Cell DebugExplorationMemory::Passage::edgeFor(Cell approach) const {
+    const int step=units?-1:1;
+    return {approach.first+step*direction.first,approach.second+step*direction.second};
+}
 uint16_t DebugExplorationMemory::Area::mask(int gx,int gy) const {
     if(gx<x || gy<y || gx>=x+width || gy>=y+height) return 0xffff;
     const auto block=maskBlocks.find({gx/32,gy/32});
@@ -53,6 +61,10 @@ bool DebugExplorationMemory::Area::stand(int gx,int gy) const {
     return clear(gx,gy) && clear(gx-1,gy) && clear(gx+1,gy) && clear(gx,gy-1) && clear(gx,gy+1);
 }
 DebugExplorationMemory::Passage *DebugExplorationMemory::Area::passage(uint64_t id) {
+    const auto it=std::find_if(passages.begin(),passages.end(),[&](const auto &p){return p.id==id;});
+    return it==passages.end()?nullptr:&*it;
+}
+const DebugExplorationMemory::Passage *DebugExplorationMemory::Area::passage(uint64_t id) const {
     const auto it=std::find_if(passages.begin(),passages.end(),[&](const auto &p){return p.id==id;});
     return it==passages.end()?nullptr:&*it;
 }
@@ -138,15 +150,15 @@ DebugExplorationMemory::Area *DebugExplorationMemory::observe(const RemoteTown &
         observation.source=source;
         metrics.sampleMs+=std::chrono::duration<double,std::milli>(Clock::now()-sampleStarted).count();
     }
-    // Collision pages can be acquired before the units on their ground.
-    // Project only actual 07 subscriptions onto space; loaded neighbouring
-    // pages and automap drawings never prove that their population was seen.
+    // A 07 reveals neighboring terrain before all of that room's units need
+    // exist. Only mark unit-search coverage in a subscribed room actually
+    // entered by the local path; revealing it from next door is not a visit.
+    const auto feet=playerCell(position);
     bool unitsChanged=false;
     for(const auto &room:town.navigationRooms()) {
-        if(!room.loaded || room.level!=m.level || !view.world.rooms.contains(
+        if(!room.loaded || room.level!=m.level || feet.first<room.x || feet.second<room.y ||
+            feet.first>=room.x+room.width || feet.second>=room.y+room.height || !view.world.rooms.contains(
             {uint8_t(room.level),uint16_t(room.x/5),uint16_t(room.y/5)})) continue;
-        // Unit observation is remembered for this game. An unchanged, already
-        // subscribed extent cannot add new cells on every frontend frame.
         if(!observation.unitRooms.emplace(room.level,room.x,room.y,room.width,room.height).second) continue;
         for(int y=room.y/5;y<(room.y+room.height)/5;++y)
             for(int x=room.x/5;x<(room.x+room.width)/5;++x)
@@ -191,7 +203,6 @@ DebugExplorationMemory::Area *DebugExplorationMemory::observe(const RemoteTown &
             m.previous=cell;m.discontinuity=discontinuity;
         } else m.previous.reset();
     }
-    (void)position;
     const auto elapsed=std::chrono::duration<double,std::milli>(Clock::now()-started).count();
     ++metrics.observations;metrics.observationMs+=elapsed;metrics.maxObservationMs=std::max(metrics.maxObservationMs,elapsed);
     return &m;
@@ -234,8 +245,7 @@ void DebugExplorationMemory::rebuildPassages(Area &m,Observation &observation,co
                 // width. Requiring three approach centres loses narrow doors.
                 // On known ground cross the observation boundary, rather than
                 // stopping on its already observed side.
-                const int step=units?1:-1;
-                p.approaches.emplace_back(cell.first+step*normal.first,cell.second+step*normal.second);
+                p.approaches.push_back(p.approachFor(cell));
             }
             if(p.approaches.empty()) continue;
             p.evidence=hash(1469598103934665603ull,units);
@@ -281,6 +291,42 @@ void DebugExplorationMemory::defer(Area &m,uint64_t id) {
     if(auto *p=m.passage(id)) {p->deferred=p->evidence;++m.revision;}
     if(m.commitment==id) m.commitment.reset();
 }
+std::vector<DebugExplorationMemory::Cell> DebugExplorationMemory::teleportReturnAnchors(const Area &m,Cell from,int range) {
+    std::vector<Cell> candidates,anchors;
+    if(!m.stand(from.first,from.second)) return anchors;
+    for(const auto &[at,links]:m.walked) {
+        // Every node is a confirmed host position, including teleport arrivals.
+        // Walking edges certify traversals, not whether a cast may return here.
+        (void)links;
+        if(gap(from,at)>range || !m.stand(at.first,at.second)) continue;
+        const auto level=m.terrainLevels.find({at.first/5,at.second/5});
+        if(level!=m.terrainLevels.end() && level->second==m.level) candidates.push_back(at);
+    }
+    if(candidates.empty()) return anchors;
+    const auto local=[&](Cell at){return Vec{float(at.first-m.x)+.5f,float(at.second-m.y)+.5f};};
+    const auto index=[&](Cell at){return size_t(at.second-m.y)*m.width+at.first-m.x;};
+    const auto masks=m.flatMasks();
+    Grid known;known.width=m.width;known.height=m.height;
+    known.collisionSample=[&](int x,int y,EntityId)->uint16_t {
+        return x<0 || y<0 || x>=m.width || y>=m.height?0xffff:masks[size_t(y)*m.width+x];
+    };
+    const auto current=known.reachableFrom(local(from),playerMovement);
+    const auto currentSize=std::count(current.begin(),current.end(),1);
+    std::erase_if(candidates,[&](Cell at){return current[index(at)];});
+    // A return must increase the actual walking area. This prevents a failed
+    // probe from bouncing between isolated landings on unchanged collision.
+    while(!candidates.empty()) {
+        const auto component=known.reachableFrom(local(candidates.back()),playerMovement);
+        const bool larger=std::count(component.begin(),component.end(),1)>currentSize;
+        std::erase_if(candidates,[&](Cell at) {
+            if(!component[index(at)]) return false;
+            if(larger) anchors.push_back(at);
+            return true;
+        });
+    }
+    std::sort(anchors.begin(),anchors.end(),[&](Cell a,Cell b){return gap(from,a)<gap(from,b);});
+    return anchors;
+}
 bool DebugExplorationMemory::Execution::requiresDoor(Cell to) const {
     // Door operations are the difference between two live collision views,
     // not between remembered ground and an unpublished landing footprint.
@@ -292,11 +338,14 @@ bool DebugExplorationMemory::Execution::requiresDoor(Cell to) const {
         if(nativeCollisionSizeCell(playerMovement.size,dx,dy) &&
             landingCollision->mask(to.first+dx-landingCollision->originX,
                 to.second+dy-landingCollision->originY)==0xffff) return false;
-    return !landingAllowed(to);
+    return !landingClear(to);
 }
-bool DebugExplorationMemory::Execution::landingAllowed(Cell to) const {
+bool DebugExplorationMemory::Execution::landingClear(Cell to) const {
     return landingCollision && landingGrid && landingGrid->walkable(
         Vec{float(to.first-landingCollision->originX)+.5f,float(to.second-landingCollision->originY)+.5f},playerMovement);
+}
+bool DebugExplorationMemory::Execution::landingAllowed(Cell to) const {
+    return landingClear(to);
 }
 bool DebugExplorationMemory::Execution::castRayAllowed(Cell from,Cell to,bool restricted) const {
     if(!restricted) return true;
@@ -330,6 +379,8 @@ bool DebugExplorationMemory::routeValid(const Area &m,const Plan &plan,int range
         return false;
     };
     if(plan.points.empty()) return reject("empty-plan");
+    if(plan.transport && (range>0 || !plan.transport->enabled ||
+        std::find(m.transports.begin(),m.transports.end(),*plan.transport)==m.transports.end())) return reject("transport-changed");
     Grid grid;grid.width=m.width;grid.height=m.height;
     grid.collisionSample=[&](int x,int y,EntityId)->uint16_t {
         const int gx=x+m.x,gy=y+m.y;const auto known=m.mask(gx,gy);
@@ -344,6 +395,9 @@ bool DebugExplorationMemory::routeValid(const Area &m,const Plan &plan,int range
         if(range>0 && execution && !plan.doorFallback && execution->requiresDoor({p.x,p.y}))
             return reject("door-bypass-recheck",i);
         const auto q=plan.points[i-1];const Vec from{float(q.x-m.x)+.5f,float(q.y-m.y)+.5f};
+        if(range<=0 && plan.transport && std::any_of(m.transports.begin(),m.transports.end(),[&](const auto &edge) {
+            return edge.enabled && edge.from==Cell{q.x,q.y} && edge.to==Cell{p.x,p.y};
+        })) continue;
         if(grid.nativeMovementSegment(from,to,playerMovement)) continue;
         if(range<=0) return reject("walking-edge",i);
         if((to-from).length()>range) return reject("cast-range",i);
@@ -478,7 +532,9 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
         const auto at=cell(i);goalLeft=std::min(goalLeft,at.first);goalRight=std::max(goalRight,at.first);
         goalTop=std::min(goalTop,at.second);goalBottom=std::max(goalBottom,at.second);
     }
+    const bool hasTransports=range<=0 && std::any_of(m.transports.begin(),m.transports.end(),[](const auto &edge){return edge.enabled;});
     const auto heuristic=[&](Cell at) {
+        if(hasTransports) return 0.f; // Transport links invalidate a Euclidean lower bound.
         if(!goal || goalCells.empty()) return 0.f;
         const float dx=float(std::max({goalLeft-at.first,0,at.first-goalRight}));
         const float dy=float(std::max({goalTop-at.second,0,at.second-goalBottom}));
@@ -530,6 +586,10 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
     const size_t count=masks.size();
     std::vector<float> costs(count,std::numeric_limits<float>::max());
     std::vector<int> parent(count,-1);
+    std::map<int,const Transport *> operation;
+    std::map<int,std::vector<const Transport *>> transports;
+    if(range<=0) for(const auto &edge:m.transports) if(edge.enabled &&
+        stand(edge.from.first,edge.from.second) && stand(edge.to.first,edge.to.second)) transports[index(edge.from)].push_back(&edge);
     // Sparse landing graph, including narrow passages and the real start.
     // Sampling controls graph density only; all objectives come from openings.
     std::map<Cell,std::vector<int>> landingBuckets;
@@ -587,9 +647,10 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
                 chosen=i;best=score;selected=target->second;bestRank=rank;
             }
         }
-        const auto relax=[&](int next,float edge) {
+        const auto relax=[&](int next,float edge,const Transport *transport=nullptr) {
             if(cost+edge>=costs[size_t(next)]) return;
             costs[size_t(next)]=cost+edge;parent[size_t(next)]=i;
+            if(transport) operation[next]=transport;else if(!operation.empty()) operation.erase(next);
             pending.emplace(cost+edge+heuristic(cell(next)),cost+edge,next);
         };
         for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx) {
@@ -602,6 +663,8 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
             // not disconnect two cells joined by known legal collision.
             relax(index(next),(dx && dy?1.414214f:1.f)*(walked?1.f:1.25f));
         }
+        if(const auto found=transports.find(i);found!=transports.end())
+            for(const auto *edge:found->second) relax(index(edge->to),8.f,edge);
         if(range>0 && landings.contains(i)) for(int by=-1;by<=1;++by) for(int bx=-1;bx<=1;++bx) {
             const auto bucket=landingBuckets.find({at.first/range+bx,at.second/range+by});
             if(bucket==landingBuckets.end()) continue;
@@ -617,15 +680,36 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
         }
     }
     timing.next(profile?&profile->finishMs:nullptr);
-    if(chosen<0) return unavailable(Plan::Outcome::Unreachable);
+    if(chosen<0 && execution) {
+        timing.next(nullptr);if(profile) ++profile->structuralCalls;
+        const auto structural=plan(m,from,range,restricted,goal,vicinity,committed,exploreGoal,approaches,nullptr,true,preferredDirection,profile);
+        timing.next(profile?&profile->finishMs:nullptr);
+        if(structural.points.empty()) return result;
+        if(range<=0) {result.outcome=Plan::Outcome::ExecutionBlocked;return result;}
+        // The semantic destination can lie beyond resident casting pages.
+        // Advance along its known route using this search's executable tree;
+        // never authorize the structural route's unvalidated cast edges.
+        for(auto it=structural.points.rbegin();it!=structural.points.rend();++it) {
+            const int i=index({it->x,it->y});
+            if(i!=root && costs[size_t(i)]<std::numeric_limits<float>::max()) {chosen=i;break;}
+        }
+        if(chosen<0) {result.outcome=Plan::Outcome::ExecutionBlocked;return result;}
+        result.outcome=Plan::Outcome::Partial;
+        result.objective=structural.points.back();
+        if(!goal && structural.passage) selected=m.passage(structural.passage);
+    }
+    if(chosen<0) return result;
     // A reachable observation passage is an executable result. A route in
     // terrain memory may depend on unloaded cast landings/room adjacency;
     // it cannot veto the passage that lets execution observe them again.
     // Structural classification belongs only to the no-route case above.
-    result.outcome=selected?Plan::Outcome::Passage:Plan::Outcome::Goal;
+    if(result.outcome!=Plan::Outcome::Partial) result.outcome=selected?Plan::Outcome::Passage:Plan::Outcome::Goal;
     result.cost=costs[size_t(chosen)];
     if(selected) {result.passage=selected->id;result.evidence=selected->evidence;}
-    for(int i=chosen;i>=0;i=parent[size_t(i)]) {const auto at=cell(i);result.points.push_back({uint16_t(at.first),uint16_t(at.second)});}
+    for(int i=chosen;i>=0;i=parent[size_t(i)]) {
+        const auto at=cell(i);result.points.push_back({uint16_t(at.first),uint16_t(at.second)});
+        if(const auto edge=operation.find(i);edge!=operation.end()) result.transport=*edge->second;
+    }
     std::reverse(result.points.begin(),result.points.end());
     if(range>0 && execution && execution->collision && execution->landingCollision) {
         const auto needsDoor=[&](OnlinePoint at) {

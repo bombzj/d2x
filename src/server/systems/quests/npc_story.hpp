@@ -27,7 +27,7 @@ struct NpcStoryState {
     EntityId blockerId,ormusAltar;
     bool ormusDelivery{},ormusActivate{},ormusActivated{},alkorDelivery{},alkorAnimate{};
     EntityId tomeCourier,tomeNpc;
-    bool cainDeparted{},cainTownActivated{},anyaDeparted{};
+    bool cainDeparted{},anyaDeparted{};
     std::optional<Vec> cainBirth;
     EntityId cainCage;
     EntityId cainRescuer,cainBirthActor;
@@ -35,7 +35,7 @@ struct NpcStoryState {
     bool cainOutsideSpawned{},cainBirthFailed{};
     struct Escape {Vec start,portal;int phase{},attempts{};uint64_t admissionRevision{};};
     std::map<EntityId,Escape> escapes;
-    struct Portal {EntityId object;RegionId area;Vec position;bool anya{},town{};uint64_t due{};unsigned updates{};};
+    struct Portal {EntityId object;RegionId area;bool anya{},town{};uint64_t due{};unsigned updates{};};
     std::vector<Portal> bluePortals;
     struct Return {EntityId marker,actor;int phase{};bool portal{};uint64_t invocation{};};
     std::array<Return,2> returns;

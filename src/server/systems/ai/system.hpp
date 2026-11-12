@@ -144,7 +144,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     StepStatus step(TickContext, FrameFacts &);
-    StepStatus think(EntityId,TickContext);
+    StepStatus think(EntityId,TickContext,bool walkEnded=false);
     void commandMinions(EntityId,UnitTarget,uint64_t until);
     DomainResult<> replacePetCommand(EntityId,uint8_t,UnitTarget,std::optional<Vec>,uint64_t tick);
 };

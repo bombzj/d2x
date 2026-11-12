@@ -15,7 +15,6 @@
 namespace d2x {
 struct DebugWalkTiming {
   int walkDecisionMs=160,walkReactionMs=40,walkRequestIntervalMs=200,walkRetryMs=1000;
-  int townTurnBaseMs=200,townTurnMinMs=600,townTurnMaxMs=2000;
 };
 struct Grid;
 class OnlineObservation;
@@ -38,6 +37,7 @@ class DebugAutoWalk {
     std::optional<uint16_t> level_;
     std::optional<uint16_t> destination_;
     std::optional<OnlinePoint> point_,segment_,previous_,client_,server_,edgeStart_,edgeEnd_,crossing_;
+    std::optional<OnlinePoint> searchHint_;
     std::optional<OnlinePoint> lastFrom_,lastRequest_,lastTarget_;
     std::optional<Vec> lastPointerFeet_;
     struct PointerLane {
@@ -60,7 +60,6 @@ class DebugAutoWalk {
     bool resyncApproach_{},changeStance_{},closeApproach_{},forceApproach_{},waitQuestAlert_{},waypointOpening_{},waypointMenu_{};
     unsigned approachRetries_{};
     Clock::time_point clickedAt_{},alertWaitSince_{};
-    Clock::time_point townTurnSince_{};
     uint64_t legDiscontinuity_{};
     uint64_t interactionRevision_{},interactionDiscontinuity_{};
     std::optional<OnlinePoint> interactionFrom_;
@@ -88,7 +87,7 @@ class DebugAutoWalk {
     DebugWalkTiming timing_;
     unsigned moves_{},interactions_{},searches_{},decisions_{};
     uint64_t failures_{};
-    bool run_=true,interact_{},landmark_{},clientMoving_{},exploration_{},localCrossing_{},exactPoint_{};
+    bool run_=true,interact_{},landmark_{},clientMoving_{},exploration_{},localCrossing_{},exactPoint_{},nativeSegment_{};
     DebugNavigationSearch search_;
     void finish(DebugWalkState,std::string,IOnlineControl &,DebugWalkFailure=DebugWalkFailure::Other);
     nlohmann::json status() const;

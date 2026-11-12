@@ -48,10 +48,10 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
     if(fact.credited[questIndex(QuestId::DenOfEvil)]) flags[41*2+1]|=resetGoal;
     else if(flags[41*2]&2) flags[41*2+1]|=0x80;
     std::vector<Bytes> result;
-    if(npc || fact.publication!=server::QuestPublication::Query)
+    if(npc || fact.publication==server::QuestPublication::Transition)
         result.push_back(encodeServerPacket(ServerMessage::GameQuests,[&](auto &out){for(const auto word:fact.gameFlags) out.u16(word);}));
     result.push_back(encodeServerPacket(ServerMessage::PlayerQuests,[&](auto &out){out.u8(npc?1:6);out.u32(npc?uint32_t(npc->value):0);out.u8(0);out.append(flags);}));
-    if(npc) return result; // 27 -> 29 -> NPC-context 28 activates the original client.
+    if(npc || fact.publication==server::QuestPublication::Private) return result;
     std::array<uint8_t,41> statuses{};
     const auto &book=record.quests.at(size_t(fact.difficulty));
     // A1Q1..6 StatusCycler: native quest numbers follow record slots,

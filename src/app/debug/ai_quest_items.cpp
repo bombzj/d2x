@@ -5,6 +5,7 @@
 namespace d2x {
 bool DebugAi::Impl::recoverQuestInventory(Context &c,const QuestStep *step) {
     const auto &view=c.observation.read();const auto &world=view.world;
+    if(questState.questRun.inventoryWork.active() && !serviceInventoryWork(c)) return false;
     if(questState.questRun.pending) {
         const auto action=questState.questRun.pending->action;
         const bool recovery=action==QuestPending::Action::RecoverOpen || action==QuestPending::Action::RecoverTake ||
@@ -140,73 +141,29 @@ bool DebugAi::Impl::questUseItem(Context &c,const QuestStep &step) {
     OnlineItemCommand use;use.action=OnlineItemAction::Use;use.item=item->id;use.itemRevision=item->revision;
     questItemRequest(c,use,QuestPending::Action::Use,"quest-item-use-submitted");return false;
 }
+bool DebugAi::Impl::serviceInventoryWork(Context &c) {
+    auto &work=questState.questRun.inventoryWork;
+    const auto command=work.next(c.observation.read(),c.inventory.read());
+    if(work.done()) return true;
+    if(!command) {wait("inventory-workflow-result",work.reason());return false;}
+    if(!settleItemInput(c)) return false;
+    const auto &before=c.observation.read().world.itemRequest;
+    const uint64_t previousSequence=before?before->sequence:0;
+    if(!submitItem(c,*command,"inventory-workflow")) return false;
+    const auto &receipt=c.observation.read().world.itemRequest;
+    work.submitted(receipt,previousSequence);cancelWalk(c);
+    note("inventory-workflow-submitted",Json{{"action",unsigned(command->action)},{"item",command->item},
+        {"target",command->target},{"cell",{command->x,command->y}},{"sequence",receipt->sequence}}.dump());
+    return false;
+}
 bool DebugAi::Impl::questCombine(Context &c,const QuestStep &step) {
-    const auto &view=c.observation.read();const auto &world=view.world;
-    const auto output=accessibleItem(c,step.item);
-    const auto cube=accessibleItem(c,step.produced);
-    const std::vector<std::string> ingredients=step.ingredients.empty()?std::vector<std::string>{"msf","vip"}:step.ingredients;
-    if(!questState.questRun.pending && owned(c,step.item) && !output)
-        throw std::runtime_error("Assembled quest item exists outside accessible backpack/cube/Cursor; no duplicate ingredients are acquired");
-    if(questState.questRun.pending) {
-        const auto &p=*questState.questRun.pending;
-        const auto wire=world.items.find(p.item);
-        bool observed=false;
-        switch(p.action) {
-        case QuestPending::Action::OpenCube:observed=cube && world.storage.kind==OnlineStorageKind::Cube && world.storage.source==cube->id;break;
-        case QuestPending::Action::CloseCube:observed=world.storage.kind==OnlineStorageKind::None && world.storage.requested==OnlineStorageKind::None;break;
-        case QuestPending::Action::Take:observed=wire!=world.items.end() && wire->second.mode==4;break;
-        case QuestPending::Action::StoreCube:observed=wire!=world.items.end() && wire->second.mode==0 && wire->second.page==4;break;
-        case QuestPending::Action::Place:observed=wire!=world.items.end() && wire->second.mode==0 && wire->second.page==1;break;
-        case QuestPending::Action::Transmute:observed=output && std::none_of(ingredients.begin(),ingredients.end(),[&](const auto &code){return owned(c,code);});break;
-        default:break;
-        }
-        if(!observed) {wait("quest-cube-result","Waiting for the actual cube/item operation; no replay");checkQuestPending(c);return false;}
-        questState.questRun.pending.reset();
-    }
-    if(output && output->mode==0 && output->page==1) {
-        if(world.storage.kind!=OnlineStorageKind::None || world.storage.requested!=OnlineStorageKind::None) {
-            OnlineItemCommand close;close.action=OnlineItemAction::StorageClose;
-            questItemRequest(c,close,QuestPending::Action::CloseCube,"quest-cube-close-submitted");return false;
-        }
-        note("quest-cube-output-observed",step.item);return true;
-    }
-    if(world.npcRequested) {c.control.closeNpc();return false;}
-    if(output && output->mode==4) return questStoreCursor(c,output->id);
-    if(!cube || cube->mode!=0 || cube->page!=1) throw std::runtime_error("Quest transmutation needs the actual backpack cube");
-    if(world.storage.kind!=OnlineStorageKind::Cube) {
-        OnlineItemCommand open;open.action=OnlineItemAction::CubeOpen;open.item=cube->id;open.itemRevision=cube->revision;
-        questItemRequest(c,open,QuestPending::Action::OpenCube,"quest-cube-open-submitted");return false;
-    }
-    if(world.storage.source!=cube->id) throw std::runtime_error("Quest cube context belongs to a different item");
-    if(output) {
-        if(output->mode!=0 || output->page!=4) throw std::runtime_error("Quest cube output is outside accessible storage");
-        OnlineItemCommand take;take.action=OnlineItemAction::Take;take.item=output->id;take.itemRevision=output->revision;
-        questItemRequest(c,take,QuestPending::Action::Take,"quest-cube-output-take-submitted");return false;
-    }
-    // Refuse unrelated contents instead of risking another recipe or consuming
-    // the player's possessions. Recipe validity and output remain MPQ/host-owned.
-    for(const auto &[id,item]:world.items) {
-        (void)id;
-        if(onlineItemOwnedBy(item,view.load.playerUnitId) && item.mode==0 && item.page==4 &&
-            std::find(ingredients.begin(),ingredients.end(),item.code)==ingredients.end())
-            throw std::runtime_error("Quest cube contains unrelated items; clear it before running this recipe");
-    }
-    for(const auto &code:ingredients) {
-        const auto item=accessibleItem(c,code);
-        if(!item) throw std::runtime_error("Quest transmutation lacks the actual ingredient: "+std::string(code));
-        if(item->mode==0 && item->page==4) continue;
-        OnlineItemCommand move;move.item=item->id;move.itemRevision=item->revision;
-        if(item->mode==4) {
-            move.action=OnlineItemAction::CubeStore;move.target=cube->id;move.targetRevision=cube->revision;
-            questItemRequest(c,move,QuestPending::Action::StoreCube,"quest-cube-ingredient-store-submitted");
-        } else if(item->mode==0 && item->page==1) {
-            move.action=OnlineItemAction::Take;
-            questItemRequest(c,move,QuestPending::Action::Take,"quest-cube-ingredient-take-submitted");
-        } else throw std::runtime_error("Quest ingredient must be in backpack, cube or Cursor");
-        return false;
-    }
-    OnlineItemCommand transmute;transmute.action=OnlineItemAction::Transmute;
-    questItemRequest(c,transmute,QuestPending::Action::Transmute,"quest-cube-transmute-submitted");return false;
+    if(!c.town.read().town) throw std::runtime_error("Quest transmutation requires a town destination");
+    if(c.observation.read().world.npcRequested) {c.control.closeNpc();return false;}
+    auto &work=questState.questRun.inventoryWork;
+    if(!work.started() || work.kind()!=InventoryWorkflow::Kind::Combine)
+        work.combine(step.produced,step.item,step.ingredients,c.observation.read(),{{"tsc","isc"}});
+    if(!serviceInventoryWork(c)) return false;
+    note("quest-cube-output-observed",step.item);return true;
 }
 bool DebugAi::Impl::questSubmitStaff(Context &c,const QuestStep &step) {
     const auto &world=c.observation.read().world;

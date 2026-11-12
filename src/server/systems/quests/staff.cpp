@@ -5,6 +5,7 @@
 #include "server/area_store.hpp"
 #include "server/systems/inventory/planning.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/world/system.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
@@ -29,6 +30,8 @@ DomainResult<> System::submitStaff(const ActorContext &actor,EntityId source,Ent
     const auto &codes=p->rules.character->actTwo;
     if(!at || at->container!=p->persistent.containers.cursor || found->second.definition!=codes.staff || found->second.nativeQuestDifficulty<unsigned(ports_.settings.difficulty)) return reply(4);
     if(state_.actTwo.tombAt || state_.actTwo.tombOpen || !area->definition.staffTomb || int(actor.area)!=*area->definition.staffTomb || area->definition.openedTombWall.empty() || !area->definition.tombOpeningTicks) return {DomainStatus::Conflict,{}};
+    const auto entrance=std::find_if(area->definition.objects.begin(),area->definition.objects.end(),[](const auto &o){return o.questSpawn;});
+    if(entrance==area->definition.objects.end()) return {DomainStatus::Unavailable,{}};
     auto record=p->persistent.player;auto &quest=record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::HoradricStaff));
     if(quest.stage>=uint32_t(StaffStage::Submitted)) return {DomainStatus::Conflict,{}};
     auto rules=std::make_shared<EquipmentRules>(*p->rules.equipment);
@@ -47,7 +50,17 @@ DomainResult<> System::submitStaff(const ActorContext &actor,EntityId source,Ent
     edit.facts.emplace_back(fact(actor.player,record,actor.area));edit.facts.emplace_back(NpcServiceFact{source,5,1});
     auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value));
-    if(result) {state_.actTwo.tombEffectPending=true;state_.actTwo.orifices.clear();state_.actTwo.tomb=actor.area;state_.actTwo.tombAt=(actor.tick/20)*20+area->definition.tombOpeningTicks;}
+    if(result) {
+        auto &tomb=state_.actTwo;
+        tomb.tombEffectPending=true;
+        tomb.orifices.clear();
+        tomb.tomb=actor.area;
+        tomb.tombAt=(actor.tick/20)*20+area->definition.tombOpeningTicks;
+        tomb.tombOpeningRooms=ActTwoState::TombOpeningRooms{source,object->position,entrance->position};
+        // A2Q6 keeps both rooms active until the timed entrance is born.
+        ports_.world.retainControllerUnitRoom(source,actor.area,object->position,true);
+        ports_.world.retainControllerUnitRoom(source,actor.area,entrance->position,true);
+    }
     return result;
 }
 }

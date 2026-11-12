@@ -379,6 +379,14 @@ void AreaStore::removeRoomUnit(EntityId id) noexcept {
     writeFootprint(found->second.body,false);writeFootprint(found->second.reservation,false);
     unlinkRoomUnit(id,found->second);roomUnits_.erase(found);
 }
+std::optional<RoomView> AreaStore::roomOfUnit(EntityId id) const {
+    const auto unit=roomUnits_.find(id);
+    if(unit==roomUnits_.end() || !unit->second.room) return {};
+    const auto [region,index]=*unit->second.room;
+    const auto &area=at(region).definition;
+    const auto &room=area.activation.rooms().at(index);
+    return RoomView{region,(int(area.origin.x)+room.x)/5,(int(area.origin.y)+room.y)/5};
+}
 std::vector<EntityId> AreaStore::roomUnitOrder(RoomView view) const {
     const auto *area=find(view.area);if(!area) return {};
     const auto &rooms=area->definition.activation.rooms();

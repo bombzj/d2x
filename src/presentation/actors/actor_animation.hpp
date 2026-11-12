@@ -41,7 +41,7 @@ struct ActorAnimation {
     std::vector<float> releaseTimes, soundTimes;
     int start = 0, frameCount = 0, holdFrame = -1;
     std::optional<int> durationFrames;
-    bool cycle = false, shadow = false;
+    bool cycle = false, shadow = false, reverse = false;
     Vec offset;
     int order = 0;
     bool ready() const;

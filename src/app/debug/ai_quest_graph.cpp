@@ -204,7 +204,8 @@ bool DebugAi::Impl::selectQuestRequirement(Context &c,const Goal &goal) {
         return false;
     }
     if(ready.empty()) throw std::runtime_error("Unsatisfied quest conditions have no ready native action");
-    if(questState.questRun.selected && questState.questRun.worldWait && !satisfied[questState.questRun.step]) {
+    if(questState.questRun.selected && !satisfied[questState.questRun.step] &&
+        (questState.questRun.worldWait || (navigation.activeTargetSearch && std::find(ready.begin(),ready.end(),questState.questRun.step)!=ready.end()))) {
         questState.questPlanDiagnostics["decision"]="retain-observed-event-scene";
         questState.questPlanDiagnostics["selected"]={{"index",questState.questRun.step},{"name",goal.requirements[questState.questRun.step].name}};
         return true;

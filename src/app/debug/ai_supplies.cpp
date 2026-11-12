@@ -563,46 +563,47 @@ bool DebugAi::Impl::autoSupply(Context &c,const Goal &goal) {
     questState.questRun.worldWait.reset();
     stop(c.walk,c.control,c.combat);resetStep();battle.combatTarget.reset();battle.retreatPoint.reset();
     supply.supplyStage=c.town.read().town?SupplyStage::Shop:SupplyStage::ToTown;
-    supply.shopIssued=false;supply.shelfObserved=false;supply.supplyNpc.reset();supply.supplyPortalUsed=false;
+    supply.shopIssued=false;supply.shelfObserved=false;supply.supplyNpc.reset();
     note("supply-detour-started",std::string(bossPressure?"boss-pressure":"travel-reserves")+
         " heal="+std::to_string(needsHealing)+" hp="+std::to_string(needsHealth)+
         " mp="+std::to_string(needsMana)+" tp="+std::to_string(needsPortal)+" ammo="+std::to_string(needsQuivers));return true;
 }
-bool DebugAi::Impl::supplyDetour(Context &c,const Goal &) {
+bool DebugAi::Impl::supplyDetour(Context &c,const Goal &goal) {
     const auto now=Clock::now();
     if(now>=supply.supplyDeadline) throw std::runtime_error("Automatic potion supply detour exceeded 600 seconds");
     Goal movement;movement.kind=Kind::Travel;
-    const bool transfer=portalIssued || supply.supplyPortalUsed || navigation.travelPhase==TravelPhase::WaypointWait ||
+    const bool transfer=portalIssued || navigation.travelPhase==TravelPhase::WaypointWait ||
         (navigation.travelPhase==TravelPhase::CrossWait && navigation.legUnit);
     if(!transfer && supply.supplyStage!=SupplyStage::ToTown && supplyCombat(c,movement)) return true;
     if(supply.supplyStage==SupplyStage::ToTown) {
         if(reachTown(c)) {resetStep();supply.supplyStage=SupplyStage::Shop;supply.shopIssued=false;supply.shelfObserved=false;supply.supplyNpc.reset();}
     } else if(supply.supplyStage==SupplyStage::Shop) {
-        if(restock(c)) {resetStep();supply.supplyStage=SupplyStage::Return;}
+        if(restock(c)) {
+            resetStep();
+            // The parent quest is selected again from actual facts in town.
+            // Its next action may be a reward, assembly or a different area;
+            // returning to the interrupted leaf first would create a loop.
+            const bool quest=cursor<goals.size() && goals[cursor].kind==Kind::Quest;
+            if(quest) {
+                supply.supplyStage=SupplyStage::None;goalDeadline+=now-supply.supplyStarted;
+                supply.supplyOrigin.reset();
+                note("supply-detour-completed","Re-evaluating the parent quest from the observed town scene");
+                return true;
+            }
+            if(goal.kind==Kind::ReturnTown) supply.supplyOrigin=c.observation.read().load.townArea;
+            else if(goal.area) supply.supplyOrigin=goal.area;
+            supply.supplyStage=SupplyStage::Return;
+        }
     } else if(supply.supplyStage==SupplyStage::Return) {
         if(c.town.read().area==supply.supplyOrigin) {
-            resetStep();supply.supplyStage=SupplyStage::None;goalDeadline+=now-supply.supplyStarted;supply.supplyOrigin.reset();supply.supplyPortalUsed=false;
+            resetStep();supply.supplyStage=SupplyStage::None;goalDeadline+=now-supply.supplyStarted;supply.supplyOrigin.reset();
             note("supply-detour-completed","Original high-level goal retained");return true;
         }
-        if(supply.supplyPortalUsed) {
-            if(now>=supply.supplyPortalDeadline) throw std::runtime_error("Return portal was used but the original supply area was not observed");
-            wait("supply-return-wait","Waiting for the original area's native scene");return true;
-        }
-        const auto &view=c.observation.read();
-        if(waypointBeforeDeparture(c)) return true;
-        if(c.town.read().town) for(const auto &entry:c.town.read().mapTargets) {
-            const auto u=view.world.units.find(entry.unit);
-            if(entry.interaction!=OnlineMapInteraction::Portal || entry.destination!=supply.supplyOrigin || u==view.world.units.end() || u->second.portalOwner!=view.load.playerUnitId) continue;
-            wait("supply-return","Returning through the actually assigned own portal");
-            if(walk(c,{.goal=DebugWalkGoal::Unit,.unit=OnlineUnitKey{entry.unit.type,entry.unit.id},.interact=true,.purpose="supply-return"})) {
-                rememberTravel(c,entry.unit);
-                supply.supplyPortalUsed=true;supply.supplyPortalDeadline=navigation.passageWaits.at(Passage::Transfer).deadline;cancelWalk(c);
-            }
-            return true;
-        }
+        // Use the same destination-based planner as ordinary travel. Its
+        // transfer receipt owns the wait, including an assigned own portal.
         if(supply.supplyOrigin) travel(c,*supply.supplyOrigin);
     }
-    if(!portalUsed && !supply.supplyPortalUsed && canInput(c,DebugActionOwner::Mobility,DebugMotion|DebugSkill)) mobility(c);
+    if(!portalUsed && canInput(c,DebugActionOwner::Mobility,DebugMotion|DebugSkill)) mobility(c);
     return true;
 }
 bool DebugAi::Impl::supplyCombat(Context &c,const Goal &goal) {

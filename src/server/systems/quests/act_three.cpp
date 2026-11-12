@@ -129,12 +129,21 @@ StepStatus System::actThreeStep(TickContext tick) {
     for(const auto &[id,m]:ports_.monsters.read().actors) {
         (void)id;if(m.alive() || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
         if(int(m.area)==102 && m.identity.monster=="mephisto") {
-            world.mephistoSlain=true;
             if(!(state_.initialFlags[questDefinition(QuestId::Guardian).nativeSlot]&0x8000) && !state_.objectives[questIndex(QuestId::Guardian)]) {
                 captureGoal(QuestId::Guardian,4,m.area,{},killerPlayer(m.killer));
                 world.pendingNarrative=QuestId::Guardian;
                 if(finishNarratedGoal(QuestId::Guardian,66,tick)==StepStatus::Blocked) return StepStatus::Blocked;
                 world.pendingNarrative.reset();
+            }
+            if(!world.mephistoSlain) {
+                // A3Q6 opens the live gate through ENDANIM. Init44 uses
+                // OPENED directly for a gate created after this callback.
+                for(const auto &[gateId,gate]:ports_.objects.read().objects) {
+                    if(gate.area!=m.area || gate.rule.initialization!=44 || gate.mode!=0) continue;
+                    const auto opened=ports_.objects.setNativeMode(gateId,1,tick.tick,true);
+                    if(!opened) return StepStatus::Blocked;
+                }
+                world.mephistoSlain=true;
             }
         }
         if(int(m.area)==83 && m.identity.rank==MonsterRank::SuperUnique && std::find(council.begin(),council.end(),m.identity.superUnique)!=council.end()) {
@@ -265,7 +274,6 @@ std::optional<int> System::objectMode(RegionId region,EntityId id,int definition
         }
         if(operation==44) return state_.actThree.sewerAt && tick>=state_.actThree.sewerAt?2:0;
         if(operation==45 && state_.actThree.sewerAt) return tick>=state_.actThree.sewerAt?2:1;
-        if(definition==341 || definition==342 || operation==46) return state_.actThree.mephistoSlain?2:0;
     }
     if(area->definition.act==4) {
         if(operation==67) return state_.npcStory.anyaIceOpened || state_.npcStory.anyaDeparted?2:0;

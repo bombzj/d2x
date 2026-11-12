@@ -88,7 +88,7 @@ DomainResult<> System::baalFx(RegionId region,Vec position) {
     if(active && !state.tyraelSpawned) {
         // 1.13c ACT5Q6_SpawnTyrael RVA 5c1f0 passes radius 100, not 1.10f's 19.
         if(const auto free=ports_.world.questFreePosition(region,position,position-Vec{5,5},5,100)) {
-            const auto result=ports_.world.admitQuestNpc(free->area,"tyrael3",free->position,4);
+            const auto result=ports_.world.spawnQuestNpc(free->area,"tyrael3",free->position,4);
             if(isDeferred(result.status)) return {result.status,{}};
             state.tyraelSpawned=bool(result);
         }

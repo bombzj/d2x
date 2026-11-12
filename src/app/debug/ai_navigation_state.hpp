@@ -21,6 +21,7 @@ struct NavigationState {
     struct ExplorationReturn {
         uint16_t area{};bool returning{};Clock::time_point deadline;
         std::optional<uint16_t> waypoint;
+        std::set<int> visited;
     };
     std::optional<ExplorationReturn> explorationReturn;
     struct FrontierAttempt {
@@ -46,8 +47,14 @@ struct NavigationState {
         uint64_t passage{},evidence{};size_t bestRemaining{~size_t{}};unsigned stalls{};
         Clock::time_point blockedSince{};std::optional<Clock::time_point> observationSince;
         ExplorationFocus focus=ExplorationFocus::Coverage;
+        bool transit{};
     };
     std::optional<FrontierRoute> frontierRoute;
+    struct LandingRecovery {
+        uint64_t revision{};DebugExplorationMemory::Cell from;
+        int range{};std::vector<DebugExplorationMemory::Cell> anchors;
+    };
+    std::optional<LandingRecovery> landingRecovery;
     std::set<std::tuple<uint16_t,uint8_t,uint16_t,uint16_t,uint16_t>> checkedHints;
     std::optional<std::array<uint16_t,48>> checkedHintQuestFlags;
     uint64_t mapCacheBuilds{},pathSearches{};
@@ -55,6 +62,7 @@ struct NavigationState {
     std::vector<int> travelRoute;
     std::set<int> travelVisitedAreas;
     std::optional<uint16_t> unavailableWaypointArea;
+    // Same-game route costs survive quest/destination changes; not a ban.
     std::map<std::pair<int,int>,unsigned> failedWalkEdges;
     std::optional<OnlinePoint> approachHint,approachFrontier;
     struct ApproachObservation {
@@ -65,6 +73,8 @@ struct NavigationState {
         std::optional<Clock::time_point> observationSince;
         std::optional<OnlinePoint> relayRecovery;
         std::shared_ptr<const NavigationSnapshot> relayTerrain;
+        std::optional<OnlinePoint> failedRelayFrom;
+        unsigned failedRelays{};
     } approachObservation;
     std::map<std::pair<uint16_t,uint16_t>,Clock::time_point> suppressedHints;
     DebugWalkIntent walkIntent;
@@ -115,6 +125,7 @@ struct NavigationState {
     struct RememberedEnemy {
         OnlinePoint position;uint64_t assignment{};std::optional<uint16_t> identity;
         std::optional<uint16_t> superUnique{};bool elite{};
+        Clock::time_point lastSeen{};
     };
     struct AreaPopulation {
         std::optional<uint32_t> seed;
@@ -126,6 +137,45 @@ struct NavigationState {
     };
     std::map<uint16_t,AreaPopulation> populationMemory;
     uint64_t populationMemoryGame{},populationMemoryRevision{};
+    struct OpenedObject {
+        OnlinePoint position;Clock::time_point observedAt{};uint64_t event{};
+    };
+    std::map<std::pair<uint16_t,uint16_t>,OpenedObject> openedObjects;
+    std::map<uint16_t,std::optional<uint32_t>> searchSeeds;
+    uint64_t searchEventSequence{};
+    struct TargetSearch {
+        using Cell=DebugExplorationMemory::Cell;
+        uint16_t area{};std::optional<uint32_t> seed;
+        uint64_t event{};std::optional<Vec> center;
+        std::optional<float> radius;
+        // Authored alternatives relative to an observed anchor room. These
+        // bounds guide search; they never provide collision or assignments.
+        std::vector<std::array<int,4>> regions;
+        std::vector<std::string> regionResults;
+        std::optional<size_t> region;
+        Clock::time_point readyAt{},deadline{};
+        std::set<Cell> checked; // This search's settled unit coverage, in native tiles.
+        struct Room {uint64_t assignment{};Clock::time_point readyAt{};};
+        std::map<std::tuple<uint8_t,uint16_t,uint16_t>,Room> rooms;
+        std::map<uint64_t,uint64_t> probes; // Passage id -> evidence inspected by this search.
+        std::optional<OnlinePoint> destination;
+        std::optional<OnlinePoint> objective; // Retained across resident-range relays.
+        bool probe{},transit{},exhausted{},awaitingAppearance{},coverageComplete{};
+        struct ObservationWait {
+            std::string reason;
+            uint64_t terrain{},coverage{};Cell from;bool teleport{};
+            Clock::time_point revisitAt{};
+        };
+        std::optional<ObservationWait> observationWait;
+        uint64_t probePassage{},probeEvidence{};
+        std::optional<Clock::time_point> arrivalSince;
+        std::vector<OnlinePoint> route;
+        std::vector<Cell> candidates;
+        uint64_t candidateRevision{~uint64_t{}},coverageRevision{},candidateCoverage{~uint64_t{}};
+    };
+    std::map<std::string,TargetSearch> targetSearches;
+    std::optional<std::string> activeTargetSearch;
+    Json targetSearchDiagnostics;
     Clock::time_point waypointDeadline{};
     struct LocalPad {
         OnlineUnitKey unit;uint64_t assignment{};uint16_t area{},identity{};OnlinePoint source{},from{};
@@ -134,7 +184,10 @@ struct NavigationState {
     struct PadObservation {OnlinePoint destination;Clock::time_point used{};unsigned visits{};};
     std::optional<LocalPad> localPad;
     std::map<std::tuple<uint16_t,uint16_t,uint16_t,uint16_t>,PadObservation> padObservations;
+    std::map<OnlineUnitKey,uint64_t> failedPads; // This assignment exhausted normal client retries.
     std::optional<OnlinePoint> padArrival;
+    std::optional<OnlinePoint> padObservationSource;
+    std::optional<Clock::time_point> padObservationSince;
     Clock::time_point padArrivedAt{};
     size_t padProgressCells{},padProgressTargets{};unsigned padTransfersWithoutDiscovery{};
     enum class TravelPhase {Route,WaypointOpen,WaypointWait,WalkExit,WarpExit,CrossWait} travelPhase{};
@@ -142,6 +195,8 @@ struct NavigationState {
     unsigned npcOpenRetries{};
     bool npcOpeningRecovery{};
     std::map<std::tuple<uint16_t,OnlineUnitKey,uint64_t>,unsigned> navigationRetries;
+    struct ConnectionStall {Vec position;unsigned attempts{};};
+    std::map<std::tuple<uint16_t,OnlineUnitKey,uint64_t>,ConnectionStall> connectionStalls;
     struct TravelSubmission {
         OnlineUnitKey unit;uint64_t assignment{},game{},world{},request{},discontinuity{};uint16_t sourceArea{};
     };
@@ -162,6 +217,7 @@ struct NavigationState {
     struct RouteCombatTask {
         std::map<OnlineUnitKey,uint64_t> targets;
         bool preferAreaAttack{};
+        bool optionalDefense{}; // A waiting shot must not fail or replace the retained route.
     };
     struct RouteExecution {
         enum class Mode { TeleportTransit, WalkingPassage, CombatEntry } mode=Mode::TeleportTransit;

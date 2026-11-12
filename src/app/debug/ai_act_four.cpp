@@ -80,6 +80,11 @@ void DebugAi::Impl::configureActFourQuest(Goal &goal,QuestId id) const {
         if(*op==52) continue;
         const auto name=*op==54?"Infector of Souls":*op==55?"Lord De Seis":"Grand Vizier of Chaos";
         s=hunt(terror,sanctum,Json{{"superunique",name}});
+        // A4Q2 Operate54/55/56: relative birth-marker bearings. The radius
+        // and initial delay are AI search policy, not a fabricated spawn bound.
+        TargetSearchKnowledge search;search.anchor=Selector{2,uint16_t(*identity),"opened seal"};
+        search.openedObjects={uint16_t(*identity)};search.radius=128;search.waitMs=5000;search.timeoutSeconds=180;
+        search.offset=*op==54?Vec{-12,-52}:*op==55?Vec{-39,33}:Vec{32,16};s.search=search;
         bosses.push_back(node(std::string("seal-boss-dead-")+name,s,{{diabloDone},{fact(K::Corpse)},{diabloPresent}},{seal},true));
     }
     if(seals.size()!=5 || bosses.size()!=3) throw std::runtime_error("Current MPQ must provide five native seals and three seal bosses");
@@ -90,6 +95,7 @@ void DebugAi::Impl::configureActFourQuest(Goal &goal,QuestId id) const {
         s.witness=Selector{2,uint16_t(*definitions->objects.number(row,"Id")),"Diablo birth anchor"};
     }
     if(!s.witness) throw std::runtime_error("Missing original Diablo Init55 anchor");
+    TargetSearchKnowledge birth;birth.anchor=s.witness;birth.radius=32;birth.waitMs=16000;birth.timeoutSeconds=90;s.search=birth;
     const auto diablo=node("diablo-dead",s,{{diabloDone},{fact(K::Corpse)}},needs,true);
     auto changed=fact(K::ActChange);changed.value=28;
     const auto harrogath=object("Harrogath",73);

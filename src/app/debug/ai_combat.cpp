@@ -115,8 +115,8 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
         if(!run.lastLife) detail+="; target life feedback unavailable";
         battle.combatDiagnostics["status"]="blocked";battle.combatDiagnostics["obstacle"]=detail;battle.combatDiagnostics["attempts"]=run.attempts;
         releaseCombat(c);
-        if(task) throw std::runtime_error("Route combat blocked on assigned unit "+std::to_string(chosen->key.id)+": "+detail);
-        cancelWalk(c);
+        if(task && !task->optionalDefense) throw std::runtime_error("Route combat blocked on assigned unit "+std::to_string(chosen->key.id)+": "+detail);
+        if(!task || !task->optionalDefense) cancelWalk(c);
         // Lack of net life progress is not proof of immunity. Preserve all
         // observations and the actual scene; never skip a required kill.
         if(required) throw std::runtime_error("Combat blocked on assigned unit "+std::to_string(chosen->key.id)+": "+detail+
@@ -167,7 +167,7 @@ bool DebugAi::Impl::combat(Context &c,const Goal &goal,bool nearbyDefense,bool p
     // Resume a ready primary from a valid firing position before continuing
     // optional circling. Survival retreats above retain their priority.
     if(!run.waitingForDelay && ray && (targetPosition-c.position).length()<=combatRange(c,skill)) {
-        if(run.kitePoint) {cancelWalk(c);run.kitePoint.reset();}
+        if(run.kitePoint) {if(!planningDefense) cancelWalk(c);run.kitePoint.reset();}
         run.kiteAfterCast=false;
     }
     if(run.kitePoint && !navigation.passageDefending) {

@@ -15,6 +15,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace d2x::debug {
@@ -22,29 +23,111 @@ namespace {
 using Json=nlohmann::json;
 using Clock=std::chrono::steady_clock;
 constexpr size_t sampleLimit=8192, queueLimit=8, fileLimit=64*1024*1024;
+constexpr size_t npcLimit=6;
+constexpr double npcRadius=16;
 Json point(Vec value) {return Json::array({value.x,value.y});}
+Json point(const std::optional<Vec> &value) {return value?point(*value):Json(nullptr);}
 double distance(Vec first,Vec second) {return std::hypot(double(first.x-second.x),double(first.y-second.y));}
 bool finite(Vec value) {return std::isfinite(value.x) && std::isfinite(value.y);}
+struct NpcSample {
+    server::NpcMovementObservation host;
+    std::optional<RemoteScene::MovementObservation> client;
+    std::optional<OnlinePoint> reported, destination;
+    std::optional<uint16_t> clientClass;
+    std::optional<uint8_t> mode;
+    uint64_t assignment{}, action{}, positionRevision{};
+    bool assigned{};
+};
 struct Sample {
     double ms{},dt{},error{},displayError{},age{};
     uint64_t frame{},generation{},discontinuity{},request{};
     int area{-1},mode{-1};
+    std::optional<uint32_t> secondarySeed;
     std::optional<server::MovementObservation> host;
     std::optional<Vec> path,display,destination;
+    std::optional<Vec> next,end;
+    std::vector<NpcSample> npcs;
+    size_t nearbyNpcs{};
     std::string status;
 };
+Json encode(const NpcSample &sample) {
+    const auto &host=sample.host;
+    Json result={{"guid",host.guid},{"class",host.nativeClass},
+        {"host",{{"position",point(host.position)},{"goal",point(host.goal)},{"next",point(host.next)},
+            {"end",point(host.end)},{"mode",host.mode},{"pathType",host.pathType},{"moving",host.moving},
+            {"collisionCell",point(host.collisionCell)},{"collisionMask",host.collisionMask},
+            {"collisionPattern",host.collisionPattern}}},{"client",nullptr}};
+    if(sample.assigned) {
+        const auto wirePoint=[](std::optional<OnlinePoint> value) {
+            return value?Json::array({value->x,value->y}):Json(nullptr);
+        };
+        result["client"]={{"reported",wirePoint(sample.reported)},{"destination",wirePoint(sample.destination)},
+            {"assignmentRevision",sample.assignment},{"actionRevision",sample.action},{"positionRevision",sample.positionRevision},
+            {"class",sample.clientClass?Json(*sample.clientClass):Json(nullptr)},
+            {"mode",sample.mode?Json(*sample.mode):Json(nullptr)}};
+        if(const auto &client=sample.client) {
+            auto &entry=result["client"];
+            entry["position"]=point(client->position);
+            entry["positionSource"]=client->predicted?"path":"packet";
+            entry["cell"]=Json::array({std::floor(client->position.x+.5f),std::floor(client->position.y+.5f)});
+            entry["next"]=point(client->next);entry["end"]=point(client->end);
+            entry["moving"]=client->predicted?Json(client->moving):Json(nullptr);
+            result["positionError"]=distance(client->position,host.position);
+        }
+    }
+    return result;
+}
+void collectNpcs(Sample &sample,const OnlineView &view,const RemoteScene &scene,
+    const server::MovementObservation &host) {
+    std::vector<std::pair<double,NpcSample>> nearest;
+    const auto distanceToPlayer=[&](Vec position) {
+        return sample.path && finite(*sample.path)?std::min(distance(position,host.position),distance(position,*sample.path)):
+            distance(position,host.position);
+    };
+    for(const auto &npc:host.npcs) {
+        if(!finite(npc.position)) continue;
+        const OnlineUnitKey key{1,npc.guid};
+        NpcSample entry;
+        entry.client=scene.unitMovementObservation(view,key);
+        if(entry.client && !finite(entry.client->position)) entry.client.reset();
+        double proximity=distanceToPlayer(npc.position);
+        if(entry.client) proximity=std::min(proximity,distanceToPlayer(entry.client->position));
+        if(proximity>npcRadius) continue;
+        entry.host=npc;
+        if(const auto unit=view.world.units.find(key);unit!=view.world.units.end()) {
+            entry.assigned=true;
+            entry.reported=unit->second.position;
+            entry.destination=unit->second.destination;
+            entry.clientClass=unit->second.classId;
+            entry.mode=unit->second.mode;
+            entry.assignment=unit->second.assignmentRevision;
+            entry.action=unit->second.actionRevision;
+            entry.positionRevision=unit->second.positionRevision;
+        }
+        nearest.emplace_back(proximity,std::move(entry));
+    }
+    sample.nearbyNpcs=nearest.size();
+    std::sort(nearest.begin(),nearest.end(),[](const auto &a,const auto &b) {
+        if(a.first!=b.first) return a.first<b.first;
+        return a.second.host.guid<b.second.host.guid;
+    });
+    for(size_t i=0;i<std::min(nearest.size(),npcLimit);++i)
+        sample.npcs.push_back(std::move(nearest[i].second));
+}
 Json encode(const Sample &sample) {
     Json result={{"ms",sample.ms},{"dtMs",sample.dt},{"frame",sample.frame},{"gameGeneration",sample.generation},
         {"area",sample.area},{"status",sample.status},{"clientMode",sample.mode},
         {"discontinuity",sample.discontinuity},{"requestRevision",sample.request},
+        {"secondarySeed",sample.secondarySeed?Json(*sample.secondarySeed):Json(nullptr)},
         {"path",sample.path?point(*sample.path):Json(nullptr)},
         {"display",sample.display?point(*sample.display):Json(nullptr)},
-        {"clientDestination",sample.destination?point(*sample.destination):Json(nullptr)}};
+        {"clientDestination",point(sample.destination)},{"clientNext",point(sample.next)},{"clientEnd",point(sample.end)}};
     if(sample.host) {
         const auto &host=*sample.host;
         result["host"]={{"gameSlot",host.game.slot},{"generation",host.game.generation},{"entity",host.actor.value},
             {"guid",host.nativeGuid},{"tick",host.tick},{"area",int(host.area)},{"position",point(host.position)},
-            {"destination",point(host.destination)},{"teleportRevision",host.teleportRevision},
+            {"destination",point(host.destination)},{"next",point(host.next)},{"end",point(host.end)},
+            {"mapSeed",host.mapSeed},{"teleportRevision",host.teleportRevision},
             {"commandSequence",host.commandSequence},{"movementSequence",host.movementSequence},
             {"acceptedSequence",host.commandSequence},{"executedSequence",host.executedSequence},{"simulationPending",host.simulationPending},
             {"pendingPhase",host.pendingPhase},
@@ -55,6 +138,11 @@ Json encode(const Sample &sample) {
             result["pathError"]=sample.error;result["displayError"]=sample.displayError;
             result["delta"]=point(*sample.path-host.position);
         }
+    }
+    if(sample.nearbyNpcs) {
+        result["nearbyNpcCount"]=sample.nearbyNpcs;
+        result["npcs"]=Json::array();
+        for(const auto &npc:sample.npcs) result["npcs"].push_back(encode(npc));
     }
     return result;
 }
@@ -140,7 +228,8 @@ struct MovementDiff::Impl {
         stream.open(destination,std::ios::out|std::ios::binary);
         if(!stream) throw std::runtime_error("Unable to create movement diff log: "+path);
         writer=std::thread([this] {writeLoop();});
-        submit({{{"event","header"},{"schema",1},{"units","global subtile feet"},{"intervalMs",5000},
+        submit({{{"event","header"},{"schema",2},{"units","global subtile feet"},{"intervalMs",5000},
+            {"npcRadius",npcRadius},{"npcLimit",npcLimit},
             {"ringMs",30000},{"ringLimit",sampleLimit},{"fileLimitBytes",fileLimit},
             {"thresholds",{{"distance2Ms",500},{"distance5Ms",200},{"oneSideMs",500},{"areaMismatchMs",1000}}}}, {}});
     }
@@ -202,19 +291,32 @@ struct MovementDiff::Impl {
         }
         window={};windowStart=previous?previous->ms:windowStart;
     }
-    void record(const std::optional<server::MovementObservation> &host,const OnlineView &view,
+    void record(std::optional<server::MovementObservation> observation,const OnlineView &view,
         const RemoteScene *scene,std::optional<int> area,bool suspended) {
         const auto now=Clock::now();Sample sample;
         sample.ms=milliseconds(now);sample.dt=std::chrono::duration<double,std::milli>(now-last).count();last=now;
-        sample.frame=++frame;sample.generation=view.gameGeneration;sample.host=host;sample.area=area.value_or(-1);
+        sample.frame=++frame;sample.generation=view.gameGeneration;sample.area=area.value_or(-1);
+        sample.secondarySeed=view.load.secondarySeed;
         if(scene) {sample.path=scene->playerPathPosition(view);sample.display=scene->playerDisplayPosition(view);
             sample.mode=scene->playerMovementMode(view).value_or(uint8_t{255});}
+        if(observation && scene && finite(observation->position) && sample.area==int(observation->area) &&
+            view.load.playerUnitId==observation->nativeGuid)
+            collectNpcs(sample,view,*scene,*observation);
+        if(observation) std::vector<server::NpcMovementObservation>{}.swap(observation->npcs);
+        sample.host=std::move(observation);
+        const auto &host=sample.host;
         if(view.world.movementRequest) {
             sample.request=view.world.movementRequest->revision;
             if(view.world.movementRequest->destination) sample.destination=Vec{float(view.world.movementRequest->destination->x),float(view.world.movementRequest->destination->y)};
         }
         if(view.load.playerUnitId) if(const auto unit=view.world.units.find({0,*view.load.playerUnitId});unit!=view.world.units.end())
             sample.discontinuity=unit->second.positionDiscontinuity;
+        if(scene && sample.path && view.load.playerUnitId) {
+            if(const auto movement=scene->unitMovementObservation(view,{0,*view.load.playerUnitId})) {
+                sample.next=movement->next;
+                sample.end=movement->end;
+            }
+        }
         const bool boundary=previous && (sample.generation!=previous->generation || bool(host)!=bool(previous->host) ||
             (host && previous->host && (host->game!=previous->host->game || host->actor!=previous->host->actor || host->area!=previous->host->area ||
                 host->teleportRevision!=previous->host->teleportRevision || host->alive!=previous->host->alive)) ||
@@ -248,10 +350,10 @@ struct MovementDiff::Impl {
 };
 MovementDiff::MovementDiff(const std::string &path) {if(!path.empty()) impl_=std::make_unique<Impl>(path);}
 MovementDiff::~MovementDiff()=default;
-void MovementDiff::record(const std::optional<server::MovementObservation> &host,const OnlineView &view,
+void MovementDiff::record(std::optional<server::MovementObservation> host,const OnlineView &view,
     const RemoteScene *scene,std::optional<int> area,bool suspended) noexcept {
     if(!impl_ || impl_->disabled) return;
-    try {impl_->record(host,view,scene,area,suspended);}
+    try {impl_->record(std::move(host),view,scene,area,suspended);}
     catch(const std::exception &error) {impl_->disabled=true;std::cerr<<"[movement-diff] recording stopped: "<<error.what()<<'\n';}
 }
 }

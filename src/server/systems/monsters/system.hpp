@@ -76,6 +76,7 @@ struct Actor {
     std::shared_ptr<FrameEventQueue::PreparedInsertion> initialModeTimer,initialWakeTimer;
     std::vector<std::shared_ptr<FrameEventQueue::PreparedInsertion>> initialModifierTimers;
     std::optional<uint64_t> modeFrame;
+    bool walkEndAiPending{};
     EntityId id; MonsterIdentity identity; std::optional<MonsterKind> implementation;
     RegionId area; Vec position; uint64_t revision{}; std::optional<PlayerId> owner;
     bool hostile{};
@@ -438,7 +439,7 @@ class System {
     void cancelAi(EntityId);
     void roomClientsChanged(RoomView,bool present,uint64_t tick);
     void resumeMode(EntityId,uint64_t tick);
-    DomainResult<> modeEvent(const FrameEvent &,uint64_t tick);
+    DomainResult<> modeEvent(const FrameEvent &,uint64_t tick,const std::function<DomainResult<>(EntityId)> &walkEndAi);
     DomainResult<> reinitializeAfterDeath(EntityId,uint64_t tick);
     DomainResult<> reinitializeBaalToStairs(EntityId,uint64_t tick);
     DomainResult<> reinitializeWhipped(EntityId source,EntityId target,int nativeClass,uint64_t tick);

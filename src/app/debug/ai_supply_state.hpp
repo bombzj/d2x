@@ -24,7 +24,6 @@ struct SupplyState {
     bool shopIssued{},shelfObserved{},healingIssued{},healingObserved{};uint64_t shopGeneration{};std::optional<OnlineUnitKey> supplyNpc;
     enum class SupplyStage {None,ToTown,Shop,Return} supplyStage{};
     std::optional<uint16_t> supplyOrigin;Clock::time_point supplyStarted{},supplyDeadline{};
-    bool supplyPortalUsed{};Clock::time_point supplyPortalDeadline{};
     unsigned drinks{},purchases{};
     struct QuiverTransfer {
         uint32_t item{};

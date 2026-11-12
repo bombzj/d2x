@@ -61,6 +61,7 @@ const Sprite *ActorAnimation::sampleFacing(float clock, float elapsed, int facin
     // Avoid GPU frame()'s implicit wrapping for one-shot and static death poses.
     const double nativeTicks=std::floor(std::max(0.0,double(cycle?clock:elapsed))*25.0+1e-5);
     const double advance = preciseFrame?std::max(0.f,*preciseFrame):nativeTicks * std::max(0.f,fps) / 25.0;
+    if(reverse) return animation.frame(facing,start+int(std::max(0.0,double(frameCount-1)-advance)));
     const int index = holdFrame >= 0 ? int(std::min(advance, double(holdFrame))) : cycle ? int(std::fmod(advance, double(frameCount)))
         : int(std::min(advance, double(frameCount - 1)));
     return animation.frame(facing, start + index);
@@ -431,6 +432,11 @@ const ActorAnimation *ActorAnimationCatalog::object(Graphics &graphics, int pale
     result.frameCount = std::max(0, result.animation.count - result.start);
     if (declared > 0) result.frameCount = std::min(result.frameCount, declared);
     result.cycle = objects_.number(row->second, "CycleAnim" + suffix).value_or(0) != 0;
+    if(identity==189 && mode==3 && declared>1 && result.start<declared && result.start<result.animation.count) {
+        // S1 starts at Start3 and counts toward frame zero on the retail client.
+        result.frameCount=result.start+1;result.start=0;
+        result.reverse=true;result.cycle=false;
+    }
     result.offset = {float(objects_.number(row->second, "Xoffset").value_or(0)),
                      float(objects_.number(row->second, "Yoffset").value_or(0))};
     result.order = objects_.number(row->second, "DrawUnder").value_or(0) ? 1
