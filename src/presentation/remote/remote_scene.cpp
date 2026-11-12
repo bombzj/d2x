@@ -512,7 +512,8 @@ std::optional<RemoteScene::MovementObservation> RemoteScene::unitMovementObserva
     if(unit==view.world.units.end() || !unit->second.position) return {};
     const auto position=impl_->localUnitPosition(key,false);
     if(!position) return {};
-    MovementObservation result{*position};
+    MovementObservation result{};
+    result.position=*position;
     const auto pose=impl_->motion.find(key);
     if(pose!=impl_->motion.end() && pose->second.last &&
         pose->second.assignmentRevision==unit->second.assignmentRevision &&

@@ -105,7 +105,8 @@ std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::observedCombatEquip
 std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::calculateCombatEquipment(OnlineUnitKey key,EquipmentActor actor,
         const std::map<int,int> &ranks,int defense,int rating,int minimum,int maximum,const StatSnapshot *playerBase) const {
         if (!playerBase && data.profile != "lod-named-txt-v1" &&
-            !(actor.hireling && session.read().protocolProfile=="pd2-local")) return {};
+            !(actor.hireling && (session.read().protocolProfile=="pd2-local" ||
+                                 session.read().protocolProfile=="pd2-cn-normal-20261020"))) return {};
         const auto &world=session.read().world;
         const auto unit=world.units.find(key),end=world.units.end();
         const auto observed=combat.states().find(key);

@@ -164,6 +164,10 @@ void SceneView::drawHireling(Vec mouse) const {
         label(labels.at(resists[index]),164,y,263,HirelingTextAlign::Center);
         value(std::to_string(numbers[index]),266,y+1,310,numbers[index]<0?&assets_.hirelingRedFont:nullptr);
     }
+    for(size_t index=0;index<hireling.skills.size() && index<6;++index) {
+        const float left=index%2?160.f:17.f;
+        value(hireling.skills[index],left,379.f+12.f*float(index/2),index%2?270.f:154.f,nullptr,HirelingTextAlign::Left);
+    }
     const auto close = hirelingClose();
     const auto *button = assets_.questClose.frame(0, CheckCollisionPointRec(rv(mouse), close) ? 11 : 10);
     if (button) {

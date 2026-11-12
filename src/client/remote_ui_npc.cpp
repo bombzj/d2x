@@ -411,6 +411,30 @@ void RemoteUiClients::Impl::projectHireling() {
             (int64_t(mods.combat.poisonMaximum)+own.poisonMaximum)*frames/256);
         hirelingView.experience=uint64_t(std::max<int64_t>(0,*value("experience")));
         hirelingView.nextExperience=uint64_t(std::max<int64_t>(0,*value("nextexp")));
+        // The identity packet does not carry the hireling table row. Match the
+        // observed base stats and only display skills shared by every match.
+        std::vector<int> skillIds;
+        bool matched=false;
+        for(const auto &candidate:data.hirelings) {
+            if(candidate.classId!=merc.monsterClass || candidate.level>hirelingView.level) continue;
+            const auto later=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &row) {
+                return row.id==candidate.id && row.level>candidate.level && row.level<=hirelingView.level;
+            });
+            if(later!=data.hirelings.end()) continue;
+            const auto stats=deriveHirelingStats(candidate,hirelingView.level);
+            if(stats.strength!=*value("strength") || stats.dexterity!=*value("dexterity") ||
+               stats.defense!=*value("armorclass") || stats.resist!=*value("fireresist")) continue;
+            std::vector<int> current;
+            for(const auto &skill:candidate.skills) {
+                const int rank=skill.level+((hirelingView.level-candidate.level)*skill.levelPerLevel>>5);
+                if(hirelingView.level>=skill.requiredLevel && rank>0 &&
+                   std::find(current.begin(),current.end(),skill.id)==current.end()) current.push_back(skill.id);
+            }
+            if(!matched) {skillIds=std::move(current);matched=true;}
+            else std::erase_if(skillIds,[&](int id){return std::find(current.begin(),current.end(),id)==current.end();});
+        }
+        for(int id:skillIds) if(const auto *skill=data.skills.find(id);skill && !skill->name.empty())
+            hirelingView.skills.push_back(skill->name);
         const int baseResist[]={int(*value("fireresist")),int(*value("coldresist")),int(*value("lightresist")),int(*value("poisonresist"))};
         const int bonus[]={mods.fireResist,mods.coldResist,mods.lightningResist,mods.poisonResist};
         const int caps[]={mods.combat.fireMaxResist,mods.combat.coldMaxResist,mods.combat.lightningMaxResist,mods.combat.poisonMaxResist};

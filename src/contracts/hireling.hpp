@@ -33,6 +33,7 @@ struct HirelingView {
     int damageMinimum = 0, damageMaximum = 0;
     uint64_t experience = 0, nextExperience = 0;
     std::array<int, 4> resistances{};
+    std::vector<std::string> skills;
     std::vector<PetPortraitView> portraits;
 };
 struct HirelingOfferView {
