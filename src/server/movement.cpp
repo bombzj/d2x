@@ -43,6 +43,13 @@ bool nativeUnitRequestRange(Vec player, Vec target) {
 std::optional<Vec> movementPoint(const AreaStore &areas, RegionId from, RegionId to, Vec point) {
     return areas.linkedPosition(from,to,point);
 }
+CommandStatus invalidCoordinateDestination(PlayerState &player,const AreaState &area,const Grid &grid,Vec target) {
+    constexpr Vec center{.5f,.5f};
+    player.routeDestination=target;
+    player.position=player.pathStep.stop(player.position+center)-center;
+    applyMovement(player,area,{MovementAction::Stop,{},false},grid);
+    return CommandStatus::InvalidDestination;
+}
 std::optional<std::pair<Vec, int>> npcPoint(const AreaStore &areas,const monsters::System &monsters, RegionId region, EntityId id) {
     const auto *unit=monsters.find(id);if(!unit || !unit->questNpc || !unit->alive()) return {};
     for (const auto &[key, area] : areas.all()) for (const auto &npc : area.definition.npcs)
@@ -54,6 +61,12 @@ std::optional<std::pair<Vec, int>> npcPoint(const AreaStore &areas,const monster
 CommandStatus MovementSystem::apply(PlayerState &player,const AreaState &area,const MovementCommand &command) {
     const auto target=command.target?command.target->id:command.exit;
     const auto grid=ports_.spatial.navigationGrid(player.area,player.actor,target);
+    if(command.coordinateRequest) {
+        const auto global=area.definition.origin+command.destination;
+        if(!ports_.areas.roomAtPosition(player.area,player.position+Vec{.5f,.5f},
+            int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f))))
+            return invalidCoordinateDestination(player,area,grid,command.destination);
+    }
     auto prepared=command;
     if(prepared.target && !prepared.arrival && prepared.target->type<=1) {
         int size=2;
@@ -396,7 +409,8 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
         target = corpse->position;
     }
     constexpr Vec center{.5f,.5f};
-    if (!grid.navigationContains(target + center)) return CommandStatus::InvalidDestination;
+    if (!grid.navigationContains(target + center))
+        return command.coordinateRequest?invalidCoordinateDestination(player,area,grid,target):CommandStatus::InvalidDestination;
     if(arrival && nativeUnitDistance(player.position,2,arrival->pos,arrival->collisionWidth)==0) {
         player.position=player.pathStep.stop(player.position+center)-center;
         return applyMovement(player,area,{MovementAction::Stop,{},false},grid);

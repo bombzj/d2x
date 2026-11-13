@@ -60,7 +60,7 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
         const auto stage=book.at(questIndex(definition.id)).stage;uint8_t status=0;
         const auto state=book.at(questIndex(definition.id)).flags;
         switch(definition.id) {
-        case QuestId::DenOfEvil: status=stage>=4?13:stage==3?5:stage==2?(fact.remaining<=5?4:2):uint8_t(stage);break;
+        case QuestId::DenOfEvil: status=stage>=4?13:stage==3?5:stage==2?(fact.denCounterActive?4:2):uint8_t(stage);break;
         case QuestId::SistersBurialGrounds: status=stage>=4?13:uint8_t(stage);break;
         case QuestId::ToolsOfTheTrade: status=stage>=6?13:stage>=5?5:stage>=3?3:stage==2?2:uint8_t(stage);break;
         case QuestId::SearchForCain: status=stage>=8?13:stage>=7?6:stage>=5?5:stage>=4?4:stage>=2?3:uint8_t(stage);break;

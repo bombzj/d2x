@@ -28,6 +28,7 @@ QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId re
     if(const auto *previous=ports_.players.find(player)) synchronizeIceRecords(previous->persistent.player.quests,result.record.quests);
     result.gameFlags=gameFlags();
     result.figurineDropped=state_.actThree.figurineDropped;
+    result.denCounterActive=state_.actOne.denCounterActive;
     result.denEffect=state_.actOne.denCleared && !(state_.initialFlags[questDefinition(QuestId::DenOfEvil).nativeSlot]&0x8000);
     for(const auto &definition:questDefinitions) {
         const auto index=questIndex(definition.id);

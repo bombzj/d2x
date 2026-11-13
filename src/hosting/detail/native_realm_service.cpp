@@ -173,6 +173,7 @@ void NativeRealmService::failGame() {
         std::osyncstream(std::cerr) << "[game-close] connection=" << diagnosticConnection
             << " phase=" << int(peer.phase) << " reason=" << failure << '\n';
     peer.phase = GamePhase::Closed;
+    admissionPending=false;
     ticket = false;
     if (binding) host.enter(*binding, false);
 }

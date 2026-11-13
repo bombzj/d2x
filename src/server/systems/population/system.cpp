@@ -660,6 +660,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     for (const auto &[region,roomIndex] : loaded) {
         const auto &area=ports_.areas.at(region);
+        if(!area.gameplayPrepared) return StepStatus::Blocked;
         if(const auto &map=area.definition.pd2Map;map && map->controller>=41 && map->controller<=45 &&
            (area.provisionalPd2Map || ports_.travel.read().pd2SceneOpening))
             continue; // Entry continuations must settle before native scene birth/scaling.

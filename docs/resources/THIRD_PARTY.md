@@ -22,11 +22,13 @@
 
 ## 传送与活动房间
 
-D2MOO `DrlgActivate.cpp::DRLGACTIVATE_ChangeClientRoom`先增加新房间引用再减少旧引用；`RoomExPropagateSetStatus`递归有序near图，依次覆盖0／1／2／3级。`ClientInSight`经InitRoomGrids、AddRoomMapTiles创建活动房间；`ClientOutOfSight`检查TILELIB_LOADED与PRESET_UNITS_ADDED；`Untile`仅加载该房间DT1与必要预设单位。三层资源前置不可删除，但不能把最外层的输入需求扩大为整区玩法内容准备。`Game.cpp::GAME_Update`在bHasPendingRoomsUpdates时遍历Act的活动房间链，调用`GAME_PopulateRoom`完成预设单位、休眠恢复、物件和怪物人口；OutOfSight／Untile引用本身不等同活动房间。`DrlgDrlg.cpp::DRLG_UpdateAndFreeInactiveRooms`按活动标记、10次倒计数、实际房间状态及Vis反向出口检查后释放整层；资源补载不能以永久缓存取代此生命周期。
+D2MOO `DrlgActivate.cpp::DRLGACTIVATE_ChangeClientRoom`先增加新房间引用再减少旧引用。`RoomExPropagateSetStatus`沿有序near图深度优先，先处理深层回调。深度3 `Untile`加载房间DT1和必要的预设单位描述，深度2 `ClientOutOfSight`检查准备标志并维护状态，深度1 `ClientInSight`经`InitRoomGrids`、`AddRoomMapTiles`创建活动`Room1`，`DUNGEON_AllocRoom`接入近邻并分配碰撞，深度0登记玩家房间。`DrlgDrlgRoom.cpp`解析带Vis链接的跨区近邻，目标层缺房间描述时按需`DRLG_InitLevel`。步行边界使用实际近邻房间，营地边缘可在人物出城前激活鲜血荒地的边缘房间。
+
+`Game.cpp::GAME_UpdateProgress`在幕有待处理房间时从活动房间链头遍历，在单位事件前生成预设单位、恢复休眠实体并处理物件和怪物人口。`reference/d2decomped/docs/research/re/drlg.md`的1.14d逆向记录以`FUN_0061b6f0`及其深度回调对应引用传播。`monsters.md`以`FUN_0066c370`及`FUN_0052d160`对应跨区near和人口顺序，并记录显式warp的落点房间经`FUN_0052d0f0`立即生成该房间人口。d2decomped重实现自己的`GameData::want_level`后台任务及`GameData::level`同步取结果属于项目调度。D2MOO `DrlgDrlg.cpp::DRLG_UpdateAndFreeInactiveRooms`按活动标记、10次倒计数、实际房间状态及Vis反向出口检查释放整层。
 
 交接记录中的1.13c定点证据：D2Game MD5 `978f6f74cd031bce6ecee602cd5988cc`、ImageBase `0x6fc20000`，公共重定位RVA E19C0在E1A22／E1A39两次调用1280（先空提示，再旧房间提示）；1280只查当前活动房间矩形及邻接活动房间，未调用地图生成／MPQ。该两次尝试与本地D2MOO转录不同；不把它推导为后续碰撞、换房和资源工作全部免费。1.13c的DRLG_Update客户端调用与宿主不导入10715的既有核对见本页地形证据，不能拿bClient=0的7 tick分支充当宿主后台预取。
 
-Host额外进度条尚未定位到本机1.13c具体阶段。D2MOO `Level.cpp::LEVEL_LoadAct`按需分配所需幕；D2Decomp `docs/research/re/net-join.md`的1.14d研究说明TCP/IP Host先建立监听服务，再由本机客户端经TCP连接自己的4000端口，而单机使用本地模式。此版本旁证仅说明初始化／连接链不同，不能证明额外时间用于整幕地图预载，也不能作为增加常驻资源或修改技能时序的依据。D2X的两种准备票据及尚未复测边界见[地图准备](../modules/MAP.md#地图缓存与分帧准备)。
+Host额外进度条尚未定位到本机1.13c具体阶段。D2MOO `Level.cpp::LEVEL_LoadAct`按需分配所需幕；D2Decomp `docs/research/re/net-join.md`的1.14d研究说明TCP/IP Host先建立监听服务，再由本机客户端经TCP连接自己的4000端口，单机使用本地模式。D2X的准备票据和已覆盖的实测范围见[地图准备](../modules/MAP.md#地图缓存与分帧准备)与[跨区移动诊断](../development/DEBUG_PIPE.md#跨区移动诊断)。
 
 ## 自然探索与客户端坐标
 

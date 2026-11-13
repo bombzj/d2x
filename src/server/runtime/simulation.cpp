@@ -6,10 +6,19 @@
 #include <stdexcept>
 
 namespace d2x::server {
+enum class Simulation::Phase {
+    Environment, Events, Domains, Rooms, Population, Actors, Companions, Skills,
+    Movement, Items, Effects, Combat, StateRemovals, Trade, Tail, Death, Services,
+    Objects, ObjectRemovals, Modifiers, Quests, QuestBirths, Tower, Publication,
+    ClientRooms, ObjectPublication, UnitSounds, RoomMaintenance
+};
+
+Simulation::Simulation() : phase_(Phase::Environment) {}
+
 std::string_view Simulation::pendingPhase() const {
     constexpr std::array names{"environment","events","domains","rooms","population","actors","companions","skills",
         "movement","items","effects","combat","state-removals","trade","tail","death","services","objects",
-        "object-removals","modifiers","quests","quest-births","tower","publication","object-publication","unit-sounds","room-maintenance"};
+        "object-removals","modifiers","quests","quest-births","tower","publication","client-rooms","object-publication","unit-sounds","room-maintenance"};
     return frame_?names.at(size_t(phase_)):"idle";
 }
 bool Simulation::step(TickContext tick, GameSystems &systems) {
@@ -43,10 +52,11 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     }
     if(phase_==Phase::Rooms) {
     run(SystemId::World,[&]{return systems.world.step(tick,facts_);});
-    if(systems.world.retiringRoom() || systems.world.awaitingRoomInputs()) return false;
+    if(steps_[size_t(SystemId::World)]!=StepStatus::Complete) return false;
     phase_=Phase::Population;
     }
     if(phase_==Phase::Population) {
+    systems.world.requestActiveAreas();
     run(SystemId::Population,[&]{return systems.population.step(tick,facts_);});
     if(steps_[size_t(SystemId::Population)]!=StepStatus::Complete) return false;
     phase_=Phase::Events;
@@ -166,6 +176,13 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     run(SystemId::Loot,[&]{return systems.loot.step(tick,facts_);});
     run(SystemId::Progression,[&]{return systems.progression.step(tick,facts_);});
     run(SystemId::Travel,[&]{return systems.travel.step(tick,facts_);});
+    phase_=Phase::ClientRooms;
+    }
+    if(phase_==Phase::ClientRooms) {
+    // The player may have stepped into another Room1 during events. Finish
+    // its near-room handoff before publication and the next frame's inputs.
+    run(SystemId::World,[&]{return systems.world.syncClientRooms(tick);});
+    if(steps_[size_t(SystemId::World)]!=StepStatus::Complete) return false;
     run(SystemId::Replication,[&]{return systems.replication.step(tick,facts_);});
     phase_=Phase::ObjectPublication;
     }

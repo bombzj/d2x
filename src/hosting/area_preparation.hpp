@@ -18,7 +18,9 @@ class AreaPreparation {
     };
     AreaPreparation(const Archives &, std::shared_ptr<const ClassicData>);
     ~AreaPreparation();
-    uint64_t submit(AreaGenerationRequest, std::vector<RoomTerrainId> roomInputs = {});
+    uint64_t submit(AreaGenerationRequest, std::vector<RoomTerrainId> roomInputs = {}, bool extendRoomGraph = false,
+        bool background = false);
+    void promote(uint64_t);
     std::optional<Result> take(uint64_t);
     void cancel(uint64_t);
 };

@@ -31,11 +31,13 @@ class NativePreparedRoomTerrain final : public PreparedRoomTerrain {
     std::shared_ptr<const WorldCatalog> catalog;
     RetailPresetScan identities;
     std::vector<RoomTerrainLink> links;
+    std::vector<RoomTerrainLevel> levelLayouts;
     std::vector<std::shared_ptr<const RoomInput>> inputs;
     std::map<int,std::array<int,8>> visible;
     explicit NativePreparedRoomTerrain(const RetailPresetScan &scan) : identities(scan) {}
     int act() const override { return actValue; }
     std::span<const RoomTerrainLink> rooms() const override { return links; }
+    std::span<const RoomTerrainLevel> levels() const override { return levelLayouts; }
     std::unique_ptr<RoomTerrainSession> instantiate() const override;
 };
 class NativeRoomTerrainSession final : public RoomTerrainSession {
@@ -274,13 +276,13 @@ std::unique_ptr<RoomTerrainSession> NativePreparedRoomTerrain::instantiate() con
 } // namespace
 
 std::shared_ptr<const PreparedRoomTerrain> NativeMapGenerator::prepareRoomTerrain(int level,
-    std::shared_ptr<const WorldCatalog> catalog, std::span<const RoomTerrainId> requested) {
+    std::shared_ptr<const WorldCatalog> catalog, std::span<const RoomTerrainId> requested, bool extendGraph) {
     if (side_!=NativeRoomActivation::Side::Server || &*catalog!=&catalog_ || !activation_.states().empty())
         throw std::runtime_error("Room inputs require a pristine server DRLG");
     auto result=std::make_shared<NativePreparedRoomTerrain>(identities_);
     result->actValue=act_;result->difficulty=difficulty_;result->seed=mapSeed_;result->catalog=std::move(catalog);
     result->mountIdentity=archives_.mountIdentity();
-    result->reloadOnly=!requested.empty();
+    result->reloadOnly=!requested.empty() && !extendGraph;
     const auto roots=levelRooms(level);
     std::map<size_t,unsigned> depth;
     std::vector<size_t> queue;
@@ -294,11 +296,11 @@ std::shared_ptr<const PreparedRoomTerrain> NativeMapGenerator::prepareRoomTerrai
         if(depth.size()!=requested.size()) throw std::runtime_error("Room input reload lost its native anchors");
         // Resolve metadata for identity validation, but decode only the missing
         // rooms. The receiving DRLG already owns their complete logical graph.
-        for(const auto id:queue) near(id);
+        if(result->reloadOnly) for(const auto id:queue) near(id);
     }
     for (size_t at=0;at<queue.size();++at) {
         const auto id=queue[at];const auto distance=depth.at(id);
-        if (!requested.empty() || distance>=3) continue;
+        if (result->reloadOnly || distance>=3) continue;
         for (const auto other : near(id)) if (depth.emplace(other,distance+1).second) queue.push_back(other);
     }
     std::map<const RetailTileSelector *,std::shared_ptr<RetailTileSelector>> selectors;
@@ -309,7 +311,8 @@ std::shared_ptr<const PreparedRoomTerrain> NativeMapGenerator::prepareRoomTerrai
         const auto connection=layout_.connections.find(room.level);
         result->visible.emplace(room.level,connection==layout_.connections.end()?catalog_.level(room.level).visible:connection->second.visible);
         auto input=std::make_shared<RoomInput>(room.room);
-        input->link={key(id),room.room.width,room.room.height,catalog_.level(room.level).town,{}};
+        const auto &levelRecord=catalog_.level(room.level);
+        input->link={key(id),room.room.width,room.room.height,levelRecord.town,{},levelRecord.act==act_};
         if (distance<3) {
             for (const auto other : room.near) input->link.near.push_back(key(other));
             for (const auto &warp : room.warps) if (warp.destination) input->warps.emplace_back(warp.id,key(*warp.destination));
@@ -343,6 +346,32 @@ std::shared_ptr<const PreparedRoomTerrain> NativeMapGenerator::prepareRoomTerrai
                 },identities_,selector);
         }
         result->links.push_back(input->link);result->inputs.push_back(std::move(input));
+    }
+    if(!result->reloadOnly) {
+        std::set<int> neighbours;
+        for(const auto &[id,distance]:depth) if(distance<=1) {
+            const auto adjacent=tiles_.rooms().at(id).level;
+            if(adjacent!=level && catalog_.level(adjacent).act==act_) neighbours.insert(adjacent);
+        }
+        for(const int adjacent:neighbours) {
+            const auto layout=recipe(adjacent);
+            if(layout.worldX<0 || layout.worldY<0 || layout.width<=0 || layout.height<=0 ||
+               int64_t(layout.worldX)+layout.width>13107 || int64_t(layout.worldY)+layout.height>13107 ||
+               int64_t(layout.width)*layout.height>4*1024*1024)
+                throw std::runtime_error("Native level extent exceeds coordinate or allocation limits");
+            const auto &record=catalog_.level(adjacent);
+            RoomTerrainLevel geometry{adjacent,layout.worldX,layout.worldY,layout.width,layout.height,
+                actTownLevels.at(size_t(act_)),record.waypoint,record.teleport,record.population.level.at(size_t(difficulty_)),record.town,{},{}};
+            for(const auto id:levels_.at(adjacent).rooms) {
+                const auto &room=tiles_.rooms().at(id).room;
+                geometry.rooms.push_back({(room.x-layout.worldX)*5,(room.y-layout.worldY)*5,room.width*5,room.height*5,
+                    !room.preset || catalog_.presets().at(room.preset).populate,
+                    record.generation==GenerationKind::Maze || (room.preset && (room.flags&0x00080000)!=0)});
+            }
+            for(const auto &edge:layout.boundaries)
+                geometry.boundaries.push_back({edge.destination,edge.side,edge.coordinate(layout.width,layout.height)*5,edge.start*5,edge.end*5});
+            result->levelLayouts.push_back(std::move(geometry));
+        }
     }
     return result;
 }

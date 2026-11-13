@@ -125,7 +125,7 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     }
     auto &creation=pending->second;
     const auto *town=ports_.areas.find(area->definition.townRegion);
-    if(!town) {
+    if(!town || !town->gameplayPrepared) {
         const auto request=ports_.world.requestTown(actor);
         return fail(request?DomainStatus::PendingContent:request.status);
     }
@@ -314,7 +314,10 @@ DomainResult<> System::linkNativePortal(EntityId source,uint64_t tick) {
 DomainResult<SpecialPortalPlan> System::prepareWorldPortal(RegionId region,int level,uint64_t tick,Vec source,const PortalRule &rule,bool blue,bool exactSource,bool durielOpening) {
     const auto *origin=ports_.areas.find(region);if(!origin) return {DomainStatus::Unavailable,{}};
     const auto *destination=ports_.areas.find(RegionId(level));
-    if(!destination) {const auto request=ports_.world.request(RegionId(level));return {request?DomainStatus::Capacity:request.status,{}};}
+    if(!destination || !destination->gameplayPrepared) {
+        const auto request=ports_.world.request(RegionId(level));
+        return {request?DomainStatus::Capacity:request.status,{}};
+    }
     if(!(blue?destination->definition.portalRule:destination->definition.specialPortalRule)) return {DomainStatus::Unavailable,{}};
     const auto freePoint=[&](const AreaState &area,Vec center)->std::optional<Vec> {
         for(int radius=0;radius<=4;++radius) for(int y=-radius;y<=radius;++y) for(int x=-radius;x<=radius;++x) {

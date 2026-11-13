@@ -41,15 +41,7 @@ NativeRealmService::PreparedGame NativeRealmService::prepareGuest(PersistentChar
         if(!pending) throw ProtocolError("Joining town preparation expired");
         const auto ticket=std::find_if(pending->begin(),pending->end(),[&](const auto &entry){return entry.request==*request.value;});
         if(ticket==pending->end()) throw ProtocolError("Joining town preparation ticket is missing");
-        if(ticket->roomInputs.empty()) {
-            auto prepared = prepareWorldArea(archives, *content, {room.settings.mapSeed, level.act, level.id,
-                room.settings.difficulty, room.settings.ladderMonsterStats()});
-            shared.installPreparedArea(room.handle, *request.value, std::move(prepared));
-        } else {
-            auto inputs=generateRoomInputs(archives,{room.settings.mapSeed,ticket->roomInputAct,level.id,
-                room.settings.difficulty,room.settings.ladderMonsterStats(),ticket->pd2Map},ticket->roomInputs);
-            shared.installPreparedRoomInputs(room.handle,*ticket,std::move(inputs));
-        }
+        shared.prepareAreaNow(room.handle,*ticket);
         // A town may already have several immutable reload tickets in flight.
         // Complete all missing inputs before admitting this synchronous guest.
         request=host.requestAdmissionTown(room.handle,town);

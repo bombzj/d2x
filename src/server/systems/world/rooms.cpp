@@ -10,6 +10,7 @@
 #include "server/systems/population/system.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "server/systems/maps/system.hpp"
+#include "gameplay/maps/pd2/definition.hpp"
 #include "world/native_room_activation.hpp"
 #include "world/room_terrain.hpp"
 #include <algorithm>
@@ -30,6 +31,8 @@ struct System::RoomRuntime {
         bool town{};
         std::vector<size_t> near;
         uint64_t creationOrder{};
+        bool terrainRegistered{};
+        bool localLevel{true};
     };
     struct Act {
         std::unique_ptr<RoomTerrainSession> terrain;
@@ -41,6 +44,7 @@ struct System::RoomRuntime {
     std::vector<Room> rooms;
     std::map<std::pair<RegionId, size_t>, size_t> identities;
     std::map<std::pair<int,RoomTerrainId>,size_t> anchors;
+    std::map<std::pair<int,RegionId>,RoomTerrainLevel> layouts;
     std::map<PlayerId, size_t> clients;
     std::map<PlayerId,std::vector<RoomView>> clientRooms;
     std::map<RoomView,size_t> roomClients;
@@ -62,11 +66,51 @@ struct System::RoomRuntime {
     AreaState &area(RegionId id) { return owner.ports_.areas.areas_.at(id); }
     NativeRoomActivation &activation(size_t id) {return *acts.at(size_t(rooms.at(id).act)).activation;}
     RoomTerrainSession &terrain(size_t id) {return *acts.at(size_t(rooms.at(id).act)).terrain;}
+    void include(const PreparedRoomTerrain &prepared) {
+        auto &act=acts.at(size_t(prepared.act()));
+        if(!act.terrain) act.terrain=prepared.instantiate();
+        else act.terrain->include(prepared);
+        act.terrainDirty=true;
+        for(const auto &layout:prepared.levels()) layouts.try_emplace({prepared.act(),RegionId(layout.level)},layout);
+        for(const auto &link:prepared.rooms()) {
+            const auto [anchor,inserted]=anchors.try_emplace({prepared.act(),link.id},rooms.size());
+            if(inserted) {
+                Room room;room.key=link.id;room.area=RegionId(link.id.level);
+                room.act=prepared.act();room.town=link.town;
+                rooms.push_back(std::move(room));
+            }
+            auto &room=rooms.at(anchor->second);
+            room.terrainRegistered=true;
+            room.localLevel=link.localLevel;
+        }
+        for(const auto &link:prepared.rooms()) {
+            if(link.near.empty()) continue;
+            auto &room=rooms.at(anchors.at({prepared.act(),link.id}));
+            std::vector<size_t> near;
+            for(const auto other:link.near) near.push_back(anchors.at({prepared.act(),other}));
+            if(!room.near.empty() && room.near!=near) throw std::runtime_error("Live native room graph changed");
+            room.near=std::move(near);
+            if(room.index==SIZE_MAX || area(room.area).gameplayPrepared) continue;
+            auto &published=area(room.area).definition.roomNear.at(room.index);
+            if(published.empty()) for(const auto other:link.near)
+                published.push_back({RegionId(other.level),other.x,other.y});
+        }
+    }
+    bool waitForGraph(size_t id) {
+        const auto &root=rooms.at(id);
+        const auto result=owner.requestRoomInputs(root.area,root.act,{root.key},area(root.area).definition.pd2Map,true);
+        if(result.status==DomainStatus::Unavailable || result.status==DomainStatus::Conflict)
+            throw std::runtime_error("Cannot prepare native room graph for level "+std::to_string(int(root.area)));
+        awaitingInputs=true;
+        return false;
+    }
     bool ensure(size_t id,unsigned depth) {
         std::map<size_t,unsigned> needed{{id,depth}};
         std::vector<size_t> queue{id};
         for(size_t at=0;at<queue.size();++at) {
             const auto current=queue[at];const auto remaining=needed.at(current);
+            const auto &room=rooms.at(current);
+            if(!room.terrainRegistered || (remaining && room.near.empty())) return waitForGraph(id);
             if(!remaining) continue;
             for(const auto near:rooms.at(current).near) {
                 const auto found=needed.find(near);
@@ -92,6 +136,52 @@ struct System::RoomRuntime {
         }
         if(!ready) awaitingInputs=true;
         return ready;
+    }
+    bool ensureClientRoom(size_t id) {
+        if(!ensure(id,3)) return false;
+        for(const auto adjacent:rooms.at(id).near) {
+            const auto &room=rooms.at(adjacent);
+            if(room.localLevel && !owner.ports_.areas.find(room.area) && !layouts.contains({room.act,room.area}))
+                return waitForGraph(id);
+        }
+        return true;
+    }
+    void stageArea(int act,RegionId region,const AreaDefinition &source) {
+        if(owner.ports_.areas.find(region)) return;
+        const auto found=layouts.find({act,region});
+        if(found==layouts.end()) throw std::logic_error("Missing native level geometry");
+        const auto &layout=found->second;
+        AreaDefinition definition;
+        definition.id=region;definition.act=act;definition.town=layout.town;
+        definition.townRegion=RegionId(layout.townLevel);
+        definition.waypointIndex=layout.waypoint;
+        definition.monsterLevel=layout.monsterLevel;
+        definition.teleportMode=layout.teleport;definition.teleportAllowed=layout.teleport!=0;
+        definition.collisionField=source.collisionField;
+        if(pd2::isMapRegion(int(region))) definition.pd2Map=source.pd2Map;
+        definition.origin={float(layout.x*5),float(layout.y*5)};
+        const int width=layout.width*5,height=layout.height*5;
+        definition.activation=RoomLayout(width,height,layout.rooms);
+        definition.roomNear.resize(layout.rooms.size());
+        definition.populationRooms.resize(layout.rooms.size());
+        for(const auto &boundary:layout.boundaries)
+            definition.boundaries.push_back({RegionId(boundary.destination),boundary.side,boundary.plane,boundary.start,boundary.end});
+        auto &grid=definition.collision;
+        grid=Grid(width,height);
+        grid.navigationRooms=std::make_shared<const std::vector<RoomBounds>>(layout.rooms);
+        grid.fullTerrainCollision.assign(grid.blocked.size(),0xffff);
+        std::fill(grid.blocked.begin(),grid.blocked.end(),1);
+        std::fill(grid.lightBlocked.begin(),grid.lightBlocked.end(),1);
+        std::fill(grid.terrainCollision.begin(),grid.terrainCollision.end(),0xff);
+        auto &state=owner.ports_.areas.areas_.try_emplace(region,AreaState{std::move(definition),1,{}}).first->second;
+        state.gameplayPrepared=false;
+        state.provisionalPd2Map=bool(state.definition.pd2Map) && !owner.ports_.travel.read().pd2MapPortal;
+        bindAreaRooms(region,state);
+        owner.registerAreaUnits(region);
+        owner.state_.residency.emplace(region,AreaLease{region,state.generation,Residency::Prepared});
+        for(auto &ticket:owner.state_.preparation) if(ticket.destination==region)
+            ticket.terrainGeneration=state.terrainGeneration;
+        owner.link();
     }
     std::optional<size_t> locate(RegionId id, Vec point) const {
         const auto *source = owner.ports_.areas.find(id);
@@ -172,51 +262,45 @@ struct System::RoomRuntime {
         state.definition.populationRooms.at(room.index)=sample.population;
         if (changed) ++state.definition.collision.obstacleRevision;
     }
+    void bindAreaRooms(RegionId region,AreaState &state) {
+        const auto &layout=state.definition.activation.rooms();
+        if(layout.empty()) throw std::runtime_error("Authority area has no original rooms");
+        const auto &grid=state.definition.collision;
+        state.rooms.resize(layout.size());
+        for(size_t index=0;index<layout.size();++index) {
+            const auto &bounds=layout[index];
+            if(bounds.x<0 || bounds.y<0 || bounds.width<=0 || bounds.height<=0 ||
+               bounds.x+bounds.width>grid.width || bounds.y+bounds.height>grid.height)
+                throw std::runtime_error("Authority room lies outside its level");
+            const RoomTerrainId key{int(region),(int(state.definition.origin.x)+bounds.x)/5,
+                (int(state.definition.origin.y)+bounds.y)/5};
+            const auto [anchor,inserted]=anchors.try_emplace({state.definition.act,key},rooms.size());
+            if(inserted) {
+                if(state.gameplayPrepared) throw std::runtime_error("Authority room lacks a DRLG anchor");
+                Room room;room.key=key;room.area=region;room.act=state.definition.act;room.town=state.definition.town;
+                rooms.push_back(std::move(room));
+            }
+            const auto id=anchor->second;
+            auto &room=rooms.at(id);room.index=index;room.bounds=bounds;
+            identities.emplace(std::pair{region,index},id);
+            if(!state.gameplayPrepared) for(const auto adjacent:room.near) {
+                const auto &other=rooms.at(adjacent);
+                state.definition.roomNear[index].push_back({other.area,other.key.x,other.key.y});
+            }
+        }
+    }
     void rebuild() {
         if (!dirty) return;
         // New resource handoffs extend the logical graph. Existing references,
         // prefetch cursor, tiles and gameplay random remain in the same DRLG.
         for (auto &[region,state] : owner.ports_.areas.areas_) {
-            (void)region;
             if (!state.rooms.empty()) continue;
             const auto &prepared=state.definition.roomTerrain;
             if (!prepared || prepared->act()!=state.definition.act)
                 throw std::runtime_error("Authority area lacks decoded native room inputs");
-            auto &act=acts.at(size_t(prepared->act()));
-            if (!act.terrain) act.terrain=prepared->instantiate();
-            else act.terrain->include(*prepared);
-            act.terrainDirty = true;
-            for (const auto &link : prepared->rooms()) if (!anchors.contains({prepared->act(),link.id})) {
-                anchors.emplace(std::pair{prepared->act(),link.id},rooms.size());
-                Room room;room.key=link.id;room.area=RegionId(link.id.level);
-                room.act=prepared->act();room.town=link.town;
-                rooms.push_back(std::move(room));
-            }
-            for (const auto &link : prepared->rooms()) {
-                if (link.near.empty()) continue;
-                auto &room=rooms.at(anchors.at({prepared->act(),link.id}));std::vector<size_t> near;
-                for (const auto other : link.near) near.push_back(anchors.at({prepared->act(),other}));
-                if (!room.near.empty() && room.near!=near) throw std::runtime_error("Live native room graph changed");
-                room.near=std::move(near);
-            }
-        }
-        for (auto &[region, state] : owner.ports_.areas.areas_) {
-            const auto &layout = state.definition.activation.rooms();
-            if (!state.rooms.empty()) continue;
-            if (layout.empty()) throw std::runtime_error("Authority area has no original rooms");
-            auto &grid = state.definition.collision;
-            state.rooms.resize(layout.size());
-            for (size_t index = 0; index < layout.size(); ++index) {
-                const auto &bounds = layout[index];
-                if (bounds.x < 0 || bounds.y < 0 || bounds.width <= 0 || bounds.height <= 0 ||
-                    bounds.x + bounds.width > grid.width || bounds.y + bounds.height > grid.height)
-                    throw std::runtime_error("Authority room lies outside its level");
-                const RoomTerrainId key{int(region),(int(state.definition.origin.x)+bounds.x)/5,
-                    (int(state.definition.origin.y)+bounds.y)/5};
-                const auto id=anchors.at({state.definition.act,key});
-                auto &room=rooms.at(id);room.index=index;room.bounds=bounds;
-                identities.emplace(std::pair{region,index},id);
-            }
+            include(*prepared);
+            bindAreaRooms(region,state);
+            auto &grid=state.definition.collision;
             // Only authored room footprints own collision. Snapshot padding
             // must not shadow the adjacent level's real seam cells.
             std::fill(grid.fullTerrainCollision.begin(), grid.fullTerrainCollision.end(), 0xffff);
@@ -267,7 +351,15 @@ struct System::RoomRuntime {
         for (auto &act : acts) act.terrainDirty = false;
     }
     bool change(std::optional<size_t> previous,std::optional<size_t> next) {
-        if(next && previous!=next && !ensure(*next,3)) return false;
+        if(next && previous!=next) {
+            if(!ensureClientRoom(*next)) return false;
+            const auto &root=rooms.at(*next);
+            const auto &source=area(root.area).definition;
+            for(const auto adjacent:root.near) {
+                const auto &room=rooms.at(adjacent);
+                if(room.localLevel) stageArea(root.act,room.area,source);
+            }
+        }
         if (previous && next && rooms.at(*previous).act==rooms.at(*next).act)
             activation(*next).changeClientRoom(previous,next);
         else {
@@ -478,7 +570,7 @@ bool System::discardPreparedRooms(std::span<const RegionId> regions) {
 }
 void System::invalidateRooms() { rooms_->dirty = true; }
 bool System::roomInputsReady(RegionId region) const {
-    const auto *area=ports_.areas.find(region);if(!area) return false;
+    const auto *area=ports_.areas.find(region);if(!area || !area->gameplayPrepared) return false;
     if(area->definition.roomTerrain) return true;
     bool found=false;
     for(size_t id=0;id<rooms_->rooms.size();++id) {
@@ -508,14 +600,43 @@ bool System::restoreRoomInputs(const AreaDefinition &prepared) {
         const auto &a=old.activation.rooms()[i],&b=prepared.activation.rooms()[i];
         if(a.x!=b.x || a.y!=b.y || a.width!=b.width || a.height!=b.height) return false;
     }
-    auto &act=rooms_->acts.at(size_t(old.act));
-    if(!act.terrain) return false;
-    act.terrain->include(*prepared.roomTerrain);
-    act.terrainDirty=true;
+    rooms_->include(*prepared.roomTerrain);
+    return true;
+}
+bool System::installAreaGameplay(AreaDefinition prepared) {
+    auto &area=ports_.areas.areas_.at(prepared.id);
+    auto &current=area.definition;
+    const auto &before=current.activation.rooms();
+    const auto &after=prepared.activation.rooms();
+    if(prepared.act!=current.act || prepared.origin.x!=current.origin.x || prepared.origin.y!=current.origin.y ||
+       prepared.collision.width!=current.collision.width || prepared.collision.height!=current.collision.height ||
+       before.size()!=after.size()) return false;
+    for(size_t index=0;index<before.size();++index) {
+        const auto &a=before[index],&b=after[index];
+        if(a.x!=b.x || a.y!=b.y || a.width!=b.width || a.height!=b.height ||
+           (!current.roomNear[index].empty() && current.roomNear[index]!=prepared.roomNear[index])) return false;
+    }
+    rooms_->include(*prepared.roomTerrain);
+    if(prepared.pd2Map && prepared.pd2Map==pd2ProgramMap_) prepared.pd2RuntimeGlobal=pd2RuntimeGlobal_;
+    assign(prepared);
+    prepared.roomTerrain.reset();
+    prepared.collision=std::move(current.collision);
+    for(size_t index=0;index<area.rooms.size();++index) if(area.rooms[index].loaded)
+        prepared.populationRooms[index]=std::move(current.populationRooms[index]);
+    current=std::move(prepared);
+    area.gameplayPrepared=true;
+    link();
     return true;
 }
 bool System::restoreRoomInputs(const PrepareArea &request,const PreparedRoomTerrain &prepared) {
-    if(prepared.rooms().size()!=request.roomInputs.size() || prepared.act()!=request.roomInputAct || prepared.act()<0 || prepared.act()>=5) return false;
+    if(prepared.act()!=request.roomInputAct || prepared.act()<0 || prepared.act()>=5) return false;
+    if(request.extendRoomGraph) {
+        for(const auto key:request.roomInputs)
+            if(std::none_of(prepared.rooms().begin(),prepared.rooms().end(),[&](const auto &room){return room.id==key && !room.near.empty();})) return false;
+        rooms_->include(prepared);
+        return true;
+    }
+    if(prepared.rooms().size()!=request.roomInputs.size()) return false;
     for(const auto &link:prepared.rooms())
         if(std::find(request.roomInputs.begin(),request.roomInputs.end(),link.id)==request.roomInputs.end()) return false;
     auto &act=rooms_->acts.at(size_t(prepared.act()));
@@ -545,19 +666,33 @@ void System::activate(RegionId region, Vec point) {
 bool System::prepareClientRoom(RegionId region, Vec point) {
     rooms_->rebuild();
     const auto room=rooms_->locate(region,point);
-    return room && rooms_->ensure(*room,3);
+    return room && rooms_->ensureClientRoom(*room);
 }
-void System::changeClientRoom(PlayerId id, uint64_t tick) {
+bool System::changeClientRoom(PlayerId id, uint64_t tick) {
     rooms_->rebuild();
     const auto *player=ports_.players.find(id);
     const auto old=rooms_->clients.find(id);
     const std::optional<size_t> previous=old==rooms_->clients.end()?std::nullopt:std::optional<size_t>{old->second};
     const auto next=player && player->entered?rooms_->locate(player->area,player->position+Vec{.5f,.5f}):std::nullopt;
-    if(!rooms_->change(previous,next)) return;
+    if(player && player->entered && !next) throw std::runtime_error("Entered player has no owning native room");
+    if(previous==next) return true;
+    if(!rooms_->change(previous,next)) return false;
     if (next) rooms_->clients.insert_or_assign(id,*next);else rooms_->clients.erase(id);
     rooms_->publish();
-    rooms_->changeClientRooms(id,visibleRooms(id),tick);
+    std::vector<RoomView> registered;
+    if(next) for(const auto adjacent:rooms_->rooms.at(*next).near) {
+        const auto &room=rooms_->rooms.at(adjacent);
+        if(!room.localLevel) continue;
+        const auto &area=ports_.areas.at(room.area);
+        if(room.index==SIZE_MAX || !area.rooms.at(room.index).loaded)
+            throw std::logic_error("Client room change left an inactive native neighbour");
+        registered.push_back({room.area,(int(area.definition.origin.x)+room.bounds.x)/5,
+            (int(area.definition.origin.y)+room.bounds.y)/5});
+    }
+    rooms_->changeClientRooms(id,registered,tick);
     if(!next) rooms_->clientRooms.erase(id);
+    else requestActiveAreas();
+    return true;
 }
 bool System::retiringRoom() const {return rooms_->retirement.has_value();}
 bool System::awaitingRoomInputs() const {return rooms_->awaitingInputs;}
@@ -573,54 +708,30 @@ std::vector<PlayerId> System::nativeRoomClients(RoomView room) const {
     for(const auto *player:clients) result.push_back(player->player);
     return result;
 }
-void System::updateRooms(TickContext tick) {
+StepStatus System::syncClientRooms(TickContext tick) {
     rooms_->rebuild();
     rooms_->awaitingInputs=false;
     rooms_->currentTick=tick.tick;
-    auto previous = rooms_->clients;
-    std::set<PlayerId> departed;
-    for(const auto &[player,registered]:rooms_->clientRooms) {(void)registered;departed.insert(player);}
     for (const auto &[id, player] : ports_.players.all()) {
-        if (!player.entered) continue;
-        const auto next = rooms_->locate(player.area, player.position + Vec{.5f, .5f});
-        if (!next) throw std::runtime_error("Entered player has no owning native room");
-        const auto old = rooms_->clients.find(id);
-        if(!rooms_->change(old == rooms_->clients.end() ? std::nullopt : std::optional<size_t>{old->second}, next)) return;
-        rooms_->clients.insert_or_assign(id, *next);
-        rooms_->publish();
-        std::vector<RoomView> registered;
-        for(const auto adjacent:rooms_->rooms.at(*next).near) {
-            const auto &room=rooms_->rooms.at(adjacent);
-            if (room.index==SIZE_MAX) continue;
-            const auto &area=ports_.areas.at(room.area);
-            if(area.rooms.at(room.index).loaded) registered.push_back({room.area,
-                (int(area.definition.origin.x)+room.bounds.x)/5,(int(area.definition.origin.y)+room.bounds.y)/5});
-        }
-        rooms_->changeClientRooms(id,registered,tick.tick);departed.erase(id);
-        previous.erase(id);
+        if(player.entered && !changeClientRoom(id,tick.tick)) return StepStatus::Blocked;
     }
-    for (const auto &[id, room] : previous) {
-        rooms_->change(room, {});
-        rooms_->clients.erase(id);
+    for(auto entry=rooms_->clients.begin();entry!=rooms_->clients.end();) {
+        const auto id=(entry++)->first;
+        const auto *player=ports_.players.find(id);
+        if(!player || !player->entered) changeClientRoom(id,tick.tick);
     }
-    for(const auto id:departed) {rooms_->changeClientRooms(id,{},tick.tick);rooms_->clientRooms.erase(id);}
     rooms_->publish();
-    for (const auto &act : rooms_->acts) if (act.activation) for (const auto &[id, state] : act.activation->states()) {
-        // GAME_Update populates the act's actual Room1 chain. OutOfSight and
-        // Untile only need resource inputs, not an entire area's gameplay
-        // definition. Requesting their neighbours here would put the removed
-        // whole-area wait straight back into the frame after a teleport.
-        if (!state.active) continue;
-        const auto &room = rooms_->rooms.at(id);
-        const auto *area=ports_.areas.find(room.area);
-        auto map=area?area->definition.pd2Map:nullptr;
-        if(!area) for(const auto near:room.near) {
-            const auto *source=ports_.areas.find(rooms_->rooms.at(near).area);
-            if(source && source->definition.pd2Map) {map=source->definition.pd2Map;break;}
-        }
-        // Preserve the map context when an active neighbour first needs its
-        // definition. Admission/population still waits for this full handoff.
-        if(!area) request(room.area,map);
+    return StepStatus::Complete;
+}
+void System::requestActiveAreas() {
+    std::set<RegionId> requested;
+    for(const auto &[region,index]:ports_.areas.loadedRoomOrder()) {
+        (void)index;
+        const auto &area=ports_.areas.at(region);
+        if(area.gameplayPrepared || !requested.insert(region).second) continue;
+        const auto result=request(region,area.definition.pd2Map);
+        if(result.status==DomainStatus::Unavailable || result.status==DomainStatus::Conflict)
+            throw std::runtime_error("Cannot prepare native room population for level "+std::to_string(int(region)));
     }
 }
 StepStatus System::maintainRooms(TickContext tick) {
@@ -649,32 +760,30 @@ bool System::clientRoomsReady(PlayerId id) const {
     // currently installed/visible subset and not an entire generated level.
     for(const auto adjacent:near) {
         const auto &room=rooms_->rooms.at(adjacent);
+        if(room.index==SIZE_MAX) continue;
         const auto *area=ports_.areas.find(room.area);
-        if(!area || room.index==SIZE_MAX || room.index>=area->rooms.size() || !area->rooms[room.index].loaded) return false;
+        if(!area || !area->gameplayPrepared || room.index>=area->rooms.size() || !area->rooms[room.index].loaded) return false;
         if(!ports_.population.roomReady(room.area,room.index)) return false;
     }
     return true;
 }
 bool System::visible(PlayerId id, RegionId region, Vec point) const {
-    const auto *player = ports_.players.find(id);
-    return player && player->entered && ports_.areas.nearby(player->area, player->position + Vec{.5f, .5f}, region, point);
+    const auto *player=ports_.players.find(id);
+    if(!player || !player->entered) return false;
+    const auto registered=rooms_->clientRooms.find(id);
+    if(registered==rooms_->clientRooms.end()) return false;
+    const auto *area=ports_.areas.find(region);
+    if(!area) return false;
+    const auto &definition=area->definition;
+    const auto *room=definition.activation.room(point+Vec{.5f,.5f});
+    if(!room) return false;
+    const RoomView view{region,(int(definition.origin.x)+room->x)/5,(int(definition.origin.y)+room->y)/5};
+    return std::find(registered->second.begin(),registered->second.end(),view)!=registered->second.end();
 }
 std::vector<RoomView> System::visibleRooms(PlayerId id) const {
-    const auto *player = ports_.players.find(id);
-    if (!player || !player->entered) return {};
-    std::vector<RoomView> result;
-    const auto &source = ports_.areas.at(player->area).definition;
-    if (const auto *observer = source.activation.room(player->position + Vec{.5f, .5f}); observer) {
-        const auto index = size_t(observer - source.activation.rooms().data());
-        for (const auto &link : source.roomNear.at(index)) {
-            const auto *destination = ports_.areas.find(link.area);
-            if (!destination || destination->definition.act != source.act) continue;
-            const Vec point{float(link.x * 5) - destination->definition.origin.x,
-                float(link.y * 5) - destination->definition.origin.y};
-            if (ports_.areas.loaded(link.area, point)) result.push_back(link);
-        }
-        return result;
-    }
-    return result;
+    const auto *player=ports_.players.find(id);
+    if(!player || !player->entered) return {};
+    const auto found=rooms_->clientRooms.find(id);
+    return found==rooms_->clientRooms.end()?std::vector<RoomView>{}:found->second;
 }
 }

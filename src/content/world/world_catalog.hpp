@@ -24,7 +24,7 @@ struct LevelRecord {
     int lightIntensity = 0, lightRed = 0, lightGreen = 0, lightBlue = 0;
     GenerationKind generation = GenerationKind::None;
     std::string name;
-    int width = 0, height = 0, subtype = -1, theme = -1, waypoint = -1;
+    int width = 0, height = 0, subtype = -1, theme = -1, waypoint = -1, teleport = 0;
     int shrineSubstitution = -1, waypointSubstitution = -1;
     std::optional<int> objectLevel; // Levels.MonLvl1, not the expansion/difficulty level.
     int offsetX = 0, offsetY = 0, depend = 0;

@@ -228,7 +228,10 @@ bool GameInstance::enter(PlayerId id, bool active) {
     auto found = players_.players_.find(id);
     if (found == players_.players_.end()) return false;
     if(!active && pendingSynchronousCommand(id)) return false;
-    if(found->second.entered==active && found->second.collisionActive==active) return true;
+    if(found->second.entered==active && found->second.collisionActive==active) {
+        if(active) systems_.world.changeClientRoom(id,tick_);
+        return true;
+    }
     std::optional<world::QuestPosition> arrival;
     if(active && !found->second.collisionActive) {
         systems_.world.activate(found->second.area,found->second.position+Vec{.5f,.5f});
@@ -455,12 +458,15 @@ void GameInstance::step() {
             pending.awaitingQuest=token;pending.dispatchedResult=result;
             inventoryWaiting=true;break;
         }
-        // Scroll callbacks also prepare world content or wait for output without
-        // a reward token. Capacity/PendingContent both dispatch as QueueFull.
-        // Retry that uncommitted callback before close/movement or simulation;
-        // it is not a cancellable approach to an NPC. Token-backed callbacks
-        // above finish through installation and must never be replayed here.
         if(result==CommandStatus::QueueFull && !dispatched) {
+            const auto *movement=std::get_if<MovementCommand>(&command.payload);
+            if(movement && movement->action==MovementAction::Synchronize &&
+                systems_.world.awaitingRoomInputs() && !systems_.world.read().preparation.empty()) {
+                // The correction has not changed position or consumed its RNG.
+                inventoryWaiting=true;break;
+            }
+            // Scroll callbacks can wait without a reward token. Retry the
+            // uncommitted callback before any later input or simulation.
             const auto *request=std::get_if<npc::Request>(&command.payload);
             const auto *talk=request?std::get_if<TalkToNpc>(&request->intent):nullptr;
             const auto *quest=std::get_if<quests::Request>(&command.payload);

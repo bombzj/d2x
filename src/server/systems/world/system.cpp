@@ -103,21 +103,20 @@ DomainResult<uint64_t> System::request(RegionId destination,std::shared_ptr<cons
     if (const auto *area = ports_.areas.find(destination)) {
         if(area->provisionalPd2Map && (!map || area->definition.pd2Map!=map)) return {DomainStatus::Conflict,{}};
         if(map && area->definition.pd2Map!=map) return {DomainStatus::Conflict,{}};
-        activateAct(destination);
-        if(roomInputsReady(destination)) return {DomainStatus::Applied, area->generation};
-        return requestAreaInputs(destination,area->definition.pd2Map);
+        if(area->gameplayPrepared) {
+            activateAct(destination);
+            if(roomInputsReady(destination)) return {DomainStatus::Applied, area->generation};
+            return requestAreaInputs(destination,area->definition.pd2Map);
+        }
+        map=area->definition.pd2Map;
     }
-    if (failed_.contains(destination)) {
-        // Existing authority is intact after a failed resource reload. A new
-        // ticket may retry it; never reuse an expired completion's request ID.
-        if(!ports_.areas.find(destination)) return {DomainStatus::Unavailable,{}};
-        failed_.erase(destination);
-    }
+    if(failed_.contains({destination,false})) return {DomainStatus::Unavailable,{}};
     for (const auto &pending : state_.preparation) if (pending.destination == destination && pending.roomInputs.empty()) {
         if(pending.pd2Map!=map) return {DomainStatus::Conflict,{}};
         return {DomainStatus::Applied, pending.request};
     }
-    if (state_.preparation.size() >= 16 || nextRequest_ == UINT64_MAX) return {DomainStatus::Capacity, {}};
+    if (std::count_if(state_.preparation.begin(),state_.preparation.end(),[](const auto &ticket){return ticket.roomInputs.empty();})>=16 ||
+        nextRequest_ == UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto id = nextRequest_;
     const auto *existing=ports_.areas.find(destination);
     state_.preparation.push_back({destination, id, ports_.settings,std::move(map),existing?existing->terrainGeneration:0});
@@ -125,30 +124,32 @@ DomainResult<uint64_t> System::request(RegionId destination,std::shared_ptr<cons
     return {DomainStatus::Applied, id};
 }
 DomainResult<uint64_t> System::requestRoomInputs(RegionId destination,int act,std::vector<RoomTerrainId> inputs,
-    std::shared_ptr<const pd2::MapInstance> map) {
+    std::shared_ptr<const pd2::MapInstance> map,bool extendGraph) {
     if(map && !pd2::isMapRegion(int(destination))) map.reset();
     const auto *existing=ports_.areas.find(destination);
     if(existing && ((existing->provisionalPd2Map && (!map || existing->definition.pd2Map!=map)) ||
        (map && existing->definition.pd2Map!=map)))
         return {DomainStatus::Conflict,{}};
-    if(failed_.contains(destination)) {
+    if(failed_.contains({destination,true})) {
         if(!existing) return {DomainStatus::Unavailable,{}};
-        failed_.erase(destination);
+        failed_.erase({destination,true});
     }
     uint64_t pendingId{};
     for(const auto &pending:state_.preparation) if(pending.destination==destination) {
         if(pending.pd2Map!=map) return {DomainStatus::Conflict,{}};
-        if(pending.roomInputs.empty()) return {DomainStatus::Applied,pending.request};
+        if(pending.roomInputs.empty()) continue;
         if(pending.roomInputAct!=act) return {DomainStatus::Conflict,{}};
+        if(extendGraph && !pending.extendRoomGraph) continue;
         pendingId=pending.request;
         std::erase_if(inputs,[&](const auto key) {
             return std::find(pending.roomInputs.begin(),pending.roomInputs.end(),key)!=pending.roomInputs.end();
         });
     }
     if(inputs.empty()) return {DomainStatus::Applied,pendingId};
-    if(state_.preparation.size()>=16 || nextRequest_==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    if(std::count_if(state_.preparation.begin(),state_.preparation.end(),[](const auto &ticket){return !ticket.roomInputs.empty();})>=16 ||
+       nextRequest_==UINT64_MAX) return {DomainStatus::Capacity,{}};
     const auto id=nextRequest_++;
-    state_.preparation.push_back({destination,id,ports_.settings,std::move(map),existing?existing->terrainGeneration:0,std::move(inputs),act});
+    state_.preparation.push_back({destination,id,ports_.settings,std::move(map),existing?existing->terrainGeneration:0,std::move(inputs),act,extendGraph});
     return {DomainStatus::Applied,id};
 }
 DomainResult<uint64_t> System::requestAdmissionTown(RegionId town) {
@@ -197,7 +198,9 @@ DomainResult<> System::install(PreparedArea prepared) {
     AreaStore::validate(prepared.definition);
     if(const auto *existing=ports_.areas.find(prepared.definition.id)) {
         if(pending->terrainGeneration!=existing->terrainGeneration) return {DomainStatus::Stale,{}};
-        if(!restoreRoomInputs(prepared.definition)) return {DomainStatus::Stale,{}};
+        if(existing->gameplayPrepared) {
+            if(!restoreRoomInputs(prepared.definition)) return {DomainStatus::Stale,{}};
+        } else if(!installAreaGameplay(std::move(prepared.definition))) return {DomainStatus::Stale,{}};
         state_.preparation.erase(pending);
         return {DomainStatus::Applied,std::monostate{}};
     }
@@ -216,7 +219,10 @@ DomainResult<> System::install(PreparedArea prepared) {
 void System::fail(uint64_t requestId) {
     auto &pending = state_.preparation;
     const auto found = std::find_if(pending.begin(), pending.end(), [&](const auto &p) { return p.request == requestId; });
-    if (found != pending.end()) { failed_[found->destination] = *found; pending.erase(found); }
+    if(found!=pending.end()) {
+        failed_[{found->destination,!found->roomInputs.empty()}]=*found;
+        pending.erase(found);
+    }
 }
 void System::openTombWall(RegionId id) {
     openedTombs_.insert(id);
@@ -232,8 +238,7 @@ std::vector<RegionId> System::visible(PlayerId id) const {
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
-    updateRooms(tick);
-    if(retiringRoom() || awaitingRoomInputs()) return StepStatus::Blocked;
+    if(syncClientRooms(tick)!=StepStatus::Complete || retiringRoom()) return StepStatus::Blocked;
     std::set<RegionId> resident;
     for (const auto &[id, player] : ports_.players.all()) {
         (void)id;
@@ -242,7 +247,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
 
     }
     for (auto &[id, lease] : state_.residency) lease.residency = resident.contains(id) ? Residency::Active : Residency::Sleeping;
-    return state_.preparation.empty() ? StepStatus::Complete : StepStatus::Blocked;
+    return StepStatus::Complete;
 }
 }
 

@@ -20,6 +20,15 @@ struct RoomTerrainLink {
     int width{}, height{};
     bool town{};
     std::vector<RoomTerrainId> near;
+    bool localLevel{true};
+};
+struct RoomTerrainLevel {
+    struct Boundary {int destination{}, side{}, plane{}, start{}, end{};};
+    int level{}, x{}, y{}, width{}, height{}; // Global tile origin and extent.
+    int townLevel{}, waypoint{-1}, teleport{}, monsterLevel{};
+    bool town{};
+    std::vector<RoomBounds> rooms; // Local subtiles, in DRLG allocation order.
+    std::vector<Boundary> boundaries; // Local subtiles, walking links only.
 };
 struct RoomTerrainTile {
     int array{}, x{}, y{}, type{};
@@ -68,6 +77,7 @@ class PreparedRoomTerrain {
     virtual ~PreparedRoomTerrain() = default;
     virtual int act() const = 0;
     virtual std::span<const RoomTerrainLink> rooms() const = 0;
+    virtual std::span<const RoomTerrainLevel> levels() const = 0;
     virtual std::unique_ptr<RoomTerrainSession> instantiate() const = 0;
 };
 } // namespace d2x

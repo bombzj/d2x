@@ -179,6 +179,7 @@ struct AreaState {
     std::vector<RoomState> rooms{};
     std::vector<EntityId> unitHeads{}; // Native pUnitFirst, separate from room residency.
     uint64_t terrainGeneration{1}; // Resource eviction never changes gameplay identity.
+    bool gameplayPrepared{true};
 };
 struct RoomUnitEntry {
     uint8_t kind{};

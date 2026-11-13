@@ -27,10 +27,10 @@ struct ActOneState {
     using DenCompletion=QuestCompletion;
     std::optional<DenCompletion> denCompletion;
     bool denLeftTown{}, denEntered{};
-    bool denHasKills{};
+    bool denHasKills{}, denCounterActive{};
     unsigned denRemaining{};
     std::map<PlayerId,EntityId> contributors;
-    std::map<PlayerId,unsigned> observed;
+    std::map<PlayerId,std::tuple<unsigned,bool>> observed;
     std::array<int,5> stones{};
     unsigned activatedStones{};
     uint32_t stoneInteractions{};

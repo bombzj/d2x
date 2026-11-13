@@ -56,10 +56,10 @@ class NativeMapGenerator {
     // Decode all inputs needed by this level's three DRLG reference rings.
     // Does not prepare lazy preset units or materialize linked room tiles /
     // collision. Outdoor substitution inputs retain their isolated seed draws.
-    // A nonempty room list decodes only those anchors for an existing session's
-    // restore(); it is not a standalone topology or an include() package.
+    // A nonempty list reloads known anchors. extendGraph also supplies the
+    // selected roots' three reference depths for an unfinished level graph.
     std::shared_ptr<const PreparedRoomTerrain> prepareRoomTerrain(int level,
-        std::shared_ptr<const WorldCatalog>, std::span<const RoomTerrainId> rooms = {});
+        std::shared_ptr<const WorldCatalog>, std::span<const RoomTerrainId> rooms = {}, bool extendGraph = false);
     size_t reveal(int level, int tileX, int tileY);
     // Allocation order; MPQ AutoMap presets also initialize their native rooms.
     std::vector<size_t> levelRooms(int level);

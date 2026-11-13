@@ -91,7 +91,7 @@
 | S→C 0x53 | 第二幕日食环境，独立于个人任务字 |
 | S→C 0x61／C→S 0x48 | 首次NPC旅行1→40／40→75设置相应completedActs后，任务投影→61(2／3)→TravelFact；非busy才发，事务成功置nativeBusy，48清除。重复往返不发；原影片播放及其他幕完整前置清理仍缺。此后续源码未构建／运行 |
 
-通用QuestFact的旧整组投影维护每连接的29／28、逐任务5D与特殊进度基线，只抑制未变化的状态投影。入局与完整52查询建立普通状态基线，不再清空后重发27项；查询专用关闭任务过滤不改变普通过渡基线。显式QuestStatusFact不抑制，仅flags0更新普通状态基线，flags2／16保留通知语义。C2S40查询不额外发29；公共旗标FlagPublication标为Global，只输出29，不附带私人28／52／全任务状态，NPC上下文与剧情事件保持各自语义。技能书、生命药剂及抗性卷轴成功使用在库存删除前发布flags2；日蚀开始53后同批发布flags16。0x58已阅回执只保存已阅位。此修复不等价于完整StatusCycler：邪恶洞窟计数阈值／人口条件、其余通用事实的来源粒度和同幕过滤仍需迁移。原版依据见[原版协议与任务依据](../../resources/NATIVE_PROTOCOL_EVIDENCE.md)。
+通用QuestFact的旧整组投影维护每连接的29／28、逐任务5D与特殊进度基线，只抑制未变化的状态投影。入局与完整52查询建立普通状态基线，不再清空后重发27项；查询专用关闭任务过滤不改变普通过渡基线。显式QuestStatusFact不抑制，仅flags0更新普通状态基线，flags2／16保留通知语义。C2S40查询不额外发29；公共旗标FlagPublication标为Global，只输出29，不附带私人28／52／全任务状态，NPC上下文与剧情事件保持各自语义。技能书、生命药剂及抗性卷轴成功使用在库存删除前发布flags2；日蚀开始53后同批发布flags16。0x58已阅回执只保存已阅位。邪恶洞穴计数提示的人口前置条件、开启阈值与复活后持续报数由quests领域维护，见[第一幕任务](ACT1.md#自研宿主执行)。这仍不等价于完整StatusCycler：死亡事件驱动、通用事实的来源粒度和同幕过滤仍需迁移。原版依据见[原版协议与任务依据](../../resources/NATIVE_PROTOCOL_EVIDENCE.md)。
 
 本人原任务事实 → QuestProjectionInput → projectQuestDisplay → QuestView → 共用quest_panel／controller。[catalog.hpp](../../../src/gameplay/quest/catalog.hpp)分别声明内部ID、幕、面板槽、原幕内任务号、图像槽及D2S槽；各幕身份表维护实际映射。第四幕只有三项，不用其他幕的六项布局补槽。
 

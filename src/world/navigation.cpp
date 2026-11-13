@@ -207,8 +207,8 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
         (blocked[index] && !(terrainCollision[index] & 0x09) ? 0x01 : 0);
 }
 Grid Grid::linkedNavigation(Vec &origin) const {
-    // Path.cpp prepares the target room; D2Collision queries room collision
-    // across active near-room links. Keep those grids borrowed, not copied.
+    // Path.cpp resolves a target in active rooms. Room lifecycle prepares
+    // their collision before the path query. Keep the linked grids borrowed.
     std::vector<NavigationSource> sources{{this, 0, 0}};
     int left = 0, top = 0, right = width, bottom = height;
     for (size_t index = 0; index < sources.size(); ++index) {

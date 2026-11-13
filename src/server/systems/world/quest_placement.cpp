@@ -46,7 +46,8 @@ bool System::nativeProtectedSpawnPosition(RegionId region,Vec position) {
     return arrival && arrival->x+area.origin.x>0 && arrival->y+area.origin.y>0 && protectedAt(*arrival);
 }
 std::optional<Vec> System::nativeActSpawnLocation(RegionId region,int tile) {
-    const auto found=ports_.areas.areas_.find(region);if(found==ports_.areas.areas_.end()) return {};
+    const auto found=ports_.areas.areas_.find(region);
+    if(found==ports_.areas.areas_.end() || !found->second.gameplayPrepared) return {};
     auto &state=found->second;const auto &area=state.definition;
     if(tile<0 || tile>13) throw std::invalid_argument("Invalid native spawn tile index");
     if(!state.levelRandom) state.levelRandom=area.initialLevelRandom;

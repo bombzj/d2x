@@ -1,6 +1,7 @@
 #include "gameplay/character/persistent_character.hpp"
 #include "server/game_messages.hpp"
 #include "server/area_store.hpp"
+#include "server/systems/world/system.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/protocol/gameplay_dispatch.hpp"
 #include "persistence/save_codec.hpp"
@@ -90,13 +91,23 @@ void NativeRealmService::uploadCharacter(net::protocol::Reader &in) {
 }
 void NativeRealmService::enterEnvironment(net::protocol::Reader &in) {
     in.finish();
-    if (peer.phase != GamePhase::LoggedOn) throw ProtocolError("Duplicate game admission");
+    if (peer.phase != GamePhase::LoggedOn || admissionPending) throw ProtocolError("Duplicate game admission");
     if (!binding || (directTcpIp && !tcpIpUploadComplete)) throw ProtocolError("Native character upload is incomplete");
+    admissionPending=true;
+    finishAdmission();
+}
+void NativeRealmService::finishAdmission() {
+    if(!admissionPending || peer.phase!=GamePhase::LoggedOn) return;
     if (!host.enter(*binding)) throw AdmissionFailure(6,"Game admission expired");
     const auto rooms=host.visibleRooms(*binding);
+    if(rooms.empty()) {
+        const auto pending=host.pendingAreas(binding->game);
+        if(!pending || pending->empty()) throw ProtocolError("Entered player lacks an active native room");
+        return;
+    }
     const auto view=host.read(*binding);
     const auto *current=view?terrain.map->activation.room(view->actor.position+Vec{.5f,.5f}):nullptr;
-    if (!current || rooms.empty()) throw ProtocolError("Entered player lacks an active native room");
+    if (!current) throw ProtocolError("Entered player lacks an active native room");
     const server::RoomView own{RegionId(terrain.request.level),
         (int(terrain.origin.x)+current->x)/5,(int(terrain.origin.y)+current->y)/5};
     for (auto &packet : admission) {
@@ -128,6 +139,7 @@ void NativeRealmService::enterEnvironment(net::protocol::Reader &in) {
                 peer.questProjection[{packet.front(),packet.at(1)}]=std::move(packet);
     }
     peer.phase = GamePhase::Entered;
+    admissionPending=false;
     peer.loadPending = true;
     peer.sequence = peer.sentRevision = peer.sentMovement = 0;
     peer.lastMotion.clear();

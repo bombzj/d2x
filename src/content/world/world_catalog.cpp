@@ -107,6 +107,7 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
                 record.subtype = number("SubType", -1);
                 record.theme = number("SubTheme", -1);
                 record.waypoint = number("Waypoint", -1);
+                record.teleport = number("Teleport");
                 record.shrineSubstitution = number("SubShrine", -1);
                 record.waypointSubstitution = number("SubWaypoint", -1);
                 // LevelsTbls compiles this WORD as zero for an empty cell.

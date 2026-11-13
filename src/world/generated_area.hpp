@@ -28,6 +28,7 @@ struct GeneratedArea {
     uint64_t levelRandom{};
     std::vector<NativeTileInfo> tileInfo;
     NativeLevelPlacement placement;
+    std::vector<int> nearbyLevels;
 };
 // Resource/descriptor preparation on the archive owner's thread. The authority
 // receives pristine decoded room inputs and materializes its own DRLG history.
@@ -45,5 +46,5 @@ class AreaGenerator {
 GeneratedArea generateArea(Archives &, AreaGenerationRequest);
 // Selective resource reload; no offline map projection or gameplay content.
 std::shared_ptr<const PreparedRoomTerrain> generateRoomInputs(Archives &, AreaGenerationRequest,
-    std::span<const RoomTerrainId>);
+    std::span<const RoomTerrainId>, bool extendGraph = false);
 } // namespace d2x

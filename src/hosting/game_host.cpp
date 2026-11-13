@@ -150,6 +150,11 @@ const server::AreaMetadata *GameHost::areaMetadata(GameHandle handle, RegionId i
     const auto *area=slot?slot->game->area(id):nullptr;
     return area?&area->definition:nullptr;
 }
+const RoomLayout *GameHost::areaRoomLayout(GameHandle handle,RegionId id) const {
+    const auto *slot=find(handle);
+    const auto *area=slot?slot->game->area(id):nullptr;
+    return area?&area->definition.activation:nullptr;
+}
 std::optional<server::GameSettings> GameHost::settings(GameHandle handle) const {
     const auto *slot = find(handle); return slot ? std::optional{slot->game->settings()} : std::nullopt;
 }

@@ -17,9 +17,9 @@ namespace d2x::server::world {
 // Area activation and prepared-area handoff; generation stays in the host.
 enum class Residency { Prepared, Active, Sleeping };
 struct AreaLease { RegionId area; uint64_t generation{}; Residency residency; };
-// Empty roomInputs requests the area's gameplay definition. A nonempty list
-// only rehydrates those known native rooms; it must not install an area.
-struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; std::shared_ptr<const pd2::MapInstance> pd2Map{}; uint64_t terrainGeneration{}; std::vector<RoomTerrainId> roomInputs{}; int roomInputAct{-1}; };
+// Empty roomInputs requests gameplay data. A room ticket supplies immutable
+// inputs for the requested anchors and can extend their native near graph.
+struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; std::shared_ptr<const pd2::MapInstance> pd2Map{}; uint64_t terrainGeneration{}; std::vector<RoomTerrainId> roomInputs{}; int roomInputAct{-1}; bool extendRoomGraph{}; };
 struct PreparedArea { uint64_t request{}; AreaDefinition definition; std::shared_ptr<const PreparedRoomTerrain> roomInputs{}; };
 struct EnvironmentNotice {EnvironmentFact value;uint64_t revision{};};
 struct QuestPosition {RegionId area;Vec position;std::optional<RoomView> room{};};
@@ -47,7 +47,7 @@ class System {
     State state_;
     const Ports ports_;
     uint64_t nextRequest_ = 1;
-    std::map<RegionId, PrepareArea> failed_;
+    std::map<std::pair<RegionId,bool>, PrepareArea> failed_;
     struct RoomRuntime;
     std::unique_ptr<RoomRuntime> rooms_;
     std::set<RegionId> openedTombs_;
@@ -58,14 +58,14 @@ class System {
     std::shared_ptr<const pd2::MapInstance> pd2ProgramMap_;
     std::vector<StatValue> pd2RuntimeGlobal_;
     void prepareActTime(int);
-    void updateRooms(TickContext);
     void invalidateRooms();
     void refreshRoomTerrain();
     bool roomInputsReady(RegionId) const;
     bool restoreRoomInputs(const AreaDefinition &);
     bool restoreRoomInputs(const PrepareArea &, const PreparedRoomTerrain &);
+    bool installAreaGameplay(AreaDefinition);
     DomainResult<uint64_t> requestAreaInputs(RegionId,std::shared_ptr<const pd2::MapInstance>);
-    DomainResult<uint64_t> requestRoomInputs(RegionId, int act, std::vector<RoomTerrainId>, std::shared_ptr<const pd2::MapInstance>);
+    DomainResult<uint64_t> requestRoomInputs(RegionId, int act, std::vector<RoomTerrainId>, std::shared_ptr<const pd2::MapInstance>, bool extendGraph = false);
     DomainResult<uint64_t> request(RegionId,std::shared_ptr<const pd2::MapInstance> = {});
     bool cancelPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &);
     void commitPd2Preparation(const std::shared_ptr<const pd2::MapInstance> &) noexcept;
@@ -123,7 +123,9 @@ class System {
     bool visible(PlayerId, RegionId, Vec) const;
     void activate(RegionId, Vec); // Acquires resident terrain; queues released inputs. Caller checks loaded().
     bool prepareClientRoom(RegionId, Vec);
-    void changeClientRoom(PlayerId, uint64_t tick); // Current entered player, including initial admission.
+    bool changeClientRoom(PlayerId, uint64_t tick); // Current entered player, including initial admission.
+    StepStatus syncClientRooms(TickContext);
+    void requestActiveAreas();
     StepStatus step(TickContext, FrameFacts &);
     StepStatus maintainRooms(TickContext);
 };

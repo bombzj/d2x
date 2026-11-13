@@ -184,24 +184,10 @@ DomainResult<> System::castTeleport(const ActorContext &actor,PointTarget target
     const Vec global=target.position+definition.origin;
     if(global.x<0 || global.y<0 || global.x>UINT16_MAX || global.y>UINT16_MAX) return {DomainStatus::InvalidRequest,{}};
     int column=int(std::floor(global.x+.5f)),row=int(std::floor(global.y+.5f));
-    const auto *bounds=definition.activation.room(player->position+Vec{.5f,.5f});
-    if(!bounds) return {DomainStatus::Unavailable,{}};
-    const RoomView current{actor.area,(int(definition.origin.x)+bounds->x)/5,(int(definition.origin.y)+bounds->y)/5};
-    // SrvDo27 -> SUNIT relocation: resolve the original room neighbourhood,
-    // acquire its terrain, then search size 2 / 0x1c09 at the release frame.
-    const auto acquire=[&](RoomView view) {
-        const auto *area=ports_.areas.find(view.area);
-        if(!area || area->definition.act!=definition.act) return false;
-        const Vec point=Vec{float(column),float(row)}-area->definition.origin;
-        const auto *room=area->definition.activation.room(point+Vec{.5f,.5f});
-        if(!room || (int(area->definition.origin.x)+room->x)/5!=view.x ||
-            (int(area->definition.origin.y)+room->y)/5!=view.y) return false;
-        ports_.world.activate(view.area,point+Vec{.5f,.5f});return ports_.areas.loaded(view.area,point+Vec{.5f,.5f});
-    };
-    bool acquired=acquire(current);
-    if(!acquired) for(const auto room:definition.roomNear.at(size_t(bounds-definition.activation.rooms().data())))
-        if(acquire(room)) {acquired=true;break;}
-    if(!acquired) return {ports_.world.awaitingRoomInputs()?DomainStatus::PendingContent:DomainStatus::Unavailable,{}};
+    // SrvDo27 -> SUNIT relocation resolves the landing in the active Room1
+    // neighbourhood. ChangeClientRoom owns materialization of new neighbours.
+    auto room=ports_.areas.roomAtPosition(actor.area,player->position+Vec{.5f,.5f},column,row);
+    if(!room) return {DomainStatus::Unavailable,{}};
     // UNITS_TestCollisionByCoordinates shortens both ends by unit size 2.
     if(player->rules.skills && player->rules.skills->pd2) {
         const auto landing=pd2TeleportLanding(actor.area,player->position,target.position,2);
@@ -209,9 +195,9 @@ DomainResult<> System::castTeleport(const ActorContext &actor,PointTarget target
         target.position=*landing.value;
         column=int(std::floor(target.position.x+definition.origin.x+.5f));
         row=int(std::floor(target.position.y+definition.origin.y+.5f));
+        room=ports_.areas.roomAtPosition(actor.area,player->position+Vec{.5f,.5f},column,row);
     } else if(definition.teleportMode==2 && !definition.collision.interactionSegment(player->position,target.position,2,{}))
         return {DomainStatus::Unavailable,{}};
-    const auto room=ports_.areas.roomAtPosition(actor.area,player->position+Vec{.5f,.5f},column,row);
     if(!room) return {DomainStatus::Unavailable,{}};
     const auto sample=ports_.spatial.nativeCollisionSample(0x1c09);
     const auto free=ports_.areas.nativeFreeCoordinates(*room,column,row,2,0x1c09,sample);
@@ -490,7 +476,7 @@ DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::o
     const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(target);
     if(!p || !p->entered || p->actor!=actor.actor || p->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
     if(!p->rules.character || !p->rules.character->areaIds.contains(target)) return {DomainStatus::InvalidRequest,{}};
-    if(!area) {
+    if(!area || !area->gameplayPrepared) {
         const auto *origin=ports_.areas.find(p->area);
         const bool mapNeighbour=origin && origin->definition.pd2Map &&
             (std::any_of(origin->definition.boundaries.begin(),origin->definition.boundaries.end(),[&](const auto &edge){return edge.destination==target;}) ||

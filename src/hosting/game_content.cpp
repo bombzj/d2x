@@ -182,6 +182,7 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     auto projection=std::make_shared<Map>();
     projection->activation=area.activation;
     result.terrain.map=std::move(projection);
+    for(const auto &neighbour:area.roomTerrain->levels()) result.terrain.nearbyLevels.push_back(neighbour.level);
     result.terrain.roomTerrain.reset();
     result.terrain.recipe={};
     result.terrain.nearRooms.clear();

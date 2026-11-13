@@ -41,12 +41,14 @@ struct NativeRealmHost {
     std::map<GameHandle, std::map<RegionId, GeneratedArea>> terrain;
     std::unique_ptr<AreaPreparation> areaPreparation;
     std::map<std::pair<GameHandle, uint64_t>, uint64_t> areaPreparations;
+    std::map<std::pair<GameHandle,RegionId>,uint64_t> nearbyPreparations;
     std::set<NativeRealmService *> peers;
     explicit NativeRealmHost(Archives &a, std::filesystem::path directory, ContentPreparation mode = ContentPreparation::OriginalRules)
         : archives(a), root(std::move(directory)), preparation(mode) {}
     void initialize();
     void installPreparedArea(GameHandle, uint64_t request, PreparedWorldArea);
     void installPreparedRoomInputs(GameHandle, const server::world::PrepareArea &, std::shared_ptr<const PreparedRoomTerrain>);
+    void prepareAreaNow(GameHandle, const server::world::PrepareArea &);
     void advance(double seconds);
     void publishEvents(GameHandle);
     void retire(PlayerBinding);

@@ -407,6 +407,11 @@ StepStatus System::denStep(TickContext tick) {
         const bool generated=ports_.population.coverage(RegionId(8)).complete();
         state_.actOne.denRemaining=unsigned(std::min<size_t>(alive,UINT16_MAX));
         state_.actOne.denHasKills|=killed!=0;
+        // ACT1Q1_Callback08_MonsterKilled requires complete population before status 4.
+        // Once entered, keep reporting the counter even if resurrection raises
+        // it above five. Zero is handled by the completion path below.
+        if(generated && state_.actOne.denHasKills && alive>0 && alive<=5)
+            state_.actOne.denCounterActive=true;
         if(!state_.actOne.denCleared && state_.actOne.denHasKills && !alive && generated) {
             if(!(state_.initialFlags[questDefinition(QuestId::DenOfEvil).nativeSlot]&0x8000)) {
                 auto eligible=eligibleParty(QuestId::DenOfEvil,uint32_t(DenStage::Cleared),RegionId(8),{},{});
@@ -422,6 +427,7 @@ StepStatus System::denStep(TickContext tick) {
             state_.actOne.denCleared=true;
         }
     }
+    const auto observation=std::tuple{state_.actOne.denRemaining,state_.actOne.denCounterActive};
     bool blocked=false;
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered) continue;
@@ -429,10 +435,10 @@ StepStatus System::denStep(TickContext tick) {
         auto record=p.persistent.player; auto &den=record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::DenOfEvil));
         bool changed=false;
         if(p.area==RegionId(8)) changed=denAdvanceOnEntry(den);
-        if(!changed && (p.area!=RegionId(8) || (state_.actOne.observed.contains(id) && state_.actOne.observed.at(id)==state_.actOne.denRemaining))) continue;
+        if(!changed && (p.area!=RegionId(8) || (state_.actOne.observed.contains(id) && state_.actOne.observed.at(id)==observation))) continue;
         const auto &at=ports_.areas.at(p.area);
         const auto result=commit({id,p.actor,p.area,at.generation,0,tick.tick},std::move(record));
-        if(result) state_.actOne.observed[id]=state_.actOne.denRemaining; else blocked=true;
+        if(result) state_.actOne.observed[id]=observation; else blocked=true;
     }
     std::erase_if(state_.actOne.observed,[&](const auto &entry){return !ports_.players.find(entry.first);});
     std::erase_if(state_.actOne.contributors,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || p->actor!=entry.second;});

@@ -85,9 +85,15 @@ QuestView projectQuestDisplay(const ClassicData &data, const QuestProjectionInpu
         }
         if (const auto text=data.questStrings.find(key); text!=data.questStrings.end()) {
             entry.description=text->second;
-            if (def.id==QuestId::DenOfEvil)
+            if (def.id==QuestId::DenOfEvil) {
+                const auto remaining=input.denRemaining ? std::to_string(*input.denRemaining) : "?";
                 if (const auto at=entry.description->find("%d"); at!=std::string::npos)
-                    entry.description->replace(at,2,input.denRemaining ? std::to_string(*input.denRemaining) : "?");
+                    entry.description->replace(at,2,remaining);
+                else if(key=="qstsa1q14")
+                    // Retail TBL stores a prefix, not a format string. The
+                    // singular qstsa1q140 is already a complete sentence.
+                    *entry.description+=remaining;
+            }
         }
         if(native && symbolText && input.staffTombOffset && *input.staffTombOffset<7)
             entry.tombSymbol=*input.staffTombOffset;

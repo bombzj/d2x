@@ -43,6 +43,10 @@ void NativeRealmHost::retire(PlayerBinding binding) {
         if (entry.first.first != binding.game) return false;
         areaPreparation->cancel(entry.second); return true;
     });
+    std::erase_if(nearbyPreparations,[&](const auto &entry) {
+        if(entry.first.first!=binding.game) return false;
+        areaPreparation->cancel(entry.second);return true;
+    });
     std::erase_if(games, [&](const auto &entry) { return entry.second.handle == binding.game; });
 }
 void NativeRealmHost::installPreparedArea(GameHandle game, uint64_t request, PreparedWorldArea prepared) {
@@ -65,6 +69,19 @@ void NativeRealmHost::installPreparedRoomInputs(GameHandle game,const server::wo
     prepared.definition.pd2Map=request.pd2Map;prepared.roomInputs=std::move(inputs);
     if(!host.installArea(game,std::move(prepared))) throw std::runtime_error("Prepared room input handoff expired");
 }
+void NativeRealmHost::prepareAreaNow(GameHandle game,const server::world::PrepareArea &request) {
+    const auto catalog=sharedWorldCatalog(archives,request.settings.difficulty);
+    const auto &level=catalog->level(int(request.destination));
+    const auto act=request.roomInputs.empty()?level.act:request.roomInputAct;
+    const AreaGenerationRequest source{request.settings.mapSeed,act,level.id,request.settings.difficulty,
+        request.settings.ladderMonsterStats(),request.pd2Map};
+    if(request.roomInputs.empty()) installPreparedArea(game,request.request,prepareWorldArea(archives,*content,source));
+    else installPreparedRoomInputs(game,request,generateRoomInputs(archives,source,request.roomInputs,request.extendRoomGraph));
+    if(const auto inFlight=areaPreparations.find({game,request.request});inFlight!=areaPreparations.end()) {
+        areaPreparation->cancel(inFlight->second);
+        areaPreparations.erase(inFlight);
+    }
+}
 void NativeRealmHost::advance(double seconds) {
     using Clock=std::chrono::steady_clock;
     const auto started=Clock::now();
@@ -81,7 +98,8 @@ void NativeRealmHost::advance(double seconds) {
     host.advance(seconds);
     const auto simulated=Clock::now();
     // Resource preparation never occupies the simulation scheduler. Consume
-    // only the oldest request per game so completion timing cannot reorder IDs.
+    // only the oldest request in each lane per game. Room-only installs do
+    // not allocate gameplay identities and can bypass full area preparation.
     for (auto &[game, areas] : terrain) {
         // Failed unpublished map openings retire authority before the host's
         // decoded terrain. Never leave an old map occupying a future handoff.
@@ -102,19 +120,28 @@ void NativeRealmHost::advance(double seconds) {
                 [&](const auto &request){return request.request==entry.first.second;})) return false;
             areaPreparation->cancel(entry.second);return true;
         });
-        for (const auto &request : *pending) {
+        for(const bool roomLane:{true,false}) for (const auto &request : *pending) {
+            if(roomLane==request.roomInputs.empty()) continue;
             const auto key = std::pair{game, request.request};
             try {
-                const auto found = areaPreparations.find(key);
+                auto found = areaPreparations.find(key);
                 if (found == areaPreparations.end()) {
                     const auto catalog = sharedWorldCatalog(archives, request.settings.difficulty);
                     const auto &level = catalog->level(int(request.destination));
                     const auto act=request.roomInputs.empty()?level.act:request.roomInputAct;
-                    const auto ticket = areaPreparation->submit({request.settings.mapSeed, act, level.id, request.settings.difficulty,request.settings.ladderMonsterStats(),request.pd2Map},request.roomInputs);
-                    areaPreparations.emplace(key, ticket);
+                    uint64_t ticket{};
+                    if(!roomLane && !request.pd2Map) {
+                        if(const auto warm=nearbyPreparations.find({game,request.destination});warm!=nearbyPreparations.end()) {
+                            ticket=warm->second;
+                            areaPreparation->promote(ticket);
+                            nearbyPreparations.erase(warm);
+                        }
+                    }
+                    if(!ticket) ticket=areaPreparation->submit({request.settings.mapSeed,act,level.id,request.settings.difficulty,
+                        request.settings.ladderMonsterStats(),request.pd2Map},request.roomInputs,request.extendRoomGraph);
+                    found=areaPreparations.emplace(key,ticket).first;
                     std::clog << "[host-content] bind game=" << game.slot << ':' << game.generation
                         << " request=" << request.request << " ticket=" << ticket << " level=" << int(request.destination) << '\n';
-                    break;
                 }
                 auto result = areaPreparation->take(found->second);
                 if (!result) break;
@@ -135,6 +162,53 @@ void NativeRealmHost::advance(double seconds) {
                     peer->counters.lastFailure = error.what(); ++peer->counters.failures;
                 }
             }
+        }
+    }
+    for(auto *peer:peers) if(peer->admissionPending) {
+        try {peer->finishAdmission();}
+        catch(const std::exception &error) {peer->rejectAdmission(6,error.what());}
+    }
+    // Room07 and movement can reference a level before its population inputs
+    // arrive. Protocol projection uses the already installed DRLG geometry.
+    for(auto &[game,areas]:terrain) {
+        const auto settings=host.settings(game);
+        if(!settings) continue;
+        std::set<RegionId> nearby;
+        for(const auto player:host.participants(game)) {
+            const auto visible=host.visibleAreas({game,player});
+            if(!visible.empty()) {
+                if(const auto current=areas.find(visible.front());current!=areas.end())
+                    for(const int level:current->second.nearbyLevels)
+                        if(level<=136 && !areas.contains(RegionId(level))) nearby.insert(RegionId(level));
+            }
+            for(const auto region:visible) {
+                if(areas.contains(region)) continue;
+                const auto *definition=host.areaMetadata(game,region);
+                const auto *layout=host.areaRoomLayout(game,region);
+                if(!definition || !layout) throw std::logic_error("Visible room lacks its level geometry");
+                auto projection=std::make_shared<Map>();
+                projection->activation=*layout;
+                GeneratedArea generated;
+                generated.request={settings->mapSeed,definition->act,int(region),settings->difficulty};
+                generated.origin=definition->origin;
+                generated.map=std::move(projection);
+                areas.emplace(region,std::move(generated));
+            }
+        }
+        std::set<RegionId> required;
+        if(const auto pending=host.pendingAreas(game)) for(const auto &request:*pending)
+            if(request.roomInputs.empty()) required.insert(request.destination);
+        std::erase_if(nearbyPreparations,[&](const auto &entry) {
+            if(entry.first.first!=game || nearby.contains(entry.first.second) || required.contains(entry.first.second)) return false;
+            areaPreparation->cancel(entry.second);return true;
+        });
+        for(const auto region:nearby) {
+            const auto key=std::pair{game,region};
+            if(required.contains(region) || nearbyPreparations.contains(key)) continue;
+            const auto catalog=sharedWorldCatalog(archives,settings->difficulty);
+            const auto &level=catalog->level(int(region));
+            nearbyPreparations.emplace(key,areaPreparation->submit({settings->mapSeed,level.act,level.id,settings->difficulty,
+                settings->ladderMonsterStats()}, {}, false, true));
         }
     }
     const auto prepared=Clock::now();

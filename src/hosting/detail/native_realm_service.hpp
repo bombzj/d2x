@@ -128,6 +128,7 @@ struct NativeRealmService {
     };
     std::optional<ReloadCandidate> reload;
     bool leavePending{};
+    bool admissionPending{};
     std::optional<uint64_t> hardcoreDeathSavedRevision;
     HostDiagnostics counters;
 
@@ -219,6 +220,7 @@ struct NativeRealmService {
     // Native game lifecycle; domain requests live under protocol/handlers_*.
     void logon(net::protocol::Reader &);
     void enterEnvironment(net::protocol::Reader &);
+    void finishAdmission();
     void saveAndLeave(net::protocol::Reader &);
     void finishPendingLeave();
     void ping(net::protocol::Reader &);

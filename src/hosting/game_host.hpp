@@ -82,6 +82,7 @@ struct PreparedArea;
 }
 
 namespace d2x {
+class RoomLayout;
 struct PlayerSnapshot;
 struct MonsterSnapshot;
 struct PetOwnershipSnapshot;
@@ -181,6 +182,7 @@ class GameHost {
     // Synchronous read-only borrow. Do not retain across host mutations or
     // instance retirement; value snapshots continue to use area().
     const server::AreaMetadata *areaMetadata(GameHandle, RegionId) const;
+    const RoomLayout *areaRoomLayout(GameHandle, RegionId) const;
     std::optional<NativeActEnvironment> environment(GameHandle,RegionId) const;
     std::optional<server::GameSettings> settings(GameHandle) const;
     uint64_t nextEntity(GameHandle) const;
