@@ -60,12 +60,12 @@ if($AiScenario){
         'ama' {'Amazon'}
         default {throw "No prepared AI saves for class '$AiClass'. Available classes: sor, ama."}
     }
-    if(-not $Diagnostic -or $ClientProfile -or $HostLan -or $Lan -or $HostSaves -or
+    if(-not $Diagnostic -or $ClientProfile -or $HostLan -or $HostSaves -or
         $OnlineCharacter -or $OnlinePlay -or $OnlineCreateGame -or $OnlineJoinGame -or
         $Hidden -or $PSBoundParameters.ContainsKey('PipeName')){
-        throw 'debug-AI requires graphical Single Player with its own save directory and diagnostic pipe.'
+        throw 'debug-AI requires graphical Single Player or TCP/IP Join with its own save directory and diagnostic pipe.'
     }
-    if(Get-Process -Name d2x -ErrorAction SilentlyContinue){
+    if(-not $Lan -and (Get-Process -Name d2x -ErrorAction SilentlyContinue)){
         throw 'A D2X instance is already running. Close it before starting debug-AI.'
     }
     $actNames=@('One','Two','Three','Four','Five')
@@ -186,7 +186,10 @@ try{
     if($Lan){$arguments+=@('--lan',$Lan)}
     if($PSBoundParameters.ContainsKey('GamePort')){$arguments+=@('--game-port',"$GamePort")}
     if($HostSaves){$arguments+=@('--host-saves',$HostSaves)}
-    if($AiScenario){$arguments+=@('--load',$aiSave)}
+    if($AiScenario){
+        if($Lan){$arguments+=@('--online-character',$aiName)}
+        else{$arguments+=@('--load',$aiSave)}
+    }
     if($OnlineConfig){$arguments+=@('--online-config',$OnlineConfig)}
     if($OnlineCharacter){$arguments+=@('--online-character',$OnlineCharacter)}
     if($OnlinePlay){$arguments+=@('--online-play',$OnlinePlay)}
@@ -236,6 +239,7 @@ try{
         if($AiScenario){
             $runInfo.aiClass=$AiClass
             $runInfo.scenario=$AiScenario
+            $runInfo.lan=$Lan
             $runInfo.saveSource=$aiSaveSource
             $runInfo.save=$aiSave
             $runInfo.initialSaveSha256=Get-DiagnosticSha256 $aiSave
@@ -275,7 +279,7 @@ try{
                 if($status.characterUi.name -ne $aiName -or $status.characterUi.level -ne 99){
                     throw "Expected level-99 $aiName."
                 }
-                if(-not $previousAiRun -and $status.online.scene.area -ne $aiTown){
+                if(-not $Lan -and -not $previousAiRun -and $status.online.scene.area -ne $aiTown){
                     throw "Expected $aiName in starting town $aiTown, got area $($status.online.scene.area)."
                 }
                 $start=& $sendCommand -PipeName $PipeName -Command debug-ai-start -Arguments @{

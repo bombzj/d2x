@@ -113,7 +113,8 @@ RealmPortraitCatalog::RealmPortraitCatalog(Archives &a) {
     }
 }
 std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit &u,
-                                                               const OnlineWorldView &w, bool unequipped,std::optional<uint8_t> disguise,bool holyShield) const {
+    const OnlineWorldView &w, bool unequipped, std::optional<uint8_t> disguise, bool holyShield,
+    const EquipmentColor &equipmentColor) const {
     const auto characterClass=disguise?std::optional<uint16_t>(*disguise):u.classId;
     if ((!disguise && u.key.type != 0) || !characterClass || *characterClass >= 7 || (!unequipped && !u.equipmentObserved))
         return {};
@@ -132,6 +133,7 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
         return false;
     };
     bool equipmentEffectsKnown = true,shield=false;
+    std::array<std::array<int, 2>, 16> componentColors{};
     std::array<bool, 2> occupiedHands{};
     for (const auto &[id, item] : w.equipment) {
         (void)id;
@@ -152,17 +154,18 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
         if((item.bodyLocation==4 || item.bodyLocation==5) && isType(visual.appearance.type,"shld")) shield=true;
         if (visual.component == 16)
             continue; // No visible body component.
-        // Live equipment identity and the MPQ body components are authoritative
-        // regardless of quality. Preview restrictions on decorative effects
-        // must not hide a world character (including magic/ethereal armor).
-        if (!item.quality || *item.quality < 1 || *item.quality > 3 || item.autoAffix ||
-            (item.flags & (0x400000 | 0x4000000)))
+        const auto color = equipmentColor ? equipmentColor(item) : std::nullopt;
+        if ((!color && (!item.quality || *item.quality < 1 || *item.quality > 3 ||
+                        item.autoAffix || (item.flags & (0x800u | 0x4000000u)))) ||
+            (item.flags & 0x400000u))
             equipmentEffectsKnown = false;
         if (item.bodyLocation == 3 && visual.component == 1) {
             constexpr std::array<size_t, 6> components{3, 4, 1, 2, 8, 9};
-            for (size_t part = 0; part < components.size(); ++part)
+            for (size_t part = 0; part < components.size(); ++part) {
                 if (!set(components[part], visual.body[part]))
                     return {};
+                if (color) componentColors[components[part]] = *color;
+            }
         } else {
             // SCmd uses UNITS_GetItemComponentId for the packet header. For
             // assassins/barbarians it can label the non-primary hand item LH,
@@ -175,10 +178,17 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
             if (component > 10 || (component != 0 && component < 5) ||
                 !set(component, visual.appearance.code))
                 return {};
+            if (color) componentColors[component] = *color;
         }
     }
     auto parts = decode(preview, occupiedHands[0] && occupiedHands[1]);
     if(parts) {
+        parts->componentColors = componentColors;
+        // The crossbow graphic spans both hand layers.
+        if (parts->weapon == "xbw") {
+            const auto color = componentColors[5][0] ? componentColors[5] : componentColors[6];
+            parts->componentColors[5] = parts->componentColors[6] = color;
+        }
         parts->equipmentEffectsKnown=equipmentEffectsKnown;
         // Retail D2Client 6E1E0 / 6E289: SH + HolyShield + an actually
         // equippable shield uses the original hsh component code.
@@ -197,10 +207,8 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineChara
     // Newly created MCP characters can still use version 4 with empty equipment.
     // Component/color/class slots are shared with the saved version 10/13 layout.
     if (version != 4 && version != 10 && version != 13) return {};
-    // Bytes 14..24 carry per-component dye transforms. The live unit preview
-    // (decode(OnlineUnit)) rebuilds them as 0xFF and draws the base component
-    // art without a palette consumer; keep the same in-game behavior instead
-    // of dropping the whole character card.
+    // The character selection card currently consumes the saved component codes.
+    // Live units resolve dye from equipped items.
     constexpr std::array tokens{"am", "so", "ne", "pa", "ba", "dz", "ai"};
     RealmPortraitParts p;
     p.token = tokens[*c.characterClass];

@@ -1,4 +1,6 @@
 #include "remote_scene_impl.hpp"
+#include "scene_direction.hpp"
+#include "world/native_path_step.hpp"
 #include "network/chat_text.hpp"
 #include "presentation/world/overlay_geometry.hpp"
 
@@ -33,6 +35,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         gameGeneration = v.gameGeneration;
         areaGeneration = v.world.areaGeneration;
         denLightRooms.clear();
+        critterRooms.clear(); critters.clear(); critterFrame=0;
         motion.clear();
         collisionCells.clear();collisionBodies.clear();collisionRooms.clear();movementClock=0;movementFrame=0;
         monsterIdentities.clear();
@@ -144,6 +147,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     std::erase_if(pd2VisualSeeds,[&](const auto &entry) { return !v.world.units.contains(entry.first); });
     const auto origin = *binding.origin;
     advanceMovement(map,origin,clients);
+    if (!pd2) advanceCritters(map,{float(origin.x),float(origin.y)},clientTicks);
     std::vector<ClientMissileTarget> missileTargets;
     const auto modifierLevel=monsterText->nativeStats->names.find("modifierlist_level");
     for (const auto &[key, unit] : v.world.units) {
@@ -306,6 +310,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     std::erase_if(preparedDeaths, [&](const auto &key) { return !v.world.units.contains(key); });
     std::erase_if(shattered, [&](const auto &key) { return !v.world.units.contains(key); });
     std::vector<SoundActorView> soundActors;
+    if (!pd2) drawCritters(worldScene,shared,soundActors,paused);
     std::map<OnlineUnitKey, size_t> soundActorsByKey;
     for (const auto &[key, unit] : v.world.units) {
         if (key.type > 2 || !unit.position || !unitClass(unit)) continue;
@@ -441,14 +446,18 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if(const auto channel=channels.find(key);channel!=channels.end() && u.actionSkill==41 && u.mode==21)
             m.animation.startedAt=channel->second.started;
         const bool knockbackPose=(key.type==0 && (u.nativeMode?u.mode==19:u.mode==20)) || (key.type==1 && u.mode==13);
+        const auto faceTarget = [&](Vec look) {
+            m.look = look;
+            m.pathFacing.reset();
+        };
         if (m.route.empty() && !walking(u) && !knockbackPose && u.destination) {
             const auto look=local(*u.destination)-feet;
-            if(look.length()>.001f) m.look=look;
+            if(look.length()>.001f) faceTarget(look);
         }
         if (m.route.empty() && !walking(u) && !knockbackPose && u.destinationUnit) {
             if (const auto target = localUnitPosition(*u.destinationUnit)) {
                 const auto look=*target-Vec{float(origin.x),float(origin.y)}-feet;
-                if(look.length()>.001f) m.look=look;
+                if(look.length()>.001f) faceTarget(look);
             }
         }
         bool moving = !frozen && m.pathMoving;
@@ -495,8 +504,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         if(!talkingNpc) m.npcFacingRevision=0;
         if (u.direction && !walking(u) && !talkingNpc) {
             // Path/Step.cpp measures clockwise from +Y, with its eight-bin offset.
-            const float angle = (float(*u.direction & 63) - 7.5f) * 2.f * pi / 64.f;
-            m.look = {-std::sin(angle), std::cos(angle)};
+            m.look = nativeFacingVector(*u.direction);
         }
         // Retail D2Client 4F577-4F60E rolls the idle NPC's seed on
         // client game frames, independently of a quest alert or conversation.
@@ -539,8 +547,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             if(m.leapLanding>=0 && (displayed.actionSkill==132 || displayed.actionSkill==143)) m.animation.startedAt=m.leapLanding;
             auto target = localCast->command.point;
             if (localCast->command.target) target=targetPosition(*localCast->command.target);
-            if (localCast->teleportFacing) m.look = *localCast->teleportFacing;
-            else if (target) m.look = local(*target) - feet;
+            if (localCast->teleportFacing) faceTarget(*localCast->teleportFacing);
+            else if (target) faceTarget(local(*target) - feet);
         }
         if (key.type == 0 && v.world.corpseOwners.contains(key.id)) {
             displayed.mode = 17; displayed.nativeMode = true; displayed.actionSkill.reset();
@@ -565,7 +573,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             // Retail 4F613/4F670 -> 4DA60 ends KB on its animation clock,
             // then enters GH (the SandLeaper base family goes neutral).
             m.finishedMonsterKnockback=u.actionRevision;
-            m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+            m.position=NativePathStep::stop(m.pathStep, m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
             m.route.clear();m.goal.reset();m.pathElapsed=0;m.pathMoving=false;moving=false;
             feet=m.position+m.correction-Vec{float(origin.x),float(origin.y)};
             displayed.mode=knockbackEndMode;
@@ -677,6 +685,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         const auto *image = key.type == 2 ? visual->sample(objectElapsed, objectElapsed, m.look)
             : m.scriptedSequence && !completedAction?visual->sample(runClock,runClock,m.look,
                 m.scriptedSequence->nativeFrame?std::optional{float(m.scriptedSequence->animation.frame)/256.f}:std::nullopt)
+            : m.pathFacing ? visual->sampleFacing(animationClock, animationElapsed,
+                nativePlayerSpriteDirection(m.pathFacing->direction(), visual->animation.directions, key.id != playerId),
+                m.animationFrame())
             : visual->sample(animationClock, animationElapsed, m.look,m.animationFrame());
         if (!image || !visible(*image, p))
             continue;

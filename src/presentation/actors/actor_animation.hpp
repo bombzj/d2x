@@ -11,6 +11,7 @@
 #include <optional>
 
 namespace d2x {
+class ItemPaletteCatalog;
 struct ActorAnimationRequest {
     std::string category, mode;
     bool sequenceUsesAttackRate{};
@@ -66,6 +67,7 @@ struct ActorAnimationState {
 // every texture; requests contain resolved appearance values rather than units.
 class ActorAnimationCatalog {
     Archives &archives_;
+    ItemPaletteCatalog &itemPalettes_;
     AnimDataTable timing_;
     DataTable objects_, sequences_;
     std::map<int, size_t> objectRows_;
@@ -75,7 +77,7 @@ class ActorAnimationCatalog {
     ActorAnimation sequence(Graphics &, int palette, const ActorAnimationRequest &);
   public:
     void clearAnimations() {animations_.clear();}
-    explicit ActorAnimationCatalog(Archives &);
+    ActorAnimationCatalog(Archives &, ItemPaletteCatalog &);
     const ActorAnimation *resolve(Graphics &, int palette, const ActorAnimationRequest &);
     const ActorAnimation *object(Graphics &, int palette, int identity, int mode);
     ObjectPresentation objectPresentation(int identity, int serverMode, float elapsed) const;

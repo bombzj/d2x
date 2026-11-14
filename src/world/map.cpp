@@ -177,6 +177,7 @@ void Map::load(Archives &a, TileLibraryCache &cache, const MapRecipe &recipe, ui
         spawn = grid.inspectionArrival();
         return;
     }
+    roomActivation.reset();
     const auto &ds1 = recipe.ds1;
     terrain.path = terrain.name = ds1;
     terrain.data = assembleMap(a, recipe);

@@ -2,6 +2,7 @@
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
 #include "core/math.hpp"
+#include <array>
 #include <optional>
 #include <functional>
 #include <memory>
@@ -25,6 +26,7 @@ struct SpriteLayer {
     AtlasCell cell;
     // COF transparency enabled: native CelDraw mode; otherwise NORMAL (5).
     uint8_t drawMode = 5;
+    std::shared_ptr<const std::array<uint8_t, 256>> translation;
 };
 struct SpriteComponentBounds {
     Rectangle bounds{};
@@ -97,7 +99,8 @@ class Graphics {
     GpuAnimation composite(const std::string &type, const std::string &token, const std::string &mode,
                            const std::string &weapon,
                            const std::array<const char *, 16> *equipment = nullptr,
-                           const std::array<uint8_t, 256> *colorMap = nullptr, bool menuPortrait = false);
+                           const std::array<uint8_t, 256> *colorMap = nullptr, bool menuPortrait = false,
+                           const std::array<const uint8_t *, 16> &componentColors = {});
     void releaseDecoded() { decoded.clear(); }
 };
 } // namespace d2x

@@ -221,9 +221,11 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             // the following close would erase it before the callback commits.
             if(isDeferred(result.status)) return result;
             if(result) {
-                std::map<uint16_t,QuestId> next;
-                for(const auto &message:ports_.quests.dialogues(actor,npc->rule)) next.emplace(message.message.text,message.quest);
-                current->second.refresh=next!=current->second.pendingQuests;
+                if(npc->rule.code!="act2guard2") {
+                    std::map<uint16_t,QuestId> next;
+                    for(const auto &message:ports_.quests.dialogues(actor,npc->rule)) next.emplace(message.message.text,message.quest);
+                    current->second.refresh=next!=current->second.pendingQuests;
+                }
                 current->second.pendingQuests.erase(pending);
             }
             return result;
@@ -242,6 +244,13 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (talk.action != TalkToNpc::Action::Talk) return {};
     if (state_.next == UINT64_MAX) return {DomainStatus::Capacity, {}};
     auto [next,fact]=offer(actor,*npc,record);
+    const auto guardSpeech=ports_.quests.preparePalaceGuardSpeech(npc->rule);
+    if(npc->rule.code=="act2guard2") {
+        if(!guardSpeech) return {DomainStatus::NotImplemented,{}};
+        next.pendingIntroduction.reset();next.pendingArrival.reset();next.pendingQuests.clear();
+        next.pendingQuests.emplace(guardSpeech->dialogue.message.text,guardSpeech->dialogue.quest);
+        fact.messages={guardSpeech->dialogue.message};
+    }
     // Ordinary gossip is selected by the client from its MPQ, not appended
     // to the server's quest/intro text chain (27).
     auto conversations = state_.conversations; conversations[actor.player] = next;
@@ -257,7 +266,13 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         healing->character.stamina!=player.persistent.player.stamina || healing->transient.states!=player.transient.states || (healing->units && !healing->units->life.empty())))
         edit.publicFacts.emplace_back(SoundFact{npc->id,1,actor.area,10});
     auto plan = ports_.transactions.prepare(std::move(edit),nullptr,{},healing?healing->units:nullptr); if (!plan) return {plan.status,{}};
-    auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) { if (healing) ports_.effects.commit(std::move(*healing)); state_.conversations.swap(conversations); ++state_.next; } return result;
+    auto result = ports_.transactions.commit(std::move(*plan.value));
+    if (result) {
+        if (healing) ports_.effects.commit(std::move(*healing));
+        if (guardSpeech) ports_.quests.publishPalaceGuardSpeech(*guardSpeech);
+        state_.conversations.swap(conversations); ++state_.next;
+    }
+    return result;
 }
 DomainResult<> System::close(PlayerId player) {
     approaches_.erase(player);

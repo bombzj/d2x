@@ -4,6 +4,7 @@
 #include <string_view>
 
 namespace d2x {
+class PaletteBlendView;
 // Shared MPQ menu artwork, text metrics, layout and hit regions. Callers own
 // selection, enabled actions and commands; this component only draws state.
 // Menus use native resource pixels; only the outer viewport scales the canvas.
@@ -19,6 +20,7 @@ class OriginalMenu {
     bool ready() const { return ready_; }
     const std::string &reason() const { return reason_; }
     void drawBorder(Rectangle bounds) const { originalBox(border_, bounds, 1); }
+    void drawListFrame(Rectangle outer, Rectangle list, const PaletteBlendView *blend) const;
     float measure(std::string_view) const;
     Vec size(std::string_view title, std::span<const std::string> options) const;
     Rectangle bounds(Vec topCentre, Rectangle viewport, std::string_view title,
@@ -26,6 +28,8 @@ class OriginalMenu {
     Rectangle row(Rectangle, bool title, size_t index) const;
     int hit(Rectangle, bool title, size_t count, Vec mouse) const;
     void label(std::string_view, Rectangle, int color = 0) const;
+    static Rectangle buttonRow(Rectangle window, float baseline);
+    void drawButton(std::string_view text, Rectangle window, float baseline, Vec mouse) const;
     void draw(Rectangle, std::string_view title, std::span<const std::string> options,
         int selected = -1, std::string_view status = {}) const;
 };

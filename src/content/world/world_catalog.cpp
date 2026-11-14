@@ -138,9 +138,11 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
                         list->emplace_back(code);
                     }
                 }
-                for (int i = 0; population.supported && i < 4; ++i) {
+                for (int i = 0; i < 4; ++i) {
                     auto suffix = std::to_string(i + 1);
-                    population.critters[i] = table.value(row, "cmon" + suffix);
+                    const auto code = table.value(row, "cmon" + suffix);
+                    if (code.empty() || !monsterIds.contains(code)) break;
+                    population.critters[i] = code;
                     population.critterChance[i] = number("cpct" + suffix);
                     population.critterAmount[i] = number("camt" + suffix);
                 }

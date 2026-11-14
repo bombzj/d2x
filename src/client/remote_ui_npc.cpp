@@ -440,7 +440,11 @@ void RemoteUiClients::Impl::projectHireling() {
         const int baseResist[]={int(*value("fireresist")),int(*value("coldresist")),int(*value("lightresist")),int(*value("poisonresist"))};
         const int bonus[]={mods.fireResist,mods.coldResist,mods.lightningResist,mods.poisonResist};
         const int caps[]={mods.combat.fireMaxResist,mods.combat.coldMaxResist,mods.combat.lightningMaxResist,mods.combat.poisonMaxResist};
-        for(size_t index=0;index<4;++index) hirelingView.resistances[index]=std::clamp(baseResist[index]+bonus[index],-100,std::clamp(75+caps[index],-100,95));
+        for (size_t index = 0; index < 4; ++index) {
+            const int maximum = std::clamp(75 + caps[index], -100, 95);
+            hirelingView.resistances[index] = std::clamp(baseResist[index] + bonus[index], -100, maximum);
+            hirelingView.resistanceCapped[index] = baseResist[index] + bonus[index] >= maximum;
+        }
         const auto unit=world.units.find({1,merc.id});
         if(unit!=world.units.end() && unit->second.position && scene && scene->origin)
             hirelingView.position={float(unit->second.position->x)-scene->origin->x,float(unit->second.position->y)-scene->origin->y};
@@ -448,25 +452,27 @@ void RemoteUiClients::Impl::projectHireling() {
 void RemoteUiClients::Impl::projectHirelingList() {
         hirelingList={};hirelingList.revision=revision;hirelingList.actor=characterView.actor;
         hirelingList.gold=inventoryView.gold+inventoryView.bankGold;
-        const auto cancel=data.itemStrings.find("Cancel");
-        hirelingList.cancelLabel=cancel==data.itemStrings.end()?"Cancel":cancel->second;
         const auto &online=session.read();const auto &world=online.world;const auto &service=world.hirelingService;
         if(!service.source || !world.npcConversation || service.source!=world.npcConversation->source ||
             service.interaction!=world.interactionGeneration || !online.load.difficulty) return;
         hirelingList.npc=npcId(*service.source);
         hirelingList.offerRevision=service.revision;
         hirelingList.replacing=world.hireling.has_value() || world.deadHirelingName.has_value();
+        hirelingList.listReceived=service.listReceived;
         hirelingList.hirePending=service.pending==OnlineHirelingAction::Hire;
         hirelingList.hired=service.completed==OnlineHirelingAction::Hire && service.result==5;
         if(!service.listReceived) return;
         const auto npc=world.units.find({1,*service.source});
         if(npc==world.units.end() || !npc->second.classId) return;
+        const bool retail=online.protocolProfile=="lod113c";
+        const int nameDifficulty=retail?1:*online.load.difficulty+1;
+        const auto definition=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry){return entry.seller==*npc->second.classId && entry.difficulty==nameDifficulty;});
+        if(definition==data.hirelings.end()) return;
+        const auto first=data.hirelingNameIds.find(definition->nameFirst),last=data.hirelingNameIds.find(definition->nameLast);
+        if(first==data.hirelingNameIds.end() || last==data.hirelingNameIds.end()) return;
         for(const auto &[name,seed]:service.offers) {
-            const auto definition=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry){return entry.seller==*npc->second.classId && entry.difficulty==*online.load.difficulty+1;});
-            if(definition==data.hirelings.end()) continue;
-            const auto first=data.hirelingNameIds.find(definition->nameFirst),last=data.hirelingNameIds.find(definition->nameLast);
-            if(first==data.hirelingNameIds.end() || last==data.hirelingNameIds.end() || name<first->second || name>last->second) continue;
-            const auto offer=resolveHirelingOffer(data.hirelings,*npc->second.classId,*online.load.difficulty,characterView.level,seed,uint32_t(name-first->second+1));
+            if(name<first->second || name>last->second) continue;
+            const auto offer=resolveHirelingOffer(data.hirelings,*npc->second.classId,*online.load.difficulty,characterView.level,seed,uint32_t(name-first->second+1),retail);
             if(!offer) continue;
             const auto text=data.hirelingStrings.find(offer->nameKey);
             const auto row=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry){return entry.sourceRow==offer->sourceRow;});

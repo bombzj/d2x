@@ -12,6 +12,7 @@ bool SceneController::handleHirelingList(const FrameInput &input) {
         const auto &list = view_.hirelingListView();
         if (list.npc == ui.dialogueObject && list.hired) {
             ui.hireListOpen = false;
+            ui.hireListSlider = {};
             ui.hirelingConfirmation.reset();
             ui.npcMenu = view_.npcView().valid && view_.npcView().npc == ui.dialogueObject;
             return true;
@@ -28,32 +29,46 @@ bool SceneController::handleHirelingList(const FrameInput &input) {
             return true;
         }
         const auto &offers = list.offers;
-        const auto cancel = hirelingListCancel();
-        if (input.escape || (input.insideViewport && input.leftPressed &&
-            CheckCollisionPointRec(rv(input.mouse), cancel))) {
+        const auto cancel = ui.hireListCancelButton.handle(view_.hirelingCancelBounds(), input);
+        if (input.escape || cancel == ClassicButtonResult::Activated) {
             ui.hireListOpen = false;
-            npcClient_.submit(EndNpcConversation{ui.dialogueObject});
+            ui.hireListSlider = {};
+            ui.hireListCancelButton = {};
+            ui.npcMenu = view_.npcView().valid && view_.npcView().npc == ui.dialogueObject;
             return true;
         }
-        const int maximum = std::max(0, int(offers.size()) - hirelingVisibleRows);
-        ui.hireListScroll = std::clamp(ui.hireListScroll + input.pageDelta - input.quantityDelta, 0, maximum);
-        if (input.insideViewport && input.leftPressed) {
-            const auto bar = hirelingScrollBounds();
-            if (CheckCollisionPointRec(rv(input.mouse), bar)) {
-                const float local = (input.mouse.y - bar.y) / classicPanelScale();
-                if (local < 10) --ui.hireListScroll;
-                else if (local > 320) ++ui.hireListScroll;
-                else ui.hireListScroll = int(std::clamp((local - 10) / 310.f, 0.f, 1.f) * maximum + .5f);
-                ui.hireListScroll = std::clamp(ui.hireListScroll, 0, maximum);
-            } else if (list.npc == ui.dialogueObject) for (int row = 0; row < hirelingVisibleRows; ++row) {
-                const int index = ui.hireListScroll + row;
-                if (index >= int(offers.size())) break;
-                if (CheckCollisionPointRec(rv(input.mouse), hirelingListRow(row))) {
-                    const auto slot = offers.at(size_t(index)).slot;
-                    if (list.replacing) ui.hirelingConfirmation = ViewState::HirelingConfirmation{slot, list.offerRevision};
-                    else npcClient_.submit(HireMercenary{ui.dialogueObject, slot});
-                    break;
-                }
+        if (cancel == ClassicButtonResult::Captured) {
+            ui.hireListPressed.reset();
+            return true;
+        }
+        const auto &layout = view_.hirelingListLayout();
+        const int maximum = layout.lastPageFirst();
+        ui.hireListScroll = std::clamp(ui.hireListScroll, 0, maximum);
+        const auto slider = TextSlider::list(hirelingListContentBounds(), false);
+        if (slider.handle(input, ui.hireListSlider, ui.hireListScroll, maximum, int(layout.rows.size()),
+                          layout.pageSize(ui.hireListScroll))) {
+            ui.hireListPressed.reset();
+            return true;
+        }
+        if (input.focused && input.insideViewport && CheckCollisionPointRec(rv(input.mouse), hirelingListBounds()))
+            ui.hireListScroll = std::clamp(ui.hireListScroll + input.pageDelta - input.quantityDelta, 0, maximum);
+        std::optional<uint32_t> hovered;
+        if (input.insideViewport && list.npc == ui.dialogueObject) {
+            const int row = layout.hit(ui.hireListScroll, input.mouse);
+            if (row >= 0) hovered = offers[size_t(layout.rows[size_t(row)].offer)].slot;
+        }
+        if (!input.focused || (ui.hireListPressed && ui.hireListPressed->offerRevision != list.offerRevision))
+            ui.hireListPressed.reset();
+        if (input.focused && input.leftPressed) {
+            ui.hireListPressed.reset();
+            if (hovered) ui.hireListPressed = ViewState::HirelingConfirmation{*hovered, list.offerRevision};
+        }
+        if (input.leftReleased) {
+            const auto pressed = ui.hireListPressed;
+            ui.hireListPressed.reset();
+            if (pressed && hovered == pressed->slot) {
+                if (list.replacing) ui.hirelingConfirmation = pressed;
+                else npcClient_.submit(HireMercenary{ui.dialogueObject, pressed->slot});
             }
         }
         return true;
@@ -170,6 +185,7 @@ bool SceneController::handleHirelingToggle(const FrameInput &input) {
             view_.notice("Native hireling state is not available yet.", true); return true;
         }
         ui.hirelingOpen = !ui.hirelingOpen && view_.hirelingView().active;
+        ui.hirelingCloseButton = {};
         if (ui.hirelingOpen) {
             if (ui.inventory.storage || ui.inventory.cubeOpen) toggleInventory();
             ui.partyOpen = ui.characterOpen = ui.questOpen = false;
@@ -214,13 +230,14 @@ bool SceneController::handleHirelingPortrait(const FrameInput &input, float elap
 
 bool SceneController::handleHirelingPanel(const FrameInput &input) {
     auto &ui = view_.ui();
-    if (ui.hirelingOpen && input.insideViewport &&
-        CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
-        if (input.leftPressed && CheckCollisionPointRec(rv(input.mouse), hirelingClose())) {
-            ui.hirelingOpen = false;
-            ui.inventory.cancelGesture();
-            return true;
-        }
+    if (!ui.hirelingOpen) return false;
+    const auto close = ui.hirelingCloseButton.handle(hirelingCloseHit(), input);
+    if (close == ClassicButtonResult::Activated) {
+        ui.hirelingOpen = false;
+        ui.inventory.cancelGesture();
+    }
+    if (close != ClassicButtonResult::None) return true;
+    if (input.insideViewport && CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
         if (ui.inventory.drag) return handleInventory(input);
         if (!ui.inventory.pending && input.leftPressed) {
             const auto &order = hirelingEquipmentOrder;

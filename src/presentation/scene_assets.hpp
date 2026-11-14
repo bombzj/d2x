@@ -2,6 +2,7 @@
 #include "presentation/audio/scene_audio.hpp"
 #include "presentation/audio/scene_streams.hpp"
 #include "presentation/actors/actor_animation.hpp"
+#include "content/items/item_appearance.hpp"
 #include "content/world/automap_data.hpp"
 #include "gameplay/items/state.hpp"
 #include "gameplay/skills/visual.hpp"
@@ -57,13 +58,13 @@ class SceneAssets {
     mutable std::vector<std::shared_ptr<const std::vector<Tile>>> worldTileLibraries_;
     mutable int worldTilePalette_ = -1;
     void loadWorldLightDefinitions();
+    mutable ItemPaletteCatalog itemPalettes_;
     mutable std::unique_ptr<ActorAnimationCatalog> actorAnimations_;
     std::set<int> shrineObjects_;
     std::map<int, std::array<int, 2>> shrineOverlayIds_;
     void loadUi(Archives &, const ClassicData &);
     void loadNpcAlert(const DataTable &);
     void loadIceShatter();
-    mutable std::map<int, Bytes> itemTransforms_;
     GpuAnimation itemArt(const std::string &, std::array<int,2>, int palette, bool ground) const;
     void loadSkillIcons(Archives &archives, const ClassicData &content);
 
@@ -72,9 +73,10 @@ class SceneAssets {
     SoundBank audio;
     SceneStreams streams;
     SceneAudio sceneAudio;
+    GpuAnimation textSlider;
     EscapeMenu escapeMenu;
     ClassicFont font, questFont, skillGreenFont, characterLabelFont, characterPointFont,
-        characterCompactFont, characterRedFont, hirelingBlueFont, hirelingRedFont, skillLevelBlueFont, skillLevelCompactFont,
+        characterCompactFont, characterRedFont, hirelingBlueFont, hirelingRedFont, hirelingGoldFont, skillLevelBlueFont, skillLevelCompactFont,
         skillLevelCompactBlueFont, skillLevelCompactRedFont;
     ClassicFont automapPartyFont, automapNpcFont, automapOtherFont, deathFont;
     GpuAnimation deathTitle, deathInstruction;
@@ -83,6 +85,9 @@ class SceneAssets {
     std::array<ClassicFont, 13> itemTextFonts; // Original PL2 text-color indices.
     std::array<ClassicFont, 13> automapTextFonts; // font6 with the same colors; BH automap monster text.
     std::map<std::string, std::string, std::less<>> characterLabels;
+    struct HirelingMenuText {
+        std::string title, empty, cancel, level, life, defense, cost, space, dash, colon, jarulf;
+    } hirelingMenuText;
     std::map<std::string, std::string, std::less<>> characterClassNames;
     std::array<std::string, 2> globeTextFormats;
     Color playerNameBackground{};
@@ -161,7 +166,7 @@ class SceneAssets {
     std::array<GpuAnimation, size_t(QuestId::Count)> questIcons;
     std::array<Rectangle, size_t(QuestId::Count)> questFaces{};
     std::array<GpuAnimation, 7> tombSymbols;
-    GpuAnimation hirelingPanel, hirelingScroll, hirelingHead, hirelingArmor, hirelingWeapon;
+    GpuAnimation hirelingPanel, hirelingHead, hirelingArmor, hirelingWeapon;
     struct OverlayArt {
         GpuAnimation animation;
         Vec offset;

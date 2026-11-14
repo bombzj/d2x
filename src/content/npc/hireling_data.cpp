@@ -122,17 +122,21 @@ HirelingStats deriveHirelingStats(const HirelingDefinition &d, int level) {
     return s;
 }
 std::optional<HirelingOffer> resolveHirelingOffer(const std::vector<HirelingDefinition> &definitions,
-    int seller, int difficulty, int playerLevel, uint32_t seed, uint32_t slot) {
+    int seller, int difficulty, int playerLevel, uint32_t seed, uint32_t slot, bool retailPurchase) {
+    const auto vendor=std::find_if(definitions.begin(),definitions.end(),[&](const auto &entry) {
+        return entry.seller==seller && entry.difficulty==(retailPurchase?1:difficulty+1);
+    });
+    if(vendor==definitions.end() || !slot || playerLevel<1) return {};
     std::vector<const HirelingDefinition *> pool;
     int firstLevel = -1;
     for (const auto &entry : definitions) {
-        if (entry.seller != seller || entry.difficulty != difficulty + 1) continue;
+        if ((retailPurchase?entry.act!=vendor->act:entry.seller!=seller) || entry.difficulty!=difficulty+1) continue;
         if (firstLevel < 0) firstLevel = entry.level;
         if (entry.level == firstLevel) pool.push_back(&entry);
     }
-    if (pool.empty() || !slot || playerLevel < 1) return {};
-    const auto &firstKey = pool.front()->nameFirst;
-    const auto &lastKey = pool.front()->nameLast;
+    if (pool.empty()) return {};
+    const auto &firstKey = vendor->nameFirst;
+    const auto &lastKey = vendor->nameLast;
     const auto prefix = firstKey.find_last_not_of("0123456789") + 1;
     if (firstKey.size() < 2 || firstKey.size() != lastKey.size() || prefix >= firstKey.size()) return {};
     int first = 0, last = 0;
@@ -140,14 +144,13 @@ std::optional<HirelingOffer> resolveHirelingOffer(const std::vector<HirelingDefi
     const auto lastParsed = std::from_chars(lastKey.data() + prefix, lastKey.data() + lastKey.size(), last);
     if (firstParsed.ec != std::errc{} || lastParsed.ec != std::errc{} || first > last || slot > unsigned(last - first + 1)) return {};
     auto random = initialRandom(seed);
-    rollRandom(random);
-    const auto &definition = *pool[uint32_t(random) % pool.size()];
-    rollRandom(random);
-    const int delta = std::min(int32_t(uint32_t(random)) % 5, playerLevel - definition.level);
-    const int level = std::max(1, definition.level + delta);
+    const auto &definition = *pool[limitedRandom(random,uint32_t(pool.size()))];
+    const auto levelRoll=rollRandom(random);
+    const int level=retailPurchase?std::max(2,playerLevel-5+int(levelRoll%5)):
+        std::max(1,definition.level+std::min(int32_t(levelRoll)%5,playerLevel-definition.level));
     std::ostringstream key;
     key << firstKey.substr(0, prefix) << std::setw(int(firstKey.size() - prefix))
         << std::setfill('0') << first + int(slot - 1);
-    return HirelingOffer{slot, definition.sourceRow, level, key.str(), deriveHirelingStats(definition, level), seed};
+    return HirelingOffer{slot, definition.sourceRow, level, key.str(), deriveHirelingStats(definition,level), seed};
 }
 } // namespace d2x

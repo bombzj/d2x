@@ -716,7 +716,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,const Onli
         }
         auto passages=Impl::Json::array(),trails=Impl::Json::array();
         for(const auto &p:m.passages) passages.push_back({{"id",p.id},{"direction",p.direction},
-            {"kind",p.units?"unit-observation":"terrain-observation"},
+            {"kind",p.road?"road-observation":p.units?"unit-observation":"terrain-observation"},
             {"boundary",p.boundary},{"approaches",p.approaches},{"evidence",p.evidence},{"deferred",p.deferred==p.evidence}});
         for(const auto &[at,edges]:m.walked) trails.push_back({{"from",at},{"to",edges}});
         const auto player=observation.read().world.playerPosition;
@@ -730,6 +730,7 @@ std::optional<std::string> DebugAi::command(const nlohmann::json &raw,const Onli
             {"player",player?Impl::Json{player->x,player->y}:Impl::Json(nullptr)},
             { "knowledgePolicy","client-collision-unit-observation-and-automap-independent"},{"terrainLevels",std::move(ownership)},
             {"unitObservationTiles",m.unitObserved},
+            {"roadFollowing",m.followPaths},{"roadTiles",m.paths},{"checkedRoadTiles",m.pathChecked},
             {"experienceBounds",m.expectedBounds?Impl::Json(*m.expectedBounds):Impl::Json(nullptr)},
             { "masks",m.flatMasks()},{"mapSketch",m.sketch?Impl::Json{{"revision",m.sketch->revision},{"primitives",m.sketch->primitives},{"ink",std::move(sketchInk)},{"townServices",std::move(services)}}:Impl::Json(nullptr)},{"frontier",std::move(route)},{"passages",std::move(passages)},{"walkedRoutes",std::move(trails)}};
         const auto file=std::filesystem::path(s.behaviorLog.path).parent_path()/

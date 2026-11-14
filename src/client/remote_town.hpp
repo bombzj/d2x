@@ -176,6 +176,7 @@ class RemoteTown {
     // Actual viewport observations in the current terrain snapshot, in world
     // tile coordinates. Room activation and automap reveal do not qualify.
     std::vector<NavigationWall> observedNavigationWalls(uint16_t level) const;
+    std::vector<std::pair<int,int>> observedNavigationPaths(uint16_t level) const;
     std::optional<OnlinePoint> knownTargetPosition(uint16_t area,uint8_t type,uint16_t identity) const;
     std::optional<OnlinePoint> automapNpcPosition(uint16_t area,uint16_t identity) const;
     std::optional<OnlinePoint> automapTargetPosition(uint16_t area,uint16_t identity) const;

@@ -347,8 +347,10 @@ DomainResult<> System::moveNpc(EntityId id,RegionId region,Vec position,Vec dest
         ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});
         ports_.events.discardUnitSound(id);ports_.areas.removeRoomUnit(id);state_.actors.erase(found);
     } else {
+        actor.route.clear();actor.running=false;actor.pathStep={};
         actor.position=position;actor.movementGoal=destination;actor.moving=(destination-position).length()>.001f;
-        actor.pathType=1;actor.pathSteps=1;++actor.revision;ports_.areas.moveRoomUnit(id,region,position);refreshCollision(actor);
+        actor.pathType=1;actor.pathSteps=1;++actor.revision;actor.teleportRevision=actor.revision;
+        ports_.areas.moveRoomUnit(id,region,position);refreshCollision(actor);
     }
     return {DomainStatus::Applied,std::monostate{}};
 }

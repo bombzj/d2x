@@ -65,7 +65,7 @@ namespace {
 FrameEventType hazardEvent(const Object &object) {
     switch(object.rule.initialization) {
     case 24:return FrameEventType::StatRegeneration;
-    case 45:return FrameEventType::MonsterModifier; // A3Q6 bridge QUESTFN.
+    case 19:case 45:return FrameEventType::MonsterModifier;
     case 51:return FrameEventType::PeriodicStats;
     case 58:return FrameEventType::PeriodicSkills;
     case 59:return FrameEventType::MonsterModifier;
@@ -159,6 +159,10 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
             if(!queued) return {queued.status,{}};
             object.pending=true;object.lootAt=0;
         }
+    } else if(event.type==FrameEventType::MonsterModifier && object.rule.initialization==19 && object.hazardAt==event.payload) {
+        const auto result=ports_.quests.palaceBlockerEvent(object.id,tick);
+        if(!result) return result;
+        object.hazardAt=0;
     } else if(event.type==FrameEventType::MonsterModifier && ports_.quests.npcPortalDue(object.id)) {
         const auto result=ports_.quests.npcPortalEvent(object.id,tick);if(!result) return result;
     } else if(event.type==FrameEventType::MonsterModifier && ports_.quests.forgeRewardDue(object.id)) {

@@ -70,6 +70,7 @@ class NativeRoomActivation {
     // town-wide client references and pending authoritative unit operations.
     void update(uint64_t tick, const std::function<bool(size_t)> &retain = {});
     const auto &states() const { return states_; }
+    const auto &activeRooms() const { return activeRooms_; }
     bool valid() const { return !failed_; }
 };
 } // namespace d2x

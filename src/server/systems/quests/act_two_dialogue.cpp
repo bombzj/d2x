@@ -7,9 +7,22 @@
 #include "server/runtime/facts/quest_signals.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/catalog.hpp"
+#include "core/random.hpp"
 #include <algorithm>
+#include <stdexcept>
 
 namespace d2x::server::quests {
+std::optional<System::PalaceGuardSpeech> System::preparePalaceGuardSpeech(const NpcRule &npc) const {
+    if(npc.code!="act2guard2" || !state_.controlRandom) return {};
+    const auto expected=*state_.controlRandom;auto next=expected;
+    const auto text=uint16_t(state_.npcStory.palaceOpen?187+limitedRandom(next,3):186);
+    if(!npc.questMessages.contains(text)) return {};
+    return PalaceGuardSpeech{{QuestId::ArcaneSanctuary,{0,text}},expected,next};
+}
+void System::publishPalaceGuardSpeech(const PalaceGuardSpeech &speech) {
+    if(state_.controlRandom!=speech.expected) throw std::logic_error("Stale palace guard speech random state");
+    state_.controlRandom=speech.next;
+}
 std::optional<Dialogue> System::actTwoDialogue(const ActorContext &actor,const NpcRule &npc) const {
     const auto *p=ports_.players.find(actor.player);if(!p) return {};
     const auto &record=p->persistent.player;
@@ -112,10 +125,16 @@ DomainResult<> System::acknowledgeMeshifPassage(const ActorContext &actor,Charac
     auto plan=ports_.transactions.prepare(std::move(edit));
     return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
 }
-DomainResult<> System::acknowledgeActTwo(const ActorContext &actor,const Request &request,const NpcRule &) {
+DomainResult<> System::acknowledgeActTwo(const ActorContext &actor,const Request &request,const NpcRule &npc) {
     const auto *p=ports_.players.find(actor.player);auto record=p->persistent.player;
     auto &book=record.quests.at(size_t(ports_.settings.difficulty));auto &q=book.at(questIndex(request.quest));
     const auto message=*request.message;
+    if(npc.code=="act2guard2") {
+        if(request.quest!=QuestId::ArcaneSanctuary || message<186 || message>189) return {DomainStatus::InvalidRequest,{}};
+        q.nativeRecord=uint16_t(q.nativeRecord.value_or(actTwoLegacyRecord(request.quest,q))|(message==186?0x80:0x100));
+        return commit(actor,std::move(record),false,{},false);
+    }
+    const bool primaryGoal=(q.nativeRecord.value_or(actTwoLegacyRecord(request.quest,q))&0x2000)!=0;
     std::optional<travel::SpecialPortalPlan> portal;
     switch(message) {
     case 253: record.questPreludes.at(size_t(ports_.settings.difficulty)).at(size_t(QuestPreludeId::LutGholeinArrival))=true;break;
@@ -152,6 +171,26 @@ DomainResult<> System::acknowledgeActTwo(const ActorContext &actor,const Request
     }
     const auto eligible=message==302?eligibleParty(QuestId::SevenTombs,uint32_t(TombsStage::TyraelRescued),actor.area,{},{}):std::set<PlayerId>{};
     const auto result=commit(actor,std::move(record),false,eligible.contains(actor.player)?std::optional{QuestId::SevenTombs}:std::nullopt);
+    if(result) {
+        auto &runtime=state_.actTwo.runtime;auto &story=state_.npcStory;
+        switch(message) {
+        case 253:break;
+        case 334:
+            if(primaryGoal) runtime[0].state=5;
+            if(primaryGoal || !runtime[0].active) advancePalaceSequence();
+            break;
+        case 373:runtime[3].state=2;story.palaceOpen=true;break;
+        case 377:runtime[3].state=3;runtime[3].last=3;break;
+        case 430:runtime[5].state=2;runtime[5].last=1;break;
+        case 302:runtime[5].state=4;break;
+        case 442:runtime[5].state=5;break;
+        default:
+            if(request.quest==QuestId::TaintedSun && primaryGoal && runtime[2].active) {
+                runtime[2].state=5;advancePalaceSequence();
+            }
+            break;
+        }
+    }
     if(result && portal) {
         ports_.travel.commitSpecialPortal(std::move(*portal));state_.actTwo.tyraelPortal=true;
         captureGoal(QuestId::SevenTombs,uint32_t(TombsStage::TyraelRescued),eligible);

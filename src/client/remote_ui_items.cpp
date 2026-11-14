@@ -78,6 +78,56 @@ std::optional<ItemInstance> RemoteUiClients::Impl::completeItem(const OnlineItem
         }
         return item;
     }
+std::optional<std::array<int, 2>> RemoteUiClients::equipmentColor(const OnlineEquippedItem &equipment) const {
+    const auto &online = impl_->session.read();
+    const auto &world = online.world;
+    const auto wire = world.items.find(equipment.id);
+    const auto &items = impl_->items.read().items;
+    const auto detail = items.find(equipment.id);
+    if (wire == world.items.end() || wire->second.mode != 1 ||
+        wire->second.ownerType != equipment.ownerType || wire->second.owner != equipment.owner ||
+        wire->second.body != equipment.bodyLocation || wire->second.code != equipment.code ||
+        detail == items.end() || !detail->second.decoded || detail->second.revision != wire->second.revision)
+        return {};
+    const auto &decoded = detail->second;
+    const auto revision = std::tuple{online.gameGeneration, world.itemRevision, impl_->items.read().revision};
+    if (impl_->equipmentColorRevision != revision) {
+        impl_->equipmentColors.clear();
+        impl_->equipmentColorRevision = revision;
+    }
+    if (const auto cached = impl_->equipmentColors.find(equipment.id); cached != impl_->equipmentColors.end())
+        return cached->second;
+    const auto quality = itemQualityFromNative(decoded.quality);
+    if (!quality || !impl_->data.items.find(wire->second.code)) return {};
+    const bool qualityColor = *quality == ItemQuality::Unique || *quality == ItemQuality::Set ||
+                              *quality == ItemQuality::Magic || *quality == ItemQuality::Rare;
+    if (qualityColor && !decoded.identified) return {};
+    if (*quality == ItemQuality::Unique || *quality == ItemQuality::Set) {
+        const auto &table = impl_->data.tables.at(*quality == ItemQuality::Unique ? "uniqueitems" : "setitems");
+        const auto codeColumn = *quality == ItemQuality::Unique ? "code" : "item";
+        if (decoded.fileIndex >= table.rows().size() ||
+            table.value(decoded.fileIndex, codeColumn) != equipment.code) return {};
+    }
+    auto item = impl_->itemInstance(wire->second, decoded, ContainerLocation{});
+    if (!qualityColor && decoded.filledSockets) {
+        const OnlineItem *first = nullptr;
+        size_t observed = 0;
+        for (const auto &[id, child] : world.items) {
+            (void)id;
+            if (child.ownerType != 4 || child.owner != equipment.id || child.mode != 6 ||
+                !child.socketAssignmentRevision) continue;
+            ++observed;
+            if (!first || child.socketAssignmentRevision < first->socketAssignmentRevision)
+                first = &child;
+        }
+        if (observed != decoded.filledSockets || !first || !impl_->data.items.find(first->code)) return {};
+        // ITEMS_GetColor needs only the first socket item identity.
+        item.socketedItems.emplace_back().definition = first->code;
+    }
+    const auto color = equipmentColorTransform(impl_->data, impl_->data.items, item);
+    impl_->equipmentColors.emplace(equipment.id, color);
+    return color;
+}
 std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::observedCombatEquipment(OnlineUnitKey key,EquipmentActor actor,
         const std::map<int,int> &ranks,int defense,int rating,int minimum,int maximum) const {
         const auto &online=session.read();

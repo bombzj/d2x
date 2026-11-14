@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "world/native_path_step.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/resources.hpp"
 #include "server/runtime/facts/travel.hpp"
@@ -103,7 +104,7 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
         player.area=relocation->area;player.position=relocation->position;
         player.lastTeleportPosition=player.position+destination->definition.origin;
         ports_.areas.moveRoomUnit(player.actor,player.area,player.position);
-        player.route.clear();player.moving=false;player.runningNow=false;player.pathStep.reset();
+        player.route.clear();player.moving=false;player.runningNow=false;NativePathStep::reset(player.pathStep);
         player.movementTarget.reset();player.movementArrival.reset();
         player.routeDestination=player.position;player.routeObstacles=destination->definition.collision.obstacleRevision;
         ++player.teleportRevision;

@@ -271,6 +271,12 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
     }
     if(!request.npc || !request.message) return {DomainStatus::InvalidRequest,{}};
     const auto *npc=ports_.npc.find(actor,*request.npc,true);if(!npc) return {DomainStatus::InvalidRequest,{}};
+    if(area->definition.act==1 && npc->rule.code=="act2guard2") {
+        const auto *conversation=ports_.npc.conversation(actor.player);
+        if(!conversation || !conversation->pendingQuests.contains(*request.message) ||
+            conversation->pendingQuests.at(*request.message)!=request.quest) return {DomainStatus::Stale,{}};
+        return acknowledgeActTwo(actor,request,npc->rule);
+    }
     const auto expected=dialogues(actor,npc->rule);
     if(std::none_of(expected.begin(),expected.end(),[&](const auto &entry){return entry.quest==request.quest && entry.message.text==*request.message;})) return {DomainStatus::Stale,{}};
     if(area->definition.act==1) return acknowledgeActTwo(actor,request,npc->rule);

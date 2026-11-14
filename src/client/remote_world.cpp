@@ -1078,7 +1078,10 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             if(previous==w.pets.end() || previous->second.type!=type || previous->second.monsterClass!=monsterClass || previous->second.owner!=owner)
                 w.pets.insert_or_assign(id,OnlinePet{type,monsterClass,owner,{},{}});
         }
-        else w.pets.erase(id);
+        else {
+            w.pets.erase(id);
+            w.pendingHirelingAttributes.erase(id);
+        }
         break;
     }
     case 0x7B: {
@@ -1191,31 +1194,48 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     }
     case 0x81: {
         const auto type=r.u8();const auto monsterClass=r.u16();const auto owner=r.u32(),id=r.u32(),seed=r.u32(),name=r.u32();r.finish();
-        if(type==7 && owner==v.load.playerUnitId) {
+        if(type!=7) break;
+        if(owner==v.load.playerUnitId) {
             if(w.hireling && w.hireling->id!=id) {
                 const auto old=w.hireling->id;
                 w.pets.erase(old);
                 removeRemotePlayerItems(w,old,1);
             }
-            if(!w.hireling || w.hireling->id!=id) w.hireling=OnlineHireling{id,owner,seed,name,monsterClass,{}};
-            else {w.hireling->seed=seed;w.hireling->name=name;w.hireling->monsterClass=monsterClass;}
-            // PlayerPets uses 0x81 instead of 0x7A to assign the owner's hireable.
-            if (!w.pets.contains(id) && w.pets.size()>=8192) throw ProtocolError("Remote pet limit exceeded");
-            const auto previous=w.pets.find(id);
-            if(previous==w.pets.end() || previous->second.type!=type || previous->second.monsterClass!=monsterClass || previous->second.owner!=owner)
-                w.pets.insert_or_assign(id,OnlinePet{type,monsterClass,owner,{},{}});
-        }
+            if(!w.hireling || w.hireling->id!=id) {
+                w.hireling=OnlineHireling{id,owner,seed,name,monsterClass,{}};
+                auto pending=w.pendingHirelingAttributes.extract(id);
+                if(pending) w.hireling->attributes=std::move(pending.mapped());
+            } else {w.hireling->seed=seed;w.hireling->name=name;w.hireling->monsterClass=monsterClass;}
+        } else w.pendingHirelingAttributes.erase(id);
+        // PlayerPets broadcasts this assignment. Only the owner consumes it
+        // as the identity for the private panel and equipment controls.
+        const auto previous=w.pets.find(id);
+        if(previous==w.pets.end() && w.pets.size()>=8192) throw ProtocolError("Remote pet limit exceeded");
+        if(previous==w.pets.end() || previous->second.type!=type || previous->second.monsterClass!=monsterClass || previous->second.owner!=owner)
+            w.pets.insert_or_assign(id,OnlinePet{type,monsterClass,owner,{},{}});
         break;
     }
     case 0x9E: case 0x9F: case 0xA0: case 0xA1: case 0xA2: {
         const auto stat=r.u8();const auto id=r.u32();
         const uint32_t value=p.id==0x9E || p.id==0xA1?r.u8():p.id==0x9F || p.id==0xA2?r.u16():r.u32();r.finish();
+        const bool delta=p.id==0xA1 || p.id==0xA2;
+        std::map<uint8_t,uint32_t> *attributes;
         if(w.hireling && w.hireling->id==id) {
-            if(p.id==0xA1 || p.id==0xA2) {
-                const auto previous=w.hireling->attributes.find(stat);
-                if(previous!=w.hireling->attributes.end() && value<=UINT32_MAX-previous->second) previous->second+=value;
-            } else w.hireling->attributes[stat]=value;
+            attributes=&w.hireling->attributes;
+        } else {
+            const auto pet=w.pets.find(id);
+            if(v.load.playerUnitId && pet!=w.pets.end() && pet->second.owner!=v.load.playerUnitId) break;
+            auto pending=w.pendingHirelingAttributes.find(id);
+            if(pending==w.pendingHirelingAttributes.end()) {
+                if(delta || w.pendingHirelingAttributes.size()>=8192) break;
+                pending=w.pendingHirelingAttributes.try_emplace(id).first;
+            }
+            attributes=&pending->second;
         }
+        if(delta) {
+            const auto previous=attributes->find(stat);
+            if(previous!=attributes->end() && value<=UINT32_MAX-previous->second) previous->second+=value;
+        } else attributes->insert_or_assign(stat,value);
         break;
     }
     case 0x9B: {
@@ -1449,6 +1469,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         if (v.load.playerUnitId == id)
             removePlayer(w);
         else removeRemotePlayerItems(w, id);
+        std::erase_if(w.pets,[&](const auto &entry){
+            if(entry.second.owner!=id) return false;
+            w.pendingHirelingAttributes.erase(entry.first);
+            return true;
+        });
         break;
     }
     case 0x60: {

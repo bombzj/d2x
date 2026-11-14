@@ -319,33 +319,30 @@ const Sprite *ClassicFont::glyphFrame(uint16_t frame) const {
 }
 void originalBox(const GpuAnimation &pieces, Rectangle bounds, float scale) {
     if (pieces.count < 22 || bounds.width <= 0 || bounds.height <= 0) return;
-    const auto *corner = pieces.frame(0, 0);
-    const float w = corner->texture.width * scale, h = corner->texture.height * scale;
-    auto piece = [&](int index, float x, float y) {
+    // D2Client BD4C0. Each cel is positioned from its bottom scanline.
+    const float left = bounds.x, top = bounds.y;
+    const float right = left + bounds.width, bottom = top + bounds.height;
+    const float step = 12 * scale;
+    const auto piece = [&](int index, float x, float baseline) {
         const auto *image = pieces.frame(0, index);
         DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
-            {x, y, image->texture.width * scale, image->texture.height * scale}, {0, 0}, 0, WHITE);
+            {x + image->x * scale, baseline + (image->y - image->texture.height + 1) * scale,
+                image->texture.width * scale, image->texture.height * scale}, {0, 0}, 0, WHITE);
     };
-    // Side ink is at x=5..7; corner ink is x=1..3 / x=10..12.
-    // Bottom edge frames have top-edge ink, so offset them by nine pixels to
-    // join the bottom corners. Derived from the current 14x15 MPQ frames.
-    const float verticalStep = h - 5 * scale;
-    uiScissor(bounds.x, bounds.y+4*scale, bounds.width, bounds.height-9*scale);
-    for (int index = 0; index * verticalStep < bounds.height; ++index) {
-        piece(10 + index % 3, bounds.x - 4 * scale, bounds.y + index * verticalStep);
-        piece(13 + index % 3, bounds.x + bounds.width - w + 5 * scale, bounds.y + index * verticalStep);
-    }
-    EndScissorMode();
-    uiScissor(bounds.x, bounds.y, bounds.width, bounds.height);
-    const float horizontalStep = (corner->texture.width - 2) * scale;
-    for (int index = 0; index * horizontalStep < bounds.width; ++index) {
-        piece(2 + index % 6, bounds.x + index * horizontalStep, bounds.y);
-        piece(16 + index % 6, bounds.x + index * horizontalStep, bounds.y + bounds.height - h + 9 * scale);
-    }
-    piece(0, bounds.x, bounds.y); piece(1, bounds.x + bounds.width - w, bounds.y);
-    piece(8, bounds.x, bounds.y + bounds.height - h);
-    piece(9, bounds.x + bounds.width - w, bounds.y + bounds.height - h);
-    EndScissorMode();
+    int tile = 0;
+    const float rightCorner = right - 13 * scale;
+    for (float x = left + step; x < rightCorner; x += step)
+        piece(2 + (++tile % 6), x, top + step);
+    for (float x = left + 13 * scale; x < rightCorner; x += step)
+        piece(16 + (++tile % 6), x, bottom + 10 * scale);
+    for (float y = top + 22 * scale; y < bottom - scale; y += step)
+        piece(10 + (++tile % 3), left - 4 * scale, y);
+    for (float y = top + 24 * scale; y < bottom - scale; y += step)
+        piece(13 + (++tile % 3), right - 7 * scale, y);
+    piece(0, left, top + step);
+    piece(1, rightCorner, top + step);
+    piece(8, left, bottom + scale);
+    piece(9, rightCorner, bottom + scale);
 }
 int UiPainter::measure(const std::string &text, int size) const {
     if (!font.originalGlyphs && ttfTextReady())

@@ -62,6 +62,7 @@ struct PetOwnershipSnapshot {
     uint16_t nativeClass{};
     uint16_t lifePercentage{};
     RegionId area;
+    std::optional<HirelingRecord> hireling;
 };
 struct MonsterSnapshot {
     EntityId id;

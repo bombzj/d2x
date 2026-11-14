@@ -244,8 +244,8 @@ SceneView::SceneView(Archives &archives, const ClassicData &content, WeatherCycl
     : archives_(archives), actorClient_(actor), inventoryClient_(inventory), characterClient_(character), questClient_(quests),
     npcClient_(npc), mapClient_(map), assets_(archives, content, int(map.read().region), audio), lighting_(std::make_unique<LightingView>()),
     weather_(std::make_unique<WeatherView>(weatherCycle)), paletteBlend_(std::make_unique<PaletteBlendView>(archives)),
-      painter_(assets_.font), chat_(archives),
-      originalMenu_(archives, assets_.font), tradeInvite_(archives, assets_.font, originalMenu_), party_(archives) {
+      painter_(assets_.font), originalMenu_(archives, assets_.font), chat_(archives, originalMenu_, assets_.textSlider),
+      tradeInvite_(archives, assets_.font, originalMenu_), party_(archives) {
     applyAudioSettings(audio);
     highlightShader_=LoadShaderFromMemory(nullptr,highlightFragment);
     highlightTransform_=GetShaderLocation(highlightShader_,"highlightTransform");

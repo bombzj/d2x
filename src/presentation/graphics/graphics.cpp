@@ -243,14 +243,22 @@ GpuAnimation Graphics::worldSingle(const std::string &path, WorldSingleArt kind,
 }
 GpuAnimation Graphics::composite(const std::string &type, const std::string &token, const std::string &mode,
                                  const std::string &weapon, const std::array<const char *, 16> *equipment,
-                                 const std::array<uint8_t, 256> *colorMap, bool menuPortrait) {
+                                 const std::array<uint8_t, 256> *colorMap, bool menuPortrait,
+                                 const std::array<const uint8_t *, 16> &componentColors) {
     auto base = "data/global/" + type + "/" + token + "/";
     const auto cofPath=base + "cof/" + token + mode + weapon + ".cof";
     auto &art=worldArt();
     std::string recipe = cofPath;
     recipe.push_back(menuPortrait ? 'P' : 'W');
+    recipe.push_back(equipment ? '1' : '0');
     if (equipment) for (auto part : *equipment) { recipe.push_back('\0'); recipe.append(part); }
+    recipe.push_back('\0');
+    recipe.push_back(colorMap ? '1' : '0');
     if (colorMap) recipe.append(reinterpret_cast<const char *>(colorMap->data()),colorMap->size());
+    for (const auto *color : componentColors) {
+        recipe.push_back(color ? '1' : '0');
+        if (color) recipe.append(reinterpret_cast<const char *>(color), 256);
+    }
     if (auto found=art.recipes.find(recipe); found!=art.recipes.end()) return found->second;
     auto bytes = archives.read(cofPath, false);
     if (bytes.empty())
@@ -328,9 +336,18 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
     };
     const bool complete = parts.size() + omitted == size_t(cof.layers);
     const int directions = cof.directions, frames = cof.frames;
+    std::array<std::shared_ptr<const std::array<uint8_t, 256>>, 16> componentTranslations{};
+    for (size_t component = 0; component < componentColors.size(); ++component) {
+        if (const auto *color = componentColors[component]) {
+            auto translation = std::make_shared<std::array<uint8_t, 256>>();
+            std::copy_n(color, translation->size(), translation->begin());
+            (*translation)[0] = 0;
+            componentTranslations[component] = std::move(translation);
+        }
+    }
     auto gpu = art.animation(
         directions, frames,
-        [this, cof, parts, componentY, castsShadow, selectable, softAdditive, drawModes, menuPortrait, monsterDeath,
+        [this, cof, parts, componentY, castsShadow, selectable, softAdditive, drawModes, menuPortrait, monsterDeath, componentTranslations,
          colors = colorMap ? std::make_shared<const std::array<uint8_t, 256>>(*colorMap)
                            : nullptr](size_t offset) {
             const int d = int(offset / cof.frames), f = int(offset % cof.frames);
@@ -399,12 +416,13 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                 const auto &part = selected[c];
                 const auto &p = *part.pixels;
                 const int y = componentY(c, p);
+                const auto &translation = componentTranslations[c] ? componentTranslations[c] : colors;
                 if (menuPortrait) {
                     if (softAdditive[c]) flushPortrait(false);
                     for (int row=0;row<p.height;++row)
                         for (int x=0;x<p.width;++x)
                             if (auto index=p.pixels[size_t(row)*p.width+x]) {
-                                mask.pixels[size_t(row+y-top)*mask.width+p.x-left+x]=colors?(*colors)[index]:index;
+                                mask.pixels[size_t(row+y-top)*mask.width+p.x-left+x]=translation?(*translation)[index]:index;
                                 segmentUsed=true;
                             }
                     if (softAdditive[c]) flushPortrait(true);
@@ -412,7 +430,7 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                 }
                 const auto cell = cache.component(*parts.at(c), part.direction, part.frame, p);
                 result.layers.push_back(
-                    {cell.texture, p.x, y, softAdditive[c], cell.indexedTexture, cell.cell, drawModes[c]});
+                    {cell.texture, p.x, y, softAdditive[c], cell.indexedTexture, cell.cell, drawModes[c], componentTranslations[c]});
                 if (castsShadow[c]) {
                     for (int row = 0; row < p.height; ++row)
                         for (int x = 0; x < p.width; ++x)

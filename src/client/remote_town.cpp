@@ -1,5 +1,6 @@
 #include "content/monsters/monster_identity.hpp"
 #include "remote_town.hpp"
+#include "world/outdoor/dirt_path_tiles.hpp"
 #include "world/navigation_snapshot.hpp"
 #include "world/retail/desert.hpp"
 #include <algorithm>
@@ -1018,6 +1019,18 @@ std::vector<RemoteTown::KnownTerrainTile> RemoteTown::knownNavigationTerrain() c
 std::vector<std::pair<int,int>> RemoteTown::knownNavigationTerrain(uint16_t level) const {
     std::vector<std::pair<int,int>> result;
     for(const auto &entry:knownNavigationTerrain()) if(entry.level==level) result.emplace_back(entry.x,entry.y);
+    return result;
+}
+std::vector<std::pair<int,int>> RemoteTown::observedNavigationPaths(uint16_t level) const {
+    constexpr uint16_t bloodMoorLevel=2;
+    std::vector<std::pair<int,int>> result;
+    if(level!=bloodMoorLevel || !catalog_ || !catalog_->levels().contains(level)) return result;
+    const auto &record=catalog_->level(level);
+    if(record.act!=0 || record.generation!=GenerationKind::Outdoor) return result;
+    for(const auto &[area,x,y,type,main,sub,wall]:observedTerrain_)
+        if(area==level && !wall && type==0 && main==0 && isDirtPathSequence(sub)) result.emplace_back(x,y);
+    std::sort(result.begin(),result.end());
+    result.erase(std::unique(result.begin(),result.end()),result.end());
     return result;
 }
 std::vector<RemoteTown::NavigationWall> RemoteTown::observedNavigationWalls(uint16_t level) const {

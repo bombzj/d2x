@@ -73,8 +73,8 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         if(monster.movementTarget) {
             result.back().movementTarget=ports_.monsters.nativeTargetIdentity(monster.movementTarget,monster.area);
         }
-        // AC's hireling owner is public; only the detailed identity/stat
-        // messages below are restricted to that owner.
+        // AC's hireling owner is public. The panel and equipment projection
+        // below is only for the owner. The public roster is in pets().
         if(monster.hireling && monster.owner) if(const auto *owner=ports_.players.find(*monster.owner))
             result.back().hirelingOwner=owner->actor;
         if(monster.hireling && monster.owner) if(const auto *owner=ports_.players.find(*monster.owner);owner && owner->player==id) {
@@ -128,9 +128,10 @@ std::vector<PetOwnershipSnapshot> System::pets(PlayerId id) const {
     for(const auto &[key,body]:ports_.monsters.read().actors) {
         if((!body.amazonPet && !body.assassinPet && !body.druidPet && !((body.necroSummon || body.hydra()) && body.rule.petType>0) && !body.hireling) || !body.owner || !body.alive() || body.inactivePet || body.petUnregistered) continue;
         const auto *owner=ports_.players.find(*body.owner);
-        if(owner && owner->entered)
-            result.push_back({key,owner->actor,uint8_t(body.hireling?7:body.amazonPet?body.amazonPet->petType:body.rule.petType),uint16_t(body.rule.nativeClass),
-                playerLifePercentage(body.life,body.maximumLife),body.area});
+        if(!owner || !owner->entered) continue;
+        result.push_back({key,owner->actor,uint8_t(body.hireling?7:body.amazonPet?body.amazonPet->petType:body.rule.petType),uint16_t(body.rule.nativeClass),
+            playerLifePercentage(body.life,body.maximumLife),body.area,{}});
+        if(body.hireling) result.back().hireling=owner->persistent.player.hireling;
     }
     return result;
 }

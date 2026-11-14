@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <string_view>
 namespace d2x::hosting {
 void NativeRealmService::publishMissiles() {
     if(!binding || peer.phase!=GamePhase::Entered) return;
@@ -30,19 +31,36 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
     std::set<EntityId> visible;
     std::vector<Bytes> packets;
     std::vector<Bytes> petAssignments;
-    std::map<EntityId,Bytes> pets;
+    std::map<EntityId,GamePeer::PetProjection> pets;
     std::map<EntityId,Bytes> petVitals;
     const auto recipient=host.read(*binding);
     for(const auto &pet:host.pets(*binding)) {
-        auto packet=encodeServerPacket(ServerMessage::PetOwnership,[&](auto &out){
-            out.u8(1);out.u8(pet.type);out.u16(pet.nativeClass);out.u32(wireId(pet.owner));out.u32(wireId(pet.id));
+        // Initial PlayerPets roster follows load completion. Live hire and
+        // resurrection broadcast 81, while removals still use 7A.
+        if(pet.hireling && !peer.initialLoadComplete) continue;
+        const auto owner=wireId(pet.owner), id=wireId(pet.id);
+        auto removal=encodeServerPacket(ServerMessage::PetOwnership,[&](auto &out){
+            out.u8(0);out.u8(pet.type);out.u16(pet.nativeClass);out.u32(owner);out.u32(id);
         });
-        const auto prior=peer.pets.find(pet.id);
-        if(prior==peer.pets.end() || prior->second!=packet) {
-            if(prior!=peer.pets.end()) {auto removal=prior->second;removal[1]=0;packets.push_back(std::move(removal));}
-            petAssignments.push_back(packet);
+        auto assignment=removal;
+        assignment[1]=1;
+        if(pet.hireling) {
+            const auto &record=*pet.hireling;
+            const auto name=content->hirelingNameIds.find(record.nameKey);
+            if(name==content->hirelingNameIds.end() || name->second<0 || name->second>=UINT16_MAX)
+                throw std::runtime_error("Missing original hireling name index");
+            assignment=encodeServerPacket(ServerMessage::HirelingIdentity,[&](auto &out) {
+                out.u8(pet.type);out.u16(pet.nativeClass);out.u32(owner);out.u32(id);
+                out.u32(record.seed);out.u32(uint32_t(name->second));
+            });
         }
-        pets.emplace(pet.id,std::move(packet));
+        const auto prior=peer.pets.find(pet.id);
+        const bool changed=prior==peer.pets.end() || prior->second.assignment!=assignment;
+        if(changed) {
+            if(prior!=peer.pets.end()) packets.push_back(prior->second.removal);
+            petAssignments.push_back(assignment);
+        }
+        pets.emplace(pet.id,GamePeer::PetProjection{std::move(assignment),std::move(removal)});
         // SCmd::sub_6FC3E200 sends monster 0x7F only to its owner, independently
         // of visible-unit removal. Its scale is 0..100, not motion's 0..128.
         if(recipient && pet.owner==recipient->actor.id) {
@@ -50,12 +68,15 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
                 out.u8(0);out.u16(pet.lifePercentage);out.u32(wireId(pet.id));out.u16(uint16_t(pet.area));
             });
             const auto previous=peer.petVitals.find(pet.id);
-            if(prior==peer.pets.end() || prior->second!=pets.at(pet.id) || previous==peer.petVitals.end() || previous->second!=vitals)
+            if(changed || previous==peer.petVitals.end() || previous->second!=vitals)
                 petAssignments.push_back(vitals);
             petVitals.emplace(pet.id,std::move(vitals));
         }
     }
-    for(const auto &[id,packet]:peer.pets) if(!pets.contains(id)) {auto removal=packet;removal[1]=0;packets.push_back(std::move(removal));}
+    for(const auto &[id,pet]:peer.pets) if(!pets.contains(id)) {
+        packets.push_back(pet.removal);
+        if(peer.hireling.actor==id) peer.hireling.dead=true;
+    }
     peer.pets=std::move(pets);
     peer.petVitals=std::move(petVitals);
     std::vector<MonsterSnapshot> transient;
@@ -82,7 +103,10 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
             packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(1);out.u32(wireId(monster.id));}));
             entry->second={};fresh=true;
         }
-        if (fresh) packets.push_back(nativeMonsterAssignment(*content,monster, origin));
+        if (fresh) {
+            packets.push_back(nativeMonsterAssignment(*content,monster, origin));
+            packets.push_back(nativeStateSnapshot(*content,monster.id,1,monster.states,monster.stateStats));
+        }
         if(!fresh && monster.teleportRevision!=entry->second.teleportRevision) {
             const auto position=monster.position+origin;
             packets.push_back(encodeServerPacket(ServerMessage::Reposition,[&](auto &out){
@@ -107,42 +131,39 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
         entry->second.nativeClass=monster.nativeClass;entry->second.modifiers=monster.modifiers;entry->second.rankFlags=monster.rankFlags;entry->second.nameSeed=monster.nameSeed;
         if(monster.hireling) {
             if(peer.hireling.actor!=monster.id) {peer.hireling={};peer.hireling.actor=monster.id;}
-            const auto &record=*monster.hireling;
-            const auto definition=std::find_if(content->hirelings.begin(),content->hirelings.end(),[&](const auto &entry){return entry.sourceRow==record.sourceRow;});
-            const auto name=content->hirelingNameIds.find(record.nameKey);
-            if(definition==content->hirelings.end() || name==content->hirelingNameIds.end()) throw std::runtime_error("Missing prepared hireling identity");
-            auto identity=encodeServerPacket(ServerMessage::HirelingIdentity,[&](auto &out){
-                out.u8(7);out.u16(uint16_t(record.classId));out.u32(wireId(monster.hirelingOwner));
-                out.u32(wireId(monster.id));out.u32(record.seed);out.u32(uint32_t(name->second));
-            });
-            if(identity!=peer.hireling.identity) {packets.push_back(identity);peer.hireling.identity=std::move(identity);}
             const auto &values=monster.hirelingAttributes;
-            const auto &table=content->tables.at("itemstatcost");
-            bool refreshLife=peer.hireling.stats.empty() || (peer.hireling.dead && monster.hirelingLife>0);
+            const auto &statIds=content->nativeStats->names;
+            bool refreshStats=peer.hireling.stats.empty() || (peer.hireling.dead && monster.hirelingLife>0);
             peer.hireling.dead=monster.hirelingLife<=0;
             for(const auto name:{"level","maxhp"}) {
-                const auto value=values.find(name);
-                const auto stat=content->nativeStats->names.find(name);
-                if(value==values.end() || stat==content->nativeStats->names.end()) continue;
-                const auto previous=peer.hireling.stats.find(uint8_t(stat->second));
-                refreshLife|=previous==peer.hireling.stats.end() || previous->second!=uint32_t(value->second);
+                const auto current=values.find(name);
+                const auto previous=peer.hireling.stats.find(uint8_t(statIds.at(name)));
+                if(current!=values.end() && previous!=peer.hireling.stats.end())
+                    refreshStats|=previous->second!=uint32_t(current->second);
             }
-            for(size_t row=0;row<table.rows().size();++row) {
-                const auto value=values.find(table.value(row,"Stat"));if(value==values.end()) continue;
-                if(table.value(row,"Stat")=="hitpoints" && !refreshLife) continue;
-                const auto stat=table.number(row,"ID");if(!stat || *stat<0 || *stat>255 || value->second<INT32_MIN || value->second>UINT32_MAX) throw std::runtime_error("Hireling stat exceeds wire capacity");
+            // MONSTERAI_SendMercStats queues stats in this order. Numeric
+            // identities still come from the mounted ItemStatCost catalog.
+            for(const std::string_view name:{"level","strength","dexterity","maxhp","hitpoints","armorclass","experience",
+                "nextexp","mindamage","maxdamage","fireresist","lightresist","coldresist","poisonresist"}) {
+                const auto value=values.find(name);
+                if(value==values.end()) continue;
+                if(name=="hitpoints" && !refreshStats) continue;
+                const auto stat=statIds.find(name);
+                if(stat==statIds.end() || stat->second>UINT8_MAX || value->second<INT32_MIN || value->second>UINT32_MAX)
+                    throw std::runtime_error("Hireling stat exceeds wire capacity");
+                const auto statId=uint8_t(stat->second);
                 const auto encoded=uint32_t(value->second);
-                const auto prior=peer.hireling.stats.find(uint8_t(*stat));
-                if(prior!=peer.hireling.stats.end() && prior->second==encoded) continue;
+                const auto prior=peer.hireling.stats.find(statId);
+                if(!refreshStats && prior!=peer.hireling.stats.end() && prior->second==encoded) continue;
                 const auto message=encoded<UINT8_MAX?ServerMessage::HirelingAttributeByte:
                     encoded<UINT16_MAX?ServerMessage::HirelingAttributeWord:ServerMessage::HirelingAttributeDword;
                 packets.push_back(encodeServerPacket(message,[&](auto &out){
-                    out.u8(uint8_t(*stat));out.u32(wireId(monster.id));
+                    out.u8(statId);out.u32(wireId(monster.id));
                     if(encoded<UINT8_MAX) out.u8(uint8_t(encoded));
                     else if(encoded<UINT16_MAX) out.u16(uint16_t(encoded));
                     else out.u32(encoded);
                 }));
-                peer.hireling.stats[uint8_t(*stat)]=encoded;
+                peer.hireling.stats[statId]=encoded;
             }
         }
         const auto statePacket = [&](int state, bool enabled) {
@@ -159,8 +180,7 @@ void NativeRealmService::publishMonsters(const std::vector<EntityId> &pendingDea
             }
             return nativeState(*content,server::StateFact{monster.id,1,monster.area,state,enabled,std::move(values)});
         };
-        if(fresh) packets.push_back(nativeStateSnapshot(*content,monster.id,1,monster.states,monster.stateStats));
-        else {
+        if(!fresh) {
             const auto appendState=[&](int state,bool enabled) {
                 auto packet=statePacket(state,enabled);if(!packet.empty()) packets.push_back(std::move(packet));
             };

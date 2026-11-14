@@ -46,8 +46,7 @@ RequestResult HighlightDoor(GameplayContext &context, net::protocol::Reader &in)
     return submitGameplay(context,server::objects::Request{{target,0,2},server::objects::Action::HighlightDoor});
 }
 RequestResult HireMercenary(GameplayContext &context, net::protocol::Reader &in) {
-    const auto npc=in.u32(),name=in.u32(); in.finish();
-    if(name>UINT16_MAX) return {RequestStatus::Rejected};
+    const auto npc=in.u32();const auto name=in.u16();in.u16();in.finish();
     return submitGameplay(context,server::companions::Request{server::companions::Action::Hire,context.entity(npc,1),name});
 }
 RequestResult IdentifyGamble(GameplayContext &context, net::protocol::Reader &in) {
@@ -134,6 +133,9 @@ RequestResult RepairItems(GameplayContext &context, net::protocol::Reader &in) {
 }
 RequestResult NpcService(GameplayContext &context, net::protocol::Reader &in) {
     const auto action = in.u32(), npc = in.u32(), item = in.u32(); in.finish();
+    // NPC_HandleDialogMessage dispatches Hire before using the last dword
+    // as an item GUID. The retail Hire button puts its player GUID there.
+    if(action==3) return submitGameplay(context,server::companions::Request{server::companions::Action::List,context.entity(npc,1),{}});
     if(action==0) {
         for(const auto area:context.host.visibleAreas(context.player)) {
             const auto view=context.host.area(context.player.game,area);if(!view) continue;
@@ -153,7 +155,6 @@ RequestResult NpcService(GameplayContext &context, net::protocol::Reader &in) {
     case 0: return {RequestStatus::Rejected};
     case 1: return OpenShop(context, npc);
     case 2: return OpenGambleShop(context, npc);
-    case 3: return submitGameplay(context,server::companions::Request{server::companions::Action::List,context.entity(npc,1),{}});
     default: return {RequestStatus::Rejected};
     }
 }

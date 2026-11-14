@@ -14,6 +14,7 @@ constexpr int controlRows = 15, controlRowHeight = 18;
 constexpr size_t fontShifts = 0x6B600 + 13 * 3;
 float controlLeft() { return float((W - 620) / 2); }
 float controlTop() { return float((H - 420) / 2); }
+TextSlider controlsSlider() { return TextSlider::controls(int(controlLeft()) + 589, int(controlTop()) + 47); }
 float menuTop(EscapeMenuPage page, int rows) {
     // D2Client 1.13c RVA 6526E: center on H-80, including the title row.
     const bool large = page == EscapeMenuPage::Main || page == EscapeMenuPage::Options;
@@ -26,8 +27,8 @@ void nativeSprite(const Sprite *image, float x, float baseline) {
 }
 }
 
-EscapeMenu::EscapeMenu(Archives &archives)
-    : graphics_(archives, "data/global/palette/units/pal.dat") {
+EscapeMenu::EscapeMenu(Archives &archives, const GpuAnimation &scroll)
+    : graphics_(archives, "data/global/palette/units/pal.dat"), scroll_(scroll) {
     const auto shifts = archives.read("data/global/palette/sky/pal.pl2");
     if (shifts.size() < fontShifts + 13 * 256)
         throw std::runtime_error("Original Escape menu grey transform is missing");
@@ -76,7 +77,6 @@ EscapeMenu::EscapeMenu(Archives &archives)
     }
     marker_ = graphics_.single("data/global/ui/cursor/pentspin.dc6");
     border_ = graphics_.single("data/global/ui/menu/boxpieces.dc6");
-    scroll_ = graphics_.single("data/global/ui/menu/textslid.dc6");
     if (marker_.count != 8 || border_.count < 22 || scroll_.count < 17)
         throw std::runtime_error("Original Escape menu marker or control panel artwork is missing");
     for (const auto &frame : marker_.frames) markerWidth_ = std::max(markerWidth_, frame.texture.width);
@@ -238,8 +238,9 @@ int EscapeMenu::textWidth(std::string_view value) const {
     return width;
 }
 int EscapeMenu::controlScrollLimit() const { return std::max(0, int(bindings_.size()) - controlRows); }
-int EscapeMenu::controlThumbHeight() const { return 12 * (21 * controlRows / int(bindings_.size())); }
-Rectangle EscapeMenu::controlTrack() const { return {controlLeft() + 589, controlTop() + 47, 12, 246}; }
+bool EscapeMenu::scrollControls(const FrameInput &input, TextSliderGesture &gesture, int &first) const {
+    return controlsSlider().handle(input, gesture, first, controlScrollLimit(), int(bindings_.size()), controlRows);
+}
 std::pair<int, int> EscapeMenu::controlAt(Vec mouse, int first) const {
     const float left = controlLeft(), top = controlTop();
     if (mouse.x < left + 18 || mouse.x >= left + 580 || mouse.y < top + 35 || mouse.y >= top + 305)
@@ -268,7 +269,7 @@ std::string EscapeMenu::bindingName(const ControlBindings &bindings, ControlActi
     }
     return result;
 }
-void EscapeMenu::drawControls(int selected, int first, int scrollPressed, const ControlBindings &controls,
+void EscapeMenu::drawControls(int selected, int first, const TextSliderGesture &slider, const ControlBindings &controls,
                               int action, int column, bool capturing, float elapsed, const PaletteBlendView &blend) const {
     const float left = controlLeft(), top = controlTop();
     // D2Client RVA 12602/12680/126CE/12723/12776: 620x369 box,
@@ -294,14 +295,7 @@ void EscapeMenu::drawControls(int selected, int first, int scrollPressed, const 
                   !available ? 2 : active && slot == column ? 3 : ordinary);
         }
     }
-    // RVA 12AC4-12CD0: track 13, up 11/9, down 10/8, thumb 14.
-    for (int tile = 0; tile < 21; ++tile) nativeSprite(scroll_.frame(0, 13), left + 589, top + 59 + tile * 12);
-    nativeSprite(scroll_.frame(0, scrollPressed == 0 ? 9 : 11), left + 589, top + 47);
-    nativeSprite(scroll_.frame(0, scrollPressed == 1 ? 8 : 10), left + 589, top + 305);
-    const int thumbTiles = controlThumbHeight() / 12;
-    const float thumb = controlScrollLimit() ? float(first) / controlScrollLimit() * (246 - thumbTiles * 12) : 0;
-    for (int tile = 0; tile < thumbTiles; ++tile)
-        nativeSprite(scroll_.frame(0, 14), left + 588, top + 59 + thumb + tile * 12);
+    controlsSlider().draw(scroll_, slider, first, controlScrollLimit(), int(bindings_.size()), controlRows);
     for (int button = 0; button < 3; ++button) {
         const auto rect = bounds(EscapeMenuPage::Controls, button);
         constexpr std::array hoverFonts{4, 3, 5};
@@ -309,10 +303,10 @@ void EscapeMenu::drawControls(int selected, int first, int scrollPressed, const 
     }
 }
 void EscapeMenu::draw(EscapeMenuPage page, int selected, float elapsed, const std::array<int, 5> &automap, const AudioSettings &audio,
-                      bool lighting, bool standardResolution, int controlScroll, int scrollPressed, const ControlBindings &controls,
+                      bool lighting, bool standardResolution, int controlScroll, const TextSliderGesture &slider, const ControlBindings &controls,
                       int action, int column, bool capturing, const PaletteBlendView &blend) const {
     if (page == EscapeMenuPage::Controls) {
-        drawControls(selected, controlScroll, scrollPressed, controls, action, column, capturing, elapsed, blend);
+        drawControls(selected, controlScroll, slider, controls, action, column, capturing, elapsed, blend);
         return;
     }
     const bool large = page == EscapeMenuPage::Main || page == EscapeMenuPage::Options;

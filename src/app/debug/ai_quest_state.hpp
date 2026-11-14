@@ -16,7 +16,7 @@ struct QuestState {
     using Clock=std::chrono::steady_clock;
     using Json=nlohmann::json;
     struct QuestPending {
-        enum class Action {Object,Portal,Scroll,Topic,Take,Imbue,Place,Travel,Pickup,Use,OpenCube,StoreCube,Transmute,SubmitStaff,Introduction,CloseCube,Service,RecoverOpen,RecoverTake,RecoverPlace,RecoverClose} action{};
+        enum class Action {Object,Portal,Scroll,Topic,Take,Imbue,Place,Travel,Pickup,Use,OpenCube,StoreCube,Transmute,SubmitStaff,CloseCube,Service,RecoverOpen,RecoverTake,RecoverPlace,RecoverClose} action{};
         std::optional<OnlineUnitKey> unit;uint64_t assignment{},sequence{},beforeRevision{};
         uint32_t item{};Clock::time_point deadline{};
         bool refreshIssued{},statusRequested{},resultObserved{};
@@ -40,6 +40,7 @@ struct QuestState {
         std::optional<WorldWait> worldWait;
         std::optional<uint16_t> denRemaining;Clock::time_point sweepReady{};
         unsigned sweeps{},materialPhase{};std::optional<uint32_t> material;
+        uint64_t forgeSubmissionRevision{};bool forgeStrikingStopped{};
         std::optional<OnlineUnitKey> materialNpc;
         std::set<uint32_t> rewardBefore;
         std::set<uint32_t> materialBefore;std::optional<uint32_t> skillPointsBefore;

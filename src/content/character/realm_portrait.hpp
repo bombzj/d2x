@@ -3,6 +3,7 @@
 #include "actor_appearance.hpp"
 #include "resources/archive.hpp"
 #include <array>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -30,9 +31,11 @@ class RealmPortraitCatalog {
     std::optional<RealmPortraitParts> decode(const OnlineCharacter &, std::optional<bool> oppositeOccupied) const;
 
   public:
+    using EquipmentColor = std::function<std::optional<std::array<int, 2>>(const OnlineEquippedItem &)>;
     explicit RealmPortraitCatalog(Archives &);
     Bytes encode(const ActorAppearance &, unsigned characterClass, unsigned level, uint16_t status) const;
     std::optional<RealmPortraitParts> decode(const OnlineCharacter &) const;
-    std::optional<RealmPortraitParts> decode(const OnlineUnit &, const OnlineWorldView &, bool unequipped = false,std::optional<uint8_t> disguise = {},bool holyShield=false) const;
+    std::optional<RealmPortraitParts> decode(const OnlineUnit &, const OnlineWorldView &, bool unequipped = false,
+        std::optional<uint8_t> disguise = {}, bool holyShield = false, const EquipmentColor &equipmentColor = {}) const;
 };
 } // namespace d2x

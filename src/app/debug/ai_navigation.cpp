@@ -113,7 +113,8 @@ void DebugAi::Impl::observeChild(Context &c,const Goal &goal) {
     if(child.state!=DebugWalkState::Completed) {
         const auto &view=c.observation.read();
         const bool questObject=goal.kind==Kind::Quest && supply.supplyStage==SupplyStage::None &&
-            navigation.walkIntent.purpose.value_or(std::string{})=="quest-object";
+            (navigation.walkIntent.purpose.value_or(std::string{})=="quest-object" ||
+             navigation.walkIntent.purpose.value_or(std::string{})=="quest-forge");
         const auto &submitted=c.control.interactionSubmission();
         if(questObject && c.walk.active() && child.gameGeneration==view.gameGeneration &&
             child.areaGeneration==view.world.areaGeneration && submitted && submitted->target==unit &&
@@ -746,6 +747,12 @@ bool DebugAi::Impl::exploreFrontier(Context &c,const std::string &purpose,bool r
         if(owned && c.walk.active()) {wait("explore-frontier","Finishing the submitted relay before changing exploration purpose");return false;}
         m.commitment.reset();navigation.frontierRoute.reset();
     }
+    const bool followPaths=focus==ExplorationFocus::Connection && !m.paths.empty();
+    if(!recoveryOnly && m.followPaths!=followPaths) {
+        m.followPaths=followPaths;
+        if(m.commitment) if(const auto *passage=m.passage(*m.commitment);passage && passage->road) m.commitment.reset();
+        ++m.revision;
+    }
     if(navigation.frontierRoute) {
         const auto *passage=m.passage(navigation.frontierRoute->passage);
         const bool stillApproach=passage && (navigation.frontierRoute->transit ||
@@ -785,6 +792,7 @@ bool DebugAi::Impl::exploreFrontier(Context &c,const std::string &purpose,bool r
         {"unitObservationTiles",m.unitObserved.size()},
         {"unitObservationDirections",std::count_if(m.passages.begin(),m.passages.end(),[](const auto &p){return p.units;})},
         {"mapSketchPrimitives",m.sketch?m.sketch->primitives:0},
+        {"roadFollowing",m.followPaths},{"observedRoadTiles",m.paths.size()},{"checkedRoadTiles",m.pathChecked.size()},
         {"deferredDirections",std::count_if(m.passages.begin(),m.passages.end(),[](const auto &p){return p.deferred==p.evidence;})},
         {"selected",nullptr}};
     if(!navigation.frontierRoute) {
@@ -815,10 +823,17 @@ bool DebugAi::Impl::exploreFrontier(Context &c,const std::string &purpose,bool r
         }
         navigation.frontierRoute=FrontierRoute{*area,plan.points.back(),std::move(plan.points),plan.passage,plan.evidence,~size_t{},0,{},{},focus};
         navigation.frontierRoute->transit=plan.outcome==DebugExplorationMemory::Plan::Outcome::Partial;
-        if(const auto *p=m.passage(plan.passage)) {m.heading=p->direction;m.commitment=p->id;}
+        if(const auto *p=m.passage(plan.passage)) {
+            if(p->road) {
+                const int dx=int(navigation.frontierRoute->target.x)-feet.first,dy=int(navigation.frontierRoute->target.y)-feet.second;
+                m.heading=std::abs(dx)>=std::abs(dy)?DebugExplorationMemory::Cell{dx>0?1:-1,0}:
+                    DebugExplorationMemory::Cell{0,dy>0?1:-1};
+            } else m.heading=p->direction;
+            m.commitment=p->id;
+        }
         note(plan.backtracking?"exploration-backtrack":"exploration-direction-selected",Json{
             {"direction",plan.passage},{"target",{navigation.frontierRoute->target.x,navigation.frontierRoute->target.y}},
-            {"observation",m.passage(plan.passage)->units?"units":"terrain-probe"},
+            {"observation",m.passage(plan.passage)->road?"road":m.passage(plan.passage)->units?"units":"terrain-probe"},
             {"routeCost",plan.cost},{"pathPoints",navigation.frontierRoute->path.size()},{"purpose",purpose}}.dump());
     }
     auto &route=*navigation.frontierRoute;

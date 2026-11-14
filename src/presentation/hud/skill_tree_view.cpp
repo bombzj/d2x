@@ -125,10 +125,8 @@ void SceneView::drawSkillTree(Vec mouse) const {
     const auto pointAnchor = skillTreeRect(268, 79, 0, 0);
     drawTreeText(assets_.font, points, {pointAnchor.x, pointAnchor.y});
     const auto close = skillTreeClose(characterView_, view_.skillPage);
-    if (const auto *button = assets_.questClose.frame(0, 10 + (view_.skillTreePressed == -1 &&
-        CheckCollisionPointRec(rv(mouse), close))))
-        DrawTexturePro(button->texture, {0, 0, float(button->texture.width), float(button->texture.height)},
-                       close, {}, 0, WHITE);
+    drawClassicSpriteButton(assets_.questClose, 10, close, close, mouse,
+        view_.skillTreePressed == -1 && classicButtonHovered(close, mouse), nullptr);
     EndScissorMode();
     if (auto hovered = skillAt(mouse)) {
         const auto &skill = *characterView_.skill(*hovered);

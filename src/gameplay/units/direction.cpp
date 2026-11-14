@@ -153,4 +153,26 @@ NativeDirection nativeDirectionVector(int64_t deltaX,int64_t deltaY) {
     else directionX=-directionX;
     return {directionX,directionY,uint8_t((angle+8)&0x3F)};
 }
+
+void NativePathFacing::aim(uint8_t direction) {
+    if (direction == target_) return;
+    target_ = direction;
+    // D2MOO Path::sub_6FDA9720 (MIT, docs/licenses/D2MOO.txt).
+    // D2Common 1.13c table RVA 0x941C8.
+    constexpr std::array<int, 64> turns{
+        0, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4,
+        4, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+        -8, -8, -8, -8, -8, -8, -8, -8, -8, -8, -8, -8, -8, -8, -8, -8,
+        -4, -4, -4, -4, -4, -4, -4, -4, -1, -1, -1, -1, -1, -1, -1, -1};
+    turn_ = turns[(target_ - current_) & 63];
+}
+
+void NativePathFacing::advance() {
+    // PATH_AdjustDirection (1.13c ordinal 10603).
+    if (current_ == target_) return;
+    current_ = uint8_t((current_ + turn_) & 63);
+    const int difference = (current_ - target_) & 63;
+    if ((difference > 31 && turn_ < 0) || (difference < 31 && turn_ > 0))
+        current_ = target_;
+}
 }

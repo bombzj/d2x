@@ -180,10 +180,14 @@ void GameHost::collectNativeIdentities(GameHandle handle,std::set<EntityId> reta
     if(auto *slot=find(handle)) slot->game->collectNativeIdentities(std::move(retained));
 }
 bool GameHost::destroy(GameHandle handle) {
+    return bool(release(handle));
+}
+std::unique_ptr<server::GameInstance> GameHost::release(GameHandle handle) {
     auto *slot = find(handle);
-    if (!slot) return false;
-    slot->game.reset(); slot->snapshots.clear(); slot->accumulator = 0;slot->fixedSteps.reset();
-    return true;
+    if (!slot) return {};
+    auto game=std::move(slot->game);
+    slot->snapshots.clear(); slot->accumulator = 0;slot->fixedSteps.reset();
+    return game;
 }
 bool GameHost::pause(GameHandle handle, bool paused) {
     auto *slot = find(handle);

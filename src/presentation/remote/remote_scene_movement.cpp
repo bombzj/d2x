@@ -1,4 +1,6 @@
 #include "remote_scene_impl.hpp"
+#include "scene_direction.hpp"
+#include "world/native_path_step.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/rules/pd2_phasing.hpp"
 #include "gameplay/skills/cast_timing.hpp"
@@ -93,12 +95,12 @@ bool RemoteScene::Impl::displayPlayerLeap(const OnlineUnit &u,Motion &m,const Ma
         // height; flight ticks use the common native graphics accumulator.
         run.graphics=*graphics;
         m.playerLeap=std::move(run);m.leapRevision=revision;m.leapFlying=true;m.leapLanding=-1;
-        m.route.clear();m.goal.reset();m.correction={};m.correctionLeft=0;m.pathStep.reset();
+        m.route.clear();m.goal.reset();m.correction={};m.correctionLeft=0;NativePathStep::reset(m.pathStep);
     }
     auto &run=*m.playerLeap;
     while(run.nextTick<=time) {
         const Vec center{.5f,.5f};
-        const auto step=run.path.advance(map.grid,run.position+center,run.destination+center,
+        const auto step=NativePathStep::advance(run.path, map.grid,run.position+center,run.destination+center,
             run.velocity*NativePathStep::seconds,{0,unitSize(u)},origin);
         m.look=run.destination-run.position;run.position=step.position-center;
         run.graphics.step();run.nextTick+=NativePathStep::seconds;
@@ -291,7 +293,8 @@ void RemoteScene::Impl::syncCollision(const OnlineUnit &unit) const {
     if(const auto footprint=unitFootprint(unit)) {
         auto point=localUnitPosition(unit.key,false);
         if(const auto found=motion.find(unit.key);found!=motion.end() && found->second.last &&
-           found->second.assignmentRevision==unit.assignmentRevision) point=found->second.position;
+              found->second.assignmentRevision==unit.assignmentRevision &&
+              found->second.discontinuity==unit.positionDiscontinuity) point=found->second.position;
         if(point) {
             next.x=int(std::floor(point->x+.5f));next.y=int(std::floor(point->y+.5f));
             next.pattern=footprint->first;next.mask=footprint->second;
@@ -383,6 +386,13 @@ void RemoteScene::Impl::advanceMovement(const Map &map,OnlinePoint origin,const 
             // during a loading gap. Retained orders still catch up tick-wise.
             if(movementFrame<endFrame && changed(*unit)) continue;
             displayPosition(*unit,map,origin,clients);
+            auto &pose = motion.at(unit->key);
+            if (pose.pathFacing) {
+                const auto previous = pose.pathFacing->direction();
+                pose.pathFacing->advance();
+                if (pose.pathFacing->direction() != previous)
+                    pose.look = nativeFacingVector(pose.pathFacing->direction());
+            }
         }
     }
     time=renderTime;movementElapsed=0;
@@ -468,11 +478,11 @@ bool RemoteScene::Impl::displayPlayerWhirlwind(const OnlineUnit &u,Motion &m,con
         run.revision=revision;run.nextTick=time+NativePathStep::seconds;
         run.destination=route.back()+origin-center;run.velocity=float(speed)*25.f/16.f;run.moving=true;
         m.look=(run.destination-m.position).unit();
-        m.route.clear();m.goal.reset();m.pathStep.reset();m.correction={};m.correctionLeft=0;
+        m.route.clear();m.goal.reset();NativePathStep::reset(m.pathStep);m.correction={};m.correctionLeft=0;
     }
     auto &run=*m.scriptedSequence;
     while(run.moving && time>=run.nextTick) {
-        const auto step=m.pathStep.advance(grid,m.position-origin+center,run.destination-origin+center,
+        const auto step=NativePathStep::advance(m.pathStep, grid,m.position-origin+center,run.destination-origin+center,
             run.velocity*NativePathStep::seconds,{0x401,unitSize(u)});
         m.position=step.position+origin-center;
         run.moving=!step.reached && !step.blocked;
@@ -547,7 +557,7 @@ bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,co
         const auto receivedNow=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
         if(u.actionReceivedMilliseconds && receivedNow>=u.actionReceivedMilliseconds)
             run.nextTick-=float(receivedNow-u.actionReceivedMilliseconds)/1000.f;
-        m.route.clear();m.goal.reset();m.pathStep.reset();m.correction={};m.correctionLeft=0;
+        m.route.clear();m.goal.reset();NativePathStep::reset(m.pathStep);m.correction={};m.correctionLeft=0;
         if(whirlwind) {
             const Vec center{.5f,.5f};
             auto path=movementGrid.nativeUnitPath(m.position-origin+center,run.destination-origin+center,7,100,{0xc01,collision.size});
@@ -570,7 +580,7 @@ bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,co
             while(!m.route.empty() && (m.route.front()-m.position).length()<.01f) m.route.pop_front();
             if(!m.route.empty()) {
                 const Vec center{.5f,.5f};const auto next=m.route.front();
-                const auto step=m.pathStep.advance(movementGrid,m.position+center,next+center,
+                const auto step=NativePathStep::advance(m.pathStep, movementGrid,m.position+center,next+center,
                     run.velocity*NativePathStep::seconds,leap?MovementCollisionRule{0,unitSize(u)}:whirlwind?MovementCollisionRule{0x401,collision.size}:collision,origin);
                 m.look=next-m.position;m.position=step.position-center;
                 if(step.blocked) m.route.clear();else if(step.reached) m.route.pop_front();
@@ -602,7 +612,7 @@ bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,co
                     const int distance=std::max(1,unitCoordinateDistance(int(std::floor(m.position.x)),int(std::floor(m.position.y)),int(run.destination.x),int(run.destination.y)));
                     const auto graphics=ClientMissileGraphics::leap(distance,nativeShiftLeft(speed,8));if(!graphics) return false;
                     run.leapGraphics=*graphics;run.leapFlags=0x1101;run.velocity=float(speed)*25.f/16.f;
-                    m.route={run.destination};m.goal=run.destination;m.pathStep.reset();run.moving=true;
+                    m.route={run.destination};m.goal=run.destination;NativePathStep::reset(m.pathStep);run.moving=true;
                 }
                 if(stopped) {run.leapFlags=0;run.stopping=true;run.moving=false;run.leapGraphics.reset();m.route.clear();m.goal.reset();}
             }
@@ -640,7 +650,7 @@ bool RemoteScene::Impl::displayScriptedSequence(const OnlineUnit &u,Motion &m,co
                 const Vec center{.5f,.5f};
                 auto path=movementGrid.nativeUnitPath(m.position-origin+center,run.destination-origin+center,1,5,collision);
                 m.route.clear();for(const auto point:path) m.route.push_back(point+origin-center);
-                m.goal=run.destination;m.pathStep.reset();run.moving=true;
+                m.goal=run.destination;NativePathStep::reset(m.pathStep);run.moving=true;
             } else if(frame==parameter(4)) {
                 run.animation.remaining=nativeShiftLeft(parameter(5),8);run.animation.frame=nativeShiftLeft(parameter(6),8);
             }
@@ -658,8 +668,8 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         m.assignmentRevision = u.assignmentRevision;
     }
     if(u.key.type==0 && m.updatedAt<0) {
-        const float angle=-7.5f*2.f*pi/64.f;
-        m.look={-std::sin(angle),std::cos(angle)};
+        m.look = nativeFacingVector(0);
+        if (!pd2) m.pathFacing.emplace(0);
     }
     if(u.key.type==1 && !m.boneWallDirection && playerId)
         if(const auto row=monsterRows.find(unitClass(u).value_or(UINT16_MAX));row!=monsterRows.end() &&
@@ -669,8 +679,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
             const OnlineUnitKey owner{0,*playerId};
             auto &random=boneWallVisualRandom.try_emplace(owner,initialRandom(owner.id)).first->second;
             m.boneWallDirection=uint8_t(rollRandom(random)&63);
-            const float angle=(float(*m.boneWallDirection)-7.5f)*2.f*pi/64.f;
-            m.look={-std::sin(angle),std::cos(angle)};
+            m.look = nativeFacingVector(*m.boneWallDirection);
         }
     const Vec target{float(u.position->x), float(u.position->y)};
     const Vec origin{float(mapOrigin.x), float(mapOrigin.y)};
@@ -728,7 +737,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     } else if (m.discontinuity != u.positionDiscontinuity) {
         m.position = target; m.correction = {}; m.correctionLeft = 0;
         m.stopDestination.reset();
-        m.pathStep.reset(); m.pathElapsed=0;
+        NativePathStep::reset(m.pathStep); m.pathElapsed=0;
         m.effectivePathType.reset();m.staminaExhausted=false;m.runningRevision=0;m.requestedRunning=false;
         m.route.clear(); m.samples.clear(); m.goal.reset(); m.pathMoving = false;
         if(pd2 || m.playerLeap || (u.key.type==0 && m.scriptedSequence)) {
@@ -756,7 +765,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         const bool knownPosition=u.position->x && u.position->y &&
             map.grid.navigationRoom(localTarget).has_value();
         if(error>tolerance && knownPosition) {
-            m.position=target;m.correction={};m.correctionLeft=0;m.pathStep.reset();m.pathElapsed=0;
+            m.position=target;m.correction={};m.correctionLeft=0;NativePathStep::reset(m.pathStep);m.pathElapsed=0;
             m.stopDestination.reset();corrected=true;
             m.positionCheckResult="relocated";
         } else if(stopSample && error>1 && knownPosition && u.pathType && u.velocityPercent && !m.npcClickStopped) {
@@ -791,7 +800,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     } else if (u.key.type==1 && u.mode==0 && m.actionRevision!=u.actionRevision) {
         // Death interrupts the path at the current displayed cell.
         m.position=m.position+m.correction;
-        m.correction={};m.correctionLeft=0;m.pathStep.reset();m.pathElapsed=0;
+        m.correction={};m.correctionLeft=0;NativePathStep::reset(m.pathStep);m.pathElapsed=0;
         m.route.clear();m.goal.reset();m.pathMoving=false;m.scriptedSequence.reset();
     } else if (u.key.type == 1 && !walking(u) && m.actionRevision != u.actionRevision &&
                m.positionRevision == u.positionRevision) {
@@ -836,18 +845,21 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         // A correction must not carry a sprite through a closed door or wall.
         if (!map.grid.segment(target - origin, displayed - origin, {}, rule)) m.correction = {};
     }
+    if (beginCast) m.pathFacing.reset();
     if(u.key.type==1 && u.wireAction==6 && m.actionRevision!=u.actionRevision)
-        m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+        m.position=NativePathStep::stop(m.pathStep, m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
     syncCollision(u);
     // Keep the old native walking destination from restarting motion after
     // the owner starts a cast (the server normally omits its skill packet).
     if (m.castHandoff) activeRequest = false;
     if(displayPlayerLeap(u,m,map,origin) || (pd2 && displayPd2PlayerCharge(u,m,map,origin))) {
+        m.pathFacing.reset();
         m.actionRevision=u.actionRevision;m.last=u.position;m.positionRevision=u.positionRevision;m.discontinuity=u.positionDiscontinuity;
         m.requestRevision=request?request->revision:0;
         return m.position+m.correction;
     }
     if(displayPlayerWhirlwind(u,m,map,origin) || displayScriptedSequence(u,m,map,origin,rule)) {
+        m.pathFacing.reset();
         m.pathMoving=m.scriptedSequence && m.scriptedSequence->moving;
         m.actionRevision=u.actionRevision;m.last=u.position;m.positionRevision=u.positionRevision;m.discontinuity=u.positionDiscontinuity;
         return m.position+m.correction;
@@ -921,7 +933,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         return targetSize>0 && nativeUnitDistance(position,unitSize(u),*point,targetSize)<=u.monsterPathStopDistance;
     };
     if (goal && playerPathArrived(m.position)) {
-        m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+        m.position=NativePathStep::stop(m.pathStep, m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
         goal.reset();
     }
     if (own && request && request->unit && goal && request->interaction) {
@@ -946,7 +958,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         if (reached) goal.reset();
     }
     if(goal && !frozenMonster && monsterPathArrived(m.position)) {
-        m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+        m.position=NativePathStep::stop(m.pathStep, m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
         goal.reset();
     }
     if (u.key.type == 1 && u.pathType && (*u.pathType == 8 || *u.pathType == 9 || *u.pathType == 11)) goal.reset();
@@ -954,6 +966,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     const bool knocked=playerKnocked || (alive && u.key.type==1 && u.mode==13 &&
         m.finishedMonsterKnockback!=u.actionRevision && u.pathType && (*u.pathType==8 || *u.pathType==11));
     if(playerKnocked && alive && u.destination) {
+        m.pathFacing.reset();
         if(m.actionRevision!=u.actionRevision) {
             const Vec center{.5f,.5f};
             const Vec destination{float(u.destination->x),float(u.destination->y)};
@@ -979,6 +992,23 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     float speed = knocked ? 25.f : movementSpeed(u);
     float pathElapsed=u.key.type==0?frameTime:elapsed;
     if(knocked) pathElapsed=(m.actionRevision!=u.actionRevision || corrected)?(frameTime>.1f?0:frameTime):frameTime;
+    const bool nativePlayerFacing = !pd2 && u.key.type == 0 && !knocked;
+    const auto aimAlongPath = [&] {
+        if (!nativePlayerFacing || m.route.empty()) return;
+        constexpr Vec center{.5f, .5f};
+        for (const auto point : m.route) {
+            const auto facing = NativePathStep::directionTo(m.pathStep, m.position + center, point + center);
+            if (!facing) continue;
+            if (!m.pathFacing) {
+                const auto dx = std::llround(double(m.look.x) * 65536);
+                const auto dy = std::llround(double(m.look.y) * 65536);
+                m.pathFacing.emplace(nativeDirectionVector(dx, dy).index);
+                m.look = nativeFacingVector(m.pathFacing->direction());
+            }
+            m.pathFacing->aim(*facing);
+            break;
+        }
+    };
     if (goal && !knocked) {
         const auto unitTarget=u.key.type==0?playerTarget:u.destinationUnit;
         const bool changedTarget = !m.goal || (unitTarget
@@ -994,11 +1024,13 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         const bool newRequest=requested && request->revision!=m.requestRevision;
         if(newRequest || corrected || m.actionRevision!=u.actionRevision) pathElapsed=frameTime>.1f?0:frameTime;
         if ((changedTarget && !frozenMonster) || corrected || newRequest ||
-            m.actionRevision != u.actionRevision)
+            m.actionRevision != u.actionRevision) {
             plan(m, *goal, map, origin, rule, speed, u,
                 requested?request->unit:u.destinationUnit);
+            aimAlongPath();
+        }
         if(m.route.empty() && u.key.type<=1)
-            m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+            m.position=NativePathStep::stop(m.pathStep, m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
     } else if(!knocked) { m.route.clear(); m.goal.reset(); }
     m.actionRevision = u.actionRevision;
     m.requestRevision = request ? request->revision : 0;
@@ -1008,7 +1040,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         const auto &movementGrid=*stepCollision;
         while (!m.route.empty() && remaining > 0) {
             if (!knocked && (playerPathArrived(m.position) || monsterPathArrived(m.position))) {
-                m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+                m.position=NativePathStep::stop(m.pathStep, m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
                 m.route.clear(); m.goal.reset(); break;
             }
             const auto next = m.route.front(), delta = next - m.position;
@@ -1016,10 +1048,10 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
             if (u.key.type <= 1) {
                 const Vec center{.5f, .5f};
                 const auto previous=m.position;
-                const auto step = m.pathStep.advance(movementGrid, m.position + center,
+                const auto step = NativePathStep::advance(m.pathStep, movementGrid, m.position + center,
                     next + center, remaining, (playerKnocked || (knocked && u.pathType==11))?MovementCollisionRule{0,rule.size}:rule, origin);
                 // Consuming an already reached path point supplies no new facing.
-                if (delta.x != 0 || delta.y != 0) m.look = knocked?delta*-1.f:delta;
+                if (!m.pathFacing && (delta.x != 0 || delta.y != 0)) m.look = knocked?delta*-1.f:delta;
                 m.position = step.position - center;
                 if (step.blocked) {
                     m.pathResult="blocked";
@@ -1038,9 +1070,13 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
                     } else m.route.clear();
                     break;
                 }
-                if (!step.reached) break;
+                if (!step.reached) {
+                    aimAlongPath();
+                    break;
+                }
                 remaining -= step.travelled; m.route.pop_front();
                 if(m.route.empty()) m.pathResult="arrived";
+                else aimAlongPath();
                 if (step.travelled > 0) break;
                 continue;
             }
@@ -1065,7 +1101,10 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
                 if(!knocked && own && requested && m.running && world().stamina && !*world().stamina) {
                     m.running=false;m.staminaExhausted=true;
                     m.movementTiming=playerTiming(u,false,clients);speed=movementSpeed(u);
-                    if(goal && !m.route.empty()) plan(m,*goal,map,origin,rule,speed,u,playerTarget);
+                    if(goal && !m.route.empty()) {
+                        plan(m,*goal,map,origin,rule,speed,u,playerTarget);
+                        aimAlongPath();
+                    }
                 }
             }
         }
@@ -1083,7 +1122,7 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         // planning or an unresolved target consume this order permanently.
         m.finishedMonsterMovement=u.actionRevision;
         m.route.clear();m.goal.reset();m.pathElapsed=0;
-        m.position=m.pathStep.stop(m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+        m.position=NativePathStep::stop(m.pathStep, m.position+Vec{.5f,.5f})-Vec{.5f,.5f};
     }
     m.playerKnockback=playerKnocked && m.pathMoving;
     if(!m.pathMoving) m.stopDestination.reset();

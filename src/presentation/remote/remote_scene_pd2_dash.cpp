@@ -1,4 +1,5 @@
 #include "remote_scene_impl.hpp"
+#include "world/native_path_step.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include <algorithm>
 #include <cmath>
@@ -21,7 +22,7 @@ void RemoteScene::Impl::advancePd2Dashes(const Grid &collision,Vec origin,SceneV
             run.destination=*target;run.animation.remaining=int(sequence->second.size())*256;run.leapFlags=0x80;
             run.velocity=float(uint32_t(monstats.number(monster->second,"Velocity").value_or(0))<<9)*25.f/4096.f;
             run.nextTick=time+NativePathStep::seconds;
-            motionState.scriptedSequence=std::move(run);motionState.pathStep.reset();motionState.route.clear();
+            motionState.scriptedSequence=std::move(run);NativePathStep::reset(motionState.pathStep);motionState.route.clear();
             motionState.goal.reset();motionState.correction={};motionState.correctionLeft=0;
             missileCastRevisions[key]=unit.actionRevision;
         }
@@ -50,7 +51,7 @@ void RemoteScene::Impl::advancePd2Dashes(const Grid &collision,Vec origin,SceneV
             if(run.animation.remaining<=0) {run.ended=true;run.moving=false;break;}
             if(run.moving) {
                 const Vec center{.5f,.5f};
-                const auto step=motionState.pathStep.advance(grid,motionState.position-origin+center,
+                const auto step=NativePathStep::advance(motionState.pathStep, grid,motionState.position-origin+center,
                     run.destination-origin+center,run.velocity*NativePathStep::seconds,{0,unitSize(unit)});
                 motionState.look=run.destination-motionState.position;motionState.position=step.position+origin-center;
             }

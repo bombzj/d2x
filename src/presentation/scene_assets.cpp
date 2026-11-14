@@ -137,8 +137,9 @@ void SceneAssets::loadNpcAlert(const DataTable &overlays) {
 }
 SceneAssets::SceneAssets(Archives &archives, const ClassicData &content, int initialLevel, const AudioSettings &audioSettings)
     : archives_(archives), soundCatalog_(archives), graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
-    unitsGraphics_(archives, "data/global/palette/units/pal.dat"), automapCatalog_(archives), audio(archives),
-      streams(archives, content, soundCatalog_), sceneAudio(archives, soundCatalog_, audio,streams), escapeMenu(archives) {
+    unitsGraphics_(archives, "data/global/palette/units/pal.dat"), automapCatalog_(archives), itemPalettes_(archives), audio(archives),
+      streams(archives, content, soundCatalog_), sceneAudio(archives, soundCatalog_, audio,streams),
+      textSlider(uiGraphics_.single(textSliderArt)), escapeMenu(archives, textSlider) {
         streams.settings(audioSettings);
         streams.update(initialLevel,0);
     loadClassicFont(uiGraphics_, archives, font, "font16");
@@ -148,6 +149,7 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content, int ini
     loadClassicFont(uiGraphics_, archives, characterCompactFont, "font8");
     loadClassicFont(uiGraphics_, archives, hirelingBlueFont, "font8", 3);
     loadClassicFont(uiGraphics_, archives, hirelingRedFont, "font8", 1);
+    loadClassicFont(uiGraphics_, archives, hirelingGoldFont, "font8", 4);
     loadClassicFont(uiGraphics_, archives, automapPartyFont, "font6", 2);
     loadClassicFont(uiGraphics_, archives, automapNpcFont, "font6", 4);
     loadClassicFont(uiGraphics_, archives, automapOtherFont, "font6", 1);
@@ -186,6 +188,11 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content, int ini
     loadClassicFont(uiGraphics_, archives, skillLevelCompactBlueFont, "fontformal10", 3);
     loadClassicFont(uiGraphics_, archives, skillLevelCompactRedFont, "fontformal10", 1);
     const ClassicStrings uiStrings(archives);
+    // D2Client 48440/48783 reads these entries by TBL index.
+    hirelingMenuText = {std::string(uiStrings.find(0xD24)), std::string(uiStrings.find(0xD25)),
+        std::string(uiStrings.find(0xD48)), std::string(uiStrings.find(0xD28)), std::string(uiStrings.find(0xD26)),
+        std::string(uiStrings.find(0xD27)), std::string(uiStrings.find(0xD29)), std::string(uiStrings.find(0xF9B)),
+        std::string(uiStrings.find(0xF9C)), std::string(uiStrings.find(0xF9D)), std::string(uiStrings.find(0x2B0D))};
     for (const auto *key : {"strchrlvl", "strchrexp", "strchrnxtlvl", "strchrstr", "strchrdex",
             "strchrvit", "strchreng", "strchrskm", "strchrrat", "strchrdef", "strchrstm",
             "strchrlif", "strchrman", "strchrfir", "strchrcol", "strchrlit", "strchrpos",
@@ -326,12 +333,11 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
         questNoticeLabel = text->second;
     loadProjectileDefinitions(content);
     hirelingPanel = uiGraphics_.single("data/global/ui/panel/npcinv.dc6");
-    hirelingScroll = uiGraphics_.single("data/global/ui/panel/scrollbar.dc6");
     hirelingHead = uiGraphics_.single("data/global/ui/panel/inv_helm_glove.dc6");
     hirelingArmor = uiGraphics_.single("data/global/ui/panel/inv_armor.dc6");
     hirelingWeapon = uiGraphics_.single("data/global/ui/panel/inv_weapons.dc6");
-    if (hirelingPanel.frames.size() < 4 || hirelingScroll.frames.size() < 6 ||
-        hirelingHead.frames.empty() || hirelingArmor.frames.empty() || hirelingWeapon.frames.empty())
+    if (hirelingPanel.frames.size() < 4 ||
+        hirelingHead.frames.size() < 2 || hirelingArmor.frames.empty() || hirelingWeapon.frames.empty())
         throw std::runtime_error("Original expansion hireling panel resources are missing");
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
     durabilityIcons = uiGraphics_.single("data/global/ui/panel/duroicon.dc6", true);
@@ -400,7 +406,7 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
             questFaces[quest] = {float(left), float(top), float(right - left + 1),
                                       float(bottom - top + 1)};
     }
-    questClose = unitsGraphics_.single("data/global/ui/panel/buysellbtn.dc6");
+    questClose = unitsGraphics_.single("data/global/ui/panel/buysellbtn.dc6", true);
     questReplay = unitsGraphics_.single("data/global/ui/menu/questlast.dc6");
     goldCoin = unitsGraphics_.single("data/global/ui/panel/goldcoinbtn.dc6");
     if (questBackground.frames.size() < 4 || questSockets.frames.size() < 2 ||
@@ -490,26 +496,8 @@ GpuAnimation SceneAssets::itemArt(const std::string &art, std::array<int, 2> tra
                                   bool ground) const {
     if (art.empty())
         return {};
-    const uint8_t *shift = nullptr;
-    if (transform[0] > 0 && transform[0] < 9 && transform[1] >= 0 && transform[1] < 21) {
-        // D2CMP 1.13c RVA 150D0: original transform group registration.
-        static constexpr const char *names[]{"",          "grey",    "grey2",    "gold",        "brown",
-                                             "greybrown", "invgrey", "invgrey2", "invgreybrown"};
-        auto found = itemTransforms_.find(transform[0]);
-        if (found == itemTransforms_.end()) {
-            auto bytes =
-                archives_.read("data/global/items/palette/" + std::string(names[transform[0]]) + ".dat");
-            if (bytes.size() < 21 * 256)
-                throw std::runtime_error("Original item palette transform is truncated");
-            found = itemTransforms_.emplace(transform[0], std::move(bytes)).first;
-        }
-        const size_t offset = size_t(transform[1]) * 256;
-        if (found->second.size() < offset + 256)
-            throw std::runtime_error("Selected item palette transform is truncated");
-        shift = found->second.data() + offset;
-    }
     return sceneGraphics(palette).worldSingle(
-        art, ground ? WorldSingleArt::GroundItem : WorldSingleArt::ItemIcon, shift);
+        art, ground ? WorldSingleArt::GroundItem : WorldSingleArt::ItemIcon, itemPalettes_.row(transform));
 }
 void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) {
     if (itemSockets.at(size_t(palette)).frames.empty())
@@ -572,11 +560,11 @@ void SceneAssets::prepareWeather(WeatherView &weather, int palette) {
 }
 const ActorAnimation *SceneAssets::actorAnimation(const ActorAnimationRequest &request, int palette) const {
     if (!actorAnimations_)
-        actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
+        actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_, itemPalettes_);
     return actorAnimations_->resolve(sceneGraphics(palette), palette, request);
 }
 const ActorAnimation *SceneAssets::objectAnimation(int identity, int mode, int palette) const {
-    if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
+    if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_, itemPalettes_);
     return actorAnimations_->object(sceneGraphics(palette), palette, identity, mode);
 }
 std::array<int, 2> SceneAssets::objectShrineOverlays(int identity, int code) const {
@@ -586,11 +574,11 @@ std::array<int, 2> SceneAssets::objectShrineOverlays(int identity, int code) con
     return {-1, -1};
 }
 ObjectPresentation SceneAssets::objectPresentation(int identity, int serverMode, float elapsed) const {
-    if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
+    if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_, itemPalettes_);
     return actorAnimations_->objectPresentation(identity, serverMode, elapsed);
 }
 std::string SceneAssets::actorSequenceMode(std::string_view name) const {
-    if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_);
+    if (!actorAnimations_) actorAnimations_ = std::make_unique<ActorAnimationCatalog>(archives_, itemPalettes_);
     return actorAnimations_->sequenceMode(name);
 }
 } // namespace d2x

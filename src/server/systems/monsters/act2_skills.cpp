@@ -1,4 +1,5 @@
 #include "core/id.hpp"
+#include "world/native_path_step.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/effects.hpp"
 #include "system.hpp"
@@ -284,7 +285,7 @@ DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t unti
     if(actor.rule.skillMoveState>=0 && !actor.aiStates.contains(actor.rule.skillMoveState) && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{source,1,actor.area,actor.rule.skillMoveState,true}}})) return {DomainStatus::Capacity,{}};
     until=std::max(until,tick+uint64_t(std::ceil((target-actor.position).length()/speed/TickContext::seconds))+1);
     actor.skillMotion=Actor::SkillMotion{target,leap?UINT64_MAX:until,actor.interruption,speed,leap,{}};
-    actor.pathStep.reset();
+    NativePathStep::reset(actor.pathStep);
     actor.skillMotion->target=victim;actor.skillMotion->moveState=actor.rule.skillMoveState>=0 && !actor.aiStates.contains(actor.rule.skillMoveState);
     actor.busyUntil=std::max(actor.busyUntil,until);actor.movementGoal=target;
     if(actor.neutralAt) actor.neutralAt=actor.busyUntil;
@@ -324,7 +325,7 @@ DomainResult<> System::startWhirlwindMotion(EntityId source,Vec target) {
     ports_.areas.setNativePatternMask(actor.area,route.back(),actor.rule.collisionPattern,0x100,true);
     actor.skillMotion=Actor::SkillMotion{route.back(),UINT64_MAX,actor.interruption,monsterMovementSpeed(actor.rule.nativeVelocity,100),false,std::move(route)};
     actor.skillMotion->eventDriven=true;actor.skillMotion->collision=MovementCollisionRule{0x401,actor.rule.size};
-    actor.pathStep.reset();actor.movementTarget={};actor.movementGoal=target;actor.pathType=7;actor.pathDistance=77;actor.pathSteps=1;
+    NativePathStep::reset(actor.pathStep);actor.movementTarget={};actor.movementGoal=target;actor.pathType=7;actor.pathDistance=77;actor.pathSteps=1;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::startDiabloRun(EntityId source,Vec target,int32_t velocity) {
@@ -338,7 +339,7 @@ DomainResult<> System::startDiabloRun(EntityId source,Vec target,int32_t velocit
     // pursue the target's new position, use ordinary run speed, or apply 75%.
     actor.skillMotion=Actor::SkillMotion{route.empty()?actor.position:route.back(),UINT64_MAX,actor.interruption,
         float(velocity)*25.f/4096.f,false,std::move(route)};
-    actor.skillMotion->eventDriven=true;actor.pathStep.reset();actor.movementTarget={};actor.movementGoal=target;
+    actor.skillMotion->eventDriven=true;NativePathStep::reset(actor.pathStep);actor.movementTarget={};actor.movementGoal=target;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 bool System::advanceScriptedMotion(EntityId source,uint64_t tick) {
@@ -358,7 +359,7 @@ void System::stopScriptedMotion(EntityId source) {
     }
     if(actor.skillMotion && actor.skillMotion->eventDriven && actor.skillMotion->leap) {actor.collisionPattern.reset();refreshCollision(actor);}
     if(!actor.skillMotion || !actor.skillMotion->eventDriven) return;
-    actor.skillMotion.reset();actor.pathStep.reset();actor.moving=false;++actor.revision;
+    actor.skillMotion.reset();NativePathStep::reset(actor.pathStep);actor.moving=false;++actor.revision;
 }
 bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
     auto &motion=*actor.skillMotion;
@@ -376,7 +377,7 @@ bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
         if(tick<motion.until) {
             AreaStore::CollisionMove collisionMove{ports_.areas,actor.id,actor.area};
             const Vec center{.5f,.5f};const auto grid=ports_.spatial.movementGrid(actor.area,collisionMove);
-            const auto step=actor.pathStep.advance(grid,actor.position+center,(motion.route.empty()?motion.destination:motion.route.front())+center,
+            const auto step=NativePathStep::advance(actor.pathStep, grid,actor.position+center,(motion.route.empty()?motion.destination:motion.route.front())+center,
                 motion.speed*TickContext::seconds,motion.collision.value_or(motion.leap?MovementCollisionRule{0,1}:actor.rule.collision));
             actor.position=step.position-center;ports_.areas.moveRoomUnit(actor.id,actor.area,actor.position);refreshCollision(actor);
             collisionMove.commit();

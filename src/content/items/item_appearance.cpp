@@ -1,7 +1,10 @@
 #include "item_appearance.hpp"
 #include "content/classic_data.hpp"
 #include "gameplay/items/state.hpp"
+#include "resources/archive.hpp"
+#include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace d2x {
 namespace {
@@ -150,6 +153,25 @@ std::array<int, 2> groundColorTransform(const ClassicData &content, const ItemCa
     }
     // ITEMS_GetColor(NULL, item, ..., 0), as used by the world item renderer.
     return itemColorTransform(content, catalog, item, ItemColorTarget::Ground);
+}
+std::array<int, 2> equipmentColorTransform(const ClassicData &content, const ItemCatalog &catalog,
+                                          const ItemInstance &item) {
+    return itemColorTransform(content, catalog, item, ItemColorTarget::Ground);
+}
+const uint8_t *ItemPaletteCatalog::row(std::array<int, 2> transform) {
+    const auto [group, color] = transform;
+    if (group <= 0 || group >= 9 || color < 0 || color >= 21) return nullptr;
+    // D2CMP 1.13c RVA 150D0 registers these eight MPQ palette groups.
+    constexpr std::array names{"", "grey", "grey2", "gold", "brown",
+                               "greybrown", "invgrey", "invgrey2", "invgreybrown"};
+    auto found = groups_.find(group);
+    if (found == groups_.end()) {
+        auto bytes = archives_.read("data/global/items/palette/" + std::string(names[group]) + ".dat");
+        if (bytes.size() < 21 * 256)
+            throw std::runtime_error("Original item palette transform is truncated");
+        found = groups_.emplace(group, std::move(bytes)).first;
+    }
+    return found->second.data() + size_t(color) * 256;
 }
 void loadItemAppearances(std::vector<ItemDefinition> &items,
                          const std::map<std::string, DataTable, std::less<>> &tables,

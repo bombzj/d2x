@@ -2,6 +2,7 @@
 #include "input.hpp"
 #include "contracts/online_scene.hpp"
 #include "presentation/audio/audio_settings.hpp"
+#include "presentation/graphics/text_slider.hpp"
 #include "client/character_client.hpp"
 #include "client/quest_client.hpp"
 #include "client/npc_client.hpp"
@@ -11,6 +12,7 @@
 #include "presentation/hud/chat_view.hpp"
 #include "presentation/hud/trade_invite_view.hpp"
 #include "presentation/hud/party_view.hpp"
+#include "presentation/npc/hireling_panel.hpp"
 #include "presentation/world/scene_geometry.hpp"
 #include "presentation/world/tile_visibility.hpp"
 #include "presentation/world/weather_debug.hpp"
@@ -61,8 +63,7 @@ struct ViewState {
     ControlBindings controls = defaultControlBindings(), controlDraft = controls;
     int controlSelected = -1, controlColumn = 0;
     bool controlCapturing = false;
-    int gameMenuScrollPressed = -1;
-    bool gameMenuScrollDragging = false;
+    TextSliderGesture controlsSlider;
     int gameMenuSliderDragging = -1;
     AudioSettings audio;
     bool lighting = true;
@@ -78,13 +79,15 @@ struct ViewState {
     std::optional<int> characterPressed, skillTreePressed;
     std::optional<bool> pointButtonPressed;
     bool hirelingOpen = false, hireListOpen = false;
+    ClassicButtonGesture hirelingCloseButton, hireListCancelButton;
     bool portraitsVisible = true;
     EntityId hirelingPortraitHovered;
     float hirelingPortraitHoverTime = 0;
     bool hirelingPortraitCanFeed = false;
     int hireListScroll = 0;
+    TextSliderGesture hireListSlider;
     struct HirelingConfirmation { uint32_t slot; uint64_t offerRevision; };
-    std::optional<HirelingConfirmation> hirelingConfirmation;
+    std::optional<HirelingConfirmation> hirelingConfirmation, hireListPressed;
     bool questOpen = false;
     bool questAutoPreview = false, hidePointer = false;
     bool partyOpen = false;
@@ -172,6 +175,7 @@ class SceneView {
     mutable ShopView shopView_;
     mutable HirelingView hirelingView_;
     mutable HirelingListView hirelingListView_;
+    mutable HirelingListLayout hirelingListLayout_;
     SceneAssets assets_;
     std::unique_ptr<LightingView> lighting_;
     std::unique_ptr<WeatherView> weather_;
@@ -193,8 +197,8 @@ class SceneView {
     mutable unsigned areaTitleFrames_=120;
     bool areaTitlePending_{};
     std::optional<std::tuple<int, int, bool, bool>> automapLayout_;
-    ChatView chat_;
     OriginalMenu originalMenu_;
+    ChatView chat_;
     TradeInviteView tradeInvite_;
     PartyView party_;
     bool incomingHostility_ = false;
@@ -270,6 +274,7 @@ class SceneView {
     void drawInventory(Vec mouse) const;
     void drawCharacter(Vec mouse) const;
     void drawHireling(Vec mouse) const;
+    bool hudPortraitsVisible() const;
     void drawHirelingPortrait(Vec mouse) const;
     void drawHirelingList(Vec mouse) const;
     void drawStorage(Vec mouse) const;
@@ -320,7 +325,7 @@ class SceneView {
     bool gameMenuItemEnabled(int index) const;
     bool adjustGameMenuSound(const FrameInput &);
     void applyAudioSettings(const AudioSettings &);
-    void scrollGameMenu(const FrameInput &);
+    bool scrollGameMenu(const FrameInput &);
     bool editGameMenuControls(const FrameInput &);
     Rectangle hirelingSlotBounds(size_t index) const;
     bool hirelingPortraitVisible() const;
@@ -421,6 +426,8 @@ class SceneView {
     const ShopView &shopView() const;
     const HirelingView &hirelingView() const;
     const HirelingListView &hirelingListView() const;
+    const HirelingListLayout &hirelingListLayout() const { return hirelingListLayout_; }
+    Rectangle hirelingCancelBounds() const;
     void refreshInteractions();
     void refreshNpcView(EntityId npc);
     Vec screen(Vec position) const;

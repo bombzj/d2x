@@ -1,4 +1,5 @@
 #include "game_instance.hpp"
+#include "world/native_path_step.hpp"
 #include "server/runtime/skill_rules.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/skills.hpp"
@@ -248,7 +249,7 @@ bool GameInstance::enter(PlayerId id, bool active) {
     else PlayerStore::publishCorpseCollision(areas_,found->second.persistent.corpses,{});
     if(arrival) {
         found->second.area=arrival->area;found->second.position=arrival->position;
-        found->second.pathStep.reset();
+        NativePathStep::reset(found->second.pathStep);
         areas_.moveRoomUnit(found->second.actor,found->second.area,found->second.position);
     }
     if (active) systems_.world.activate(found->second.area, found->second.position + Vec{.5f, .5f});

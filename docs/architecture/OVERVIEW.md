@@ -117,6 +117,10 @@ flowchart TD
 
 编译依赖按实际类型使用收窄：`runtime/prepared_rules.hpp` 仅前置声明 `SkillRules`，完整规则由读取成员或构造规则的 cpp 显式包含；仅转交规则指针的领域不依赖其布局。`actors/actor_animation.hpp` 直接使用 `contracts/animation_timing.hpp`，不引入整套角色面板契约。此项为头文件依赖调整，不改变运行态布局；尚未构建验证。
 
+路径状态与操作接口分开：`world/native_path_state.hpp` 定义按值保存的 `NativePathState`，玩家、怪物和场景公共状态只包含此头；`native_path_step.hpp` 提供接收状态引用的 `NativePathStep` 操作，仅实际执行移动／重置的 cpp 包含。复制与回滚保留定点位置、已发布位置和标志，不引入逐单位堆分配；状态布局变化仍会触发持有者重编译。场景原生朝向声明及实现归 `presentation/remote/scene_direction.*`，通用绘图头不再暴露该接口。
+
+客户端房间激活信息由 `world/room_activation_snapshot.hpp` 独立定义，`Map` 仅以前置声明的 `shared_ptr<const RoomActivationSnapshot>` 随地形发布；生成器和环境生物消费者显式包含定义。该快照的房间数组与当前地形房间索引一致，整幕活动序号集合独立保留跨步行连通范围的生命周期；通用 `MapTerrain::PreparedRoom` 不持有激活序号或初始活动种子。上述依赖拆分尚未构建或运行，历史 Ninja 依赖记录需在后续获授权重编译后刷新，不能据旧记录宣称实际增量耗时或重编译数量已降低。
+
 ## 生命周期
 
 原服与自研均由FrameInput → SceneController → RemoteUiClients／RemoteControl／Combat／Inventory → RealmSession发送原包。回包进入同一RemoteWorld／RemoteTown／RemoteScene，再由公共UI、动画和声音消费。单机仅在组装入口建立内存字节连接；移除了LocalGame／GameClients／GameScene及其CMake目标。

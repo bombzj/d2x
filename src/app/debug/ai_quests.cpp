@@ -53,6 +53,7 @@ void DebugAi::Impl::configureQuest(Goal &goal) const {
     switch(goal.questId) {
     case QuestId::DenOfEvil: {
         talk("akara",64,4,true);
+        goal.steps.back().status=1;
         QuestStep s;s.action=QuestAction::Clear;s.area=definitions->area("Act 1 - Cave 1");s.flags=2;goal.steps.push_back(s);
         home();talk("akara",76,1);break;
     }
@@ -393,10 +394,9 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
     case QuestPending::Action::SubmitStaff:
         if(world.staffRevision>pending.beforeRevision && world.staffResult==4) throw std::runtime_error("The original orifice rejected this staff");
         {const auto staff=questFlags(c,QuestId::HoradricStaff);observed=staff && (*staff&1) && !owned(c,step.item);}break;
-    case QuestPending::Action::Introduction:observed=world.quests.revision>pending.beforeRevision;break;
     case QuestPending::Action::Topic:
         observed=flags && step.flags && (*flags&step.flags)==step.flags && !(*flags&step.clearFlags);
-        if(step.optional) observed|=world.quests.revision>pending.beforeRevision && world.quests.statuses[questDefinition(step.stateQuest.value_or(goal.questId)).nativeSlot].value_or(0)>0;
+        if(step.status) observed|=world.quests.statuses[questDefinition(step.stateQuest.value_or(goal.questId)).nativeSlot]==step.status;
         if(!step.item.empty() && step.produced.empty()) observed=observed && !owned(c,step.item);
         if(!step.produced.empty()) observed=observed && owned(c,step.produced);
         if(!step.produced.empty() && step.produced!="rin")
@@ -444,7 +444,6 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
         else if(step.witness && !step.topics.empty()) observed=false; // A reading completes on its witness below.
         else observed=unit!=world.units.end() && unit->second.assignmentRevision==pending.assignment && unit->second.mode && *unit->second.mode!=0;
         if(step.witness && step.action!=QuestAction::Portal) observed|=find(c,*step.witness).has_value();
-        if(step.optional) observed|=world.quests.statuses[goal.questSlot].value_or(0)>0;
         break;
     case QuestPending::Action::Imbue:
         observed=questState.questRun.materialPhase==4 && flags && (*flags&1);
@@ -481,17 +480,29 @@ void DebugAi::Impl::observeQuestResult(Context &c) {
     else checkQuestPending(c);
 }
 void DebugAi::Impl::observeQuestInteraction(Context &c,const DebugWalkIntent &intent) {
-    if(questState.questRun.pending || cursor>=goals.size() || goals[cursor].kind!=Kind::Quest) return;
+    const bool forge=intent.purpose.value_or(std::string{})=="quest-forge";
+    if((questState.questRun.pending && !forge) || cursor>=goals.size() || goals[cursor].kind!=Kind::Quest) return;
     if(intent.purpose.value_or(std::string{})=="quest-orb" || intent.purpose.value_or(std::string{})=="quest-forge") {
-        const bool forge=intent.purpose.value_or(std::string{})=="quest-forge";
         const unsigned hits=forge?3:2;
         if(questState.questRun.step>=goals[cursor].steps.size() || goals[cursor].steps[questState.questRun.step].action!=(forge?QuestAction::SmashForge:QuestAction::SmashOrb) ||
-            questState.questRun.materialPhase>=hits) throw std::runtime_error("Unexpected extra quest weapon operation");
+            questState.questRun.materialPhase>=(forge?6:hits)) throw std::runtime_error("Unexpected extra quest weapon operation");
+        if(forge) {
+            const auto &sent=c.control.interactionSubmission();const auto child=c.walk.observe();
+            const OnlineUnitKey target{intent.unit.value().type,intent.unit.value().id};
+            const auto unit=c.observation.read().world.units.find(target);
+            if(questState.questRun.forgeStrikingStopped || !sent || sent->target!=target ||
+                !onlineWorldMatches(sent->context,c.observation.read()) ||
+                (sent->revision<=child.interactionRevision && (!child.submittedInteraction ||
+                    sent->revision!=child.submittedInteraction->worldRevision)) ||
+                sent->revision<=questState.questRun.forgeSubmissionRevision || unit==c.observation.read().world.units.end() ||
+                sent->targetAssignment!=unit->second.assignmentRevision) return;
+            questState.questRun.forgeSubmissionRevision=sent->revision;
+        }
         if(forge && !questState.questRun.materialPhase) {
             questState.questRun.rewardBefore.clear();for(const auto &[id,item]:c.observation.read().world.items) {(void)item;questState.questRun.rewardBefore.insert(id);}
         }
         const auto now=Clock::now();++questState.questRun.materialPhase;++interactions;
-        questState.questRun.sweepReady=now+std::chrono::milliseconds(600);
+        questState.questRun.sweepReady=now+std::chrono::milliseconds(forge && questState.questRun.materialPhase>=hits?1000:600);
         if(questState.questRun.materialPhase==hits) {
             QuestPending pending;pending.action=QuestPending::Action::Object;
             pending.unit=OnlineUnitKey{intent.unit.value().type,intent.unit.value().id};

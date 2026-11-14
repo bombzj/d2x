@@ -101,6 +101,6 @@ RemoteScene补CltDo18–22、ClientMissile补原尾迹／毒烟／引导及Hit12
 
 原CltDo2补药瓶及左手的物品弹体映射，地面寿命计算与服务端共用纯函数；原3F准备鉴定光标，事件revision区分重复来源／入局代次并等待真实来源投影；Unsummon按原7A及PetType的本人归属／许可筛选。原服和自研仍消费同一原消息，不推算服务器扣费或伤害。普通木桶按原OperateFn5和已发送0x13预测本人隐藏KK，复用原动作渲染；破坏／掉落仍等服务端。依据与未认证边界见[通用技能](../gameplay/skills/GENERAL.md)。
 
-个人传送点63保留收到时的`waypointHistoryRevision`，随同一连接跨区保留，新游戏清空。它是原始协议快照，供正常菜单及最终旅行资格复验；AI另将新快照与本人实际激活／正常跨幕城镇事实归入唯一决策记忆，不回写原始位表。具体消费者与初次查询边界见[调试AI](../development/DEBUG_AI.md#全链路问题的共用恢复)。
+个人传送点63保留收到时的`waypointHistoryRevision`，随同一连接跨区保留，新游戏清空。它是原始协议快照，供菜单及旅行资格复验；AI决策记忆不回写原位表，其消费者与查询边界见[旅行与传送点](../architecture/CLIENT_NAVIGATION_REDESIGN.md#旅行与传送点)。
 
-AI动态清场不再将房间／敌人线索放进QuestRun：统一按区域保留订阅修订、最后敌人位置与指派身份，并复验种子、死亡与重新订阅；NPC和入口仍消费RemoteTown现有导航坐标，不另建第二套位置权威。动态GUID不写入导航存档，详见[场景记忆归属](../development/DEBUG_AI.md#场景记忆的归属)。
+AI动态清场及位置线索的所有权、复验与生命周期见[导航知识](../architecture/CLIENT_NAVIGATION_REDESIGN.md#坐标与知识)，不另建位置权威或持久化动态GUID。

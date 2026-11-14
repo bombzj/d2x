@@ -24,7 +24,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 内容 | 负责页面 | 收录边界 |
 | --- | --- | --- |
 | D2X与零售原版的一致性缺口、待核对差异及相关验收 | [ORIGINAL_GAPS](development/ORIGINAL_GAPS.md)汇总，详细规则与依据归对应gameplay／modules专题 | 明确要核对的原版功能、依据或同条件对照需求；已确认差异与待核对项分开。不作为项目全部缺陷或待办的总表 |
-| 调试AI／自主行走的策略、任务编排、能力限制及组合验收 | [DEBUG_AI](development/DEBUG_AI.md)；命令和现场读取契约归[DEBUG_PIPE](development/DEBUG_PIPE.md) | 包括工具流程内尚待定位的接近、补给和路线问题，保留归因未知；自动玩家策略不作为原版规则 |
+| 调试AI／自主行走的策略、任务编排、能力限制及组合验收 | [AI文档分工](#调试任务ai文档)；缺陷与验收集中于[DEBUG_AI](development/DEBUG_AI.md) | 包括工具流程内尚待定位的接近、补给和路线问题，保留归因未知；自动玩家策略不作为原版规则 |
 | 未定位的通用客户端／宿主故障 | [RUNTIME_ISSUES](development/RUNTIME_ISSUES.md) | 记录现象、必要条件与待查边界；崩溃、加载超时或断连本身不证明原版行为差异 |
 | 已定位的公共模块问题 | 对应modules／gameplay专题；涉及原版差异时同步ORIGINAL_GAPS摘要 | 更新当前实现与剩余限制，缩小或移除未定位问题条目；其他页面链接同一负责段落，不复制缺陷台账 |
 
@@ -68,13 +68,16 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 
 | 需要了解的内容 | 负责入口 |
 | --- | --- |
-| 高层任务指令、可重载配置、五幕配方与部分进度恢复 | [调试任务AI](development/DEBUG_AI.md) |
-| AI验证方法、隔离输入、结果与取证边界 | [测试指南](development/TESTING.md)，具体运行产物留在忽略目录，不维护历史流水 |
-| 旅行／探索、动作等待与输入占用、战斗／职业移动及通用补给的实现入口 | [执行分层](development/DEBUG_AI.md#执行分层)、[公共操作](development/DEBUG_AI.md#公共操作与部分进度恢复)、[战斗策略](development/DEBUG_AI.md#战斗策略) |
-| 管道命令、状态与诊断字段、消息和现场采集 | [调试管道](development/DEBUG_PIPE.md)、[AI命令与组合](development/DEBUG_AI.md#输入与组合) |
-| 启动与失焦继续运行参数、构建和正常退出 | [构建运行](development/BUILD_AND_RUN.md) |
-| 调试AI已知问题、能力限制及组合验收范围 | [已知运行问题](development/DEBUG_AI.md#已知运行问题)、[调试导航待验收](development/DEBUG_AI.md#待验收调试导航) |
-| 客户端／服务端的实际任务规则、包与保存语义 | [任务系统](gameplay/quests/SYSTEM.md)、[第一幕](gameplay/quests/ACT1.md)、[第二幕](gameplay/quests/ACT2.md)、[后三幕](gameplay/quests/ACT3_5.md)；AI策略不替代权威规则 |
+| 命令、目标组合、配置与策略参数 | [调试任务AI](development/DEBUG_AI.md)；只说明自动玩家如何选择正常操作 |
+| 五幕任务条件、奖励确认与部分进度恢复 | [任务配方](development/DEBUG_AI_QUESTS.md)；不复制权威规则与原包分析 |
+| 状态所有权、调度／时钟、输入交接、战斗与补给执行 | [执行契约](development/DEBUG_AI_RUNTIME.md)；不维护参数表或运行台账 |
+| 地图知识、通路／目标核查、路径执行及旅行算法 | [导航结构](architecture/CLIENT_NAVIGATION_REDESIGN.md)；不维护命令和诊断格式 |
+| 工具缺陷、能力限制与待验收组合 | [已知运行问题](development/DEBUG_AI.md#已知运行问题)、[待验收范围](development/DEBUG_AI.md#待验收调试导航)；不保留已修历史和运行流水 |
+| AI状态、行为日志及导航采集格式 | [AI诊断](development/DEBUG_AI_DIAGNOSTICS.md)；命令传输、原包和宿主读取归[调试管道](development/DEBUG_PIPE.md) |
+| 启动、隔离角色、续跑与退出 | [构建运行](development/BUILD_AND_RUN.md#诊断启动与任务-ai)；不维护执行算法 |
+| 验证方法、授权与证据边界 | [测试指南](development/TESTING.md)；具体产物放忽略目录 |
+| 尚未实施的优化建议 | [AI优化候选](development/DEBUG_AI_ANALYSIS.md)；区分源码事实、风险与采纳条件，不作为当前能力台账 |
+| 权威任务规则、协议与保存 | [任务系统](gameplay/quests/SYSTEM.md)及各幕专题；不维护自动玩家策略 |
 
 ## 当前模块
 

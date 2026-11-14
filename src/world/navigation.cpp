@@ -560,9 +560,24 @@ void appendOffsetPath(const Grid &grid,Vec from,Vec target,int distance,int offs
 }
 bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
     const CollisionQueryScope collisionScope{*this};
+    if (!neighbours.empty()) {
+        Vec origin; const auto view = linkedNavigation(origin);
+        return view.missileSegment(a - origin, b - origin, rule);
+    }
     // D2MOO COLLISION_CheckMaskWithSize: 0/1 point, 2 cross, 3 square.
     if (rule.size < 0 || rule.size > 3) return false;
     const auto clear = [&](int x, int y) {
+        if (!navigationSources.empty()) {
+            for (const auto &source : navigationSources) {
+                const auto &grid = *source.grid;
+                const int column = x + source.offsetX, row = y + source.offsetY;
+                if (column < 0 || row < 0 || column >= grid.width || row >= grid.height || grid.terrainCollision.empty()) continue;
+                const size_t index = size_t(row) * grid.width + column;
+                if (!grid.fullTerrainCollision.empty() && grid.fullTerrainCollision[index] == 0xffff) continue;
+                return !((grid.terrainCollision[index] | grid.objectMask(column, row)) & rule.mask & 0x0005);
+            }
+            return false;
+        }
         if (x < 0 || y < 0 || x >= width || y >= height || terrainCollision.empty()) return false;
         // Step.cpp stops missile travel on WALL/BARRIER only. Other mode bits
         // find units; e.g. DT1 water sharing unit bits must not stop travel.

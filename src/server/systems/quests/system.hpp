@@ -116,12 +116,15 @@ class System {
     DomainResult<> readAncientAltar(const ActorContext &,EntityId);
     void orderStones();
     StepStatus npcStoryStep(TickContext);
+    void restorePalaceState(const CharacterRecord &);
+    void advancePalaceSequence();
     DomainResult<> bindNpcMapAi(EntityId);
     DomainResult<EntityId> spawnStoryNpc(RegionId,std::string_view,Vec,uint64_t,bool critical);
     DomainResult<std::optional<Vec>> npcSpawnPosition(const AreaNpc &,RegionId,uint64_t tick);
     bool npcInteracting(EntityId) const;
   public:
     void registerNpcStoryObject(EntityId,RegionId,int definition,int initialization,Vec);
+    DomainResult<> palaceBlockerEvent(EntityId,uint64_t);
     uint64_t cainBirthDue(EntityId) const;
     DomainResult<> cainBirthEvent(EntityId,uint64_t);
     DomainResult<bool> admitStoryNpc(const AreaNpc &,RegionId,uint64_t tick);
@@ -173,6 +176,9 @@ class System {
     std::optional<Dialogue> dialogue(const ActorContext &,const NpcRule &) const;
     std::optional<uint16_t> alertMessage(const ActorContext &,const NpcRule &) const;
     std::vector<Dialogue> dialogues(const ActorContext &,const NpcRule &) const;
+    struct PalaceGuardSpeech {Dialogue dialogue;uint64_t expected{},next{};};
+    std::optional<PalaceGuardSpeech> preparePalaceGuardSpeech(const NpcRule &) const;
+    void publishPalaceGuardSpeech(const PalaceGuardSpeech &);
     DomainResult<> operate(const ActorContext &,EntityId,int definition,int operation,Vec);
     std::vector<Preparation> pending() const;
     uint64_t pendingCommand(PlayerId, uint64_t sequence) const;

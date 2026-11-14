@@ -37,7 +37,9 @@ DomainResult<bool> System::replaceHireling(const ActorContext &actor,HirelingRec
     const auto *player=ports_.players.find(actor.player);
     if(!player || !player->entered || player->actor!=actor.actor || player->area!=actor.area ||
         ports_.areas.at(actor.area).generation!=actor.areaGeneration || player->persistent.player.hp<=0 ||
-        record.sourceRow<0 || record.level<1 || record.level>player->persistent.player.level) return {DomainStatus::InvalidActor,{}};
+        record.sourceRow<0 || record.level<1) return {DomainStatus::InvalidActor,{}};
+    const bool retailPurchase=request && player->rules.skills && !player->rules.skills->pd2;
+    if(record.level>std::max(player->persistent.player.level,retailPurchase?2:1)) return {DomainStatus::InvalidActor,{}};
     if(player->inventoryRevision==UINT64_MAX || player->characterRevision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     if(uint64_t(player->persistent.player.gold)+player->persistent.player.bankGold<price) return {DomainStatus::Unavailable,{}};
     auto candidate=player->persistent;candidate.player.hireling=record;
@@ -167,13 +169,17 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if(request.action==Action::Equipment) return request.offer?equipHireling(actor,*request.offer):DomainResult<>{DomainStatus::InvalidRequest,{}};
     const auto *player = ports_.players.find(actor.player);
     const auto access = ports_.npc.service(actor,request.npc);
-    if (!player || !access || (access->npc->rule.code!="kashya" && access->npc->rule.code!="greiz" && access->npc->rule.code!="asheara" && access->npc->rule.code!="tyrael" && access->npc->rule.code!="qual-kehk")) return {DomainStatus::InvalidRequest,{}};
-    if(access->npc->rule.code=="tyrael" && request.action!=Action::Resurrect) return {DomainStatus::InvalidRequest,{}};
+    if(!player) return {DomainStatus::InvalidRequest,{}};
     const auto reject = [&](uint8_t result) -> DomainResult<> {
         const auto sent = ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
             {MerchantFact{request.npc,EntityId{UINT32_MAX},0,result,player->persistent.player.gold}}});
         return sent ? DomainResult<>{DomainStatus::Applied,std::monostate{}} : DomainResult<>{sent.status,{}};
     };
+    if(!access) return request.action==Action::List?DomainResult<>{DomainStatus::InvalidRequest,{}}:reject(9);
+    const auto &sellerCode=access->npc->rule.code;
+    const bool hires=sellerCode=="kashya" || sellerCode=="greiz" || sellerCode=="asheara" || sellerCode=="qual-kehk";
+    if(!hires && !(sellerCode=="tyrael" && request.action==Action::Resurrect))
+        return request.action==Action::List?DomainResult<>{DomainStatus::InvalidRequest,{}}:reject(9);
     if (request.action == Action::List) {
         if (pendingLists_.contains(actor.player)) return {DomainStatus::Conflict,{}};
         if (pendingLists_.size() >= 8 || nextList_ == UINT64_MAX) return {DomainStatus::Capacity,{}};
@@ -207,9 +213,11 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     std::vector<EntityId> retiredPets;
     unsigned price = 0;
     if (request.action == Action::Hire) {
-        const auto &quest = record.quests.at(size_t(player->persistent.difficulty)).at(questIndex(QuestId::SistersBurialGrounds));
-        if (access->npc->rule.code=="kashya" && record.level < 8 && quest.stage < questCompletionStage(QuestId::SistersBurialGrounds)) return reject(11);
-        if(access->npc->rule.code=="qual-kehk" && record.quests.at(size_t(player->persistent.difficulty)).at(questIndex(QuestId::RescueOnMountArreat)).stage<questCompletionStage(QuestId::RescueOnMountArreat)) return reject(11);
+        const auto &quests=record.quests.at(size_t(player->persistent.difficulty));
+        constexpr auto bloodRaven=QuestId::SistersBurialGrounds;
+        if(sellerCode=="kashya" && record.level<8 && quests.at(questIndex(bloodRaven)).stage<questCompletionStage(bloodRaven)) return reject(11);
+        const auto actFiveGate=player->rules.skills && player->rules.skills->pd2?QuestId::RescueOnMountArreat:QuestId::EveOfDestruction;
+        if(sellerCode=="qual-kehk" && quests.at(questIndex(actFiveGate)).stage<questCompletionStage(actFiveGate)) return reject(11);
         const auto list = hirelingLists_.find(actor.player);
         if (!request.offer || list == hirelingLists_.end() || list->second.source.conversation != access->conversation->revision ||
             list->second.source.level != record.level) return reject(9);
@@ -220,12 +228,13 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         auto roster=ports_.npc.prepareHirelingHired(list->second.source.seller,list->second.source.rosterRevision,candidate->name,candidate->record.seed);
         if(!roster) return {roster.status,{}};
         const auto *seller=ports_.monsters.find(request.npc);
-        if(!seller || seller->area!=actor.area) return {DomainStatus::Unavailable,{}};
+        if(!seller || seller->area!=actor.area) return reject(15);
         const auto result=replaceHireling(actor,candidate->record,candidate->price,request,seller->position);
         if(result.status==DomainStatus::PendingContent) return {DomainStatus::Applied,std::monostate{}};
         if(!result) {
             if(!isDeferred(result.status)) hirelingReplacements_.erase(actor.player);
-            return result.status==DomainStatus::Unavailable?reject(15):DomainResult<>{result.status,{}};
+            if(isDeferred(result.status)) return {result.status,{}};
+            return reject(result.status==DomainStatus::Unavailable?15:9);
         }
         if(!*result.value) {
             hirelingReplacements_.erase(actor.player);return {DomainStatus::Applied,std::monostate{}};

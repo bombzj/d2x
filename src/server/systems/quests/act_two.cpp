@@ -95,7 +95,6 @@ QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId re
 bool System::allowsTravel(const CharacterRecord &record,RegionId from,RegionId to) const {
     const auto &book=record.quests.at(size_t(ports_.settings.difficulty));
     if(int(to)==73) return int(from)==int(state_.actTwo.tomb) && state_.actTwo.tombOpen;
-    if(int(from)==40 && int(to)==50) return book.at(questIndex(QuestId::ArcaneSanctuary)).stage>=uint32_t(ArcaneStage::PalaceOpened) || book.at(questIndex(QuestId::SevenTombs)).stage>=uint32_t(TombsStage::DurielSlain);
     if(int(to)==100) return state_.actThree.orbSmashed || book.at(questIndex(QuestId::KhalimsWill)).stage>=4;
     if(int(from)==102 && int(to)==103) return book.at(questIndex(QuestId::Guardian)).stage>=4;
     if(int(to)==113) return book.at(questIndex(QuestId::SiegeOnHarrogath)).stage>=3;
@@ -193,6 +192,7 @@ StepStatus System::actTwoStep(TickContext tick) {
             shareProgress(QuestId::SevenTombs,uint32_t(TombsStage::DurielSlain),
                 eligibleParty(QuestId::SevenTombs,uint32_t(TombsStage::DurielSlain),m.area,{},killerPlayer(m.killer)));
             state_.actTwo.durielSlain=true;
+            if(state_.actTwo.runtime[5].active) state_.actTwo.runtime[5].state=3;
         }
     }
     if(state_.actTwo.sunScheduled && !state_.actTwo.altarDestroyed && tick.tick>=state_.actTwo.sunAt && !state_.actTwo.dark) {
@@ -237,6 +237,15 @@ StepStatus System::actTwoStep(TickContext tick) {
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered) continue;
         const auto &area=ports_.areas.at(p.area);const ActorContext actor{id,p.actor,p.area,area.generation,0,tick.tick};
+        const auto observed=state_.actTwo.observed.find(id);
+        if(observed==state_.actTwo.observed.end() || std::get<0>(observed->second)!=p.area) {
+            auto &arcane=state_.actTwo.runtime[3];auto &tombs=state_.actTwo.runtime[5];
+            if(int(p.area)==74) {arcane.state=std::max<uint8_t>(arcane.state,4);arcane.last=std::max<uint8_t>(arcane.last,4);}
+            else if(observed!=state_.actTwo.observed.end() && int(std::get<0>(observed->second))==40 && arcane.state==3)
+                arcane.state=4;
+            if(tombs.active && ((area.definition.staffTomb && int(p.area)==*area.definition.staffTomb) ||
+                (int(p.area)==73 && tombs.state<=1) || (int(p.area)==46 && !tombs.state))) tombs.state=2;
+        }
         auto record=p.persistent.player;auto &book=record.quests.at(size_t(ports_.settings.difficulty));const auto before=book;
         const auto available=[&](QuestId quest){return !unavailable(id,record,quest);};
         auto &radament=book.at(questIndex(QuestId::RadamentsLair));

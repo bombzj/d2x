@@ -33,6 +33,9 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
             npcClient_.submit(OpenHirelingList{ui.dialogueObject});
             ui.npcMenu=false;ui.hireListOpen=true;ui.hireListScroll=0;
             ui.hirelingConfirmation.reset();
+            ui.hireListPressed.reset();
+            ui.hireListSlider = {};
+            ui.hireListCancelButton = {};
         }
         else if (action == NpcMenuAction::Resurrect) npcClient_.submit(ResurrectHireling{ui.dialogueObject});
         else if (action == NpcMenuAction::Identify)

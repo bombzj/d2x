@@ -16,6 +16,8 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 
 客户端按可见瓦片与动画帧上传场景图像，按预算回收图集页和解码像素；MPQ规则表按挂载和准备模式共享，见[客户端资源与内存](docs/development/CLIENT_RESOURCE_MEMORY.md)。服务端战斗目标以[复刻目标架构](docs/architecture/SERVER_COMBAT_RECONSTRUCTION.md)为准，目标设计不等于当前能力。性能优化必须保持有效输入下的数值、随机消费和执行次序，不能用降频、合帧或近似算法换速度。
 
+增量编译依赖已拆分路径值状态／操作接口、场景朝向和客户端房间激活快照；公共状态头不再包含路径操作头，通用地形／绘图头不再承载上述专用接口。首次迁移仍需重编受影响单元，实际编译收益尚未验证，见[依赖方向](docs/architecture/OVERVIEW.md#依赖方向)。
+
 ## 当前实现范围
 
 已接能力不代表全部组合或原版客户端兼容性完成；支持条件和未覆盖范围由对应专题维护。
@@ -28,7 +30,7 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | 战斗／技能 | 普攻、法术、状态、武器效果及PvP；女巫、亚马逊、圣骑士、死灵、野蛮人技能；刺客蓄气／陷阱／伙伴施法及德鲁伊变形／召唤已有执行入口；尸体技能起手资格与选取 | 全技能与来源组合、完整双持与触发组合、完整PvP规则；[女巫](docs/gameplay/skills/SORCERESS.md)、[死灵](docs/gameplay/skills/NECROMANCER.md)、[刺客](docs/gameplay/skills/ASSASSIN.md)、[阵营](docs/gameplay/combat/FACTIONS.md) |
 | 怪物／伙伴 | 第一、二幕家族及第三至第五幕逐项程序；NPC休眠命令、光环与修饰器重建；零售死灵召唤回调 | 全局交错／逐随机及全难度组合；本机1.13c的Uber默认AI、高级方块门保留空分支，不新增Realm World Event触发或替换规则；[怪物目录](docs/gameplay/monsters/README.md#当前实施范围)、[逐项台账](docs/gameplay/monsters/ACT3.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
 | NPC／任务 | 城镇服务、NPC原MapAI移动与动作、交谈暂停；Cain／Anya退场、熔炉、邪恶洞窟、Nihlathak、混沌清场等任务演出；五幕个人任务主流程、组队任务及奖励保存；任务日志已阅回执 | 完整剧情时序／退场表现、机关和特殊多人任务；[NPC交互](docs/gameplay/npc/INTERACTIONS.md#宿主npc移动与地图动作)、[NPC／任务](docs/modules/NPC_QUEST.md)、[任务](docs/gameplay/quests/SYSTEM.md) |
-| 多人／表现 | 组队、聊天、交易、敌意及共享收益；物品提示、自动地图、区域标题、消息日志、局内聊天与IME、头顶消息、ESC各级菜单与设置；包裹拿放、快捷键、方块、鉴定、堆叠与金币输入 | 完整像素／状态对齐、特殊任务事件、硬核权限组合、完整本地化／输入法组合；[UI](docs/gameplay/ui/CLASSIC_HUD.md)、[包裹](docs/gameplay/items/INVENTORY_UI.md#操作)、[自动地图](docs/gameplay/world/AUTOMAP.md)、[物品提示](docs/gameplay/items/PRESENTATION.md#物品属性提示) |
+| 多人／表现 | 组队、聊天、交易、敌意及共享收益；物品提示、自动地图、区域标题、消息日志、局内聊天与IME、头顶消息、ESC各级菜单与设置；包裹拿放、快捷键、方块、鉴定、堆叠与金币输入；零售角色按装备副本与MPQ逐组件染色 | 完整像素／状态对齐、特殊任务事件、硬核权限组合、完整本地化／输入法组合；[UI](docs/gameplay/ui/CLASSIC_HUD.md)、[包裹](docs/gameplay/items/INVENTORY_UI.md#操作)、[自动地图](docs/gameplay/world/AUTOMAP.md)、[物品提示与染色](docs/gameplay/items/PRESENTATION.md) |
 
 ## 专项状态
 
@@ -38,11 +40,11 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | 局内面板与输入 | 传送点菜单原字体与状态色；Configure Controls主／副键、16个技能快捷槽、全角色共享偏好；原版技能循环与角色语音键 | 实机组合、重启保存及像素对照；[传送点](docs/gameplay/ui/CLASSIC_HUD.md#传送点与菜单)、[ESC菜单](docs/gameplay/ui/CLASSIC_HUD.md#esc-菜单)、[面板核对](docs/gameplay/ui/CLASSIC_HUD.md#主要面板对照边界)、[客户端偏好](docs/modules/SAVES.md#客户端偏好凭据与探索) |
 | 世界选取与标注 | 世界悬停／点击使用原COF组件、cell帧范围及专用矩形；NPC／玩家姓名、门户标题、覆盖图与感叹号沿原高度和字体框定位 | 重叠目标、全部动画与原版运行对照；[世界选取](docs/gameplay/world/OBJECTS.md#世界悬停与点击选取)、[NPC姓名](docs/gameplay/npc/INTERACTIONS.md)、[状态覆盖图](docs/gameplay/skills/COMMON.md)、[玩家姓名](docs/modules/NETWORK.md#组队邀请客户端) |
 | 音频 | 音乐／任务曲／对白／雨声独立读取与播放线程，短音效后台准备及混音；局前菜单曲、UI、脚步、物品、NPC、叙事事件声音；场景声音单位绑定与原Falloff距离音量 | 脚步地板次序、变形、语音占用／防重、完整混音、空间声像、过场影片声音及端到端延迟；[音频边界](docs/gameplay/ui/CLASSIC_HUD.md#esc-菜单) |
-| 自然生成 | server/population唯一执行自然生成，普通／精英／任务怪物及NPC共用Actor构造、发布与休眠恢复；地面物品JM休眠；整层资源按原11帧检查释放；原生GUID与内部句柄分离 | 特殊AI／光环组合、原生分配与全局交错；[人口](docs/gameplay/monsters/POPULATION.md#自然生成工作总览)、[物件](docs/gameplay/world/OBJECTS.md#自然生成源码边界) |
+| 自然生成 | server/population执行权威生成，普通／精英／任务怪物及NPC共用Actor构造、发布与休眠恢复；地面物品JM休眠；整层资源按原11帧检查释放；原生GUID与内部句柄分离；零售客户端按活动房间生成Levels.cmon环境生物 | 特殊AI／光环组合、原生分配与全局交错、环境生物逐帧对照；[人口](docs/gameplay/monsters/POPULATION.md#自然生成工作总览)、[环境生物](docs/gameplay/monsters/PRESENTATION.md#零售客户端环境生物)、[物件](docs/gameplay/world/OBJECTS.md#自然生成源码边界) |
 | 天气 | 客户端雨雪四阶段、风向、水花、雷电及循环雨声；Act 1河流物件；第五幕雪区规则 | **开局阶段按用户授权随机选取，是产品调整，不是原版规则**；没有服务端天气同步，同局各客户端可能不一致；声音空间定位、环境声与原版音画对照；[天气](docs/gameplay/world/LIGHTING.md#天气与河流水面)、[河流](docs/modules/MAP.md#act-1河流与天气) |
 | 首领绘制 | 五幕首领原COF及组件资源，墨菲斯托雾气、王座巴尔护罩、都瑞尔死亡血迹与透明混色 | 缺失原图（如41的DD）及完整画面对照；[首领绘制](docs/gameplay/monsters/BOSSES.md#五幕首领绘制) |
-| 移动一致性 | 角色本地／权威动作隔离、落地位置修正保留动作时钟、重复坐标请求、权威范围与超界反馈、出口／门户目标准备、跑步耗体力与零体力转换；5F目标资格、通用受阻目标准备、客户端怪物碰撞续算、MPQ开门寻路掩码、IDAStar0／16公共算法与逐帧击退；在线地图快照真实房间输入、客户端常驻碰撞与全局逐tick推进、宿主房间／事件／释放顺序；伙伴跨区攻击和零售闲逛中心修正 | 本轮源码尚未构建／运行；逐条收包历史、专用技能／飞弹交错、IDAStar房间／随机组合、全伙伴AI与跨区运行对照；[移动一致性审计](docs/modules/MAP.md#移动一致性审计边界) |
-| 调试任务 AI | 五幕 27 项任务配方与传送点目标，按私人任务状态恢复；AI及子寻路只持只读观察和客户端功能接口，不持会话或副本更新权限；目标搜索按本轮单位核查与配置的等待／范围推进，找树、延迟首领及红门共用；延迟目标一轮未找到后继续有界观察，仅重访已退订的核查范围；长程路线与传送目标只用已取得地形／物件，动态单位占位用于城镇／野外原生局部步行绕行，步行出口按实时可通开口连续穿越，出城无额外等待、首次传送失败先走一格再试，入口及坐标中继停滞跨重规划有界，近距单位交互按原生路径终点资格交接手动点击的接近／寻路，修正落点从实际位置复验后续接；步行路线纳入实际确认的传送台连接，传送角色排除传送台；旅行按各区域步行／传送资格和入口位置估价，补给后在城内重新判断任务目的地，蓝门与传送点共用旅行选择；远程等待时按小范围与攻击射线主动防御，任务方块合成先回城；局部执行区分步行清路、传送途经和空挡入战，清路只将当前阻挡列为攻击目标；父子导航使用类型契约，导航／战斗／补给／任务状态分属唯一对象，选敌、攻击、辅助和站位分开实现；使用地图图元、经验方向及城镇服务地标辅助探索 | 自动练级、通用装备选择待补；通用范围搜索、传送占位分层、修正落点续接、等待防御／城镇合成及旅行／补给调整的运行组合尚待验收，局部执行及跨地图、职业与恢复组合待实机验收；[配置与策略](docs/development/DEBUG_AI.md)、[待验收清单](docs/development/DEBUG_AI.md#待验收调试导航) |
+| 移动一致性 | 角色本地／权威动作隔离、落地位置修正保留动作时钟、重复坐标请求、权威范围与超界反馈、出口／门户目标准备、跑步耗体力与零体力转换；零售普通玩家保留64向路径朝向并按原规则取停步帧；5F目标资格、通用受阻目标准备、客户端怪物碰撞续算、MPQ开门寻路掩码、IDAStar0／16公共算法与逐帧击退；在线地图快照真实房间输入、客户端常驻碰撞与全局逐tick推进、宿主房间／事件／释放顺序；伙伴跨区攻击和零售闲逛中心修正 | 本轮源码尚未构建／运行；逐条收包历史、专用技能／飞弹交错、IDAStar房间／随机组合、全伙伴AI与跨区运行对照；[移动一致性审计](docs/modules/MAP.md#移动一致性审计边界) |
+| 调试任务 AI | 五幕27项任务及部分进度恢复，复用正常客户端导航、战斗、库存和补给；只读客户端知识，通过公共功能接口行动 | 自动成长、通用装备选择及死亡续办未实现；跨地图、职业、旅行与恢复组合待验收。[使用与缺口](docs/development/DEBUG_AI.md)、[执行契约](docs/development/DEBUG_AI_RUNTIME.md)、[导航结构](docs/architecture/CLIENT_NAVIGATION_REDESIGN.md) |
 
 ## 保存边界
 

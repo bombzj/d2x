@@ -31,7 +31,7 @@ constexpr std::array<int, 8> hudMiniActions{0, 1, 2, 4, 3, 7, 5, 6};
 std::optional<int> miniPanelOffset(const ViewState &view, Rectangle viewport) {
     // Visibility is temporary; closing a covering panel restores the user's
     // expanded state. Drawing, hit testing and tooltips use the same rule.
-    if (!view.miniPanelOpen || view.gameMenuOpen || view.messageLogOpen || view.chatInputOpen)
+    if (!view.miniPanelOpen || view.gameMenuOpen || view.messageLogOpen || view.chatInputOpen || view.hireListOpen)
         return {};
     const bool left = viewport.x > 0, right = viewport.x + viewport.width < W;
     // D2Client 63000/64990: move toward the uncovered side; hide when

@@ -8,6 +8,7 @@
 #include <psapi.h>
 #elif defined(__linux__)
 #include <sys/resource.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -33,6 +34,10 @@ nlohmann::json FrameProfile::processSample() {
         const auto milliseconds=[](FILETIME value) {return double((uint64_t(value.dwHighDateTime)<<32)|value.dwLowDateTime)/10000.;};
         sample["kernelCpuMs"]=milliseconds(kernel);sample["userCpuMs"]=milliseconds(user);
     }
+    if(GetThreadTimes(GetCurrentThread(),&creation,&exit,&kernel,&user)) {
+        const auto milliseconds=[](FILETIME value) {return double((uint64_t(value.dwHighDateTime)<<32)|value.dwLowDateTime)/10000.;};
+        sample["mainThreadCpuMs"]=milliseconds(kernel)+milliseconds(user);
+    }
 #elif defined(__linux__)
     uint64_t total{},resident{};std::ifstream memory("/proc/self/statm");
     if(memory>>total>>resident) {
@@ -40,7 +45,14 @@ nlohmann::json FrameProfile::processSample() {
         if(page>0) {sample["virtualBytes"]=total*uint64_t(page);sample["workingSetBytes"]=resident*uint64_t(page);}
     }
     rusage usage{};
-    if(getrusage(RUSAGE_SELF,&usage)==0) {sample["minorFaults"]=usage.ru_minflt;sample["majorFaults"]=usage.ru_majflt;}
+    if(getrusage(RUSAGE_SELF,&usage)==0) {
+        sample["minorFaults"]=usage.ru_minflt;sample["majorFaults"]=usage.ru_majflt;
+        sample["kernelCpuMs"]=double(usage.ru_stime.tv_sec)*1000.+double(usage.ru_stime.tv_usec)/1000.;
+        sample["userCpuMs"]=double(usage.ru_utime.tv_sec)*1000.+double(usage.ru_utime.tv_usec)/1000.;
+    }
+    timespec threadTime{};
+    if(clock_gettime(CLOCK_THREAD_CPUTIME_ID,&threadTime)==0)
+        sample["mainThreadCpuMs"]=double(threadTime.tv_sec)*1000.+double(threadTime.tv_nsec)/1000000.;
 #endif
     return sample;
 }
@@ -59,8 +71,17 @@ void FrameProfile::record(uint64_t frame,std::span<const double> values,std::spa
         const auto now=Clock::now();
         const double total=std::accumulate(values.begin(),values.end(),0.0);
         maximum_=std::max(maximum_,total);
+        intervalSums_.resize(values.size());intervalMaxima_.resize(values.size());
+        for(size_t index=0;index<values.size();++index) {
+            intervalSums_[index]+=values[index];
+            intervalMaxima_[index]=std::max(intervalMaxima_[index],values[index]);
+        }
+        ++intervalFrames_;intervalTotal_+=total;intervalMaximum_=std::max(intervalMaximum_,total);
+        if(total>1000./60.) ++intervalOverBudget_;
+        if(total>=100) ++intervalSlow_;
         if(total<100 && now-sampled_<std::chrono::seconds(1)) return;
         const auto measured=Clock::now();auto memory=processSample();
+        const double gapMs=std::chrono::duration<double,std::milli>(now-sampled_).count();
         nlohmann::json event={{"frame",frame},{"kind",total>=100?"slow-frame":"sample"},
             {"elapsedMs",std::chrono::duration<double,std::milli>(now-started_).count()},
             {"epochMs",std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()},
@@ -68,6 +89,26 @@ void FrameProfile::record(uint64_t frame,std::span<const double> values,std::spa
             {"previousMemory",previousMemory_},{"memory",memory},
             {"memorySampleGapMs",std::chrono::duration<double,std::milli>(now-sampled_).count()}};
         for(size_t i=0;i<std::min(values.size(),names.size());++i) event["milliseconds"][names[i]]=values[i];
+        auto &interval=event["interval"];
+        interval={{"frames",intervalFrames_},{"wallMs",gapMs},{"meanFrameMs",intervalTotal_/double(intervalFrames_)},
+            {"maxFrameMs",intervalMaximum_},{"framesOver16_67Ms",intervalOverBudget_},{"framesAtLeast100Ms",intervalSlow_},
+            {"meanMilliseconds",nlohmann::json::object()},{"maxMilliseconds",nlohmann::json::object()}};
+        for(size_t index=0;index<std::min(values.size(),names.size());++index) {
+            interval["meanMilliseconds"][names[index]]=intervalSums_[index]/double(intervalFrames_);
+            interval["maxMilliseconds"][names[index]]=intervalMaxima_[index];
+        }
+        if(gapMs>0) {
+            if(memory.contains("kernelCpuMs") && memory.contains("userCpuMs") &&
+               previousMemory_.contains("kernelCpuMs") && previousMemory_.contains("userCpuMs")) {
+                const double cpuMs=memory["kernelCpuMs"].get<double>()+memory["userCpuMs"].get<double>()-
+                    previousMemory_["kernelCpuMs"].get<double>()-previousMemory_["userCpuMs"].get<double>();
+                interval["processCpuMs"]=cpuMs;interval["processCpuOneCorePercent"]=100.*cpuMs/gapMs;
+            }
+            if(memory.contains("mainThreadCpuMs") && previousMemory_.contains("mainThreadCpuMs")) {
+                const double cpuMs=memory["mainThreadCpuMs"].get<double>()-previousMemory_["mainThreadCpuMs"].get<double>();
+                interval["mainThreadCpuMs"]=cpuMs;interval["mainThreadCpuOneCorePercent"]=100.*cpuMs/gapMs;
+            }
+        }
         if(context_) event["context"]=context_();
         event["diagnosticCollectionMs"]=std::chrono::duration<double,std::milli>(Clock::now()-measured).count();
         auto line=event.dump();line+='\n';
@@ -76,6 +117,9 @@ void FrameProfile::record(uint64_t frame,std::span<const double> values,std::spa
         if(total>=100) {++slow_;output_.flush();}
         if(!output_) {error_="Frame profile write failed";return;}
         bytes_+=line.size();++events_;sampled_=now;previousMemory_=std::move(memory);
+        std::fill(intervalSums_.begin(),intervalSums_.end(),0.);
+        std::fill(intervalMaxima_.begin(),intervalMaxima_.end(),0.);
+        intervalFrames_=intervalOverBudget_=intervalSlow_=0;intervalTotal_=intervalMaximum_=0;
     } catch(const std::exception &e) {error_=e.what();}
     catch(...) {error_="Frame profile observation failed";}
 }

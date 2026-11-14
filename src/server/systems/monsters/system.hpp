@@ -36,7 +36,7 @@
 #include <array>
 #include <span>
 #include <stdexcept>
-#include "world/native_path_step.hpp"
+#include "world/native_path_state.hpp"
 #include "world/navigation.hpp"
 #include <deque>
 #include <map>
@@ -178,7 +178,7 @@ struct Actor {
     bool hydra() const {return implementation==MonsterKind::Hydra1 || implementation==MonsterKind::Hydra2 || implementation==MonsterKind::Hydra3;}
     unsigned admittedPlayerCount = 1;
     std::deque<Vec> route;
-    NativePathStep pathStep;
+    NativePathState pathStep;
     uint64_t busyUntil{}, deathTick{}, deathOccurrence{};
     uint64_t nativeActionRevision{},nativeActionInterruption{},nativeActionUntil{};
     std::optional<uint64_t> neutralAt;

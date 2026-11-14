@@ -178,6 +178,33 @@ DebugExplorationMemory::Area *DebugExplorationMemory::observe(const RemoteTown &
         rebuildPassages(m,observation,dirty);metrics.boundaryCells+=dirty.size();
         metrics.boundaryMs+=std::chrono::duration<double,std::milli>(Clock::now()-boundaryStarted).count();
     }
+    bool pathsChanged=false;
+    for(const auto &tile:town.observedNavigationPaths(*level)) pathsChanged|=m.paths.insert(tile).second;
+    const bool subscribed=std::any_of(town.navigationRooms().begin(),town.navigationRooms().end(),[&](const auto &room) {
+        return room.loaded && room.level==m.level && feet.first>=room.x && feet.second>=room.y &&
+            feet.first<room.x+room.width && feet.second<room.y+room.height && view.world.rooms.contains(
+                {uint8_t(room.level),uint16_t(room.x/5),uint16_t(room.y/5)});
+    });
+    if(!town.read().mapLoading.pendingEvents && !town.read().mapLoading.terrainDirty &&
+        subscribed) {
+        for(const auto &tile:m.paths) {
+            if(m.pathChecked.contains(tile)) continue;
+            const Cell center{tile.first*5+2,tile.second*5+2};
+            if(gap(feet,center)>8) continue;
+            bool reachable=false;
+            for(int dy=-2;dy<=2 && !reachable;++dy) for(int dx=-2;dx<=2 && !reachable;++dx) {
+                const Cell stance{center.first+dx,center.second+dy};
+                reachable=m.stand(stance.first,stance.second) && grid.nativeMovementSegment(
+                    Vec{float(feet.first-origin->x)+.5f,float(feet.second-origin->y)+.5f},
+                    Vec{float(stance.first-origin->x)+.5f,float(stance.second-origin->y)+.5f},playerMovement);
+            }
+            if(reachable) pathsChanged|=m.pathChecked.insert(tile).second;
+        }
+    }
+    if(pathsChanged || passagesChanged || unitsChanged) {
+        rebuildPathPassages(m);
+        ++m.revision;
+    }
     // Only confirmed host positions form the return graph. Do not infer an edge
     // across a correction, teleport, loading transition, or an unobserved bend.
     const auto actor=view.world.units.find({0,view.load.playerUnitId.value_or(0)});
@@ -258,7 +285,7 @@ void DebugExplorationMemory::rebuildPassages(Area &m,Observation &observation,co
                 }
             }
             const Passage *prior=nullptr;size_t overlap=0;
-            for(const auto &old:m.passages) if(old.units==units && old.direction==p.direction) {
+            for(const auto &old:m.passages) if(!old.road && old.units==units && old.direction==p.direction) {
                 size_t shared=0;for(const auto &cell:p.boundary) shared+=old.boundary.contains(cell);
                 if(shared>overlap) {overlap=shared;prior=&old;}
             }
@@ -266,7 +293,7 @@ void DebugExplorationMemory::rebuildPassages(Area &m,Observation &observation,co
                 // Keep a branch identity as its observed opening advances.
                 // Tangentially separate branches must never inherit each other.
                 float closest=13;
-                for(const auto &old:m.passages) if(old.units==units && old.direction==p.direction && old.deferred!=old.evidence) {
+                for(const auto &old:m.passages) if(!old.road && old.units==units && old.direction==p.direction && old.deferred!=old.evidence) {
                     const auto a=old.approaches[old.approaches.size()/2],b=p.approaches[p.approaches.size()/2];
                     const int dx=b.first-a.first,dy=b.second-a.second;
                     const int forward=dx*normal.first+dy*normal.second,lateral=std::abs(dx*normal.second-dy*normal.first);
@@ -284,7 +311,52 @@ void DebugExplorationMemory::rebuildPassages(Area &m,Observation &observation,co
             next.push_back(std::move(p));
         }
     }
+    for(auto &old:m.passages) if(old.road) next.push_back(std::move(old));
     m.passages=std::move(next);
+    if(m.commitment && !m.passage(*m.commitment)) m.commitment.reset();
+}
+void DebugExplorationMemory::rebuildPathPassages(Area &m) {
+    std::vector<Passage> previous;
+    for(const auto &passage:m.passages) if(passage.road) previous.push_back(passage);
+    std::erase_if(m.passages,[](const auto &passage){return passage.road;});
+    auto remaining=m.paths;
+    for(const auto &tile:m.pathChecked) remaining.erase(tile);
+    std::set<uint64_t> reused;
+    while(!remaining.empty()) {
+        Passage passage;passage.road=true;
+        std::vector<Cell> pending{*remaining.begin()};remaining.erase(remaining.begin());
+        for(size_t index=0;index<pending.size();++index) {
+            const auto tile=pending[index];
+            for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx) {
+                const Cell next{tile.first+dx,tile.second+dy};
+                if(remaining.erase(next)) pending.push_back(next);
+            }
+            const Cell center{tile.first*5+2,tile.second*5+2};
+            passage.boundary.insert(center);
+            for(int dy=-2;dy<=2;++dy) for(int dx=-2;dx<=2;++dx)
+                if(m.stand(center.first+dx,center.second+dy)) passage.approaches.emplace_back(center.first+dx,center.second+dy);
+        }
+        if(passage.approaches.empty()) continue;
+        std::sort(passage.approaches.begin(),passage.approaches.end());
+        passage.approaches.erase(std::unique(passage.approaches.begin(),passage.approaches.end()),passage.approaches.end());
+        passage.evidence=1469598103934665603ull;
+        for(const auto &center:passage.boundary) {
+            passage.evidence=hash(hash(passage.evidence,uint32_t(center.first)),uint32_t(center.second));
+            for(int dy=-3;dy<=3;++dy) for(int dx=-3;dx<=3;++dx)
+                passage.evidence=hash(passage.evidence,m.mask(center.first+dx,center.second+dy));
+        }
+        const Passage *prior=nullptr;size_t overlap=0;
+        for(const auto &old:previous) if(!reused.contains(old.id)) {
+            size_t shared=0;
+            for(const auto &center:passage.boundary) shared+=old.boundary.contains(center);
+            if(shared>overlap) {overlap=shared;prior=&old;}
+        }
+        if(prior) {
+            passage.id=prior->id;reused.insert(prior->id);
+            if(prior->deferred==prior->evidence && prior->evidence==passage.evidence) passage.deferred=passage.evidence;
+        } else passage.id=m.nextPassage++;
+        m.passages.push_back(std::move(passage));
+    }
     if(m.commitment && !m.passage(*m.commitment)) m.commitment.reset();
 }
 void DebugExplorationMemory::defer(Area &m,uint64_t id) {
@@ -483,10 +555,12 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
     };
     if(nearest==std::numeric_limits<float>::max()) return unavailable(Plan::Outcome::StartUnavailable);
     std::map<int,const Passage *> destinations;
-    for(const auto &p:m.passages) if((!goal || exploreGoal) && (!committed || p.id==committed) && p.deferred!=p.evidence)
+    for(const auto &p:m.passages) if((!p.road || (m.followPaths && !goal)) &&
+        (!goal || exploreGoal) && (!committed || p.id==committed) && p.deferred!=p.evidence)
         for(const auto &at:p.approaches) if(stand(at.first,at.second)) {
             auto [entry,fresh]=destinations.emplace(index(at),&p);
-            if(!fresh && p.units && !entry->second->units) entry->second=&p;
+            if(!fresh && ((m.followPaths && p.road && !entry->second->road) ||
+                (!entry->second->road && p.units && !entry->second->units))) entry->second=&p;
         }
     if(!goal && destinations.empty()) return unavailable(Plan::Outcome::Unreachable);
     // A collision publication edge does not prove there is a passage beyond
@@ -495,6 +569,7 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
     // existing contract. Both choices use the same graph and movement rules.
     const auto evidenceRank=[&](const Passage &p) {
         if(goal || committed) return 0;
+        if(m.followPaths && p.road) return 0;
         if(p.units) return 0;
         if(m.expectedBounds) {
             const auto &b=*m.expectedBounds;
@@ -561,6 +636,15 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
     }
     const auto passagePenalty=[&](Cell at,const Passage &p) {
         float score=-(sketchDirections.contains(p.id)?6.f:0.f);
+        if(m.followPaths && !goal) {
+            if(p.road) score-=32.f;
+            else {
+                for(int forward=-20;forward<=0;forward+=5) {
+                    const Cell tile{(at.first+p.direction.first*forward)/5,(at.second+p.direction.second*forward)/5};
+                    if(m.paths.contains(tile)) {score-=16.f;break;}
+                }
+            }
+        }
         if(goal) {
             const Vec toward=*goal-Vec{float(at.first),float(at.second)};
             const float remaining=toward.length();const auto normal=p.direction;
@@ -569,14 +653,17 @@ DebugExplorationMemory::Plan DebugExplorationMemory::plan(const Area &m,Vec from
             score+=1.25f*remaining;
             if(remaining>0) score+=24.f*(1-(toward.x*normal.first+toward.y*normal.second)/remaining);
         } else if(preferredDirection) {
-            const auto normal=p.direction;
+            const auto normal=p.road?Cell{at.first-source.first,at.second-source.second}:p.direction;
             const Vec axis=Vec{float(preferredDirection->first),float(preferredDirection->second)}.unit();
             // Experience supplies a bounded directional preference, not a
             // synthetic far-away goal that forces an exhaustive search.
-            score+=24.f*(1-axis.x*normal.first-axis.y*normal.second);
+            const auto bearing=Vec{float(normal.first),float(normal.second)}.unit();
+            score+=24.f*(1-axis.x*bearing.x-axis.y*bearing.y);
         } else if(m.heading) {
-            const auto heading=*m.heading,direction=p.direction;
-            score+=12.f*(1-(heading.first*direction.first+heading.second*direction.second));
+            const auto heading=*m.heading;
+            const auto direction=p.road?Vec{float(at.first-source.first),float(at.second-source.second)}.unit():
+                Vec{float(p.direction.first),float(p.direction.second)};
+            score+=12.f*(1-(heading.first*direction.x+heading.second*direction.y));
         }
         return score;
     };

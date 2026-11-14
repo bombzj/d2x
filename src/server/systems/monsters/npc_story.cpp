@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "world/native_path_step.hpp"
 #include "server/runtime/events.hpp"
 #include "server/systems/effects/system.hpp"
 #include <memory>
@@ -34,7 +35,7 @@ DomainResult<> System::departQuestNpc(EntityId id,uint64_t tick,std::vector<Even
     recordNativeMode(candidate,animateDeath?0:12);
     if(!animateDeath) candidate.busyUntil=tick;
     candidate.nativeActionUntil=0;candidate.neutralAt.reset();
-    candidate.movementGoal=candidate.position;candidate.pathStep.reset();candidate.rewardComplete=true;
+    candidate.movementGoal=candidate.position;NativePathStep::reset(candidate.pathStep);candidate.rewardComplete=true;
     candidate.killer={};candidate.wanderTargetOrder=candidate.specialTargetOrder=0;
     auto publication=ports_.effects.prepareDamageStates(std::move(candidate),{},tick);
     if(!ports_.effects.validateAuraUnits(publication)) return {DomainStatus::Stale,{}};

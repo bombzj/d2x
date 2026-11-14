@@ -23,6 +23,7 @@ class DebugExplorationMemory {
     struct Passage {
         uint64_t id{},evidence{};
         bool units{}; // Known ground beyond the unit observation boundary.
+        bool road{};
         Cell direction;
         std::set<Cell> boundary;
         std::vector<Cell> approaches;
@@ -42,6 +43,8 @@ class DebugExplorationMemory {
         uint16_t level{};
         std::map<Cell,uint16_t> terrainLevels; // Known page ownership, for area-local objectives only.
         std::set<Cell> unitObserved; // Entered, subscribed room footprints, in native tiles; not assignment proof.
+        std::set<Cell> paths,pathChecked;
+        bool followPaths{};
         uint64_t revision{},nextPassage{1},sample{},geometry{};
         std::vector<Passage> passages;
         std::map<Cell,std::set<Cell>> walked;
@@ -122,5 +125,6 @@ class DebugExplorationMemory {
     };
     std::map<uint16_t,Observation> observations_;
     static void rebuildPassages(Area &,Observation &,const std::set<Cell> &dirty);
+    static void rebuildPathPassages(Area &);
 };
 }

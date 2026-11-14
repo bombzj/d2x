@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "world/native_path_step.hpp"
 #include "server/systems/attributes/monster_sources.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "gameplay/rules/pd2_phasing.hpp"
@@ -91,7 +92,7 @@ bool System::recacheMovementRoom(Actor &actor,Vec previous) {
     // PATH_RecacheRoomAtCoordIfNeeded moves room ownership without restarting
     // the path or treating a continuous level boundary as a pet teleport.
     actor.area=destination.definition.id;
-    actor.position=actor.pathStep.translate(actor.position+center,offset)-center;
+    actor.position=NativePathStep::translate(actor.pathStep, actor.position+center,offset)-center;
     actor.movementGoal=actor.movementGoal+offset;
     for(auto &point:actor.route) point=point+offset;
     return true;
@@ -176,7 +177,7 @@ void System::stop(EntityId id) {
         auto &actor = it->second;
         // Step::PATH_ResetMovement clears points and velocity, not pTargetUnit.
         if (!actor.route.empty() || actor.moving || actor.running) {
-            actor.position=actor.pathStep.stop(actor.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+            actor.position=NativePathStep::stop(actor.pathStep, actor.position+Vec{.5f,.5f})-Vec{.5f,.5f};
             actor.route.clear(); actor.moving = false; actor.running = false; ++actor.revision;
             if(ports_.areas.hasRoomUnit(id)) ports_.areas.moveRoomUnit(id,actor.area,actor.position);
         }
@@ -297,7 +298,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             AreaStore::CollisionMove collisionMove{ports_.areas,actor.id,actor.area};
             const auto grid=ports_.spatial.movementGrid(actor.area,collisionMove);
             const Vec center{.5f,.5f};
-            const auto step=actor.pathStep.advance(grid,actor.position+center,*actor.knockbackGoal+center,
+            const auto step=NativePathStep::advance(actor.pathStep, grid,actor.position+center,*actor.knockbackGoal+center,
                 1.f,actor.rule.collision);
             actor.position=step.position-center;
             const bool finished=tick.tick>=actor.knockedUntil;
@@ -314,7 +315,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             ++actor.revision;
             if(tick.tick<actor.knockedUntil) continue;
             actor.knockbackGoal.reset();actor.knockedUntil=0;
-            actor.position=actor.pathStep.stop(actor.position+center)-center;
+            actor.position=NativePathStep::stop(actor.pathStep, actor.position+center)-center;
             ports_.areas.moveRoomUnit(id,actor.area,actor.position);
             if(leaper) {
                 actor.neutralAt.reset();actor.reactionUntil=0;
@@ -377,7 +378,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             for(auto &point:route) point=point-center;
             actor.route=std::move(route);actor.pathType=type;actor.movementGoal=target->first;
             if(actor.route.empty()) {
-                actor.position=actor.pathStep.stop(actor.position+center)-center;
+                actor.position=NativePathStep::stop(actor.pathStep, actor.position+center)-center;
                 ports_.areas.moveRoomUnit(id,actor.area,actor.position);
                 actor.moving=false;actor.running=false;finishWalk();++actor.revision;continue;
             }
@@ -392,7 +393,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             if (distance == 0) { actor.route.pop_front(); ++actor.pathPointsConsumed; continue; }
             constexpr Vec center{.5f,.5f};
             const auto previousStep=actor.pathStep;
-            const auto step=actor.pathStep.advance(movementGrid,actor.position+center,actor.route.front()+center,
+            const auto step=NativePathStep::advance(actor.pathStep, movementGrid,actor.position+center,actor.route.front()+center,
                 remaining,collision);
             const Vec next=step.position-center;
             const auto previous=actor.position;actor.position=next;
@@ -410,7 +411,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         collisionMove.commit();
         // D2Common_10226 reports path exhaustion or collision to the WALK/RUN callback.
         if(actor.route.empty()) {
-            actor.position=actor.pathStep.stop(actor.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+            actor.position=NativePathStep::stop(actor.pathStep, actor.position+Vec{.5f,.5f})-Vec{.5f,.5f};
             ports_.areas.moveRoomUnit(id,actor.area,actor.position);
             actor.moving=false;actor.running=false;finishWalk();
         }

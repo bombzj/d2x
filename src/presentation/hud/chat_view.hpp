@@ -1,12 +1,16 @@
 #pragma once
 #include "contracts/online_social.hpp"
-#include "presentation/graphics/primitives.hpp"
+#include "presentation/graphics/classic_button.hpp"
+#include "presentation/graphics/text_slider.hpp"
 #include "presentation/input.hpp"
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
 namespace d2x {
+class OriginalMenu;
+class PaletteBlendView;
 struct ChatIntent {
     bool consumed{};
     std::optional<std::string> message;
@@ -15,14 +19,19 @@ struct ChatIntent {
 // Original-resource message presentation. Only the application sends the
 // returned intent; local diagnostics are separate from the server transcript.
 class ChatView {
+    enum FontKind { Overlay, Entry, Log, FontCount };
     mutable Graphics graphics_;
-    std::array<ClassicFont, 2> fonts_{};
-    mutable std::array<std::array<ClassicFont, 13>, 2> colored_{};
+    std::array<ClassicFont, FontCount> fonts_{};
+    mutable std::array<std::array<ClassicFont, 13>, FontCount> colored_{};
     Bytes palette_;
-    GpuAnimation border_, slider_;
+    const OriginalMenu &menu_;
+    const GpuAnimation &slider_;
     std::string title_, close_, reason_, draft_, fontDirectory_{"latin"};
-    bool ready_{}, inputOpen_{}, logOpen_{}, dragging_{};
-    size_t caret_{}, scroll_{}, unavailable_{};
+    bool ready_{}, inputOpen_{}, logOpen_{};
+    size_t caret_{}, unavailable_{};
+    int scroll_{}, logWidth_{}, logLinesPerPage_{};
+    TextSliderGesture logSlider_;
+    ClassicButtonGesture logClose_;
     uint64_t sequence_{}, accountSequence_{};
     uint64_t clearedAt_{};
     uint8_t language_{};
@@ -40,38 +49,34 @@ class ChatView {
     std::vector<Message> diagnostics_;
     uint64_t diagnosticSequence_{};
     bool diagnosticsDirty_{};
-    std::vector<Line> rows_;
-    const ClassicFont &font(int kind, int color) const;
-    float width(int kind, const Line &) const;
-    void text(int kind, const Line &, Vec) const;
+    struct LogEntry { size_t message; int start; };
+    std::vector<LogEntry> logEntries_;
+    std::vector<int> logLineCounts_;
+    size_t logRows_{};
+    const ClassicFont &font(FontKind kind, int color) const;
+    float width(FontKind kind, const Line &) const;
+    void text(FontKind kind, const Line &, Vec) const;
     Line plain(std::string_view, uint8_t color = 0) const;
-    std::vector<Line> wrap(const Line &, float width) const;
-    void piece(const GpuAnimation &, int frame, Vec) const;
-    void horizontal(float x, float y, float width, bool bottom) const;
-    void box(Rectangle) const;
+    std::vector<Line> wrap(const Line &, FontKind, float width) const;
     Rectangle bounds() const;
     Rectangle body() const;
-    Rectangle closeBounds() const;
-    Rectangle track() const;
-    Rectangle thumb() const;
-    size_t visibleRows() const;
-    size_t maximumScroll() const;
-    void scrollTo(Vec);
+    int visibleRows(int first) const;
+    int maximumScroll() const;
   public:
-    explicit ChatView(Archives &);
+    ChatView(Archives &, const OriginalMenu &, const GpuAnimation &slider);
     void update(const OnlineSocialView &, const OnlineSocialView &account);
     void diagnostic(std::string_view text, bool error = false);
     ChatIntent handle(const FrameInput &, bool canOpen);
     void setLogOpen(bool);
     void sent(bool accepted);
-    void draw(Rectangle worldViewport) const;
+    void draw(Rectangle worldViewport, Vec mouse, const PaletteBlendView *blend) const;
     bool ready() const { return ready_; }
     bool inputOpen() const { return inputOpen_; }
     bool logOpen() const { return logOpen_; }
     const std::string &draft() const { return draft_; }
     const std::string &reason() const { return reason_; }
     size_t scroll() const { return scroll_; }
-    size_t rows() const { return rows_.size(); }
+    size_t rows() const { return logRows_; }
     size_t unavailable() const { return unavailable_; }
 };
 }

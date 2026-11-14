@@ -90,6 +90,7 @@ DomainResult<> System::operateActTwo(const ActorContext &actor,EntityId source,i
             const auto result = ports_.transactions.commit(std::move(*plan.value));
             if (result) {
                 state_.actTwo.journals.swap(leases);
+                if(state_.actTwo.runtime[3].active) state_.actTwo.runtime[3].state=5;
                 if (eligible) captureGoal(quest, stage, std::move(*eligible));
             }
             return result;

@@ -102,6 +102,8 @@ struct RemoteUiClients::Impl {
     using CombatEquipmentKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,std::string,int,int,int,int,unsigned,bool,int,int,int,int,std::map<int,int>,std::map<StatKey,int32_t>>;
     struct CachedCombatEquipment {CombatEquipmentKey key;std::optional<CombatDisplayEquipment> value;};
     mutable std::map<OnlineUnitKey,CachedCombatEquipment> combatEquipment;
+    mutable std::tuple<uint64_t, uint64_t, uint64_t> equipmentColorRevision{};
+    mutable std::map<uint32_t, std::array<int, 2>> equipmentColors;
 
     struct Actor final : IActorClient {
         Impl &o; explicit Actor(Impl &owner) : o(owner) {}

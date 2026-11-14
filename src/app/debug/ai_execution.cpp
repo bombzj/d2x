@@ -132,7 +132,6 @@ bool DebugAi::Impl::questWaitRequiresInput(const Context &c) const {
     if(pending.action==QuestPending::Action::Object && cursor<goals.size() && questState.questRun.step<goals[cursor].steps.size() &&
         goals[cursor].steps[questState.questRun.step].refreshFlags && !pending.statusRequested &&
         (goals[cursor].steps[questState.questRun.step].topics.empty() || pending.refreshIssued)) return true;
-    if(pending.action==QuestPending::Action::Introduction) return !pending.statusRequested;
     if(pending.action==QuestPending::Action::Object && pending.unit && cursor<goals.size() &&
         questState.questRun.step<goals[cursor].steps.size() && c.observation.read().world.npcConversation &&
         c.observation.read().world.npcConversation->source==pending.unit->id) {
@@ -146,7 +145,6 @@ bool DebugAi::Impl::questWaitRequiresInput(const Context &c) const {
     if(pending.action!=QuestPending::Action::Topic && !((pending.action==QuestPending::Action::Imbue ||
         pending.action==QuestPending::Action::Service) && questState.questRun.materialPhase==4)) return false;
     if(!pending.refreshIssued) return true;
-    if(cursor<goals.size() && questState.questRun.step<goals[cursor].steps.size() && goals[cursor].steps[questState.questRun.step].optional) return false;
     return !pending.statusRequested;
 }
 void DebugAi::Impl::execute(Context &c,const Goal &goal) {

@@ -69,17 +69,15 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 坐标目标可用`exactPoint=true`要求抵达选中的整数格；AI的混合步行／传送中继使用此项，普通坐标目标默认保留一格容差。状态返回`exactPoint`，它不修改原移动碰撞或Host判定。
 
-批量高层任务另见[调试任务AI](DEBUG_AI.md)：`debug-ai-start`／`append`／`status`／`pause`／`resume`／`cancel`支持自主旅行、寻找、战斗、取物、回城和交付配方。各幕任务顺序由配置维护，源码只负责按幕／原资源任务编号选择及具体任务条件图，不再另存一套幕队列。聊天可用`/debug-ai-start act3`、`/debug-ai-start act1 quest4`及`/debug-ai-status`，独立行走可用`/debug-walk waypoint`；无需管道，复用相同执行代码，语法和运行边界见该专题。
+批量任务的命令、面板编号选择器与聊天语法见[调试AI](DEBUG_AI.md#输入与组合)。本节只维护独立debug-walk接口，不复制AI配置或任务配方。
 
 `debug-walk`启动异步调试输入，`debug-walk-status`只读进度，`debug-walk-cancel`取消后沿客户端Stop提交停止请求。目标`goal=waypoint`（默认）自动寻找本区已指派传送点并用正常交互打开；`goal=exit`选择本区出口，可给`level`筛目的地，默认只走到附近；没有可点击warp的步行连接读取客户端已重建的逻辑near及原Vis／warp=-1连接（不要求邻层房间已激活），扫描当前已知碰撞的通行开口并选择本层内侧落点，可用于城镇门口，不自动跨区；这种连接不接受interact=true；`goal=point`需要全局subtile的`x/y`；`goal=unit`需要实际`unitId`，`unitType`默认2。`interact`默认在waypoint／unit目标启用，其他目标关闭；`run`默认true，`timeoutSeconds`为5–300，默认120。没有使用服务端管理旅行、坐标写入、私有包或鼠标模拟。
 
-导航只读取RemoteTown已重建的地形／碰撞、逻辑步行连接与当前mapTargets，不额外生成或激活房间。出口目标先按目的层及真实共边选定连接，再找已知通行开口；输入不足时只沿该连接方向接近当前可达地形前沿，缺连接不回退为任意房间巡游。传送点未指派时仍可探索当前层可达房间；缺地图／资源不穿墙或补造目标，不自动战斗／喝药／复活／解锁任务／传送点。当前不实现跨层导航任务，换区、重入、离局或死亡终止旧意图。
+可成对提供searchHintX／searchHintY，为waypoint／exit补充方向线索；不授予目标指派或碰撞。导航只使用客户端已取得知识，不自动战斗、补给、复活或解锁任务；换区、重入、离局或死亡结束旧意图。算法、局部绕行和恢复唯一见[导航结构](../architecture/CLIENT_NAVIGATION_REDESIGN.md)，预算与请求期限见[执行契约](DEBUG_AI_RUNTIME.md#调度与时钟)。
 
-移动衔接使用正常RemoteScene.playerPathPosition（客户端DynamicPath位置，不含绘制校正），每0.2秒判断并重新规划，包括行走过程中；方向改变、原段受阻或接近段尾时沿同一RemoteControl.move／interact入口更新输入，同方向仍有效时保留当前请求，并传递同一客户端操作原点；不等待稀疏0x96服务器位置才发下一次输入。规划复用Grid.path，只在首条碰撞核实的直线段内前视最多18子格，量化到实际整数点击目标后复核同一碰撞射线，不跨尚未走过的转角，保留原50子格请求、资格／限流及服务端碰撞裁决。客户端预测不写OnlineView或权威位置；服务器采样另保留供诊断。无路、目标撤出、无进展及总期限明确失败；传送点以服务器菜单确认，其他交互的submitted仍须另核对服务器结果。
+导航期间窗口未最小化时可持后台客户端焦点；菜单／表现暂停／最小化阻止输入，显式server-pause仍独立。人工点击／按键及修改客户端状态的调试请求取消独立导航，不能把此规则套到父AI计划。
 
-父AI与独立debug-walk共用执行预算计时：观察面板、表现暂停或地图输入不可用期间不消耗导航总预算和移动无进展时间，恢复不因面板停留触发15秒卡住；不延长已经提交给正常客户端的请求现实期限。导航状态另含executionBlocked、executionRemainingMs和suspendedExecutionMs。AI动作的输入占用、结果观察及恢复契约见[动作调度](DEBUG_AI.md)。
-
-显式导航期间调试输入持有后台客户端焦点，窗口未最小化时单机可正常推进；客户端菜单／表现暂停会阻止操作，最小化不执行输入；显式server-pause仍由宿主独立持有，导航不读取宿主暂停真值，无位置进展将按期限失败。人工点击／按键及其他修改客户端状态的调试请求取消导航，让位正常操作。返回`navigation`含state、reason、gameGeneration／areaGeneration、target／unit／segment、clientPosition／serverPosition、targetSource、exitLevel与boundaryStart／boundaryEnd、decisionIntervalMs／decisions／clientMoving，以及moveRequests／interactionRequests／searchRooms（位置为最近一次导航决策采样，停止后实时位置见online-status；前两项为客户端入口受理次数，同目标合并时不等于发包数）；`townLane`与`pointerSelections`记录城镇双段续接及最近32次普通短程选点，字段与范围见[现场保持与子导航诊断](DEBUG_AI.md#事件观察与现场保持)。`completed`对传送点表示已收到服务器菜单，其他交互只表示已提交正常请求，不表示奖励或旅行成功。源码入口为[auto_walk.cpp](../../src/app/debug/auto_walk.cpp)，没有新增测试脚本／专用测试程序；调试导航组合边界见[AI验收范围](DEBUG_AI.md#待验收调试导航)。
+返回navigation含state／reason、场景代次、目标／单位／segment、clientPosition／serverPosition、targetSource、exitLevel／boundaryStart／boundaryEnd、decisionIntervalMs／decisions／clientMoving及请求计数。moveRequests／interactionRequests为功能入口受理次数，不等于发包数；停止后位置仍为最后决策采样。completed对waypoint表示收到菜单，其他交互只表示正常请求已提交，奖励和旅行另行确认。详细选点与恢复字段见[AI诊断](DEBUG_AI_DIAGNOSTICS.md#状态与事件)，组合验收见[当前边界](DEBUG_AI.md#待验收调试导航)。
 
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command debug-walk -Arguments @{goal='waypoint'}
@@ -90,7 +88,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 性能与宿主时序
 
-`online-status`和`server-status`另返回`performance`：最近120个已完成呈现帧的`milliseconds`按host、network、client、ai、navigation、debug、scene、present、other和total记录mean／p95／max，`completedFrames`及`over100ms`为本进程累计计数。ai／navigation分别为调试父AI／子行走调度，包含其碰撞和候选处理；present包含垂直同步／限帧等待，host包含嵌入宿主工作，scene包含场景及UI更新／绘制；这是实际墙钟耗时，不是25 Hz权威帧。`performance.navigationSearch`另列父／子共享的新求路数、缓存／可达证明命中、预算让出、移动段复用与实际求路微秒；预算范围及单次公共求路仍为同步调用的边界见[共享寻路预算](DEBUG_AI.md#共享寻路预算)。统计有界保存且不逐帧写磁盘；查询看到上一完整帧为止的帧样本和当前求路计数，暂停或切换场景后须等待窗口刷新再比较。共享预算和缓存的计数含义见[调试 AI](DEBUG_AI.md#共享寻路预算)。
+`online-status`和`server-status`另返回performance：最近120个呈现帧按host、network、client、ai、navigation、debug、scene、present、other和total记录mean／p95／max，completedFrames及over100ms为进程累计。ai／navigation是父AI／子行走的前台耗时，present含垂直同步／限帧，host含嵌入宿主，scene含更新／绘制；不是25Hz权威帧。navigationSearch提供共享查询、缓存及预算计数，后台计算须另看[导航诊断](DEBUG_AI_DIAGNOSTICS.md#时间线)，不能全归入前台AI时间。查询截止上一完整帧，切场景／暂停后应待窗口刷新再比。
 
 需要捕捉可能被120帧窗口覆盖的停顿时，启动加`--frame-profile <新路径.jsonl>`；`performance.frameLog`提供路径、已写事件数、最大帧和错误。持久日志另含进程／系统内存、缺页／CPU累计、读写量、当前场景与Graphics资源计数，并单列采集耗时。用同EXE／同资源、无并行构建的原版Host客户端比较AI启停、换区／新单位加载与绘制等待；不能凭进程内存突增先归因AI，也不能把原版网络心跳持续误认为图形主循环没有卡帧。具体字段和限制见[长帧取证](BUILD_AND_RUN.md)。
 
@@ -105,14 +103,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 3. 分别标出客户端和宿主第一次报告进入目标区的采样，并同时查看两端坐标。少数采样的区域标签不同可与共同目标、接近的脚点同时出现。绘图时用同一全局子格坐标系标出边界、请求前数秒的双端轨迹、首条请求处理前后的目标、两端换区及首发传送的落点。判定传送时，用技能请求、本人GUID的`15`和实际落点配对，宿主`teleportRevision`可确认发生位移。包时间差只在同一日志内直接计算，跨日志用相同包内容、命令和位置事件对齐。区域标签的采样间隔提供观察窗口，不能精确定位两端内部切换时刻。
 4. 区域等待按`game/request/ticket/level`串起`blocked/resumed`与`submit/bind/ready`。以同一tick的`wait_ms`量固定帧等待，按`blocked_stage`定位换房、技能或人口。后台预取时，`delivery_ms`包含任务完成后等待实际绑定请求的时间。若慢帧已经推进tick、无待区域请求，再查`busiest`、`host-work`与`host-pump`的耗时分段。
 
-**回归样本。** 图形单机、`assets/mpq2`、种子`557488535`，两个样本的首条跨界跑步目标均为`(4601,4642)`。原始日志位于本地`artifacts/diagnostics/`，行号用于定位。
-
-| 样本 | 首差及结果 | 证据入口 |
-| --- | --- | --- |
-| `20261112-213005-3c5e9d0a`，`0C860AE6…` | 宿主在2区碰撞交付前处理首条`03`。命令43推进后宿主仍沿旧目标`(4593,4642)`，客户端出城时两端相隔8子格。旧日志缺命令状态码，`InvalidDestination`是结合路径和代码得出的推断。 | `host-packets.jsonl`第507、509行，`movement-diff.jsonl`第735、785行 |
-| `20261113-072112-0a7dfbba`，`311C6F8B…` | 宿主发出的首批2区`07`早于该`03`约1.646秒。tick 653已执行命令45并采用同一目标，两端均到达`(4601,4642)`。宿主在采样628先进入2区，客户端在630确认，两采样相隔约226ms，中间两次区域不一致时脚点差均小于1子格。首发传送收到本人`15`，双端落在`(4603,4639)`。 | `host-packets.jsonl`第506、536、573、577行，`movement-diff.jsonl`第605、636–638、644行 |
-
-新样本唯一一次区域阻塞发生在出城前的tick 610，`population`等待35.7ms。2区预取任务实际工作1264ms，结果完成后约23.2秒才由宿主取用。此前约388.9ms的区域准备阻塞本轮未复现。新样本中另有tick 1528的`effects`慢帧，约571ms且无待区域请求。耗时证据见新样本`stderr.log`第21–24、56行及旧传送样本`20261108-153816-c7889ca8/stderr.log`第20–26行。新样本验证了该单机场景的跨区推进与首发传送，真正缺房间输入的冷路径、多人和跨幕组合仍待复测。
+具体运行样本留在忽略目录，不在本页维护复测流水。工具恢复与组合边界归[调试AI](DEBUG_AI.md#待验收调试导航)，公共移动差异归[地图模块](../modules/MAP.md#移动一致性审计边界)。
 
 ## 原服收包记录
 

@@ -77,7 +77,7 @@ bool debugInspectionOpen(const ViewState &ui,bool inventoryOwned) {
 // Bounded diagnostics of completed presentation frames, independent of game time.
 class FrontendTimings {
   public:
-    enum Stage { Host, Network, Client, Ai, Navigation, Debug, Scene, Present, Other, Count };
+    enum Stage { Host, Network, Client, Ai, Navigation, Debug, Scene, Present, Other, Town, UiProjection, World, UiDraw, CombatProjection, GraphicsMaintenance, Count };
     FrontendTimings(const std::string &path,std::function<nlohmann::json()> context):profile_(path,std::move(context)) {}
     class Frame {
         FrontendTimings &owner_;
@@ -93,7 +93,8 @@ class FrontendTimings {
         ~Frame() {mark(Other);owner_.record(values_);}
     };
     nlohmann::json summary() const {
-        constexpr std::array names{"host","network","client","ai","navigation","debug","scene","present","other","total"};
+        constexpr std::array names{"host","network","client","ai","navigation","debug","scene","present","other",
+            "town","uiProjection","world","uiDraw","combatProjection","graphicsMaintenance","total"};
         nlohmann::json result={{"windowFrames",size_},{"completedFrames",completed_},{"over100ms",slow_}};
         result["frameLog"]=profile_.summary();
         for(size_t stage=0;stage<names.size();++stage) {
@@ -117,7 +118,8 @@ class FrontendTimings {
     void record(const std::array<double,Count> &values) {
         samples_[next_]=values;next_=(next_+1)%samples_.size();size_=std::min(size_+1,samples_.size());++completed_;
         double total=0;for(auto value:values) total+=value;if(total>100) ++slow_;
-        constexpr std::array<const char *,Count> names{"host","network","client","ai","navigation","debug","scene","present","other"};
+        constexpr std::array<const char *,Count> names{"host","network","client","ai","navigation","debug","scene","present","other",
+            "town","uiProjection","world","uiDraw","combatProjection","graphicsMaintenance"};
         profile_.record(completed_,values,names);
     }
 };
@@ -643,8 +645,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     bool wasMinimized = false;
     auto clientFrame = std::chrono::steady_clock::now();
     while (true) {
-        beginGraphicsFrame();
         FrontendTimings::Frame frameTiming(frameTimings);
+        beginGraphicsFrame();
+        frameTiming.mark(FrontendTimings::GraphicsMaintenance);
         const auto clientNow = std::chrono::steady_clock::now();
         const float frameSeconds = std::clamp(std::chrono::duration<float>(clientNow - clientFrame).count(), 0.f, .1f);
         clientFrame = clientNow;
@@ -727,7 +730,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             sceneError.clear();
             renderedAct = session.read().load.act;
         }
+        frameTiming.mark(FrontendTimings::Client);
         town.update(session.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
+        frameTiming.mark(FrontendTimings::Town);
         if(!quit && session.read().stage==OnlineStage::ProtocolReady && town.read().nativeMapReady &&
            session.read().load.mapSeed && session.read().load.secondarySeed && session.read().load.act) {
             try {
@@ -772,7 +777,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         // Publish client projections after control continuations, before input
         // consumers observe them. AI has no replica-update capability.
         inventory.update(session.read());
+        frameTiming.mark(FrontendTimings::Client);
         combat.update();
+        frameTiming.mark(FrontendTimings::CombatProjection);
         DebugAi::SuppliesView aiSupplies;
         if(sharedUi) {
             aiSupplies.openQuestLog=[&]{return sharedUi->openQuestLogPreview();};
@@ -1331,8 +1338,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         initial.bhShowLkChestLines = preferences.bhShowLkChestLines;
                         sharedController->resetInput();
                     }
+                    frameTiming.mark(FrontendTimings::Scene);
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
                     sharedUi->refreshUi(frameSeconds);
+                    frameTiming.mark(FrontendTimings::UiProjection);
                     auto &panels = sharedUi->ui();
                     const auto &native = view.world;
                     if(debugAi.controlsInventory() &&
@@ -1465,10 +1474,12 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     const auto *quickCast = sharedController->quickCastSelection();
                     const bool rightHand = quickCast && !input.leftPressed && !input.rightPressed ? quickCast->right
                         : input.rightHeld || input.rightPressed;
+                    frameTiming.mark(FrontendTimings::Scene);
                     worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,*sharedClients,
                         sharedController->uiConsumed(),input.mouse,rightHand,
                         localConnection && !lanConnection && ((!input.focused && !options.noPauseOnFocusLoss) || panels.gameMenuOpen ||
                             (embedded && embedded->singlePlayerContentBlocked())));
+                            frameTiming.mark(FrontendTimings::World);
                     if (quickCast) {
                         worldFrame.input.quickCastSkillSupported = scene->supportsQuickCast(std::max(0, quickCast->skill));
                     }
@@ -1479,8 +1490,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     sharedController->handleWorld(input,worldFrame.input,frameSeconds);
                     scene->drawTargetInfo(view,worldFrame,*sharedUi,combat,sharedController->combatTarget());
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
+                    frameTiming.mark(FrontendTimings::Scene);
                     drawGameUi(input.mouse);
                     drawVictory(finaleInput);
+                    frameTiming.mark(FrontendTimings::UiDraw);
                 } catch (const std::exception &e) {
                     // Resource construction can fail after creating the clients
                     // but before creating the view. Retire the whole group so

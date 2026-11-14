@@ -2,7 +2,7 @@
 #include "server/game_commands.hpp"
 #include "server/systems/attributes/calculation.hpp"
 #include "gameplay/character/persistent_character.hpp"
-#include "world/native_path_step.hpp"
+#include "world/native_path_state.hpp"
 #include <deque>
 
 namespace d2x::server {
@@ -21,7 +21,7 @@ struct PlayerState {
     uint8_t targetNodeIndex{11}; // First free native player target group, runtime only.
     Vec position, look{0, 1};
     std::deque<Vec> route;
-    NativePathStep pathStep;
+    NativePathState pathStep;
     struct KnockbackMotion {
         Vec destination, position;
         uint64_t started{}, teleportRevision{};

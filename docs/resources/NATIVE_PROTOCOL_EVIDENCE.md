@@ -65,7 +65,13 @@
 - 墨菲斯托桥：当前MPQ InitFn45及SizeX识别桥；Quests每24帧检查红门已开、同房间及D2Common_10399距离小于18，推动桥0→1→2。该距离不是欧氏距离，动画结束不能单独代替通路确认。
 - 混沌首领落点：本机1.13c D2Game MD5 `978f6f74cd031bce6ecee602cd5988cc`，RVA BC050／BC0A2确认搜索范围100、size3、mask0x3F11；D2MOO Operate54／55／56所传13／14／15不是其助手实际使用的搜索范围。详见[后三幕任务](../gameplay/quests/ACT3_5.md)。
 
-## 佣兵属性及版本冲突
+## 佣兵名单、身份和属性
+
+D2MOO `PlrMsg::Rcv0x38_EntityAction → SUnitNpc::NPC_HandleDialogMessage` 先按 action 分派，分支3直接执行 `BuildHirelingList`，发送4F和逐项4E。零售D2Client的38/action3末字段为玩家GUID。36为9字节，D2Client RVA46C00把u16姓名零扩展后写入末尾，服务端回调读取低16位。`SUnitNpc::sub_6FCC7FA0` 与本机D2Game（MD5 `978f6f74cd031bce6ecee602cd5988cc`）RVA C1510–C1832确认卡夏检查难度内slot2的奖励位或等级8，夸尔凯克检查slot36巴尔奖励位；成功登记新佣兵后刷新名单，再发2A/result5与新GUID。
+
+1.13c D2Common（MD5 `ee1238806ef6d6d9801d12a09d128fe1`）ordinal10458／RVA2CCC0与52050确认按幕、难度和版本取得种子选行的起始等级组。RVA2CDB4–2CDEC使用第二次无符号骰值计算`max(2, 玩家等级 - 5 + 随机值 % 5)`，2CE43–2CE6F按该行Gold与等级差计算报价。D2MOO 1.10f的等级式与本机零售不同；d2decomped `npc-menu.md` 的1.14d报价提供交叉依据。D2Game RVABBB20中的普通难度雇主等级上限用于前置资格，C16B5–C16DC传真实玩家给属性计算。
+
+`PlrSave2`载入时由`MONSTERAI_SendMercStats`通过`SUnitMsg`排队；房间同步先发AC／AA和属性。`Game::sub_6FC369C0 → SCmd::sub_6FC3DF80 → PlayerPets::D2GAME_PLAYERPETS_Last_6FC7E970` 在首轮04后发布81。两次零售Host收包都观察到同GUID的14项属性全部先于本人81。`PlayerPets::sub_6FC7DBF0`与`sub_6FC7DD90`向局内玩家发布佣兵81，退役使用7A删除；自己的7F比例独立于房间视野。
 
 `SCmd`绝对属性按值小于255使用9E、小于65535使用9F，其余A0；负值按uint32表示仍为宽值。`MONSTERAI_SendMercStats`由载入、雇用／复活、升级等调用，不是普通每帧生命再生入口。7F生命比例与A0的8.8生命属性不同；空间0A／重新AC和拥有者面板81／属性基线不能混为同一生命周期。9B死亡报价及复活清除也是事件来源，不是活佣兵入局必发空值。
 

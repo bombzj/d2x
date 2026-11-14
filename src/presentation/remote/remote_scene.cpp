@@ -1,4 +1,5 @@
 #include "content/monsters/monster_identity.hpp"
+#include "world/native_path_step.hpp"
 #include "remote_scene_impl.hpp"
 #include "content/skills/description_values.hpp"
 #include "content/language.hpp"
@@ -199,6 +200,7 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
             monsterRunRates.emplace(id,std::clamp(run,0,32767));
         }
     }
+    prepareCritters(animations);
 }
 
 bool RemoteScene::Impl::channelSkill(int id) const {
@@ -544,7 +546,7 @@ void RemoteScene::stopNpcPath(const OnlineView &view, OnlineUnitKey key) {
     auto &pose = impl_->motion.at(key);
     pose.npcClickStopped = true;
     pose.finishedMonsterMovement = view.world.units.at(key).actionRevision;
-    pose.position=pose.pathStep.stop(pose.position+Vec{.5f,.5f})-Vec{.5f,.5f};
+    pose.position=NativePathStep::stop(pose.pathStep, pose.position+Vec{.5f,.5f})-Vec{.5f,.5f};
     pose.route.clear(); pose.goal.reset(); pose.pathMoving = false; pose.pathElapsed=0; pose.stopDestination.reset();
     impl_->syncCollision(view.world.units.at(key));
 }

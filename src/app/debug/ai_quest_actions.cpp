@@ -156,9 +156,7 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
     else if(!step.produced.empty() && step.produced!="rin")
         done=owned(c,step.produced) && (step.item.empty() || !owned(c,step.item));
     else if(!step.item.empty() && step.produced.empty()) done=done && !owned(c,step.item);
-    if(step.optional && questState.questRun.pending && questState.questRun.pending->action==QuestPending::Action::Topic &&
-        world.quests.revision>questState.questRun.pending->beforeRevision &&
-        world.quests.statuses[slot] && *world.quests.statuses[slot]>0) done=true;
+    if(step.status && world.quests.statuses[slot]==step.status) done=true;
     if(done) {
         if(questState.questRun.rewardTracked && (step.rareReward || !step.rewardCodes.empty())) return questReceiveRewards(c,step);
         if((step.skillPointReward || goal.questId==QuestId::DenOfEvil) && step.flags==1 && questState.questRun.skillPointsBefore) {
@@ -204,28 +202,6 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         }
     }
     if(questState.questRun.pending) {
-        if(questState.questRun.pending->action==QuestPending::Action::Introduction) {
-            checkQuestPending(c);
-            if(world.quests.revision<=questState.questRun.pending->beforeRevision) {
-                if(!questState.questRun.pending->statusRequested && c.control.refreshQuests()) {
-                    questState.questRun.pending->statusRequested=true;
-                    questState.questRun.pending->deadline=Clock::now()+std::chrono::seconds(20);
-                    note("quest-status-requested","Querying the actual prerequisite greeting result without replaying its topic");
-                }
-                wait("quest-introduction-result","Waiting for the actually offered prerequisite greeting to commit");return false;
-            }
-            cancelWalk(c);questState.questRun.pending.reset();
-            note("quest-prerequisite-greeting-observed","Continuing with the next actually offered topic");return false;
-        }
-        if(step.optional && questState.questRun.pending->action==QuestPending::Action::Topic && !questState.questRun.pending->refreshIssued) {
-            // A1Q1/A1Q2 queue their introduction status until NPCDEACTIVATE.
-            // End normal listening once; only the later real state/status
-            // completes this optional step, never the queued acknowledgement.
-            if(world.npcRequested) c.control.closeNpc();
-            cancelWalk(c);questState.questRun.pending->refreshIssued=true;
-            note("quest-introduction-closed","Waiting for the native post-conversation quest update");
-            checkQuestPending(c);return false;
-        }
         // Retail ScrollMessage callbacks (notably Cain's A2Q2 335..338)
         // change private flags without immediately sending another 0x28.
         // Close once and request 0x40 for the actual private record. This
@@ -285,15 +261,11 @@ bool DebugAi::Impl::questTalk(Context &c,const Goal &goal,const QuestStep &step)
         if(conversation.acknowledged.contains(topic) || (automatic && *automatic!=topic) ||
             (!automatic && (view.protocolProfile=="lod113c" || message.menu!=2)) ||
             receipt.heard.contains({flags.value_or(0),topic})) continue;
-        if(automatic && !step.topics.empty() && std::find(step.topics.begin(),step.topics.end(),topic)==step.topics.end()) {
-            // An automatic introduction can precede the planned quest topic.
-            // Its confirmation must not trigger the quest's close-and-query path.
-            const auto before=world.quests.revision;
+        if(!step.topics.empty() && std::find(step.topics.begin(),step.topics.end(),topic)==step.topics.end()) {
+            if(!automatic) continue;
             if(c.control.acknowledgeNpc(topic)) {
                 receipt.heard.emplace(flags.value_or(0),topic);
-                QuestPending pending;pending.action=QuestPending::Action::Introduction;pending.unit=npc->key;pending.beforeRevision=before;
-                pending.deadline=Clock::now()+std::chrono::seconds(20);questState.questRun.pending=pending;
-                ++interactions;note("quest-prerequisite-greeting-submitted",std::to_string(topic));
+                ++interactions;note("npc-unplanned-speech-finished",std::to_string(topic));
             }
             return false;
         }
@@ -418,8 +390,6 @@ bool DebugAi::Impl::questOperate(Context &c,const QuestStep &step) {
         world.quests.statuses[questDefinition(step.stateQuest.value_or(goals[cursor].questId)).nativeSlot]==step.status) return true;
     if(!step.publishesTombSymbol && step.flags && flags && (*flags&step.flags)==step.flags) return true;
     if(step.witness && find(c,*step.witness)) return true;
-    if(step.optional && questState.questRun.pending && world.quests.statuses[goals[cursor].questSlot] &&
-        *world.quests.statuses[goals[cursor].questSlot]>0) return true;
     if(questState.questRun.pending) {
         if(!step.publishesTombSymbol && step.witness && !step.topics.empty()) {
             wait("quest-object-callback",questState.questRun.pending->refreshIssued?"Waiting for the acknowledged reading's encounter witness":

@@ -737,10 +737,13 @@ void DebugAutoWalk::tick(const OnlineObservation &observation,const RemoteTown &
                     finish(DebugWalkState::Failed,reason_,control);return;
                 }
                 pointerLane_.reset();
-                interactionRevision_=submissionRevision;interactionDiscontinuity_=discontinuity;interactionFrom_=observedInteractionApproach?*server_:player;
+                interactionRevision_=submissionRevision;interactionDiscontinuity_=discontinuity;
+                if(unit_->type==2) {
+                    interactionFrom_.reset();source_="native-unit-approach";
+                } else interactionFrom_=observedInteractionApproach?*server_:player;
                 ++interactions_;progressAt_=now;state_=DebugWalkState::Interacting;
                 if(unit_->type==1 || unit_->type==5 || waypointOpening_) clickedAt_=now;
-                else if(goal_!=Goal::Waypoint) finish(DebugWalkState::Completed,observedInteractionApproach?
+                else if(unit_->type!=2 && goal_!=Goal::Waypoint) finish(DebugWalkState::Completed,observedInteractionApproach?
                     "Unit interaction submitted from the observed server approach; verify the server result separately":
                     "Interaction submitted; verify the server result separately",control);
                 return;

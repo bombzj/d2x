@@ -24,7 +24,7 @@ bool SceneController::handleMenu(const FrameInput &input) {
         auto resume = [&] {
             ui.gameMenuOpen = false;
             ui.gameMenuPressed = -1;
-            ui.gameMenuScrollDragging = false;
+            ui.controlsSlider = {};
             ui.gameMenuSliderDragging = -1;
             ui.controlCapturing = false;
             releaseAfterLoad_ = true;
@@ -33,7 +33,7 @@ bool SceneController::handleMenu(const FrameInput &input) {
             ui.gameMenuPage = target;
             ui.gameMenuSelected = selected < 0 ? view_.gameMenuItemCount() - 1 : selected;
             ui.gameMenuPressed = -1;
-            ui.gameMenuScrollDragging = false;
+            ui.controlsSlider = {};
             ui.gameMenuSliderDragging = -1;
             // Ignore the unchanged pointer when a page opens; the original
             // initially selects Previous Menu rather than the row underneath.
@@ -46,7 +46,7 @@ bool SceneController::handleMenu(const FrameInput &input) {
             view_.playUiSound("cursor_switch");
             return true;
         }
-        view_.scrollGameMenu(input);
+        if (view_.scrollGameMenu(input)) return true;
         const int hovered = input.insideViewport ? view_.gameMenuAt(input.mouse) : -1;
         if ((input.mouse - ui.gameMenuMouse).length() > 0 || input.leftPressed) {
             if (hovered >= 0 || ui.gameMenuPage == EscapeMenuPage::Controls) ui.gameMenuSelected = hovered;
@@ -341,8 +341,10 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         }
         else if (ui.characterOpen)
             ui.characterOpen = false;
-        else if (ui.hirelingOpen)
+        else if (ui.hirelingOpen) {
             ui.hirelingOpen = false;
+            ui.hirelingCloseButton = {};
+        }
         else if (ui.skillTreeOpen)
             ui.skillTreeOpen = false;
         else if (ui.questOpen)
@@ -354,6 +356,7 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         inventoryRight_ = inventoryRight_ || input.rightPressed;
         return true;
     }
+    if (ui.hirelingCloseButton.pressed && handleHirelingPanel(input)) return true;
     if (input.insideViewport && input.leftPressed && !ui.blocksInput() &&
         view_.characterView().unspentAttributes > 0 &&
         CheckCollisionPointRec(rv(input.mouse), hudCharacterButton())) {
@@ -511,6 +514,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (handleDeath(input)) return true;
     auto &ui = view_.ui();
     if(ui.hirelingOpen && !view_.hirelingView().active) {ui.hirelingOpen=false;ui.inventory.cancelGesture();}
+    if (!ui.hirelingOpen || !input.focused || ui.capturesWorldInput()) ui.hirelingCloseButton = {};
     if (!input.focused || !input.insideViewport || !view_.hirelingPortraitVisible() ||
         !CheckCollisionPointRec(rv(input.mouse), hirelingPortraitHitBounds(view_.partyPortraitOffset()))) {
         ui.hirelingPortraitHovered={};ui.hirelingPortraitHoverTime=0;ui.hirelingPortraitCanFeed=false;
@@ -540,8 +544,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         actorClient_.stopMoving();
         ui.skillPicker.reset(); ui.inventory.cancelGesture();
         ui.gameMenuPressed = -1;
-        ui.gameMenuScrollDragging = false;
-        ui.gameMenuScrollPressed = -1;
+        ui.controlsSlider = {};
+        ui.hireListSlider = {};
+        ui.hireListCancelButton = {};
+        ui.hireListPressed.reset();
         ui.gameMenuSliderDragging = -1;
         ui.controlCapturing = false;
         resetInput();
@@ -674,8 +680,7 @@ void SceneController::openGameMenu(Vec mouse) {
     ui.gameMenuPressed = -1;
     ui.gameMenuTime = 0;
     ui.gameMenuControlScroll = 0;
-    ui.gameMenuScrollPressed = -1;
-    ui.gameMenuScrollDragging = false;
+    ui.controlsSlider = {};
     ui.gameMenuSliderDragging = -1;
     ui.gameMenuMouse = mouse;
     ui.showLoot = false;

@@ -126,6 +126,7 @@ class GameHost {
     void observeSteps(std::function<void(const hosting::StepTiming &)> observer);
     PlayerBinding create(server::GameDefinition);
     bool destroy(GameHandle);
+    std::unique_ptr<server::GameInstance> release(GameHandle);
     PlayerBinding admit(GameHandle, server::GameDefinition);
     bool remove(PlayerBinding);
     bool enter(PlayerBinding, bool active = true);

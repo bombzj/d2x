@@ -1,4 +1,5 @@
 #include "server/runtime/events.hpp"
+#include "world/native_path_step.hpp"
 #include "server/runtime/facts/effects.hpp"
 #include "server/runtime/facts/skills.hpp"
 #include "system.hpp"
@@ -46,7 +47,7 @@ DomainResult<> System::startLeapAttackMotion(EntityId source) {
     auto &actor=found->second;
     actor.skillMotion=Actor::SkillMotion{actor.skillReservation->position,UINT64_MAX,actor.interruption,float(actor.rule.nativeRunVelocity)*25.f/16.f,true,{}};
     actor.skillMotion->eventDriven=true;actor.skillMotion->collision=MovementCollisionRule{0,actor.rule.size};
-    actor.collisionPattern=NativeCollisionPattern::None;refreshCollision(actor);actor.pathStep.reset();actor.movementTarget={};
+    actor.collisionPattern=NativeCollisionPattern::None;refreshCollision(actor);NativePathStep::reset(actor.pathStep);actor.movementTarget={};
     actor.movementGoal=actor.skillReservation->position;actor.pathType=9;++actor.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
@@ -99,7 +100,7 @@ DomainResult<> System::finishLeaperLanding(EntityId id,EntityId target,int skill
         if((clipped-actor.position).length()>.01f) {
             const float speed=float(actor.rule.nativeRunVelocity)*25.f/16.f;
             actor.skillMotion=Actor::SkillMotion{clipped,UINT64_MAX,actor.interruption,speed,false,{}};
-            actor.skillMotion->leaperRecovery=true;actor.pathStep.reset();
+            actor.skillMotion->leaperRecovery=true;NativePathStep::reset(actor.pathStep);
         }
     }
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};

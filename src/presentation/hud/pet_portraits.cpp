@@ -35,8 +35,13 @@ void portraitText(const ClassicFont &font, std::string value, float x, float bas
     }
 }
 }
+bool SceneView::hudPortraitsVisible() const {
+    return view_.portraitsVisible && worldViewport().x == 0 &&
+        !view_.playerTradeBlocking && !view_.messageLogOpen && !view_.gameMenuOpen && !view_.help &&
+        !view_.npcMenu && !view_.shopOpen && view_.dialogue.empty();
+}
 bool SceneView::hirelingPortraitVisible() const {
-    if (!view_.portraitsVisible || worldViewport().x!=0 || view_.capturesWorldInput()) return false;
+    if (!hudPortraitsVisible() || view_.capturesWorldInput()) return false;
     const auto &portraits=hirelingView().portraits;
     return std::any_of(portraits.begin(),portraits.end(),[&](const auto &entry){
         const auto art=assets_.petPortraits.find(entry.art);
@@ -44,7 +49,7 @@ bool SceneView::hirelingPortraitVisible() const {
     });
 }
 void SceneView::drawHirelingPortrait(Vec mouse) const {
-    if (!view_.portraitsVisible || worldViewport().x!=0 || view_.capturesWorldInput()) return;
+    if (!hudPortraitsVisible()) return;
     const int palette=std::clamp(mapView().palette,0,4);
     const auto *blend=palette==0?paletteBlend_.get():actPaletteBlends_[size_t(palette)].get();
     if (!blend) return;
@@ -57,7 +62,7 @@ void SceneView::drawHirelingPortrait(Vec mouse) const {
         const Rectangle bounds{(x+image->x)*classicPanelScale(),
             (60+image->y-image->texture.height)*classicPanelScale(),
             image->texture.width*classicPanelScale(),image->texture.height*classicPanelScale()};
-        const bool hovered=entry.hireling && entry.single==view_.hirelingPortraitHovered &&
+        const bool hovered=!view_.capturesWorldInput() && entry.hireling && entry.single==view_.hirelingPortraitHovered &&
             CheckCollisionPointRec(rv(mouse),hirelingPortraitHitBounds(partyPortraitOffset()));
         const bool hint=hovered && !view_.inventory.drag && !view_.inventory.identify &&
             view_.hirelingPortraitHoverTime>=hirelingPortraitHoverSeconds;

@@ -246,6 +246,8 @@ struct OnlineHirelingService {
 struct OnlineWorldView {
     OnlineHirelingService hirelingService;
     std::optional<OnlineHireling> hireling;
+    // Native hireling stats can precede the 0x81 ownership assignment.
+    std::map<uint32_t, std::map<uint8_t, uint32_t>> pendingHirelingAttributes;
     std::optional<uint16_t> deadHirelingName;
     std::optional<uint32_t> hirelingReviveCost;
     OnlineSocialView social;
@@ -342,6 +344,7 @@ struct OnlineWorldView {
 
     void clear() {
         hirelingService = {}; hireling.reset(); deadHirelingName.reset(); hirelingReviveCost.reset();
+        pendingHirelingAttributes.clear();
         playerTrade = {};
         social.revision = social.chatSequence = 0;
         social.players.clear();

@@ -7,6 +7,7 @@
 #include <memory>
 #include <tuple>
 namespace d2x {
+struct RoomActivationSnapshot;
 class TileLibraryCache {
     Archives &archives_;
 
@@ -17,6 +18,8 @@ class TileLibraryCache {
 struct Map {
     using RoomBounds = d2x::RoomBounds;
     MapTerrain terrain;
+    // Optional client lifetime data, paired with this terrain publication.
+    std::shared_ptr<const RoomActivationSnapshot> roomActivation;
     Grid grid;
     Vec spawn;
     std::vector<RoomBounds> rooms;

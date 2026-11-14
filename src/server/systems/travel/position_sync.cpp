@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "world/native_path_step.hpp"
 #include "server/runtime/skill_rules.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/effects.hpp"
@@ -132,7 +133,7 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     player.area=region;player.position=at;player.route.clear();
     ports_.areas.moveRoomUnit(player.actor,player.area,player.position);
     ports_.world.changeClientRoom(actor.player,actor.tick);
-    player.pathStep.reset();
+    NativePathStep::reset(player.pathStep);
     player.knockback.reset();
     const auto offset=source->definition.origin-destination->definition.origin;
     player.routeDestination=player.routeDestination+offset;

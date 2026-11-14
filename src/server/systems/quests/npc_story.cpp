@@ -118,6 +118,48 @@ bool System::npcInteracting(EntityId id) const {
         if(conversation.npc==id && ports_.npc.conversation(player)) return true;
     return false;
 }
+void System::advancePalaceSequence() {
+    auto &runtime=state_.actTwo.runtime;
+    if((!runtime[0].active || runtime[0].state==5) && runtime[5].active && !runtime[5].state)
+        runtime[5].state=1;
+    if((!runtime[2].active || runtime[2].state==5) && runtime[3].active && !runtime[3].state) {
+        runtime[3].state=1;
+        if(runtime[5].active && !runtime[5].state) runtime[5].state=1;
+    }
+}
+void System::restorePalaceState(const CharacterRecord &record) {
+    const auto difficulty=size_t(ports_.settings.difficulty);
+    const auto &book=record.quests.at(difficulty);
+    const auto bits=[&](QuestId quest) {
+        const auto &entry=book[questIndex(quest)];
+        return entry.nativeRecord.value_or(actTwoLegacyRecord(quest,entry));
+    };
+    auto &story=state_.npcStory;auto &runtime=state_.actTwo.runtime;
+    const auto radament=bits(QuestId::RadamentsLair),sun=bits(QuestId::TaintedSun);
+    const auto arcane=bits(QuestId::ArcaneSanctuary),tombs=bits(QuestId::SevenTombs);
+    if(radament&0x8001) {runtime[0].active=false;runtime[0].state=0;}
+    if(sun&0x8001) runtime[2].active=false;
+    if(arcane&0x8001) runtime[3].active=false;
+    if(tombs&0x8001) runtime[5].active=false;
+    story.palaceRequested|=record.questPreludes.at(difficulty).at(size_t(QuestPreludeId::LutGholeinArrival)) || (radament&1)!=0;
+    story.palaceArcaneCompleted|=(arcane&3)!=0;
+    story.palaceTombsCompleted|=(tombs&1)!=0;
+    story.palaceOpen|=(sun&1)!=0 || (arcane&3)!=0 || (arcane&0x3c)!=0 || (bits(QuestId::HoradricStaff)&1)!=0;
+    if(!(arcane&3)) {
+        auto &quest=runtime[3];
+        if(arcane&0x20) {quest.state=4;quest.last=4;}
+        else if(arcane&0x10) {quest.state=4;quest.last=3;}
+        else if(arcane&8) {quest.state=3;quest.last=3;}
+        else if(arcane&4) {quest.state=2;quest.last=2;}
+    }
+    if(!(tombs&0x8001)) {
+        auto &quest=runtime[5];
+        if(tombs&4) {quest.state=2;quest.last=1;}
+        else if(tombs&8) {quest.state=5;quest.last=5;}
+        else if(tombs&0x10) {quest.state=5;quest.last=6;}
+    }
+    story.palaceRequested|=!runtime[5].active || runtime[5].state>=2 || story.palaceArcaneCompleted;
+}
 void System::registerNpcStoryObject(EntityId id,RegionId region,int definition,int initialization,Vec position) {
     auto &story=state_.npcStory;
     if(!story.markers.insert(id).second) return;
@@ -138,6 +180,22 @@ void System::registerNpcStoryObject(EntityId id,RegionId region,int definition,i
             if(unit.area==region && unit.questNpc && unit.alive() && unit.identity.monster==input.npc) targets.push_back(actor);
         for(const auto actor:targets) bindNpcMapAi(actor);
     }
+}
+DomainResult<> System::palaceBlockerEvent(EntityId id,uint64_t tick) {
+    auto &story=state_.npcStory;
+    if(story.palaceOpen || story.blocker) return {DomainStatus::Applied,std::monostate{}};
+    const auto marker=ports_.objects.read().objects.find(id);
+    if(marker==ports_.objects.read().objects.end() || int(marker->second.area)!=40 || marker->second.rule.initialization!=19)
+        return {DomainStatus::Applied,std::monostate{}};
+    const auto region=marker->second.area;
+    const auto position=marker->second.position;
+    if(!ports_.areas.at(region).definition.objectRules.contains(318)) return {DomainStatus::NotImplemented,{}};
+    for(const auto offset:{Vec{-2,-1},Vec{-2,0}}) {
+        const auto born=ports_.objects.admit({318,region,position+offset,{},{},0,tick});
+        if(born) return {DomainStatus::Applied,std::monostate{}};
+        if(isDeferred(born.status)) return {born.status,{}};
+    }
+    return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::bindNpcMapAi(EntityId id) {
     const auto *unit=ports_.monsters.find(id);
@@ -272,19 +330,16 @@ DomainResult<std::optional<Vec>> System::npcSpawnPosition(const AreaNpc &npc,Reg
         if(initialization==19) {
             for(const auto &candidate:area.npcs) if(candidate.rule.code=="jerhyn" && candidate.rule.questInitFunction==18 && ports_.monsters.find(candidate.id))
                 return allowed({});
-            bool late=state_.actTwo.durielSlain || (state_.initialFlags[questDefinition(QuestId::SevenTombs).nativeSlot]&0x8000);
-            for(const auto &[id,player]:ports_.players.all()) {
-                (void)id;
-                if(player.entered && player.persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::SevenTombs)].stage>=uint32_t(TombsStage::Assigned)) late=true;
-            }
+            const auto &tombs=state_.actTwo.runtime[5];
+            const bool late=!tombs.active || tombs.state>=2;
             // ACT2Q4_InitializeJerhynMonster, relative to the actual marker.
-            const auto marker=npc.sourceObjectPosition.value_or(npc.spawnPosition);
+            const auto marker=story.palaceBirthOrigin?*story.palaceBirthOrigin-area.origin:npc.sourceObjectPosition.value_or(npc.spawnPosition);
             return freePosition(marker+Vec{late?15.f:-10.f,-3},3,9);
         }
         return freePosition(npc.spawnPosition,2,10);
     }
     if(int(region)==40 && code=="act2guard2" &&
-       ((state_.initialFlags[questDefinition(QuestId::SevenTombs).nativeSlot]&0x8000) || state_.actTwo.tyraelPortal)) return allowed({});
+         (story.palaceTombsCompleted || state_.actTwo.tyraelPortal)) return allowed({});
     if(int(region)==75 && code=="hratli" && (initialization==49 || initialization==50)) {
         if((initialization==49)==story.hratliDeparted) return allowed({});
         if(initialization==50) for(const auto &candidate:area.npcs)
@@ -322,8 +377,10 @@ DomainResult<bool> System::admitStoryNpc(const AreaNpc &npc,RegionId region,uint
     }
     if(!ports_.areas.validateRoomRandom(*loan.value)) return {DomainStatus::Stale,{}};
     if(!*placed.value) {ports_.areas.publishRoomRandom(*loan.value);return {DomainStatus::Applied,false};}
-    const auto admitted=ports_.monsters.admitNpc(npc.id,region,**placed.value,npc.rule);
+    const auto admitted=ports_.monsters.admitNpc(npc.id,region,**placed.value,npc.rule,
+        int(region)==40 && npc.rule.code=="jerhyn" && npc.rule.questInitFunction==19);
     if(!admitted) return {admitted.status,{}};
+    if(int(region)==40 && npc.rule.code=="jerhyn" && npc.rule.questInitFunction==19) state_.npcStory.palaceInitialized=true;
     ports_.areas.publishRoomRandom(*loan.value);
     const auto bound=bindNpcMapAi(npc.id);if(!bound) return {bound.status,{}};
     return {DomainStatus::Applied,true};
@@ -342,7 +399,8 @@ DomainResult<NpcAiResult> System::npcThink(EntityId id,uint64_t tick) {
     };
     const auto walk=[&](Vec point) -> DomainResult<NpcAiResult> {
         if(!unit->route.empty()) return done({true,true,false,1,{}});
-        const uint8_t pathType=unit->identity.monster=="cain1" && unit->rule.ai.kind==MonsterAiKind::NpcOutOfTown?13:7;
+        const bool palace=unit->identity.monster=="jerhyn" || unit->rule.ai.kind==MonsterAiKind::JarJar;
+        const uint8_t pathType=palace || (unit->identity.monster=="cain1" && unit->rule.ai.kind==MonsterAiKind::NpcOutOfTown)?13:7;
         const auto result=ports_.monsters.requestMove({id,{unit->area,ports_.areas.at(unit->area).generation,point-area.origin},{},0,75,false,1,0,0,pathType,5});
         if(!result) {
             if(isDeferred(result.status)) return {result.status,{}};
@@ -387,37 +445,27 @@ DomainResult<NpcAiResult> System::npcThink(EntityId id,uint64_t tick) {
         const auto source=std::find_if(area.npcs.begin(),area.npcs.end(),[&](const auto &npc){return npc.id==id;});
         if(source==area.npcs.end() || source->rule.questInitFunction!=19) return done();
         if(!unit->route.empty()) return done({true,true,false,1,{}});
-        bool radamentFinished=(state_.initialFlags[questDefinition(QuestId::RadamentsLair).nativeSlot]&0x8000)!=0;
-        bool tombsFinished=(state_.initialFlags[questDefinition(QuestId::SevenTombs).nativeSlot]&0x8000)!=0;
-        bool arcaneStarted=story.palaceOpen;
-        bool tombsBriefed=false;
-        for(const auto &[playerId,player]:ports_.players.all()) {
-            (void)playerId;if(!player.entered) continue;
-            const auto &book=player.persistent.player.quests.at(size_t(ports_.settings.difficulty));
-            radamentFinished|=book[questIndex(QuestId::RadamentsLair)].stage>=uint32_t(RadamentStage::Slain);
-            tombsFinished|=book[questIndex(QuestId::SevenTombs)].stage>=uint32_t(TombsStage::JerhynConfirmed);
-            tombsBriefed|=book[questIndex(QuestId::SevenTombs)].stage>=uint32_t(TombsStage::Assigned);
-            arcaneStarted|=book[questIndex(QuestId::ArcaneSanctuary)].stage>0;
-        }
-        if(!radamentFinished && !tombsFinished && !arcaneStarted) return idle(40);
+        const auto &radament=state_.actTwo.runtime[0];
+        const auto &arcane=state_.actTwo.runtime[3];
+        const auto &tombs=state_.actTwo.runtime[5];
+        if(radament.active && radament.state!=5 && tombs.active && tombs.state<4 && arcane.active && arcane.state<2) return idle(40);
         if(story.palaceRelocated && !story.palaceHomeShifted) {
             const auto home=global+Vec{9,0};
             const auto changed=ports_.monsters.setNpcHomeCommand(id,home);if(!changed) return {changed.status,{}};
             story.palaceHomeShifted=true;
             auto result=idle(50);if(result) result.value->home=home;return result;
         }
-        if(tombsFinished || tombsBriefed || arcaneStarted || state_.actTwo.durielSlain || story.palaceRelocated) return done();
-        // A2Q1's sequence activates A2Q6 state1 before Jerhyn's 430 text;
-        // personal TombsStage::Assigned is the later native state2.
-        story.palaceApproach|=radamentFinished;
-        if(!story.palaceApproach && !story.palaceApproached) return done();
+        if(!arcane.active || story.palaceArcaneCompleted || story.palaceTombsCompleted || state_.actTwo.journalRead ||
+            state_.actTwo.tyraelPortal || !tombs.active || tombs.state>=2 || story.palaceRelocated) return done();
+        story.palaceApproach|=tombs.state==1;
+        if(!story.palaceApproach) return done();
         if(!story.blocker) return idle(20);
         if(!story.palaceApproached) {
             bool close=false;
             for(const auto &[playerId,player]:ports_.players.all()) {
                 (void)playerId;if(!player.entered || ports_.areas.at(player.area).definition.act!=1) continue;
-                const auto stage=player.persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::SevenTombs)].stage;
-                if(stage>=uint32_t(TombsStage::TyraelRescued)) continue;
+                const auto &record=player.persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::SevenTombs)];
+                if(record.nativeRecord.value_or(actTwoLegacyRecord(QuestId::SevenTombs,record))&3) continue;
                 if(coordinateDistance(player.position+ports_.areas.at(player.area).definition.origin,*story.blocker)<=30) close=true;
             }
             if(!close) return idle(20);
@@ -430,7 +478,7 @@ DomainResult<NpcAiResult> System::npcThink(EntityId id,uint64_t tick) {
         }
         const auto object=ports_.objects.read().objects.find(story.blockerId);
         if(object==ports_.objects.read().objects.end()) return idle(20);
-        const auto point=*story.blocker+Vec{4,0};
+        const auto point=object->second.position+ports_.areas.at(object->second.area).definition.origin+Vec{4,0};
         const auto room=ports_.areas.roomAtPosition(unit->area,unit->position,int(point.x),int(point.y));
         if(!room) return idle(20);
         const auto sample=ports_.spatial.nativeCollisionSample();
@@ -550,14 +598,13 @@ StepStatus System::npcStoryStep(TickContext tick) {
         const auto &record=player.persistent.player;const auto &book=record.quests.at(difficulty);
         const auto previous=story.playerAreas.find(id);
         if(previous==story.playerAreas.end()) {
-            story.palaceRequested|=record.questPreludes.at(difficulty).at(size_t(QuestPreludeId::LutGholeinArrival)) ||
-                book[questIndex(QuestId::RadamentsLair)].stage>=uint32_t(RadamentStage::Slain) || book[questIndex(QuestId::ArcaneSanctuary)].stage>0 || book[questIndex(QuestId::SevenTombs)].stage>0;
-            story.palaceOpen|=book[questIndex(QuestId::TaintedSun)].stage>=uint32_t(SunStage::AltarDestroyed) ||
-                book[questIndex(QuestId::HoradricStaff)].stage>=uint32_t(StaffStage::Submitted);
+            restorePalaceState(record);
             if(!story.anyaThawAt && book[questIndex(QuestId::PrisonOfIce)].stage>=5) story.anyaDeparted=true;
-        } else if(int(previous->second)==40 && int(player.area)!=40) story.palaceRequested=true;
+        } else if(int(previous->second)==40 && int(player.area)!=40) {
+            if(!story.palaceInitialized && story.blocker) story.palaceBirthOrigin=story.blocker;
+            story.palaceRequested=true;
+        }
         story.playerAreas.insert_or_assign(id,player.area);
-        story.palaceOpen|=book[questIndex(QuestId::ArcaneSanctuary)].stage>0;
         story.hratliDeparted|=record.questPreludes.at(difficulty).at(size_t(QuestPreludeId::KurastArrival));
     }
     std::erase_if(story.playerAreas,[&](const auto &entry){const auto *player=ports_.players.find(entry.first);return !player || !player->entered;});

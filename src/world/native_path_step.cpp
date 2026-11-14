@@ -16,37 +16,44 @@ Vec projected(int64_t x, int64_t y) {
 }
 bool same(Vec a, Vec b) { return a.x == b.x && a.y == b.y; }
 }
-void NativePathStep::reset() { initialized_ = changedCell_ = false;direction_={}; }
-Vec NativePathStep::stop(Vec position) {
-    if(!initialized_ || !same(position,published_)) {
-        precisionX_=precise(position.x);precisionY_=precise(position.y);
+void NativePathStep::reset(NativePathState &state) { state.initialized_ = state.changedCell_ = false;state.direction_={}; }
+Vec NativePathStep::stop(NativePathState &state, Vec position) {
+    if(!state.initialized_ || !same(position,state.published_)) {
+        state.precisionX_=precise(position.x);state.precisionY_=precise(position.y);
     }
-    precisionX_=(precisionX_>>16)*precisionScale+precisionScale/2;
-    precisionY_=(precisionY_>>16)*precisionScale+precisionScale/2;
-    published_=projected(precisionX_,precisionY_);
-    initialized_=true;changedCell_=false;
-    return published_;
+    state.precisionX_=(state.precisionX_>>16)*precisionScale+precisionScale/2;
+    state.precisionY_=(state.precisionY_>>16)*precisionScale+precisionScale/2;
+    state.published_=projected(state.precisionX_,state.precisionY_);
+    state.initialized_=true;state.changedCell_=false;
+    return state.published_;
 }
-Vec NativePathStep::translate(Vec position, Vec offset) {
-    if (!initialized_ || !same(position, published_)) { reset(); return position + offset; }
-    precisionX_ += precise(offset.x); precisionY_ += precise(offset.y);
-    published_ = projected(precisionX_, precisionY_);
-    return published_;
+Vec NativePathStep::translate(NativePathState &state, Vec position, Vec offset) {
+    if (!state.initialized_ || !same(position, state.published_)) { reset(state); return position + offset; }
+    state.precisionX_ += precise(offset.x); state.precisionY_ += precise(offset.y);
+    state.published_ = projected(state.precisionX_, state.precisionY_);
+    return state.published_;
 }
-NativePathStepResult NativePathStep::advance(const Grid &grid, Vec position, Vec point,
+std::optional<uint8_t> NativePathStep::directionTo(const NativePathState &state, Vec position, Vec point) {
+    const bool retained = state.initialized_ && same(position, state.published_);
+    const auto dx = precise(point.x) - (retained ? state.precisionX_ : precise(position.x));
+    const auto dy = precise(point.y) - (retained ? state.precisionY_ : precise(position.y));
+    if (!dx && !dy) return {};
+    return nativeDirectionVector(dx, dy).index;
+}
+NativePathStepResult NativePathStep::advance(NativePathState &state, const Grid &grid, Vec position, Vec point,
                                             float distance, MovementCollisionRule rule, Vec gridOrigin) {
     NativePathStepResult result{position};
-    changedCell_=false;
+    state.changedCell_=false;
     if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
         !std::isfinite(point.x) || !std::isfinite(point.y) ||
         !std::isfinite(distance) || distance <= 0) return result;
-    if (!initialized_ || !same(position, published_)) {
-        precisionX_ = precise(position.x); precisionY_ = precise(position.y);
-        initialized_ = true;
+    if (!state.initialized_ || !same(position, state.published_)) {
+        state.precisionX_ = precise(position.x); state.precisionY_ = precise(position.y);
+        state.initialized_ = true;
     }
     const int64_t targetX = precise(point.x), targetY = precise(point.y);
-    const int64_t startX = precisionX_, startY = precisionY_;
-    const int64_t deltaX = targetX - precisionX_, deltaY = targetY - precisionY_;
+    const int64_t startX = state.precisionX_, startY = state.precisionY_;
+    const int64_t deltaX = targetX - state.precisionX_, deltaY = targetY - state.precisionY_;
     if (!deltaX && !deltaY) { result.reached = true; return result; }
     // D2MOO Step::PATH_GetDirectionVector and PathMisc::D2Common_10226
     // (MIT, docs/licenses/D2MOO.txt): recompute from precise coordinates on
@@ -60,10 +67,10 @@ NativePathStepResult NativePathStep::advance(const Grid &grid, Vec position, Vec
     const auto maximum = std::max(std::abs(velocityX), std::abs(velocityY));
     result.reached = std::abs(deltaX) <= maximum && std::abs(deltaY) <= maximum;
     if (result.reached) { velocityX = deltaX; velocityY = deltaY; }
-    const int64_t nextX = precisionX_ + velocityX, nextY = precisionY_ + velocityY;
-    int column = int(precisionX_ >> 16), row = int(precisionY_ >> 16);
+    const int64_t nextX = state.precisionX_ + velocityX, nextY = state.precisionY_ + velocityY;
+    int column = int(state.precisionX_ >> 16), row = int(state.precisionY_ >> 16);
     const int endColumn = int(nextX >> 16), endRow = int(nextY >> 16);
-    int64_t sampleX = precisionX_, sampleY = precisionY_;
+    int64_t sampleX = state.precisionX_, sampleY = state.precisionY_;
     // Step::sub_6FDAB810 halves the velocity until each component is <=1
     // subtile. Check only cells entered by those samples, not a DDA supercover.
     while (std::abs(velocityX) > precisionScale || std::abs(velocityY) > precisionScale) {
@@ -80,21 +87,21 @@ NativePathStepResult NativePathStep::advance(const Grid &grid, Vec position, Vec
             grid.movementClear(nextColumn-int(gridOrigin.x),nextRow-int(gridOrigin.y),rule);
         if (!accepted) {
             // Native collision stops at the center of the last accepted cell.
-            precisionX_ = int64_t(column) * precisionScale + precisionScale / 2;
-            precisionY_ = int64_t(row) * precisionScale + precisionScale / 2;
+            state.precisionX_ = int64_t(column) * precisionScale + precisionScale / 2;
+            state.precisionY_ = int64_t(row) * precisionScale + precisionScale / 2;
             result.blocked = true; result.reached = false;
             break;
         }
         column = nextColumn; row = nextRow;
         if (++savedSteps == 10) break; // D2DynamicPathStrc::PATH_MAX_STEP_LEN.
     }
-    if (!result.blocked) { precisionX_ = nextX; precisionY_ = nextY; }
-    published_ = projected(precisionX_, precisionY_);
-    result.position = published_;
-    changedCell_=(startX>>16)!=(precisionX_>>16) || (startY>>16)!=(precisionY_>>16);
-    direction_=direction.index;
-    const double travelledX = double(precisionX_ - startX) / precisionScale;
-    const double travelledY = double(precisionY_ - startY) / precisionScale;
+    if (!result.blocked) { state.precisionX_ = nextX; state.precisionY_ = nextY; }
+    state.published_ = projected(state.precisionX_, state.precisionY_);
+    result.position = state.published_;
+    state.changedCell_=(startX>>16)!=(state.precisionX_>>16) || (startY>>16)!=(state.precisionY_>>16);
+    state.direction_=direction.index;
+    const double travelledX = double(state.precisionX_ - startX) / precisionScale;
+    const double travelledY = double(state.precisionY_ - startY) / precisionScale;
     result.travelled = float(std::sqrt(travelledX * travelledX + travelledY * travelledY));
     return result;
 }

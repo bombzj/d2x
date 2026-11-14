@@ -125,9 +125,9 @@
 | 33 | SellItem | 17 | u32 npc,item; u16 mode,reserved; u32 quote |
 | 34 | IdentifyAll | 5 | u32 npc |
 | 35 | RepairItems | 17 | u32 npc,item; u16 reserved,reserved; u32 all；全修item/all均FFFFFFFF |
-| 36 | HireMercenary，第一幕已接 | 9 | u32 npc,name；name为原TBL姓名索引 |
+| 36 | HireMercenary | 9 | u32 npc、u16 TBL姓名索引、u16高字（原客户端发送0） |
 | 37 | IdentifyGamble，stub | 5 | u32 item |
-| 38 | NpcService | 13 | u32 action,npc,parameter；parameter按NPC解释为物品／目的地／0 |
+| 38 | NpcService | 13 | u32 action,npc,parameter。action3为雇佣名单，原客户端传本人GUID；action0按NPC解释为物品／目的地／0 |
 | 3A | SpendAttribute | 3 | u16 packed；低8位属性0力量1精力2敏捷3体力，高8位count-1 |
 | 3B | LearnSkill | 3 | u16 skill |
 | 3C | SelectSkill | 9 | u32 selected,owner；selected低16位skill、bit31左手，其他位0；普通owner=FFFFFFFF |
@@ -273,9 +273,9 @@
 
 ## MCP 与 SID
 
-## 第一幕佣兵扩展
+## 佣兵服务与同步
 
-C2S36雇佣、62复活已接第一幕；61由stub转partial，含罗格装备及支持药水，38/action3为名单请求。S2C4E固定7字节(u16 name,u32 seed)，4F固定1字节清空名单；81固定20字节(u8 petType,u16 class,u32 owner,unit,seed,name)，9B固定7字节(u16 name,u32 cost)，name=FFFF清除死亡报价。9E/9F/A0为u8 stat,u32 unit后u8/u16/u32绝对值；A1/A2相同前缀后u8/u16增量，未知基线不凭空累加。上述身份不再Reserved，宿主81／9B／A0已输出，9E／9F／A1／A2仍仅消费预留。原清单中的相应stub／Reserved数量是重构时快照，以当前代码目录和本节为准。功能、限制与依据见[佣兵](../gameplay/characters/HIRELINGS.md)。
+C2S36雇佣、62复活、61装备及支持药水、38/action3名单请求。S2C4E固定7字节(u16 name,u32 seed)，4F固定1字节清空名单；81固定20字节(u8 petType,u16 class,u32 owner,unit,seed,name)，9B固定7字节(u16 name,u32 cost)，name=FFFF清除死亡报价。宿主9E/9F/A0为u8 stat、u32 unit后接u8/u16/u32绝对值；客户端可在81前按GUID缓存。A1/A2相同前缀后接u8/u16增量，客户端仅在该属性基线已知时累加，宿主暂未生成增量。功能、限制与依据见[佣兵](../gameplay/characters/HIRELINGS.md)。
 
 MCP请求：01启动、02建角、03建房、04加入、05列表、06详情、07选角、0A删角、19角色列表；对应响应已接，14排队由客户端消费、自研输出stub。字段由[客户端会话](../../src/network/realm_session.cpp)、[realm_protocol](../../src/hosting/detail/realm_protocol.cpp)、[realm_characters](../../src/hosting/detail/realm_characters.cpp)及[realm_games](../../src/hosting/detail/realm_games.cpp)维护；不能用D2GS长度表拆MCP。
 

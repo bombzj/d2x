@@ -153,11 +153,8 @@ void System::initialize(const CharacterRecord &creator) {
     state_.actTwo.sunNoticePending=state_.actTwo.dark;
     auto &story=state_.npcStory;
     const auto difficulty=size_t(ports_.settings.difficulty);
-    story.palaceRequested=creator.questPreludes.at(difficulty).at(size_t(QuestPreludeId::LutGholeinArrival)) ||
-        book[questIndex(QuestId::RadamentsLair)].stage>=uint32_t(RadamentStage::Slain) ||
-        book[questIndex(QuestId::ArcaneSanctuary)].stage>0 || book[questIndex(QuestId::SevenTombs)].stage>0;
-    story.palaceOpen=sun>=uint32_t(SunStage::AltarDestroyed) || book[questIndex(QuestId::ArcaneSanctuary)].stage>0 ||
-        book[questIndex(QuestId::HoradricStaff)].stage>=uint32_t(StaffStage::Submitted);
+    restorePalaceState(creator);
+    advancePalaceSequence();
     story.hratliDeparted=creator.questPreludes.at(difficulty).at(size_t(QuestPreludeId::KurastArrival));
     story.ormusActivated=book[questIndex(QuestId::BladeOfTheOldReligion)].stage>=4;
     story.cainDeparted=book[questIndex(QuestId::SearchForCain)].stage>=uint32_t(CainStage::Rescued);

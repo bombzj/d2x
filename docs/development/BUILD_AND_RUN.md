@@ -54,20 +54,24 @@ cmake --build build --parallel
 
 `Play-Diagnostic.cmd` 沿用普通 Play 的程序和角色目录，并为每次启动创建独立诊断目录。包日志、脱敏范围和现场读取见[原服收包记录](DEBUG_PIPE.md#原服收包记录)。
 
-`debug-AI.cmd [职业] [幕范围或 continue]` 从源码目录启动图形单机任务 AI。默认职业为 `sor`（女巫），也可选 `ama`（亚马逊）。`pal`、`nec` 等职业尚无准备档。默认计划为普通难度 `act1-5`。可选单幕或升序范围，首幕决定起始存档。
+`debug-AI.cmd [join] [职业] [幕范围或 continue]` 从源码目录启动图形任务AI；无join时为单机，join通过TCP/IP加入本机`127.0.0.1:4000`的现有房主。默认职业`sor`（女巫），也可选`ama`（亚马逊）；其他职业尚无准备档。默认普通难度act1-5，可选单幕或升序范围，首幕选择起始档。
 
 ```powershell
 .\debug-AI.cmd
 .\debug-AI.cmd act2-5
 .\debug-AI.cmd ama act1-2
 .\debug-AI.cmd ama continue
+.\debug-AI.cmd join ama act2-5
+.\debug-AI.cmd join continue
 ```
 
 启动器从本地 `artifacts/saves/` 读取 99 级起始档，女巫使用 `ActOneSorc.d2s` 至 `ActFiveSorc.d2s`，亚马逊使用 `ActOneAmazon.d2s` 至 `ActFiveAmazon.d2s`。每次启动都复制到新诊断目录的 `saves/`。`continue` 按启动时间选取所选职业最近一次可续档的运行，跳过缺少有效运行记录、合法幕范围或对应存档的目录。启动器复制已落盘的 D2S 及现存 `.map`／`.ma0` 至 `.ma3`，沿用原幕范围并从存档对应城镇入局。`debug-AI.cmd continue` 接续女巫，也支持旧启动器留下的女巫运行。计划根据角色任务状态恢复。用 Save & Exit 保存进度，供下次启动接续。
 
-启动器要求先关闭已有 D2X 实例。双击时保留启动器控制台和游戏窗口，D2X 复用启动器的控制台，标准输出和错误仍写入本次诊断目录。客户端就绪后，通过独立调试管道核对角色与等级，新计划还核对起始城镇，再使用配置快照启动 AI。工作目录和 `client-settings.json` 与普通 Play 共用，失焦时继续运行。需要指定资源目录时可传 `debug-AI.cmd ama act1-2 -Mpq <目录>`。
+单机启动前要求关闭已有D2X实例，join允许房主已运行。双击保留控制台和游戏窗口，标准输出／错误写诊断目录。客户端就绪后用独立管道核对角色与等级，单机新计划另核对起始城镇；join出生幕由房主及角色状态决定，不套单机城镇检查。随后使用配置快照自动启动AI。工作目录和client-settings.json与普通Play共用，失焦继续运行；ESC菜单和显式暂停仍有效。资源可用`-Mpq <目录>`指定，join入口尚待运行验收。
 
-各次启动的配置快照、包日志、程序输出及存档位于 `artifacts/diagnostics/` 的独立子目录。导航输出见[慢搜索导出](DEBUG_AI.md#慢搜索与无路现场导出)，崩溃报告见[崩溃记录](CRASH_REPORTS.md)。进程异常退出时，启动器报告日志目录及可取得的退出码，详细输出见 `stderr.log` 和 `stdout.log`。
+各次启动的配置快照、包日志、输出及存档位于artifacts/diagnostics的独立子目录；诊断启动器自动设置D2X_NAVIGATION_DUMP，结束恢复环境。导航格式见[AI诊断](DEBUG_AI_DIAGNOSTICS.md#慢搜索与无路现场导出)，崩溃见[崩溃记录](CRASH_REPORTS.md)。异常退出报告目录和可取得的退出码。手动启动单机可加`--no-pause-on-focus-loss`，AI结束后仍继续失焦运行；不会禁用ESC或显式暂停。
+
+离线角色准备可复用[女巫配方](fixtures/debug-sorceress.json)及[第一幕配方](fixtures/debug-act1.json)，装配方法见[对照角色](CHARACTER_REFERENCE_FIXTURES.md)。任务使用独立副本并预备真实技能、装备、资金和空间；普通任务无需备用帽，显式服务奖励测试才准备合格材料。启动器不授予AI修改角色的权限。
 
 ### 单机位置差异日志
 
@@ -117,6 +121,10 @@ ESC 优先关闭面板，无面板时打开游戏菜单；Save and Exit 请求�
 EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame` 开始的首次生命周期节点：MPQ 挂载、平台、菜单资产、首个显示帧、服务端世界、客户端内容、游戏 UI 及首个已绘制游戏帧。每个节点只记录一次并立即刷新；未指定不产生文件。`--frames <数量>` 可有限运行后正常退局，`--hidden` 仍建立 OpenGL 上下文但跳过音频设备初始化。测速需注明运行条件，文件首帧时间不包含操作系统创建进程之前的耗时，也不代表首次磁盘冷启动或后续每次入局耗时。
 
 `--frame-profile <新路径.jsonl>`为图形客户端提供可选长帧取证，输出必须不存在。每个≥100ms的完整呈现帧记录host／network／client／ai／navigation／debug／scene／present／other的墙钟耗时，另约每秒采样进程内存、缺页／CPU累计、读写量、可用物理内存及Graphics已解码像素／逻辑RGBA纹理规模。记录含epochMs、单调elapsedMs、区域／世界修订和寻路计数，可与game-packet-log对齐；32MiB封顶，写入错误停止诊断而不改变游戏。diagnosticCollectionMs单列采集开销；textureCountsBySource／textureBytesBySource只计独立纹理的首次上传归属。世界图集另计 atlasBytes／atlasPages，atlasBytesByUse 依次为地形、角色（含阴影）、特效、物品。atlasUploadBytes／atlasEvictions 为当前所有者累计值，atlasOwnerPeaksBytes 为各当前所有者峰值之和。directionBytes 为按需解码缓存，dt1Libraries／dt1PixelBytes 为客户端挂载内仍存活的 DT1 库及索引像素容量；逻辑纹理字节不是驱动实占／显存结论，Windows缺页计数也不区分软硬缺页。日志在长帧结束后写入，永久死锁需另取线程栈。默认关闭，不逐帧写磁盘；原版Host测试使用直接debug pipe控制AI，不走聊天入口。
+
+帧日志另提供 `interval`：包含本区间所有已完成帧的 `frames/meanFrameMs/maxFrameMs/meanMilliseconds/maxMilliseconds`、`framesOver16_67Ms/framesAtLeast100Ms`、`wallMs`，以及 Windows／Linux 可取得的 `processCpuMs/mainThreadCpuMs` 和对应 `*CpuOneCorePercent`。CPU 百分比以一个逻辑核为 100，进程值可超过 100；mainThread 指前端调用线程，不能据阶段墙钟推导各阶段 CPU。新增互斥阶段 `town/uiProjection/combatProjection/world/uiDraw/graphicsMaintenance`，原 `scene/client` 保留其余工作，`present` 仍含限帧／交换等待。区间均值按帧累计，最大值不一定来自同一帧；日志采样后的序列化和写盘不在 `diagnosticCollectionMs` 内。最后不足输出周期的区间可能未记录。
+
+CPU 基准优先直接使用 `--frame-profile`，不启用包日志、AI 和 `D2X_NAVIGATION_DUMP`；`Play-Diagnostic.cmd` 会开启逐包记录及导航地形导出，存在额外 CPU／I/O 开销。源码分析、优化候选和手动采样步骤见[客户端性能](CLIENT_RESOURCE_MEMORY.md#cpu-采样)。新增字段尚未构建／运行验证。
 
 启动测量在当次交付中说明程序版本、资源、启动参数及采样条件；临时测量文件可清理，不作为功能或原版一致性的长期依据。
 

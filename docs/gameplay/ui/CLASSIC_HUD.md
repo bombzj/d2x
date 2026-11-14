@@ -30,7 +30,7 @@
 
 ## 聊天与消息日志
 
-聊天界面依据与源码：用户提供原版底部输入、左上回显及M消息日志三张截图，历史最新消息在上、真实角色名深金色／普通文字白色、标题Message Log、底部Close、右侧滚动条。OpenDiablo2 `d2game/d2player/key_map.go`核对Enter／M，`d2common/d2resource/resource_paths.go`及`d2core/d2gui/box.go`／`layout_scrollbar.go`核对boxpieces／textslid原帧用途。当前MPQ：boxpieces为22帧14×15，textslid为17帧12×13；TBL的strMsgLog／strClose存在；对照截图字形和尺寸选font8消息、font16输入／标题，字宽沿原TBL。`presentation/hud/chat_view.*`独立维护只读消息、编辑草稿、光标及滚动；边框步距从原帧尺寸读取，位置按截图800像素基准适配当前HUD尺度。Sky原PL2十三种字体索引变换按需上传，白色保留原索引；messageColor控制正文，姓名色独立于等级字段，支持原FF c0–c9颜色串（本地d2bs Print用例补证）。标题／Close动态读当前MPQ。
+用户提供的原版截图确认M消息日志最新在上、真实角色名深金色／正文白色、标题Message Log和底部Close。d2decomped调用索引中`004A0050`和Hire的`004B5C60`同调`004BF8F0`。1.13c D2Client RVA2C770–2C876以`(5,65,W−20,H−200)`建立日志列表，正文用FontInGameChat，行步进14像素、消息间隔2像素。`text_list`和`text_slider`供[雇佣名单](../characters/HIRELINGS.md#服务奖励与保存)和日志共用，文本按原字宽换行并以消息为单位滚动，超出一页的消息分段。原框`boxpieces`及`textslid`取当前MPQ。Message Log与Hire共用`OriginalMenu`外框、内列表和底部文字按钮，底板使用原PL2 TRANS50。标题与Close取TBL的`strMsgLog`／`strClose`。RVA2C801和53941给出Close基线`H−114`，位于正文框下方的独立底栏。RVA534B0与53967给出按钮行命中与悬停颜色3，按下和松开都在同一行才提交。消息保持Sky PL2颜色，换行保留已解析颜色。挂载语言缺少FontInGameChat时沿用其Font8。底部输入和左上回显继续使用现有Font16／Font8。跨语言和原版截图待验收。
 
 Enter打开底部输入，再次Enter提交普通广播；空白Enter关闭，Esc丢弃草稿。Backspace／Delete、左右／Home／End按完整Unicode字符编辑光标，正文沿原UCS-2边界（不支持非BMP字符），转换为系统原生代码页后限制255字节；提交拒绝保留草稿。Windows使用已有GLFW的WM_CHAR提交字符及系统IME候选窗口；app层读取组合态，组合中的方向／退格／Esc不修改已提交草稿，候选确认／组合结束同帧不同时发送聊天，已提交的片段仍进入草稿。M／底栏Message Log打开历史，M／Esc／Close关闭；滚轮、上下、PageUp／PageDown、Home／End及原箭头／滚动条拖拽翻阅，新消息到达时保留正在查看的旧行锚点。聊天输入只消费键盘编辑及快捷键，保留鼠标点击、按住、释放、滚轮和修饰键的正常游戏操作，不因聊天重置移动手势。NPC菜单／对白、商店、雇用、储物箱、方块、传送点及玩家交易等交互面板打开后自动关闭聊天并清空草稿；同帧原编辑键不转交玩法。M消息日志仍占用整个开启、编辑和关闭帧，持有按钮需重新释放；服务器／网络不暂停。关闭与新局不重放消息或玩法意图，换区保留本局历史。聊天鼠标放行及交互面板自动关闭的新增源码尚未构建／运行。
 
@@ -110,7 +110,7 @@ ESC先关闭面板／对白，无面板时打开游戏菜单。`hud/escape_menu`
 
 菜单标签通过`localUiArtPath`优先读取所选语言的`data/local/ui/<language>/*.dc6`，缺图才回退英文；使用原分片、底部原点和原像素尺寸，不随hudScale拉伸，也不由TTF字体重绘。按键页的功能文字和字体另按下述英文TBL／Latin资源读取。3DSound原图实际文案为3D SOUND；大字Previous与设置页SPrevious使用各自原资源。普通菜单按`(H−80)/2−行数×50/2`定位，标签基线偏移39；设置页包含标题，行距45、基线偏移34，左右列锚点为W/2±230。五芒星原8帧、相反方向、50ms帧间隔，锚点为W/2±249，保留原帧偏移及底部原点。扩展窗口沿原居中公式延伸，不缩放菜单字形。
 
-按键页直接读取英文TBL和Latin FontInGameChat的DC6／TBL，原表62行含56功能及6个分隔空行，每屏15行、行距18；保留620×369原边框、三列、原textslid滚动条、底部三个按钮。点击功能／主键列编辑主键，点击副键列编辑副键；键盘上下逐项选择并滚动入视野，首尾停止，左右在两个槽间选择、不循环；Enter进入捕获，鼠标悬停不改变键盘选中行。滚轮、PageUp／PageDown、Home／End及拖动滚动条浏览。捕获时Esc只取消捕获，重复绑定清除全表原槽为None，不设Delete／Backspace清空捷径。Default只重置草稿；Cancel及非捕获时Esc丢弃，Accept应用并保存；捕获优先消费按键，失焦取消捕获。具体格式与失败处理见[客户端偏好](../../modules/SAVES.md#客户端偏好凭据与探索)。
+按键页直接读取英文TBL和Latin FontInGameChat的DC6／TBL，原表62行含56功能及6个分隔空行，每屏15行、行距18。保留620×369原边框、三列和底部三个按钮，与雇佣名单／消息日志共用`textslid`图集和鼠标捕获。d2decomped `controls.md`及`controls.cpp::mouse_frame`给出设置页自己的滚动规则。箭头逐行、轨道按14行步进，按住后以50毫秒间隔重复，滑块保留抓取位置。点击功能／主键列编辑主键，点击副键列编辑副键；键盘上下逐项选择并滚动入视野，首尾停止，左右在两个槽间选择。Enter进入捕获，鼠标悬停保留键盘选中行。滚轮、PageUp／PageDown、Home／End可浏览。捕获时Esc取消捕获，重复绑定清除全表原槽为None。Default重置草稿，Cancel及非捕获时Esc丢弃，Accept应用并保存。失焦撤销手势及捕获。具体格式与失败处理见[客户端偏好](../../modules/SAVES.md#客户端偏好凭据与探索)。
 
 字体颜色全部来自Sky PL2原索引变换，不猜RGB：按钮未悬停4（金），Cancel悬停1（红）、Default 3（蓝）、Accept 2（绿）；选中键位3，未选中已绑定4，空槽5（灰），双槽空1（红），普通功能标签0（白）。取证为同份1.13c D2Client按钮表RVA F8B98（三条26字节记录、色号偏移6）、绘制12CE0–12D26、绑定绘制127D0–12A58及槽存在判定398C0；用户原版实测确认按钮颜色、选中蓝色／捕获蓝色闪烁、Esc取消捕获、冲突清除及不循环键盘导航。当前捕获按时间闪烁，原版按帧计数，精确节奏未认证。上一／下一技能已接16槽右手快捷键；8条角色语音键已接原版3F请求和2C声音消费，允许编辑；普通键盘、中键／侧键及滚轮已接编码，但全部设备与原版完整允许键集合仍待实测。
 
@@ -167,7 +167,7 @@ Resolution按产品要求提供800×600／Any两档，支持鼠标、Enter及左
 | 商店／赌博／玩家交易 | buysell／trade原图、原物品副本及交易格；npc_shop_view、trade_invite_view | 商店购买确认已使用OriginalMenu和VerifyTransaction系列TBL，旧自绘YES／NO结论不再适用；分页、维修／出售选择描边、Repair All硬编码提示及全部按压状态仍需核对，不可宣称商店整体准确还原 |
 | 任务日志 | questbackground／expquesttabs／questsockets／任务原动画；quest_panel、quest_controller | 完整任务动画／文字／重播节奏及所有幕状态 |
 | 佣兵装备／属性 | 原hireling面板、inventory原槽位／原字体；hireling_view | 原装备面板与雇用列表是两种界面；各佣兵职业、属性状态色与完整按压仍需对照 |
-| NPC雇用列表 | hireling_view::drawHirelingList、commerce_controller | 仍用自绘黑底、金色描边／分隔线、缩字号长行与RGBA悬停色；只有滚动箭头取原资源，不能归为原面板已还原 |
+| NPC雇用列表 | hireling_view::drawHirelingList、commerce_controller、text_list、text_slider | Font16、PL2悬停色及底板、内外原框、滚动和换行分页已接。保留队伍及佣兵头像，临时收起底栏展开按钮。修正后的画面仍待验收 |
 | 组队／敌意／回收权限 | 原party面板及按钮；party_view | 已有按下捕获／释放提交，38像素行距和关系操作；背景自身仍以y=64绘制，不能直接用其他面板y=61结论统一修改，需查本面板原入口；多人关系及全状态像素待对照 |
 | 传送点 | waygatebackground／expwaygatetabs／waygateicons；waypoint_view | 原版逐像素布局及全幕／不可达状态组合 |
 | 消息日志／聊天 | boxpieces／textslid、strMsgLog／strClose、原字体；chat_view、app/input | 新增局内中文编码／Unicode编辑／Windows IME路径已构建，行为仍待实测；实体键盘、输入法切换／候选窗口及精确原版布局仍待验收 |

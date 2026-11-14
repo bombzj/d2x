@@ -33,6 +33,7 @@ struct HirelingView {
     int damageMinimum = 0, damageMaximum = 0;
     uint64_t experience = 0, nextExperience = 0;
     std::array<int, 4> resistances{};
+    std::array<bool, 4> resistanceCapped{};
     std::vector<std::string> skills;
     std::vector<PetPortraitView> portraits;
 };
@@ -40,6 +41,7 @@ struct HirelingOfferView {
     uint32_t slot = 0;
     std::string name, description;
     int level = 0, life = 0, defense = 0, price = 0;
+    bool operator==(const HirelingOfferView &) const = default;
 };
 // Bound player's offered candidates; no seeds, native hireling records or other players.
 struct HirelingListView {
@@ -47,8 +49,7 @@ struct HirelingListView {
     uint64_t offerRevision = 0;
     EntityId actor, npc;
     unsigned gold = 0;
-    bool replacing = false, hirePending = false, hired = false;
-    std::string cancelLabel;
+    bool replacing = false, listReceived = false, hirePending = false, hired = false;
     std::vector<HirelingOfferView> offers;
 };
 } // namespace d2x

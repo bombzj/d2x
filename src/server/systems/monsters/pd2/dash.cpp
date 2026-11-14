@@ -1,4 +1,5 @@
 #include "../system.hpp"
+#include "world/native_path_step.hpp"
 #include "server/area_store.hpp"
 
 namespace d2x::server::monsters {
@@ -12,7 +13,7 @@ DomainResult<> System::startPd2DashMotion(EntityId id,Vec target) {
     unit.skillMotion=Actor::SkillMotion{target,UINT64_MAX,unit.interruption,
         float(uint32_t(unit.rule.nativeVelocity)<<9)*25.f/4096.f,false,{target}};
     unit.skillMotion->eventDriven=true;unit.skillMotion->collision=MovementCollisionRule{0,unit.rule.size};
-    unit.pathStep.reset();unit.movementTarget={};unit.movementGoal=target;unit.pathType=9;
+    NativePathStep::reset(unit.pathStep);unit.movementTarget={};unit.movementGoal=target;unit.pathType=9;
     ++unit.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 }

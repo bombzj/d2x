@@ -74,8 +74,9 @@ void SceneView::drawCharacter(Vec mouse) const {
         DrawTexturePro(sprite.texture, {0, 0, float(sprite.texture.width), float(sprite.texture.height)},
             box, {}, 0, WHITE);
     };
-    art(*assets_.questClose.frame(0, 10 + (view_.characterPressed == -1 &&
-        CheckCollisionPointRec(rv(mouse), characterClose()))), characterClose());
+    const auto close = characterClose();
+    drawClassicSpriteButton(assets_.questClose, 10, close, close, mouse,
+        view_.characterPressed == -1 && classicButtonHovered(close, mouse), nullptr);
     const auto label = [&](const char *key) -> const std::string & { return assets_.characterLabels.at(key); };
     const auto cell = [&](const std::string &value, float left, float baseline, float right,
                           bool small = false, uint8_t color = 0, bool fitWidth = false) {

@@ -14,6 +14,7 @@
 #include "content/monsters/monster_enchantment.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/units/distance.hpp"
+#include "gameplay/units/direction.hpp"
 #include "gameplay/monsters/collision_spec.hpp"
 #include "gameplay/monsters/types.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
@@ -28,7 +29,7 @@
 #include "gameplay/actions/monster_timing.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "world/interaction_geometry.hpp"
-#include "world/native_path_step.hpp"
+#include "world/native_path_state.hpp"
 #include "world/native_target_path.hpp"
 #include "world/native_spawn.hpp"
 #include "network/protocol/bits.hpp"
@@ -74,7 +75,7 @@ struct RemoteScene::Impl {
             int skill{-1};float started{};
             Vec position,destination;
             float velocity{},nextTick{};
-            NativePathStep path;
+            NativePathState path;
             ClientMissileGraphics graphics;
         };
         std::optional<PlayerLeap> playerLeap;
@@ -100,6 +101,7 @@ struct RemoteScene::Impl {
         std::optional<ScriptedSequence> scriptedSequence;
         std::optional<OnlinePoint> last;
         Vec look;
+        std::optional<NativePathFacing> pathFacing;
         std::optional<uint8_t> boneWallDirection;
         bool pathMoving{};
         bool playerKnockback{};
@@ -114,7 +116,7 @@ struct RemoteScene::Impl {
         Vec position, correction;
         float correctionLeft{}, updatedAt{-1}, progressAt{};
         std::deque<Vec> route;
-        NativePathStep pathStep;
+        NativePathState pathStep;
         std::optional<uint8_t> effectivePathType;
         std::optional<Vec> plannedFrom, plannedGoal, plannedEnd;
         uint64_t collisionReplans{};
@@ -198,6 +200,36 @@ struct RemoteScene::Impl {
     std::map<OnlineUnitKey,int> stateColorShifts;
     uint64_t combatSequence{};
     std::map<std::array<int,3>,uint64_t> denLightRooms;
+    struct CritterDefinition {
+        enum class Think { Chicken, Bunny, Scavenger, Bat, Snake, Bird };
+        Think think{};
+        int minGroup{}, maxGroup{}, size{}, velocity{}, walkRate{}, skillFrames{}, skillRate{}, startFrameBound{};
+        bool walkMode{}, skillMoves{}, flight{}, ignoredByFlock{}, skillUsesWalkRate{};
+        int travelAnimationRate(int percentage) const;
+        uint16_t walkMask{};
+        std::array<std::optional<ActorAnimationRequest>, 3> animations;
+        const ActorAnimationRequest *animation(int mode) const;
+    };
+    struct Critter {
+        enum Mode { Neutral = 1, Walk = 2, Skill = 8 };
+        int identity{};
+        uint64_t id{}, room{}, random{}, modeFrame{};
+        int startFrame{};
+        Vec position;
+        Mode mode{Neutral};
+        std::deque<Vec> route;
+        NativePathState path;
+        NativePathFacing facing{0};
+        MovementCollisionRule movement;
+        int wait{}, velocityPercent{75}, skillDuration{};
+        bool marked{}, gone{};
+        std::optional<uint64_t> skillSoundFrame;
+    };
+    std::map<int, CritterDefinition> critterDefinitions;
+    std::map<std::string_view, int, std::less<>> critterClasses;
+    std::set<uint64_t> critterRooms;
+    std::vector<Critter> critters;
+    uint64_t critterSerial{}, critterFrame{};
     uint64_t localRequestSequence{};
     uint64_t localObjectKickRevision{};
     struct LocalCast {
@@ -307,6 +339,9 @@ struct RemoteScene::Impl {
                        SceneView &shared, const Grid &grid, Vec origin);
     void observeEffects(const OnlineView &v, SceneView &shared, const RemoteCombat &combat, bool town,const Grid &collision,Vec worldOrigin);
     void observeDenLights(const OnlineView &,const Map &,SceneView &,float elapsed);
+    void prepareCritters(const AnimDataTable &);
+    void advanceCritters(const Map &, Vec origin, uint64_t ticks);
+    void drawCritters(WorldDrawView &, SceneView &, std::vector<SoundActorView> &, bool paused);
     const OnlineUnit *questNearbyUnit(const OnlineView &,const Map &,int type,int identity) const;
     void observeQuestMissileEffects(const OnlineView &,const Map &,SceneView &,WorldDrawView &,float elapsed);
     bool walking(const OnlineUnit &u) const;

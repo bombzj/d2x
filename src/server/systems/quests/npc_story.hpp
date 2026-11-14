@@ -22,8 +22,9 @@ struct NpcStoryState {
     struct MapAi {std::vector<MonsterRule::MapAiNode> nodes;bool consumed{};};
     std::map<std::string,MapAi,std::less<>> mapAi;
     bool palaceRequested{},palaceOpen{},palaceApproach{},palaceApproached{},palaceRelocated{},palaceHomeShifted{};
+    bool palaceArcaneCompleted{},palaceTombsCompleted{},palaceInitialized{};
     bool guardAtEntrance{},guardStepBack{},hratliDeparted{};
-    std::optional<Vec> blocker,guard;
+    std::optional<Vec> blocker,guard,palaceBirthOrigin;
     EntityId blockerId,ormusAltar;
     bool ormusDelivery{},ormusActivate{},ormusActivated{},alkorDelivery{},alkorAnimate{};
     EntityId tomeCourier,tomeNpc;

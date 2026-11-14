@@ -8,6 +8,7 @@
 #include "contracts/online_items.hpp"
 #include "core/math.hpp"
 #include "gameplay/actions/movement_timing.hpp"
+#include <array>
 #include <memory>
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +22,7 @@ class Archives;
 struct ClassicData;
 struct OnlineSceneView;
 struct OnlineUnitKey;
+struct OnlineEquippedItem;
 struct UnitLightAttributes { int32_t radiusModifier{}; uint32_t color{}; };
 struct Pd2PlayerRates { int velocityPercent{},attackRate{},itemIAS{}; };
 class RemoteInventory;
@@ -52,6 +54,7 @@ class RemoteUiClients {
     std::optional<uint64_t> waitingItemRequest() const;
     RemoteUiNotice takeNotice();
     std::optional<unsigned> itemQuote(uint32_t item, OnlineItemAction action) const;
+    std::optional<std::array<int, 2>> equipmentColor(const OnlineEquippedItem &) const;
     std::optional<UnitLightAttributes> light(OnlineUnitKey) const;
     std::optional<MovementTiming> movement(OnlineUnitKey,bool running) const;
     std::optional<KnownAttackTiming> attackTiming() const;

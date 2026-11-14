@@ -667,6 +667,7 @@ void sortRetailNearRooms(std::vector<size_t> &near, const std::deque<RetailTileR
 void RetailTileMaterializer::activateCollision(size_t room, std::span<const size_t> activeNear) {
     if (collisions_.contains(room)) throw std::runtime_error("Native room collision already active");
     auto &current = rooms_.at(room);
+    current.activationSerial = ++activationSerial_;
     // DRLG_CreateRoomForRoomEx rolls once after tile creation, then
     // DUNGEON_AllocRoom initializes a separate low/high=666 active seed.
     // Keep the draw on the actual room stream: later seam tile selection may

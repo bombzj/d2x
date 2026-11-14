@@ -6,6 +6,7 @@
 #include "server/systems/world/system.hpp"
 #include "server/game_messages.hpp"
 #include "server/area_store.hpp"
+#include "server/game_instance.hpp"
 #include "native_realm_host.hpp"
 #include "native_realm_service.hpp"
 #include "hosting/loot_content.hpp"
@@ -17,8 +18,46 @@
 #include "content/world/world_catalog.hpp"
 #include "server/runtime/event_batch.hpp"
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <iostream>
+#include <mutex>
+#include <syncstream>
+#include <thread>
 namespace d2x::hosting {
+struct NativeRealmHost::Retirement {
+    struct Entry {
+        std::unique_ptr<server::GameInstance> game;
+        std::map<RegionId,GeneratedArea> terrain;
+    };
+    std::mutex mutex;
+    std::condition_variable_any wake;
+    std::deque<Entry> pending;
+    std::jthread worker{[this](std::stop_token stop) {
+        for(;;) {
+            std::unique_lock lock(mutex);
+            wake.wait(lock,stop,[&]{return !pending.empty();});
+            if(pending.empty()) return;
+            auto entry=std::move(pending.front());pending.pop_front();
+            lock.unlock();
+            entry.game.reset();entry.terrain.clear();
+        }
+    }};
+    ~Retirement() {worker.request_stop();wake.notify_all();}
+    bool retire(GameHost &host,GameHandle handle,std::map<GameHandle,std::map<RegionId,GeneratedArea>> &terrain) {
+        std::lock_guard lock(mutex);
+        if(pending.size()>=8) return false;
+        pending.emplace_back();
+        auto &entry=pending.back();
+        entry.game=host.release(handle);
+        if(auto found=terrain.find(handle);found!=terrain.end()) {
+            entry.terrain=std::move(found->second);terrain.erase(found);
+        }
+        wake.notify_one();
+        return true;
+    }
+};
 void NativeRealmHost::initialize() {
     if (content) return;
     auto data = sharedClassicData(archives, preparation);
@@ -26,6 +65,7 @@ void NativeRealmHost::initialize() {
     items = std::shared_ptr<const ItemCatalog>(data, &data->items);
     content = std::move(data); portraits = std::move(previews);
     areaPreparation = std::make_unique<AreaPreparation>(archives, content);
+    retirement=std::make_shared<Retirement>();
 }
 const HostedGame *NativeRealmHost::find(GameHandle handle) const {
     for (const auto &[name, game] : games) { (void)name; if (game.handle == handle) return &game; }
@@ -36,9 +76,15 @@ NativeRealmService *NativeRealmHost::ticket(uint32_t hash, uint16_t token) const
     return nullptr;
 }
 void NativeRealmHost::retire(PlayerBinding binding) {
+    const auto started=std::chrono::steady_clock::now();
     host.remove(binding);
     if (!host.participants(binding.game).empty()) return;
-    host.destroy(binding.game); terrain.erase(binding.game);
+    const auto removed=std::chrono::steady_clock::now();
+    const bool deferred=retirement && retirement->retire(host,binding.game,terrain);
+    if(!deferred) host.destroy(binding.game);
+    const auto destroyed=std::chrono::steady_clock::now();
+    terrain.erase(binding.game);
+    const auto terrainReleased=std::chrono::steady_clock::now();
     std::erase_if(areaPreparations, [&](const auto &entry) {
         if (entry.first.first != binding.game) return false;
         areaPreparation->cancel(entry.second); return true;
@@ -48,6 +94,12 @@ void NativeRealmHost::retire(PlayerBinding binding) {
         areaPreparation->cancel(entry.second);return true;
     });
     std::erase_if(games, [&](const auto &entry) { return entry.second.handle == binding.game; });
+    const auto finished=std::chrono::steady_clock::now();
+    const auto ms=[](auto duration){return std::chrono::duration<double,std::milli>(duration).count();};
+    if(ms(finished-started)>=40) std::osyncstream(std::clog) << "[game-retire] game=" << binding.game.slot << ':' << binding.game.generation
+        << " total_ms=" << ms(finished-started) << " remove_ms=" << ms(removed-started)
+        << " destroy_ms=" << ms(destroyed-removed) << " terrain_ms=" << ms(terrainReleased-destroyed)
+        << " preparation_ms=" << ms(finished-terrainReleased) << " deferred=" << deferred << '\n';
 }
 void NativeRealmHost::installPreparedArea(GameHandle game, uint64_t request, PreparedWorldArea prepared) {
     auto &areas = terrain.at(game);

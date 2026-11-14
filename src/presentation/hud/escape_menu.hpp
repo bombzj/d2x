@@ -1,5 +1,6 @@
 #pragma once
 #include "presentation/graphics/primitives.hpp"
+#include "presentation/graphics/text_slider.hpp"
 #include "presentation/audio/audio_settings.hpp"
 #include "presentation/control_bindings.hpp"
 #include <array>
@@ -40,17 +41,18 @@ class EscapeMenu {
     std::vector<Binding> bindings_;
     std::map<uint16_t, std::string> keyNames_;
     std::array<std::string, 3> headers_, buttons_;
-    GpuAnimation marker_, border_, scroll_;
+    GpuAnimation marker_, border_;
+    const GpuAnimation &scroll_;
     int markerWidth_ = 0;
     const Art &art(std::string_view name) const;
     void image(std::string_view name, float x, float baseline, int alignment, bool enabled) const;
     void text(std::string_view value, float x, float baseline, int color) const;
     int textWidth(std::string_view value) const;
-    void drawControls(int selected, int first, int scrollPressed, const ControlBindings &, int action,
+    void drawControls(int selected, int first, const TextSliderGesture &, const ControlBindings &, int action,
                       int column, bool capturing, float elapsed, const PaletteBlendView &) const;
 
   public:
-    explicit EscapeMenu(Archives &);
+    EscapeMenu(Archives &, const GpuAnimation &scroll);
     int count(EscapeMenuPage) const;
     bool enabled(EscapeMenuPage, int row) const;
     Rectangle bounds(EscapeMenuPage, int row) const;
@@ -58,14 +60,13 @@ class EscapeMenu {
     bool sliderHit(int row, Vec mouse) const;
     int sliderValue(float mouseX) const;
     int controlScrollLimit() const;
-    Rectangle controlTrack() const;
-    int controlThumbHeight() const;
+    bool scrollControls(const FrameInput &, TextSliderGesture &, int &first) const;
     std::pair<int, int> controlAt(Vec mouse, int first) const;
     int controlRow(ControlAction) const;
     std::string keyName(uint16_t) const;
     std::string bindingName(const ControlBindings &, ControlAction) const;
     void draw(EscapeMenuPage, int selected, float elapsed, const std::array<int, 5> &automap, const AudioSettings &,
-              bool lighting, bool standardResolution, int controlScroll, int scrollPressed, const ControlBindings &, int action,
+              bool lighting, bool standardResolution, int controlScroll, const TextSliderGesture &, const ControlBindings &, int action,
               int column, bool capturing, const PaletteBlendView &) const;
 };
 } // namespace d2x

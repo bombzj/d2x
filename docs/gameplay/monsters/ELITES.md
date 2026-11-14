@@ -20,13 +20,17 @@ hosting准备MonUMod权重、排斥、类型限制、难度常数及不可变数
 | 元素／资源 | 元素附伤、Mana Burn、Spectral Hit持久元素stat；真实数值与随机由权威准备／执行 |
 | 多发 | Multishot与原NoMultiShot／NoUniqueMod限制，传播由missiles处理 |
 | 光环／诅咒 | 范围Amplify Damage、友方属性光环、Holy Fire／Freeze／Shock敌对脉冲 |
-| 传送／恢复约束 | 低生命Teleport、PreventHeal复验；UMod26独立准备真实A1动作时钟，不要求普通A1伤害规则，不由客户端推算实际落点或恢复 |
+| 传送／恢复约束 | 低生命Teleport、PreventHeal复验；UMod26不要求普通A1伤害规则，缺A1记录时保留原生无事件缺省时钟，不由客户端推算实际落点或恢复 |
 | 察觉／等待 | 首次察觉音效与原等待条件 |
 | 受击／死亡事件 | Lightning GH延时／冷却，Cold／Fire死亡事件，独立发生编号与时钟 |
 
 monsters持Spectral Hit累计stat、谱系与死亡连锁，effects/monster_enchantments持每单位光环／诅咒／受击与死亡事件时钟。死亡触发与光环使用不同发生编号，可靠队列重试保留首次计划，具体公共事务要求见[COMMON](COMMON.md)。
 
-UMod26按本地D2MOO `MONSTERUNIQUE_UMod26_Teleport`直接赋予MonTeleport并设置mode4，没有普通A1伤害攻击存在性的前置条件。`hosting/combat_content.cpp`先复用已有A1攻击时钟；缺普通攻击的FetishShaman等家族改经公共`prepareMonsterModeClock`读取当前MPQ的真实A1帧、速度及动作事件。此公共实现也供PD2既有`prepareNativeClock`委托调用，保持其选择事件及ENDANIM后备语义，不伪造时长或跳过词缀。
+UMod26按本地D2MOO `MONSTERUNIQUE_UMod26_Teleport`直接赋予MonTeleport并设置mode4，没有普通A1伤害攻击存在性的前置条件。`hosting/combat_content.cpp`先复用已有A1攻击时钟；缺普通攻击的FetishShaman等家族经公共`prepareMonsterModeClock`读取A1帧、速度及动作事件。若该入口失败，UMod26按token／A1／MonStats2.BaseW精确查询AnimData，不再以COF存在性拒绝；键不存在时采用原版缺省记录（2048帧、速度256、零事件），已有非法记录仍拒绝。此后备仅在UMod26准备入口，不放宽普通怪物资源校验。执行器`monsterActionEvent`按真实事件释放，零事件只结束动作，不在ENDANIM补发传送。
+
+当前MPQ的`suicideminion2`使用xy／hth，mA1为空，`XYA1HTH`不存在；`XYS1HTH`为26帧、速度160且含事件1，不能借用S1替代A1。D2MOO `AnimTbls::DATATBLS_LoadAnimDataD2／DATATBLS_GetAnimDataRecord`和`SUnit::sub_6FCBCE70`分别给出缺省记录、未命中返回及仅按事件安排MODECHANGE的依据。D2Decomp的`components/game/ai.cpp::teleport_mod`直接使用S1，与本机1.13c不一致，不采用该模式选择。
+
+本机1.13c静态核对：D2Game MD5 `978f6f74cd031bce6ecee602cd5988cc`、ImageBase `0x6fc20000`，RVA2420E–2421D为技能184设置mode4；D2Common MD5 `ee1238806ef6d6d9801d12a09d128fe1`、ImageBase `0x6fd50000`，RVA41E72–41E80清零记录，41EC7／41ED1写2048／256，41FBA–41FC4在动画键未命中时返回缺省记录。缺省时钟准备已接，尚未构建／运行核对自然出生、动作结束及休眠恢复组合；静态核对不等于原版实机行为认证。
 
 准备缺少真实资源或规则时，`PreparedModifiers.deferred` 保留原因并暂缓人口续办。`[monster-modifiers] blocked` 输出区域、tick、token、领队身份和原因，权威快照保留失败状态。永久内容失败的通用恢复仍待实现。
 

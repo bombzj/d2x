@@ -14,13 +14,16 @@ bool RemoteScene::Impl::hasVisualState(OnlineUnitKey key,std::string_view name) 
 const RemoteScene::Impl::Art *RemoteScene::Impl::character(const OnlineUnit &u, bool moving, bool town, SceneView &shared) {
     // PlrMsg::sub_6FC81C00 uses wire 19 for correction, not PLRMODE_DEAD.
     const bool death = playerDead(u);
-    const auto parts = portraits.decode(u, world(), death,{},hasVisualState(u.key,"holyshield"));
+    const auto parts = portraits.decode(u, world(), death, {}, hasVisualState(u.key,"holyshield"),
+        [this](const OnlineEquippedItem &item) {
+            return pd2 || !uiClients ? std::nullopt : uiClients->equipmentColor(item);
+        });
     if (!parts) {
         effectLimitations.insert("Original character equipment components unavailable for unit " + std::to_string(u.key.id));
         return nullptr;
     }
     if (!parts->equipmentEffectsKnown)
-        effectLimitations.insert("Per-component equipment coloring and ethereal transparency are not implemented; original body components remain visible");
+        effectLimitations.insert("Some equipment colors or ethereal transparency are unavailable; original body components remain visible");
     ActorAnimationRequest request; request.category = "chars"; request.appearance = *parts; request.shadow = true;
     if(const auto shift=stateColorShifts.find(u.key);shift!=stateColorShifts.end()) request.stateColorShift=shift->second;
     if (u.key.type==0 && u.key.id==playerId) request.fasterCast=shared.characterView().fasterCast;

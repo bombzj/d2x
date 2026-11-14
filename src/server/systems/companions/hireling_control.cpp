@@ -488,14 +488,15 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         }
         if(distanceToOwner<=1) {
             const unsigned radius=unsigned(minimumDistance==16?4:minimumDistance/2-1);
-            if(!walkNear(ports_,*body,p->position,radius,7) && !escapeFrom(ports_,*body,p->position,radius,7)) {
-                monsters::MoveRequest request{pet.actor,{body->area,area.generation,p->routeDestination},{},0,75,false};
+            const auto ownerPosition=p->position+area.definition.origin-bodyArea.definition.origin;
+            if(!walkNear(ports_,*body,ownerPosition,radius,7) && !escapeFrom(ports_,*body,ownerPosition,radius,7)) {
+                monsters::MoveRequest request{pet.actor,{body->area,bodyArea.generation,p->routeDestination+area.definition.origin-bodyArea.definition.origin},{},0,75,false};
                 request.pathSteps=1;request.pathDistance=40;ports_.monsters.requestMove(request);
             }
         } else {
             const bool move=limitedRandom(random,100)<5;
             ports_.monsters.commitCombatRandom(body->id,random);
-            if(move) walkNear(ports_,*body,p->position,unsigned(minimumDistance));
+            if(move) walkNear(ports_,*body,p->position+area.definition.origin-bodyArea.definition.origin,unsigned(minimumDistance));
         }
         pet.nextDecision=tick.tick+uint64_t(prepared.think);
     }

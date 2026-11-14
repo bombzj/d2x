@@ -66,6 +66,7 @@ void System::initialize(Object &object,uint64_t tick,uint64_t &random,uint64_t &
         rule.trap=limitedRandom(controlRandom,1000)<333?3:0;
     }
     if(rule.initialization==8) object.mode=2;
+    if(int(object.area)==40 && object.definition==318) object.resurrected=true;
     if(rule.initialization==45) {
         object.collisionReleased=object.mode==2;
         if(!object.mode) object.hazardAt=tick+20;
@@ -101,6 +102,7 @@ void System::initialize(Object &object,uint64_t tick,uint64_t &random,uint64_t &
             if(!object.mode) {object.mode=1;object.until=tick+rule.openingTicks-1;}
         } else if(ports_.areas.at(object.area).definition.town) object.mode=2;
     }
+    if(rule.initialization==19 && int(object.area)==40) object.hazardAt=tick+1;
     if(object.rule.initialization==22 || object.rule.initialization==24) object.hazardAt=tick+25;
     if(object.rule.initialization==22 && !object.mode) object.mode=object.rule.initialMode;
     if(object.rule.initialization==34 && limitedRandom(controlRandom,2)) object.mode=1;

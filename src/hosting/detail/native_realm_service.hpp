@@ -71,6 +71,7 @@ struct NativeRealmService {
         unsigned resourceInactivity{};
         bool pendingPlayerUpdate{};
         bool loadPending{};
+        bool initialLoadComplete{};
         RegionId resourceArea{};
         std::set<RegionId> areas;
         std::set<server::RoomView> rooms;
@@ -84,10 +85,11 @@ struct NativeRealmService {
         std::map<PlayerId, VisiblePlayer> visible;
         struct VisibleMonster { int nativeClass{-1}; Bytes motion; uint64_t movementRevision{},teleportRevision{},skillAction{}; std::set<int> states; std::map<int,std::vector<StatValue>> stateStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; std::optional<uint8_t> life; };
         std::map<EntityId, VisibleMonster> monsters;
-        struct HirelingProjection {EntityId actor;Bytes identity;std::map<uint8_t,uint32_t> stats;bool dead{};};
+        struct HirelingProjection {EntityId actor;std::map<uint8_t,uint32_t> stats;bool dead{};};
         HirelingProjection hireling;
         std::set<EntityId> missiles;
-        std::map<EntityId, Bytes> pets;
+        struct PetProjection { Bytes assignment, removal; };
+        std::map<EntityId, PetProjection> pets;
         std::map<EntityId, Bytes> petVitals;
         std::map<EntityId, uint64_t> groundItems, corpses;
         struct VisibleObject { uint64_t revision{}; int mode{}; Bytes assignment; };

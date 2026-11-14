@@ -533,7 +533,8 @@ target_link_libraries(d2x_remote_scene PUBLIC d2x_client d2x_world d2x_remote_cl
 
 add_library(d2x_presentation
   src/presentation/graphics/graphics.cpp src/presentation/graphics/world_art.cpp src/presentation/audio/audio.cpp
-  src/presentation/graphics/primitives.cpp src/presentation/graphics/original_menu.cpp
+  src/presentation/graphics/primitives.cpp src/presentation/graphics/original_menu.cpp src/presentation/graphics/classic_button.cpp
+  src/presentation/graphics/text_list.cpp src/presentation/graphics/text_slider.cpp
   src/presentation/scene_assets.cpp src/presentation/actors/actor_animation.cpp
   src/presentation/scene_view.cpp src/presentation/hud/skill_assets.cpp
   src/presentation/hud/hud_controls.cpp
@@ -569,6 +570,8 @@ add_library(d2x_presentation
   src/presentation/npc/inventory_interactions.cpp src/presentation/frontend/realm_frontend.cpp
   src/presentation/remote/remote_scene.cpp src/presentation/remote/remote_scene_units.cpp
   src/presentation/remote/remote_scene_effects.cpp
+  src/presentation/remote/remote_scene_critters.cpp
+  src/presentation/remote/scene_direction.cpp
   src/presentation/remote/remote_scene_pd2.cpp
   src/presentation/remote/remote_scene_pd2_dash.cpp
   src/presentation/remote/remote_scene_movement.cpp

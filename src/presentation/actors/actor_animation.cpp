@@ -4,6 +4,7 @@
 #include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/skills/weapon_volley.hpp"
 #include "content/monsters/monster_animation.hpp"
+#include "content/items/item_appearance.hpp"
 #include "content/world/object_mode.hpp"
 #include "gameplay/skills/cast_timing.hpp"
 #include "gameplay/skills/amazon_sequence.hpp"
@@ -41,6 +42,10 @@ std::string keyFor(int palette, const ActorAnimationRequest &request) {
     key+=":"+std::to_string(request.persistentCycle)+":"+std::to_string(request.sequenceStart)+":"+std::to_string(request.sequenceEnd)+":"+std::to_string(request.animationHoldFrame);
     key+=":"+std::to_string(request.stateColorShift);
     for (const auto &part : request.appearance.components) key += ":" + part;
+    for (size_t component = 0; component < request.appearance.componentColors.size(); ++component) {
+        const auto [group, color] = request.appearance.componentColors[component];
+        if (group) key += ":dye:" + std::to_string(component) + ":" + std::to_string(group) + ":" + std::to_string(color);
+    }
     return key;
 }
 } // namespace
@@ -80,8 +85,8 @@ std::optional<Vec> ActorAnimation::riderAnchor(float clock,float elapsed,Vec loo
     return sprite ? sprite->riderAnchor : std::nullopt;
 }
 float ActorAnimationState::elapsed(float now) const { return std::max(0.f, clock(now) - startedAt); }
-ActorAnimationCatalog::ActorAnimationCatalog(Archives &archives)
-    : archives_(archives), timing_(archives.read("data/global/animdata.d2")),
+ActorAnimationCatalog::ActorAnimationCatalog(Archives &archives, ItemPaletteCatalog &itemPalettes)
+    : archives_(archives), itemPalettes_(itemPalettes), timing_(archives.read("data/global/animdata.d2")),
       objects_(archives.read("data/global/excel/objects.txt")),
       sequences_(archives.read("data/global/excel/monseq.txt")) {
     for (size_t row = 0; row < objects_.rows().size(); ++row)
@@ -143,8 +148,11 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
     if (mode == "dd" && !archives_.contains(base + "cof/" + parts.token + mode + weapon + ".cof")) {
         mode = "dt"; finalFrame = true;
     }
+    std::array<const uint8_t *, 16> componentColors{};
+    for (size_t component = 0; component < componentColors.size(); ++component)
+        componentColors[component] = itemPalettes_.row(parts.componentColors[component]);
     result.animation = graphics.composite(request.category, parts.token, mode, weapon, &components,
-        colors ? &*colors : nullptr);
+        colors ? &*colors : nullptr, false, componentColors);
     if (!result.animation.completeComposite) { result.animation = {}; return result; }
     result.shadow = request.shadow;
     std::string timingKey = parts.token + mode + weapon;

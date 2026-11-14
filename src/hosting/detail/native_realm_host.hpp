@@ -43,6 +43,8 @@ struct NativeRealmHost {
     std::map<std::pair<GameHandle, uint64_t>, uint64_t> areaPreparations;
     std::map<std::pair<GameHandle,RegionId>,uint64_t> nearbyPreparations;
     std::set<NativeRealmService *> peers;
+    struct Retirement;
+    std::shared_ptr<Retirement> retirement;
     explicit NativeRealmHost(Archives &a, std::filesystem::path directory, ContentPreparation mode = ContentPreparation::OriginalRules)
         : archives(a), root(std::move(directory)), preparation(mode) {}
     void initialize();

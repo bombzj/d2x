@@ -9,6 +9,7 @@
 #include "persistence/save_codec.hpp"
 #include "resources/atomic_file.hpp"
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <random>
 #include <syncstream>
@@ -86,7 +87,9 @@ void NativeRealmService::discardReload() {
     reload.reset();
 }
 void NativeRealmService::close(bool save, bool keepReload) {
+    const auto started=std::chrono::steady_clock::now();
     if (save && !checkpoint()) throw std::runtime_error("Character save is awaiting confirmation");
+    const auto saved=std::chrono::steady_clock::now();
     if (binding) {
         const auto *room = shared.find(binding->game);
         if (room && room->tcpIp && room->tcpIpOwner == binding->player) {
@@ -100,7 +103,9 @@ void NativeRealmService::close(bool save, bool keepReload) {
             }
         }
     }
+    const auto guestsSaved=std::chrono::steady_clock::now();
     if (binding) shared.retire(*binding);
+    const auto retired=std::chrono::steady_clock::now();
     binding.reset(); lease.reset(); selected.reset();
     leavePending=false;
     hardcoreDeathSavedRevision.reset();
@@ -109,6 +114,12 @@ void NativeRealmService::close(bool save, bool keepReload) {
     gameName.clear(); gamePassword.clear();
     gameLadder = false;
     if (!keepReload) discardReload();
+    const auto finished=std::chrono::steady_clock::now();
+    const auto ms=[](auto duration){return std::chrono::duration<double,std::milli>(duration).count();};
+    if(ms(finished-started)>=40) std::osyncstream(std::clog) << "[game-leave] connection=" << diagnosticConnection
+        << " total_ms=" << ms(finished-started) << " save_ms=" << ms(saved-started)
+        << " guests_ms=" << ms(guestsSaved-saved) << " retire_ms=" << ms(retired-guestsSaved)
+        << " cleanup_ms=" << ms(finished-retired) << '\n';
 }
 void NativeRealmService::endGame(bool save, bool keepReload) {
     const bool entered = peer.phase == GamePhase::Entered;

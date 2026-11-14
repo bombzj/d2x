@@ -73,7 +73,7 @@ void NativeRealmService::publishAreas(RegionId region, std::vector<Bytes> packet
         sendGame(encodeServerPacket(ServerMessage::Environment,[&](auto &out) {
             out.u32(uint32_t(environment->cycle));out.u32(uint32_t(environment->ticks));out.u8(environment->eclipse?1:0);
         }));
-        peer.areas.clear(); peer.rooms.clear(); peer.warps.clear(); peer.visible.clear(); peer.monsters.clear(); peer.missiles.clear(); peer.pets.clear(); peer.petVitals.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcQuestAlerts.clear(); peer.shopItems.clear(); peer.gambleShopItems.clear(); peer.shopOwner = {}; peer.states.clear();
+        peer.areas.clear(); peer.rooms.clear(); peer.warps.clear(); peer.visible.clear(); peer.monsters.clear(); peer.missiles.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcQuestAlerts.clear(); peer.shopItems.clear(); peer.gambleShopItems.clear(); peer.shopOwner = {}; peer.states.clear();
     }
     std::set<RegionId> desired{region};
     const auto rooms = host.visibleRooms(*binding);
@@ -137,6 +137,7 @@ void NativeRealmService::publishLoadComplete() {
             out.u8(0);out.u8(0);out.u32(wireId(player->actor.id));out.u32(0);
         })});
     peer.loadPending=false;
+    peer.initialLoadComplete=true;
 }
 void NativeRealmService::publishRoomRemovals() {
     const auto rooms = host.visibleRooms(*binding);

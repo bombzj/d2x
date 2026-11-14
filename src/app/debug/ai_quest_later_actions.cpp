@@ -169,7 +169,19 @@ bool DebugAi::Impl::Definitions::itemHasType(std::string_view code,std::string_v
 }
 bool DebugAi::Impl::questSmashForge(Context &c,const QuestStep &step) {
     const auto now=Clock::now();const auto flags=questFlags(c,QuestId::HellsForge);
-    if(questState.questRun.materialPhase>=3) {
+    const auto forge=step.target?find(c,*step.target,true):std::nullopt;
+    if(!questState.questRun.forgeStrikingStopped && ((flags && (*flags&3)) ||
+        (forge && (forge->mode==3 || forge->mode==4)) ||
+        (questState.questRun.materialPhase && !owned(c,"hfh")))) {
+        questState.questRun.forgeStrikingStopped=true;cancelWalk(c);
+        note("quest-forge-striking-stopped","Observed smash mode, hammer removal or personal completion");
+    }
+    if(questState.questRun.forgeStrikingStopped && !questState.questRun.pending) {
+        QuestPending pending;pending.action=QuestPending::Action::Object;
+        if(forge) {pending.unit=forge->key;pending.assignment=forge->assignmentRevision;}
+        pending.deadline=now+std::chrono::seconds(40);questState.questRun.pending=pending;
+    }
+    if(questState.questRun.materialPhase>=3 || questState.questRun.forgeStrikingStopped) {
         if(!questState.questRun.pending) throw std::runtime_error("Forge hit sequence lost its submitted-result contract");
         unsigned gems=0,runes=0;
         const auto object=step.target?find(c,*step.target,true):std::nullopt;
@@ -183,11 +195,19 @@ bool DebugAi::Impl::questSmashForge(Context &c,const QuestStep &step) {
         }
         if(now>=questState.questRun.pending->deadline) throw std::runtime_error("Forge result incomplete: pending/reward flag, hammer removal and four gems / one rune were not all observed");
         if(!questState.questRun.pending->statusRequested && c.control.refreshQuests()) questState.questRun.pending->statusRequested=true;
-        wait("quest-forge-result","Observing actual hammer consumption and the native sequential reward drops");return false;
+        if(questState.questRun.forgeStrikingStopped || questState.questRun.materialPhase>=6 ||
+            now<questState.questRun.sweepReady || !forge ||
+            questState.questRun.pending->unit!=forge->key || forge->assignmentRevision!=questState.questRun.pending->assignment) {
+            wait("quest-forge-result","Observing actual hammer consumption and the native sequential reward drops");return false;
+        }
     }
     if(now<questState.questRun.sweepReady) {wait("quest-forge-input","Waiting between native hammer operations");return false;}
-    const auto forge=step.target?find(c,*step.target,true):std::nullopt;
     if(!forge) {if(!step.target || !approachKnown(c,*step.target)) explore(c,"actual Hellforge");return false;}
+    const bool equipped=std::any_of(c.observation.read().world.items.begin(),c.observation.read().world.items.end(),[&](const auto &entry) {
+        const auto &item=entry.second;return item.code=="hfh" && item.mode==1 && item.body==4 &&
+            onlineItemOwnedBy(item,c.observation.read().load.playerUnitId);
+    });
+    if(!equipped) {wait("quest-forge-equipment","Waiting for the actual equipped quest hammer before striking");return false;}
     int mode=forge->mode.value_or(0);
     const auto milliseconds=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
     const float age=forge->actionReceivedMilliseconds && milliseconds>=forge->actionReceivedMilliseconds?

@@ -283,10 +283,22 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
             stage("enchantment teleport");
             server::MonsterAttackRule teleport;
             if(const auto attack=rule.attacks.find(4);attack!=rule.attacks.end()) teleport=attack->second;
-            // UMod26 assigns MonTeleport in mode4 independently of an A1
-            // damage attack. Caster families may have only skill markers
-            // in A1; use their real action clock rather than rejecting them.
-            else if(!prepareMonsterModeClock(archives,animations,*record,"A1",teleport,true)) return {};
+            else if(!prepareMonsterModeClock(archives,animations,*record,"A1",teleport,true)) {
+                std::string key=record->token+"a1"+record->baseWeapon;
+                for(auto &character:key) character=char(std::toupper(static_cast<unsigned char>(character)));
+                const AnimDataRecord nativeDefault{2048,256,{}};
+                const auto *animation=animations.find(key);
+                if(!animation) animation=&nativeDefault;
+                if(!animation->frames || animation->frames>2048 || animation->speed<=0 || animation->speed>65535) return {};
+                teleport.animation=AnimationTiming{int(animation->frames),animation->speed};
+                teleport.duration=monsterAnimationTicks(*teleport.animation);
+                teleport.animationFlags.resize(animation->frames);
+                std::copy_n(animation->frameFlags.begin(),std::min(size_t(animation->frames),animation->frameFlags.size()),teleport.animationFlags.begin());
+                const auto marker=std::ranges::find_if(teleport.animationFlags,[](uint8_t flag){return flag==1 || flag==2 || flag==4;});
+                teleport.animationAction=int(marker-teleport.animationFlags.begin());
+                teleport.animationEvent=marker==teleport.animationFlags.end()?1:*marker;
+                teleport.release=std::clamp(animationFrameTicks(teleport.animationAction,animation->speed),1,teleport.duration);
+            }
             teleport.action=server::MonsterAttackRule::Action::Teleport;teleport.missile.reset();teleport.rank=1;
             rule.skillActions.emplace(184,std::move(teleport));
             rule.preventHealState=data.states.at("preventheal").definition.id;

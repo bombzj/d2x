@@ -481,7 +481,7 @@ bool RealmSession::hireling_service(OnlineHirelingAction action, std::optional<u
     try {
         Writer out;
         if(action==OnlineHirelingAction::List) {out.u8(0x38);out.u32(3);out.u32(conversation->source);out.u32(*state.view.load.playerUnitId);}
-        else if(action==OnlineHirelingAction::Hire) {out.u8(0x36);out.u32(conversation->source);out.u32(*name);}
+        else if(action==OnlineHirelingAction::Hire) {out.u8(0x36);out.u32(conversation->source);out.u16(*name);out.u16(0);}
         else {out.u8(0x62);out.u32(conversation->source);}
         state.sent(state.gs,out.release());
         if(action==OnlineHirelingAction::List) {service.offers.clear();service.listReceived=false;}

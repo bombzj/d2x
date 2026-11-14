@@ -29,7 +29,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             server::companions::PreparedHirelingList prepared;prepared.source=source;
             try {
                 for(const auto &entry:source.entries) {
-                    const auto resolved=resolveHirelingOffer(data.hirelings,source.seller,source.difficulty,source.level,entry.seed,entry.slot);
+                    const auto resolved=resolveHirelingOffer(data.hirelings,source.seller,source.difficulty,source.level,entry.seed,entry.slot,!data.pd2Host);
                     if(!resolved) throw std::runtime_error("Missing original hireling candidate rule");
                     const auto &offer=*resolved;
                     const auto definition=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry){return entry.sourceRow==offer.sourceRow;});
@@ -37,7 +37,10 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                     if(definition==data.hirelings.end() || name<0 || name>UINT16_MAX || name!=entry.name) throw std::runtime_error("Missing original hireling candidate");
                     prepared.offers.push_back({uint16_t(name),{offer.sourceRow,definition->classId,offer.nameKey,offer.level,float(offer.stats.life),offer.stats.experience,offer.seed},offer.stats.price});
                 }
-            } catch(const std::exception &error) {prepared.deferred=error.what();prepared.offers.clear();}
+            } catch(const std::exception &error) {
+                prepared.deferred=error.what();prepared.offers.clear();
+                std::clog<<"[hireling-list] seller="<<source.seller<<" difficulty="<<source.difficulty<<" deferred="<<prepared.deferred<<'\n';
+            }
             host.installHirelingList(game,std::move(prepared));
         }
     }

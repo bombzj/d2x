@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "world/native_path_step.hpp"
 #include "server/player_store.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/travel.hpp"
@@ -92,7 +93,7 @@ DomainResult<> System::useTeleportPad(const ActorContext &actor,EntityId sourceI
     if(!published) return {published.status,{}};
     auto &moving=ports_.players.players_.at(actor.player);
     moving.area=plan.landing.area;moving.position=plan.landing.position;
-    moving.route.clear();moving.pathStep.reset();moving.knockback.reset();moving.moving=false;moving.runningNow=false;
+    moving.route.clear();NativePathStep::reset(moving.pathStep);moving.knockback.reset();moving.moving=false;moving.runningNow=false;
     moving.movementTarget.reset();moving.movementArrival.reset();moving.routeDestination=moving.position;
     moving.routeObstacles=destination->definition.collision.obstacleRevision;
     moving.lastTeleportPosition=moving.position+destination->definition.origin;++moving.teleportRevision;

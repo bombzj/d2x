@@ -1274,6 +1274,7 @@ DebugExplorationMemory::Plan DebugNavigationSearch::observedRoute(uint16_t area,
             [&](const auto &p){return p.id==plan.passage;});
         const auto end=plan.points.back();
         return passage!=memory->passages.end() && passage->deferred!=passage->evidence &&
+            (!passage->road || (memory->followPaths && !target)) &&
             std::find(passage->approaches.begin(),passage->approaches.end(),
                 DebugExplorationMemory::Cell{end.x,end.y})!=passage->approaches.end();
     };
@@ -1371,11 +1372,12 @@ DebugExplorationMemory::Plan DebugNavigationSearch::observedRoute(uint16_t area,
             {"approaches",approaches?nlohmann::json(*approaches):nlohmann::json(nullptr)},
             {"heading",snapshot->heading?nlohmann::json(*snapshot->heading):nlohmann::json(nullptr)},
             {"commitment",snapshot->commitment?nlohmann::json(*snapshot->commitment):nlohmann::json(nullptr)},
+            {"followPaths",snapshot->followPaths},{"roadTiles",snapshot->paths},{"checkedRoadTiles",snapshot->pathChecked},
             {"expectedBounds",snapshot->expectedBounds?nlohmann::json(*snapshot->expectedBounds):nlohmann::json(nullptr)}};
         input["passages"]=nlohmann::json::array();
         for(const auto &p:snapshot->passages) input["passages"].push_back({{"id",p.id},{"evidence",p.evidence},
             {"deferred",p.deferred?nlohmann::json(*p.deferred):nlohmann::json(nullptr)},
-            {"units",p.units},{"direction",p.direction},{"boundary",p.boundary},{"approaches",p.approaches}});
+            {"units",p.units},{"road",p.road},{"direction",p.direction},{"boundary",p.boundary},{"approaches",p.approaches}});
         input["walked"]=nlohmann::json::array();
         for(const auto &[from,edges]:snapshot->walked) input["walked"].push_back({{"from",from},{"to",edges}});
         input["transports"]=nlohmann::json::array();

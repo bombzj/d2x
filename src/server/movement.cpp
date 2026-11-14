@@ -1,4 +1,5 @@
 #include "movement.hpp"
+#include "world/native_path_step.hpp"
 #include "server/runtime/skill_rules.hpp"
 #include "area_store.hpp"
 #include "player_store.hpp"
@@ -46,7 +47,7 @@ std::optional<Vec> movementPoint(const AreaStore &areas, RegionId from, RegionId
 CommandStatus invalidCoordinateDestination(PlayerState &player,const AreaState &area,const Grid &grid,Vec target) {
     constexpr Vec center{.5f,.5f};
     player.routeDestination=target;
-    player.position=player.pathStep.stop(player.position+center)-center;
+    player.position=NativePathStep::stop(player.pathStep, player.position+center)-center;
     applyMovement(player,area,{MovementAction::Stop,{},false},grid);
     return CommandStatus::InvalidDestination;
 }
@@ -93,7 +94,7 @@ DomainResult<bool> MovementSystem::leapStep(const ActorContext &actor,Vec target
     AreaStore::CollisionMove movement{ports_.areas,p.actor,p.area};
     const auto grid=ports_.spatial.movementGrid(p.area,movement);
     const Vec center{.5f,.5f};
-    const auto step=p.pathStep.advance(grid,p.position+center,target+center,speed*TickContext::seconds,
+    const auto step=NativePathStep::advance(p.pathStep, grid,p.position+center,target+center,speed*TickContext::seconds,
         collision.value_or(MovementCollisionRule{0,2}));
     p.route.clear();p.position=step.position-center;movement.commit();
     ports_.areas.moveRoomUnit(p.actor,p.area,p.position);
@@ -113,7 +114,7 @@ DomainResult<bool> MovementSystem::chargeStep(const ActorContext &actor,Vec targ
     AreaStore::CollisionMove movement{ports_.areas,p.actor,p.area};
     const auto grid=ports_.spatial.movementGrid(p.area,movement);
     const Vec center{.5f,.5f};
-    const auto step=p.pathStep.advance(grid,p.position+center,destination+center,speed*TickContext::seconds,movementCollision(p));
+    const auto step=NativePathStep::advance(p.pathStep, grid,p.position+center,destination+center,speed*TickContext::seconds,movementCollision(p));
     p.route.clear();p.position=step.position-center;movement.commit();
     ports_.areas.moveRoomUnit(p.actor,p.area,p.position);p.look=delta.unit();p.moving=step.travelled>0;p.runningNow=true;
     skillSteps_[actor.player]=actor.tick;
@@ -257,7 +258,7 @@ DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext ti
                 AreaStore::CollisionMove collisionMove{ports.areas,player.actor,player.area};
                 const auto grid=ports.spatial.movementGrid(player.area,collisionMove);
                 const Vec center{.5f,.5f};
-                const auto step=player.pathStep.advance(grid,player.position+center,
+                const auto step=NativePathStep::advance(player.pathStep, grid,player.position+center,
                     player.knockback->destination-area.definition.origin+center,1.f,movementCollision(player));
                 player.position=step.position-center;
                 const ActorContext actor{player.player,player.actor,player.area,area.generation,player.locomotionSequence,tick.tick};
@@ -269,7 +270,7 @@ DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext ti
                 collisionMove.commit();
                 if(facing.x!=0 || facing.y!=0) player.look=facing.unit();
                 if(step.reached || step.blocked) {
-                    player.position=player.pathStep.stop(player.position+center)-center;
+                    player.position=NativePathStep::stop(player.pathStep, player.position+center)-center;
                     player.knockback.reset();
                     ports.effects.finishKnockback(player.actor,tick.tick);
                 } else player.knockback->position=player.position+ports.areas.at(player.area).definition.origin;
@@ -412,7 +413,7 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
     if (!grid.navigationContains(target + center))
         return command.coordinateRequest?invalidCoordinateDestination(player,area,grid,target):CommandStatus::InvalidDestination;
     if(arrival && nativeUnitDistance(player.position,2,arrival->pos,arrival->collisionWidth)==0) {
-        player.position=player.pathStep.stop(player.position+center)-center;
+        player.position=NativePathStep::stop(player.pathStep, player.position+center)-center;
         return applyMovement(player,area,{MovementAction::Stop,{},false},grid);
     }
     // PlrModes::StartXY/StartID -> sub_6FC7F600 runs D2Common_10142
@@ -427,7 +428,7 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
         arrival?arrival->doorOrientation:std::nullopt);
     for(auto &point:route) point=point-center;
     if (route.empty()) {
-        player.position=player.pathStep.stop(player.position+center)-center;
+        player.position=NativePathStep::stop(player.pathStep, player.position+center)-center;
         player.route.clear(); player.moving = false;player.runningNow=false;
         player.movementTarget.reset();player.movementArrival.reset();
         return CommandStatus::NoRoute;
@@ -468,7 +469,7 @@ void advanceMovement(PlayerState &player, float seconds,const Grid &grid,const S
         }
         const Vec delta = player.route.front() - player.position;
         constexpr Vec center{.5f,.5f};
-        const auto step = player.pathStep.advance(grid, player.position + center,
+        const auto step = NativePathStep::advance(player.pathStep, grid, player.position + center,
             player.route.front() + center, remaining,movementCollision(player));
         player.look = delta.unit();
         player.moving = player.moving || step.travelled > 0;
@@ -481,7 +482,7 @@ void advanceMovement(PlayerState &player, float seconds,const Grid &grid,const S
     }
     if(player.route.empty()) {
         constexpr Vec center{.5f,.5f};
-        player.position=player.pathStep.stop(player.position+center)-center;
+        player.position=NativePathStep::stop(player.pathStep, player.position+center)-center;
         player.moving=false;player.runningNow=false;
     }
 }

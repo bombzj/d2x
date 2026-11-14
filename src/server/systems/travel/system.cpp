@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "world/native_path_step.hpp"
 #include "server/runtime/frame_facts.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/travel.hpp"
@@ -91,7 +92,7 @@ DomainResult<> System::walked(const ActorContext &actor) {
     const Vec offset = source->definition.origin - destination->definition.origin;
     auto &moving = ports_.players.players_.at(actor.player);
     moving.area = destination->definition.id;
-    moving.position = moving.pathStep.translate(moving.position + center, offset) - center;
+    moving.position = NativePathStep::translate(moving.pathStep, moving.position + center, offset) - center;
     ports_.areas.moveRoomUnit(moving.actor,moving.area,moving.position);
     for (auto &point : moving.route) point = point + offset;
     moving.routeDestination = moving.routeDestination + offset;
@@ -452,7 +453,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         ports_.world.changeClientRoom(player.player,tick.tick);
         if(transition.from!=transition.to) ports_.quests.onLevelEntered(transition.to);
         if(cinematic || (int(transition.from)==132 && int(transition.to)==109 && transition.kind==Kind::QuestObject)) player.nativeBusy=true;
-        player.pathStep.reset();
+        NativePathStep::reset(player.pathStep);
         player.knockback.reset();
         player.routeRunning = player.running; player.moving = !player.route.empty();
         player.movementTarget.reset();player.movementArrival.reset();

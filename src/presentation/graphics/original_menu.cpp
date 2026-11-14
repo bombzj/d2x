@@ -1,4 +1,6 @@
 #include "original_menu.hpp"
+#include "classic_button.hpp"
+#include "presentation/world/palette_blend_view.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
@@ -55,6 +57,20 @@ void OriginalMenu::label(std::string_view text, Rectangle box, int color) const 
     const auto &painter = color == 3 ? selectedFont_ : color == 4 ? titleFont_ : font_;
     const float x = box.x + int((box.width-measure(text)+1)/2) + 1;
     painter.drawBaseline(text, {x, box.y+11}, 1);
+}
+void OriginalMenu::drawListFrame(Rectangle outer, Rectangle list, const PaletteBlendView *blend) const {
+    if (blend) blend->drawRectangle(outer, BLACK, true);
+    else DrawRectangleRec(outer, {0, 0, 0, 128});
+    drawBorder(outer);
+    drawBorder(list);
+}
+Rectangle OriginalMenu::buttonRow(Rectangle window, float baseline) {
+    // 1.13c D2Client 534B0: the actionable text row uses the interior of the window.
+    return {window.x + 16, baseline - 10, std::max(0.f, window.width - 31), 14};
+}
+void OriginalMenu::drawButton(std::string_view text, Rectangle window, float baseline, Vec mouse) const {
+    const int color = classicButtonHovered(buttonRow(window, baseline), mouse) ? 3 : 0;
+    label(text, {window.x, baseline - 11, window.width, 15}, color);
 }
 void OriginalMenu::draw(Rectangle box, std::string_view title, std::span<const std::string> options,
     int selected, std::string_view status) const {

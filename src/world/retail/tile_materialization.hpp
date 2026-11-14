@@ -53,6 +53,7 @@ struct RetailTileRoom {
     bool singleLogicalRegion{};
     bool loaded{};
     std::optional<uint64_t> initialActiveRandom; // DUNGEON_AllocRoom's separate seed.
+    uint64_t activationSerial{};
 };
 struct RetailRoomCollision {
     int x{}, y{}, width{}, height{}; // subtiles
@@ -67,6 +68,7 @@ class RetailTileMaterializer {
     std::map<size_t,RetailMaterializedTile> tiles_;
     size_t nextTile_{};
     std::map<size_t, RetailRoomCollision> collisions_;
+    uint64_t activationSerial_{};
     std::map<RetailPresetKey, std::vector<RetailPresetUnit>> presetUnits_;
     std::map<int,int> logicalCounters_;
     bool failed_{};

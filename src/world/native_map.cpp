@@ -1,4 +1,5 @@
 #include "native_map.hpp"
+#include "world/room_activation_snapshot.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <limits>
@@ -432,6 +433,10 @@ NativeMapSnapshot NativeMapGenerator::snapshot(int currentLevel, bool continuous
     result.collision.assign(result.map.grid.blocked.size(), 0xffff);
     auto &terrain = result.map.terrain;
     terrain.preparedRooms = true;
+    auto roomActivation = std::make_shared<RoomActivationSnapshot>();
+    result.map.roomActivation = roomActivation;
+    for (const auto index : activation_.activeRooms())
+        roomActivation->activeSerials.insert(tiles_.rooms().at(index).activationSerial);
     terrain.path = terrain.name = "native-act" + std::to_string(act_ + 1) + "/" + std::to_string(mapSeed_);
     terrain.data.act = act_;
     terrain.data.width = right - x + 1; terrain.data.height = bottom - y + 1;
@@ -454,6 +459,7 @@ NativeMapSnapshot NativeMapGenerator::snapshot(int currentLevel, bool continuous
             level.generation == GenerationKind::Maze || (r.preset && (r.flags & 0x00080000) != 0)});
         terrain.rooms.push_back({room.level, r.x - x, r.y - y, r.width, r.height,
             r.preset, r.file, r.mapX - x, r.mapY - y, {}, r.flags, {}, {}, room.singleLogicalRegion});
+        roomActivation->rooms.push_back({room.activationSerial, room.initialActiveRandom});
         auto &output = terrain.rooms.back();
         output.logicalCells = room.logicalCells;
         for (const auto &region : room.logicalRegions)

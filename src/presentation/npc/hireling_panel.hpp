@@ -1,6 +1,8 @@
 #pragma once
 #include "gameplay/items/equipment_rules.hpp"
 #include <array>
+#include <string>
+#include <vector>
 #include "presentation/hud/classic_panel.hpp"
 
 namespace d2x {
@@ -12,11 +14,22 @@ Rectangle hirelingLifeBounds(float offset = 0);
 Rectangle hirelingPortraitHitBounds(float offset = 0);
 inline constexpr float hirelingPortraitHoverSeconds = .7f;
 Rectangle hirelingPanelBounds();
-Rectangle hirelingArtRect(float x, float y, float width, float height);
-Rectangle hirelingClose();
+Rectangle hirelingPanelRect(float x, float y, float width, float height);
+Rectangle hirelingCloseArt();
+Rectangle hirelingCloseHit();
 Rectangle hirelingListBounds();
-Rectangle hirelingListRow(int row);
-Rectangle hirelingListCancel();
-Rectangle hirelingScrollBounds();
-inline constexpr int hirelingVisibleRows = 8;
+Rectangle hirelingListContentBounds();
+float hirelingListCancelBaseline();
+int hirelingRowExtent(int lineCount);
+
+struct HirelingListLayout {
+    struct Row { int offer; std::vector<std::string> lines; };
+    std::vector<int> lineCounts;
+    std::vector<Row> rows;
+    void clear(size_t expectedRows);
+    void add(int offer, std::vector<std::string> lines);
+    int lastPageFirst() const;
+    int pageSize(int first) const;
+    int hit(int first, Vec mouse) const;
+};
 } // namespace d2x

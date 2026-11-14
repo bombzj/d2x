@@ -5,6 +5,7 @@
 #include <functional>
 #include <span>
 #include <string>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 namespace d2x {
@@ -18,6 +19,9 @@ class FrameProfile {
     std::function<nlohmann::json()> context_;
     uint64_t events_{},slow_{},bytes_{};
     double maximum_{};
+    std::vector<double> intervalSums_,intervalMaxima_;
+    uint64_t intervalFrames_{},intervalOverBudget_{},intervalSlow_{};
+    double intervalTotal_{},intervalMaximum_{};
     static nlohmann::json processSample();
   public:
     explicit FrameProfile(const std::string &,std::function<nlohmann::json()>);

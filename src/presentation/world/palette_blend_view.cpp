@@ -497,7 +497,8 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
         // DT S2 uses mode 2; treating every non-Screen layer as opaque loses it.
         for(const auto &layer:image->layers) {
             Sprite part;part.cell=layer.cell;part.texture=layer.texture;part.indexedTexture=layer.indexedTexture;
-            part.translation=image->translation;part.x=layer.x;part.y=layer.y;
+            part.translation=layer.translation ? layer.translation : image->translation;
+            part.x=layer.x;part.y=layer.y;
             auto mode=composition;
             if(mode==PaletteComposition::Normal) {
                 switch(layer.drawMode) {

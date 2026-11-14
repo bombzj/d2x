@@ -48,31 +48,15 @@ bool SceneView::adjustGameMenuSound(const FrameInput &input) {
     if (settings != view_.audio) applyAudioSettings(settings);
     return consumed;
 }
-void SceneView::scrollGameMenu(const FrameInput &input) {
-    view_.gameMenuScrollPressed = -1;
-    if (view_.gameMenuPage != EscapeMenuPage::Controls) return;
+bool SceneView::scrollGameMenu(const FrameInput &input) {
+    if (view_.gameMenuPage != EscapeMenuPage::Controls) return false;
+    auto &first = view_.gameMenuControlScroll;
+    if (assets_.escapeMenu.scrollControls(input, view_.controlsSlider, first)) return true;
     const int limit = assets_.escapeMenu.controlScrollLimit();
-    const auto track = assets_.escapeMenu.controlTrack();
-    int delta = -int(input.wheel) + input.menuDelta + input.pageDelta * 14;
-    if (input.entryHome) view_.gameMenuControlScroll = 0;
-    if (input.entryEnd) view_.gameMenuControlScroll = limit;
-    const Rectangle up{track.x, track.y - 13, track.width, 13};
-    const Rectangle down{track.x, track.y + track.height, track.width, 13};
-    if (input.insideViewport && input.leftHeld) {
-        if (CheckCollisionPointRec(rv(input.mouse), up)) view_.gameMenuScrollPressed = 0;
-        else if (CheckCollisionPointRec(rv(input.mouse), down)) view_.gameMenuScrollPressed = 1;
-    }
-    if (input.insideViewport && input.leftPressed) {
-        if (CheckCollisionPointRec(rv(input.mouse), up)) --delta;
-        else if (CheckCollisionPointRec(rv(input.mouse), down)) ++delta;
-        else if (CheckCollisionPointRec(rv(input.mouse), track)) view_.gameMenuScrollDragging = true;
-    }
-    if (view_.gameMenuScrollDragging && input.leftHeld) {
-        const float height = float(assets_.escapeMenu.controlThumbHeight());
-        const auto fraction = std::clamp((input.mouse.y - track.y - height / 2) / (track.height - height), 0.f, 1.f);
-        view_.gameMenuControlScroll = int(std::round(fraction * limit));
-    } else view_.gameMenuControlScroll = std::clamp(view_.gameMenuControlScroll + delta, 0, limit);
-    if (!input.leftHeld || input.leftReleased) view_.gameMenuScrollDragging = false;
+    if (input.entryHome) first = 0;
+    if (input.entryEnd) first = limit;
+    first = std::clamp(first - int(input.wheel) + input.menuDelta + input.pageDelta * 14, 0, limit);
+    return false;
 }
 bool SceneView::editGameMenuControls(const FrameInput &input) {
     if (view_.gameMenuPage != EscapeMenuPage::Controls) return false;
@@ -129,7 +113,7 @@ void SceneView::drawGameMenu() const {
         view_.automapFade == AutomapFade::Everything ? 2 : 3,
         int(view_.automapCenterWhenCleared), int(view_.automapParty), int(view_.automapNames)};
     assets_.escapeMenu.draw(view_.gameMenuPage, view_.gameMenuSelected, view_.gameMenuTime,
-                            values, view_.audio, view_.lighting, view_.standardResolution, view_.gameMenuControlScroll, view_.gameMenuScrollPressed,
+                            values, view_.audio, view_.lighting, view_.standardResolution, view_.gameMenuControlScroll, view_.controlsSlider,
                             view_.controlDraft, view_.controlSelected, view_.controlColumn, view_.controlCapturing, *blend);
 }
 void SceneView::drawHelp() const {
@@ -233,7 +217,7 @@ void SceneView::drawDeathNotice() const {
     }
 }
 float SceneView::partyPortraitOffset() const {
-    return view_.portraitsVisible && worldViewport().x == 0 && !view_.capturesWorldInput() ?
+    return hudPortraitsVisible() ?
         float(party_.portraitCount()) * 56 * classicPanelScale() : 0;
 }
 void SceneView::drawBhOverlay() const {
@@ -344,9 +328,9 @@ void SceneView::drawUi(Vec mouse) const {
     drawDurabilityWarning();
     drawHostilityWarning();
     drawQuestNotice();
-    if (view_.portraitsVisible && worldViewport().x == 0 && !view_.capturesWorldInput()) {
-        const int palette = std::clamp(mapView().palette, 0, 4);
-        const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
+    const int palette = std::clamp(mapView().palette, 0, 4);
+    const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
+    if (hudPortraitsVisible()) {
         if (blend) party_.drawPortraits(15, *blend);
     }
     drawHirelingPortrait(mouse);
@@ -375,7 +359,7 @@ void SceneView::drawUi(Vec mouse) const {
     if (view_.npcMenu) drawNpcMenu(mouse);
     drawHirelingList(mouse);
     if (!view_.dialogue.empty()) drawNpcDialogue();
-    if (!view_.playerTradeBlocking) chat_.draw(worldViewport());
+    if (!view_.playerTradeBlocking) chat_.draw(worldViewport(), mouse, blend);
     const bool itemCursor = drawInventoryCursor(mouse);
     drawGameMenu();
     tradeInvite_.draw(worldViewport());

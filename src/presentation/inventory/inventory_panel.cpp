@@ -134,7 +134,7 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
         for (size_t index = 0; index < slots.size(); ++index) {
             const auto &box = slots[index];
             if (box[0] < 0) continue;
-            auto bounds = hirelingArtRect(float(box[0]), float(box[1]),
+            auto bounds = hirelingPanelRect(float(box[0]), float(box[1]),
                                            float(box[2] - box[0]), float(box[3] - box[1]));
             if (!CheckCollisionPointRec(rv(mouse), bounds)) continue;
             drop.bounds = bounds;

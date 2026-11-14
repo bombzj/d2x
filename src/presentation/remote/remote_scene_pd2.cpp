@@ -1,4 +1,5 @@
 #include "remote_scene_impl.hpp"
+#include "world/native_path_step.hpp"
 #include "gameplay/skills/cast_timing.hpp"
 #include "gameplay/actions/timing.hpp"
 #include "gameplay/skills/projectile_path.hpp"
@@ -182,7 +183,7 @@ bool RemoteScene::Impl::displayPd2MonsterCharge(const OnlineUnit &u,Motion &m,co
         run.destination=*destination;run.velocity=float(raw)*25.f/4096.f;run.nextTick=time+NativePathStep::seconds;run.moving=true;
         const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
         if(u.actionReceivedMilliseconds && now>=u.actionReceivedMilliseconds) run.nextTick-=float(now-u.actionReceivedMilliseconds)/1000.f;
-        m.scriptedSequence=std::move(run);m.route.clear();m.goal.reset();m.pathStep.reset();m.correction={};m.correctionLeft=0;
+        m.scriptedSequence=std::move(run);m.route.clear();m.goal.reset();NativePathStep::reset(m.pathStep);m.correction={};m.correctionLeft=0;
     }
     auto &run=*m.scriptedSequence;
     const int eventFrame=!sequenced || sequence->second.front()?7:-1; // Retail 2B6E0 reads the first MonSeq event byte repeatedly.
@@ -199,14 +200,14 @@ bool RemoteScene::Impl::displayPd2MonsterCharge(const OnlineUnit &u,Motion &m,co
                 const Vec center{.5f,.5f};m.route.clear();
                 const auto path=grid.nativeUnitPath(m.position-origin+center,*destination-origin+center,2,30,collision,u.destinationUnit.has_value());
                 for(const auto point:path) m.route.push_back(point+origin-center);
-                m.goal=*destination;m.pathStep.reset();
+                m.goal=*destination;NativePathStep::reset(m.pathStep);
             }
             bool contact=false,retargeted=false;
             if(u.destinationUnit) if(const auto target=world().units.find(*u.destinationUnit);target!=world().units.end()) contact=inReach(target->second);
             bool stopped=m.route.empty();
             if(!contact && !stopped) {
                 const Vec center{.5f,.5f},next=m.route.front();m.look=next-m.position;
-                const auto step=m.pathStep.advance(grid,m.position+center,next+center,run.velocity*NativePathStep::seconds,collision,origin);
+                const auto step=NativePathStep::advance(m.pathStep, grid,m.position+center,next+center,run.velocity*NativePathStep::seconds,collision,origin);
                 m.position=step.position-center;if(step.blocked) m.route.clear();else if(step.reached) m.route.pop_front();
                 stopped=m.route.empty();
                 if(u.destinationUnit) if(const auto target=world().units.find(*u.destinationUnit);target!=world().units.end()) contact=inReach(target->second);
@@ -306,7 +307,7 @@ bool RemoteScene::Impl::displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,con
         const int attack=std::min(256,nativeAdd(nativeAdd(effectiveFasterRate(*itemIAS),*attackRate),skills.number(row->second,"Param6").value_or(0)));
         if(attack<=0) {effectLimitations.insert("PD2 charge nonpositive attack rate");return false;}
         m.pd2PlayerCharge=Motion::Pd2PlayerCharge{revision,time+NativePathStep::seconds,-1,attack};
-        m.route.clear();m.goal.reset();m.pathStep.reset();m.correction={};m.correctionLeft=0;
+        m.route.clear();m.goal.reset();NativePathStep::reset(m.pathStep);m.correction={};m.correctionLeft=0;
     }
     auto &charge=*m.pd2PlayerCharge;
     charge.confirmed|=travelling;
@@ -350,13 +351,13 @@ bool RemoteScene::Impl::displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,con
     if(!m.goal || std::floor(m.goal->x)!=std::floor(point->x) || std::floor(m.goal->y)!=std::floor(point->y)) {
         auto route=grid.nativeUnitPath(m.position-origin+center,*point-origin+center,7,100,playerMovement,target.has_value());
         m.route.clear();for(auto cell:route) m.route.push_back(cell+origin-center);
-        m.goal=*point;m.pathStep.reset();
+        m.goal=*point;NativePathStep::reset(m.pathStep);
     }
     while(charge.nextTick<=time) {
         charge.nextTick+=NativePathStep::seconds;
         if(m.route.empty()) {finish(false);return true;}
         const auto next=m.route.front();m.look=next-m.position;
-        const auto step=m.pathStep.advance(grid,m.position+center,next+center,speed*NativePathStep::seconds,playerMovement,origin);
+        const auto step=NativePathStep::advance(m.pathStep, grid,m.position+center,next+center,speed*NativePathStep::seconds,playerMovement,origin);
         m.position=step.position-center;
         if(step.blocked) {finish(false);return true;}
         if(inReach()) {finish(true);return true;}

@@ -1,4 +1,5 @@
 #include "gameplay/items/quality_rules.hpp"
+#include "world/native_path_step.hpp"
 #include "server/runtime/events.hpp"
 #include "server/runtime/facts/map.hpp"
 #include "server/runtime/facts/travel.hpp"
@@ -200,7 +201,7 @@ DomainResult<> System::finishPd2Map(const ActorContext &actor,ItemHandle request
             state_.pd2SceneEntryRooms.insert(*sceneRoom);
             auto &owner=ports_.players.players_.at(actor.player);
             ports_.npc.close(actor.player);ports_.inventory.close(actor.player);state_.waypoints.erase(actor.player);
-            owner.area=town;owner.position=*sceneArrival;owner.route.clear();owner.moving=false;owner.pathStep.reset();
+            owner.area=town;owner.position=*sceneArrival;owner.route.clear();owner.moving=false;NativePathStep::reset(owner.pathStep);
             owner.movementTarget.reset();owner.movementArrival.reset();owner.routeDestination=owner.position;
             owner.routeObstacles=ports_.areas.at(town).definition.collision.obstacleRevision;
             ports_.areas.moveRoomUnit(owner.actor,town,owner.position);
